@@ -1,0 +1,37 @@
+{
+  "result": "PASS",
+  "scope": "static_design_artifacts_and_reference_trace_only",
+  "paths": 23,
+  "operations": 25,
+  "core_operations": 22,
+  "schemas": 56,
+  "local_refs": 294,
+  "shape_checks": 522,
+  "scenarios": 21,
+  "scenario_example_references": 37,
+  "continuous_trace_steps": 23,
+  "negative_static_cases_rejected": [
+    "reject_lost_review_item",
+    "reject_wrong_expected_version",
+    "reject_frozen_content_changed_without_digest",
+    "confirmation_wrong_chapter",
+    "confirmation_wrong_template",
+    "confirmation_missing_asset_versions",
+    "duplicate_review_decision",
+    "same_review_id_different_reason",
+    "same_review_item_id_different_statement",
+    "frozen_confirmation_not_actual_return",
+    "replacement_without_acknowledgement",
+    "replacement_silently_merges_old_body",
+    "replacement_erases_old_review_history",
+    "history_label_without_release_read",
+    "history_label_claims_current"
+  ],
+  "not_run": [
+    "complete OpenAPI meta-schema validation",
+    "Prism runtime",
+    "real provider/database/model tests",
+    "actual DOCX export/opening"
+  ],
+  "note": "This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples."
+}
