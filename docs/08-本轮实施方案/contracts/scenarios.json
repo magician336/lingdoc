@@ -969,7 +969,7 @@
         "expected_label_after": "历史版本"
       },
       "assertions": [
-        "T18获取ExportArtifact.snapshot_id后读取getRelease；仅verified不等于当前。",
+        "T14交付界面切片获取ExportArtifact.snapshot_id后读取getRelease；仅verified不等于当前。",
         "页面刷新/重新打开/本地编辑成功/展示下载入口时刷新对应快照状态，不沿用过期标签。",
         "getRelease失败或尚未读取时显示当前性未知，不宣称当前。",
         "is_current变更不改变冻结输入、digest或已生成文件hash。",
