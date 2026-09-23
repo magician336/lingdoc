@@ -9565,11 +9565,11 @@
                       }
                     }
                   },
-                  "available": {
+                  "unknown": {
                     "value": {
                       "data": {
                         "project_id": "p-demo",
-                        "content_access": "available",
+                        "content_access": "unknown",
                         "recovery_actions": [],
                         "can_create_project": true
                       },
@@ -11511,6 +11511,7 @@
             "type": "string",
             "enum": [
               "available",
+              "unknown",
               "restricted"
             ]
           },

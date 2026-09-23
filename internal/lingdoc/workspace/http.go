@@ -259,8 +259,8 @@ func (h *Handler) accessStatus(c *gin.Context) {
 		sendError(c, err)
 		return
 	}
-	// There are no project assets in this slice. T09 must join source status
-	// before this answer is used to gate source-bearing operations.
-	sendOK(c, http.StatusOK, gin.H{"project_id": id, "content_access": "available",
+	// Source authorization is not integrated in this slice. Until T09 provides
+	// SourcePolicy, report unknown and do not signal content access.
+	sendOK(c, http.StatusOK, gin.H{"project_id": id, "content_access": "unknown",
 		"recovery_actions": []string{}, "can_create_project": true}, false)
 }
