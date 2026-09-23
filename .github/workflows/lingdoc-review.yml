@@ -1,0 +1,165 @@
+name: LingDoc Review
+
+# Always create one stable check. Top-level paths filters can leave a required
+# check pending forever on unrelated PRs; select expensive steps inside the job.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lingdoc-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: LingDoc PR gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: bash
+    env:
+      LOG_FORMAT: ""
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONOPTIMIZE: "0"
+    steps:
+      # Use pull_request (NOT pull_request_target), no secrets or write token.
+      # Default checkout tests the merge result; scope uses base...head below.
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Test gate selection
+        id: selftest
+        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_pr_scope.py' -v
+
+      - name: Select checks and check diff whitespace
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lingdoc-checks"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            python scripts/ci/lingdoc_pr_scope.py --all > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+          else
+            python scripts/ci/lingdoc_pr_scope.py > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+          fi
+          cat "$RUNNER_TEMP/lingdoc-checks/scope.json"
+
+      - name: Install contract validator dependency
+        if: steps.scope.outputs.contracts == 'true'
+        run: python -m pip install --disable-pip-version-check -r scripts/ci/requirements-lingdoc.txt
+
+      - name: Validate contract examples and reference trace
+        if: steps.scope.outputs.contracts == 'true'
+        id: contracts
+        run: |
+          scratch=$(mktemp -d "$RUNNER_TEMP/lingdoc-contracts.XXXXXX")
+          cp -R "docs/08-本轮实施方案/contracts/." "$scratch/"
+          # Never mistake the committed report for a result from this run.
+          rm -f "$scratch/validation-result.json"
+          python -X utf8 "$scratch/validate_artifacts.py" | tee "$RUNNER_TEMP/lingdoc-checks/contracts.log"
+          cp "$scratch/validation-result.json" "$RUNNER_TEMP/lingdoc-checks/validation-result.json"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks/validation-result.json').read_text())
+          assert report['result'] == 'PASS'
+          assert report['scope'] == 'static_design_artifacts_and_reference_trace_only'
+          # Counts are intentionally NOT fixed: adding F22 or a new API is valid.
+          PY
+
+      - uses: actions/setup-go@v6
+        if: steps.scope.outputs.provider_tests == 'true'
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Test and vet existing LingDoc provider packages
+        if: steps.scope.outputs.provider_tests == 'true'
+        id: providers
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          mapfile -t targets < <(python - <<'PY'
+          import json, os
+          from pathlib import Path
+          report = json.loads((Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks/scope.json').read_text())
+          print('\n'.join(report['provider_packages']))
+          PY
+          )
+          test "${#targets[@]}" -gt 0
+          go test -race -count=1 -json "${targets[@]}" | tee "$RUNNER_TEMP/lingdoc-checks/go-test.jsonl"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks/go-test.jsonl'
+          count = sum(1 for line in path.read_text().splitlines()
+                      if line and (row := json.loads(line)).get('Test') and row.get('Action') == 'pass')
+          if count == 0:
+              raise SystemExit('Provider code exists, but no tests passed; do not report an empty suite as coverage.')
+          print(f'Passed test/subtest events: {count} (not a coverage percentage)')
+          PY
+          go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
+
+      - uses: actions/setup-node@v6
+        if: steps.scope.outputs.frontend == 'true'
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Test, type-check and build frontend
+        if: steps.scope.outputs.frontend == 'true'
+        id: frontend
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-tests.log"
+          npm run type-check 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-types.log"
+          npm run build 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-build.log"
+
+      - name: Publish check boundary and results
+        if: always()
+        env:
+          SELFTEST: ${{ steps.selftest.outcome }}
+          SCOPE: ${{ steps.scope.outcome }}
+          CONTRACTS: ${{ steps.contracts.outcome }}
+          PROVIDERS: ${{ steps.providers.outcome }}
+          FRONTEND: ${{ steps.frontend.outcome }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          result = {key.lower(): os.environ[key] for key in
+                    ('SELFTEST', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
+          result['tested_sha'] = os.environ['GITHUB_SHA']
+          result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
+          folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
+          folder.mkdir(exist_ok=True)
+          (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
+              handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
+              for key in ('selftest', 'scope', 'contracts', 'providers', 'frontend'):
+                  handle.write(f'| {key} | {result[key]} |\n')
+              handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
+              handle.write(result['boundary'] + '\n')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lingdoc-checks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-checks/
+          if-no-files-found: warn
+          retention-days: 14
