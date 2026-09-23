@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -36,7 +37,10 @@ func syntheticOrigin(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("读取合成资料: %v", err)
 	}
-	return string(b)
+	// 行尾归一。本仓库的 .gitattributes 被 .gitignore 的 `.*` 忽略、从未提交，
+	// 所以 Windows 上 core.autocrlf=true 会把 fixture 检出成 CRLF——每行多一个
+	// rune，下面写死的坐标会整体漂移。判据不依赖检出方式，故在此归一到 LF。
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 func goalHit() *types.SearchResult {
