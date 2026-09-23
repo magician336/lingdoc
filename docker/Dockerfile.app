@@ -103,12 +103,15 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Then switch to mirror if specified and install other packages
+# Then switch to mirror if specified and install other packages.
+# Sources go over HTTPS: on this network the same mirror's :80 gets its
+# responses rewritten (apt reports "502 Bad Gateway" / connection
+# timeouts), while :443 works. See the T03 build notes.
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
-        sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
+        sed -i -e "s@deb.debian.org@${APK_MIRROR_ARG}@g" -e "s@^URIs: http://@URIs: https://@" /etc/apt/sources.list.d/debian.sources; \
     fi && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
+    apt-get -o Acquire::Retries=10 update && \
+    apt-get -o Acquire::Retries=10 install -y --no-install-recommends \
         build-essential postgresql-client default-mysql-client tzdata sed curl bash vim wget \
         libsqlite3-0 \
         python3 python3-pip python3-dev libffi-dev libssl-dev \
