@@ -4,11 +4,17 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+// ErrAssetKnowledgeMismatch indicates that a search hit cannot be attributed
+// to the asset supplied by the caller. Such a hit is rejected before reading
+// any origin text so it can never be emitted as a source for the wrong asset.
+var ErrAssetKnowledgeMismatch = errors.New("evidence: hit does not belong to asset")
 
 // SourceStatus 说明一条来源此刻能不能被当作证据。
 type SourceStatus string
@@ -92,6 +98,9 @@ func (r *sourceResolver) Resolve(
 }
 
 func (r *sourceResolver) resolveOne(ctx context.Context, asset Asset, hit *types.SearchResult) (Source, error) {
+	if hit.KnowledgeID != asset.KnowledgeID {
+		return Source{}, fmt.Errorf("%w: hit knowledge_id=%q asset knowledge_id=%q", ErrAssetKnowledgeMismatch, hit.KnowledgeID, asset.KnowledgeID)
+	}
 	src := Source{
 		ID:            hit.ID,
 		ProjectID:     asset.ProjectID,

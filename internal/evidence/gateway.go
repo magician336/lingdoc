@@ -84,17 +84,17 @@ func (g *assetGateway) ResolveAllowed(
 			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotFound})
 			continue
 		}
-		if asset.ProcessingState != AssetStateReady {
-			// 未就绪资料不得用空解析结果充当证据。
-			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotReady})
-			continue
-		}
 		allowed, err := g.authz.CanAccessAsset(ctx, actor, projectID, asset)
 		if err != nil {
 			return nil, err
 		}
 		if !allowed {
 			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotAuthorized})
+			continue
+		}
+		if asset.ProcessingState != AssetStateReady {
+			// 授权必须先于状态判定，避免向无权调用者泄露资料状态。
+			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotReady})
 			continue
 		}
 		res.Allowed = append(res.Allowed, asset)
