@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -18,20 +17,31 @@ import (
 // 报告由测试生成而非手写：报告能重跑，散文不能。
 const reportPath = "../../docs/08-本轮实施方案/T03-验证报告.json"
 
+// s7EvidencePath 真实回路落下的证据，由 cli/acceptance/e2e 的 TestRAGFullLoop
+// 在 WEKNORA_E2E_EVIDENCE 指向此处时写出。
+//
+// S7 读它，而不是直接写 CheckPassed：没跑过就没有文件，结论只能是 not_run。
+const s7EvidencePath = "../../docs/08-本轮实施方案/T03-S7-证据.json"
+
 // TestT03VerificationRun 把 T03 的验收各跑一遍并落成报告。
 //
 // 跑的是领域代码本身——真实的 rune 坐标运算、真实切分、真实失效判定；
 // 替身只有绑定存储与权限判定这两个外部依赖，原文用合成文本。
-// 因此 mode 报 mock：契约 §9 下，没有真实模型输出时整体 mode 永远不是 real。
+// 唯一走真实回路的是 S7，它读 e2e 落下的证据文件；证据不在时如实标 not_run，
+// 且契约 §9 下整体 mode 不得因此升级。
 func TestT03VerificationRun(t *testing.T) {
 	ctx := context.Background()
 	origin := syntheticOrigin(t)
 	actor := Actor{UserID: "u-verifier", TenantID: "t-demo"}
 
-	rep := NewReport(ModeMock)
-	rep.Note = "领域代码为真实实现（坐标运算 / rune 切分 / 失效判定）；" +
-		"绑定存储与权限判定为测试替身；原文为合成文本 testdata/synthetic-asset.txt；" +
-		"真实模型回路见 not_run 项。"
+	// declared 是本次运行打算达到的保真度上限。S7 真的跑过真实模型，所以上限是
+	// real；EffectiveMode 只在 RequiresModel 的检查确实 passed 时才让它成立，
+	// 因此这一句本身不构成结论。
+	rep := NewReport(ModeReal)
+	rep.Note = "F22/F02/S4/S5：领域代码为真实实现（坐标运算 / rune 切分 / 失效判定），" +
+		"绑定存储与权限判定为测试替身，原文为合成文本 testdata/synthetic-asset.txt；" +
+		"S7：真实回路（真实服务 + 真实 embedding/chat 模型），" +
+		"运行记录见 T03-S7-证据.json（含运行时间、模型名、回答字数与引用数）。"
 
 	record := func(id string, requiresModel bool, run func() (CheckStatus, string)) {
 		status, detail := run()
@@ -134,21 +144,45 @@ func TestT03VerificationRun(t *testing.T) {
 		return CheckPassed, ""
 	})
 
-	// 唯一需要真实模型的一条。没跑成必须如实标 not_run，且不得让整体 mode 升级。
+	// 唯一需要真实模型的一条。判据不在这里发明：读 e2e 那次真实运行的记录。
+	// 没跑过就没有文件，只能是 not_run；跑了但记录不满足判据，是 failed。
 	record("S7-一次真实模型输出", true, func() (CheckStatus, string) {
-		var missing []string
-		for _, k := range []string{"WEKNORA_E2E_HOST", "WEKNORA_E2E_TOKEN", "WEKNORA_E2E_CHAT_MODEL"} {
-			if os.Getenv(k) == "" {
-				missing = append(missing, k)
-			}
-		}
-		if len(missing) > 0 {
+		raw, err := os.ReadFile(filepath.Clean(s7EvidencePath))
+		if err != nil {
 			return CheckNotRun, fmt.Sprintf(
-				"%s 未设置，本轮无模型权限/凭据；真实回路见 cli/acceptance/e2e/e2e_test.go TestRAGFullLoop",
-				strings.Join(missing, ", "))
+				"没有真实回路的运行记录（读 %s 失败：%v）。真实回路带 acceptance_e2e 构建标记，"+
+					"须单独运行 go test -tags acceptance_e2e ./cli/acceptance/e2e/，"+
+					"并让 WEKNORA_E2E_EVIDENCE 指向该文件；不在 make test 内",
+				s7EvidencePath, err)
 		}
-		return CheckNotRun, "凭据已配置，但真实回路带 acceptance_e2e 构建标记，" +
-			"须单独运行 go test -tags acceptance_e2e ./cli/acceptance/e2e/，不在 make test 内"
+		var ev struct {
+			RunAt          string `json:"run_at"`
+			ChatModel      string `json:"chat_model"`
+			EmbeddingModel string `json:"embedding_model"`
+			SearchHits     int    `json:"search_hits"`
+			AnswerChars    int    `json:"answer_chars"`
+			ReferenceCount int    `json:"reference_count"`
+		}
+		if err := json.Unmarshal(raw, &ev); err != nil {
+			return CheckFailed, fmt.Sprintf("真实回路证据 %s 不是合法 JSON：%v", s7EvidencePath, err)
+		}
+		// 判据逐条对着 T03 验收标准，而不是「测试跑绿了」：
+		// 先要这份记录认得出是哪一次真实运行，再要模型真的产出了回答，
+		// 最后要回答指得回原文——引用为 0 就是「答了但回溯不了」，不算通过。
+		switch {
+		case ev.RunAt == "" || ev.ChatModel == "" || ev.EmbeddingModel == "":
+			return CheckFailed, fmt.Sprintf(
+				"证据 %s 没记全运行时间或模型名——无法确认这是真实模型而非替身跑出来的",
+				s7EvidencePath)
+		case ev.AnswerChars <= 0:
+			return CheckFailed, fmt.Sprintf(
+				"证据 %s 记了 %d 字回答，不构成一次真实模型输出", s7EvidencePath, ev.AnswerChars)
+		case ev.SearchHits <= 0:
+			return CheckFailed, "证据记了 0 条检索命中——回答不是来自资料"
+		case ev.ReferenceCount <= 0:
+			return CheckFailed, "证据记了 0 处引用——回答指不回原文（T03 验收①）"
+		}
+		return CheckPassed, ""
 	})
 
 	if problems := rep.Problems(); len(problems) > 0 {
@@ -157,8 +191,12 @@ func TestT03VerificationRun(t *testing.T) {
 	if failed := rep.Failed(); len(failed) > 0 {
 		t.Errorf("有 %d 条检查失败: %+v", len(failed), failed)
 	}
+	// mode 报 real 必须有落地证据。判据写在闭包里等于让闭包自己给自己作证，
+	// 所以这里独立复核一次：报了 real，磁盘上就得有那次真实运行的记录。
 	if rep.EffectiveMode() == ModeReal {
-		t.Error("mode 报了 real，但本轮没有任何真实模型输出")
+		if _, err := os.Stat(filepath.Clean(s7EvidencePath)); err != nil {
+			t.Errorf("mode 报了 real，但真实回路的证据文件不在：%v", err)
+		}
 	}
 
 	raw, err := json.MarshalIndent(rep, "", "  ")
