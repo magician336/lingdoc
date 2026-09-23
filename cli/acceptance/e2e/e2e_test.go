@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -150,6 +151,35 @@ func TestRAGFullLoop(t *testing.T) {
 		// question, but the demo flow is supposed to.
 		t.Logf("warning: chat returned 0 reference indexes (server may have a different config)")
 	}
+
+	// Emit machine-readable evidence when asked.
+	//
+	// The T03 verification report reads this file rather than trusting prose:
+	// a check claiming "a real model produced output" has to be backed by a
+	// record of the run, not by someone remembering that it passed. Unset (the
+	// default, including CI) means no file and no behavior change.
+	if out := os.Getenv("WEKNORA_E2E_EVIDENCE"); out != "" {
+		evidence := map[string]any{
+			"run_at":          time.Now().Format(time.RFC3339),
+			"host":            host,
+			"embedding_model": embeddingModel,
+			"chat_model":      chatModel,
+			"kb_id":           created.Data.ID,
+			"doc_id":          uploaded.Data.ID,
+			"search_hits":     len(results),
+			"answer_chars":    len(strings.TrimSpace(answer.String())),
+			"reference_count": refCount,
+		}
+		blob, err := json.MarshalIndent(evidence, "", "  ")
+		if err != nil {
+			t.Fatalf("marshal evidence: %v", err)
+		}
+		if err := os.WriteFile(out, append(blob, '\n'), 0o644); err != nil {
+			t.Fatalf("write evidence %s: %v", out, err)
+		}
+		t.Logf("evidence written to %s (answer %d chars, %d references)",
+			out, len(strings.TrimSpace(answer.String())), refCount)
+	}
 }
 
 func mustEnv(t *testing.T, key string) string {
@@ -174,7 +204,12 @@ func envOr(key, fallback string) string {
 func buildBinary(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	out := filepath.Join(dir, "weknora")
+	// "go build -o <file>" does not append the platform's executable suffix.
+	// On Windows the suite then died with
+	//   exec: "...\weknora": executable file not found in %PATH%
+	// for a binary that was sitting on disk, because exec.Command does not
+	// resolve an extension-less path the way a shell does. Name it explicitly.
+	out := filepath.Join(dir, "weknora"+exeSuffix())
 	// Repo layout: this test sits at cli/acceptance/e2e/, so cli/ is two levels up.
 	cmd := exec.Command("go", "build", "-o", out, ".")
 	cmd.Dir = filepath.Join("..", "..")
@@ -184,6 +219,15 @@ func buildBinary(t *testing.T) string {
 		t.Fatalf("build cli: %v", err)
 	}
 	return out
+}
+
+// exeSuffix is the platform's executable suffix. On Windows an extension-less
+// path is not runnable through exec.Command, so the binary has to carry .exe.
+func exeSuffix() string {
+	if runtime.GOOS == "windows" {
+		return ".exe"
+	}
+	return ""
 }
 
 // writeSampleDoc emits a small bilingual doc that gives the embedder enough
