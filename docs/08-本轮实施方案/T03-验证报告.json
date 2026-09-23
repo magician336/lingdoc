@@ -1,0 +1,31 @@
+{
+  "mode": "mock",
+  "note": "领域代码为真实实现（坐标运算 / rune 切分 / 失效判定）；绑定存储与权限判定为测试替身；原文为合成文本 testdata/synthetic-asset.txt；真实模型回路见 not_run 项。",
+  "passed": [
+    {
+      "id": "F22-部分授权不得静默当全部成功",
+      "status": "passed"
+    },
+    {
+      "id": "F02-空范围不得扩大为全库",
+      "status": "passed"
+    },
+    {
+      "id": "S4-来源能指回原文（强档）",
+      "status": "passed"
+    },
+    {
+      "id": "S5-失效命中不得报 available",
+      "status": "passed"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "S7-一次真实模型输出",
+      "status": "not_run",
+      "requires_model": true,
+      "detail": "WEKNORA_E2E_HOST, WEKNORA_E2E_TOKEN, WEKNORA_E2E_CHAT_MODEL 未设置，本轮无模型权限/凭据；真实回路见 cli/acceptance/e2e/e2e_test.go TestRAGFullLoop"
+    }
+  ]
+}

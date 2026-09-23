@@ -1,6 +1,7 @@
 package evidence
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -57,6 +58,27 @@ func TestReportNeverUpgradesDeclaredMode(t *testing.T) {
 
 	if got := rep.EffectiveMode(); got != ModeMock {
 		t.Errorf("EffectiveMode() = %q, want %q", got, ModeMock)
+	}
+}
+
+// 导出物必须是结论：声明 real 但模型没跑成，序列化出的 mode 不能是 real。
+// 否则交接记录会把"打算用 real"当成事实写出去。
+func TestReportSerializesEffectiveModeNotDeclared(t *testing.T) {
+	rep := &Report{declared: ModeReal}
+	rep.Add(Check{ID: "S7", Status: CheckNotRun, RequiresModel: true, Detail: "模型不可用"})
+
+	raw, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got struct {
+		Mode RunMode `json:"mode"`
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if got.Mode == ModeReal {
+		t.Errorf("序列化出的 mode = %q，把意图写成了事实", got.Mode)
 	}
 }
 

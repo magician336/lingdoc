@@ -1,6 +1,9 @@
 package evidence
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // RunMode 是契约 §9 的运行模式，保真度递增。
 type RunMode string
@@ -27,20 +30,45 @@ const (
 // Check 一条断言的结果。
 type Check struct {
 	// ID 指回契约场景编号（如 scenarios.json 的 F03），便于对上来源。
-	ID     string
-	Status CheckStatus
+	ID     string      `json:"id"`
+	Status CheckStatus `json:"status"`
 	// RequiresModel 标记这条检查是否真的调用了模型。
 	// 模式由它推导——声明出来的模式容易被写成想要的而不是实际的。
-	RequiresModel bool
+	RequiresModel bool `json:"requires_model,omitempty"`
 	// Detail 失败/未运行时的原因。通过时留空。
-	Detail string
+	Detail string `json:"detail,omitempty"`
 }
 
 // Report 一次验证的记录。
 type Report struct {
 	// declared 是本次运行打算使用的模式。它不是结论，见 EffectiveMode。
 	declared RunMode
-	Checks   []Check
+	// Note 说明本次哪些部分是真的、哪些是替身，供交接时不必追问。
+	Note   string
+	Checks []Check
+}
+
+// MarshalJSON 用 EffectiveMode 而非 declared 输出模式。
+//
+// 交接物必须是结论：把"打算用 real"这个意图写成事实，正是契约 §9
+// 要禁的那件事。自定义序列化让这条不可能被绕过。
+func (r *Report) MarshalJSON() ([]byte, error) {
+	type view struct {
+		Mode     RunMode  `json:"mode"`
+		Note     string   `json:"note,omitempty"`
+		Passed   []Check  `json:"passed"`
+		Failed   []Check  `json:"failed"`
+		NotRun   []Check  `json:"not_run"`
+		Problems []string `json:"problems,omitempty"`
+	}
+	return json.Marshal(view{
+		Mode:     r.EffectiveMode(),
+		Note:     r.Note,
+		Passed:   r.Passed(),
+		Failed:   r.Failed(),
+		NotRun:   r.NotRun(),
+		Problems: r.Problems(),
+	})
 }
 
 // NewReport 开始一次记录。declared 只作为上限，不会因证据被抬高。
@@ -79,8 +107,15 @@ func (r *Report) NotRun() []Check {
 	return r.filter(func(c Check) bool { return c.Status == CheckNotRun })
 }
 
+// Failed 返回跑过但失败的检查。
+func (r *Report) Failed() []Check {
+	return r.filter(func(c Check) bool { return c.Status == CheckFailed })
+}
+
 func (r *Report) filter(keep func(Check) bool) []Check {
-	var out []Check
+	// 初始化为空切片而非 nil：序列化出去是 [] 而不是 null，
+	// 消费方少一个 null 分支。
+	out := []Check{}
 	for _, c := range r.Checks {
 		if keep(c) {
 			out = append(out, c)
