@@ -34,20 +34,23 @@ type Anchor struct {
 	ContentRewritten bool
 }
 
-// Source 按契约 §2 的字段形状构造，另挂一个不对外暴露的仓库锚点供本层校验。
+// Source 按契约 §2 的字段形状构造，另挂一个不序列化的仓库锚点供本层校验。
+// json tag 与契约同名；契约里 Source 是 additionalProperties: false，
+// 所以内部字段必须显式排除，否则序列化出去即违规。
 type Source struct {
-	ID             string
-	ProjectID      string
-	AssetID        string
-	AssetRevision  string
-	Locator        string
-	QuotedText     string
-	QuotedTextHash string
-	Status         SourceStatus
+	ID             string       `json:"id"`
+	ProjectID      string       `json:"project_id"`
+	AssetID        string       `json:"asset_id"`
+	AssetRevision  int          `json:"asset_revision"`
+	Locator        string       `json:"locator"`
+	QuotedText     string       `json:"quoted_text"`
+	QuotedTextHash string       `json:"quoted_text_hash"`
+	Status         SourceStatus `json:"status"`
 
 	// Anchor 保留回到原文的坐标，供下游重定位与人工复核。
-	// 标 json:"-"：ContentRevision/ContentRewritten 本就是 json:"-"
-	// （见 ADR-0001），序列化出去会丢掉失效信息，反而误导。
+	// 标 json:"-"：它不在契约字段里，而 Source 是 additionalProperties: false；
+	// 且 ContentRevision/ContentRewritten 本就是 json:"-"（见 ADR-0001），
+	// 序列化出去会丢掉失效信息，反而误导。
 	Anchor Anchor `json:"-"`
 }
 

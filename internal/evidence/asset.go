@@ -6,13 +6,15 @@
 package evidence
 
 // Asset 是项目已绑定资料的对外形状，字段对应契约 contracts/openapi.json 的 Asset。
+// json tag 与契约字段同名：契约里 Asset 是 additionalProperties: false，
+// 多一个键就违规，所以名字必须钉死在结构体上，而不是留给映射层去对齐。
 type Asset struct {
-	ID              string
-	ProjectID       string
-	KnowledgeID     string
-	Title           string
-	AssetRevision   string
-	ProcessingState AssetState
+	ID              string     `json:"id"`
+	ProjectID       string     `json:"project_id"`
+	KnowledgeID     string     `json:"knowledge_id"`
+	Title           string     `json:"title"`
+	AssetRevision   int        `json:"asset_revision"`
+	ProcessingState AssetState `json:"processing_state"`
 }
 
 // AssetState 对应契约的 processing_state 枚举。

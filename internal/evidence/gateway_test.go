@@ -31,7 +31,7 @@ func testAsset(id string, state AssetState) Asset {
 		ProjectID:       "p-demo",
 		KnowledgeID:     "k-" + id,
 		Title:           "合成资料 " + id,
-		AssetRevision:   "r1",
+		AssetRevision:   1,
 		ProcessingState: state,
 	}
 }
