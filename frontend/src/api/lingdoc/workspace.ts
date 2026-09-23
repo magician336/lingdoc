@@ -30,6 +30,15 @@ export interface Chapter {
   confirmation_valid: boolean
 }
 
+export interface Asset {
+  id: string
+  project_id: string
+  knowledge_id: string
+  title: string
+  asset_revision: number
+  processing_state: 'pending' | 'processing' | 'ready' | 'failed' | 'replaced'
+}
+
 export interface Result<T> {
   data: T
   request_id: string
@@ -51,6 +60,7 @@ export const activateProject = (id: string, expected: number, key: string) =>
   post<Result<Project>>(`${base}/${segment(id)}/activate`,
     { expected_spec_revision: expected }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
+export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const saveChapter = (projectId: string, chapterId: string, input: {
   expected_chapter_version_id: string | null
   expected_spec_revision: number

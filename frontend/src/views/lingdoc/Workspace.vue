@@ -36,6 +36,17 @@
         </div>
         <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
 
+        <section class="assets">
+          <h3>项目资料</h3>
+          <p v-if="assets.length === 0" class="muted">当前项目没有可用的已就绪资料。</p>
+          <ul v-else class="asset-list">
+            <li v-for="asset in assets" :key="asset.id">
+              <span><strong>{{ asset.title || asset.knowledge_id }}</strong><small>版本 {{ asset.asset_revision }}</small></span>
+              <em>{{ asset.processing_state === 'ready' ? '已就绪' : asset.processing_state }}</em>
+            </li>
+          </ul>
+        </section>
+
         <form class="spec-form" @submit.prevent="saveConditions">
           <h3>研究条件</h3>
           <label for="subject">研究主题</label>
@@ -75,14 +86,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
-  activateProject, createProject, getProject, listChapters, listProjects,
-  saveChapter, saveSpec, type Chapter, type Project,
+  activateProject, createProject, getProject, listAssets, listChapters, listProjects,
+  saveChapter, saveSpec, type Asset, type Chapter, type Project,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
 const truncated = ref(false)
 const project = ref<Project | null>(null)
 const chapters = ref<Chapter[]>([])
+const assets = ref<Asset[]>([])
 const chapter = ref<Chapter | null>(null)
 const newName = ref('')
 const subject = ref('')
@@ -158,6 +170,8 @@ async function selectProject(id: string, force = false) {
     goal.value = result.data.spec.research_goal ?? ''
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
     chapters.value = chapterResult?.data ?? []
+    const assetResult = await listAssets(id)
+    assets.value = assetResult.data
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
   } catch (error) { failure(error) }
@@ -250,6 +264,10 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .project-list { list-style: none; padding: 0; display: grid; gap: 7px; }
 .project-list button { width: 100%; display: flex; justify-content: space-between; text-align: left; }
 .project-list small, .chapter-tabs small { color: #67746a; margin-left: 8px; }
+.asset-list { list-style: none; padding: 0; display: grid; gap: 8px; }
+.asset-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
+.asset-list span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.asset-list small, .asset-list em { color: #67746a; font-size: 12px; font-style: normal; }
 .chapter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .empty-work { display: grid; place-items: center; min-height: 300px; color: #6b7670; }
 @media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } }

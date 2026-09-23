@@ -1,21 +1,33 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-type Handler struct{ service *Service }
+type Handler struct {
+	service  *Service
+	bindings *evidence.Bindings
+	gateway  evidence.AssetGateway
+}
 
 func NewHandler(db *gorm.DB) *Handler {
-	return &Handler{service: NewService(db, ContractDemoTemplate{})}
+	bindings := evidence.NewBindings(db)
+	return &Handler{
+		service:  NewService(db, ContractDemoTemplate{}),
+		bindings: bindings,
+		gateway:  evidence.NewAssetGateway(bindings, tenantAssetAuthorizer{bindings: bindings}),
+	}
 }
 
 func (h *Handler) Service() *Service { return h.service }
@@ -29,8 +41,31 @@ func (h *Handler) Register(v1 *gin.RouterGroup) {
 	group.POST("/projects/:projectId/activate", h.activateProject)
 	group.PUT("/projects/:projectId/members", h.saveMembers)
 	group.GET("/projects/:projectId/chapters", h.listChapters)
+	group.GET("/projects/:projectId/assets", h.listAssets)
 	group.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	group.GET("/projects/:projectId/access-status", h.accessStatus)
+}
+
+// tenantAssetAuthorizer is the conservative first production adapter for the
+// evidence domain. Project membership is checked by workspacecore before this
+// handler runs; this adapter additionally requires that the bound asset still
+// belongs to the caller's tenant. A future KB role adapter can replace it
+// without changing AssetGateway or the HTTP contract.
+type tenantAssetAuthorizer struct{ bindings *evidence.Bindings }
+
+func (a tenantAssetAuthorizer) CanAccessAsset(ctx context.Context, actor evidence.Actor, projectID string, asset evidence.Asset) (bool, error) {
+	scope, err := a.bindings.AssetScope(ctx, projectID, asset.ID)
+	if errors.Is(err, evidence.ErrAssetNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	tenantID, err := strconv.ParseUint(actor.TenantID, 10, 64)
+	if err != nil {
+		return false, nil
+	}
+	return scope.OwnerTenantID == tenantID, nil
 }
 
 func caller(c *gin.Context) (Actor, bool) {
@@ -225,6 +260,33 @@ func (h *Handler) listChapters(c *gin.Context) {
 		return
 	}
 	sendOK(c, 200, data, false)
+}
+
+func (h *Handler) listAssets(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	projectID := c.Param("projectId")
+	if err := h.service.Authorize(c.Request.Context(), actor, projectID, "read"); err != nil {
+		sendError(c, err)
+		return
+	}
+	assets, err := h.bindings.BoundAssets(c.Request.Context(), projectID)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	requested := make([]string, 0, len(assets))
+	for _, asset := range assets {
+		requested = append(requested, asset.ID)
+	}
+	resolved, err := h.gateway.ResolveAllowed(c.Request.Context(), projectID, evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, requested)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, resolved.Allowed, false)
 }
 
 func (h *Handler) saveChapter(c *gin.Context) {
