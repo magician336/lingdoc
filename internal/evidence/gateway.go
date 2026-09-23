@@ -102,12 +102,17 @@ func (g *assetGateway) ResolveAllowed(
 	return res, nil
 }
 
+// normalizeKey 是「两个 ID 算不算同一个」的唯一判据。网关与来源复核都经它：
+// 两处各判一次时，同一个 ID 会在一个入口里算数、在另一个里被丢掉，
+// 而两边的报错都说得通——最难查的一类错。
+func normalizeKey(id string) string { return strings.TrimSpace(id) }
+
 // normalizeIDs 去重并保持请求顺序，与契约 asset_ids 的 uniqueItems 约束一致。
 func normalizeIDs(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := make(map[string]struct{}, len(in))
 	for _, item := range in {
-		item = strings.TrimSpace(item)
+		item = normalizeKey(item)
 		if item == "" {
 			continue
 		}

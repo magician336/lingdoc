@@ -333,14 +333,86 @@ func TestT09VerificationRun(t *testing.T) {
 		return CheckPassed, ""
 	})
 
+	// 契约 §2 报表里那句 `SourcePolicy.Validate(projectID, actor, sourceRefs)`。
+	// 它复核的是**已产出的引用**此刻还能不能用，不是重新检索一遍：重新检索会得到
+	// 另一批引用，答的不是消费者问的那个问题（T03 §6.5 记的偏离，T09 §5 的答复）。
+	record("T09-SourcePolicy.Validate：复核已产出的引用（契约 §2）", func() (CheckStatus, string) {
+		// 合成资料经 writeText 落盘：与 policy_test 同一个助手，坐标才是按同一份
+		// 内容换算出来的（写文件这一步在两个测试文件里各写一套没有好处）。
+		origin := syntheticOrigin(t)
+		path := writeText(t, "synthetic.txt", origin)
+		reader := NewOriginReader(&fakeKnowledge{rows: map[string]*types.Knowledge{
+			"k-demo": {ID: "k-demo", FilePath: path, FileType: "txt", ParseStatus: types.ParseStatusCompleted},
+		}})
+		asset, err := store.Bind(ctx, bindInputKB("p-check", "k-demo", "kb-ok", nil))
+		if err != nil {
+			return CheckFailed, fmt.Sprintf("Bind: %v", err)
+		}
+		srcs, err := NewSourceResolver(reader).Resolve(ctx, asset, []*types.SearchResult{goalHit()})
+		if err != nil {
+			return CheckFailed, fmt.Sprintf("Resolve: %v", err)
+		}
+
+		// 撤权要在两次复核之间发生：资料服务的结论必须现查，不许复用产出时的授权。
+		revoking := &fakeKBRead{allowed: map[string]bool{"kb-ok": true}, revokeAt: map[string]int{"kb-ok": 2}}
+		policy := NewSourcePolicy(NewAssetGateway(store, NewFixedAuthorizer(store, revoking)), reader, store)
+
+		first, err := policy.Validate(ctx, "p-check", actor, srcs)
+		if err != nil {
+			return CheckFailed, fmt.Sprintf("Validate: %v", err)
+		}
+		if len(first.Usable) != 1 || len(first.Unusable) != 0 {
+			return CheckFailed, fmt.Sprintf("刚产出的来源被判不可用: %+v", first.Unusable)
+		}
+		if first.Usable[0].AssetRevision != 1 {
+			return CheckFailed, fmt.Sprintf("复核放行的来源版本 = %d, want 1", first.Usable[0].AssetRevision)
+		}
+
+		second, err := policy.Validate(ctx, "p-check", actor, srcs)
+		if err != nil {
+			return CheckFailed, fmt.Sprintf("Validate(撤权后): %v", err)
+		}
+		if len(second.Usable) != 0 {
+			return CheckFailed, "撤权后仍放行——复核用了历史授权结论"
+		}
+		if len(second.Unusable) != 1 || second.Unusable[0].AssetDeny != DenyNotAuthorized {
+			return CheckFailed, fmt.Sprintf("撤权后的结论 = %+v, want not_authorized", second.Unusable)
+		}
+		if second.Unusable[0].Status != "" {
+			return CheckFailed, fmt.Sprintf("资料层没过时坐标层不该作答: status=%q", second.Unusable[0].Status)
+		}
+
+		// 版本前进：原件一个字没动、坐标仍逐字对得上，但这一版引用已不再可信。
+		// 判据与 Resolve 对「被标过编辑的命中」的态度一致（术语表 §2 默认拒绝）。
+		if _, err := store.ObserveAsset(ctx, "p-check", asset.ID, signal(func(s *KnowledgeSignal) {
+			s.KnowledgeID = "k-demo"
+			s.FileHash = "hash-v2"
+		})); err != nil {
+			return CheckFailed, fmt.Sprintf("ObserveAsset: %v", err)
+		}
+		third, err := NewSourcePolicy(NewAssetGateway(store, NewFixedAuthorizer(store, kb)), reader, store).
+			Validate(ctx, "p-check", actor, srcs)
+		if err != nil {
+			return CheckFailed, fmt.Sprintf("Validate(版本前进后): %v", err)
+		}
+		if len(third.Usable) != 0 || len(third.Unusable) != 1 || third.Unusable[0].Status != SourceStale {
+			return CheckFailed, fmt.Sprintf("资料前进一版后的结论 = %+v, want 一条 stale", third.Unusable)
+		}
+		if third.Unusable[0].Detail == "" {
+			return CheckFailed, "判了 stale 却没说清为什么——人工复核无从下手"
+		}
+		return CheckPassed, ""
+	})
+
 	record("T09-S4-HTTP 薄适配与幂等（未交付）", func() (CheckStatus, string) {
 		return CheckNotRun, "未实现。原因见 T09-项目资料与来源.md §6.1/§6.2：" +
 			"契约 evidence 域四操作的挂载点（internal/router/router.go）是共用入口文件，" +
 			"与未合入的 PR#4 冲突；且 PR#4 已实现幂等（lingdoc_operations + workspacecore.operation），" +
 			"T09 应复用而不是自己再落一张表。领域接口已就绪，接线即可。" +
-			"S4 另有三条别漏（§7「S4 接线时不要漏这几条」）：契约 §2 的 SourcePolicy.Validate 薄封装（本领域未提供）；" +
+			"S4 另有三条别漏（§7「S4 接线时不要漏这几条」）：" +
 			"F02 的「空范围」400 要在 HTTP 层按 minItems:1 造（领域层对空集合返回成功空集是对的）；" +
-			"KnowledgeReader.UsesBuiltinConverter 必须实现，否则文件类强档全程降档"
+			"KnowledgeReader.UsesBuiltinConverter 必须实现，否则文件类强档全程降档；" +
+			"SourcePolicy.Validate 已在本领域实现（见上一条检查），S4 只需接线"
 	})
 
 	record("T09-S5-界面切片（未交付）", func() (CheckStatus, string) {

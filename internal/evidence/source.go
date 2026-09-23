@@ -142,19 +142,27 @@ func (r *sourceResolver) resolveOne(ctx context.Context, asset Asset, hit *types
 }
 
 // quoteFromOrigin 是强档判据：原文可取回时，逐字比对坐标指向的那一段。
+// 判据本体在 quoteAt——产出与复核走同一个函数，档位的含义才只有一个。
+func quoteFromOrigin(origin string, hit *types.SearchResult) (SourceStatus, string) {
+	return quoteAt(origin, hit.StartAt, hit.EndAt, hit.Content)
+}
+
+// quoteAt 与 quoteFromOrigin 是同一个判据，只是坐标直接给：复核已产出的来源时
+// 手上没有检索命中，坐标在 Anchor 上。两处**必须走同一个函数**——否则
+// 「什么叫可用」在产出与复核两个时点会各自演化。
 //
 // 偏移单位是 rune 而非 byte（见 merge_overlap.go:98 的不变量
 // runeLen(Content) == EndAt-StartAt）。按字节切会静默切错中文，此处是主要防线。
-func quoteFromOrigin(origin string, hit *types.SearchResult) (SourceStatus, string) {
+func quoteAt(origin string, startAt, endAt int, content string) (SourceStatus, string) {
 	runes := []rune(origin)
-	if hit.StartAt < 0 || hit.EndAt > len(runes) || hit.EndAt <= hit.StartAt {
+	if startAt < 0 || endAt > len(runes) || endAt <= startAt {
 		return SourceUnavailable, ""
 	}
-	if got := string(runes[hit.StartAt:hit.EndAt]); got != hit.Content {
+	if got := string(runes[startAt:endAt]); got != content {
 		// 坐标取回的不是这段内容：坐标漂移，或该块已被下游改写。
 		return SourceStale, ""
 	}
-	return SourceAvailable, hit.Content
+	return SourceAvailable, content
 }
 
 // quoteBySelfConsistency 是弱档判据：拿不到原文时唯一能诚实声明的一档。
@@ -166,10 +174,15 @@ func quoteFromOrigin(origin string, hit *types.SearchResult) (SourceStatus, stri
 // EndAt > StartAt 必须单独判：空内容配零长区间会满足长度不变量的退化形式
 // （runeLen("") == 0 == 0-0），只看长度就会把它当可用证据放过去。
 func quoteBySelfConsistency(hit *types.SearchResult) (SourceStatus, string) {
-	if hit.EndAt <= hit.StartAt || utf8.RuneCountInString(hit.Content) != hit.EndAt-hit.StartAt {
+	return selfConsistentAt(hit.StartAt, hit.EndAt, hit.Content)
+}
+
+// selfConsistentAt 与 quoteBySelfConsistency 同一判据，坐标直接给（同上，复核要用）。
+func selfConsistentAt(startAt, endAt int, content string) (SourceStatus, string) {
+	if endAt <= startAt || utf8.RuneCountInString(content) != endAt-startAt {
 		return SourceUnavailable, ""
 	}
-	return SourceAvailable, hit.Content
+	return SourceAvailable, content
 }
 
 func hashText(text string) string {

@@ -292,6 +292,25 @@ func (b *Bindings) Revisions(ctx context.Context, assetID string) ([]ProjectAsse
 	return rows, nil
 }
 
+// KnowledgeOfRevision 实现 RevisionReader：某一版资料当时对应底座的哪一份知识。
+//
+// 判据取修订行而不是资料行：重解析后资料行上的 `knowledge_id` 仍是**绑定时**那一份
+// （它是绑定的身份，`findBinding` 按它查），新知识 ID 只记在修订行里。
+// 行不存在或知识 ID 为空时返回 ok=false——历史数据（基线缺失）会走到这条路径，
+// 由调用方按「判不定」处理，本方法不替它猜一个知识出来。
+func (b *Bindings) KnowledgeOfRevision(
+	ctx context.Context, assetID string, revision int,
+) (knowledgeID string, ok bool, err error) {
+	row, err := b.currentRevision(ctx, assetID, int64(revision))
+	if err != nil {
+		return "", false, err
+	}
+	if row.ID == "" || row.KnowledgeID == "" {
+		return "", false, nil
+	}
+	return row.KnowledgeID, true, nil
+}
+
 func (b *Bindings) findBinding(ctx context.Context, projectID, knowledgeID string) (ProjectAsset, error) {
 	var row ProjectAsset
 	err := b.db.WithContext(ctx).

@@ -33,6 +33,10 @@
     {
       "id": "T09-拿不到原文时降弱档（如实声明上限）",
       "status": "passed"
+    },
+    {
+      "id": "T09-SourcePolicy.Validate：复核已产出的引用（契约 §2）",
+      "status": "passed"
     }
   ],
   "failed": [],
@@ -40,7 +44,7 @@
     {
       "id": "T09-S4-HTTP 薄适配与幂等（未交付）",
       "status": "not_run",
-      "detail": "未实现。原因见 T09-项目资料与来源.md §6.1/§6.2：契约 evidence 域四操作的挂载点（internal/router/router.go）是共用入口文件，与未合入的 PR#4 冲突；且 PR#4 已实现幂等（lingdoc_operations + workspacecore.operation），T09 应复用而不是自己再落一张表。领域接口已就绪，接线即可。S4 另有三条别漏（§7「S4 接线时不要漏这几条」）：契约 §2 的 SourcePolicy.Validate 薄封装（本领域未提供）；F02 的「空范围」400 要在 HTTP 层按 minItems:1 造（领域层对空集合返回成功空集是对的）；KnowledgeReader.UsesBuiltinConverter 必须实现，否则文件类强档全程降档"
+      "detail": "未实现。原因见 T09-项目资料与来源.md §6.1/§6.2：契约 evidence 域四操作的挂载点（internal/router/router.go）是共用入口文件，与未合入的 PR#4 冲突；且 PR#4 已实现幂等（lingdoc_operations + workspacecore.operation），T09 应复用而不是自己再落一张表。领域接口已就绪，接线即可。S4 另有三条别漏（§7「S4 接线时不要漏这几条」）：F02 的「空范围」400 要在 HTTP 层按 minItems:1 造（领域层对空集合返回成功空集是对的）；KnowledgeReader.UsesBuiltinConverter 必须实现，否则文件类强档全程降档；SourcePolicy.Validate 已在本领域实现（见上一条检查），S4 只需接线"
     },
     {
       "id": "T09-S5-界面切片（未交付）",
