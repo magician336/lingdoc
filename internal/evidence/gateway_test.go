@@ -27,9 +27,11 @@ func (f *fakeAuthorizer) CanAccessAsset(_ context.Context, _ Actor, _ string, as
 
 func testAsset(id string, state AssetState) Asset {
 	return Asset{
-		ID:              id,
-		ProjectID:       "p-demo",
-		KnowledgeID:     "k-" + id,
+		ID:        id,
+		ProjectID: "p-demo",
+		// Source tests use the shared synthetic origin k-demo; keep fixtures
+		// attributable to that knowledge entry unless a test explicitly changes it.
+		KnowledgeID:     "k-demo",
 		Title:           "合成资料 " + id,
 		AssetRevision:   1,
 		ProcessingState: state,
@@ -85,6 +87,20 @@ func TestResolveAllowedReportsNotReady(t *testing.T) {
 	}
 	if len(got.Denied) != 1 || got.Denied[0].Reason != DenyNotReady {
 		t.Errorf("Denied = %+v, want 1 项 not_ready", got.Denied)
+	}
+}
+
+func TestResolveAllowedHidesProcessingStateFromUnauthorizedActor(t *testing.T) {
+	asset := testAsset("a-processing", AssetStateProcessing)
+	bindings := &fakeBindings{assets: []Asset{asset}}
+	gw := NewAssetGateway(bindings, &fakeAuthorizer{denied: map[string]bool{asset.ID: true}})
+
+	got, err := gw.ResolveAllowed(context.Background(), "p-demo", Actor{UserID: "revoked"}, []string{asset.ID})
+	if err != nil {
+		t.Fatalf("ResolveAllowed: %v", err)
+	}
+	if len(got.Denied) != 1 || got.Denied[0].Reason != DenyNotAuthorized {
+		t.Fatalf("Denied = %+v, want not_authorized (processing state must be hidden)", got.Denied)
 	}
 }
 

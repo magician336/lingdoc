@@ -1,0 +1,55 @@
+{
+  "mode": "mock",
+  "note": "绑定存储与表结构为真实实现（SQLite 实库 + migrations/sqlite/000019 的真实 DDL）；资料版本、允许集合、授权判定为真实领域实现；原文读取为真实实现（读合成资料文件）；替身只有两处：知识库权限判定（T07/PR#4 未合入，资料服务按 02-接口与Mock约定 §2 只消费不自建）与底座读取端口 KnowledgeReader。HTTP 薄适配（S4）与界面切片（S5）未交付，逐条标 not_run。资料服务不涉及模型，故 mode 取阶梯里最保守的一档。",
+  "passed": [
+    {
+      "id": "T09-绑定资料与就绪状态（F03 第一步）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-只允许已绑定且已就绪的资料（F03 第二步）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-请求集合与返回集合逐项相等（F22）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-跨项目 ID 与不存在的 ID 收敛 not_found",
+      "status": "passed"
+    },
+    {
+      "id": "T09-撤权后现查即拒（F07）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-资料版本：内容变了才递增",
+      "status": "passed"
+    },
+    {
+      "id": "T09-定位可回到原文（真实原文读取 + 合成资料）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-拿不到原文时降弱档（如实声明上限）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-SourcePolicy.Validate：复核已产出的引用（契约 §2）",
+      "status": "passed"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "T09-S4-HTTP 薄适配与幂等（未交付）",
+      "status": "not_run",
+      "detail": "未实现。原因见 T09-项目资料与来源.md §6.1/§6.2：契约 evidence 域四操作的挂载点（internal/router/router.go）是共用入口文件，与未合入的 PR#4 冲突；且 PR#4 已实现幂等（lingdoc_operations + workspacecore.operation），T09 应复用而不是自己再落一张表。领域接口已就绪，接线即可。S4 另有三条别漏（§7「S4 接线时不要漏这几条」）：F02 的「空范围」400 要在 HTTP 层按 minItems:1 造（领域层对空集合返回成功空集是对的）；KnowledgeReader.UsesBuiltinConverter 必须实现，否则文件类强档全程降档；SourcePolicy.Validate 已在本领域实现（见上一条检查），S4 只需接线"
+    },
+    {
+      "id": "T09-S5-界面切片（未交付）",
+      "status": "not_run",
+      "detail": "未实现。原因见 T09-项目资料与来源.md §6.1：前端底座（frontend/src/api/lingdoc/、views/lingdoc/）由未合入的 PR#4 引入，本分支挂不上"
+    }
+  ]
+}
