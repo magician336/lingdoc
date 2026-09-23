@@ -24,16 +24,13 @@ var versionedSQLiteTables = []string{
 	"browser_devices",
 	"browser_pairings",
 	"browser_task_interruptions",
-<<<<<<< HEAD
 	"lingdoc_project_assets",
 	"lingdoc_asset_revisions",
-=======
 	"lingdoc_projects",
 	"lingdoc_members",
 	"lingdoc_chapters",
 	"lingdoc_chapter_versions",
 	"lingdoc_operations",
->>>>>>> origin/main
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
