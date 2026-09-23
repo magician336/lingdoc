@@ -4820,6 +4820,25 @@
                       },
                       "request_id": "req-demo"
                     }
+                  },
+                  "asset_not_authorized": {
+                    "summary": "部分授权",
+                    "value": {
+                      "error": {
+                        "code": "asset_not_authorized",
+                        "message": "请求中存在未获授权的资料，未开始处理。",
+                        "retryable": false,
+                        "details": {
+                          "denied": [
+                            {
+                              "asset_id": "a-bound-but-unauthorized",
+                              "reason": "not_authorized"
+                            }
+                          ]
+                        }
+                      },
+                      "request_id": "req-demo"
+                    }
                   }
                 }
               }
@@ -5472,6 +5491,25 @@
                         "code": "invalid_state",
                         "message": "当前阶段不能执行该动作。",
                         "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "asset_not_authorized": {
+                    "summary": "部分授权",
+                    "value": {
+                      "error": {
+                        "code": "asset_not_authorized",
+                        "message": "请求中存在未获授权的资料，未开始处理。",
+                        "retryable": false,
+                        "details": {
+                          "denied": [
+                            {
+                              "asset_id": "a-bound-but-unauthorized",
+                              "reason": "not_authorized"
+                            }
+                          ]
+                        }
                       },
                       "request_id": "req-demo"
                     }

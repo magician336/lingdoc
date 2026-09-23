@@ -6,9 +6,9 @@
   "core_operations": 22,
   "schemas": 56,
   "local_refs": 294,
-  "shape_checks": 522,
-  "scenarios": 21,
-  "scenario_example_references": 37,
+  "shape_checks": 524,
+  "scenarios": 22,
+  "scenario_example_references": 38,
   "continuous_trace_steps": 23,
   "negative_static_cases_rejected": [
     "reject_lost_review_item",

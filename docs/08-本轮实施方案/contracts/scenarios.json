@@ -979,6 +979,22 @@
         "workspace",
         "delivery"
       ]
+    },
+    {
+      "id": "F22",
+      "name": "部分授权不静默成功",
+      "setup": "项目绑定多个资料；调用者仅获授权其中一部分，startGeneration 同时提交全部。",
+      "steps": [
+        {
+          "operation_id": "startGeneration",
+          "expected_http": 422,
+          "assertion": "整体失败，不得只处理已授权子集并返回成功；被拒资料须逐项带原因，不得把‘返回无错误’当作全部授权成功。",
+          "response_example": "asset_not_authorized"
+        }
+      ],
+      "providers": [
+        "evidence"
+      ]
     }
   ],
   "canonical_fixture": {
