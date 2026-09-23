@@ -13,7 +13,7 @@ import (
 // create to stay in sync with the versioned (PostgreSQL) migrations:
 // 000041 task queue, 000053 system settings, 000055 processing spans,
 // 000063 knowledge multi-tags, 000093 browser authorization,
-// 000098 LingDoc evidence assets.
+// 000097 LingDoc workspace, 000098 LingDoc evidence assets.
 var versionedSQLiteTables = []string{
 	"memory_extraction_sessions",
 	"task_pending_ops",
@@ -24,8 +24,16 @@ var versionedSQLiteTables = []string{
 	"browser_devices",
 	"browser_pairings",
 	"browser_task_interruptions",
+<<<<<<< HEAD
 	"lingdoc_project_assets",
 	"lingdoc_asset_revisions",
+=======
+	"lingdoc_projects",
+	"lingdoc_members",
+	"lingdoc_chapters",
+	"lingdoc_chapter_versions",
+	"lingdoc_operations",
+>>>>>>> origin/main
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
