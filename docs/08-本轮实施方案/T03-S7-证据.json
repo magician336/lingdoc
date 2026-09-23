@@ -1,0 +1,11 @@
+{
+  "answer_chars": 1588,
+  "chat_model": "deepseek-chat",
+  "doc_id": "d6396a6d-4c23-4dbd-b2e8-4a1d4f5aca65",
+  "embedding_model": "text-embedding-v4",
+  "host": "http://localhost:8080",
+  "kb_id": "3ff194f1-1011-481a-870c-0661fb59675d",
+  "reference_count": 2,
+  "run_at": "2026-09-23T18:45:49+08:00",
+  "search_hits": 2
+}

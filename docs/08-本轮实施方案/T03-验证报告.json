@@ -1,0 +1,29 @@
+{
+  "mode": "real",
+  "note": "F22/F02/S4/S5：领域代码为真实实现（坐标运算 / rune 切分 / 失效判定），绑定存储与权限判定为测试替身，原文为合成文本 testdata/synthetic-asset.txt；S7：真实回路（真实服务 + 真实 embedding/chat 模型），运行记录见 T03-S7-证据.json（含运行时间、模型名、回答字数与引用数）。",
+  "passed": [
+    {
+      "id": "F22-部分授权不得静默当全部成功",
+      "status": "passed"
+    },
+    {
+      "id": "F02-空范围不得扩大为全库",
+      "status": "passed"
+    },
+    {
+      "id": "S4-来源能指回原文（强档）",
+      "status": "passed"
+    },
+    {
+      "id": "S5-失效命中不得报 available",
+      "status": "passed"
+    },
+    {
+      "id": "S7-一次真实模型输出",
+      "status": "passed",
+      "requires_model": true
+    }
+  ],
+  "failed": [],
+  "not_run": []
+}
