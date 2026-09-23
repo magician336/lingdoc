@@ -45,7 +45,10 @@ type Source struct {
 	QuotedTextHash string
 	Status         SourceStatus
 
-	anchor Anchor
+	// Anchor 保留回到原文的坐标，供下游重定位与人工复核。
+	// 标 json:"-"：ContentRevision/ContentRewritten 本就是 json:"-"
+	// （见 ADR-0001），序列化出去会丢掉失效信息，反而误导。
+	Anchor Anchor `json:"-"`
 }
 
 // OriginReader 提供一份资料的解析原文。纯文本资料直接返回内容；
@@ -92,7 +95,7 @@ func (r *sourceResolver) resolveOne(ctx context.Context, asset Asset, hit *types
 		AssetID:       asset.ID,
 		AssetRevision: asset.AssetRevision,
 		Locator:       locatorFor(asset, hit),
-		anchor: Anchor{
+		Anchor: Anchor{
 			KnowledgeID:      hit.KnowledgeID,
 			ChunkID:          hit.ID,
 			ChunkIndex:       hit.ChunkIndex,
@@ -147,8 +150,11 @@ func quoteFromOrigin(origin string, hit *types.SearchResult) (SourceStatus, stri
 // 判据与 chat_pipeline 的 chunkTrusted（merge_overlap.go:94-99）同构，
 // 但就地实现而非调用——chunkTrusted 未导出，且 T03 不改动该包。
 // 两处若分叉，以 chunkTrusted 为准（它才是生产路径真正使用的那个）。
+//
+// EndAt > StartAt 必须单独判：空内容配零长区间会满足长度不变量的退化形式
+// （runeLen("") == 0 == 0-0），只看长度就会把它当可用证据放过去。
 func quoteBySelfConsistency(hit *types.SearchResult) (SourceStatus, string) {
-	if utf8.RuneCountInString(hit.Content) != hit.EndAt-hit.StartAt {
+	if hit.EndAt <= hit.StartAt || utf8.RuneCountInString(hit.Content) != hit.EndAt-hit.StartAt {
 		return SourceUnavailable, ""
 	}
 	return SourceAvailable, hit.Content

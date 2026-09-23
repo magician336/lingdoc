@@ -108,6 +108,56 @@ func TestResolveMarksStaleWhenContentNoLongerMatchesOrigin(t *testing.T) {
 	}
 }
 
+// 退化区间（EndAt == StartAt）不得因为"长度自洽"而报 available。
+//
+// chunkTrusted 把 EndAt > StartAt 列为独立条件（merge_overlap.go:97），
+// 弱档若只看长度，空内容配零长区间会蒙混过关——这是朝不安全方向的偏离。
+func TestResolveRejectsDegenerateRange(t *testing.T) {
+	for _, originAvailable := range []bool{true, false} {
+		tier := "弱档"
+		origins := OriginReader(fakeOrigin{ok: false})
+		if originAvailable {
+			tier = "强档"
+			origins = fakeOrigin{text: syntheticOrigin(t), ok: true}
+		}
+
+		hit := goalHit()
+		hit.StartAt, hit.EndAt, hit.Content = 0, 0, ""
+
+		got, err := NewSourceResolver(origins).Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+		if err != nil {
+			t.Fatalf("%s Resolve: %v", tier, err)
+		}
+		if got[0].Status == SourceAvailable {
+			t.Errorf("%s 把退化区间报成了 available", tier)
+		}
+	}
+}
+
+// stale 不是失败，是结论：它必须仍带得回原文的坐标，人才有得查。
+// 术语表 §2 要求来源锚点「支持重定位和失效检测」——两半都要能观测到。
+func TestStaleSourceKeepsRelocatableAnchor(t *testing.T) {
+	hit := goalHit()
+	hit.ContentRewritten = true
+
+	r := NewSourceResolver(fakeOrigin{text: syntheticOrigin(t), ok: true})
+	got, err := r.Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	a := got[0].Anchor
+	if a.StartAt != goalStart || a.EndAt != goalEnd {
+		t.Errorf("坐标漂了: [%d,%d), want [%d,%d)", a.StartAt, a.EndAt, goalStart, goalEnd)
+	}
+	if a.KnowledgeID != "k-demo" || a.ChunkID != "c-1" || a.ChunkIndex != 2 {
+		t.Errorf("锚点没带全回原文所需的位置: %+v", a)
+	}
+	if !a.ContentRewritten {
+		t.Error("失效原因没记进锚点，下游无从判断为什么不可采信")
+	}
+}
+
 // 失效标记优先于强档：即便原文能取回、切片也对得上，被标过重写的命中仍不可采信。
 // 术语表 §2 的「默认拒绝」要求标记先于内容判定。
 func TestResolveInvalidationFlagBeatsStrongTier(t *testing.T) {
