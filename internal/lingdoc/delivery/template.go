@@ -6,6 +6,8 @@ package delivery
 import (
 	"errors"
 	"fmt"
+
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
 
 const (
@@ -23,44 +25,16 @@ const (
 // requested immutable template version.
 var ErrTemplateNotFound = errors.New("lingdoc template not found")
 
-// TemplateReader is the delivery-domain dependency used by project, generation
-// and checking code.  Keeping it transport-free lets T07, T10 and T13 start
-// against this fixed implementation before the HTTP adapter is registered.
-type TemplateReader interface {
-	Get(id, version string) (Template, error)
-}
+// TemplateReader is the shared consumer contract used by project, generation,
+// and checking code. T07 must use this contract rather than redeclaring a
+// look-alike interface: Go method return types must be identical.
+type TemplateReader = lingdoctemplate.Reader
 
-// Template is a versioned writing skeleton and its deterministic rules.  It is
-// explicitly marked as a demo and must never be presented as a formal grant
-// application template.
-type Template struct {
-	ID             string
-	Name           string
-	Version        string
-	IsDemo         bool
-	Sections       []Section
-	RequiredFields []string
-	RulesetHash    string
-	Rules          []Rule
-}
-
-// Section identifies one required chapter in a template.
-type Section struct {
-	ID       string
-	Title    string
-	Required bool
-}
-
-// Rule describes a deterministic delivery check. Parameters deliberately keep
-// JSON-shaped values so later rules can use typed configuration without a DTO
-// redesign.
-type Rule struct {
-	ID         string
-	Kind       string
-	Severity   string
-	Evaluator  string
-	Parameters map[string]any
-}
+// These aliases keep the original T02 API stable while making the exact same
+// types available to T07, T10, and T13 through internal/lingdoc/template.
+type Template = lingdoctemplate.Template
+type Section = lingdoctemplate.Section
+type Rule = lingdoctemplate.Rule
 
 // FixedTemplateReader provides the one versioned template used for the
 // internal demonstration.

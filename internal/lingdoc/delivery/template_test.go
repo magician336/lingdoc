@@ -4,7 +4,14 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
+
+// This is the type T07, T10, and T13 consume. Keep it as a compile-time test:
+// a same-looking interface declared in another package is not sufficient when
+// its Get method returns a different named Template type.
+var _ lingdoctemplate.Reader = NewFixedTemplateReader()
 
 func TestFixedTemplateReaderReturnsDemoContract(t *testing.T) {
 	reader := NewFixedTemplateReader()
@@ -67,5 +74,17 @@ func TestFixedTemplateReaderReturnsIndependentCopies(t *testing.T) {
 	}
 	if _, ok := second.Rules[0].Parameters["nested"]; ok {
 		t.Fatalf("second Get() reused mutable rule parameters: %#v", second.Rules[0].Parameters)
+	}
+}
+
+func TestCloneParametersCopiesNestedJSONValues(t *testing.T) {
+	original := map[string]any{
+		"nested": map[string]any{"items": []any{map[string]any{"value": "original"}}},
+	}
+	copy := cloneParameters(original)
+	copy["nested"].(map[string]any)["items"].([]any)[0].(map[string]any)["value"] = "mutated"
+
+	if got := original["nested"].(map[string]any)["items"].([]any)[0].(map[string]any)["value"]; got != "original" {
+		t.Fatalf("cloneParameters mutated source nested value: %q", got)
 	}
 }
