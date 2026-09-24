@@ -1,6 +1,6 @@
 {
   "mode": "mock",
-  "note": "绑定存储与表结构为真实实现（SQLite 实库 + migrations/sqlite/000019 的真实 DDL）；资料版本、允许集合、授权判定为真实领域实现；原文读取为真实实现（读合成资料文件）；替身只有两处：知识库权限判定（T07/PR#4 未合入，资料服务按 02-接口与Mock约定 §2 只消费不自建）与底座读取端口 KnowledgeReader。HTTP 薄适配（S4）与界面切片（S5）未交付，逐条标 not_run。资料服务不涉及模型，故 mode 取阶梯里最保守的一档。",
+  "note": "绑定存储、HTTP 适配与界面切片均已有真实实现；权限判定消费已合入 PR#4 的 access.KBPermissions，底座读取端口 KnowledgeReader 在生产接线中由数据库适配器实现。当前报告沿用领域验证基线，未补跑 HTTP 集成与浏览器联调，因此 mode 仍取阶梯里最保守的一档，not_run 只表示本次验证未运行，不表示代码未实现。",
   "passed": [
     {
       "id": "T09-绑定资料与就绪状态（F03 第一步）",
@@ -42,14 +42,14 @@
   "failed": [],
   "not_run": [
     {
-      "id": "T09-S4-HTTP 薄适配与幂等（未交付）",
+      "id": "T09-S4-HTTP 薄适配与幂等（本次未运行集成验证）",
       "status": "not_run",
-      "detail": "未实现。原因见 T09-项目资料与来源.md §6.1/§6.2：契约 evidence 域四操作的挂载点（internal/router/router.go）是共用入口文件，与未合入的 PR#4 冲突；且 PR#4 已实现幂等（lingdoc_operations + workspacecore.operation），T09 应复用而不是自己再落一张表。领域接口已就绪，接线即可。S4 另有三条别漏（§7「S4 接线时不要漏这几条」）：F02 的「空范围」400 要在 HTTP 层按 minItems:1 造（领域层对空集合返回成功空集是对的）；KnowledgeReader.UsesBuiltinConverter 必须实现，否则文件类强档全程降档；SourcePolicy.Validate 已在本领域实现（见上一条检查），S4 只需接线"
+      "detail": "S4 已接入工作区路由并复用 lingdoc_operations；本次未运行 HTTP 集成测试。已覆盖代码路径包括空范围/部分授权错误信封、当前知识状态刷新、来源定位和绑定幂等。"
     },
     {
-      "id": "T09-S5-界面切片（未交付）",
+      "id": "T09-S5-界面切片（本次未运行浏览器联调）",
       "status": "not_run",
-      "detail": "未实现。原因见 T09-项目资料与来源.md §6.1：前端底座（frontend/src/api/lingdoc/、views/lingdoc/）由未合入的 PR#4 引入，本分支挂不上"
+      "detail": "S5 已接入 frontend/src/api/lingdoc/ 与 views/lingdoc/；本次未运行浏览器联调，前端 vue-tsc 类型检查已通过。"
     }
   ]
 }

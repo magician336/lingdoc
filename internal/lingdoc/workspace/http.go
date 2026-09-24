@@ -334,7 +334,12 @@ func (h *Handler) bindAsset(c *gin.Context) {
 		return
 	}
 	var input bindAssetInput
-	if !decodeBody(c, &input) || strings.TrimSpace(input.KnowledgeID) == "" {
+	if !decodeBody(c, &input) {
+		return
+	}
+	input.KnowledgeID = strings.TrimSpace(input.KnowledgeID)
+	if input.KnowledgeID == "" {
+		sendError(c, ErrInvalidRequest)
 		return
 	}
 	var knowledge types.Knowledge
