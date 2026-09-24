@@ -118,3 +118,17 @@ func TestAcceptCandidateRejectsStaleAndMismatchedRequests(t *testing.T) {
 	require.NoError(t, store.DB().Model(&adoptionIdempotencyRow{}).Count(&adoptionCount).Error)
 	require.Equal(t, int64(0), adoptionCount)
 }
+
+func TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	first := confirmationIdempotencyRow{
+		ID: "request-1", ProjectID: "project-1", ChapterID: "chapter-1", ActorID: "user-1",
+		Key: "confirm-key-0001", RequestHash: "hash-1", ResponseJSON: `{}`,
+	}
+	require.NoError(t, store.DB().Create(&first).Error)
+	duplicate := confirmationIdempotencyRow{
+		ID: "request-2", ProjectID: first.ProjectID, ChapterID: first.ChapterID, ActorID: first.ActorID,
+		Key: first.Key, RequestHash: "hash-2", ResponseJSON: `{}`,
+	}
+	require.Error(t, store.DB().Create(&duplicate).Error, "the focused SQLite schema must enforce the same composite idempotency key as production migrations")
+}

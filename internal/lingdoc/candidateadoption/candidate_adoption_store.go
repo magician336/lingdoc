@@ -96,10 +96,10 @@ type adoptionIdempotencyRow struct {
 
 type confirmationIdempotencyRow struct {
 	ID           string `gorm:"primaryKey;size:36"`
-	ProjectID    string `gorm:"index;not null;size:36"`
-	ChapterID    string `gorm:"index;not null;size:36"`
-	ActorID      string `gorm:"index;not null;size:128"`
-	Key          string `gorm:"column:idempotency_key;not null;size:128"`
+	ProjectID    string `gorm:"uniqueIndex:uq_lingdoc_confirmation_request,priority:1;not null;size:36"`
+	ChapterID    string `gorm:"uniqueIndex:uq_lingdoc_confirmation_request,priority:2;not null;size:36"`
+	ActorID      string `gorm:"uniqueIndex:uq_lingdoc_confirmation_request,priority:3;not null;size:128"`
+	Key          string `gorm:"column:idempotency_key;uniqueIndex:uq_lingdoc_confirmation_request,priority:4;not null;size:128"`
 	RequestHash  string `gorm:"not null;size:64"`
 	ResponseJSON string `gorm:"type:text;not null"`
 	CreatedAt    time.Time
