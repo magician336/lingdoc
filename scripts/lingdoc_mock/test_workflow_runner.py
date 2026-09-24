@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.lingdoc_mock.run_f01 import F01Runner, WorkflowError, substitute
+from urllib.request import Request
+
+from scripts.lingdoc_mock.run_f01 import CredentialSafeRedirectHandler, F01Runner, WorkflowError, substitute
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -137,6 +139,23 @@ class WorkflowRunnerTest(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowError, "non-loopback HTTP"):
             F01Runner(openapi, {"id": "F01", "steps": []}, token="secret")
         F01Runner(openapi, {"id": "F01", "steps": []}, base_url="http://127.0.0.1:8080/api/v1", token="test-token")
+
+    def test_redirect_protects_credentials_and_rejects_downgrades_or_mutations(self) -> None:
+        handler = CredentialSafeRedirectHandler()
+        request = Request("https://provider.test/api", headers={"Authorization": "Bearer secret"})
+        redirected = handler.redirect_request(request, None, 302, "Found", {}, "https://files.test/export.docx")
+        self.assertIsNotNone(redirected)
+        self.assertNotIn("Authorization", redirected.headers)
+
+        same_origin = handler.redirect_request(request, None, 302, "Found", {}, "https://provider.test/next")
+        self.assertEqual(same_origin.headers.get("Authorization"), "Bearer secret")
+
+        with self.assertRaisesRegex(WorkflowError, "HTTPS downgrade"):
+            handler.redirect_request(request, None, 302, "Found", {}, "http://provider.test/export.docx")
+
+        post = Request("https://provider.test/api", data=b"{}", headers={"Authorization": "Bearer secret"}, method="POST")
+        with self.assertRaisesRegex(WorkflowError, "mutating provider request"):
+            handler.redirect_request(post, None, 302, "Found", {}, "https://provider.test/next")
 
 
 if __name__ == "__main__":
