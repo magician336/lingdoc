@@ -143,6 +143,7 @@ class F01Runner:
 
     def run(self) -> dict[str, Any]:
         completed = 0
+        step_results: list[dict[str, Any]] = []
         for step in self.workflow["steps"]:
             operation_id = step.get("operation_id")
             if operation_id not in self.operations:
@@ -162,8 +163,14 @@ class F01Runner:
                 payload = self._poll_terminal(step, method, url, headers, payload)
             self._capture(step, payload)
             if operation_id == "downloadExport":
-                self._verify_download(step, payload)
+                self._verify_download(step, payload, response_headers)
             completed += 1
+            step_results.append({
+                "id": step["id"],
+                "operation_id": operation_id,
+                "http_status": status,
+                "content_type": response_headers.get("Content-Type", ""),
+            })
             print(f"{step['id']} PASS {operation_id} HTTP {status}")
 
         manual_assertions = [
@@ -175,7 +182,12 @@ class F01Runner:
             print(f"F01 completed {completed} steps; {len(manual_assertions)} provider assertions remain evidence items.")
             for step_id, assertion in manual_assertions:
                 print(f"MANUAL {step_id}: {assertion}")
-        return {"workflow": self.workflow["id"], "completed_steps": completed, "variables": self.variables}
+        return {
+            "workflow": self.workflow["id"],
+            "completed_steps": completed,
+            "steps": step_results,
+            "variables": self.variables,
+        }
 
     def _request(self, method: str, url: str, headers: dict[str, str], body: Any) -> tuple[int, dict[str, str], Any]:
         request_headers = {str(key): str(value) for key, value in headers.items()}
@@ -239,9 +251,13 @@ class F01Runner:
         for name, pointer in step.get("capture", {}).items():
             self.variables[name] = json_pointer(payload, pointer)
 
-    def _verify_download(self, step: dict[str, Any], payload: Any) -> None:
+    def _verify_download(self, step: dict[str, Any], payload: Any, headers: dict[str, str]) -> None:
         if not isinstance(payload, bytes):
             raise WorkflowError(f"{step['id']}: downloadExport must return file bytes, not JSON")
+        expected_type = step.get("expected_binary", {}).get("content_type")
+        actual_type = headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        if expected_type and actual_type != expected_type.lower():
+            raise WorkflowError(f"{step['id']}: Content-Type {actual_type or '<missing>'}; expected {expected_type}")
         variable_name = self.workflow.get("download_sha256_variable")
         if not variable_name:
             raise WorkflowError("workflow must name the captured export digest for download verification")
@@ -263,6 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--request-timeout", type=float, default=20)
     parser.add_argument("--poll-interval", type=float, default=1)
     parser.add_argument("--poll-timeout", type=float, default=120)
+    parser.add_argument("--report", type=Path, help="write a sanitized JSON record of completed workflow steps")
     args = parser.parse_args(argv)
     try:
         runner = F01Runner.from_files(
@@ -275,6 +292,10 @@ def main(argv: list[str] | None = None) -> int:
             poll_timeout=args.poll_timeout,
         )
         result = runner.run()
+        if args.report:
+            report = {key: value for key, value in result.items() if key != "variables"}
+            args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            print(f"F01 report written to {args.report}")
     except WorkflowError as error:
         print(f"F01 FAILED: {error}", file=sys.stderr)
         return 1

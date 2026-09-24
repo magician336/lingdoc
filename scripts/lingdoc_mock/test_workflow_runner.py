@@ -71,6 +71,7 @@ class WorkflowRunnerTest(unittest.TestCase):
                 {
                     "id": "download", "operation_id": "downloadExport", "expected_http": 200,
                     "request": {"path_params": {"projectId": "p1", "exportId": "{{export_id}}"}, "headers": {}, "json": None},
+                    "expected_binary": {"content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
                     "capture": {},
                 },
             ],
@@ -79,7 +80,7 @@ class WorkflowRunnerTest(unittest.TestCase):
             FakeResponse(b'{"data":{"id":"e1"}}', 202),
             FakeResponse(b'{"data":{"status":"queued"}}'),
             FakeResponse(json.dumps({"data": {"status": "verified", "file_sha256": digest}}).encode()),
-            FakeResponse(file_bytes, 200, "application/octet-stream"),
+            FakeResponse(file_bytes, 200, "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
         ]
         requests = []
 
@@ -90,11 +91,18 @@ class WorkflowRunnerTest(unittest.TestCase):
         runner = F01Runner(openapi, workflow, token="test-token", opener=opener, sleep=lambda _: None, poll_timeout=0.1)
         result = runner.run()
         self.assertEqual(result["completed_steps"], 3)
+        self.assertEqual([step["id"] for step in result["steps"]], ["start", "poll", "download"])
         self.assertEqual([request.method for request in requests], ["POST", "GET", "GET", "GET"])
         self.assertIn("/exports/e1", requests[1].full_url)
         self.assertEqual(requests[0].get_header("Idempotency-key"), "once")
         self.assertEqual(requests[0].get_header("Authorization"), "Bearer test-token")
         self.assertFalse(responses)
+
+    def test_rejects_unexpected_download_content_type(self) -> None:
+        runner = F01Runner({"servers": [{"url": "http://provider.test"}], "paths": {"/": {}}}, {"id": "F01", "steps": []})
+        step = {"id": "download", "expected_binary": {"content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}}
+        with self.assertRaisesRegex(WorkflowError, "Content-Type"):
+            runner._verify_download(step, b"not a docx", {"Content-Type": "text/plain"})
 
 
 if __name__ == "__main__":

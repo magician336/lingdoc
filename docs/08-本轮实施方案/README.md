@@ -35,10 +35,14 @@ python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
 `scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 和 workflow.json 读取请求定义，可对隔离的提供方测试环境运行 23 步 F01 连续流程。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
 
 ```text
-python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1
+python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1 --report artifacts/f01-run.json
 ```
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会比较实际文件字节的 SHA-256 与 getExport 返回值。
+
+
+
+`--report` 写出不含访问令牌和动态业务 ID 的脱敏 JSON，记录完成步骤、operationId、HTTP 状态和响应 Content-Type；只在成功完成整条流程后生成。
 
 当前契约标记为 `specification_not_executed_against_provider`，仓库尚未提供这里所需的完整真实服务/隔离测试环境。因此本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
 
