@@ -134,12 +134,14 @@ func TestAllowsLiteralPipeInPlainParagraph(t *testing.T) {
 	}
 }
 
-
 func TestAllowsUnderscoresInsidePlainIdentifiers(t *testing.T) {
 	for _, body := range []string{
 		"foo_bar_baz 是普通标识符。",
 		"snake_case_value 可以作为字段名。",
 		"field_name 不应被当成强调。",
+		"foo__bar__baz 也只是标识符。",
+		"版本_1_说明包含 Unicode 字符和数字。",
+		"field_name 与 snake_case_value；A | B。",
 	} {
 		t.Run(body, func(t *testing.T) {
 			in := demoInput()
@@ -148,9 +150,7 @@ func TestAllowsUnderscoresInsidePlainIdentifiers(t *testing.T) {
 			if err != nil {
 				t.Fatalf("identifier underscore should remain valid plain text: %v", err)
 			}
-			if len(data) == 0 {
-				t.Fatal("render returned an empty DOCX")
-			}
+			assertDOCXContainsText(t, data, body)
 		})
 	}
 }
@@ -159,6 +159,9 @@ func TestRejectsBoundaryUnderscoreEmphasis(t *testing.T) {
 	for _, body := range []string{
 		"_重点_",
 		"前文 _重点_ 后文",
+		"__重点__",
+		"（_重点_）",
+		"_snake_case_value_",
 	} {
 		t.Run(body, func(t *testing.T) {
 			in := demoInput()
@@ -168,4 +171,43 @@ func TestRejectsBoundaryUnderscoreEmphasis(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Check the rendered text, not just that Render returned a nonempty ZIP.
+func assertDOCXContainsText(t *testing.T, data []byte, expected string) {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range zr.File {
+		if file.Name != "word/document.xml" {
+			continue
+		}
+		r, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer r.Close()
+		decoder := xml.NewDecoder(r)
+		for {
+			token, err := decoder.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if start, ok := token.(xml.StartElement); ok && start.Name.Local == "t" {
+				var value string
+				if err := decoder.DecodeElement(&value, &start); err != nil {
+					t.Fatal(err)
+				}
+				if value == expected {
+					return
+				}
+			}
+		}
+	}
+	t.Fatalf("DOCX did not preserve exact text %q", expected)
 }

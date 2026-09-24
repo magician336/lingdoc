@@ -41,7 +41,10 @@ var marker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
 var blockMarkup = regexp.MustCompile(`^(#{1,6}\s|[-*+]\s|[0-9]+[.)]\s|>)`)
 var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*$`)
 var tableDelimiter = regexp.MustCompile(`^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$`)
-var inlineEmphasis = regexp.MustCompile(`(?:\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~)`)
+
+// Underscores are handled only by hasUnderscoreEmphasis below. A broad
+// _..._ alternative here would short-circuit that identifier-aware check.
+var inlineStarOrStrike = regexp.MustCompile(`(?:\*[^*\n]+\*|~~[^~\n]+~~)`)
 var inlineCode = regexp.MustCompile("`+[^\\`\\n]+`+")
 var inlineLink = regexp.MustCompile(`!?\[[^\]\n]*\](?:\([^\)\n]*\)|\[[^\]\n]*\])`)
 var referenceDefinition = regexp.MustCompile(`^\[[^\]\n]+\]:\s*\S+`)
@@ -209,7 +212,7 @@ func containsUnsupportedMarkdown(rawLine string) bool {
 		tableDelimiter.MatchString(probe) {
 		return true
 	}
-	return inlineEmphasis.MatchString(probe) ||
+	return inlineStarOrStrike.MatchString(probe) ||
 		hasUnderscoreEmphasis(probe) ||
 		inlineCode.MatchString(probe) ||
 		inlineLink.MatchString(probe) ||
@@ -217,7 +220,6 @@ func containsUnsupportedMarkdown(rawLine string) bool {
 		inlineHTMLOrAutolink.MatchString(probe) ||
 		inlineMath.MatchString(probe)
 }
-
 
 // hasUnderscoreEmphasis detects the supported Markdown-emphasis shape without
 // treating intraword underscores as markup. Common identifiers such as
