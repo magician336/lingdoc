@@ -364,6 +364,7 @@ func sameOptionalString(a, b *string) bool {
 func sourceReferences(markdown string) ([]string, error) {
 	const prefix, suffix = "[[source:", "]]"
 	var result []string
+	seen := make(map[string]struct{})
 	for offset := 0; ; {
 		start := strings.Index(markdown[offset:], prefix)
 		if start < 0 {
@@ -378,7 +379,10 @@ func sourceReferences(markdown string) ([]string, error) {
 		if id == "" {
 			return nil, ErrInvalidRequest
 		}
-		result = append(result, id)
+		if _, exists := seen[id]; !exists {
+			seen[id] = struct{}{}
+			result = append(result, id)
+		}
 		offset = start + end + len(suffix)
 	}
 	return normalizeIDs(result), nil
