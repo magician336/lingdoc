@@ -89,7 +89,10 @@ func TestRejectSilentCitationLoss(t *testing.T) {
 		{"unsupported underscore emphasis", func(in *Input) { in.Chapters[0].BodyMarkdown = "_重点_"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported inline code", func(in *Input) { in.Chapters[0].BodyMarkdown = "`code`"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported strikethrough", func(in *Input) { in.Chapters[0].BodyMarkdown = "~~删除线~~"; in.Chapters[0].SourceIDs = nil }},
-		{"unsupported inline link", func(in *Input) { in.Chapters[0].BodyMarkdown = "[链接](https://example.com)"; in.Chapters[0].SourceIDs = nil }},
+		{"unsupported inline link", func(in *Input) {
+			in.Chapters[0].BodyMarkdown = "[链接](https://example.com)"
+			in.Chapters[0].SourceIDs = nil
+		}},
 		{"unsupported reference link", func(in *Input) { in.Chapters[0].BodyMarkdown = "[链接][ref]"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported autolink", func(in *Input) { in.Chapters[0].BodyMarkdown = "<https://example.com>"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported inline html", func(in *Input) { in.Chapters[0].BodyMarkdown = "<em>重点</em>"; in.Chapters[0].SourceIDs = nil }},
