@@ -38,89 +38,13 @@ type ReviewItem struct {
 
 var marker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
 var blockMarkup = regexp.MustCompile(`^(#{1,6}\s|[-*+]\s|[0-9]+[.)]\s|\||>)`)
-var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*// Package docx renders LingDoc's internal demo delivery as an editable DOCX.
-// It deliberately supports only plain paragraphs and source markers; callers
-// must reject richer Markdown before presenting export as successful.
-package docx
-
-import (
-	"archive/zip"
-	"bytes"
-	"encoding/xml"
-	"fmt"
-	"regexp"
-	"sort"
-	"strings"
-	"unicode/utf8"
-)
-
-type Input struct {
-	ProjectName  string
-	DeliveryKind string
-	Chapters     []Chapter
-	Sources      []Source
-}
-
-type Chapter struct {
-	Title        string
-	BodyMarkdown string
-	SourceIDs    []string
-	ReviewItems  []ReviewItem
-}
-
-type Source struct {
-	ID, DisplayTitle, Locator, QuotedText string
-}
-
-type ReviewItem struct {
-	ID, Statement, Disposition, Reason string
-}
-
-)
+var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*$`)
 var inlineEmphasis = regexp.MustCompile(`(?:\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~)`)
 var inlineCode = regexp.MustCompile("`+[^\\`\\n]+`+")
 var inlineLink = regexp.MustCompile(`!?\[[^\]\n]*\](?:\([^\)\n]*\)|\[[^\]\n]*\])`)
 var referenceDefinition = regexp.MustCompile(`^\[[^\]\n]+\]:\s*\S+`)
 var inlineHTMLOrAutolink = regexp.MustCompile(`<(?:(?:https?://|mailto:)[^>\n]+|/?[A-Za-z][^>\n]*)>`)
-var inlineMath = regexp.MustCompile(`\$[^$\n]+\// Package docx renders LingDoc's internal demo delivery as an editable DOCX.
-// It deliberately supports only plain paragraphs and source markers; callers
-// must reject richer Markdown before presenting export as successful.
-package docx
-
-import (
-	"archive/zip"
-	"bytes"
-	"encoding/xml"
-	"fmt"
-	"regexp"
-	"sort"
-	"strings"
-	"unicode/utf8"
-)
-
-type Input struct {
-	ProjectName  string
-	DeliveryKind string
-	Chapters     []Chapter
-	Sources      []Source
-}
-
-type Chapter struct {
-	Title        string
-	BodyMarkdown string
-	SourceIDs    []string
-	ReviewItems  []ReviewItem
-}
-
-type Source struct {
-	ID, DisplayTitle, Locator, QuotedText string
-}
-
-type ReviewItem struct {
-	ID, Statement, Disposition, Reason string
-}
-
-)
+var inlineMath = regexp.MustCompile(`\$[^$\n]+\$`)
 
 // Render creates a standalone WordprocessingML package. The caller remains
 // responsible for authorization, snapshot/currentness checks and file storage.
@@ -267,15 +191,15 @@ func Render(in Input) ([]byte, error) {
 
 
 func containsUnsupportedMarkdown(rawLine string) bool {
-	// Four-space/tab indentation and two trailing spaces have Markdown semantics
-	// (code block / hard break) that this renderer would otherwise trim away.
+	// Indented code and trailing-two-space hard breaks have Markdown semantics
+	// that this renderer would otherwise silently trim away.
 	if strings.HasPrefix(rawLine, "\t") || strings.HasPrefix(rawLine, "    ") || strings.HasSuffix(rawLine, "  ") {
 		return true
 	}
 
 	line := strings.TrimSpace(rawLine)
 	// Source markers are the only supported markup. Remove valid markers before
-	// probing so IDs containing '-' or '_' are not mistaken for Markdown.
+	// probing so '-'/'_' inside source IDs are not mistaken for Markdown.
 	probe := marker.ReplaceAllString(line, "")
 	if blockMarkup.MatchString(probe) ||
 		setextOrRuleMarkup.MatchString(probe) ||
