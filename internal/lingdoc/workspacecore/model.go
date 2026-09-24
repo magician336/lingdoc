@@ -138,12 +138,12 @@ type chapterRow struct {
 func (chapterRow) TableName() string { return "lingdoc_chapters" }
 
 type chapterVersionRow struct {
-	ID              string  `gorm:"primaryKey;size:36"`
-	ProjectID       string  `gorm:"not null;index;size:36"`
-	ChapterID       string  `gorm:"not null;index;size:36"`
-	ParentVersionID *string `gorm:"size:36"`
-	BodyMarkdown    string  `gorm:"not null;type:text"`
-	SourceIDsJSON   string  `gorm:"column:source_ids_json;not null;type:text"`
+	ID                string  `gorm:"primaryKey;size:36"`
+	ProjectID         string  `gorm:"not null;index;size:36"`
+	ChapterID         string  `gorm:"not null;index;size:36"`
+	ParentVersionID   *string `gorm:"size:36"`
+	BodyMarkdown      string  `gorm:"not null;type:text"`
+	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
 	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
 	SpecRevision      int64   `gorm:"not null;default:0"`
 	ConfirmationValid bool    `gorm:"not null;default:false"`
