@@ -39,8 +39,8 @@ func testStore(t *testing.T, path string) *Service {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, stmt := range strings.Split(string(migration), ";") {
-				if !hasSQLStatement(stmt) {
+			for _, stmt := range strings.Split(stripSQLLineComments(string(migration)), ";") {
+				if strings.TrimSpace(stmt) == "" {
 					continue
 				}
 				if err := db.Exec(stmt).Error; err != nil {
@@ -56,15 +56,16 @@ func testStore(t *testing.T, path string) *Service {
 	return svc
 }
 
-func hasSQLStatement(stmt string) bool {
-	for _, line := range strings.Split(stmt, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "--") {
+func stripSQLLineComments(script string) string {
+	var uncommented strings.Builder
+	for _, line := range strings.Split(script, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "--") {
 			continue
 		}
-		return true
+		uncommented.WriteString(line)
+		uncommented.WriteByte('\n')
 	}
-	return false
+	return uncommented.String()
 }
 
 func seedTenantMember(t *testing.T, svc *Service, actor Actor) {
