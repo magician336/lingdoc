@@ -182,6 +182,33 @@ func Render(in Input) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
+
+func containsUnsupportedMarkdown(rawLine string) bool {
+	// Four-space/tab indentation and two trailing spaces have Markdown semantics
+	// (code block / hard break) that this renderer would otherwise trim away.
+	if strings.HasPrefix(rawLine, "\t") || strings.HasPrefix(rawLine, "    ") || strings.HasSuffix(rawLine, "  ") {
+		return true
+	}
+
+	line := strings.TrimSpace(rawLine)
+	// Source markers are the only supported markup. Remove valid markers before
+	// probing so IDs containing '-' or '_' are not mistaken for Markdown.
+	probe := marker.ReplaceAllString(line, "")
+	if blockMarkup.MatchString(probe) ||
+		setextOrRuleMarkup.MatchString(probe) ||
+		strings.HasPrefix(probe, "```") ||
+		strings.HasPrefix(probe, "~~~") ||
+		strings.Contains(probe, "|") {
+		return true
+	}
+	return inlineEmphasis.MatchString(probe) ||
+		inlineCode.MatchString(probe) ||
+		inlineLink.MatchString(probe) ||
+		referenceDefinition.MatchString(probe) ||
+		inlineHTMLOrAutolink.MatchString(probe) ||
+		inlineMath.MatchString(probe)
+}
+
 func paragraph(b *strings.Builder, style, value string) {
 	b.WriteString(`<w:p>`)
 	if style != "" {
