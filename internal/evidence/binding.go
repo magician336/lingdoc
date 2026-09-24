@@ -6,11 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 // ErrAssetNotFound 表示「这个项目里没有这份资料」。
@@ -23,6 +23,10 @@ var ErrAssetNotFound = errors.New("asset not found")
 var ErrInvalidBinding = errors.New("invalid binding input")
 
 var ErrIdempotencyConflict = errors.New("idempotency conflict")
+
+// ErrObservationConflict 表示这次观测读到的资产版本已经被别的观测提交。
+// 调用方可以安全地重读并重试；它不是内容冲突，也不是资料不存在。
+var ErrObservationConflict = errors.New("asset observation conflict")
 
 // 修订行的状态。旧修订不删除、只标 superseded：冻结与确认要能回指「当时那一版」。
 const (
@@ -287,85 +291,106 @@ func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, 
 func (b *Bindings) ObserveAsset(
 	ctx context.Context, projectID, assetID string, sig KnowledgeSignal,
 ) (ObserveResult, error) {
-	var row ProjectAsset
-	if err := b.db.WithContext(ctx).
-		Where("project_id = ? AND id = ?", projectID, assetID).
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ObserveResult{}, ErrAssetNotFound
-		}
-		return ObserveResult{}, err
-	}
-
-	// 当前指纹取自当前修订行。行缺失（历史数据/被手工清过）时按「未观测过」处理：
-	// Observe 在那种情况下只建立基线、不递增版本，而下面的 needsRevision 会把这条
-	// 基线补写进修订行，让「当前修订行记着当前指纹」这个不变量重新成立。
-	current, err := b.currentRevision(ctx, row.ID, row.AssetRevision)
-	if err != nil {
-		return ObserveResult{}, err
-	}
-
-	res := Observe(BindingState{
-		Revision:    row.AssetRevision,
-		Fingerprint: current.ContentHash,
-	}, sig)
-
-	// 需要写一行修订的条件不是「版本递增了」，而是「当前修订行没有记着这次指纹」。
-	// 两者只在正常路径上等价：修订行缺失时 Observe 走的是建立基线（不递增），
-	// 若按 Changed 落库，基线就永远写不进修订表——此后每次观测都重新建立基线，
-	// 内容变化再也检测不到，asset_revision 从此不再动。
-	needsRevision := res.Next.Fingerprint != current.ContentHash
-	stateUnchanged := res.State == AssetState(row.ProcessingState)
-	if !needsRevision && stateUnchanged {
-		return res, nil
-	}
-
-	// 重解析后底座会给出新的知识 ID，那一版就该指向新的那一份；
-	// 拿不到新 ID 时沿用绑定时的值。
-	knowledgeID := sig.KnowledgeID
-	if knowledgeID == "" {
-		knowledgeID = row.KnowledgeID
-	}
-
-	err = b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if needsRevision {
-			// 当前有效的那一行让位。带上 revision_no <> 是为了让补建基线这条路径
-			// 也满足「同一资产只有一行 active」——那条路径写的是既有的版本号。
-			if err := tx.Model(&ProjectAssetRevision{}).
-				Where("asset_id = ? AND status = ? AND revision_no <> ?",
-					row.ID, RevisionActive, res.Next.Revision).
-				Update("status", RevisionSuperseded).Error; err != nil {
+	// 资产行是版本闸门。每次重试都会在同一事务里重新读取资产和当前修订，
+	// 通过 revision/state 的 CAS 更新抢占写入权；因此并发观测不会互相覆盖同一
+	// revision_no 的 hash 或 KnowledgeID，也不会让 current revision 倒退。
+	const maxAttempts = 3
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		var result ObserveResult
+		err := b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			var row ProjectAsset
+			if err := tx.Where("project_id = ? AND id = ?", projectID, assetID).First(&row).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrAssetNotFound
+				}
 				return err
 			}
-			// 该版本号上原则上还没有行；用 upsert 兜住历史数据里内容哈希为空的那种行，
-			// 否则会撞 UNIQUE(asset_id, revision_no)。顺带也就免疫了并发重复观测。
-			revision := ProjectAssetRevision{
-				ID:          uuid.New().String(),
-				AssetID:     row.ID,
-				RevisionNo:  res.Next.Revision,
-				KnowledgeID: knowledgeID,
-				ContentHash: res.Next.Fingerprint,
-				Status:      RevisionActive,
-				Metadata:    metadataFor(res.Fingerprint),
-			}
-			if err := tx.Clauses(clause.OnConflict{
-				Columns: []clause.Column{{Name: "asset_id"}, {Name: "revision_no"}},
-				DoUpdates: clause.AssignmentColumns([]string{
-					"weknora_knowledge_id", "content_hash", "status", "metadata_json",
-				}),
-			}).Create(&revision).Error; err != nil {
+
+			// 当前指纹取自当前修订行。行缺失（历史数据/被手工清过）时按「未观测过」处理，
+			// 本事务会补建基线。
+			current, err := currentRevisionTx(tx, row.ID, row.AssetRevision)
+			if err != nil {
 				return err
 			}
+			res := Observe(BindingState{
+				Revision:    row.AssetRevision,
+				Fingerprint: current.ContentHash,
+			}, sig)
+			needsRevision := res.Next.Fingerprint != current.ContentHash
+			stateUnchanged := res.State == AssetState(row.ProcessingState)
+			if !needsRevision && stateUnchanged {
+				result = res
+				return nil
+			}
+
+			// 重解析后底座会给出新的知识 ID，那一版就该指向新的那一份；
+			// 拿不到新 ID 时沿用绑定时的值。
+			knowledgeID := sig.KnowledgeID
+			if knowledgeID == "" {
+				knowledgeID = row.KnowledgeID
+			}
+
+			update := tx.Model(&ProjectAsset{}).
+				Where("id = ? AND asset_revision = ? AND processing_state = ?",
+					row.ID, row.AssetRevision, row.ProcessingState).
+				Updates(map[string]any{
+					"asset_revision":   res.Next.Revision,
+					"processing_state": string(res.State),
+				})
+			if update.Error != nil {
+				return update.Error
+			}
+			if update.RowsAffected != 1 {
+				return ErrObservationConflict
+			}
+
+			if needsRevision {
+				// 旧修订只做不可变历史；不再 upsert 同一 revision_no。
+				// 若并发事务已经写入该版本，唯一键错误会回滚本次 CAS，下一次重试
+				// 会重新读取并沿用已经提交的修订。
+				if err := tx.Model(&ProjectAssetRevision{}).
+					Where("asset_id = ? AND status = ? AND revision_no <> ?",
+						row.ID, RevisionActive, res.Next.Revision).
+					Update("status", RevisionSuperseded).Error; err != nil {
+					return err
+				}
+				revision := ProjectAssetRevision{
+					ID:          uuid.New().String(),
+					AssetID:     row.ID,
+					RevisionNo:  res.Next.Revision,
+					KnowledgeID: knowledgeID,
+					ContentHash: res.Next.Fingerprint,
+					Status:      RevisionActive,
+					Metadata:    metadataFor(res.Fingerprint),
+				}
+				if err := tx.Create(&revision).Error; err != nil {
+					return err
+				}
+			}
+			result = res
+			return nil
+		})
+		if !errors.Is(err, ErrObservationConflict) && !isObservationUniqueConflict(err) {
+			return result, err
 		}
-		return tx.Model(&ProjectAsset{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"asset_revision":   res.Next.Revision,
-			"processing_state": string(res.State),
-		}).Error
-	})
-	if err != nil {
-		return ObserveResult{}, err
+		if err := ctx.Err(); err != nil {
+			return ObserveResult{}, err
+		}
 	}
-	return res, nil
+	return ObserveResult{}, ErrObservationConflict
+}
+
+// isObservationUniqueConflict turns a duplicate immutable revision into a retry.
+// This is the one expected race that cannot be represented by the asset-row CAS:
+// a missing baseline has the same revision/state values in both readers.
+func isObservationUniqueConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "unique constraint") ||
+		strings.Contains(message, "duplicate key") ||
+		strings.Contains(message, "unique failed")
 }
 
 // AssetScope 实现 ScopeReader：判权需要知识库与租户，而契约的 Asset 上没有。
@@ -426,8 +451,12 @@ func (b *Bindings) findBinding(ctx context.Context, projectID, knowledgeID strin
 }
 
 func (b *Bindings) currentRevision(ctx context.Context, assetID string, revisionNo int64) (ProjectAssetRevision, error) {
+	return currentRevisionTx(b.db.WithContext(ctx), assetID, revisionNo)
+}
+
+func currentRevisionTx(tx *gorm.DB, assetID string, revisionNo int64) (ProjectAssetRevision, error) {
 	var row ProjectAssetRevision
-	err := b.db.WithContext(ctx).
+	err := tx.
 		Where("asset_id = ? AND revision_no = ?", assetID, revisionNo).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
