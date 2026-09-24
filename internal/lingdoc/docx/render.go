@@ -39,7 +39,7 @@ type ReviewItem struct {
 var marker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
 var blockMarkup = regexp.MustCompile(`^(#{1,6}\\s|[-*+]\\s|[0-9]+[.)]\\s|>)`)
 var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*$`)
-var tableDelimiter = regexp.MustCompile(`^\\|?\\s*:?-{3,}:?\\s*(?:\\|\\s*:?-{3,}:?\\s*)+\\|?$`)
+var tableDelimiter = regexp.MustCompile(`^\\|?\\s*:?-{3,}:?\\s*(\\|\\s*:?-{3,}:?\\s*)+\\|?$`)
 var inlineEmphasis = regexp.MustCompile(`(?:\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~)`)
 var inlineCode = regexp.MustCompile("`+[^\\`\\n]+`+")
 var inlineLink = regexp.MustCompile(`!?\[[^\]\n]*\](?:\([^\)\n]*\)|\[[^\]\n]*\])`)
