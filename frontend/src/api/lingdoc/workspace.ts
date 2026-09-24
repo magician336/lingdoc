@@ -61,6 +61,8 @@ export const activateProject = (id: string, expected: number, key: string) =>
     { expected_spec_revision: expected }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
+export const bindAsset = (id: string, knowledgeId: string, key: string) =>
+  post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))
 export const saveChapter = (projectId: string, chapterId: string, input: {
   expected_chapter_version_id: string | null
   expected_spec_revision: number

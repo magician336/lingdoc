@@ -38,6 +38,13 @@
 
         <section class="assets">
           <h3>项目资料</h3>
+          <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
+            <label for="knowledge-id">绑定知识资料</label>
+            <div class="asset-bind-row">
+              <input id="knowledge-id" v-model="knowledgeId" :disabled="busy" placeholder="输入 knowledge_id" />
+              <button type="submit" :disabled="busy || !knowledgeId.trim()">绑定</button>
+            </div>
+          </form>
           <p v-if="assets.length === 0" class="muted">当前项目没有可用的已就绪资料。</p>
           <ul v-else class="asset-list">
             <li v-for="asset in assets" :key="asset.id">
@@ -86,7 +93,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
-  activateProject, createProject, getProject, listAssets, listChapters, listProjects,
+  activateProject, bindAsset, createProject, getProject, listAssets, listChapters, listProjects,
   saveChapter, saveSpec, type Asset, type Chapter, type Project,
 } from '@/api/lingdoc/workspace'
 
@@ -95,6 +102,7 @@ const truncated = ref(false)
 const project = ref<Project | null>(null)
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
+const knowledgeId = ref('')
 const chapter = ref<Chapter | null>(null)
 const newName = ref('')
 const subject = ref('')
@@ -175,6 +183,23 @@ async function selectProject(id: string, force = false) {
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
   } catch (error) { failure(error) }
+}
+
+async function bindProjectAsset() {
+  if (!project.value || busy.value || !knowledgeId.value.trim()) return
+  busy.value = true
+  errorMessage.value = ''
+  const projectId = project.value.id
+  const input = { knowledge_id: knowledgeId.value.trim() }
+  const key = operationKey(`asset:${projectId}`, input)
+  try {
+    await bindAsset(projectId, input.knowledge_id, key)
+    attempts.delete(`asset:${projectId}`)
+    knowledgeId.value = ''
+    const refreshed = await listAssets(projectId)
+    assets.value = refreshed.data
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
 }
 
 async function saveConditions() {
@@ -265,6 +290,9 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .project-list button { width: 100%; display: flex; justify-content: space-between; text-align: left; }
 .project-list small, .chapter-tabs small { color: #67746a; margin-left: 8px; }
 .asset-list { list-style: none; padding: 0; display: grid; gap: 8px; }
+.asset-bind-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.asset-bind-row { display: flex; gap: 8px; }
+.asset-bind-row input { flex: 1; min-width: 0; }
 .asset-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
 .asset-list span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .asset-list small, .asset-list em { color: #67746a; font-size: 12px; font-style: normal; }
