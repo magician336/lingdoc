@@ -1,3 +1,5 @@
+// Match the app entry: initialize Vue before request.ts loads TDesign utilities.
+import 'vue'
 import { get } from '@/utils/request'
 import { createContractMockAdapter } from './adapter'
 
