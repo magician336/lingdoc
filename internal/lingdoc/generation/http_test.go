@@ -41,13 +41,16 @@ func TestGenerationStartStrictlyValidatesRequestBody(t *testing.T) {
 	}
 	oversized := fmt.Sprintf(`{"instruction":"%s"}`, strings.Repeat("x", maxGenerationRequestBytes))
 	tests := []struct {
-		name string
-		body string
+		name       string
+		body       string
+		wantStatus int
+		wantCode   string
 	}{
-		{name: "unknown field", body: `{"chapter_id":"chapter-1","unexpected":true}`},
-		{name: "second json value", body: `{"chapter_id":"chapter-1"} {}`},
-		{name: "trailing data", body: `{"chapter_id":"chapter-1"} garbage`},
-		{name: "body too large", body: oversized},
+		{name: "unknown field", body: `{"chapter_id":"chapter-1","unexpected":true}`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
+		{name: "second json value", body: `{"chapter_id":"chapter-1"} {}`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
+		{name: "trailing data", body: `{"chapter_id":"chapter-1"} garbage`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
+		{name: "body too large", body: oversized, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
+		{name: "valid request", body: `{"chapter_id":"chapter-1"}`, wantStatus: http.StatusServiceUnavailable, wantCode: "dependency_unavailable"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -57,11 +60,11 @@ func TestGenerationStartStrictlyValidatesRequestBody(t *testing.T) {
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, request)
 
-			if response.Code != http.StatusBadRequest {
-				t.Fatalf("POST status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
+			if response.Code != tt.wantStatus {
+				t.Fatalf("POST status = %d, want %d; body=%s", response.Code, tt.wantStatus, response.Body.String())
 			}
-			if !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
-				t.Fatalf("response missing invalid_request error: %s", response.Body.String())
+			if !strings.Contains(response.Body.String(), `"code":"`+tt.wantCode+`"`) {
+				t.Fatalf("response missing %s error: %s", tt.wantCode, response.Body.String())
 			}
 		})
 	}
