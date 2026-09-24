@@ -204,7 +204,7 @@ func containsUnsupportedMarkdown(rawLine string) bool {
 		setextOrRuleMarkup.MatchString(probe) ||
 		strings.HasPrefix(probe, "```") ||
 		strings.HasPrefix(probe, "~~~") ||
-		strings.Contains(probe, "|") {
+		tableDelimiter.MatchString(probe) {
 		return true
 	}
 	return inlineEmphasis.MatchString(probe) ||
