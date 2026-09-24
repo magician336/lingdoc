@@ -244,7 +244,7 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		_, err := s.findProject(tx, actor, projectID, "write")
 		return err
 	}
-	raw, status, replayed, err := s.operation(ctx, actor, "saveSpec", projectID, key, input, auth, func(tx *gorm.DB) (any, int, error) {
+	write := func(tx *gorm.DB) (any, int, error) {
 		row, err := s.findProject(tx, actor, projectID, "write")
 		if err != nil {
 			return nil, 0, err
@@ -273,19 +273,52 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		}
 		view, err := projectView(tx, row)
 		return view, 200, err
-	})
-	if err != nil && !isWorkspaceDomainError(err) {
-		// SQLite can reject a transaction that read the old row before another
-		// writer committed (SQLITE_BUSY_SNAPSHOT). Once the failed transaction
-		// is rolled back, report the optimistic-concurrency conflict instead of
-		// leaking a driver-specific lock error when the expected revision is now
-		// stale.
+	}
+	operation := func() (json.RawMessage, int, bool, error) {
+		return s.operation(ctx, actor, "saveSpec", projectID, key, input, auth, write)
+	}
+	raw, status, replayed, err := operation()
+	for attempt := 0; isSQLiteLockError(err) && attempt < 3; attempt++ {
+		// SQLite may report BUSY while the winning transaction is still
+		// committing. Check for a stale revision, then retry the idempotent
+		// operation after a short context-aware backoff so the loser receives
+		// the domain conflict rather than a transient driver error.
+		current, readErr := s.GetProject(ctx, actor, projectID)
+		if readErr == nil && current.SpecRevision != input.ExpectedSpecRevision {
+			return nil, 0, false, ErrVersionConflict
+		}
+		timer := time.NewTimer(time.Duration(attempt+1) * 5 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, 0, false, ctx.Err()
+		case <-timer.C:
+		}
+		raw, status, replayed, err = operation()
+		if err == nil || isWorkspaceDomainError(err) {
+			return raw, status, replayed, err
+		}
+	}
+	if isSQLiteLockError(err) {
 		current, readErr := s.GetProject(ctx, actor, projectID)
 		if readErr == nil && current.SpecRevision != input.ExpectedSpecRevision {
 			return nil, 0, false, ErrVersionConflict
 		}
 	}
 	return raw, status, replayed, err
+}
+
+func isSQLiteLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var codedError interface{ Code() int }
+	if errors.As(err, &codedError) {
+		code := codedError.Code() & 0xff
+		return code == 5 || code == 6 // SQLITE_BUSY or SQLITE_LOCKED
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked")
 }
 
 func isWorkspaceDomainError(err error) bool {
