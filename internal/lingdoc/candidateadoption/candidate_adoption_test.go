@@ -168,7 +168,7 @@ func TestReadDeliveryInputReturnsCurrentSnapshotAndEmptyChapters(t *testing.T) {
 	require.Equal(t, &version, first.Chapters[1].ChapterVersionID)
 	require.Nil(t, first.Chapters[1].Confirmation)
 
-	service := NewConfirmationService(store, nil, nil)
+	service := NewConfirmationService(store, nil, confirmationAuthorizerFunc(allowConfirmation))
 	input := ConfirmChapterInput{ProjectID: "project-1", ChapterID: "chapter-1", ActorID: "user-1",
 		IdempotencyKey: "confirm-key-0001", ExpectedChapterVersionID: version, ExpectedSpecRevision: 2}
 	confirmation, _, err := service.ConfirmChapter(context.Background(), input)
@@ -188,3 +188,4 @@ func TestReadDeliveryInputReturnsCurrentSnapshotAndEmptyChapters(t *testing.T) {
 	require.NoError(t, store.DB().Model(&confirmationRow{}).Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", "chapter-1", version, true).Count(&validConfirmations).Error)
 	require.Equal(t, int64(1), validConfirmations, "only the latest confirmation for a chapter version remains current")
 }
+
