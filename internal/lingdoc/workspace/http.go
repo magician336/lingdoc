@@ -294,6 +294,15 @@ func (h *Handler) listAssets(c *gin.Context) {
 		sendError(c, err)
 		return
 	}
+	if err := h.refreshAssets(c.Request.Context(), projectID, assets); err != nil {
+		sendError(c, err)
+		return
+	}
+	assets, err = h.bindings.BoundAssets(c.Request.Context(), projectID)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
 	requested := make([]string, 0, len(assets))
 	for _, asset := range assets {
 		requested = append(requested, asset.ID)
@@ -395,6 +404,10 @@ func (h *Handler) getSource(c *gin.Context) {
 		sendError(c, ErrNotFound)
 		return
 	}
+	if err := h.refreshAssets(c.Request.Context(), projectID, []evidence.Asset{asset}); err != nil {
+		sendError(c, err)
+		return
+	}
 	evidenceActor := evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}
 	resolved, err := h.gateway.ResolveAllowed(c.Request.Context(), projectID, evidenceActor, []string{asset.ID})
 	if err != nil {
@@ -486,6 +499,48 @@ func valueTime(value *time.Time) time.Time {
 	return *value
 }
 
+// refreshProjectAssets snapshots current WeKnora signals before a read path
+// exposes the durable project binding rows.
+func (h *Handler) refreshProjectAssets(ctx context.Context, projectID string) error {
+	assets, err := h.bindings.BoundAssets(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	return h.refreshAssets(ctx, projectID, assets)
+}
+
+func (h *Handler) refreshAssets(ctx context.Context, projectID string, assets []evidence.Asset) error {
+	for _, asset := range assets {
+		var knowledge types.Knowledge
+		err := h.db.WithContext(ctx).
+			Where("id = ? AND deleted_at IS NULL", asset.KnowledgeID).
+			First(&knowledge).Error
+		var signal evidence.KnowledgeSignal
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// A deleted knowledge must stop being ready. ObserveAsset records the
+			// loss as a new revision when the previous fingerprint was known.
+			signal = evidence.KnowledgeSignal{
+				KnowledgeID: asset.KnowledgeID,
+				ParseStatus: types.ParseStatusDeleting,
+			}
+		} else if err != nil {
+			return err
+		} else {
+			signal = evidence.KnowledgeSignal{
+				KnowledgeID: knowledge.ID,
+				ParseStatus: knowledge.ParseStatus,
+				FileHash:    knowledge.FileHash,
+				FileSize:    knowledge.FileSize,
+				ProcessedAt: valueTime(knowledge.ProcessedAt),
+			}
+		}
+		if _, err := h.bindings.ObserveAsset(ctx, projectID, asset.ID, signal); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type retrieveSourcesInput struct {
 	Query    string   `json:"query"`
 	AssetIDs []string `json:"asset_ids"`
@@ -515,6 +570,10 @@ func (h *Handler) retrieveSources(c *gin.Context) {
 	}
 	if input.Query == "" || !hasAssetID {
 		sendError(c, ErrInvalidRequest)
+		return
+	}
+	if err := h.refreshProjectAssets(c.Request.Context(), projectID); err != nil {
+		sendError(c, err)
 		return
 	}
 	evidenceActor := evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}
