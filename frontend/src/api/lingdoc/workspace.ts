@@ -39,6 +39,17 @@ export interface Asset {
   processing_state: 'pending' | 'processing' | 'ready' | 'failed' | 'replaced'
 }
 
+export interface Source {
+  id: string
+  project_id: string
+  asset_id: string
+  asset_revision: number
+  locator: string
+  quoted_text: string
+  quoted_text_hash: string
+  status: 'available' | 'stale' | 'unavailable'
+}
+
 export interface Result<T> {
   data: T
   request_id: string
@@ -63,6 +74,10 @@ export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${se
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const bindAsset = (id: string, knowledgeId: string, key: string) =>
   post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))
+export const retrieveSources = (id: string, query: string, assetIds: string[]) =>
+  post<Result<Source[]>>(`${base}/${segment(id)}/retrieval`, { query, asset_ids: assetIds })
+export const getSource = (projectId: string, sourceId: string) =>
+  get<Result<Source>>(`${base}/${segment(projectId)}/sources/${segment(sourceId)}`)
 export const saveChapter = (projectId: string, chapterId: string, input: {
   expected_chapter_version_id: string | null
   expected_spec_revision: number

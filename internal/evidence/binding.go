@@ -139,6 +139,25 @@ func (b *Bindings) BoundAssets(ctx context.Context, projectID string) ([]Asset, 
 	return out, nil
 }
 
+// AssetForKnowledge resolves the current project asset revision that owns a
+// knowledge row. Source IDs are chunk IDs, so this joins through the revision
+// table rather than assuming the original bound knowledge is still current.
+func (b *Bindings) AssetForKnowledge(ctx context.Context, projectID, knowledgeID string) (Asset, error) {
+	var row ProjectAsset
+	err := b.db.WithContext(ctx).
+		Joins("JOIN lingdoc_asset_revisions AS r ON r.asset_id = lingdoc_project_assets.id").
+		Where("lingdoc_project_assets.project_id = ? AND r.weknora_knowledge_id = ?", projectID, knowledgeID).
+		Order("r.revision_no DESC").
+		First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return Asset{}, ErrAssetNotFound
+	}
+	if err != nil {
+		return Asset{}, err
+	}
+	return row.toAsset(), nil
+}
+
 // Bind 绑定一份资料。同一（项目, 资料）重复绑定返回既有的那一条，不产生新版本——
 // 绑定的幂等由唯一索引兜底，并发下第二个写会撞约束，此时回读既有行。
 func (b *Bindings) Bind(ctx context.Context, in BindInput) (Asset, error) {

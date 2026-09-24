@@ -54,6 +54,24 @@
           </ul>
         </section>
 
+        <section class="sources">
+          <h3>资料检索</h3>
+          <form class="source-search-form" @submit.prevent="searchSources">
+            <label for="source-query">检索问题</label>
+            <div class="asset-bind-row">
+              <input id="source-query" v-model="sourceQuery" :disabled="busy || assets.length === 0" placeholder="输入要定位的内容" />
+              <button type="submit" :disabled="busy || !sourceQuery.trim() || assets.length === 0">检索</button>
+            </div>
+          </form>
+          <p v-if="sourceQuery && sources.length === 0" class="muted">暂无可定位来源。</p>
+          <ul v-else-if="sources.length" class="source-list">
+            <li v-for="source in sources" :key="source.id">
+              <span><strong>{{ source.locator }}</strong><small>{{ source.status }}</small></span>
+              <p>{{ source.quoted_text || '当前版本无法取回原文片段。' }}</p>
+            </li>
+          </ul>
+        </section>
+
         <form class="spec-form" @submit.prevent="saveConditions">
           <h3>研究条件</h3>
           <label for="subject">研究主题</label>
@@ -94,7 +112,7 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   activateProject, bindAsset, createProject, getProject, listAssets, listChapters, listProjects,
-  saveChapter, saveSpec, type Asset, type Chapter, type Project,
+  retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type Source,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -103,6 +121,8 @@ const project = ref<Project | null>(null)
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const knowledgeId = ref('')
+const sourceQuery = ref('')
+const sources = ref<Source[]>([])
 const chapter = ref<Chapter | null>(null)
 const newName = ref('')
 const subject = ref('')
@@ -180,9 +200,21 @@ async function selectProject(id: string, force = false) {
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
     assets.value = assetResult.data
+    sources.value = []
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
   } catch (error) { failure(error) }
+}
+
+async function searchSources() {
+  if (!project.value || busy.value || !sourceQuery.value.trim() || assets.value.length === 0) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await retrieveSources(project.value.id, sourceQuery.value.trim(), assets.value.map(item => item.id))
+    sources.value = result.data
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
 }
 
 async function bindProjectAsset() {

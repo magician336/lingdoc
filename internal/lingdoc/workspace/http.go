@@ -10,26 +10,31 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 type Handler struct {
-	service  *Service
-	bindings *evidence.Bindings
-	gateway  evidence.AssetGateway
-	db       *gorm.DB
+	service   *Service
+	bindings  *evidence.Bindings
+	gateway   evidence.AssetGateway
+	knowledge interfaces.KnowledgeBaseService
+	db        *gorm.DB
 }
 
-func NewHandler(db *gorm.DB) *Handler {
+func NewHandler(db *gorm.DB, kbShares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService) *Handler {
 	bindings := evidence.NewBindings(db)
+	authorizer := evidence.NewFixedAuthorizer(bindings, kbReadChecker{shares: kbShares})
 	return &Handler{
-		service:  NewService(db, ContractDemoTemplate{}),
-		bindings: bindings,
-		gateway:  evidence.NewAssetGateway(bindings, tenantAssetAuthorizer{bindings: bindings}),
-		db:       db,
+		service:   NewService(db, ContractDemoTemplate{}),
+		bindings:  bindings,
+		gateway:   evidence.NewAssetGateway(bindings, authorizer),
+		knowledge: knowledge,
+		db:        db,
 	}
 }
 
@@ -46,30 +51,20 @@ func (h *Handler) Register(v1 *gin.RouterGroup) {
 	group.GET("/projects/:projectId/chapters", h.listChapters)
 	group.GET("/projects/:projectId/assets", h.listAssets)
 	group.POST("/projects/:projectId/assets", h.bindAsset)
+	group.POST("/projects/:projectId/retrieval", h.retrieveSources)
+	group.GET("/projects/:projectId/sources/:sourceId", h.getSource)
 	group.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	group.GET("/projects/:projectId/access-status", h.accessStatus)
 }
 
-// tenantAssetAuthorizer is the conservative first production adapter for the
-// evidence domain. Project membership is checked by workspacecore before this
-// handler runs; this adapter additionally requires that the bound asset still
-// belongs to the caller's tenant. A future KB role adapter can replace it
-// without changing AssetGateway or the HTTP contract.
-type tenantAssetAuthorizer struct{ bindings *evidence.Bindings }
+type kbReadChecker struct{ shares interfaces.KBShareService }
 
-func (a tenantAssetAuthorizer) CanAccessAsset(ctx context.Context, actor evidence.Actor, projectID string, asset evidence.Asset) (bool, error) {
-	scope, err := a.bindings.AssetScope(ctx, projectID, asset.ID)
-	if errors.Is(err, evidence.ErrAssetNotFound) {
+func (a kbReadChecker) CanReadKB(ctx context.Context, actor evidence.Actor, knowledgeBaseID string, ownerTenantID uint64) (bool, error) {
+	caller := types.CallerFromContext(ctx)
+	if caller.UserID != actor.UserID || strconv.FormatUint(caller.TenantID, 10) != actor.TenantID || a.shares == nil {
 		return false, nil
 	}
-	if err != nil {
-		return false, err
-	}
-	tenantID, err := strconv.ParseUint(actor.TenantID, 10, 64)
-	if err != nil {
-		return false, nil
-	}
-	return scope.OwnerTenantID == tenantID, nil
+	return access.NewKBPermissions(ctx, a.shares).Check(knowledgeBaseID, ownerTenantID, types.OrgRoleViewer)
 }
 
 func caller(c *gin.Context) (Actor, bool) {
@@ -114,6 +109,11 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
 	}
 	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": code == "request_in_progress"},
+		"request_id": requestID(c)})
+}
+
+func sendErrorDetails(c *gin.Context, status int, code, message string, details any) {
+	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": false, "details": details},
 		"request_id": requestID(c)})
 }
 
@@ -346,11 +346,196 @@ func (h *Handler) bindAsset(c *gin.Context) {
 	sendOK(c, status, asset, replay)
 }
 
+func (h *Handler) getSource(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	projectID, sourceID := c.Param("projectId"), c.Param("sourceId")
+	if err := h.service.Authorize(c.Request.Context(), actor, projectID, "read"); err != nil {
+		sendError(c, err)
+		return
+	}
+	var chunk types.Chunk
+	if err := h.db.WithContext(c.Request.Context()).Where("id = ?", sourceID).First(&chunk).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			sendError(c, ErrNotFound)
+		} else {
+			sendError(c, err)
+		}
+		return
+	}
+	asset, err := h.bindings.AssetForKnowledge(c.Request.Context(), projectID, chunk.KnowledgeID)
+	if err != nil {
+		sendError(c, ErrNotFound)
+		return
+	}
+	evidenceActor := evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}
+	resolved, err := h.gateway.ResolveAllowed(c.Request.Context(), projectID, evidenceActor, []string{asset.ID})
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if len(resolved.Allowed) != 1 {
+		sendError(c, ErrSourceUnavailable)
+		return
+	}
+	hit := &types.SearchResult{ID: chunk.ID, KnowledgeID: chunk.KnowledgeID, ChunkIndex: chunk.ChunkIndex,
+		StartAt: chunk.StartAt, EndAt: chunk.EndAt, Content: chunk.Content,
+		ContentRevision: chunk.ContentRevision, KnowledgeTitle: asset.Title}
+	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
+	sources, err := evidence.NewSourceResolver(origins).Resolve(c.Request.Context(), asset, []*types.SearchResult{hit})
+	if err != nil || len(sources) != 1 {
+		if err != nil {
+			sendError(c, err)
+		} else {
+			sendError(c, ErrNotFound)
+		}
+		return
+	}
+	source := sources[0]
+	policy := evidence.NewSourcePolicy(h.gateway, origins, h.bindings)
+	checked, err := policy.Validate(c.Request.Context(), projectID, evidenceActor, []evidence.Source{source})
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if len(checked.Unusable) > 0 {
+		unusable := checked.Unusable[0]
+		if unusable.AssetDeny != "" {
+			sendError(c, ErrSourceUnavailable)
+			return
+		}
+		source.Status = unusable.Status
+	}
+	sendOK(c, http.StatusOK, source, false)
+}
+
+type dbKnowledgeReader struct{ db *gorm.DB }
+
+func (r dbKnowledgeReader) KnowledgeForOrigin(ctx context.Context, knowledgeID string) (*types.Knowledge, error) {
+	var knowledge types.Knowledge
+	err := r.db.WithContext(ctx).Where("id = ?", knowledgeID).First(&knowledge).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &knowledge, nil
+}
+
+func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID string) (bool, error) {
+	var knowledge types.Knowledge
+	if err := r.db.WithContext(ctx).Where("id = ?", knowledgeID).First(&knowledge).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	if knowledge.KnowledgeBaseID == "" {
+		return false, nil
+	}
+	var kb types.KnowledgeBase
+	if err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", knowledge.KnowledgeBaseID, knowledge.TenantID).First(&kb).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return kb.ChunkingConfig.ResolveParserEngine(knowledge.FileType) == "", nil
+}
+
 func valueTime(value *time.Time) time.Time {
 	if value == nil {
 		return time.Time{}
 	}
 	return *value
+}
+
+type retrieveSourcesInput struct {
+	Query    string   `json:"query"`
+	AssetIDs []string `json:"asset_ids"`
+}
+
+func (h *Handler) retrieveSources(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	projectID := c.Param("projectId")
+	if err := h.service.Authorize(c.Request.Context(), actor, projectID, "read"); err != nil {
+		sendError(c, err)
+		return
+	}
+	var input retrieveSourcesInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	input.Query = strings.TrimSpace(input.Query)
+	hasAssetID := false
+	for _, id := range input.AssetIDs {
+		if strings.TrimSpace(id) != "" {
+			hasAssetID = true
+			break
+		}
+	}
+	if input.Query == "" || !hasAssetID {
+		sendError(c, ErrInvalidRequest)
+		return
+	}
+	evidenceActor := evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}
+	resolved, err := h.gateway.ResolveAllowed(c.Request.Context(), projectID, evidenceActor, input.AssetIDs)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if len(resolved.Denied) > 0 {
+		denied := make([]gin.H, 0, len(resolved.Denied))
+		for _, item := range resolved.Denied {
+			denied = append(denied, gin.H{"asset_id": item.AssetID, "reason": item.Reason})
+		}
+		sendErrorDetails(c, http.StatusUnprocessableEntity, "asset_not_authorized", "请求中存在未获授权的资料，未开始处理。", gin.H{"denied": denied})
+		return
+	}
+	if h.knowledge == nil {
+		sendError(c, ErrSourceUnavailable)
+		return
+	}
+	assetsByKnowledge := make(map[string]evidence.Asset, len(resolved.Allowed))
+	assetsByKB := make(map[string][]string)
+	for _, asset := range resolved.Allowed {
+		assetsByKnowledge[asset.KnowledgeID] = asset
+		scope, err := h.bindings.AssetScope(c.Request.Context(), projectID, asset.ID)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		assetsByKB[scope.KnowledgeBaseID] = append(assetsByKB[scope.KnowledgeBaseID], asset.KnowledgeID)
+	}
+	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
+	resolver := evidence.NewSourceResolver(origins)
+	result := make([]evidence.Source, 0)
+	for kbID, knowledgeIDs := range assetsByKB {
+		hits, err := h.knowledge.HybridSearch(c.Request.Context(), kbID, types.SearchParams{QueryText: input.Query, MatchCount: 20, KnowledgeIDs: knowledgeIDs})
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		for _, hit := range hits {
+			asset, ok := assetsByKnowledge[hit.KnowledgeID]
+			if !ok {
+				continue
+			}
+			sources, err := resolver.Resolve(c.Request.Context(), asset, []*types.SearchResult{hit})
+			if err != nil {
+				sendError(c, err)
+				return
+			}
+			result = append(result, sources...)
+		}
+	}
+	sendOK(c, http.StatusOK, result, false)
 }
 
 func (h *Handler) saveChapter(c *gin.Context) {
