@@ -10,7 +10,7 @@ type recoveryRenderer func(DeliveryInput) ([]byte, error)
 func (f recoveryRenderer) RenderFrozen(input DeliveryInput) ([]byte, error) { return f(input) }
 
 func recoveryExportService(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer) *ExportService {
-	return recoveryExportService(snapshots, exports, renderer, CurrentnessFunc(func(DeliveryInput) (bool, error) {
+	return NewExportService(snapshots, exports, renderer, CurrentnessFunc(func(DeliveryInput) (bool, error) {
 		return true, nil
 	}), ExportAccessFunc(func(actorUserID, projectID string) error {
 		if actorUserID != "owner" || projectID != "project-1" {
