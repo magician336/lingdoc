@@ -19,7 +19,7 @@ import time
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urljoin, urlsplit, urlunsplit
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -107,6 +107,34 @@ def build_url(base_url: str, path_template: str, params: dict[str, Any], query: 
     return url
 
 
+def _origin(url: str) -> tuple[str, str, int | None]:
+    parsed = urlsplit(url)
+    port = parsed.port
+    if port is None:
+        port = {"http": 80, "https": 443}.get(parsed.scheme.lower())
+    return parsed.scheme.lower(), (parsed.hostname or "").lower(), port
+
+
+class CredentialSafeRedirectHandler(HTTPRedirectHandler):
+    """Do not replay mutations or leak credentials across redirect origins."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        source = urlsplit(req.full_url)
+        target = urlsplit(newurl)
+        if target.scheme.lower() not in {"http", "https"}:
+            raise WorkflowError("refusing redirect to a non-HTTP provider URL")
+        if source.scheme.lower() == "https" and target.scheme.lower() != "https":
+            raise WorkflowError("refusing HTTPS downgrade redirect")
+        if req.get_method() not in {"GET", "HEAD"}:
+            raise WorkflowError("refusing redirect for a mutating provider request")
+
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and _origin(req.full_url) != _origin(newurl):
+            for name in ("Authorization", "Proxy-Authorization", "Cookie"):
+                redirected.remove_header(name)
+        return redirected
+
+
 class F01Runner:
     def __init__(
         self,
@@ -117,7 +145,7 @@ class F01Runner:
         timeout: float = 20,
         poll_interval: float = 1,
         poll_timeout: float = 120,
-        opener=urlopen,
+        opener=None,
         sleep=time.sleep,
     ) -> None:
         server_url, self.operations = operation_index(openapi)
@@ -127,7 +155,7 @@ class F01Runner:
         self.timeout = timeout
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
-        self.opener = opener
+        self.opener = opener if opener is not None else build_opener(CredentialSafeRedirectHandler()).open
         self.sleep = sleep
         self.variables: dict[str, Any] = {}
         parsed_base = urlsplit(self.base_url)
