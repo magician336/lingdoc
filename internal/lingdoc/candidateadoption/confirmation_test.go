@@ -155,4 +155,3 @@ func TestConfirmationServiceFailsClosedBeforeIdempotencyReplayWithoutAuthorizer(
 		t.Fatal("confirmation replay queried without project authorization")
 	}
 }
-
