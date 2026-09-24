@@ -80,10 +80,11 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 		len(in.IdempotencyKey) > 128 || strings.TrimSpace(in.ExpectedChapterVersionID) == "" || in.ExpectedSpecRevision < 0 {
 		return Confirmation{}, false, ErrInvalidRequest
 	}
-	if s.Authorizer != nil {
-		if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
-			return Confirmation{}, false, err
-		}
+	if s.Authorizer == nil {
+		return Confirmation{}, false, ErrInvalidState
+	}
+	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
+		return Confirmation{}, false, err
 	}
 	// Check replay after current authorization but before reading mutable state,
 	// so a lost response can be recovered even if the chapter later changes.
@@ -182,3 +183,4 @@ func newConfirmation(in ConfirmChapterInput, workspace GenerationContext) Confir
 		TemplateVersion: workspace.Basis.TemplateVersion, ActorUserID: in.ActorID,
 		CreatedAt: time.Now().UTC(), Valid: true, ReviewDecisions: decisions}
 }
+
