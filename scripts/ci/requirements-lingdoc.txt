@@ -1,0 +1,2 @@
+# Validator uses the existing RefResolver API; upgrade with contract checks.
+jsonschema==4.23.0

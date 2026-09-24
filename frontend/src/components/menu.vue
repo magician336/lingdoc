@@ -416,6 +416,8 @@ const isMenuItemActive = (itemPath: string): boolean => {
             return currentRoute === 'kbCreatChat' || currentRoute === 'globalCreatChat';
         case 'settings':
             return currentRoute === 'settings';
+        case 'lingdoc':
+            return currentRoute === 'lingdocWorkspace';
         default:
             return itemPath === currentpath.value;
     }
@@ -439,9 +441,11 @@ const getIconActiveState = (itemPath: string) => {
 
 // 分离上下两部分菜单（使用 visibleMenuArr 以便 lite 模式过滤 logout）
 const topMenuItems = computed<MenuItem[]>(() => {
-    return (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
+    const items = (visibleMenuArr.value as unknown as MenuItem[]).filter((item: MenuItem) =>
         item.path === 'knowledge-bases' || item.path === 'agents' || item.path === 'organizations' || item.path === 'creatChat'
     );
+    items.push({ title: '灵档项目', icon: 'zhishiku', path: 'lingdoc' });
+    return items;
 });
 
 const bottomMenuItems = computed<MenuItem[]>(() => {
