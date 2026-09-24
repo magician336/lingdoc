@@ -19,6 +19,7 @@ func recoveryExportService(snapshots SnapshotStore, exports ExportStore, rendere
 		return nil
 	}))
 }
+
 // These are deliberately cross-component tests rather than more unit cases
 // for either snapshot.go or export.go. They are the first runnable T15 entry
 // point and cover recovery behavior a UI must be able to explain.
@@ -37,7 +38,7 @@ func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
 	}
 	calls := 0
 	exports := NewMemoryExportStore()
-	service := recoveryExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
+	service := recoveryExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
 		calls++
 		return []byte("must not render"), nil
 	}))
@@ -55,7 +56,7 @@ func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
 func TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes(t *testing.T) {
 	snapshots, snapshot := preparedSnapshot(t)
 	exports := NewMemoryExportStore()
-	failed := recoveryExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
+	failed := recoveryExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
 		return nil, errors.New("temporary renderer outage")
 	}))
 	first, err := failed.Start("owner", snapshot.ProjectID, snapshot.ID)
