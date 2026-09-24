@@ -1,12 +1,12 @@
 # T05：固定两章 DOCX 导出验证
 
-状态：本地实现与自动校验通过；gong 回报人工副本编辑保存验收通过。基线为 `origin/main` 的 `9b7cf049`，工作分支 `codex/t05-docx-poc`。
+状态：实现、针对性测试与当前 PR 自动检查通过；gong 回报人工副本编辑保存验收通过。工作分支 `codex/t05-docx-poc`；分支已同步本 PR 当前 `main` 基线。
 
 ## 交付范围
 
 - `internal/lingdoc/docx`：仅使用 Go 标准库，把两章、正文、引用清单、待核事项及处置理由写为可编辑的 WordprocessingML/DOCX。只接受 `internal_demo`；内容含已识别的不支持 Markdown、缺失引用、重复待核项或不完整处置时拒绝生成，不会悄悄丢内容。
 - `cmd/lingdoc-docx-demo`：读取仓库已有的 `frozen-input.canonical.json` 合成样例，映射为渲染输入并输出真实文件。仅做 T05 固定输入 PoC，不声称执行 T13 的冻结/权限/当前性检查。
-- 文件留在仓外正式施工现场：`D:/Mon3tr/projects/lingdoc-dachuang/acceptance/T05-demo.docx`。内容是合成资料，没有真实个人数据。代码没有提交或推送。
+- 生成的验收文件留在仓外施工现场：`D:/Mon3tr/projects/lingdoc-dachuang/acceptance/T05-demo.docx`。内容是合成资料，没有真实个人数据；DOCX 验收文件本身不随 PR 提交，渲染器与测试代码已提交到本 PR。
 
 ## 复现
 
