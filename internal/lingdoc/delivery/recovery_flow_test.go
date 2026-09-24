@@ -113,4 +113,3 @@ func TestRecoveryFlowFrozenDigestIsUnaffectedByLaterSourcePresentation(t *testin
 		t.Fatal("a new frozen source value did not produce a new digest")
 	}
 }
-
