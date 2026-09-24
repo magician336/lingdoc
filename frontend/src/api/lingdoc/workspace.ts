@@ -1,1 +1,114 @@
-import { get, post, put } from '@/utils/request'\n\nexport interface Project {\n  id: string\n  name: string\n  status: 'draft' | 'active'\n  project_version: number\n  spec_revision: number\n  spec: Record<string, string>\n  template_id: string\n  template_version: string\n  members: Array<{ user_id: string; role: 'owner' | 'collaborator' }>\n}\n\nexport interface ReviewItem {\n  id: string\n  statement: string\n  origin_candidate_id: string\n}\n\nexport interface ReviewDecision {\n  review_item_id: string\n  disposition: 'resolved' | 'retained_warning'\n  reason: string\n}\n\nexport interface Confirmation {\n  id: string\n  chapter_id: string\n  chapter_version_id: string\n  spec_revision: number\n  asset_versions: Array<{ asset_id: string; asset_revision: number }>\n  template_version: string\n  actor_user_id: string\n  created_at: string\n  valid: boolean\n  review_decisions: ReviewDecision[]\n}\n\nexport interface Chapter {\n  id: string\n  project_id: string\n  section_id: string\n  title: string\n  current_version_id: string | null\n  body_markdown: string\n  source_ids: string[]\n  review_items: ReviewItem[]\n  confirmation_valid: boolean\n}\n\nexport interface Asset {\n  id: string\n  project_id: string\n  knowledge_id: string\n  title: string\n  asset_revision: number\n  processing_state: 'pending' | 'processing' | 'ready' | 'failed' | 'replaced'\n}\n\nexport interface Source {\n  id: string\n  project_id: string\n  asset_id: string\n  asset_revision: number\n  locator: string\n  quoted_text: string\n  quoted_text_hash: string\n  status: 'available' | 'stale' | 'unavailable'\n}\n\nexport interface Result<T> {\n  data: T\n  request_id: string\n  meta: { replayed: boolean; refresh_required: boolean }\n}\n\nconst base = '/api/v1/lingdoc/projects'\nconst segment = (id: string) => encodeURIComponent(id)\nconst keyHeader = (key: string) => ({ headers: { 'Idempotency-Key': key } })\n\nexport const listProjects = () => get<Result<{ items: Project[]; truncated: boolean }>>(base)\nexport const createProject = (name: string, key: string) =>\n  post<Result<Project>>(base, { name, template_id: 'template-demo' }, keyHeader(key))\nexport const getProject = (id: string) => get<Result<Project>>(`${base}/${segment(id)}`)\nexport const saveSpec = (id: string, expected: number, fields: Record<string, string>, key: string) =>\n  put<Result<Project>>(`${base}/${segment(id)}/spec`,\n    { expected_spec_revision: expected, fields }, keyHeader(key))\nexport const activateProject = (id: string, expected: number, key: string) =>\n  post<Result<Project>>(`${base}/${segment(id)}/activate`,\n    { expected_spec_revision: expected }, keyHeader(key))\nexport const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)\nexport const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)\nexport const bindAsset = (id: string, knowledgeId: string, key: string) =>\n  post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))\nexport const retrieveSources = (id: string, query: string, assetIds: string[]) =>\n  post<Result<Source[]>>(`${base}/${segment(id)}/retrieval`, { query, asset_ids: assetIds })\nexport const getSource = (projectId: string, sourceId: string) =>\n  get<Result<Source>>(`${base}/${segment(projectId)}/sources/${segment(sourceId)}`)\nexport const saveChapter = (projectId: string, chapterId: string, input: {\n  expected_chapter_version_id: string | null\n  expected_spec_revision: number\n  body_markdown: string\n  source_ids: string[]\n}, key: string) => post<Result<Chapter>>(\n  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/versions`, input, keyHeader(key),\n)\nexport const confirmChapter = (projectId: string, chapterId: string, input: {\n  expected_chapter_version_id: string\n  expected_spec_revision: number\n  review_decisions: ReviewDecision[]\n}, key: string) => post<Result<Confirmation>>(\n  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/confirmations`, input, keyHeader(key),\n)\n
+import { get, post, put } from '@/utils/request'
+
+export interface Project {
+  id: string
+  name: string
+  status: 'draft' | 'active'
+  project_version: number
+  spec_revision: number
+  spec: Record<string, string>
+  template_id: string
+  template_version: string
+  members: Array<{ user_id: string; role: 'owner' | 'collaborator' }>
+}
+
+export interface ReviewItem {
+  id: string
+  statement: string
+  origin_candidate_id: string
+}
+
+export interface ReviewDecision {
+  review_item_id: string
+  disposition: 'resolved' | 'retained_warning'
+  reason: string
+}
+
+export interface Confirmation {
+  id: string
+  chapter_id: string
+  chapter_version_id: string
+  spec_revision: number
+  asset_versions: Array<{ asset_id: string; asset_revision: number }>
+  template_version: string
+  actor_user_id: string
+  created_at: string
+  valid: boolean
+  review_decisions: ReviewDecision[]
+}
+
+export interface Chapter {
+  id: string
+  project_id: string
+  section_id: string
+  title: string
+  current_version_id: string | null
+  body_markdown: string
+  source_ids: string[]
+  review_items: ReviewItem[]
+  confirmation_valid: boolean
+}
+
+export interface Asset {
+  id: string
+  project_id: string
+  knowledge_id: string
+  title: string
+  asset_revision: number
+  processing_state: 'pending' | 'processing' | 'ready' | 'failed' | 'replaced'
+}
+
+export interface Source {
+  id: string
+  project_id: string
+  asset_id: string
+  asset_revision: number
+  locator: string
+  quoted_text: string
+  quoted_text_hash: string
+  status: 'available' | 'stale' | 'unavailable'
+}
+
+export interface Result<T> {
+  data: T
+  request_id: string
+  meta: { replayed: boolean; refresh_required: boolean }
+}
+
+const base = '/api/v1/lingdoc/projects'
+const segment = (id: string) => encodeURIComponent(id)
+const keyHeader = (key: string) => ({ headers: { 'Idempotency-Key': key } })
+
+export const listProjects = () => get<Result<{ items: Project[]; truncated: boolean }>>(base)
+export const createProject = (name: string, key: string) =>
+  post<Result<Project>>(base, { name, template_id: 'template-demo' }, keyHeader(key))
+export const getProject = (id: string) => get<Result<Project>>(`${base}/${segment(id)}`)
+export const saveSpec = (id: string, expected: number, fields: Record<string, string>, key: string) =>
+  put<Result<Project>>(`${base}/${segment(id)}/spec`,
+    { expected_spec_revision: expected, fields }, keyHeader(key))
+export const activateProject = (id: string, expected: number, key: string) =>
+  post<Result<Project>>(`${base}/${segment(id)}/activate`,
+    { expected_spec_revision: expected }, keyHeader(key))
+export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
+export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
+export const bindAsset = (id: string, knowledgeId: string, key: string) =>
+  post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))
+export const retrieveSources = (id: string, query: string, assetIds: string[]) =>
+  post<Result<Source[]>>(`${base}/${segment(id)}/retrieval`, { query, asset_ids: assetIds })
+export const getSource = (projectId: string, sourceId: string) =>
+  get<Result<Source>>(`${base}/${segment(projectId)}/sources/${segment(sourceId)}`)
+export const saveChapter = (projectId: string, chapterId: string, input: {
+  expected_chapter_version_id: string | null
+  expected_spec_revision: number
+  body_markdown: string
+  source_ids: string[]
+}, key: string) => post<Result<Chapter>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/versions`, input, keyHeader(key),
+)
+export const confirmChapter = (projectId: string, chapterId: string, input: {
+  expected_chapter_version_id: string
+  expected_spec_revision: number
+  review_decisions: ReviewDecision[]
+}, key: string) => post<Result<Confirmation>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/confirmations`, input, keyHeader(key),
+)

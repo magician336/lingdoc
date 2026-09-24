@@ -1,1 +1,487 @@
-package candidateadoption\n\nimport (\n	"context"\n	"encoding/json"\n	"errors"\n	"fmt"\n	"strings"\n	"time"\n\n	"github.com/google/uuid"\n	"gorm.io/gorm"\n)\n\n// SQLiteCandidateAdoptionStore owns the T11 candidate and adoption records\n// while reusing the T08 workspace tables for projects, chapters, and versions.\ntype SQLiteCandidateAdoptionStore struct {\n	db *gorm.DB\n}\n\nfunc NewSQLiteCandidateAdoptionStore(db *gorm.DB) *SQLiteCandidateAdoptionStore {\n	return &SQLiteCandidateAdoptionStore{db: db}\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) DB() *gorm.DB { return s.db }\n\ntype projectRow struct {\n	ID              string `gorm:"primaryKey;size:36"`\n	TenantID        uint64 `gorm:"not null;index"`\n	Name            string `gorm:"not null;size:120"`\n	Status          string `gorm:"not null;size:16"`\n	ProjectVersion  int64  `gorm:"not null"`\n	SpecRevision    int64  `gorm:"not null"`\n	SpecJSON        string `gorm:"column:spec_json;not null;type:text"`\n	TemplateID      string `gorm:"not null;size:80"`\n	TemplateVersion string `gorm:"not null;size:40"`\n	CreatedAt       time.Time\n}\n\ntype chapterRow struct {\n	ID               string  `gorm:"primaryKey;size:36"`\n	ProjectID        string  `gorm:"not null;index;size:36"`\n	SectionID        string  `gorm:"not null;size:80"`\n	Title            string  `gorm:"not null;size:120"`\n	CurrentVersionID *string `gorm:"size:36"`\n}\n\ntype chapterVersionRow struct {\n	ID                string  `gorm:"primaryKey;size:36"`\n	ProjectID         string  `gorm:"not null;index;size:36"`\n	ChapterID         string  `gorm:"not null;index;size:36"`\n	ParentVersionID   *string `gorm:"size:36"`\n	CandidateID       string  `gorm:"index;size:36"`\n	BodyMarkdown      string  `gorm:"not null;type:text"`\n	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`\n	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`\n	SpecRevision      int64   `gorm:"not null;default:0"`\n	ConfirmationValid bool    `gorm:"not null;default:false"`\n	CreatedBy         string  `gorm:"not null;default:'';size:128"`\n	CreatedAt         time.Time\n}\n\ntype confirmationRow struct {\n	ID               string `gorm:"primaryKey;size:36"`\n	ChapterID        string `gorm:"index;not null;size:36"`\n	ChapterVersionID string `gorm:"index;not null;size:36"`\n	Valid            bool   `gorm:"not null;default:false"`\n	DetailsJSON      string `gorm:"type:text;not null;default:'{}'"`\n	CreatedAt        time.Time\n}\n\ntype candidateRow struct {\n	ID              string `gorm:"primaryKey;size:36"`\n	ProjectID       string `gorm:"index;not null;size:36"`\n	ChapterID       string `gorm:"index;not null;size:36"`\n	RunID           string `gorm:"not null;size:128"`\n	BodyMarkdown    string `gorm:"type:text;not null"`\n	SourceIDsJSON   string `gorm:"type:text;not null"`\n	BasisJSON       string `gorm:"type:text;not null"`\n	Validity        string `gorm:"not null;size:16"`\n	ReviewItemsJSON string `gorm:"type:text;not null"`\n	CreatedAt       time.Time\n}\n\ntype adoptionIdempotencyRow struct {\n	ID               string `gorm:"primaryKey;size:36"`\n	ProjectID        string `gorm:"index;not null;size:36"`\n	ChapterID        string `gorm:"index;not null;size:36"`\n	ActorID          string `gorm:"index;not null;size:128"`\n	Key              string `gorm:"column:idempotency_key;not null;size:128"`\n	RequestHash      string `gorm:"not null;size:64"`\n	ChapterVersionID string `gorm:"not null;size:36"`\n	ResponseJSON     string `gorm:"type:text;not null"`\n	CreatedAt        time.Time\n}\n\ntype confirmationIdempotencyRow struct {\n	ID           string `gorm:"primaryKey;size:36"`\n	ProjectID    string `gorm:"index;not null;size:36"`\n	ChapterID    string `gorm:"index;not null;size:36"`\n	ActorID      string `gorm:"index;not null;size:128"`\n	Key          string `gorm:"column:idempotency_key;not null;size:128"`\n	RequestHash  string `gorm:"not null;size:64"`\n	ResponseJSON string `gorm:"type:text;not null"`\n	CreatedAt    time.Time\n}\n\nfunc (projectRow) TableName() string                 { return "lingdoc_projects" }\nfunc (chapterRow) TableName() string                 { return "lingdoc_chapters" }\nfunc (chapterVersionRow) TableName() string          { return "lingdoc_chapter_versions" }\nfunc (confirmationRow) TableName() string            { return "lingdoc_chapter_confirmations" }\nfunc (candidateRow) TableName() string               { return "lingdoc_candidates" }\nfunc (adoptionIdempotencyRow) TableName() string     { return "lingdoc_candidate_adoptions" }\nfunc (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_confirmation_requests" }\n\n// AutoMigrate is used by focused store tests. Production startup uses the\n// numbered migrations, where 000018 owns workspace tables and 000020 adds the\n// T11 columns and records.\nfunc (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {\n	return s.db.WithContext(ctx).AutoMigrate(\n		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &candidateRow{},\n		&confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{},\n	)\n}\n\n// ConfirmChapter persists the confirmation and idempotent response atomically.\n// It rechecks the current chapter and project revisions inside the write\n// transaction so a concurrent edit cannot be confirmed from a stale read.\nfunc (s *SQLiteCandidateAdoptionStore) ReplayConfirmation(ctx context.Context, in ConfirmChapterInput) (*Confirmation, error) {\n	var previous confirmationIdempotencyRow\n	err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?",\n		in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error\n	if errors.Is(err, gorm.ErrRecordNotFound) {\n		return nil, nil\n	}\n	if err != nil {\n		return nil, err\n	}\n	if previous.RequestHash != confirmationRequestHash(in) {\n		return nil, ErrIdempotencyConflict\n	}\n	var result Confirmation\n	if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {\n		return nil, fmt.Errorf("decode confirmation idempotency response: %w", err)\n	}\n	return &result, nil\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in ConfirmChapterInput, workspace GenerationContext) (Confirmation, bool, error) {\n	var result Confirmation\n	replayed := false\n	hash := confirmationRequestHash(in)\n	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {\n		var previous confirmationIdempotencyRow\n		err := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error\n		if err == nil {\n			if previous.RequestHash != hash {\n				return ErrIdempotencyConflict\n			}\n			if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {\n				return err\n			}\n			replayed = true\n			return nil\n		}\n		if !errors.Is(err, gorm.ErrRecordNotFound) {\n			return err\n		}\n		var project projectRow\n		if err := tx.Where("id = ?", in.ProjectID).First(&project).Error; err != nil {\n			if errors.Is(err, gorm.ErrRecordNotFound) {\n				return ErrNotFound\n			}\n			return err\n		}\n		var chapter chapterRow\n		if err := tx.Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID).First(&chapter).Error; err != nil {\n			if errors.Is(err, gorm.ErrRecordNotFound) {\n				return ErrNotFound\n			}\n			return err\n		}\n		if chapter.CurrentVersionID == nil || *chapter.CurrentVersionID != in.ExpectedChapterVersionID ||\n			int(project.SpecRevision) != in.ExpectedSpecRevision || project.TemplateVersion != workspace.Basis.TemplateVersion {\n			return ErrVersionConflict\n		}\n		var version chapterVersionRow\n		if err := tx.Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).First(&version).Error; err != nil {\n			if errors.Is(err, gorm.ErrRecordNotFound) {\n				return ErrVersionConflict\n			}\n			return err\n		}\n		result = newConfirmation(in, workspace)\n		details, err := json.Marshal(result)\n		if err != nil {\n			return err\n		}\n		if err := tx.Create(&confirmationRow{ID: result.ID, ChapterID: in.ChapterID, ChapterVersionID: in.ExpectedChapterVersionID, Valid: true, DetailsJSON: string(details)}).Error; err != nil {\n			return err\n		}\n		if err := tx.Model(&chapterVersionRow{}).Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).Update("confirmation_valid", true).Error; err != nil {\n			return err\n		}\n		response, err := json.Marshal(result)\n		if err != nil {\n			return err\n		}\n		return tx.Create(&confirmationIdempotencyRow{ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,\n			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash, ResponseJSON: string(response)}).Error\n	})\n	return result, replayed, err\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) GetCandidate(ctx context.Context, projectID, candidateID string) (Candidate, error) {\n	var row candidateRow\n	if err := s.db.WithContext(ctx).Where("id = ? AND project_id = ?", candidateID, projectID).First(&row).Error; err != nil {\n		if errors.Is(err, gorm.ErrRecordNotFound) {\n			return Candidate{}, ErrNotFound\n		}\n		return Candidate{}, err\n	}\n	return candidateFromRow(row)\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, projectID, chapterID string) (GenerationContext, error) {\n	tx := s.db.WithContext(ctx)\n	var project projectRow\n	if err := tx.Where("id = ?", projectID).First(&project).Error; err != nil {\n		if errors.Is(err, gorm.ErrRecordNotFound) {\n			return GenerationContext{}, ErrNotFound\n		}\n		return GenerationContext{}, err\n	}\n	var row chapterRow\n	if err := tx.Where("id = ? AND project_id = ?", chapterID, projectID).First(&row).Error; err != nil {\n		if errors.Is(err, gorm.ErrRecordNotFound) {\n			return GenerationContext{}, ErrNotFound\n		}\n		return GenerationContext{}, err\n	}\n	chapter, err := s.chapterFromRow(tx, row)\n	if err != nil {\n		return GenerationContext{}, err\n	}\n	basis := Basis{\n		SpecRevision:     int(project.SpecRevision),\n		ChapterVersionID: chapter.CurrentVersionID,\n		TemplateID:       project.TemplateID,\n		TemplateVersion:  project.TemplateVersion,\n	}\n	return GenerationContext{\n		ProjectID: projectID, ChapterID: chapterID, SpecRevision: int(project.SpecRevision),\n		ChapterVersionID: chapter.CurrentVersionID, Basis: basis, Chapter: chapter,\n	}, nil\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) ListChapters(ctx context.Context, projectID string) ([]Chapter, error) {\n	tx := s.db.WithContext(ctx)\n	var rows []chapterRow\n	if err := tx.Where("project_id = ?", projectID).Order("section_id ASC").Find(&rows).Error; err != nil {\n		return nil, err\n	}\n	chapters := make([]Chapter, 0, len(rows))\n	for _, row := range rows {\n		chapter, err := s.chapterFromRow(tx, row)\n		if err != nil {\n			return nil, err\n		}\n		chapters = append(chapters, chapter)\n	}\n	return chapters, nil\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) ReplayCandidateAcceptance(ctx context.Context, in AcceptCandidateInput) (*AcceptResult, error) {\n	var row adoptionIdempotencyRow\n	err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&row).Error\n	if errors.Is(err, gorm.ErrRecordNotFound) {\n		return nil, nil\n	}\n	if err != nil {\n		return nil, err\n	}\n	if row.RequestHash != requestHash(in) {\n		return nil, ErrIdempotencyConflict\n	}\n	var chapter Chapter\n	if err := json.Unmarshal([]byte(row.ResponseJSON), &chapter); err != nil {\n		return nil, fmt.Errorf("decode idempotency response: %w", err)\n	}\n	return &AcceptResult{Chapter: chapter, Replayed: true}, nil\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in AcceptCandidateInput, candidate Candidate) (AcceptResult, error) {\n	var result AcceptResult\n	hash := requestHash(in)\n	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {\n		var existing adoptionIdempotencyRow\n		lookupErr := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&existing).Error\n		if lookupErr == nil {\n			if existing.RequestHash != hash {\n				return ErrIdempotencyConflict\n			}\n			if err := json.Unmarshal([]byte(existing.ResponseJSON), &result.Chapter); err != nil {\n				return fmt.Errorf("decode idempotency response: %w", err)\n			}\n			result.Replayed = true\n			return nil\n		}\n		if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {\n			return lookupErr\n		}\n\n		var project projectRow\n		if err := tx.Where("id = ?", in.ProjectID).First(&project).Error; err != nil {\n			if errors.Is(err, gorm.ErrRecordNotFound) {\n				return ErrNotFound\n			}\n			return err\n		}\n		if project.SpecRevision != int64(in.ExpectedSpecRevision) {\n			return ErrVersionConflict\n		}\n		var chapter chapterRow\n		if err := tx.Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID).First(&chapter).Error; err != nil {\n			if errors.Is(err, gorm.ErrRecordNotFound) {\n				return ErrNotFound\n			}\n			return err\n		}\n		if !sameOptionalString(chapter.CurrentVersionID, in.ExpectedChapterVersionID) {\n			return ErrVersionConflict\n		}\n		current, err := s.chapterFromRow(tx, chapter)\n		if err != nil {\n			return err\n		}\n		if strings.TrimSpace(current.BodyMarkdown) != "" && !in.ReplaceExisting {\n			return ErrInvalidState\n		}\n\n		oldVersionID := chapter.CurrentVersionID\n		newVersionID := uuid.NewString()\n		sourceJSON, err := json.Marshal(normalizeIDs(candidate.SourceIDs))\n		if err != nil {\n			return err\n		}\n		reviewJSON, err := json.Marshal(candidate.ReviewItems)\n		if err != nil {\n			return err\n		}\n		version := chapterVersionRow{\n			ID: newVersionID, ProjectID: in.ProjectID, ChapterID: in.ChapterID,\n			ParentVersionID: oldVersionID, CandidateID: candidate.ID,\n			BodyMarkdown: candidate.BodyMarkdown, SourceIDsJSON: string(sourceJSON),\n			ReviewItemsJSON: string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),\n			ConfirmationValid: false, CreatedBy: in.ActorID,\n		}\n		if err := tx.Create(&version).Error; err != nil {\n			return err\n		}\n		if err := tx.Create(&confirmationRow{ID: uuid.NewString(), ChapterID: in.ChapterID, ChapterVersionID: newVersionID, Valid: false, DetailsJSON: "{}"}).Error; err != nil {\n			return err\n		}\n		query := tx.Model(&chapterRow{}).Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID)\n		if oldVersionID == nil {\n			query = query.Where("current_version_id IS NULL")\n		} else {\n			query = query.Where("current_version_id = ?", *oldVersionID)\n		}\n		if result := query.Update("current_version_id", newVersionID); result.Error != nil {\n			return result.Error\n		} else if result.RowsAffected != 1 {\n			return ErrVersionConflict\n		}\n		if result := tx.Model(&projectRow{}).Where("id = ? AND project_version = ?", in.ProjectID, project.ProjectVersion).Update("project_version", gorm.Expr("project_version + 1")); result.Error != nil {\n			return result.Error\n		} else if result.RowsAffected != 1 {\n			return ErrVersionConflict\n		}\n\n		current.CurrentVersionID = &newVersionID\n		current.BodyMarkdown = candidate.BodyMarkdown\n		current.SourceIDs = normalizeIDs(candidate.SourceIDs)\n		current.ReviewItems = candidate.ReviewItems\n		current.ConfirmationValid = false\n		result.Chapter = current\n		responseJSON, err := json.Marshal(result.Chapter)\n		if err != nil {\n			return err\n		}\n		if err := tx.Create(&adoptionIdempotencyRow{\n			ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,\n			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,\n			ChapterVersionID: newVersionID, ResponseJSON: string(responseJSON),\n		}).Error; err != nil {\n			return err\n		}\n		return nil\n	})\n	return result, err\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) UpsertProject(ctx context.Context, id string, version int) error {\n	row := projectRow{\n		ID: id, TenantID: 1, Name: id, Status: "draft", ProjectVersion: int64(version),\n		SpecRevision: 0, SpecJSON: "{}", TemplateID: "template-demo", TemplateVersion: "1",\n	}\n	return s.db.WithContext(ctx).Save(&row).Error\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) UpsertChapter(ctx context.Context, chapter Chapter, specRevision int) error {\n	if err := s.db.WithContext(ctx).Save(&chapterRow{\n		ID: chapter.ID, ProjectID: chapter.ProjectID, SectionID: chapter.SectionID,\n		Title: chapter.Title, CurrentVersionID: chapter.CurrentVersionID,\n	}).Error; err != nil {\n		return err\n	}\n	return s.db.WithContext(ctx).Model(&projectRow{}).Where("id = ?", chapter.ProjectID).Update("spec_revision", specRevision).Error\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) UpsertChapterWithBasis(ctx context.Context, chapter Chapter, specRevision int, _ Basis) error {\n	if err := s.UpsertChapter(ctx, chapter, specRevision); err != nil {\n		return err\n	}\n	return s.db.WithContext(ctx).Model(&projectRow{}).Where("id = ?", chapter.ProjectID).Update("spec_revision", specRevision).Error\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) UpsertCandidate(ctx context.Context, candidate Candidate) error {\n	sources, err := json.Marshal(normalizeIDs(candidate.SourceIDs))\n	if err != nil {\n		return err\n	}\n	basis, err := json.Marshal(candidate.Basis)\n	if err != nil {\n		return err\n	}\n	reviews, err := json.Marshal(candidate.ReviewItems)\n	if err != nil {\n		return err\n	}\n	return s.db.WithContext(ctx).Save(&candidateRow{\n		ID: candidate.ID, ProjectID: candidate.ProjectID, ChapterID: candidate.ChapterID,\n		RunID: candidate.RunID, BodyMarkdown: candidate.BodyMarkdown,\n		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: candidate.Validity,\n		ReviewItemsJSON: string(reviews),\n	}).Error\n}\n\nfunc (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRow) (Chapter, error) {\n	chapter := Chapter{\n		ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,\n		CurrentVersionID: row.CurrentVersionID, SourceIDs: []string{}, ReviewItems: []ReviewItem{},\n	}\n	if row.CurrentVersionID == nil {\n		return chapter, nil\n	}\n	var version chapterVersionRow\n	if err := tx.Where("id = ? AND project_id = ? AND chapter_id = ?", *row.CurrentVersionID, row.ProjectID, row.ID).First(&version).Error; err != nil {\n		return Chapter{}, err\n	}\n	chapter.BodyMarkdown = version.BodyMarkdown\n	chapter.ConfirmationValid = version.ConfirmationValid\n	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &chapter.SourceIDs); err != nil {\n		return Chapter{}, err\n	}\n	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &chapter.ReviewItems); err != nil {\n		return Chapter{}, err\n	}\n	return chapter, nil\n}\n\nfunc candidateFromRow(row candidateRow) (Candidate, error) {\n	var candidate Candidate\n	candidate.ID, candidate.ProjectID, candidate.ChapterID, candidate.RunID = row.ID, row.ProjectID, row.ChapterID, row.RunID\n	candidate.BodyMarkdown, candidate.Validity = row.BodyMarkdown, row.Validity\n	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &candidate.SourceIDs); err != nil {\n		return Candidate{}, err\n	}\n	if err := json.Unmarshal([]byte(row.BasisJSON), &candidate.Basis); err != nil {\n		return Candidate{}, err\n	}\n	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &candidate.ReviewItems); err != nil {\n		return Candidate{}, err\n	}\n	return candidate, nil\n}\n
+package candidateadoption
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+)
+
+// SQLiteCandidateAdoptionStore owns the T11 candidate and adoption records
+// while reusing the T08 workspace tables for projects, chapters, and versions.
+type SQLiteCandidateAdoptionStore struct {
+	db *gorm.DB
+}
+
+func NewSQLiteCandidateAdoptionStore(db *gorm.DB) *SQLiteCandidateAdoptionStore {
+	return &SQLiteCandidateAdoptionStore{db: db}
+}
+
+func (s *SQLiteCandidateAdoptionStore) DB() *gorm.DB { return s.db }
+
+type projectRow struct {
+	ID              string `gorm:"primaryKey;size:36"`
+	TenantID        uint64 `gorm:"not null;index"`
+	Name            string `gorm:"not null;size:120"`
+	Status          string `gorm:"not null;size:16"`
+	ProjectVersion  int64  `gorm:"not null"`
+	SpecRevision    int64  `gorm:"not null"`
+	SpecJSON        string `gorm:"column:spec_json;not null;type:text"`
+	TemplateID      string `gorm:"not null;size:80"`
+	TemplateVersion string `gorm:"not null;size:40"`
+	CreatedAt       time.Time
+}
+
+type chapterRow struct {
+	ID               string  `gorm:"primaryKey;size:36"`
+	ProjectID        string  `gorm:"not null;index;size:36"`
+	SectionID        string  `gorm:"not null;size:80"`
+	Title            string  `gorm:"not null;size:120"`
+	CurrentVersionID *string `gorm:"size:36"`
+}
+
+type chapterVersionRow struct {
+	ID                string  `gorm:"primaryKey;size:36"`
+	ProjectID         string  `gorm:"not null;index;size:36"`
+	ChapterID         string  `gorm:"not null;index;size:36"`
+	ParentVersionID   *string `gorm:"size:36"`
+	CandidateID       string  `gorm:"index;size:36"`
+	BodyMarkdown      string  `gorm:"not null;type:text"`
+	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
+	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
+	SpecRevision      int64   `gorm:"not null;default:0"`
+	ConfirmationValid bool    `gorm:"not null;default:false"`
+	CreatedBy         string  `gorm:"not null;default:'';size:128"`
+	CreatedAt         time.Time
+}
+
+type confirmationRow struct {
+	ID               string `gorm:"primaryKey;size:36"`
+	ChapterID        string `gorm:"index;not null;size:36"`
+	ChapterVersionID string `gorm:"index;not null;size:36"`
+	Valid            bool   `gorm:"not null;default:false"`
+	DetailsJSON      string `gorm:"type:text;not null;default:'{}'"`
+	CreatedAt        time.Time
+}
+
+type candidateRow struct {
+	ID              string `gorm:"primaryKey;size:36"`
+	ProjectID       string `gorm:"index;not null;size:36"`
+	ChapterID       string `gorm:"index;not null;size:36"`
+	RunID           string `gorm:"not null;size:128"`
+	BodyMarkdown    string `gorm:"type:text;not null"`
+	SourceIDsJSON   string `gorm:"type:text;not null"`
+	BasisJSON       string `gorm:"type:text;not null"`
+	Validity        string `gorm:"not null;size:16"`
+	ReviewItemsJSON string `gorm:"type:text;not null"`
+	CreatedAt       time.Time
+}
+
+type adoptionIdempotencyRow struct {
+	ID               string `gorm:"primaryKey;size:36"`
+	ProjectID        string `gorm:"index;not null;size:36"`
+	ChapterID        string `gorm:"index;not null;size:36"`
+	ActorID          string `gorm:"index;not null;size:128"`
+	Key              string `gorm:"column:idempotency_key;not null;size:128"`
+	RequestHash      string `gorm:"not null;size:64"`
+	ChapterVersionID string `gorm:"not null;size:36"`
+	ResponseJSON     string `gorm:"type:text;not null"`
+	CreatedAt        time.Time
+}
+
+type confirmationIdempotencyRow struct {
+	ID           string `gorm:"primaryKey;size:36"`
+	ProjectID    string `gorm:"index;not null;size:36"`
+	ChapterID    string `gorm:"index;not null;size:36"`
+	ActorID      string `gorm:"index;not null;size:128"`
+	Key          string `gorm:"column:idempotency_key;not null;size:128"`
+	RequestHash  string `gorm:"not null;size:64"`
+	ResponseJSON string `gorm:"type:text;not null"`
+	CreatedAt    time.Time
+}
+
+func (projectRow) TableName() string                 { return "lingdoc_projects" }
+func (chapterRow) TableName() string                 { return "lingdoc_chapters" }
+func (chapterVersionRow) TableName() string          { return "lingdoc_chapter_versions" }
+func (confirmationRow) TableName() string            { return "lingdoc_chapter_confirmations" }
+func (candidateRow) TableName() string               { return "lingdoc_candidates" }
+func (adoptionIdempotencyRow) TableName() string     { return "lingdoc_candidate_adoptions" }
+func (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_confirmation_requests" }
+
+// AutoMigrate is used by focused store tests. Production startup uses the
+// numbered migrations, where 000018 owns workspace tables and 000020 adds the
+// T11 columns and records.
+func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
+	return s.db.WithContext(ctx).AutoMigrate(
+		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &candidateRow{},
+		&confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{},
+	)
+}
+
+// ConfirmChapter persists the confirmation and idempotent response atomically.
+// It rechecks the current chapter and project revisions inside the write
+// transaction so a concurrent edit cannot be confirmed from a stale read.
+func (s *SQLiteCandidateAdoptionStore) ReplayConfirmation(ctx context.Context, in ConfirmChapterInput) (*Confirmation, error) {
+	var previous confirmationIdempotencyRow
+	err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?",
+		in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if previous.RequestHash != confirmationRequestHash(in) {
+		return nil, ErrIdempotencyConflict
+	}
+	var result Confirmation
+	if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {
+		return nil, fmt.Errorf("decode confirmation idempotency response: %w", err)
+	}
+	return &result, nil
+}
+
+func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in ConfirmChapterInput, workspace GenerationContext) (Confirmation, bool, error) {
+	var result Confirmation
+	replayed := false
+	hash := confirmationRequestHash(in)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var previous confirmationIdempotencyRow
+		err := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error
+		if err == nil {
+			if previous.RequestHash != hash {
+				return ErrIdempotencyConflict
+			}
+			if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {
+				return err
+			}
+			replayed = true
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var project projectRow
+		if err := tx.Where("id = ?", in.ProjectID).First(&project).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		var chapter chapterRow
+		if err := tx.Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID).First(&chapter).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if chapter.CurrentVersionID == nil || *chapter.CurrentVersionID != in.ExpectedChapterVersionID ||
+			int(project.SpecRevision) != in.ExpectedSpecRevision || project.TemplateVersion != workspace.Basis.TemplateVersion {
+			return ErrVersionConflict
+		}
+		var version chapterVersionRow
+		if err := tx.Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).First(&version).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrVersionConflict
+			}
+			return err
+		}
+		result = newConfirmation(in, workspace)
+		details, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		if err := tx.Create(&confirmationRow{ID: result.ID, ChapterID: in.ChapterID, ChapterVersionID: in.ExpectedChapterVersionID, Valid: true, DetailsJSON: string(details)}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&chapterVersionRow{}).Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).Update("confirmation_valid", true).Error; err != nil {
+			return err
+		}
+		response, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		return tx.Create(&confirmationIdempotencyRow{ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
+			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash, ResponseJSON: string(response)}).Error
+	})
+	return result, replayed, err
+}
+
+func (s *SQLiteCandidateAdoptionStore) GetCandidate(ctx context.Context, projectID, candidateID string) (Candidate, error) {
+	var row candidateRow
+	if err := s.db.WithContext(ctx).Where("id = ? AND project_id = ?", candidateID, projectID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Candidate{}, ErrNotFound
+		}
+		return Candidate{}, err
+	}
+	return candidateFromRow(row)
+}
+
+func (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, projectID, chapterID string) (GenerationContext, error) {
+	tx := s.db.WithContext(ctx)
+	var project projectRow
+	if err := tx.Where("id = ?", projectID).First(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return GenerationContext{}, ErrNotFound
+		}
+		return GenerationContext{}, err
+	}
+	var row chapterRow
+	if err := tx.Where("id = ? AND project_id = ?", chapterID, projectID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return GenerationContext{}, ErrNotFound
+		}
+		return GenerationContext{}, err
+	}
+	chapter, err := s.chapterFromRow(tx, row)
+	if err != nil {
+		return GenerationContext{}, err
+	}
+	basis := Basis{
+		SpecRevision:     int(project.SpecRevision),
+		ChapterVersionID: chapter.CurrentVersionID,
+		TemplateID:       project.TemplateID,
+		TemplateVersion:  project.TemplateVersion,
+	}
+	return GenerationContext{
+		ProjectID: projectID, ChapterID: chapterID, SpecRevision: int(project.SpecRevision),
+		ChapterVersionID: chapter.CurrentVersionID, Basis: basis, Chapter: chapter,
+	}, nil
+}
+
+func (s *SQLiteCandidateAdoptionStore) ListChapters(ctx context.Context, projectID string) ([]Chapter, error) {
+	tx := s.db.WithContext(ctx)
+	var rows []chapterRow
+	if err := tx.Where("project_id = ?", projectID).Order("section_id ASC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	chapters := make([]Chapter, 0, len(rows))
+	for _, row := range rows {
+		chapter, err := s.chapterFromRow(tx, row)
+		if err != nil {
+			return nil, err
+		}
+		chapters = append(chapters, chapter)
+	}
+	return chapters, nil
+}
+
+func (s *SQLiteCandidateAdoptionStore) ReplayCandidateAcceptance(ctx context.Context, in AcceptCandidateInput) (*AcceptResult, error) {
+	var row adoptionIdempotencyRow
+	err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if row.RequestHash != requestHash(in) {
+		return nil, ErrIdempotencyConflict
+	}
+	var chapter Chapter
+	if err := json.Unmarshal([]byte(row.ResponseJSON), &chapter); err != nil {
+		return nil, fmt.Errorf("decode idempotency response: %w", err)
+	}
+	return &AcceptResult{Chapter: chapter, Replayed: true}, nil
+}
+
+func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in AcceptCandidateInput, candidate Candidate) (AcceptResult, error) {
+	var result AcceptResult
+	hash := requestHash(in)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing adoptionIdempotencyRow
+		lookupErr := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&existing).Error
+		if lookupErr == nil {
+			if existing.RequestHash != hash {
+				return ErrIdempotencyConflict
+			}
+			if err := json.Unmarshal([]byte(existing.ResponseJSON), &result.Chapter); err != nil {
+				return fmt.Errorf("decode idempotency response: %w", err)
+			}
+			result.Replayed = true
+			return nil
+		}
+		if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+			return lookupErr
+		}
+
+		var project projectRow
+		if err := tx.Where("id = ?", in.ProjectID).First(&project).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if project.SpecRevision != int64(in.ExpectedSpecRevision) {
+			return ErrVersionConflict
+		}
+		var chapter chapterRow
+		if err := tx.Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID).First(&chapter).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if !sameOptionalString(chapter.CurrentVersionID, in.ExpectedChapterVersionID) {
+			return ErrVersionConflict
+		}
+		current, err := s.chapterFromRow(tx, chapter)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(current.BodyMarkdown) != "" && !in.ReplaceExisting {
+			return ErrInvalidState
+		}
+
+		oldVersionID := chapter.CurrentVersionID
+		newVersionID := uuid.NewString()
+		sourceJSON, err := json.Marshal(normalizeIDs(candidate.SourceIDs))
+		if err != nil {
+			return err
+		}
+		reviewJSON, err := json.Marshal(candidate.ReviewItems)
+		if err != nil {
+			return err
+		}
+		version := chapterVersionRow{
+			ID: newVersionID, ProjectID: in.ProjectID, ChapterID: in.ChapterID,
+			ParentVersionID: oldVersionID, CandidateID: candidate.ID,
+			BodyMarkdown: candidate.BodyMarkdown, SourceIDsJSON: string(sourceJSON),
+			ReviewItemsJSON: string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),
+			ConfirmationValid: false, CreatedBy: in.ActorID,
+		}
+		if err := tx.Create(&version).Error; err != nil {
+			return err
+		}
+		if err := tx.Create(&confirmationRow{ID: uuid.NewString(), ChapterID: in.ChapterID, ChapterVersionID: newVersionID, Valid: false, DetailsJSON: "{}"}).Error; err != nil {
+			return err
+		}
+		query := tx.Model(&chapterRow{}).Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID)
+		if oldVersionID == nil {
+			query = query.Where("current_version_id IS NULL")
+		} else {
+			query = query.Where("current_version_id = ?", *oldVersionID)
+		}
+		if result := query.Update("current_version_id", newVersionID); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected != 1 {
+			return ErrVersionConflict
+		}
+		if result := tx.Model(&projectRow{}).Where("id = ? AND project_version = ?", in.ProjectID, project.ProjectVersion).Update("project_version", gorm.Expr("project_version + 1")); result.Error != nil {
+			return result.Error
+		} else if result.RowsAffected != 1 {
+			return ErrVersionConflict
+		}
+
+		current.CurrentVersionID = &newVersionID
+		current.BodyMarkdown = candidate.BodyMarkdown
+		current.SourceIDs = normalizeIDs(candidate.SourceIDs)
+		current.ReviewItems = candidate.ReviewItems
+		current.ConfirmationValid = false
+		result.Chapter = current
+		responseJSON, err := json.Marshal(result.Chapter)
+		if err != nil {
+			return err
+		}
+		if err := tx.Create(&adoptionIdempotencyRow{
+			ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
+			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
+			ChapterVersionID: newVersionID, ResponseJSON: string(responseJSON),
+		}).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	return result, err
+}
+
+func (s *SQLiteCandidateAdoptionStore) UpsertProject(ctx context.Context, id string, version int) error {
+	row := projectRow{
+		ID: id, TenantID: 1, Name: id, Status: "draft", ProjectVersion: int64(version),
+		SpecRevision: 0, SpecJSON: "{}", TemplateID: "template-demo", TemplateVersion: "1",
+	}
+	return s.db.WithContext(ctx).Save(&row).Error
+}
+
+func (s *SQLiteCandidateAdoptionStore) UpsertChapter(ctx context.Context, chapter Chapter, specRevision int) error {
+	if err := s.db.WithContext(ctx).Save(&chapterRow{
+		ID: chapter.ID, ProjectID: chapter.ProjectID, SectionID: chapter.SectionID,
+		Title: chapter.Title, CurrentVersionID: chapter.CurrentVersionID,
+	}).Error; err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Model(&projectRow{}).Where("id = ?", chapter.ProjectID).Update("spec_revision", specRevision).Error
+}
+
+func (s *SQLiteCandidateAdoptionStore) UpsertChapterWithBasis(ctx context.Context, chapter Chapter, specRevision int, _ Basis) error {
+	if err := s.UpsertChapter(ctx, chapter, specRevision); err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Model(&projectRow{}).Where("id = ?", chapter.ProjectID).Update("spec_revision", specRevision).Error
+}
+
+func (s *SQLiteCandidateAdoptionStore) UpsertCandidate(ctx context.Context, candidate Candidate) error {
+	sources, err := json.Marshal(normalizeIDs(candidate.SourceIDs))
+	if err != nil {
+		return err
+	}
+	basis, err := json.Marshal(candidate.Basis)
+	if err != nil {
+		return err
+	}
+	reviews, err := json.Marshal(candidate.ReviewItems)
+	if err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Save(&candidateRow{
+		ID: candidate.ID, ProjectID: candidate.ProjectID, ChapterID: candidate.ChapterID,
+		RunID: candidate.RunID, BodyMarkdown: candidate.BodyMarkdown,
+		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: candidate.Validity,
+		ReviewItemsJSON: string(reviews),
+	}).Error
+}
+
+func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRow) (Chapter, error) {
+	chapter := Chapter{
+		ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
+		CurrentVersionID: row.CurrentVersionID, SourceIDs: []string{}, ReviewItems: []ReviewItem{},
+	}
+	if row.CurrentVersionID == nil {
+		return chapter, nil
+	}
+	var version chapterVersionRow
+	if err := tx.Where("id = ? AND project_id = ? AND chapter_id = ?", *row.CurrentVersionID, row.ProjectID, row.ID).First(&version).Error; err != nil {
+		return Chapter{}, err
+	}
+	chapter.BodyMarkdown = version.BodyMarkdown
+	chapter.ConfirmationValid = version.ConfirmationValid
+	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &chapter.SourceIDs); err != nil {
+		return Chapter{}, err
+	}
+	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &chapter.ReviewItems); err != nil {
+		return Chapter{}, err
+	}
+	return chapter, nil
+}
+
+func candidateFromRow(row candidateRow) (Candidate, error) {
+	var candidate Candidate
+	candidate.ID, candidate.ProjectID, candidate.ChapterID, candidate.RunID = row.ID, row.ProjectID, row.ChapterID, row.RunID
+	candidate.BodyMarkdown, candidate.Validity = row.BodyMarkdown, row.Validity
+	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &candidate.SourceIDs); err != nil {
+		return Candidate{}, err
+	}
+	if err := json.Unmarshal([]byte(row.BasisJSON), &candidate.Basis); err != nil {
+		return Candidate{}, err
+	}
+	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &candidate.ReviewItems); err != nil {
+		return Candidate{}, err
+	}
+	return candidate, nil
+}
