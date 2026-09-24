@@ -188,4 +188,3 @@ func TestReadDeliveryInputReturnsCurrentSnapshotAndEmptyChapters(t *testing.T) {
 	require.NoError(t, store.DB().Model(&confirmationRow{}).Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", "chapter-1", version, true).Count(&validConfirmations).Error)
 	require.Equal(t, int64(1), validConfirmations, "only the latest confirmation for a chapter version remains current")
 }
-
