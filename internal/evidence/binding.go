@@ -2,6 +2,8 @@ package evidence
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -19,6 +21,8 @@ var ErrAssetNotFound = errors.New("asset not found")
 
 // ErrInvalidBinding 表示绑定入参不成立（缺项目或资料 ID）。
 var ErrInvalidBinding = errors.New("invalid binding input")
+
+var ErrIdempotencyConflict = errors.New("idempotency conflict")
 
 // 修订行的状态。旧修订不删除、只标 superseded：冻结与确认要能回指「当时那一版」。
 const (
@@ -102,6 +106,20 @@ type Bindings struct {
 	db *gorm.DB
 }
 
+type operationRow struct {
+	TenantID     uint64 `gorm:"primaryKey"`
+	UserID       string `gorm:"primaryKey;size:64"`
+	Operation    string `gorm:"primaryKey;size:40"`
+	Target       string `gorm:"primaryKey;size:100"`
+	Key          string `gorm:"primaryKey;size:128"`
+	BodyHash     string `gorm:"not null;size:64"`
+	ResponseJSON string `gorm:"column:response_json;not null;type:text"`
+	ResponseCode int    `gorm:"not null"`
+	CreatedAt    time.Time
+}
+
+func (operationRow) TableName() string { return "lingdoc_operations" }
+
 // NewBindings 组装绑定存储。
 func NewBindings(db *gorm.DB) *Bindings { return &Bindings{db: db} }
 
@@ -172,6 +190,75 @@ func (b *Bindings) Bind(ctx context.Context, in BindInput) (Asset, error) {
 		return Asset{}, err
 	}
 	return row.toAsset(), nil
+}
+
+func (b *Bindings) bindTx(tx *gorm.DB, in BindInput) (Asset, error) {
+	if in.ProjectID == "" || in.KnowledgeID == "" {
+		return Asset{}, ErrInvalidBinding
+	}
+	var existing ProjectAsset
+	if err := tx.Where("project_id = ? AND knowledge_id = ?", in.ProjectID, in.KnowledgeID).First(&existing).Error; err == nil {
+		return existing.toAsset(), nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return Asset{}, err
+	}
+	fp := FingerprintOf(in.Signal)
+	row := ProjectAsset{ID: uuid.New().String(), TenantID: in.TenantID, ProjectID: in.ProjectID,
+		KnowledgeID: in.KnowledgeID, KnowledgeBaseID: in.KnowledgeBaseID, Origin: OriginWeKnora,
+		Title: in.Title, AssetRevision: 1, ProcessingState: string(ProcessingStateOf(in.Signal.ParseStatus)), CreatedBy: in.CreatedBy}
+	if err := tx.Create(&row).Error; err != nil {
+		return Asset{}, err
+	}
+	if err := tx.Create(&ProjectAssetRevision{ID: uuid.New().String(), AssetID: row.ID, RevisionNo: 1,
+		KnowledgeID: row.KnowledgeID, ContentHash: fp.Digest, Status: RevisionActive, Metadata: metadataFor(fp)}).Error; err != nil {
+		return Asset{}, err
+	}
+	return row.toAsset(), nil
+}
+
+// BindIdempotent persists the exact bind response in the workspace operation
+// table. The write and the operation record share one transaction, so a retry
+// after a response loss cannot create a second binding or a different result.
+func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, target, key string, in BindInput) (Asset, bool, error) {
+	if len(key) < 8 || len(key) > 128 || userID == "" {
+		return Asset{}, false, ErrInvalidBinding
+	}
+	body, err := json.Marshal(in)
+	if err != nil {
+		return Asset{}, false, err
+	}
+	sum := sha256.Sum256(body)
+	bodyHash := hex.EncodeToString(sum[:])
+	var result Asset
+	var replay bool
+	err = b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var previous operationRow
+		err := tx.Where("tenant_id = ? AND user_id = ? AND operation = ? AND target = ? AND key = ?", tenantID, userID, "bindAsset", target, key).First(&previous).Error
+		if err == nil {
+			if previous.BodyHash != bodyHash {
+				return ErrIdempotencyConflict
+			}
+			if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {
+				return err
+			}
+			replay = true
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		result, err = b.bindTx(tx, in)
+		if err != nil {
+			return err
+		}
+		response, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		return tx.Create(&operationRow{TenantID: tenantID, UserID: userID, Operation: "bindAsset", Target: target, Key: key,
+			BodyHash: bodyHash, ResponseJSON: string(response), ResponseCode: 201}).Error
+	})
+	return result, replay, err
 }
 
 // ObserveAsset 用一次新观测更新绑定：指纹变了就递增版本并新建修订行，

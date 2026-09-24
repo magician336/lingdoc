@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -19,6 +20,7 @@ type Handler struct {
 	service  *Service
 	bindings *evidence.Bindings
 	gateway  evidence.AssetGateway
+	db       *gorm.DB
 }
 
 func NewHandler(db *gorm.DB) *Handler {
@@ -27,6 +29,7 @@ func NewHandler(db *gorm.DB) *Handler {
 		service:  NewService(db, ContractDemoTemplate{}),
 		bindings: bindings,
 		gateway:  evidence.NewAssetGateway(bindings, tenantAssetAuthorizer{bindings: bindings}),
+		db:       db,
 	}
 }
 
@@ -42,6 +45,7 @@ func (h *Handler) Register(v1 *gin.RouterGroup) {
 	group.PUT("/projects/:projectId/members", h.saveMembers)
 	group.GET("/projects/:projectId/chapters", h.listChapters)
 	group.GET("/projects/:projectId/assets", h.listAssets)
+	group.POST("/projects/:projectId/assets", h.bindAsset)
 	group.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	group.GET("/projects/:projectId/access-status", h.accessStatus)
 }
@@ -89,6 +93,12 @@ func sendError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrInvalidRequest):
 		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, evidence.ErrInvalidBinding):
+		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, evidence.ErrIdempotencyConflict):
+		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
+	case errors.Is(err, evidence.ErrAssetNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrNotFound):
 		status, code, message = 404, "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrVersionConflict):
@@ -287,6 +297,60 @@ func (h *Handler) listAssets(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, resolved.Allowed, false)
+}
+
+type bindAssetInput struct {
+	KnowledgeID string `json:"knowledge_id"`
+}
+
+func (h *Handler) bindAsset(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	projectID := c.Param("projectId")
+	if err := h.service.Authorize(c.Request.Context(), actor, projectID, "write"); err != nil {
+		sendError(c, err)
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input bindAssetInput
+	if !decodeBody(c, &input) || strings.TrimSpace(input.KnowledgeID) == "" {
+		return
+	}
+	var knowledge types.Knowledge
+	if err := h.db.WithContext(c.Request.Context()).Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", actor.TenantID, input.KnowledgeID).First(&knowledge).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			sendError(c, evidence.ErrAssetNotFound)
+		} else {
+			sendError(c, err)
+		}
+		return
+	}
+	asset, replay, err := h.bindings.BindIdempotent(c.Request.Context(), actor.TenantID, actor.UserID, projectID, key, evidence.BindInput{
+		TenantID: actor.TenantID, ProjectID: projectID, KnowledgeID: knowledge.ID,
+		KnowledgeBaseID: knowledge.KnowledgeBaseID, Title: knowledge.Title, CreatedBy: actor.UserID,
+		Signal: evidence.KnowledgeSignal{KnowledgeID: knowledge.ID, ParseStatus: knowledge.ParseStatus, FileHash: knowledge.FileHash, FileSize: knowledge.FileSize, ProcessedAt: valueTime(knowledge.ProcessedAt)},
+	})
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	status := http.StatusCreated
+	if replay {
+		status = http.StatusOK
+	}
+	sendOK(c, status, asset, replay)
+}
+
+func valueTime(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 func (h *Handler) saveChapter(c *gin.Context) {
