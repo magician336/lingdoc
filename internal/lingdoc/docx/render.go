@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -209,11 +210,44 @@ func containsUnsupportedMarkdown(rawLine string) bool {
 		return true
 	}
 	return inlineEmphasis.MatchString(probe) ||
+		hasUnderscoreEmphasis(probe) ||
 		inlineCode.MatchString(probe) ||
 		inlineLink.MatchString(probe) ||
 		referenceDefinition.MatchString(probe) ||
 		inlineHTMLOrAutolink.MatchString(probe) ||
 		inlineMath.MatchString(probe)
+}
+
+
+// hasUnderscoreEmphasis detects the supported Markdown-emphasis shape without
+// treating intraword underscores as markup. Common identifiers such as
+// foo_bar_baz remain plain text, while "_重点_" and "A _重点_ B" are rejected.
+func hasUnderscoreEmphasis(value string) bool {
+	runes := []rune(value)
+	for i, r := range runes {
+		if r != '_' || i+1 >= len(runes) || unicode.IsSpace(runes[i+1]) {
+			continue
+		}
+		// An opening underscore inside an identifier is literal text.
+		if i > 0 && isWordRune(runes[i-1]) {
+			continue
+		}
+		for j := i + 1; j < len(runes); j++ {
+			if runes[j] != '_' || j == i+1 || unicode.IsSpace(runes[j-1]) {
+				continue
+			}
+			// A closing underscore followed by a word rune is also intraword.
+			if j+1 < len(runes) && isWordRune(runes[j+1]) {
+				continue
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func isWordRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
 func paragraph(b *strings.Builder, style, value string) {
