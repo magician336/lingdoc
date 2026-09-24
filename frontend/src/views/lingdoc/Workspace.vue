@@ -141,6 +141,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { getCandidate, type Candidate } from '@/api/lingdoc/candidateAdoption'
 import { getGeneration, startGeneration, type GenerationRun } from '@/api/lingdoc/generation'
+import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
   activateProject, bindAsset, createProject, getProject, getSource, listAssets, listChapters, listProjects,
   retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type Source,
@@ -376,13 +377,13 @@ async function startDraft() {
     expected_spec_revision: project.value.spec_revision,
     expected_chapter_version_id: chapter.value.current_version_id,
   }
-  const key = operationKey(`generation:${chapterId}`, input)
   try {
+    const key = await generationIdempotencyKey(localStorage, projectId, chapterId, input)
     const result = await startGeneration(projectId, input, key)
     generationRun.value = result.data
     generationCandidate.value = null
     localStorage.setItem(generationStorageKey(projectId, chapterId), result.data.id)
-    if (!result.meta.replayed) attempts.delete(`generation:${chapterId}`)
+    clearGenerationAttempt(localStorage, projectId, chapterId)
     await refreshGeneration(result.data.id)
   } catch (error) { failure(error) }
   finally { busy.value = false }
