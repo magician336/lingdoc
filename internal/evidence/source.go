@@ -124,6 +124,12 @@ func (r *sourceResolver) resolveOne(ctx context.Context, asset Asset, hit *types
 		src.Status = SourceStale
 		return src, nil
 	}
+	if present, known, err := originKnowledgePresent(ctx, r.origins, hit.KnowledgeID); err != nil {
+		return Source{}, err
+	} else if known && !present {
+		src.Status = SourceUnavailable
+		return src, nil
+	}
 
 	origin, ok, err := r.origins.OriginText(ctx, hit.KnowledgeID)
 	if err != nil {
@@ -139,6 +145,18 @@ func (r *sourceResolver) resolveOne(ctx context.Context, asset Asset, hit *types
 		src.QuotedTextHash = hashText(src.QuotedText)
 	}
 	return src, nil
+}
+
+// originKnowledgePresent is optional to keep OriginReader useful for callers
+// that only have a text reconstruction service. The production reader exposes
+// presence, so a deleted knowledge row cannot fall through to weak checks.
+func originKnowledgePresent(ctx context.Context, origins OriginReader, knowledgeID string) (present, known bool, err error) {
+	reader, ok := origins.(OriginPresenceReader)
+	if !ok {
+		return true, false, nil
+	}
+	present, err = reader.OriginKnowledgePresent(ctx, knowledgeID)
+	return present, true, err
 }
 
 // quoteFromOrigin 是强档判据：原文可取回时，逐字比对坐标指向的那一段。

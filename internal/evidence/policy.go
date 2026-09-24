@@ -195,6 +195,11 @@ func (p *sourcePolicy) recheck(ctx context.Context, asset Asset, src Source) (So
 		return SourceStale, fmt.Sprintf("锚点指向的知识 %s 不是这份资料第 %d 版的知识 %s",
 			src.Anchor.KnowledgeID, asset.AssetRevision, known), nil
 	}
+	if present, known, err := originKnowledgePresent(ctx, p.origins, src.Anchor.KnowledgeID); err != nil {
+		return "", "", err
+	} else if known && !present {
+		return SourceUnavailable, "锚点指向的知识已删除，不能作为弱档来源", nil
+	}
 
 	origin, ok, err := p.origins.OriginText(ctx, src.Anchor.KnowledgeID)
 	if err != nil {

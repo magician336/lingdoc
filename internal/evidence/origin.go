@@ -51,6 +51,13 @@ type KnowledgeReader interface {
 	UsesBuiltinConverter(ctx context.Context, knowledgeID string) (bool, error)
 }
 
+// OriginPresenceReader lets callers distinguish a missing knowledge row from a
+// present row whose original text cannot be reconstructed. The latter is a
+// legitimate weak-evidence case; the former must never be treated as one.
+type OriginPresenceReader interface {
+	OriginKnowledgePresent(ctx context.Context, knowledgeID string) (bool, error)
+}
+
 // NewOriginReader 组装固定实现：手工资料的正文取自 metadata，
 // 纯文本文件直读文件字节，其余一律 ok=false（调用方降弱档）。
 func NewOriginReader(knowledge KnowledgeReader) OriginReader {
@@ -59,6 +66,17 @@ func NewOriginReader(knowledge KnowledgeReader) OriginReader {
 
 type fileOriginReader struct {
 	knowledge KnowledgeReader
+}
+
+func (r *fileOriginReader) OriginKnowledgePresent(ctx context.Context, knowledgeID string) (bool, error) {
+	if knowledgeID == "" {
+		return false, nil
+	}
+	row, err := r.knowledge.KnowledgeForOrigin(ctx, knowledgeID)
+	if err != nil {
+		return false, err
+	}
+	return row != nil, nil
 }
 
 func (r *fileOriginReader) OriginText(ctx context.Context, knowledgeID string) (string, bool, error) {
