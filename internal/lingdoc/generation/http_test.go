@@ -1,6 +1,7 @@
 package generation
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,3 +32,38 @@ func TestGenerationRoutesMatchContractAndRejectMissingActor(t *testing.T) {
 		t.Fatalf("GET status = %d, want %d", response.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestGenerationStartStrictlyValidatesRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	validResolver := func(*gin.Context) (Actor, bool) {
+		return Actor{TenantID: 1, UserID: "user-1"}, true
+	}
+	oversized := fmt.Sprintf(`{"instruction":"%s"}`, strings.Repeat("x", maxGenerationRequestBytes))
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "unknown field", body: `{"chapter_id":"chapter-1","unexpected":true}`},
+		{name: "second json value", body: `{"chapter_id":"chapter-1"} {}`},
+		{name: "trailing data", body: `{"chapter_id":"chapter-1"} garbage`},
+		{name: "body too large", body: oversized},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := gin.New()
+			RegisterRoutes(router.Group("/api/v1/lingdoc"), NewHandler(nil, validResolver))
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/lingdoc/projects/p-demo/generations", strings.NewReader(tt.body))
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("POST status = %d, want %d; body=%s", response.Code, http.StatusBadRequest, response.Body.String())
+			}
+			if !strings.Contains(response.Body.String(), `"code":"invalid_request"`) {
+				t.Fatalf("response missing invalid_request error: %s", response.Body.String())
+			}
+		})
+	}
+}
+
