@@ -67,6 +67,10 @@ func decodeGenerationRequest(body io.Reader, dst *Request) error {
 	if len(encoded) > maxGenerationRequestBytes {
 		return ErrInvalidRequest
 	}
+	encoded = bytes.TrimSpace(encoded)
+	if len(encoded) == 0 || encoded[0] != '{' {
+		return ErrInvalidRequest
+	}
 	decoder := json.NewDecoder(bytes.NewReader(encoded))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
