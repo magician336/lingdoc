@@ -69,4 +69,3 @@ func TestGenerationStartStrictlyValidatesRequestBody(t *testing.T) {
 		})
 	}
 }
-
