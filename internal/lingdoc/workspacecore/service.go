@@ -467,6 +467,7 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 	}
 	return views, nil
 }
+
 type SaveChapterInput struct {
 	ExpectedChapterVersionID *string  `json:"expected_chapter_version_id"`
 	ExpectedSpecRevision     int64    `json:"expected_spec_revision"`
