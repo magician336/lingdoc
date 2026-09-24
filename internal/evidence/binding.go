@@ -244,13 +244,18 @@ func (b *Bindings) bindTx(tx *gorm.DB, in BindInput) (Asset, error) {
 }
 
 // BindIdempotent persists the exact bind response in the workspace operation
-// table. The write and the operation record share one transaction, so a retry
-// after a response loss cannot create a second binding or a different result.
+// table. The idempotency fingerprint contains only the client request field;
+// title, parse state and content signals are server snapshots and may change
+// between a lost response and its retry. The write and operation record share
+// one transaction, so a retry cannot create a second binding or a different
+// result.
 func (b *Bindings) BindIdempotent(ctx context.Context, tenantID uint64, userID, target, key string, in BindInput) (Asset, bool, error) {
 	if len(key) < 8 || len(key) > 128 || userID == "" {
 		return Asset{}, false, ErrInvalidBinding
 	}
-	body, err := json.Marshal(in)
+	body, err := json.Marshal(struct {
+		KnowledgeID string `json:"knowledge_id"`
+	}{KnowledgeID: strings.TrimSpace(in.KnowledgeID)})
 	if err != nil {
 		return Asset{}, false, err
 	}
