@@ -121,6 +121,22 @@ func TestExecuteCreatesCandidateOnlyForVerifiedSources(t *testing.T) {
 	}
 }
 
+func TestExecuteAllowsRepeatedCitationOfOneSource(t *testing.T) {
+	svc, repo := generationFixture()
+	svc.Model = testModel{draft: Draft{
+		BodyMarkdown: "First claim [[source:source-1]]. Another claim [[source:source-1]].",
+		Sources:      []Source{{ID: "source-1"}},
+	}}
+
+	run, err := svc.Execute(context.Background(), "run-1")
+	if err != nil || run.Status != StatusSucceeded {
+		t.Fatalf("Execute() = (%+v, %v), want succeeded", run, err)
+	}
+	if len(repo.candidate.SourceIDs) != 1 || repo.candidate.SourceIDs[0] != "source-1" {
+		t.Fatalf("candidate source IDs = %v, want one unique source ID", repo.candidate.SourceIDs)
+	}
+}
+
 func TestExecuteInterruptsWhenInputIsStale(t *testing.T) {
 	svc, repo := generationFixture()
 	svc.Currentness = testCurrentness{current: false}
