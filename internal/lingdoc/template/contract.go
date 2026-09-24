@@ -13,30 +13,30 @@ type Reader interface {
 // explicitly marked as a demo and must never be presented as a formal grant
 // application template.
 type Template struct {
-	ID             string
-	Name           string
-	Version        string
-	IsDemo         bool
-	Sections       []Section
-	RequiredFields []string
-	RulesetHash    string
-	Rules          []Rule
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Version        string    `json:"version"`
+	IsDemo         bool      `json:"is_demo"`
+	Sections       []Section `json:"sections"`
+	RequiredFields []string  `json:"required_fields"`
+	RulesetHash    string    `json:"ruleset_hash"`
+	Rules          []Rule    `json:"rules"`
 }
 
 // Section identifies one required chapter in a template.
 type Section struct {
-	ID       string
-	Title    string
-	Required bool
+	ID       string `json:"section_id"`
+	Title    string `json:"title"`
+	Required bool   `json:"required"`
 }
 
 // Rule describes a deterministic delivery check. Parameters deliberately keep
 // JSON-shaped values so later rules can use typed configuration without a DTO
 // redesign.
 type Rule struct {
-	ID         string
-	Kind       string
-	Severity   string
-	Evaluator  string
-	Parameters map[string]any
+	ID         string         `json:"rule_id"`
+	Kind       string         `json:"kind"`
+	Severity   string         `json:"severity"`
+	Evaluator  string         `json:"evaluator"`
+	Parameters map[string]any `json:"parameters"`
 }
