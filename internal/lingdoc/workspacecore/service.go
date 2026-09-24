@@ -272,21 +272,7 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 			row.SpecJSON, row.SpecRevision, row.ProjectVersion = string(raw), row.SpecRevision+1, row.ProjectVersion+1
 		}
 		view, err := projectView(tx, row)
-		re
-}
-
-func isWorkspaceDomainError(err error) bool {
-	for _, domainErr := range []error{
-		ErrInvalidRequest, ErrInvalidState, ErrVersionConflict, ErrIdempotencyConflict,
-		ErrRequestInProgress, ErrSourceUnavailable, ErrNotFound,
-		gorm.ErrRecordNotFound, sql.ErrNoRows, context.Canceled, context.DeadlineExceeded,
-	} {
-		if errors.Is(err, domainErr) {
-			return true
-		}
-	}
-	return false
-}n view, 200, err
+		return view, 200, err
 	})
 	if err != nil && !isWorkspaceDomainError(err) {
 		// SQLite can reject a transaction that read the old row before another
@@ -300,6 +286,19 @@ func isWorkspaceDomainError(err error) bool {
 		}
 	}
 	return raw, status, replayed, err
+}
+
+func isWorkspaceDomainError(err error) bool {
+	for _, domainErr := range []error{
+		ErrInvalidRequest, ErrInvalidState, ErrVersionConflict, ErrIdempotencyConflict,
+		ErrRequestInProgress, ErrSourceUnavailable, ErrNotFound,
+		gorm.ErrRecordNotFound, sql.ErrNoRows, context.Canceled, context.DeadlineExceeded,
+	} {
+		if errors.Is(err, domainErr) {
+			return true
+		}
+	}
+	return false
 }
 
 type ActivateProjectInput struct {
