@@ -126,7 +126,6 @@ func TestValidateRefreshesCurrentSignalBeforeAllowingSource(t *testing.T) {
 }
 
 func TestValidateRefreshesReparseFingerprintBeforeAllowingSource(t *testing.T) {
-	ctx := context.Background()
 	c := newPolicyCase(t, &fakeKBRead{allowed: map[string]bool{"kb-ok": true}})
 	src := c.resolve(t, c.asset)
 	current := &mutableKnowledgeSignal{
