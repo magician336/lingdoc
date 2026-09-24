@@ -340,11 +340,8 @@ func TestValidateRejectsAnAnchorFromAnotherKnowledge(t *testing.T) {
 	}
 }
 
-// 重解析后底座的算的是新的知识 ID，记在**修订行**上；资料行上的那个是绑定时那份，
-// 不跟着变。归位判据必须取修订行，否则新版引用会被判成 stale（假的 stale）。
-//
-// 这条来源只能手搓：产出侧的 Resolve 拿 asset.KnowledgeID（绑定那份）与命中比对，
-// 会先一步拒掉新知识的命中（见 §8 Q5 记的漂移）。这里钉的是复核侧的判据本身。
+// 重解析后底座的算的是新的知识 ID，记在当前修订行上；公开 Asset 也必须跟随
+// 当前修订，才能让新版检索命中通过 Resolve，再由 Validate 复核同一份知识。
 func TestValidateAcceptsTheKnowledgeRecordedForThatRevision(t *testing.T) {
 	ctx := context.Background()
 	c := newPolicyCase(t, &fakeKBRead{allowed: map[string]bool{"kb-ok": true}})
@@ -363,8 +360,8 @@ func TestValidateAcceptsTheKnowledgeRecordedForThatRevision(t *testing.T) {
 	if len(latest) != 1 || latest[0].AssetRevision != 2 {
 		t.Fatalf("前提不成立：库里的资料 = %+v", latest)
 	}
-	if latest[0].KnowledgeID != "k-demo" {
-		t.Fatalf("前提不成立：资料行上的知识不该跟着重解析变，得到 %q", latest[0].KnowledgeID)
+	if latest[0].KnowledgeID != "k-demo-v2" {
+		t.Fatalf("前提不成立：公开资料应指向当前修订知识，得到 %q", latest[0].KnowledgeID)
 	}
 
 	path := writeText(t, "v2.txt", c.origin)
