@@ -97,10 +97,10 @@ func TestRejectSilentCitationLoss(t *testing.T) {
 		{"unsupported autolink", func(in *Input) { in.Chapters[0].BodyMarkdown = "<https://example.com>"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported inline html", func(in *Input) { in.Chapters[0].BodyMarkdown = "<em>重点</em>"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported inline math", func(in *Input) { in.Chapters[0].BodyMarkdown = "$x+y$"; in.Chapters[0].SourceIDs = nil }},
-		{"unsupported setext heading", func(in *Input) { in.Chapters[0].BodyMarkdown = "标题\\n---"; in.Chapters[0].SourceIDs = nil }},
+		{"unsupported setext heading", func(in *Input) { in.Chapters[0].BodyMarkdown = "标题\n---"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported indented code", func(in *Input) { in.Chapters[0].BodyMarkdown = "    code"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported hard break", func(in *Input) {
-			in.Chapters[0].BodyMarkdown = "第一行  \\n第二行"
+			in.Chapters[0].BodyMarkdown = "第一行  \n第二行"
 			in.Chapters[0].SourceIDs = nil
 		}},
 		{"invalid XML control", func(in *Input) { in.ProjectName = "测试\x00" }},
