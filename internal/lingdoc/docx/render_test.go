@@ -133,3 +133,39 @@ func TestAllowsLiteralPipeInPlainParagraph(t *testing.T) {
 		t.Fatal("render returned an empty DOCX")
 	}
 }
+
+
+func TestAllowsUnderscoresInsidePlainIdentifiers(t *testing.T) {
+	for _, body := range []string{
+		"foo_bar_baz 是普通标识符。",
+		"snake_case_value 可以作为字段名。",
+		"field_name 不应被当成强调。",
+	} {
+		t.Run(body, func(t *testing.T) {
+			in := demoInput()
+			in.Chapters[1].BodyMarkdown = body
+			data, err := Render(in)
+			if err != nil {
+				t.Fatalf("identifier underscore should remain valid plain text: %v", err)
+			}
+			if len(data) == 0 {
+				t.Fatal("render returned an empty DOCX")
+			}
+		})
+	}
+}
+
+func TestRejectsBoundaryUnderscoreEmphasis(t *testing.T) {
+	for _, body := range []string{
+		"_重点_",
+		"前文 _重点_ 后文",
+	} {
+		t.Run(body, func(t *testing.T) {
+			in := demoInput()
+			in.Chapters[1].BodyMarkdown = body
+			if _, err := Render(in); err == nil {
+				t.Fatal("expected underscore emphasis to be rejected")
+			}
+		})
+	}
+}
