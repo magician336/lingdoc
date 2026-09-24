@@ -125,6 +125,39 @@ func TestValidateRefreshesCurrentSignalBeforeAllowingSource(t *testing.T) {
 	}
 }
 
+
+func TestValidateRefreshesReparseFingerprintBeforeAllowingSource(t *testing.T) {
+	ctx := context.Background()
+	c := newPolicyCase(t, &fakeKBRead{allowed: map[string]bool{"kb-ok": true}})
+	src := c.resolve(t, c.asset)
+	current := &mutableKnowledgeSignal{
+		signal: signal(func(s *KnowledgeSignal) {
+			s.KnowledgeID = "k-demo"
+			s.FileHash = "hash-after-reparse"
+		}),
+		present: true,
+	}
+	c.store.SetKnowledgeSignalReader(current)
+
+	// Call Validate directly: no preceding list/retrieve request may be required
+	// to observe that the original has been reparsed.
+	res := c.validate(t, src)
+	if len(res.Usable) != 0 || len(res.Unusable) != 1 {
+		t.Fatalf("重解析后仍放行旧来源: %+v", res)
+	}
+	if res.Unusable[0].Status != SourceStale {
+		t.Fatalf("重解析后的来源状态 = %q, want stale", res.Unusable[0].Status)
+	}
+
+	assets, err := c.store.BoundAssets(context.Background(), "p-1")
+	if err != nil {
+		t.Fatalf("BoundAssets: %v", err)
+	}
+	if len(assets) != 1 || assets[0].AssetRevision != 2 {
+		t.Fatalf("Validate 未刷新当前修订: %+v, want revision 2", assets)
+	}
+}
+
 // 复核必须现查授权，不许拿产出时的结论复用——否则撤权之后引用照旧可用（F07）。
 func TestValidateReflectsRevocationImmediately(t *testing.T) {
 	// 第 2 次问到时改口：一次 Validate 问一次权限，两次调用之间撤权。
