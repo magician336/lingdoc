@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
 	candidateadoption "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/middleware"
@@ -92,6 +93,7 @@ type RouterParams struct {
 	MemoryHandler                   *handler.MemoryHandler
 	LingDocWorkspace                *workspace.Handler
 	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler `optional:"true"`
+	LingDocGenerationHandler        *generation.Handler                         `optional:"true"`
 }
 
 // NewRouter 创建新的路由
@@ -319,6 +321,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 		if params.LingDocCandidateAdoptionHandler != nil {
 			lingdoc := v1.Group("/lingdoc")
 			candidateadoption.RegisterRoutes(lingdoc, params.LingDocCandidateAdoptionHandler)
+		}
+		if params.LingDocGenerationHandler != nil {
+			lingdoc := v1.Group("/lingdoc")
+			generation.RegisterRoutes(lingdoc, params.LingDocGenerationHandler)
 		}
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
