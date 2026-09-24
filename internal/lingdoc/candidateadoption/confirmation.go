@@ -183,4 +183,3 @@ func newConfirmation(in ConfirmChapterInput, workspace GenerationContext) Confir
 		TemplateVersion: workspace.Basis.TemplateVersion, ActorUserID: in.ActorID,
 		CreatedAt: time.Now().UTC(), Valid: true, ReviewDecisions: decisions}
 }
-
