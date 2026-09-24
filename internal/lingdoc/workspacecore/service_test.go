@@ -403,4 +403,3 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatalf("reconfirmation of current basis not reported: %+v, %v", chapters, err)
 	}
 }
-
