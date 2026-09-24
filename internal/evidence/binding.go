@@ -138,7 +138,11 @@ func (b *Bindings) BoundAssets(ctx context.Context, projectID string) ([]Asset, 
 	}
 	out := make([]Asset, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, row.toAsset())
+		asset, err := b.assetWithCurrentRevision(ctx, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, asset)
 	}
 	return out, nil
 }
@@ -159,7 +163,7 @@ func (b *Bindings) AssetForKnowledge(ctx context.Context, projectID, knowledgeID
 	if err != nil {
 		return Asset{}, err
 	}
-	return row.toAsset(), nil
+	return b.assetWithCurrentRevision(ctx, row)
 }
 
 // Bind 绑定一份资料。同一（项目, 资料）重复绑定返回既有的那一条，不产生新版本——
@@ -475,6 +479,21 @@ func (a ProjectAsset) toAsset() Asset {
 		AssetRevision:   int(a.AssetRevision),
 		ProcessingState: AssetState(a.ProcessingState),
 	}
+}
+
+// assetWithCurrentRevision keeps the public asset identity aligned with the
+// revision that search and source validation use. ProjectAsset.KnowledgeID is
+// the original binding key; a reparse can move the live knowledge ID forward.
+func (b *Bindings) assetWithCurrentRevision(ctx context.Context, row ProjectAsset) (Asset, error) {
+	asset := row.toAsset()
+	revision, err := b.currentRevision(ctx, row.ID, row.AssetRevision)
+	if err != nil {
+		return Asset{}, err
+	}
+	if revision.KnowledgeID != "" {
+		asset.KnowledgeID = revision.KnowledgeID
+	}
+	return asset, nil
 }
 
 // metadataFor 记下这次指纹的依据，人工核对时不必反推。
