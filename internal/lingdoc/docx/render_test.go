@@ -103,6 +103,10 @@ func TestRejectSilentCitationLoss(t *testing.T) {
 			in.Chapters[0].BodyMarkdown = "第一行  \n第二行"
 			in.Chapters[0].SourceIDs = nil
 		}},
+		{"unsupported table", func(in *Input) {
+			in.Chapters[0].BodyMarkdown = "列A | 列B\\n--- | ---\\nA | B"
+			in.Chapters[0].SourceIDs = nil
+		}},
 		{"invalid XML control", func(in *Input) { in.ProjectName = "测试\x00" }},
 		{"invalid disposition", func(in *Input) { in.Chapters[0].ReviewItems[0].Disposition = "unknown" }},
 		{"formal export", func(in *Input) { in.DeliveryKind = "formal" }},
@@ -115,5 +119,17 @@ func TestRejectSilentCitationLoss(t *testing.T) {
 				t.Fatal("expected refusal")
 			}
 		})
+	}
+}
+
+func TestAllowsLiteralPipeInPlainParagraph(t *testing.T) {
+	in := demoInput()
+	in.Chapters[1].BodyMarkdown = "A | B 是普通文本。"
+	data, err := Render(in)
+	if err != nil {
+		t.Fatalf("literal pipe should remain valid plain text: %v", err)
+	}
+	if len(data) == 0 {
+		t.Fatal("render returned an empty DOCX")
 	}
 }
