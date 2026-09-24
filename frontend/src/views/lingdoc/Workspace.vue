@@ -200,7 +200,7 @@ async function selectProject(id: string, force = false) {
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
-    assets.value = assetResult.data
+    assets.value = assetResult.data ?? []
     sources.value = []
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
@@ -241,7 +241,7 @@ async function bindProjectAsset() {
     attempts.delete(`asset:${projectId}`)
     knowledgeId.value = ''
     const refreshed = await listAssets(projectId)
-    assets.value = refreshed.data
+    assets.value = refreshed.data ?? []
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }

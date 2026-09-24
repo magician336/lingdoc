@@ -65,7 +65,7 @@ func (g *assetGateway) ResolveAllowed(
 	requested := normalizeIDs(assetIDs)
 	if len(requested) == 0 {
 		// 空范围是"没有资料"，不是"全部资料"：不触达存储，返回空集合。
-		return &ResolveResult{Requested: []string{}}, nil
+		return &ResolveResult{Requested: []string{}, Allowed: []Asset{}, Denied: []DeniedAsset{}}, nil
 	}
 
 	bound, err := g.bindings.BoundAssets(ctx, projectID)
@@ -77,7 +77,11 @@ func (g *assetGateway) ResolveAllowed(
 		byID[asset.ID] = asset
 	}
 
-	res := &ResolveResult{Requested: requested}
+	res := &ResolveResult{
+		Requested: requested,
+		Allowed:   make([]Asset, 0, len(requested)),
+		Denied:    make([]DeniedAsset, 0, len(requested)),
+	}
 	for _, id := range requested {
 		asset, ok := byID[id]
 		if !ok {
