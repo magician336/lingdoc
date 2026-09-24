@@ -160,7 +160,8 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 }
 
 func TestTwoWritersSameSpecRevision(t *testing.T) {
-	svc := testStore(t, filepath.Join(t.TempDir(), "race.db"))
+	path := filepath.Join(t.TempDir(), "race.db")
+	svc := testStore(t, path)
 	ctx := context.Background()
 	actor := Actor{TenantID: 17, UserID: "writer"}
 	seedTenantMember(t, svc, actor)
@@ -169,6 +170,7 @@ func TestTwoWritersSameSpecRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := asProject(t, raw).ID
+	writers := []*Service{testStore(t, path), testStore(t, path)}
 	start := make(chan struct{})
 	type writeResult struct {
 		value string
@@ -181,7 +183,7 @@ func TestTwoWritersSameSpecRevision(t *testing.T) {
 		go func(i int, value string) {
 			defer wg.Done()
 			<-start
-			_, _, _, err := svc.SaveSpec(ctx, actor, id, "race-spec-"+string(rune('0'+i)), SaveSpecInput{
+			_, _, _, err := writers[i].SaveSpec(ctx, actor, id, "race-spec-"+string(rune('0'+i)), SaveSpecInput{
 				ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": value},
 			})
 			results <- writeResult{value: value, err: err}
