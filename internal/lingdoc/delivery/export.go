@@ -119,7 +119,11 @@ func (s *ExportService) Start(actorUserID, projectID, snapshotID string) (Export
 	if snapshot.Check.Status != CheckPassed {
 		return ExportArtifact{}, ErrExportPreflightBlocked
 	}
-	if !snapshot.IsCurrent || !s.isCurrent(snapshot.FrozenInput) {
+	current, err := s.isCurrent(snapshot.FrozenInput)
+	if err != nil {
+		return ExportArtifact{}, err
+	}
+	if !snapshot.IsCurrent || !current {
 		return ExportArtifact{}, ErrExportStaleInput
 	}
 	if s.renderer == nil {
@@ -147,7 +151,11 @@ func (s *ExportService) Start(actorUserID, projectID, snapshotID string) (Export
 		}
 		return artifact, nil
 	}
-	if !s.isCurrent(snapshot.FrozenInput) {
+	current, err = s.isCurrent(snapshot.FrozenInput)
+	if err != nil {
+		return ExportArtifact{}, err
+	}
+	if !current {
 		return ExportArtifact{}, ErrExportStaleInput
 	}
 	sum := sha256.Sum256(data)
@@ -183,12 +191,11 @@ func (s *ExportService) authorize(actorUserID, projectID string) error {
 	return s.access.Authorize(actorUserID, projectID)
 }
 
-func (s *ExportService) isCurrent(input DeliveryInput) bool {
+func (s *ExportService) isCurrent(input DeliveryInput) (bool, error) {
 	if s.currentness == nil {
-		return false
+		return false, ErrExportUnavailable
 	}
-	current, err := s.currentness.IsCurrent(input)
-	return err == nil && current
+	return s.currentness.IsCurrent(input)
 }
 
 func cloneExport(artifact ExportArtifact) ExportArtifact {
