@@ -1,0 +1,75 @@
+name: LingDoc Mock
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/lingdoc_mock/**'
+      - 'scripts/ci/requirements-lingdoc.txt'
+      - 'docs/08-本轮实施方案/contracts/**'
+      - 'frontend/src/dev/lingdoc-mock/**'
+      - 'frontend/lingdoc-mock.html'
+      - 'frontend/src/utils/request.ts'
+      - 'frontend/package*.json'
+      - 'frontend/vite.config.ts'
+      - '.github/workflows/lingdoc-mock.yml'
+permissions:
+  contents: read
+concurrency:
+  group: lingdoc-mock-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  mock:
+    name: T06 fixed mock and request consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pip install -r scripts/ci/requirements-lingdoc.txt
+      - name: Test engine, actual contract and corrupt-response rejection
+        run: |
+          python -m unittest discover -s scripts/lingdoc_mock -p 'test_*.py' -v
+          python scripts/lingdoc_mock/server.py --check
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - name: Actual HTTP, Axios request layer and browser consumption
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/lingdoc_mock/server.py > "$RUNNER_TEMP/t06-mock.log" 2>&1 &
+          mock_pid=$!
+          (cd frontend && npm run dev -- --host 127.0.0.1 --strictPort) > "$RUNNER_TEMP/t06-vite.log" 2>&1 &
+          vite_pid=$!
+          trap 'kill "$mock_pid" "$vite_pid" 2>/dev/null || true' EXIT
+          for i in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4010/api/v1/lingdoc/templates/template-demo > /dev/null &&
+               curl --fail --silent http://127.0.0.1:5173/lingdoc-mock.html > /dev/null; then break; fi
+            sleep 1
+          done
+          (cd frontend && LINGDOC_MOCK_ORIGIN=http://127.0.0.1:4010 npx tsx --test src/dev/lingdoc-mock/*.test.*)
+          export CHROME_BIN="$(command -v google-chrome || command -v chromium)"
+          node scripts/lingdoc_mock/browser_smoke.mjs
+      - name: Type-check and build (mock page must not enter release output)
+        working-directory: frontend
+        run: |
+          npm run type-check
+          npm run build-only
+          test ! -e dist/lingdoc-mock.html
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: t06-service-logs-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/t06-mock.log
+            ${{ runner.temp }}/t06-vite.log
+          if-no-files-found: ignore
+          retention-days: 7
