@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,7 @@ type Handler struct {
 	service   *Service
 	bindings  *evidence.Bindings
 	gateway   evidence.AssetGateway
+	kbShares  interfaces.KBShareService
 	knowledge interfaces.KnowledgeBaseService
 	db        *gorm.DB
 }
@@ -33,6 +35,7 @@ func NewHandler(db *gorm.DB, kbShares interfaces.KBShareService, knowledge inter
 		service:   NewService(db, ContractDemoTemplate{}),
 		bindings:  bindings,
 		gateway:   evidence.NewAssetGateway(bindings, authorizer),
+		kbShares:  kbShares,
 		knowledge: knowledge,
 		db:        db,
 	}
@@ -65,6 +68,10 @@ func (a kbReadChecker) CanReadKB(ctx context.Context, actor evidence.Actor, know
 		return false, nil
 	}
 	return access.NewKBPermissions(ctx, a.shares).Check(knowledgeBaseID, ownerTenantID, types.OrgRoleViewer)
+}
+
+func (a kbReadChecker) canReadKnowledgeBase(ctx context.Context, actor Actor, kb *types.KnowledgeBase) (bool, error) {
+	return a.CanReadKB(ctx, evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, kb.ID, kb.TenantID)
 }
 
 func caller(c *gin.Context) (Actor, bool) {
@@ -322,7 +329,7 @@ func (h *Handler) bindAsset(c *gin.Context) {
 		return
 	}
 	var knowledge types.Knowledge
-	if err := h.db.WithContext(c.Request.Context()).Where("tenant_id = ? AND id = ? AND deleted_at IS NULL", actor.TenantID, input.KnowledgeID).First(&knowledge).Error; err != nil {
+	if err := h.db.WithContext(c.Request.Context()).Where("id = ? AND deleted_at IS NULL", input.KnowledgeID).First(&knowledge).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			sendError(c, evidence.ErrAssetNotFound)
 		} else {
@@ -330,8 +337,26 @@ func (h *Handler) bindAsset(c *gin.Context) {
 		}
 		return
 	}
+	if h.knowledge == nil {
+		sendError(c, evidence.ErrAssetNotFound)
+		return
+	}
+	kb, err := h.knowledge.GetKnowledgeBaseByIDOnly(c.Request.Context(), knowledge.KnowledgeBaseID)
+	if err != nil || kb == nil {
+		sendError(c, evidence.ErrAssetNotFound)
+		return
+	}
+	allowed, err := (kbReadChecker{shares: h.kbShares}).canReadKnowledgeBase(c.Request.Context(), actor, kb)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if !allowed {
+		sendError(c, evidence.ErrAssetNotFound)
+		return
+	}
 	asset, replay, err := h.bindings.BindIdempotent(c.Request.Context(), actor.TenantID, actor.UserID, projectID, key, evidence.BindInput{
-		TenantID: actor.TenantID, ProjectID: projectID, KnowledgeID: knowledge.ID,
+		TenantID: kb.TenantID, ProjectID: projectID, KnowledgeID: knowledge.ID,
 		KnowledgeBaseID: knowledge.KnowledgeBaseID, Title: knowledge.Title, CreatedBy: actor.UserID,
 		Signal: evidence.KnowledgeSignal{KnowledgeID: knowledge.ID, ParseStatus: knowledge.ParseStatus, FileHash: knowledge.FileHash, FileSize: knowledge.FileSize, ProcessedAt: valueTime(knowledge.ProcessedAt)},
 	})
@@ -443,7 +468,15 @@ func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID
 		}
 		return false, err
 	}
-	return kb.ChunkingConfig.ResolveParserEngine(knowledge.FileType) == "", nil
+	chunking := kb.ChunkingConfig
+	overrides, err := knowledge.ProcessOverrides()
+	if err != nil {
+		return false, nil
+	}
+	if overrides != nil && len(overrides.ParserEngineRules) > 0 {
+		chunking.ParserEngineRules = overrides.ParserEngineRules
+	}
+	return chunking.ResolveParserEngine(knowledge.FileType) == "", nil
 }
 
 func valueTime(value *time.Time) time.Time {
@@ -516,7 +549,13 @@ func (h *Handler) retrieveSources(c *gin.Context) {
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
 	resolver := evidence.NewSourceResolver(origins)
 	result := make([]evidence.Source, 0)
-	for kbID, knowledgeIDs := range assetsByKB {
+	kbIDs := make([]string, 0, len(assetsByKB))
+	for kbID := range assetsByKB {
+		kbIDs = append(kbIDs, kbID)
+	}
+	sort.Strings(kbIDs)
+	for _, kbID := range kbIDs {
+		knowledgeIDs := assetsByKB[kbID]
 		hits, err := h.knowledge.HybridSearch(c.Request.Context(), kbID, types.SearchParams{QueryText: input.Query, MatchCount: 20, KnowledgeIDs: knowledgeIDs})
 		if err != nil {
 			sendError(c, err)

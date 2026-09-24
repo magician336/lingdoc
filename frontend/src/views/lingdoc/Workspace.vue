@@ -68,6 +68,7 @@
             <li v-for="source in sources" :key="source.id">
               <span><strong>{{ source.locator }}</strong><small>{{ source.status }}</small></span>
               <p>{{ source.quoted_text || '当前版本无法取回原文片段。' }}</p>
+              <button type="button" :disabled="busy" @click="refreshSource(source.id)">重新定位</button>
             </li>
           </ul>
         </section>
@@ -111,7 +112,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
-  activateProject, bindAsset, createProject, getProject, listAssets, listChapters, listProjects,
+  activateProject, bindAsset, createProject, getProject, getSource, listAssets, listChapters, listProjects,
   retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type Source,
 } from '@/api/lingdoc/workspace'
 
@@ -213,6 +214,17 @@ async function searchSources() {
   try {
     const result = await retrieveSources(project.value.id, sourceQuery.value.trim(), assets.value.map(item => item.id))
     sources.value = result.data
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function refreshSource(sourceId: string) {
+  if (!project.value || busy.value) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await getSource(project.value.id, sourceId)
+    sources.value = sources.value.map(item => item.id === sourceId ? result.data : item)
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
