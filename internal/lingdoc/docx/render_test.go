@@ -96,7 +96,10 @@ func TestRejectSilentCitationLoss(t *testing.T) {
 		{"unsupported inline math", func(in *Input) { in.Chapters[0].BodyMarkdown = "$x+y$"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported setext heading", func(in *Input) { in.Chapters[0].BodyMarkdown = "标题\\n---"; in.Chapters[0].SourceIDs = nil }},
 		{"unsupported indented code", func(in *Input) { in.Chapters[0].BodyMarkdown = "    code"; in.Chapters[0].SourceIDs = nil }},
-		{"unsupported hard break", func(in *Input) { in.Chapters[0].BodyMarkdown = "第一行  \\n第二行"; in.Chapters[0].SourceIDs = nil }},
+		{"unsupported hard break", func(in *Input) {
+			in.Chapters[0].BodyMarkdown = "第一行  \\n第二行"
+			in.Chapters[0].SourceIDs = nil
+		}},
 		{"invalid XML control", func(in *Input) { in.ProjectName = "测试\x00" }},
 		{"invalid disposition", func(in *Input) { in.Chapters[0].ReviewItems[0].Disposition = "unknown" }},
 		{"formal export", func(in *Input) { in.DeliveryKind = "formal" }},
