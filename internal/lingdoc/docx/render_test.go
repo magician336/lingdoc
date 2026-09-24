@@ -104,7 +104,7 @@ func TestRejectSilentCitationLoss(t *testing.T) {
 			in.Chapters[0].SourceIDs = nil
 		}},
 		{"unsupported table", func(in *Input) {
-			in.Chapters[0].BodyMarkdown = "列A | 列B\\n--- | ---\\nA | B"
+			in.Chapters[0].BodyMarkdown = "列A | 列B\n--- | ---\nA | B"
 			in.Chapters[0].SourceIDs = nil
 		}},
 		{"invalid XML control", func(in *Input) { in.ProjectName = "测试\x00" }},
