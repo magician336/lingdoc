@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -129,6 +130,17 @@ class F01Runner:
         self.opener = opener
         self.sleep = sleep
         self.variables: dict[str, Any] = {}
+        parsed_base = urlsplit(self.base_url)
+        if parsed_base.scheme not in {"http", "https"} or not parsed_base.netloc:
+            raise WorkflowError("provider base URL must use http or https")
+        if self.token and parsed_base.scheme != "https":
+            hostname = (parsed_base.hostname or "").lower()
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = hostname == "localhost"
+            if not is_loopback:
+                raise WorkflowError("refusing to send a bearer token over non-loopback HTTP")
 
     @classmethod
     def from_files(cls, openapi_path: Path, workflow_path: Path, **kwargs: Any) -> "F01Runner":

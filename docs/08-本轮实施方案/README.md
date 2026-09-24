@@ -38,7 +38,7 @@ python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
 python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1 --report artifacts/f01-run.json
 ```
 
-如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会比较实际文件字节的 SHA-256 与 getExport 返回值。
+如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 
 
 

@@ -88,7 +88,7 @@ class WorkflowRunnerTest(unittest.TestCase):
             requests.append(request)
             return responses.pop(0)
 
-        runner = F01Runner(openapi, workflow, token="test-token", opener=opener, sleep=lambda _: None, poll_timeout=0.1)
+        runner = F01Runner(openapi, workflow, base_url="https://provider.test/api/v1", token="test-token", opener=opener, sleep=lambda _: None, poll_timeout=0.1)
         result = runner.run()
         self.assertEqual(result["completed_steps"], 3)
         self.assertEqual([step["id"] for step in result["steps"]], ["start", "poll", "download"])
@@ -103,6 +103,12 @@ class WorkflowRunnerTest(unittest.TestCase):
         step = {"id": "download", "expected_binary": {"content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}}
         with self.assertRaisesRegex(WorkflowError, "Content-Type"):
             runner._verify_download(step, b"not a docx", {"Content-Type": "text/plain"})
+
+    def test_refuses_to_send_bearer_token_to_remote_http(self) -> None:
+        openapi = {"servers": [{"url": "http://provider.test/api/v1"}], "paths": {}}
+        with self.assertRaisesRegex(WorkflowError, "non-loopback HTTP"):
+            F01Runner(openapi, {"id": "F01", "steps": []}, token="secret")
+        F01Runner(openapi, {"id": "F01", "steps": []}, base_url="http://127.0.0.1:8080/api/v1", token="test-token")
 
 
 if __name__ == "__main__":
