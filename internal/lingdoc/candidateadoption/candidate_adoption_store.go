@@ -199,8 +199,21 @@ func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in Co
 		if err := tx.Create(&confirmationRow{ID: result.ID, ChapterID: in.ChapterID, ChapterVersionID: in.ExpectedChapterVersionID, Valid: true, DetailsJSON: string(details)}).Error; err != nil {
 			return err
 		}
+		if err := tx.Model(&confirmationRow{}).
+			Where("chapter_id = ? AND chapter_version_id = ? AND id <> ? AND valid = ?", in.ChapterID, in.ExpectedChapterVersionID, result.ID, true).
+			Update("valid", false).Error; err != nil {
+			return err
+		}
 		if err := tx.Model(&chapterVersionRow{}).Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).Update("confirmation_valid", true).Error; err != nil {
 			return err
+		}
+		projectUpdate := tx.Model(&projectRow{}).Where("id = ? AND project_version = ?", in.ProjectID, project.ProjectVersion).
+			Update("project_version", project.ProjectVersion+1)
+		if projectUpdate.Error != nil {
+			return projectUpdate.Error
+		}
+		if projectUpdate.RowsAffected != 1 {
+			return ErrVersionConflict
 		}
 		response, err := json.Marshal(result)
 		if err != nil {

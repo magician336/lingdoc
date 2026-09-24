@@ -132,3 +132,59 @@ func TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore(t *testing.T) {
 	}
 	require.Error(t, store.DB().Create(&duplicate).Error, "the focused SQLite schema must enforce the same composite idempotency key as production migrations")
 }
+
+func TestReadDeliveryInputReturnsCurrentSnapshotAndEmptyChapters(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	version := "chapter-version-1"
+	require.NoError(t, store.UpsertProject(context.Background(), "project-1", 6))
+	require.NoError(t, store.DB().Model(&projectRow{}).Where("id = ?", "project-1").Updates(map[string]any{
+		"name": "演示项目", "spec_revision": 2, "spec_json": `{"research_goal":"验证"}`,
+		"template_id": "demo-v2", "template_version": "2",
+	}).Error)
+	require.NoError(t, store.UpsertChapter(context.Background(), Chapter{
+		ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "研究问题", CurrentVersionID: &version,
+	}, 2))
+	require.NoError(t, store.DB().Create(&chapterVersionRow{
+		ID: version, ProjectID: "project-1", ChapterID: "chapter-1", BodyMarkdown: "已核正文",
+		SourceIDsJSON: "[]", ReviewItemsJSON: "[]", SpecRevision: 2,
+	}).Error)
+	require.NoError(t, store.UpsertChapter(context.Background(), Chapter{
+		ID: "chapter-empty", ProjectID: "project-1", SectionID: "method", Title: "研究方案",
+	}, 2))
+
+	reader := DeliveryInputReader(store)
+	first, err := reader.ReadDeliveryInput(context.Background(), "project-1")
+	require.NoError(t, err)
+	require.Equal(t, int64(6), first.ProjectVersion)
+	require.Equal(t, 2, first.SpecRevision)
+	require.Equal(t, map[string]string{"research_goal": "验证"}, first.Spec)
+	require.Len(t, first.Chapters, 2)
+	require.Equal(t, "chapter-empty", first.Chapters[0].ChapterID)
+	require.Nil(t, first.Chapters[0].ChapterVersionID)
+	require.Nil(t, first.Chapters[0].Confirmation)
+	require.NotNil(t, first.Chapters[0].SourceIDs)
+	require.Empty(t, first.Chapters[0].SourceIDs)
+	require.Equal(t, "chapter-1", first.Chapters[1].ChapterID)
+	require.Equal(t, &version, first.Chapters[1].ChapterVersionID)
+	require.Nil(t, first.Chapters[1].Confirmation)
+
+	service := NewConfirmationService(store, nil, nil)
+	input := ConfirmChapterInput{ProjectID: "project-1", ChapterID: "chapter-1", ActorID: "user-1",
+		IdempotencyKey: "confirm-key-0001", ExpectedChapterVersionID: version, ExpectedSpecRevision: 2}
+	confirmation, _, err := service.ConfirmChapter(context.Background(), input)
+	require.NoError(t, err)
+	input.IdempotencyKey = "confirm-key-0002"
+	latest, _, err := service.ConfirmChapter(context.Background(), input)
+	require.NoError(t, err)
+	require.NotEqual(t, confirmation.ID, latest.ID)
+
+	second, err := reader.ReadDeliveryInput(context.Background(), "project-1")
+	require.NoError(t, err)
+	require.Equal(t, int64(8), second.ProjectVersion, "each new confirmation is a workspace state change")
+	require.Nil(t, second.Chapters[0].Confirmation, "empty chapters remain part of the delivery input without a fabricated confirmation")
+	require.Equal(t, latest.ID, second.Chapters[1].Confirmation.ID)
+	require.True(t, second.Chapters[1].Confirmation.Valid)
+	var validConfirmations int64
+	require.NoError(t, store.DB().Model(&confirmationRow{}).Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", "chapter-1", version, true).Count(&validConfirmations).Error)
+	require.Equal(t, int64(1), validConfirmations, "only the latest confirmation for a chapter version remains current")
+}
