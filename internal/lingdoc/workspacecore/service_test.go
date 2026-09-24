@@ -29,16 +29,23 @@ func testStore(t *testing.T, path string) *Service {
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if !db.Migrator().HasTable(&projectRow{}) {
-		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000018_lingdoc_workspace.up.sql"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, stmt := range strings.Split(string(migration), ";") {
-			if strings.TrimSpace(stmt) == "" {
-				continue
+		for _, name := range []string{
+			"000018_lingdoc_workspace.up.sql",
+			"000019_lingdoc_evidence_assets.up.sql",
+			"000020_lingdoc_candidate_adoption.up.sql",
+			"000021_lingdoc_chapter_confirmation_requests.up.sql",
+		} {
+			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+			if err != nil {
+				t.Fatal(err)
 			}
-			if err := db.Exec(stmt).Error; err != nil {
-				t.Fatalf("production SQLite migration: %v", err)
+			for _, stmt := range strings.Split(string(migration), ";") {
+				if strings.TrimSpace(stmt) == "" {
+					continue
+				}
+				if err := db.Exec(stmt).Error; err != nil {
+					t.Fatalf("production SQLite migration %s: %v", name, err)
+				}
 			}
 		}
 	}
@@ -316,3 +323,84 @@ func TestManualEditPreservesReviewAndFailsClosedOnExistingSource(t *testing.T) {
 		t.Fatalf("existing source was dropped without T09 recheck: %v", err)
 	}
 }
+
+func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "confirmation.db"))
+	ctx := context.Background()
+	owner := Actor{TenantID: 55, UserID: "owner"}
+	seedTenantMember(t, svc, owner)
+	raw, _, _, err := svc.CreateProject(ctx, owner, "create-confirmation", CreateProjectInput{Name: "确认测试", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, raw)
+	raw, _, _, err = svc.SaveSpec(ctx, owner, project.ID, "spec-confirmation-1", SaveSpecInput{
+		ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "样本", "research_goal": "验证"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision}); err != nil {
+		t.Fatal(err)
+	}
+	chapters, err := svc.ListChapters(ctx, owner, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("list chapters: %v, %v", chapters, err)
+	}
+	chapter := chapters[0]
+	versionRaw, _, _, err := svc.SaveChapter(ctx, owner, project.ID, chapter.ID, "save-confirmation", SaveChapterInput{
+		ExpectedSpecRevision: project.SpecRevision, BodyMarkdown: "已核正文", SourceIDs: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Chapter
+	if err := json.Unmarshal(versionRaw, &saved); err != nil || saved.CurrentVersionID == nil {
+		t.Fatalf("saved chapter: %+v, %v", saved, err)
+	}
+
+	insertConfirmation := func(id string, revision int64) {
+		t.Helper()
+		details, err := json.Marshal(chapterConfirmationDetails{
+			ID: id, ChapterVersionID: *saved.CurrentVersionID, SpecRevision: revision,
+			TemplateVersion: project.TemplateVersion, Valid: true,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.db.Create(&chapterConfirmationRow{ID: id, ChapterID: chapter.ID,
+			ChapterVersionID: *saved.CurrentVersionID, Valid: true, DetailsJSON: string(details)}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.db.Model(&chapterVersionRow{}).Where("id = ?", *saved.CurrentVersionID).Update("confirmation_valid", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	insertConfirmation("confirmation-1", project.SpecRevision)
+	chapters, err = svc.ListChapters(ctx, owner, project.ID)
+	if err != nil || !chapters[0].ConfirmationValid {
+		t.Fatalf("current confirmation not reported: %+v, %v", chapters, err)
+	}
+
+	raw, _, _, err = svc.SaveSpec(ctx, owner, project.ID, "spec-confirmation-2", SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision, Fields: map[string]string{"research_subject": "样本", "research_goal": "新目标"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	chapters, err = svc.ListChapters(ctx, owner, project.ID)
+	if err != nil || chapters[0].ConfirmationValid {
+		t.Fatalf("stale confirmation survived spec change: %+v, %v", chapters, err)
+	}
+	if err := svc.db.Model(&chapterConfirmationRow{}).Where("id = ?", "confirmation-1").Update("valid", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	insertConfirmation("confirmation-2", project.SpecRevision)
+	chapters, err = svc.ListChapters(ctx, owner, project.ID)
+	if err != nil || !chapters[0].ConfirmationValid {
+		t.Fatalf("reconfirmation of current basis not reported: %+v, %v", chapters, err)
+	}
+}
+
