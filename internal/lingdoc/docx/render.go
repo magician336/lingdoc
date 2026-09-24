@@ -37,7 +37,90 @@ type ReviewItem struct {
 }
 
 var marker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
-var blockMarkup = regexp.MustCompile(`^(#{1,6}\s|[-*+]\s|[0-9]+\.\s|\||>)`)
+var blockMarkup = regexp.MustCompile(`^(#{1,6}\s|[-*+]\s|[0-9]+[.)]\s|\||>)`)
+var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*// Package docx renders LingDoc's internal demo delivery as an editable DOCX.
+// It deliberately supports only plain paragraphs and source markers; callers
+// must reject richer Markdown before presenting export as successful.
+package docx
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/xml"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"unicode/utf8"
+)
+
+type Input struct {
+	ProjectName  string
+	DeliveryKind string
+	Chapters     []Chapter
+	Sources      []Source
+}
+
+type Chapter struct {
+	Title        string
+	BodyMarkdown string
+	SourceIDs    []string
+	ReviewItems  []ReviewItem
+}
+
+type Source struct {
+	ID, DisplayTitle, Locator, QuotedText string
+}
+
+type ReviewItem struct {
+	ID, Statement, Disposition, Reason string
+}
+
+)
+var inlineEmphasis = regexp.MustCompile(`(?:\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~)`)
+var inlineCode = regexp.MustCompile("`+[^\\`\\n]+`+")
+var inlineLink = regexp.MustCompile(`!?\[[^\]\n]*\](?:\([^\)\n]*\)|\[[^\]\n]*\])`)
+var referenceDefinition = regexp.MustCompile(`^\[[^\]\n]+\]:\s*\S+`)
+var inlineHTMLOrAutolink = regexp.MustCompile(`<(?:(?:https?://|mailto:)[^>\n]+|/?[A-Za-z][^>\n]*)>`)
+var inlineMath = regexp.MustCompile(`\$[^$\n]+\// Package docx renders LingDoc's internal demo delivery as an editable DOCX.
+// It deliberately supports only plain paragraphs and source markers; callers
+// must reject richer Markdown before presenting export as successful.
+package docx
+
+import (
+	"archive/zip"
+	"bytes"
+	"encoding/xml"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"unicode/utf8"
+)
+
+type Input struct {
+	ProjectName  string
+	DeliveryKind string
+	Chapters     []Chapter
+	Sources      []Source
+}
+
+type Chapter struct {
+	Title        string
+	BodyMarkdown string
+	SourceIDs    []string
+	ReviewItems  []ReviewItem
+}
+
+type Source struct {
+	ID, DisplayTitle, Locator, QuotedText string
+}
+
+type ReviewItem struct {
+	ID, Statement, Disposition, Reason string
+}
+
+)
 
 // Render creates a standalone WordprocessingML package. The caller remains
 // responsible for authorization, snapshot/currentness checks and file storage.
@@ -90,12 +173,12 @@ func Render(in Input) ([]byte, error) {
 			declared[id] = true
 		}
 		used := map[string]bool{}
-		for _, line := range strings.Split(strings.ReplaceAll(chapter.BodyMarkdown, "\r\n", "\n"), "\n") {
-			line = strings.TrimSpace(line)
+		for _, rawLine := range strings.Split(strings.ReplaceAll(chapter.BodyMarkdown, "\r\n", "\n"), "\n") {
+			line := strings.TrimSpace(rawLine)
 			if line == "" {
 				continue
 			}
-			if blockMarkup.MatchString(line) || strings.Contains(line, "**") || strings.Contains(line, "__") || strings.Contains(line, "![") || strings.Contains(line, "](") || strings.Contains(line, "```") || strings.Contains(line, "$$") {
+			if containsUnsupportedMarkdown(rawLine) {
 				return nil, fmt.Errorf("chapter %d contains unsupported Markdown", i+1)
 			}
 			matches := marker.FindAllStringSubmatch(line, -1)
