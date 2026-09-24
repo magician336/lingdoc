@@ -163,4 +163,3 @@ func writeGenerationError(c *gin.Context, requestID string, status int, err erro
 	}
 	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": status >= 500}, "request_id": requestID})
 }
-
