@@ -244,7 +244,7 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		_, err := s.findProject(tx, actor, projectID, "write")
 		return err
 	}
-	return s.operation(ctx, actor, "saveSpec", projectID, key, input, auth, func(tx *gorm.DB) (any, int, error) {
+	raw, status, replayed, err := s.operation(ctx, actor, "saveSpec", projectID, key, input, auth, func(tx *gorm.DB) (any, int, error) {
 		row, err := s.findProject(tx, actor, projectID, "write")
 		if err != nil {
 			return nil, 0, err
@@ -272,8 +272,34 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 			row.SpecJSON, row.SpecRevision, row.ProjectVersion = string(raw), row.SpecRevision+1, row.ProjectVersion+1
 		}
 		view, err := projectView(tx, row)
-		return view, 200, err
+		re
+}
+
+func isWorkspaceDomainError(err error) bool {
+	for _, domainErr := range []error{
+		ErrInvalidRequest, ErrInvalidState, ErrVersionConflict, ErrIdempotencyConflict,
+		ErrRequestInProgress, ErrSourceUnavailable, ErrNotFound,
+		gorm.ErrRecordNotFound, sql.ErrNoRows, context.Canceled, context.DeadlineExceeded,
+	} {
+		if errors.Is(err, domainErr) {
+			return true
+		}
+	}
+	return false
+}n view, 200, err
 	})
+	if err != nil && !isWorkspaceDomainError(err) {
+		// SQLite can reject a transaction that read the old row before another
+		// writer committed (SQLITE_BUSY_SNAPSHOT). Once the failed transaction
+		// is rolled back, report the optimistic-concurrency conflict instead of
+		// leaking a driver-specific lock error when the expected revision is now
+		// stale.
+		current, readErr := s.GetProject(ctx, actor, projectID)
+		if readErr == nil && current.SpecRevision != input.ExpectedSpecRevision {
+			return nil, 0, false, ErrVersionConflict
+		}
+	}
+	return raw, status, replayed, err
 }
 
 type ActivateProjectInput struct {
