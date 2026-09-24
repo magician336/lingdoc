@@ -189,7 +189,6 @@ func Render(in Input) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-
 func containsUnsupportedMarkdown(rawLine string) bool {
 	// Indented code and trailing-two-space hard breaks have Markdown semantics
 	// that this renderer would otherwise silently trim away.
