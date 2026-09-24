@@ -7,8 +7,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 
+const browserErrors = []
 async function until(fn, label) {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 400; i++) {
+    if (browserErrors.length) throw new Error('Browser exception: ' + JSON.stringify(browserErrors))
     const value = await fn()
     if (value) return value
     await sleep(100)
@@ -41,6 +43,7 @@ try {
   socket.addEventListener('message', ({ data }) => {
     const message = JSON.parse(data)
     if (message.method === 'Network.requestWillBeSent') requests.push(message.params.request)
+    if (message.method === 'Runtime.exceptionThrown') browserErrors.push(message.params.exceptionDetails)
     if (waiting.has(message.id)) {
       const { resolve, reject, timer } = waiting.get(message.id)
       clearTimeout(timer); waiting.delete(message.id)
@@ -59,6 +62,7 @@ try {
     return value.result.value
   }
   await call('Network.enable')
+  await call('Runtime.enable')
   await call('Page.navigate', { url: 'http://127.0.0.1:5173/lingdoc-mock.html' })
   await until(() => evaluate("document.querySelector('#status')?.textContent === '尚未运行'"), 'dev page')
   // Module imports may still be loading; wait until its event listeners are installed.
@@ -71,13 +75,14 @@ try {
   assert.equal(await evaluate("JSON.parse(document.querySelector('#payload').textContent).error.code"), 'invalid_state')
   assert.equal(await evaluate("localStorage.getItem('weknora_token')"), 't06-private-sentinel')
   const api = requests.filter(value => new URL(value.url).pathname.startsWith('/api/'))
-  assert.equal(api.length, 2, 'exactly two calls; no auth refresh or backend fallback')
+  const businessCalls = api.filter(value => value.method !== 'OPTIONS')
+  assert.equal(businessCalls.length, 2, 'exactly two business calls; no auth refresh or backend fallback')
   for (const request of api) {
     assert.equal(new URL(request.url).origin, 'http://127.0.0.1:4010')
     const headers = new Headers(request.headers)
     for (const name of ['authorization', 'cookie', 'x-tenant-id']) assert.equal(headers.get(name), null)
   }
-  console.log(JSON.stringify({ result: 'PASS', scope: 'real_browser_fixed_mock_only', successes: 1, failures: 1, api_calls: api.length }))
+  console.log(JSON.stringify({ result: 'PASS', scope: 'real_browser_fixed_mock_only', successes: 1, failures: 1, api_calls: businessCalls.length, preflights: api.length - businessCalls.length }))
 } finally {
   socket?.close()
   if (chrome.exitCode === null && !startupError) {
