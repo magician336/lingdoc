@@ -15,6 +15,14 @@ func (s confirmationWorkspaceStub) GenerationContext(context.Context, string, st
 	return s.value, s.err
 }
 
+type confirmationAuthorizerFunc func(context.Context, string, string, string) error
+
+func (f confirmationAuthorizerFunc) Authorize(ctx context.Context, actorID, projectID, chapterID string) error {
+	return f(ctx, actorID, projectID, chapterID)
+}
+
+func allowConfirmation(context.Context, string, string, string) error { return nil }
+
 type confirmationSourceStub struct {
 	calls         int
 	err           error
@@ -72,7 +80,7 @@ func TestConfirmationServiceFailsClosedWithoutCurrentSourcePolicy(t *testing.T) 
 		Basis:   Basis{SpecRevision: 3, ChapterVersionID: &version, TemplateID: "demo", TemplateVersion: "1"},
 		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version, SourceIDs: []string{"s1"}}}
 	writer := &confirmationWriterStub{}
-	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Writer: writer}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Authorizer: confirmationAuthorizerFunc(allowConfirmation), Writer: writer}
 	_, _, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
 		IdempotencyKey: "request-123", ExpectedChapterVersionID: version, ExpectedSpecRevision: 3})
 	if !errors.Is(err, ErrInvalidState) {
@@ -88,7 +96,7 @@ func TestConfirmationServiceRejectsStaleVersionBeforeWrite(t *testing.T) {
 	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,
 		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version}}
 	writer := &confirmationWriterStub{}
-	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Writer: writer}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Authorizer: confirmationAuthorizerFunc(allowConfirmation), Writer: writer}
 	_, _, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
 		IdempotencyKey: "request-123", ExpectedChapterVersionID: "version-1", ExpectedSpecRevision: 3})
 	if !errors.Is(err, ErrVersionConflict) {
@@ -106,7 +114,8 @@ func TestConfirmationServiceCapturesCurrentSourceAssetVersions(t *testing.T) {
 		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version, SourceIDs: []string{"s1"}}}
 	sourcePolicy := &confirmationSourceStub{assetVersions: []AssetVersion{{AssetID: "a1", AssetRevision: 7}}}
 	writer := &confirmationWriterStub{}
-	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Sources: sourcePolicy, Writer: writer}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Sources: sourcePolicy,
+		Authorizer: confirmationAuthorizerFunc(allowConfirmation), Writer: writer}
 	got, replayed, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
 		IdempotencyKey: "request-123", ExpectedChapterVersionID: version, ExpectedSpecRevision: 3})
 	if err != nil {
@@ -123,7 +132,7 @@ func TestConfirmationServiceCapturesCurrentSourceAssetVersions(t *testing.T) {
 func TestConfirmationServiceReplaysBeforeReadingMutableWorkspace(t *testing.T) {
 	existing := &Confirmation{ID: "saved-confirmation", Valid: true}
 	replay := &confirmationReplayStub{value: existing}
-	service := ConfirmationService{Idempotency: replay}
+	service := ConfirmationService{Idempotency: replay, Authorizer: confirmationAuthorizerFunc(allowConfirmation)}
 	got, wasReplay, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
 		IdempotencyKey: "request-123", ExpectedChapterVersionID: "version-1", ExpectedSpecRevision: 3})
 	if err != nil {
@@ -133,3 +142,17 @@ func TestConfirmationServiceReplaysBeforeReadingMutableWorkspace(t *testing.T) {
 		t.Fatalf("unexpected replay: %#v, replay=%v, calls=%d", got, wasReplay, replay.calls)
 	}
 }
+
+func TestConfirmationServiceFailsClosedBeforeIdempotencyReplayWithoutAuthorizer(t *testing.T) {
+	replay := &confirmationReplayStub{value: &Confirmation{ID: "must-not-leak", Valid: true}}
+	service := ConfirmationService{Idempotency: replay}
+	_, _, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
+		IdempotencyKey: "request-123", ExpectedChapterVersionID: "version-1", ExpectedSpecRevision: 3})
+	if !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("got %v, want invalid state", err)
+	}
+	if replay.calls != 0 {
+		t.Fatal("confirmation replay queried without project authorization")
+	}
+}
+
