@@ -53,6 +53,19 @@ type ExportStore interface {
 	GetExport(projectID, exportID string) (ExportArtifact, error)
 }
 
+// ExportAccessChecker enforces the caller's present project access at both
+// export creation and download time. A previous successful export must not
+// become a back door after membership is revoked.
+type ExportAccessChecker interface {
+	Authorize(actorUserID, projectID string) error
+}
+
+type ExportAccessFunc func(actorUserID, projectID string) error
+
+func (f ExportAccessFunc) Authorize(actorUserID, projectID string) error {
+	return f(actorUserID, projectID)
+}
+
 type MemoryExportStore struct {
 	mu      sync.RWMutex
 	exports map[string]ExportArtifact
@@ -80,22 +93,25 @@ func (s *MemoryExportStore) GetExport(projectID, exportID string) (ExportArtifac
 }
 
 type ExportService struct {
-	snapshots SnapshotStore
-	exports   ExportStore
-	renderer  FrozenRenderer
-	now       func() time.Time
-	mu        sync.Mutex
-	next      int
+	snapshots   SnapshotStore
+	exports     ExportStore
+	renderer    FrozenRenderer
+	currentness CurrentnessChecker
+	access      ExportAccessChecker
+	now         func() time.Time
 }
 
-func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer) *ExportService {
-	return &ExportService{snapshots: snapshots, exports: exports, renderer: renderer, now: time.Now}
+func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer, currentness CurrentnessChecker, access ExportAccessChecker) *ExportService {
+	return &ExportService{snapshots: snapshots, exports: exports, renderer: renderer, currentness: currentness, access: access, now: time.Now}
 }
 
 // Start renders a frozen, passing, current snapshot. Renderer errors become a
 // persisted failed artifact so the UI can show a recovery state; they never
 // create a downloadable file.
-func (s *ExportService) Start(projectID, snapshotID string) (ExportArtifact, error) {
+func (s *ExportService) Start(actorUserID, projectID, snapshotID string) (ExportArtifact, error) {
+	if err := s.authorize(actorUserID, projectID); err != nil {
+		return ExportArtifact{}, err
+	}
 	snapshot, err := s.snapshots.Get(projectID, snapshotID)
 	if err != nil {
 		return ExportArtifact{}, err
@@ -103,13 +119,16 @@ func (s *ExportService) Start(projectID, snapshotID string) (ExportArtifact, err
 	if snapshot.Check.Status != CheckPassed {
 		return ExportArtifact{}, ErrExportPreflightBlocked
 	}
-	if !snapshot.IsCurrent {
+	if !snapshot.IsCurrent || !s.isCurrent(snapshot.FrozenInput) {
 		return ExportArtifact{}, ErrExportStaleInput
 	}
-	s.mu.Lock()
-	s.next++
-	id := fmt.Sprintf("export-%06d", s.next)
-	s.mu.Unlock()
+	if s.renderer == nil {
+		return ExportArtifact{}, ErrExportUnavailable
+	}
+	id, err := opaqueID("export")
+	if err != nil {
+		return ExportArtifact{}, err
+	}
 	artifact := ExportArtifact{ID: id, ProjectID: projectID, SnapshotID: snapshotID, CreatedAt: s.now().UTC()}
 	data, renderErr := s.renderer.RenderFrozen(snapshot.FrozenInput)
 	if renderErr != nil {
@@ -128,6 +147,9 @@ func (s *ExportService) Start(projectID, snapshotID string) (ExportArtifact, err
 		}
 		return artifact, nil
 	}
+	if !s.isCurrent(snapshot.FrozenInput) {
+		return ExportArtifact{}, ErrExportStaleInput
+	}
 	sum := sha256.Sum256(data)
 	artifact.Status = ExportVerified
 	artifact.FileSHA256 = hex.EncodeToString(sum[:])
@@ -140,7 +162,10 @@ func (s *ExportService) Start(projectID, snapshotID string) (ExportArtifact, err
 
 // Download returns bytes only for a verified export. A transport layer must
 // re-run its current authorization check before calling this method.
-func (s *ExportService) Download(projectID, exportID string) ([]byte, error) {
+func (s *ExportService) Download(actorUserID, projectID, exportID string) ([]byte, error) {
+	if err := s.authorize(actorUserID, projectID); err != nil {
+		return nil, err
+	}
 	artifact, err := s.exports.GetExport(projectID, exportID)
 	if err != nil {
 		return nil, err
@@ -151,8 +176,22 @@ func (s *ExportService) Download(projectID, exportID string) ([]byte, error) {
 	return append([]byte(nil), artifact.file...), nil
 }
 
+func (s *ExportService) authorize(actorUserID, projectID string) error {
+	if s.access == nil {
+		return errors.New("export access checker is required")
+	}
+	return s.access.Authorize(actorUserID, projectID)
+}
+
+func (s *ExportService) isCurrent(input DeliveryInput) bool {
+	if s.currentness == nil {
+		return false
+	}
+	current, err := s.currentness.IsCurrent(input)
+	return err == nil && current
+}
+
 func cloneExport(artifact ExportArtifact) ExportArtifact {
 	artifact.file = append([]byte(nil), artifact.file...)
 	return artifact
 }
-
