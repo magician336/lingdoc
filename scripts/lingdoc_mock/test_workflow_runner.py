@@ -42,6 +42,34 @@ class WorkflowRunnerTest(unittest.TestCase):
         for step in runner.workflow["steps"]:
             self.assertIn(step["operation_id"], runner.operations, step["id"])
 
+    def test_executes_all_f01_steps_with_synthetic_reference_trace(self) -> None:
+        runner = F01Runner.from_files(
+            ROOT / "docs/08-本轮实施方案/contracts/openapi.json",
+            ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
+            sleep=lambda _: None,
+        )
+        file_bytes = b"synthetic F01 export bytes; not a real DOCX"
+        digest = hashlib.sha256(file_bytes).hexdigest()
+        requests = []
+
+        def opener(request, timeout):
+            step = runner.workflow["steps"][len(requests)]
+            requests.append(request)
+            if step["id"] == "F01-23":
+                return FakeResponse(file_bytes, 200, step["expected_binary"]["content_type"])
+            payload = json.loads(json.dumps(step["reference_response"]))
+            if step["id"] == "F01-22":
+                payload["data"]["file_sha256"] = digest
+            return FakeResponse(json.dumps(payload, ensure_ascii=False).encode("utf-8"), step["expected_http"])
+
+        runner.opener = opener
+        result = runner.run()
+        self.assertEqual(result["completed_steps"], 23)
+        self.assertEqual(len(result["steps"]), 23)
+        self.assertEqual(len(requests), 23)
+        self.assertEqual(requests[1].method, "POST")
+        self.assertNotIn("{{", "\n".join(request.full_url for request in requests))
+
     def test_polls_without_reposting_and_verifies_download_bytes(self) -> None:
         file_bytes = b"test-docx-bytes"
         digest = hashlib.sha256(file_bytes).hexdigest()
