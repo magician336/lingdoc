@@ -16,13 +16,14 @@ func (s confirmationWorkspaceStub) GenerationContext(context.Context, string, st
 }
 
 type confirmationSourceStub struct {
-	calls int
-	err   error
+	calls         int
+	err           error
+	assetVersions []AssetVersion
 }
 
-func (s *confirmationSourceStub) ValidateCurrent(context.Context, string, string, []string) error {
+func (s *confirmationSourceStub) ValidateCurrent(context.Context, string, string, []string) ([]AssetVersion, error) {
 	s.calls++
-	return s.err
+	return s.assetVersions, s.err
 }
 
 type confirmationWriterStub struct{ calls int }
@@ -95,6 +96,27 @@ func TestConfirmationServiceRejectsStaleVersionBeforeWrite(t *testing.T) {
 	}
 	if writer.calls != 0 {
 		t.Fatal("writer called for stale version")
+	}
+}
+
+func TestConfirmationServiceCapturesCurrentSourceAssetVersions(t *testing.T) {
+	version := "version-1"
+	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,
+		Basis:   Basis{SpecRevision: 3, ChapterVersionID: &version, TemplateVersion: "demo-v2"},
+		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version, SourceIDs: []string{"s1"}}}
+	sourcePolicy := &confirmationSourceStub{assetVersions: []AssetVersion{{AssetID: "a1", AssetRevision: 7}}}
+	writer := &confirmationWriterStub{}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace}, Sources: sourcePolicy, Writer: writer}
+	got, replayed, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
+		IdempotencyKey: "request-123", ExpectedChapterVersionID: version, ExpectedSpecRevision: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed || sourcePolicy.calls != 1 || writer.calls != 1 {
+		t.Fatalf("unexpected calls/replay: %d/%d replay=%v", sourcePolicy.calls, writer.calls, replayed)
+	}
+	if len(got.AssetVersions) != 1 || got.AssetVersions[0] != (AssetVersion{AssetID: "a1", AssetRevision: 7}) {
+		t.Fatalf("confirmation omitted current source asset revision: %#v", got.AssetVersions)
 	}
 }
 

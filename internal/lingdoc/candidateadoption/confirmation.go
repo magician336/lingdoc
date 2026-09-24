@@ -47,10 +47,11 @@ type ConfirmationWorkspace interface {
 }
 
 // ConfirmationSourcePolicy must check that the chapter's exact source IDs are
-// still current, authorized, ready, and belong to the project. T09 adapters
-// should implement this using their persisted source/asset revisions.
+// still current, authorized, ready, and belong to the project, and return the
+// current asset revisions used by those sources. T09 adapters should use
+// persisted source/asset revisions rather than reconstructing them from IDs.
 type ConfirmationSourcePolicy interface {
-	ValidateCurrent(context.Context, string, string, []string) error
+	ValidateCurrent(context.Context, string, string, []string) ([]AssetVersion, error)
 }
 
 type ConfirmationWriter interface {
@@ -113,9 +114,11 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 		if s.Sources == nil {
 			return Confirmation{}, false, fmt.Errorf("%w: current source policy is unavailable", ErrInvalidState)
 		}
-		if err := s.Sources.ValidateCurrent(ctx, in.ProjectID, in.ActorID, workspace.Chapter.SourceIDs); err != nil {
+		assetVersions, err := s.Sources.ValidateCurrent(ctx, in.ProjectID, in.ActorID, workspace.Chapter.SourceIDs)
+		if err != nil {
 			return Confirmation{}, false, err
 		}
+		workspace.Basis.AssetVersions = append([]AssetVersion{}, assetVersions...)
 	}
 	if err := validateReviewDecisions(workspace.Chapter.ReviewItems, in.Decisions); err != nil {
 		return Confirmation{}, false, err
