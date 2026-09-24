@@ -40,7 +40,7 @@ func testStore(t *testing.T, path string) *Service {
 				t.Fatal(err)
 			}
 			for _, stmt := range strings.Split(string(migration), ";") {
-				if strings.TrimSpace(stmt) == "" {
+				if !hasSQLStatement(stmt) {
 					continue
 				}
 				if err := db.Exec(stmt).Error; err != nil {
@@ -54,6 +54,17 @@ func testStore(t *testing.T, path string) *Service {
 	}
 	svc := NewService(db, ContractDemoTemplate{})
 	return svc
+}
+
+func hasSQLStatement(stmt string) bool {
+	for _, line := range strings.Split(stmt, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "--") {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 func seedTenantMember(t *testing.T, svc *Service, actor Actor) {
