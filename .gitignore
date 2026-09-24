@@ -3,6 +3,7 @@
 # 但不忽略特定隐藏文件和目录
 !.env.example
 !.gitignore
+!.gitattributes
 !.github/
 
 # 敏感文件
