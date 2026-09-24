@@ -256,6 +256,37 @@ func TestObserveRestoresAMissingBaselineRevision(t *testing.T) {
 	}
 }
 
+func TestObserveFillsAnExistingEmptyBaselineWithoutCreatingADuplicate(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	asset, err := store.Bind(ctx, bindInput("p-1", "k-1", nil))
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	if err := store.db.Model(&ProjectAssetRevision{}).
+		Where("asset_id = ? AND revision_no = ?", asset.ID, 1).
+		Updates(map[string]any{"content_hash": "", "weknora_knowledge_id": ""}).Error; err != nil {
+		t.Fatalf("清空历史基线: %v", err)
+	}
+
+	observed, err := store.ObserveAsset(ctx, "p-1", asset.ID, signal(func(s *KnowledgeSignal) {
+		s.FileHash = "hash-restored"
+	}))
+	if err != nil {
+		t.Fatalf("ObserveAsset(空基线): %v", err)
+	}
+	if observed.Next.Revision != 1 || observed.Changed {
+		t.Fatalf("填充空基线不该递增版本: %+v", observed)
+	}
+	revisions, err := store.Revisions(ctx, asset.ID)
+	if err != nil {
+		t.Fatalf("Revisions: %v", err)
+	}
+	if len(revisions) != 1 || revisions[0].ContentHash == "" || revisions[0].KnowledgeID == "" {
+		t.Fatalf("空基线填充结果 = %+v, want 唯一且完整的第 1 版", revisions)
+	}
+}
+
 // 重解析后底座会给出新的知识 ID，那一版修订就该指向新的那一份：
 // 列名 weknora_knowledge_id 说的是「这一版对应底座的哪一份」。
 func TestObserveRecordsTheKnowledgeOfThatRevision(t *testing.T) {
@@ -285,6 +316,33 @@ func TestObserveRecordsTheKnowledgeOfThatRevision(t *testing.T) {
 	}
 	if got := revisions[1].KnowledgeID; got != "k-reparsed" {
 		t.Errorf("第二版的知识 ID = %q, want k-reparsed（重解析后的那一份）", got)
+	}
+}
+
+func TestAssetForKnowledgeOnlyResolvesTheCurrentRevision(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+
+	asset, err := store.Bind(ctx, bindInput("p-1", "k-old", nil))
+	if err != nil {
+		t.Fatalf("Bind: %v", err)
+	}
+	if _, err := store.ObserveAsset(ctx, "p-1", asset.ID, signal(func(s *KnowledgeSignal) {
+		s.KnowledgeID = "k-new"
+		s.FileHash = "hash-v2"
+	})); err != nil {
+		t.Fatalf("ObserveAsset: %v", err)
+	}
+
+	if _, err := store.AssetForKnowledge(ctx, "p-1", "k-old"); !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("历史 revision 仍可解析为当前资料: %v", err)
+	}
+	current, err := store.AssetForKnowledge(ctx, "p-1", "k-new")
+	if err != nil {
+		t.Fatalf("AssetForKnowledge(当前): %v", err)
+	}
+	if current.ID != asset.ID || current.AssetRevision != 2 || current.KnowledgeID != "k-new" {
+		t.Fatalf("当前 revision 归属 = %+v, want asset=%s revision=2 knowledge=k-new", current, asset.ID)
 	}
 }
 

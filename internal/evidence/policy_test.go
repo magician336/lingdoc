@@ -23,6 +23,15 @@ type policyCase struct {
 	origin  string
 }
 
+type mutableKnowledgeSignal struct {
+	signal  KnowledgeSignal
+	present bool
+}
+
+func (r *mutableKnowledgeSignal) CurrentKnowledgeSignal(context.Context, string) (KnowledgeSignal, bool, error) {
+	return r.signal, r.present, nil
+}
+
 func newPolicyCase(t *testing.T, kb *fakeKBRead) *policyCase {
 	t.Helper()
 	ctx := context.Background()
@@ -94,6 +103,25 @@ func TestValidateKeepsUsableSources(t *testing.T) {
 	}
 	if got.ID != src.ID || got.AssetRevision != 1 {
 		t.Fatalf("复核放行的来源与输入的来源不是同一条: %+v", got)
+	}
+}
+
+func TestValidateRefreshesCurrentSignalBeforeAllowingSource(t *testing.T) {
+	c := newPolicyCase(t, &fakeKBRead{allowed: map[string]bool{"kb-ok": true}})
+	src := c.resolve(t, c.asset)
+	current := &mutableKnowledgeSignal{
+		signal:  signal(nil),
+		present: true,
+	}
+	c.store.SetKnowledgeSignalReader(current)
+	current.signal.ParseStatus = types.ParseStatusProcessing
+
+	res := c.validate(t, src)
+	if len(res.Usable) != 0 || len(res.Unusable) != 1 {
+		t.Fatalf("当前 processing 的来源仍被放行: %+v", res)
+	}
+	if res.Unusable[0].AssetDeny != DenyNotReady {
+		t.Fatalf("当前 processing 的拒绝原因 = %+v, want not_ready", res.Unusable[0])
 	}
 }
 
@@ -345,7 +373,6 @@ func TestValidateRejectsAnAnchorFromAnotherKnowledge(t *testing.T) {
 func TestValidateAcceptsTheKnowledgeRecordedForThatRevision(t *testing.T) {
 	ctx := context.Background()
 	c := newPolicyCase(t, &fakeKBRead{allowed: map[string]bool{"kb-ok": true}})
-	src := c.resolve(t, c.asset)
 
 	if _, err := c.store.ObserveAsset(ctx, "p-1", c.asset.ID, signal(func(s *KnowledgeSignal) {
 		s.KnowledgeID = "k-demo-v2"
@@ -369,10 +396,17 @@ func TestValidateAcceptsTheKnowledgeRecordedForThatRevision(t *testing.T) {
 		"k-demo":    {ID: "k-demo", FilePath: path, FileType: "txt", ParseStatus: types.ParseStatusCompleted},
 		"k-demo-v2": {ID: "k-demo-v2", FilePath: path, FileType: "txt", ParseStatus: types.ParseStatusCompleted},
 	}})
-	fresh := src
+	freshHit := goalHit()
+	freshHit.KnowledgeID = latest[0].KnowledgeID
+	freshSources, err := NewSourceResolver(reader).Resolve(ctx, latest[0], []*types.SearchResult{freshHit})
+	if err != nil {
+		t.Fatalf("Resolve(当前修订): %v", err)
+	}
+	if len(freshSources) != 1 {
+		t.Fatalf("Resolve(当前修订) 返回 %d 条来源, want 1", len(freshSources))
+	}
+	fresh := freshSources[0]
 	fresh.ID = "s-v2"
-	fresh.AssetRevision = 2
-	fresh.Anchor.KnowledgeID = "k-demo-v2"
 
 	res, err := NewSourcePolicy(c.gateway, reader, c.store).
 		Validate(ctx, "p-1", Actor{UserID: "u-1", TenantID: "7"}, []Source{fresh})

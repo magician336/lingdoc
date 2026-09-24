@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -107,7 +108,15 @@ type BindInput struct {
 //
 // 它同时满足 T03 定义的 BindingSource，所以 AssetGateway 可以直接用它。
 type Bindings struct {
-	db *gorm.DB
+	db      *gorm.DB
+	signals KnowledgeSignalReader
+}
+
+// KnowledgeSignalReader supplies the current bottom-layer observation used to
+// refresh a binding before authorization and source validation. A missing row is
+// returned as present=false so the binding can be moved out of ready state.
+type KnowledgeSignalReader interface {
+	CurrentKnowledgeSignal(ctx context.Context, knowledgeID string) (signal KnowledgeSignal, present bool, err error)
 }
 
 type operationRow struct {
@@ -126,6 +135,45 @@ func (operationRow) TableName() string { return "lingdoc_operations" }
 
 // NewBindings 组装绑定存储。
 func NewBindings(db *gorm.DB) *Bindings { return &Bindings{db: db} }
+
+// SetKnowledgeSignalReader wires the current bottom-layer snapshot provider.
+// It is set during handler construction, before the binding store is shared.
+func (b *Bindings) SetKnowledgeSignalReader(reader KnowledgeSignalReader) { b.signals = reader }
+
+// CurrentAsset returns the public asset snapshot for one current binding.
+func (b *Bindings) CurrentAsset(ctx context.Context, projectID, assetID string) (Asset, error) {
+	var row ProjectAsset
+	if err := b.db.WithContext(ctx).
+		Where("project_id = ? AND id = ?", projectID, assetID).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Asset{}, ErrAssetNotFound
+		}
+		return Asset{}, err
+	}
+	return b.assetWithCurrentRevision(ctx, row)
+}
+
+// RefreshAsset observes one binding's current knowledge state. Authorization is
+// performed by AssetGateway before this method is called.
+func (b *Bindings) RefreshAsset(ctx context.Context, projectID, assetID string) error {
+	if b.signals == nil {
+		return nil
+	}
+	asset, err := b.CurrentAsset(ctx, projectID, assetID)
+	if err != nil {
+		return err
+	}
+	signal, present, err := b.signals.CurrentKnowledgeSignal(ctx, asset.KnowledgeID)
+	if err != nil {
+		return err
+	}
+	if !present {
+		signal = KnowledgeSignal{KnowledgeID: asset.KnowledgeID, ParseStatus: types.ParseStatusDeleting}
+	}
+	_, err = b.ObserveAsset(ctx, projectID, assetID, signal)
+	return err
+}
 
 // BoundAssets 实现 BindingSource：返回该项目当前绑定的全部资料。
 func (b *Bindings) BoundAssets(ctx context.Context, projectID string) ([]Asset, error) {
@@ -154,8 +202,7 @@ func (b *Bindings) AssetForKnowledge(ctx context.Context, projectID, knowledgeID
 	var row ProjectAsset
 	err := b.db.WithContext(ctx).
 		Joins("JOIN lingdoc_asset_revisions AS r ON r.asset_id = lingdoc_project_assets.id").
-		Where("lingdoc_project_assets.project_id = ? AND r.weknora_knowledge_id = ?", projectID, knowledgeID).
-		Order("r.revision_no DESC").
+		Where("lingdoc_project_assets.project_id = ? AND r.weknora_knowledge_id = ? AND r.revision_no = lingdoc_project_assets.asset_revision AND r.status = ?", projectID, knowledgeID, RevisionActive).
 		First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return Asset{}, ErrAssetNotFound
@@ -176,7 +223,7 @@ func (b *Bindings) Bind(ctx context.Context, in BindInput) (Asset, error) {
 	existing, err := b.findBinding(ctx, in.ProjectID, in.KnowledgeID)
 	switch {
 	case err == nil:
-		return existing.toAsset(), nil
+		return b.assetWithCurrentRevision(ctx, existing)
 	case !errors.Is(err, gorm.ErrRecordNotFound):
 		return Asset{}, err
 	}
@@ -212,7 +259,7 @@ func (b *Bindings) Bind(ctx context.Context, in BindInput) (Asset, error) {
 	if err != nil {
 		// 并发重复绑定：唯一索引挡住了第二个写，回读先到的那一条。
 		if again, findErr := b.findBinding(ctx, in.ProjectID, in.KnowledgeID); findErr == nil {
-			return again.toAsset(), nil
+			return b.assetWithCurrentRevision(ctx, again)
 		}
 		return Asset{}, err
 	}
@@ -225,7 +272,7 @@ func (b *Bindings) bindTx(tx *gorm.DB, in BindInput) (Asset, error) {
 	}
 	var existing ProjectAsset
 	if err := tx.Where("project_id = ? AND knowledge_id = ?", in.ProjectID, in.KnowledgeID).First(&existing).Error; err == nil {
-		return existing.toAsset(), nil
+		return assetWithCurrentRevisionTx(tx, existing)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return Asset{}, err
 	}
@@ -240,7 +287,7 @@ func (b *Bindings) bindTx(tx *gorm.DB, in BindInput) (Asset, error) {
 		KnowledgeID: row.KnowledgeID, ContentHash: fp.Digest, Status: RevisionActive, Metadata: metadataFor(fp)}).Error; err != nil {
 		return Asset{}, err
 	}
-	return row.toAsset(), nil
+	return assetWithCurrentRevisionTx(tx, row)
 }
 
 // BindIdempotent persists the exact bind response in the workspace operation
@@ -362,6 +409,25 @@ func (b *Bindings) ObserveAsset(
 						row.ID, RevisionActive, res.Next.Revision).
 					Update("status", RevisionSuperseded).Error; err != nil {
 					return err
+				}
+				if current.ID != "" && current.ContentHash == "" && res.Next.Revision == row.AssetRevision {
+					fill := tx.Model(&ProjectAssetRevision{}).
+						Where("id = ? AND asset_id = ? AND revision_no = ? AND content_hash = ?",
+							current.ID, row.ID, row.AssetRevision, "").
+						Updates(map[string]any{
+							"weknora_knowledge_id": knowledgeID,
+							"content_hash":         res.Next.Fingerprint,
+							"status":               RevisionActive,
+							"metadata_json":        metadataFor(res.Fingerprint),
+						})
+					if fill.Error != nil {
+						return fill.Error
+					}
+					if fill.RowsAffected != 1 {
+						return ErrObservationConflict
+					}
+					result = res
+					return nil
 				}
 				revision := ProjectAssetRevision{
 					ID:          uuid.New().String(),
@@ -490,8 +556,12 @@ func (a ProjectAsset) toAsset() Asset {
 // revision that search and source validation use. ProjectAsset.KnowledgeID is
 // the original binding key; a reparse can move the live knowledge ID forward.
 func (b *Bindings) assetWithCurrentRevision(ctx context.Context, row ProjectAsset) (Asset, error) {
+	return assetWithCurrentRevisionTx(b.db.WithContext(ctx), row)
+}
+
+func assetWithCurrentRevisionTx(tx *gorm.DB, row ProjectAsset) (Asset, error) {
 	asset := row.toAsset()
-	revision, err := b.currentRevision(ctx, row.ID, row.AssetRevision)
+	revision, err := currentRevisionTx(tx, row.ID, row.AssetRevision)
 	if err != nil {
 		return Asset{}, err
 	}

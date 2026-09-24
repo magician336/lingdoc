@@ -2,6 +2,7 @@ package evidence
 
 import (
 	"context"
+	"errors"
 	"strings"
 )
 
@@ -36,6 +37,13 @@ type ResolveResult struct {
 // BindingSource 提供"该项目当前绑定了哪些资料"。
 type BindingSource interface {
 	BoundAssets(ctx context.Context, projectID string) ([]Asset, error)
+}
+
+// CurrentAssetRefresher lets the gateway refresh current bottom-layer state
+// after access is authorized and then read the same current asset snapshot.
+type CurrentAssetRefresher interface {
+	RefreshAsset(ctx context.Context, projectID, assetID string) error
+	CurrentAsset(ctx context.Context, projectID, assetID string) (Asset, error)
 }
 
 // Authorizer 判定调用者此刻能否访问某份资料。授权是否仍有效必须现查，
@@ -95,6 +103,23 @@ func (g *assetGateway) ResolveAllowed(
 		if !allowed {
 			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotAuthorized})
 			continue
+		}
+		if refresher, ok := g.bindings.(CurrentAssetRefresher); ok {
+			if err := refresher.RefreshAsset(ctx, projectID, asset.ID); err != nil {
+				if errors.Is(err, ErrAssetNotFound) {
+					res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotFound})
+					continue
+				}
+				return nil, err
+			}
+			asset, err = refresher.CurrentAsset(ctx, projectID, asset.ID)
+			if err != nil {
+				if errors.Is(err, ErrAssetNotFound) {
+					res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotFound})
+					continue
+				}
+				return nil, err
+			}
 		}
 		if asset.ProcessingState != AssetStateReady {
 			// 授权必须先于状态判定，避免向无权调用者泄露资料状态。
