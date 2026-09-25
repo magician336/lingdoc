@@ -81,7 +81,18 @@ type CheckStatus string
 const (
 	CheckPassed  CheckStatus = "passed"
 	CheckBlocked CheckStatus = "blocked"
+	// CheckNotEvaluated is the published status for a check that had no ruleset
+	// to run. Reporting "passed" there would claim a check that never happened.
+	CheckNotEvaluated CheckStatus = "not_evaluated"
 )
+
+// DeliveryKindInternalDemo is the only delivery kind this demo can release.
+const DeliveryKindInternalDemo = "internal_demo"
+
+// unattributedTarget covers a project-scoped finding that has no project ID to
+// point at. ValidationIssue.target_id is published as non-empty, and an empty
+// target would hide the defect from the caller.
+const unattributedTarget = "unresolved-project"
 
 type CheckResult struct {
 	ProjectVersion int          `json:"project_version"`
@@ -204,122 +215,193 @@ func (s *ReleaseService) Get(projectID, snapshotID string) (ReleaseSnapshot, err
 	return snapshot, nil
 }
 
+// issueFunc reports one finding against the frozen delivery input. ruleID must
+// name a rule of the frozen template; the internal code labels the diagnostic
+// for tests and never reaches the wire.
+type issueFunc func(ruleID, code, chapterID, message string)
+
 func Evaluate(input DeliveryInput) CheckResult {
-	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: input.Template.RulesetHash, Status: CheckPassed}
-	issue := func(code, chapterID, message string) {
-		target := input.ProjectID
-		if chapterID != "" {
-			target = chapterID
-		}
-		result.Issues = append(result.Issues, CheckIssue{ID: fmt.Sprintf("%s-%s-%d", code, target, len(result.Issues)+1), RuleID: code, RulesetHash: input.Template.RulesetHash, Severity: "blocking", TargetID: target, TargetVersion: nil, Message: message, Code: code, ChapterID: chapterID})
+	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: input.Template.RulesetHash, Status: CheckPassed, Issues: []CheckIssue{}}
+	severities := ruleSeverities(input.Template.Rules)
+	if len(severities) == 0 {
+		result.Status = CheckNotEvaluated
+		return result
 	}
-	if input.ProjectID == "" || input.DeliveryKind != "internal_demo" {
-		issue("invalid_delivery_input", "", "project_id and internal_demo delivery_kind are required")
+	versions := chapterVersionIDs(input.Chapters)
+	add := func(severity, ruleID, code, chapterID, message string) {
+		target, targetVersion := issueTarget(input, versions, chapterID)
+		result.Issues = append(result.Issues, CheckIssue{ID: fmt.Sprintf("%s-%s-%d", code, target, len(result.Issues)+1), RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: targetVersion, Message: message, Code: code, ChapterID: chapterID})
+		if severity == SeverityBlocking {
+			result.Status = CheckBlocked
+		}
+	}
+	issue := func(ruleID, code, chapterID, message string) {
+		add(ruleSeverity(severities, ruleID), ruleID, code, chapterID, message)
+	}
+	// advisory reports an acknowledged finding: the rule is satisfied, but the
+	// result must still carry the item forward to the exported file.
+	advisory := func(ruleID, code, chapterID, message string) {
+		add(SeverityWarning, ruleID, code, chapterID, message)
+	}
+
+	if input.ProjectID == "" || input.DeliveryKind != DeliveryKindInternalDemo {
+		issue(RuleRequiredFields, "invalid_delivery_input", "", "project_id 与交付类型 internal_demo 均为必填")
 	}
 	for _, field := range input.Template.RequiredFields {
 		if strings.TrimSpace(input.Spec[field]) == "" {
-			issue("required_field_missing", "", "required research condition is missing: "+field)
+			issue(RuleRequiredFields, "required_field_missing", "", "缺少必填研究条件："+field)
 		}
 	}
 	validateFrozenCollections(input, issue)
 	chapters := map[string]SnapshotChapter{}
 	for _, chapter := range input.Chapters {
 		if chapter.SectionID == "" || chapters[chapter.SectionID].SectionID != "" {
-			issue("invalid_chapter_section", chapter.ChapterID, "chapter section must be present and unique")
+			issue(RuleChapterNonempty, "invalid_chapter_section", chapter.ChapterID, "章节必须对应唯一的模板章节")
 		}
 		chapters[chapter.SectionID] = chapter
-		checkChapter(chapter, input, issue)
+		checkChapter(chapter, input, issue, advisory)
 	}
 	for _, section := range input.Template.Sections {
 		if section.Required && chapters[section.ID].SectionID == "" {
-			issue("required_chapter_missing", "", "required template section is missing: "+section.ID)
+			issue(RuleRequiredFields, "required_chapter_missing", "", "缺少必填模板章节："+section.ID)
 		}
-	}
-	if len(result.Issues) > 0 {
-		result.Status = CheckBlocked
 	}
 	return result
 }
-func validateFrozenCollections(input DeliveryInput, issue func(string, string, string)) {
+
+func ruleSeverities(rules []Rule) map[string]string {
+	out := make(map[string]string, len(rules))
+	for _, rule := range rules {
+		out[rule.ID] = rule.Severity
+	}
+	return out
+}
+
+// ruleSeverity keeps an undeclared rule blocking: a rule the frozen template
+// does not describe must never be silently downgraded.
+func ruleSeverity(severities map[string]string, ruleID string) string {
+	if severity, ok := severities[ruleID]; ok && severity != "" {
+		return severity
+	}
+	return SeverityBlocking
+}
+
+// chapterVersionIDs indexes the immutable version a chapter-scoped finding must
+// cite, so ValidationIssue.target_version can pin the exact reviewed version.
+func chapterVersionIDs(chapters []SnapshotChapter) map[string]*string {
+	out := make(map[string]*string, len(chapters))
+	for _, chapter := range chapters {
+		if chapter.ChapterID == "" || chapter.ChapterVersionID == nil {
+			continue
+		}
+		out[chapter.ChapterID] = cloneVersion(chapter.ChapterVersionID)
+	}
+	return out
+}
+
+// issueTarget names what the caller must act on. Project-scoped findings point
+// at the project; chapter-scoped findings point at the chapter and, when one
+// exists, at the exact version the finding is about.
+func issueTarget(input DeliveryInput, versions map[string]*string, chapterID string) (string, *string) {
+	if chapterID == "" {
+		if input.ProjectID != "" {
+			return input.ProjectID, nil
+		}
+		return unattributedTarget, nil
+	}
+	return chapterID, cloneVersion(versions[chapterID])
+}
+
+func validateFrozenCollections(input DeliveryInput, issue issueFunc) {
 	sources := map[string]bool{}
 	for _, source := range input.Sources {
 		if source.ID == "" || sources[source.ID] || source.ProjectID == "" || source.AssetID == "" || source.AssetRevision < 1 || source.Locator == "" || source.DisplayTitle == "" {
-			issue("invalid_frozen_source", "", "frozen sources require unique IDs and complete provenance")
+			issue(RuleSourceAvailable, "invalid_frozen_source", "", "冻结来源必须具有唯一 ID 与完整溯源信息")
 		}
 		sources[source.ID] = true
 	}
 	assets := map[string]bool{}
 	for _, asset := range input.AssetVersions {
 		if asset.AssetID == "" || asset.Revision < 1 || assets[asset.AssetID] {
-			issue("invalid_asset_versions", "", "asset versions require unique asset IDs and positive revisions")
+			issue(RuleSourceAvailable, "invalid_asset_versions", "", "冻结资料版本必须具有唯一 asset_id 与正整数 revision")
 		}
 		assets[asset.AssetID] = true
 	}
 	policy := map[string]bool{}
 	for _, id := range input.PolicyAssetIDs {
 		if id == "" || policy[id] {
-			issue("invalid_policy_assets", "", "policy asset IDs must be non-empty and unique")
+			issue(RuleSourceAvailable, "invalid_policy_assets", "", "授权资料 ID 不得为空且必须唯一")
 		}
 		policy[id] = true
 	}
 }
-func checkChapter(chapter SnapshotChapter, input DeliveryInput, issue func(string, string, string)) {
+func checkChapter(chapter SnapshotChapter, input DeliveryInput, issue issueFunc, advisory issueFunc) {
 	if chapter.ChapterVersionID == nil {
-		issue("chapter_version_missing", chapter.ChapterID, "chapter has no immutable version")
+		issue(RuleChapterNonempty, "chapter_version_missing", chapter.ChapterID, "章节尚无不可变版本")
 		return
 	}
 	if strings.TrimSpace(chapter.BodyMarkdown) == "" {
-		issue("chapter_empty", chapter.ChapterID, "chapter body is empty")
+		issue(RuleChapterNonempty, "chapter_empty", chapter.ChapterID, "章节正文为空")
 	}
 	ids := map[string]bool{}
 	for _, id := range chapter.SourceIDs {
 		if id == "" || ids[id] {
-			issue("invalid_source_ids", chapter.ChapterID, "source IDs must be non-empty and unique")
+			issue(RuleSourceAvailable, "invalid_source_ids", chapter.ChapterID, "来源 ID 不得为空且必须唯一")
 			break
 		}
 		ids[id] = true
 	}
 	if !sameStringSet(ids, citationIDs(chapter.BodyMarkdown)) {
-		issue("citation_mismatch", chapter.ChapterID, "citation markers must exactly match source_ids")
+		issue(RuleSourceAvailable, "citation_mismatch", chapter.ChapterID, "正文引用标记必须与 source_ids 完全一致")
 	}
 	sources, assets, allowed := sourcesByID(input.Sources), assetVersions(input.AssetVersions), stringSet(input.PolicyAssetIDs)
 	expectedAssets := map[string]int{}
 	for id := range ids {
 		source, ok := sources[id]
 		if !ok || source.ProjectID != input.ProjectID || !allowed[source.AssetID] || assets[source.AssetID] != source.AssetRevision || sha256Text(source.QuotedText) != source.QuotedTextHash {
-			issue("source_invalid", chapter.ChapterID, "source is not a complete frozen allowed record: "+id)
+			issue(RuleSourceAvailable, "source_invalid", chapter.ChapterID, "来源不是完整、冻结且已授权的记录："+id)
 			continue
 		}
 		expectedAssets[source.AssetID] = source.AssetRevision
 	}
 	confirmation := chapter.Confirmation
 	if confirmation == nil || confirmation.ID == "" || confirmation.ChapterID != chapter.ChapterID || confirmation.ChapterVersionID != *chapter.ChapterVersionID || confirmation.SpecRevision != input.SpecRevision || confirmation.TemplateVersion != input.Template.Version || confirmation.ActorUserID == "" || confirmation.CreatedAt.IsZero() {
-		issue("confirmation_stale", chapter.ChapterID, "confirmation does not match the frozen chapter, specification, and template")
+		issue(RuleChapterConfirmed, "confirmation_stale", chapter.ChapterID, "确认记录与冻结章节、研究条件及模板不一致")
 		return
 	}
-	checkDecisions(chapter, issue)
+	checkDecisions(chapter, issue, advisory)
 	if !sameAssetVersions(confirmation.AssetVersions, expectedAssets) {
-		issue("confirmation_asset_versions_mismatch", chapter.ChapterID, "confirmation assets must exactly match the chapter's frozen sources")
+		issue(RuleChapterConfirmed, "confirmation_asset_versions_mismatch", chapter.ChapterID, "确认记录的资料版本必须与章节冻结来源完全一致")
 	}
 }
-func checkDecisions(chapter SnapshotChapter, issue func(string, string, string)) {
+func checkDecisions(chapter SnapshotChapter, issue issueFunc, advisory issueFunc) {
 	items, decisions := map[string]bool{}, map[string]bool{}
 	for _, item := range chapter.ReviewItems {
 		if item.ID == "" || item.Statement == "" || item.OriginCandidateID == "" || items[item.ID] {
-			issue("review_items_invalid", chapter.ChapterID, "review items must have unique complete IDs")
+			issue(RuleReviewItemsDecided, "review_items_invalid", chapter.ChapterID, "待核项必须具备唯一且完整的 ID")
 			return
 		}
 		items[item.ID] = true
 	}
+	retained := make([]string, 0, len(chapter.Confirmation.Decisions))
 	for _, decision := range chapter.Confirmation.Decisions {
-		if decisions[decision.ReviewItemID] || !items[decision.ReviewItemID] || (decision.Disposition != "resolved" && decision.Disposition != "retained_warning") || strings.TrimSpace(decision.Reason) == "" {
-			issue("review_decisions_invalid", chapter.ChapterID, "review decisions must exactly cover items with a reason")
+		if decisions[decision.ReviewItemID] || !items[decision.ReviewItemID] || (decision.Disposition != DispositionResolved && decision.Disposition != DispositionRetainedWarning) || strings.TrimSpace(decision.Reason) == "" {
+			issue(RuleReviewItemsDecided, "review_decisions_invalid", chapter.ChapterID, "待核项处置必须逐项覆盖且给出理由")
 			return
 		}
 		decisions[decision.ReviewItemID] = true
+		if decision.Disposition == DispositionRetainedWarning {
+			retained = append(retained, decision.ReviewItemID)
+		}
 	}
 	if len(items) != len(decisions) {
-		issue("review_decisions_incomplete", chapter.ChapterID, "all review items need one decision")
+		issue(RuleReviewItemsDecided, "review_decisions_incomplete", chapter.ChapterID, "每个待核项都需要一条处置记录")
+		return
+	}
+	// A retained item does not block: it is reported so the caller keeps it in
+	// the released file instead of dropping it silently.
+	for _, id := range retained {
+		advisory(RuleReviewItemsDecided, "retained_review_item", chapter.ChapterID, "存在经负责人选择保留的待核项，须随内部演示文件呈现："+id)
 	}
 }
 
@@ -377,10 +459,7 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 }
 func cloneChapter(chapter SnapshotChapter) SnapshotChapter {
 	copy := chapter
-	if chapter.ChapterVersionID != nil {
-		value := *chapter.ChapterVersionID
-		copy.ChapterVersionID = &value
-	}
+	copy.ChapterVersionID = cloneVersion(chapter.ChapterVersionID)
 	copy.SourceIDs = append([]string(nil), chapter.SourceIDs...)
 	copy.ReviewItems = append([]ReviewItem(nil), chapter.ReviewItems...)
 	if chapter.Confirmation != nil {
@@ -393,8 +472,27 @@ func cloneChapter(chapter SnapshotChapter) SnapshotChapter {
 }
 func cloneSnapshot(snapshot ReleaseSnapshot) ReleaseSnapshot {
 	snapshot.FrozenInput = cloneInput(snapshot.FrozenInput)
-	snapshot.Check.Issues = append([]CheckIssue(nil), snapshot.Check.Issues...)
+	snapshot.Check.Issues = cloneIssues(snapshot.Check.Issues)
 	return snapshot
+}
+
+// cloneIssues keeps a saved snapshot from sharing issue targets with the copy
+// handed to the caller, and keeps "issues" an empty array rather than null so
+// every served CheckResult matches the published schema.
+func cloneIssues(issues []CheckIssue) []CheckIssue {
+	out := make([]CheckIssue, len(issues))
+	for i, issue := range issues {
+		out[i] = issue
+		out[i].TargetVersion = cloneVersion(issue.TargetVersion)
+	}
+	return out
+}
+func cloneVersion(version *string) *string {
+	if version == nil {
+		return nil
+	}
+	value := *version
+	return &value
 }
 func opaqueID(prefix string) (string, error) {
 	var value [16]byte
