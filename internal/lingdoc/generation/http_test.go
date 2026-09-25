@@ -47,6 +47,7 @@ func TestGenerationStartStrictlyValidatesRequestBody(t *testing.T) {
 		wantCode   string
 	}{
 		{name: "unknown field", body: `{"chapter_id":"chapter-1","unexpected":true}`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
+		{name: "non-json unicode whitespace", body: "\\u00a0{\\\"chapter_id\\\":\\\"chapter-1\\\"}", wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
 		{name: "second json value", body: `{"chapter_id":"chapter-1"} {}`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
 		{name: "trailing data", body: `{"chapter_id":"chapter-1"} garbage`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
 		{name: "null is not an object", body: `null`, wantStatus: http.StatusBadRequest, wantCode: "invalid_request"},
