@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -405,40 +406,62 @@ func checkDecisions(chapter SnapshotChapter, issue, advisory issueFunc) {
 	}
 }
 
-type canonicalDeliveryInput struct {
-	ProjectID      string                     `json:"project_id"`
-	ProjectName    string                     `json:"project_name"`
-	ProjectVersion int                        `json:"project_version"`
-	SpecRevision   int                        `json:"spec_revision"`
-	Spec           map[string]string          `json:"spec"`
-	Template       Template                   `json:"template"`
-	Chapters       []canonicalSnapshotChapter `json:"chapters"`
-	Sources        []FrozenSource             `json:"sources"`
-	AssetVersions  []AssetVersion             `json:"asset_versions"`
-	PolicyAssetIDs []string                   `json:"policy_asset_ids"`
-	DeliveryKind   string                     `json:"delivery_kind"`
-}
-type canonicalSnapshotChapter struct {
-	ChapterID        string        `json:"chapter_id"`
-	ChapterVersionID *string       `json:"chapter_version_id"`
-	Title            string        `json:"title"`
-	BodyMarkdown     string        `json:"body_markdown"`
-	SourceIDs        []string      `json:"source_ids"`
-	ReviewItems      []ReviewItem  `json:"review_items"`
-	Confirmation     *Confirmation `json:"confirmation,omitempty"`
-}
-
+// digestFrozenInput 按契约发布的那套规范形式取摘要。发布的那对
+// contracts/frozen-input.canonical.json 与 .sha256 就是它的输出，prepareRelease
+// 样例里的 snapshot_digest 就是这一枚：重算得到同一个值，那对文件才有核对的意义，
+// 否则消费者拿到快照无从判断它是不是自己以为的那一份。
+//
+// 值先过一遍 cloneInput，因为摘要只该取决于内容：契约里「没有来源」写作 []，
+// 而 Go 里同一件事的自然写法是 nil 切片，编出来是 null。两者会落成两枚摘要，
+// 可它们在契约里是同一个值。工作区侧那些真会是空的集合（引用、待核项、资料版本、
+// 研究条件）都由 cloneInput 一并规整，走它就不会漏。
 func digestFrozenInput(input DeliveryInput) (string, error) {
-	chapters := make([]canonicalSnapshotChapter, len(input.Chapters))
-	for i, chapter := range input.Chapters {
-		chapters[i] = canonicalSnapshotChapter{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID, Title: chapter.Title, BodyMarkdown: chapter.BodyMarkdown, SourceIDs: chapter.SourceIDs, ReviewItems: chapter.ReviewItems, Confirmation: chapter.Confirmation}
-	}
-	data, err := json.Marshal(canonicalDeliveryInput{ProjectID: input.ProjectID, ProjectName: input.ProjectName, ProjectVersion: input.ProjectVersion, SpecRevision: input.SpecRevision, Spec: input.Spec, Template: input.Template, Chapters: chapters, Sources: input.Sources, AssetVersions: input.AssetVersions, PolicyAssetIDs: input.PolicyAssetIDs, DeliveryKind: input.DeliveryKind})
+	data, err := canonicalJSON(cloneInput(input))
 	if err != nil {
 		return "", fmt.Errorf("canonicalize frozen input: %w", err)
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// canonicalJSON 把值编成契约发布的规范形式。判据是发布侧那台生成器，
+// contracts/validate_artifacts.py 的 canon()：
+//
+//	json.dumps(x, ensure_ascii=False, sort_keys=True, separators=(',',':'))
+//
+// 即对象键**递归按字母序**、紧凑分隔符、非 ASCII 原样输出。
+//
+// 做法是先按 Go 的规则编一次，拿到一个合法的 JSON 值，再解成通用结构重编一次：
+// 第二轮里对象是 map[string]any，encoding/json 对 map 的键一律排序，键序于是只
+// 取决于内容，与字段在 Go 里怎么排无关。
+//
+// 早先这里另立了一组与主结构体逐字段对应的影子结构体，想靠书写顺序复刻契约的
+// 字段序。那既是对 sort_keys 的误读（排的是字母序，不是某份文档里的出现顺序），
+// 又是个复制品：主结构体新增字段时影子不会跟着长，摘要会**静默**漏掉那个字段。
+func canonicalJSON(value any) ([]byte, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	// 解成 json.Number 而不是 float64：float64 会改掉大整数与超过 17 位的精度，
+	// 而摘要只该取决于内容，不该取决于数字多大。
+	decoder.UseNumber()
+	var generic any
+	if err := decoder.Decode(&generic); err != nil {
+		return nil, err
+	}
+	var out bytes.Buffer
+	encoder := json.NewEncoder(&out)
+	// 发布侧 ensure_ascii=False 的意思是不转义非 ASCII，它也从不动 < > &；
+	// Go 默认的 HTML 转义会把它们写成 < 之类。两边不是同一套字节，
+	// 就永远对不上同一枚摘要。
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(generic); err != nil {
+		return nil, err
+	}
+	// Encode 会补一个换行，canon() 没有。
+	return bytes.TrimRight(out.Bytes(), "\n"), nil
 }
 
 func cloneInput(input DeliveryInput) DeliveryInput {
@@ -452,23 +475,32 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 	for i, chapter := range input.Chapters {
 		copy.Chapters[i] = cloneChapter(chapter)
 	}
-	copy.Sources = append([]FrozenSource(nil), input.Sources...)
-	copy.AssetVersions = append([]AssetVersion(nil), input.AssetVersions...)
-	copy.PolicyAssetIDs = append([]string(nil), input.PolicyAssetIDs...)
+	copy.Sources = cloneSlice(input.Sources)
+	copy.AssetVersions = cloneSlice(input.AssetVersions)
+	copy.PolicyAssetIDs = cloneSlice(input.PolicyAssetIDs)
 	return copy
 }
 func cloneChapter(chapter SnapshotChapter) SnapshotChapter {
 	copy := chapter
 	copy.ChapterVersionID = cloneVersion(chapter.ChapterVersionID)
-	copy.SourceIDs = append([]string(nil), chapter.SourceIDs...)
-	copy.ReviewItems = append([]ReviewItem(nil), chapter.ReviewItems...)
+	copy.SourceIDs = cloneSlice(chapter.SourceIDs)
+	copy.ReviewItems = cloneSlice(chapter.ReviewItems)
 	if chapter.Confirmation != nil {
 		confirmation := *chapter.Confirmation
-		confirmation.AssetVersions = append([]AssetVersion(nil), chapter.Confirmation.AssetVersions...)
-		confirmation.Decisions = append([]ReviewDecision(nil), chapter.Confirmation.Decisions...)
+		confirmation.AssetVersions = cloneSlice(chapter.Confirmation.AssetVersions)
+		confirmation.Decisions = cloneSlice(chapter.Confirmation.Decisions)
 		copy.Confirmation = &confirmation
 	}
 	return copy
+}
+
+// cloneSlice 复制一份切片，并让「空」落成 []T{} 而不是 nil。契约里集合一律是
+// 数组（[] 与 null 是两个不同的值），而 nil 切片编出来正是 null——空集在
+// 契约里只有一种写法，服务端产出的那份也得是它。
+func cloneSlice[T any](values []T) []T {
+	out := make([]T, len(values))
+	copy(out, values)
+	return out
 }
 func cloneSnapshot(snapshot ReleaseSnapshot) ReleaseSnapshot {
 	snapshot.FrozenInput = cloneInput(snapshot.FrozenInput)
