@@ -67,7 +67,10 @@ func decodeGenerationRequest(body io.Reader, dst *Request) error {
 	if len(encoded) > maxGenerationRequestBytes {
 		return ErrInvalidRequest
 	}
-	// JSON permits only space, horizontal tab, carriage return, and line feed\n\t// around a value. bytes.TrimSpace would also remove Unicode whitespace that\n\t// encoding/json correctly rejects, silently broadening the wire contract.\n\tencoded = bytes.Trim(encoded, " \\t\\r\\n")
+	// JSON permits only space, horizontal tab, carriage return, and line feed.
+	// around a value. bytes.TrimSpace would also remove Unicode whitespace that
+	// encoding/json correctly rejects, silently broadening the wire contract.
+	encoded = bytes.Trim(encoded, " \t\r\n")
 	if len(encoded) == 0 || encoded[0] != '{' {
 		return ErrInvalidRequest
 	}
