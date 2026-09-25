@@ -48,8 +48,11 @@ func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
 	if calls != 0 {
 		t.Fatalf("renderer was invoked %d times for a blocked snapshot", calls)
 	}
-	if _, err := exports.GetExport(snapshot.ProjectID, "export-000001"); err == nil {
-		t.Fatal("blocked snapshot left an export artifact")
+	// IDs are opaque: looking up one guessed ID cannot prove no write occurred.
+	exports.mu.RLock()
+	defer exports.mu.RUnlock()
+	if len(exports.exports) != 0 {
+		t.Fatalf("blocked snapshot persisted %d export artifacts", len(exports.exports))
 	}
 }
 
@@ -111,5 +114,39 @@ func TestRecoveryFlowFrozenDigestIsUnaffectedByLaterSourcePresentation(t *testin
 	}
 	if current.SnapshotDigest == first.SnapshotDigest {
 		t.Fatal("a new frozen source value did not produce a new digest")
+	}
+}
+
+func TestRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact(t *testing.T) {
+	snapshots, snapshot := preparedSnapshot(t)
+	exports := NewMemoryExportStore()
+	currentnessErr := errors.New("currentness store unavailable after rendering")
+	checks, renders := 0, 0
+	service := NewExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
+		renders++
+		// A state-flow fixture, not proof of a valid DOCX; T14 owns validation.
+		return []byte("rendered state-flow fixture"), nil
+	}), CurrentnessFunc(func(DeliveryInput) (bool, error) {
+		checks++
+		if checks == 1 {
+			return true, nil
+		}
+		return false, currentnessErr
+	}), ExportAccessFunc(allowExport))
+
+	artifact, err := service.Start("owner", snapshot.ProjectID, snapshot.ID)
+	if !errors.Is(err, currentnessErr) {
+		t.Fatalf("Start error = %v, want %v", err, currentnessErr)
+	}
+	if checks != 2 || renders != 1 {
+		t.Fatalf("currentness/render calls = %d/%d, want 2/1", checks, renders)
+	}
+	if artifact.ID != "" || len(artifact.file) != 0 {
+		t.Fatalf("currentness failure exposed an artifact: %+v", artifact)
+	}
+	exports.mu.RLock()
+	defer exports.mu.RUnlock()
+	if len(exports.exports) != 0 {
+		t.Fatalf("post-render currentness error persisted %d artifacts", len(exports.exports))
 	}
 }
