@@ -244,7 +244,7 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		_, err := s.findProject(tx, actor, projectID, "write")
 		return err
 	}
-	return s.operation(ctx, actor, "saveSpec", projectID, key, input, auth, func(tx *gorm.DB) (any, int, error) {
+	write := func(tx *gorm.DB) (any, int, error) {
 		row, err := s.findProject(tx, actor, projectID, "write")
 		if err != nil {
 			return nil, 0, err
@@ -273,7 +273,23 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		}
 		view, err := projectView(tx, row)
 		return view, 200, err
+	}
+	return retrySQLiteSpecOperation(ctx, specLockRetryBudget, func(attemptCtx context.Context) (json.RawMessage, int, bool, error) {
+		return s.operation(attemptCtx, actor, "saveSpec", projectID, key, input, auth, write)
 	})
+}
+
+func isSQLiteLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var codedError interface{ Code() int }
+	if errors.As(err, &codedError) {
+		code := codedError.Code() & 0xff
+		return code == 5 || code == 6 // SQLITE_BUSY or SQLITE_LOCKED
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked")
 }
 
 type ActivateProjectInput struct {

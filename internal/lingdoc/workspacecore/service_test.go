@@ -160,7 +160,8 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 }
 
 func TestTwoWritersSameSpecRevision(t *testing.T) {
-	svc := testStore(t, filepath.Join(t.TempDir(), "race.db"))
+	path := filepath.Join(t.TempDir(), "race.db")
+	svc := testStore(t, path)
 	ctx := context.Background()
 	actor := Actor{TenantID: 17, UserID: "writer"}
 	seedTenantMember(t, svc, actor)
@@ -169,38 +170,52 @@ func TestTwoWritersSameSpecRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := asProject(t, raw).ID
+	writers := []*Service{testStore(t, path), testStore(t, path)}
 	start := make(chan struct{})
-	results := make(chan error, 2)
+	type writeResult struct {
+		value string
+		err   error
+	}
+	results := make(chan writeResult, 2)
 	var wg sync.WaitGroup
 	for i, value := range []string{"甲", "乙"} {
 		wg.Add(1)
 		go func(i int, value string) {
 			defer wg.Done()
 			<-start
-			_, _, _, err := svc.SaveSpec(ctx, actor, id, "race-spec-"+string(rune('0'+i)), SaveSpecInput{
+			_, _, _, err := writers[i].SaveSpec(ctx, actor, id, "race-spec-"+string(rune('0'+i)), SaveSpecInput{
 				ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": value},
 			})
-			results <- err
+			results <- writeResult{value: value, err: err}
 		}(i, value)
 	}
 	close(start)
 	wg.Wait()
 	close(results)
 	successes := 0
-	for err := range results {
-		if err == nil {
+	conflicts := 0
+	winner := ""
+	for result := range results {
+		if result.err == nil {
 			successes++
+			winner = result.value
+		} else if errors.Is(result.err, ErrVersionConflict) {
+			conflicts++
+		} else {
+			t.Errorf("concurrent save returned neither success nor version conflict: %v", result.err)
 		}
 	}
 	project, err := svc.GetProject(ctx, actor, id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if successes != 1 || project.SpecRevision != 1 || project.ProjectVersion != 2 {
-		t.Fatalf("lost CAS: successes=%d project=%+v", successes, project)
+	if successes != 1 || conflicts != 1 || project.SpecRevision != 1 || project.ProjectVersion != 2 {
+		t.Fatalf("lost CAS: successes=%d conflicts=%d project=%+v", successes, conflicts, project)
+	}
+	if got := project.Spec["research_subject"]; got != winner {
+		t.Fatalf("persisted spec = %q, want winning writer value %q", got, winner)
 	}
 }
-
 func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "members.db"))
 	ctx := context.Background()
