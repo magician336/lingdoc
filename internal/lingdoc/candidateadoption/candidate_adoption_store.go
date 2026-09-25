@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,6 +81,13 @@ type candidateRow struct {
 	CreatedAt       time.Time
 }
 
+type projectAssetRow struct {
+	ID            string     `gorm:"primaryKey;size:36"`
+	ProjectID     string     `gorm:"index;not null;size:36"`
+	AssetRevision int        `gorm:"not null;default:1"`
+	DeletedAt     *time.Time `gorm:"index"`
+}
+
 type adoptionIdempotencyRow struct {
 	ID               string `gorm:"primaryKey;size:36"`
 	ProjectID        string `gorm:"index;not null;size:36"`
@@ -110,6 +116,7 @@ func (chapterRow) TableName() string                 { return "lingdoc_chapters"
 func (chapterVersionRow) TableName() string          { return "lingdoc_chapter_versions" }
 func (confirmationRow) TableName() string            { return "lingdoc_chapter_confirmations" }
 func (candidateRow) TableName() string               { return "lingdoc_candidates" }
+func (projectAssetRow) TableName() string            { return "lingdoc_project_assets" }
 func (adoptionIdempotencyRow) TableName() string     { return "lingdoc_candidate_adoptions" }
 func (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_confirmation_requests" }
 
@@ -118,7 +125,7 @@ func (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_c
 // T11 columns and records.
 func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
 	return s.db.WithContext(ctx).AutoMigrate(
-		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &candidateRow{},
+		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{},
 		&confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{},
 	)
 }
@@ -236,6 +243,23 @@ func (s *SQLiteCandidateAdoptionStore) GetCandidate(ctx context.Context, project
 	return candidateFromRow(row)
 }
 
+func (s *SQLiteCandidateAdoptionStore) ListCandidates(ctx context.Context, projectID, chapterID string) ([]CandidateSummary, error) {
+	var rows []candidateRow
+	if err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ?", projectID, chapterID).
+		Order("created_at DESC, id DESC").Limit(50).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	candidates := make([]CandidateSummary, 0, len(rows))
+	for _, row := range rows {
+		var basis Basis
+		if err := json.Unmarshal([]byte(row.BasisJSON), &basis); err != nil {
+			return nil, fmt.Errorf("decode candidate basis: %w", err)
+		}
+		candidates = append(candidates, CandidateSummary{ID: row.ID, RunID: row.RunID, Validity: row.Validity, CreatedAt: row.CreatedAt, Basis: basis})
+	}
+	return candidates, nil
+}
+
 func (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, projectID, chapterID string) (GenerationContext, error) {
 	tx := s.db.WithContext(ctx)
 	var project projectRow
@@ -261,6 +285,14 @@ func (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, pr
 		ChapterVersionID: chapter.CurrentVersionID,
 		TemplateID:       project.TemplateID,
 		TemplateVersion:  project.TemplateVersion,
+	}
+	var assets []projectAssetRow
+	if err := tx.Where("project_id = ? AND deleted_at IS NULL", projectID).Order("id ASC").Find(&assets).Error; err != nil {
+		return GenerationContext{}, err
+	}
+	basis.AssetVersions = make([]AssetVersion, 0, len(assets))
+	for _, asset := range assets {
+		basis.AssetVersions = append(basis.AssetVersions, AssetVersion{AssetID: asset.ID, AssetRevision: asset.AssetRevision})
 	}
 	return GenerationContext{
 		ProjectID: projectID, ChapterID: chapterID, SpecRevision: int(project.SpecRevision),
@@ -348,7 +380,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(current.BodyMarkdown) != "" && !in.ReplaceExisting {
+		if current.CurrentVersionID != nil && !in.ReplaceExisting {
 			return ErrInvalidState
 		}
 

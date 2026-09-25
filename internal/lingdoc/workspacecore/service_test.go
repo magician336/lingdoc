@@ -33,7 +33,7 @@ func testStore(t *testing.T, path string) *Service {
 			"000018_lingdoc_workspace.up.sql",
 			"000019_lingdoc_evidence_assets.up.sql",
 			"000020_lingdoc_candidate_adoption.up.sql",
-			"000021_lingdoc_chapter_confirmation_requests.up.sql",
+			"000023_lingdoc_chapter_confirmation_requests.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {

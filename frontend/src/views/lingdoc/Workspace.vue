@@ -73,6 +73,47 @@
           </ul>
         </section>
 
+        <section v-if="project.status === 'active' && chapter" class="generation">
+          <h3>生成候选稿</h3>
+          <fieldset class="generation-assets" :disabled="generationPending || busy">
+            <legend>本次允许使用的资料</legend>
+            <label v-for="asset in readyAssets" :key="asset.id" class="asset-choice">
+              <input v-model="selectedAssetIds" type="checkbox" :value="asset.id" />
+              {{ asset.title || asset.knowledge_id }}（版本 {{ asset.asset_revision }}）
+            </label>
+            <p v-if="readyAssets.length === 0" class="muted">请先绑定已就绪的项目资料。</p>
+          </fieldset>
+          <form class="generation-form" @submit.prevent="startDraft">
+            <label for="generation-instruction">写作要求</label>
+            <textarea id="generation-instruction" v-model="generationInstruction" rows="3"
+              :disabled="busy || generationPending" placeholder="说明本章要回答的问题和需要关注的重点" />
+            <div class="actions">
+              <button type="submit" :disabled="busy || generationPending || !selectedAssetIds.length || !generationInstruction.trim()">生成候选稿</button>
+              <button v-if="generationRun" type="button" :disabled="generationBusy" @click="refreshGeneration()">刷新任务状态</button>
+              <button v-if="generationRun?.status === 'queued' || generationRun?.status === 'running'" type="button"
+                :disabled="generationBusy" @click="cancelGenerationRun()">取消生成</button>
+            </div>
+          </form>
+          <p v-if="generationRun" class="muted">任务 {{ generationRun.id }} · 状态：{{ generationRun.status }}</p>
+          <p v-if="generationRun?.error" role="alert" class="warning">{{ generationRun.error.message }}</p>
+          <section v-if="generationCandidates.length" class="candidate-list" aria-label="本章候选历史">
+            <h4>本章候选历史</h4>
+            <ul>
+              <li v-for="candidate in generationCandidates" :key="candidate.id">
+                <button type="button" :aria-pressed="generationCandidate?.id === candidate.id"
+                  @click="showGenerationCandidate(candidate.run_id)">
+                  候选 {{ candidate.id.slice(0, 8) }} · {{ candidate.validity }} · {{ new Date(candidate.created_at).toLocaleString() }}
+                </button>
+              </li>
+            </ul>
+          </section>
+          <article v-if="generationCandidate" class="candidate-preview">
+            <h4>候选稿预览（不会自动覆盖章节）</h4>
+            <pre>{{ generationCandidate.body_markdown }}</pre>
+            <p>引用 {{ generationCandidate.source_ids.length }} 条来源 · 待核事项 {{ generationCandidate.review_items.length }} 条 · 生成时状态：{{ generationCandidate.validity }}（采纳时仍会复核当前版本）</p>
+          </article>
+        </section>
+
         <form class="spec-form" @submit.prevent="saveConditions">
           <h3>研究条件</h3>
           <label for="subject">研究主题</label>
@@ -130,7 +171,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import type { Candidate } from '@/api/lingdoc/candidateAdoption'
+import {
+  cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
+  type GenerationCandidateSummary, type GenerationRun,
+} from '@/api/lingdoc/generation'
+import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
   activateProject, bindAsset, confirmChapter, createProject, getProject, getSource, listAssets, listChapters, listProjects,
   retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type ReviewDecision, type Source,
@@ -141,6 +188,7 @@ const truncated = ref(false)
 const project = ref<Project | null>(null)
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
+const selectedAssetIds = ref<string[]>([])
 const knowledgeId = ref('')
 const sourceQuery = ref('')
 const sources = ref<Source[]>([])
@@ -153,6 +201,14 @@ const busy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 const reviewDrafts = ref<Record<string, { disposition: ReviewDecision['disposition']; reason: string }>>({})
+const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
+const generationRun = ref<GenerationRun | null>(null)
+const generationCandidate = ref<Candidate | null>(null)
+const generationCandidates = ref<GenerationCandidateSummary[]>([])
+const generationBusy = ref(false)
+const readyAssets = computed(() => assets.value.filter(item => item.processing_state === 'ready'))
+const generationPending = computed(() => generationRun.value?.status === 'queued' || generationRun.value?.status === 'running')
+let generationTimer: ReturnType<typeof setTimeout> | undefined
 
 // Keep one key for a retry of the exact same operation and body.
 const attempts = new Map<string, { body: string; key: string }>()
@@ -221,6 +277,10 @@ async function selectProject(id: string, force = false) {
       !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
   if (force && (specChanged.value || bodyChanged.value) &&
       !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
+  if (generationTimer) clearTimeout(generationTimer)
+  generationRun.value = null
+  generationCandidate.value = null
+  generationCandidates.value = []
   errorMessage.value = ''
   try {
     const result = await getProject(id)
@@ -231,9 +291,12 @@ async function selectProject(id: string, force = false) {
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
     assets.value = assetResult.data ?? []
+    selectedAssetIds.value = readyAssets.value.map(item => item.id)
     sources.value = []
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
+    await loadGenerationCandidates(chapter.value?.id)
+    await resumeGeneration()
   } catch (error) { failure(error) }
 }
 
@@ -312,9 +375,86 @@ async function activate() {
 
 function selectChapter(item: Chapter) {
   if (bodyChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
+  if (generationTimer) clearTimeout(generationTimer)
+  generationTimer = undefined
   chapter.value = item
   bodyDraft.value = item.body_markdown
   errorMessage.value = ''
+  generationRun.value = null
+  generationCandidate.value = null
+  generationCandidates.value = []
+  void loadGenerationCandidates(item.id)
+  void resumeGeneration()
+}
+
+async function loadGenerationCandidates(chapterId = chapter.value?.id) {
+  if (!project.value || !chapterId) {
+    generationCandidates.value = []
+    return
+  }
+  const projectId = project.value.id
+  try {
+    const result = await listGenerationCandidates(projectId, chapterId)
+    if (project.value?.id === projectId && chapter.value?.id === chapterId) generationCandidates.value = result.data
+  } catch (error) { failure(error) }
+}
+
+async function showGenerationCandidate(runId: string) {
+  if (!project.value || generationBusy.value) return
+  generationBusy.value = true
+  try {
+    const result = await getGeneratedCandidate(project.value.id, runId)
+    generationCandidate.value = result.data
+  } catch (error) { failure(error) }
+  finally { generationBusy.value = false }
+}
+
+function generationStorageKey(projectId: string, chapterId: string) {
+  return `lingdoc:generation:${projectId}:${chapterId}`
+}
+
+async function resumeGeneration() {
+  if (!project.value || !chapter.value) return
+  const savedRunId = localStorage.getItem(generationStorageKey(project.value.id, chapter.value.id))
+  if (savedRunId) await refreshGeneration(savedRunId)
+}
+
+async function refreshGeneration(runId = generationRun.value?.id) {
+  if (!project.value || !runId || generationBusy.value) return
+  generationBusy.value = true
+  const projectId = project.value.id
+  try {
+    const result = await getGeneration(projectId, runId)
+    if (project.value?.id !== projectId || chapter.value?.id !== result.data.chapter_id) return
+    generationRun.value = result.data
+    generationCandidate.value = null
+    if (result.data.status === 'succeeded' && result.data.candidate_id) {
+      const candidate = await getGeneratedCandidate(projectId, runId)
+      if (project.value?.id !== projectId || chapter.value?.id !== candidate.data.chapter_id) return
+      generationCandidate.value = candidate.data
+      await loadGenerationCandidates(candidate.data.chapter_id)
+    }
+    if (result.data.status === 'queued' || result.data.status === 'running') {
+      if (generationTimer) clearTimeout(generationTimer)
+      generationTimer = setTimeout(() => { void refreshGeneration(runId) }, 2000)
+    }
+  } catch (error) { failure(error) }
+  finally { generationBusy.value = false }
+}
+
+async function cancelGenerationRun() {
+  if (!project.value || !generationRun.value || generationBusy.value) return
+  const runId = generationRun.value.id
+  generationBusy.value = true
+  try {
+    const result = await cancelGeneration(project.value.id, runId)
+    generationRun.value = result.data
+  } catch (error) { failure(error) }
+  finally { generationBusy.value = false }
+  if (generationRun.value?.status === 'queued' || generationRun.value?.status === 'running') {
+    if (generationTimer) clearTimeout(generationTimer)
+    generationTimer = setTimeout(() => { void refreshGeneration(runId) }, 2000)
+  }
 }
 
 async function confirmCurrentChapter() {
@@ -348,6 +488,31 @@ async function confirmCurrentChapter() {
   finally { busy.value = false }
 }
 
+async function startDraft() {
+  if (!project.value || !chapter.value || busy.value || !selectedAssetIds.value.length || !generationInstruction.value.trim()) return
+  busy.value = true
+  errorMessage.value = ''
+  const projectId = project.value.id
+  const chapterId = chapter.value.id
+  const input = {
+    chapter_id: chapterId,
+    asset_ids: [...selectedAssetIds.value].sort(),
+    instruction: generationInstruction.value.trim(),
+    expected_spec_revision: project.value.spec_revision,
+    expected_chapter_version_id: chapter.value.current_version_id,
+  }
+  try {
+    const key = await generationIdempotencyKey(localStorage, projectId, chapterId, input)
+    const result = await startGeneration(projectId, input, key)
+    generationRun.value = result.data
+    generationCandidate.value = null
+    localStorage.setItem(generationStorageKey(projectId, chapterId), result.data.id)
+    clearGenerationAttempt(localStorage, projectId, chapterId)
+    await refreshGeneration(result.data.id)
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
 async function saveText() {
   if (!project.value || !chapter.value || busy.value || chapter.value.source_ids.length) return
   busy.value = true
@@ -375,6 +540,7 @@ async function saveText() {
 }
 
 onMounted(loadProjects)
+onUnmounted(() => { if (generationTimer) clearTimeout(generationTimer) })
 </script>
 
 <style scoped>
@@ -385,7 +551,7 @@ p { margin: 6px 0; } .muted { color: #6b7670; font-size: 13px; } .warning { colo
 .alert { padding: 12px 16px; margin: 20px 0; background: #fff1ee; border: 1px solid #eea99e; border-radius: 8px; }
 .workspace-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; margin-top: 24px; }
 .panel { background: #fff; border: 1px solid #dbe5dd; border-radius: 12px; padding: 22px; min-width: 0; }
-.create-form, .spec-form, .chapter-form { display: flex; flex-direction: column; gap: 10px; }
+.create-form, .spec-form, .chapter-form, .generation-form { display: flex; flex-direction: column; gap: 10px; }
 label { font-weight: 600; font-size: 14px; }
 input, textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #becdc3; border-radius: 7px; font: inherit; }
 button { padding: 8px 12px; border: 1px solid #becdc3; border-radius: 7px; background: #fff; color: #25452f; cursor: pointer; }
@@ -393,12 +559,6 @@ button:hover:not(:disabled), button.selected { border-color: #238a52; background
 button:disabled { opacity: .55; cursor: not-allowed; }
 .project-list { list-style: none; padding: 0; display: grid; gap: 7px; }
 .project-list button { width: 100%; display: flex; justify-content: space-between; text-align: left; }
-.review-items { display: grid; gap: 10px; padding: 14px; border: 1px solid #e7d5a7; border-radius: 8px; background: #fffaf0; }
-.review-items h4 { margin: 0; }
-.review-item { display: grid; gap: 8px; min-width: 0; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
-.review-item legend { padding: 0 4px; font-weight: 600; }
-.review-item select { padding: 9px 10px; border: 1px solid #becdc3; border-radius: 7px; font: inherit; }
-.confirmed { color: #167346; font-size: 13px; }
 .project-list small, .chapter-tabs small { color: #67746a; margin-left: 8px; }
 .asset-list { list-style: none; padding: 0; display: grid; gap: 8px; }
 .asset-bind-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
@@ -407,6 +567,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .asset-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
 .asset-list span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .asset-list small, .asset-list em { color: #67746a; font-size: 12px; font-style: normal; }
+.generation-assets { display: grid; gap: 8px; margin: 0 0 12px; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
+.asset-choice { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.asset-choice input { width: auto; }
+.candidate-list { margin-top: 14px; }
+.candidate-list ul { display: grid; gap: 6px; padding-left: 20px; }
+.candidate-preview { margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
+.candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .chapter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .empty-work { display: grid; place-items: center; min-height: 300px; color: #6b7670; }
 @media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } }

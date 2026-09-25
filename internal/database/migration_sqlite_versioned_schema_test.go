@@ -14,7 +14,8 @@ import (
 // 000041 task queue, 000053 system settings, 000055 processing spans,
 // 000063 knowledge multi-tags, 000093 browser authorization,
 // 000097 LingDoc workspace, 000098 LingDoc evidence assets,
-// 000099 LingDoc candidate adoption, 000100 LingDoc confirmation requests.
+// 000099 LingDoc candidate adoption, 000100/000101 LingDoc generation runs,
+// 000102 LingDoc confirmation requests.
 var versionedSQLiteTables = []string{
 	"memory_extraction_sessions",
 	"task_pending_ops",
@@ -36,24 +37,26 @@ var versionedSQLiteTables = []string{
 	"lingdoc_chapter_confirmations",
 	"lingdoc_candidate_adoptions",
 	"lingdoc_chapter_confirmation_requests",
+	"lingdoc_generation_runs",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
 // versioned migrations add and the SQLite baseline was missing.
 var versionedSQLiteColumns = map[string][]string{
-	"memory_subjects":    {"extraction_state"},               // 000094
-	"memory_items":       {"replaces_id"},                    // 000094
-	"tenants":            {"api_principal_config"},           // 000064
-	"users":              {"is_system_admin"},                // 000053
-	"knowledges":         {"pending_subtasks_count"},         // 000056
-	"messages":           {"attachments", "usage"},           // 000034, 000085
-	"tenant_invitations": {"token", "accepted_count"},        // 000054
-	"embed_channels":     {"allow_memory"},                   // 000060
-	"mcp_oauth_tokens":   {"principal_type", "principal_id"}, // 000064
-	"mcp_tool_approvals": {"enabled"},                        // 000091
+	"memory_subjects":         {"extraction_state"},                // 000094
+	"memory_items":            {"replaces_id"},                     // 000094
+	"tenants":                 {"api_principal_config"},            // 000064
+	"users":                   {"is_system_admin"},                 // 000053
+	"knowledges":              {"pending_subtasks_count"},          // 000056
+	"messages":                {"attachments", "usage"},            // 000034, 000085
+	"tenant_invitations":      {"token", "accepted_count"},         // 000054
+	"embed_channels":          {"allow_memory"},                    // 000060
+	"mcp_oauth_tokens":        {"principal_type", "principal_id"},  // 000064
+	"mcp_tool_approvals":      {"enabled"},                         // 000091
+	"lingdoc_generation_runs": {"claim_token", "cancel_requested"}, // 000101
 }
 
-const expectedSQLiteMigrationVersion = 21
+const expectedSQLiteMigrationVersion = 23
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

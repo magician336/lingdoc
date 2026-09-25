@@ -598,7 +598,7 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 		result = GenerationContext{ProjectID: projectID, ProjectVersion: project.ProjectVersion,
 			SpecRevision: project.SpecRevision, Spec: spec, TemplateID: project.TemplateID,
 			TemplateVersion: project.TemplateVersion, ChapterID: chapterID,
-			ChapterVersionID: view.CurrentVersionID, ChapterBody: view.BodyMarkdown}
+			ChapterVersionID: view.CurrentVersionID, ChapterBody: view.BodyMarkdown, Chapter: view}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return result, err

@@ -5611,6 +5611,186 @@
         "x-domain": "evidence"
       }
     },
+    "/projects/{projectId}/generations/{runId}/cancel": {
+      "post": {
+        "operationId": "cancelGeneration",
+        "tags": [
+          "evidence"
+        ],
+        "summary": "取消章节候选稿生成",
+        "description": "排队任务立即中断；运行中任务由工作进程协作取消。已完成任务保持原状态。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "取消请求已处理，返回最新任务状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRunResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/candidates": {
+      "get": {
+        "operationId": "listChapterCandidates",
+        "tags": [
+          "evidence"
+        ],
+        "summary": "列出章节候选稿",
+        "description": "按最近生成时间倒序返回本项目、本章节最近的候选稿；需要项目读取权限。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "候选稿列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "run_id": { "type": "string" },
+                          "validity": { "type": "string", "enum": ["fresh", "stale"] },
+                          "created_at": { "type": "string", "format": "date-time" }
+                        },
+                        "required": ["id", "run_id", "validity", "created_at"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "request_id": { "type": "string" },
+                    "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+                  },
+                  "required": ["data", "request_id", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
+    "/projects/{projectId}/generations/{runId}/candidate": {
+      "get": {
+        "operationId": "getGeneratedCandidate",
+        "tags": ["evidence"],
+        "summary": "读取生成任务候选稿",
+        "description": "需要项目读取权限；来源权限会在返回候选稿前重新校验，条件或资料版本已变化时 validity 为 stale。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "候选稿正文和服务端 basis",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CandidateResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "当前来源授权已失效",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在、尚无候选稿或不可访问",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
     "/projects/{projectId}/generations/{runId}": {
       "get": {
         "operationId": "getGeneration",
