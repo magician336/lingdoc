@@ -63,3 +63,6 @@ miniprogram/project.private.config.json
 
 # Locally built BrowserSkill runtime and extension bundles
 /artifacts/browserskill/
+
+# 本机内置模型声明（含 API key；按 config/builtin_models.yaml.example 自行生成，勿入库）
+config/builtin_models.yaml

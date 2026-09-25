@@ -1,0 +1,55 @@
+{
+  "mode": "mock",
+  "note": "绑定存储、HTTP 适配与界面切片均已有真实实现；权限判定消费已合入 PR#4 的 access.KBPermissions，底座读取端口 KnowledgeReader 在生产接线中由数据库适配器实现。当前报告沿用领域验证基线，未补跑 HTTP 集成与浏览器联调，因此 mode 仍取阶梯里最保守的一档，not_run 只表示本次验证未运行，不表示代码未实现。",
+  "passed": [
+    {
+      "id": "T09-绑定资料与就绪状态（F03 第一步）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-只允许已绑定且已就绪的资料（F03 第二步）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-请求集合与返回集合逐项相等（F22）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-跨项目 ID 与不存在的 ID 收敛 not_found",
+      "status": "passed"
+    },
+    {
+      "id": "T09-撤权后现查即拒（F07）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-资料版本：内容变了才递增",
+      "status": "passed"
+    },
+    {
+      "id": "T09-定位可回到原文（真实原文读取 + 合成资料）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-拿不到原文时降弱档（如实声明上限）",
+      "status": "passed"
+    },
+    {
+      "id": "T09-SourcePolicy.Validate：复核已产出的引用（契约 §2）",
+      "status": "passed"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "T09-S4-HTTP 薄适配与幂等（本次未运行集成验证）",
+      "status": "not_run",
+      "detail": "S4 已接入工作区路由并复用 lingdoc_operations；本次未运行 HTTP 集成测试。已覆盖代码路径包括空范围/部分授权错误信封、当前知识状态刷新、来源定位和绑定幂等。"
+    },
+    {
+      "id": "T09-S5-界面切片（本次未运行浏览器联调）",
+      "status": "not_run",
+      "detail": "S5 已接入 frontend/src/api/lingdoc/ 与 views/lingdoc/；本次未运行浏览器联调，前端 vue-tsc 类型检查已通过。"
+    }
+  ]
+}

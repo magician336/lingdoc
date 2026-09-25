@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,16 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+func TestResolveRejectsCrossAssetHit(t *testing.T) {
+	hit := goalHit()
+	hit.KnowledgeID = "k-other"
+	r := NewSourceResolver(fakeOrigin{text: syntheticOrigin(t), ok: true})
+	_, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
+	if !errors.Is(err, ErrAssetKnowledgeMismatch) {
+		t.Fatalf("Resolve error = %v, want ErrAssetKnowledgeMismatch", err)
+	}
+}
 
 // 合成原文 testdata/synthetic-asset.txt 共 167 runes / 475 bytes。
 // 下列坐标是一次性算准后写死的字面量，不在运行时推导——否则
@@ -65,7 +76,7 @@ func TestResolveQuotesOriginByRuneOffsets(t *testing.T) {
 	}
 
 	r := NewSourceResolver(fakeOrigin{text: origin, ok: true})
-	got, err := r.Resolve(context.Background(), Asset{ID: "a-1", Title: "合成资料"}, []*types.SearchResult{goalHit()})
+	got, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo", Title: "合成资料"}, []*types.SearchResult{goalHit()})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -99,7 +110,7 @@ func TestResolveMarksStaleWhenContentNoLongerMatchesOrigin(t *testing.T) {
 	hit.Content = "这段正文已被改写，与坐标指向的原文不符"
 
 	r := NewSourceResolver(fakeOrigin{text: origin, ok: true})
-	got, err := r.Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+	got, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -124,7 +135,7 @@ func TestResolveRejectsDegenerateRange(t *testing.T) {
 		hit := goalHit()
 		hit.StartAt, hit.EndAt, hit.Content = 0, 0, ""
 
-		got, err := NewSourceResolver(origins).Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+		got, err := NewSourceResolver(origins).Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
 		if err != nil {
 			t.Fatalf("%s Resolve: %v", tier, err)
 		}
@@ -141,7 +152,7 @@ func TestStaleSourceKeepsRelocatableAnchor(t *testing.T) {
 	hit.ContentRewritten = true
 
 	r := NewSourceResolver(fakeOrigin{text: syntheticOrigin(t), ok: true})
-	got, err := r.Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+	got, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -166,7 +177,7 @@ func TestResolveInvalidationFlagBeatsStrongTier(t *testing.T) {
 	hit.ContentRewritten = true
 
 	r := NewSourceResolver(fakeOrigin{text: origin, ok: true})
-	got, err := r.Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+	got, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -185,7 +196,7 @@ func TestResolveMarksUnavailableOnOutOfRangeCoordinates(t *testing.T) {
 	hit.StartAt, hit.EndAt = totalRunes+10, totalRunes+20
 
 	r := NewSourceResolver(fakeOrigin{text: origin, ok: true})
-	got, err := r.Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+	got, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -211,7 +222,7 @@ func TestResolveFallsBackToWeakTierWithoutOrigin(t *testing.T) {
 			tc.mut(hit)
 
 			r := NewSourceResolver(fakeOrigin{ok: false})
-			got, err := r.Resolve(context.Background(), Asset{ID: "a-1"}, []*types.SearchResult{hit})
+			got, err := r.Resolve(context.Background(), Asset{ID: "a-1", KnowledgeID: "k-demo"}, []*types.SearchResult{hit})
 			if err != nil {
 				t.Fatalf("Resolve: %v", err)
 			}
