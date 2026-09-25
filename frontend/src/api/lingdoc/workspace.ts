@@ -18,6 +18,25 @@ export interface ReviewItem {
   origin_candidate_id: string
 }
 
+export interface ReviewDecision {
+  review_item_id: string
+  disposition: 'resolved' | 'retained_warning'
+  reason: string
+}
+
+export interface Confirmation {
+  id: string
+  chapter_id: string
+  chapter_version_id: string
+  spec_revision: number
+  asset_versions: Array<{ asset_id: string; asset_revision: number }>
+  template_version: string
+  actor_user_id: string
+  created_at: string
+  valid: boolean
+  review_decisions: ReviewDecision[]
+}
+
 export interface Chapter {
   id: string
   project_id: string
@@ -85,4 +104,11 @@ export const saveChapter = (projectId: string, chapterId: string, input: {
   source_ids: string[]
 }, key: string) => post<Result<Chapter>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/versions`, input, keyHeader(key),
+)
+export const confirmChapter = (projectId: string, chapterId: string, input: {
+  expected_chapter_version_id: string
+  expected_spec_revision: number
+  review_decisions: ReviewDecision[]
+}, key: string) => post<Result<Confirmation>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/confirmations`, input, keyHeader(key),
 )

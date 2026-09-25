@@ -140,6 +140,26 @@
             <label for="chapter-body">{{ chapter.title }}正文</label>
             <textarea id="chapter-body" v-model="bodyDraft" :disabled="busy" rows="12" placeholder="从这里开始撰写章节" />
             <p v-if="chapter.review_items.length" class="warning">本章有 {{ chapter.review_items.length }} 条待核事项。保存修改会保留这些事项，仍需逐项核查。</p>
+            <section v-if="chapter.review_items.length" class="review-items" aria-label="待核项处置">
+              <h4>逐项处置待核事项</h4>
+              <fieldset v-for="item in chapter.review_items" :key="item.id" class="review-item">
+                <legend>{{ item.statement }}</legend>
+                <label :for="`disposition-${item.id}`">处理结果</label>
+                <select :id="`disposition-${item.id}`" v-model="reviewDraft(item.id).disposition" :disabled="busy">
+                  <option value="resolved">已核实并解决</option>
+                  <option value="retained_warning">保留为提示</option>
+                </select>
+                <label :for="`reason-${item.id}`">处理理由</label>
+                <textarea :id="`reason-${item.id}`" v-model="reviewDraft(item.id).reason" :disabled="busy" rows="2" maxlength="2000" placeholder="记录核查依据或保留原因" />
+              </fieldset>
+            </section>
+            <p v-if="!chapter.current_version_id" class="muted">空章节尚无可确认版本；仍可继续交付检查，检查结果会指出内容缺失。</p>
+            <p v-else-if="chapter.confirmation_valid" class="confirmed">当前章节版本已确认。保存新版本后需要重新确认。</p>
+            <p v-else-if="bodyChanged" class="muted">正文有未保存修改，请先保存为新版本，再确认当前版本。</p>
+            <button v-if="chapter.current_version_id" type="button" @click="confirmCurrentChapter"
+              :disabled="busy || bodyChanged || !reviewDecisionsReady">
+              {{ chapter.confirmation_valid ? '重新确认当前版本' : '确认当前章节版本' }}
+            </button>
             <p v-if="chapter.source_ids.length" class="warning">本章已有来源引用。资料授权接入前暂不支持修改此章，以免丢失引用。</p>
             <button type="submit" :disabled="busy || !bodyChanged || chapter.source_ids.length > 0">保存为新版本</button>
           </form>
@@ -159,8 +179,8 @@ import {
 } from '@/api/lingdoc/generation'
 import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
-  activateProject, bindAsset, createProject, getProject, getSource, listAssets, listChapters, listProjects,
-  retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type Source,
+  activateProject, bindAsset, confirmChapter, createProject, getProject, getSource, listAssets, listChapters, listProjects,
+  retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type ReviewDecision, type Source,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -180,6 +200,7 @@ const bodyDraft = ref('')
 const busy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
+const reviewDrafts = ref<Record<string, { disposition: ReviewDecision['disposition']; reason: string }>>({})
 const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
 const generationRun = ref<GenerationRun | null>(null)
 const generationCandidate = ref<Candidate | null>(null)
@@ -205,6 +226,15 @@ const specChanged = computed(() => !!project.value && (
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
 const bodyChanged = computed(() => !!chapter.value && bodyDraft.value !== chapter.value.body_markdown)
+const reviewDecisionsReady = computed(() => !!chapter.value && chapter.value.review_items.every(item => {
+  const decision = reviewDrafts.value[`${chapter.value!.id}:${item.id}`]
+  return !!decision?.reason.trim()
+}))
+
+function reviewDraft(itemId: string) {
+  const key = `${chapter.value?.id ?? ''}:${itemId}`
+  return reviewDrafts.value[key] ??= { disposition: 'resolved', reason: '' }
+}
 
 function failure(error: unknown) {
   const item = error as { status?: number; message?: string; error?: { code?: string } }
@@ -425,6 +455,37 @@ async function cancelGenerationRun() {
     if (generationTimer) clearTimeout(generationTimer)
     generationTimer = setTimeout(() => { void refreshGeneration(runId) }, 2000)
   }
+}
+
+async function confirmCurrentChapter() {
+  if (!project.value || !chapter.value?.current_version_id || busy.value || bodyChanged.value || !reviewDecisionsReady.value) return
+  const current = chapter.value
+  const expectedVersion = current.current_version_id
+  if (!expectedVersion) return
+  const projectId = project.value.id
+  const decisions: ReviewDecision[] = current.review_items.map(item => ({
+    review_item_id: item.id,
+    disposition: reviewDraft(item.id).disposition,
+    reason: reviewDraft(item.id).reason.trim(),
+  }))
+  if (!window.confirm(`将确认“${current.title}”的当前版本。后续保存新版本会使本次确认失效。继续吗？`)) return
+  busy.value = true
+  errorMessage.value = ''
+  const input = {
+    expected_chapter_version_id: expectedVersion,
+    expected_spec_revision: project.value.spec_revision,
+    review_decisions: decisions,
+  }
+  const key = operationKey(`confirm:${current.id}`, input)
+  try {
+    await confirmChapter(projectId, current.id, input, key)
+    attempts.delete(`confirm:${current.id}`)
+    const result = await listChapters(projectId)
+    chapters.value = result.data
+    chapter.value = result.data.find(item => item.id === current.id) ?? null
+    if (chapter.value) bodyDraft.value = chapter.value.body_markdown
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
 }
 
 async function startDraft() {

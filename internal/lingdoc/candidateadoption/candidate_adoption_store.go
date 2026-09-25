@@ -100,13 +100,25 @@ type adoptionIdempotencyRow struct {
 	CreatedAt        time.Time
 }
 
-func (projectRow) TableName() string             { return "lingdoc_projects" }
-func (chapterRow) TableName() string             { return "lingdoc_chapters" }
-func (chapterVersionRow) TableName() string      { return "lingdoc_chapter_versions" }
-func (confirmationRow) TableName() string        { return "lingdoc_chapter_confirmations" }
-func (candidateRow) TableName() string           { return "lingdoc_candidates" }
-func (projectAssetRow) TableName() string        { return "lingdoc_project_assets" }
-func (adoptionIdempotencyRow) TableName() string { return "lingdoc_candidate_adoptions" }
+type confirmationIdempotencyRow struct {
+	ID           string `gorm:"primaryKey;size:36"`
+	ProjectID    string `gorm:"uniqueIndex:uq_lingdoc_confirmation_request,priority:1;not null;size:36"`
+	ChapterID    string `gorm:"uniqueIndex:uq_lingdoc_confirmation_request,priority:2;not null;size:36"`
+	ActorID      string `gorm:"uniqueIndex:uq_lingdoc_confirmation_request,priority:3;not null;size:128"`
+	Key          string `gorm:"column:idempotency_key;uniqueIndex:uq_lingdoc_confirmation_request,priority:4;not null;size:128"`
+	RequestHash  string `gorm:"not null;size:64"`
+	ResponseJSON string `gorm:"type:text;not null"`
+	CreatedAt    time.Time
+}
+
+func (projectRow) TableName() string                 { return "lingdoc_projects" }
+func (chapterRow) TableName() string                 { return "lingdoc_chapters" }
+func (chapterVersionRow) TableName() string          { return "lingdoc_chapter_versions" }
+func (confirmationRow) TableName() string            { return "lingdoc_chapter_confirmations" }
+func (candidateRow) TableName() string               { return "lingdoc_candidates" }
+func (projectAssetRow) TableName() string            { return "lingdoc_project_assets" }
+func (adoptionIdempotencyRow) TableName() string     { return "lingdoc_candidate_adoptions" }
+func (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_confirmation_requests" }
 
 // AutoMigrate is used by focused store tests. Production startup uses the
 // numbered migrations, where 000018 owns workspace tables and 000020 adds the
@@ -114,8 +126,110 @@ func (adoptionIdempotencyRow) TableName() string { return "lingdoc_candidate_ado
 func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
 	return s.db.WithContext(ctx).AutoMigrate(
 		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{},
-		&confirmationRow{}, &adoptionIdempotencyRow{},
+		&confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{},
 	)
+}
+
+// ConfirmChapter persists the confirmation and idempotent response atomically.
+// It rechecks the current chapter and project revisions inside the write
+// transaction so a concurrent edit cannot be confirmed from a stale read.
+func (s *SQLiteCandidateAdoptionStore) ReplayConfirmation(ctx context.Context, in ConfirmChapterInput) (*Confirmation, error) {
+	var previous confirmationIdempotencyRow
+	err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?",
+		in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if previous.RequestHash != confirmationRequestHash(in) {
+		return nil, ErrIdempotencyConflict
+	}
+	var result Confirmation
+	if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {
+		return nil, fmt.Errorf("decode confirmation idempotency response: %w", err)
+	}
+	return &result, nil
+}
+
+func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in ConfirmChapterInput, workspace GenerationContext) (Confirmation, bool, error) {
+	var result Confirmation
+	replayed := false
+	hash := confirmationRequestHash(in)
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var previous confirmationIdempotencyRow
+		err := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error
+		if err == nil {
+			if previous.RequestHash != hash {
+				return ErrIdempotencyConflict
+			}
+			if err := json.Unmarshal([]byte(previous.ResponseJSON), &result); err != nil {
+				return err
+			}
+			replayed = true
+			return nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		var project projectRow
+		if err := tx.Where("id = ?", in.ProjectID).First(&project).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		var chapter chapterRow
+		if err := tx.Where("id = ? AND project_id = ?", in.ChapterID, in.ProjectID).First(&chapter).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return err
+		}
+		if chapter.CurrentVersionID == nil || *chapter.CurrentVersionID != in.ExpectedChapterVersionID ||
+			int(project.SpecRevision) != in.ExpectedSpecRevision || project.TemplateVersion != workspace.Basis.TemplateVersion {
+			return ErrVersionConflict
+		}
+		var version chapterVersionRow
+		if err := tx.Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).First(&version).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrVersionConflict
+			}
+			return err
+		}
+		result = newConfirmation(in, workspace)
+		details, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		if err := tx.Create(&confirmationRow{ID: result.ID, ChapterID: in.ChapterID, ChapterVersionID: in.ExpectedChapterVersionID, Valid: true, DetailsJSON: string(details)}).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&confirmationRow{}).
+			Where("chapter_id = ? AND chapter_version_id = ? AND id <> ? AND valid = ?", in.ChapterID, in.ExpectedChapterVersionID, result.ID, true).
+			Update("valid", false).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&chapterVersionRow{}).Where("id = ? AND chapter_id = ? AND project_id = ?", in.ExpectedChapterVersionID, in.ChapterID, in.ProjectID).Update("confirmation_valid", true).Error; err != nil {
+			return err
+		}
+		projectUpdate := tx.Model(&projectRow{}).Where("id = ? AND project_version = ?", in.ProjectID, project.ProjectVersion).
+			Update("project_version", project.ProjectVersion+1)
+		if projectUpdate.Error != nil {
+			return projectUpdate.Error
+		}
+		if projectUpdate.RowsAffected != 1 {
+			return ErrVersionConflict
+		}
+		response, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		return tx.Create(&confirmationIdempotencyRow{ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
+			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash, ResponseJSON: string(response)}).Error
+	})
+	return result, replayed, err
 }
 
 func (s *SQLiteCandidateAdoptionStore) GetCandidate(ctx context.Context, projectID, candidateID string) (Candidate, error) {

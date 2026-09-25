@@ -3566,6 +3566,31 @@
             "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmChapterRequest"
+              },
+              "examples": {
+                "confirmCurrentVersion": {
+                  "value": {
+                    "expected_chapter_version_id": "cv-question-2",
+                    "expected_spec_revision": 1,
+                    "review_decisions": [
+                      {
+                        "review_item_id": "review-1",
+                        "disposition": "retained_warning",
+                        "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Owner确认当前章节版本",
@@ -10577,6 +10602,20 @@
           "validity",
           "review_items"
         ],
+        "additionalProperties": false
+      },
+      "ConfirmChapterRequest": {
+        "type": "object",
+        "properties": {
+          "expected_chapter_version_id": { "type": "string", "minLength": 1 },
+          "expected_spec_revision": { "type": "integer", "minimum": 0 },
+          "review_decisions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ReviewDecision" },
+            "uniqueItems": true
+          }
+        },
+        "required": ["expected_chapter_version_id", "expected_spec_revision", "review_decisions"],
         "additionalProperties": false
       },
       "Confirmation": {

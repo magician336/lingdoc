@@ -13,12 +13,23 @@ import (
 type ActorResolver func(*gin.Context) (string, bool)
 
 type CandidateAdoptionHandler struct {
-	Service      *CandidateAdoptionService
-	ResolveActor ActorResolver
+	Service       *CandidateAdoptionService
+	Confirmations *ConfirmationService
+	ResolveActor  ActorResolver
 }
 
 func NewCandidateAdoptionHandler(service *CandidateAdoptionService, resolveActor ActorResolver) *CandidateAdoptionHandler {
-	return &CandidateAdoptionHandler{Service: service, ResolveActor: resolveActor}
+	handler := &CandidateAdoptionHandler{Service: service, ResolveActor: resolveActor}
+	if service != nil {
+		if store, ok := service.Writer.(*SQLiteCandidateAdoptionStore); ok {
+			var sources ConfirmationSourcePolicy
+			if current, ok := service.Sources.(ConfirmationSourcePolicy); ok {
+				sources = current
+			}
+			handler.Confirmations = NewConfirmationService(store, sources, service.Authorizer)
+		}
+	}
+	return handler
 }
 
 // RegisterRoutes mounts the contract route below an existing authenticated
@@ -30,6 +41,57 @@ func RegisterRoutes(r gin.IRouter, h *CandidateAdoptionHandler) {
 	}
 	r.POST("/projects/:projectId/chapters/:chapterId/acceptances", h.AcceptCandidate)
 	r.GET("/projects/:projectId/candidates/:candidateId", h.GetCandidate)
+	r.POST("/projects/:projectId/chapters/:chapterId/confirmations", h.ConfirmChapter)
+}
+
+type confirmChapterRequest struct {
+	ExpectedChapterVersionID string            `json:"expected_chapter_version_id" binding:"required"`
+	ExpectedSpecRevision     *int              `json:"expected_spec_revision"`
+	ReviewDecisions          *[]ReviewDecision `json:"review_decisions"`
+}
+
+func (h *CandidateAdoptionHandler) ConfirmChapter(c *gin.Context) {
+	requestID := c.GetString("request_id")
+	if requestID == "" {
+		requestID = c.GetHeader("X-Request-ID")
+	}
+	if requestID == "" {
+		requestID = "unknown"
+	}
+	if h.Confirmations == nil {
+		writeCandidateAdoptionError(c, requestID, http.StatusServiceUnavailable, ErrInvalidState)
+		return
+	}
+	if h.ResolveActor == nil {
+		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
+		return
+	}
+	actor, ok := h.ResolveActor(c)
+	if !ok || strings.TrimSpace(actor) == "" {
+		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
+		return
+	}
+	var req confirmChapterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		writeCandidateAdoptionError(c, requestID, http.StatusBadRequest, ErrInvalidRequest)
+		return
+	}
+	if req.ExpectedSpecRevision == nil || req.ReviewDecisions == nil {
+		writeCandidateAdoptionError(c, requestID, http.StatusBadRequest, ErrInvalidRequest)
+		return
+	}
+	confirmation, replayed, err := h.Confirmations.ConfirmChapter(c.Request.Context(), ConfirmChapterInput{
+		ProjectID: c.Param("projectId"), ChapterID: c.Param("chapterId"), ActorID: actor,
+		IdempotencyKey:           strings.TrimSpace(c.GetHeader("Idempotency-Key")),
+		ExpectedChapterVersionID: req.ExpectedChapterVersionID, ExpectedSpecRevision: *req.ExpectedSpecRevision,
+		Decisions: *req.ReviewDecisions,
+	})
+	if err != nil {
+		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"data": confirmation, "request_id": requestID,
+		"meta": gin.H{"replayed": replayed, "refresh_required": replayed}})
 }
 
 type acceptCandidateRequest struct {

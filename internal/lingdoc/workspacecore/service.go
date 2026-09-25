@@ -403,7 +403,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 	})
 }
 
-func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
+func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
 	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
 		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
 	if row.CurrentVersionID == nil {
@@ -414,6 +414,24 @@ func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
 		return Chapter{}, err
 	}
 	view.BodyMarkdown = version.BodyMarkdown
+	if version.ConfirmationValid {
+		var confirmations []chapterConfirmationRow
+		if err := tx.Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", row.ID, version.ID, true).
+			Order("created_at DESC, id DESC").Find(&confirmations).Error; err != nil {
+			return Chapter{}, err
+		}
+		for _, confirmation := range confirmations {
+			var details chapterConfirmationDetails
+			if err := json.Unmarshal([]byte(confirmation.DetailsJSON), &details); err != nil {
+				return Chapter{}, fmt.Errorf("decode chapter confirmation %q: %w", confirmation.ID, err)
+			}
+			if details.Valid && details.ID == confirmation.ID && details.ChapterVersionID == version.ID &&
+				details.SpecRevision == project.SpecRevision && details.TemplateVersion == project.TemplateVersion {
+				view.ConfirmationValid = true
+				break
+			}
+		}
+	}
 	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &view.SourceIDs); err != nil {
 		return Chapter{}, err
 	}
@@ -424,21 +442,28 @@ func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
 }
 
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
-	tx := s.db.WithContext(ctx)
-	if _, err := s.findProject(tx, actor, projectID, "read"); err != nil {
-		return nil, err
-	}
-	var rows []chapterRow
-	if err := tx.Where("project_id = ?", projectID).Order("section_id").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	views := make([]Chapter, 0, len(rows))
-	for _, row := range rows {
-		view, err := chapterView(tx, row)
+	var views []Chapter
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		project, err := s.findProject(tx, actor, projectID, "read")
 		if err != nil {
-			return nil, err
+			return err
 		}
-		views = append(views, view)
+		var rows []chapterRow
+		if err := tx.Where("project_id = ?", projectID).Order("section_id").Find(&rows).Error; err != nil {
+			return err
+		}
+		views = make([]Chapter, 0, len(rows))
+		for _, row := range rows {
+			view, err := chapterView(tx, row, project)
+			if err != nil {
+				return err
+			}
+			views = append(views, view)
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
 	}
 	return views, nil
 }
@@ -500,7 +525,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 			(chapter.CurrentVersionID != nil && *chapter.CurrentVersionID != *input.ExpectedChapterVersionID) {
 			return nil, 0, ErrVersionConflict
 		}
-		old, err := chapterView(tx, chapter)
+		old, err := chapterView(tx, chapter, project)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -523,7 +548,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		}
 		version := chapterVersionRow{ID: newVersionID, ProjectID: projectID, ChapterID: chapterID,
 			ParentVersionID: chapter.CurrentVersionID, BodyMarkdown: input.BodyMarkdown,
-			SourceIDsJSON: "[]", ReviewItemsJSON: string(reviewJSON)}
+			SourceIDsJSON: "[]", ReviewItemsJSON: string(reviewJSON), SpecRevision: project.SpecRevision}
 		if err := tx.Create(&version).Error; err != nil {
 			return nil, 0, err
 		}
@@ -541,7 +566,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 			return nil, 0, ErrVersionConflict
 		}
 		chapter.CurrentVersionID = &newVersionID
-		view, err := chapterView(tx, chapter)
+		view, err := chapterView(tx, chapter, project)
 		return view, 201, err
 	})
 }
@@ -562,7 +587,7 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 			}
 			return err
 		}
-		view, err := chapterView(tx, chapter)
+		view, err := chapterView(tx, chapter, project)
 		if err != nil {
 			return err
 		}
