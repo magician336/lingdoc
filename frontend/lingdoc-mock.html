@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LingDoc · T06 契约 Mock 验证</title>
+    <style>
+      body { max-width: 840px; margin: 48px auto; padding: 0 24px; font: 16px/1.7 system-ui,sans-serif; }
+      button { padding: 10px 18px; margin: 8px 12px 16px 0; cursor: pointer; }
+      pre { border: 1px solid #aaa; padding: 18px; overflow: auto; white-space: pre-wrap; }
+      #notice { border-left: 4px solid #666; padding-left: 16px; }
+    </style>
+  </head>
+  <body>
+    <h1>T06 · 契约 Mock 验证</h1>
+    <p id="notice"><strong>MOCK / 仅开发环境</strong>：固定样例，无真实权限、数据库或模型调用。
+      请求经过现有 request.ts，但只发向 127.0.0.1:4010，不转发登录凭据，也不回退真实接口。</p>
+    <p>先在仓库根启动：<code>python scripts/lingdoc_mock/server.py</code></p>
+    <button id="success" type="button">消费成功样例 · 200</button>
+    <button id="failure" type="button">消费失败样例 · 422</button>
+    <p id="status" role="status" aria-live="polite">尚未运行</p>
+    <pre id="payload">点击按钮后显示契约响应。</pre>
+    <p>这是请求/响应适配验证，不是 F01 连续业务流程；写请求不会改变下一次固定响应。</p>
+    <script type="module" src="/src/dev/lingdoc-mock/main.ts"></script>
+  </body>
+</html>
