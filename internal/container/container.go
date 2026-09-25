@@ -21,6 +21,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql" // 给 Doris (database/sql) 注册 MySQL 协议驱动
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
@@ -81,6 +82,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/im/yunzhijia"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/mcp"
@@ -100,6 +102,25 @@ import (
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
 	wgrpc "github.com/weaviate/weaviate-go-client/v5/weaviate/grpc"
 )
+
+type candidateAdoptionWorkspaceAuthorizer struct {
+	service *workspace.Service
+}
+
+func (a candidateAdoptionWorkspaceAuthorizer) Authorize(ctx context.Context, actorID, projectID, capability string) error {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || a.service == nil {
+		return candidateadoption.ErrNotFound
+	}
+	err := a.service.Authorize(ctx, workspace.Actor{TenantID: tenantID, UserID: actorID}, projectID, capability)
+	if errors.Is(err, workspace.ErrNotFound) {
+		return candidateadoption.ErrNotFound
+	}
+	if errors.Is(err, workspace.ErrInvalidRequest) {
+		return candidateadoption.ErrInvalidRequest
+	}
+	return err
+}
 
 // BuildContainer constructs the dependency injection container
 // Registers all components, services, repositories and handlers needed by the application
@@ -457,6 +478,14 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(workspace.NewHandler))
+	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) *candidateadoption.CandidateAdoptionHandler {
+		store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
+		authorizer := candidateAdoptionWorkspaceAuthorizer{service: workspaceHandler.Service()}
+		service := candidateadoption.NewCandidateAdoptionService(store, nil, authorizer)
+		return candidateadoption.NewCandidateAdoptionHandler(service, func(c *gin.Context) (string, bool) {
+			return types.UserIDFromContext(c.Request.Context())
+		})
+	}))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))
