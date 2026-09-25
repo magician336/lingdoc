@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 var (
@@ -59,6 +60,14 @@ type Candidate struct {
 	Basis        Basis        `json:"basis"`
 	Validity     string       `json:"validity"`
 	ReviewItems  []ReviewItem `json:"review_items"`
+}
+
+type CandidateSummary struct {
+	ID        string    `json:"id"`
+	RunID     string    `json:"run_id"`
+	Validity  string    `json:"validity"`
+	CreatedAt time.Time `json:"created_at"`
+	Basis     Basis     `json:"-"`
 }
 
 type Chapter struct {

@@ -90,10 +90,23 @@
             <div class="actions">
               <button type="submit" :disabled="busy || generationPending || !selectedAssetIds.length || !generationInstruction.trim()">生成候选稿</button>
               <button v-if="generationRun" type="button" :disabled="generationBusy" @click="refreshGeneration()">刷新任务状态</button>
+              <button v-if="generationRun?.status === 'queued' || generationRun?.status === 'running'" type="button"
+                :disabled="generationBusy" @click="cancelGenerationRun()">取消生成</button>
             </div>
           </form>
           <p v-if="generationRun" class="muted">任务 {{ generationRun.id }} · 状态：{{ generationRun.status }}</p>
           <p v-if="generationRun?.error" role="alert" class="warning">{{ generationRun.error.message }}</p>
+          <section v-if="generationCandidates.length" class="candidate-list" aria-label="本章候选历史">
+            <h4>本章候选历史</h4>
+            <ul>
+              <li v-for="candidate in generationCandidates" :key="candidate.id">
+                <button type="button" :aria-pressed="generationCandidate?.id === candidate.id"
+                  @click="showGenerationCandidate(candidate.run_id)">
+                  候选 {{ candidate.id.slice(0, 8) }} · {{ candidate.validity }} · {{ new Date(candidate.created_at).toLocaleString() }}
+                </button>
+              </li>
+            </ul>
+          </section>
           <article v-if="generationCandidate" class="candidate-preview">
             <h4>候选稿预览（不会自动覆盖章节）</h4>
             <pre>{{ generationCandidate.body_markdown }}</pre>
@@ -139,8 +152,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { getCandidate, type Candidate } from '@/api/lingdoc/candidateAdoption'
-import { getGeneration, startGeneration, type GenerationRun } from '@/api/lingdoc/generation'
+import type { Candidate } from '@/api/lingdoc/candidateAdoption'
+import {
+  cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
+  type GenerationCandidateSummary, type GenerationRun,
+} from '@/api/lingdoc/generation'
 import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
   activateProject, bindAsset, createProject, getProject, getSource, listAssets, listChapters, listProjects,
@@ -167,6 +183,7 @@ const errorMessage = ref('')
 const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
 const generationRun = ref<GenerationRun | null>(null)
 const generationCandidate = ref<Candidate | null>(null)
+const generationCandidates = ref<GenerationCandidateSummary[]>([])
 const generationBusy = ref(false)
 const readyAssets = computed(() => assets.value.filter(item => item.processing_state === 'ready'))
 const generationPending = computed(() => generationRun.value?.status === 'queued' || generationRun.value?.status === 'running')
@@ -233,6 +250,7 @@ async function selectProject(id: string, force = false) {
   if (generationTimer) clearTimeout(generationTimer)
   generationRun.value = null
   generationCandidate.value = null
+  generationCandidates.value = []
   errorMessage.value = ''
   try {
     const result = await getProject(id)
@@ -247,6 +265,7 @@ async function selectProject(id: string, force = false) {
     sources.value = []
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
+    await loadGenerationCandidates(chapter.value?.id)
     await resumeGeneration()
   } catch (error) { failure(error) }
 }
@@ -326,12 +345,38 @@ async function activate() {
 
 function selectChapter(item: Chapter) {
   if (bodyChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
+  if (generationTimer) clearTimeout(generationTimer)
+  generationTimer = undefined
   chapter.value = item
   bodyDraft.value = item.body_markdown
   errorMessage.value = ''
   generationRun.value = null
   generationCandidate.value = null
+  generationCandidates.value = []
+  void loadGenerationCandidates(item.id)
   void resumeGeneration()
+}
+
+async function loadGenerationCandidates(chapterId = chapter.value?.id) {
+  if (!project.value || !chapterId) {
+    generationCandidates.value = []
+    return
+  }
+  const projectId = project.value.id
+  try {
+    const result = await listGenerationCandidates(projectId, chapterId)
+    if (project.value?.id === projectId && chapter.value?.id === chapterId) generationCandidates.value = result.data
+  } catch (error) { failure(error) }
+}
+
+async function showGenerationCandidate(runId: string) {
+  if (!project.value || generationBusy.value) return
+  generationBusy.value = true
+  try {
+    const result = await getGeneratedCandidate(project.value.id, runId)
+    generationCandidate.value = result.data
+  } catch (error) { failure(error) }
+  finally { generationBusy.value = false }
 }
 
 function generationStorageKey(projectId: string, chapterId: string) {
@@ -350,11 +395,14 @@ async function refreshGeneration(runId = generationRun.value?.id) {
   const projectId = project.value.id
   try {
     const result = await getGeneration(projectId, runId)
+    if (project.value?.id !== projectId || chapter.value?.id !== result.data.chapter_id) return
     generationRun.value = result.data
     generationCandidate.value = null
     if (result.data.status === 'succeeded' && result.data.candidate_id) {
-      const candidate = await getCandidate(projectId, result.data.candidate_id)
+      const candidate = await getGeneratedCandidate(projectId, runId)
+      if (project.value?.id !== projectId || chapter.value?.id !== candidate.data.chapter_id) return
       generationCandidate.value = candidate.data
+      await loadGenerationCandidates(candidate.data.chapter_id)
     }
     if (result.data.status === 'queued' || result.data.status === 'running') {
       if (generationTimer) clearTimeout(generationTimer)
@@ -362,6 +410,21 @@ async function refreshGeneration(runId = generationRun.value?.id) {
     }
   } catch (error) { failure(error) }
   finally { generationBusy.value = false }
+}
+
+async function cancelGenerationRun() {
+  if (!project.value || !generationRun.value || generationBusy.value) return
+  const runId = generationRun.value.id
+  generationBusy.value = true
+  try {
+    const result = await cancelGeneration(project.value.id, runId)
+    generationRun.value = result.data
+  } catch (error) { failure(error) }
+  finally { generationBusy.value = false }
+  if (generationRun.value?.status === 'queued' || generationRun.value?.status === 'running') {
+    if (generationTimer) clearTimeout(generationTimer)
+    generationTimer = setTimeout(() => { void refreshGeneration(runId) }, 2000)
+  }
 }
 
 async function startDraft() {
@@ -446,6 +509,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .generation-assets { display: grid; gap: 8px; margin: 0 0 12px; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
 .asset-choice { display: flex; align-items: center; gap: 8px; font-weight: 400; }
 .asset-choice input { width: auto; }
+.candidate-list { margin-top: 14px; }
+.candidate-list ul { display: grid; gap: 6px; padding-left: 20px; }
 .candidate-preview { margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
 .candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .chapter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }

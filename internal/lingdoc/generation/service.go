@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/google/uuid"
 )
@@ -27,17 +28,20 @@ var (
 	ErrStaleInput            = errors.New("stale_input")
 	ErrIdempotencyConflict   = errors.New("idempotency_conflict")
 	ErrRunUnavailable        = errors.New("generation_run_unavailable")
+	ErrGenerationCancelled   = errors.New("generation_cancelled")
 	ErrDependencyUnavailable = errors.New("dependency_unavailable")
 )
 
 type Status string
 
 const (
-	StatusQueued      Status = "queued"
-	StatusRunning     Status = "running"
-	StatusSucceeded   Status = "succeeded"
-	StatusFailed      Status = "failed"
-	StatusInterrupted Status = "interrupted"
+	StatusQueued           Status = "queued"
+	StatusRunning          Status = "running"
+	StatusSucceeded        Status = "succeeded"
+	StatusFailed           Status = "failed"
+	StatusInterrupted      Status = "interrupted"
+	claimLeaseDuration            = 5 * time.Minute
+	claimHeartbeatInterval        = 30 * time.Second
 )
 
 type RunError struct {
@@ -56,6 +60,7 @@ type Run struct {
 	CreatedAt   time.Time `json:"-"`
 	UpdatedAt   time.Time `json:"-"`
 	Replayed    bool      `json:"-"`
+	ClaimToken  string    `json:"-"`
 }
 
 // Actor is the authenticated owner identity passed from the HTTP boundary.
@@ -74,6 +79,10 @@ type Source struct {
 	Locator       string `json:"locator"`
 	QuotedText    string `json:"quoted_text"`
 	Status        string `json:"status"`
+	// Anchor is an internal-only verification snapshot. It is stored with the
+	// queued input so the T09 source policy can re-check the exact coordinates
+	// after generation; generation inputs are never returned by the HTTP API.
+	Anchor evidence.Anchor `json:"anchor"`
 }
 
 type Request struct {
@@ -87,11 +96,12 @@ type Request struct {
 // Input is the immutable, server-resolved generation basis captured before
 // queueing. The client never supplies project spec, template, or source text.
 type Input struct {
-	Actor     Actor                               `json:"actor"`
-	Workspace candidateadoption.GenerationContext `json:"workspace"`
-	Basis     candidateadoption.Basis             `json:"basis"`
-	Sources   []Source                            `json:"sources"`
-	Request   Request                             `json:"request"`
+	Actor       Actor                               `json:"actor"`
+	Workspace   candidateadoption.GenerationContext `json:"workspace"`
+	Basis       candidateadoption.Basis             `json:"basis"`
+	ProjectSpec map[string]string                   `json:"project_spec"`
+	Sources     []Source                            `json:"sources"`
+	Request     Request                             `json:"request"`
 }
 
 type Draft struct {
@@ -123,11 +133,23 @@ type ModelAdapter interface {
 }
 
 type Repository interface {
+	FindReplay(context.Context, Actor, string, string, string) (Run, bool, error)
 	CreateOrReplay(context.Context, Actor, string, string, string, Input) (Run, error)
 	Claim(context.Context, string) (Run, Input, bool, error)
-	Complete(context.Context, string, candidateadoption.Candidate) (Run, error)
-	Fail(context.Context, string, Status, RunError) (Run, error)
+	Touch(context.Context, string, string) error
+	Cancel(context.Context, Actor, string, string) (Run, error)
+	ListCandidates(context.Context, string, string) ([]candidateadoption.CandidateSummary, error)
+	GetCandidate(context.Context, string, string) (candidateadoption.Candidate, Input, error)
+	Complete(context.Context, string, string, candidateadoption.Candidate) (Run, error)
+	Fail(context.Context, string, string, Status, RunError) (Run, error)
 	Get(context.Context, Actor, string, string) (Run, error)
+}
+
+// Enqueuer durably schedules an already-persisted queued run. Implementations
+// must be idempotent at the task boundary; the repository claim is the final
+// guard against duplicate delivery.
+type Enqueuer interface {
+	EnqueueGeneration(context.Context, uint64, string) error
 }
 
 type Service struct {
@@ -137,6 +159,7 @@ type Service struct {
 	Currentness CurrentnessChecker
 	Model       ModelAdapter
 	Repository  Repository
+	Enqueuer    Enqueuer
 	NewID       func() string
 }
 
@@ -160,11 +183,28 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 			return Run{}, ErrInvalidRequest
 		}
 	}
-	if s.Authorizer == nil || s.Inputs == nil || s.Repository == nil {
+	if s.Authorizer == nil || s.Inputs == nil || s.Repository == nil || s.Enqueuer == nil {
 		return Run{}, ErrDependencyUnavailable
 	}
 	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
 		return Run{}, err
+	}
+	encoded, err := json.Marshal(request)
+	if err != nil {
+		return Run{}, ErrInvalidRequest
+	}
+	hash := sha256.Sum256(encoded)
+	requestHash := hex.EncodeToString(hash[:])
+	if run, found, err := s.Repository.FindReplay(ctx, actor, projectID, key, requestHash); err != nil {
+		return Run{}, err
+	} else if found {
+		run.Replayed = true
+		if run.Status == StatusQueued {
+			if err := s.Enqueuer.EnqueueGeneration(ctx, actor.TenantID, run.ID); err != nil {
+				return Run{}, ErrDependencyUnavailable
+			}
+		}
+		return run, nil
 	}
 	input, err := s.Inputs.ResolveGenerationInput(ctx, actor, projectID, request)
 	if err != nil {
@@ -183,12 +223,18 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	}
 	input.Request = request
 	input.Actor = actor
-	encoded, err := json.Marshal(request)
+	run, err := s.Repository.CreateOrReplay(ctx, actor, projectID, key, requestHash, input)
 	if err != nil {
-		return Run{}, ErrInvalidRequest
+		return Run{}, err
 	}
-	hash := sha256.Sum256(encoded)
-	return s.Repository.CreateOrReplay(ctx, actor, projectID, key, hex.EncodeToString(hash[:]), input)
+	if run.Status == StatusQueued {
+		if err := s.Enqueuer.EnqueueGeneration(ctx, actor.TenantID, run.ID); err != nil {
+			// The run is durable. Retrying the same request key returns the same
+			// run and re-arms the queue without creating a duplicate candidate.
+			return Run{}, ErrDependencyUnavailable
+		}
+	}
+	return run, nil
 }
 
 // Execute processes one queued run. A conditional claim prevents duplicate
@@ -199,9 +245,38 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	}
 	run, input, claimed, err := s.Repository.Claim(ctx, runID)
 	if err != nil || !claimed {
+		if err == nil && run.Status == StatusRunning {
+			return run, ErrRunUnavailable
+		}
 		return run, err
 	}
-	draft, generateErr := s.Model.Generate(ctx, input)
+	workCtx, cancel := context.WithCancel(ctx)
+	stopHeartbeat := make(chan struct{})
+	heartbeatDone := make(chan struct{})
+	go func() {
+		defer close(heartbeatDone)
+		ticker := time.NewTicker(claimHeartbeatInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stopHeartbeat:
+				return
+			case <-workCtx.Done():
+				return
+			case <-ticker.C:
+				if err := s.Repository.Touch(context.WithoutCancel(ctx), run.ID, run.ClaimToken); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() {
+		close(stopHeartbeat)
+		cancel()
+		<-heartbeatDone
+	}()
+	draft, generateErr := s.Model.Generate(workCtx, input)
 	if generateErr != nil {
 		status := StatusFailed
 		failure := RunError{Code: "generation_failed", Message: "生成失败，原始资料和凭据未写入任务错误。", Retryable: true}
@@ -209,14 +284,14 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 			status = StatusInterrupted
 			failure = RunError{Code: "generation_interrupted", Message: "生成已中断；可重新发起任务。", Retryable: true}
 		}
-		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, status, failure)
+		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, status, failure)
 		if storeErr != nil {
 			return Run{}, storeErr
 		}
 		return failed, nil
 	}
 	if strings.TrimSpace(draft.BodyMarkdown) == "" {
-		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusFailed, RunError{Code: "empty_candidate", Message: "生成结果为空。", Retryable: false})
+		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "empty_candidate", Message: "生成结果为空。", Retryable: false})
 		return failed, err
 	}
 	selectedAssets := make(map[string]int, len(input.Basis.AssetVersions))
@@ -236,7 +311,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	for _, source := range draft.Sources {
 		original, ok := allowed[source.ID]
 		if !ok {
-			failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusFailed, RunError{Code: "invalid_source_reference", Message: "生成结果引用了本次允许来源之外的资料。", Retryable: false})
+			failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "invalid_source_reference", Message: "生成结果引用了本次允许来源之外的资料。", Retryable: false})
 			return failed, err
 		}
 		if _, duplicate := seen[source.ID]; duplicate {
@@ -246,32 +321,32 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		used = append(used, original)
 	}
 	if len(used) == 0 {
-		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusFailed, RunError{Code: "missing_source_reference", Message: "生成结果未引用可验证的项目资料。", Retryable: false})
+		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "missing_source_reference", Message: "生成结果未引用可验证的项目资料。", Retryable: false})
 		return failed, err
 	}
-	if err := s.Sources.ValidateGenerationSources(ctx, input.Actor, run.ProjectID, used); err != nil {
+	if err := s.Sources.ValidateGenerationSources(workCtx, input.Actor, run.ProjectID, used); err != nil {
 		status := StatusFailed
 		failure := RunError{Code: "source_access_denied", Message: "生成来源已失效或当前不可访问。", Retryable: false}
 		if !errors.Is(err, ErrSourceAccessDenied) {
 			status = StatusInterrupted
 			failure = RunError{Code: "source_validation_unavailable", Message: "来源复核暂不可用，任务已中断。", Retryable: true}
 		}
-		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, status, failure)
+		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, status, failure)
 		if storeErr != nil {
 			return Run{}, storeErr
 		}
 		return failed, nil
 	}
-	current, err := s.Currentness.GenerationInputIsCurrent(ctx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
+	current, err := s.Currentness.GenerationInputIsCurrent(workCtx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
 	if err != nil {
-		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusInterrupted, RunError{Code: "currentness_unavailable", Message: "无法确认生成输入仍为当前版本，任务已中断。", Retryable: true})
+		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusInterrupted, RunError{Code: "currentness_unavailable", Message: "无法确认生成输入仍为当前版本，任务已中断。", Retryable: true})
 		if storeErr != nil {
 			return Run{}, storeErr
 		}
 		return failed, nil
 	}
 	if !current {
-		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusInterrupted, RunError{Code: "stale_input", Message: "研究条件、章节或资料版本已变化，需重新生成。", Retryable: false})
+		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusInterrupted, RunError{Code: "stale_input", Message: "研究条件、章节或资料版本已变化，需重新生成。", Retryable: false})
 		return failed, err
 	}
 	sourceIDs := make([]string, 0, len(used))
@@ -281,7 +356,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	sort.Strings(sourceIDs)
 	references, err := sourceReferences(draft.BodyMarkdown)
 	if err != nil || !sameStringSet(references, sourceIDs) {
-		failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusFailed, RunError{Code: "invalid_source_reference", Message: "正文引用与来源清单不一致。", Retryable: false})
+		failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "invalid_source_reference", Message: "正文引用与来源清单不一致。", Retryable: false})
 		return failed, failErr
 	}
 	candidateID := s.id()
@@ -289,11 +364,11 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	reviewIDs := make(map[string]struct{}, len(reviewItems))
 	for i := range reviewItems {
 		if strings.TrimSpace(reviewItems[i].ID) == "" || strings.TrimSpace(reviewItems[i].Statement) == "" {
-			failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusFailed, RunError{Code: "invalid_review_item", Message: "生成的待核事项格式无效。", Retryable: false})
+			failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "invalid_review_item", Message: "生成的待核事项格式无效。", Retryable: false})
 			return failed, failErr
 		}
 		if _, exists := reviewIDs[reviewItems[i].ID]; exists {
-			failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, StatusFailed, RunError{Code: "invalid_review_item", Message: "生成结果包含重复的待核事项编号。", Retryable: false})
+			failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "invalid_review_item", Message: "生成结果包含重复的待核事项编号。", Retryable: false})
 			return failed, failErr
 		}
 		reviewIDs[reviewItems[i].ID] = struct{}{}
@@ -304,7 +379,12 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		BodyMarkdown: draft.BodyMarkdown, SourceIDs: sourceIDs, Basis: input.Basis,
 		Validity: "fresh", ReviewItems: reviewItems,
 	}
-	return s.Repository.Complete(ctx, run.ID, candidate)
+	completed, err := s.Repository.Complete(workCtx, run.ID, run.ClaimToken, candidate)
+	if errors.Is(err, ErrGenerationCancelled) {
+		return s.Repository.Fail(context.WithoutCancel(ctx), run.ID, run.ClaimToken, StatusInterrupted,
+			RunError{Code: "generation_cancelled", Message: "生成任务已取消。", Retryable: false})
+	}
+	return completed, err
 }
 
 func (s *Service) Get(ctx context.Context, actor Actor, projectID, runID string) (Run, error) {
@@ -315,6 +395,80 @@ func (s *Service) Get(ctx context.Context, actor Actor, projectID, runID string)
 		return Run{}, ErrNotFound
 	}
 	return s.Repository.Get(ctx, actor, projectID, runID)
+}
+
+func (s *Service) Cancel(ctx context.Context, actor Actor, projectID, runID string) (Run, error) {
+	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
+		return Run{}, ErrNotFound
+	}
+	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+		return Run{}, err
+	}
+	return s.Repository.Cancel(ctx, actor, projectID, runID)
+}
+
+func (s *Service) ListCandidates(ctx context.Context, actor Actor, projectID, chapterID string) ([]candidateadoption.CandidateSummary, error) {
+	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
+		return nil, ErrNotFound
+	}
+	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+		return nil, err
+	}
+	candidates, err := s.Repository.ListCandidates(ctx, projectID, chapterID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range candidates {
+		candidates[i].Validity = s.candidateValidity(ctx, actor, projectID, chapterID, candidates[i].Basis)
+	}
+	return candidates, nil
+}
+
+func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runID string) (candidateadoption.Candidate, error) {
+	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
+		return candidateadoption.Candidate{}, ErrNotFound
+	}
+	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+		return candidateadoption.Candidate{}, err
+	}
+	candidate, input, err := s.Repository.GetCandidate(ctx, projectID, runID)
+	if err != nil {
+		return candidateadoption.Candidate{}, err
+	}
+	if s.Sources == nil {
+		return candidateadoption.Candidate{}, ErrDependencyUnavailable
+	}
+	allowedSources := make(map[string]Source, len(input.Sources))
+	for _, source := range input.Sources {
+		allowedSources[source.ID] = source
+	}
+	usedSources := make([]Source, 0, len(candidate.SourceIDs))
+	for _, sourceID := range candidate.SourceIDs {
+		source, ok := allowedSources[sourceID]
+		if !ok {
+			return candidateadoption.Candidate{}, ErrSourceAccessDenied
+		}
+		usedSources = append(usedSources, source)
+	}
+	if err := s.Sources.ValidateGenerationSources(ctx, actor, projectID, usedSources); err != nil {
+		if errors.Is(err, ErrSourceAccessDenied) {
+			return candidateadoption.Candidate{}, ErrSourceAccessDenied
+		}
+		return candidateadoption.Candidate{}, ErrDependencyUnavailable
+	}
+	candidate.Validity = s.candidateValidity(ctx, actor, projectID, candidate.ChapterID, candidate.Basis)
+	return candidate, nil
+}
+
+func (s *Service) candidateValidity(ctx context.Context, actor Actor, projectID, chapterID string, basis candidateadoption.Basis) string {
+	if s.Currentness == nil {
+		return "stale"
+	}
+	current, err := s.Currentness.GenerationInputIsCurrent(ctx, actor, projectID, chapterID, basis)
+	if err != nil || !current {
+		return "stale"
+	}
+	return "fresh"
 }
 
 func (s *Service) id() string {

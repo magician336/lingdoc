@@ -26,6 +26,9 @@ func RegisterRoutes(r gin.IRouter, h *Handler) {
 	}
 	r.POST("/projects/:projectId/generations", h.Start)
 	r.GET("/projects/:projectId/generations/:runId", h.Get)
+	r.GET("/projects/:projectId/generations/:runId/candidate", h.GetCandidate)
+	r.POST("/projects/:projectId/generations/:runId/cancel", h.Cancel)
+	r.GET("/projects/:projectId/chapters/:chapterId/candidates", h.ListCandidates)
 }
 
 func (h *Handler) Start(c *gin.Context) {
@@ -67,6 +70,60 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": run, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
+}
+
+func (h *Handler) Cancel(c *gin.Context) {
+	requestID := generationRequestID(c)
+	actor, ok := h.actor(c, requestID)
+	if !ok {
+		return
+	}
+	if h.Service == nil {
+		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		return
+	}
+	run, err := h.Service.Cancel(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"))
+	if err != nil {
+		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": run, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
+}
+
+func (h *Handler) ListCandidates(c *gin.Context) {
+	requestID := generationRequestID(c)
+	actor, ok := h.actor(c, requestID)
+	if !ok {
+		return
+	}
+	if h.Service == nil {
+		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		return
+	}
+	candidates, err := h.Service.ListCandidates(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	if err != nil {
+		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": candidates, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
+}
+
+func (h *Handler) GetCandidate(c *gin.Context) {
+	requestID := generationRequestID(c)
+	actor, ok := h.actor(c, requestID)
+	if !ok {
+		return
+	}
+	if h.Service == nil {
+		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		return
+	}
+	candidate, err := h.Service.GetCandidate(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"))
+	if err != nil {
+		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"data": candidate, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
 }
 
 func (h *Handler) actor(c *gin.Context, requestID string) (Actor, bool) {

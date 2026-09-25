@@ -52,6 +52,7 @@ type GenerationContext struct {
 	ChapterID        string            `json:"chapter_id"`
 	ChapterVersionID *string           `json:"chapter_version_id"`
 	ChapterBody      string            `json:"chapter_body"`
+	Chapter          Chapter           `json:"chapter"`
 }
 
 type Actor struct {
