@@ -1360,7 +1360,9 @@
           "refresh_required": false
         }
       },
-      "capture": {},
+      "capture": {
+        "expected_export_sha256": "/data/file_sha256"
+      },
       "assertions": [
         "文件hash在真实测试中由实际文件字节比较；本参考trace的零hash仅为占位，不能当实物证据。"
       ]
@@ -1391,5 +1393,6 @@
         "本文件不含DOCX实物；提供方联调测试必须实际执行以上断言。"
       ]
     }
-  ]
+  ],
+  "download_sha256_variable": "expected_export_sha256"
 }
