@@ -335,7 +335,7 @@ func validateFrozenCollections(input DeliveryInput, issue issueFunc) {
 		policy[id] = true
 	}
 }
-func checkChapter(chapter SnapshotChapter, input DeliveryInput, issue issueFunc, advisory issueFunc) {
+func checkChapter(chapter SnapshotChapter, input DeliveryInput, issue, advisory issueFunc) {
 	if chapter.ChapterVersionID == nil {
 		issue(RuleChapterNonempty, "chapter_version_missing", chapter.ChapterID, "章节尚无不可变版本")
 		return
@@ -374,7 +374,7 @@ func checkChapter(chapter SnapshotChapter, input DeliveryInput, issue issueFunc,
 		issue(RuleChapterConfirmed, "confirmation_asset_versions_mismatch", chapter.ChapterID, "确认记录的资料版本必须与章节冻结来源完全一致")
 	}
 }
-func checkDecisions(chapter SnapshotChapter, issue issueFunc, advisory issueFunc) {
+func checkDecisions(chapter SnapshotChapter, issue, advisory issueFunc) {
 	items, decisions := map[string]bool{}, map[string]bool{}
 	for _, item := range chapter.ReviewItems {
 		if item.ID == "" || item.Statement == "" || item.OriginCandidateID == "" || items[item.ID] {
