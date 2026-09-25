@@ -1,0 +1,45 @@
+name: LingDoc F01 Runner
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/lingdoc_mock/run_f01.py'
+      - 'scripts/lingdoc_mock/test_workflow*.py'
+      - 'docs/08-本轮实施方案/contracts/**'
+      - 'docs/08-本轮实施方案/README.md'
+      - '.github/workflows/lingdoc-f01-runner.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runner-tests:
+    name: F01 runner regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check PR whitespace
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git diff --check "$BASE_SHA...$HEAD_SHA"
+      - name: Run synthetic runner and report regressions
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py' -v 2>&1 | tee artifacts/f01-runner-tests.log
+          python -m py_compile scripts/lingdoc_mock/run_f01.py scripts/lingdoc_mock/test_workflow_runner.py scripts/lingdoc_mock/test_workflow_reports.py
+      - name: Preserve test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: f01-runner-tests-${{ github.run_id }}
+          path: artifacts/f01-runner-tests.log
+          if-no-files-found: warn
