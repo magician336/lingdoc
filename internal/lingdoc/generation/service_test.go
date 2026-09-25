@@ -2,10 +2,14 @@ package generation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/hibiken/asynq"
 )
 
 type testAuthorizer struct{ err error }
@@ -43,10 +47,32 @@ type testModel struct {
 
 func (m testModel) Generate(context.Context, Input) (Draft, error) { return m.draft, m.err }
 
+type countingModel struct {
+	calls int
+	draft Draft
+}
+
+func (m *countingModel) Generate(context.Context, Input) (Draft, error) {
+	m.calls++
+	return m.draft, nil
+}
+
 type testEnqueuer struct{ calls int }
 
 func (e *testEnqueuer) EnqueueGeneration(context.Context, uint64, string) error {
 	e.calls++
+	return nil
+}
+
+type delayedTestEnqueuer struct {
+	calls int
+	delay time.Duration
+}
+
+func (e *delayedTestEnqueuer) EnqueueGeneration(context.Context, uint64, string) error { return nil }
+func (e *delayedTestEnqueuer) EnqueueGenerationAfter(_ context.Context, _ uint64, _ string, delay time.Duration) error {
+	e.calls++
+	e.delay = delay
 	return nil
 }
 
@@ -194,6 +220,43 @@ func TestExecuteInterruptsWhenInputIsStale(t *testing.T) {
 	run, err := svc.Execute(context.Background(), "run-1")
 	if err != nil || run.Status != StatusInterrupted || repo.failure == nil || repo.failure.Code != "stale_input" {
 		t.Fatalf("stale Execute() = (%+v, %v), failure=%+v", run, err, repo.failure)
+	}
+}
+
+func TestExecuteRechecksAuthorizationAndSourcesBeforeModel(t *testing.T) {
+	for name, configure := range map[string]func(*Service){
+		"authorization revoked": func(svc *Service) { svc.Authorizer = testAuthorizer{err: ErrForbidden} },
+		"source revoked":        func(svc *Service) { svc.Sources = testSources{err: ErrSourceAccessDenied} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, repo := generationFixture()
+			model := &countingModel{draft: Draft{BodyMarkdown: "Text [[source:source-1]]", Sources: []Source{{ID: "source-1"}}}}
+			svc.Model = model
+			configure(svc)
+			run, err := svc.Execute(context.Background(), repo.run.ID)
+			if err != nil || run.Status != StatusFailed || model.calls != 0 {
+				t.Fatalf("Execute() = (%+v, %v), model calls=%d; want blocked before model", run, err, model.calls)
+			}
+		})
+	}
+}
+
+func TestTaskHandlerDelaysRetryWhenLeaseIsStillLive(t *testing.T) {
+	svc, repo := generationFixture()
+	repo.claimed = true
+	repo.run.Status = StatusRunning
+	delayed := &delayedTestEnqueuer{}
+	svc.Enqueuer = delayed
+	handler := NewTaskHandler(svc)
+	task, err := json.Marshal(generationTaskPayload{TenantID: 1, RunID: repo.run.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := handler.Handle(context.Background(), asynq.NewTask(types.TypeLingDocGeneration, task)); err != nil {
+		t.Fatalf("Handle() error = %v", err)
+	}
+	if delayed.calls != 1 || delayed.delay <= claimLeaseDuration {
+		t.Fatalf("delayed retry = calls %d, delay %s; want one lease-delayed retry", delayed.calls, delayed.delay)
 	}
 }
 
