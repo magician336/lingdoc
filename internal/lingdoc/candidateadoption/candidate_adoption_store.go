@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -82,6 +81,13 @@ type candidateRow struct {
 	CreatedAt       time.Time
 }
 
+type projectAssetRow struct {
+	ID            string     `gorm:"primaryKey;size:36"`
+	ProjectID     string     `gorm:"index;not null;size:36"`
+	AssetRevision int        `gorm:"not null;default:1"`
+	DeletedAt     *time.Time `gorm:"index"`
+}
+
 type adoptionIdempotencyRow struct {
 	ID               string `gorm:"primaryKey;size:36"`
 	ProjectID        string `gorm:"index;not null;size:36"`
@@ -99,6 +105,7 @@ func (chapterRow) TableName() string             { return "lingdoc_chapters" }
 func (chapterVersionRow) TableName() string      { return "lingdoc_chapter_versions" }
 func (confirmationRow) TableName() string        { return "lingdoc_chapter_confirmations" }
 func (candidateRow) TableName() string           { return "lingdoc_candidates" }
+func (projectAssetRow) TableName() string        { return "lingdoc_project_assets" }
 func (adoptionIdempotencyRow) TableName() string { return "lingdoc_candidate_adoptions" }
 
 // AutoMigrate is used by focused store tests. Production startup uses the
@@ -106,7 +113,7 @@ func (adoptionIdempotencyRow) TableName() string { return "lingdoc_candidate_ado
 // T11 columns and records.
 func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
 	return s.db.WithContext(ctx).AutoMigrate(
-		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &candidateRow{},
+		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{},
 		&confirmationRow{}, &adoptionIdempotencyRow{},
 	)
 }
@@ -164,6 +171,14 @@ func (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, pr
 		ChapterVersionID: chapter.CurrentVersionID,
 		TemplateID:       project.TemplateID,
 		TemplateVersion:  project.TemplateVersion,
+	}
+	var assets []projectAssetRow
+	if err := tx.Where("project_id = ? AND deleted_at IS NULL", projectID).Order("id ASC").Find(&assets).Error; err != nil {
+		return GenerationContext{}, err
+	}
+	basis.AssetVersions = make([]AssetVersion, 0, len(assets))
+	for _, asset := range assets {
+		basis.AssetVersions = append(basis.AssetVersions, AssetVersion{AssetID: asset.ID, AssetRevision: asset.AssetRevision})
 	}
 	return GenerationContext{
 		ProjectID: projectID, ChapterID: chapterID, SpecRevision: int(project.SpecRevision),
@@ -251,7 +266,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err != nil {
 			return err
 		}
-		if strings.TrimSpace(current.BodyMarkdown) != "" && !in.ReplaceExisting {
+		if current.CurrentVersionID != nil && !in.ReplaceExisting {
 			return ErrInvalidState
 		}
 

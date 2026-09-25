@@ -11,21 +11,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
 var (
-	ErrInvalidRequest      = errors.New("invalid_request")
-	ErrNotFound            = errors.New("not_found")
-	ErrForbidden           = errors.New("forbidden")
-	ErrSourceAccessDenied  = errors.New("source_access_denied")
-	ErrStaleInput          = errors.New("stale_input")
-	ErrVersionConflict     = errors.New("version_conflict")
-	ErrInvalidState        = errors.New("invalid_state")
-	ErrIdempotencyConflict = errors.New("idempotency_conflict")
+	ErrInvalidRequest        = errors.New("invalid_request")
+	ErrNotFound              = errors.New("not_found")
+	ErrForbidden             = errors.New("forbidden")
+	ErrSourceAccessDenied    = errors.New("source_access_denied")
+	ErrStaleInput            = errors.New("stale_input")
+	ErrVersionConflict       = errors.New("version_conflict")
+	ErrInvalidState          = errors.New("invalid_state")
+	ErrIdempotencyConflict   = errors.New("idempotency_conflict")
+	ErrDependencyUnavailable = errors.New("dependency_unavailable")
 )
 
 // ReviewItem is copied from the candidate into every adopted version. It is
@@ -124,6 +124,7 @@ type SourcePolicy interface {
 }
 
 type Authorizer interface {
+	// capability is "read" for candidate/chapter reads and "write" for adoption.
 	Authorize(context.Context, string, string, string) error
 }
 
@@ -144,6 +145,23 @@ type CandidateAdoptionService struct {
 	Idempotency IdempotencyReader
 }
 
+func (s *CandidateAdoptionService) authorize(ctx context.Context, actorID, projectID, capability string) error {
+	if s.Authorizer == nil {
+		return ErrDependencyUnavailable
+	}
+	return s.Authorizer.Authorize(ctx, actorID, projectID, capability)
+}
+
+func (s *CandidateAdoptionService) validateSources(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
+	if len(sourceIDs) == 0 {
+		return nil
+	}
+	if s.Sources == nil {
+		return ErrSourceAccessDenied
+	}
+	return s.Sources.Validate(ctx, projectID, actorID, sourceIDs)
+}
+
 // NewCandidateAdoptionService wires the fixed SQLite implementation. Callers that already
 // have real T08/T09/T10 adapters can construct CandidateAdoptionService directly instead.
 func NewCandidateAdoptionService(store *SQLiteCandidateAdoptionStore, sources SourcePolicy, authorizer Authorizer) *CandidateAdoptionService {
@@ -154,28 +172,27 @@ func NewCandidateAdoptionService(store *SQLiteCandidateAdoptionStore, sources So
 }
 
 func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in AcceptCandidateInput) (AcceptResult, error) {
-	if s.Authorizer != nil {
-		if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
-			return AcceptResult{}, err
-		}
-	}
 	if err := validateInput(in); err != nil {
+		return AcceptResult{}, err
+	}
+	if err := s.authorize(ctx, in.ActorID, in.ProjectID, "write"); err != nil {
 		return AcceptResult{}, err
 	}
 	// Replay is checked before candidate/context version checks. This is what
 	// lets a client recover a lost response with the original idempotency key.
-	if s.Idempotency != nil {
-		result, err := s.Idempotency.ReplayCandidateAcceptance(ctx, in)
-		if err != nil {
+	if s.Idempotency == nil || s.Workspace == nil || s.Candidates == nil || s.Writer == nil {
+		return AcceptResult{}, ErrDependencyUnavailable
+	}
+	result, err := s.Idempotency.ReplayCandidateAcceptance(ctx, in)
+	if err != nil {
+		return AcceptResult{}, err
+	}
+	if result != nil {
+		if err := s.validateSources(ctx, in.ProjectID, in.ActorID, result.Chapter.SourceIDs); err != nil {
 			return AcceptResult{}, err
 		}
-		if result != nil {
-			result.Replayed = true
-			return *result, nil
-		}
-	}
-	if s.Workspace == nil || s.Candidates == nil || s.Writer == nil {
-		return AcceptResult{}, fmt.Errorf("%w: adoption dependencies are not configured", ErrInvalidState)
+		result.Replayed = true
+		return *result, nil
 	}
 	workspace, err := s.Workspace.GenerationContext(ctx, in.ProjectID, in.ChapterID)
 	if err != nil {
@@ -188,10 +205,8 @@ func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in Accep
 	if err := validateCandidate(in, workspace, candidate); err != nil {
 		return AcceptResult{}, err
 	}
-	if s.Sources != nil {
-		if err := s.Sources.Validate(ctx, in.ProjectID, in.ActorID, candidate.SourceIDs); err != nil {
-			return AcceptResult{}, err
-		}
+	if err := s.validateSources(ctx, in.ProjectID, in.ActorID, candidate.SourceIDs); err != nil {
+		return AcceptResult{}, err
 	}
 	return s.Writer.AcceptCandidate(ctx, in, candidate)
 }
@@ -235,7 +250,7 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 	if !sameOptionalString(workspace.ChapterVersionID, in.ExpectedChapterVersionID) {
 		return ErrVersionConflict
 	}
-	if strings.TrimSpace(workspace.Chapter.BodyMarkdown) != "" && !in.ReplaceExisting {
+	if workspace.Chapter.CurrentVersionID != nil && !in.ReplaceExisting {
 		return ErrInvalidState
 	}
 	if err := validateSourceReferences(candidate.BodyMarkdown, candidate.SourceIDs); err != nil {
