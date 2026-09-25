@@ -91,7 +91,7 @@ type RouterParams struct {
 	WikiPageHandler                 *handler.WikiPageHandler
 	MemoryHandler                   *handler.MemoryHandler
 	LingDocWorkspace                *workspace.Handler
-	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler `optional:"true"`
+	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
 }
 
 // NewRouter 创建新的路由

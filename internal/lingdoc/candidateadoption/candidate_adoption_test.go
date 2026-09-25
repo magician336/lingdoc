@@ -10,6 +10,16 @@ import (
 	"gorm.io/gorm"
 )
 
+type allowAuthorizer struct{}
+
+func (allowAuthorizer) Authorize(context.Context, string, string, string) error { return nil }
+
+type sourcePolicyFunc func(context.Context, string, string, []string) error
+
+func (f sourcePolicyFunc) Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
+	return f(ctx, projectID, actorID, sourceIDs)
+}
+
 func newCandidateAdoptionStore(t *testing.T) *SQLiteCandidateAdoptionStore {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -44,7 +54,8 @@ func TestAcceptCandidateCreatesVersionPreservesReviewItemsAndReplays(t *testing.
 			Basis: Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1"}, Validity: "fresh", ReviewItems: []ReviewItem{item},
 		}, 1)
 
-	service := NewCandidateAdoptionService(store, nil, nil)
+	allowSources := sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil })
+	service := NewCandidateAdoptionService(store, allowSources, allowAuthorizer{})
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0001", ExpectedSpecRevision: 1,
@@ -70,11 +81,12 @@ func TestAcceptCandidateRequiresExplicitReplacementAndKeepsOldVersion(t *testing
 	store := newCandidateAdoptionStore(t)
 	first := "old-version"
 	seedCandidateAdoptionWorkspace(t, store,
-		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题", CurrentVersionID: &first, BodyMarkdown: "旧正文 [[source:source-1]]", SourceIDs: []string{"source-1"}},
+		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题", CurrentVersionID: &first},
 		Candidate{ID: "candidate-2", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-2", BodyMarkdown: "新正文 [[source:source-2]]", SourceIDs: []string{"source-2"}, Basis: Basis{SpecRevision: 1, ChapterVersionID: &first, TemplateID: "template-demo", TemplateVersion: "1"}, Validity: "fresh"}, 1)
-	require.NoError(t, store.DB().Create(&chapterVersionRow{ID: first, ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-2", BodyMarkdown: "旧正文 [[source:source-1]]", SourceIDsJSON: `["source-1"]`, ReviewItemsJSON: "[]", SpecRevision: 1, CreatedBy: "user-old"}).Error)
+	require.NoError(t, store.DB().Create(&chapterVersionRow{ID: first, ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-2", BodyMarkdown: "", SourceIDsJSON: "[]", ReviewItemsJSON: "[]", SpecRevision: 1, CreatedBy: "user-old"}).Error)
 
-	service := NewCandidateAdoptionService(store, nil, nil)
+	allowSources := sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil })
+	service := NewCandidateAdoptionService(store, allowSources, allowAuthorizer{})
 	input := AcceptCandidateInput{ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-2", ActorID: "user-1", IdempotencyKey: "candidate-adoption-key-0002", ExpectedChapterVersionID: &first, ExpectedSpecRevision: 1}
 	_, err := service.AcceptCandidate(context.Background(), input)
 	require.ErrorIs(t, err, ErrInvalidState)
@@ -103,7 +115,7 @@ func TestAcceptCandidateRejectsStaleAndMismatchedRequests(t *testing.T) {
 	seedCandidateAdoptionWorkspace(t, store,
 		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
 		Candidate{ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1", BodyMarkdown: "正文 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: Basis{SpecRevision: 1}, Validity: "stale"}, 1)
-	service := NewCandidateAdoptionService(store, nil, nil)
+	service := NewCandidateAdoptionService(store, nil, allowAuthorizer{})
 	base := AcceptCandidateInput{ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1", IdempotencyKey: "candidate-adoption-key-0003", ExpectedSpecRevision: 1}
 	_, err := service.AcceptCandidate(context.Background(), base)
 	require.ErrorIs(t, err, ErrStaleInput)
@@ -117,4 +129,43 @@ func TestAcceptCandidateRejectsStaleAndMismatchedRequests(t *testing.T) {
 	var adoptionCount int64
 	require.NoError(t, store.DB().Model(&adoptionIdempotencyRow{}).Count(&adoptionCount).Error)
 	require.Equal(t, int64(0), adoptionCount)
+}
+
+func TestAcceptCandidateRequiresAuthorizationDependency(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	service := NewCandidateAdoptionService(store, nil, nil)
+	_, err := service.AcceptCandidate(context.Background(), AcceptCandidateInput{
+		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1",
+		ActorID: "user-1", IdempotencyKey: "candidate-adoption-auth-1", ExpectedSpecRevision: 1,
+	})
+	require.ErrorIs(t, err, ErrDependencyUnavailable)
+}
+
+func TestReplayCandidateAcceptanceRechecksCurrentSourceAccess(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	seedCandidateAdoptionWorkspace(t, store,
+		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
+		Candidate{
+			ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1",
+			BodyMarkdown: "候选正文 [[source:source-1]]", SourceIDs: []string{"source-1"},
+			Basis: Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1"}, Validity: "fresh",
+		}, 1)
+	input := AcceptCandidateInput{
+		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
+		IdempotencyKey: "candidate-adoption-replay-1", ExpectedSpecRevision: 1,
+	}
+	allowSources := sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil })
+	service := NewCandidateAdoptionService(store, allowSources, allowAuthorizer{})
+	first, err := service.AcceptCandidate(context.Background(), input)
+	require.NoError(t, err)
+
+	denySources := sourcePolicyFunc(func(context.Context, string, string, []string) error { return ErrSourceAccessDenied })
+	service = NewCandidateAdoptionService(store, denySources, allowAuthorizer{})
+	_, err = service.AcceptCandidate(context.Background(), input)
+	require.ErrorIs(t, err, ErrSourceAccessDenied)
+
+	var versionCount int64
+	require.NoError(t, store.DB().Model(&chapterVersionRow{}).Where("chapter_id = ?", "chapter-1").Count(&versionCount).Error)
+	require.Equal(t, int64(1), versionCount)
+	require.NotNil(t, first.Chapter.CurrentVersionID)
 }

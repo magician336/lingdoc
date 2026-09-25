@@ -1,7 +1,9 @@
 package candidateadoption
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -28,7 +30,6 @@ func RegisterRoutes(r gin.IRouter, h *CandidateAdoptionHandler) {
 	}
 	r.POST("/projects/:projectId/chapters/:chapterId/acceptances", h.AcceptCandidate)
 	r.GET("/projects/:projectId/candidates/:candidateId", h.GetCandidate)
-	r.GET("/projects/:projectId/chapters", h.ListChapters)
 }
 
 type acceptCandidateRequest struct {
@@ -61,7 +62,7 @@ func (h *CandidateAdoptionHandler) AcceptCandidate(c *gin.Context) {
 	}
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	var req acceptCandidateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := decodeCandidateRequest(c, &req); err != nil {
 		writeCandidateAdoptionError(c, requestID, http.StatusBadRequest, ErrInvalidRequest)
 		return
 	}
@@ -102,17 +103,18 @@ func (h *CandidateAdoptionHandler) GetCandidate(c *gin.Context) {
 		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
 		return
 	}
-	_ = actor
+	if err := h.Service.authorize(c.Request.Context(), actor, c.Param("projectId"), "read"); err != nil {
+		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
+		return
+	}
 	candidate, err := h.Service.Candidates.GetCandidate(c.Request.Context(), c.Param("projectId"), c.Param("candidateId"))
 	if err != nil {
 		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
 		return
 	}
-	if h.Service.Authorizer != nil {
-		if err := h.Service.Authorizer.Authorize(c.Request.Context(), actor, c.Param("projectId"), candidate.ChapterID); err != nil {
-			writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
-			return
-		}
+	if err := h.Service.validateSources(c.Request.Context(), c.Param("projectId"), actor, candidate.SourceIDs); err != nil {
+		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
+		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": candidate, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
 }
@@ -138,8 +140,13 @@ func (h *CandidateAdoptionHandler) ListChapters(c *gin.Context) {
 		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
 		return
 	}
-	if actor, ok := h.ResolveActor(c); !ok || strings.TrimSpace(actor) == "" {
+	actor, ok := h.ResolveActor(c)
+	if !ok || strings.TrimSpace(actor) == "" {
 		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
+		return
+	}
+	if err := h.Service.authorize(c.Request.Context(), actor, c.Param("projectId"), "read"); err != nil {
+		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
 		return
 	}
 	chapters, err := reader.ListChapters(c.Request.Context(), c.Param("projectId"))
@@ -147,7 +154,26 @@ func (h *CandidateAdoptionHandler) ListChapters(c *gin.Context) {
 		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
 		return
 	}
+	for _, chapter := range chapters {
+		if err := h.Service.validateSources(c.Request.Context(), c.Param("projectId"), actor, chapter.SourceIDs); err != nil {
+			writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
+			return
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"data": chapters, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
+}
+
+func decodeCandidateRequest(c *gin.Context, dst any) error {
+	decoder := json.NewDecoder(io.LimitReader(c.Request.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var tail any
+	if err := decoder.Decode(&tail); err != io.EOF {
+		return errors.New("request body must contain one JSON value")
+	}
+	return nil
 }
 
 func candidateAdoptionHTTPStatus(err error) int {
@@ -162,6 +188,8 @@ func candidateAdoptionHTTPStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, ErrInvalidState):
 		return http.StatusUnprocessableEntity
+	case errors.Is(err, ErrDependencyUnavailable):
+		return http.StatusServiceUnavailable
 	default:
 		return http.StatusInternalServerError
 	}
@@ -186,6 +214,8 @@ func writeCandidateAdoptionError(c *gin.Context, requestID string, status int, e
 		code, message = "invalid_state", "当前阶段不能执行该动作。"
 	case errors.Is(err, ErrIdempotencyConflict):
 		code, message = "idempotency_conflict", "同一幂等键对应不同请求。"
+	case errors.Is(err, ErrDependencyUnavailable):
+		code, message, retryable = "dependency_unavailable", "候选采纳依赖尚未就绪，请稍后重试。", true
 	case status == http.StatusUnauthorized:
 		code, message = "unauthenticated", "请登录后重试。"
 	}
