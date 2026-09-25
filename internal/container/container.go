@@ -482,7 +482,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) *candidateadoption.CandidateAdoptionHandler {
 		store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
 		authorizer := candidateAdoptionWorkspaceAuthorizer{service: workspaceHandler.Service()}
-		service := candidateadoption.NewCandidateAdoptionService(store, nil, authorizer)
+		sources := workspaceHandler.CandidateAdoptionSourcePolicy()
+		service := candidateadoption.NewCandidateAdoptionService(store, sources, authorizer)
 		return candidateadoption.NewCandidateAdoptionHandler(service, func(c *gin.Context) (string, bool) {
 			return types.UserIDFromContext(c.Request.Context())
 		})
