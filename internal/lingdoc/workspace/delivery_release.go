@@ -167,16 +167,23 @@ func (s *DeliveryReleaseService) releases(ctx context.Context) *delivery.Release
 	}))
 }
 
-// stillCurrent 拿冻结输入记下的项目版本、研究条件与逐章版本去对此刻的工作区。
+// stillCurrent 直接读 Reader 而不再判一次成员：本次调用的入口（Check/Prepare/Get）
+// 已经在读之前判过同一个项目，且用的是同一个调用者上下文里的身份。
+func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, frozen delivery.DeliveryInput) (bool, error) {
+	return deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+}
+
+// deliveryCurrentness 拿冻结输入记下的项目版本、研究条件与逐章版本去对此刻的工作区。
+//
+// T13 的 is_current 与 T14 的 stale_input 判的是同一件事，所以判据只有这一份：
+// 两处各判一次的话，「T13 说这份快照仍代表工作区、T14 却把同一份快照判成过期」
+// 是迟早的事，而那时没人知道该信哪一个。
 //
 // 判据取保守的一方：项目版本、研究条件、任一章节版本对不上都算不再当前。
 // 「还当前」是会被下游当作事实用的那一侧（is_current 为真表示这份交付仍然代表
 // 工作区），所以宁可多报几次「变了」——重冻一次很便宜，按一份过期的交付发文件不便宜。
-//
-// 这里直接读 Reader 而不再判一次成员：本次调用的入口（Check/Prepare/Get）已经在
-// 读之前判过同一个项目，且用的是同一个调用者上下文里的身份。
-func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, frozen delivery.DeliveryInput) (bool, error) {
-	current, err := s.inputs.Reader.ReadDeliveryInput(ctx, frozen.ProjectID)
+func deliveryCurrentness(ctx context.Context, reader candidateadoption.DeliveryInputReader, frozen delivery.DeliveryInput) (bool, error) {
+	current, err := reader.ReadDeliveryInput(ctx, frozen.ProjectID)
 	if err != nil {
 		return false, err
 	}

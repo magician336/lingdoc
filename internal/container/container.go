@@ -497,18 +497,29 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			return types.UserIDFromContext(c.Request.Context())
 		})
 	}))
-	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
-	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
-	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) (*workspace.DeliveryReleaseService, error) {
-		// 快照库是进程内的那一份：同一台服务里冻下的快照，取的时候得还在。
-		// 它同时得能记「哪一次动作冻了它」——/releases 收了幂等键就要照它办事。
-		store := delivery.NewMemorySnapshotStore()
-		inputs := &candidateadoption.DeliveryInputService{
+	// 快照库单独 Provide，是为了让 T13 与 T14 拿到**同一个**实例：各自建一个的话，
+	// 刚冻下的快照在导出时取不到，而那看起来会像是「快照不存在」而不是「装配错了」。
+	//
+	// 声明成接口、实现是进程内那一份：同一台服务里冻下的快照，取的时候得还在。
+	// 它还得分记「哪一次动作冻了它 / 导出了它」——两条路由都收了幂等键就要照它办事，
+	// 那两项能力（FreezeRecorder / ExportRecorder）由各自的构造器断言，装不上就在
+	// 那里报 nil。
+	must(container.Provide(func() delivery.SnapshotStore {
+		return delivery.NewMemorySnapshotStore()
+	}))
+	// 交付输入服务：T12 的读取侧 + 成员判定。两个交付服务共用同一份，授权口径分家
+	// 是迟早的事——同一份交付在一个入口放行、在另一个入口拦住，那时没人知道该信哪个。
+	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) *candidateadoption.DeliveryInputService {
+		return &candidateadoption.DeliveryInputService{
 			Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(db),
 			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: workspaceHandler.Service()},
 		}
-		service := workspace.NewDeliveryReleaseService(inputs, workspaceHandler.DeliveryInputBuilder(), store)
+	}))
+	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
+	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
+	// 传输层紧跟着用它装出来。
+	must(container.Provide(func(workspaceHandler *workspace.Handler, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (*workspace.DeliveryReleaseService, error) {
+		service := workspace.NewDeliveryReleaseService(inputs, workspaceHandler.DeliveryInputBuilder(), snapshots)
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
@@ -521,6 +532,27 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		handler := workspace.NewDeliveryHandler(service)
 		if handler == nil {
 			return nil, errors.New("lingdoc delivery handler: incomplete dependencies")
+		}
+		return handler, nil
+	}))
+	// T14 的导出与下载（交付链 T13→T14 的组装点）。渲染器与校验器是同一个值
+	// （DeliveryDocument）：两者共用同一跳「冻结输入 → DOCX 输入」的翻译，拆成两个
+	// 类型就得把那一跳写两遍，而两份翻译迟早会在某个字段上分叉——那时校验器会开始
+	// 拒绝渲染器自己产出的文件，或者更糟，放行它。
+	//
+	// 产物库同样是进程内的那一份，理由与快照库相同：重启即丢。持久化是另一件事，
+	// 见 02-接口与Mock约定 §7 里对存储的约定。
+	must(container.Provide(func(inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (*workspace.DeliveryExportService, error) {
+		service := workspace.NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), workspace.DeliveryDocument{}, inputs)
+		if service == nil {
+			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
+		}
+		return service, nil
+	}))
+	must(container.Provide(func(service *workspace.DeliveryExportService) (*workspace.DeliveryExportHandler, error) {
+		handler := workspace.NewDeliveryExportHandler(service)
+		if handler == nil {
+			return nil, errors.New("lingdoc delivery export handler: incomplete dependencies")
 		}
 		return handler, nil
 	}))

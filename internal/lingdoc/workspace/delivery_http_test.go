@@ -391,18 +391,46 @@ func publishedDataExamples(t *testing.T, operationID, status string) []json.RawM
 	return nil
 }
 
-func compareWithPublishedExample(t *testing.T, operationID, status string, actual json.RawMessage) {
+// compareWithPublishedExample 把响应的**字段形状**与契约样例对齐。
+//
+// 比哪条样例：样例集里带 status 时只比同状态的那条。契约正是用 status 分流发布这组
+// 响应的（checkCurrent 的 passed/blocked/not_evaluated、getExport 的
+// verified/failed），而 ExportArtifact 的 error 只在 failed 时出现——拿并集去比，
+// 一份 verified 的响应就必须凭空多带一个 error 对象才算「合格」。样例不带 status
+// 的（prepareRelease 与 getRelease 的快照）退回并集，行为与从前一致。
+//
+// minFields 是「这条用例有没有在比什么」的下限，默认 10。样例本来就少的响应
+// （导出产物只有 6 个字段路径）要显式给一个小一点的数，否则守卫会一直误报。
+func compareWithPublishedExample(t *testing.T, operationID, status string, actual json.RawMessage, minFields ...int) {
 	t.Helper()
-	// 判据取所有样例的并集：契约在这条响应里**可能**出现的字段，响应都该有；
+	examples := publishedDataExamples(t, operationID, status)
+	if wanted := dataStatus(t, actual); wanted != "" {
+		var matching []json.RawMessage
+		for _, example := range examples {
+			if dataStatus(t, example) == wanted {
+				matching = append(matching, example)
+			}
+		}
+		// 没有同状态的样例就退回并集，而不是让这条用例凭空失败：分流是优化，
+		// 不是这条用例成立的前提。
+		if len(matching) > 0 {
+			examples = matching
+		}
+	}
+	// 判据取所选样例的并集：契约在这条响应里**可能**出现的字段，响应都该有；
 	// 响应里也不该多出任何一个样例从没提过的字段。
 	published := map[string]bool{}
-	for _, example := range publishedDataExamples(t, operationID, status) {
+	for _, example := range examples {
 		for _, path := range jsonFieldPaths(t, example) {
 			published[path] = true
 		}
 	}
 	// 两个空清单也「相等」：样例读成空的话，这条用例会永远绿着什么都不比。
-	if len(published) < 10 {
+	required := 10
+	if len(minFields) > 0 {
+		required = minFields[0]
+	}
+	if len(published) < required {
 		t.Fatalf("%s %s 的契约样例只解析出 %d 个字段，这条用例没有在比什么", operationID, status, len(published))
 	}
 	got := jsonFieldPaths(t, actual)
@@ -422,6 +450,18 @@ func compareWithPublishedExample(t *testing.T, operationID, status string, actua
 	}
 	sort.Strings(missing)
 	t.Errorf("%s %s 的响应与契约样例对不上\n  契约有而响应没有: %v\n  响应有而契约没有: %v", operationID, status, missing, extra)
+}
+
+// dataStatus 取响应或样例里 data.status 的值；没有这个字段就是空串。
+func dataStatus(t *testing.T, raw json.RawMessage) string {
+	t.Helper()
+	var envelope struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("decode %s: %v", raw, err)
+	}
+	return envelope.Status
 }
 
 func containsPath(paths []string, want string) bool {

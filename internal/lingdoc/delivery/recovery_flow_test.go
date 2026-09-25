@@ -10,7 +10,7 @@ type recoveryRenderer func(DeliveryInput) ([]byte, error)
 func (f recoveryRenderer) RenderFrozen(input DeliveryInput) ([]byte, error) { return f(input) }
 
 func recoveryExportService(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer) *ExportService {
-	return NewExportService(snapshots, exports, renderer, CurrentnessFunc(func(DeliveryInput) (bool, error) {
+	return NewExportService(snapshots, exports, renderer, FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(func(DeliveryInput) (bool, error) {
 		return true, nil
 	}), ExportAccessFunc(func(actorUserID, projectID string) error {
 		if actorUserID != "owner" || projectID != "project-1" {
@@ -42,7 +42,7 @@ func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
 		calls++
 		return []byte("must not render"), nil
 	}))
-	if _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID); !errors.Is(err, ErrExportPreflightBlocked) {
+	if _, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey); !errors.Is(err, ErrExportPreflightBlocked) {
 		t.Fatalf("blocked start = %v", err)
 	}
 	if calls != 0 {
@@ -62,23 +62,25 @@ func TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes(t *testing.T) {
 	failed := recoveryExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
 		return nil, errors.New("temporary renderer outage")
 	}))
-	first, err := failed.Start("owner", snapshot.ProjectID, snapshot.ID)
+	first, _, err := failed.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey)
 	if err != nil || first.Status != ExportFailed {
 		t.Fatalf("failed export = %+v, %v", first, err)
 	}
-	if _, err := failed.Download("owner", snapshot.ProjectID, first.ID); !errors.Is(err, ErrExportUnavailable) {
+	if _, _, err := failed.Download("owner", snapshot.ProjectID, first.ID); !errors.Is(err, ErrExportUnavailable) {
 		t.Fatalf("failed artifact became downloadable: %v", err)
 	}
 
-	// A retry is a new explicit export service, not a mutation of a failed file.
+	// A retry is a new explicit action — §6「重试新任务是明确的新动作」—— so it
+	// carries a new key and produces its own artifact, never a mutation of the
+	// failed one. (Replaying the *same* key is covered in export_action_test.go.)
 	retry := recoveryExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
 		return []byte("PK\\x03\\x04recovered docx"), nil
 	}))
-	second, err := retry.Start("owner", snapshot.ProjectID, snapshot.ID)
+	second, _, err := retry.Start("owner", snapshot.ProjectID, snapshot.ID, "export-action-retry")
 	if err != nil || second.Status != ExportVerified || second.ID == first.ID {
 		t.Fatalf("retried export = %+v, %v", second, err)
 	}
-	if _, err := retry.Download("owner", snapshot.ProjectID, second.ID); err != nil {
+	if _, _, err := retry.Download("owner", snapshot.ProjectID, second.ID); err != nil {
 		t.Fatalf("verified retry cannot download: %v", err)
 	}
 	storedFirst, err := exports.GetExport(snapshot.ProjectID, first.ID)
@@ -126,7 +128,7 @@ func TestRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact(t *testing.T
 		renders++
 		// A state-flow fixture, not proof of a valid DOCX; T14 owns validation.
 		return []byte("rendered state-flow fixture"), nil
-	}), CurrentnessFunc(func(DeliveryInput) (bool, error) {
+	}), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(func(DeliveryInput) (bool, error) {
 		checks++
 		if checks == 1 {
 			return true, nil
@@ -134,7 +136,7 @@ func TestRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact(t *testing.T
 		return false, currentnessErr
 	}), ExportAccessFunc(allowExport))
 
-	artifact, err := service.Start("owner", snapshot.ProjectID, snapshot.ID)
+	artifact, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey)
 	if !errors.Is(err, currentnessErr) {
 		t.Fatalf("Start error = %v, want %v", err, currentnessErr)
 	}

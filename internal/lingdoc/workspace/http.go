@@ -137,6 +137,23 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
 	case errors.Is(err, candidateadoption.ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
+	// T14 的导出与下载。与上面同一件事：这些是 delivery 包里**另一个** ErrInvalidRequest，
+	// 必须单独列出来——名字相同、值不同，漏掉就是把 400 答成 500。
+	case errors.Is(err, delivery.ErrInvalidRequest):
+		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, delivery.ErrExportNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, delivery.ErrExportPreflightBlocked):
+		// F10：快照本来就是一份 blocked 的检查结论。要给的是那些 issue，
+		// 而不是一次假下载。
+		status, code, message = 422, "preflight_blocked", "请先处理交付阻断项。"
+	case errors.Is(err, delivery.ErrExportStaleInput):
+		// F11：快照基于的输入已经不是此刻的工作区了。
+		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
+	case errors.Is(err, delivery.ErrExportUnavailable):
+		// F13：产物存在但不可下载（failed，或字节已不在）。这不是 404——
+		// 资源在，是它此刻不能交出去。
+		status, code, message = 422, "invalid_state", "当前阶段不能执行该动作。"
 	}
 	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": code == "request_in_progress"},
 		"request_id": requestID(c)})

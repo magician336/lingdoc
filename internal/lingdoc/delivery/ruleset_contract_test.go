@@ -119,8 +119,8 @@ func TestRetainedReviewItemIsAWarningAndStillReleases(t *testing.T) {
 	exports := NewMemoryExportStore()
 	service := NewExportService(store, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
 		return []byte("PK\x03\x04retained appendix"), nil
-	}), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
-	artifact, err := service.Start("owner", snapshot.ProjectID, snapshot.ID)
+	}), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
+	artifact, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey)
 	if err != nil || artifact.Status != ExportVerified {
 		t.Fatalf("retained warning blocked the release: %+v, %v", artifact, err)
 	}

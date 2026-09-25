@@ -93,6 +93,7 @@ type RouterParams struct {
 	MemoryHandler                   *handler.MemoryHandler
 	LingDocWorkspace                *workspace.Handler
 	LingDocDeliveryHandler          *workspace.DeliveryHandler
+	LingDocDeliveryExportHandler    *workspace.DeliveryExportHandler
 	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
 	LingDocGenerationHandler        *generation.Handler `optional:"true"`
 }
@@ -322,6 +323,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 		if params.LingDocDeliveryHandler != nil {
 			lingdoc := v1.Group("/lingdoc")
 			workspace.RegisterDeliveryRoutes(lingdoc, params.LingDocDeliveryHandler)
+		}
+		if params.LingDocDeliveryExportHandler != nil {
+			lingdoc := v1.Group("/lingdoc")
+			workspace.RegisterDeliveryExportRoutes(lingdoc, params.LingDocDeliveryExportHandler)
 		}
 		if params.LingDocCandidateAdoptionHandler != nil {
 			lingdoc := v1.Group("/lingdoc")
