@@ -83,6 +83,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -121,6 +122,14 @@ func (a candidateAdoptionWorkspaceAuthorizer) Authorize(ctx context.Context, act
 		return candidateadoption.ErrInvalidRequest
 	}
 	return err
+}
+
+// AuthorizeProject 是 T13 读交付输入前的成员校验。
+//
+// 用「读」权限：冻结出来的是一份只读快照，不改动工作区；交付侧本来就只判成员
+// 不判能力（见 delivery 包里的导出访问接口），这里跟着它，不另立一套更强的要求。
+func (a candidateAdoptionWorkspaceAuthorizer) AuthorizeProject(ctx context.Context, actorID, projectID string) error {
+	return a.Authorize(ctx, actorID, projectID, "read")
 }
 
 // BuildContainer constructs the dependency injection container
@@ -487,6 +496,24 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		return candidateadoption.NewCandidateAdoptionHandler(service, func(c *gin.Context) (string, bool) {
 			return types.UserIDFromContext(c.Request.Context())
 		})
+	}))
+	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
+	// HTTP 入口列为「容量有余才启用」，所以这里只装领域这一层，路由由后续切片接上。
+	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) (*workspace.DeliveryReleaseService, error) {
+		// 快照库是进程内的那一份：同一台服务里冻下的快照，取的时候得还在。
+		store := delivery.NewMemorySnapshotStore()
+		inputs := &candidateadoption.DeliveryInputService{
+			Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(db),
+			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: workspaceHandler.Service()},
+		}
+		service := workspace.NewDeliveryReleaseService(inputs, workspaceHandler.DeliveryInputBuilder(), store)
+		if service == nil {
+			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
+			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
+			// 在第一个消费者出现时才生效——目前还没有路由接上这一层。
+			return nil, errors.New("lingdoc delivery release service: incomplete dependencies")
+		}
+		return service, nil
 	}))
 	must(container.Provide(workspace.NewGenerationHandler))
 	must(container.Provide(func(h *generation.Handler) interfaces.TaskHandler {

@@ -32,8 +32,14 @@ func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy
 	if h == nil || h.db == nil || h.bindings == nil || h.gateway == nil {
 		return nil
 	}
+	return &candidateAdoptionSourcePolicy{sourceRevalidator: h.sourceRevalidator()}
+}
+
+// sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
+// 它只被那几个带 nil 守卫的装配入口调用。
+func (h *Handler) sourceRevalidator() sourceRevalidator {
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
-	return &candidateAdoptionSourcePolicy{
+	return sourceRevalidator{
 		db: h.db, bindings: h.bindings, gateway: h.gateway, origins: origins,
 		policy: evidence.NewSourcePolicy(h.gateway, origins, h.bindings),
 	}
@@ -43,11 +49,7 @@ func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy
 // ConfirmationSourcePolicy：两者问的是同一件事，只是 T12 还要把被引用资料的当前版本交出来
 // 给确认记录钉住——确认之后资料再前进就该判失效，而不是静默沿用旧坐标。
 type candidateAdoptionSourcePolicy struct {
-	db       *gorm.DB
-	bindings *evidence.Bindings
-	gateway  evidence.AssetGateway
-	origins  evidence.OriginReader
-	policy   evidence.SourcePolicy
+	sourceRevalidator
 }
 
 // 装配处靠类型断言才能把复核接给确认服务（candidate_adoption_http.go:26），而断言失败是
@@ -71,32 +73,23 @@ func (p *candidateAdoptionSourcePolicy) recheck(ctx context.Context, projectID, 
 	if len(sourceIDs) == 0 {
 		return nil, nil
 	}
-	tenantID, ok := types.TenantIDFromContext(ctx)
-	if !ok || tenantID == 0 || strings.TrimSpace(projectID) == "" || strings.TrimSpace(actorID) == "" {
+	checked, actor, ok := recheckContext(ctx, actorID)
+	if !ok || strings.TrimSpace(projectID) == "" {
 		// 身份不全就无从判定「此刻还授不授权」，默认拒绝，不去猜一个更宽松的答案。
 		return nil, candidateadoption.ErrSourceAccessDenied
 	}
-	actor := evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}
-	// 资料网关的读权限判据（kbReadChecker.CanReadKB）会拿调用者与 actor 逐字对账，
-	// 并要求执行租户一致（modelContextForActor 同款）。复核必须带着同一份调用者
-	// 上下文去问，否则每一条引用都会被判成越权。
-	checked := types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleViewer})
-	checked = types.WithExecutionTenant(checked, tenantID)
-
-	sources, err := p.rebuild(checked, projectID, actor, sourceIDs)
+	verdicts, err := p.revalidate(checked, projectID, actor, sourceIDs)
 	if err != nil {
 		return nil, err
-	}
-	result, err := p.policy.Validate(checked, projectID, actor, sources)
-	if err != nil {
-		return nil, err
-	}
-	if result == nil {
-		return nil, candidateadoption.ErrDependencyUnavailable
 	}
 	stale, denied := false, false
-	for _, unusable := range result.Unusable {
-		if unusable.AssetDeny == "" {
+	usable := make([]evidence.Source, 0, len(verdicts))
+	for _, verdict := range verdicts {
+		if verdict.Usable {
+			usable = append(usable, verdict.Source)
+			continue
+		}
+		if verdict.AssetDeny == "" {
 			// 资料层放行、卡在坐标层：资料还在、还授权，只是这枚引用指不回原文了
 			// （坐标漂移，或该块已被编辑/重写）。
 			stale = true
@@ -114,12 +107,113 @@ func (p *candidateAdoptionSourcePolicy) recheck(ctx context.Context, projectID, 
 	if denied {
 		return nil, candidateadoption.ErrSourceAccessDenied
 	}
-	if len(result.Usable) != len(result.Requested) {
-		// 每一项请求都必须得到「可用」或「不可用」之一（ValidateResult 的不变量）。
-		// 两个都没有说明协作方坏了：如实报错，别把没被复核的当成复核通过。
+	return assetVersionsOf(usable), nil
+}
+
+// recheckContext 把调用上下文补成复核能用的那一份。
+//
+// 资料网关的读权限判据（kbReadChecker.CanReadKB）会拿调用者与 actor 逐字对账，
+// 并要求执行租户一致（modelContextForActor 同款）。复核必须带着同一份调用者
+// 上下文去问，否则每一条引用都会被判成越权——这是「复核」与「重新检索」之间
+// 唯一一处不能省的差别。
+//
+// 身份不全（没有租户、没有执行人）时 ok=false：无从判定「此刻还授不授权」，
+// 调用方据此默认拒绝，不去猜一个更宽松的答案。
+func recheckContext(ctx context.Context, actorID string) (context.Context, evidence.Actor, bool) {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || tenantID == 0 || strings.TrimSpace(actorID) == "" {
+		return nil, evidence.Actor{}, false
+	}
+	actor := evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}
+	checked := types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleViewer})
+	return types.WithExecutionTenant(checked, tenantID), actor, true
+}
+
+// sourceRevalidator 是「这批已经产出的引用此刻还能不能当证据」这一问的唯一实现。
+//
+// 它服务两个消费方，两者的**判定**相同而**处置**相反：
+//   - T11/T12（人工确认前后的复核）逐项作答后整批拒绝：有一条不可用就带着
+//     ErrStaleInput / ErrSourceAccessDenied 打回，人改完再说；
+//   - T13（冻结前的交付检查）则把不可用的那条**留在原地**（章节仍引用它）而不放进
+//     冻结来源，让 T13 的 source_invalid 规则把结论落成一份可读的报告。
+//
+// 所以这里交回的是逐条的结论，不替调用方决定整批怎么办。
+type sourceRevalidator struct {
+	db       *gorm.DB
+	bindings *evidence.Bindings
+	gateway  evidence.AssetGateway
+	origins  evidence.OriginReader
+	policy   evidence.SourcePolicy
+}
+
+// revalidated 是一次复核对一条引用的回答。
+type revalidated struct {
+	SourceID string
+	// Source 是放行时重建出来的来源；不可用时只带 ID（零值的其余字段）。
+	Source evidence.Source
+	// DisplayTitle 是这条引用所属资料此刻的标题。T13 的冻结来源要 display_title，
+	// 而它是资料的属性、不在 evidence.Source 里。
+	DisplayTitle string
+	Usable       bool
+	// AssetDeny 非空表示卡在资料层（不存在 / 未就绪 / 未授权 / 不属于本项目）；
+	// 为空而 Usable=false 表示资料层放行、只是这枚引用指不回原文了。
+	AssetDeny evidence.DenyReason
+	Detail    string
+}
+
+// revalidate 逐条给出结论，顺序与请求一致（去重、去空白后）。
+func (p *sourceRevalidator) revalidate(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]revalidated, error) {
+	rebuilt, err := p.rebuild(ctx, projectID, actor, sourceIDs)
+	if err != nil {
+		return nil, err
+	}
+	if len(rebuilt) == 0 {
+		return nil, nil
+	}
+	sources := make([]evidence.Source, 0, len(rebuilt))
+	for _, entry := range rebuilt {
+		sources = append(sources, entry.Source)
+	}
+	result, err := p.policy.Validate(ctx, projectID, actor, sources)
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
 		return nil, candidateadoption.ErrDependencyUnavailable
 	}
-	return assetVersionsOf(result.Usable), nil
+	usable := make(map[string]evidence.Source, len(result.Usable))
+	for _, source := range result.Usable {
+		usable[source.ID] = source
+	}
+	unusable := make(map[string]evidence.UnusableSource, len(result.Unusable))
+	for _, entry := range result.Unusable {
+		unusable[entry.SourceID] = entry
+	}
+
+	verdicts := make([]revalidated, 0, len(rebuilt))
+	for _, entry := range rebuilt {
+		verdict := revalidated{SourceID: entry.Source.ID, DisplayTitle: entry.DisplayTitle}
+		if source, ok := usable[entry.Source.ID]; ok {
+			verdict.Source, verdict.Usable = source, true
+			verdicts = append(verdicts, verdict)
+			continue
+		}
+		entry, ok := unusable[verdict.SourceID]
+		if !ok {
+			// 每一项请求都必须得到「可用」或「不可用」之一（ValidateResult 的不变量）。
+			// 两个都没有说明协作方坏了：如实报错，别把没被复核的当成复核通过。
+			return nil, candidateadoption.ErrDependencyUnavailable
+		}
+		verdict.AssetDeny, verdict.Detail = entry.AssetDeny, entry.Detail
+		verdicts = append(verdicts, verdict)
+	}
+	return verdicts, nil
+}
+
+// rebuiltSource 是一条引用在底座上重建出来的样子，连同它所属资料此刻的标题。
+type rebuiltSource struct {
+	Source       evidence.Source
+	DisplayTitle string
 }
 
 // rebuild 把已产出的引用从底座上取回来。
@@ -127,7 +221,7 @@ func (p *candidateAdoptionSourcePolicy) recheck(ctx context.Context, projectID, 
 // 取不回来的（分块行已删、这份知识已不挂在本项目下、资料已被重解析换成另一份知识）
 // 不在这里判死：按 §8「逐项作答」把它当成一条不指向任何资料的来源交给复核，由复核
 // 给出 not_found。这样「引用失效」只有一个出口，不会多出一套只在本函数里成立的判据。
-func (p *candidateAdoptionSourcePolicy) rebuild(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]evidence.Source, error) {
+func (p *sourceRevalidator) rebuild(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]rebuiltSource, error) {
 	ids := normalizeSourceIDs(sourceIDs)
 	rows, err := p.chunks(ctx, ids)
 	if err != nil {
@@ -171,11 +265,11 @@ func (p *candidateAdoptionSourcePolicy) rebuild(ctx context.Context, projectID s
 	}
 
 	resolver := evidence.NewSourceResolver(p.origins)
-	sources := make([]evidence.Source, 0, len(ids))
+	out := make([]rebuiltSource, 0, len(ids))
 	for _, id := range ids {
 		entry, ok := held[id]
 		if !ok {
-			sources = append(sources, evidence.Source{ID: id})
+			out = append(out, rebuiltSource{Source: evidence.Source{ID: id}})
 			continue
 		}
 		asset := entry.asset
@@ -183,29 +277,36 @@ func (p *candidateAdoptionSourcePolicy) rebuild(ctx context.Context, projectID s
 			asset = refreshed
 		}
 		// 判据与产出侧同源：坐标取自分块行（StartAt/EndAt/Content，以及标记失效的
-		// ContentRevision），Resolve 会拿它们与此刻的原文逐字比对，产出 side 与复核
+		// ContentRevision），Resolve 会拿它们与此刻的原文逐字比对，产出侧与复核
 		// 侧因此得到同一个「可用/失效」结论。
 		hit := &types.SearchResult{
 			ID: entry.chunk.ID, KnowledgeID: entry.chunk.KnowledgeID, ChunkIndex: entry.chunk.ChunkIndex,
 			StartAt: entry.chunk.StartAt, EndAt: entry.chunk.EndAt, Content: entry.chunk.Content,
 			ContentRevision: entry.chunk.ContentRevision, KnowledgeTitle: asset.Title,
 		}
-		rebuilt, err := resolver.Resolve(ctx, asset, []*types.SearchResult{hit})
+		resolved, err := resolver.Resolve(ctx, asset, []*types.SearchResult{hit})
 		if err != nil {
 			if errors.Is(err, evidence.ErrAssetKnowledgeMismatch) {
 				// 锚点指向的知识不是这份资料此刻的正文（重解析换过知识 ID）：
 				// 同样交给复核逐项作答，不在两处各写一条守卫。
-				sources = append(sources, evidence.Source{ID: id})
+				out = append(out, rebuiltSource{Source: evidence.Source{ID: id}})
 				continue
 			}
 			return nil, err
 		}
-		sources = append(sources, rebuilt...)
+		// 一条命中交回一条来源（resolveOne 逐命中作答），所以这里取首条即可。
+		// 零条说明协作方坏了：留一条只带 ID 的来源让复核逐项作答，
+		// 免得它既不进 Usable 也不进 Unusable——那会被读成「复核通过」。
+		if len(resolved) == 0 {
+			out = append(out, rebuiltSource{Source: evidence.Source{ID: id}})
+			continue
+		}
+		out = append(out, rebuiltSource{Source: resolved[0], DisplayTitle: asset.Title})
 	}
-	return sources, nil
+	return out, nil
 }
 
-func (p *candidateAdoptionSourcePolicy) chunks(ctx context.Context, ids []string) (map[string]types.Chunk, error) {
+func (p *sourceRevalidator) chunks(ctx context.Context, ids []string) (map[string]types.Chunk, error) {
 	var rows []types.Chunk
 	if err := p.db.WithContext(ctx).Where("id IN ?", ids).Find(&rows).Error; err != nil {
 		return nil, err
