@@ -35,23 +35,24 @@ python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
 `scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 和 workflow.json 读取请求定义，可对隔离的提供方测试环境运行 23 步 F01 连续流程。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
 
 ```text
-python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1 --report artifacts/f01-run.json
+python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/lingdoc --report artifacts/f01-run.json
 ```
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 
+`--report` 写出不含访问令牌和动态业务 ID 的脱敏 JSON。执行器会在任何提供方请求之前创建父目录并写入 `not_started` 记录；无法写入则直接失败，不执行写请求。成功后原子替换为 `completed`，流程中途失败则尽力保存 `failed`、已完成步骤和失败步骤标识，不写原始响应或异常内容。写报告失败会明确报错，不用 traceback 冒充流程结果。
 
-
-`--report` 写出不含访问令牌和动态业务 ID 的脱敏 JSON，记录完成步骤、operationId、HTTP 状态和响应 Content-Type；只在成功完成整条流程后生成。
+报告的 `verification_scope=http_smoke_only`、`provider_semantics_status=not_verified` 和 `manual_assertions` 明确标出尚未验证的业务语义。`completed_steps=23` 只证明请求步骤与文件传输检查完成，不等于模型质量、数据库副作用或 DOCX 可编辑性通过。
 
 当前契约标记为 `specification_not_executed_against_provider`，仓库尚未提供这里所需的完整真实服务/隔离测试环境。因此本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
 
-执行器单元测试：
+执行器单元测试（包含报告与大小写响应头回归）：
 
 ```text
-python -m unittest scripts.lingdoc_mock.test_workflow_runner -v
+python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py' -v
 ```
 
+`.github/workflows/lingdoc-f01-runner.yml` 对执行器、相关测试和契约变更运行该命令，保留测试日志；它仅使用合成响应，不读取凭据或调用真实模型。
 
 这些接口是待实现方案。Schema 不能独自验证全部跨字段规则，静态轨迹也不能证明数据库副作用。Prism、完整 OpenAPI meta-schema、真实服务/数据库/浏览器/模型/DOCX 均未由本脚本验证；文件 hash 占位值不代表已生成真实文件。
 

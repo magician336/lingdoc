@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -31,6 +32,35 @@ FAILURE_STATES = {"failed", "interrupted", "cancelled", "canceled", "error"}
 
 class WorkflowError(RuntimeError):
     """An actionable error in the workflow definition or provider response."""
+
+
+def header_value(headers: Any, name: str) -> str:
+    """Read HTTP field names case-insensitively, including plain mappings."""
+    for key, value in headers.items():
+        if key.lower() == name.lower():
+            return str(value)
+    return ""
+
+
+def write_report(path: Path, report: dict[str, Any]) -> None:
+    """Create parents and atomically replace only a complete sanitized report."""
+    temporary: str | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
+                                         prefix=".f01-", suffix=".tmp", delete=False) as stream:
+            temporary = stream.name
+            stream.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+        os.replace(temporary, path)
+        temporary = None
+    except OSError as error:
+        raise WorkflowError(f"cannot write workflow report ({type(error).__name__})") from error
+    finally:
+        if temporary is not None:
+            try:
+                Path(temporary).unlink(missing_ok=True)
+            except OSError:
+                pass  # Do not mask the original write error.
 
 
 def json_pointer(value: Any, pointer: str) -> Any:
@@ -158,6 +188,8 @@ class F01Runner:
         self.opener = opener if opener is not None else build_opener(CredentialSafeRedirectHandler()).open
         self.sleep = sleep
         self.variables: dict[str, Any] = {}
+        self.step_results: list[dict[str, Any]] = []
+        self.active_step: dict[str, str] | None = None
         parsed_base = urlsplit(self.base_url)
         if parsed_base.scheme not in {"http", "https"} or not parsed_base.netloc:
             raise WorkflowError("provider base URL must use http or https")
@@ -182,10 +214,14 @@ class F01Runner:
         return cls(openapi, workflow, **kwargs)
 
     def run(self) -> dict[str, Any]:
+        self.variables = {}
+        self.step_results = []
+        self.active_step = None
         completed = 0
-        step_results: list[dict[str, Any]] = []
+        step_results = self.step_results
         for step in self.workflow["steps"]:
             operation_id = step.get("operation_id")
+            self.active_step = {"id": step.get("id", ""), "operation_id": operation_id or ""}
             if operation_id not in self.operations:
                 raise WorkflowError(f"{step.get('id')}: OpenAPI operation not found: {operation_id}")
             method, path_template = self.operations[operation_id]
@@ -209,7 +245,7 @@ class F01Runner:
                 "id": step["id"],
                 "operation_id": operation_id,
                 "http_status": status,
-                "content_type": response_headers.get("Content-Type", ""),
+                "content_type": header_value(response_headers, "Content-Type"),
             })
             print(f"{step['id']} PASS {operation_id} HTTP {status}")
 
@@ -222,12 +258,29 @@ class F01Runner:
             print(f"F01 completed {completed} steps; {len(manual_assertions)} provider assertions remain evidence items.")
             for step_id, assertion in manual_assertions:
                 print(f"MANUAL {step_id}: {assertion}")
-        return {
+        self.active_step = None
+        return {**self.report("completed"), "variables": self.variables}
+
+    def report(self, status: str) -> dict[str, Any]:
+        # Never include captured IDs, bearer tokens, provider bodies, URLs, or
+        # raw exceptions. Assertions are unexpanded text from the local contract.
+        result = {
             "workflow": self.workflow["id"],
-            "completed_steps": completed,
-            "steps": step_results,
-            "variables": self.variables,
+            "runner_status": status,
+            "completed_steps": len(self.step_results),
+            "total_steps": len(self.workflow["steps"]),
+            "steps": list(self.step_results),
+            "verification_scope": "http_smoke_only",
+            "provider_semantics_status": "not_verified",
+            "manual_assertions": [
+                {"step_id": step["id"], "assertion": assertion, "status": "not_run"}
+                for step in self.workflow["steps"]
+                for assertion in step.get("assertions", [])
+            ],
         }
+        if status == "failed" and self.active_step is not None:
+            result["failed_step"] = dict(self.active_step)
+        return result
 
     def _request(self, method: str, url: str, headers: dict[str, str], body: Any) -> tuple[int, dict[str, str], Any]:
         request_headers = {str(key): str(value) for key, value in headers.items()}
@@ -250,7 +303,7 @@ class F01Runner:
             if len(content) > 16 * 1024 * 1024:
                 raise WorkflowError("provider response exceeds the 16 MiB safety limit")
             response_headers = dict(response.headers.items())
-            content_type = response.headers.get("Content-Type", "").lower()
+            content_type = header_value(response.headers, "Content-Type").lower()
             if "json" in content_type:
                 try:
                     payload: Any = json.loads(content.decode("utf-8"))
@@ -295,7 +348,7 @@ class F01Runner:
         if not isinstance(payload, bytes):
             raise WorkflowError(f"{step['id']}: downloadExport must return file bytes, not JSON")
         expected_type = step.get("expected_binary", {}).get("content_type")
-        actual_type = headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+        actual_type = header_value(headers, "Content-Type").split(";", 1)[0].strip().lower()
         if expected_type and actual_type != expected_type.lower():
             raise WorkflowError(f"{step['id']}: Content-Type {actual_type or '<missing>'}; expected {expected_type}")
         variable_name = self.workflow.get("download_sha256_variable")
@@ -321,6 +374,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--poll-timeout", type=float, default=120)
     parser.add_argument("--report", type=Path, help="write a sanitized JSON record of completed workflow steps")
     args = parser.parse_args(argv)
+    runner: F01Runner | None = None
+    report_started = False
     try:
         runner = F01Runner.from_files(
             args.openapi,
@@ -331,13 +386,22 @@ def main(argv: list[str] | None = None) -> int:
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
         )
+        if args.report:
+            # Verify the destination before any provider mutation and replace a
+            # previous successful record with an explicit incomplete-run record.
+            write_report(args.report, runner.report("not_started"))
+            report_started = True
         result = runner.run()
         if args.report:
-            report = {key: value for key, value in result.items() if key != "variables"}
-            args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            write_report(args.report, runner.report("completed"))
             print(f"F01 report written to {args.report}")
-    except WorkflowError as error:
+    except (WorkflowError, OSError) as error:
         print(f"F01 FAILED: {error}", file=sys.stderr)
+        if report_started and runner is not None:
+            try:
+                write_report(args.report, runner.report("failed"))
+            except WorkflowError as report_error:
+                print(f"F01 REPORT FAILED: {report_error}", file=sys.stderr)
         return 1
     print(json.dumps({key: value for key, value in result.items() if key != "variables"}, ensure_ascii=False))
     return 0
@@ -345,4 +409,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
