@@ -36,6 +36,43 @@
         </div>
         <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
 
+        <section class="assets">
+          <h3>项目资料</h3>
+          <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
+            <label for="knowledge-id">绑定知识资料</label>
+            <div class="asset-bind-row">
+              <input id="knowledge-id" v-model="knowledgeId" :disabled="busy" placeholder="输入 knowledge_id" />
+              <button type="submit" :disabled="busy || !knowledgeId.trim()">绑定</button>
+            </div>
+          </form>
+          <p v-if="assets.length === 0" class="muted">当前项目没有可用的已就绪资料。</p>
+          <ul v-else class="asset-list">
+            <li v-for="asset in assets" :key="asset.id">
+              <span><strong>{{ asset.title || asset.knowledge_id }}</strong><small>版本 {{ asset.asset_revision }}</small></span>
+              <em>{{ asset.processing_state === 'ready' ? '已就绪' : asset.processing_state }}</em>
+            </li>
+          </ul>
+        </section>
+
+        <section class="sources">
+          <h3>资料检索</h3>
+          <form class="source-search-form" @submit.prevent="searchSources">
+            <label for="source-query">检索问题</label>
+            <div class="asset-bind-row">
+              <input id="source-query" v-model="sourceQuery" :disabled="busy || assets.length === 0" placeholder="输入要定位的内容" />
+              <button type="submit" :disabled="busy || !sourceQuery.trim() || assets.length === 0">检索</button>
+            </div>
+          </form>
+          <p v-if="sourceQuery && sources.length === 0" class="muted">暂无可定位来源。</p>
+          <ul v-else-if="sources.length" class="source-list">
+            <li v-for="source in sources" :key="source.id">
+              <span><strong>{{ source.locator }}</strong><small>{{ source.status }}</small></span>
+              <p>{{ source.quoted_text || '当前版本无法取回原文片段。' }}</p>
+              <button type="button" :disabled="busy" @click="refreshSource(source.id)">重新定位</button>
+            </li>
+          </ul>
+        </section>
+
         <form class="spec-form" @submit.prevent="saveConditions">
           <h3>研究条件</h3>
           <label for="subject">研究主题</label>
@@ -75,14 +112,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import {
-  activateProject, createProject, getProject, listChapters, listProjects,
-  saveChapter, saveSpec, type Chapter, type Project,
+  activateProject, bindAsset, createProject, getProject, getSource, listAssets, listChapters, listProjects,
+  retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type Source,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
 const truncated = ref(false)
 const project = ref<Project | null>(null)
 const chapters = ref<Chapter[]>([])
+const assets = ref<Asset[]>([])
+const knowledgeId = ref('')
+const sourceQuery = ref('')
+const sources = ref<Source[]>([])
 const chapter = ref<Chapter | null>(null)
 const newName = ref('')
 const subject = ref('')
@@ -158,9 +199,51 @@ async function selectProject(id: string, force = false) {
     goal.value = result.data.spec.research_goal ?? ''
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
     chapters.value = chapterResult?.data ?? []
+    const assetResult = await listAssets(id)
+    assets.value = assetResult.data ?? []
+    sources.value = []
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
   } catch (error) { failure(error) }
+}
+
+async function searchSources() {
+  if (!project.value || busy.value || !sourceQuery.value.trim() || assets.value.length === 0) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await retrieveSources(project.value.id, sourceQuery.value.trim(), assets.value.map(item => item.id))
+    sources.value = result.data
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function refreshSource(sourceId: string) {
+  if (!project.value || busy.value) return
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await getSource(project.value.id, sourceId)
+    sources.value = sources.value.map(item => item.id === sourceId ? result.data : item)
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function bindProjectAsset() {
+  if (!project.value || busy.value || !knowledgeId.value.trim()) return
+  busy.value = true
+  errorMessage.value = ''
+  const projectId = project.value.id
+  const input = { knowledge_id: knowledgeId.value.trim() }
+  const key = operationKey(`asset:${projectId}`, input)
+  try {
+    await bindAsset(projectId, input.knowledge_id, key)
+    attempts.delete(`asset:${projectId}`)
+    knowledgeId.value = ''
+    const refreshed = await listAssets(projectId)
+    assets.value = refreshed.data ?? []
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
 }
 
 async function saveConditions() {
@@ -250,6 +333,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .project-list { list-style: none; padding: 0; display: grid; gap: 7px; }
 .project-list button { width: 100%; display: flex; justify-content: space-between; text-align: left; }
 .project-list small, .chapter-tabs small { color: #67746a; margin-left: 8px; }
+.asset-list { list-style: none; padding: 0; display: grid; gap: 8px; }
+.asset-bind-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.asset-bind-row { display: flex; gap: 8px; }
+.asset-bind-row input { flex: 1; min-width: 0; }
+.asset-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
+.asset-list span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.asset-list small, .asset-list em { color: #67746a; font-size: 12px; font-style: normal; }
 .chapter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .empty-work { display: grid; place-items: center; min-height: 300px; color: #6b7670; }
 @media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } }
