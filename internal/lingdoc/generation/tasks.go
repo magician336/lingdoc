@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -49,9 +50,13 @@ func (h *TaskHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	run, err := h.Service.Execute(ctx, payload.RunID)
 	if err != nil {
 		if errors.Is(err, ErrRunUnavailable) {
-			// Another delivery still owns a live lease, or this worker lost a
-			// fenced claim. The owning delivery will finish or be retried itself.
-			return nil
+			if delayed, ok := h.Service.Enqueuer.(DelayedEnqueuer); ok {
+				if enqueueErr := delayed.EnqueueGenerationAfter(ctx, payload.TenantID, payload.RunID, claimLeaseDuration+time.Second); enqueueErr == nil {
+					return nil
+				}
+			}
+			// Do not ACK a run that may have lost its only worker.
+			return ErrRunUnavailable
 		}
 		return err
 	}

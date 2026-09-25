@@ -69,6 +69,7 @@ type Section struct {
 type Template struct {
 	ID             string
 	Version        string
+	RulesetHash    string
 	Sections       []Section
 	RequiredFields []string
 }
@@ -87,6 +88,7 @@ func (ContractDemoTemplate) Get(id, version string) (Template, error) {
 	}
 	return Template{
 		ID: "template-demo", Version: "1",
+		RulesetHash: "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
 		Sections: []Section{
 			{ID: "question", Title: "研究问题", Required: true},
 			{ID: "method", Title: "研究方案", Required: true},

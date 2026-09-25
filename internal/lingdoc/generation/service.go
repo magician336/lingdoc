@@ -25,6 +25,7 @@ var (
 	ErrForbidden             = errors.New("forbidden")
 	ErrVersionConflict       = errors.New("version_conflict")
 	ErrSourceAccessDenied    = errors.New("source_access_denied")
+	ErrSourceStale           = errors.New("source_stale")
 	ErrStaleInput            = errors.New("stale_input")
 	ErrIdempotencyConflict   = errors.New("idempotency_conflict")
 	ErrRunUnavailable        = errors.New("generation_run_unavailable")
@@ -152,6 +153,12 @@ type Enqueuer interface {
 	EnqueueGeneration(context.Context, uint64, string) error
 }
 
+// DelayedEnqueuer preserves a lease-wait retry instead of acknowledging a
+// task while its previous worker may have disappeared.
+type DelayedEnqueuer interface {
+	EnqueueGenerationAfter(context.Context, uint64, string, time.Duration) error
+}
+
 type Service struct {
 	Authorizer  Authorizer
 	Inputs      InputResolver
@@ -163,9 +170,9 @@ type Service struct {
 	NewID       func() string
 }
 
-func NewService(authorizer Authorizer, inputs InputResolver, sources SourceValidator, currentness CurrentnessChecker, model ModelAdapter, repo Repository) *Service {
+func NewService(authorizer Authorizer, inputs InputResolver, sources SourceValidator, currentness CurrentnessChecker, model ModelAdapter, repo Repository, enqueuer Enqueuer) *Service {
 	return &Service{Authorizer: authorizer, Inputs: inputs, Sources: sources, Currentness: currentness, Model: model, Repository: repo,
-		NewID: func() string { return uuid.NewString() }}
+		Enqueuer: enqueuer, NewID: func() string { return uuid.NewString() }}
 }
 
 func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string, request Request) (Run, error) {
@@ -240,7 +247,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 // Execute processes one queued run. A conditional claim prevents duplicate
 // workers from invoking the model for the same run.
 func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
-	if s.Repository == nil || s.Model == nil || s.Currentness == nil || s.Sources == nil {
+	if s.Repository == nil || s.Model == nil || s.Currentness == nil || s.Sources == nil || s.Authorizer == nil {
 		return Run{}, ErrDependencyUnavailable
 	}
 	run, input, claimed, err := s.Repository.Claim(ctx, runID)
@@ -276,6 +283,19 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		cancel()
 		<-heartbeatDone
 	}()
+	if err := s.Authorizer.AuthorizeGeneration(ctx, input.Actor, run.ProjectID); err != nil {
+		return s.failBeforeModel(ctx, run, err)
+	}
+	if err := s.Sources.ValidateGenerationSources(ctx, input.Actor, run.ProjectID, input.Sources); err != nil {
+		return s.failBeforeModel(ctx, run, err)
+	}
+	current, err := s.Currentness.GenerationInputIsCurrent(ctx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
+	if err != nil {
+		return s.failBeforeModel(ctx, run, err)
+	}
+	if !current {
+		return s.failBeforeModel(ctx, run, ErrStaleInput)
+	}
 	draft, generateErr := s.Model.Generate(workCtx, input)
 	if generateErr != nil {
 		status := StatusFailed
@@ -327,7 +347,10 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	if err := s.Sources.ValidateGenerationSources(workCtx, input.Actor, run.ProjectID, used); err != nil {
 		status := StatusFailed
 		failure := RunError{Code: "source_access_denied", Message: "生成来源已失效或当前不可访问。", Retryable: false}
-		if !errors.Is(err, ErrSourceAccessDenied) {
+		if errors.Is(err, ErrSourceStale) {
+			status = StatusInterrupted
+			failure = RunError{Code: "stale_input", Message: "生成来源版本或定位已变化，需重新生成。", Retryable: false}
+		} else if !errors.Is(err, ErrSourceAccessDenied) {
 			status = StatusInterrupted
 			failure = RunError{Code: "source_validation_unavailable", Message: "来源复核暂不可用，任务已中断。", Retryable: true}
 		}
@@ -337,7 +360,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		}
 		return failed, nil
 	}
-	current, err := s.Currentness.GenerationInputIsCurrent(workCtx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
+	current, err = s.Currentness.GenerationInputIsCurrent(workCtx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
 	if err != nil {
 		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusInterrupted, RunError{Code: "currentness_unavailable", Message: "无法确认生成输入仍为当前版本，任务已中断。", Retryable: true})
 		if storeErr != nil {
@@ -385,6 +408,28 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 			RunError{Code: "generation_cancelled", Message: "生成任务已取消。", Retryable: false})
 	}
 	return completed, err
+}
+
+func (s *Service) failBeforeModel(ctx context.Context, run Run, cause error) (Run, error) {
+	status := StatusFailed
+	failure := RunError{Code: "source_access_denied", Message: "生成输入当前不可访问。", Retryable: false}
+	switch {
+	case errors.Is(cause, ErrStaleInput), errors.Is(cause, ErrSourceStale):
+		status = StatusInterrupted
+		failure = RunError{Code: "stale_input", Message: "生成输入版本或来源已变化，需重新生成。", Retryable: false}
+	case errors.Is(cause, ErrDependencyUnavailable):
+		status = StatusInterrupted
+		failure = RunError{Code: "generation_preflight_unavailable", Message: "生成前置校验暂不可用，任务已中断。", Retryable: true}
+	case errors.Is(cause, ErrNotFound), errors.Is(cause, ErrForbidden), errors.Is(cause, ErrSourceAccessDenied):
+	default:
+		status = StatusInterrupted
+		failure = RunError{Code: "generation_preflight_unavailable", Message: "生成前置校验失败，任务已中断。", Retryable: true}
+	}
+	failed, err := s.Repository.Fail(context.WithoutCancel(ctx), run.ID, run.ClaimToken, status, failure)
+	if err != nil {
+		return Run{}, err
+	}
+	return failed, nil
 }
 
 func (s *Service) Get(ctx context.Context, actor Actor, projectID, runID string) (Run, error) {
@@ -451,6 +496,10 @@ func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runI
 		usedSources = append(usedSources, source)
 	}
 	if err := s.Sources.ValidateGenerationSources(ctx, actor, projectID, usedSources); err != nil {
+		if errors.Is(err, ErrSourceStale) {
+			candidate.Validity = "stale"
+			return candidate, nil
+		}
 		if errors.Is(err, ErrSourceAccessDenied) {
 			return candidateadoption.Candidate{}, ErrSourceAccessDenied
 		}

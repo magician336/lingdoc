@@ -93,7 +93,7 @@ type RouterParams struct {
 	MemoryHandler                   *handler.MemoryHandler
 	LingDocWorkspace                *workspace.Handler
 	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
-	LingDocGenerationHandler        *generation.Handler                         `optional:"true"`
+	LingDocGenerationHandler        *generation.Handler `optional:"true"`
 }
 
 // NewRouter 创建新的路由

@@ -119,8 +119,7 @@ func generationFixture() (*Service, *testRepository) {
 		Sources:   []Source{{ID: "source-1", ProjectID: "project-1", AssetID: "asset-1", AssetRevision: 2, Status: "available"}}}
 	repo := &testRepository{input: input, run: Run{ID: "run-1", ProjectID: "project-1", ChapterID: "chapter-1", Status: StatusQueued}}
 	svc := NewService(testAuthorizer{}, testInputs{input: input}, testSources{}, testCurrentness{current: true},
-		testModel{draft: Draft{BodyMarkdown: "Text [[source:source-1]]", Sources: []Source{{ID: "source-1"}}}}, repo)
-	svc.Enqueuer = &testEnqueuer{}
+		testModel{draft: Draft{BodyMarkdown: "Text [[source:source-1]]", Sources: []Source{{ID: "source-1"}}}}, repo, &testEnqueuer{})
 	svc.NewID = func() string { return "candidate-1" }
 	return svc, repo
 }

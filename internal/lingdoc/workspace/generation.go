@@ -2,8 +2,6 @@ package workspace
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
@@ -21,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"gorm.io/gorm"
 )
 
@@ -53,9 +53,8 @@ func NewGenerationHandler(
 		generationWorkspaceAuthorizer{workspace: workspace.service}, inputs,
 		generationSourceValidator{policy: policy},
 		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: core.ContractDemoTemplate{}},
-		generationHostModel{models: models}, repository,
+		generationHostModel{models: models}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
-	service.Enqueuer = generationTaskEnqueuer{tasks: tasks}
 	return generation.NewHandler(service, func(c *gin.Context) (generation.Actor, bool) {
 		actor, ok := caller(c)
 		return generation.Actor{TenantID: actor.TenantID, UserID: actor.UserID}, ok
@@ -97,11 +96,6 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 	if err != nil {
 		return generation.Input{}, generation.ErrDependencyUnavailable
 	}
-	templateBytes, err := json.Marshal(template)
-	if err != nil {
-		return generation.Input{}, generation.ErrDependencyUnavailable
-	}
-	templateHash := sha256.Sum256(templateBytes)
 	chapter, ok := workspaceChapter(current.ChapterID, current.Chapter, template)
 	if !ok {
 		return generation.Input{}, generation.ErrNotFound
@@ -124,8 +118,16 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 		if err != nil {
 			return generation.Input{}, generation.ErrSourceAccessDenied
 		}
-		byKnowledge[asset.KnowledgeID] = asset
-		byKB[scope.KnowledgeBaseID] = append(byKB[scope.KnowledgeBaseID], asset.KnowledgeID)
+		knowledgeID, ok, err := r.bindings.KnowledgeOfRevision(ctx, asset.ID, asset.AssetRevision)
+		if err != nil {
+			return generation.Input{}, generation.ErrDependencyUnavailable
+		}
+		if !ok || knowledgeID == "" {
+			return generation.Input{}, generation.ErrSourceAccessDenied
+		}
+		asset.KnowledgeID = knowledgeID
+		byKnowledge[knowledgeID] = asset
+		byKB[scope.KnowledgeBaseID] = append(byKB[scope.KnowledgeBaseID], knowledgeID)
 		assetVersions = append(assetVersions, candidateadoption.AssetVersion{AssetID: asset.ID, AssetRevision: asset.AssetRevision})
 	}
 	sort.Slice(assetVersions, func(i, j int) bool { return assetVersions[i].AssetID < assetVersions[j].AssetID })
@@ -176,7 +178,7 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 	basis := candidateadoption.Basis{
 		SpecRevision: int(current.SpecRevision), ChapterVersionID: current.ChapterVersionID,
 		TemplateID: current.TemplateID, TemplateVersion: current.TemplateVersion,
-		RulesetHash: hex.EncodeToString(templateHash[:]), AssetVersions: assetVersions,
+		RulesetHash: template.RulesetHash, AssetVersions: assetVersions,
 	}
 	return generation.Input{
 		Workspace: candidateadoption.GenerationContext{
@@ -229,7 +231,15 @@ func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context
 	if err != nil {
 		return err
 	}
-	if checked == nil || len(checked.Unusable) != 0 || len(checked.Usable) != len(sources) {
+	if checked == nil {
+		return generation.ErrSourceAccessDenied
+	}
+	if len(checked.Unusable) != 0 || len(checked.Usable) != len(sources) {
+		for _, unusable := range checked.Unusable {
+			if unusable.AssetDeny == "" {
+				return generation.ErrSourceStale
+			}
+		}
 		return generation.ErrSourceAccessDenied
 	}
 	return nil
@@ -257,12 +267,7 @@ func (c generationCurrentnessChecker) GenerationInputIsCurrent(ctx context.Conte
 	if err != nil {
 		return false, err
 	}
-	encoded, err := json.Marshal(template)
-	if err != nil {
-		return false, err
-	}
-	hash := sha256.Sum256(encoded)
-	if basis.RulesetHash != hex.EncodeToString(hash[:]) {
+	if basis.RulesetHash != template.RulesetHash {
 		return false, nil
 	}
 	requested := make([]string, 0, len(basis.AssetVersions))
@@ -459,4 +464,19 @@ type generationTaskEnqueuer struct{ tasks interfaces.TaskEnqueuer }
 
 func (e generationTaskEnqueuer) EnqueueGeneration(ctx context.Context, tenantID uint64, runID string) error {
 	return generation.EnqueueTask(ctx, e.tasks, tenantID, runID)
+}
+
+func (e generationTaskEnqueuer) EnqueueGenerationAfter(_ context.Context, tenantID uint64, runID string, delay time.Duration) error {
+	if e.tasks == nil || tenantID == 0 || runID == "" {
+		return generation.ErrDependencyUnavailable
+	}
+	payload, err := json.Marshal(struct {
+		TenantID uint64 `json:"tenant_id"`
+		RunID    string `json:"run_id"`
+	}{tenantID, runID})
+	if err != nil {
+		return err
+	}
+	_, err = e.tasks.Enqueue(asynq.NewTask(types.TypeLingDocGeneration, payload), asynq.Queue(types.QueueSummary), asynq.ProcessIn(delay))
+	return err
 }

@@ -98,8 +98,7 @@ func TestGenerationServicePersistsReadableCandidate(t *testing.T) {
 	draft := Draft{BodyMarkdown: "Verified text [[source:source-1]]", Sources: []Source{{ID: "source-1"}},
 		ReviewItems: []candidateadoption.ReviewItem{{ID: "review-1", Statement: "复核统计口径"}}}
 	service := NewService(testAuthorizer{}, testInputs{input: input}, testSources{}, testCurrentness{current: true},
-		testModel{draft: draft}, repo)
-	service.Enqueuer = &testEnqueuer{}
+		testModel{draft: draft}, repo, &testEnqueuer{})
 	request := Request{ChapterID: "chapter-1", AssetIDs: []string{"asset-1"}, Instruction: "Draft this chapter",
 		ExpectedSpecRevision: 3, ExpectedChapterVersionID: &chapterVersion}
 	run, err := service.Start(ctx, actor, "project-1", "generation-key-1", request)
