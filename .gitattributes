@@ -1,0 +1,3 @@
+# Keep Go source and acceptance contract fixtures stable across Windows checkouts.
+*.go text eol=lf
+cli/acceptance/testdata/**/*.json text eol=lf

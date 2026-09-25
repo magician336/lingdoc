@@ -2,6 +2,7 @@ package evidence
 
 import (
 	"context"
+	"errors"
 	"strings"
 )
 
@@ -38,6 +39,13 @@ type BindingSource interface {
 	BoundAssets(ctx context.Context, projectID string) ([]Asset, error)
 }
 
+// CurrentAssetRefresher lets the gateway refresh current bottom-layer state
+// after access is authorized and then read the same current asset snapshot.
+type CurrentAssetRefresher interface {
+	RefreshAsset(ctx context.Context, projectID, assetID string) error
+	CurrentAsset(ctx context.Context, projectID, assetID string) (Asset, error)
+}
+
 // Authorizer 判定调用者此刻能否访问某份资料。授权是否仍有效必须现查，
 // 不能用历史缓存——否则撤权后仍会从旧结果里放行。
 type Authorizer interface {
@@ -65,7 +73,7 @@ func (g *assetGateway) ResolveAllowed(
 	requested := normalizeIDs(assetIDs)
 	if len(requested) == 0 {
 		// 空范围是"没有资料"，不是"全部资料"：不触达存储，返回空集合。
-		return &ResolveResult{Requested: []string{}}, nil
+		return &ResolveResult{Requested: []string{}, Allowed: []Asset{}, Denied: []DeniedAsset{}}, nil
 	}
 
 	bound, err := g.bindings.BoundAssets(ctx, projectID)
@@ -77,16 +85,15 @@ func (g *assetGateway) ResolveAllowed(
 		byID[asset.ID] = asset
 	}
 
-	res := &ResolveResult{Requested: requested}
+	res := &ResolveResult{
+		Requested: requested,
+		Allowed:   make([]Asset, 0, len(requested)),
+		Denied:    make([]DeniedAsset, 0, len(requested)),
+	}
 	for _, id := range requested {
 		asset, ok := byID[id]
 		if !ok {
 			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotFound})
-			continue
-		}
-		if asset.ProcessingState != AssetStateReady {
-			// 未就绪资料不得用空解析结果充当证据。
-			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotReady})
 			continue
 		}
 		allowed, err := g.authz.CanAccessAsset(ctx, actor, projectID, asset)
@@ -97,17 +104,44 @@ func (g *assetGateway) ResolveAllowed(
 			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotAuthorized})
 			continue
 		}
+		if refresher, ok := g.bindings.(CurrentAssetRefresher); ok {
+			if err := refresher.RefreshAsset(ctx, projectID, asset.ID); err != nil {
+				if errors.Is(err, ErrAssetNotFound) {
+					res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotFound})
+					continue
+				}
+				return nil, err
+			}
+			asset, err = refresher.CurrentAsset(ctx, projectID, asset.ID)
+			if err != nil {
+				if errors.Is(err, ErrAssetNotFound) {
+					res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotFound})
+					continue
+				}
+				return nil, err
+			}
+		}
+		if asset.ProcessingState != AssetStateReady {
+			// 授权必须先于状态判定，避免向无权调用者泄露资料状态。
+			res.Denied = append(res.Denied, DeniedAsset{AssetID: id, Reason: DenyNotReady})
+			continue
+		}
 		res.Allowed = append(res.Allowed, asset)
 	}
 	return res, nil
 }
+
+// normalizeKey 是「两个 ID 算不算同一个」的唯一判据。网关与来源复核都经它：
+// 两处各判一次时，同一个 ID 会在一个入口里算数、在另一个里被丢掉，
+// 而两边的报错都说得通——最难查的一类错。
+func normalizeKey(id string) string { return strings.TrimSpace(id) }
 
 // normalizeIDs 去重并保持请求顺序，与契约 asset_ids 的 uniqueItems 约束一致。
 func normalizeIDs(in []string) []string {
 	out := make([]string, 0, len(in))
 	seen := make(map[string]struct{}, len(in))
 	for _, item := range in {
-		item = strings.TrimSpace(item)
+		item = normalizeKey(item)
 		if item == "" {
 			continue
 		}
