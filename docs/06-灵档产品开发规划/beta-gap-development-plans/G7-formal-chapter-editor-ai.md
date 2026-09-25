@@ -1,6 +1,6 @@
 # G7. 正式章节编辑器与 AI 辅助写作
 
-> 补充计划：本文件聚焦 active 项目的正式章节编辑器和 AI 辅助写作，不改变 Beta 六项缺口 G1–G6 的编号。  
+> 补充计划：本文件聚焦 active 项目的正式章节编辑器和 AI 辅助写作，不改变 Beta 六项缺口 G1–G6 的编号。
 > 相关计划：[G1. 建项语义与草稿阶段](G1-draft-baseline.md)、[G2. 证据工作台与调研智能体](G2-evidence-research.md)、[G3. PCC、ChangeSet、依赖图与技术路线图](G3-pcc-change-coordination.md)、[G4. 模板、规则与问题治理](G4-template-rules.md)、[G5. 完整权限、治理与审计](G5-permissions-governance.md)、[G6. Beta 质量、运行与效果评估](G6-beta-quality-operations.md)
 > 相关基线：[领域架构与 PCC](../02-领域架构与PCC.md)、[数据模型与接口契约](../03-数据模型与接口契约.md)、[用户界面与交互规划](../09-用户界面与交互规划.md)
 

@@ -1,7 +1,7 @@
 # G4. 模板、规则与问题治理
 
-> 父计划：[Beta 六项缺口开发计划](../18-Beta六项缺口开发计划.md)  
-> 相关计划：[G1. 建项语义与草稿阶段](G1-draft-baseline.md)、[G3. PCC、ChangeSet、依赖图与技术路线图](G3-pcc-change-coordination.md)、[G4. 项目级模板副本与规则编辑](G4-project-template-copy.md)  
+> 父计划：[Beta 六项缺口开发计划](../18-Beta六项缺口开发计划.md)
+> 相关计划：[G1. 建项语义与草稿阶段](G1-draft-baseline.md)、[G3. PCC、ChangeSet、依赖图与技术路线图](G3-pcc-change-coordination.md)、[G4. 项目级模板副本与规则编辑](G4-project-template-copy.md)
 > 前置假设：T01–T16 已完成并通过各自验收。本文件是后续开发计划，不表示功能当前已实现。
 
 ## 1. 目标和基本判断
