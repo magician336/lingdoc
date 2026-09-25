@@ -67,8 +67,10 @@ func seedChunk(t *testing.T, db *gorm.DB, sourceID, knowledgeID, content string,
 }
 
 // policyContext 带上租户：复核要拿它构造 evidence.Actor，缺了就只能默认拒绝。
-func policyContext() context.Context {
-	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "reader")
+func policyContext() context.Context { return policyContextWithUser("reader") }
+
+func policyContextWithUser(userID string) context.Context {
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, userID)
 	return context.WithValue(ctx, types.TenantIDContextKey, uint64(7))
 }
 

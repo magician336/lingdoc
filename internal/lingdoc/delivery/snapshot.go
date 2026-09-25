@@ -14,7 +14,15 @@ import (
 	"time"
 )
 
-var ErrSnapshotStaleInput = errors.New("delivery input is no longer current")
+var (
+	ErrSnapshotStaleInput = errors.New("delivery input is no longer current")
+	// ErrSnapshotNotFound 让传输层把「这里没有这份快照」答成 404。取不到与读失败
+	// 是两件事：前者是调用方写错了 ID，后者才是服务端出了问题。
+	ErrSnapshotNotFound = errors.New("release snapshot not found")
+	// ErrIdempotencyConflict 是一个动作键被换了请求复用。契约 §6：同键不同请求
+	// 返回冲突，而不是当成新动作再做一次。
+	ErrIdempotencyConflict = errors.New("idempotency key reused for a different request")
+)
 
 // DeliveryInput is the immutable value captured for checking and export.
 type DeliveryInput struct {
@@ -128,28 +136,109 @@ type SnapshotStore interface {
 	Save(ReleaseSnapshot) error
 	Get(projectID, snapshotID string) (ReleaseSnapshot, error)
 }
+
+// FreezeAttempt 是「哪一次用户动作要求了这次冻结」。契约 §6 记的范围是租户、
+// 操作者、操作、目标资源路径与键；目标路径就是这个项目，操作由路由定死
+// （只有 prepareRelease 冻结），所以动作身份落成这三项。
+type FreezeAttempt struct {
+	ActorID   string
+	ProjectID string
+	Key       string
+}
+
+// FreezeRecorder 是 SnapshotStore 的可选能力：把一份冻结记到要求它的那次动作名下。
+//
+// 两个方法各司其职，都不是多余的：ReplayFreeze 是**读**，它必须能在版本比较之前
+// 跑（契约 §6：「重放完成结果必须先于首次写入的旧版本比较」，否则一次
+// 「已经冻好了但响应丢了」的重试会被误报成版本冲突）；RecordFreeze 是**写**，
+// 它把「这份快照」与「这次动作冻了它」放在同一次写入里，让并发重试只有一个能落笔。
+type FreezeRecorder interface {
+	// ReplayFreeze 返回这次动作已经冻出来的那一份。found=false 表示这是个新动作；
+	// 记下的请求指纹与 requestHash 不符则是键被复用，返回 ErrIdempotencyConflict。
+	ReplayFreeze(attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error)
+	// RecordFreeze 把快照与它的动作一起落存，并回报**这次调用是不是落笔的那一次**。
+	// 并发下输的一方拿回赢家的那一份（replayed=true），而不是另冻一份：
+	// 一次用户动作在交付历史里只能有一条。
+	RecordFreeze(snapshot ReleaseSnapshot, attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error)
+}
+
+// freezeRecord 是一次动作冻出来的东西。请求指纹用来把「重试」与「换了请求却
+// 复用同一个键」分开——契约 §6 要求对前者换回原结果、对后者报冲突。
+type freezeRecord struct {
+	SnapshotID  string
+	RequestHash string
+}
+
 type MemorySnapshotStore struct {
 	mu        sync.RWMutex
 	snapshots map[string]ReleaseSnapshot
+	freezes   map[string]freezeRecord
 }
 
 func NewMemorySnapshotStore() *MemorySnapshotStore {
-	return &MemorySnapshotStore{snapshots: make(map[string]ReleaseSnapshot)}
+	return &MemorySnapshotStore{
+		snapshots: make(map[string]ReleaseSnapshot),
+		freezes:   make(map[string]freezeRecord),
+	}
 }
+
+func snapshotIndex(projectID, snapshotID string) string { return projectID + "/" + snapshotID }
+
+func freezeIndex(attempt FreezeAttempt) string {
+	return attempt.ProjectID + "/" + attempt.ActorID + "/" + attempt.Key
+}
+
 func (s *MemorySnapshotStore) Save(snapshot ReleaseSnapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.snapshots[snapshot.ProjectID+"/"+snapshot.ID] = cloneSnapshot(snapshot)
+	s.snapshots[snapshotIndex(snapshot.ProjectID, snapshot.ID)] = cloneSnapshot(snapshot)
 	return nil
 }
 func (s *MemorySnapshotStore) Get(projectID, snapshotID string) (ReleaseSnapshot, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	snapshot, ok := s.snapshots[projectID+"/"+snapshotID]
+	snapshot, ok := s.snapshots[snapshotIndex(projectID, snapshotID)]
 	if !ok {
-		return ReleaseSnapshot{}, fmt.Errorf("release snapshot not found")
+		return ReleaseSnapshot{}, fmt.Errorf("%w: %s", ErrSnapshotNotFound, snapshotID)
 	}
 	return cloneSnapshot(snapshot), nil
+}
+
+func (s *MemorySnapshotStore) ReplayFreeze(attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	record, ok := s.freezes[freezeIndex(attempt)]
+	if !ok {
+		return ReleaseSnapshot{}, false, nil
+	}
+	return s.replayed(attempt.ProjectID, record, requestHash)
+}
+
+func (s *MemorySnapshotStore) RecordFreeze(snapshot ReleaseSnapshot, attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := freezeIndex(attempt)
+	if record, ok := s.freezes[index]; ok {
+		return s.replayed(attempt.ProjectID, record, requestHash)
+	}
+	stored := cloneSnapshot(snapshot)
+	s.snapshots[snapshotIndex(snapshot.ProjectID, snapshot.ID)] = stored
+	s.freezes[index] = freezeRecord{SnapshotID: snapshot.ID, RequestHash: requestHash}
+	return cloneSnapshot(stored), false, nil
+}
+
+// replayed 由调用方持锁调用。索引与快照永远在同一次写入里成对落下，所以
+// 「索引在、快照不在」只可能来自别的实现——那种情况下宁可说找不到，
+// 也不要交出一份谁也读不回来的快照。
+func (s *MemorySnapshotStore) replayed(projectID string, record freezeRecord, requestHash string) (ReleaseSnapshot, bool, error) {
+	if record.RequestHash != requestHash {
+		return ReleaseSnapshot{}, false, ErrIdempotencyConflict
+	}
+	snapshot, ok := s.snapshots[snapshotIndex(projectID, record.SnapshotID)]
+	if !ok {
+		return ReleaseSnapshot{}, false, ErrSnapshotNotFound
+	}
+	return cloneSnapshot(snapshot), true, nil
 }
 
 // CurrentnessChecker compares frozen versions with current workspace and source state.
@@ -178,7 +267,12 @@ func NewReleaseService(store SnapshotStore, checkers ...CurrentnessChecker) *Rel
 	return &ReleaseService{store: store, currentness: checker, now: time.Now}
 }
 
-func (s *ReleaseService) Prepare(input DeliveryInput) (ReleaseSnapshot, error) {
+// Freeze 算出冻结快照，但不落存。
+//
+// 分开是因为冻结与「哪一次动作冻了它」必须一起落：由调用方拿着这份快照去
+// RecordFreeze，两件事才是同一次写入。先存后记的话，两次写之间就存在一个
+// 「快照在、动作不在」的窗口，重试正好落在那里就会再冻一份。
+func (s *ReleaseService) Freeze(input DeliveryInput) (ReleaseSnapshot, error) {
 	frozen := cloneInput(input)
 	current, err := s.currentness.IsCurrent(frozen)
 	if err != nil {
@@ -195,7 +289,14 @@ func (s *ReleaseService) Prepare(input DeliveryInput) (ReleaseSnapshot, error) {
 	if err != nil {
 		return ReleaseSnapshot{}, err
 	}
-	snapshot := ReleaseSnapshot{ID: id, ProjectID: frozen.ProjectID, FrozenInput: frozen, SnapshotDigest: digest, Check: Evaluate(frozen), IsCurrent: true, CreatedAt: s.now().UTC()}
+	return ReleaseSnapshot{ID: id, ProjectID: frozen.ProjectID, FrozenInput: frozen, SnapshotDigest: digest, Check: Evaluate(frozen), IsCurrent: true, CreatedAt: s.now().UTC()}, nil
+}
+
+func (s *ReleaseService) Prepare(input DeliveryInput) (ReleaseSnapshot, error) {
+	snapshot, err := s.Freeze(input)
+	if err != nil {
+		return ReleaseSnapshot{}, err
+	}
 	if err := s.store.Save(snapshot); err != nil {
 		return ReleaseSnapshot{}, err
 	}

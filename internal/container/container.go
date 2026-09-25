@@ -498,9 +498,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		})
 	}))
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
-	// HTTP 入口列为「容量有余才启用」，所以这里只装领域这一层，路由由后续切片接上。
+	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
+	// 传输层紧跟着用它装出来。
 	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) (*workspace.DeliveryReleaseService, error) {
 		// 快照库是进程内的那一份：同一台服务里冻下的快照，取的时候得还在。
+		// 它同时得能记「哪一次动作冻了它」——/releases 收了幂等键就要照它办事。
 		store := delivery.NewMemorySnapshotStore()
 		inputs := &candidateadoption.DeliveryInputService{
 			Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(db),
@@ -510,10 +512,17 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
-			// 在第一个消费者出现时才生效——目前还没有路由接上这一层。
+			// 在第一个消费者出现时才生效——现在消费者是下面的 handler。
 			return nil, errors.New("lingdoc delivery release service: incomplete dependencies")
 		}
 		return service, nil
+	}))
+	must(container.Provide(func(service *workspace.DeliveryReleaseService) (*workspace.DeliveryHandler, error) {
+		handler := workspace.NewDeliveryHandler(service)
+		if handler == nil {
+			return nil, errors.New("lingdoc delivery handler: incomplete dependencies")
+		}
+		return handler, nil
 	}))
 	must(container.Provide(workspace.NewGenerationHandler))
 	must(container.Provide(func(h *generation.Handler) interfaces.TaskHandler {

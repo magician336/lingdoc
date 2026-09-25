@@ -13,6 +13,8 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
@@ -114,6 +116,26 @@ func sendError(c *gin.Context, err error) {
 	case errors.Is(err, ErrSourceUnavailable):
 		status, code, message = 403, "source_access_denied", "来源授权尚未接入，不能保存带引用的正文。"
 	case errors.Is(err, ErrInvalidState):
+		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
+	// 交付链（T12 候选采纳 / T13 冻结）的判定。这些是各自包里的 sentinel，
+	// 名字与工作区那几个相同却是**不同的值**，所以必须逐个列出来——漏一个就是把
+	// 409 答成 500。口径统一在传输层做，领域层不为了对上 HTTP 而改自己的错误。
+	case errors.Is(err, candidateadoption.ErrInvalidRequest):
+		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, candidateadoption.ErrNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, delivery.ErrSnapshotNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, candidateadoption.ErrSourceAccessDenied):
+		status, code, message = 403, "source_access_denied", "资料授权已不可用。"
+	case errors.Is(err, candidateadoption.ErrVersionConflict):
+		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
+	case errors.Is(err, candidateadoption.ErrIdempotencyConflict), errors.Is(err, delivery.ErrIdempotencyConflict):
+		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
+	case errors.Is(err, candidateadoption.ErrStaleInput), errors.Is(err, delivery.ErrSnapshotStaleInput):
+		// 读输入与冻结之间工作区被人改过。契约 §7：发生竞争变更返回 409，重新读取。
+		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
+	case errors.Is(err, candidateadoption.ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
 	}
 	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": code == "request_in_progress"},

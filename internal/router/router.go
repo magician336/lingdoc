@@ -92,6 +92,7 @@ type RouterParams struct {
 	WikiPageHandler                 *handler.WikiPageHandler
 	MemoryHandler                   *handler.MemoryHandler
 	LingDocWorkspace                *workspace.Handler
+	LingDocDeliveryHandler          *workspace.DeliveryHandler
 	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
 	LingDocGenerationHandler        *generation.Handler `optional:"true"`
 }
@@ -317,6 +318,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		if params.LingDocWorkspace != nil {
 			params.LingDocWorkspace.Register(v1)
+		}
+		if params.LingDocDeliveryHandler != nil {
+			lingdoc := v1.Group("/lingdoc")
+			workspace.RegisterDeliveryRoutes(lingdoc, params.LingDocDeliveryHandler)
 		}
 		if params.LingDocCandidateAdoptionHandler != nil {
 			lingdoc := v1.Group("/lingdoc")

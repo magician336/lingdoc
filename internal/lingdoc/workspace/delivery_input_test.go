@@ -24,6 +24,8 @@ const (
 	deliveryChapterID = "chapter-1"
 	deliveryVersionID = "version-1"
 	deliveryReviewID  = "review-1"
+	// 一次用户动作的幂等键：契约把 Idempotency-Key 标成 /releases 的必填头。
+	deliveryFreezeKey = "freeze-action-1"
 	// 正文里的 [[source:…]] 标记必须与 source_ids 完全一致，否则 T13 判 citation_mismatch
 	// ——那会盖住本用例真正要看的结论。
 	deliveryBody = "研究问题：演示资料包含虚构记录 [[source:source-1]]，不能当作真实结论。"
@@ -88,6 +90,14 @@ func deliveryMethodChapter() deliveryChapter {
 	return deliveryChapter{
 		id: "chapter-2", sectionID: "method", title: "研究方案", versionID: "version-2",
 		body: "研究方案：使用合成记录检验软件流程，结果仅用于内部演示。",
+	}
+}
+
+// deliveryEmptyChapter 是契约 §7 说的那种空章：有不可变版本，正文却是空的。
+// 它要被冻成一份 blocked 快照，而不是被挡在门外。
+func deliveryEmptyChapter() deliveryChapter {
+	return deliveryChapter{
+		id: deliveryChapterID, sectionID: "question", title: "研究问题", versionID: deliveryVersionID,
 	}
 }
 
@@ -219,9 +229,12 @@ func TestDeliveryLinkTurnsAWorkspaceIntoAPassedRelease(t *testing.T) {
 		t.Fatalf("Check issues = %v, want exactly the retained warning", result.Issues)
 	}
 
-	snapshot, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryProjectVersion)
+	snapshot, replayed, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
+	}
+	if replayed {
+		t.Fatal("the first freeze of an action reports a replay")
 	}
 	if snapshot.Check.Status != delivery.CheckPassed || !snapshot.IsCurrent {
 		t.Fatalf("snapshot check = %s current = %v, want passed/current", snapshot.Check.Status, snapshot.IsCurrent)
@@ -309,7 +322,7 @@ func TestDeliveryLinkDiagnosesASourceItCannotFreeze(t *testing.T) {
 
 	// 冻结仍会发生，且快照如实记下「哪一条没冻进去」：章节仍引用 source-2，
 	// 而冻结来源里只有 source-1。这一份 blocked 快照就是操作者要的答案。
-	snapshot, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryProjectVersion)
+	snapshot, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -339,7 +352,7 @@ func TestDeliveryLinkRefusesAProjectVersionTheCallerDidNotSee(t *testing.T) {
 	if !errors.Is(err, candidateadoption.ErrVersionConflict) {
 		t.Fatalf("Check = %v, want ErrVersionConflict", err)
 	}
-	if _, err := service.Prepare(policyContext(), deliveryActorID, "project-1", deliveryProjectVersion-1); !errors.Is(err, candidateadoption.ErrVersionConflict) {
+	if _, _, err := service.Prepare(policyContext(), deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion-1); !errors.Is(err, candidateadoption.ErrVersionConflict) {
 		t.Fatalf("Prepare = %v, want ErrVersionConflict", err)
 	}
 }
@@ -355,7 +368,7 @@ func TestDeliveryLinkReportsDriftAfterTheWorkspaceMoves(t *testing.T) {
 	service := newDeliveryReleaseService(t, handler)
 	ctx := policyContext()
 
-	snapshot, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryProjectVersion)
+	snapshot, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
@@ -401,11 +414,13 @@ func TestDeliveryLinkDigestsTheSameWorkspaceTheSameWay(t *testing.T) {
 	service := newDeliveryReleaseService(t, handler)
 	ctx := policyContext()
 
-	first, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryProjectVersion)
+	// 两次冻结用两个键：同一个键是重放（那有单独的用例），这里要的是**两次动作**
+	// 落在同一份内容上——它们必须各得一枚快照，而摘要相同。
+	first, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey+"-a", deliveryProjectVersion)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	second, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryProjectVersion)
+	second, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey+"-b", deliveryProjectVersion)
 	if err != nil {
 		t.Fatalf("Prepare again: %v", err)
 	}

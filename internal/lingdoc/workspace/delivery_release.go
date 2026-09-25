@@ -2,6 +2,9 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
@@ -19,15 +22,24 @@ type DeliveryReleaseService struct {
 	inputs  *candidateadoption.DeliveryInputService
 	builder *DeliveryInputBuilder
 	store   delivery.SnapshotStore
+	freezes delivery.FreezeRecorder
 }
 
 // NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
 // 少一个，链路就有一截是空的（读不到、补不上、或者冻不下来）。
+//
+// 快照库还必须能记「哪一次动作冻了它」（delivery.FreezeRecorder）。契约把
+// Idempotency-Key 标成 /releases 的必填头，退化成「照冻不误」就等于收下了这个头
+// 却不当回事：一次超时重试会在交付历史里多出一条，而调用方以为自己只冻过一次。
 func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder *DeliveryInputBuilder, store delivery.SnapshotStore) *DeliveryReleaseService {
 	if inputs == nil || builder == nil || store == nil {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store}
+	freezes, ok := store.(delivery.FreezeRecorder)
+	if !ok {
+		return nil
+	}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -43,13 +55,66 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 	return delivery.Evaluate(input), nil
 }
 
-// Prepare 冻结一份快照并落存。
-func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.ReleaseSnapshot, error) {
+// Prepare 冻结一份快照并落存，返回它是不是这次动作的重放。key 是这次用户动作的
+// 幂等键——契约把 Idempotency-Key 标成 /releases 的必填头。
+//
+// 处理顺序照契约 §6：先判身份，再判是不是已经做过，最后才比版本。
+// 「重放先于版本比较」不是两个可以调换的步骤：一次「其实已经冻好了、只是响应
+// 丢了」的重试，此刻读回来的工作区完全可能是被那次冻结推动过的版本；先比版本
+// 就会把它判成冲突，调用方于是再也拿不回那份已经存在的快照。
+func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID, key string, expectedProjectVersion int64) (delivery.ReleaseSnapshot, bool, error) {
+	if s == nil || s.inputs == nil || s.builder == nil || s.freezes == nil {
+		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
+		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
+	}
+	key = strings.TrimSpace(key)
+	if len(key) < 8 || len(key) > 128 {
+		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
+	}
+	// 1. 身份与项目能力。撤权之后不能从「这个键做过」里把旧快照交出去。
+	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	attempt := delivery.FreezeAttempt{ActorID: actorID, ProjectID: projectID, Key: key}
+	requestHash := freezeRequestHash(actorID, projectID, expectedProjectVersion)
+	// 2. 已经做过就换回原结果；同键不同请求是冲突，不是又一次冻结。
+	replay, found, err := s.freezes.ReplayFreeze(attempt, requestHash)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	if found {
+		return replay, true, nil
+	}
+	// 3. 只有新动作才比版本，也只有新动作才读工作区。
 	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
 	if err != nil {
-		return delivery.ReleaseSnapshot{}, err
+		return delivery.ReleaseSnapshot{}, false, err
 	}
-	return s.releases(ctx).Prepare(input)
+	// 4. 冻结与「这次动作冻了什么」一起落。并发的同键请求只会有一个落笔，
+	// 输的那一方拿回赢家的那一份，而不是自己手里这份。
+	snapshot, err := s.releases(ctx).Freeze(input)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	recorded, replayed, err := s.freezes.RecordFreeze(snapshot, attempt, requestHash)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	return recorded, replayed, nil
+}
+
+// freezeRequestHash 是这次动作请求体的规范指纹。契约 §6 要求把它与键一起记下：
+// 它是把「重试」与「换了请求却复用同一个键」分开的唯一依据。
+func freezeRequestHash(actorID, projectID string, expectedProjectVersion int64) string {
+	hasher := sha256.New()
+	for _, field := range []string{actorID, projectID, strconv.FormatInt(expectedProjectVersion, 10)} {
+		// hash.Hash.Write 从不返回错误（见 hash.Hash 文档）；长度前缀是为了让不同的
+		// 字段组合拼不出同一串字节——否则改一下字段边界就成了另一次「同一个请求」。
+		_, _ = hasher.Write([]byte(strconv.Itoa(len(field)) + ":" + field))
+	}
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // Get 取一份已冻结的快照，并按**此刻**的工作区重算 is_current。
