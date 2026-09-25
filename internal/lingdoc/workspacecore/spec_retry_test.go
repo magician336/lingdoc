@@ -178,13 +178,17 @@ func TestSpecRetryBoundAndCancellation(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			started := time.Now()
 			_, _, _, err = svc.SaveSpec(ctx, actor, id, "save-bound", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_goal": "blocked"}})
-			wantErr, wantCalls := ErrRequestInProgress, 4
+			wantErr := ErrRequestInProgress
 			if cancelOnLock {
-				wantErr, wantCalls = context.Canceled, 1
+				wantErr = context.Canceled
 			}
-			if !errors.Is(err, wantErr) || calls != wantCalls {
-				t.Fatalf("error/calls = %v/%d, want %v/%d", err, calls, wantErr, wantCalls)
+			if !errors.Is(err, wantErr) || calls < 1 || calls > specLockMaxAttempts || (cancelOnLock && calls != 1) {
+				t.Fatalf("error/calls = %v/%d, want %v within bounded attempts", err, calls, wantErr)
+			}
+			if !cancelOnLock && time.Since(started) < specLockRetryBudget {
+				t.Fatal("persistent contention exhausted retries before the recovery budget")
 			}
 			var project projectRow
 			if err := svc.db.Where("id = ?", id).First(&project).Error; err != nil || project.SpecRevision != 0 || project.ProjectVersion != 1 {

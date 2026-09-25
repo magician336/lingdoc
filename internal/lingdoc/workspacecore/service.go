@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -275,34 +274,9 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		view, err := projectView(tx, row)
 		return view, 200, err
 	}
-	operation := func() (json.RawMessage, int, bool, error) {
-		return s.operation(ctx, actor, "saveSpec", projectID, key, input, auth, write)
-	}
-	raw, status, replayed, err := operation()
-	for attempt := 0; isSQLiteLockError(err) && attempt < 3; attempt++ {
-		// Restart the whole transaction: current authorization and same-key
-		// replay must precede new-write version checks, including after BUSY.
-		// A changed revision alone cannot distinguish a competing operation
-		// from this very request whose successful response was lost.
-		timer := time.NewTimer(time.Duration(attempt+1) * 5 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, 0, false, ctx.Err()
-		case <-timer.C:
-		}
-		raw, status, replayed, err = operation()
-	}
-	if isSQLiteLockError(err) {
-		// Contention that outlasts the bounded retries is not evidence of a
-		// version conflict. Preserve the key for an authorized retry instead
-		// of guessing from a separate read or returning driver internals.
-		if err := ctx.Err(); err != nil {
-			return nil, 0, false, err
-		}
-		return nil, 0, false, ErrRequestInProgress
-	}
-	return raw, status, replayed, err
+	return retrySQLiteSpecOperation(ctx, specLockRetryBudget, func(attemptCtx context.Context) (json.RawMessage, int, bool, error) {
+		return s.operation(attemptCtx, actor, "saveSpec", projectID, key, input, auth, write)
+	})
 }
 
 func isSQLiteLockError(err error) bool {
