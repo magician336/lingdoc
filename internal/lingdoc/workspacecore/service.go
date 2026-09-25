@@ -280,14 +280,10 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 	}
 	raw, status, replayed, err := operation()
 	for attempt := 0; isSQLiteLockError(err) && attempt < 3; attempt++ {
-		// SQLite may report BUSY while the winning transaction is still
-		// committing. Check for a stale revision, then retry the idempotent
-		// operation after a short context-aware backoff so the loser receives
-		// the domain conflict rather than a transient driver error.
-		current, readErr := s.GetProject(ctx, actor, projectID)
-		if readErr == nil && current.SpecRevision != input.ExpectedSpecRevision {
-			return nil, 0, false, ErrVersionConflict
-		}
+		// Restart the whole transaction: current authorization and same-key
+		// replay must precede new-write version checks, including after BUSY.
+		// A changed revision alone cannot distinguish a competing operation
+		// from this very request whose successful response was lost.
 		timer := time.NewTimer(time.Duration(attempt+1) * 5 * time.Millisecond)
 		select {
 		case <-ctx.Done():
@@ -296,15 +292,15 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		case <-timer.C:
 		}
 		raw, status, replayed, err = operation()
-		if err == nil || isWorkspaceDomainError(err) {
-			return raw, status, replayed, err
-		}
 	}
 	if isSQLiteLockError(err) {
-		current, readErr := s.GetProject(ctx, actor, projectID)
-		if readErr == nil && current.SpecRevision != input.ExpectedSpecRevision {
-			return nil, 0, false, ErrVersionConflict
+		// Contention that outlasts the bounded retries is not evidence of a
+		// version conflict. Preserve the key for an authorized retry instead
+		// of guessing from a separate read or returning driver internals.
+		if err := ctx.Err(); err != nil {
+			return nil, 0, false, err
 		}
+		return nil, 0, false, ErrRequestInProgress
 	}
 	return raw, status, replayed, err
 }
@@ -320,19 +316,6 @@ func isSQLiteLockError(err error) bool {
 	}
 	message := strings.ToLower(err.Error())
 	return strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked")
-}
-
-func isWorkspaceDomainError(err error) bool {
-	for _, domainErr := range []error{
-		ErrInvalidRequest, ErrInvalidState, ErrVersionConflict, ErrIdempotencyConflict,
-		ErrRequestInProgress, ErrSourceUnavailable, ErrNotFound,
-		gorm.ErrRecordNotFound, sql.ErrNoRows, context.Canceled, context.DeadlineExceeded,
-	} {
-		if errors.Is(err, domainErr) {
-			return true
-		}
-	}
-	return false
 }
 
 type ActivateProjectInput struct {
