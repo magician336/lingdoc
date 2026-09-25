@@ -129,6 +129,23 @@ func (s *SQLiteCandidateAdoptionStore) GetCandidate(ctx context.Context, project
 	return candidateFromRow(row)
 }
 
+func (s *SQLiteCandidateAdoptionStore) ListCandidates(ctx context.Context, projectID, chapterID string) ([]CandidateSummary, error) {
+	var rows []candidateRow
+	if err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ?", projectID, chapterID).
+		Order("created_at DESC, id DESC").Limit(50).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	candidates := make([]CandidateSummary, 0, len(rows))
+	for _, row := range rows {
+		var basis Basis
+		if err := json.Unmarshal([]byte(row.BasisJSON), &basis); err != nil {
+			return nil, fmt.Errorf("decode candidate basis: %w", err)
+		}
+		candidates = append(candidates, CandidateSummary{ID: row.ID, RunID: row.RunID, Validity: row.Validity, CreatedAt: row.CreatedAt, Basis: basis})
+	}
+	return candidates, nil
+}
+
 func (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, projectID, chapterID string) (GenerationContext, error) {
 	tx := s.db.WithContext(ctx)
 	var project projectRow

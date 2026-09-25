@@ -83,6 +83,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/mcp"
@@ -486,6 +487,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			return types.UserIDFromContext(c.Request.Context())
 		})
 	}))
+	must(container.Provide(workspace.NewGenerationHandler))
+	must(container.Provide(func(h *generation.Handler) interfaces.TaskHandler {
+		return generation.NewTaskHandler(h.Service)
+	}, dig.Name("lingdocGeneration")))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))
