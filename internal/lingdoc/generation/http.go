@@ -1,12 +1,17 @@
 package generation
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+const maxGenerationRequestBytes = 1 << 20
 
 type ActorResolver func(*gin.Context) (Actor, bool)
 
@@ -38,7 +43,7 @@ func (h *Handler) Start(c *gin.Context) {
 		return
 	}
 	var req Request
-	if c.ShouldBindJSON(&req) != nil {
+	if decodeGenerationRequest(c.Request.Body, &req) != nil {
 		writeGenerationError(c, requestID, http.StatusBadRequest, ErrInvalidRequest)
 		return
 	}
@@ -52,6 +57,39 @@ func (h *Handler) Start(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"data": run, "request_id": requestID, "meta": gin.H{"replayed": run.Replayed, "refresh_required": run.Replayed}})
+}
+
+// decodeGenerationRequest applies the shared API contract at the HTTP edge:
+// bound the body before parsing, reject unknown fields, and reject any second
+// JSON value or trailing non-whitespace data.
+func decodeGenerationRequest(body io.Reader, dst *Request) error {
+	encoded, err := io.ReadAll(io.LimitReader(body, maxGenerationRequestBytes+1))
+	if err != nil {
+		return err
+	}
+	if len(encoded) > maxGenerationRequestBytes {
+		return ErrInvalidRequest
+	}
+	// JSON permits only space, horizontal tab, carriage return, and line feed.
+	// around a value. bytes.TrimSpace would also remove Unicode whitespace that
+	// encoding/json correctly rejects, silently broadening the wire contract.
+	encoded = bytes.Trim(encoded, " \t\r\n")
+	if len(encoded) == 0 || encoded[0] != '{' {
+		return ErrInvalidRequest
+	}
+	decoder := json.NewDecoder(bytes.NewReader(encoded))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return ErrInvalidRequest
+		}
+		return err
+	}
+	return nil
 }
 
 func (h *Handler) Get(c *gin.Context) {
