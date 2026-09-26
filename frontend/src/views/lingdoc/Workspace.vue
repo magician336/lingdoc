@@ -164,6 +164,9 @@
             <button type="submit" :disabled="busy || !bodyChanged || chapter.source_ids.length > 0">保存为新版本</button>
           </form>
         </div>
+
+        <DeliveryPanel v-if="project.status === 'active'" :project="project" :chapters="chapters"
+          @refresh-project="refreshProjectVersion" />
       </section>
       <section v-else class="panel empty-work"><p>选一个项目开始；也可以先创建项目。</p></section>
     </div>
@@ -177,6 +180,7 @@ import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
   type GenerationCandidateSummary, type GenerationRun,
 } from '@/api/lingdoc/generation'
+import DeliveryPanel from './DeliveryPanel.vue'
 import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
   activateProject, bindAsset, confirmChapter, createProject, getProject, getSource, listAssets, listChapters, listProjects,
@@ -297,6 +301,18 @@ async function selectProject(id: string, force = false) {
     bodyDraft.value = chapter.value?.body_markdown ?? ''
     await loadGenerationCandidates(chapter.value?.id)
     await resumeGeneration()
+  } catch (error) { failure(error) }
+}
+
+// 交付面板的写入都要交 expected_project_version，过期时它请这里重读一次。
+//
+// 只读项目、不动别的：走 selectProject 会重选章节、清掉未保存的正文草稿，而用户要的只是
+// 把版本号更新到当前。协作编辑是这条路的现实来源——别人改了项目，版本就旧了。
+async function refreshProjectVersion() {
+  if (!project.value) return
+  try {
+    const result = await getProject(project.value.id)
+    project.value = result.data
   } catch (error) { failure(error) }
 }
 
@@ -484,6 +500,11 @@ async function confirmCurrentChapter() {
     chapters.value = result.data
     chapter.value = result.data.find(item => item.id === current.id) ?? null
     if (chapter.value) bodyDraft.value = chapter.value.body_markdown
+    // 确认会推进项目版本（确认记在项目上），所以项目必须跟着重读一次。少了这一步，
+    // 紧接着的交付检查与冻结会拿着一个过期的 expected_project_version 去问，换来一个
+    // 409——而用户什么都没做错。保存章节那条路径早就在重读，确认这条一直漏着。
+    const refreshed = await getProject(projectId)
+    project.value = refreshed.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
