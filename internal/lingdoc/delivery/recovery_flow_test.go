@@ -24,7 +24,10 @@ func recoveryExportService(snapshots SnapshotStore, exports ExportStore, rendere
 // for either snapshot.go or export.go. They are the first runnable T15 entry
 // point and cover recovery behavior a UI must be able to explain.
 func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
-	snapshots := NewMemorySnapshotStore()
+	forEachStorePair(t, testRecoveryFlowBlockedInputDoesNotInvokeRenderer)
+}
+
+func testRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
 	releases := NewReleaseService(snapshots)
 	input := validDeliveryInput()
 	input.Chapters[0].ChapterVersionID = nil // an empty/unwritten chapter is a valid blocked snapshot input
@@ -37,7 +40,6 @@ func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
 		t.Fatalf("status = %s, want blocked", snapshot.Check.Status)
 	}
 	calls := 0
-	exports := NewMemoryExportStore()
 	service := recoveryExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
 		calls++
 		return []byte("must not render"), nil
@@ -49,16 +51,19 @@ func TestRecoveryFlowBlockedInputDoesNotInvokeRenderer(t *testing.T) {
 		t.Fatalf("renderer was invoked %d times for a blocked snapshot", calls)
 	}
 	// IDs are opaque: looking up one guessed ID cannot prove no write occurred.
-	exports.mu.RLock()
-	defer exports.mu.RUnlock()
-	if len(exports.exports) != 0 {
-		t.Fatalf("blocked snapshot persisted %d export artifacts", len(exports.exports))
+	// So the assertion goes through the contract («这次动作一份都没落下») rather than
+	// through the in-memory map — which also makes it run against the stored one.
+	if listed := listExports(t, exports, snapshot.ProjectID); len(listed) != 0 {
+		t.Fatalf("blocked snapshot persisted %d export artifacts", len(listed))
 	}
 }
 
 func TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	exports := NewMemoryExportStore()
+	forEachStorePair(t, testRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes)
+}
+
+func testRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	failed := recoveryExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
 		return nil, errors.New("temporary renderer outage")
 	}))
@@ -90,7 +95,10 @@ func TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes(t *testing.T) {
 }
 
 func TestRecoveryFlowFrozenDigestIsUnaffectedByLaterSourcePresentation(t *testing.T) {
-	snapshots := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testRecoveryFlowFrozenDigestIsUnaffectedByLaterSourcePresentation)
+}
+
+func testRecoveryFlowFrozenDigestIsUnaffectedByLaterSourcePresentation(t *testing.T, snapshots snapshotStoreUnderTest) {
 	releases := NewReleaseService(snapshots)
 	input := validDeliveryInput()
 	first, err := releases.Prepare(input)
@@ -120,8 +128,11 @@ func TestRecoveryFlowFrozenDigestIsUnaffectedByLaterSourcePresentation(t *testin
 }
 
 func TestRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	exports := NewMemoryExportStore()
+	forEachStorePair(t, testRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact)
+}
+
+func testRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	currentnessErr := errors.New("currentness store unavailable after rendering")
 	checks, renders := 0, 0
 	service := NewExportService(snapshots, exports, recoveryRenderer(func(DeliveryInput) ([]byte, error) {
@@ -146,9 +157,7 @@ func TestRecoveryFlowCurrentnessErrorAfterRenderingLeavesNoArtifact(t *testing.T
 	if artifact.ID != "" || len(artifact.file) != 0 {
 		t.Fatalf("currentness failure exposed an artifact: %+v", artifact)
 	}
-	exports.mu.RLock()
-	defer exports.mu.RUnlock()
-	if len(exports.exports) != 0 {
-		t.Fatalf("post-render currentness error persisted %d artifacts", len(exports.exports))
+	if listed := listExports(t, exports, snapshot.ProjectID); len(listed) != 0 {
+		t.Fatalf("post-render currentness error persisted %d artifacts", len(listed))
 	}
 }

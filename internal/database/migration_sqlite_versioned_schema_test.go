@@ -15,7 +15,7 @@ import (
 // 000063 knowledge multi-tags, 000093 browser authorization,
 // 000097 LingDoc workspace, 000098 LingDoc evidence assets,
 // 000099 LingDoc candidate adoption, 000100/000101 LingDoc generation runs,
-// 000102 LingDoc confirmation requests.
+// 000102 LingDoc confirmation requests, 000103 LingDoc delivery stores.
 var versionedSQLiteTables = []string{
 	"memory_extraction_sessions",
 	"task_pending_ops",
@@ -38,6 +38,8 @@ var versionedSQLiteTables = []string{
 	"lingdoc_candidate_adoptions",
 	"lingdoc_chapter_confirmation_requests",
 	"lingdoc_generation_runs",
+	"lingdoc_release_snapshots",
+	"lingdoc_export_artifacts",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -56,7 +58,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_generation_runs": {"claim_token", "cancel_requested"}, // 000101
 }
 
-const expectedSQLiteMigrationVersion = 23
+const expectedSQLiteMigrationVersion = 24
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

@@ -75,6 +75,28 @@ export interface Result<T> {
   meta: { replayed: boolean; refresh_required: boolean }
 }
 
+/**
+ * 撤权之后的恢复入口（契约 §8）。它只答状态与恢复动作，不含正文、研究条件、资料标题。
+ *
+ * `content_access` 三态：`available` 一次都不拒绝；`restricted` 至少一条绑定资料被拒；
+ * `unknown` 是服务端答不出（读不到绑定，或资料网关报错）。`unknown` 不是错误码，
+ * 它是「答不出但能如实说答不出」——界面不能拿它当 `available`。
+ */
+export interface AccessStatus {
+  project_id: string
+  content_access: 'available' | 'unknown' | 'restricted'
+  /**
+   * 取值由服务端定，本轮只有 `restore_source_authorization` 与 `create_clean_project`。
+   *
+   * 刻意写成 `string[]` 而不是字面量联合：字面量联合在编译期看着更严，代价是界面上
+   * 那处 `switch` 的兜底分支变成「不可达」，而它恰恰是唯一能兜住枚举漂移的地方——
+   * 服务端将来多一个动作，界面必须原样把它列出来，不能因为不认识就悄悄吞掉一条
+   * 恢复路径（同 `deliveryState.ts` 的 `issueTargetLabel`：认不出来就显示 ID，不猜）。
+   */
+  recovery_actions: string[]
+  can_create_project: boolean
+}
+
 const base = '/api/v1/lingdoc/projects'
 const segment = (id: string) => encodeURIComponent(id)
 const keyHeader = (key: string) => ({ headers: { 'Idempotency-Key': key } })
@@ -90,6 +112,7 @@ export const activateProject = (id: string, expected: number, key: string) =>
   post<Result<Project>>(`${base}/${segment(id)}/activate`,
     { expected_spec_revision: expected }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
+export const getAccessStatus = (id: string) => get<Result<AccessStatus>>(`${base}/${segment(id)}/access-status`)
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const bindAsset = (id: string, knowledgeId: string, key: string) =>
   post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))

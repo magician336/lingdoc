@@ -11320,6 +11320,21 @@
                   "$ref": "#/components/schemas/AccessStatusResponse"
                 },
                 "examples": {
+                  "available": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "content_access": "available",
+                        "recovery_actions": [],
+                        "can_create_project": true
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
                   "restricted": {
                     "value": {
                       "data": {

@@ -11,8 +11,11 @@ import (
 // 返回原业务结果」。同键重放要换回**原来那一份**，而不是再渲一份——否则一次
 // 「其实已经导出好了、只是响应丢了」的重试会在交付历史里多出一条。
 func TestExportReplaysTheArtifactForTheSameAction(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	exports := NewMemoryExportStore()
+	forEachStorePair(t, testExportReplaysTheArtifactForTheSameAction)
+}
+
+func testExportReplaysTheArtifactForTheSameAction(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	renders := 0
 	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
 		renders++
@@ -33,19 +36,21 @@ func TestExportReplaysTheArtifactForTheSameAction(t *testing.T) {
 	if renders != 1 {
 		t.Fatalf("renderer ran %d times for one action", renders)
 	}
-	exports.mu.RLock()
-	defer exports.mu.RUnlock()
-	if len(exports.exports) != 1 {
-		t.Fatalf("one action left %d artifacts behind", len(exports.exports))
+	if listed := listExports(t, exports, snapshot.ProjectID); len(listed) != 1 {
+		t.Fatalf("one action left %d artifacts behind", len(listed))
 	}
 }
 
 // 失败产物同样入账：§6 说重试是**新动作**（换新键），所以同一个键必须永远换回
 // 同一个结果——包括失败。否则拿旧键重放会变成成功，而调用方以为自己只做过一次。
 func TestExportReplaysAFailedArtifactRatherThanRetryingIt(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
+	forEachStorePair(t, testExportReplaysAFailedArtifactRatherThanRetryingIt)
+}
+
+func testExportReplaysAFailedArtifactRatherThanRetryingIt(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	renders := 0
-	service := NewExportService(snapshots, NewMemoryExportStore(), frozenRenderer(func(DeliveryInput) ([]byte, error) {
+	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
 		renders++
 		return nil, errors.New("renderer outage")
 	}), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
@@ -66,13 +71,16 @@ func TestExportReplaysAFailedArtifactRatherThanRetryingIt(t *testing.T) {
 // 同一个键换了请求是冲突，不是重试。这里顺带要求没有副作用：冲突之后库里仍只有
 // 原来那一份。
 func TestExportRefusesAKeyReusedForADifferentSnapshot(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
+	forEachStorePair(t, testExportRefusesAKeyReusedForADifferentSnapshot)
+}
+
+func testExportRefusesAKeyReusedForADifferentSnapshot(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	second := snapshot
 	second.ID = "snapshot-other"
 	if err := snapshots.Save(second); err != nil {
 		t.Fatal(err)
 	}
-	exports := NewMemoryExportStore()
 	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
 		return []byte("PK\x03\x04docx"), nil
 	}), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
@@ -83,15 +91,19 @@ func TestExportRefusesAKeyReusedForADifferentSnapshot(t *testing.T) {
 	if _, _, err := service.Start("owner", snapshot.ProjectID, second.ID, exportActionKey); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("reused key on another snapshot = %v, want ErrIdempotencyConflict", err)
 	}
-	exports.mu.RLock()
-	defer exports.mu.RUnlock()
-	if len(exports.exports) != 1 {
-		t.Fatalf("the refused request left %d artifacts behind", len(exports.exports))
+	if listed := listExports(t, exports, snapshot.ProjectID); len(listed) != 1 {
+		t.Fatalf("the refused request left %d artifacts behind", len(listed))
 	}
 }
 
 // 并发下的同键请求只有一个能落笔，输的一方拿回赢家的那一份——一次用户动作在交付
 // 历史里只能有一条。
+//
+// 这条**只跑内存实现**，有意不并进一致性套件：落库那一侧靠的是一条
+// `INSERT ... ON CONFLICT DO NOTHING`（单语句，没有读-写窗口），它要证明的东西与
+// 这里问的不同。把 8 个 goroutine 放进 SQLite 的单写锁里，测出来的是锁的排队方式，
+// 而不是「一次动作一条记录」——那件事由下面 RecordExport 的语义与
+// TestExportReplaysTheArtifactForTheSameAction 一起钉住，两边都跑。
 func TestConcurrentSameActionLandsOneArtifact(t *testing.T) {
 	snapshots, snapshot := preparedSnapshot(t)
 	exports := NewMemoryExportStore()
@@ -131,8 +143,11 @@ func TestConcurrentSameActionLandsOneArtifact(t *testing.T) {
 // §7-5：文件要先过校验才能提供下载。渲染器说成功不等于文件里有该有的东西——
 // F13「导出器产生损坏文件」正是这个形状。
 func TestExportPersistsValidationFailureButNeverDownloadsIt(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	exports := NewMemoryExportStore()
+	forEachStorePair(t, testExportPersistsValidationFailureButNeverDownloadsIt)
+}
+
+func testExportPersistsValidationFailureButNeverDownloadsIt(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	rendered := []byte("PK\x03\x04structurally wrong docx")
 	var seen []byte
 	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
@@ -213,7 +228,10 @@ func TestExportStartRejectsIncompleteArguments(t *testing.T) {
 // 取不到就是取不到：传输层要拿这个把它答成 404，而不是把调用方写错的 ID
 // 报成服务端故障。
 func TestGetExportReportsAMissingArtifactAsNotFound(t *testing.T) {
-	exports := NewMemoryExportStore()
+	forEachStorePair(t, testGetExportReportsAMissingArtifactAsNotFound)
+}
+
+func testGetExportReportsAMissingArtifactAsNotFound(t *testing.T, _ snapshotStoreUnderTest, exports exportStoreUnderTest) {
 	if _, err := exports.GetExport("project-1", "export-nope"); !errors.Is(err, ErrExportNotFound) {
 		t.Fatalf("GetExport = %v, want ErrExportNotFound", err)
 	}

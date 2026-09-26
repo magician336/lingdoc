@@ -27,21 +27,20 @@ func allowExport(actorUserID, projectID string) error {
 
 func currentExportInput(DeliveryInput) (bool, error) { return true, nil }
 
+// preparedSnapshot 给只跑内存实现的用例用；一致性套件那几条走
+// `forEachStorePair` + `preparedSnapshotOn`（同一路径，库由夹具给）。
 func preparedSnapshot(t *testing.T) (*MemorySnapshotStore, ReleaseSnapshot) {
 	t.Helper()
 	store := NewMemorySnapshotStore()
-	service := NewReleaseService(store)
-	service.now = func() time.Time { return time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC) }
-	snapshot, err := service.Prepare(validDeliveryInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return store, snapshot
+	return store, preparedSnapshotOn(t, store)
 }
 
 func TestExportOnlyRendersPassingCurrentSnapshot(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	exports := NewMemoryExportStore()
+	forEachStorePair(t, testExportOnlyRendersPassingCurrentSnapshot)
+}
+
+func testExportOnlyRendersPassingCurrentSnapshot(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	renderer := frozenRenderer(func(input DeliveryInput) ([]byte, error) {
 		if input.ProjectID != snapshot.ProjectID {
 			t.Fatalf("renderer got project %q", input.ProjectID)
@@ -72,8 +71,12 @@ func TestExportOnlyRendersPassingCurrentSnapshot(t *testing.T) {
 }
 
 func TestExportPersistsFailureButNeverDownloadsIt(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	service := NewExportService(snapshots, NewMemoryExportStore(), frozenRenderer(func(DeliveryInput) ([]byte, error) { return nil, errors.New("broken docx") }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
+	forEachStorePair(t, testExportPersistsFailureButNeverDownloadsIt)
+}
+
+func testExportPersistsFailureButNeverDownloadsIt(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
+	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) { return nil, errors.New("broken docx") }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
 	artifact, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey)
 	if err != nil || artifact.Status != ExportFailed || artifact.FailureCode != "render_failed" {
 		t.Fatalf("artifact = %+v, err = %v", artifact, err)
@@ -84,8 +87,12 @@ func TestExportPersistsFailureButNeverDownloadsIt(t *testing.T) {
 }
 
 func TestExportRejectsBlockedAndHistoricalSnapshots(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
-	service := NewExportService(snapshots, NewMemoryExportStore(), frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("docx"), nil }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
+	forEachStorePair(t, testExportRejectsBlockedAndHistoricalSnapshots)
+}
+
+func testExportRejectsBlockedAndHistoricalSnapshots(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
+	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("docx"), nil }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
 	blocked := snapshot
 	blocked.ID, blocked.Check.Status = "blocked", CheckBlocked
 	if err := snapshots.Save(blocked); err != nil {
@@ -105,9 +112,13 @@ func TestExportRejectsBlockedAndHistoricalSnapshots(t *testing.T) {
 }
 
 func TestExportRechecksCurrentnessAndAccess(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
+	forEachStorePair(t, testExportRechecksCurrentnessAndAccess)
+}
+
+func testExportRechecksCurrentnessAndAccess(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	current := true
-	service := NewExportService(snapshots, NewMemoryExportStore(), frozenRenderer(func(DeliveryInput) ([]byte, error) {
+	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) {
 		current = false
 		return []byte("docx"), nil
 	}), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(func(DeliveryInput) (bool, error) { return current, nil }), ExportAccessFunc(allowExport))
@@ -120,9 +131,13 @@ func TestExportRechecksCurrentnessAndAccess(t *testing.T) {
 }
 
 func TestDownloadRechecksCurrentAccess(t *testing.T) {
-	snapshots, snapshot := preparedSnapshot(t)
+	forEachStorePair(t, testDownloadRechecksCurrentAccess)
+}
+
+func testDownloadRechecksCurrentAccess(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+	snapshot := preparedSnapshotOn(t, snapshots)
 	allowed := true
-	service := NewExportService(snapshots, NewMemoryExportStore(), frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("docx"), nil }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(func(actorUserID, projectID string) error {
+	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("docx"), nil }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(func(actorUserID, projectID string) error {
 		if allowed {
 			return nil
 		}

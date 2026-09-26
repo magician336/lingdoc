@@ -6,7 +6,7 @@
   "core_operations": 27,
   "schemas": 61,
   "local_refs": 327,
-  "shape_checks": 561,
+  "shape_checks": 562,
   "scenarios": 22,
   "scenario_example_references": 38,
   "continuous_trace_steps": 23,

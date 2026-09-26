@@ -13,7 +13,10 @@ func freezeAttempt() FreezeAttempt {
 // 动作还没记上，此时的重试会当作新动作再冻一份——一次用户动作于是变成
 // 交付历史里的两条。Freeze 不落存，正是为了让这件事只能一起发生。
 func TestFreezeDoesNotPersistUntilTheActionIsRecorded(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testFreezeDoesNotPersistUntilTheActionIsRecorded)
+}
+
+func testFreezeDoesNotPersistUntilTheActionIsRecorded(t *testing.T, store snapshotStoreUnderTest) {
 	service := NewReleaseService(store)
 
 	snapshot, err := service.Freeze(validDeliveryInput())
@@ -45,7 +48,10 @@ func TestFreezeDoesNotPersistUntilTheActionIsRecorded(t *testing.T) {
 
 // 重试要换回原来那一份，而不是再冻一份：契约 §6 说已完成且同请求返回原业务结果。
 func TestRecordFreezeReplaysTheSnapshotForTheSameAction(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testRecordFreezeReplaysTheSnapshotForTheSameAction)
+}
+
+func testRecordFreezeReplaysTheSnapshotForTheSameAction(t *testing.T, store snapshotStoreUnderTest) {
 	service := NewReleaseService(store)
 	first, err := service.Freeze(validDeliveryInput())
 	if err != nil {
@@ -91,7 +97,10 @@ func TestRecordFreezeReplaysTheSnapshotForTheSameAction(t *testing.T) {
 // 同一个键换了请求是冲突，不是重试，也不能把新内容当成旧动作的结果交出去。
 // 这里同时要求没有副作用：冲突之后库里仍只有原来那一份。
 func TestRecordFreezeRefusesAKeyReusedForADifferentRequest(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testRecordFreezeRefusesAKeyReusedForADifferentRequest)
+}
+
+func testRecordFreezeRefusesAKeyReusedForADifferentRequest(t *testing.T, store snapshotStoreUnderTest) {
 	service := NewReleaseService(store)
 	first, err := service.Freeze(validDeliveryInput())
 	if err != nil {
@@ -119,7 +128,10 @@ func TestRecordFreezeRefusesAKeyReusedForADifferentRequest(t *testing.T) {
 // 取不到就是取不到：传输层要拿这个把它答成 404，而不是把调用方写错的 ID
 // 报成服务端故障。
 func TestGetReportsAMissingSnapshotAsNotFound(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testGetReportsAMissingSnapshotAsNotFound)
+}
+
+func testGetReportsAMissingSnapshotAsNotFound(t *testing.T, store snapshotStoreUnderTest) {
 	if _, err := store.Get("project-1", "snapshot-nope"); !errors.Is(err, ErrSnapshotNotFound) {
 		t.Fatalf("Get = %v, want ErrSnapshotNotFound", err)
 	}
@@ -127,7 +139,10 @@ func TestGetReportsAMissingSnapshotAsNotFound(t *testing.T) {
 
 // 一份快照的归属由它自己的 project_id 决定：换个项目去取，取到的必须是「没有」。
 func TestSnapshotIsScopedToItsProject(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testSnapshotIsScopedToItsProject)
+}
+
+func testSnapshotIsScopedToItsProject(t *testing.T, store snapshotStoreUnderTest) {
 	service := NewReleaseService(store)
 	snapshot, err := service.Prepare(validDeliveryInput())
 	if err != nil {

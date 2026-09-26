@@ -500,12 +500,20 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 快照库单独 Provide，是为了让 T13 与 T14 拿到**同一个**实例：各自建一个的话，
 	// 刚冻下的快照在导出时取不到，而那看起来会像是「快照不存在」而不是「装配错了」。
 	//
-	// 声明成接口、实现是进程内那一份：同一台服务里冻下的快照，取的时候得还在。
-	// 它还得分记「哪一次动作冻了它 / 导出了它」——两条路由都收了幂等键就要照它办事，
-	// 那两项能力（FreezeRecorder / ExportRecorder）由各自的构造器断言，装不上就在
-	// 那里报 nil。
-	must(container.Provide(func() delivery.SnapshotStore {
-		return delivery.NewMemorySnapshotStore()
+	// 声明成接口、实现落在库上：同一台服务里冻下的快照，重启之后取的时候还得在。
+	// 进程内那一份（NewMemorySnapshotStore）保留下来当测试里的参照实现与被对照的
+	// 一致性套件，但不再进生产装配——它的注释写着「重启即丢」，那正是这一条要修的。
+	//
+	// store 还得分记「哪一次动作冻了它 / 导出了它」——两条路由都收了幂等键就要照它
+	// 办事，那两项能力（FreezeRecorder / ExportRecorder）由各自的构造器断言，
+	// 装不上就在那里报 nil，所以下面两个 Provide 声明的都是完整实现。
+	must(container.Provide(func(db *gorm.DB) delivery.SnapshotStore {
+		return delivery.NewSQLiteSnapshotStore(db)
+	}))
+	// 产物库（含已校验的 DOCX 字节）与快照库同一条：重启之后交付历史还在，
+	// 已导出的文件也还能下载。它与上面的快照库共用同一个 *gorm.DB。
+	must(container.Provide(func(db *gorm.DB) delivery.ExportStore {
+		return delivery.NewSQLiteExportStore(db)
 	}))
 	// 交付输入服务：T12 的读取侧 + 成员判定。两个交付服务共用同一份，授权口径分家
 	// 是迟早的事——同一份交付在一个入口放行、在另一个入口拦住，那时没人知道该信哪个。
@@ -540,10 +548,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 类型就得把那一跳写两遍，而两份翻译迟早会在某个字段上分叉——那时校验器会开始
 	// 拒绝渲染器自己产出的文件，或者更糟，放行它。
 	//
-	// 产物库同样是进程内的那一份，理由与快照库相同：重启即丢。持久化是另一件事，
-	// 见 02-接口与Mock约定 §7 里对存储的约定。
-	must(container.Provide(func(inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (*workspace.DeliveryExportService, error) {
-		service := workspace.NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), workspace.DeliveryDocument{}, inputs)
+	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
+	must(container.Provide(func(inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore) (*workspace.DeliveryExportService, error) {
+		service := workspace.NewDeliveryExportService(snapshots, exports, workspace.DeliveryDocument{}, inputs)
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}

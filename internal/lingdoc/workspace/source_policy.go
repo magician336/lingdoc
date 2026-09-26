@@ -35,6 +35,34 @@ func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy
 	return &candidateAdoptionSourcePolicy{sourceRevalidator: h.sourceRevalidator()}
 }
 
+// WorkspaceSourcePolicy 把同一台判定器接到 T08（章节保存）上。
+//
+// 它每次调用都**现取** h.CandidateAdoptionSourcePolicy()，而不是在装配时抓一份
+// revalidator 存下来：Handler 的 gateway 在装配之后还会被换掉（http_currentness_test.go
+// 就是这么注入一份放行的资料授权的；运行期也可能整体换一套底座），抓早了那台判定器就永远
+// 停在旧的那一份上。症状是「复核结论与产出侧对不上」——最难查的一类错，因为两边都「有实现」。
+//
+// 依赖不齐（组装漏了库连接/绑定/网关）时答 ErrDependencyUnavailable：既不去猜一个更宽松的
+// 答案，也不答成「授权被拒」——后者会让一次装配失误看着像用户的权限出了问题。
+func (h *Handler) WorkspaceSourcePolicy() SourcePolicy {
+	return workspaceSourcePolicy{handler: h}
+}
+
+type workspaceSourcePolicy struct{ handler *Handler }
+
+// 装配处把 SourcePolicy 交给核心域（core_alias.go 的 NewService），断言失败是静默的
+// ——把「静默少一层校验」变成「编译不过」。
+var _ SourcePolicy = workspaceSourcePolicy{}
+
+func (p workspaceSourcePolicy) Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
+	// 复用产出侧那一个 nil 守卫，不在这里再抄一遍判据：依赖齐备与否只该有一处定义。
+	policy := p.handler.CandidateAdoptionSourcePolicy()
+	if policy == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	return policy.Validate(ctx, projectID, actorID, sourceIDs)
+}
+
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
 // 它只被那几个带 nil 守卫的装配入口调用。
 func (h *Handler) sourceRevalidator() sourceRevalidator {

@@ -34,14 +34,17 @@ func NewHandler(db *gorm.DB, kbShares interfaces.KBShareService, knowledge inter
 	bindings := evidence.NewBindings(db)
 	bindings.SetKnowledgeSignalReader(dbKnowledgeReader{db: db})
 	authorizer := evidence.NewFixedAuthorizer(bindings, kbReadChecker{shares: kbShares})
-	return &Handler{
-		service:   NewService(db, ContractDemoTemplate{}),
+	h := &Handler{
 		bindings:  bindings,
 		gateway:   evidence.NewAssetGateway(bindings, authorizer),
 		kbShares:  kbShares,
 		knowledge: knowledge,
 		db:        db,
 	}
+	// service 要等 h 建好之后再装：章节保存的来源复核拿的是**这个** h，不是一份快照
+	//（WorkspaceSourcePolicy 每次调用现取 h 上的 gateway）。一行结构体字面量绑不死这件事。
+	h.service = NewService(db, ContractDemoTemplate{}, h.WorkspaceSourcePolicy())
+	return h
 }
 
 func (h *Handler) Service() *Service { return h.service }
@@ -114,7 +117,10 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 409, "request_in_progress", "原请求仍在提交，请稍后用相同操作键重试。"
 		c.Header("Retry-After", "1")
 	case errors.Is(err, ErrSourceUnavailable):
-		status, code, message = 403, "source_access_denied", "来源授权尚未接入，不能保存带引用的正文。"
+		// 三处共用这一个结论：保存带引用的正文时复核不过、取来源时该资料不放行、
+		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
+		// 措辞不再提「尚未接入」——来源复核已经接入，答 403 是有判据的拒绝，不是缺席。
+		status, code, message = 403, "source_access_denied", "资料不可用或未获授权。"
 	case errors.Is(err, ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
 	// 交付链（T12 候选采纳 / T13 冻结）的判定。这些是各自包里的 sentinel，
@@ -154,8 +160,19 @@ func sendError(c *gin.Context, err error) {
 		// F13：产物存在但不可下载（failed，或字节已不在）。这不是 404——
 		// 资源在，是它此刻不能交出去。
 		status, code, message = 422, "invalid_state", "当前阶段不能执行该动作。"
+	case errors.Is(err, candidateadoption.ErrDependencyUnavailable):
+		// 复核侧「答不出来」的那一档：资料底座读不出结论，或某条引用既没被判可用也没被
+		// 判不可用。它和 403 的区别正是「不是你的授权有问题，是此刻判不了」——所以答 503
+		// 且 retryable（契约 §6 单列了这一档）。
+		//
+		// 这原本是一条罕见路径，直到章节保存也走复核（workspaceSourcePolicy）：现在它成了
+		// SaveChapter 的常规失败之一，漏掉映射就是把一句「请稍后重试」答成 500。
+		// generation 包里另有一个同名的 sentinel，走的是 generation 自己的 handler，
+		// 不经过这里——名字相同、值不同，这是本文件反复出现的那类陷阱。
+		status, code, message = 503, "dependency_unavailable", "依赖的服务此刻不可用，请稍后重试。"
 	}
-	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": code == "request_in_progress"},
+	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message,
+		"retryable": code == "request_in_progress" || code == "dependency_unavailable"},
 		"request_id": requestID(c)})
 }
 
@@ -663,18 +680,57 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	sendOK(c, status, data, replay)
 }
 
+// accessStatus 答的是「这个项目现在还能不能用」，供撤权之后给出一条恢复路径（§8）。
+//
+// 三态里 available 只在**一次都不拒绝**时给出：Denied 里混着 not_authorized / not_ready /
+// not_found，任一被拒都答 restricted。not_ready（资料还在解析）严格说不是撤权，但它同样
+// 意味着此刻读不到——报 restricted 只是让人多看一眼，报 available 会让界面放行一份读不
+// 出来的内容。要把 not_authorized 单独挑出来也行，代价是在传输层抄一份 DenyReason 枚举，
+// 多一处可漂移的地方，不划算。
+//
+// unknown 兜所有错误（绑定读不出、网关答不出）。契约 200 已发布这个取值，它就是为
+// 「答不出但能如实说答不出」准备的；同路径的 503 留给调用方完全无法作答的情形。
 func (h *Handler) accessStatus(c *gin.Context) {
 	actor, ok := identity(c)
 	if !ok {
 		return
 	}
-	id := c.Param("projectId")
-	if err := h.service.Authorize(c.Request.Context(), actor, id, "read"); err != nil {
+	projectID := c.Param("projectId")
+	// 这道门本身就是判据的一部分：findProject 不区分「项目不存在」与「不是成员」，两条都答
+	// 404。所以能走到下面的调用者，已经证明了他是该租户的 active 成员、也是本项目成员——
+	// can_create_project 直接用这个事实，不必再查一次 tenant_members。
+	if err := h.service.Authorize(c.Request.Context(), actor, projectID, "read"); err != nil {
 		sendError(c, err)
 		return
 	}
-	// Source authorization is not integrated in this slice. Until T09 provides
-	// SourcePolicy, report unknown and do not signal content access.
-	sendOK(c, http.StatusOK, gin.H{"project_id": id, "content_access": "unknown",
-		"recovery_actions": []string{}, "can_create_project": true}, false)
+	contentAccess := "available"
+	assets, err := h.bindings.BoundAssets(c.Request.Context(), projectID)
+	if err != nil {
+		contentAccess = "unknown"
+	} else {
+		requested := make([]string, 0, len(assets))
+		for _, asset := range assets {
+			requested = append(requested, asset.ID)
+		}
+		resolved, err := h.gateway.ResolveAllowed(c.Request.Context(), projectID,
+			evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, requested)
+		switch {
+		case err != nil:
+			contentAccess = "unknown"
+		case len(resolved.Denied) > 0:
+			contentAccess = "restricted"
+		}
+	}
+	// 判据落在**资料授权**上，不落在章节引用的「坐标还算不算数」上：这个端点回答的是
+	// 「这个项目的资料我现在能不能用」。把 T09 的失效类结论算进来，会让「有资料被撤权」
+	// 与「某条引用过期了」在界面上长得一样，而两者的恢复动作并不相同。
+	//
+	// 必须是空切片而不是 nil：nil 会序列化成 null，而契约里 recovery_actions 是 array。
+	actions := []string{}
+	if contentAccess == "restricted" {
+		// 取值照 §8，本轮只有「恢复原资料权限」与「新建干净项目」两种，不做旧派生正文迁移。
+		actions = []string{"restore_source_authorization", "create_clean_project"}
+	}
+	sendOK(c, http.StatusOK, gin.H{"project_id": projectID, "content_access": contentAccess,
+		"recovery_actions": actions, "can_create_project": true}, false)
 }

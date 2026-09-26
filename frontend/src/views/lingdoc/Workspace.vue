@@ -111,8 +111,20 @@
             <h4>候选稿预览（不会自动覆盖章节）</h4>
             <pre>{{ generationCandidate.body_markdown }}</pre>
             <p>引用 {{ generationCandidate.source_ids.length }} 条来源 · 待核事项 {{ generationCandidate.review_items.length }} 条 · 生成时状态：{{ generationCandidate.validity }}（采纳时仍会复核当前版本）</p>
+            <div class="actions">
+              <button type="button" :disabled="busy" @click="openAdoption">采纳到本章</button>
+            </div>
           </article>
         </section>
+
+        <!-- v-if 而不是 :open 传布尔：对话框自带本地状态（幂等键、错误文案、提交中），
+             v-if 让每次打开都是干净的一份；用 :open 隐藏再显示，会把上一次的失败文案和
+             用过的键一起带回来——那个键对应的是上一次的请求体。 -->
+        <LingDocCandidateAdoptionDialog
+          v-if="adoptionOpen && project && chapter && generationCandidate"
+          :project-id="project.id" :chapter="chapter" :candidate="generationCandidate"
+          :expected-spec-revision="project.spec_revision"
+          @adopted="onAdopted" @cancel="adoptionOpen = false" />
 
         <form class="spec-form" @submit.prevent="saveConditions">
           <h3>研究条件</h3>
@@ -126,6 +138,23 @@
           </div>
           <p v-if="specChanged && project.status === 'draft'" class="muted">立项前请先保存研究条件。</p>
         </form>
+
+        <!-- 撤权提示（§8）。只在服务端判 restricted 时出现，且它是一条**提示**而不是拦截：
+             本轮只有 access-status 这一条读路径带资料层判定，别的端点仍会照常返回内容
+             （差额记在 02-接口与Mock约定 §8）。所以这里给的是恢复入口，不是封锁——写成
+             封锁，界面就在声称一个它并没有执行的限制。 -->
+        <section v-if="restricted" class="access-warning" role="status" aria-label="资料访问状态">
+          <h3>{{ RESTRICTED_NOTICE }}</h3>
+          <ul v-if="recoveryActions.length" class="access-warning__actions">
+            <li v-for="action in recoveryActions" :key="action.code">
+              <strong>{{ action.label }}</strong>
+              <span v-if="action.detail">{{ action.detail }}</span>
+            </li>
+          </ul>
+          <button type="button" :disabled="accessBusy" @click="recheckAccess">
+            {{ accessBusy ? '检查中…' : '重新检查' }}
+          </button>
+        </section>
 
         <div v-if="project.status === 'active'" class="chapters">
           <h3>章节</h3>
@@ -160,8 +189,11 @@
               :disabled="busy || bodyChanged || !reviewDecisionsReady">
               {{ chapter.confirmation_valid ? '重新确认当前版本' : '确认当前章节版本' }}
             </button>
-            <p v-if="chapter.source_ids.length" class="warning">本章已有来源引用。资料授权接入前暂不支持修改此章，以免丢失引用。</p>
-            <button type="submit" :disabled="busy || !bodyChanged || chapter.source_ids.length > 0">保存为新版本</button>
+            <p v-if="draftCitations.malformed" class="warning">{{ MALFORMED_CITATION_MESSAGE }}</p>
+            <p v-else-if="draftCitations.sourceIds.length" class="muted">
+              本章引用 {{ draftCitations.sourceIds.length }} 条来源。保存时会逐条复核；删掉正文里的标记就等于放弃那一条。
+            </p>
+            <button type="submit" :disabled="busy || !bodyChanged">保存为新版本</button>
           </form>
         </div>
 
@@ -174,17 +206,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
   type GenerationCandidateSummary, type GenerationRun,
 } from '@/api/lingdoc/generation'
 import DeliveryPanel from './DeliveryPanel.vue'
+import LingDocCandidateAdoptionDialog from '@/components/LingDocCandidateAdoptionDialog.vue'
+import { RESTRICTED_NOTICE, isRestricted, recoveryActionsOf } from './accessStatus'
+import { chapterCitations, MALFORMED_CITATION_MESSAGE } from './chapterCitations'
 import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
-  activateProject, bindAsset, confirmChapter, createProject, getProject, getSource, listAssets, listChapters, listProjects,
-  retrieveSources, saveChapter, saveSpec, type Asset, type Chapter, type Project, type ReviewDecision, type Source,
+  activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource, listAssets,
+  listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
+  type AccessStatus, type Asset, type Chapter, type Project, type ReviewDecision, type Source,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -210,6 +246,11 @@ const generationRun = ref<GenerationRun | null>(null)
 const generationCandidate = ref<Candidate | null>(null)
 const generationCandidates = ref<GenerationCandidateSummary[]>([])
 const generationBusy = ref(false)
+const accessStatus = ref<AccessStatus | null>(null)
+const accessBusy = ref(false)
+const adoptionOpen = ref(false)
+const restricted = computed(() => isRestricted(accessStatus.value))
+const recoveryActions = computed(() => recoveryActionsOf(accessStatus.value))
 const readyAssets = computed(() => assets.value.filter(item => item.processing_state === 'ready'))
 const generationPending = computed(() => generationRun.value?.status === 'queued' || generationRun.value?.status === 'running')
 let generationTimer: ReturnType<typeof setTimeout> | undefined
@@ -230,6 +271,14 @@ const specChanged = computed(() => !!project.value && (
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
 const bodyChanged = computed(() => !!chapter.value && bodyDraft.value !== chapter.value.body_markdown)
+
+// 正文里的来源标记：提取与体检一次算完。模板因此不必自己去拆这个联合类型。
+const draftCitations = computed(() => {
+  const parsed = chapterCitations(bodyDraft.value)
+  return parsed.kind === 'ok'
+    ? { sourceIds: parsed.sourceIds, malformed: false }
+    : { sourceIds: [] as string[], malformed: true }
+})
 const reviewDecisionsReady = computed(() => !!chapter.value && chapter.value.review_items.every(item => {
   const decision = reviewDrafts.value[`${chapter.value!.id}:${item.id}`]
   return !!decision?.reason.trim()
@@ -285,6 +334,7 @@ async function selectProject(id: string, force = false) {
   generationRun.value = null
   generationCandidate.value = null
   generationCandidates.value = []
+  adoptionOpen.value = false
   errorMessage.value = ''
   try {
     const result = await getProject(id)
@@ -314,6 +364,36 @@ async function refreshProjectVersion() {
     const result = await getProject(project.value.id)
     project.value = result.data
   } catch (error) { failure(error) }
+}
+
+// 打开项目时问一次访问状态，决定要不要给出撤权恢复入口（§8）。
+//
+// 只跟项目 ID 走，不跟 project_version：一条资料被撤权是资料层的事，本地保存一次正文
+// 不会改这个答案。反过来，每存一次正文就重问一遍，会让提示条随着无关操作闪来闪去。
+watch(() => project.value?.id, (projectId) => {
+  // 换项目就把上一条结论丢掉：它是**别的项目**的答案。这里清掉之后如果读取失败，
+  // 界面不显示提示——不知道就别说，与三态里 unknown 不显示是同一条规矩。
+  accessStatus.value = null
+  if (projectId) void loadAccessStatus(projectId)
+}, { immediate: true })
+
+async function loadAccessStatus(projectId: string) {
+  try {
+    const result = await getAccessStatus(projectId)
+    // 慢响应回来时可能已经换了项目：别人的状态不能贴到当前这个项目上。
+    if (project.value?.id === projectId) accessStatus.value = result.data
+  } catch {
+    // 「重新检查」读失败时**不**清掉上一次的结论：网络失败不是关于资料授权的证据，
+    // 而悄悄撤掉一条撤权提示会变成一次假的「一切正常」，用户就没得可点了。
+    // （换项目那一路已经清过了，见上面的 watch。）
+  }
+}
+
+async function recheckAccess() {
+  if (!project.value || accessBusy.value) return
+  accessBusy.value = true
+  try { await loadAccessStatus(project.value.id) }
+  finally { accessBusy.value = false }
 }
 
 async function searchSources() {
@@ -399,6 +479,9 @@ function selectChapter(item: Chapter) {
   generationRun.value = null
   generationCandidate.value = null
   generationCandidates.value = []
+  // 对话框挂着上一个章节的幂等键与失败文案时，props 会被换成新的章节而组件不会重建
+  //（同一位置、同一类型）。关掉它，保证每次打开都是干净的一份。
+  adoptionOpen.value = false
   void loadGenerationCandidates(item.id)
   void resumeGeneration()
 }
@@ -423,6 +506,45 @@ async function showGenerationCandidate(runId: string) {
     generationCandidate.value = result.data
   } catch (error) { failure(error) }
   finally { generationBusy.value = false }
+}
+
+function openAdoption() {
+  if (!project.value || !chapter.value || !generationCandidate.value || busy.value) return
+  adoptionOpen.value = true
+}
+
+// 采纳成功后必须重读**整个**工作区，而不是只换章节。
+//
+// 采纳会推进项目版本；只更新 chapters/chapter 会让界面拿着旧的 project_version 去发
+// 下一个请求——下一个动作必然 409，而用户什么都没做错。
+//
+// 这里刻意不再顺手调 saveChapter/confirmChapter：采纳已经是整章替换，下一步该由人
+// 看过正文再决定（§5 要求采纳后重新确认待核项）。也不要复用 saveText 那把幂等键——
+// 对话框有自己的签名，两者的「同一件事」定义不同。
+async function onAdopted(adopted: Chapter) {
+  adoptionOpen.value = false
+  if (!project.value || !chapter.value) return
+  const projectId = project.value.id
+  const chapterId = chapter.value.id
+  const index = chapters.value.findIndex(item => item.id === chapterId)
+  if (index >= 0) chapters.value[index] = adopted
+  chapter.value = adopted
+  // 不同步的话 bodyChanged 为真、保存按钮亮着，用户一点就把刚采纳的正文又存成一版。
+  bodyDraft.value = adopted.body_markdown
+  // 待核项已经换成候选自带那一份，为本章编的逐项处置不再适用。只清本章的：
+  // 别的章节的草稿是用户刚写的理由，采纳这一章不该把它抹掉。
+  for (const key of Object.keys(reviewDrafts.value)) {
+    if (key.startsWith(`${chapterId}:`)) delete reviewDrafts.value[key]
+  }
+  generationCandidate.value = null
+  try {
+    const [refreshed, candidates] = await Promise.all([
+      getProject(projectId), listGenerationCandidates(projectId, chapterId),
+    ])
+    project.value = refreshed.data
+    // 旧候选的 validity 是按旧版本算出来的，不重读会继续显示一条已经不成立的 fresh。
+    generationCandidates.value = candidates.data
+  } catch (error) { failure(error) }
 }
 
 function generationStorageKey(projectId: string, chapterId: string) {
@@ -535,7 +657,14 @@ async function startDraft() {
 }
 
 async function saveText() {
-  if (!project.value || !chapter.value || busy.value || chapter.value.source_ids.length) return
+  if (!project.value || !chapter.value || busy.value) return
+  // 引用从正文里读，与服务端用同一条规则。写坏的标记在本地就拦下：服务端也会判 400，
+  // 但「请求字段不符合约定」说不清是哪里坏了，而这一刻我们完全知道。
+  const citations = chapterCitations(bodyDraft.value)
+  if (citations.kind === 'malformed') {
+    errorMessage.value = MALFORMED_CITATION_MESSAGE
+    return
+  }
   busy.value = true
   errorMessage.value = ''
   const projectId = project.value.id
@@ -544,7 +673,7 @@ async function saveText() {
     expected_chapter_version_id: chapter.value.current_version_id,
     expected_spec_revision: project.value.spec_revision,
     body_markdown: bodyDraft.value,
-    source_ids: [] as string[],
+    source_ids: citations.sourceIds,
   }
   const key = operationKey(`chapter:${chapterId}`, input)
   try {
@@ -596,6 +725,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .candidate-preview { margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
 .candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .chapter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.access-warning { display: grid; gap: 10px; margin: 22px 0 0; padding: 14px 16px; background: #fff8ec; border: 1px solid #e6c98a; border-radius: 8px; }
+.access-warning h3 { margin: 0; font-size: 15px; }
+.access-warning__actions { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+.access-warning__actions li { display: grid; gap: 2px; }
+.access-warning__actions span { color: #6b7670; font-size: 13px; }
+.access-warning button { justify-self: start; }
 .empty-work { display: grid; place-items: center; min-height: 300px; color: #6b7670; }
 @media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } }
 </style>

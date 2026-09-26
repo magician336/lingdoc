@@ -224,13 +224,16 @@ func (s *MemorySnapshotStore) ListSnapshots(projectID string) ([]ReleaseSnapshot
 			matches = append(matches, cloneSnapshot(snapshot))
 		}
 	}
-	// 新的在前。同一时刻冻下的两份（固定时钟的测试里会遇到）再按 ID 定序：
-	// 少了这个兜底，顺序会随 map 的遍历次序漂，同一份历史两次读到两个样子。
+	// 新的在前。同一时刻冻下的两份（固定时钟的测试里会遇到，生产的墙上时钟也会）
+	// 再按 ID 定序：少了这个兜底，顺序会随 map 的遍历次序漂，同一份历史两次读到两个
+	// 样子。定序取**降序**，是为了与落库实现的 `ORDER BY created_at DESC, id DESC`
+	// 同一个次序——两个实现要是各排各的，同一组一致性断言就会分家，
+	// 而分家的那一刻没人知道该信哪一个。
 	sort.Slice(matches, func(i, j int) bool {
 		if !matches[i].CreatedAt.Equal(matches[j].CreatedAt) {
 			return matches[i].CreatedAt.After(matches[j].CreatedAt)
 		}
-		return matches[i].ID < matches[j].ID
+		return matches[i].ID > matches[j].ID
 	})
 	return matches, nil
 }

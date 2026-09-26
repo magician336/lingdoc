@@ -184,13 +184,14 @@ func (s *MemoryExportStore) ListExports(projectID string) ([]ExportArtifact, err
 			matches = append(matches, cloneExport(artifact))
 		}
 	}
-	// 新的在前，与 ListSnapshots 同一条：同一时刻产出的两份按 ID 定序，
-	// 免得顺序随 map 遍历次序漂。
+	// 新的在前，与 ListSnapshots 同一条：同一时刻产出的两份按 ID 降序定序，
+	// 免得顺序随 map 遍历次序漂，也免得与落库实现的
+	// `ORDER BY created_at DESC, id DESC` 排出两个样子。
 	sort.Slice(matches, func(i, j int) bool {
 		if !matches[i].CreatedAt.Equal(matches[j].CreatedAt) {
 			return matches[i].CreatedAt.After(matches[j].CreatedAt)
 		}
-		return matches[i].ID < matches[j].ID
+		return matches[i].ID > matches[j].ID
 	})
 	return matches, nil
 }

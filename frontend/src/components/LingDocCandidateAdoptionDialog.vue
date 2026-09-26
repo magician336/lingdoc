@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { Candidate, Chapter } from '@/api/lingdoc/candidateAdoption'
+import type { AcceptCandidateInput, Candidate, Chapter } from '@/api/lingdoc/candidateAdoption'
 import { acceptCandidate, listChapters, newIdempotencyKey } from '@/api/lingdoc/candidateAdoption'
+import { keyForAttempt, type AdoptionAttempt } from '@/views/lingdoc/candidateAdoption'
 
 const props = defineProps<{
   projectId: string
@@ -19,36 +20,28 @@ const emit = defineEmits<{
 const submitting = ref(false)
 const errorMessage = ref('')
 const hasExistingVersion = computed(() => props.chapter.current_version_id !== null)
-const attempt = ref<{ signature: string; key: string } | null>(null)
+const attempt = ref<AdoptionAttempt | null>(null)
 
-function idempotencyKeyForAttempt() {
-  const signature = JSON.stringify({
-    candidate_id: props.candidate.id,
-    expected_chapter_version_id: props.chapter.current_version_id,
-    expected_spec_revision: props.expectedSpecRevision,
-    replace_existing: hasExistingVersion.value,
-  })
-  if (attempt.value?.signature === signature) return attempt.value.key
-  const key = newIdempotencyKey()
-  attempt.value = { signature, key }
-  return key
-}
+// 签名与请求体出自**同一个**对象。分开构造时，改了请求却忘了改签名的那种错，
+// 症状是「同一个操作键对应不同请求」——而两处代码各自看起来都对。
+const input = computed<AcceptCandidateInput>(() => ({
+  candidate_id: props.candidate.id,
+  expected_chapter_version_id: props.chapter.current_version_id,
+  expected_spec_revision: props.expectedSpecRevision,
+  replace_existing: props.chapter.current_version_id !== null,
+}))
 
 async function adopt() {
   if (submitting.value) return
   errorMessage.value = ''
   submitting.value = true
   try {
+    attempt.value = keyForAttempt(attempt.value, input.value, newIdempotencyKey)
     const response = await acceptCandidate(
       props.projectId,
       props.chapter.id,
-      {
-        candidate_id: props.candidate.id,
-        expected_chapter_version_id: props.chapter.current_version_id,
-        expected_spec_revision: props.expectedSpecRevision,
-        replace_existing: hasExistingVersion.value,
-      },
-      idempotencyKeyForAttempt(),
+      input.value,
+      attempt.value.key,
     )
     // The write response is an acknowledgement. Read the chapter again so
     // the UI observes the server's current version and review state.
