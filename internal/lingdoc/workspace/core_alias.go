@@ -13,6 +13,7 @@ type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
 type ContractDemoTemplate = core.ContractDemoTemplate
+type SourcePolicy = core.SourcePolicy
 
 var (
 	ErrNotFound            = core.ErrNotFound
@@ -24,6 +25,6 @@ var (
 	ErrSourceUnavailable   = core.ErrSourceUnavailable
 )
 
-func NewService(db *gorm.DB, templates core.TemplateReader) *Service {
-	return core.NewService(db, templates)
+func NewService(db *gorm.DB, templates core.TemplateReader, sources SourcePolicy) *Service {
+	return core.NewService(db, templates, sources)
 }

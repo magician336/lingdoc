@@ -17,13 +17,14 @@ func TestExportPropagatesCurrentnessErrorBeforeRendering(t *testing.T) {
 			renderCalls++
 			return []byte("should not render"), nil
 		}),
+		FrozenValidatorFunc(fileValidationNotUnderTest),
 		CurrentnessFunc(func(DeliveryInput) (bool, error) {
 			return false, currentnessErr
 		}),
 		ExportAccessFunc(allowExport),
 	)
 
-	if _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID); !errors.Is(err, currentnessErr) {
+	if _, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey); !errors.Is(err, currentnessErr) {
 		t.Fatalf("Start error = %v, want currentness error %v", err, currentnessErr)
 	}
 	if renderCalls != 0 {

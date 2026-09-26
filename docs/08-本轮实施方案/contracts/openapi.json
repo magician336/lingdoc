@@ -5229,6 +5229,376 @@
         "x-domain": "evidence"
       }
     },
+    "/projects/{projectId}/sources/{sourceId}/context": {
+      "get": {
+        "operationId": "getSourceContext",
+        "tags": [
+          "evidence"
+        ],
+        "summary": "展开引用处的原文上下文",
+        "description": "同页展开：在**走完授权与复核之后**才读引用块周围的段落，回答「这句话出自哪里」。与「跳回原文」不同——不跳转、不要知识库 ID（Asset 与 Source 都带不了它），也不重新检索。展开的是分块表的文本，不是重新解析原文件得到的逐字原文（后者没有落库，见 ADR-0001）；每一段是否与原文逐字相符由段上的 verbatim 如实标注，取不回原文时正文照样给而 verbatim 为 false。窗口按 chunk_index 取**同族**邻居（text 与 parent_text 各有独立索引空间），派生块（summary/image_ocr/…）没有指向原文的坐标，不可展开。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "展开引用处的原文上下文",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceContextResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "source": {
+                          "id": "s-demo",
+                          "project_id": "p-demo",
+                          "asset_id": "a-demo",
+                          "asset_revision": 1,
+                          "locator": "测试段落 1",
+                          "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                          "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                          "status": "available"
+                        },
+                        "context_available": true,
+                        "window": {
+                          "before": 1,
+                          "after": 1
+                        },
+                        "segments": [
+                          {
+                            "source_id": "s-demo-prev",
+                            "chunk_index": 0,
+                            "relation": "before",
+                            "verbatim": true,
+                            "text": "合成测试材料：第 0 段，仅用于软件测试。"
+                          },
+                          {
+                            "source_id": "s-demo-next",
+                            "chunk_index": 2,
+                            "relation": "after",
+                            "verbatim": false,
+                            "text": ""
+                          }
+                        ]
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "not_expandable": {
+                    "value": {
+                      "data": {
+                        "source": {
+                          "id": "s-demo",
+                          "project_id": "p-demo",
+                          "asset_id": "a-demo",
+                          "asset_revision": 1,
+                          "locator": "测试段落 1",
+                          "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                          "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                          "status": "available"
+                        },
+                        "context_available": false,
+                        "window": {
+                          "before": 1,
+                          "after": 1
+                        },
+                        "segments": []
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "stale_input": {
+                    "value": {
+                      "error": {
+                        "code": "stale_input",
+                        "message": "候选稿或快照基于旧输入。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "insufficient_evidence": {
+                    "value": {
+                      "error": {
+                        "code": "insufficient_evidence",
+                        "message": "允许资料不足以生成该章节。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "asset_not_ready": {
+                    "value": {
+                      "error": {
+                        "code": "asset_not_ready",
+                        "message": "资料尚未处理完成。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "preflight_blocked": {
+                    "value": {
+                      "error": {
+                        "code": "preflight_blocked",
+                        "message": "请先处理交付阻断项。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "rate_limited": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "请求过多，请稍后重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
     "/projects/{projectId}/generations": {
       "post": {
         "operationId": "startGeneration",
@@ -5578,6 +5948,186 @@
                 "instruction": "起草研究问题并单列待核事项。",
                 "expected_spec_revision": 1,
                 "expected_chapter_version_id": null
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
+    "/projects/{projectId}/generations/{runId}/cancel": {
+      "post": {
+        "operationId": "cancelGeneration",
+        "tags": [
+          "evidence"
+        ],
+        "summary": "取消章节候选稿生成",
+        "description": "排队任务立即中断；运行中任务由工作进程协作取消。已完成任务保持原状态。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "取消请求已处理，返回最新任务状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationRunResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/candidates": {
+      "get": {
+        "operationId": "listChapterCandidates",
+        "tags": [
+          "evidence"
+        ],
+        "summary": "列出章节候选稿",
+        "description": "按最近生成时间倒序返回本项目、本章节最近的候选稿；需要项目读取权限。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "候选稿列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "run_id": { "type": "string" },
+                          "validity": { "type": "string", "enum": ["fresh", "stale"] },
+                          "created_at": { "type": "string", "format": "date-time" }
+                        },
+                        "required": ["id", "run_id", "validity", "created_at"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "request_id": { "type": "string" },
+                    "meta": { "$ref": "#/components/schemas/ResponseMeta" }
+                  },
+                  "required": ["data", "request_id", "meta"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "未登录",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
+    "/projects/{projectId}/generations/{runId}/candidate": {
+      "get": {
+        "operationId": "getGeneratedCandidate",
+        "tags": ["evidence"],
+        "summary": "读取生成任务候选稿",
+        "description": "需要项目读取权限；来源权限会在返回候选稿前重新校验，条件或资料版本已变化时 validity 为 stale。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "minLength": 1 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "候选稿正文和服务端 basis",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CandidateResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "当前来源授权已失效",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
+              }
+            }
+          },
+          "404": {
+            "description": "任务不存在、尚无候选稿或不可访问",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" }
               }
             }
           }
@@ -6713,6 +7263,1198 @@
       }
     },
     "/projects/{projectId}/releases": {
+      "get": {
+          "operationId": "listReleases",
+          "tags": [
+            "delivery"
+          ],
+          "summary": "列出项目的交付快照，最多50条",
+          "description": "新的在前。is_current按查询时的当前项目/资料状态逐条计算，不取冻结时存下的值；设了上限故显式返回truncated。",
+          "parameters": [
+            {
+              "name": "projectId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "列出项目的交付快照，最多50条",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ReleaseSnapshotListResponse"
+                  },
+                  "examples": {
+                    "success": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "snapshot-demo",
+                              "project_id": "p-demo",
+                              "frozen_input": {
+                                "project_id": "p-demo",
+                                "project_name": "合成资料演示项目",
+                                "project_version": 8,
+                                "spec_revision": 1,
+                                "spec": {
+                                  "research_subject": "公开的合成调查样本",
+                                  "research_goal": "验证资料到章节的工作流程"
+                                },
+                                "template": {
+                                  "id": "template-demo",
+                                  "name": "演示模板：研究问题与研究方案",
+                                  "version": "1",
+                                  "is_demo": true,
+                                  "sections": [
+                                    {
+                                      "section_id": "question",
+                                      "title": "研究问题",
+                                      "required": true
+                                    },
+                                    {
+                                      "section_id": "method",
+                                      "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                  "required_fields": [
+                                    "research_subject",
+                                    "research_goal"
+                                  ],
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "rules": [
+                                    {
+                                      "rule_id": "required-fields",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "required_fields",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-nonempty",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "nonempty_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-confirmed",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "confirmed_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "review-items-decided",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "review_items_decided",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "source-available",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "source_available",
+                                      "parameters": {}
+                                    }
+                                  ]
+                                },
+                                "chapters": [
+                                  {
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "title": "研究问题",
+                                    "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                    "source_ids": [
+                                      "s-demo"
+                                    ],
+                                    "review_items": [
+                                      {
+                                        "id": "review-1",
+                                        "statement": "100条合成记录不能证明真实研究结论。",
+                                        "origin_candidate_id": "candidate-demo"
+                                      }
+                                    ],
+                                    "confirmation": {
+                                      "id": "confirm-question",
+                                      "chapter_id": "ch-question",
+                                      "chapter_version_id": "cv-question-2",
+                                      "spec_revision": 1,
+                                      "asset_versions": [
+                                        {
+                                          "asset_id": "a-demo",
+                                          "asset_revision": 1
+                                        }
+                                      ],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": [
+                                        {
+                                          "review_item_id": "review-1",
+                                          "disposition": "retained_warning",
+                                          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": "cv-method-1",
+                                    "title": "研究方案",
+                                    "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                                    "source_ids": [],
+                                    "review_items": [],
+                                    "confirmation": {
+                                      "id": "confirm-method",
+                                      "chapter_id": "ch-method",
+                                      "chapter_version_id": "cv-method-1",
+                                      "spec_revision": 1,
+                                      "asset_versions": [],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": []
+                                    }
+                                  }
+                                ],
+                                "sources": [
+                                  {
+                                    "id": "s-demo",
+                                    "project_id": "p-demo",
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1,
+                                    "locator": "测试段落 1",
+                                    "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                    "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                    "display_title": "合成测试材料（不是真实研究证据）"
+                                  }
+                                ],
+                                "asset_versions": [
+                                  {
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1
+                                  }
+                                ],
+                                "policy_asset_ids": [
+                                  "a-demo"
+                                ],
+                                "delivery_kind": "internal_demo"
+                              },
+                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "check": {
+                                "project_version": 8,
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "status": "passed",
+                                "issues": [
+                                  {
+                                    "id": "warning-review-1",
+                                    "rule_id": "review-items-decided",
+                                    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                    "severity": "warning",
+                                    "target_id": "ch-question",
+                                    "target_version": "cv-question-2",
+                                    "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                                  }
+                                ]
+                              },
+                              "is_current": true,
+                              "created_at": "2026-09-21T08:00:00Z"
+                            }
+                          ],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
+                    "historical": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "snapshot-demo",
+                              "project_id": "p-demo",
+                              "frozen_input": {
+                                "project_id": "p-demo",
+                                "project_name": "合成资料演示项目",
+                                "project_version": 8,
+                                "spec_revision": 1,
+                                "spec": {
+                                  "research_subject": "公开的合成调查样本",
+                                  "research_goal": "验证资料到章节的工作流程"
+                                },
+                                "template": {
+                                  "id": "template-demo",
+                                  "name": "演示模板：研究问题与研究方案",
+                                  "version": "1",
+                                  "is_demo": true,
+                                  "sections": [
+                                    {
+                                      "section_id": "question",
+                                      "title": "研究问题",
+                                      "required": true
+                                    },
+                                    {
+                                      "section_id": "method",
+                                      "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                  "required_fields": [
+                                    "research_subject",
+                                    "research_goal"
+                                  ],
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "rules": [
+                                    {
+                                      "rule_id": "required-fields",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "required_fields",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-nonempty",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "nonempty_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-confirmed",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "confirmed_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "review-items-decided",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "review_items_decided",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "source-available",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "source_available",
+                                      "parameters": {}
+                                    }
+                                  ]
+                                },
+                                "chapters": [
+                                  {
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "title": "研究问题",
+                                    "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                    "source_ids": [
+                                      "s-demo"
+                                    ],
+                                    "review_items": [
+                                      {
+                                        "id": "review-1",
+                                        "statement": "100条合成记录不能证明真实研究结论。",
+                                        "origin_candidate_id": "candidate-demo"
+                                      }
+                                    ],
+                                    "confirmation": {
+                                      "id": "confirm-question",
+                                      "chapter_id": "ch-question",
+                                      "chapter_version_id": "cv-question-2",
+                                      "spec_revision": 1,
+                                      "asset_versions": [
+                                        {
+                                          "asset_id": "a-demo",
+                                          "asset_revision": 1
+                                        }
+                                      ],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": [
+                                        {
+                                          "review_item_id": "review-1",
+                                          "disposition": "retained_warning",
+                                          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": "cv-method-1",
+                                    "title": "研究方案",
+                                    "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                                    "source_ids": [],
+                                    "review_items": [],
+                                    "confirmation": {
+                                      "id": "confirm-method",
+                                      "chapter_id": "ch-method",
+                                      "chapter_version_id": "cv-method-1",
+                                      "spec_revision": 1,
+                                      "asset_versions": [],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": []
+                                    }
+                                  }
+                                ],
+                                "sources": [
+                                  {
+                                    "id": "s-demo",
+                                    "project_id": "p-demo",
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1,
+                                    "locator": "测试段落 1",
+                                    "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                    "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                    "display_title": "合成测试材料（不是真实研究证据）"
+                                  }
+                                ],
+                                "asset_versions": [
+                                  {
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1
+                                  }
+                                ],
+                                "policy_asset_ids": [
+                                  "a-demo"
+                                ],
+                                "delivery_kind": "internal_demo"
+                              },
+                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "check": {
+                                "project_version": 8,
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "status": "passed",
+                                "issues": [
+                                  {
+                                    "id": "warning-review-1",
+                                    "rule_id": "review-items-decided",
+                                    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                    "severity": "warning",
+                                    "target_id": "ch-question",
+                                    "target_version": "cv-question-2",
+                                    "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                                  }
+                                ]
+                              },
+                              "is_current": false,
+                              "created_at": "2026-09-21T08:00:00Z"
+                            }
+                          ],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
+                    "blocked": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "snapshot-one-chapter",
+                              "project_id": "p-demo",
+                              "frozen_input": {
+                                "project_id": "p-demo",
+                                "project_name": "合成资料演示项目",
+                                "project_version": 5,
+                                "spec_revision": 1,
+                                "spec": {
+                                  "research_subject": "公开的合成调查样本",
+                                  "research_goal": "验证资料到章节的工作流程"
+                                },
+                                "template": {
+                                  "id": "template-demo",
+                                  "name": "演示模板：研究问题与研究方案",
+                                  "version": "1",
+                                  "is_demo": true,
+                                  "sections": [
+                                    {
+                                      "section_id": "question",
+                                      "title": "研究问题",
+                                      "required": true
+                                    },
+                                    {
+                                      "section_id": "method",
+                                      "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                  "required_fields": [
+                                    "research_subject",
+                                    "research_goal"
+                                  ],
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "rules": [
+                                    {
+                                      "rule_id": "required-fields",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "required_fields",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-nonempty",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "nonempty_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-confirmed",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "confirmed_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "review-items-decided",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "review_items_decided",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "source-available",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "source_available",
+                                      "parameters": {}
+                                    }
+                                  ]
+                                },
+                                "chapters": [
+                                  {
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "title": "研究问题",
+                                    "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                    "source_ids": [
+                                      "s-demo"
+                                    ],
+                                    "review_items": [
+                                      {
+                                        "id": "review-1",
+                                        "statement": "100条合成记录不能证明真实研究结论。",
+                                        "origin_candidate_id": "candidate-demo"
+                                      }
+                                    ]
+                                  },
+                                  {
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": null,
+                                    "title": "研究方案",
+                                    "body_markdown": "",
+                                    "source_ids": [],
+                                    "review_items": []
+                                  }
+                                ],
+                                "sources": [
+                                  {
+                                    "id": "s-demo",
+                                    "project_id": "p-demo",
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1,
+                                    "locator": "测试段落 1",
+                                    "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                    "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                    "display_title": "合成测试材料（不是真实研究证据）"
+                                  }
+                                ],
+                                "asset_versions": [
+                                  {
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1
+                                  }
+                                ],
+                                "policy_asset_ids": [
+                                  "a-demo"
+                                ],
+                                "delivery_kind": "internal_demo"
+                              },
+                              "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                              "check": {
+                                "project_version": 5,
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "status": "blocked",
+                                "issues": [
+                                  {
+                                    "id": "empty-ch-method",
+                                    "rule_id": "chapter-nonempty",
+                                    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                    "severity": "blocking",
+                                    "target_id": "ch-method",
+                                    "target_version": null,
+                                    "message": "章节尚无正文版本。"
+                                  },
+                                  {
+                                    "id": "missing-confirm",
+                                    "rule_id": "chapter-confirmed",
+                                    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                    "severity": "blocking",
+                                    "target_id": "ch-question",
+                                    "target_version": "cv-question-2",
+                                    "message": "已填写章节仍未确认。"
+                                  }
+                                ]
+                              },
+                              "is_current": true,
+                              "created_at": "2026-09-21T08:00:00Z"
+                            }
+                          ],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
+                    "truncated": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "snapshot-demo",
+                              "project_id": "p-demo",
+                              "frozen_input": {
+                                "project_id": "p-demo",
+                                "project_name": "合成资料演示项目",
+                                "project_version": 8,
+                                "spec_revision": 1,
+                                "spec": {
+                                  "research_subject": "公开的合成调查样本",
+                                  "research_goal": "验证资料到章节的工作流程"
+                                },
+                                "template": {
+                                  "id": "template-demo",
+                                  "name": "演示模板：研究问题与研究方案",
+                                  "version": "1",
+                                  "is_demo": true,
+                                  "sections": [
+                                    {
+                                      "section_id": "question",
+                                      "title": "研究问题",
+                                      "required": true
+                                    },
+                                    {
+                                      "section_id": "method",
+                                      "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                  "required_fields": [
+                                    "research_subject",
+                                    "research_goal"
+                                  ],
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "rules": [
+                                    {
+                                      "rule_id": "required-fields",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "required_fields",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-nonempty",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "nonempty_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-confirmed",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "confirmed_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "review-items-decided",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "review_items_decided",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "source-available",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "source_available",
+                                      "parameters": {}
+                                    }
+                                  ]
+                                },
+                                "chapters": [
+                                  {
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "title": "研究问题",
+                                    "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                    "source_ids": [
+                                      "s-demo"
+                                    ],
+                                    "review_items": [
+                                      {
+                                        "id": "review-1",
+                                        "statement": "100条合成记录不能证明真实研究结论。",
+                                        "origin_candidate_id": "candidate-demo"
+                                      }
+                                    ],
+                                    "confirmation": {
+                                      "id": "confirm-question",
+                                      "chapter_id": "ch-question",
+                                      "chapter_version_id": "cv-question-2",
+                                      "spec_revision": 1,
+                                      "asset_versions": [
+                                        {
+                                          "asset_id": "a-demo",
+                                          "asset_revision": 1
+                                        }
+                                      ],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": [
+                                        {
+                                          "review_item_id": "review-1",
+                                          "disposition": "retained_warning",
+                                          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": "cv-method-1",
+                                    "title": "研究方案",
+                                    "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                                    "source_ids": [],
+                                    "review_items": [],
+                                    "confirmation": {
+                                      "id": "confirm-method",
+                                      "chapter_id": "ch-method",
+                                      "chapter_version_id": "cv-method-1",
+                                      "spec_revision": 1,
+                                      "asset_versions": [],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": []
+                                    }
+                                  }
+                                ],
+                                "sources": [
+                                  {
+                                    "id": "s-demo",
+                                    "project_id": "p-demo",
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1,
+                                    "locator": "测试段落 1",
+                                    "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                    "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                    "display_title": "合成测试材料（不是真实研究证据）"
+                                  }
+                                ],
+                                "asset_versions": [
+                                  {
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1
+                                  }
+                                ],
+                                "policy_asset_ids": [
+                                  "a-demo"
+                                ],
+                                "delivery_kind": "internal_demo"
+                              },
+                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "check": {
+                                "project_version": 8,
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "status": "passed",
+                                "issues": [
+                                  {
+                                    "id": "warning-review-1",
+                                    "rule_id": "review-items-decided",
+                                    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                    "severity": "warning",
+                                    "target_id": "ch-question",
+                                    "target_version": "cv-question-2",
+                                    "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                                  }
+                                ]
+                              },
+                              "is_current": true,
+                              "created_at": "2026-09-21T08:00:00Z"
+                            },
+                            {
+                              "id": "snapshot-demo",
+                              "project_id": "p-demo",
+                              "frozen_input": {
+                                "project_id": "p-demo",
+                                "project_name": "合成资料演示项目",
+                                "project_version": 8,
+                                "spec_revision": 1,
+                                "spec": {
+                                  "research_subject": "公开的合成调查样本",
+                                  "research_goal": "验证资料到章节的工作流程"
+                                },
+                                "template": {
+                                  "id": "template-demo",
+                                  "name": "演示模板：研究问题与研究方案",
+                                  "version": "1",
+                                  "is_demo": true,
+                                  "sections": [
+                                    {
+                                      "section_id": "question",
+                                      "title": "研究问题",
+                                      "required": true
+                                    },
+                                    {
+                                      "section_id": "method",
+                                      "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                  "required_fields": [
+                                    "research_subject",
+                                    "research_goal"
+                                  ],
+                                  "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                  "rules": [
+                                    {
+                                      "rule_id": "required-fields",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "required_fields",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-nonempty",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "nonempty_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "chapter-confirmed",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "confirmed_chapter",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "review-items-decided",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "review_items_decided",
+                                      "parameters": {}
+                                    },
+                                    {
+                                      "rule_id": "source-available",
+                                      "kind": "computed",
+                                      "severity": "blocking",
+                                      "evaluator": "source_available",
+                                      "parameters": {}
+                                    }
+                                  ]
+                                },
+                                "chapters": [
+                                  {
+                                    "chapter_id": "ch-question",
+                                    "chapter_version_id": "cv-question-2",
+                                    "title": "研究问题",
+                                    "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                                    "source_ids": [
+                                      "s-demo"
+                                    ],
+                                    "review_items": [
+                                      {
+                                        "id": "review-1",
+                                        "statement": "100条合成记录不能证明真实研究结论。",
+                                        "origin_candidate_id": "candidate-demo"
+                                      }
+                                    ],
+                                    "confirmation": {
+                                      "id": "confirm-question",
+                                      "chapter_id": "ch-question",
+                                      "chapter_version_id": "cv-question-2",
+                                      "spec_revision": 1,
+                                      "asset_versions": [
+                                        {
+                                          "asset_id": "a-demo",
+                                          "asset_revision": 1
+                                        }
+                                      ],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": [
+                                        {
+                                          "review_item_id": "review-1",
+                                          "disposition": "retained_warning",
+                                          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  {
+                                    "chapter_id": "ch-method",
+                                    "chapter_version_id": "cv-method-1",
+                                    "title": "研究方案",
+                                    "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                                    "source_ids": [],
+                                    "review_items": [],
+                                    "confirmation": {
+                                      "id": "confirm-method",
+                                      "chapter_id": "ch-method",
+                                      "chapter_version_id": "cv-method-1",
+                                      "spec_revision": 1,
+                                      "asset_versions": [],
+                                      "template_version": "1",
+                                      "actor_user_id": "u-owner",
+                                      "created_at": "2026-09-21T08:00:00Z",
+                                      "review_decisions": []
+                                    }
+                                  }
+                                ],
+                                "sources": [
+                                  {
+                                    "id": "s-demo",
+                                    "project_id": "p-demo",
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1,
+                                    "locator": "测试段落 1",
+                                    "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                                    "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                                    "display_title": "合成测试材料（不是真实研究证据）"
+                                  }
+                                ],
+                                "asset_versions": [
+                                  {
+                                    "asset_id": "a-demo",
+                                    "asset_revision": 1
+                                  }
+                                ],
+                                "policy_asset_ids": [
+                                  "a-demo"
+                                ],
+                                "delivery_kind": "internal_demo"
+                              },
+                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "check": {
+                                "project_version": 8,
+                                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                "status": "passed",
+                                "issues": [
+                                  {
+                                    "id": "warning-review-1",
+                                    "rule_id": "review-items-decided",
+                                    "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                                    "severity": "warning",
+                                    "target_id": "ch-question",
+                                    "target_version": "cv-question-2",
+                                    "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+                                  }
+                                ]
+                              },
+                              "is_current": false,
+                              "created_at": "2026-09-21T08:00:00Z"
+                            }
+                          ],
+                          "truncated": true
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "invalid_request": {
+                      "value": {
+                        "error": {
+                          "code": "invalid_request",
+                          "message": "请求字段不符合约定。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "unauthenticated": {
+                      "value": {
+                        "error": {
+                          "code": "unauthenticated",
+                          "message": "请登录后重试。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "forbidden": {
+                      "value": {
+                        "error": {
+                          "code": "forbidden",
+                          "message": "无权执行该动作。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "source_access_denied": {
+                      "value": {
+                        "error": {
+                          "code": "source_access_denied",
+                          "message": "资料授权已不可用。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "not_found": {
+                      "value": {
+                        "error": {
+                          "code": "not_found",
+                          "message": "资源不存在或不可访问。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "version_conflict": {
+                      "value": {
+                        "error": {
+                          "code": "version_conflict",
+                          "message": "内容已变化，请先读取当前版本。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "stale_input": {
+                      "value": {
+                        "error": {
+                          "code": "stale_input",
+                          "message": "候选稿或快照基于旧输入。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "idempotency_conflict": {
+                      "value": {
+                        "error": {
+                          "code": "idempotency_conflict",
+                          "message": "同一幂等键对应不同请求。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "request_in_progress": {
+                      "value": {
+                        "error": {
+                          "code": "request_in_progress",
+                          "message": "同键请求正在提交，稍后用原键重试。",
+                          "retryable": true
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              },
+              "headers": {
+                "Retry-After": {
+                  "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "description": "仅request_in_progress建议携带。"
+                }
+              }
+            },
+            "422": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "insufficient_evidence": {
+                      "value": {
+                        "error": {
+                          "code": "insufficient_evidence",
+                          "message": "允许资料不足以生成该章节。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "asset_not_ready": {
+                      "value": {
+                        "error": {
+                          "code": "asset_not_ready",
+                          "message": "资料尚未处理完成。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "preflight_blocked": {
+                      "value": {
+                        "error": {
+                          "code": "preflight_blocked",
+                          "message": "请先处理交付阻断项。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "invalid_state": {
+                      "value": {
+                        "error": {
+                          "code": "invalid_state",
+                          "message": "当前阶段不能执行该动作。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "429": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "rate_limited": {
+                      "value": {
+                        "error": {
+                          "code": "rate_limited",
+                          "message": "请求过多，请稍后重试。",
+                          "retryable": true
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "503": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "dependency_unavailable": {
+                      "value": {
+                        "error": {
+                          "code": "dependency_unavailable",
+                          "message": "依赖暂时不可用。",
+                          "retryable": true
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "x-delivery-phase": "core",
+          "x-domain": "delivery"
+      },
       "post": {
         "operationId": "prepareRelease",
         "tags": [
@@ -8854,6 +10596,382 @@
         "x-domain": "delivery"
       }
     },
+    "/projects/{projectId}/exports": {
+        "get": {
+          "operationId": "listExports",
+          "tags": [
+            "delivery"
+          ],
+          "summary": "列出项目的导出产物，最多50条",
+          "description": "新的在前。产物状态不代表是否仍为当前内容；展示或下载入口前按snapshot_id读取getRelease，依据is_current标记。",
+          "parameters": [
+            {
+              "name": "projectId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "列出项目的导出产物，最多50条",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ExportArtifactListResponse"
+                  },
+                  "examples": {
+                    "success": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "export-demo",
+                              "project_id": "p-demo",
+                              "snapshot_id": "snapshot-demo",
+                              "status": "verified",
+                              "file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                              "download_path": "/api/v1/lingdoc/projects/p-demo/exports/export-demo/file"
+                            }
+                          ],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
+                    "with_failure": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "export-demo",
+                              "project_id": "p-demo",
+                              "snapshot_id": "snapshot-demo",
+                              "status": "failed",
+                              "file_sha256": null,
+                              "download_path": null,
+                              "error": {
+                                "code": "render_failed",
+                                "message": "文件生成失败。",
+                                "retryable": true
+                              }
+                            }
+                          ],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
+                    "truncated": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "export-demo",
+                              "project_id": "p-demo",
+                              "snapshot_id": "snapshot-demo",
+                              "status": "verified",
+                              "file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+                              "download_path": "/api/v1/lingdoc/projects/p-demo/exports/export-demo/file"
+                            },
+                            {
+                              "id": "export-demo",
+                              "project_id": "p-demo",
+                              "snapshot_id": "snapshot-demo",
+                              "status": "failed",
+                              "file_sha256": null,
+                              "download_path": null,
+                              "error": {
+                                "code": "render_failed",
+                                "message": "文件生成失败。",
+                                "retryable": true
+                              }
+                            }
+                          ],
+                          "truncated": true
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "400": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "invalid_request": {
+                      "value": {
+                        "error": {
+                          "code": "invalid_request",
+                          "message": "请求字段不符合约定。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "401": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "unauthenticated": {
+                      "value": {
+                        "error": {
+                          "code": "unauthenticated",
+                          "message": "请登录后重试。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "403": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "forbidden": {
+                      "value": {
+                        "error": {
+                          "code": "forbidden",
+                          "message": "无权执行该动作。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "source_access_denied": {
+                      "value": {
+                        "error": {
+                          "code": "source_access_denied",
+                          "message": "资料授权已不可用。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "not_found": {
+                      "value": {
+                        "error": {
+                          "code": "not_found",
+                          "message": "资源不存在或不可访问。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "version_conflict": {
+                      "value": {
+                        "error": {
+                          "code": "version_conflict",
+                          "message": "内容已变化，请先读取当前版本。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "stale_input": {
+                      "value": {
+                        "error": {
+                          "code": "stale_input",
+                          "message": "候选稿或快照基于旧输入。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "idempotency_conflict": {
+                      "value": {
+                        "error": {
+                          "code": "idempotency_conflict",
+                          "message": "同一幂等键对应不同请求。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "request_in_progress": {
+                      "value": {
+                        "error": {
+                          "code": "request_in_progress",
+                          "message": "同键请求正在提交，稍后用原键重试。",
+                          "retryable": true
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              },
+              "headers": {
+                "Retry-After": {
+                  "schema": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "description": "仅request_in_progress建议携带。"
+                }
+              }
+            },
+            "422": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "insufficient_evidence": {
+                      "value": {
+                        "error": {
+                          "code": "insufficient_evidence",
+                          "message": "允许资料不足以生成该章节。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "asset_not_ready": {
+                      "value": {
+                        "error": {
+                          "code": "asset_not_ready",
+                          "message": "资料尚未处理完成。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "preflight_blocked": {
+                      "value": {
+                        "error": {
+                          "code": "preflight_blocked",
+                          "message": "请先处理交付阻断项。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    },
+                    "invalid_state": {
+                      "value": {
+                        "error": {
+                          "code": "invalid_state",
+                          "message": "当前阶段不能执行该动作。",
+                          "retryable": false
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "429": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "rate_limited": {
+                      "value": {
+                        "error": {
+                          "code": "rate_limited",
+                          "message": "请求过多，请稍后重试。",
+                          "retryable": true
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "503": {
+              "description": "公共错误；具体语义见接口草案。",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "$ref": "#/components/schemas/ErrorResponse"
+                  },
+                  "examples": {
+                    "dependency_unavailable": {
+                      "value": {
+                        "error": {
+                          "code": "dependency_unavailable",
+                          "message": "依赖暂时不可用。",
+                          "retryable": true
+                        },
+                        "request_id": "req-demo"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "x-delivery-phase": "core",
+          "x-domain": "delivery"
+        }
+    },
     "/projects/{projectId}/exports/{exportId}": {
       "get": {
         "operationId": "getExport",
@@ -9547,6 +11665,21 @@
                   "$ref": "#/components/schemas/AccessStatusResponse"
                 },
                 "examples": {
+                  "available": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "content_access": "available",
+                        "recovery_actions": [],
+                        "can_create_project": true
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
                   "restricted": {
                     "value": {
                       "data": {
@@ -10399,6 +12532,20 @@
         ],
         "additionalProperties": false
       },
+      "ConfirmChapterRequest": {
+        "type": "object",
+        "properties": {
+          "expected_chapter_version_id": { "type": "string", "minLength": 1 },
+          "expected_spec_revision": { "type": "integer", "minimum": 0 },
+          "review_decisions": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/ReviewDecision" },
+            "uniqueItems": true
+          }
+        },
+        "required": ["expected_chapter_version_id", "expected_spec_revision", "review_decisions"],
+        "additionalProperties": false
+      },
       "Confirmation": {
         "type": "object",
         "properties": {
@@ -10623,6 +12770,26 @@
         ],
         "additionalProperties": false
       },
+      "ReleaseSnapshotList": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ReleaseSnapshot"
+              },
+              "maxItems": 50
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "items",
+            "truncated"
+          ],
+          "additionalProperties": false
+      },
       "ExportArtifact": {
         "type": "object",
         "properties": {
@@ -10670,6 +12837,26 @@
           "download_path"
         ],
         "additionalProperties": false
+      },
+      "ExportArtifactList": {
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ExportArtifact"
+              },
+              "maxItems": 50
+            },
+            "truncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "items",
+            "truncated"
+          ],
+          "additionalProperties": false
       },
       "CreateProject": {
         "type": "object",
@@ -11152,6 +13339,26 @@
         ],
         "additionalProperties": false
       },
+      "ReleaseSnapshotListResponse": {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/components/schemas/ReleaseSnapshotList"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "meta": {
+              "$ref": "#/components/schemas/ResponseMeta"
+            }
+          },
+          "required": [
+            "data",
+            "request_id",
+            "meta"
+          ],
+          "additionalProperties": false
+      },
       "ExportArtifactResponse": {
         "type": "object",
         "properties": {
@@ -11171,6 +13378,26 @@
           "meta"
         ],
         "additionalProperties": false
+      },
+      "ExportArtifactListResponse": {
+          "type": "object",
+          "properties": {
+            "data": {
+              "$ref": "#/components/schemas/ExportArtifactList"
+            },
+            "request_id": {
+              "type": "string"
+            },
+            "meta": {
+              "$ref": "#/components/schemas/ResponseMeta"
+            }
+          },
+          "required": [
+            "data",
+            "request_id",
+            "meta"
+          ],
+          "additionalProperties": false
       },
       "AssetListResponse": {
         "type": "object",
@@ -11542,6 +13769,105 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/AccessStatus"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContextWindow": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "before",
+          "after"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContextSegment": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chunk_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ]
+          },
+          "verbatim": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "chunk_index",
+          "relation",
+          "verbatim",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContext": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          },
+          "context_available": {
+            "type": "boolean"
+          },
+          "window": {
+            "$ref": "#/components/schemas/SourceContextWindow"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceContextSegment"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "context_available",
+          "window",
+          "segments"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContextResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SourceContext"
           },
           "request_id": {
             "type": "string"

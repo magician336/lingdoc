@@ -183,6 +183,16 @@ func quoteAt(origin string, startAt, endAt int, content string) (SourceStatus, s
 	return SourceAvailable, content
 }
 
+// VerbatimAt 回答「这串文本此刻是不是原文坐标 [startAt,endAt) 上的那一段」。
+//
+// 判据与 quoteAt 是同一个函数：产出（Resolve）、复核（Validate）、语境展开
+// 三处必须共用它，否则「什么叫逐字原文」会各自演化（见 quoteAt 的注释）。
+// 只回 bool——调用方要的是「能不能把这段当原文摆出去」，档位细节由 Source.status 说。
+func VerbatimAt(origin string, startAt, endAt int, content string) bool {
+	status, _ := quoteAt(origin, startAt, endAt, content)
+	return status == SourceAvailable
+}
+
 // quoteBySelfConsistency 是弱档判据：拿不到原文时唯一能诚实声明的一档。
 //
 // 判据与 chat_pipeline 的 chunkTrusted（merge_overlap.go:94-99）同构，

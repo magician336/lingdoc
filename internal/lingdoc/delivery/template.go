@@ -21,6 +21,31 @@ const (
 	DemoRulesetHash = "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1"
 )
 
+// Demo ruleset rule IDs. A ValidationIssue.rule_id must name one of these: the
+// frozen template is the only input a consumer needs to reproduce a finding, so
+// an ad-hoc code would make the published ruleset unreproducible.
+const (
+	RuleRequiredFields     = "required-fields"
+	RuleChapterNonempty    = "chapter-nonempty"
+	RuleChapterConfirmed   = "chapter-confirmed"
+	RuleReviewItemsDecided = "review-items-decided"
+	RuleSourceAvailable    = "source-available"
+)
+
+// Severity values published for ValidationIssue.
+const (
+	SeverityBlocking = "blocking"
+	SeverityWarning  = "warning"
+	SeverityInfo     = "info"
+)
+
+// Review dispositions published for ReviewDecision. A retained item does not
+// block the release; it must travel with the exported file instead.
+const (
+	DispositionResolved        = "resolved"
+	DispositionRetainedWarning = "retained_warning"
+)
+
 // ErrTemplateNotFound is returned when the fixed reader cannot supply the
 // requested immutable template version.
 var ErrTemplateNotFound = errors.New("lingdoc template not found")
@@ -73,11 +98,11 @@ var demoTemplate = Template{
 	RequiredFields: []string{"research_subject", "research_goal"},
 	RulesetHash:    DemoRulesetHash,
 	Rules: []Rule{
-		{ID: "required-fields", Kind: "computed", Severity: "blocking", Evaluator: "required_fields", Parameters: map[string]any{}},
-		{ID: "chapter-nonempty", Kind: "computed", Severity: "blocking", Evaluator: "nonempty_chapter", Parameters: map[string]any{}},
-		{ID: "chapter-confirmed", Kind: "computed", Severity: "blocking", Evaluator: "confirmed_chapter", Parameters: map[string]any{}},
-		{ID: "review-items-decided", Kind: "computed", Severity: "blocking", Evaluator: "review_items_decided", Parameters: map[string]any{}},
-		{ID: "source-available", Kind: "computed", Severity: "blocking", Evaluator: "source_available", Parameters: map[string]any{}},
+		{ID: RuleRequiredFields, Kind: "computed", Severity: SeverityBlocking, Evaluator: "required_fields", Parameters: map[string]any{}},
+		{ID: RuleChapterNonempty, Kind: "computed", Severity: SeverityBlocking, Evaluator: "nonempty_chapter", Parameters: map[string]any{}},
+		{ID: RuleChapterConfirmed, Kind: "computed", Severity: SeverityBlocking, Evaluator: "confirmed_chapter", Parameters: map[string]any{}},
+		{ID: RuleReviewItemsDecided, Kind: "computed", Severity: SeverityBlocking, Evaluator: "review_items_decided", Parameters: map[string]any{}},
+		{ID: RuleSourceAvailable, Kind: "computed", Severity: SeverityBlocking, Evaluator: "source_available", Parameters: map[string]any{}},
 	},
 }
 
