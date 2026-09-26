@@ -124,8 +124,6 @@ func (h *DeliveryExportHandler) Start(c *gin.Context) {
 	sendOK(c, http.StatusAccepted, artifactView(artifact), replayed)
 }
 
-// Get 读一份产物的状态。它不返回字节——下载要单独走一次，因为**下载那一刻**的
-// 授权必须重查一次。
 // List 列出项目导出过的产物，新的在前。契约 §3：列表设了上限就必须显式提示截断。
 //
 // 交出去的是每一项都过一遍 artifactView 的视图，不是内部结构体——列表里同样要满足
@@ -148,6 +146,8 @@ func (h *DeliveryExportHandler) List(c *gin.Context) {
 	sendOK(c, http.StatusOK, gin.H{"items": items, "truncated": truncated}, false)
 }
 
+// Get 读一份产物的状态。它不返回字节——下载要单独走一次，因为**下载那一刻**的
+// 授权必须重查一次。
 func (h *DeliveryExportHandler) Get(c *gin.Context) {
 	actor, ok := identity(c)
 	if !ok {

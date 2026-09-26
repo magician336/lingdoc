@@ -72,21 +72,48 @@ const freezeAttempt = ref<{ signature: string; key: string } | null>(null)
 /** 导出：每个快照各自一条。键在成功后清掉，所以「再导一份」是新动作而不是重放。 */
 const exportAttempts = new Map<string, { signature: string; key: string }>()
 
-const rowsBySnapshot = computed(() => {
-  const map: Record<string, ArtifactRow[]> = {}
-  for (const artifact of artifacts.value) {
-    const view = viewOf(artifact)
-    const row: ArtifactRow = {
-      id: artifact.id,
-      snapshotID: artifact.snapshot_id,
-      currency: currencyOf(currencyReads.value[artifact.snapshot_id]),
-      downloadPath: view.kind === 'downloadable' ? view.downloadPath : '',
-      fileSHA256: view.kind === 'downloadable' ? view.fileSHA256 : '',
-      failure: view.kind === 'failed' ? { message: view.message, retryable: view.retryable } : null,
-    }
-    ;(map[artifact.snapshot_id] ??= []).push(row)
+function toRow(artifact: ExportArtifact): ArtifactRow {
+  const view = viewOf(artifact)
+  return {
+    id: artifact.id,
+    snapshotID: artifact.snapshot_id,
+    currency: currencyOf(currencyReads.value[artifact.snapshot_id]),
+    downloadPath: view.kind === 'downloadable' ? view.downloadPath : '',
+    fileSHA256: view.kind === 'downloadable' ? view.fileSHA256 : '',
+    failure: view.kind === 'failed' ? { message: view.message, retryable: view.retryable } : null,
   }
-  return map
+}
+
+/** 历史里的一条：一份快照，以及挂在它名下的那些产物。 */
+interface DeliveryGroup {
+  /** 快照不在当前列表里时为 null——这一组只有产物，没有快照可描述。 */
+  snapshot: ReleaseSnapshot | null
+  snapshotID: string
+  rows: ArtifactRow[]
+}
+
+/**
+ * 把产物按 snapshot_id 挂到各自的快照下面。
+ *
+ * 挂不上的那些必须单独成组，不能丢：快照列表是服务端截断过的（上限 50），而产物列表
+ * 不跟着快照截断，所以一份早期导出完全可能指向一份没被列出来的快照。丢了它的话，
+ * listExports 明明返回了它、reload 甚至为它读了一次当前性，界面上却一个像素都没有——
+ * 用户会以为它从没导出过，而后端里它还在、按 ID 也还下得下来。
+ */
+const groups = computed<DeliveryGroup[]>(() => {
+  const rowsBySnapshot: Record<string, ArtifactRow[]> = {}
+  for (const artifact of artifacts.value) {
+    (rowsBySnapshot[artifact.snapshot_id] ??= []).push(toRow(artifact))
+  }
+  const listed = new Set(snapshots.value.map((item) => item.id))
+  return [
+    ...snapshots.value.map((snapshot) => ({
+      snapshot, snapshotID: snapshot.id, rows: rowsBySnapshot[snapshot.id] ?? [],
+    })),
+    ...Object.keys(rowsBySnapshot)
+      .filter((snapshotID) => !listed.has(snapshotID))
+      .map((snapshotID) => ({ snapshot: null, snapshotID, rows: rowsBySnapshot[snapshotID] })),
+  ]
 })
 
 function fail(error: unknown, fallback: string) {
@@ -161,6 +188,10 @@ async function reload() {
     ...snapshots.value.map((item) => item.id),
     ...artifacts.value.map((item) => item.snapshot_id),
   ])]
+  // 逐条 getRelease 是这个面板主动加的一轮读取（§7 要求按 snapshot_id 读，所以列表里
+  // 那个重算过的 is_current 不被信任）：50 份快照就是 50 次工作区读，一次刷新连同服务端
+  // 那次重算约 100 次。列表面向演示规模，这个量可以接受——换掉的是一份可能已经过期的
+  // 当前性，那正是 §7 要求每次刷新都更新它的原因。
   await Promise.all(ids.map(refreshCurrency))
 }
 
@@ -180,26 +211,38 @@ function refreshHistory() {
 
 async function runCheck() {
   if (busy.value) return
+  const projectId = props.project.id
+  const expected = props.project.project_version
   pending.value = 'check'
   errorMessage.value = ''
   try {
-    const result = await checkDelivery(props.project.id, props.project.project_version)
+    const result = await checkDelivery(projectId, expected)
+    // 等待期间用户可能已经换了项目。这一条结论属于上一个项目，落进当前界面就是把 A 的
+    // 检查结果贴到 B 上（连它带的「项目版本 N」也是 A 的）。另外三处等待都有这道守卫，
+    // 只有检查这一条一直漏着。
+    if (projectId !== props.project.id) return
     checks.value = result.data
-  } catch (error) { if (!recoverVersionConflict(error)) fail(error, '交付检查失败，请重试。') }
-  finally { pending.value = '' }
+  } catch (error) {
+    if (projectId !== props.project.id) return
+    if (!recoverVersionConflict(error)) fail(error, '交付检查失败，请重试。')
+  } finally { pending.value = '' }
 }
 
 async function freeze() {
   if (busy.value) return
+  const projectId = props.project.id
+  const expected = props.project.project_version
   pending.value = 'freeze'
   errorMessage.value = ''
-  const expected = props.project.project_version
   try {
     // 返回值不接：重放回来的快照带着**冻结当时**写下的 is_current，拿它渲染当前性正是
     // §7 点名要避免的事。
-    await prepareRelease(props.project.id, expected, freezeKey(expected))
+    await prepareRelease(projectId, expected, freezeKey(expected))
     freezeAttempt.value = null
   } catch (error) {
+    // 换了项目就什么都不做：这条报错说的是上一个项目，而 recoverVersionConflict 还会
+    // 请上层重读——重读的是当前这个项目，那是一次没有理由的读取。
+    if (projectId !== props.project.id) return
     if (!recoverVersionConflict(error)) fail(error, '冻结交付快照失败，请重试。')
     return
   } finally { pending.value = '' }
@@ -210,12 +253,14 @@ async function freeze() {
 
 async function exportSnapshot(snapshot: ReleaseSnapshot) {
   if (busy.value) return
+  const projectId = props.project.id
   pending.value = `export:${snapshot.id}`
   errorMessage.value = ''
   try {
-    await startExport(props.project.id, snapshot.id, exportKey(snapshot.id, snapshot.snapshot_digest))
+    await startExport(projectId, snapshot.id, exportKey(snapshot.id, snapshot.snapshot_digest))
     exportAttempts.delete(snapshot.id)
   } catch (error) {
+    if (projectId !== props.project.id) return
     if (!recoverVersionConflict(error)) fail(error, '生成交付文件失败，请重试。')
     return
   } finally { pending.value = '' }
@@ -278,11 +323,17 @@ watch(
   () => [props.project.id, props.project.project_version] as const,
   (current, previous) => {
     if (current[0] !== previous?.[0]) {
-      checks.value = null
       currencyReads.value = {}
       freezeAttempt.value = null
       exportAttempts.clear()
+      // 换了项目，上一条报错说的就是别的项目了。注意这只在换项目时清——项目版本变化
+      // 时不清，那正是 recoverVersionConflict 那句提示要活下来的场合。
+      errorMessage.value = ''
     }
+    // 检查结果记的是它算出来那一刻的项目版本。内容一变（自己刚保存，或协作者改了），
+    // 那份结论就不再是「当前内容的检查结果」——把它留在屏幕上，用户会以为自己刚做的
+    // 改动已经通过了检查。这与快照的当前性是同一件事：结论只在它被算出的那一刻成立。
+    checks.value = null
     void load()
   },
   { immediate: true },
@@ -323,38 +374,50 @@ watch(
       <p v-else class="muted">没有发现问题。</p>
     </section>
 
-    <p v-if="!snapshots.length" class="muted">还没有冻结过交付快照。</p>
+    <p v-if="!groups.length" class="muted">还没有冻结过交付快照。</p>
     <template v-else>
       <p v-if="historyTruncated" class="muted">只显示最近 {{ snapshots.length }} 份快照，更早的未列出。</p>
       <ul class="delivery__history">
-        <li v-for="snapshot in snapshots" :key="snapshot.id" class="delivery__snapshot">
-          <header class="delivery__snapshot-head">
-            <strong>快照 {{ snapshot.id.slice(0, 8) }}</strong>
-            <span class="delivery__currency">{{ currencyOf(currencyReads[snapshot.id]) }}</span>
-          </header>
-          <p class="muted">
-            冻结于项目版本 {{ snapshot.frozen_input.project_version }} ·
-            研究条件第 {{ snapshot.frozen_input.spec_revision }} 版 ·
-            章节 {{ snapshot.frozen_input.chapters.length }} 章 ·
-            资料 {{ snapshot.frozen_input.sources.length }} 份 ·
-            摘要 {{ snapshot.snapshot_digest.slice(0, 12) }}
-          </p>
-          <p class="muted">
-            交付检查：{{ statusLabels[snapshot.check.status] }} ·
-            冻结时间 {{ new Date(snapshot.created_at).toLocaleString() }}
-          </p>
-          <p v-if="snapshot.check.issues.length" class="warning">
-            这份快照带着 {{ snapshot.check.issues.length }} 条检查记录。
-          </p>
+        <li v-for="group in groups" :key="group.snapshotID" class="delivery__snapshot">
+          <template v-if="group.snapshot">
+            <header class="delivery__snapshot-head">
+              <strong>快照 {{ group.snapshot.id.slice(0, 8) }}</strong>
+              <span class="delivery__currency">{{ currencyOf(currencyReads[group.snapshot.id]) }}</span>
+            </header>
+            <p class="muted">
+              冻结于项目版本 {{ group.snapshot.frozen_input.project_version }} ·
+              研究条件第 {{ group.snapshot.frozen_input.spec_revision }} 版 ·
+              章节 {{ group.snapshot.frozen_input.chapters.length }} 章 ·
+              资料 {{ group.snapshot.frozen_input.sources.length }} 份 ·
+              摘要 {{ group.snapshot.snapshot_digest.slice(0, 12) }}
+            </p>
+            <p class="muted">
+              交付检查：{{ statusLabels[group.snapshot.check.status] }} ·
+              冻结时间 {{ new Date(group.snapshot.created_at).toLocaleString() }}
+            </p>
+            <p v-if="group.snapshot.check.issues.length" class="warning">
+              这份快照带着 {{ group.snapshot.check.issues.length }} 条检查记录。
+            </p>
 
-          <div class="delivery__actions">
-            <button type="button" :disabled="busy" @click="exportSnapshot(snapshot)">
-              {{ pending === `export:${snapshot.id}` ? '生成中…' : '生成 DOCX' }}
-            </button>
-          </div>
+            <div class="delivery__actions">
+              <button type="button" :disabled="busy" @click="exportSnapshot(group.snapshot)">
+                {{ pending === `export:${group.snapshot.id}` ? '生成中…' : '生成 DOCX' }}
+              </button>
+            </div>
+          </template>
 
-          <ul v-if="rowsBySnapshot[snapshot.id]?.length" class="delivery__artifacts">
-            <li v-for="row in rowsBySnapshot[snapshot.id]" :key="row.id">
+          <!-- 快照自己掉出了列表，它名下的文件还在。只描述得快照 ID：它这会儿没有可读的
+               冻结输入，编一份出来就等于把界面的猜测当成事实。 -->
+          <template v-else>
+            <header class="delivery__snapshot-head">
+              <strong>快照 {{ group.snapshotID.slice(0, 8) }}</strong>
+              <span class="delivery__currency">{{ currencyOf(currencyReads[group.snapshotID]) }}</span>
+            </header>
+            <p class="muted">这份快照不在上面的列表里（历史只显示最近 {{ snapshots.length }} 份），它的交付文件仍列在下面。</p>
+          </template>
+
+          <ul v-if="group.rows.length" class="delivery__artifacts">
+            <li v-for="row in group.rows" :key="row.id">
               <span class="delivery__artifact-id">{{ row.id.slice(0, 8) }}</span>
               <em>{{ row.currency }}</em>
 
