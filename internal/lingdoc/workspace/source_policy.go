@@ -66,7 +66,7 @@ func (p workspaceSourcePolicy) Validate(ctx context.Context, projectID, actorID 
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
 // 它只被那几个带 nil 守卫的装配入口调用。
 func (h *Handler) sourceRevalidator() sourceRevalidator {
-	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
+	origins := h.origins()
 	return sourceRevalidator{
 		db: h.db, bindings: h.bindings, gateway: h.gateway, origins: origins,
 		policy: evidence.NewSourcePolicy(h.gateway, origins, h.bindings),
@@ -177,8 +177,13 @@ type sourceRevalidator struct {
 // revalidated 是一次复核对一条引用的回答。
 type revalidated struct {
 	SourceID string
-	// Source 是放行时重建出来的来源；不可用时只带 ID（零值的其余字段）。
+	// Source 是重建出来的来源。判成不可用时**照样带着坐标**（Resolve 已经产出过它，
+	// locator 与 asset_revision 都在上面），只是 Status 换成坐标层那条结论——取来源的
+	// 调用方要说得清失败的是哪一条引用。仅当分块行本身不存在时它才只剩 ID。
 	Source evidence.Source
+	// Chunk 是这条引用在底座上的那一行（ChunkIndex / ChunkType / 坐标都在它上面），
+	// 供调用方接着读它周围的段落。分块行不存在时为零值。
+	Chunk types.Chunk
 	// DisplayTitle 是这条引用所属资料此刻的标题。T13 的冻结来源要 display_title，
 	// 而它是资料的属性、不在 evidence.Source 里。
 	DisplayTitle string
@@ -186,7 +191,10 @@ type revalidated struct {
 	// AssetDeny 非空表示卡在资料层（不存在 / 未就绪 / 未授权 / 不属于本项目）；
 	// 为空而 Usable=false 表示资料层放行、只是这枚引用指不回原文了。
 	AssetDeny evidence.DenyReason
-	Detail    string
+	// Status 是坐标层那条结论（stale / unavailable），取自 UnusableSource.Status。
+	// 资料层拒绝时留空——与 UnusableSource 同一套读法，两处不该各演各的。
+	Status evidence.SourceStatus
+	Detail string
 }
 
 // revalidate 逐条给出结论，顺序与请求一致（去重、去空白后）。
@@ -220,27 +228,99 @@ func (p *sourceRevalidator) revalidate(ctx context.Context, projectID string, ac
 
 	verdicts := make([]revalidated, 0, len(rebuilt))
 	for _, entry := range rebuilt {
-		verdict := revalidated{SourceID: entry.Source.ID, DisplayTitle: entry.DisplayTitle}
+		verdict := revalidated{
+			SourceID:     entry.Source.ID,
+			Source:       entry.Source,
+			Chunk:        entry.Chunk,
+			DisplayTitle: entry.DisplayTitle,
+		}
 		if source, ok := usable[entry.Source.ID]; ok {
 			verdict.Source, verdict.Usable = source, true
 			verdicts = append(verdicts, verdict)
 			continue
 		}
-		entry, ok := unusable[verdict.SourceID]
+		reason, ok := unusable[verdict.SourceID]
 		if !ok {
 			// 每一项请求都必须得到「可用」或「不可用」之一（ValidateResult 的不变量）。
 			// 两个都没有说明协作方坏了：如实报错，别把没被复核的当成复核通过。
 			return nil, candidateadoption.ErrDependencyUnavailable
 		}
-		verdict.AssetDeny, verdict.Detail = entry.AssetDeny, entry.Detail
+		verdict.AssetDeny, verdict.Detail = reason.AssetDeny, reason.Detail
+		verdict.Status = reason.Status
 		verdicts = append(verdicts, verdict)
 	}
 	return verdicts, nil
 }
 
+// sourceRead 是一次「把引用块读成一条已复核来源」的结果。
+//
+// 只有 readSource 能构造它，而语境展开收它作入参——于是「没走完授权与复核
+// 就先查邻居」在类型上就写不出来，不必靠一句注释来维持。
+type sourceRead struct {
+	// Chunk 是引用块那一行：坐标、ChunkIndex、ChunkType 都在它上面，窗口按它取。
+	Chunk types.Chunk
+	// Source 是复核后的来源。坐标层失效时它照样带着 locator 与 asset_revision，
+	// 只是 Status 换成了失效结论——界面要说得清失效的是哪一条引用。
+	Source evidence.Source
+}
+
+// readSource 是「项目读权限 → 引用块 → 资料绑定 → 授权 → 复原坐标 → 复核」
+// 这条判定链的唯一实现，getSource 与 getSourceContext 都走它。
+//
+// 抽出来的理由不是省行数：两个端点各写一条时，某天有人只改了其中一条（比如给
+// 授权加一道判据），同一个 sourceId 就会在两个 URL 上得到不同的可用性结论，
+// 而两边都「有实现」、都说得通——最难查的一类错。
+//
+// 返回的全是既有 sentinel（ErrNotFound / ErrSourceUnavailable / 上游 error），
+// 不含任何 HTTP 概念：两个端点走同一个 sendError，状态码不会分叉。
+func (h *Handler) readSource(ctx context.Context, actor Actor, projectID, sourceID string) (sourceRead, error) {
+	if err := h.service.Authorize(ctx, actor, projectID, "read"); err != nil {
+		return sourceRead{}, err
+	}
+	revalidator := h.sourceRevalidator()
+	verdicts, err := revalidator.revalidate(ctx, projectID,
+		evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)},
+		[]string{sourceID})
+	if err != nil {
+		return sourceRead{}, err
+	}
+	// revalidate 逐项作答，请求几条就回几条；一条都没有说明协作方坏了。
+	if len(verdicts) == 0 {
+		return sourceRead{}, ErrNotFound
+	}
+	verdict := verdicts[0]
+	if verdict.Chunk.ID == "" {
+		// 分块行不存在：这条引用指向的块没了。与「资料不可用」分开答——
+		// 在用户眼里那是两件事：一个链接坏了，一个权限没了。
+		return sourceRead{}, ErrNotFound
+	}
+	switch {
+	case verdict.Usable:
+		return sourceRead{Chunk: verdict.Chunk, Source: verdict.Source}, nil
+	case verdict.AssetDeny != "":
+		// 资料层拒绝（不存在 / 未就绪 / 未授权 / 不属于本项目）：四种原因不在措辞上
+		// 区分，它们该触发的动作是同一个——拒绝。
+		return sourceRead{}, ErrSourceUnavailable
+	default:
+		// 资料层放行、卡在坐标层：这是 200 的合法结论，不是错误。
+		source := verdict.Source
+		source.Status = verdict.Status
+		return sourceRead{Chunk: verdict.Chunk, Source: source}, nil
+	}
+}
+
+// origins 现取原文读取器。装配只有这一处定义——将来换实现不会漏掉某条读路径。
+func (h *Handler) origins() evidence.OriginReader {
+	return evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
+}
+
 // rebuiltSource 是一条引用在底座上重建出来的样子，连同它所属资料此刻的标题。
 type rebuiltSource struct {
-	Source       evidence.Source
+	Source evidence.Source
+	// Chunk 是这条引用在底座上的那一行。**分块行不存在时为零值**——调用方据此答
+	// 「查无此块」（404），而不是把它折叠成复核侧那条 not_found（那是资料层的措辞，
+	// 答的是 403）。两者在用户眼里是不同的事：一个是链接坏了，一个是权限没了。
+	Chunk        types.Chunk
 	DisplayTitle string
 }
 
@@ -317,7 +397,7 @@ func (p *sourceRevalidator) rebuild(ctx context.Context, projectID string, actor
 			if errors.Is(err, evidence.ErrAssetKnowledgeMismatch) {
 				// 锚点指向的知识不是这份资料此刻的正文（重解析换过知识 ID）：
 				// 同样交给复核逐项作答，不在两处各写一条守卫。
-				out = append(out, rebuiltSource{Source: evidence.Source{ID: id}})
+				out = append(out, rebuiltSource{Source: evidence.Source{ID: id}, Chunk: entry.chunk})
 				continue
 			}
 			return nil, err
@@ -326,10 +406,10 @@ func (p *sourceRevalidator) rebuild(ctx context.Context, projectID string, actor
 		// 零条说明协作方坏了：留一条只带 ID 的来源让复核逐项作答，
 		// 免得它既不进 Usable 也不进 Unusable——那会被读成「复核通过」。
 		if len(resolved) == 0 {
-			out = append(out, rebuiltSource{Source: evidence.Source{ID: id}})
+			out = append(out, rebuiltSource{Source: evidence.Source{ID: id}, Chunk: entry.chunk})
 			continue
 		}
-		out = append(out, rebuiltSource{Source: resolved[0], DisplayTitle: asset.Title})
+		out = append(out, rebuiltSource{Source: resolved[0], Chunk: entry.chunk, DisplayTitle: asset.Title})
 	}
 	return out, nil
 }

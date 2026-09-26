@@ -45,6 +45,9 @@
               <button type="submit" :disabled="busy || !knowledgeId.trim()">绑定</button>
             </div>
           </form>
+          <!-- 绑定成功但资料还没就绪时，它随后会从下面的列表里消失（listAssets 只回允许集合）。
+               不说这一句，用户看到的是「绑定成功了但什么都没发生，再绑一次还是这样」。 -->
+          <p v-if="bindingNoticeText" class="binding-notice" role="status">{{ bindingNoticeText }}</p>
           <p v-if="assets.length === 0" class="muted">当前项目没有可用的已就绪资料。</p>
           <ul v-else class="asset-list">
             <li v-for="asset in assets" :key="asset.id">
@@ -63,12 +66,48 @@
               <button type="submit" :disabled="busy || !sourceQuery.trim() || assets.length === 0">检索</button>
             </div>
           </form>
-          <p v-if="sourceQuery && sources.length === 0" class="muted">暂无可定位来源。</p>
+          <!-- 被拒明细（F07）：服务端对有未授权项的检索整批答 422、一条都不处理，而那句概括
+               里没说**是哪一份、为什么**。明细比概括具体，所以它替掉顶部的通用错误提示。 -->
+          <section v-if="deniedRows.length" class="denied-sources" role="alert" aria-label="未获授权的资料">
+            <p>{{ DENIED_NOTICE }}</p>
+            <ul>
+              <li v-for="row in deniedRows" :key="row.assetId">
+                <span><strong>{{ row.assetId }}</strong> —— {{ row.label }}</span>
+                <small>{{ row.next }}</small>
+              </li>
+            </ul>
+            <p class="muted">这里只给得出资料 ID：项目资料列表只列已就绪且已授权的资料，
+              被拒的那一份在里面没有痕迹，界面上也就没有它的标题可显示。</p>
+          </section>
+          <p v-if="searchedNothing" class="muted">暂无可定位来源。</p>
           <ul v-else-if="sources.length" class="source-list">
             <li v-for="source in sources" :key="source.id">
-              <span><strong>{{ source.locator }}</strong><small>{{ source.status }}</small></span>
-              <p>{{ source.quoted_text || '当前版本无法取回原文片段。' }}</p>
-              <button type="button" :disabled="busy" @click="refreshSource(source.id)">重新定位</button>
+              <div class="source-head">
+                <span><strong>{{ source.locator }}</strong><small>{{ sourceStatusLabel(source.status) }}</small></span>
+                <div class="source-actions">
+                  <button type="button" :disabled="busy" @click="refreshSource(source.id)">重新定位</button>
+                  <!-- 同页展开，不跳知识库页：那条路要 kbId，而 Asset 与 Source 都带不了它。 -->
+                  <button type="button" :disabled="contextBusy" :aria-expanded="contextOpenFor === source.id"
+                    @click="toggleSourceContext(source.id)">查看原文</button>
+                </div>
+              </div>
+              <p class="source-quote">{{ quotedTextOf(source) }}</p>
+              <section v-if="contextOpenFor === source.id" class="source-context" aria-label="引用处的原文上下文">
+                <h4>{{ contextHeading }}</h4>
+                <p v-if="contextReason" class="muted">{{ contextReason }}</p>
+                <!-- 窗口开得出来但一段都没有：引用就在文档的两头。空列表配着「前后各 1 段」
+                     的抬头，看上去像加载失败了，所以这一句要说出来。 -->
+                <p v-else-if="!contextRows.length" class="muted">这一段前后都没有同族的邻居段，它可能就在文档的两头。</p>
+                <ol v-else class="source-context__segments">
+                  <li v-for="line in contextRows" :key="line.id" :class="{ 'is-verbatim': line.verbatim }">
+                    <small>{{ line.label }}</small>
+                    <p v-if="line.text">{{ line.text }}</p>
+                    <p v-else class="muted">这一段没有正文可摆。</p>
+                    <small v-if="line.note">{{ line.note }}</small>
+                  </li>
+                </ol>
+                <p class="muted">展开的是分块记录里的文本，不是重新解析原文件得到的逐字原文。</p>
+              </section>
             </li>
           </ul>
         </section>
@@ -218,9 +257,13 @@ import { RESTRICTED_NOTICE, isRestricted, recoveryActionsOf } from './accessStat
 import { chapterCitations, MALFORMED_CITATION_MESSAGE } from './chapterCitations'
 import { clearGenerationAttempt, generationIdempotencyKey } from './generationAttempt'
 import {
-  activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource, listAssets,
-  listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
-  type AccessStatus, type Asset, type Chapter, type Project, type ReviewDecision, type Source,
+  CONTEXT_UNAVAILABLE_NOTICE, contextLines, contextNotice, quotedTextOf, sourceStatusLabel, windowLabel,
+} from './sourceContext'
+import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
+import {
+  activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource,
+  getSourceContext, listAssets, listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
+  type AccessStatus, type Asset, type Chapter, type Project, type ReviewDecision, type Source, type SourceContext,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -232,6 +275,14 @@ const selectedAssetIds = ref<string[]>([])
 const knowledgeId = ref('')
 const sourceQuery = ref('')
 const sources = ref<Source[]>([])
+// 上一次**真的问过**的那个问题。空结果与「还没检索」在界面上必须分开：只看 sources.length
+// 的话，刚打开项目就会显示一句「暂无可定位来源」。
+const searchedQuery = ref('')
+const deniedRows = ref<Array<{ assetId: string; label: string; next: string }>>([])
+const bindingNoticeText = ref('')
+const contextSourceId = ref('')
+const sourceContext = ref<SourceContext | null>(null)
+const contextBusy = ref(false)
 const chapter = ref<Chapter | null>(null)
 const newName = ref('')
 const subject = ref('')
@@ -253,6 +304,21 @@ const restricted = computed(() => isRestricted(accessStatus.value))
 const recoveryActions = computed(() => recoveryActionsOf(accessStatus.value))
 const readyAssets = computed(() => assets.value.filter(item => item.processing_state === 'ready'))
 const generationPending = computed(() => generationRun.value?.status === 'queued' || generationRun.value?.status === 'running')
+
+// 「上一次检索确实什么都没找到」——而且提问没被改过。改了提问而没重新检索，
+// 屏幕上那句话说的已经不是现在这个问题了。
+const searchedNothing = computed(() => !!searchedQuery.value && searchedQuery.value === sourceQuery.value.trim()
+  && sources.value.length === 0)
+
+// 面板真的开着 = 记住了是哪一条 **且** 拿到了内容。只看 id 的话，一次失败的展开会让
+// 再点一次变成「收起」：什么都不会发生，而用户以为按钮坏了。
+const contextOpenFor = computed(() => (sourceContext.value ? contextSourceId.value : ''))
+const contextHeading = computed(() => (sourceContext.value?.context_available
+  ? windowLabel(sourceContext.value) : CONTEXT_UNAVAILABLE_NOTICE))
+const contextReason = computed(() => contextNotice(sourceContext.value))
+// 这一层只是把判定搬到渲染旁边：窗口里最多三段，且同时只有一条来源的面板开着。
+const contextRows = computed(() => contextLines(sourceContext.value))
+
 let generationTimer: ReturnType<typeof setTimeout> | undefined
 
 // Keep one key for a retry of the exact same operation and body.
@@ -291,6 +357,13 @@ function reviewDraft(itemId: string) {
 
 function failure(error: unknown) {
   const item = error as { status?: number; message?: string; error?: { code?: string } }
+  // 被拒明细比服务端那句概括更具体（逐条说了是哪一份、为什么），所以它**替掉**概括：
+  // 两句话说的是同一件事，并排显示只会让人读两遍再去找哪一句带细节。
+  deniedRows.value = deniedSourcesOf(error).map(entry => ({ assetId: entry.assetId, ...denyReasonOf(entry.reason) }))
+  if (deniedRows.value.length) {
+    errorMessage.value = ''
+    return
+  }
   if (item?.status === 409 && item?.error?.code === 'version_conflict') {
     errorMessage.value = '内容已被修改。当前输入已保留；请先重新读取，再决定如何处理。'
   } else {
@@ -346,7 +419,13 @@ async function selectProject(id: string, force = false) {
     const assetResult = await listAssets(id)
     assets.value = assetResult.data ?? []
     selectedAssetIds.value = readyAssets.value.map(item => item.id)
+    // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
+    // 留着它们，新项目一打开就会带着别人的结论（包括那句「暂无可定位来源」）。
     sources.value = []
+    searchedQuery.value = ''
+    deniedRows.value = []
+    bindingNoticeText.value = ''
+    closeSourceContext()
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
     await loadGenerationCandidates(chapter.value?.id)
@@ -400,9 +479,15 @@ async function searchSources() {
   if (!project.value || busy.value || !sourceQuery.value.trim() || assets.value.length === 0) return
   busy.value = true
   errorMessage.value = ''
+  // 上一次的结论先撤掉：留着它，一次正在飞行的检索会顶着一句「有资料未获授权」，
+  // 而那句话说的是上一次的问题、上一次的资料范围。
+  deniedRows.value = []
+  const query = sourceQuery.value.trim()
   try {
-    const result = await retrieveSources(project.value.id, sourceQuery.value.trim(), assets.value.map(item => item.id))
+    const result = await retrieveSources(project.value.id, query, assets.value.map(item => item.id))
     sources.value = result.data
+    searchedQuery.value = query
+    closeSourceContext()
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
@@ -414,21 +499,60 @@ async function refreshSource(sourceId: string) {
   try {
     const result = await getSource(project.value.id, sourceId)
     sources.value = sources.value.map(item => item.id === sourceId ? result.data : item)
+    // 面板里那一份是重新定位**之前**的结论。留着不重读，标题说着「可以指回原文」
+    // 而列表那行已经变成了「坐标已不可信」——同一屏上两个相反的结论。
+    if (contextOpenFor.value === sourceId) await loadSourceContext(sourceId)
   } catch (error) { failure(error) }
   finally { busy.value = false }
+}
+
+// 「查看原文」：同页展开这一条引用所在分块的前后邻居，不跳转到知识库页。
+//
+// 展开得了与展开不了都要开面板——展不开的那两种原因（这一段是派生块 / 这条引用此刻失效）
+// 本身就是用户点这一下想知道的事，闷着不显示等于让按钮看起来坏了。
+async function toggleSourceContext(sourceId: string) {
+  if (contextOpenFor.value === sourceId) {
+    closeSourceContext()
+    return
+  }
+  await loadSourceContext(sourceId)
+}
+
+async function loadSourceContext(sourceId: string) {
+  if (!project.value || contextBusy.value) return
+  const projectId = project.value.id
+  contextBusy.value = true
+  contextSourceId.value = sourceId
+  sourceContext.value = null
+  errorMessage.value = ''
+  try {
+    const result = await getSourceContext(projectId, sourceId)
+    // 慢响应回来时可能已经换了项目、或点了另一条来源：别人的上下文不能贴到这一条上。
+    if (project.value?.id === projectId && contextSourceId.value === sourceId) sourceContext.value = result.data
+  } catch (error) { failure(error) }
+  finally { contextBusy.value = false }
+}
+
+function closeSourceContext() {
+  contextSourceId.value = ''
+  sourceContext.value = null
 }
 
 async function bindProjectAsset() {
   if (!project.value || busy.value || !knowledgeId.value.trim()) return
   busy.value = true
   errorMessage.value = ''
+  bindingNoticeText.value = ''
   const projectId = project.value.id
   const input = { knowledge_id: knowledgeId.value.trim() }
   const key = operationKey(`asset:${projectId}`, input)
   try {
-    await bindAsset(projectId, input.knowledge_id, key)
+    // 响应体就是绑定后的那一份资料（带 processing_state）。此前它被丢掉了，于是
+    // 「绑定成功但还没就绪」这件事在界面上完全没有痕迹——只见它 201 之后从列表里消失。
+    const bound = await bindAsset(projectId, input.knowledge_id, key)
     attempts.delete(`asset:${projectId}`)
     knowledgeId.value = ''
+    bindingNoticeText.value = bindingNotice(bound.data)
     const refreshed = await listAssets(projectId)
     assets.value = refreshed.data ?? []
   } catch (error) { failure(error) }
@@ -724,6 +848,26 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .candidate-list ul { display: grid; gap: 6px; padding-left: 20px; }
 .candidate-preview { margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
 .candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.binding-notice { padding: 10px 12px; background: #fff8ec; border: 1px solid #e6c98a; border-radius: 7px; color: #6b5a2e; font-size: 13px; }
+.denied-sources { margin: 12px 0; padding: 12px 16px; background: #fff1ee; border: 1px solid #eea99e; border-radius: 8px; font-size: 13px; }
+.denied-sources ul { display: grid; gap: 8px; margin: 8px 0; padding-left: 20px; }
+.denied-sources li { display: grid; gap: 2px; }
+.denied-sources small { color: #6b7670; font-size: 12px; }
+.source-list { list-style: none; padding: 0; display: grid; gap: 10px; }
+.source-list > li { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
+.source-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.source-head span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.source-head small { color: #67746a; font-size: 12px; }
+.source-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.source-quote { margin: 0; font-size: 13px; }
+.source-context { display: grid; gap: 8px; padding: 12px; background: #f7faf8; border: 1px solid #dbe5dd; border-radius: 7px; }
+.source-context h4 { margin: 0; font-size: 13px; }
+.source-context p { margin: 0; font-size: 12px; }
+.source-context__segments { display: grid; gap: 8px; margin: 0; padding-left: 20px; }
+.source-context__segments li { display: grid; gap: 3px; font-size: 13px; }
+.source-context__segments p { font-size: 13px; }
+.source-context__segments small { color: #6b7670; font-size: 12px; }
+.source-context__segments .is-verbatim > small:first-child { color: #238a52; font-weight: 600; }
 .chapter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .access-warning { display: grid; gap: 10px; margin: 22px 0 0; padding: 14px 16px; background: #fff8ec; border: 1px solid #e6c98a; border-radius: 8px; }
 .access-warning h3 { margin: 0; font-size: 15px; }

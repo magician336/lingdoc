@@ -62,6 +62,7 @@ func (h *Handler) Register(v1 *gin.RouterGroup) {
 	group.POST("/projects/:projectId/assets", h.bindAsset)
 	group.POST("/projects/:projectId/retrieval", h.retrieveSources)
 	group.GET("/projects/:projectId/sources/:sourceId", h.getSource)
+	group.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	group.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	group.GET("/projects/:projectId/access-status", h.accessStatus)
 }
@@ -433,70 +434,44 @@ func (h *Handler) bindAsset(c *gin.Context) {
 	sendOK(c, status, asset, replay)
 }
 
+// getSource 与 getSourceContext 都只有这一层：判定链在 readSource 里，
+// 两条 URL 因此对同一个 sourceId 给同一个结论。
 func (h *Handler) getSource(c *gin.Context) {
 	actor, ok := identity(c)
 	if !ok {
 		return
 	}
-	projectID, sourceID := c.Param("projectId"), c.Param("sourceId")
-	if err := h.service.Authorize(c.Request.Context(), actor, projectID, "read"); err != nil {
-		sendError(c, err)
-		return
-	}
-	var chunk types.Chunk
-	if err := h.db.WithContext(c.Request.Context()).Where("id = ?", sourceID).First(&chunk).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			sendError(c, ErrNotFound)
-		} else {
-			sendError(c, err)
-		}
-		return
-	}
-	asset, err := h.bindings.AssetForKnowledge(c.Request.Context(), projectID, chunk.KnowledgeID)
-	if err != nil {
-		sendError(c, ErrNotFound)
-		return
-	}
-	evidenceActor := evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}
-	resolved, err := h.gateway.ResolveAllowed(c.Request.Context(), projectID, evidenceActor, []string{asset.ID})
+	read, err := h.readSource(c.Request.Context(), actor, c.Param("projectId"), c.Param("sourceId"))
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	if len(resolved.Allowed) != 1 {
-		sendError(c, ErrSourceUnavailable)
+	sendOK(c, http.StatusOK, read.Source, false)
+}
+
+// getSourceContext 是「同页展开原文上下文」：在**走完授权与复核之后**才去读
+// 引用块周围的段落，回答「这句话出自哪里」。
+//
+// 与「跳回原文」的区别：它不跳转、不要知识库 ID（Asset 与 Source 都带不了它），
+// 也不重新检索——只把这一条**已产出**引用所在的上下文摊开给人看。展开的是
+// 分块表的文本，不是重新解析原文件得到的逐字原文（后者没有落库，见 ADR-0001）；
+// 每一段是否与原文逐字相符，由段上的 verbatim 如实标注。
+func (h *Handler) getSourceContext(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
 		return
 	}
-	asset = resolved.Allowed[0]
-	hit := &types.SearchResult{ID: chunk.ID, KnowledgeID: chunk.KnowledgeID, ChunkIndex: chunk.ChunkIndex,
-		StartAt: chunk.StartAt, EndAt: chunk.EndAt, Content: chunk.Content,
-		ContentRevision: chunk.ContentRevision, KnowledgeTitle: asset.Title}
-	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
-	sources, err := evidence.NewSourceResolver(origins).Resolve(c.Request.Context(), asset, []*types.SearchResult{hit})
-	if err != nil || len(sources) != 1 {
-		if err != nil {
-			sendError(c, err)
-		} else {
-			sendError(c, ErrNotFound)
-		}
-		return
-	}
-	source := sources[0]
-	policy := evidence.NewSourcePolicy(h.gateway, origins, h.bindings)
-	checked, err := policy.Validate(c.Request.Context(), projectID, evidenceActor, []evidence.Source{source})
+	read, err := h.readSource(c.Request.Context(), actor, c.Param("projectId"), c.Param("sourceId"))
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	if len(checked.Unusable) > 0 {
-		unusable := checked.Unusable[0]
-		if unusable.AssetDeny != "" {
-			sendError(c, ErrSourceUnavailable)
-			return
-		}
-		source.Status = unusable.Status
+	view, err := h.expandSourceContext(c.Request.Context(), read)
+	if err != nil {
+		sendError(c, err)
+		return
 	}
-	sendOK(c, http.StatusOK, source, false)
+	sendOK(c, http.StatusOK, view, false)
 }
 
 type dbKnowledgeReader struct{ db *gorm.DB }

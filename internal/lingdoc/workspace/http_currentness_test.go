@@ -77,6 +77,10 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			processed_at DATETIME,
 			deleted_at DATETIME
 		)`,
+		// chunk_type / is_enabled 与生产 DDL 同款默认值（migrations/sqlite/000000_init.up.sql）。
+		// 两列各钉一条判据：语境窗口按 chunk_type 分族（text 与 parent_text 各有独立的
+		// chunk_index 空间），而停用是「不参与检索」、不是「不在原文里」——列缺了，
+		// 那两条就无从测起，会安静地退化成「没测」。
 		`CREATE TABLE chunks (
 			id TEXT PRIMARY KEY,
 			tenant_id INTEGER NOT NULL,
@@ -85,6 +89,8 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			content TEXT NOT NULL,
 			content_revision INTEGER NOT NULL DEFAULT 0,
 			chunk_index INTEGER NOT NULL,
+			chunk_type TEXT NOT NULL DEFAULT 'text',
+			is_enabled INTEGER NOT NULL DEFAULT 1,
 			start_at INTEGER NOT NULL,
 			end_at INTEGER NOT NULL,
 			deleted_at DATETIME

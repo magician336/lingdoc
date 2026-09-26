@@ -130,6 +130,16 @@ T14 的交付界面切片读取 ExportArtifact 后，必须按 snapshot_id 调�
 
 上面「读取派生内容先检查所需共同资料权限」这条，本轮只落在 `access-status` 一处。差额记在这里：F07 要求撤权后 `listChapters`、`getCandidate`、`downloadExport` 返 403，而本轮这几个端点在成员仍然有效时依然 200——它们只做项目/成员门禁（`Authorize` 的注释已写明资料授权不在它这一层）。各自读路径补资料层判定属 T15 的另一刀，本轮不做。所以 `access-status` 答 `restricted` 是**提示**而不是拦截：它把恢复入口递到用户面前，并不改变其它端点此刻仍在放行的事实。
 
+**2026-09-26 修正**：上面「只落在 `access-status` 一处」这句已不再准确。**资料域自己的读路径在读取时现查资料授权**：`getSource` 与同日新增的 `GET /projects/{projectId}/sources/{sourceId}/context` 走同一条判定链（身份 → `Authorize` → 查引用块 → 反查资料 → `ResolveAllowed` 要求恰好一条 → `SourcePolicy.Validate` 复核），撤权后两条都答 403 `source_access_denied`（集成用例 `getSource 撤权后 403`、`getSourceContext 撤权后 403 且不泄露正文`）。`listAssets`/`retrieveSources` 走 `ResolveAllowed`：被拒的条目不出现在结果里，或整批 422 并逐项给原因。**差额仍在，但范围缩小了**——F07 点名的那三个端点仍只做项目/成员门禁，仍返 200，仍属 T15。
+
+新增的 `GET /projects/{projectId}/sources/{sourceId}/context` 回答「这一条引用此刻还能不能指回原文、它周围长什么样」：**不跳转**（跳知识库页那条路要 `kbId`，而 `Asset` 与 `Source` 都带不了它）、不要知识库 ID、不重新检索，只把一条**已产出**的引用所在的分块摊开。三点口子必须写清：
+
+- 它展开的是**分块表里的文本**（`chunks.content`），不是重新解析原文件得到的逐字原文——后者没有落库（[ADR-0001](../adr/0001-source-anchor-uses-repo-offsets.md) 第二条后果）。所以每段带 `verbatim`，说的是「这段文字此刻逐字等于原文坐标上的那一段」；拿不到原文（PDF/DOCX 这类要重解析的格式）时它是 `false`，而**正文照样给**，代价是那段正文无法被原文证明。界面上的措辞因此有两种，不能混成一句「原文」。
+- `context_available=false` 只在两种情况下出现：引用块是**派生块**（摘要、图片说明等，本来就没有指向原文的坐标），或它此刻**指不回原文**（`source.status` 非 `available`）。前者不代表引用坏了，后者的原因由 `status` 如实说着。
+- 窗口只在引用块**自己那一族**里扫（`chunk_type` 相同）：`text` 与 `parent_text` 各有独立且稠密的 `chunk_index` 空间，混排会让同一段文字出现两次。命中那一段**不在**窗口里——它是 `source.quoted_text`，窗口只给前后邻居，所以「引用跨块」在这里没有高亮可言。
+
+判据的完整设计（含「为什么判定链必须与 `getSource` 共用一份」）见 [T09 文档](T09-项目资料与来源.md) §3.7。
+
 ## 9. Mock 怎样接真
 
 **界面用固定 HTTP 样例；后端用可注入的小接口固定实现；完整流程用真实服务和测试数据库。** 三者不要混成一个“Mock 全绿”。

@@ -3566,31 +3566,6 @@
             "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ConfirmChapterRequest"
-              },
-              "examples": {
-                "confirmCurrentVersion": {
-                  "value": {
-                    "expected_chapter_version_id": "cv-question-2",
-                    "expected_spec_revision": 1,
-                    "review_decisions": [
-                      {
-                        "review_item_id": "review-1",
-                        "disposition": "retained_warning",
-                        "reason": "仅作内部演示，保留该项并随文件明确列出。"
-                      }
-                    ]
-                  }
-                }
-              }
-            }
-          }
-        },
         "responses": {
           "201": {
             "description": "Owner确认当前章节版本",
@@ -4982,6 +4957,376 @@
                         "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
                         "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
                         "status": "available"
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "stale_input": {
+                    "value": {
+                      "error": {
+                        "code": "stale_input",
+                        "message": "候选稿或快照基于旧输入。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "insufficient_evidence": {
+                    "value": {
+                      "error": {
+                        "code": "insufficient_evidence",
+                        "message": "允许资料不足以生成该章节。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "asset_not_ready": {
+                    "value": {
+                      "error": {
+                        "code": "asset_not_ready",
+                        "message": "资料尚未处理完成。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "preflight_blocked": {
+                    "value": {
+                      "error": {
+                        "code": "preflight_blocked",
+                        "message": "请先处理交付阻断项。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "rate_limited": {
+                    "value": {
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "请求过多，请稍后重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "evidence"
+      }
+    },
+    "/projects/{projectId}/sources/{sourceId}/context": {
+      "get": {
+        "operationId": "getSourceContext",
+        "tags": [
+          "evidence"
+        ],
+        "summary": "展开引用处的原文上下文",
+        "description": "同页展开：在**走完授权与复核之后**才读引用块周围的段落，回答「这句话出自哪里」。与「跳回原文」不同——不跳转、不要知识库 ID（Asset 与 Source 都带不了它），也不重新检索。展开的是分块表的文本，不是重新解析原文件得到的逐字原文（后者没有落库，见 ADR-0001）；每一段是否与原文逐字相符由段上的 verbatim 如实标注，取不回原文时正文照样给而 verbatim 为 false。窗口按 chunk_index 取**同族**邻居（text 与 parent_text 各有独立索引空间），派生块（summary/image_ocr/…）没有指向原文的坐标，不可展开。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "展开引用处的原文上下文",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceContextResponse"
+                },
+                "examples": {
+                  "success": {
+                    "value": {
+                      "data": {
+                        "source": {
+                          "id": "s-demo",
+                          "project_id": "p-demo",
+                          "asset_id": "a-demo",
+                          "asset_revision": 1,
+                          "locator": "测试段落 1",
+                          "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                          "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                          "status": "available"
+                        },
+                        "context_available": true,
+                        "window": {
+                          "before": 1,
+                          "after": 1
+                        },
+                        "segments": [
+                          {
+                            "source_id": "s-demo-prev",
+                            "chunk_index": 0,
+                            "relation": "before",
+                            "verbatim": true,
+                            "text": "合成测试材料：第 0 段，仅用于软件测试。"
+                          },
+                          {
+                            "source_id": "s-demo-next",
+                            "chunk_index": 2,
+                            "relation": "after",
+                            "verbatim": false,
+                            "text": ""
+                          }
+                        ]
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "not_expandable": {
+                    "value": {
+                      "data": {
+                        "source": {
+                          "id": "s-demo",
+                          "project_id": "p-demo",
+                          "asset_id": "a-demo",
+                          "asset_revision": 1,
+                          "locator": "测试段落 1",
+                          "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                          "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                          "status": "available"
+                        },
+                        "context_available": false,
+                        "window": {
+                          "before": 1,
+                          "after": 1
+                        },
+                        "segments": []
                       },
                       "request_id": "req-demo",
                       "meta": {
@@ -13424,6 +13769,105 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/AccessStatus"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContextWindow": {
+        "type": "object",
+        "properties": {
+          "before": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "after": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "before",
+          "after"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContextSegment": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chunk_index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "before",
+              "after"
+            ]
+          },
+          "verbatim": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "chunk_index",
+          "relation",
+          "verbatim",
+          "text"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContext": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/Source"
+          },
+          "context_available": {
+            "type": "boolean"
+          },
+          "window": {
+            "$ref": "#/components/schemas/SourceContextWindow"
+          },
+          "segments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourceContextSegment"
+            }
+          }
+        },
+        "required": [
+          "source",
+          "context_available",
+          "window",
+          "segments"
+        ],
+        "additionalProperties": false
+      },
+      "SourceContextResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SourceContext"
           },
           "request_id": {
             "type": "string"
