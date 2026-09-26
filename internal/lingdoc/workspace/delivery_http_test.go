@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -544,5 +545,172 @@ func TestDeliveryReleaseScopesTheIdempotencyKeyToItsActor(t *testing.T) {
 	}
 	if second.SnapshotDigest != created.SnapshotDigest {
 		t.Fatalf("digests = %s / %s, want the same content to digest the same", second.SnapshotDigest, created.SnapshotDigest)
+	}
+}
+
+// listSnapshots 读一次交付历史。四种断言（形状、当前性、截断、隔离）都要先取到它，
+// 取法只有一种，写成一处。
+func listSnapshots(t *testing.T, router *gin.Engine, projectID string) []delivery.ReleaseSnapshot {
+	t.Helper()
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, "/api/v1/lingdoc/projects/"+projectID+"/releases", "", ""))
+	if listed.Code != http.StatusOK {
+		t.Fatalf("GET releases = %d, want 200: %s", listed.Code, listed.Body.String())
+	}
+	var data struct {
+		Items []delivery.ReleaseSnapshot `json:"items"`
+	}
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, listed).Data, &data); err != nil {
+		t.Fatalf("decode listed snapshots: %v", err)
+	}
+	return data.Items
+}
+
+// compareListItemsWithPublishedExample 把列表响应里的每一条与**单条**样例对齐。
+//
+// 整包比不了：列表的 data 上没有 status，compareWithPublishedExample 于是退回样例并集，
+// 而并集里有 blocked 样例才有的 issues[].rule_id——一条 passed 的快照没有那个字段，
+// 比出来必红。拆开就对了：信封判信封（items 与 truncated 两个键都在），元素判元素。
+// 元素正是 getRelease / getExport 已经发布过的那张单条形状，连按 status 分流都能照用。
+//
+// 返回解析出的元素，好让调用方自己断言条数：**空列表会跳过整轮比较**，那时这条用例
+// 什么都没比，而「该有几条」只有调用方知道。
+func compareListItemsWithPublishedExample(t *testing.T, listOperationID, itemOperationID, status string, data json.RawMessage, minFields ...int) []json.RawMessage {
+	t.Helper()
+	var envelope struct {
+		Items     []json.RawMessage `json:"items"`
+		Truncated *bool             `json:"truncated"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		t.Fatalf("decode %s data: %v", listOperationID, err)
+	}
+	// truncated 用指针接：契约把它标成 required，而「false」与「字段不在」必须分得开，
+	// bool 的零值恰好也是 false。
+	if envelope.Truncated == nil {
+		t.Fatalf("%s 的 data 里没有 truncated：%s", listOperationID, data)
+	}
+	if envelope.Items == nil {
+		t.Fatalf("%s 的 data 里没有 items 数组：%s", listOperationID, data)
+	}
+	for _, item := range envelope.Items {
+		compareWithPublishedExample(t, itemOperationID, status, item, minFields...)
+	}
+	return envelope.Items
+}
+
+// 交付历史的读侧：响应要对得上契约发布的形状，且 items 里的每一条就是 getRelease
+// 发布过的那张单条形状——列表不是第二种快照表示。
+func TestDeliveryListAnswersTheContractShape(t *testing.T) {
+	handler, _ := newDeliveryHTTPHandler(t)
+	router := deliveryRoutes(handler)
+	created := freezeRelease(t, router, deliveryFreezeKey)
+
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/releases", "", ""))
+	if listed.Code != http.StatusOK {
+		t.Fatalf("GET releases = %d, want 200: %s", listed.Code, listed.Body.String())
+	}
+	envelope := decodeDeliveryEnvelope(t, listed)
+	if envelope.Meta.Replayed {
+		t.Fatal("a read is reported as a replay")
+	}
+	items := compareListItemsWithPublishedExample(t, "listReleases", "getRelease", "200", envelope.Data)
+	if len(items) != 1 {
+		t.Fatalf("listed %d snapshots, want the one that was frozen", len(items))
+	}
+	var readBack delivery.ReleaseSnapshot
+	if err := json.Unmarshal(items[0], &readBack); err != nil {
+		t.Fatalf("decode listed snapshot: %v", err)
+	}
+	if readBack.ID != created.ID || readBack.SnapshotDigest != created.SnapshotDigest {
+		t.Fatalf("listed %s/%s, want the frozen %s/%s", readBack.ID, readBack.SnapshotDigest, created.ID, created.SnapshotDigest)
+	}
+}
+
+// 契约 §7 要求界面在每次刷新时拿到**重算过**的当前性。列表是最容易违反这条的地方：
+// 交回冻结时记下的那个值，历史里每一条都会永远自称「当前内容」。
+//
+// 这条用例同时盯住另一半：工作区变了，动的是**结论**，不是快照——frozen_input 与
+// digest 必须停在冻结那一刻。那正是「冻结后内容变化不改变快照」看得见的样子。
+func TestDeliveryListRecomputesCurrentnessAgainstTheLiveWorkspace(t *testing.T) {
+	handler, db := newDeliveryHTTPHandler(t)
+	router := deliveryRoutes(handler)
+	created := freezeRelease(t, router, deliveryFreezeKey)
+
+	before := listSnapshots(t, router, "project-1")
+	if len(before) != 1 || !before[0].IsCurrent {
+		t.Fatalf("listed %+v, want the freshly frozen snapshot to read as current", before)
+	}
+
+	// 工作区往前走了。冻结本身不改项目版本，所以这一步就是「冻结之后又编辑过」。
+	if err := db.Exec("UPDATE lingdoc_projects SET project_version = project_version + 1 WHERE id = ?", "project-1").Error; err != nil {
+		t.Fatalf("move the project on: %v", err)
+	}
+
+	after := listSnapshots(t, router, "project-1")
+	if len(after) != 1 {
+		t.Fatalf("listed %d snapshots, want the same one", len(after))
+	}
+	if after[0].IsCurrent {
+		t.Fatal("一份已经不再代表工作区的快照被列表报成了当前内容")
+	}
+	if after[0].ID != created.ID || after[0].SnapshotDigest != created.SnapshotDigest {
+		t.Fatalf("快照本身动了：%s/%s，want %s/%s", after[0].ID, after[0].SnapshotDigest, created.ID, created.SnapshotDigest)
+	}
+	if after[0].FrozenInput.ProjectVersion != deliveryProjectVersion {
+		t.Fatalf("冻结输入记的项目版本变成了 %d，它该停在冻结那一刻的 %d",
+			after[0].FrozenInput.ProjectVersion, deliveryProjectVersion)
+	}
+
+	// 单条读取与列表必须给同一个答案。两处各判一次的话，迟早一个说当前、一个说历史，
+	// 而那时没人知道该信哪一个。
+	got := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/releases/"+created.ID, "", ""))
+	var readBack delivery.ReleaseSnapshot
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, got).Data, &readBack); err != nil {
+		t.Fatalf("decode read-back snapshot: %v", err)
+	}
+	if readBack.IsCurrent {
+		t.Fatal("getRelease 与 listReleases 对同一份快照给了两个结论")
+	}
+}
+
+// 契约 §3：列表设了上限就必须显式提示截断，界面不能把截断后的列表当成全部历史。
+func TestDeliveryListReportsTruncation(t *testing.T) {
+	handler, _ := newDeliveryHTTPHandler(t)
+	router := deliveryRoutes(handler)
+
+	// 每个键是一次独立的用户动作，所以每一条都真的落进历史。
+	for index := 0; index <= deliveryHistoryLimit; index++ {
+		freezeRelease(t, router, fmt.Sprintf("freeze-action-%d", index))
+	}
+
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/releases", "", ""))
+	var data struct {
+		Items     []json.RawMessage `json:"items"`
+		Truncated bool              `json:"truncated"`
+	}
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, listed).Data, &data); err != nil {
+		t.Fatalf("decode listed snapshots: %v", err)
+	}
+	if len(data.Items) != deliveryHistoryLimit {
+		t.Fatalf("listed %d snapshots, want the %d之限", len(data.Items), deliveryHistoryLimit)
+	}
+	if !data.Truncated {
+		t.Fatal("列表被截断了却没有报 truncated——界面会把这一屏当成全部历史")
+	}
+}
+
+// 历史按项目隔离：另一个项目读不到这个项目的交付记录，而它读到的也不是一个错误
+// ——「我没有交付历史」是个正常答案。
+func TestDeliveryListScopesHistoryToTheProject(t *testing.T) {
+	handler, _ := newDeliveryHTTPHandler(t)
+	router := deliveryRoutes(handler)
+	freezeRelease(t, router, deliveryFreezeKey)
+
+	other := deliveryServe(router, deliveryRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-other/releases", "", ""))
+	if other.Code != http.StatusOK {
+		t.Fatalf("GET another project's releases = %d, want 200: %s", other.Code, other.Body.String())
+	}
+	items := compareListItemsWithPublishedExample(t, "listReleases", "getRelease", "200", decodeDeliveryEnvelope(t, other).Data)
+	if len(items) != 0 {
+		t.Fatalf("另一个项目看到了 %d 条不属于它的交付历史", len(items))
 	}
 }

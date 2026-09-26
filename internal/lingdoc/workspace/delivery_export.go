@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
@@ -70,6 +71,41 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 		return delivery.ExportArtifact{}, nil, candidateadoption.ErrInvalidState
 	}
 	return s.service(ctx).Download(actorID, projectID, exportID)
+}
+
+// List 列出项目导出过的产物，新的在前。
+//
+// 与 DeliveryReleaseService.List 分开而不是合成一个「交付历史」：两者读的是两个库，
+// 各自的授权口径与截断都要能单独演进。界面把它们按 snapshot_id 拼起来是界面的事，
+// 服务端不为了少一次请求而在这一层做一次跨库连接。
+//
+// 产物本身没有「当前性」——当前与否是**快照**的属性（同一个快照的几个产物共享同一个
+// 结论）。所以这里不做重算，界面拿到 ExportArtifact.snapshot_id 之后按契约 §7 去读
+// getRelease。
+func (s *DeliveryExportService) List(ctx context.Context, actorID, projectID string) ([]delivery.ExportArtifact, bool, error) {
+	if s == nil || s.inputs == nil || s.exports == nil {
+		return nil, false, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
+		return nil, false, candidateadoption.ErrInvalidRequest
+	}
+	// 先判成员再列，与同一包里三处读操作同一条：非成员不该从「空列表」与
+	// 「没权限」的差别里问出某个项目导出过什么。
+	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		return nil, false, err
+	}
+	lister, ok := s.exports.(delivery.ExportLister)
+	if !ok {
+		return nil, false, candidateadoption.ErrInvalidState
+	}
+	artifacts, err := lister.ListExports(projectID)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(artifacts) > deliveryHistoryLimit {
+		return artifacts[:deliveryHistoryLimit], true, nil
+	}
+	return artifacts, false, nil
 }
 
 // service 现建一台绑定本次请求上下文的 ExportService。

@@ -7,17 +7,22 @@ import (
 )
 
 // DeliveryHandler 是 T13 的传输层：契约里的 checkCurrent、prepareRelease、
-// getRelease 三个操作。
+// getRelease、listReleases 四个操作。
 //
 // 为什么另立一个 handler 而不是把这三个方法挂到 workspace.Handler 上：本层要读的
 // 交付输入正是由 workspace.Handler 的交付输入构建器产出的，挂回去就成环——服务依赖
 // handler，handler 又依赖服务。这里只持有**已经装好**的那台服务，不再回头拿东西。
 //
-// 契约把这三个入口标为「容量有余才启用的独立 HTTP 入口，核心流程不依赖本接口」，
+// 契约把检查与冻结标为「容量有余才启用的独立 HTTP 入口，核心流程不依赖本接口」，
 // 同一句话里也写了领域函数必须实现。领域函数在 DeliveryReleaseService 里；这里做的是
 // 把身份、幂等键、版本号这些线上形状翻译成它的入参，再把它的结论按契约的信封发出去。
-// 导出的三个操作属于 T14（真实导出与下载），它还需要 T05 那台渲染器的生产实现，
+// 导出的四个操作属于 T14（真实导出与下载），它还需要 T05 那台渲染器的生产实现，
 // 不在这里假装可用。
+//
+// listReleases 与它们不同：界面上的交付历史只能从服务端来（本地记账撑不住「刷新交付
+// 页」，而契约 §7 要求刷新后仍要显示当前性），所以它标的是 core 而不是「容量有余才
+// 启用」。它也是这里唯一不读请求体的操作——问「这个项目交付过什么」不需要调用方先
+// 声明一个版本。
 type DeliveryHandler struct {
 	service *DeliveryReleaseService
 }
@@ -39,6 +44,7 @@ func RegisterDeliveryRoutes(r gin.IRouter, h *DeliveryHandler) {
 	}
 	r.POST("/projects/:projectId/checks", h.Check)
 	r.POST("/projects/:projectId/releases", h.Prepare)
+	r.GET("/projects/:projectId/releases", h.List)
 	r.GET("/projects/:projectId/releases/:snapshotId", h.Get)
 }
 
@@ -108,6 +114,23 @@ func (h *DeliveryHandler) Get(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, snapshot, false)
+}
+
+// List 列出项目冻结过的快照，新的在前。契约 §3：列表设了上限就必须显式提示截断，
+// 所以 truncated 与 items 一起发出去——界面不能把截断后的列表当成全部历史。
+func (h *DeliveryHandler) List(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	snapshots, truncated, err := h.service.List(c.Request.Context(), actor.UserID, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	// 非分页列表没有「重放」可言，meta.replayed 恒为 false。契约的 envelope 只有一个，
+	// 不为读操作另造一个不带 meta 的。
+	sendOK(c, http.StatusOK, gin.H{"items": snapshots, "truncated": truncated}, false)
 }
 
 func (h *DeliveryHandler) readVersion(c *gin.Context) (readVersion, bool) {

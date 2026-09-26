@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -113,6 +114,15 @@ type ExportRecorder interface {
 	RecordExport(artifact ExportArtifact, attempt ExportAttempt, requestHash string) (ExportArtifact, bool, error)
 }
 
+// ExportLister 是 ExportStore 的可选能力：列出项目下导出过的产物。理由与
+// SnapshotLister 逐字相同——交付页问的是「这个项目导出过什么」，不是
+// 「哪一次动作产出了它」。
+type ExportLister interface {
+	// ListExports 返回该项目下的产物，新的在前。项目没有产物时返回空切片而不是
+	// nil——调用方要区分「没有导出过」与「读失败」。
+	ListExports(projectID string) ([]ExportArtifact, error)
+}
+
 // ExportAccessChecker enforces the caller's present project access at both
 // export creation and download time. A previous successful export must not
 // become a back door after membership is revoked.
@@ -163,6 +173,26 @@ func (s *MemoryExportStore) GetExport(projectID, exportID string) (ExportArtifac
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.stored(projectID, exportID)
+}
+
+func (s *MemoryExportStore) ListExports(projectID string) ([]ExportArtifact, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	matches := make([]ExportArtifact, 0, len(s.exports))
+	for _, artifact := range s.exports {
+		if artifact.ProjectID == projectID {
+			matches = append(matches, cloneExport(artifact))
+		}
+	}
+	// 新的在前，与 ListSnapshots 同一条：同一时刻产出的两份按 ID 定序，
+	// 免得顺序随 map 遍历次序漂。
+	sort.Slice(matches, func(i, j int) bool {
+		if !matches[i].CreatedAt.Equal(matches[j].CreatedAt) {
+			return matches[i].CreatedAt.After(matches[j].CreatedAt)
+		}
+		return matches[i].ID < matches[j].ID
+	})
+	return matches, nil
 }
 
 func (s *MemoryExportStore) ReplayExport(attempt ExportAttempt, requestHash string) (ExportArtifact, bool, error) {

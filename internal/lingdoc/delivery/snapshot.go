@@ -162,6 +162,17 @@ type FreezeRecorder interface {
 	RecordFreeze(snapshot ReleaseSnapshot, attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error)
 }
 
+// SnapshotLister 是 SnapshotStore 的可选能力：列出项目下冻结过的快照。
+//
+// 它与 FreezeRecorder 分成两个接口，是因为两者服务的是不同的问法：重放问
+// 「这一次动作冻出了什么」，列表问「这个项目的交付历史长什么样」。挂在同一个
+// 接口上会让只读的交付页也被迫去实现一份动作记录。
+type SnapshotLister interface {
+	// ListSnapshots 返回该项目下的快照，新的在前。项目没有快照时返回空切片而不是
+	// nil——调用方要区分「没有历史」与「读失败」，两者都不该由 nil 来表达。
+	ListSnapshots(projectID string) ([]ReleaseSnapshot, error)
+}
+
 // freezeRecord 是一次动作冻出来的东西。请求指纹用来把「重试」与「换了请求却
 // 复用同一个键」分开——契约 §6 要求对前者换回原结果、对后者报冲突。
 type freezeRecord struct {
@@ -202,6 +213,26 @@ func (s *MemorySnapshotStore) Get(projectID, snapshotID string) (ReleaseSnapshot
 		return ReleaseSnapshot{}, fmt.Errorf("%w: %s", ErrSnapshotNotFound, snapshotID)
 	}
 	return cloneSnapshot(snapshot), nil
+}
+
+func (s *MemorySnapshotStore) ListSnapshots(projectID string) ([]ReleaseSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	matches := make([]ReleaseSnapshot, 0, len(s.snapshots))
+	for _, snapshot := range s.snapshots {
+		if snapshot.ProjectID == projectID {
+			matches = append(matches, cloneSnapshot(snapshot))
+		}
+	}
+	// 新的在前。同一时刻冻下的两份（固定时钟的测试里会遇到）再按 ID 定序：
+	// 少了这个兜底，顺序会随 map 的遍历次序漂，同一份历史两次读到两个样子。
+	sort.Slice(matches, func(i, j int) bool {
+		if !matches[i].CreatedAt.Equal(matches[j].CreatedAt) {
+			return matches[i].CreatedAt.After(matches[j].CreatedAt)
+		}
+		return matches[i].ID < matches[j].ID
+	})
+	return matches, nil
 }
 
 func (s *MemorySnapshotStore) ReplayFreeze(attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error) {

@@ -11,6 +11,11 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 )
 
+// deliveryHistoryLimit 是交付历史列表的上限，快照与产物共用。契约 §3：列表面向
+// 演示规模，不引入通用分页平台；若设上限，必须显式提示截断。取 50 与
+// listProjects 同值，两处历史在界面上看起来才是同一种东西。
+const deliveryHistoryLimit = 50
+
 // DeliveryReleaseService 是 T13 在被装配起来之后的那一份：读 T12 的交付输入、
 // 补成冻结输入、再交给 T13 的检查与冻结。
 //
@@ -134,6 +139,51 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 		return delivery.ReleaseSnapshot{}, err
 	}
 	return s.releases(ctx).Get(projectID, snapshotID)
+}
+
+// List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。
+//
+// 重算的理由与 Get 逐字相同，只是这一次对整份历史做：列表里交回冻结时记下的
+// is_current，等于让翻到第三屏的旧标签冒充当前状态。契约 §7 要求界面在「页面刷新、
+// 重新打开、本地编辑成功、展示下载入口时」更新当前性，那个要求能成立的前提正是
+// 每次刷新都拿到重算过的值，而不是存下来的那个。
+//
+// 第二个返回值说的是「这份历史被截断了」——契约 §3 要求设了上限就必须显式提示，
+// 界面不能把截断后的列表当成全部历史。
+func (s *DeliveryReleaseService) List(ctx context.Context, actorID, projectID string) ([]delivery.ReleaseSnapshot, bool, error) {
+	if s == nil || s.inputs == nil || s.store == nil {
+		return nil, false, candidateadoption.ErrInvalidState
+	}
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
+		return nil, false, candidateadoption.ErrInvalidRequest
+	}
+	// 与 Get 同一条顺序：先判成员再列。反过来的话，非成员能从「空列表」与
+	// 「没权限」的差别里问出某个项目有没有冻结过东西。
+	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		return nil, false, err
+	}
+	lister, ok := s.store.(delivery.SnapshotLister)
+	if !ok {
+		return nil, false, candidateadoption.ErrInvalidState
+	}
+	snapshots, err := lister.ListSnapshots(projectID)
+	if err != nil {
+		return nil, false, err
+	}
+	// 先截断再重算，而不是算完再截断：重算一条要读一次整个工作区，被截掉的那些
+	// 算出来也没人要。响应一模一样，读的次数从「历史有多长」降到「界面看得到几条」。
+	truncated := len(snapshots) > deliveryHistoryLimit
+	if truncated {
+		snapshots = snapshots[:deliveryHistoryLimit]
+	}
+	for index := range snapshots {
+		current, err := s.stillCurrent(ctx, snapshots[index].FrozenInput)
+		if err != nil {
+			return nil, false, err
+		}
+		snapshots[index].IsCurrent = current
+	}
+	return snapshots, truncated, nil
 }
 
 // assemble 是一次「读 T12 → 补 T13」：读的那一步已经在可重复读事务里取齐了

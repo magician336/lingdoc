@@ -22,13 +22,17 @@ const exportFormatDOCX = "docx"
 // 所以它漂开的那天用例先红，而不是等前端拿着一个 404 的地址回来问。
 const downloadPathPrefix = "/api/v1/lingdoc"
 
-// DeliveryExportHandler 是 T14 的传输层：契约里的 startExport、getExport 与
-// downloadExport 三个操作。
+// DeliveryExportHandler 是 T14 的传输层：契约里的 startExport、getExport、
+// downloadExport 与 listExports 四个操作。
 //
 // 为什么另立一个 handler 而不挂到 DeliveryHandler 上：本层要读的交付输入正是由
 // workspace.Handler 的交付输入构建器产出的，挂回去就成环。这里只持有**已经装好**的
-// 那台服务，不再回头拿东西。T13 那一批的结尾写着「导出的三个操作属于 T14」，
+// 那台服务，不再回头拿东西。T13 那一批的结尾写着「导出的操作属于 T14」，
 // 这里就是那句话兑现的地方。
+//
+// listExports 与另外三个不同：那三个是「对一个已知的快照做点什么」，它回答的是
+// 「这个项目导出过什么」。界面上的产物列表只能从服务端来——契约 §7 要求刷新交付页
+// 之后仍能按 snapshot_id 显示当前性，而前端自己记账撑不住刷新。
 type DeliveryExportHandler struct {
 	service *DeliveryExportService
 }
@@ -49,6 +53,7 @@ func RegisterDeliveryExportRoutes(r gin.IRouter, h *DeliveryExportHandler) {
 		return
 	}
 	r.POST("/projects/:projectId/releases/:snapshotId/exports", h.Start)
+	r.GET("/projects/:projectId/exports", h.List)
 	r.GET("/projects/:projectId/exports/:exportId", h.Get)
 	// 契约里这条是 /file，不是 /download。
 	r.GET("/projects/:projectId/exports/:exportId/file", h.Download)
@@ -121,6 +126,28 @@ func (h *DeliveryExportHandler) Start(c *gin.Context) {
 
 // Get 读一份产物的状态。它不返回字节——下载要单独走一次，因为**下载那一刻**的
 // 授权必须重查一次。
+// List 列出项目导出过的产物，新的在前。契约 §3：列表设了上限就必须显式提示截断。
+//
+// 交出去的是每一项都过一遍 artifactView 的视图，不是内部结构体——列表里同样要满足
+// 「file_sha256 与 download_path 是 required + nullable」这条，不能因为「只是列表」
+// 就少走一次翻译。
+func (h *DeliveryExportHandler) List(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	artifacts, truncated, err := h.service.List(c.Request.Context(), actor.UserID, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	items := make([]exportArtifactView, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		items = append(items, artifactView(artifact))
+	}
+	sendOK(c, http.StatusOK, gin.H{"items": items, "truncated": truncated}, false)
+}
+
 func (h *DeliveryExportHandler) Get(c *gin.Context) {
 	actor, ok := identity(c)
 	if !ok {

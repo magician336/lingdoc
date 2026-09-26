@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -29,6 +30,12 @@ const (
 	deliveryExportBody = `{"format":"docx"}`
 	// 一次导出动作的幂等键（8..128 字符）。
 	deliveryExportKey = "export-action-http-1"
+
+	// compareWithPublishedExample 的「这条用例有没有在比什么」下限。导出产物的契约
+	// 样例本来就短：verified 只有 6 个字段路径，failed 多一个 error 对象是 9 个。
+	// 默认的 10 会把两条都误报成「没比什么」——那不是响应缺字段，是样例本来就窄。
+	exportVerifiedMinFields = 6
+	exportFailedMinFields   = 9
 )
 
 // switchableAuthorizer 先放行、后撤权，用来演 F07：**已经导出成功过**的文件，
@@ -281,14 +288,14 @@ func TestExportRoutesAnswerTheShapeTheContractPublished(t *testing.T) {
 	}
 	// 契约给 startExport 只发布了 queued 那一条样例；我们答的是 verified，与它没有
 	// 同状态的样例可比，于是退回并集——并集就是那 6 条路径，结果一样。
-	compareWithPublishedExample(t, "startExport", "202", decodeDeliveryEnvelope(t, started).Data, 6)
+	compareWithPublishedExample(t, "startExport", "202", decodeDeliveryEnvelope(t, started).Data, exportVerifiedMinFields)
 
 	artifact := startExportOf(t, router, snapshot.ID)
 	got := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/exports/"+artifact.ID, "", ""))
 	if got.Code != http.StatusOK {
 		t.Fatalf("getExport = %d, want 200: %s", got.Code, got.Body.String())
 	}
-	compareWithPublishedExample(t, "getExport", "200", decodeDeliveryEnvelope(t, got).Data, 6)
+	compareWithPublishedExample(t, "getExport", "200", decodeDeliveryEnvelope(t, got).Data, exportVerifiedMinFields)
 }
 
 // 失败的产物对着契约那一份 failed 样例比：error 对象只在 failed 时出现，而它正是
@@ -307,7 +314,7 @@ func TestExportRoutesAnswerTheContractShapeForAFailedArtifact(t *testing.T) {
 	if got.Code != http.StatusOK {
 		t.Fatalf("getExport = %d, want 200: %s", got.Code, got.Body.String())
 	}
-	compareWithPublishedExample(t, "getExport", "200", decodeDeliveryEnvelope(t, got).Data, 9)
+	compareWithPublishedExample(t, "getExport", "200", decodeDeliveryEnvelope(t, got).Data, exportFailedMinFields)
 }
 
 func TestExportRoutesRejectMalformedRequests(t *testing.T) {
@@ -495,6 +502,165 @@ func TestExportFailureCodesCarryTheirOwnRecoveryAdvice(t *testing.T) {
 	}
 	if exportFailureMessage(delivery.FailureValidationFailed) == exportFailureMessage(delivery.FailureRenderFailed) {
 		t.Fatal("a content mismatch reads exactly like a renderer crash")
+	}
+}
+
+// listArtifacts 读一次产物历史。四种断言（形状、次序、可见性、截断）都要先取到它。
+//
+// 与 listSnapshots 用**不同的项目参数**而不是同一个常量：产物列表的隔离用例要的是
+// 「换个项目就是另一个答案」，把路径钉死在一个项目上就测不了那件事。
+func listArtifacts(t *testing.T, router *gin.Engine, projectID string) []json.RawMessage {
+	t.Helper()
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, "/api/v1/lingdoc/projects/"+projectID+"/exports", "", ""))
+	if listed.Code != http.StatusOK {
+		t.Fatalf("GET exports = %d, want 200: %s", listed.Code, listed.Body.String())
+	}
+	var data struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, listed).Data, &data); err != nil {
+		t.Fatalf("decode listed artifacts: %v", err)
+	}
+	return data.Items
+}
+
+// 产物列表的读侧：items 里的每一条就是 getExport 发布过的那张单条形状，不是第二种产物表示。
+func TestExportListAnswersTheContractShape(t *testing.T) {
+	router, _ := newDeliveryExportHandler(t, deliveryTestAuthorizer{})
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	created := startExportOf(t, router, snapshot.ID)
+
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/exports", "", ""))
+	if listed.Code != http.StatusOK {
+		t.Fatalf("GET exports = %d, want 200: %s", listed.Code, listed.Body.String())
+	}
+	envelope := decodeDeliveryEnvelope(t, listed)
+	if envelope.Meta.Replayed {
+		t.Fatal("a read is reported as a replay")
+	}
+	items := compareListItemsWithPublishedExample(t, "listExports", "getExport", "200", envelope.Data, exportVerifiedMinFields)
+	if len(items) != 1 {
+		t.Fatalf("listed %d artifacts, want the one that was exported", len(items))
+	}
+	var readBack publishedArtifact
+	if err := json.Unmarshal(items[0], &readBack); err != nil {
+		t.Fatalf("decode listed artifact: %v", err)
+	}
+	if readBack.ID != created.ID || readBack.SnapshotID != snapshot.ID {
+		t.Fatalf("listed %s/%s, want the exported %s/%s", readBack.ID, readBack.SnapshotID, created.ID, snapshot.ID)
+	}
+	// 列表里的每一条同样是「可空字段是 null 而不是缺席」——列表不是放宽这条的地方，
+	// 否则界面同一个渲染分支要看两种形状。
+	if readBack.FileSHA256 == nil || readBack.DownloadPath == nil {
+		t.Fatalf("a verified artifact listed without its file: %+v", readBack)
+	}
+}
+
+// 新的在前。这条次序是界面画「交付历史」的全部依据：反过来的话，用户每次打开交付页
+// 看到的头一条都是最旧的那份，而最该看见的是刚做出来的。
+//
+// 同一个快照导两次就是两次独立动作，各自一份产物——这正是重放与重试的分界：
+// 同一个键是重放（换回原来那份），换一个键是新动作（多一份）。
+func TestExportListPutsTheNewestFirst(t *testing.T) {
+	router, _ := newDeliveryExportHandler(t, deliveryTestAuthorizer{})
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	first := startExportOf(t, router, snapshot.ID)
+	second, _, status := startExport(t, router, snapshot.ID, deliveryExportKey+"-second")
+	if status != http.StatusAccepted {
+		t.Fatalf("second export = %d, want 202", status)
+	}
+	if second.ID == first.ID {
+		t.Fatal("换了一个键却换回了同一份产物——这就是把新动作当成了重放")
+	}
+
+	items := listArtifacts(t, router, "project-1")
+	if len(items) != 2 {
+		t.Fatalf("listed %d artifacts, want both exports", len(items))
+	}
+	var head, tail publishedArtifact
+	if err := json.Unmarshal(items[0], &head); err != nil {
+		t.Fatalf("decode head: %v", err)
+	}
+	if err := json.Unmarshal(items[1], &tail); err != nil {
+		t.Fatalf("decode tail: %v", err)
+	}
+	if head.ID != second.ID || tail.ID != first.ID {
+		t.Fatalf("listed %s then %s, want the newer %s first", head.ID, tail.ID, second.ID)
+	}
+}
+
+// 失败的产物也留在历史里，带着它自己的失败码。列表把它藏掉的话，用户点过一次导出、
+// 看到一句报错，再打开交付页就只剩一片空白——那读起来像「从没导出过」，而实际是
+// 「导出过、没成」。界面按 Error 显示恢复状态，所以这条路径必须能列出来。
+func TestExportListKeepsFailedExportsVisible(t *testing.T) {
+	router := exportRouterWithUnrenderableBody(t)
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	failed := startExportOf(t, router, snapshot.ID)
+	if failed.Status != string(delivery.ExportFailed) {
+		t.Fatalf("fixture status = %q, want failed", failed.Status)
+	}
+
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/exports", "", ""))
+	items := compareListItemsWithPublishedExample(t, "listExports", "getExport", "200",
+		decodeDeliveryEnvelope(t, listed).Data, exportFailedMinFields)
+	if len(items) != 1 {
+		t.Fatalf("listed %d artifacts, want the failed one to stay visible", len(items))
+	}
+	var readBack publishedArtifact
+	if err := json.Unmarshal(items[0], &readBack); err != nil {
+		t.Fatalf("decode listed artifact: %v", err)
+	}
+	if readBack.ID != failed.ID || readBack.Error == nil {
+		t.Fatalf("listed %+v, want the failed artifact with its failure", readBack)
+	}
+	if readBack.FileSHA256 != nil || readBack.DownloadPath != nil {
+		t.Fatalf("列表里的一份失败产物带着下载地址：%+v", readBack)
+	}
+}
+
+// F04 在列表这一侧的同一件事：产物列表按项目切，别的项目下就是空的。
+//
+// 断言的是**空**而不是 404：列表是一条集合读，成员资格已经由授权判过了，非成员拿不到
+// 200；成员在别的项目下诚实地看到空列表。这两者混起来，界面就没法区分「没有产物」
+// 与「没有权限」。
+func TestExportListScopesArtifactsToTheProject(t *testing.T) {
+	router, _ := newDeliveryExportHandler(t, deliveryTestAuthorizer{})
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	startExportOf(t, router, snapshot.ID)
+
+	if items := listArtifacts(t, router, "project-1"); len(items) != 1 {
+		t.Fatalf("本项目的产物列表有 %d 条，want 1", len(items))
+	}
+	if items := listArtifacts(t, router, "other-project"); len(items) != 0 {
+		t.Fatalf("别的项目下列出了 %d 条产物，want 空", len(items))
+	}
+}
+
+// 契约 §3：列表设了上限就必须显式提示截断。产物这一侧与快照同一道闸。
+func TestExportListReportsTruncation(t *testing.T) {
+	router, _ := newDeliveryExportHandler(t, deliveryTestAuthorizer{})
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+
+	// 每个键是一次独立的导出动作，所以每一份都真的落进历史。
+	for index := 0; index <= deliveryHistoryLimit; index++ {
+		if _, _, status := startExport(t, router, snapshot.ID, fmt.Sprintf("export-action-%d", index)); status != http.StatusAccepted {
+			t.Fatalf("export #%d = %d, want 202", index, status)
+		}
+	}
+
+	listed := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/exports", "", ""))
+	var data struct {
+		Items     []json.RawMessage `json:"items"`
+		Truncated bool              `json:"truncated"`
+	}
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, listed).Data, &data); err != nil {
+		t.Fatalf("decode listed artifacts: %v", err)
+	}
+	if len(data.Items) != deliveryHistoryLimit {
+		t.Fatalf("listed %d artifacts, want the %d之限", len(data.Items), deliveryHistoryLimit)
+	}
+	if !data.Truncated {
+		t.Fatal("列表被截断了却报 truncated=false：界面会把它当成全部历史")
 	}
 }
 
