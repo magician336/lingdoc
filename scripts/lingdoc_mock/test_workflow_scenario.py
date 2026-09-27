@@ -271,6 +271,30 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(combined["summary"], {"passed": 3, "failed": 0, "not_run": 0})
         self.assertEqual(run_one.call_count, 3)
 
+    def test_a_scenario_startup_failure_does_not_discard_other_batch_results(self):
+        def report(scenario_id):
+            all_ids = ["F08", "F05", "F12"]
+            return {
+                "report_version": 1,
+                "executed": {"scenario": scenario_id, "verdict": "passed", "steps": [], "state": {"mismatches": []}},
+                "scenarios": [{"scenario": item, "verdict": "passed" if item == scenario_id else "not_run",
+                               "name": item, "reason": "executed" if item == scenario_id else "not selected"}
+                              for item in all_ids],
+                "summary": {"passed": 1, "failed": 0, "not_run": 2},
+                "not_run": [],
+            }
+
+        with patch.object(module, "run_scenario", side_effect=[report("F08"), WorkflowError("synthetic failure"), report("F12")]):
+            combined = module.run_scenarios(
+                ["F08", "F05", "F12"], SCENARIOS_PATH, OPENAPI_PATH,
+                knowledge={}, member={}, identities={
+                    "u-owner": "test-owner-token", "u-member": "test-member-token",
+                })
+
+        self.assertEqual([item["scenario"] for item in combined["executed"]], ["F08", "F05", "F12"])
+        self.assertEqual([item["verdict"] for item in combined["executed"]], ["passed", "failed", "passed"])
+        self.assertEqual(combined["summary"], {"passed": 2, "failed": 1, "not_run": 0})
+
     def test_duplicate_scenario_ids_are_rejected_before_any_scenario_runs(self):
         with patch.object(module, "run_scenario") as run_one:
             with self.assertRaisesRegex(WorkflowError, "duplicate"):

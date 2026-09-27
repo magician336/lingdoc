@@ -94,10 +94,10 @@
           "actor": "u-owner",
           "expected_http": 200,
           "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
-          "capture": {"f05.chapter_id": "/data/0/id", "f05.owner_version": "/data/0/current_version_id"},
+          "capture": {"f05.chapter_id": "/data/1/id", "f05.owner_version": "/data/1/current_version_id"},
           "assertion": "Owner 读取并留存开始写入前的章节版本。",
           "response_example": "success",
-          "checks": [{"path": "/data/0/section_id", "equals": "question", "intent": "读取的是双方竞争保存的研究问题章节"}]
+          "checks": [{"path": "/data/1/section_id", "equals": "question", "intent": "读取的是双方竞争保存的研究问题章节"}]
         },
         {
           "id": "F05-02",
@@ -105,10 +105,10 @@
           "actor": "u-member",
           "expected_http": 200,
           "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
-          "capture": {"f05.member_version": "/data/0/current_version_id"},
+          "capture": {"f05.member_version": "/data/1/current_version_id"},
           "assertion": "协作者在 Owner 写入前也读取并留存同一版本。",
           "response_example": "success",
-          "checks": [{"path": "/data/0/current_version_id", "equals": "{{f05.owner_version}}", "intent": "两位调用者基于同一个章节版本"}]
+          "checks": [{"path": "/data/1/current_version_id", "equals": "{{f05.owner_version}}", "intent": "两位调用者基于同一个章节版本"}]
         },
         {
           "id": "F05-03",
@@ -150,8 +150,8 @@
           "assertion": "冲突后重新读取，确认只有 Owner 的新版本成为当前版本且正文未丢失。",
           "response_example": "success",
           "checks": [
-            {"path": "/data/0/current_version_id", "equals": "{{f05.written_version}}", "intent": "协作者的冲突写入没有创建另一条当前版本"},
-            {"path": "/data/0/body_markdown", "equals": "{{f05.written_body}}", "intent": "冲突没有覆盖 Owner 已保存的正文"}
+            {"path": "/data/1/current_version_id", "equals": "{{f05.written_version}}", "intent": "协作者的冲突写入没有创建另一条当前版本"},
+            {"path": "/data/1/body_markdown", "equals": "{{f05.written_body}}", "intent": "冲突没有覆盖 Owner 已保存的正文"}
           ]
         }
       ],
@@ -248,10 +248,10 @@
           "actor": "u-owner",
           "expected_http": 200,
           "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
-          "capture": {"f08.chapter_id": "/data/0/id"},
+          "capture": {"f08.chapter_id": "/data/1/id"},
           "assertion": "从本次起点读取章节资源 ID，后续生成请求使用这个响应捕获值。",
           "response_example": "success",
-          "checks": [{"path": "/data/0/section_id", "equals": "question", "intent": "生成请求目标是研究问题章节"}]
+          "checks": [{"path": "/data/1/section_id", "equals": "question", "intent": "生成请求目标是研究问题章节"}]
         },
         {
           "id": "F08-01",

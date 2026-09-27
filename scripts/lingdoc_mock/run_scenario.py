@@ -189,24 +189,34 @@ def step_verdicts(spec, runner: ScenarioRunner) -> list[dict[str, Any]]:
         mismatch = failed_status.get(step_id)
         step_checks = checks.get(step_id, [])
         broken = [check for check in step_checks if check["status"] == "failed"]
+        after_abort = runner.aborted_at is not None and step_id != runner.aborted_at and not answered and not mismatch
+        if after_abort:
+            verdict = "not_run"
+        else:
+            verdict = "failed" if mismatch or broken else "passed"
         if answered is not None:
             actual = answered["http_status"]
         else:
-            actual = mismatch["actual"] if mismatch else None
+            actual = mismatch.get("actual") if mismatch else None
         entry: dict[str, Any] = {
             "step_id": step_id,
             "operation_id": step["operation_id"],
             "actor": step["actor"],
             "expected_http": step["expected_http"],
             "actual_http": actual,
-            "verdict": "failed" if mismatch or broken else "passed",
+            "verdict": verdict,
             "intent": step["assertions"][0] if step["assertions"] else "",
             "checks": step_checks,
         }
-        if entry["verdict"] == "failed":
+        if entry["verdict"] == "not_run":
+            entry["why"] = ["前一步未能继续执行，本步骤未发送请求"]
+        elif entry["verdict"] == "failed":
             why = []
             if mismatch:
-                why.append(f"期望 HTTP {mismatch['expected']}，实际 HTTP {mismatch['actual']}")
+                if mismatch["kind"] == "http_status":
+                    why.append(f"期望 HTTP {mismatch['expected']}，实际 HTTP {mismatch['actual']}")
+                else:
+                    why.append(mismatch["why"])
             for check in broken:
                 observed = (json.dumps(check["actual"], ensure_ascii=False) if check["found"]
                             else "<该位置在响应里不存在>")
@@ -293,7 +303,21 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         runner = ScenarioRunner(openapi, spec, base_url=base_url or server_url, token=token,
                                 timeout=timeout, opener=opener, identities=effective_identities,
                                 variables=variables_from(loader), redactions=redactions)
-        runner.run(stop_on_mismatch=False)
+        try:
+            runner.run(stop_on_mismatch=False)
+        except WorkflowError as error:
+            failed_step = runner.active_step or {}
+            failed_step_id = failed_step.get("id")
+            declaration = next((step for step in runner.spec.steps if step.get("id") == failed_step_id), None)
+            if not declaration:
+                raise
+            runner.aborted_at = failed_step_id
+            runner.failures.append({"step_id": failed_step_id,
+                                    "operation_id": declaration["operation_id"],
+                                    "kind": "execution_error",
+                                    "expected": declaration["expected_http"],
+                                    "actual": None,
+                                    "why": f"执行器无法继续本步骤：{error}"})
         executed["steps"] = step_verdicts(runner.spec, runner)
         executed["verdict"] = "failed" if any(step["verdict"] == "failed" for step in executed["steps"]) else "passed"
 
@@ -375,7 +399,33 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
                           if name in state_knowledge},
             "member": {name: value for name, value in kwargs.get("member", {}).items() if name in state.members},
         }
-        reports.append(run_scenario(scenario_id, states_path, openapi_path, **scenario_kwargs))
+        try:
+            report = run_scenario(scenario_id, states_path, openapi_path, **scenario_kwargs)
+        except WorkflowError:
+            scenario = scenario_entry(document, scenario_id, states_path.name)
+            state_id = scenario["starting_state"]
+            executed = {
+                "scenario": scenario_id,
+                "name": scenario["name"],
+                "starting_state": state_id,
+                "state": {"status": "not_started", "mismatches": []},
+                "steps": [],
+                "verdict": "failed",
+                "why": ["场景在起点装载或执行器初始化阶段中止；具体原因见命令行错误"],
+            }
+            entries = scenario_verdicts(document, scenario_id, state_id, "failed")
+            summary = {verdict: sum(entry["verdict"] == verdict for entry in entries)
+                       for verdict in ("passed", "failed", "not_run")}
+            report = {
+                "report_version": 1,
+                "contract_version": document.get("contract_version"),
+                "scope": "scenario failed before its execution report could be completed",
+                "executed": executed,
+                "scenarios": entries,
+                "summary": summary,
+                "not_run": ["本场景没有完整执行轨迹；检查命令行错误后重跑"],
+            }
+        reports.append(report)
     if len(reports) == 1:
         return reports[0]
 

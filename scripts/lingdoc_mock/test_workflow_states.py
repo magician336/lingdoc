@@ -118,7 +118,8 @@ class SyntheticProvider:
             return self._activate(match.group(1), body)
         match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/chapters", path)
         if match and method == "GET":
-            return Response(200, self._envelope(list(self.chapters.get(match.group(1), []))))
+            chapters = sorted(self.chapters.get(match.group(1), []), key=lambda chapter: chapter["section_id"])
+            return Response(200, self._envelope(chapters))
         match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/chapters/([^/]+)/versions", path)
         if match and method == "POST":
             return self._save_chapter(match.group(1), match.group(2), body)

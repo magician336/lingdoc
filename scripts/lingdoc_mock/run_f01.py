@@ -540,6 +540,7 @@ class ScenarioRunner:
         self.failures = []
         self.check_results = []
         self.active_step = None
+        self.aborted_at = None
         completed = 0
         step_results = self.step_results
         for step in self.spec.steps:
@@ -592,6 +593,7 @@ class ScenarioRunner:
             for step_id, assertion in manual_assertions:
                 print(f"MANUAL {step_id}: {assertion}")
         self.active_step = None
+        self.aborted_at = None
         return {**self.report("completed"), "variables": self.variables}
 
     def _evaluate_checks(self, step: dict[str, Any], payload: Any) -> list[dict[str, Any]]:
