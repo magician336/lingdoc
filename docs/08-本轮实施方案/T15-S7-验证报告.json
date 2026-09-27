@@ -3,7 +3,6 @@
   "contract_version": "0.5.0",
   "scope": "multiple independent scenarios driven from their declared starting states",
   "provider_host": "127.0.0.1:8080",
-  "execution_note": "首次实跑使用修正前已启动的服务进程；F11/F21 均在 confirmChapter 收到 HTTP 400 invalid_request。源码已修复确认为 write 权限，但修复版服务尚未重启，故本报告不是修复后的验收结果。",
   "executed": [
     {
       "scenario": "F11",
@@ -161,13 +160,10 @@
           "operation_id": "confirmChapter",
           "actor": "u-owner",
           "expected_http": 201,
-          "actual_http": 400,
-          "verdict": "failed",
+          "actual_http": 201,
+          "verdict": "passed",
           "intent": "确认研究问题章节的刚保存版本。",
-          "checks": [],
-          "why": [
-            "期望 HTTP 201，实际 HTTP 400"
-          ]
+          "checks": []
         },
         {
           "step_id": "F11-04",
@@ -184,13 +180,10 @@
           "operation_id": "confirmChapter",
           "actor": "u-owner",
           "expected_http": 201,
-          "actual_http": 400,
-          "verdict": "failed",
+          "actual_http": 201,
+          "verdict": "passed",
           "intent": "确认研究方案章节的刚保存版本。",
-          "checks": [],
-          "why": [
-            "期望 HTTP 201，实际 HTTP 400"
-          ]
+          "checks": []
         },
         {
           "step_id": "F11-06",
@@ -208,7 +201,7 @@
           "actor": "u-owner",
           "expected_http": 201,
           "actual_http": 201,
-          "verdict": "failed",
+          "verdict": "passed",
           "intent": "先构造可导出的快照，隔离章节编辑导致的失效。",
           "checks": [
             {
@@ -217,13 +210,10 @@
               "operator": "equals",
               "intent": "快照检查可通过，后续导出拒绝由过期引起",
               "expected": "passed",
-              "actual": "blocked",
+              "actual": "passed",
               "found": true,
-              "status": "failed"
+              "status": "passed"
             }
-          ],
-          "why": [
-            "/data/check/status：期望等于 \"passed\"，实际 \"blocked\""
           ]
         },
         {
@@ -274,8 +264,8 @@
           "operation_id": "startExport",
           "actor": "u-owner",
           "expected_http": 409,
-          "actual_http": 422,
-          "verdict": "failed",
+          "actual_http": 409,
+          "verdict": "passed",
           "intent": "历史快照的导出请求被服务端拒绝。",
           "checks": [
             {
@@ -284,18 +274,14 @@
               "operator": "equals",
               "intent": "服务端因快照过期拒绝导出",
               "expected": "stale_input",
-              "actual": "preflight_blocked",
+              "actual": "stale_input",
               "found": true,
-              "status": "failed"
+              "status": "passed"
             }
-          ],
-          "why": [
-            "期望 HTTP 409，实际 HTTP 422",
-            "/error/code：期望等于 \"stale_input\"，实际 \"preflight_blocked\""
           ]
         }
       ],
-      "verdict": "failed"
+      "verdict": "passed"
     },
     {
       "scenario": "F21",
@@ -453,13 +439,10 @@
           "operation_id": "confirmChapter",
           "actor": "u-owner",
           "expected_http": 201,
-          "actual_http": 400,
-          "verdict": "failed",
+          "actual_http": 201,
+          "verdict": "passed",
           "intent": "确认研究问题章节的刚保存版本。",
-          "checks": [],
-          "why": [
-            "期望 HTTP 201，实际 HTTP 400"
-          ]
+          "checks": []
         },
         {
           "step_id": "F21-04",
@@ -476,13 +459,10 @@
           "operation_id": "confirmChapter",
           "actor": "u-owner",
           "expected_http": 201,
-          "actual_http": 400,
-          "verdict": "failed",
+          "actual_http": 201,
+          "verdict": "passed",
           "intent": "确认研究方案章节的刚保存版本。",
-          "checks": [],
-          "why": [
-            "期望 HTTP 201，实际 HTTP 400"
-          ]
+          "checks": []
         },
         {
           "step_id": "F21-06",
@@ -500,7 +480,7 @@
           "actor": "u-owner",
           "expected_http": 201,
           "actual_http": 201,
-          "verdict": "failed",
+          "verdict": "passed",
           "intent": "创建可导出的交付快照。",
           "checks": [
             {
@@ -509,13 +489,10 @@
               "operator": "equals",
               "intent": "快照检查可通过，导出可进入真实渲染流程",
               "expected": "passed",
-              "actual": "blocked",
+              "actual": "passed",
               "found": true,
-              "status": "failed"
+              "status": "passed"
             }
-          ],
-          "why": [
-            "/data/check/status：期望等于 \"passed\"，实际 \"blocked\""
           ]
         },
         {
@@ -523,25 +500,30 @@
           "operation_id": "startExport",
           "actor": "u-owner",
           "expected_http": 202,
-          "actual_http": 422,
-          "verdict": "failed",
+          "actual_http": 202,
+          "verdict": "passed",
           "intent": "提交真实 DOCX 导出任务。",
-          "checks": [],
-          "why": [
-            "期望 HTTP 202，实际 HTTP 422"
-          ]
+          "checks": []
         },
         {
           "step_id": "F21-09",
           "operation_id": "getExport",
           "actor": "u-owner",
           "expected_http": 200,
-          "actual_http": null,
-          "verdict": "failed",
+          "actual_http": 200,
+          "verdict": "passed",
           "intent": "轮询任务直到真实导出状态为 verified。",
-          "checks": [],
-          "why": [
-            "后续请求引用了尚未捕获的变量"
+          "checks": [
+            {
+              "step_id": "F21-09",
+              "path": "/data/status",
+              "operator": "equals",
+              "intent": "确认导出任务真实到达 verified",
+              "expected": "verified",
+              "actual": "verified",
+              "found": true,
+              "status": "passed"
+            }
           ]
         },
         {
@@ -549,55 +531,112 @@
           "operation_id": "getRelease",
           "actor": "u-owner",
           "expected_http": 200,
-          "actual_http": null,
-          "verdict": "not_run",
+          "actual_http": 200,
+          "verdict": "passed",
           "intent": "编辑前通过 getRelease 读取当前标签。",
-          "checks": [],
-          "why": [
-            "前一步未能继续执行，本步骤未发送请求"
-          ]
+          "checks": [
+            {
+              "step_id": "F21-10",
+              "path": "/data/is_current",
+              "operator": "equals",
+              "intent": "编辑前读回当前快照标签",
+              "expected": true,
+              "actual": true,
+              "found": true,
+              "status": "passed",
+              "observation": {
+                "kind": "readback",
+                "request_step_id": "F21-10",
+                "after_step": "F21-07",
+                "operation_id": "getRelease"
+              }
+            }
+          ],
+          "observation": {
+            "kind": "readback",
+            "request_step_id": "F21-10",
+            "after_step": "F21-07",
+            "operation_id": "getRelease"
+          }
         },
         {
           "step_id": "F21-11",
           "operation_id": "saveChapter",
           "actor": "u-owner",
           "expected_http": 201,
-          "actual_http": null,
-          "verdict": "not_run",
+          "actual_http": 201,
+          "verdict": "passed",
           "intent": "导出完成后保存新章节版本。",
-          "checks": [],
-          "why": [
-            "前一步未能继续执行，本步骤未发送请求"
-          ]
+          "checks": []
         },
         {
           "step_id": "F21-12",
           "operation_id": "getExport",
           "actor": "u-owner",
           "expected_http": 200,
-          "actual_http": null,
-          "verdict": "not_run",
+          "actual_http": 200,
+          "verdict": "passed",
           "intent": "刷新历史记录时重新读取导出状态。",
-          "checks": [],
-          "why": [
-            "前一步未能继续执行，本步骤未发送请求"
-          ]
+          "checks": [
+            {
+              "step_id": "F21-12",
+              "path": "/data/status",
+              "operator": "equals",
+              "intent": "编辑后重新读取同一导出仍为 verified",
+              "expected": "verified",
+              "actual": "verified",
+              "found": true,
+              "status": "passed",
+              "observation": {
+                "kind": "readback",
+                "request_step_id": "F21-12",
+                "after_step": "F21-11",
+                "operation_id": "getExport"
+              }
+            }
+          ],
+          "observation": {
+            "kind": "readback",
+            "request_step_id": "F21-12",
+            "after_step": "F21-11",
+            "operation_id": "getExport"
+          }
         },
         {
           "step_id": "F21-13",
           "operation_id": "getRelease",
           "actor": "u-owner",
           "expected_http": 200,
-          "actual_http": null,
-          "verdict": "not_run",
+          "actual_http": 200,
+          "verdict": "passed",
           "intent": "历史标签结论来自编辑后的 getRelease 读回响应。",
-          "checks": [],
-          "why": [
-            "前一步未能继续执行，本步骤未发送请求"
-          ]
+          "checks": [
+            {
+              "step_id": "F21-13",
+              "path": "/data/is_current",
+              "operator": "equals",
+              "intent": "章节编辑后读取快照观察到历史标签",
+              "expected": false,
+              "actual": false,
+              "found": true,
+              "status": "passed",
+              "observation": {
+                "kind": "readback",
+                "request_step_id": "F21-13",
+                "after_step": "F21-11",
+                "operation_id": "getRelease"
+              }
+            }
+          ],
+          "observation": {
+            "kind": "readback",
+            "request_step_id": "F21-13",
+            "after_step": "F21-11",
+            "operation_id": "getRelease"
+          }
         }
       ],
-      "verdict": "failed"
+      "verdict": "passed"
     }
   ],
   "scenarios": [
@@ -674,7 +713,7 @@
     {
       "scenario": "F11",
       "name": "快照过期",
-      "verdict": "failed",
+      "verdict": "passed",
       "executable": true,
       "reason": "本次运行驱动的那一条，起点 S1"
     },
@@ -744,7 +783,7 @@
     {
       "scenario": "F21",
       "name": "已导出后编辑并刷新历史标签",
-      "verdict": "failed",
+      "verdict": "passed",
       "executable": true,
       "reason": "本次运行驱动的那一条，起点 S1"
     },
@@ -757,8 +796,8 @@
     }
   ],
   "summary": {
-    "passed": 0,
-    "failed": 2,
+    "passed": 2,
+    "failed": 0,
     "not_run": 20
   },
   "registered_gaps": [
