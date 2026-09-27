@@ -22,6 +22,13 @@ from scripts.lingdoc_mock.test_workflow_states import MEMBER_ID, PROVIDER_IDS, R
 
 KNOWLEDGE = {name: resolved for name, resolved in PROVIDER_IDS.items()}
 IDENTITIES = {"u-owner": "synthetic-owner-token"}
+F02_WHITE_BOX = {
+    "input_resolver_calls": 0,
+    "repository_find_replay_calls": 0,
+    "repository_create_run_calls": 0,
+    "enqueue_calls": 0,
+    "model_generate_calls": 0,
+}
 DENIED = {"/error/code", "/error/details/denied", "/error/details/denied/0/asset_id",
           "/error/details/denied/0", "/error/details/denied/0/reason", "/error/retryable"}
 
@@ -222,9 +229,8 @@ class ScenarioReportTest(unittest.TestCase):
         # anything, so F01 is not something it can drive.
         self.assertFalse(entries["F01"]["executable"])
         self.assertIn("没有声明 starting_state", entries["F01"]["reason"])
-        # F02–F14 have steps that are still prose-shaped; their starting state is not what holds
-        # them back, and the report has to name the part that actually does.
-        self.assertNotIn("starting_state", entries["F02"]["reason"])
+        self.assertTrue(entries["F02"]["executable"])
+        self.assertIn("可执行", entries["F02"]["reason"])
         for entry in report["scenarios"]:
             self.assertTrue(entry["reason"].strip(), entry["scenario"])
             self.assertTrue(entry["name"].strip(), entry["scenario"])
@@ -246,6 +252,54 @@ class ScenarioReportTest(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowError, "scenario F03 step 1 has no request definition"):
             module.run_scenario("F03", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
                                 identities={}, opener=provider().open)
+
+    def test_f02_requires_and_reports_its_explicit_white_box_observation(self):
+        synthetic = provider()
+        with patch.object(module, "collect_white_box_observation",
+                          return_value=(F02_WHITE_BOX, "go test observer")) as collect:
+            module.run_scenario("F02", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
+                                identities=dict(IDENTITIES), opener=synthetic.open)
+            collect.assert_called_once()
+        synthetic = provider()
+        with patch.object(module, "collect_white_box_observation",
+                          return_value=(F02_WHITE_BOX, "go test observer")):
+            report = module.run_scenario("F02", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
+                                         identities=dict(IDENTITIES), opener=synthetic.open)
+        executed = report["executed"]
+        self.assertEqual(executed["verdict"], "passed")
+        self.assertEqual(executed["steps"][0]["actual_http"], 400)
+        observation = executed["white_box_observation"]
+        self.assertEqual(observation["classification"], "white_box")
+        self.assertEqual(observation["status"], "passed")
+        self.assertEqual(observation["observed_counters"], F02_WHITE_BOX)
+        self.assertIn("真实 HTTP 结果单独记录", observation["boundary"])
+
+    def test_a_failed_white_box_observer_blocks_f02_before_provider_writes(self):
+        synthetic = provider()
+        with patch.object(module, "collect_white_box_observation",
+                          side_effect=WorkflowError("white-box observer failed with exit code 1")):
+            with self.assertRaisesRegex(WorkflowError, "observer failed"):
+                module.run_scenario("F02", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
+                                    identities=dict(IDENTITIES), opener=synthetic.open)
+        self.assertEqual(synthetic.calls, [])
+
+    def test_white_box_collector_requires_the_observer_process_and_exact_zero_counters(self):
+        observation = module.scenario_entry(
+            module.read_json_object(SCENARIOS_PATH, "scenarios document"), "F02", SCENARIOS_PATH.name
+        )["white_box_observation"]
+        output = "WHITE_BOX_OBSERVATION " + json.dumps(F02_WHITE_BOX)
+        result = type("ProcessResult", (), {"returncode": 0, "stdout": output, "stderr": ""})()
+        with patch.object(module.subprocess, "run", return_value=result) as run:
+            counters, command = module.collect_white_box_observation(observation)
+        self.assertEqual(counters, F02_WHITE_BOX)
+        self.assertIn("TestStartEmptyAssetScopeHasNoDownstreamEffects", command)
+        self.assertEqual(run.call_args.args[0], observation["observer"])
+        self.assertEqual(run.call_args.kwargs["cwd"], module.ROOT)
+
+        result.returncode = 1
+        with patch.object(module.subprocess, "run", return_value=result):
+            with self.assertRaisesRegex(WorkflowError, "exit code 1"):
+                module.collect_white_box_observation(observation)
 
     def test_an_environment_name_no_declaration_uses_is_refused_before_the_first_write(self):
         synthetic = provider()

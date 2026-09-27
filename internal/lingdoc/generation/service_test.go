@@ -25,6 +25,13 @@ func (r testInputs) ResolveGenerationInput(_ context.Context, actor Actor, proje
 	return in, nil
 }
 
+type countingInputs struct{ calls int }
+
+func (r *countingInputs) ResolveGenerationInput(context.Context, Actor, string, Request) (Input, error) {
+	r.calls++
+	return Input{}, nil
+}
+
 type testSources struct{ err error }
 
 func (v testSources) ValidateGenerationSources(context.Context, Actor, string, []Source) error {
@@ -77,6 +84,8 @@ func (e *delayedTestEnqueuer) EnqueueGenerationAfter(_ context.Context, _ uint64
 }
 
 type testRepository struct {
+	findReplayCalls  int
+	createRunCalls   int
 	run            Run
 	input          Input
 	idempotencyKey string
@@ -87,6 +96,7 @@ type testRepository struct {
 }
 
 func (r *testRepository) FindReplay(_ context.Context, _ Actor, _ string, key, hash string) (Run, bool, error) {
+	r.findReplayCalls++
 	if r.run.ID == "" || key != r.idempotencyKey {
 		return Run{}, false, nil
 	}
@@ -98,6 +108,7 @@ func (r *testRepository) FindReplay(_ context.Context, _ Actor, _ string, key, h
 	return run, true, nil
 }
 func (r *testRepository) CreateOrReplay(_ context.Context, _ Actor, project, key, hash string, input Input) (Run, error) {
+	r.createRunCalls++
 	r.run = Run{ID: "run-1", ProjectID: project, ChapterID: input.Request.ChapterID, Status: StatusQueued}
 	r.input, r.idempotencyKey, r.requestHash = input, key, hash
 	return r.run, nil
@@ -148,6 +159,38 @@ func generationFixture() (*Service, *testRepository) {
 		testModel{draft: Draft{BodyMarkdown: "Text [[source:source-1]]", Sources: []Source{{ID: "source-1"}}}}, repo, &testEnqueuer{})
 	svc.NewID = func() string { return "candidate-1" }
 	return svc, repo
+}
+
+func TestStartEmptyAssetScopeHasNoDownstreamEffects(t *testing.T) {
+	inputs := &countingInputs{}
+	repo := &testRepository{}
+	enqueuer := &testEnqueuer{}
+	model := &countingModel{}
+	service := NewService(testAuthorizer{}, inputs, testSources{}, testCurrentness{}, model, repo, enqueuer)
+	request := Request{
+		ChapterID: "chapter-1", AssetIDs: []string{}, Instruction: "Draft",
+		ExpectedSpecRevision: 1, ExpectedChapterVersionID: nil,
+	}
+
+	_, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"},
+		"project-1", "f02-empty-assets-0001", request)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("Start() error = %v, want invalid request", err)
+	}
+	observation := map[string]int{
+		"input_resolver_calls":        inputs.calls,
+		"repository_find_replay_calls": repo.findReplayCalls,
+		"repository_create_run_calls":  repo.createRunCalls,
+		"enqueue_calls":                enqueuer.calls,
+		"model_generate_calls":         model.calls,
+	}
+	encoded, _ := json.Marshal(observation)
+	t.Logf("WHITE_BOX_OBSERVATION %s", encoded)
+	for point, calls := range observation {
+		if calls != 0 {
+			t.Errorf("%s = %d, want 0", point, calls)
+		}
+	}
 }
 
 func TestStartChecksVersionsAndAssetSet(t *testing.T) {

@@ -10,8 +10,8 @@
   "scenarios": 22,
   "scenario_example_references": 66,
   "continuous_trace_steps": 23,
-  "scenario_steps_with_requests": 37,
-  "scenario_checks_tied_to_a_published_example": 22,
+  "scenario_steps_with_requests": 38,
+  "scenario_checks_tied_to_a_published_example": 23,
   "scenario_checks_left_to_the_run": 6,
   "starting_states": 7,
   "starting_state_parts_buildable": [
@@ -61,6 +61,7 @@
     "scenario_readback_needs_a_check",
     "scenario_readback_must_point_to_an_earlier_step",
     "scenario_declares_an_unknown_starting_state",
+    "white_box_observation_is_restricted_to_f02",
     "scenario_uses_a_capture_before_it_is_produced",
     "scenario_capture_points_outside_the_published_response"
   ],

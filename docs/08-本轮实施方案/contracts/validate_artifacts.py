@@ -179,6 +179,23 @@ def check_scenario_step(scenario,index,step):
 # 声明的协作者两种名字，别的地方冒出来的名字是这个校验器要拦住的那种笔误。
 ACTORS={'u-owner'}|{name for state in cases['starting_states'] for name in state['project'].get('members',[])}
 def check_scenario(scenario):
+    observation=scenario.get('white_box_observation')
+    if observation is not None:
+        assert scenario['id']=='F02','white-box observations are only permitted for F02'
+        assert isinstance(observation,dict),'white_box_observation must be an object'
+        assert observation.get('id')=='F02-WB-01','F02 white-box observation needs its explicit contract id'
+        assert observation.get('classification')=='white_box','F02 observation must be marked white_box'
+        observer=observation.get('observer')
+        assert isinstance(observer,list) and observer and all(isinstance(part,str) and part.strip() for part in observer),\
+            'F02 white-box observation must declare its observer as an argument list'
+        counters=observation.get('zero_counters')
+        assert isinstance(counters,list) and counters and all(isinstance(item,str) and item.strip() for item in counters),\
+            'F02 white-box observation must enumerate its zero counters'
+        assert len(counters)==len(set(counters)),'F02 white-box observation repeats a counter'
+        assert isinstance(observation.get('boundary'),str) and observation['boundary'].strip(),\
+            'F02 white-box observation must state its boundary'
+    elif scenario['id']=='F02':
+        raise AssertionError('F02 must declare its white-box observation point')
     if scenario.get('starting_state') is not None:
         assert scenario['starting_state'] in {state['id'] for state in cases['starting_states']},scenario['id']
     steps=scenario.get('steps',[])
@@ -520,6 +537,9 @@ for label,action in [
                                           readback_of='F05-01')]})),
     ('scenario_declares_an_unknown_starting_state',
      lambda:check_scenario({**F22,'starting_state':'S99'})),
+    ('white_box_observation_is_restricted_to_f02',
+     lambda:check_scenario({**F22,'white_box_observation':copy.deepcopy(next(s for s in cases['scenarios']
+                                                                           if s['id']=='F02')['white_box_observation'])})),
     ('scenario_uses_a_capture_before_it_is_produced',
      lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F08')),
                             'steps':[dict(next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0],

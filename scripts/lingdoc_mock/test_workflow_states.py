@@ -209,6 +209,9 @@ class SyntheticProvider:
         return Response(201, self._envelope(dict(chapter)))
 
     def _start_generation(self, project_id, body):
+        if not body.get("asset_ids"):
+            return Response(400, {"error": {"code": "invalid_request", "message": "synthetic",
+                                             "retryable": False}, "request_id": "req-synthetic"})
         run_id = self._next_id("run")
         return Response(202, self._envelope({"id": run_id, "project_id": project_id,
                                              "chapter_id": body["chapter_id"], "status": "queued",

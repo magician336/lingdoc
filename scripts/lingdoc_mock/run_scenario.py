@@ -22,6 +22,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 from typing import Any
 from urllib.parse import urlsplit
@@ -95,9 +96,9 @@ BOUNDARIES = (
     },
     {
         "id": "T15-04-B2",
-        "statement": "报告只到「HTTP 通道 + 契约里可求值的形状」这一层。",
-        "why": "断言读的是响应里能取到的值。模型质量、数据库副作用、DOCX 可编辑性不在任何通道能证的范围内，"
-               "所以它们既不出现在通过里，也不出现在失败里。",
+        "statement": "报告按来源标出观察范围；只有 F02 追加了显式白盒依赖计数。",
+        "why": "HTTP check 只读取响应；F02-WB-01 只观察 Service.Start 的五个依赖边界。"
+               "模型质量、DOCX 可编辑性以及观察点以外的副作用仍不能由这些通道判定。",
     },
 )
 
@@ -265,6 +266,33 @@ def scenario_verdicts(document: dict[str, Any], executed_id: str, state_id: str,
     return entries
 
 
+def collect_white_box_observation(observation: dict[str, Any]) -> tuple[dict[str, int], str]:
+    """Execute the declared observer and accept only its single machine-readable result."""
+    command = observation.get("observer")
+    if not isinstance(command, list) or not command or not all(isinstance(part, str) for part in command):
+        raise WorkflowError("white-box observer must be a non-empty argument list")
+    try:
+        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, check=False)
+    except OSError as error:
+        raise WorkflowError(f"white-box observer could not start: {error}") from error
+    if result.returncode != 0:
+        raise WorkflowError(f"white-box observer failed with exit code {result.returncode}")
+    marker = "WHITE_BOX_OBSERVATION "
+    records = [line.split(marker, 1)[1] for line in result.stdout.splitlines() if marker in line]
+    if len(records) != 1:
+        raise WorkflowError("white-box observer did not emit exactly one observation record")
+    try:
+        counters = json.loads(records[0])
+    except json.JSONDecodeError as error:
+        raise WorkflowError("white-box observer emitted an invalid JSON observation") from error
+    expected = set(observation.get("zero_counters", []))
+    if not isinstance(counters, dict) or set(counters) != expected:
+        raise WorkflowError("white-box observer counters do not match the declared observation")
+    if any(type(value) is not int or value != 0 for value in counters.values()):
+        raise WorkflowError("white-box observer did not record all zero counters")
+    return dict(sorted(counters.items())), " ".join(command)
+
+
 def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
                  knowledge: dict[str, str], member: dict[str, str],
                  identities: dict[str, str] | None = None,
@@ -273,6 +301,11 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     """Build the declared state, send the declared steps, and return the report for both halves."""
     document = read_json_object(states_path, "states document")
     scenario = scenario_entry(document, scenario_id, states_path.name)
+    observation = scenario.get("white_box_observation")
+    if observation:
+        if scenario_id != "F02":
+            raise WorkflowError(f"{scenario_id} declares a white-box observation outside the F02 exception")
+        observed_counters, observer_command = collect_white_box_observation(observation)
     # The specification is loaded first on purpose: a scenario whose steps cannot be sent
     # must be refused before a single write is issued, not after the state is already built.
     spec = load_spec(states_path, scenario_id)
@@ -317,6 +350,15 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         "state": state_report,
         "steps": [],
     }
+    if observation:
+        executed["white_box_observation"] = {
+            "id": observation["id"],
+            "classification": "white_box",
+            "observer": observer_command,
+            "status": "passed",
+            "observed_counters": observed_counters,
+            "boundary": observation["boundary"],
+        }
     # A state that did not read back as declared is not a place to run a scenario from: the
     # steps would be testing something other than what the contract says they test.
     if settled["mismatches"]:
@@ -356,11 +398,12 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         "summary": summary,
         "registered_gaps": list(REGISTERED_GAPS),
         "boundaries": list(BOUNDARIES),
-        "verification_scope": "http_smoke_only",
+        "verification_scope": ("http_smoke_plus_declared_f02_white_box" if observation
+                                else "http_smoke_only"),
         "provider_semantics_status": "not_verified",
         # Counted from the summary rather than written down: the sentence has to keep telling the
         # truth the next time somebody fills a request definition into the contract.
-        "not_run": ["模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
+        "not_run": ["模型质量、DOCX 可打开性及 F02 白盒观察点以外的数据库副作用：当前通道未观测",
                     f"其余 {summary['not_run']} 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"],
     }
 

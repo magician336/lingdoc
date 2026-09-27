@@ -141,7 +141,7 @@
         "expected_http": 400,
         "actual_http": 400,
         "verdict": "passed",
-        "intent": "",
+        "intent": "HTTP 端点以 invalid_request 拒绝空资料请求。",
         "checks": [
           {
             "step_id": "F02-01",
@@ -159,7 +159,7 @@
     "white_box_observation": {
       "id": "F02-WB-01",
       "classification": "white_box",
-      "observer": "go test ./internal/lingdoc/generation -run '^TestStartEmptyAssetScopeHasNoDownstreamEffects$' -count=1",
+      "observer": "go test ./internal/lingdoc/generation -run ^TestStartEmptyAssetScopeHasNoDownstreamEffects$ -count=1 -v",
       "status": "passed",
       "observed_counters": {
         "enqueue_calls": 0,
@@ -355,14 +355,14 @@
     },
     {
       "id": "T15-04-B2",
-      "statement": "报告只到「HTTP 通道 + 契约里可求值的形状」这一层。",
-      "why": "断言读的是响应里能取到的值。模型质量、数据库副作用、DOCX 可编辑性不在任何通道能证的范围内，所以它们既不出现在通过里，也不出现在失败里。"
+      "statement": "报告按来源标出观察范围；只有 F02 追加了显式白盒依赖计数。",
+      "why": "HTTP check 只读取响应；F02-WB-01 只观察 Service.Start 的五个依赖边界。模型质量、DOCX 可编辑性以及观察点以外的副作用仍不能由这些通道判定。"
     }
   ],
-  "verification_scope": "http_smoke_only",
+  "verification_scope": "http_smoke_plus_declared_f02_white_box",
   "provider_semantics_status": "not_verified",
   "not_run": [
-    "模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
+    "模型质量、DOCX 可打开性及 F02 白盒观察点以外的数据库副作用：当前通道未观测",
     "其余 21 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"
   ]
 }

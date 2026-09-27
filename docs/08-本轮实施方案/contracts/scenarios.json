@@ -17,13 +17,59 @@
     {
       "id": "F02",
       "name": "空资料不扩大范围",
+      "starting_state": "S1",
       "setup": "项目无绑定资料；请求传空asset_ids。",
+      "white_box_observation": {
+        "id": "F02-WB-01",
+        "classification": "white_box",
+        "observer": [
+          "go",
+          "test",
+          "./internal/lingdoc/generation",
+          "-run",
+          "^TestStartEmptyAssetScopeHasNoDownstreamEffects$",
+          "-count=1",
+          "-v"
+        ],
+        "zero_counters": [
+          "input_resolver_calls",
+          "repository_find_replay_calls",
+          "repository_create_run_calls",
+          "enqueue_calls",
+          "model_generate_calls"
+        ],
+        "boundary": "依赖计数观察 Service.Start 的 guard 后缀；真实 HTTP 结果单独记录，不把白盒计数描述成真实进程的探针。"
+      },
       "steps": [
         {
+          "id": "F02-01",
           "operation_id": "startGeneration",
           "expected_http": 400,
-          "assertion": "不创建任务，不调用模型，不检索全库。",
-          "response_example": "invalid_request"
+          "assertion": "HTTP 端点以 invalid_request 拒绝空资料请求。",
+          "actor": "u-owner",
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            },
+            "headers": {
+              "Idempotency-Key": "f02-empty-assets-01"
+            },
+            "json": {
+              "chapter_id": "{{chapter.question}}",
+              "asset_ids": [],
+              "instruction": "基于项目资料起草研究问题。",
+              "expected_spec_revision": 1,
+              "expected_chapter_version_id": null
+            }
+          },
+          "response_example": "invalid_request",
+          "checks": [
+            {
+              "path": "/error/code",
+              "equals": "invalid_request",
+              "intent": "空资料请求被参数校验拒绝。"
+            }
+          ]
         }
       ],
       "providers": [
