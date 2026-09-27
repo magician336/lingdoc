@@ -83,7 +83,7 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 	if s.Authorizer == nil {
 		return Confirmation{}, false, ErrInvalidState
 	}
-	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
+	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, "write"); err != nil {
 		return Confirmation{}, false, err
 	}
 	// Check replay after current authorization but before reading mutable state,

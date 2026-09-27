@@ -208,6 +208,14 @@ def step_verdicts(spec, runner: ScenarioRunner) -> list[dict[str, Any]]:
             "intent": step["assertions"][0] if step["assertions"] else "",
             "checks": step_checks,
         }
+        received_response = answered is not None or (mismatch is not None and mismatch.get("actual") is not None)
+        if step.get("readback_of") and received_response:
+            entry["observation"] = {
+                "kind": "readback",
+                "request_step_id": step_id,
+                "after_step": step["readback_of"],
+                "operation_id": step["operation_id"],
+            }
         if entry["verdict"] == "not_run":
             entry["why"] = ["前一步未能继续执行，本步骤未发送请求"]
         elif entry["verdict"] == "failed":

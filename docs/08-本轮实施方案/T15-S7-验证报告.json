@@ -1,0 +1,796 @@
+{
+  "report_version": 1,
+  "contract_version": "0.5.0",
+  "scope": "multiple independent scenarios driven from their declared starting states",
+  "provider_host": "127.0.0.1:8080",
+  "execution_note": "首次实跑使用修正前已启动的服务进程；F11/F21 均在 confirmChapter 收到 HTTP 400 invalid_request。源码已修复确认为 write 权限，但修复版服务尚未重启，故本报告不是修复后的验收结果。",
+  "executed": [
+    {
+      "scenario": "F11",
+      "name": "快照过期",
+      "starting_state": "S1",
+      "state": {
+        "state": "S1",
+        "runner_status": "completed",
+        "build_steps": [
+          {
+            "id": "S1-create",
+            "operation_id": "createProject",
+            "http_status": 201,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-spec",
+            "operation_id": "saveSpec",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-activate",
+            "operation_id": "activateProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "readback_steps": [
+          {
+            "id": "S1-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-read-project",
+            "operation_id": "getProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-read-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-read-assets",
+            "operation_id": "listAssets",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "snapshot": {
+          "project": {
+            "name": "合成起点：空资料项目",
+            "template_id": "template-demo",
+            "status": "active",
+            "spec": {
+              "research_subject": "公开的合成调查样本",
+              "research_goal": "验证资料到章节的工作流程"
+            },
+            "members": [
+              {
+                "role": "owner"
+              }
+            ]
+          },
+          "chapters": [
+            {
+              "section_id": "method",
+              "body_markdown": "",
+              "source_ids": []
+            },
+            {
+              "section_id": "question",
+              "body_markdown": "",
+              "source_ids": []
+            }
+          ],
+          "assets": []
+        },
+        "snapshot_digest": "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7",
+        "observed": {
+          "project_version": 3,
+          "spec_revision": 1,
+          "chapters": [
+            {
+              "section_id": "method",
+              "has_version": false
+            },
+            {
+              "section_id": "question",
+              "has_version": false
+            }
+          ],
+          "assets": []
+        },
+        "observed_digest": "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092",
+        "mismatches": [],
+        "unverified": [],
+        "cannot_build": [
+          {
+            "part": "template",
+            "reason": "the service ships the demo template; the contract has no request that creates one"
+          },
+          {
+            "part": "source",
+            "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+          },
+          {
+            "part": "candidate",
+            "reason": "a candidate is produced by a generation run, which needs a model adapter"
+          },
+          {
+            "part": "confirmation",
+            "reason": "a chapter confirmation needs the review items a candidate carries"
+          },
+          {
+            "part": "release",
+            "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+          },
+          {
+            "part": "export",
+            "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+          }
+        ],
+        "verification_scope": "declared_state_read_back_only",
+        "provider_semantics_status": "not_verified"
+      },
+      "steps": [
+        {
+          "step_id": "F11-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "从已读回的两个章节开始构造可导出快照。",
+          "checks": []
+        },
+        {
+          "step_id": "F11-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "保存首个章节版本。",
+          "checks": []
+        },
+        {
+          "step_id": "F11-03",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 400,
+          "verdict": "failed",
+          "intent": "确认研究问题章节的刚保存版本。",
+          "checks": [],
+          "why": [
+            "期望 HTTP 201，实际 HTTP 400"
+          ]
+        },
+        {
+          "step_id": "F11-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "保存另一个必需章节。",
+          "checks": []
+        },
+        {
+          "step_id": "F11-05",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 400,
+          "verdict": "failed",
+          "intent": "确认研究方案章节的刚保存版本。",
+          "checks": [],
+          "why": [
+            "期望 HTTP 201，实际 HTTP 400"
+          ]
+        },
+        {
+          "step_id": "F11-06",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "读取项目的最新版本以准备交付快照。",
+          "checks": []
+        },
+        {
+          "step_id": "F11-07",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "failed",
+          "intent": "先构造可导出的快照，隔离章节编辑导致的失效。",
+          "checks": [
+            {
+              "step_id": "F11-07",
+              "path": "/data/check/status",
+              "operator": "equals",
+              "intent": "快照检查可通过，后续导出拒绝由过期引起",
+              "expected": "passed",
+              "actual": "blocked",
+              "found": true,
+              "status": "failed"
+            }
+          ],
+          "why": [
+            "/data/check/status：期望等于 \"passed\"，实际 \"blocked\""
+          ]
+        },
+        {
+          "step_id": "F11-08",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "快照准备后保存新章节版本。",
+          "checks": []
+        },
+        {
+          "step_id": "F11-09",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "结论来自章节编辑后的 getRelease 读回响应。",
+          "checks": [
+            {
+              "step_id": "F11-09",
+              "path": "/data/is_current",
+              "operator": "equals",
+              "intent": "通过后续读取快照观察到章节编辑已使快照过期",
+              "expected": false,
+              "actual": false,
+              "found": true,
+              "status": "passed",
+              "observation": {
+                "kind": "readback",
+                "request_step_id": "F11-09",
+                "after_step": "F11-08",
+                "operation_id": "getRelease"
+              }
+            }
+          ],
+          "observation": {
+            "kind": "readback",
+            "request_step_id": "F11-09",
+            "after_step": "F11-08",
+            "operation_id": "getRelease"
+          }
+        },
+        {
+          "step_id": "F11-10",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 409,
+          "actual_http": 422,
+          "verdict": "failed",
+          "intent": "历史快照的导出请求被服务端拒绝。",
+          "checks": [
+            {
+              "step_id": "F11-10",
+              "path": "/error/code",
+              "operator": "equals",
+              "intent": "服务端因快照过期拒绝导出",
+              "expected": "stale_input",
+              "actual": "preflight_blocked",
+              "found": true,
+              "status": "failed"
+            }
+          ],
+          "why": [
+            "期望 HTTP 409，实际 HTTP 422",
+            "/error/code：期望等于 \"stale_input\"，实际 \"preflight_blocked\""
+          ]
+        }
+      ],
+      "verdict": "failed"
+    },
+    {
+      "scenario": "F21",
+      "name": "已导出后编辑并刷新历史标签",
+      "starting_state": "S1",
+      "state": {
+        "state": "S1",
+        "runner_status": "completed",
+        "build_steps": [
+          {
+            "id": "S1-create",
+            "operation_id": "createProject",
+            "http_status": 201,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-spec",
+            "operation_id": "saveSpec",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-activate",
+            "operation_id": "activateProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "readback_steps": [
+          {
+            "id": "S1-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-read-project",
+            "operation_id": "getProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-read-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S1-read-assets",
+            "operation_id": "listAssets",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "snapshot": {
+          "project": {
+            "name": "合成起点：空资料项目",
+            "template_id": "template-demo",
+            "status": "active",
+            "spec": {
+              "research_subject": "公开的合成调查样本",
+              "research_goal": "验证资料到章节的工作流程"
+            },
+            "members": [
+              {
+                "role": "owner"
+              }
+            ]
+          },
+          "chapters": [
+            {
+              "section_id": "method",
+              "body_markdown": "",
+              "source_ids": []
+            },
+            {
+              "section_id": "question",
+              "body_markdown": "",
+              "source_ids": []
+            }
+          ],
+          "assets": []
+        },
+        "snapshot_digest": "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7",
+        "observed": {
+          "project_version": 3,
+          "spec_revision": 1,
+          "chapters": [
+            {
+              "section_id": "method",
+              "has_version": false
+            },
+            {
+              "section_id": "question",
+              "has_version": false
+            }
+          ],
+          "assets": []
+        },
+        "observed_digest": "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092",
+        "mismatches": [],
+        "unverified": [],
+        "cannot_build": [
+          {
+            "part": "template",
+            "reason": "the service ships the demo template; the contract has no request that creates one"
+          },
+          {
+            "part": "source",
+            "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+          },
+          {
+            "part": "candidate",
+            "reason": "a candidate is produced by a generation run, which needs a model adapter"
+          },
+          {
+            "part": "confirmation",
+            "reason": "a chapter confirmation needs the review items a candidate carries"
+          },
+          {
+            "part": "release",
+            "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+          },
+          {
+            "part": "export",
+            "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+          }
+        ],
+        "verification_scope": "declared_state_read_back_only",
+        "provider_semantics_status": "not_verified"
+      },
+      "steps": [
+        {
+          "step_id": "F21-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "从已读回的两个章节开始构造可导出快照。",
+          "checks": []
+        },
+        {
+          "step_id": "F21-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "保存首个章节版本。",
+          "checks": []
+        },
+        {
+          "step_id": "F21-03",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 400,
+          "verdict": "failed",
+          "intent": "确认研究问题章节的刚保存版本。",
+          "checks": [],
+          "why": [
+            "期望 HTTP 201，实际 HTTP 400"
+          ]
+        },
+        {
+          "step_id": "F21-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "保存另一个必需章节。",
+          "checks": []
+        },
+        {
+          "step_id": "F21-05",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 400,
+          "verdict": "failed",
+          "intent": "确认研究方案章节的刚保存版本。",
+          "checks": [],
+          "why": [
+            "期望 HTTP 201，实际 HTTP 400"
+          ]
+        },
+        {
+          "step_id": "F21-06",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "读取项目的最新版本以准备交付快照。",
+          "checks": []
+        },
+        {
+          "step_id": "F21-07",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "failed",
+          "intent": "创建可导出的交付快照。",
+          "checks": [
+            {
+              "step_id": "F21-07",
+              "path": "/data/check/status",
+              "operator": "equals",
+              "intent": "快照检查可通过，导出可进入真实渲染流程",
+              "expected": "passed",
+              "actual": "blocked",
+              "found": true,
+              "status": "failed"
+            }
+          ],
+          "why": [
+            "/data/check/status：期望等于 \"passed\"，实际 \"blocked\""
+          ]
+        },
+        {
+          "step_id": "F21-08",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "actual_http": 422,
+          "verdict": "failed",
+          "intent": "提交真实 DOCX 导出任务。",
+          "checks": [],
+          "why": [
+            "期望 HTTP 202，实际 HTTP 422"
+          ]
+        },
+        {
+          "step_id": "F21-09",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": null,
+          "verdict": "failed",
+          "intent": "轮询任务直到真实导出状态为 verified。",
+          "checks": [],
+          "why": [
+            "后续请求引用了尚未捕获的变量"
+          ]
+        },
+        {
+          "step_id": "F21-10",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": null,
+          "verdict": "not_run",
+          "intent": "编辑前通过 getRelease 读取当前标签。",
+          "checks": [],
+          "why": [
+            "前一步未能继续执行，本步骤未发送请求"
+          ]
+        },
+        {
+          "step_id": "F21-11",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": null,
+          "verdict": "not_run",
+          "intent": "导出完成后保存新章节版本。",
+          "checks": [],
+          "why": [
+            "前一步未能继续执行，本步骤未发送请求"
+          ]
+        },
+        {
+          "step_id": "F21-12",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": null,
+          "verdict": "not_run",
+          "intent": "刷新历史记录时重新读取导出状态。",
+          "checks": [],
+          "why": [
+            "前一步未能继续执行，本步骤未发送请求"
+          ]
+        },
+        {
+          "step_id": "F21-13",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": null,
+          "verdict": "not_run",
+          "intent": "历史标签结论来自编辑后的 getRelease 读回响应。",
+          "checks": [],
+          "why": [
+            "前一步未能继续执行，本步骤未发送请求"
+          ]
+        }
+      ],
+      "verdict": "failed"
+    }
+  ],
+  "scenarios": [
+    {
+      "scenario": "F01",
+      "name": "完整连续闭环",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "由 workflow.json 的连续规格驱动，但没有声明 starting_state：本驱动先装起点再发步骤，不知道从哪里起跑"
+    },
+    {
+      "scenario": "F02",
+      "name": "空资料不扩大范围",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "1 步里这 1 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步"
+    },
+    {
+      "scenario": "F03",
+      "name": "未就绪资料",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "2 步里这 2 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步"
+    },
+    {
+      "scenario": "F04",
+      "name": "跨项目访问",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F05",
+      "name": "两人同版本保存",
+      "verdict": "not_run",
+      "executable": true,
+      "reason": "可执行；本次运行只驱动一条，未执行"
+    },
+    {
+      "scenario": "F06",
+      "name": "生成期间改条件",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "5 步里这 5 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步、第 4 步、第 5 步"
+    },
+    {
+      "scenario": "F07",
+      "name": "来源撤权影响派生内容",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "4 步里这 4 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步、第 4 步"
+    },
+    {
+      "scenario": "F08",
+      "name": "重复提交与幂等冲突",
+      "verdict": "not_run",
+      "executable": true,
+      "reason": "可执行；本次运行只驱动一条，未执行"
+    },
+    {
+      "scenario": "F09",
+      "name": "模型超时或中断",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F10",
+      "name": "未确认不得导出",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F11",
+      "name": "快照过期",
+      "verdict": "failed",
+      "executable": true,
+      "reason": "本次运行驱动的那一条，起点 S1"
+    },
+    {
+      "scenario": "F12",
+      "name": "草稿版本也有效",
+      "verdict": "not_run",
+      "executable": true,
+      "reason": "可执行；本次运行只驱动一条，未执行"
+    },
+    {
+      "scenario": "F13",
+      "name": "文件校验失败",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F14",
+      "name": "只有相关没有支撑",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "2 步里这 2 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步"
+    },
+    {
+      "scenario": "F15",
+      "name": "待核项不在正文也不能丢",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F16",
+      "name": "空章和一章输入可保留阻断快照",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F17",
+      "name": "撤权后可执行恢复",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F18",
+      "name": "幂等顺序和中间状态",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F19",
+      "name": "冻结输入可复算",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F20",
+      "name": "已有人工正文再次采纳",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F21",
+      "name": "已导出后编辑并刷新历史标签",
+      "verdict": "failed",
+      "executable": true,
+      "reason": "本次运行驱动的那一条，起点 S1"
+    },
+    {
+      "scenario": "F22",
+      "name": "部分授权不静默成功",
+      "verdict": "not_run",
+      "executable": true,
+      "reason": "可执行；本次运行只驱动一条，未执行"
+    }
+  ],
+  "summary": {
+    "passed": 0,
+    "failed": 2,
+    "not_run": 20
+  },
+  "registered_gaps": [
+    {
+      "id": "T15-04-R1",
+      "title": "startGeneration 声明的整条 422 分支在实现里不存在",
+      "contract_says": "openapi.json 给 startGeneration 声明了 5 个 422 例子：insufficient_evidence / asset_not_ready / preflight_blocked / invalid_state / asset_not_authorized，其中 asset_not_authorized 还要求被拒资料逐项带原因（details.denied[].reason）。",
+      "service_does": "这 5 个形状一条都发不出来：internal/lingdoc/generation/ 里没有任何 422 分支（`grep -rn 422 internal/lingdoc/generation/` 零命中）。对已绑定但不可用的资料，startGeneration 答 403 source_access_denied——只有一个错误码，没有 details.denied，调用者看不出是哪一条、为什么。",
+      "where": "internal/lingdoc/workspace/generation.go 的 ResolveGenerationInput 把任何被拒资料折成 generation.ErrSourceAccessDenied；internal/lingdoc/generation/http.go 的 generationHTTPStatus / writeGenerationError 把它映射成 403 source_access_denied。",
+      "consequence": "契约承诺的逐项原因在生成这一步拿不到。受这条作废的不止一处：F22 原本指向的那一步在内，契约里 F03 的第 2 步（startGeneration → 422 asset_not_ready，setup 说「资料仍 processing」）同样落在一条实现里不存在的分支上。F22 因此改指 retrieveSources，并把这里登记为缺口，而不是把断言迁就实现。",
+      "owner": "生成线的实现者",
+      "status": "open"
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "T15-04-B1",
+      "statement": "F22 的授权维（同租户内一条被授权、另一条不被授权）在本构建不可达；本票驱动的是可用性那一维。",
+      "why": "绑定与读取用同一判定（bindAsset 与 evidence 网关都走 kbReadChecker.CanReadKB），同租户读取无条件放行，跨租户的差异只来自租户级分享，而分享的有效权限按租户算、角色下限是 viewer——同一租户的两名成员不可能一个放行一个被拒。",
+      "verified_by": "T15-04 的代码核对与实跑：同租户协作者在业主租户下读到 200；跨租户读取 403、把该知识绑进本项目 404。",
+      "unblocks": "撤权（移除分享、把租户移出组织）落地后 not_authorized 才有可达路径；#27 把撤权族分给 #35。"
+    },
+    {
+      "id": "T15-04-B2",
+      "statement": "报告只到「HTTP 通道 + 契约里可求值的形状」这一层。",
+      "why": "断言读的是响应里能取到的值。模型质量、数据库副作用、DOCX 可编辑性不在任何通道能证的范围内，所以它们既不出现在通过里，也不出现在失败里。"
+    }
+  ],
+  "verification_scope": "http_smoke_only",
+  "provider_semantics_status": "not_verified",
+  "not_run": [
+    "模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
+    "其余 20 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"
+  ]
+}

@@ -91,6 +91,28 @@ func TestConfirmationServiceFailsClosedWithoutCurrentSourcePolicy(t *testing.T) 
 	}
 }
 
+func TestConfirmationServiceAuthorizesWriteCapability(t *testing.T) {
+	version := "version-1"
+	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,
+		Basis:   Basis{SpecRevision: 3, ChapterVersionID: &version},
+		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version}}
+	var capability string
+	writer := &confirmationWriterStub{}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace},
+		Authorizer: confirmationAuthorizerFunc(func(_ context.Context, _, _, got string) error {
+			capability = got
+			return nil
+		}), Writer: writer}
+	_, _, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
+		IdempotencyKey: "request-123", ExpectedChapterVersionID: version, ExpectedSpecRevision: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capability != "write" {
+		t.Fatalf("authorization capability = %q, want write", capability)
+	}
+}
+
 func TestConfirmationServiceRejectsStaleVersionBeforeWrite(t *testing.T) {
 	version := "version-2"
 	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,

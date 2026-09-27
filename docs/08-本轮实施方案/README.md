@@ -14,6 +14,7 @@
 | [openapi.json](contracts/openapi.json) | 拟议 HTTP：31 操作，28 core / 3 optional；x-domain 表示服务职责，不指定人 |
 | [scenarios.json](contracts/scenarios.json) | 22 个行为场景（F01–F22）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
+| [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
 | [validation-result.json](contracts/validation-result.json) | 本次静态检查结果及未运行范围 |
@@ -39,7 +40,7 @@ python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/l
 python scripts/lingdoc_mock/run_f01.py --scenario F01 --base-url http://127.0.0.1:8080/api/v1/lingdoc
 ```
 
-执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01、F05、F08、F12、F22 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：未覆盖场景若没有请求定义或步骤，报告会逐条说明原因。执行器允许重复传入 `--scenario`，每条场景从自己的声明起点独立构建，并在一份报告中分别记录执行轨迹；跨步响应捕获通过 `{{变量}}` 供后续请求与检查使用。F05/F08/F12 的多步结果及约束见 [T15-06 多步与跨步捕获](T15-多步与跨步捕获.md)。
+执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01、F05、F08、F11、F12、F21、F22 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：未覆盖场景若没有请求定义或步骤，报告会逐条说明原因。执行器允许重复传入 `--scenario`，每条场景从自己的声明起点独立构建，并在一份报告中分别记录执行轨迹；跨步响应捕获通过 `{{变量}}` 供后续请求与检查使用。F05/F08/F12 的多步结果及约束见 [T15-06 多步与跨步捕获](T15-多步与跨步捕获.md)；F11/F21 的读回断言见 [T15-读回式副作用断言](T15-读回式副作用断言.md)。
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 

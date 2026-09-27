@@ -446,6 +446,119 @@ class RecordedOutcomeTest(unittest.TestCase):
         self.assertIn("{{f32.project_id}}", rendered)
 
 
+class ReadbackAssertionTest(unittest.TestCase):
+    def setUp(self):
+        self.openapi = {
+            "servers": LOOPBACK_SERVER,
+            "paths": {
+                "/projects/{projectId}/chapters": {"post": {"operationId": "saveChapter"}},
+                "/projects/{projectId}/releases/{snapshotId}": {"get": {"operationId": "getRelease"}},
+            },
+        }
+        self.document = {
+            "id": "F11",
+            "steps": [
+                {"id": "F11-01", "operation_id": "saveChapter", "expected_http": 201,
+                 "request": {"path_params": {"projectId": "p1"}, "json": {"body": "edited"}},
+                 "capture": {"snapshot_id": "/data/snapshot_id"}},
+                {"id": "F11-02", "operation_id": "getRelease", "expected_http": 200,
+                 "request": {"path_params": {"projectId": "p1", "snapshotId": "{{snapshot_id}}"}},
+                 "readback_of": "F11-01",
+                 "checks": [{"path": "/data/is_current", "equals": False,
+                             "intent": "章节编辑后读取快照，观察到它已是历史版本"}]},
+            ],
+        }
+
+    def runner(self, document=None):
+        responses = [FakeResponse(b'{"data":{"snapshot_id":"snap-1"}}', 201),
+                     FakeResponse(b'{"data":{"is_current":false}}', 200)]
+        requests = []
+
+        def opener(request, timeout):
+            requests.append(request)
+            return responses.pop(0)
+
+        runner = ScenarioRunner(self.openapi, spec_from_document(document or self.document, "readback test"),
+                                base_url=LOOPBACK_SERVER[0]["url"], opener=opener)
+        return runner, requests
+
+    def test_followup_get_compares_its_response_and_reports_readback_provenance(self):
+        runner, requests = self.runner()
+
+        result = runner.run()
+
+        self.assertEqual([request.method for request in requests], ["POST", "GET"])
+        self.assertEqual(result["steps"][1]["observation"]["kind"], "readback")
+        check = runner.report("completed")["checks"][0]
+        self.assertEqual(check["actual"], False)
+        self.assertEqual(check["expected"], False)
+        self.assertEqual(check["status"], "passed")
+        self.assertEqual(check["observation"], {
+            "kind": "readback",
+            "request_step_id": "F11-02",
+            "after_step": "F11-01",
+            "operation_id": "getRelease",
+        })
+        from scripts.lingdoc_mock.run_scenario import step_verdicts
+        readback_step = step_verdicts(runner.spec, runner)[1]
+        self.assertEqual(readback_step["observation"], check["observation"])
+        self.assertEqual(readback_step["checks"][0]["observation"], check["observation"])
+
+    def test_skipped_readback_does_not_claim_an_observation(self):
+        from types import SimpleNamespace
+        from scripts.lingdoc_mock.run_scenario import step_verdicts
+
+        spec = spec_from_document(self.document, "readback test")
+        runner = SimpleNamespace(
+            step_results=[],
+            failures=[{"step_id": "F11-01", "kind": "http_status", "expected": 201, "actual": 500}],
+            check_results=[],
+            aborted_at="F11-01",
+        )
+
+        readback = step_verdicts(spec, runner)[1]
+
+        self.assertEqual(readback["verdict"], "not_run")
+        self.assertNotIn("observation", readback)
+
+        runner.failures = [{"step_id": "F11-02", "kind": "execution_error", "actual": None,
+                            "why": "request construction failed"}]
+        runner.aborted_at = "F11-02"
+        readback = step_verdicts(spec, runner)[1]
+        self.assertEqual(readback["verdict"], "failed")
+        self.assertNotIn("observation", readback)
+
+    def test_invalid_readback_reference_is_rejected_before_any_request(self):
+        document = json.loads(json.dumps(self.document))
+        document["steps"][1]["readback_of"] = "missing-write"
+        runner, requests = self.runner(document)
+
+        with self.assertRaisesRegex(WorkflowError, "readback_of.*earlier step"):
+            runner.run()
+
+        self.assertEqual(requests, [])
+
+    def test_readback_must_be_a_get_with_at_least_one_check(self):
+        document = json.loads(json.dumps(self.document))
+        document["steps"][0]["readback_of"] = "F11-02"
+        document["steps"][0]["checks"] = [
+            {"path": "/data/snapshot_id", "equals": "snap-1", "intent": "检查写入响应"}
+        ]
+        runner, requests = self.runner(document)
+
+        with self.assertRaisesRegex(WorkflowError, "readback step.*GET"):
+            runner.run()
+
+        self.assertEqual(requests, [])
+
+    def test_readback_without_checks_is_rejected_while_loading(self):
+        document = json.loads(json.dumps(self.document))
+        document["steps"][1].pop("checks")
+
+        with self.assertRaisesRegex(WorkflowError, "readback step must declare at least one check"):
+            spec_from_document(document, "readback test")
+
+
 class DottedVariableTest(unittest.TestCase):
     def test_a_variable_name_may_be_namespaced_the_way_the_contract_spells_it(self):
         variables = {"project.id": "p-1", "asset.k-notready": "asset-1", "chapter.method": "c-1"}

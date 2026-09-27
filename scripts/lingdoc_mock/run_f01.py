@@ -168,8 +168,12 @@ def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, An
         if not isinstance(expected, int) or isinstance(expected, bool):
             raise WorkflowError(f"{where} expected_http must be an HTTP status number")
         actor = step.get("actor")
+        readback_of = _optional_string(step.get("readback_of"), f"{where} readback_of")
+        if readback_of is not None and not step.get("checks"):
+            raise WorkflowError(f"{where} readback step must declare at least one check")
         validated.append({**step, "id": step_id, "operation_id": operation_id,
                           "actor": _optional_string(actor, f"{where} actor"),
+                          **({"readback_of": readback_of} if readback_of is not None else {}),
                           "request": _request_definition(step, where),
                           "checks": _check_definitions(step, where),
                           "assertions": _assertion_texts(step, where)})
@@ -541,6 +545,7 @@ class ScenarioRunner:
         self.check_results = []
         self.active_step = None
         self.aborted_at = None
+        self._validate_readbacks()
         completed = 0
         step_results = self.step_results
         for step in self.spec.steps:
@@ -576,6 +581,7 @@ class ScenarioRunner:
                     "operation_id": operation_id,
                     "http_status": status,
                     "content_type": header_value(response_headers, "Content-Type"),
+                    **({"observation": self._readback_observation(step)} if step.get("readback_of") else {}),
                 })
             # Checks are read even when the status was not the declared one: "it answered
             # 403 with source_access_denied" is a more useful failure than "it answered 403".
@@ -595,6 +601,41 @@ class ScenarioRunner:
         self.active_step = None
         self.aborted_at = None
         return {**self.report("completed"), "variables": self.variables}
+
+    def _validate_readbacks(self) -> None:
+        """Require each declared readback to be a checked GET after a prior write step."""
+        positions = {step["id"]: index for index, step in enumerate(self.spec.steps)}
+        for index, step in enumerate(self.spec.steps):
+            source_id = step.get("readback_of")
+            if source_id is None:
+                continue
+            operation = self.operations.get(step["operation_id"])
+            if operation is None:
+                raise WorkflowError(f"{step['id']}: OpenAPI operation not found: {step['operation_id']}")
+            method, _ = operation
+            if method != "GET":
+                raise WorkflowError(f"{step['id']}: readback step must use GET")
+            if not step.get("checks"):
+                raise WorkflowError(f"{step['id']}: readback step must declare at least one check")
+            source_index = positions.get(source_id)
+            if source_index is None or source_index >= index:
+                raise WorkflowError(f"{step['id']}: readback_of must name an earlier step")
+            source = self.spec.steps[source_index]
+            source_operation = self.operations.get(source["operation_id"])
+            if source_operation is None:
+                raise WorkflowError(f"{step['id']}: readback_of names a step with an unknown operation")
+            source_method, _ = source_operation
+            if source_method == "GET":
+                raise WorkflowError(f"{step['id']}: readback_of must name an earlier write step")
+
+    @staticmethod
+    def _readback_observation(step: dict[str, Any]) -> dict[str, str]:
+        return {
+            "kind": "readback",
+            "request_step_id": step["id"],
+            "after_step": step["readback_of"],
+            "operation_id": step["operation_id"],
+        }
 
     def _evaluate_checks(self, step: dict[str, Any], payload: Any) -> list[dict[str, Any]]:
         """Decide every declared expectation against the response, and record why it held.
@@ -627,6 +668,7 @@ class ScenarioRunner:
                 "actual": redact(actual, self.redactions) if found else None,
                 "found": found,
                 "status": "passed" if held else "failed",
+                **({"observation": self._readback_observation(step)} if step.get("readback_of") else {}),
             })
         return recorded
 

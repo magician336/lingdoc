@@ -364,30 +364,146 @@
     {
       "id": "F11",
       "name": "快照过期",
+      "starting_state": "S1",
       "setup": "已经准备快照，此后章节发生变更。",
       "steps": [
         {
-          "operation_id": "prepareRelease",
-          "expected_http": 201,
-          "assertion": "",
-          "response_example": "success"
-        },
-        {
-          "operation_id": "saveChapter",
-          "expected_http": 201,
-          "assertion": "",
-          "response_example": "success"
-        },
-        {
-          "operation_id": "getRelease",
+          "id": "F11-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
           "expected_http": 200,
-          "assertion": "",
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {
+            "f11.method_id": "/data/0/id",
+            "f11.method_version": "/data/0/current_version_id",
+            "f11.question_id": "/data/1/id",
+            "f11.question_version": "/data/1/current_version_id"
+          },
+          "assertion": "从已读回的两个章节开始构造可导出快照。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F11-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.question_id}}"},
+            "headers": {"Idempotency-Key": "f11-question-save-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.question_version}}", "expected_spec_revision": 1,
+                     "body_markdown": "合成演示：研究问题章节，用于验证快照过期。", "source_ids": []}
+          },
+          "capture": {"f11.question_written_version": "/data/current_version_id"},
+          "assertion": "保存首个章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-03",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.question_id}}"},
+            "headers": {"Idempotency-Key": "f11-question-confirm-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.question_written_version}}", "expected_spec_revision": 1,
+                     "review_decisions": []}
+          },
+          "assertion": "确认研究问题章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.method_id}}"},
+            "headers": {"Idempotency-Key": "f11-method-save-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.method_version}}", "expected_spec_revision": 1,
+                     "body_markdown": "合成演示：研究方案章节，用于验证快照过期。", "source_ids": []}
+          },
+          "capture": {"f11.method_written_version": "/data/current_version_id"},
+          "assertion": "保存另一个必需章节。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-05",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.method_id}}"},
+            "headers": {"Idempotency-Key": "f11-method-confirm-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.method_written_version}}", "expected_spec_revision": 1,
+                     "review_decisions": []}
+          },
+          "assertion": "确认研究方案章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-06",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f11.project_version": "/data/project_version"},
+          "assertion": "读取项目的最新版本以准备交付快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-07",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {"Idempotency-Key": "f11-release-0001"},
+            "json": {"expected_project_version": "{{f11.project_version}}"}
+          },
+          "capture": {"f11.snapshot_id": "/data/id"},
+          "checks": [{"path": "/data/check/status", "equals": "passed", "intent": "快照检查可通过，后续导出拒绝由过期引起"}],
+          "assertion": "先构造可导出的快照，隔离章节编辑导致的失效。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-08",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.question_id}}"},
+            "headers": {"Idempotency-Key": "f11-question-edit-0002"},
+            "json": {"expected_chapter_version_id": "{{f11.question_written_version}}", "expected_spec_revision": 1,
+                     "body_markdown": "合成演示：快照准备后编辑章节，使快照成为历史版本。", "source_ids": []}
+          },
+          "capture": {"f11.question_edited_version": "/data/current_version_id"},
+          "assertion": "快照准备后保存新章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-09",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f11.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F11-08",
+          "checks": [{"path": "/data/is_current", "equals": false, "intent": "通过后续读取快照观察到章节编辑已使快照过期"}],
+          "assertion": "结论来自章节编辑后的 getRelease 读回响应。",
           "response_example": "historical"
         },
         {
+          "id": "F11-10",
           "operation_id": "startExport",
+          "actor": "u-owner",
           "expected_http": 409,
-          "assertion": "历史文件仅在来源权限仍有效时可作为历史下载。",
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f11.snapshot_id}}"},
+            "headers": {"Idempotency-Key": "f11-export-stale-0001"},
+            "json": {"format": "docx"}
+          },
+          "checks": [{"path": "/error/code", "equals": "stale_input", "intent": "服务端因快照过期拒绝导出"}],
+          "assertion": "历史快照的导出请求被服务端拒绝。",
           "response_example": "stale_input"
         }
       ],
@@ -726,6 +842,166 @@
       "id": "F21",
       "name": "已导出后编辑并刷新历史标签",
       "setup": "已有verified文件，随后保存新章节使旧快照成为历史版本。",
+      "starting_state": "S1",
+      "steps": [
+        {
+          "id": "F21-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f21.method_id": "/data/0/id", "f21.method_version": "/data/0/current_version_id",
+                      "f21.question_id": "/data/1/id", "f21.question_version": "/data/1/current_version_id"},
+          "assertion": "从已读回的两个章节开始构造可导出快照。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F21-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.question_id}}"},
+                      "headers": {"Idempotency-Key": "f21-question-save-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.question_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成演示：研究问题章节，用于验证历史标签刷新。", "source_ids": []}},
+          "capture": {"f21.question_written_version": "/data/current_version_id"},
+          "assertion": "保存首个章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-03",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.question_id}}"},
+                      "headers": {"Idempotency-Key": "f21-question-confirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.question_written_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认研究问题章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.method_id}}"},
+                      "headers": {"Idempotency-Key": "f21-method-save-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.method_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成演示：研究方案章节，用于验证历史标签刷新。", "source_ids": []}},
+          "capture": {"f21.method_written_version": "/data/current_version_id"},
+          "assertion": "保存另一个必需章节。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-05",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.method_id}}"},
+                      "headers": {"Idempotency-Key": "f21-method-confirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.method_written_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认研究方案章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-06",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f21.project_version": "/data/project_version"},
+          "assertion": "读取项目的最新版本以准备交付快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-07",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f21-release-0001"},
+                      "json": {"expected_project_version": "{{f21.project_version}}"}},
+          "capture": {"f21.snapshot_id": "/data/id"},
+          "checks": [{"path": "/data/check/status", "equals": "passed", "intent": "快照检查可通过，导出可进入真实渲染流程"}],
+          "assertion": "创建可导出的交付快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-08",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f21.snapshot_id}}"},
+                      "headers": {"Idempotency-Key": "f21-export-0001"}, "json": {"format": "docx"}},
+          "capture": {"f21.export_id": "/data/id"},
+          "assertion": "提交真实 DOCX 导出任务。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F21-09",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "exportId": "{{f21.export_id}}"},
+                      "headers": {}, "json": null},
+          "checks": [{"path": "/data/status", "equals": "verified", "intent": "确认导出任务真实到达 verified"}],
+          "assertion": "轮询任务直到真实导出状态为 verified。",
+          "reference_response": {"data": {"status": "verified"}},
+          "response_example": "verified"
+        },
+        {
+          "id": "F21-10",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f21.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F21-07",
+          "checks": [{"path": "/data/is_current", "equals": true, "intent": "编辑前读回当前快照标签"}],
+          "assertion": "编辑前通过 getRelease 读取当前标签。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-11",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.question_id}}"},
+                      "headers": {"Idempotency-Key": "f21-question-edit-0002"},
+                      "json": {"expected_chapter_version_id": "{{f21.question_written_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成演示：导出后编辑章节，刷新旧快照历史标签。", "source_ids": []}},
+          "capture": {"f21.question_edited_version": "/data/current_version_id"},
+          "assertion": "导出完成后保存新章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-12",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "exportId": "{{f21.export_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F21-11",
+          "checks": [{"path": "/data/status", "equals": "verified", "intent": "编辑后重新读取同一导出仍为 verified"}],
+          "assertion": "刷新历史记录时重新读取导出状态。",
+          "reference_response": {"data": {"status": "verified"}},
+          "response_example": "verified"
+        },
+        {
+          "id": "F21-13",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f21.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F21-11",
+          "checks": [{"path": "/data/is_current", "equals": false, "intent": "章节编辑后读取快照观察到历史标签"}],
+          "assertion": "历史标签结论来自编辑后的 getRelease 读回响应。",
+          "response_example": "historical"
+        }
+      ],
       "reference": {
         "export_before": {
           "id": "export-demo",

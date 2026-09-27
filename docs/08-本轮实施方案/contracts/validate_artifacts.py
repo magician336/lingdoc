@@ -50,11 +50,13 @@ def validate(schema,value,label):
     checks+=1
 for schema in normalized['components']['schemas'].values(): Draft7Validator.check_schema(schema)
 ops={}
+operation_methods={}
 for path,item in spec['paths'].items():
     for method,op in item.items():
         assert method in {'get','post','put','patch','delete'}
         oid=op['operationId']; assert oid not in ops
         ops[oid]=op
+        operation_methods[oid]=method
         assert set(re.findall(r'\{([^}]+)\}',path))=={p['name'] for p in op.get('parameters',[]) if p['in']=='path' and p['required']}
         if 'requestBody' in op:
             media=op['requestBody']['content']['application/json']
@@ -148,6 +150,10 @@ def check_scenario_step(scenario,index,step):
     global scenario_steps,scenario_steps_with_requests,check_references
     where=step.get('id') or f"{scenario['id']} step {index}"
     assert step['operation_id'] in ops,where+' names an operation the OpenAPI document does not have'
+    if 'readback_of' in step:
+        assert isinstance(step['readback_of'],str) and step['readback_of'].strip(),where+' readback_of must name an earlier step'
+        assert operation_methods[step['operation_id']]=='get',where+' readback step must use GET'
+        assert step.get('checks'),where+' readback step must declare at least one check'
     response=ops[step['operation_id']]['responses'][str(step['expected_http'])]
     if 'response_example' in step:
         assert step['response_example'] in response['content']['application/json']['examples'],where
@@ -175,8 +181,15 @@ ACTORS={'u-owner'}|{name for state in cases['starting_states'] for name in state
 def check_scenario(scenario):
     if scenario.get('starting_state') is not None:
         assert scenario['starting_state'] in {state['id'] for state in cases['starting_states']},scenario['id']
-    for index,step in enumerate(scenario.get('steps',[]),start=1):
+    steps=scenario.get('steps',[])
+    for index,step in enumerate(steps,start=1):
         check_scenario_step(scenario,index,step)
+        if 'readback_of' in step:
+            earlier=next((candidate for candidate in steps[:index-1]
+                          if candidate.get('id')==step['readback_of']),None)
+            assert earlier is not None,step['id']+' readback_of must name an earlier step'
+            assert operation_methods[earlier['operation_id']]!='get',\
+                step['id']+' readback_of must name an earlier write step'
     state=next((item for item in cases['starting_states'] if item['id']==scenario.get('starting_state')),None)
     if state and scenario.get('steps') and all('request' in step for step in scenario['steps']):
         available={'project.id'}
@@ -324,7 +337,7 @@ def check_trace(steps):
             chapters[data['id']]=copy.deepcopy(data);project_version+=1
         elif oid=='confirmChapter':
             ch=chapters[req['path_params']['chapterId']]
-            assert body['chapter_version_id']==ch['current_version_id'] and body['expected_spec_revision']==spec_revision
+            assert body['expected_chapter_version_id']==ch['current_version_id'] and body['expected_spec_revision']==spec_revision
             assert unique_by(body['review_decisions'],'review_item_id')==review_ids(ch)
             assert data['review_decisions']==body['review_decisions']
             confirmations[ch['id']]={k:copy.deepcopy(v) for k,v in data.items() if k!='valid'}
@@ -495,6 +508,16 @@ for label,action in [
      mutate_step(lambda s:s['request']['headers'].pop('Idempotency-Key'))),
     ('scenario_step_names_an_undeclared_actor',mutate_step(lambda s:s.update(actor='u-stranger'))),
     ('scenario_step_points_at_an_unknown_operation',mutate_step(lambda s:s.update(operation_id='inventOperation'))),
+    ('scenario_readback_must_use_a_read_operation',
+     mutate_step(lambda s:s.update(readback_of='F22-00'))),
+    ('scenario_readback_needs_a_check',
+     lambda:check_scenario_step(next(s for s in cases['scenarios'] if s['id']=='F05'),1,
+                                {**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F05')['steps'][0]),
+                                 'readback_of':'F05-02','checks':[]})),
+    ('scenario_readback_must_point_to_an_earlier_step',
+     lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F05')),
+                            'steps':[dict(copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F05')['steps'][0]),
+                                          readback_of='F05-01')]})),
     ('scenario_declares_an_unknown_starting_state',
      lambda:check_scenario({**F22,'starting_state':'S99'})),
     ('scenario_uses_a_capture_before_it_is_produced',
