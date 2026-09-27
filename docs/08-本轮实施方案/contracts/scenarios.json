@@ -85,19 +85,74 @@
     {
       "id": "F05",
       "name": "两人同版本保存",
-      "setup": "两个调用者已授权，均读到cv-question-2；先后提交不同正文。",
+      "starting_state": "S2",
+      "setup": "Owner 与协作者先后读取同一章节版本，再各自提交不同正文；先写入者成功，后写入者应收到明确的版本冲突，且不能覆盖先写入者。",
       "steps": [
         {
+          "id": "F05-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f05.chapter_id": "/data/0/id", "f05.owner_version": "/data/0/current_version_id"},
+          "assertion": "Owner 读取并留存开始写入前的章节版本。",
+          "response_example": "success",
+          "checks": [{"path": "/data/0/section_id", "equals": "question", "intent": "读取的是双方竞争保存的研究问题章节"}]
+        },
+        {
+          "id": "F05-02",
+          "operation_id": "listChapters",
+          "actor": "u-member",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f05.member_version": "/data/0/current_version_id"},
+          "assertion": "协作者在 Owner 写入前也读取并留存同一版本。",
+          "response_example": "success",
+          "checks": [{"path": "/data/0/current_version_id", "equals": "{{f05.owner_version}}", "intent": "两位调用者基于同一个章节版本"}]
+        },
+        {
+          "id": "F05-03",
           "operation_id": "saveChapter",
+          "actor": "u-owner",
           "expected_http": 201,
-          "assertion": "",
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f05.chapter_id}}"},
+            "headers": {"Idempotency-Key": "f05-owner-save-0001"},
+            "json": {"expected_chapter_version_id": "{{f05.owner_version}}", "expected_spec_revision": 1,
+                      "body_markdown": "Owner 写入的合成版本。", "source_ids": []}
+          },
+          "capture": {"f05.written_version": "/data/current_version_id", "f05.written_body": "/data/body_markdown"},
+          "assertion": "基于读取到的当前版本，Owner 的首次写入成功并产生新版本。",
           "response_example": "success"
         },
         {
+          "id": "F05-04",
           "operation_id": "saveChapter",
+          "actor": "u-member",
           "expected_http": 409,
-          "assertion": "第二次无新版本，第一次正文不丢失。",
-          "response_example": "version_conflict"
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f05.chapter_id}}"},
+            "headers": {"Idempotency-Key": "f05-member-save-0001"},
+            "json": {"expected_chapter_version_id": "{{f05.member_version}}", "expected_spec_revision": 1,
+                      "body_markdown": "协作者尝试写入的不同版本。", "source_ids": []}
+          },
+          "assertion": "后到的协作者写入必须因旧章节版本发生冲突，而不是被静默覆盖。",
+          "response_example": "version_conflict",
+          "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "冲突明确指向章节版本过期"}]
+        },
+        {
+          "id": "F05-05",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {},
+          "assertion": "冲突后重新读取，确认只有 Owner 的新版本成为当前版本且正文未丢失。",
+          "response_example": "success",
+          "checks": [
+            {"path": "/data/0/current_version_id", "equals": "{{f05.written_version}}", "intent": "协作者的冲突写入没有创建另一条当前版本"},
+            {"path": "/data/0/body_markdown", "equals": "{{f05.written_body}}", "intent": "冲突没有覆盖 Owner 已保存的正文"}
+          ]
         }
       ],
       "providers": [
@@ -184,25 +239,63 @@
     {
       "id": "F08",
       "name": "重复提交与幂等冲突",
+      "starting_state": "S5",
       "setup": "已授权；第一次请求成功，客户端未收到响应。",
       "steps": [
         {
-          "operation_id": "startGeneration",
-          "expected_http": 202,
-          "assertion": "保存返回run_id。",
-          "response_example": "queued"
+          "id": "F08-00",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f08.chapter_id": "/data/0/id"},
+          "assertion": "从本次起点读取章节资源 ID，后续生成请求使用这个响应捕获值。",
+          "response_example": "success",
+          "checks": [{"path": "/data/0/section_id", "equals": "question", "intent": "生成请求目标是研究问题章节"}]
         },
         {
+          "id": "F08-01",
           "operation_id": "startGeneration",
+          "actor": "u-owner",
           "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f08-generation-0001"},
+                       "json": {"chapter_id": "{{f08.chapter_id}}", "asset_ids": ["{{asset.k-demo}}"],
+                                "instruction": "幂等场景的固定合成生成请求。", "expected_spec_revision": 1,
+                                "expected_chapter_version_id": null}},
+          "capture": {"f08.first_run_id": "/data/id"},
+          "assertion": "第一次提交成功，记录服务返回的 run_id。",
+          "response_example": "queued",
+          "checks": [{"path": "/meta/replayed", "equals": false, "intent": "首次提交不是重放响应"}]
+        },
+        {
+          "id": "F08-02",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f08-generation-0001"},
+                       "json": {"chapter_id": "{{f08.chapter_id}}", "asset_ids": ["{{asset.k-demo}}"],
+                                "instruction": "幂等场景的固定合成生成请求。", "expected_spec_revision": 1,
+                                "expected_chapter_version_id": null}},
+          "capture": {"f08.replayed_run_id": "/data/id"},
           "assertion": "同键同请求返回原run_id；只有一条业务任务。",
-          "response_example": "queued"
+          "response_example": "replayed",
+          "checks": [
+            {"path": "/data/id", "equals": "{{f08.first_run_id}}", "intent": "同键重放返回第一次创建的同一个 run_id，因此没有第二条生成任务"},
+            {"path": "/meta/replayed", "equals": true, "intent": "服务明确标记该响应来自幂等重放"}
+          ]
         },
         {
+          "id": "F08-03",
           "operation_id": "startGeneration",
+          "actor": "u-owner",
           "expected_http": 409,
-          "assertion": "同键改instruction被拒绝；同样验证采纳和导出。",
-          "response_example": "idempotency_conflict"
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f08-generation-0001"},
+                       "json": {"chapter_id": "{{f08.chapter_id}}", "asset_ids": ["{{asset.k-demo}}"],
+                                "instruction": "改过的请求必须产生幂等冲突。", "expected_spec_revision": 1,
+                                "expected_chapter_version_id": null}},
+          "assertion": "同键改 instruction 必须拒绝，报告区分幂等冲突与成功重放。",
+          "response_example": "idempotency_conflict",
+          "checks": [{"path": "/error/code", "equals": "idempotency_conflict", "intent": "同键不同请求得到幂等冲突，而不是被当成重放"}]
         }
       ],
       "providers": [
@@ -306,19 +399,56 @@
     {
       "id": "F12",
       "name": "草稿版本也有效",
+      "starting_state": "S4",
       "setup": "草稿条件先后保存，spec_revision递增，立项不豁免版本比较。",
       "steps": [
         {
-          "operation_id": "saveSpec",
+          "id": "F12-01",
+          "operation_id": "getProject",
+          "actor": "u-owner",
           "expected_http": 200,
-          "assertion": "",
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f12.initial_spec_revision": "/data/spec_revision"},
+          "assertion": "先读取草稿项目当前版本，后续写入以此作为乐观并发基线。",
+          "response_example": "success",
+          "checks": [{"path": "/data/spec_revision", "equals": 1, "intent": "起点的草稿条件版本为 1"}]
+        },
+        {
+          "id": "F12-02",
+          "operation_id": "saveSpec",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-save-spec-0001"},
+                       "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}",
+                                "fields": {"research_subject": "公开的合成调查样本", "research_goal": "草稿状态下验证条件版本递增与立项"}}},
+          "capture": {"f12.saved_spec_revision": "/data/spec_revision"},
+          "assertion": "草稿状态保存成功，并返回递增后的 spec_revision。",
           "response_example": "success"
         },
         {
+          "id": "F12-03",
           "operation_id": "activateProject",
+          "actor": "u-owner",
           "expected_http": 409,
-          "assertion": "使用旧expected_spec_revision不得确认立项。",
-          "response_example": "version_conflict"
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-activate-stale-0001"},
+                       "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}"}},
+          "assertion": "立项请求仍用保存前的旧 spec_revision，必须明确冲突，不得因处于草稿状态而跳过版本比较。",
+          "response_example": "version_conflict",
+          "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "草稿立项明确报告条件版本冲突"}]
+        },
+        {
+          "id": "F12-04",
+          "operation_id": "activateProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-activate-fresh-0001"},
+                       "json": {"expected_spec_revision": "{{f12.saved_spec_revision}}"}},
+          "assertion": "刷新为刚保存的 spec_revision 后，草稿项目可以正常立项。",
+          "response_example": "success",
+          "checks": [
+            {"path": "/data/status", "equals": "active", "intent": "使用最新草稿版本后立项成功"},
+            {"path": "/data/spec_revision", "equals": "{{f12.saved_spec_revision}}", "intent": "立项返回刚保存的条件版本"}
+          ]
         }
       ],
       "providers": [

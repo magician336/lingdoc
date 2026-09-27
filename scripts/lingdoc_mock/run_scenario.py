@@ -244,6 +244,18 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     # The specification is loaded first on purpose: a scenario whose steps cannot be sent
     # must be refused before a single write is issued, not after the state is already built.
     spec = load_spec(states_path, scenario_id)
+    named_actors = sorted({step["actor"] for step in spec.steps if step.get("actor")})
+    effective_identities = dict(identities or {})
+    if len(named_actors) > 1:
+        missing = [actor for actor in named_actors if actor not in effective_identities]
+        if missing:
+            raise WorkflowError(f"{scenario_id} names multiple actors but no credential was supplied for "
+                                + ", ".join(missing))
+    unused = sorted(set(effective_identities) - set(named_actors))
+    if unused:
+        raise WorkflowError(f"{scenario_id} does not use supplied identity: " + ", ".join(unused))
+    if len(named_actors) == 1 and named_actors[0] not in effective_identities and token:
+        effective_identities[named_actors[0]] = token
     state_id = scenario.get("starting_state")
     if not state_id:
         raise WorkflowError(f"{scenario_id} declares no starting_state, so there is nothing to drive it from")
@@ -279,7 +291,7 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         executed["verdict"] = "failed"
     else:
         runner = ScenarioRunner(openapi, spec, base_url=base_url or server_url, token=token,
-                                timeout=timeout, opener=opener, identities=identities,
+                                timeout=timeout, opener=opener, identities=effective_identities,
                                 variables=variables_from(loader), redactions=redactions)
         runner.run(stop_on_mismatch=False)
         executed["steps"] = step_verdicts(runner.spec, runner)
@@ -307,9 +319,91 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     }
 
 
+def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path, **kwargs: Any) -> dict[str, Any]:
+    """Run independent declared starting states and combine their per-scenario conclusions.
+
+    A single scenario keeps the version-1 report shape for existing callers. A multi-scenario
+    report records one complete execution per ID and merges only those IDs' verdicts into the
+    shared contract listing.
+    """
+    if not scenario_ids:
+        raise WorkflowError("at least one --scenario is required")
+    if len(scenario_ids) != len(set(scenario_ids)):
+        raise WorkflowError("--scenario contains a duplicate scenario id")
+
+    provided_identities = dict(kwargs.get("identities") or {})
+    document = read_json_object(states_path, "states document")
+    scenario_specs = {scenario_id: load_spec(states_path, scenario_id) for scenario_id in scenario_ids}
+    scenario_states = {}
+    for scenario_id in scenario_ids:
+        scenario = scenario_entry(document, scenario_id, states_path.name)
+        state_id = scenario.get("starting_state")
+        if not state_id:
+            raise WorkflowError(f"{scenario_id} declares no starting_state, so there is nothing to drive it from")
+        scenario_states[scenario_id] = load_state(states_path, state_id)
+    all_actors = {step["actor"] for spec in scenario_specs.values() for step in spec.steps if step.get("actor")}
+    unused_identities = sorted(set(provided_identities) - all_actors)
+    if unused_identities:
+        raise WorkflowError("--identity supplies actors not used by the selected scenarios: "
+                            + ", ".join(unused_identities))
+    multi_actor_names = {actor for spec in scenario_specs.values()
+                         for actor in {step["actor"] for step in spec.steps if step.get("actor")}
+                         if len({step["actor"] for step in spec.steps if step.get("actor")}) > 1}
+    missing_identities = sorted(multi_actor_names - set(provided_identities))
+    if missing_identities:
+        raise WorkflowError("--scenario needs a credential for every actor in multi-actor scenarios: "
+                            + ", ".join(missing_identities))
+    known_knowledge = {asset.knowledge_id for state in scenario_states.values() for asset in state.assets}
+    known_members = {name for state in scenario_states.values() for name in state.members}
+    unused_knowledge = sorted(set(kwargs.get("knowledge", {})) - known_knowledge)
+    unused_members = sorted(set(kwargs.get("member", {})) - known_members)
+    if unused_knowledge:
+        raise WorkflowError("--knowledge supplies names not used by the selected starting states: "
+                            + ", ".join(unused_knowledge))
+    if unused_members:
+        raise WorkflowError("--member supplies names not used by the selected starting states: "
+                            + ", ".join(unused_members))
+    reports = []
+    for scenario_id in scenario_ids:
+        actors = {step["actor"] for step in scenario_specs[scenario_id].steps if step.get("actor")}
+        state = scenario_states[scenario_id]
+        state_knowledge = {asset.knowledge_id for asset in state.assets}
+        scenario_kwargs = {
+            **kwargs,
+            "identities": {name: token for name, token in provided_identities.items() if name in actors},
+            "knowledge": {name: value for name, value in kwargs.get("knowledge", {}).items()
+                          if name in state_knowledge},
+            "member": {name: value for name, value in kwargs.get("member", {}).items() if name in state.members},
+        }
+        reports.append(run_scenario(scenario_id, states_path, openapi_path, **scenario_kwargs))
+    if len(reports) == 1:
+        return reports[0]
+
+    merged = dict(reports[0])
+    verdicts = {entry["scenario"]: entry for entry in reports[0]["scenarios"]}
+    for report in reports[1:]:
+        for entry in report["scenarios"]:
+            if entry["verdict"] != "not_run":
+                verdicts[entry["scenario"]] = entry
+
+    scenarios = [verdicts[entry["scenario"]] for entry in reports[0]["scenarios"]]
+    summary = {verdict: sum(entry["verdict"] == verdict for entry in scenarios)
+               for verdict in ("passed", "failed", "not_run")}
+    merged.update({
+        "scope": "multiple independent scenarios driven from their declared starting states",
+        "executed": [report["executed"] for report in reports],
+        "scenarios": scenarios,
+        "summary": summary,
+        "not_run": ["模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
+                    f"其余 {summary['not_run']} 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"],
+    })
+    return merged
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Drive one contract scenario from its declared state to a report.")
-    parser.add_argument("--scenario", required=True, help="scenario id declared in the states document")
+    parser = argparse.ArgumentParser(description="Drive contract scenarios from their declared states to a report.")
+    parser.add_argument("--scenario", required=True, action="append",
+                        help="scenario id declared in the states document; repeat to drive independent scenarios")
     parser.add_argument("--states", type=Path, default=SCENARIOS_PATH, help="document holding scenarios and starting_states")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--base-url", help="OpenAPI server base URL; defaults to the first server in openapi.json")
@@ -330,33 +424,36 @@ def main(argv: list[str] | None = None) -> int:
         identities = dict(parse_environment_fact(value, "identity") for value in args.identity)
         # Verify the destination before any provider mutation: a run that dies halfway then
         # leaves an explicit record instead of a stale success from the previous run.
+        scenario_label = ",".join(args.scenario)
         write_report(args.report, {"report_version": 1, "runner_status": "not_started",
-                                   "scenario": args.scenario})
+                                   "scenarios": args.scenario})
         report_started = True
-        report = run_scenario(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
-                              identities=identities, base_url=args.base_url, token=args.token,
-                              timeout=args.request_timeout)
+        report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
+                               identities=identities, base_url=args.base_url, token=args.token,
+                               timeout=args.request_timeout)
         write_report(args.report, report)
-        verdict = report["executed"]["verdict"]
-        print(f"{args.scenario} {verdict}; report written to {args.report}")
-        for step in report["executed"]["steps"]:
-            print(f"{step['step_id']} {step['verdict'].upper()} {step['operation_id']} "
-                  f"HTTP {step['actual_http']} (expected {step['expected_http']})")
-            for line in step.get("why", []):
-                print(f"  {line}")
-        for mismatch in report["executed"]["state"]["mismatches"]:
-            print(f"MISMATCH {mismatch['pointer']}: declared {mismatch['declared']!r}, "
-                  f"read back {mismatch['actual']!r}", file=sys.stderr)
+        executions = report["executed"] if isinstance(report["executed"], list) else [report["executed"]]
+        verdict = "failed" if any(execution["verdict"] != "passed" for execution in executions) else "passed"
+        print(f"{scenario_label} {verdict}; report written to {args.report}")
+        for execution in executions:
+            for step in execution["steps"]:
+                print(f"{execution['scenario']} {step['step_id']} {step['verdict'].upper()} {step['operation_id']} "
+                      f"HTTP {step['actual_http']} (expected {step['expected_http']})")
+                for line in step.get("why", []):
+                    print(f"  {line}")
+            for mismatch in execution["state"]["mismatches"]:
+                print(f"{execution['scenario']} MISMATCH {mismatch['pointer']}: declared {mismatch['declared']!r}, "
+                      f"read back {mismatch['actual']!r}", file=sys.stderr)
     except (WorkflowError, OSError) as error:
-        print(f"{args.scenario} FAILED: {error}", file=sys.stderr)
+        print(f"{scenario_label if 'scenario_label' in locals() else args.scenario} FAILED: {error}", file=sys.stderr)
         if report_started:
             try:
                 write_report(args.report, {"report_version": 1, "runner_status": "failed",
-                                           "scenario": args.scenario})
+                                           "scenarios": args.scenario})
             except WorkflowError as report_error:
-                print(f"{args.scenario} REPORT FAILED: {report_error}", file=sys.stderr)
+                print(f"{scenario_label} REPORT FAILED: {report_error}", file=sys.stderr)
         return 1
-    return 0 if report["executed"]["verdict"] == "passed" else 1
+    return 0 if verdict == "passed" else 1
 
 
 if __name__ == "__main__":

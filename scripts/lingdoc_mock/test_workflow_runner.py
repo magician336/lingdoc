@@ -410,6 +410,41 @@ class RecordedOutcomeTest(unittest.TestCase):
         self.assertEqual(first["scratch"], "provider-asset-id")
         self.assertEqual(second, first)
 
+    def test_a_response_capture_is_substituted_into_the_next_step_request(self):
+        openapi = {
+            "servers": LOOPBACK_SERVER,
+            "paths": {
+                "/projects": {"post": {"operationId": "createProject"}},
+                "/projects/{projectId}": {"get": {"operationId": "getProject"}},
+            },
+        }
+        workflow = {"id": "F32", "steps": [
+            {"id": "create", "operation_id": "createProject", "expected_http": 201,
+             "request": {"json": {"name": "synthetic"}},
+             "capture": {"f32.project_id": "/data/id"}},
+            {"id": "read", "operation_id": "getProject", "expected_http": 200,
+             "request": {"path_params": {"projectId": "{{f32.project_id}}"}},
+             "capture": {},
+             "checks": [{"path": "/data/id", "equals": "{{f32.project_id}}", "intent": "复用前一步创建的项目"}]},
+        ]}
+        responses = [FakeResponse(b'{"data":{"id":"provider-project-id"}}', 201),
+                     FakeResponse(b'{"data":{"id":"provider-project-id"}}', 200)]
+        requests = []
+
+        def opener(request, timeout):
+            requests.append(request)
+            return responses.pop(0)
+
+        runner = ScenarioRunner(openapi, spec_from_document(workflow, "synthetic specification"),
+                                base_url=LOOPBACK_SERVER[0]["url"], opener=opener)
+        result = runner.run()
+        self.assertEqual(requests[1].full_url, "http://127.0.0.1:8080/api/v1/lingdoc/projects/provider-project-id")
+        self.assertEqual(result["variables"]["f32.project_id"], "provider-project-id")
+        self.assertEqual(result["checks"][0]["status"], "passed")
+        rendered = json.dumps(runner.report("completed"), ensure_ascii=False)
+        self.assertNotIn("provider-project-id", rendered)
+        self.assertIn("{{f32.project_id}}", rendered)
+
 
 class DottedVariableTest(unittest.TestCase):
     def test_a_variable_name_may_be_namespaced_the_way_the_contract_spells_it(self):

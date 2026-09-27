@@ -67,13 +67,18 @@ for path,item in spec['paths'].items():
 scenario_steps=0
 scenario_steps_with_requests=0
 check_references={'tied':0,'unresolved':0}
-VARIABLE=re.compile(r'\{\{[A-Za-z_][A-Za-z0-9_.-]*\}\}')
+VARIABLE=re.compile(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}')
 CHECK_OPERATORS=('equals','length','keys','one_of')
 def has_variable(value):
     if isinstance(value,str): return bool(VARIABLE.search(value))
     if isinstance(value,list): return any(has_variable(v) for v in value)
     if isinstance(value,dict): return any(has_variable(v) for v in value.values())
     return False
+def variable_names(value):
+    if isinstance(value,str): return set(VARIABLE.findall(value))
+    if isinstance(value,list): return set().union(*(variable_names(v) for v in value)) if value else set()
+    if isinstance(value,dict): return set().union(*(variable_names(v) for v in value.values())) if value else set()
+    return set()
 
 def check_request_shape(op,request,where):
     """The parts of a request a static check can hold without knowing what a variable resolves to.
@@ -172,6 +177,29 @@ def check_scenario(scenario):
         assert scenario['starting_state'] in {state['id'] for state in cases['starting_states']},scenario['id']
     for index,step in enumerate(scenario.get('steps',[]),start=1):
         check_scenario_step(scenario,index,step)
+    state=next((item for item in cases['starting_states'] if item['id']==scenario.get('starting_state')),None)
+    if state and scenario.get('steps') and all('request' in step for step in scenario['steps']):
+        available={'project.id'}
+        available|={f"asset.{asset['knowledge_id']}" for asset in state.get('assets') or []}
+        available|={f"chapter.{chapter['section_id']}" for chapter in state.get('chapters') or []}
+        for index,step in enumerate(scenario['steps'],start=1):
+            where=step.get('id') or f"{scenario['id']} step {index}"
+            referenced=variable_names(step['request'])|variable_names(step.get('checks',[]))
+            missing=referenced-available
+            assert not missing,where+' references values not yet captured: '+', '.join(sorted(missing))
+            captures=step.get('capture',{})
+            assert isinstance(captures,dict),where+' capture must be an object'
+            example=(ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']
+                     ['application/json']['examples'][step['response_example']]['value'])
+            for name,pointer in captures.items():
+                assert isinstance(name,str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*',name),\
+                    where+' capture name is invalid'
+                assert isinstance(pointer,str) and pointer.startswith('/'),where+' capture pointer must be a JSON pointer'
+                assert name not in available,where+' captures an already available variable: '+name
+                try: ptr(example,pointer)
+                except (KeyError,IndexError,TypeError,ValueError):
+                    raise AssertionError(where+' capture pointer is absent from its published response example: '+pointer)
+                available.add(name)
 for scenario in cases['scenarios']:
     check_scenario(scenario)
 # 反例也会走到同一段代码，所以计数在这里就截下来：报告要说的是契约里有几条，不是校验器跑了几遍。
@@ -469,6 +497,15 @@ for label,action in [
     ('scenario_step_points_at_an_unknown_operation',mutate_step(lambda s:s.update(operation_id='inventOperation'))),
     ('scenario_declares_an_unknown_starting_state',
      lambda:check_scenario({**F22,'starting_state':'S99'})),
+    ('scenario_uses_a_capture_before_it_is_produced',
+     lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F08')),
+                            'steps':[dict(next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0],
+                                          request={'path_params':{'projectId':'{{f08.run_id}}'},'headers':{},
+                                                   'json':next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0]['request']['json']})]})),
+    ('scenario_capture_points_outside_the_published_response',
+     lambda:check_scenario({**copy.deepcopy(next(s for s in cases['scenarios'] if s['id']=='F08')),
+                            'steps':[dict(next(s for s in cases['scenarios'] if s['id']=='F08')['steps'][0],
+                                          capture={'f08.missing':'/data/not_a_field'})]})),
 ]:
     must_reject(label,action)
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'

@@ -67,6 +67,7 @@ class SyntheticProvider:
         self.assets: dict[str, list[dict]] = {}
         self.calls: list[dict] = []
         self.counter = 0
+        self.idempotency: dict[tuple[str, str], tuple[str, Response]] = {}
 
     # ---- the opener seam --------------------------------------------------
 
@@ -77,12 +78,27 @@ class SyntheticProvider:
         headers = {name.lower(): value for name, value in request.headers.items()}
         self.calls.append({"method": method, "url": request.full_url, "path": path,
                            "headers": headers, "body": body})
+        idempotency_key = headers.get("idempotency-key")
+        identity = request.get_header("Authorization") or request.get_header("authorization") or ""
+        replay_key = (identity, idempotency_key) if idempotency_key else None
+        fingerprint = json.dumps([method, path, body], ensure_ascii=False, sort_keys=True)
+        if replay_key in self.idempotency:
+            previous_fingerprint, previous = self.idempotency[replay_key]
+            if previous_fingerprint != fingerprint:
+                return Response(409, {"error": {"code": "idempotency_conflict", "message": "synthetic",
+                                                 "retryable": False}, "request_id": "req-synthetic"})
+            payload = json.loads(previous.payload.decode("utf-8"))
+            if isinstance(payload, dict) and isinstance(payload.get("meta"), dict):
+                payload["meta"].update(replayed=True, refresh_required=True)
+            return Response(previous.status, payload)
         for pattern, status in self.failures.items():
             if re.fullmatch(pattern, path):
                 return Response(status, {"error": {"code": "version_conflict", "message": "synthetic",
                                                    "retryable": False}, "request_id": "req-synthetic"})
         route = self._route(method, path, body)
         assert route is not None, f"unrouted {method} {path}"
+        if replay_key and route.status in {200, 201, 202}:
+            self.idempotency[replay_key] = (fingerprint, route)
         return route
 
     def _route(self, method: str, path: str, body):
@@ -116,6 +132,9 @@ class SyntheticProvider:
         match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/retrieval", path)
         if match and method == "POST":
             return self._retrieve(match.group(1), body)
+        match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/generations", path)
+        if match and method == "POST":
+            return self._start_generation(match.group(1), body)
         return None
 
     # ---- operations -------------------------------------------------------
@@ -147,7 +166,8 @@ class SyntheticProvider:
 
     def _save_spec(self, project_id, body):
         project = self.projects[project_id]
-        assert body["expected_spec_revision"] == project["spec_revision"], "spec revision precondition"
+        if body["expected_spec_revision"] != project["spec_revision"]:
+            return self._version_conflict()
         project["spec_revision"] += 1
         project["project_version"] += 1
         project["spec"] = dict(body["fields"])
@@ -164,7 +184,8 @@ class SyntheticProvider:
 
     def _activate(self, project_id, body):
         project = self.projects[project_id]
-        assert body["expected_spec_revision"] == project["spec_revision"], "spec revision precondition"
+        if body["expected_spec_revision"] != project["spec_revision"]:
+            return self._version_conflict()
         project["status"] = "active"
         project["project_version"] += 1
         self.chapters[project_id] = [{"id": self._next_id("ch"), "project_id": project_id,
@@ -176,14 +197,26 @@ class SyntheticProvider:
     def _save_chapter(self, project_id, chapter_id, body):
         project = self.projects[project_id]
         chapter = next(ch for ch in self.chapters[project_id] if ch["id"] == chapter_id)
-        assert body["expected_chapter_version_id"] == chapter["current_version_id"], "chapter version precondition"
-        assert body["expected_spec_revision"] == project["spec_revision"], "spec revision precondition"
+        if (body["expected_chapter_version_id"] != chapter["current_version_id"]
+                or body["expected_spec_revision"] != project["spec_revision"]):
+            return self._version_conflict()
         project["project_version"] += 1  # the real service serialises chapter writes through the project row
         chapter["current_version_id"] = self._next_id("cv")
         chapter["body_markdown"] = (self.chapter_body_override if self.chapter_body_override is not None
                                     else body["body_markdown"])
         chapter["source_ids"] = list(body["source_ids"])
         return Response(201, self._envelope(dict(chapter)))
+
+    def _start_generation(self, project_id, body):
+        run_id = self._next_id("run")
+        return Response(202, self._envelope({"id": run_id, "project_id": project_id,
+                                             "chapter_id": body["chapter_id"], "status": "queued",
+                                             "candidate_id": None}))
+
+    @staticmethod
+    def _version_conflict():
+        return Response(409, {"error": {"code": "version_conflict", "message": "synthetic",
+                                        "retryable": False}, "request_id": "req-synthetic"})
 
     def _bind_asset(self, project_id, body):
         asset = {"id": self._next_id("a"), "project_id": project_id, "knowledge_id": body["knowledge_id"],

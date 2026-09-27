@@ -6,13 +6,13 @@
   "core_operations": 28,
   "schemas": 65,
   "local_refs": 341,
-  "shape_checks": 579,
+  "shape_checks": 580,
   "scenarios": 22,
-  "scenario_example_references": 38,
+  "scenario_example_references": 46,
   "continuous_trace_steps": 23,
-  "scenario_steps_with_requests": 1,
-  "scenario_checks_tied_to_a_published_example": 5,
-  "scenario_checks_left_to_the_run": 1,
+  "scenario_steps_with_requests": 14,
+  "scenario_checks_tied_to_a_published_example": 14,
+  "scenario_checks_left_to_the_run": 6,
   "starting_states": 7,
   "starting_state_parts_buildable": [
     "assets",
@@ -57,7 +57,9 @@
     "scenario_request_without_an_idempotency_key",
     "scenario_step_names_an_undeclared_actor",
     "scenario_step_points_at_an_unknown_operation",
-    "scenario_declares_an_unknown_starting_state"
+    "scenario_declares_an_unknown_starting_state",
+    "scenario_uses_a_capture_before_it_is_produced",
+    "scenario_capture_points_outside_the_published_response"
   ],
   "not_run": [
     "complete OpenAPI meta-schema validation",

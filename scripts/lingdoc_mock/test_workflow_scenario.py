@@ -18,7 +18,7 @@ from unittest.mock import patch
 
 from scripts.lingdoc_mock import run_scenario as module
 from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, PROVIDER_ID, SCENARIOS_PATH, WorkflowError, write_report
-from scripts.lingdoc_mock.test_workflow_states import PROVIDER_IDS, Response, SyntheticProvider
+from scripts.lingdoc_mock.test_workflow_states import MEMBER_ID, PROVIDER_IDS, Response, SyntheticProvider
 
 KNOWLEDGE = {name: resolved for name, resolved in PROVIDER_IDS.items()}
 IDENTITIES = {"u-owner": "synthetic-owner-token"}
@@ -244,13 +244,72 @@ class ScenarioReportTest(unittest.TestCase):
                                 member={}, identities=dict(IDENTITIES), opener=synthetic.open)
         self.assertEqual(synthetic.calls, [])
 
+    def test_multiple_scenarios_are_recorded_as_independent_executions(self):
+        def report(scenario_id):
+            all_ids = ["F08", "F05", "F12"]
+            return {
+                "report_version": 1,
+                "executed": {"scenario": scenario_id, "verdict": "passed", "steps": [], "state": {"mismatches": []}},
+                "scenarios": [{"scenario": item, "verdict": "passed" if item == scenario_id else "not_run",
+                               "name": item, "reason": "executed" if item == scenario_id else "not selected"}
+                              for item in all_ids],
+                "summary": {"passed": 1, "failed": 0, "not_run": 2},
+                "not_run": ["initial"],
+            }
+
+        reports = [report(scenario_id) for scenario_id in ("F08", "F05", "F12")]
+        with patch.object(module, "run_scenario", side_effect=reports) as run_one:
+            combined = module.run_scenarios(["F08", "F05", "F12"], SCENARIOS_PATH, OPENAPI_PATH,
+                                             knowledge={}, member={}, identities={
+                                                 "u-owner": "test-owner-token",
+                                                 "u-member": "test-member-token",
+                                             })
+
+        self.assertEqual([item["scenario"] for item in combined["executed"]], ["F08", "F05", "F12"])
+        self.assertEqual({item["scenario"] for item in combined["scenarios"]
+                          if item["verdict"] == "passed"}, {"F08", "F05", "F12"})
+        self.assertEqual(combined["summary"], {"passed": 3, "failed": 0, "not_run": 0})
+        self.assertEqual(run_one.call_count, 3)
+
+    def test_duplicate_scenario_ids_are_rejected_before_any_scenario_runs(self):
+        with patch.object(module, "run_scenario") as run_one:
+            with self.assertRaisesRegex(WorkflowError, "duplicate"):
+                module.run_scenarios(["F08", "F08"], SCENARIOS_PATH, OPENAPI_PATH,
+                                     knowledge={}, member={})
+        run_one.assert_not_called()
+
+    def test_f08_f05_and_f12_capture_values_across_realistic_provider_steps(self):
+        synthetic = SyntheticProvider()
+        report = module.run_scenarios(
+            ["F08", "F05", "F12"], SCENARIOS_PATH, OPENAPI_PATH,
+            base_url="http://127.0.0.1:8080/api/v1/lingdoc",
+            knowledge={"k-demo": PROVIDER_IDS["k-demo"]},
+            member={"u-member": MEMBER_ID},
+            identities={"u-owner": "synthetic-owner-token", "u-member": "synthetic-member-token"},
+            token="synthetic-owner-token", opener=synthetic.open)
+
+        self.assertEqual([item["scenario"] for item in report["executed"]], ["F08", "F05", "F12"])
+        self.assertEqual(report["summary"], {"passed": 3, "failed": 0, "not_run": 19})
+        f08 = report["executed"][0]
+        self.assertEqual([step["actual_http"] for step in f08["steps"]], [200, 202, 202, 409])
+        self.assertEqual([check["status"] for step in f08["steps"] for check in step["checks"]],
+                         ["passed", "passed", "passed", "passed", "passed"])
+        f05 = report["executed"][1]
+        self.assertEqual([step["actual_http"] for step in f05["steps"]], [200, 200, 201, 409, 200])
+        self.assertEqual(f05["steps"][3]["checks"][0]["expected"], "version_conflict")
+        self.assertEqual([check["status"] for check in f05["steps"][4]["checks"]], ["passed", "passed"])
+        f12 = report["executed"][2]
+        self.assertEqual([step["actual_http"] for step in f12["steps"]], [200, 200, 409, 200])
+        self.assertEqual(f12["steps"][2]["checks"][0]["expected"], "version_conflict")
+        self.assertEqual([check["status"] for check in f12["steps"][3]["checks"]], ["passed", "passed"])
+
 
 class ScenarioCommandLineTest(unittest.TestCase):
     def test_the_command_line_writes_the_report_and_exits_on_the_verdict(self):
         report, _ = drive()
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "report.json"
-            with patch.object(module, "run_scenario", return_value=report), \
+            with patch.object(module, "run_scenarios", return_value=report), \
                     redirect_stdout(io.StringIO()) as stdout:
                 status = module.main(["--scenario", "F22", "--knowledge", "k-demo=knowledge-1",
                                       "--knowledge", "k-notready=knowledge-2",
@@ -264,7 +323,7 @@ class ScenarioCommandLineTest(unittest.TestCase):
         report, _ = drive(provider=provider(failures={r".*/lingdoc/projects/[^/]+/retrieval": 200}))
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "report.json"
-            with patch.object(module, "run_scenario", return_value=report), redirect_stdout(io.StringIO()):
+            with patch.object(module, "run_scenarios", return_value=report), redirect_stdout(io.StringIO()):
                 status = module.main(["--scenario", "F22", "--knowledge", "k-demo=knowledge-1",
                                       "--knowledge", "k-notready=knowledge-2",
                                       "--report", str(destination)])

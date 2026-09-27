@@ -39,11 +39,13 @@ python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/l
 python scripts/lingdoc_mock/run_f01.py --scenario F01 --base-url http://127.0.0.1:8080/api/v1/lingdoc
 ```
 
-执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01 与 F22 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：F02–F14 的步骤只有操作名、期望状态码与断言文本，没有请求定义（拒绝语为 `F03 FAILED: scenario F03 step 1 has no request definition in the contract`），F15–F21 连步骤都没有（`F17 has no executable steps`）。把请求定义补进契约是后续任务，不是本执行器的省略。改动范围、回归证据与边界见 [T15-02 执行器场景驱动](T15-执行器场景驱动.md)。
+执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01、F05、F08、F12、F22 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：未覆盖场景若没有请求定义或步骤，报告会逐条说明原因。执行器允许重复传入 `--scenario`，每条场景从自己的声明起点独立构建，并在一份报告中分别记录执行轨迹；跨步响应捕获通过 `{{变量}}` 供后续请求与检查使用。F05/F08/F12 的多步结果及约束见 [T15-06 多步与跨步捕获](T15-多步与跨步捕获.md)。
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 
 `--report` 写出不含访问令牌和动态业务 ID 的脱敏 JSON。执行器会在任何提供方请求之前创建父目录并写入 `not_started` 记录；无法写入则直接失败，不执行写请求。成功后原子替换为 `completed`，流程中途失败则尽力保存 `failed`、已完成步骤和失败步骤标识，不写原始响应或异常内容。写报告失败会明确报错，不用 traceback 冒充流程结果。
+
+多场景可重复 `--scenario`，例如 `--scenario F08 --scenario F05 --scenario F12`。F05/F08 是双身份场景，必须分别通过 `--identity u-owner=<令牌>` 和 `--identity u-member=<令牌>` 提供凭证；报告中的响应捕获使用声明别名呈现，不发布真实 ID。
 
 报告的 `verification_scope=http_smoke_only`、`provider_semantics_status=not_verified` 和 `manual_assertions` 明确标出尚未验证的业务语义。`completed_steps=23` 只证明请求步骤与文件传输检查完成，不等于模型质量、数据库副作用或 DOCX 可编辑性通过。
 

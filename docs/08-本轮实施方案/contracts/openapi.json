@@ -5653,6 +5653,22 @@
                         "refresh_required": false
                       }
                     }
+                  },
+                  "replayed": {
+                    "value": {
+                      "data": {
+                        "id": "run-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "status": "queued",
+                        "candidate_id": null
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": true,
+                        "refresh_required": true
+                      }
+                    }
                   }
                 }
               }

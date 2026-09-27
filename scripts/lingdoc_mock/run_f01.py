@@ -685,7 +685,13 @@ class ScenarioRunner:
         if not isinstance(payload, (dict, list)) and step.get("capture"):
             raise WorkflowError(f"{step['id']}: cannot capture values from a binary response")
         for name, pointer in step.get("capture", {}).items():
-            self.variables[name] = json_pointer(payload, pointer)
+            value = json_pointer(payload, pointer)
+            self.variables[name] = value
+            if isinstance(value, str) and value:
+                # A later check may expose a captured provider ID as expected/actual data.
+                # Give it the contract alias now so the report can explain equality without
+                # publishing the provider's identifier.
+                self.redactions.setdefault(value, f"{{{{{name}}}}}")
 
     def _verify_download(self, step: dict[str, Any], payload: Any, headers: dict[str, str]) -> None:
         if not isinstance(payload, bytes):
