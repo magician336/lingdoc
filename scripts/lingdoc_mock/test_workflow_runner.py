@@ -71,7 +71,7 @@ class WorkflowRunnerTest(unittest.TestCase):
                 payload["data"]["file_sha256"] = digest
             return FakeResponse(json.dumps(payload, ensure_ascii=False).encode("utf-8"), step["expected_http"])
 
-        runner.opener = opener
+        runner.client.opener = opener
         result = runner.run()
         self.assertEqual(result["completed_steps"], 23)
         self.assertEqual(len(result["steps"]), 23)

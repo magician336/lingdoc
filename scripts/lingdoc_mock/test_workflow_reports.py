@@ -58,16 +58,16 @@ class WorkflowReportTest(unittest.TestCase):
             with self.subTest(header=name):
                 json_response = MessageResponse(b'{"data":{"id":"synthetic-id"}}', "application/json", name)
                 runner = small_runner(lambda request, timeout: json_response)
-                _, _, payload = runner._request("GET", runner.base_url, {}, None)
+                _, _, payload = runner.client.request("GET", runner.base_url, {}, None)
                 self.assertEqual(payload, {"data": {"id": "synthetic-id"}})
                 self.assertTrue(json_response.closed)
 
                 data = b"synthetic transport bytes, not proof of a valid DOCX"
                 response = MessageResponse(data, DOCX_TYPE + "; charset=binary", name)
-                runner.opener = lambda request, timeout: response
+                runner.client.opener = lambda request, timeout: response
                 runner.spec = replace(runner.spec, download_sha256_variable="file_sha256")
                 runner.variables["file_sha256"] = hashlib.sha256(data).hexdigest()
-                _, headers, payload = runner._request("GET", runner.base_url, {}, None)
+                _, headers, payload = runner.client.request("GET", runner.base_url, {}, None)
                 with redirect_stdout(io.StringIO()):
                     runner._verify_download({"id": "download", "expected_binary": {"content_type": DOCX_TYPE}}, payload, headers)
                 self.assertTrue(response.closed)

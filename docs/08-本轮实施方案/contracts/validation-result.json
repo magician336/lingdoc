@@ -10,6 +10,12 @@
   "scenarios": 22,
   "scenario_example_references": 38,
   "continuous_trace_steps": 23,
+  "starting_states": 6,
+  "starting_state_parts_buildable": [
+    "assets",
+    "chapters",
+    "project"
+  ],
   "negative_static_cases_rejected": [
     "reject_lost_review_item",
     "reject_wrong_expected_version",
@@ -25,13 +31,21 @@
     "replacement_silently_merges_old_body",
     "replacement_erases_old_review_history",
     "history_label_without_release_read",
-    "history_label_claims_current"
+    "history_label_claims_current",
+    "starting_state_declares_unbuildable_part",
+    "starting_state_unknown_section",
+    "starting_state_source_marker_without_reference",
+    "starting_state_draft_with_chapters",
+    "starting_state_unknown_spec_field",
+    "starting_state_unknown_knowledge",
+    "starting_state_unknown_asset_state"
   ],
   "not_run": [
     "complete OpenAPI meta-schema validation",
     "Prism runtime",
     "real provider/database/model tests",
-    "actual DOCX export/opening"
+    "actual DOCX export/opening",
+    "building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)"
   ],
   "note": "This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples."
 }

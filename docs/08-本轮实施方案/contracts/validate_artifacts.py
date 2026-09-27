@@ -285,12 +285,57 @@ for label,mutate in [
     bad=copy.deepcopy(f21);mutate(bad)
     must_reject(label,lambda:check_history(bad))
 
+# 起点状态的静态形状。真把一份声明造进服务、再读回比对，是 scripts/lingdoc_mock/load_state.py
+# 的职责；这里只保证契约里这份声明本身是自洽的，且只声明造得出来的部分。
+startable={'project','assets','chapters'}
+buildable_states=cases['starting_states']
+unique_by(buildable_states,'id')
+fixture_sections={s['section_id'] for s in cases['canonical_fixture']['template']['sections']}
+# 起点状态可以绑一条「当前不可用」的资料（F03 的前提）。它不是 canonical fixture 那条
+# ——canonical 那条是 ready 的——所以这里显式补一个名字，而不是往 canonical 里塞第二份资料。
+fixture_knowledge={cases['canonical_fixture']['asset']['knowledge_id'],'k-notready'}
+def check_starting_state(state):
+    unbuildable=set(state)-startable-{'id','name','note'}
+    assert not unbuildable,'starting state declares parts that cannot be built: '+str(sorted(unbuildable))
+    assert state.get('id','').strip() and state.get('name','').strip()
+    project=state['project']
+    assert project['template_id']==cases['canonical_fixture']['template']['id']
+    assert project['status'] in {'draft','active'}
+    assert project['spec'] and all(isinstance(v,str) and v.strip() for v in project['spec'].values())
+    assert set(project['spec'])<=set(ops['getTemplate']['responses']['200']['content']['application/json']['examples']['success']['value']['data']['required_fields'])
+    assert all(isinstance(m,str) and m.strip() for m in project.get('members',[]))
+    if project['status']=='draft': assert not state.get('chapters'),'template sections only exist once the project is active'
+    for asset in state.get('assets',[]):
+        assert asset['knowledge_id'] in fixture_knowledge,asset['knowledge_id']
+        assert asset['processing_state'] in {'pending','processing','ready','failed','replaced'}
+    for chapter in state.get('chapters',[]):
+        assert chapter['section_id'] in fixture_sections,chapter['section_id']
+        assert isinstance(chapter['body_markdown'],str),'an empty body declares a section with no version yet'
+        assert chapter['body_markdown'].strip() or not chapter['source_ids'],'no body cannot cite anything'
+        # 标记的字符集以提供方自己的解析为准（internal/lingdoc/workspacecore/service.go 的
+        # sourceMarker），不是随便写一个「方括号里什么都行」：静态检查要比运行期至少一样严，
+        # 否则契约能过、装载器却拒——那正是这票最不想要的两种结论不一致。
+        assert set(re.findall(r'\[\[source:([A-Za-z0-9_-]+)\]\]',chapter['body_markdown']))==set(chapter['source_ids']),'body markers and source_ids disagree'
+for state in buildable_states: check_starting_state(state)
+for label,mutate in [
+ ('starting_state_declares_unbuildable_part',lambda s:s.update(candidate={'id':'candidate-demo'})),
+ ('starting_state_unknown_section',lambda s:s['chapters'][0].update(section_id='introduction')),
+ ('starting_state_source_marker_without_reference',lambda s:s['chapters'][0].update(body_markdown='带引用 [[source:s-demo]] 的正文')),
+ ('starting_state_draft_with_chapters',lambda s:s['project'].update(status='draft')),
+ ('starting_state_unknown_spec_field',lambda s:s['project']['spec'].update(invented_condition='x')),
+ ('starting_state_unknown_knowledge',lambda s:s.update(assets=[{'knowledge_id':'k-fabricated','processing_state':'ready'}])),
+ ('starting_state_unknown_asset_state',lambda s:s.update(assets=[{'knowledge_id':'k-demo','processing_state':'probably'}]))
+]:
+    bad=copy.deepcopy(next(s for s in buildable_states if s['id']=='S2'));mutate(bad)
+    must_reject(label,lambda:check_starting_state(bad))
+
 report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','paths':len(spec['paths']),
  'operations':len(ops),'core_operations':sum(o['x-delivery-phase']=='core' for o in ops.values()),
  'schemas':len(spec['components']['schemas']),'local_refs':refs,'shape_checks':checks,
  'scenarios':len(cases['scenarios']),'scenario_example_references':scenario_steps,'continuous_trace_steps':len(resolved),
+ 'starting_states':len(buildable_states),'starting_state_parts_buildable':sorted(startable),
  'negative_static_cases_rejected':negative_results,
- 'not_run':['complete OpenAPI meta-schema validation','Prism runtime','real provider/database/model tests','actual DOCX export/opening'],
+ 'not_run':['complete OpenAPI meta-schema validation','Prism runtime','real provider/database/model tests','actual DOCX export/opening','building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)'],
  'note':'This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples.'}
 (ROOT/'validation-result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print(json.dumps(report,ensure_ascii=False))

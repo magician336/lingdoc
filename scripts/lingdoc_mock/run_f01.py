@@ -48,13 +48,13 @@ class ScenarioSpec:
     download_sha256_variable: str | None = None
 
 
-def _non_empty_string(value: Any, label: str) -> str:
+def non_empty_string(value: Any, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise WorkflowError(f"{label} must be a non-empty string")
     return value
 
 
-def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+def read_json_object(path: Path, label: str) -> dict[str, Any]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -69,11 +69,11 @@ def _assertion_texts(step: dict[str, Any], where: str) -> list[str]:
     texts: list[str] = []
     single = step.get("assertion")
     if single is not None:
-        texts.append(_non_empty_string(single, f"{where} assertion"))
+        texts.append(non_empty_string(single, f"{where} assertion"))
     listed = step.get("assertions", [])
     if not isinstance(listed, list):
         raise WorkflowError(f"{where} assertions must be a list")
-    texts.extend(_non_empty_string(text, f"{where} assertion") for text in listed)
+    texts.extend(non_empty_string(text, f"{where} assertion") for text in listed)
     return texts
 
 
@@ -97,11 +97,11 @@ def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, An
         if not isinstance(step, dict):
             raise WorkflowError(f"{label} step {index} must be an object")
         declared = step.get("id")
-        step_id = _non_empty_string(declared or f"{spec_id}-{index:02d}", f"{label} step {index} id")
+        step_id = non_empty_string(declared or f"{spec_id}-{index:02d}", f"{label} step {index} id")
         # A report id may be synthesised, but an error has to point at an address the
         # contract file actually resolves: only a declared id does.
         where = step_id if declared else f"{label} step {index}"
-        operation_id = _non_empty_string(step.get("operation_id"), f"{where} operation_id")
+        operation_id = non_empty_string(step.get("operation_id"), f"{where} operation_id")
         expected = step.get("expected_http")
         if not isinstance(expected, int) or isinstance(expected, bool):
             raise WorkflowError(f"{where} expected_http must be an HTTP status number")
@@ -114,7 +114,7 @@ def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, An
 def _optional_string(value: Any, label: str) -> str | None:
     if value is None:
         return None
-    return _non_empty_string(value, label)
+    return non_empty_string(value, label)
 
 
 def spec_from_document(document: dict[str, Any], label: str, spec_id: str | None = None) -> ScenarioSpec:
@@ -123,7 +123,7 @@ def spec_from_document(document: dict[str, Any], label: str, spec_id: str | None
     `spec_id` overrides the document's own id when a caller asked for the scenario by
     name and the document it points at is the continuous specification file.
     """
-    resolved = _non_empty_string(spec_id or document.get("id"), f"{label} id")
+    resolved = non_empty_string(spec_id or document.get("id"), f"{label} id")
     return ScenarioSpec(
         id=resolved,
         steps=_validated_steps(document.get("steps"), label, resolved),
@@ -134,7 +134,7 @@ def spec_from_document(document: dict[str, Any], label: str, spec_id: str | None
 
 def load_spec(spec_path: Path, scenario_id: str | None = None) -> ScenarioSpec:
     """Load the specification a run is driven by: a step list document, or one named scenario."""
-    document = _read_json_object(spec_path, "specification")
+    document = read_json_object(spec_path, "specification")
     if scenario_id is None:
         if isinstance(document.get("scenarios"), list):
             raise WorkflowError(f"{spec_path.name} holds scenarios; name one with --scenario")
@@ -151,7 +151,7 @@ def load_spec(spec_path: Path, scenario_id: str | None = None) -> ScenarioSpec:
     pointer = entry.get("specification_file")
     if pointer is None:
         raise WorkflowError(f"{scenario_id} has no executable steps; its contract holds prose assertions only")
-    referenced = _read_json_object(spec_path.parent / _non_empty_string(pointer, f"{scenario_id} specification_file"),
+    referenced = read_json_object(spec_path.parent / non_empty_string(pointer, f"{scenario_id} specification_file"),
                                    f"{scenario_id} specification")
     return spec_from_document(referenced, f"{scenario_id} specification", scenario_id)
 
@@ -287,6 +287,66 @@ class CredentialSafeRedirectHandler(HTTPRedirectHandler):
         return redirected
 
 
+class ProviderClient:
+    """One provider's HTTP transport: where to send, what to send with, how much to read back.
+
+    Both tools talk to a provider through this, so opener injection, the redirect
+    credential rules, the bearer-token rule and the response ceiling stay in one place
+    instead of being copied into a second client.
+    """
+
+    def __init__(self, base_url: str, token: str | None = None, timeout: float = 20, opener=None) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.token = token
+        self.timeout = timeout
+        self.opener = opener if opener is not None else build_opener(CredentialSafeRedirectHandler()).open
+        parsed_base = urlsplit(self.base_url)
+        if parsed_base.scheme not in {"http", "https"} or not parsed_base.netloc:
+            raise WorkflowError("provider base URL must use http or https")
+        if token and parsed_base.scheme != "https":
+            hostname = (parsed_base.hostname or "").lower()
+            try:
+                is_loopback = ipaddress.ip_address(hostname).is_loopback
+            except ValueError:
+                is_loopback = hostname == "localhost"
+            if not is_loopback:
+                raise WorkflowError("refusing to send a bearer token over non-loopback HTTP")
+
+    def request(self, method: str, url: str, headers: dict[str, str], body: Any) -> tuple[int, dict[str, str], Any]:
+        """One provider exchange, saying plainly when the provider itself misbehaves."""
+        request_headers = {str(key): str(value) for key, value in headers.items()}
+        request_headers.setdefault("Accept", "application/json, application/octet-stream")
+        if self.token:
+            request_headers["Authorization"] = "Bearer " + self.token
+        data = None
+        if body is not None:
+            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+            request_headers.setdefault("Content-Type", "application/json")
+        request = Request(url, data=data, headers=request_headers, method=method)
+        try:
+            response = self.opener(request, timeout=self.timeout)
+        except HTTPError as error:
+            response = error
+        except URLError as error:
+            raise WorkflowError(f"request failed for {url}: {error.reason}") from error
+        try:
+            content = response.read(16 * 1024 * 1024 + 1)
+            if len(content) > 16 * 1024 * 1024:
+                raise WorkflowError("provider response exceeds the 16 MiB safety limit")
+            response_headers = dict(response.headers.items())
+            content_type = header_value(response.headers, "Content-Type").lower()
+            if "json" in content_type:
+                try:
+                    payload: Any = json.loads(content.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                    raise WorkflowError("provider returned invalid JSON") from error
+            else:
+                payload = content
+            return response.status, response_headers, payload
+        finally:
+            response.close()
+
+
 class ScenarioRunner:
     def __init__(
         self,
@@ -301,34 +361,24 @@ class ScenarioRunner:
         sleep=time.sleep,
     ) -> None:
         server_url, self.operations = operation_index(openapi)
-        self.base_url = (base_url or server_url).rstrip("/")
+        # The transport is the client's business, not the runner's: the runner drives steps
+        # through it, other tools send their own requests through it, and the base URL and
+        # token rules are resolved once, inside it.
+        self.client = ProviderClient(base_url or server_url, token=token, timeout=timeout, opener=opener)
+        self.base_url = self.client.base_url
         self.spec = spec
-        self.token = token
-        self.timeout = timeout
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
-        self.opener = opener if opener is not None else build_opener(CredentialSafeRedirectHandler()).open
         self.sleep = sleep
         self.variables: dict[str, Any] = {}
         self.step_results: list[dict[str, Any]] = []
         self.active_step: dict[str, str] | None = None
-        parsed_base = urlsplit(self.base_url)
-        if parsed_base.scheme not in {"http", "https"} or not parsed_base.netloc:
-            raise WorkflowError("provider base URL must use http or https")
-        if self.token and parsed_base.scheme != "https":
-            hostname = (parsed_base.hostname or "").lower()
-            try:
-                is_loopback = ipaddress.ip_address(hostname).is_loopback
-            except ValueError:
-                is_loopback = hostname == "localhost"
-            if not is_loopback:
-                raise WorkflowError("refusing to send a bearer token over non-loopback HTTP")
 
     @classmethod
     def from_files(cls, openapi_path: Path, spec_path: Path, scenario_id: str | None = None,
                    **kwargs: Any) -> "ScenarioRunner":
         spec = load_spec(spec_path, scenario_id)
-        return cls(_read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
+        return cls(read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
 
     def run(self) -> dict[str, Any]:
         self.variables = {}
@@ -348,7 +398,7 @@ class ScenarioRunner:
             headers = substitute(request_spec.get("headers", {}), self.variables)
             body = substitute(request_spec.get("json"), self.variables)
             url = build_url(self.base_url, path_template, path_params, query)
-            status, response_headers, payload = self._request(method, url, headers, body)
+            status, response_headers, payload = self.client.request(method, url, headers, body)
             expected_status = step.get("expected_http")
             if status != expected_status:
                 raise WorkflowError(f"{step['id']} {operation_id}: HTTP {status}; expected {expected_status}")
@@ -401,39 +451,6 @@ class ScenarioRunner:
             result["failed_step"] = dict(self.active_step)
         return result
 
-    def _request(self, method: str, url: str, headers: dict[str, str], body: Any) -> tuple[int, dict[str, str], Any]:
-        request_headers = {str(key): str(value) for key, value in headers.items()}
-        request_headers.setdefault("Accept", "application/json, application/octet-stream")
-        if self.token:
-            request_headers["Authorization"] = "Bearer " + self.token
-        data = None
-        if body is not None:
-            data = json.dumps(body, ensure_ascii=False).encode("utf-8")
-            request_headers.setdefault("Content-Type", "application/json")
-        request = Request(url, data=data, headers=request_headers, method=method)
-        try:
-            response = self.opener(request, timeout=self.timeout)
-        except HTTPError as error:
-            response = error
-        except URLError as error:
-            raise WorkflowError(f"request failed for {url}: {error.reason}") from error
-        try:
-            content = response.read(16 * 1024 * 1024 + 1)
-            if len(content) > 16 * 1024 * 1024:
-                raise WorkflowError("provider response exceeds the 16 MiB safety limit")
-            response_headers = dict(response.headers.items())
-            content_type = header_value(response.headers, "Content-Type").lower()
-            if "json" in content_type:
-                try:
-                    payload: Any = json.loads(content.decode("utf-8"))
-                except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                    raise WorkflowError("provider returned invalid JSON") from error
-            else:
-                payload = content
-            return response.status, response_headers, payload
-        finally:
-            response.close()
-
     def _poll_terminal(self, step: dict[str, Any], method: str, url: str, headers: dict[str, str], payload: Any) -> Any:
         reference = step.get("reference_response") or {}
         target = reference.get("data", {}).get("status")
@@ -452,7 +469,7 @@ class ScenarioRunner:
             if time.monotonic() >= deadline:
                 raise WorkflowError(f"{step['id']}: timed out waiting for terminal state {target}")
             self.sleep(self.poll_interval)
-            next_status, _, next_payload = self._request(method, url, headers, None)
+            next_status, _, next_payload = self.client.request(method, url, headers, None)
             if next_status != step.get("expected_http"):
                 raise WorkflowError(f"{step['id']}: poll returned HTTP {next_status}")
             payload = next_payload
