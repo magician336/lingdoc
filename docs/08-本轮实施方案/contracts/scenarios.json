@@ -101,24 +101,20 @@
     {
       "id": "F04",
       "name": "跨项目访问",
-      "setup": "调用者不属于目标项目。",
+      "starting_state": "S5",
+      "setup": "契约步骤 F04-01 检查项目存在性。真实驱动另用不同项目成员身份读取本次 F07 流程实际产生的候选和已验证导出；这两项补充观测记入运行报告，使用当次对象 ID。",
       "steps": [
         {
+          "id": "F04-01",
           "operation_id": "getProject",
+          "actor": "u-member",
           "expected_http": 404,
-          "assertion": "",
-          "response_example": "not_found"
-        },
-        {
-          "operation_id": "getCandidate",
-          "expected_http": 404,
-          "assertion": "",
-          "response_example": "not_found"
-        },
-        {
-          "operation_id": "downloadExport",
-          "expected_http": 404,
-          "assertion": "",
+          "assertion": "非项目成员无法读取项目存在性。",
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            }
+          },
           "response_example": "not_found"
         }
       ],

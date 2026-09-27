@@ -459,7 +459,13 @@ class ProviderClient:
                 try:
                     payload: Any = json.loads(content.decode("utf-8"))
                 except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                    raise WorkflowError("provider returned invalid JSON") from error
+                    # Error handlers sometimes return an empty or non-JSON body (notably
+                    # binary download routes). The HTTP status is still observable and is
+                    # enough for a status-only contract step; any declared response check
+                    # will correctly fail because there is no JSON value to inspect.
+                    if response.status < 400:
+                        raise WorkflowError("provider returned invalid JSON") from error
+                    payload = None
             else:
                 payload = content
             return response.status, response_headers, payload
@@ -573,7 +579,7 @@ class ScenarioRunner:
                 if operation_id in {"getGeneration", "getExport"}:
                     payload = self._poll_terminal(step, method, url, headers, payload, actor_token)
                 self._capture(step, payload)
-                if operation_id == "downloadExport":
+                if operation_id == "downloadExport" and 200 <= status < 300:
                     self._verify_download(step, payload, response_headers)
                 completed += 1
                 step_results.append({

@@ -169,6 +169,37 @@ class SpecificationLoadTest(unittest.TestCase):
         with self.assertRaisesRegex(WorkflowError, "F93-01: OpenAPI operation not found: getProject"):
             runner.run()
 
+    def test_status_only_download_rejection_does_not_require_file_bytes(self):
+        openapi = {
+            "servers": OPENAPI["servers"],
+            "paths": {"/projects/{projectId}/exports/{exportId}/file": {
+                "get": {"operationId": "downloadExport"},
+            }},
+        }
+        spec = spec_from_document({"id": "F94", "steps": [{
+            "id": "F94-01", "operation_id": "downloadExport", "expected_http": 404,
+            "request": {"path_params": {"projectId": "p-1", "exportId": "e-1"}},
+        }]}, "synthetic specification")
+        runner = ScenarioRunner(
+            openapi, spec,
+            opener=lambda request, timeout: FakeResponse(b'{"error":{"code":"not_found"}}', status=404),
+        )
+        result = runner.run()
+        self.assertEqual(result["completed_steps"], 1)
+        self.assertEqual(runner.report("completed")["steps"][0]["http_status"], 404)
+
+    def test_non_json_error_preserves_http_status_for_status_only_contracts(self):
+        spec = spec_from_document({"id": "F95", "steps": [{
+            "id": "F95-01", "operation_id": "getProject", "expected_http": 404,
+            "request": {"path_params": {"projectId": "p-1"}},
+        }]}, "synthetic specification")
+        runner = ScenarioRunner(
+            OPENAPI, spec, opener=lambda request, timeout: FakeResponse(b"not-json", status=404),
+        )
+        result = runner.run()
+        self.assertEqual(result["completed_steps"], 1)
+        self.assertEqual(runner.report("completed")["steps"][0]["http_status"], 404)
+
 
 class ScenarioCommandLineTest(unittest.TestCase):
     def test_named_scenario_is_passed_to_the_loader_with_the_scenarios_contract(self):
