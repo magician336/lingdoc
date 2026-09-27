@@ -104,11 +104,15 @@ class SpecificationLoadTest(unittest.TestCase):
             load_spec(SCENARIOS_PATH)
 
     def test_scenario_whose_steps_lack_request_definitions_names_the_step(self):
-        # Only F22's steps carry a request definition so far; every other scenario step has
-        # no id in the contract, so the refusal addresses the step the way the contract file
-        # does ("scenario F03 step 1"), not with a synthesised id.
-        with self.assertRaisesRegex(WorkflowError, "scenario F03 step 1 has no request definition"):
-            load_spec(SCENARIOS_PATH, "F03")
+        # Exercise the refusal with a temporary incomplete copy now that F03 is executable.
+        document = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
+        scenario = next(item for item in document["scenarios"] if item["id"] == "F03")
+        scenario["steps"][0].pop("request")
+        with tempfile.TemporaryDirectory() as directory:
+            states = Path(directory) / "scenarios.json"
+            states.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(WorkflowError, "F03-01 has no request definition"):
+                load_spec(states, "F03")
 
     def test_the_one_scenario_that_can_be_sent_carries_its_checks_and_its_actor(self):
         spec = load_spec(SCENARIOS_PATH, "F22")

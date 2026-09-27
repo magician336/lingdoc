@@ -220,10 +220,12 @@ class ScenarioReportTest(unittest.TestCase):
     def test_a_scenario_that_cannot_be_driven_says_which_part_is_missing(self):
         report, _ = drive()
         entries = {entry["scenario"]: entry for entry in report["scenarios"]}
-        self.assertFalse(entries["F03"]["executable"])
-        self.assertIn("没有请求定义", entries["F03"]["reason"])
         self.assertFalse(entries["F17"]["executable"])
         self.assertIn("没有步骤", entries["F17"]["reason"])
+        self.assertFalse(entries["F06"]["executable"])
+        self.assertIn("没有请求定义", entries["F06"]["reason"])
+        for scenario_id in ("F03", "F15", "F18", "F20"):
+            self.assertTrue(entries[scenario_id]["executable"], scenario_id)
         # F01 declares its 23 steps and every one of them carries a request, but it never says
         # where a run should start — and this driver builds the declared state before it sends
         # anything, so F01 is not something it can drive.
@@ -249,9 +251,15 @@ class ScenarioReportTest(unittest.TestCase):
                                 identities={}, opener=provider().open)
 
     def test_a_scenario_whose_steps_cannot_be_sent_is_refused_by_name(self):
-        with self.assertRaisesRegex(WorkflowError, "scenario F03 step 1 has no request definition"):
-            module.run_scenario("F03", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
-                                identities={}, opener=provider().open)
+        document = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
+        scenario = next(item for item in document["scenarios"] if item["id"] == "F03")
+        scenario["steps"][0].pop("request")
+        with tempfile.TemporaryDirectory() as directory:
+            states = Path(directory) / "scenarios.json"
+            states.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+            with self.assertRaisesRegex(WorkflowError, "F03-01 has no request definition"):
+                module.run_scenario("F03", states, OPENAPI_PATH, knowledge={}, member={},
+                                    identities={}, opener=provider().open)
 
     def test_f02_requires_and_reports_its_explicit_white_box_observation(self):
         synthetic = provider()
