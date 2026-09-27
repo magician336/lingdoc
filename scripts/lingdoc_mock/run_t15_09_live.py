@@ -384,7 +384,7 @@ def run_live(token: str, source_tenant_id: int, knowledge_base_id: str,
         report["scenarios"]["F13"] = {
             "verdict": "not_run",
             "blocked_at": "before-startExport",
-            "reason": ("真实服务的 renderer 与 validator 使用同一 DeliveryDocument，公开 HTTP 没有注入损坏" 
+            "reason": ("真实服务的 renderer 与 validator 使用同一 DeliveryDocument，公开 HTTP 没有注入损坏"
                        "产物或替换校验器的入口；正常导出始终校验服务生成的同一份字节。"),
         }
         report["summary"] = {

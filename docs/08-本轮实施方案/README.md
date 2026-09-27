@@ -18,6 +18,7 @@
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
 | [T15-09 验证报告](T15-09-验证报告.json) | issue #36 的 F10/F16/F19 实跑证据、F13 未运行原因与已登记缺口 |
 | [T15-10 验证报告](T15-10-验证报告.json) | issue #37 的 F03/F15/F18/F20 实跑证据、F06/F09/F14 未运行原因与已登记缺口 |
+| [T15-11 验证报告](T15-11-验证报告.json) / [证据](T15-11-证据.json) | issue #38 的 F01–F22 完整状态矩阵、缺口责任归属与确定性构建证据 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
 | [validation-result.json](contracts/validation-result.json) | 本次静态检查结果及未运行范围 |
@@ -72,6 +73,16 @@ python scripts/lingdoc_mock/run_t15_10_live.py --local-facts-path <本地fixture
 多场景可重复 `--scenario`，例如 `--scenario F08 --scenario F05 --scenario F12`。F05/F08 是双身份场景，必须分别通过 `--identity u-owner=<令牌>` 和 `--identity u-member=<令牌>` 提供凭证；报告中的响应捕获使用声明别名呈现，不发布真实 ID。
 
 报告的 `verification_scope=http_smoke_only`、`provider_semantics_status=not_verified` 和 `manual_assertions` 明确标出尚未验证的业务语义。`completed_steps=23` 只证明请求步骤与文件传输检查完成，不等于模型质量、数据库副作用或 DOCX 可编辑性通过。
+
+### T15-11 全矩阵报告
+
+从仓库根运行下面的命令，合并 T15 已保存的场景证据，生成完整的 F01–F22 矩阵和输入摘要：
+
+```text
+python scripts/lingdoc_mock/build_t15_matrix.py
+```
+
+这是离线证据整理，不会启动服务、发送请求、运行模型或访问数据库。每个场景都给出 `passed`、`failed` 或 `not_run` 及其证据来源；失败项列出责任任务和任务负责人角色。当前任务池不预填个人姓名，矩阵会明确标出尚无个人 assignee。F15 保留修复提交前的历史失败结论，并注明修复后尚待真实场景复测。报告和证据不包含时间戳，构建器会在单次运行中重复渲染并核对字节一致；输入文件 SHA-256 及矩阵摘要见 [T15-11 证据](T15-11-证据.json)。矩阵明确保留未运行原因以及边界：资料上下文使用分块表文本、未从原文件重新解析；UI 尚未通过真实后端浏览器验证；完整 F01 流程由 T16 负责。
 
 当前契约标记为 `specification_not_executed_against_provider`：真实服务已能按 [T15-01 的启动配方](T15-真实服务启动.md) 在本机起来并接受真实请求，但**尚未对着它跑过这条 23 步流程**。执行器不解释契约里的 `mode`（workflow.json 的 `mode` 是这份规格的执行状态，场景条目里的 `mode` 是「真接口 / 假模型」这类运行方式，两个是不同层面的记账，都由契约维护者随进度更新，由人按它决定怎么跑），因此别把这两个字段当成执行器的开关。所以本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
 

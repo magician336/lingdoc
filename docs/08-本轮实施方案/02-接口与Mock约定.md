@@ -128,9 +128,9 @@ T14 的交付界面切片读取 ExportArtifact 后，必须按 snapshot_id 调�
 
 恢复动作只有两种：合法恢复原资料权限，或新建干净项目重新输入允许使用的内容。本轮不做旧派生正文自动迁移，也不通过“解除资料绑定”给旧内容放行。更细的安全迁移另立任务，不能作为一个按钮附带实现。
 
-上面「读取派生内容先检查所需共同资料权限」这条，本轮只落在 `access-status` 一处。差额记在这里：F07 要求撤权后 `listChapters`、`getCandidate`、`downloadExport` 返 403，而本轮这几个端点在成员仍然有效时依然 200——它们只做项目/成员门禁（`Authorize` 的注释已写明资料授权不在它这一层）。各自读路径补资料层判定属 T15 的另一刀，本轮不做。所以 `access-status` 答 `restricted` 是**提示**而不是拦截：它把恢复入口递到用户面前，并不改变其它端点此刻仍在放行的事实。
+上面「读取派生内容先检查所需共同资料权限」这条，F07 验证的是撤权后派生内容的读取权限，不只 `access-status`。初稿列出 `listChapters`、`getCandidate`、`downloadExport` 三个端点；资料授权检查接入 `getCandidate` 后，它已能在来源撤权时返回 403 `source_access_denied`。`access-status` 的 `restricted` 仍是**提示**而不是拦截，不能替代各读取端点自己的授权检查。
 
-**2026-09-26 修正**：上面「只落在 `access-status` 一处」这句已不再准确。**资料域自己的读路径在读取时现查资料授权**：`getSource` 与同日新增的 `GET /projects/{projectId}/sources/{sourceId}/context` 走同一条判定链（身份 → `Authorize` → 查引用块 → 反查资料 → `ResolveAllowed` 要求恰好一条 → `SourcePolicy.Validate` 复核），撤权后两条都答 403 `source_access_denied`（集成用例 `getSource 撤权后 403`、`getSourceContext 撤权后 403 且不泄露正文`）。`listAssets`/`retrieveSources` 走 `ResolveAllowed`：被拒的条目不出现在结果里，或整批 422 并逐项给原因。**差额仍在，但范围缩小了**——F07 点名的那三个端点仍只做项目/成员门禁，仍返 200，仍属 T15。
+**2026-09-27 实跑后的差额**：T15-S9 对 F07 实测 `getSource` 与 `getCandidate` 在撤权后返回 403；`listChapters` 与 `downloadExport` 仍分别返回 200，预期均为 403。剩余两个实现缺口分别归工作区章节读取 T08（资料授权由 T09 提供）和交付下载 T14，证据登记为 `T15-08-R1` 与 `T15-08-R2`。T15 记录实跑结果，不代替这些领域任务修复缺口。
 
 新增的 `GET /projects/{projectId}/sources/{sourceId}/context` 回答「这一条引用此刻还能不能指回原文、它周围长什么样」：**不跳转**（跳知识库页那条路要 `kbId`，而 `Asset` 与 `Source` 都带不了它）、不要知识库 ID、不重新检索，只把一条**已产出**的引用所在的分块摊开。三点口子必须写清：
 
