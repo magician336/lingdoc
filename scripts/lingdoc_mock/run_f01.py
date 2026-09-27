@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Execute the repository's F01 workflow against an isolated test provider.
+"""Execute one LingDoc scenario specification against an isolated test provider.
 
-The runner uses OpenAPI operationIds and workflow.json as its only source of
-request shapes. It is intentionally a smoke/integration runner, not a server
-implementation or a replacement for the provider's semantic assertions.
+A specification is either a step list document (F01's continuous trace in
+workflow.json) or one scenario named out of scenarios.json; the runner drives
+whichever it is handed. The runner uses OpenAPI operationIds and the
+specification document as its only source of request shapes. It is
+intentionally a smoke/integration runner, not a server implementation or a
+replacement for the provider's semantic assertions.
 """
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import ipaddress
 import json
@@ -26,12 +30,130 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 ROOT = Path(__file__).resolve().parents[2]
 OPENAPI_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
 WORKFLOW_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
+SCENARIOS_PATH = ROOT / "docs/08-本轮实施方案/contracts/scenarios.json"
 VARIABLE = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
 FAILURE_STATES = {"failed", "interrupted", "cancelled", "canceled", "error"}
 
 
 class WorkflowError(RuntimeError):
-    """An actionable error in the workflow definition or provider response."""
+    """An actionable error in the specification or provider response."""
+
+
+@dataclass(frozen=True)
+class ScenarioSpec:
+    """One provider-driving specification: a step list plus how to read its result."""
+
+    id: str
+    steps: tuple[dict[str, Any], ...]
+    download_sha256_variable: str | None = None
+
+
+def _non_empty_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise WorkflowError(f"{label} must be a non-empty string")
+    return value
+
+
+def _read_json_object(path: Path, label: str) -> dict[str, Any]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise WorkflowError(f"cannot load {label} ({path}): {error}") from error
+    if not isinstance(document, dict):
+        raise WorkflowError(f"{label} must be a JSON object: {path}")
+    return document
+
+
+def _assertion_texts(step: dict[str, Any], where: str) -> list[str]:
+    """Keep the intent text of a step, whichever of the two contract shapes it uses."""
+    texts: list[str] = []
+    single = step.get("assertion")
+    if single is not None:
+        texts.append(_non_empty_string(single, f"{where} assertion"))
+    listed = step.get("assertions", [])
+    if not isinstance(listed, list):
+        raise WorkflowError(f"{where} assertions must be a list")
+    texts.extend(_non_empty_string(text, f"{where} assertion") for text in listed)
+    return texts
+
+
+def _request_definition(step: dict[str, Any], where: str) -> dict[str, Any]:
+    """Read the one thing that makes a step drivable, and say so plainly when it is absent."""
+    request_spec = step.get("request")
+    if not isinstance(request_spec, dict):
+        raise WorkflowError(
+            f"{where} has no request definition in the contract; only specifications that "
+            "declare path, query, header and body inputs can be driven"
+        )
+    return request_spec
+
+
+def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, Any], ...]:
+    """Validate the step shape that makes a specification drivable, without naming any scenario."""
+    if not isinstance(steps, list) or not steps:
+        raise WorkflowError(f"{label} must be a non-empty list of steps")
+    validated: list[dict[str, Any]] = []
+    for index, step in enumerate(steps, start=1):
+        if not isinstance(step, dict):
+            raise WorkflowError(f"{label} step {index} must be an object")
+        declared = step.get("id")
+        step_id = _non_empty_string(declared or f"{spec_id}-{index:02d}", f"{label} step {index} id")
+        # A report id may be synthesised, but an error has to point at an address the
+        # contract file actually resolves: only a declared id does.
+        where = step_id if declared else f"{label} step {index}"
+        operation_id = _non_empty_string(step.get("operation_id"), f"{where} operation_id")
+        expected = step.get("expected_http")
+        if not isinstance(expected, int) or isinstance(expected, bool):
+            raise WorkflowError(f"{where} expected_http must be an HTTP status number")
+        validated.append({**step, "id": step_id, "operation_id": operation_id,
+                          "request": _request_definition(step, where),
+                          "assertions": _assertion_texts(step, where)})
+    return tuple(validated)
+
+
+def _optional_string(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    return _non_empty_string(value, label)
+
+
+def spec_from_document(document: dict[str, Any], label: str, spec_id: str | None = None) -> ScenarioSpec:
+    """Build the specification one document describes.
+
+    `spec_id` overrides the document's own id when a caller asked for the scenario by
+    name and the document it points at is the continuous specification file.
+    """
+    resolved = _non_empty_string(spec_id or document.get("id"), f"{label} id")
+    return ScenarioSpec(
+        id=resolved,
+        steps=_validated_steps(document.get("steps"), label, resolved),
+        download_sha256_variable=_optional_string(document.get("download_sha256_variable"),
+                                                   f"{resolved} download_sha256_variable"),
+    )
+
+
+def load_spec(spec_path: Path, scenario_id: str | None = None) -> ScenarioSpec:
+    """Load the specification a run is driven by: a step list document, or one named scenario."""
+    document = _read_json_object(spec_path, "specification")
+    if scenario_id is None:
+        if isinstance(document.get("scenarios"), list):
+            raise WorkflowError(f"{spec_path.name} holds scenarios; name one with --scenario")
+        return spec_from_document(document, spec_path.name)
+    entries = document.get("scenarios")
+    if not isinstance(entries, list):
+        raise WorkflowError(f"{spec_path.name} is not a scenarios document; --scenario needs one")
+    entry = next((item for item in entries if isinstance(item, dict) and item.get("id") == scenario_id), None)
+    if entry is None:
+        raise WorkflowError(f"{spec_path.name} has no scenario {scenario_id}")
+    if entry.get("steps") is not None:
+        return spec_from_document(entry, f"scenario {scenario_id}", scenario_id)
+    # A scenario without its own steps may point at the continuous specification file.
+    pointer = entry.get("specification_file")
+    if pointer is None:
+        raise WorkflowError(f"{scenario_id} has no executable steps; its contract holds prose assertions only")
+    referenced = _read_json_object(spec_path.parent / _non_empty_string(pointer, f"{scenario_id} specification_file"),
+                                   f"{scenario_id} specification")
+    return spec_from_document(referenced, f"{scenario_id} specification", scenario_id)
 
 
 def header_value(headers: Any, name: str) -> str:
@@ -165,11 +287,11 @@ class CredentialSafeRedirectHandler(HTTPRedirectHandler):
         return redirected
 
 
-class F01Runner:
+class ScenarioRunner:
     def __init__(
         self,
         openapi: dict[str, Any],
-        workflow: dict[str, Any],
+        spec: ScenarioSpec,
         base_url: str | None = None,
         token: str | None = None,
         timeout: float = 20,
@@ -180,7 +302,7 @@ class F01Runner:
     ) -> None:
         server_url, self.operations = operation_index(openapi)
         self.base_url = (base_url or server_url).rstrip("/")
-        self.workflow = workflow
+        self.spec = spec
         self.token = token
         self.timeout = timeout
         self.poll_interval = poll_interval
@@ -203,15 +325,10 @@ class F01Runner:
                 raise WorkflowError("refusing to send a bearer token over non-loopback HTTP")
 
     @classmethod
-    def from_files(cls, openapi_path: Path, workflow_path: Path, **kwargs: Any) -> "F01Runner":
-        try:
-            openapi = json.loads(openapi_path.read_text(encoding="utf-8"))
-            workflow = json.loads(workflow_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            raise WorkflowError(f"cannot load workflow contracts: {error}") from error
-        if workflow.get("id") != "F01" or not isinstance(workflow.get("steps"), list):
-            raise WorkflowError("workflow contract is not a valid F01 step list")
-        return cls(openapi, workflow, **kwargs)
+    def from_files(cls, openapi_path: Path, spec_path: Path, scenario_id: str | None = None,
+                   **kwargs: Any) -> "ScenarioRunner":
+        spec = load_spec(spec_path, scenario_id)
+        return cls(_read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
 
     def run(self) -> dict[str, Any]:
         self.variables = {}
@@ -219,13 +336,13 @@ class F01Runner:
         self.active_step = None
         completed = 0
         step_results = self.step_results
-        for step in self.workflow["steps"]:
+        for step in self.spec.steps:
             operation_id = step.get("operation_id")
             self.active_step = {"id": step.get("id", ""), "operation_id": operation_id or ""}
             if operation_id not in self.operations:
                 raise WorkflowError(f"{step.get('id')}: OpenAPI operation not found: {operation_id}")
             method, path_template = self.operations[operation_id]
-            request_spec = step.get("request", {})
+            request_spec = _request_definition(step, step["id"])
             path_params = substitute(request_spec.get("path_params", {}), self.variables)
             query = substitute(request_spec.get("query", {}), self.variables)
             headers = substitute(request_spec.get("headers", {}), self.variables)
@@ -251,11 +368,11 @@ class F01Runner:
 
         manual_assertions = [
             (step["id"], assertion)
-            for step in self.workflow["steps"]
+            for step in self.spec.steps
             for assertion in step.get("assertions", [])
         ]
         if manual_assertions:
-            print(f"F01 completed {completed} steps; {len(manual_assertions)} provider assertions remain evidence items.")
+            print(f"{self.spec.id} completed {completed} steps; {len(manual_assertions)} provider assertions remain evidence items.")
             for step_id, assertion in manual_assertions:
                 print(f"MANUAL {step_id}: {assertion}")
         self.active_step = None
@@ -264,17 +381,19 @@ class F01Runner:
     def report(self, status: str) -> dict[str, Any]:
         # Never include captured IDs, bearer tokens, provider bodies, URLs, or
         # raw exceptions. Assertions are unexpanded text from the local contract.
+        # The "workflow" key keeps its name so F01 results stay comparable across
+        # the scenario-driven step; the matrix report renames it later.
         result = {
-            "workflow": self.workflow["id"],
+            "workflow": self.spec.id,
             "runner_status": status,
             "completed_steps": len(self.step_results),
-            "total_steps": len(self.workflow["steps"]),
+            "total_steps": len(self.spec.steps),
             "steps": list(self.step_results),
             "verification_scope": "http_smoke_only",
             "provider_semantics_status": "not_verified",
             "manual_assertions": [
                 {"step_id": step["id"], "assertion": assertion, "status": "not_run"}
-                for step in self.workflow["steps"]
+                for step in self.spec.steps
                 for assertion in step.get("assertions", [])
             ],
         }
@@ -351,9 +470,10 @@ class F01Runner:
         actual_type = header_value(headers, "Content-Type").split(";", 1)[0].strip().lower()
         if expected_type and actual_type != expected_type.lower():
             raise WorkflowError(f"{step['id']}: Content-Type {actual_type or '<missing>'}; expected {expected_type}")
-        variable_name = self.workflow.get("download_sha256_variable")
+        variable_name = self.spec.download_sha256_variable
         if not variable_name:
-            raise WorkflowError("workflow must name the captured export digest for download verification")
+            raise WorkflowError(f"{step['id']}: the specification must name the captured export digest "
+                                "for download verification")
         expected = self.variables.get(variable_name)
         if not isinstance(expected, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", expected):
             raise WorkflowError(f"{step['id']}: captured export SHA-256 is missing or invalid")
@@ -364,22 +484,25 @@ class F01Runner:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the F01 end-to-end workflow against an isolated LingDoc test provider.")
+    parser = argparse.ArgumentParser(description="Run one LingDoc scenario specification against an isolated test provider.")
     parser.add_argument("--base-url", help="OpenAPI server base URL; defaults to the first server in openapi.json")
     parser.add_argument("--token", default=os.environ.get("LINGDOC_TEST_TOKEN"), help="short-lived test bearer token (or LINGDOC_TEST_TOKEN)")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
-    parser.add_argument("--workflow", type=Path, default=WORKFLOW_PATH)
+    parser.add_argument("--spec", type=Path, help="specification document: a step list (default workflow.json) or a scenarios document together with --scenario")
+    parser.add_argument("--scenario", help="scenario id to drive out of the scenarios document (default scenarios.json)")
     parser.add_argument("--request-timeout", type=float, default=20)
     parser.add_argument("--poll-interval", type=float, default=1)
     parser.add_argument("--poll-timeout", type=float, default=120)
-    parser.add_argument("--report", type=Path, help="write a sanitized JSON record of completed workflow steps")
+    parser.add_argument("--report", type=Path, help="write a sanitized JSON record of completed steps")
     args = parser.parse_args(argv)
-    runner: F01Runner | None = None
+    spec_path = args.spec or (SCENARIOS_PATH if args.scenario else WORKFLOW_PATH)
+    runner: ScenarioRunner | None = None
     report_started = False
     try:
-        runner = F01Runner.from_files(
+        runner = ScenarioRunner.from_files(
             args.openapi,
-            args.workflow,
+            spec_path,
+            scenario_id=args.scenario,
             base_url=args.base_url,
             token=args.token,
             timeout=args.request_timeout,
@@ -394,14 +517,16 @@ def main(argv: list[str] | None = None) -> int:
         result = runner.run()
         if args.report:
             write_report(args.report, runner.report("completed"))
-            print(f"F01 report written to {args.report}")
+            print(f"{runner.spec.id} report written to {args.report}")
     except (WorkflowError, OSError) as error:
-        print(f"F01 FAILED: {error}", file=sys.stderr)
+        # Name the specification that failed; a load failure has no spec id yet.
+        failed = runner.spec.id if runner is not None else args.scenario or spec_path.name
+        print(f"{failed} FAILED: {error}", file=sys.stderr)
         if report_started and runner is not None:
             try:
                 write_report(args.report, runner.report("failed"))
             except WorkflowError as report_error:
-                print(f"F01 REPORT FAILED: {report_error}", file=sys.stderr)
+                print(f"{runner.spec.id} REPORT FAILED: {report_error}", file=sys.stderr)
         return 1
     print(json.dumps({key: value for key, value in result.items() if key != "variables"}, ensure_ascii=False))
     return 0

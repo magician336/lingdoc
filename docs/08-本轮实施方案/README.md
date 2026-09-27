@@ -12,7 +12,7 @@
 | 文件 | 用途 |
 |---|---|
 | [openapi.json](contracts/openapi.json) | 拟议 HTTP：25 操作，22 core / 3 optional；x-domain 表示服务职责，不指定人 |
-| [scenarios.json](contracts/scenarios.json) | 21 个行为场景及合成样例；providers 表示参与服务 |
+| [scenarios.json](contracts/scenarios.json) | 22 个行为场景（F01–F22）及合成样例；providers 表示参与服务 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
@@ -30,13 +30,16 @@ python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
 
 检查包含确认章节/模板/资料版本对应、待核及处置 ID 唯一、确认返回与快照对应、整章替换留存、幂等参考顺序和历史标签行为。共 15 个静态反例应被拒绝。
 
-## F01 提供方联调执行器
+## 提供方联调执行器（按场景驱动）
 
-`scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 和 workflow.json 读取请求定义，可对隔离的提供方测试环境运行 23 步 F01 连续流程。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
+`scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 与规格文档读取请求定义，对隔离的提供方测试环境逐步发请求。规格有两种给法：默认的 workflow.json 是 F01 的 23 步连续规格；`--scenario` 则按 id 从 scenarios.json 取一条，F01 在契约里指向 workflow.json，所以两种给法等价。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
 
 ```text
 python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/lingdoc --report artifacts/f01-run.json
+python scripts/lingdoc_mock/run_f01.py --scenario F01 --base-url http://127.0.0.1:8080/api/v1/lingdoc
 ```
+
+执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：F02–F22 的步骤只有操作名、期望状态码与断言文本，没有请求定义（拒绝语为 `F22 FAILED: scenario F22 step 1 has no request definition in the contract`），F15–F21 连步骤都没有（`F17 has no executable steps`）。把请求定义补进契约是后续任务，不是本执行器的省略。改动范围、回归证据与边界见 [T15-02 执行器场景驱动](T15-执行器场景驱动.md)。
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 
@@ -44,7 +47,7 @@ python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/l
 
 报告的 `verification_scope=http_smoke_only`、`provider_semantics_status=not_verified` 和 `manual_assertions` 明确标出尚未验证的业务语义。`completed_steps=23` 只证明请求步骤与文件传输检查完成，不等于模型质量、数据库副作用或 DOCX 可编辑性通过。
 
-当前契约标记为 `specification_not_executed_against_provider`，仓库尚未提供这里所需的完整真实服务/隔离测试环境。因此本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
+当前契约标记为 `specification_not_executed_against_provider`：真实服务已能按 [T15-01 的启动配方](T15-真实服务启动.md) 在本机起来并接受真实请求，但**尚未对着它跑过这条 23 步流程**。执行器不解释契约里的 `mode`（workflow.json 的 `mode` 是这份规格的执行状态，场景条目里的 `mode` 是「真接口 / 假模型」这类运行方式，两个是不同层面的记账，都由契约维护者随进度更新，由人按它决定怎么跑），因此别把这两个字段当成执行器的开关。所以本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
 
 执行器单元测试（包含报告与大小写响应头回归）：
 

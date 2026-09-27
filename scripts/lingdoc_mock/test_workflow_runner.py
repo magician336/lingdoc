@@ -8,7 +8,14 @@ import unittest
 
 from urllib.request import Request
 
-from scripts.lingdoc_mock.run_f01 import CredentialSafeRedirectHandler, F01Runner, WorkflowError, substitute
+from scripts.lingdoc_mock.run_f01 import (
+    CredentialSafeRedirectHandler,
+    ScenarioRunner,
+    ScenarioSpec,
+    WorkflowError,
+    spec_from_document,
+    substitute,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,17 +42,17 @@ class WorkflowRunnerTest(unittest.TestCase):
             substitute("{{missing}}", {})
 
     def test_repository_f01_resolves_all_steps(self) -> None:
-        runner = F01Runner.from_files(
+        runner = ScenarioRunner.from_files(
             ROOT / "docs/08-本轮实施方案/contracts/openapi.json",
             ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
         )
-        self.assertEqual(runner.workflow["id"], "F01")
-        self.assertEqual(len(runner.workflow["steps"]), 23)
-        for step in runner.workflow["steps"]:
+        self.assertEqual(runner.spec.id, "F01")
+        self.assertEqual(len(runner.spec.steps), 23)
+        for step in runner.spec.steps:
             self.assertIn(step["operation_id"], runner.operations, step["id"])
 
     def test_executes_all_f01_steps_with_synthetic_reference_trace(self) -> None:
-        runner = F01Runner.from_files(
+        runner = ScenarioRunner.from_files(
             ROOT / "docs/08-本轮实施方案/contracts/openapi.json",
             ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
             sleep=lambda _: None,
@@ -55,7 +62,7 @@ class WorkflowRunnerTest(unittest.TestCase):
         requests = []
 
         def opener(request, timeout):
-            step = runner.workflow["steps"][len(requests)]
+            step = runner.spec.steps[len(requests)]
             requests.append(request)
             if step["id"] == "F01-23":
                 return FakeResponse(file_bytes, 200, step["expected_binary"]["content_type"])
@@ -118,7 +125,9 @@ class WorkflowRunnerTest(unittest.TestCase):
             requests.append(request)
             return responses.pop(0)
 
-        runner = F01Runner(openapi, workflow, base_url="https://provider.test/api/v1", token="test-token", opener=opener, sleep=lambda _: None, poll_timeout=0.1)
+        runner = ScenarioRunner(openapi, spec_from_document(workflow, "synthetic specification"),
+                                base_url="https://provider.test/api/v1", token="test-token", opener=opener,
+                                sleep=lambda _: None, poll_timeout=0.1)
         result = runner.run()
         self.assertEqual(result["completed_steps"], 3)
         self.assertEqual([step["id"] for step in result["steps"]], ["start", "poll", "download"])
@@ -129,16 +138,18 @@ class WorkflowRunnerTest(unittest.TestCase):
         self.assertFalse(responses)
 
     def test_rejects_unexpected_download_content_type(self) -> None:
-        runner = F01Runner({"servers": [{"url": "http://provider.test"}], "paths": {"/": {}}}, {"id": "F01", "steps": []})
+        runner = ScenarioRunner({"servers": [{"url": "http://provider.test"}], "paths": {"/": {}}},
+                                ScenarioSpec(id="F01", steps=()))
         step = {"id": "download", "expected_binary": {"content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}}
         with self.assertRaisesRegex(WorkflowError, "Content-Type"):
             runner._verify_download(step, b"not a docx", {"Content-Type": "text/plain"})
 
     def test_refuses_to_send_bearer_token_to_remote_http(self) -> None:
         openapi = {"servers": [{"url": "http://provider.test/api/v1"}], "paths": {}}
+        spec = ScenarioSpec(id="F01", steps=())
         with self.assertRaisesRegex(WorkflowError, "non-loopback HTTP"):
-            F01Runner(openapi, {"id": "F01", "steps": []}, token="secret")
-        F01Runner(openapi, {"id": "F01", "steps": []}, base_url="http://127.0.0.1:8080/api/v1", token="test-token")
+            ScenarioRunner(openapi, spec, token="secret")
+        ScenarioRunner(openapi, spec, base_url="http://127.0.0.1:8080/api/v1", token="test-token")
 
     def test_redirect_protects_credentials_and_rejects_downgrades_or_mutations(self) -> None:
         handler = CredentialSafeRedirectHandler()
