@@ -84,15 +84,15 @@ func (e *delayedTestEnqueuer) EnqueueGenerationAfter(_ context.Context, _ uint64
 }
 
 type testRepository struct {
-	findReplayCalls  int
-	createRunCalls   int
-	run            Run
-	input          Input
-	idempotencyKey string
-	requestHash    string
-	claimed        bool
-	candidate      candidateadoption.Candidate
-	failure        *RunError
+	findReplayCalls int
+	createRunCalls  int
+	run             Run
+	input           Input
+	idempotencyKey  string
+	requestHash     string
+	claimed         bool
+	candidate       candidateadoption.Candidate
+	failure         *RunError
 }
 
 func (r *testRepository) FindReplay(_ context.Context, _ Actor, _ string, key, hash string) (Run, bool, error) {
@@ -178,7 +178,7 @@ func TestStartEmptyAssetScopeHasNoDownstreamEffects(t *testing.T) {
 		t.Fatalf("Start() error = %v, want invalid request", err)
 	}
 	observation := map[string]int{
-		"input_resolver_calls":        inputs.calls,
+		"input_resolver_calls":         inputs.calls,
 		"repository_find_replay_calls": repo.findReplayCalls,
 		"repository_create_run_calls":  repo.createRunCalls,
 		"enqueue_calls":                enqueuer.calls,
