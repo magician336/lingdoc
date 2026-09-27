@@ -92,6 +92,16 @@ def scenario_requests(synthetic):
 
 
 class ScenarioReportTest(unittest.TestCase):
+    def test_execution_errors_are_sanitized_before_they_reach_reports(self):
+        private_id = "f838a8d9-03a1-4951-bd35-1da51ba802d3"
+        error = WorkflowError(f"request failed for http://127.0.0.1/projects/{private_id}: connection reset")
+
+        safe = module.safe_execution_error(error)
+
+        self.assertNotIn(private_id, safe)
+        self.assertNotIn("http://", safe)
+        self.assertIn("HTTP", safe)
+
     def test_a_scenario_that_holds_is_reported_step_by_step_and_check_by_check(self):
         report, _ = drive()
         executed = report["executed"]

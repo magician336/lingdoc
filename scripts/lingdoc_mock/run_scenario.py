@@ -226,6 +226,20 @@ def step_verdicts(spec, runner: ScenarioRunner) -> list[dict[str, Any]]:
     return verdicts
 
 
+def safe_execution_error(error: WorkflowError) -> str:
+    """Return a report-safe category without URLs, response text, or captured IDs."""
+    message = str(error)
+    if message.startswith("workflow variable is not captured yet:"):
+        return "后续请求引用了尚未捕获的变量"
+    if message.startswith("capture pointer not found:"):
+        return "响应中缺少声明的捕获位置"
+    if message.startswith("request failed for "):
+        return "提供方 HTTP 传输失败"
+    if "invalid JSON" in message:
+        return "提供方返回了无效 JSON"
+    return "执行器无法完成请求构造或提供方响应处理"
+
+
 def scenario_verdicts(document: dict[str, Any], executed_id: str, state_id: str,
                       verdict: str) -> list[dict[str, Any]]:
     """Every scenario in the contract, with the one this run drove carrying its conclusion."""
@@ -317,7 +331,7 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
                                     "kind": "execution_error",
                                     "expected": declaration["expected_http"],
                                     "actual": None,
-                                    "why": f"执行器无法继续本步骤：{error}"})
+                                    "why": safe_execution_error(error)})
         executed["steps"] = step_verdicts(runner.spec, runner)
         executed["verdict"] = "failed" if any(step["verdict"] == "failed" for step in executed["steps"]) else "passed"
 
