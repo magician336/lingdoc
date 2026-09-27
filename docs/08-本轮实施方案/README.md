@@ -12,7 +12,7 @@
 | 文件 | 用途 |
 |---|---|
 | [openapi.json](contracts/openapi.json) | 拟议 HTTP：31 操作，28 core / 3 optional；x-domain 表示服务职责，不指定人 |
-| [scenarios.json](contracts/scenarios.json) | 22 个行为场景（F01–F22）及合成样例；providers 表示参与服务 |
+| [scenarios.json](contracts/scenarios.json) | 22 个行为场景（F01–F22）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
@@ -39,7 +39,7 @@ python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/l
 python scripts/lingdoc_mock/run_f01.py --scenario F01 --base-url http://127.0.0.1:8080/api/v1/lingdoc
 ```
 
-执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：F02–F22 的步骤只有操作名、期望状态码与断言文本，没有请求定义（拒绝语为 `F22 FAILED: scenario F22 step 1 has no request definition in the contract`），F15–F21 连步骤都没有（`F17 has no executable steps`）。把请求定义补进契约是后续任务，不是本执行器的省略。改动范围、回归证据与边界见 [T15-02 执行器场景驱动](T15-执行器场景驱动.md)。
+执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01 与 F22 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：F02–F14 的步骤只有操作名、期望状态码与断言文本，没有请求定义（拒绝语为 `F03 FAILED: scenario F03 step 1 has no request definition in the contract`），F15–F21 连步骤都没有（`F17 has no executable steps`）。把请求定义补进契约是后续任务，不是本执行器的省略。改动范围、回归证据与边界见 [T15-02 执行器场景驱动](T15-执行器场景驱动.md)。
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 
@@ -71,7 +71,24 @@ python scripts/lingdoc_mock/load_state.py --state S3 --knowledge k-notready=<真
 
 资料与成员用契约里的名字（`k-demo`、`k-notready`、`u-member`）声明，真实 ID 由环境用 `--knowledge` / `--member` 注入；`--token` 或 `LINGDOC_TEST_TOKEN` 传凭证。报告格式与执行器一致地脱敏：不含令牌、不含提供方 ID。`snapshot` 是声明里那些被读回确认过的事实，`observed` 是读回本身产生的事实（`project_version`、章节是否已有版本、资料可用性），两者各有摘要；**同一份声明跑两遍，`observed` 与它的摘要相同、两次都不一致清单为空**，才是「起点可重复构造」——只比 `snapshot` 等于拿声明跟它自己比，证不了提供方那一侧。读回只能证到通道能证的那一层：提供方对不可用资料只答「不可用」，所以声明里写 `pending` / `failed` 时，那句更细的话会进报告的 `unverified`（附上为什么），不会冒充已验证。改动范围、实跑证据与边界见 [T15-03 起点状态装载](T15-起点状态装载.md)。
 
-`.github/workflows/lingdoc-f01-runner.yml` 对执行器、装载器、相关测试和契约变更运行该命令，保留测试日志；它仅使用合成响应，不读取凭据或调用真实模型。
+## 场景驱动（一条场景从契约跑到报告）
+
+`scripts/lingdoc_mock/run_scenario.py` 把上面两件事接起来：按声明把起点灌进提供方并读回核对，再按步骤声明的身份发出那一步，逐条求值断言，写出一份逐项报告。
+
+```text
+python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
+  --base-url http://127.0.0.1:8080/api/v1/lingdoc \
+  --knowledge k-demo=<真实知识 id> --knowledge k-notready=<真实知识 id> \
+  --identity u-owner=<该账号令牌>
+```
+
+契约里的请求用 `{{变量}}` 引用运行时的值，只有三个命名空间：`project.id`（本次建出来的项目）、`asset.<声明名>`（`bindAsset` 返回的**绑定 id**，不是知识 id）、`chapter.<节 id>`。真实值由 `--knowledge` / `--member` / `--identity` 注入，于是契约文件里只出现契约自己的名字。步骤声明 `actor`；一次运行里步骤声明的 actor 多于一个时，每一个都必须给凭证——缺一个就是把两个调用者当成同一个人，那样跑出来的通过没有意义；只声明一个 actor 的规格可以退回 `--token`。
+
+断言是「一个 `path`（JSON 指针）+ 一个算子 + 一句 `intent`」，算子有 `equals` / `length` / `keys` / `one_of`。`intent` 与步骤的 `assertion` 是中文意图说明，原样进报告但不参与求值；报告另写 `expected` 与 `actual`。期望值的现成来源是契约已发布的响应例子，静态校验逐条比对「这条 check 的 `path` 在声明的那个例子里是否存在、值是否一致」，比对不上就拒绝；例子里给不出的运行时值（比如绑定 id）记作留给运行。
+
+报告默认写在 `docs/08-本轮实施方案/T15-验证报告.json`，不含令牌、不含提供方 ID、不含时间戳，**同一输入两次运行的字节相同**。逐条判定分三种：`passed`；`failed` 带 `why`（先写期望与实际的 HTTP 状态码，再逐条写「哪个指针、期望什么、实际读到什么」，读不到的位置明说读不到）；`not_run` 带原因（没有请求定义 / 没有步骤），22 条场景全部出现，没有一条留空。起点读不回来时那一步**不发**，结论直接为失败。改动范围、实跑结论与边界见 [T15-04 场景到报告](T15-场景到报告.md)。
+
+`.github/workflows/lingdoc-f01-runner.yml` 对执行器、装载器、场景驱动、相关测试与契约变更运行 `python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py'`（并对这几个模块做 `py_compile`），保留测试日志；它仅使用合成响应，**不运行上面的真实服务命令**，不读取凭据，也不调用真实模型。
 
 这些接口是待实现方案。Schema 不能独自验证全部跨字段规则，静态轨迹也不能证明数据库副作用。Prism、完整 OpenAPI meta-schema、真实服务/数据库/浏览器/模型/DOCX 均未由本脚本验证；文件 hash 占位值不代表已生成真实文件。
 

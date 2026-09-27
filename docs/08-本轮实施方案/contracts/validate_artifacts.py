@@ -65,20 +65,126 @@ for path,item in spec['paths'].items():
                     validate(media['schema'],example['value'],oid+' '+code+' '+name)
 
 scenario_steps=0
+scenario_steps_with_requests=0
+check_references={'tied':0,'unresolved':0}
+VARIABLE=re.compile(r'\{\{[A-Za-z_][A-Za-z0-9_.-]*\}\}')
+CHECK_OPERATORS=('equals','length','keys','one_of')
+def has_variable(value):
+    if isinstance(value,str): return bool(VARIABLE.search(value))
+    if isinstance(value,list): return any(has_variable(v) for v in value)
+    if isinstance(value,dict): return any(has_variable(v) for v in value.values())
+    return False
+
+def check_request_shape(op,request,where):
+    """The parts of a request a static check can hold without knowing what a variable resolves to.
+
+    A `{{...}}` value has no type here, so field *presence* and field *names* are checked and
+    value types are left to the run; claiming more would be pretending to know the environment.
+    """
+    assert isinstance(request,dict),where+' request must be an object'
+    assert set(request)<= {'path_params','query','headers','json'},where+' request has an unknown bucket'
+    for bucket in ('path_params','query','headers'):
+        assert isinstance(request.get(bucket,{}),dict),where+' '+bucket+' must be an object'
+    for parameter in op.get('parameters',[]):
+        if parameter['in'] not in {'path','header'}: continue
+        bucket=request.get('path_params' if parameter['in']=='path' else 'headers',{})
+        if parameter.get('required'):
+            present=[name for name in bucket if name.lower()==parameter['name'].lower()]
+            assert present,where+' omits required '+parameter['in']+' parameter '+parameter['name']
+    declared={p['name'] for p in op.get('parameters',[]) if p['in']=='path'}
+    assert set(request.get('path_params',{}))<=declared,where+' sends a path parameter the path does not declare'
+    if 'requestBody' in op:
+        schema=op['requestBody']['content']['application/json']['schema']
+        schema=ptr(spec,schema['$ref']) if '$ref' in schema else schema
+        body=request.get('json')
+        assert isinstance(body,dict),where+' must send a JSON body for this operation'
+        assert set(schema.get('required',[]))<=set(body),where+' omits a required body field'
+        if schema.get('additionalProperties') is False:
+            unknown=set(body)-set(schema.get('properties',{}))
+            assert not unknown,where+' sends body fields the contract does not declare: '+str(sorted(unknown))
+    else:
+        assert request.get('json') is None,where+' sends a body to an operation that declares none'
+
+def check_scenario_checks(step,where):
+    """Validate the evaluable expectations, and tie every one of them to the published example."""
+    checks=step.get('checks')
+    if checks is None: return 0,0
+    assert isinstance(checks,list) and checks,where+' checks must be a non-empty list'
+    example=ptr(ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']['application/json']
+                ['examples'][step['response_example']],'/value')
+    tied=unresolved=0
+    for index,check in enumerate(checks,start=1):
+        at=where+' check '+str(index)
+        assert set(check)<= {'path','intent'}|set(CHECK_OPERATORS),at+' carries an unknown key'
+        assert isinstance(check.get('path'),str) and check['path'].startswith('/'),at+' path must be a JSON pointer'
+        assert isinstance(check.get('intent'),str) and check['intent'].strip(),at+' intent must be a sentence'
+        operators=[name for name in CHECK_OPERATORS if name in check]
+        assert len(operators)==1,at+' must state exactly one of '+str(list(CHECK_OPERATORS))
+        operator=operators[0];expected=check[operator]
+        if operator=='length': assert isinstance(expected,int) and not isinstance(expected,bool) and expected>=0,at+' length'
+        if operator=='keys': assert isinstance(expected,list) and all(isinstance(k,str) and k.strip() for k in expected),at+' keys'
+        if operator=='one_of': assert isinstance(expected,list) and expected,at+' one_of'
+        # The expected value has to come from somewhere checkable, and the somewhere is the
+        # response example this step already names: an assertion that no published example
+        # supports is a wish, not an expectation.
+        actual=ptr(example,check['path'])
+        if operator!='equals' and has_variable(expected):
+            raise AssertionError(at+' cannot tie a '+operator+' expectation to the example')
+        if operator=='equals':
+            if has_variable(expected): unresolved+=1;continue
+            assert actual==expected,at+': the example holds '+repr(actual)+', not '+repr(expected)
+        elif operator=='length': assert len(actual)==expected,at+': the example has '+str(len(actual))
+        elif operator=='keys': assert sorted(actual)==sorted(expected),at+': the example has '+str(sorted(actual))
+        else: assert actual in expected,at+': the example holds '+repr(actual)
+        tied+=1
+    return tied,unresolved
+
+def check_scenario_step(scenario,index,step):
+    global scenario_steps,scenario_steps_with_requests,check_references
+    where=step.get('id') or f"{scenario['id']} step {index}"
+    assert step['operation_id'] in ops,where+' names an operation the OpenAPI document does not have'
+    response=ops[step['operation_id']]['responses'][str(step['expected_http'])]
+    if 'response_example' in step:
+        assert step['response_example'] in response['content']['application/json']['examples'],where
+    if step.get('actor') is not None:
+        assert step['actor'] in ACTORS,where+' names an actor the contract never declares: '+str(step['actor'])
+    if 'request' in step:
+        # 一个请求能被发出去，除了形状合法还差两样：谁在发（actor），以及重投时凭什么认出
+        # 是同一次（幂等键）。两样都得有出处——只查名字写对没写对，删掉它们也照样通过。
+        assert step.get('actor'),where+' carries a request but names nobody to send it as'
+        if step['request'].get('json') is not None:
+            headers=step['request'].get('headers',{})
+            assert any(name.lower()=='idempotency-key' for name in headers),\
+                where+' sends a body without an Idempotency-Key'
+        check_request_shape(ops[step['operation_id']],step['request'],where)
+        scenario_steps_with_requests+=1
+    if 'checks' in step:
+        assert 'response_example' in step,where+' checks an expectation no published example stands behind'
+        tied,unresolved=check_scenario_checks(step,where)
+        check_references['tied']+=tied;check_references['unresolved']+=unresolved
+    scenario_steps+=1
+
+# 谁是「调用者」这件事也得有出处：契约里只有所有者（canonical fixture 的立项人）和起点状态
+# 声明的协作者两种名字，别的地方冒出来的名字是这个校验器要拦住的那种笔误。
+ACTORS={'u-owner'}|{name for state in cases['starting_states'] for name in state['project'].get('members',[])}
+def check_scenario(scenario):
+    if scenario.get('starting_state') is not None:
+        assert scenario['starting_state'] in {state['id'] for state in cases['starting_states']},scenario['id']
+    for index,step in enumerate(scenario.get('steps',[]),start=1):
+        check_scenario_step(scenario,index,step)
 for scenario in cases['scenarios']:
-    for step in scenario.get('steps',[]):
-        response=ops[step['operation_id']]['responses'][str(step['expected_http'])]
-        if 'response_example' in step:
-            assert step['response_example'] in response['content']['application/json']['examples'],step
-        scenario_steps+=1
+    check_scenario(scenario)
+# 反例也会走到同一段代码，所以计数在这里就截下来：报告要说的是契约里有几条，不是校验器跑了几遍。
+scenario_totals={'steps_with_requests':scenario_steps_with_requests,
+                 'checks_tied':check_references['tied'],'checks_unresolved':check_references['unresolved']}
 
 def expand(x,env):
     if isinstance(x,dict): return {k:expand(v,env) for k,v in x.items()}
     if isinstance(x,list): return [expand(v,env) for v in x]
     if not isinstance(x,str): return x
-    match=re.fullmatch(r'\{\{(\w+)\}\}',x)
+    match=re.fullmatch(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',x)
     if match: return env[match[1]]
-    return re.sub(r'\{\{(\w+)\}\}',lambda m:str(env[m[1]]),x)
+    return re.sub(r'\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}',lambda m:str(env[m[1]]),x)
 env={};resolved=[]
 for step in flow['steps']:
     op=ops[step['operation_id']]
@@ -329,13 +435,55 @@ for label,mutate in [
     bad=copy.deepcopy(next(s for s in buildable_states if s['id']=='S2'));mutate(bad)
     must_reject(label,lambda:check_starting_state(bad))
 
+# 场景步骤的请求、身份与可求值断言。反例都从契约里真实那条步骤改出来，改完必须被拒——
+# 不然「静态校验认得这些新键」只是一句话，不是一件事。
+F22=next(s for s in cases['scenarios'] if s['id']=='F22')
+def scenario_step():
+    return copy.deepcopy(F22['steps'][0])
+def mutate_step(mutate):
+    def run():
+        step=scenario_step();mutate(step);check_scenario_step(F22,1,step)
+    return run
+def mutate_check(mutate):
+    def run():
+        step=scenario_step();mutate(step['checks'][0]);check_scenario_step(F22,1,step)
+    return run
+for label,action in [
+    ('scenario_check_with_two_operators',mutate_check(lambda c:c.update(one_of=['x']))),
+    ('scenario_check_disagrees_with_the_published_example',mutate_check(lambda c:c.update(equals='other_code'))),
+    ('scenario_check_reads_a_place_the_example_does_not_have',mutate_check(lambda c:c.update(path='/error/nope'))),
+    ('scenario_check_without_an_intent',mutate_check(lambda c:c.pop('intent'))),
+    ('scenario_check_without_an_operator',mutate_check(lambda c:c.pop('equals'))),
+    ('scenario_check_with_an_unknown_key',mutate_check(lambda c:c.update(assertion='prose'))),
+    ('scenario_check_on_a_step_with_no_published_example',mutate_step(lambda s:s.pop('response_example'))),
+    ('scenario_request_omits_a_required_path_parameter',mutate_step(lambda s:s['request']['path_params'].pop('projectId'))),
+    ('scenario_request_sends_a_field_the_contract_does_not_declare',
+     mutate_step(lambda s:s['request']['json'].update(invented_field='x'))),
+    ('scenario_request_omits_a_required_body_field',mutate_step(lambda s:s['request']['json'].pop('asset_ids'))),
+    ('scenario_request_sends_a_body_the_operation_does_not_take',mutate_step(lambda s:s.update(
+        operation_id='listProjects',request={'path_params':{},'headers':{},'json':{'query':'x'}}))),
+    ('scenario_request_without_an_actor',mutate_step(lambda s:s.pop('actor'))),
+    ('scenario_request_without_an_idempotency_key',
+     mutate_step(lambda s:s['request']['headers'].pop('Idempotency-Key'))),
+    ('scenario_step_names_an_undeclared_actor',mutate_step(lambda s:s.update(actor='u-stranger'))),
+    ('scenario_step_points_at_an_unknown_operation',mutate_step(lambda s:s.update(operation_id='inventOperation'))),
+    ('scenario_declares_an_unknown_starting_state',
+     lambda:check_scenario({**F22,'starting_state':'S99'})),
+]:
+    must_reject(label,action)
+assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'
+assert scenario_totals['checks_tied']>=1,'no check was tied back to a published response example'
+
 report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','paths':len(spec['paths']),
  'operations':len(ops),'core_operations':sum(o['x-delivery-phase']=='core' for o in ops.values()),
  'schemas':len(spec['components']['schemas']),'local_refs':refs,'shape_checks':checks,
  'scenarios':len(cases['scenarios']),'scenario_example_references':scenario_steps,'continuous_trace_steps':len(resolved),
+ 'scenario_steps_with_requests':scenario_totals['steps_with_requests'],
+ 'scenario_checks_tied_to_a_published_example':scenario_totals['checks_tied'],
+ 'scenario_checks_left_to_the_run':scenario_totals['checks_unresolved'],
  'starting_states':len(buildable_states),'starting_state_parts_buildable':sorted(startable),
  'negative_static_cases_rejected':negative_results,
- 'not_run':['complete OpenAPI meta-schema validation','Prism runtime','real provider/database/model tests','actual DOCX export/opening','building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)'],
+ 'not_run':['complete OpenAPI meta-schema validation','Prism runtime','real provider/database/model tests','actual DOCX export/opening','running a scenario step and evaluating its checks against a real response (scripts/lingdoc_mock/run_scenario.py does that against a real service; this static check ties the expectations to the published examples and stops there)','building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)'],
  'note':'This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples.'}
 (ROOT/'validation-result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print(json.dumps(report,ensure_ascii=False))

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.4.0",
+  "contract_version": "0.5.0",
   "status": "design_static_only",
   "scenarios": [
     {
@@ -983,13 +983,70 @@
     {
       "id": "F22",
       "name": "部分授权不静默成功",
-      "setup": "项目绑定多个资料；调用者仅获授权其中一部分，startGeneration 同时提交全部。",
+      "starting_state": "S7",
+      "setup": "项目绑定两条资料：一条当前可用、一条当前不可用；调用者一次提交两条。整体必须失败，不得只处理可用子集后返回成功，被拒资料须逐项带原因。本构建可达的拒绝原因是 not_ready——授权维不可达（同租户绑定即放行，绑定与读取用同一判定，租户内两名成员不可能一放一拒），所以 not_authorized 只作契约词表里的一项存在。",
       "steps": [
         {
-          "operation_id": "startGeneration",
+          "id": "F22-01",
+          "operation_id": "retrieveSources",
+          "actor": "u-owner",
           "expected_http": 422,
-          "assertion": "整体失败，不得只处理已授权子集并返回成功；被拒资料须逐项带原因，不得把‘返回无错误’当作全部授权成功。",
-          "response_example": "asset_not_authorized"
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            },
+            "headers": {
+              "Idempotency-Key": "f22-retrieval-0001"
+            },
+            "json": {
+              "query": "合成起点：一次提交一条可用与一条不可用的资料。",
+              "asset_ids": [
+                "{{asset.k-demo}}",
+                "{{asset.k-notready}}"
+              ]
+            }
+          },
+          "assertion": "整体失败，不得只处理可用子集并返回成功；被拒资料须逐项带原因，不得把「返回无错误」当作全部资料通过。本构建可达的只有 not_ready 一侧，断言因此落在「整批拒绝 + 逐项原因」的形状上，而不是「哪条被授权」上。",
+          "response_example": "asset_not_authorized",
+          "checks": [
+            {
+              "path": "/error/code",
+              "equals": "asset_not_authorized",
+              "intent": "整批拒绝用的是契约声明的拒绝码，不是只拒子集后的成功码"
+            },
+            {
+              "path": "/error/details/denied",
+              "length": 1,
+              "intent": "被拒的恰好是那一条不可用资料；既没有悄悄放过它，也没有连可用那条一起拒"
+            },
+            {
+              "path": "/error/details/denied/0/asset_id",
+              "equals": "{{asset.k-notready}}",
+              "intent": "被拒的是声明为不可用的那条，可用那条不在名单上"
+            },
+            {
+              "path": "/error/details/denied/0",
+              "keys": [
+                "asset_id",
+                "reason"
+              ],
+              "intent": "每条被拒资料恰好带 id 与原因两键，没有折叠成一句话"
+            },
+            {
+              "path": "/error/details/denied/0/reason",
+              "one_of": [
+                "not_authorized",
+                "not_ready",
+                "not_found"
+              ],
+              "intent": "原因落在契约给出的词表里，不是实现自造的说法"
+            },
+            {
+              "path": "/error/retryable",
+              "equals": false,
+              "intent": "这次拒绝不声明可重试，调用者不该原样重投"
+            }
+          ]
         }
       ],
       "providers": [
@@ -1149,6 +1206,42 @@
         {
           "knowledge_id": "k-demo",
           "processing_state": "ready"
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "name": "绑定一条可用与一条不可用资料",
+      "note": "已立项，绑定两条资料：一条当前可用、一条当前不可用。F22（部分授权不静默成功）的起点：一次提交两条，检索预检必须整批拒绝并逐项说明哪条被拒、为什么，不得只处理可用子集。它与 S3/S5 是同一种声明形状的合取：可用那条用 canonical fixture 的知识，不可用那条用 k-notready，两条都由装载器各自绑定后读回。",
+      "project": {
+        "name": "合成起点：可用与不可用资料各一条",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "assets": [
+        {
+          "knowledge_id": "k-demo",
+          "processing_state": "ready"
+        },
+        {
+          "knowledge_id": "k-notready",
+          "processing_state": "pending"
+        }
+      ],
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "",
+          "source_ids": []
+        },
+        {
+          "section_id": "method",
+          "body_markdown": "",
+          "source_ids": []
         }
       ]
     }

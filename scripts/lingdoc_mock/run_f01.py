@@ -31,7 +31,13 @@ ROOT = Path(__file__).resolve().parents[2]
 OPENAPI_PATH = ROOT / "docs/08-本轮实施方案/contracts/openapi.json"
 WORKFLOW_PATH = ROOT / "docs/08-本轮实施方案/contracts/workflow.json"
 SCENARIOS_PATH = ROOT / "docs/08-本轮实施方案/contracts/scenarios.json"
-VARIABLE = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
+# A variable name may be namespaced the way the contract spells its own facts
+# ("{{asset.k-notready}}"), so dots and dashes are part of a name, not separators.
+VARIABLE = re.compile(r"\{\{([A-Za-z_][A-Za-z0-9_.-]*)\}\}")
+PROVIDER_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+# A check states one expectation about one place in the response. The operator is what
+# makes it evaluable; `intent` keeps the sentence a reader needs to judge the expectation.
+CHECK_OPERATORS = ("equals", "length", "keys", "one_of")
 FAILURE_STATES = {"failed", "interrupted", "cancelled", "canceled", "error"}
 
 
@@ -64,6 +70,26 @@ def read_json_object(path: Path, label: str) -> dict[str, Any]:
     return document
 
 
+def redact(value: Any, names: dict[str, str]) -> Any:
+    """Replace provider identifiers with the contract name they were declared under.
+
+    A report may say which declared asset was refused and may not publish the provider's
+    own id for it. An id no declaration accounts for is replaced by a marker rather than
+    passed through: an unexplained identifier is exactly what must not leave the machine.
+    """
+    if isinstance(value, dict):
+        return {key: redact(child, names) for key, child in value.items()}
+    if isinstance(value, list):
+        return [redact(child, names) for child in value]
+    if not isinstance(value, str):
+        return value
+    if value in names:
+        return names[value]
+    for identifier, name in names.items():
+        value = value.replace(identifier, name)
+    return PROVIDER_ID.sub("<provider-id>", value)
+
+
 def _assertion_texts(step: dict[str, Any], where: str) -> list[str]:
     """Keep the intent text of a step, whichever of the two contract shapes it uses."""
     texts: list[str] = []
@@ -88,6 +114,42 @@ def _request_definition(step: dict[str, Any], where: str) -> dict[str, Any]:
     return request_spec
 
 
+def _check_definitions(step: dict[str, Any], where: str) -> list[dict[str, Any]]:
+    """Validate the evaluable expectations a step declares, before any request is sent.
+
+    A check that cannot be evaluated has to be refused here: the alternative is a report
+    that quietly counts an unevaluatable sentence as a pass.
+    """
+    checks = step.get("checks")
+    if checks is None:
+        return []
+    if not isinstance(checks, list):
+        raise WorkflowError(f"{where} checks must be a list")
+    validated: list[dict[str, Any]] = []
+    for index, check in enumerate(checks, start=1):
+        at = f"{where} check {index}"
+        if not isinstance(check, dict):
+            raise WorkflowError(f"{at} must be an object")
+        pointer = check.get("path")
+        if not isinstance(pointer, str) or not pointer.startswith("/"):
+            raise WorkflowError(f"{at} path must be a JSON pointer string that starts with '/'")
+        non_empty_string(check.get("intent"), f"{at} intent")
+        present = [name for name in CHECK_OPERATORS if name in check]
+        if len(present) != 1:
+            raise WorkflowError(f"{at} must state exactly one of {' / '.join(CHECK_OPERATORS)}; "
+                                f"it states {present or 'none'}")
+        operator, expected = present[0], check[present[0]]
+        if operator == "length" and (not isinstance(expected, int) or isinstance(expected, bool) or expected < 0):
+            raise WorkflowError(f"{at} length must be a count of zero or more")
+        if operator == "keys" and (not isinstance(expected, list)
+                                   or not all(isinstance(key, str) and key.strip() for key in expected)):
+            raise WorkflowError(f"{at} keys must be a list of field names")
+        if operator == "one_of" and (not isinstance(expected, list) or not expected):
+            raise WorkflowError(f"{at} one_of must be a non-empty list of allowed values")
+        validated.append(dict(check))
+    return validated
+
+
 def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, Any], ...]:
     """Validate the step shape that makes a specification drivable, without naming any scenario."""
     if not isinstance(steps, list) or not steps:
@@ -105,8 +167,11 @@ def _validated_steps(steps: Any, label: str, spec_id: str) -> tuple[dict[str, An
         expected = step.get("expected_http")
         if not isinstance(expected, int) or isinstance(expected, bool):
             raise WorkflowError(f"{where} expected_http must be an HTTP status number")
+        actor = step.get("actor")
         validated.append({**step, "id": step_id, "operation_id": operation_id,
+                          "actor": _optional_string(actor, f"{where} actor"),
                           "request": _request_definition(step, where),
+                          "checks": _check_definitions(step, where),
                           "assertions": _assertion_texts(step, where)})
     return tuple(validated)
 
@@ -132,6 +197,22 @@ def spec_from_document(document: dict[str, Any], label: str, spec_id: str | None
     )
 
 
+def scenario_entry(document: dict[str, Any], scenario_id: str, label: str) -> dict[str, Any]:
+    """The one scenario a document declares under this id, or a refusal naming the file and the id.
+
+    Two callers look a scenario up — driving one, and reporting why the others were not driven —
+    and a report that explains a scenario away in different words than the refusal uses would be
+    describing two different contracts.
+    """
+    entries = document.get("scenarios")
+    if not isinstance(entries, list):
+        raise WorkflowError(f"{label} is not a scenarios document; --scenario needs one")
+    entry = next((item for item in entries if isinstance(item, dict) and item.get("id") == scenario_id), None)
+    if entry is None:
+        raise WorkflowError(f"{label} has no scenario {scenario_id}")
+    return entry
+
+
 def load_spec(spec_path: Path, scenario_id: str | None = None) -> ScenarioSpec:
     """Load the specification a run is driven by: a step list document, or one named scenario."""
     document = read_json_object(spec_path, "specification")
@@ -139,12 +220,7 @@ def load_spec(spec_path: Path, scenario_id: str | None = None) -> ScenarioSpec:
         if isinstance(document.get("scenarios"), list):
             raise WorkflowError(f"{spec_path.name} holds scenarios; name one with --scenario")
         return spec_from_document(document, spec_path.name)
-    entries = document.get("scenarios")
-    if not isinstance(entries, list):
-        raise WorkflowError(f"{spec_path.name} is not a scenarios document; --scenario needs one")
-    entry = next((item for item in entries if isinstance(item, dict) and item.get("id") == scenario_id), None)
-    if entry is None:
-        raise WorkflowError(f"{spec_path.name} has no scenario {scenario_id}")
+    entry = scenario_entry(document, scenario_id, spec_path.name)
     if entry.get("steps") is not None:
         return spec_from_document(entry, f"scenario {scenario_id}", scenario_id)
     # A scenario without its own steps may point at the continuous specification file.
@@ -164,6 +240,15 @@ def header_value(headers: Any, name: str) -> str:
     return ""
 
 
+def render_report(report: dict[str, Any]) -> str:
+    """The one serialization of a report: what is written and what is compared are the same text.
+
+    Two serializations that happen to agree today would let a report be compared in one shape
+    and published in another, so both callers go through here.
+    """
+    return json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+
+
 def write_report(path: Path, report: dict[str, Any]) -> None:
     """Create parents and atomically replace only a complete sanitized report."""
     temporary: str | None = None
@@ -172,7 +257,7 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent,
                                          prefix=".f01-", suffix=".tmp", delete=False) as stream:
             temporary = stream.name
-            stream.write(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+            stream.write(render_report(report))
         os.replace(temporary, path)
         temporary = None
     except OSError as error:
@@ -185,23 +270,37 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
                 pass  # Do not mask the original write error.
 
 
-def json_pointer(value: Any, pointer: str) -> Any:
+def lookup_pointer(value: Any, pointer: str) -> tuple[bool, Any]:
+    """Walk a JSON pointer, reporting an absent place instead of raising.
+
+    A capture that cannot be read is a broken specification and has to stop the run; a
+    check that reads an absent place is a finding about the response and has to be
+    reported. One walk, two callers, two ways of treating "not there".
+    """
     if pointer == "":
-        return value
+        return True, value
     if not pointer.startswith("/"):
-        raise WorkflowError(f"capture pointer must start with '/': {pointer}")
+        raise WorkflowError(f"pointer must start with '/': {pointer}")
     current = value
     for raw_part in pointer[1:].split("/"):
         part = raw_part.replace("~1", "/").replace("~0", "~")
-        try:
-            if isinstance(current, list):
-                current = current[int(part)]
-            elif isinstance(current, dict):
-                current = current[part]
-            else:
-                raise KeyError(part)
-        except (KeyError, IndexError, ValueError) as error:
-            raise WorkflowError(f"capture pointer not found: {pointer}") from error
+        if isinstance(current, list):
+            if not part.isdigit() or int(part) >= len(current):
+                return False, None
+            current = current[int(part)]
+        elif isinstance(current, dict):
+            if part not in current:
+                return False, None
+            current = current[part]
+        else:
+            return False, None
+    return True, current
+
+
+def json_pointer(value: Any, pointer: str) -> Any:
+    found, current = lookup_pointer(value, pointer)
+    if not found:
+        raise WorkflowError(f"capture pointer not found: {pointer}")
     return current
 
 
@@ -287,6 +386,22 @@ class CredentialSafeRedirectHandler(HTTPRedirectHandler):
         return redirected
 
 
+def refuse_token_over_plain_http(url: str, token: str | None) -> None:
+    """Refuse to put a bearer credential on a cleartext connection off this machine."""
+    if not token:
+        return
+    parsed = urlsplit(url)
+    if parsed.scheme == "https":
+        return
+    hostname = (parsed.hostname or "").lower()
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        is_loopback = hostname == "localhost"
+    if not is_loopback:
+        raise WorkflowError("refusing to send a bearer token over non-loopback HTTP")
+
+
 class ProviderClient:
     """One provider's HTTP transport: where to send, what to send with, how much to read back.
 
@@ -303,21 +418,22 @@ class ProviderClient:
         parsed_base = urlsplit(self.base_url)
         if parsed_base.scheme not in {"http", "https"} or not parsed_base.netloc:
             raise WorkflowError("provider base URL must use http or https")
-        if token and parsed_base.scheme != "https":
-            hostname = (parsed_base.hostname or "").lower()
-            try:
-                is_loopback = ipaddress.ip_address(hostname).is_loopback
-            except ValueError:
-                is_loopback = hostname == "localhost"
-            if not is_loopback:
-                raise WorkflowError("refusing to send a bearer token over non-loopback HTTP")
+        refuse_token_over_plain_http(self.base_url, token)
 
-    def request(self, method: str, url: str, headers: dict[str, str], body: Any) -> tuple[int, dict[str, str], Any]:
-        """One provider exchange, saying plainly when the provider itself misbehaves."""
+    def request(self, method: str, url: str, headers: dict[str, str], body: Any,
+                token: str | None = None) -> tuple[int, dict[str, str], Any]:
+        """One provider exchange, saying plainly when the provider itself misbehaves.
+
+        `token` overrides the client's own for this exchange, which is how one run can
+        act as more than one caller; the cleartext rule is checked where the credential
+        is actually attached, not only where the base URL was resolved.
+        """
+        credential = self.token if token is None else token
+        refuse_token_over_plain_http(url, credential)
         request_headers = {str(key): str(value) for key, value in headers.items()}
         request_headers.setdefault("Accept", "application/json, application/octet-stream")
-        if self.token:
-            request_headers["Authorization"] = "Bearer " + self.token
+        if credential:
+            request_headers["Authorization"] = "Bearer " + credential
         data = None
         if body is not None:
             data = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -359,6 +475,9 @@ class ScenarioRunner:
         poll_timeout: float = 120,
         opener=None,
         sleep=time.sleep,
+        identities: dict[str, str] | None = None,
+        variables: dict[str, Any] | None = None,
+        redactions: dict[str, str] | None = None,
     ) -> None:
         server_url, self.operations = operation_index(openapi)
         # The transport is the client's business, not the runner's: the runner drives steps
@@ -370,9 +489,38 @@ class ScenarioRunner:
         self.poll_interval = poll_interval
         self.poll_timeout = poll_timeout
         self.sleep = sleep
+        self.identities = dict(identities or {})
+        self.seed_variables = dict(variables or {})
+        # Identifiers the report must never publish, mapped to the name the contract gave
+        # them. Kept on the runner because the runner is what records check outcomes.
+        self.redactions = dict(redactions or {})
         self.variables: dict[str, Any] = {}
         self.step_results: list[dict[str, Any]] = []
+        self.failures: list[dict[str, Any]] = []
+        self.check_results: list[dict[str, Any]] = []
         self.active_step: dict[str, str] | None = None
+        self._preflight_identities()
+
+    def _preflight_identities(self) -> None:
+        """Refuse, before the first request, every credential this run cannot honour.
+
+        A run that acts as one caller may take the run's own credential; a specification
+        that drives steps as more than one caller has to supply each one, because falling
+        back to a single token there would quietly run two callers as the same one — and
+        "two callers, one of them refused" is precisely what such a scenario is about.
+        A credential nothing names is refused too: that is how a typo hides.
+        """
+        named = sorted({step["actor"] for step in self.spec.steps if step.get("actor")})
+        if len(named) > 1:
+            missing = [actor for actor in named if actor not in self.identities]
+            if missing:
+                raise WorkflowError(
+                    f"this specification drives steps as {', '.join(named)} and the environment supplies no "
+                    f"credential for {', '.join(missing)}; bind each caller with --identity <name>=<token>")
+        unused = sorted(set(self.identities) - set(named))
+        if unused:
+            raise WorkflowError(f"--identity supplies {', '.join(unused)}, which this specification "
+                                "never names as an actor; a credential that goes nowhere is how a typo hides")
 
     @classmethod
     def from_files(cls, openapi_path: Path, spec_path: Path, scenario_id: str | None = None,
@@ -380,9 +528,17 @@ class ScenarioRunner:
         spec = load_spec(spec_path, scenario_id)
         return cls(read_json_object(openapi_path, "OpenAPI document"), spec, **kwargs)
 
-    def run(self) -> dict[str, Any]:
-        self.variables = {}
+    def run(self, stop_on_mismatch: bool = True) -> dict[str, Any]:
+        """Drive every step.
+
+        `stop_on_mismatch=False` turns an unmet expectation into a recorded verdict and
+        keeps going, which is what a matrix run needs: one scenario's failure is a result
+        about that scenario, not a reason to lose the rest of the run.
+        """
+        self.variables = dict(self.seed_variables)
         self.step_results = []
+        self.failures = []
+        self.check_results = []
         self.active_step = None
         completed = 0
         step_results = self.step_results
@@ -398,23 +554,33 @@ class ScenarioRunner:
             headers = substitute(request_spec.get("headers", {}), self.variables)
             body = substitute(request_spec.get("json"), self.variables)
             url = build_url(self.base_url, path_template, path_params, query)
-            status, response_headers, payload = self.client.request(method, url, headers, body)
+            actor_token = self.identities.get(step.get("actor"))
+            status, response_headers, payload = self.client.request(method, url, headers, body, token=actor_token)
             expected_status = step.get("expected_http")
             if status != expected_status:
-                raise WorkflowError(f"{step['id']} {operation_id}: HTTP {status}; expected {expected_status}")
-            if operation_id in {"getGeneration", "getExport"}:
-                payload = self._poll_terminal(step, method, url, headers, payload)
-            self._capture(step, payload)
-            if operation_id == "downloadExport":
-                self._verify_download(step, payload, response_headers)
-            completed += 1
-            step_results.append({
-                "id": step["id"],
-                "operation_id": operation_id,
-                "http_status": status,
-                "content_type": header_value(response_headers, "Content-Type"),
-            })
-            print(f"{step['id']} PASS {operation_id} HTTP {status}")
+                if stop_on_mismatch:
+                    raise WorkflowError(f"{step['id']} {operation_id}: HTTP {status}; expected {expected_status}")
+                self.failures.append({"step_id": step["id"], "operation_id": operation_id, "kind": "http_status",
+                                      "expected": expected_status, "actual": status,
+                                      "intent": "该操作按契约返回声明的状态码"})
+            else:
+                if operation_id in {"getGeneration", "getExport"}:
+                    payload = self._poll_terminal(step, method, url, headers, payload, actor_token)
+                self._capture(step, payload)
+                if operation_id == "downloadExport":
+                    self._verify_download(step, payload, response_headers)
+                completed += 1
+                step_results.append({
+                    "id": step["id"],
+                    "operation_id": operation_id,
+                    "http_status": status,
+                    "content_type": header_value(response_headers, "Content-Type"),
+                })
+            # Checks are read even when the status was not the declared one: "it answered
+            # 403 with source_access_denied" is a more useful failure than "it answered 403".
+            self.check_results.extend(self._evaluate_checks(step, payload))
+            if status == expected_status:
+                print(f"{step['id']} PASS {operation_id} HTTP {status}")
 
         manual_assertions = [
             (step["id"], assertion)
@@ -427,6 +593,40 @@ class ScenarioRunner:
                 print(f"MANUAL {step_id}: {assertion}")
         self.active_step = None
         return {**self.report("completed"), "variables": self.variables}
+
+    def _evaluate_checks(self, step: dict[str, Any], payload: Any) -> list[dict[str, Any]]:
+        """Decide every declared expectation against the response, and record why it held.
+
+        The comparison is made on the real values and the record is written with the
+        declared names: redacting first would make two different provider ids compare
+        equal, which is the one thing a check must never do.
+        """
+        recorded: list[dict[str, Any]] = []
+        for check in step.get("checks", []):
+            operator = next(name for name in CHECK_OPERATORS if name in check)
+            expected = substitute(check[operator], self.variables)
+            found, actual = lookup_pointer(payload, check["path"])
+            if not found:
+                held = False
+            elif operator == "equals":
+                held = actual == expected
+            elif operator == "length":
+                held = isinstance(actual, (list, str, dict)) and len(actual) == expected
+            elif operator == "keys":
+                held = isinstance(actual, dict) and sorted(actual) == sorted(expected)
+            else:  # one_of
+                held = actual in expected
+            recorded.append({
+                "step_id": step["id"],
+                "path": check["path"],
+                "operator": operator,
+                "intent": check["intent"],
+                "expected": redact(expected, self.redactions),
+                "actual": redact(actual, self.redactions) if found else None,
+                "found": found,
+                "status": "passed" if held else "failed",
+            })
+        return recorded
 
     def report(self, status: str) -> dict[str, Any]:
         # Never include captured IDs, bearer tokens, provider bodies, URLs, or
@@ -447,11 +647,18 @@ class ScenarioRunner:
                 for assertion in step.get("assertions", [])
             ],
         }
+        # A specification with no evaluable expectations keeps exactly the shape it had
+        # before checks existed, so F01's records stay comparable byte for byte.
+        if self.check_results:
+            result["checks"] = list(self.check_results)
+        if self.failures:
+            result["failures"] = list(self.failures)
         if status == "failed" and self.active_step is not None:
             result["failed_step"] = dict(self.active_step)
         return result
 
-    def _poll_terminal(self, step: dict[str, Any], method: str, url: str, headers: dict[str, str], payload: Any) -> Any:
+    def _poll_terminal(self, step: dict[str, Any], method: str, url: str, headers: dict[str, str],
+                       payload: Any, token: str | None = None) -> Any:
         reference = step.get("reference_response") or {}
         target = reference.get("data", {}).get("status")
         if not target:
@@ -469,7 +676,7 @@ class ScenarioRunner:
             if time.monotonic() >= deadline:
                 raise WorkflowError(f"{step['id']}: timed out waiting for terminal state {target}")
             self.sleep(self.poll_interval)
-            next_status, _, next_payload = self.client.request(method, url, headers, None)
+            next_status, _, next_payload = self.client.request(method, url, headers, None, token=token)
             if next_status != step.get("expected_http"):
                 raise WorkflowError(f"{step['id']}: poll returned HTTP {next_status}")
             payload = next_payload
@@ -500,10 +707,20 @@ class ScenarioRunner:
         print(f"{step['id']} FILE_SHA256 {actual}")
 
 
+def parse_environment_fact(value: str, label: str) -> tuple[str, str]:
+    """Read one `name=id` binding from the command line."""
+    name, separator, resolved = value.partition("=")
+    if not separator or not name.strip() or not resolved.strip():
+        raise WorkflowError(f"--{label} takes name=id, got: {value}")
+    return name.strip(), resolved.strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one LingDoc scenario specification against an isolated test provider.")
     parser.add_argument("--base-url", help="OpenAPI server base URL; defaults to the first server in openapi.json")
     parser.add_argument("--token", default=os.environ.get("LINGDOC_TEST_TOKEN"), help="short-lived test bearer token (or LINGDOC_TEST_TOKEN)")
+    parser.add_argument("--identity", action="append", default=[], metavar="NAME=TOKEN",
+                        help="credential for an actor a step names (repeatable); steps with no actor use --token")
     parser.add_argument("--openapi", type=Path, default=OPENAPI_PATH)
     parser.add_argument("--spec", type=Path, help="specification document: a step list (default workflow.json) or a scenarios document together with --scenario")
     parser.add_argument("--scenario", help="scenario id to drive out of the scenarios document (default scenarios.json)")
@@ -525,6 +742,7 @@ def main(argv: list[str] | None = None) -> int:
             timeout=args.request_timeout,
             poll_interval=args.poll_interval,
             poll_timeout=args.poll_timeout,
+            identities=dict(parse_environment_fact(value, "identity") for value in args.identity),
         )
         if args.report:
             # Verify the destination before any provider mutation and replace a

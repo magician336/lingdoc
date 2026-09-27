@@ -44,6 +44,7 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402  (path setup must run f
     header_value,
     non_empty_string,
     operation_index,
+    parse_environment_fact,
     read_json_object,
     write_report,
 )
@@ -610,14 +611,6 @@ class StateLoader:
         if status == "failed" and self.active_step is not None:
             result["failed_step"] = dict(self.active_step)
         return result
-
-
-def parse_environment_fact(value: str, label: str) -> tuple[str, str]:
-    """Read one `name=id` binding from the command line."""
-    name, separator, resolved = value.partition("=")
-    if not separator or not name.strip() or not resolved.strip():
-        raise WorkflowError(f"--{label} takes name=id, got: {value}")
-    return name.strip(), resolved.strip()
 
 
 def main(argv: list[str] | None = None) -> int:

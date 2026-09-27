@@ -104,10 +104,28 @@ class SpecificationLoadTest(unittest.TestCase):
             load_spec(SCENARIOS_PATH)
 
     def test_scenario_whose_steps_lack_request_definitions_names_the_step(self):
-        # The contract gives scenario steps no ids, so the refusal addresses the step the
-        # way the contract file does ("scenario F22 step 1"), not with a synthesised id.
-        with self.assertRaisesRegex(WorkflowError, "scenario F22 step 1 has no request definition"):
-            load_spec(SCENARIOS_PATH, "F22")
+        # Only F22's steps carry a request definition so far; every other scenario step has
+        # no id in the contract, so the refusal addresses the step the way the contract file
+        # does ("scenario F03 step 1"), not with a synthesised id.
+        with self.assertRaisesRegex(WorkflowError, "scenario F03 step 1 has no request definition"):
+            load_spec(SCENARIOS_PATH, "F03")
+
+    def test_the_one_scenario_that_can_be_sent_carries_its_checks_and_its_actor(self):
+        spec = load_spec(SCENARIOS_PATH, "F22")
+        self.assertEqual(spec.id, "F22")
+        step = spec.steps[0]
+        self.assertEqual((step["id"], step["actor"], step["operation_id"]),
+                         ("F22-01", "u-owner", "retrieveSources"))
+        operators = []
+        for check in step["checks"]:
+            present = [name for name in ("equals", "length", "keys", "one_of") if name in check]
+            self.assertEqual(len(present), 1, check)
+            self.assertEqual(set(check), {"path", "intent", present[0]}, check)
+            operators.append(present[0])
+        # Every operator the runner knows is exercised by the one scenario that can be sent,
+        # so the machinery is not carried untested.
+        self.assertEqual(sorted(set(operators)), ["equals", "keys", "length", "one_of"])
+        self.assertEqual(len(step["checks"]), 6)
 
     def test_scenario_that_holds_only_prose_is_refused_as_not_executable(self):
         with self.assertRaisesRegex(WorkflowError, "F17 has no executable steps"):

@@ -1,0 +1,462 @@
+{
+  "report_version": 1,
+  "contract_version": "0.5.0",
+  "scope": "one scenario driven from its declared starting state to a per-item verdict",
+  "provider_host": "127.0.0.1:8080",
+  "executed": {
+    "scenario": "F22",
+    "name": "部分授权不静默成功",
+    "starting_state": "S7",
+    "state": {
+      "state": "S7",
+      "runner_status": "completed",
+      "build_steps": [
+        {
+          "id": "S7-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-activate",
+          "operation_id": "activateProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-asset-1",
+          "operation_id": "bindAsset",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-asset-2",
+          "operation_id": "bindAsset",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S7-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S7-read-asset-2",
+          "operation_id": "retrieveSources",
+          "http_status": 422,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "snapshot": {
+        "project": {
+          "name": "合成起点：可用与不可用资料各一条",
+          "template_id": "template-demo",
+          "status": "active",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            }
+          ]
+        },
+        "chapters": [
+          {
+            "section_id": "method",
+            "body_markdown": "",
+            "source_ids": []
+          },
+          {
+            "section_id": "question",
+            "body_markdown": "",
+            "source_ids": []
+          }
+        ],
+        "assets": [
+          {
+            "knowledge_id": "k-demo"
+          },
+          {
+            "knowledge_id": "k-notready"
+          }
+        ]
+      },
+      "snapshot_digest": "d32e84415d20f3f0c4ec5a64f41eaf137d679ab609a17574eeabcb6745b99c7e",
+      "observed": {
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": [
+          {
+            "section_id": "method",
+            "has_version": false
+          },
+          {
+            "section_id": "question",
+            "has_version": false
+          }
+        ],
+        "assets": [
+          {
+            "knowledge_id": "k-demo",
+            "listed_state": "ready",
+            "deny_reason": ""
+          },
+          {
+            "knowledge_id": "k-notready",
+            "listed_state": null,
+            "deny_reason": "not_ready"
+          }
+        ]
+      },
+      "observed_digest": "161357fc6ae1397075b94690ac5adbceae05540b1db97d2be26f52017c43693e",
+      "mismatches": [],
+      "unverified": [
+        {
+          "pointer": "/assets/k-notready",
+          "declared": "处理状态 pending",
+          "verified": "不可用（not_ready）",
+          "why": "提供方只答「不可用」；pending / processing / failed / replaced 之间没有任何通道能区分"
+        }
+      ],
+      "cannot_build": [
+        {
+          "part": "template",
+          "reason": "the service ships the demo template; the contract has no request that creates one"
+        },
+        {
+          "part": "source",
+          "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+        },
+        {
+          "part": "candidate",
+          "reason": "a candidate is produced by a generation run, which needs a model adapter"
+        },
+        {
+          "part": "confirmation",
+          "reason": "a chapter confirmation needs the review items a candidate carries"
+        },
+        {
+          "part": "release",
+          "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+        },
+        {
+          "part": "export",
+          "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+        }
+      ],
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    },
+    "steps": [
+      {
+        "step_id": "F22-01",
+        "operation_id": "retrieveSources",
+        "actor": "u-owner",
+        "expected_http": 422,
+        "actual_http": 422,
+        "verdict": "passed",
+        "intent": "整体失败，不得只处理可用子集并返回成功；被拒资料须逐项带原因，不得把「返回无错误」当作全部资料通过。本构建可达的只有 not_ready 一侧，断言因此落在「整批拒绝 + 逐项原因」的形状上，而不是「哪条被授权」上。",
+        "checks": [
+          {
+            "step_id": "F22-01",
+            "path": "/error/code",
+            "operator": "equals",
+            "intent": "整批拒绝用的是契约声明的拒绝码，不是只拒子集后的成功码",
+            "expected": "asset_not_authorized",
+            "actual": "asset_not_authorized",
+            "found": true,
+            "status": "passed"
+          },
+          {
+            "step_id": "F22-01",
+            "path": "/error/details/denied",
+            "operator": "length",
+            "intent": "被拒的恰好是那一条不可用资料；既没有悄悄放过它，也没有连可用那条一起拒",
+            "expected": 1,
+            "actual": [
+              {
+                "asset_id": "asset.k-notready",
+                "reason": "not_ready"
+              }
+            ],
+            "found": true,
+            "status": "passed"
+          },
+          {
+            "step_id": "F22-01",
+            "path": "/error/details/denied/0/asset_id",
+            "operator": "equals",
+            "intent": "被拒的是声明为不可用的那条，可用那条不在名单上",
+            "expected": "asset.k-notready",
+            "actual": "asset.k-notready",
+            "found": true,
+            "status": "passed"
+          },
+          {
+            "step_id": "F22-01",
+            "path": "/error/details/denied/0",
+            "operator": "keys",
+            "intent": "每条被拒资料恰好带 id 与原因两键，没有折叠成一句话",
+            "expected": [
+              "asset_id",
+              "reason"
+            ],
+            "actual": {
+              "asset_id": "asset.k-notready",
+              "reason": "not_ready"
+            },
+            "found": true,
+            "status": "passed"
+          },
+          {
+            "step_id": "F22-01",
+            "path": "/error/details/denied/0/reason",
+            "operator": "one_of",
+            "intent": "原因落在契约给出的词表里，不是实现自造的说法",
+            "expected": [
+              "not_authorized",
+              "not_ready",
+              "not_found"
+            ],
+            "actual": "not_ready",
+            "found": true,
+            "status": "passed"
+          },
+          {
+            "step_id": "F22-01",
+            "path": "/error/retryable",
+            "operator": "equals",
+            "intent": "这次拒绝不声明可重试，调用者不该原样重投",
+            "expected": false,
+            "actual": false,
+            "found": true,
+            "status": "passed"
+          }
+        ]
+      }
+    ],
+    "verdict": "passed"
+  },
+  "scenarios": [
+    {
+      "scenario": "F01",
+      "name": "完整连续闭环",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "由 workflow.json 的连续规格驱动，但没有声明 starting_state：本驱动先装起点再发步骤，不知道从哪里起跑"
+    },
+    {
+      "scenario": "F02",
+      "name": "空资料不扩大范围",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "1 步里这 1 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步"
+    },
+    {
+      "scenario": "F03",
+      "name": "未就绪资料",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "2 步里这 2 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步"
+    },
+    {
+      "scenario": "F04",
+      "name": "跨项目访问",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F05",
+      "name": "两人同版本保存",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "2 步里这 2 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步"
+    },
+    {
+      "scenario": "F06",
+      "name": "生成期间改条件",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "5 步里这 5 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步、第 4 步、第 5 步"
+    },
+    {
+      "scenario": "F07",
+      "name": "来源撤权影响派生内容",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "4 步里这 4 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步、第 4 步"
+    },
+    {
+      "scenario": "F08",
+      "name": "重复提交与幂等冲突",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F09",
+      "name": "模型超时或中断",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F10",
+      "name": "未确认不得导出",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F11",
+      "name": "快照过期",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "4 步里这 4 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步、第 4 步"
+    },
+    {
+      "scenario": "F12",
+      "name": "草稿版本也有效",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "2 步里这 2 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步"
+    },
+    {
+      "scenario": "F13",
+      "name": "文件校验失败",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "3 步里这 3 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步、第 3 步"
+    },
+    {
+      "scenario": "F14",
+      "name": "只有相关没有支撑",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "2 步里这 2 步只有操作名、期望状态码与断言文本，没有请求定义：第 1 步、第 2 步"
+    },
+    {
+      "scenario": "F15",
+      "name": "待核项不在正文也不能丢",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F16",
+      "name": "空章和一章输入可保留阻断快照",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F17",
+      "name": "撤权后可执行恢复",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F18",
+      "name": "幂等顺序和中间状态",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F19",
+      "name": "冻结输入可复算",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F20",
+      "name": "已有人工正文再次采纳",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F21",
+      "name": "已导出后编辑并刷新历史标签",
+      "verdict": "not_run",
+      "executable": false,
+      "reason": "场景没有步骤，只有合成样例：能写请求的那部分还没写进契约"
+    },
+    {
+      "scenario": "F22",
+      "name": "部分授权不静默成功",
+      "verdict": "passed",
+      "executable": true,
+      "reason": "本次运行驱动的那一条，起点 S7"
+    }
+  ],
+  "summary": {
+    "passed": 1,
+    "failed": 0,
+    "not_run": 21
+  },
+  "registered_gaps": [
+    {
+      "id": "T15-04-R1",
+      "title": "startGeneration 声明的整条 422 分支在实现里不存在",
+      "contract_says": "openapi.json 给 startGeneration 声明了 5 个 422 例子：insufficient_evidence / asset_not_ready / preflight_blocked / invalid_state / asset_not_authorized，其中 asset_not_authorized 还要求被拒资料逐项带原因（details.denied[].reason）。",
+      "service_does": "这 5 个形状一条都发不出来：internal/lingdoc/generation/ 里没有任何 422 分支（`grep -rn 422 internal/lingdoc/generation/` 零命中）。对已绑定但不可用的资料，startGeneration 答 403 source_access_denied——只有一个错误码，没有 details.denied，调用者看不出是哪一条、为什么。",
+      "where": "internal/lingdoc/workspace/generation.go 的 ResolveGenerationInput 把任何被拒资料折成 generation.ErrSourceAccessDenied；internal/lingdoc/generation/http.go 的 generationHTTPStatus / writeGenerationError 把它映射成 403 source_access_denied。",
+      "consequence": "契约承诺的逐项原因在生成这一步拿不到。受这条作废的不止一处：F22 原本指向的那一步在内，契约里 F03 的第 2 步（startGeneration → 422 asset_not_ready，setup 说「资料仍 processing」）同样落在一条实现里不存在的分支上。F22 因此改指 retrieveSources，并把这里登记为缺口，而不是把断言迁就实现。",
+      "owner": "生成线的实现者",
+      "status": "open"
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "T15-04-B1",
+      "statement": "F22 的授权维（同租户内一条被授权、另一条不被授权）在本构建不可达；本票驱动的是可用性那一维。",
+      "why": "绑定与读取用同一判定（bindAsset 与 evidence 网关都走 kbReadChecker.CanReadKB），同租户读取无条件放行，跨租户的差异只来自租户级分享，而分享的有效权限按租户算、角色下限是 viewer——同一租户的两名成员不可能一个放行一个被拒。",
+      "verified_by": "T15-04 的代码核对与实跑：同租户协作者在业主租户下读到 200；跨租户读取 403、把该知识绑进本项目 404。",
+      "unblocks": "撤权（移除分享、把租户移出组织）落地后 not_authorized 才有可达路径；#27 把撤权族分给 #35。"
+    },
+    {
+      "id": "T15-04-B2",
+      "statement": "报告只到「HTTP 通道 + 契约里可求值的形状」这一层。",
+      "why": "断言读的是响应里能取到的值。模型质量、数据库副作用、DOCX 可编辑性不在任何通道能证的范围内，所以它们既不出现在通过里，也不出现在失败里。"
+    }
+  ],
+  "verification_scope": "http_smoke_only",
+  "provider_semantics_status": "not_verified",
+  "not_run": [
+    "模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
+    "其余 21 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"
+  ]
+}

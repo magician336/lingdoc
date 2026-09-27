@@ -1,0 +1,284 @@
+"""Driving one contract scenario from its declared state to a report; no live provider is used.
+
+The provider double is the same one the loader's tests use: the point here is the
+composition — build the declared state, read it back, drive the steps as the actors they
+name, decide every declared expectation, and write one report that says what held and
+what did not. What the report *means* about the real service is in
+docs/08-本轮实施方案/T15-场景到报告.md.
+"""
+from __future__ import annotations
+
+from contextlib import redirect_stderr, redirect_stdout
+import io
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from scripts.lingdoc_mock import run_scenario as module
+from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, PROVIDER_ID, SCENARIOS_PATH, WorkflowError, write_report
+from scripts.lingdoc_mock.test_workflow_states import PROVIDER_IDS, Response, SyntheticProvider
+
+KNOWLEDGE = {name: resolved for name, resolved in PROVIDER_IDS.items()}
+IDENTITIES = {"u-owner": "synthetic-owner-token"}
+DENIED = {"/error/code", "/error/details/denied", "/error/details/denied/0/asset_id",
+          "/error/details/denied/0", "/error/details/denied/0/reason", "/error/retryable"}
+
+
+def provider(**kwargs):
+    # The double keys asset state by the provider's knowledge id, the way the loader's own
+    # tests do. The declaration names the asset the other way, and mapping between the two
+    # is the environment's job (--knowledge k-notready=<id>), not the double's.
+    return SyntheticProvider(asset_states={PROVIDER_IDS["k-notready"]: "pending"}, **kwargs)
+
+
+class NumberedProvider(SyntheticProvider):
+    """A double whose identifiers start somewhere else each run, the way a real provider's do.
+
+    The base double counts from zero, so two runs of it hand out the same project and binding
+    ids — which is exactly the shape of environment a redaction bug hides in.
+    """
+
+    def __init__(self, run: int):
+        super().__init__(asset_states={PROVIDER_IDS["k-notready"]: "pending"})
+        self.counter = run * 1000
+
+
+class AnswersThePreflightWrongly(SyntheticProvider):
+    """A provider that answers the scenario's own preflight with something other than the truth.
+
+    The read-back probes one asset at a time, so keying on the request's own shape keeps the
+    declared state building exactly as declared while the step under test is answered
+    wrongly — which is the only way to reach the failure path without also breaking the
+    starting state the scenario is supposed to run from.
+    """
+
+    def __init__(self, answer):
+        super().__init__(asset_states={PROVIDER_IDS["k-notready"]: "pending"})
+        self.answer = answer
+
+    def _retrieve(self, project_id, body):
+        response = super()._retrieve(project_id, body)
+        return self.answer(response) if len(body["asset_ids"]) > 1 else response
+
+
+def answered_with_200(response):
+    return Response(200, SyntheticProvider._envelope([]))
+
+
+def answered_with_the_wrong_code(response):
+    """The shape the real service has on startGeneration: 422, but a code the contract does not put there."""
+    payload = json.loads(response.payload.decode("utf-8"))
+    payload["error"]["code"] = "source_access_denied"
+    return Response(response.status, payload)
+
+
+def drive(**kwargs):
+    """Run F22 against a synthetic provider and return (report, provider)."""
+    synthetic = kwargs.pop("provider", None) or provider()
+    report = module.run_scenario(
+        "F22", SCENARIOS_PATH, OPENAPI_PATH,
+        base_url="http://127.0.0.1:8080/api/v1/lingdoc",
+        knowledge=dict(KNOWLEDGE), member={}, identities=dict(IDENTITIES),
+        opener=synthetic.open, **kwargs)
+    return report, synthetic
+
+
+def scenario_requests(synthetic):
+    """The retrievals the scenario itself sent, told apart from the read-back's one-asset probes."""
+    return [call for call in synthetic.calls if call["path"].endswith("/retrieval")
+            and len(call["body"]["asset_ids"]) > 1]
+
+
+class ScenarioReportTest(unittest.TestCase):
+    def test_a_scenario_that_holds_is_reported_step_by_step_and_check_by_check(self):
+        report, _ = drive()
+        executed = report["executed"]
+        self.assertEqual(executed["scenario"], "F22")
+        self.assertEqual(executed["starting_state"], "S7")
+        self.assertEqual(executed["verdict"], "passed")
+        self.assertEqual(executed["state"]["mismatches"], [])
+        self.assertEqual([step["step_id"] for step in executed["steps"]], ["F22-01"])
+
+        step = executed["steps"][0]
+        self.assertEqual(step["operation_id"], "retrieveSources")
+        self.assertEqual(step["actor"], "u-owner")
+        self.assertEqual((step["expected_http"], step["actual_http"]), (422, 422))
+        self.assertEqual(step["verdict"], "passed")
+        self.assertNotIn("why", step)
+        self.assertEqual({check["path"] for check in step["checks"]}, DENIED)
+        self.assertEqual({check["status"] for check in step["checks"]}, {"passed"})
+
+    def test_the_declared_asset_name_is_what_the_report_publishes(self):
+        report, synthetic = drive()
+        checks = report["executed"]["steps"][0]["checks"]
+        named = next(check for check in checks if check["path"] == "/error/details/denied/0/asset_id")
+        self.assertEqual(named["actual"], "asset.k-notready")
+        self.assertEqual(named["status"], "passed")
+        # The refusal must be about the asset the declaration calls unavailable, and the
+        # request must have carried both bindings — not just the one that gets refused.
+        requests = scenario_requests(synthetic)
+        self.assertEqual(len(requests), 1)
+        bound = {asset["id"] for assets in synthetic.assets.values() for asset in assets}
+        self.assertEqual(len(bound), 2)
+        self.assertEqual(set(requests[0]["body"]["asset_ids"]), bound)
+
+    def test_an_expectation_that_does_not_hold_is_reported_with_what_was_expected_and_what_arrived(self):
+        report, _ = drive(provider=AnswersThePreflightWrongly(answered_with_200))
+        executed = report["executed"]
+        self.assertEqual(executed["verdict"], "failed")
+        self.assertEqual(executed["state"]["mismatches"], [], "the state must still have built as declared")
+        step = executed["steps"][0]
+        self.assertEqual(step["verdict"], "failed")
+        self.assertEqual((step["expected_http"], step["actual_http"]), (422, 200))
+        # Every declared expectation is answered, not just the first: a success envelope
+        # holds none of the places the refusal was supposed to hold.
+        self.assertEqual(step["why"][0], "期望 HTTP 422，实际 HTTP 200")
+        self.assertEqual(len(step["why"]), 1 + len(DENIED))
+        self.assertIn('/error/code：期望等于 "asset_not_authorized"，实际 <该位置在响应里不存在>', step["why"])
+        self.assertEqual({check["found"] for check in step["checks"]}, {False})
+
+    def test_a_denial_that_uses_another_code_is_reported_beside_the_status_that_did_match(self):
+        # The defect T15-04 registered against startGeneration, reproduced against the
+        # double: the status the contract declares, but not the refusal it declares.
+        report, _ = drive(provider=AnswersThePreflightWrongly(answered_with_the_wrong_code))
+        executed = report["executed"]
+        self.assertEqual(executed["verdict"], "failed")
+        step = executed["steps"][0]
+        self.assertEqual((step["expected_http"], step["actual_http"]), (422, 422))
+        self.assertEqual(step["why"],
+                         ['/error/code：期望等于 "asset_not_authorized"，实际 "source_access_denied"'])
+        by_path = {check["path"]: check for check in step["checks"]}
+        self.assertEqual(by_path["/error/code"]["status"], "failed")
+        self.assertEqual(by_path["/error/details/denied/0/reason"]["status"], "passed")
+
+    def test_a_state_that_does_not_read_back_fails_the_verdict_before_any_step_is_sent(self):
+        report, synthetic = drive(provider=provider(project_name="读回来对不上的名字"))
+        executed = report["executed"]
+        self.assertEqual(executed["verdict"], "failed")
+        self.assertEqual(executed["steps"], [])
+        self.assertEqual([mismatch["pointer"] for mismatch in executed["state"]["mismatches"]], ["/project/name"])
+        self.assertNotIn("why", executed)
+        # The read-back probes each binding on its own; what must not have happened is the
+        # scenario's own request going out over a state that is not the declared one.
+        self.assertEqual(scenario_requests(synthetic), [])
+
+    def test_the_same_input_twice_produces_the_same_report_bytes(self):
+        first, _ = drive()
+        second, _ = drive()
+        self.assertEqual(module.render_report(first), module.render_report(second))
+        with tempfile.TemporaryDirectory() as directory:
+            paths = []
+            for number, report in enumerate((first, second)):
+                path = Path(directory) / f"run-{number}.json"
+                write_report(path, report)
+                paths.append(path)
+            self.assertEqual(paths[0].read_bytes(), paths[1].read_bytes())
+            # The written bytes and the in-memory rendering are one format, not two.
+            self.assertEqual(paths[0].read_text(encoding="utf-8"), module.render_report(first))
+
+    def test_two_runs_whose_identifiers_differ_still_produce_the_same_report_bytes(self):
+        # The judgement is about the redaction, not about the double's id generator: a real
+        # provider hands out a new project every run, so a double that reuses its counter would
+        # let the redaction be deleted outright and the test above still pass. Both halves are
+        # asserted here — the identifiers really do differ, and the report really does not.
+        first, first_provider = drive(provider=NumberedProvider(1))
+        second, second_provider = drive(provider=NumberedProvider(2))
+        self.assertNotEqual(set(first_provider.projects), set(second_provider.projects))
+        self.assertNotEqual({asset["id"] for assets in first_provider.assets.values() for asset in assets},
+                            {asset["id"] for assets in second_provider.assets.values() for asset in assets})
+        self.assertEqual(module.render_report(first), module.render_report(second))
+
+    def test_every_contract_scenario_appears_once_and_only_the_driven_one_has_a_verdict(self):
+        report, _ = drive()
+        document = json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))
+        self.assertEqual([entry["scenario"] for entry in report["scenarios"]],
+                         [scenario["id"] for scenario in document["scenarios"]])
+        verdicts = {entry["scenario"]: entry["verdict"] for entry in report["scenarios"]}
+        self.assertEqual(verdicts["F22"], "passed")
+        self.assertEqual({sid for sid, verdict in verdicts.items() if verdict != "not_run"}, {"F22"})
+        self.assertEqual(report["summary"], {"passed": 1, "failed": 0, "not_run": 21})
+
+    def test_a_scenario_that_cannot_be_driven_says_which_part_is_missing(self):
+        report, _ = drive()
+        entries = {entry["scenario"]: entry for entry in report["scenarios"]}
+        self.assertFalse(entries["F03"]["executable"])
+        self.assertIn("没有请求定义", entries["F03"]["reason"])
+        self.assertFalse(entries["F17"]["executable"])
+        self.assertIn("没有步骤", entries["F17"]["reason"])
+        # F01 declares its 23 steps and every one of them carries a request, but it never says
+        # where a run should start — and this driver builds the declared state before it sends
+        # anything, so F01 is not something it can drive.
+        self.assertFalse(entries["F01"]["executable"])
+        self.assertIn("没有声明 starting_state", entries["F01"]["reason"])
+        # F02–F14 have steps that are still prose-shaped; their starting state is not what holds
+        # them back, and the report has to name the part that actually does.
+        self.assertNotIn("starting_state", entries["F02"]["reason"])
+        for entry in report["scenarios"]:
+            self.assertTrue(entry["reason"].strip(), entry["scenario"])
+            self.assertTrue(entry["name"].strip(), entry["scenario"])
+
+    def test_the_report_publishes_no_provider_identifier_and_no_timestamp(self):
+        text = module.render_report(drive()[0])
+        self.assertIsNone(PROVIDER_ID.search(text), text)
+        for word in ("timestamp", "generated_at", "started_at", "duration", "elapsed", "synthetic-owner-token"):
+            self.assertNotIn(word, text)
+        for identifier in ("knowledge-1", "knowledge-2"):
+            self.assertNotIn(identifier, text)
+
+    def test_a_scenario_without_a_declared_starting_state_is_refused(self):
+        with self.assertRaisesRegex(WorkflowError, "F01 declares no starting_state"):
+            module.run_scenario("F01", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
+                                identities={}, opener=provider().open)
+
+    def test_a_scenario_whose_steps_cannot_be_sent_is_refused_by_name(self):
+        with self.assertRaisesRegex(WorkflowError, "scenario F03 step 1 has no request definition"):
+            module.run_scenario("F03", SCENARIOS_PATH, OPENAPI_PATH, knowledge={}, member={},
+                                identities={}, opener=provider().open)
+
+    def test_an_environment_name_no_declaration_uses_is_refused_before_the_first_write(self):
+        synthetic = provider()
+        with self.assertRaisesRegex(WorkflowError, "k-dmeo"):
+            module.run_scenario("F22", SCENARIOS_PATH, OPENAPI_PATH, knowledge={**KNOWLEDGE, "k-dmeo": "x"},
+                                member={}, identities=dict(IDENTITIES), opener=synthetic.open)
+        self.assertEqual(synthetic.calls, [])
+
+
+class ScenarioCommandLineTest(unittest.TestCase):
+    def test_the_command_line_writes_the_report_and_exits_on_the_verdict(self):
+        report, _ = drive()
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "report.json"
+            with patch.object(module, "run_scenario", return_value=report), \
+                    redirect_stdout(io.StringIO()) as stdout:
+                status = module.main(["--scenario", "F22", "--knowledge", "k-demo=knowledge-1",
+                                      "--knowledge", "k-notready=knowledge-2",
+                                      "--identity", "u-owner=synthetic-owner-token",
+                                      "--report", str(destination)])
+            self.assertEqual(status, 0)
+            self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), report)
+            self.assertIn("F22 passed", stdout.getvalue())
+
+    def test_a_failed_verdict_exits_non_zero_and_still_leaves_the_report(self):
+        report, _ = drive(provider=provider(failures={r".*/lingdoc/projects/[^/]+/retrieval": 200}))
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "report.json"
+            with patch.object(module, "run_scenario", return_value=report), redirect_stdout(io.StringIO()):
+                status = module.main(["--scenario", "F22", "--knowledge", "k-demo=knowledge-1",
+                                      "--knowledge", "k-notready=knowledge-2",
+                                      "--report", str(destination)])
+            self.assertEqual(status, 1)
+            self.assertEqual(json.loads(destination.read_text(encoding="utf-8"))["executed"]["verdict"], "failed")
+
+    def test_a_broken_environment_binding_is_reported_without_a_traceback(self):
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            status = module.main(["--scenario", "F22", "--knowledge", "k-demo"])
+        self.assertEqual(status, 1)
+        self.assertIn("--knowledge takes name=id", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
+
+
+if __name__ == "__main__":
+    unittest.main()

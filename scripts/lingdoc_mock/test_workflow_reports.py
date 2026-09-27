@@ -89,6 +89,20 @@ class WorkflowReportTest(unittest.TestCase):
         self.assertNotIn("synthetic-test-token", encoded)
         self.assertNotIn("variables", report)
 
+    def test_a_report_with_no_evaluable_expectations_keeps_its_exact_key_set(self):
+        # F01's specification carries no checks and never mismatches, so its record must keep
+        # exactly the shape it had before checks existed. A key that appears only sometimes is a
+        # key no consumer can rely on, and the matrix report is assembled by reading these.
+        responses = [MessageResponse(b'{"data":{"id":"private-project-id"}}', "application/json", status=201),
+                     MessageResponse(b'{"data":{}}', "application/json")]
+        runner = small_runner(lambda request, timeout: responses.pop(0))
+        with redirect_stdout(io.StringIO()):
+            runner.run()
+        report = runner.report("completed")
+        self.assertEqual(sorted(report),
+                         ["completed_steps", "manual_assertions", "provider_semantics_status",
+                          "runner_status", "steps", "total_steps", "verification_scope", "workflow"])
+
     def test_main_creates_report_parent_before_provider_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "new" / "artifacts" / "run.json"
