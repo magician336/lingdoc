@@ -163,10 +163,16 @@ def check_scenario_step(scenario,index,step):
         # 一个请求能被发出去，除了形状合法还差两样：谁在发（actor），以及重投时凭什么认出
         # 是同一次（幂等键）。两样都得有出处——只查名字写对没写对，删掉它们也照样通过。
         assert step.get('actor'),where+' carries a request but names nobody to send it as'
-        if step['request'].get('json') is not None:
+        required_idempotency = any(
+            parameter['in'] == 'header'
+            and parameter['name'].lower() == 'idempotency-key'
+            and parameter.get('required')
+            for parameter in ops[step['operation_id']].get('parameters', [])
+        )
+        if required_idempotency:
             headers=step['request'].get('headers',{})
             assert any(name.lower()=='idempotency-key' for name in headers),\
-                where+' sends a body without an Idempotency-Key'
+                where+' omits the required Idempotency-Key'
         check_request_shape(ops[step['operation_id']],step['request'],where)
         scenario_steps_with_requests+=1
     if 'checks' in step:
@@ -219,8 +225,12 @@ def check_scenario(scenario):
             assert not missing,where+' references values not yet captured: '+', '.join(sorted(missing))
             captures=step.get('capture',{})
             assert isinstance(captures,dict),where+' capture must be an object'
-            example=(ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']
-                     ['application/json']['examples'][step['response_example']]['value'])
+            if captures:
+                try:
+                    example=(ops[step['operation_id']]['responses'][str(step['expected_http'])]['content']
+                             ['application/json']['examples'][step['response_example']]['value'])
+                except KeyError as error:
+                    raise AssertionError(where+' capture needs a published JSON response example') from error
             for name,pointer in captures.items():
                 assert isinstance(name,str) and re.fullmatch(r'[A-Za-z_][A-Za-z0-9_.-]*',name),\
                     where+' capture name is invalid'
@@ -497,7 +507,8 @@ for label,mutate in [
 # 不然「静态校验认得这些新键」只是一句话，不是一件事。
 F22=next(s for s in cases['scenarios'] if s['id']=='F22')
 def scenario_step():
-    return copy.deepcopy(F22['steps'][0])
+    scenario=next(s for s in cases['scenarios'] if s['id']=='F10')
+    return copy.deepcopy(next(step for step in scenario['steps'] if step['operation_id']=='prepareRelease'))
 def mutate_step(mutate):
     def run():
         step=scenario_step();mutate(step);check_scenario_step(F22,1,step)

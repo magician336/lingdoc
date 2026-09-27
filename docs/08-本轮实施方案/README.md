@@ -16,6 +16,7 @@
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
+| [T15-09 验证报告](T15-09-验证报告.json) | issue #36 的 F10/F16/F19 实跑证据、F13 未运行原因与已登记缺口 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
 | [validation-result.json](contracts/validation-result.json) | 本次静态检查结果及未运行范围 |
@@ -41,7 +42,17 @@ python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/l
 python scripts/lingdoc_mock/run_f01.py --scenario F01 --base-url http://127.0.0.1:8080/api/v1/lingdoc
 ```
 
-执行器只按传进来的规格驱动，不对场景 id 做内置判断。除 F01、F05、F08、F11、F12、F21、F22 外的场景目前**还不能执行**，且原因会被明确报出，不会静默跑出空结论：未覆盖场景若没有请求定义或步骤，报告会逐条说明原因。执行器允许重复传入 `--scenario`，每条场景从自己的声明起点独立构建，并在一份报告中分别记录执行轨迹；跨步响应捕获通过 `{{变量}}` 供后续请求与检查使用。F05/F08/F12 的多步结果及约束见 [T15-06 多步与跨步捕获](T15-多步与跨步捕获.md)；F11/F21 的读回断言见 [T15-读回式副作用断言](T15-读回式副作用断言.md)。
+执行器只按传进来的规格驱动，不对场景 id 做内置判断。通用执行器目前覆盖 F01、F05、F08、F10、F11、F12、F16、F21、F22；其他场景若没有请求定义或步骤，会逐条报告具体原因，不会静默给出空结论。执行器允许重复传入 `--scenario`，每条场景从自己的声明起点独立构建，并在一份报告中分别记录执行轨迹；跨步响应捕获通过 `{{变量}}` 供后续请求与检查使用。F19 的跨租户撤权与额外摘要检查由下方 T15-09 专用驱动完成。F05/F08/F12 的多步结果及约束见 [T15-06 多步与跨步捕获](T15-多步与跨步捕获.md)；F11/F21 的读回断言见 [T15-读回式副作用断言](T15-读回式副作用断言.md)。
+
+### T15-09 交付场景实跑
+
+F10/F16 可由通用驱动分别从各自声明的起点执行。F19 还需要一个临时消费者租户、跨租户资料分享、快照复算和撤权后重试，因此使用专用驱动；本机已有测试 fixture helper 时可这样运行：
+
+```text
+python scripts/lingdoc_mock/run_t15_09_live.py --local-facts-path <本地fixture-helper路径>
+```
+
+驱动会清理临时组织、分享和消费者租户，并把 F10/F16/F19/F13 的结果写入 [T15-09 验证报告](T15-09-验证报告.json)，保留 T15-08 的报告不变。报告区分场景通过、实跑失败和因缺少公开注入点而未运行；当前 F19 会记录撤权后下载仍返回 200 的 T14 授权缺口，F13 记录缺少损坏字节注入入口。
 
 如需凭证，可通过 `LINGDOC_TEST_TOKEN` 环境变量传入；不要把令牌写入命令历史或仓库。带令牌时，执行器只允许 HTTPS，HTTP 仅放行 localhost/loopback 测试地址。轮询对 generation/export 只发 GET，不会因等待而重复提交创建请求。下载步骤会验证 DOCX Content-Type，并比较实际文件字节的 SHA-256 与 getExport 返回值。
 

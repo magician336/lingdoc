@@ -10640,6 +10640,19 @@
                     "$ref": "#/components/schemas/ExportArtifactListResponse"
                   },
                   "examples": {
+                    "empty": {
+                      "value": {
+                        "data": {
+                          "items": [],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
                     "success": {
                       "value": {
                         "data": {
