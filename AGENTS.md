@@ -23,3 +23,17 @@ Name Go tests `TestXxx` and frontend tests with the existing `.test.ts`/`.test.j
 ## Commit & Pull Request Guidelines
 
 Use Conventional Commit prefixes such as `feat:`, `fix:`, `test:`, `docs:`, `chore:`, or `ci:`; include the LingDoc task ID when relevant (for example, `feat(T03): ...`). PR titles follow the same convention. Fill in `.github/pull_request_template.md` with the user-visible result, related task/issue, contract impact, validation evidence, risks, and screenshots for UI changes. Never commit secrets; derive local configuration from `.env.example`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and specs live as GitHub issues on `magician336/lingdoc`, created and read with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical triage roles keep their default strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` at the repo root alongside the existing `docs/adr/`. See `docs/agents/domain.md`.
