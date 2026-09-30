@@ -20,17 +20,22 @@ import (
 )
 
 var (
-	ErrInvalidRequest        = errors.New("invalid_request")
-	ErrNotFound              = errors.New("not_found")
-	ErrForbidden             = errors.New("forbidden")
-	ErrVersionConflict       = errors.New("version_conflict")
-	ErrSourceAccessDenied    = errors.New("source_access_denied")
-	ErrSourceStale           = errors.New("source_stale")
-	ErrStaleInput            = errors.New("stale_input")
-	ErrIdempotencyConflict   = errors.New("idempotency_conflict")
-	ErrRunUnavailable        = errors.New("generation_run_unavailable")
-	ErrGenerationCancelled   = errors.New("generation_cancelled")
-	ErrDependencyUnavailable = errors.New("dependency_unavailable")
+	ErrInvalidRequest              = errors.New("invalid_request")
+	ErrNotFound                    = errors.New("not_found")
+	ErrForbidden                   = errors.New("forbidden")
+	ErrVersionConflict             = errors.New("version_conflict")
+	ErrSourceAccessDenied          = errors.New("source_access_denied")
+	ErrSourceStale                 = errors.New("source_stale")
+	ErrStaleInput                  = errors.New("stale_input")
+	ErrIdempotencyConflict         = errors.New("idempotency_conflict")
+	ErrRunUnavailable              = errors.New("generation_run_unavailable")
+	ErrGenerationCancelled         = errors.New("generation_cancelled")
+	ErrDependencyUnavailable       = errors.New("dependency_unavailable")
+	ErrGenerationIncomplete        = errors.New("generation_incomplete")
+	ErrAcceptanceBudgetExceeded    = errors.New("acceptance_budget_exceeded")
+	ErrAcceptanceBudgetUnavailable = errors.New("acceptance_budget_unavailable")
+	ErrAcceptanceOutcomeUnknown    = errors.New("acceptance_outcome_unknown")
+	ErrAcceptanceModelMismatch     = errors.New("acceptance_model_mismatch")
 )
 
 type Status string
@@ -300,7 +305,18 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	if generateErr != nil {
 		status := StatusFailed
 		failure := RunError{Code: "generation_failed", Message: "生成失败，原始资料和凭据未写入任务错误。", Retryable: true}
-		if errors.Is(generateErr, context.Canceled) || errors.Is(generateErr, context.DeadlineExceeded) {
+		switch {
+		case errors.Is(generateErr, ErrGenerationIncomplete):
+			failure = RunError{Code: "generation_incomplete", Message: "本轮输出达到 6,000 token 上限，结果不完整；系统不会自动续写。缩小输入后重新发起会占用下一次调用额度。", Retryable: false}
+		case errors.Is(generateErr, ErrAcceptanceBudgetExceeded):
+			failure = RunError{Code: "generation_budget_exceeded", Message: "本轮验收预算已到上限或输入超限，系统未继续请求模型。", Retryable: false}
+		case errors.Is(generateErr, ErrAcceptanceBudgetUnavailable):
+			failure = RunError{Code: "generation_budget_unavailable", Message: "本轮预算账本不可用，模型调用已阻止。", Retryable: false}
+		case errors.Is(generateErr, ErrAcceptanceOutcomeUnknown):
+			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
+		case errors.Is(generateErr, ErrAcceptanceModelMismatch):
+			failure = RunError{Code: "generation_model_mismatch", Message: "验收模式未找到唯一且符合条件的 deepseek-flash 配置；未调用模型。", Retryable: false}
+		case errors.Is(generateErr, context.Canceled) || errors.Is(generateErr, context.DeadlineExceeded):
 			status = StatusInterrupted
 			failure = RunError{Code: "generation_interrupted", Message: "生成已中断；可重新发起任务。", Retryable: true}
 		}

@@ -6,7 +6,7 @@ import {
   prepareRelease, startExport,
   type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot,
 } from '@/api/lingdoc/delivery'
-import { currencyOf, issueTargetLabel, viewOf, type Currency } from './deliveryState'
+import { canExportSnapshot, currencyOf, issueTargetLabel, viewOf, type Currency } from './deliveryState'
 
 // T13 与 T14 的界面切片：交付检查、冻结快照、导出与下载。
 //
@@ -253,6 +253,10 @@ async function freeze() {
 
 async function exportSnapshot(snapshot: ReleaseSnapshot) {
   if (busy.value) return
+  if (!canExportSnapshot(snapshot)) {
+    errorMessage.value = '这份快照冻结时的检查已阻断，不能生成 DOCX。请检查并冻结当前内容后再导出。'
+    return
+  }
   const projectId = props.project.id
   pending.value = `export:${snapshot.id}`
   errorMessage.value = ''
@@ -359,7 +363,7 @@ watch(
 
     <section v-if="checks" class="delivery__result" aria-label="交付检查结果">
       <p :class="['delivery__status', `delivery__status--${checks.status}`]">
-        检查结果：{{ statusLabels[checks.status] }}
+        当前检查结果：{{ statusLabels[checks.status] }}
         <small>（项目版本 {{ checks.project_version }}）</small>
       </p>
       <ul v-if="checks.issues.length" class="delivery__issues">
@@ -392,15 +396,21 @@ watch(
               摘要 {{ group.snapshot.snapshot_digest.slice(0, 12) }}
             </p>
             <p class="muted">
-              交付检查：{{ statusLabels[group.snapshot.check.status] }} ·
+              冻结时的交付检查：{{ statusLabels[group.snapshot.check.status] }} ·
               冻结时间 {{ new Date(group.snapshot.created_at).toLocaleString() }}
+            </p>
+            <p class="muted">检查结果固定于冻结时；当前检查或后续编辑不会自动更新这份快照。</p>
+            <p v-if="!canExportSnapshot(group.snapshot)" role="note" class="warning">
+              该快照冻结时已被阻断，不能从它生成 DOCX。请处理当前内容后重新冻结，再生成文件。
             </p>
             <p v-if="group.snapshot.check.issues.length" class="warning">
               这份快照带着 {{ group.snapshot.check.issues.length }} 条检查记录。
             </p>
 
             <div class="delivery__actions">
-              <button type="button" :disabled="busy" @click="exportSnapshot(group.snapshot)">
+              <button type="button" :disabled="busy || !canExportSnapshot(group.snapshot)"
+                :title="!canExportSnapshot(group.snapshot) ? '请重新检查并冻结当前内容后再生成 DOCX。' : undefined"
+                @click="exportSnapshot(group.snapshot)">
                 {{ pending === `export:${group.snapshot.id}` ? '生成中…' : '生成 DOCX' }}
               </button>
             </div>
@@ -416,6 +426,9 @@ watch(
             <p class="muted">这份快照不在上面的列表里（历史只显示最近 {{ snapshots.length }} 份），它的交付文件仍列在下面。</p>
           </template>
 
+          <p v-if="group.rows.some(row => row.downloadPath)" role="status" class="delivery__success">
+              DOCX 已生成，可在本快照下点击“下载 DOCX”。
+          </p>
           <ul v-if="group.rows.length" class="delivery__artifacts">
             <li v-for="row in group.rows" :key="row.id">
               <span class="delivery__artifact-id">{{ row.id.slice(0, 8) }}</span>
@@ -423,7 +436,7 @@ watch(
 
               <template v-if="row.downloadPath">
                 <button type="button" :disabled="busy" @click="download(row)">
-                  {{ pending === `download:${row.id}` ? '下载中…' : '下载' }}
+                  {{ pending === `download:${row.id}` ? '下载中…' : '下载 DOCX' }}
                 </button>
                 <small>摘要 {{ row.fileSHA256.slice(0, 12) }}</small>
               </template>
@@ -453,6 +466,7 @@ watch(
 .delivery__status--passed { color: #1c6b3f; }
 .delivery__status--blocked { color: #b3261e; }
 .delivery__status--not_evaluated { color: #6b7670; }
+.delivery__success { color: #1c6b3f; font-weight: 600; }
 .delivery__issues { margin: 0; padding-left: 20px; }
 .delivery__issues li { margin-bottom: 10px; }
 .delivery__target { font-weight: 600; }

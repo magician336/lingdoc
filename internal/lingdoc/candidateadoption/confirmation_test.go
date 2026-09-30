@@ -17,8 +17,26 @@ func (s confirmationWorkspaceStub) GenerationContext(context.Context, string, st
 
 type confirmationAuthorizerFunc func(context.Context, string, string, string) error
 
-func (f confirmationAuthorizerFunc) Authorize(ctx context.Context, actorID, projectID, chapterID string) error {
+func (f confirmationAuthorizerFunc) AuthorizeChapter(ctx context.Context, actorID, projectID, chapterID string) error {
 	return f(ctx, actorID, projectID, chapterID)
+}
+
+type confirmationCapabilityRecorder struct{ capability string }
+
+func (r *confirmationCapabilityRecorder) Authorize(_ context.Context, _, _, capability string) error {
+	r.capability = capability
+	return nil
+}
+
+func TestProjectWriteConfirmationAuthorizerUsesWriteCapability(t *testing.T) {
+	recorder := &confirmationCapabilityRecorder{}
+	adapter := projectWriteConfirmationAuthorizer{projectAuthorizer: recorder}
+	if err := adapter.AuthorizeChapter(context.Background(), "user-1", "project-1", "chapter-1"); err != nil {
+		t.Fatalf("AuthorizeChapter returned %v", err)
+	}
+	if recorder.capability != "write" {
+		t.Fatalf("project capability = %q, want write", recorder.capability)
+	}
 }
 
 func allowConfirmation(context.Context, string, string, string) error { return nil }

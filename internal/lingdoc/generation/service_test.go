@@ -260,4 +260,26 @@ func TestTaskHandlerDelaysRetryWhenLeaseIsStillLive(t *testing.T) {
 	}
 }
 
+func TestExecuteStoresAcceptanceStopsAsNonRetryable(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		code string
+	}{
+		{name: "truncated output", err: ErrGenerationIncomplete, code: "generation_incomplete"},
+		{name: "exhausted budget", err: ErrAcceptanceBudgetExceeded, code: "generation_budget_exceeded"},
+		{name: "uncertain provider outcome", err: ErrAcceptanceOutcomeUnknown, code: "generation_outcome_unknown"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, repo := generationFixture()
+			svc.Model = testModel{err: tc.err}
+			run, err := svc.Execute(context.Background(), repo.run.ID)
+			if err != nil || run.Status != StatusFailed || run.Error == nil || run.Error.Code != tc.code || run.Error.Retryable {
+				t.Fatalf("Execute() = (%+v, %v), want non-retryable %s", run, err, tc.code)
+			}
+		})
+	}
+}
+
 func stringPtr(s string) *string { return &s }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { currencyOf, issueTargetLabel, viewOf } from './deliveryState'
+import { canExportSnapshot, currencyOf, issueTargetLabel, viewOf } from './deliveryState'
 import type { ExportArtifact } from '@/api/lingdoc/delivery'
 
 const projectId = 'project-1'
@@ -33,6 +33,12 @@ test('当前性：读到了才敢下结论，没读到就是未知', () => {
   // 字段缺席不是 false。用 `!is_current` 去判会把它读成「历史版本」——那是拿一个我们
   // 没有依据的结论去顶替「不知道」，而用户会照着它去重新导出一份本来还当前的文件。
   assert.equal(currencyOf({} as { is_current: boolean }), '当前性未知')
+})
+
+test('历史快照是否能生成 DOCX 只看它冻结时自己的检查结果', () => {
+  assert.equal(canExportSnapshot({ check: { status: 'blocked' } }), false)
+  assert.equal(canExportSnapshot({ check: { status: 'passed' } }), true)
+  assert.equal(canExportSnapshot({ check: { status: 'not_evaluated' } }), true)
 })
 
 test('产物：只有真的有一份文件时才给下载地址', () => {

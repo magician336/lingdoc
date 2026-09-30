@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/gin-gonic/gin"
@@ -49,6 +50,12 @@ func (a *switchableAuthorizer) AuthorizeProject(context.Context, string, string)
 	return nil
 }
 
+type switchableAssetAuthorizer struct{ revoked bool }
+
+func (a *switchableAssetAuthorizer) CanAccessAsset(context.Context, evidence.Actor, string, evidence.Asset) (bool, error) {
+	return !a.revoked, nil
+}
+
 // assembleExportRoutes 按容器与 router.go 装起来的样子挂载 T13 与 T14 两组。
 //
 // 两组共用同一个快照库。各自建一个的话，刚冻下的快照在导出时取不到，而那看起来
@@ -65,13 +72,14 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 	}
 	snapshots := delivery.NewMemorySnapshotStore()
 	releases := NewDeliveryReleaseService(inputs, builder, snapshots)
-	exports := NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, inputs)
+	exports := NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
 	if releases == nil || exports == nil {
 		t.Fatal("交付链装配不齐：T13 或 T14 仍是断的")
 	}
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	handler.Register(router.Group("/api/v1"))
 	group := router.Group("/api/v1/lingdoc")
 	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))
 	RegisterDeliveryExportRoutes(group, NewDeliveryExportHandler(exports))
@@ -82,7 +90,19 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 // 那条走得通的默认对（带引用的 question 章 + 陪衬 method 章）。
 func newDeliveryExportHandler(t *testing.T, authorizer candidateadoption.DeliveryInputProjectAuthorizer, chapters ...deliveryChapter) (*gin.Engine, *gorm.DB) {
 	t.Helper()
+	router, db, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, authorizer, &switchableAssetAuthorizer{}, chapters...)
+	return router, db
+}
+
+func newDeliveryExportHandlerWithSourceAuthorizer(
+	t *testing.T,
+	authorizer candidateadoption.DeliveryInputProjectAuthorizer,
+	sourceAuthorizer *switchableAssetAuthorizer,
+	chapters ...deliveryChapter,
+) (*gin.Engine, *gorm.DB, *Handler) {
+	t.Helper()
 	handler, db, assetID := seedBoundSource(t)
+	handler.gateway = evidence.NewAssetGateway(handler.bindings, sourceAuthorizer)
 	if len(chapters) == 0 {
 		chapters = []deliveryChapter{
 			deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}),
@@ -90,7 +110,7 @@ func newDeliveryExportHandler(t *testing.T, authorizer candidateadoption.Deliver
 		}
 	}
 	seedDeliveryWorkspace(t, db, chapters...)
-	return assembleExportRoutes(t, handler, db, authorizer), db
+	return assembleExportRoutes(t, handler, db, authorizer), db, handler
 }
 
 // publishedArtifact 是契约里的 ExportArtifact，按字段原名解回来。
@@ -479,6 +499,60 @@ func TestExportRoutesDenyADownloadAfterAccessIsGone(t *testing.T) {
 	status := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/exports/"+artifact.ID, "", ""))
 	if status.Code != http.StatusForbidden {
 		t.Fatalf("getExport after revocation = %d, want 403", status.Code)
+	}
+}
+
+func TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked(t *testing.T) {
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	artifact := startExportOf(t, router, snapshot.ID)
+	if artifact.DownloadPath == nil {
+		t.Fatal("the export did not produce a file to revoke access to")
+	}
+
+	sourceAuthorizer.revoked = true
+	download := deliveryServe(router, deliveryRequest(http.MethodGet, *artifact.DownloadPath, "", ""))
+	if download.Code != http.StatusForbidden {
+		t.Fatalf("download after source access revocation = %d, want 403: %s", download.Code, download.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, download).Error; code == nil || code.Code != "source_access_denied" {
+		t.Fatalf("download after source access revocation error = %+v, want source_access_denied", code)
+	}
+}
+
+func TestExportRoutesDenyStartAfterBoundSourceAccessIsRevoked(t *testing.T) {
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+
+	sourceAuthorizer.revoked = true
+	_, envelope, status := startExport(t, router, snapshot.ID, deliveryExportKey)
+	if status != http.StatusForbidden {
+		t.Fatalf("startExport after source access revocation = %d, want 403", status)
+	}
+	if envelope.Error == nil || envelope.Error.Code != "source_access_denied" {
+		t.Fatalf("startExport after source access revocation error = %+v, want source_access_denied", envelope.Error)
+	}
+}
+
+func TestListChaptersDeniesRevokedBoundSource(t *testing.T) {
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
+	path := "/api/v1/lingdoc/projects/project-1/chapters"
+
+	allowed := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("list chapters before revocation = %d, want 200: %s", allowed.Code, allowed.Body.String())
+	}
+
+	sourceAuthorizer.revoked = true
+	denied := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("list chapters after source access revocation = %d, want 403: %s", denied.Code, denied.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, denied).Error; code == nil || code.Code != "source_access_denied" {
+		t.Fatalf("list chapters after source access revocation error = %+v, want source_access_denied", code)
 	}
 }
 

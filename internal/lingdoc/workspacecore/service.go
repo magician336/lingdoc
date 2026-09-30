@@ -492,6 +492,18 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 	if err != nil {
 		return nil, err
 	}
+	var sourceIDs []string
+	for _, view := range views {
+		sourceIDs = append(sourceIDs, view.SourceIDs...)
+	}
+	if len(sourceIDs) > 0 {
+		if s.sources == nil {
+			return nil, ErrSourceUnavailable
+		}
+		if err := s.sources.Validate(ctx, projectID, actor.UserID, sourceIDs); err != nil {
+			return nil, err
+		}
+	}
 	return views, nil
 }
 

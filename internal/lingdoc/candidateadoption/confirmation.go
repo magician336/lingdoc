@@ -54,6 +54,27 @@ type ConfirmationSourcePolicy interface {
 	ValidateCurrent(context.Context, string, string, []string) ([]AssetVersion, error)
 }
 
+// ConfirmationAuthorizer checks write access to the project before a chapter
+// confirmation is persisted. Chapter ownership is checked by the workspace
+// reader and writer using the supplied project/chapter pair.
+type ConfirmationAuthorizer interface {
+	AuthorizeChapter(context.Context, string, string, string) error
+}
+
+// projectWriteConfirmationAuthorizer adapts the candidate-adoption project
+// capability port to the confirmation port. The fourth argument to
+// AuthorizeChapter is a chapter ID; it must never be forwarded as a capability.
+type projectWriteConfirmationAuthorizer struct {
+	projectAuthorizer Authorizer
+}
+
+func (a projectWriteConfirmationAuthorizer) AuthorizeChapter(ctx context.Context, actorID, projectID, _ string) error {
+	if a.projectAuthorizer == nil {
+		return ErrInvalidState
+	}
+	return a.projectAuthorizer.Authorize(ctx, actorID, projectID, "write")
+}
+
 type ConfirmationWriter interface {
 	ConfirmChapter(context.Context, ConfirmChapterInput, GenerationContext) (Confirmation, bool, error)
 }
@@ -65,12 +86,12 @@ type ConfirmationReplayReader interface {
 type ConfirmationService struct {
 	Workspace   ConfirmationWorkspace
 	Sources     ConfirmationSourcePolicy
-	Authorizer  Authorizer
+	Authorizer  ConfirmationAuthorizer
 	Writer      ConfirmationWriter
 	Idempotency ConfirmationReplayReader
 }
 
-func NewConfirmationService(store *SQLiteCandidateAdoptionStore, sources ConfirmationSourcePolicy, authorizer Authorizer) *ConfirmationService {
+func NewConfirmationService(store *SQLiteCandidateAdoptionStore, sources ConfirmationSourcePolicy, authorizer ConfirmationAuthorizer) *ConfirmationService {
 	return &ConfirmationService{Workspace: store, Sources: sources, Authorizer: authorizer, Writer: store, Idempotency: store}
 }
 
@@ -83,7 +104,7 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 	if s.Authorizer == nil {
 		return Confirmation{}, false, ErrInvalidState
 	}
-	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
+	if err := s.Authorizer.AuthorizeChapter(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
 		return Confirmation{}, false, err
 	}
 	// Check replay after current authorization but before reading mutable state,

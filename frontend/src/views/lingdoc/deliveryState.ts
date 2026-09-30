@@ -1,4 +1,4 @@
-import type { ExportArtifact, ValidationIssue } from '@/api/lingdoc/delivery'
+import type { CheckStatus, ExportArtifact, ValidationIssue } from '@/api/lingdoc/delivery'
 
 // 交付面板的判定逻辑，与渲染分开。
 //
@@ -13,6 +13,11 @@ import type { ExportArtifact, ValidationIssue } from '@/api/lingdoc/delivery'
  * 做出来了，与它是不是还代表工作区，是两件独立的事。
  */
 export type Currency = '当前内容' | '历史版本' | '当前性未知'
+
+/** 导出资格只由待导出的冻结快照自身决定；当前检查不能改写历史快照。 */
+export function canExportSnapshot(snapshot: { check: { status: CheckStatus } }): boolean {
+  return snapshot.check.status !== 'blocked'
+}
 
 /**
  * 依据快照的 is_current 判定当前性。

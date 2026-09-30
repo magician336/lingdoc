@@ -549,8 +549,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 拒绝渲染器自己产出的文件，或者更糟，放行它。
 	//
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
-	must(container.Provide(func(inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore) (*workspace.DeliveryExportService, error) {
-		service := workspace.NewDeliveryExportService(snapshots, exports, workspace.DeliveryDocument{}, inputs)
+	must(container.Provide(func(workspaceHandler *workspace.Handler, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore) (*workspace.DeliveryExportService, error) {
+		service := workspace.NewDeliveryExportService(snapshots, exports, workspace.DeliveryDocument{}, inputs, workspaceHandler.WorkspaceSourcePolicy())
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
@@ -1880,12 +1880,30 @@ func startHousekeepingService(svc *service.HousekeepingService, cleaner interfac
 // startTenantSkillReaper starts the stuck-install / orphan-snapshot cron and
 // registers cleanup. Best-effort: a startup error is logged but does NOT abort
 // the container — the rest of the system stays usable.
-func startTenantSkillReaper(svc *service.TenantSkillService, cleaner interfaces.ResourceCleaner) {
+func startTenantSkillReaper(
+	svc *service.TenantSkillService, cleaner interfaces.ResourceCleaner, db *gorm.DB,
+) {
 	if svc == nil {
+		return
+	}
+	if db == nil {
+		logger.Warnf(context.Background(), "[Container] tenant skill reaper disabled: database handle unavailable")
+		return
+	}
+	if !db.Migrator().HasTable(&types.TenantSkillEntity{}) ||
+		!db.Migrator().HasTable(&types.TenantSkillSnapshotEntity{}) {
+		if db.Dialector.Name() == "sqlite" {
+			logger.Infof(context.Background(),
+				"[Container] tenant skill reaper disabled: SQLite schema has no tenant skill ledger tables")
+		} else {
+			logger.Warnf(context.Background(),
+				"[Container] tenant skill reaper disabled: tenant skill ledger tables are missing; apply database migrations")
+		}
 		return
 	}
 	if err := svc.Start(context.Background()); err != nil {
 		logger.Warnf(context.Background(), "[Container] tenant skill reaper start failed: %v", err)
+		return
 	}
 	cleaner.RegisterWithName("TenantSkillReaper", func() error {
 		svc.Stop()
