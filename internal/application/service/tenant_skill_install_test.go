@@ -741,6 +741,15 @@ func TestInstallSkillRecoversFromNameConflict(t *testing.T) {
 	fx := newInstallFixture(t)
 	fx.skillRepo.getByNameMisses = 1
 	fx.skillRepo.createErr = errors.New("UNIQUE constraint failed: tenant_skills.sandbox_config_id")
+	installStarted := make(chan struct{})
+	releaseInstall := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseInstall) }) }
+	t.Cleanup(release)
+	fx.beforeExecute = func() {
+		close(installStarted)
+		<-releaseInstall
+	}
 	archive := zipBundle(t, map[string]string{"SKILL.md": validSkillMD})
 
 	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
@@ -748,9 +757,22 @@ func TestInstallSkillRecoversFromNameConflict(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "sk-1", id,
 		"the upload that lost the unique index must reuse the row that won")
+	require.Eventually(t, func() bool {
+		select {
+		case <-installStarted:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
 	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
 	require.NoError(t, getErr)
 	require.Equal(t, types.SkillStatusInstalling, skill.Status)
+	release()
+	require.Eventually(t, func() bool {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		return err == nil && skill != nil && skill.Status == types.SkillStatusReady
+	}, time.Second, time.Millisecond)
 }
 
 func TestInstallSkillRefusesWhenBundleCannotBeStored(t *testing.T) {
