@@ -8,7 +8,7 @@
   "local_refs": 341,
   "shape_checks": 586,
   "scenarios": 23,
-  "scenario_example_references": 43,
+  "scenario_example_references": 44,
   "continuous_trace_steps": 23,
   "negative_static_cases_rejected": [
     "reject_lost_review_item",
