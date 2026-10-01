@@ -95,8 +95,9 @@ func TestKnowledgePostProcessGraphEnqueueSelection(t *testing.T) {
 	service := &KnowledgePostProcessService{
 		knowledgeRepo: repo,
 		kbService: &wikiEnqueueFailureKBService{kb: &types.KnowledgeBase{
-			ID:       kbID,
-			TenantID: 7,
+			SummaryModelID: "summary-model",
+			ID:             kbID,
+			TenantID:       7,
 			IndexingStrategy: types.IndexingStrategy{
 				GraphEnabled: true,
 			},

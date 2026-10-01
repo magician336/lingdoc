@@ -351,3 +351,24 @@ func (c *CompositeRetrieveEngine) MoveKnowledgeIndices(
 		)
 	})
 }
+
+// WithRetrieverTypes returns an independent routing view restricted to the KB's
+// enabled indexing pipelines. It never changes the registry or other KBs.
+func (c *CompositeRetrieveEngine) WithRetrieverTypes(allowed []types.RetrieverType) *CompositeRetrieveEngine {
+	out := &CompositeRetrieveEngine{}
+	for _, info := range c.engineInfos {
+		if info == nil {
+			continue
+		}
+		var selected []types.RetrieverType
+		for _, kind := range info.retrieverType {
+			if slices.Contains(allowed, kind) {
+				selected = append(selected, kind)
+			}
+		}
+		if len(selected) > 0 {
+			out.engineInfos = append(out.engineInfos, &engineInfo{retrieveEngine: info.retrieveEngine, retrieverType: selected})
+		}
+	}
+	return out
+}

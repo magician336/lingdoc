@@ -14,9 +14,12 @@ import type { CheckStatus, ExportArtifact, ValidationIssue } from '@/api/lingdoc
  */
 export type Currency = '当前内容' | '历史版本' | '当前性未知'
 
-/** 导出资格只由待导出的冻结快照自身决定；当前检查不能改写历史快照。 */
-export function canExportSnapshot(snapshot: { check: { status: CheckStatus } }): boolean {
-  return snapshot.check.status !== 'blocked'
+/** 只有重新确认当前性且冻结检查未阻断的快照可生成当前 DOCX。 */
+export function canExportSnapshot(
+  snapshot: { check: { status: CheckStatus } },
+  current: { is_current: boolean } | undefined | null,
+): boolean {
+  return current?.is_current === true && snapshot.check.status !== 'blocked'
 }
 
 /**

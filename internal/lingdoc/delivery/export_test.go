@@ -152,3 +152,33 @@ func testDownloadRechecksCurrentAccess(t *testing.T, snapshots snapshotStoreUnde
 		t.Fatal("download should require current project access")
 	}
 }
+
+func TestDownloadRejectsPersistedCorruption(t *testing.T) {
+	forEachStorePair(t, func(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
+		snapshot := preparedSnapshotOn(t, snapshots)
+		service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("original verified file"), nil }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
+		artifact, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		stored, err := exports.GetExport(snapshot.ProjectID, artifact.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		original := append([]byte(nil), stored.file...)
+		stored.file[0] ^= 1
+		if err := exports.SaveExport(stored); err != nil {
+			t.Fatal(err)
+		}
+		if _, file, err := service.Download("owner", snapshot.ProjectID, artifact.ID); !errors.Is(err, ErrExportUnavailable) || len(file) != 0 {
+			t.Fatalf("corrupt download: bytes=%d err=%v", len(file), err)
+		}
+		stored.file = original
+		if err := exports.SaveExport(stored); err != nil {
+			t.Fatal(err)
+		}
+		if _, file, err := service.Download("owner", snapshot.ProjectID, artifact.ID); err != nil || string(file) != string(original) {
+			t.Fatalf("restored download failed: %v", err)
+		}
+	})
+}

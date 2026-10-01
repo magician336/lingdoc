@@ -67,7 +67,7 @@ func TestSkillPythonVerifier(t *testing.T) {
 		// package it can install would only delay a failure it cannot.
 		name: "a syntax error alongside a missing requirement",
 		files: map[string]string{
-			"requirements.txt": "pandas==3.0.1\n",
+			"requirements.txt": "lingdoc_verifier_missing_dependency==3.0.1\n",
 			"scripts/bad.py":   "def broken(:\n",
 		},
 		wantProblem: "scripts/bad.py has a syntax error",
@@ -75,10 +75,10 @@ func TestSkillPythonVerifier(t *testing.T) {
 	}, {
 		name: "a requirement the venv does not carry",
 		files: map[string]string{
-			"requirements.txt": "# pinned\npandas==3.0.1\n-r other.txt\n",
+			"requirements.txt": "# pinned\nlingdoc_verifier_missing_dependency==3.0.1\n-r other.txt\n",
 			"scripts/run.py":   "x = 1\n",
 		},
-		wantProblem: "requirements.txt declares pandas but it is not installed",
+		wantProblem: "requirements.txt declares lingdoc_verifier_missing_dependency but it is not installed",
 		wantExit:    2,
 	}, {
 		// pip skips a line whose marker is false here, so refusing the install

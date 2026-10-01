@@ -397,6 +397,13 @@ func (s *ExportService) Download(actorUserID, projectID, exportID string) (Expor
 	if artifact.Status != ExportVerified || len(artifact.file) == 0 {
 		return ExportArtifact{}, nil, ErrExportUnavailable
 	}
+	// A verified status describes the bytes checked at export time. Recheck
+	// persisted bytes before delivery so storage corruption cannot escape that
+	// boundary; never return any bytes from a mismatched artifact.
+	sum := sha256.Sum256(artifact.file)
+	if artifact.FileSHA256 != fmt.Sprintf("%x", sum) {
+		return ExportArtifact{}, nil, ErrExportUnavailable
+	}
 	return artifact, append([]byte(nil), artifact.file...), nil
 }
 

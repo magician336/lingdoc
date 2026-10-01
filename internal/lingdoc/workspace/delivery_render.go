@@ -93,7 +93,7 @@ func documentChapter(chapter delivery.SnapshotChapter) (docx.Chapter, error) {
 
 	out := docx.Chapter{
 		Title:        chapter.Title,
-		BodyMarkdown: chapter.BodyMarkdown,
+		BodyMarkdown: plainParagraphs(chapter.BodyMarkdown),
 		SourceIDs:    chapter.SourceIDs,
 	}
 	for _, item := range chapter.ReviewItems {

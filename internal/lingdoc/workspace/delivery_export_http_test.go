@@ -758,3 +758,51 @@ func exportRouterWithUnrenderableBody(t *testing.T) *gin.Engine {
 	)
 	return assembleExportRoutes(t, handler, db, deliveryTestAuthorizer{})
 }
+
+func TestExportDownloadRejectsCorruptedPersistedBytes(t *testing.T) {
+	handler, db, assetID := seedBoundSource(t)
+	seedDeliveryWorkspace(t, db, deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}), deliveryMethodChapter())
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000024_lingdoc_delivery_stores.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(migration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
+	snapshots := delivery.NewSQLiteSnapshotStore(db)
+	releases := NewDeliveryReleaseService(inputs, handler.DeliveryInputBuilder(), snapshots)
+	exports := NewDeliveryExportService(snapshots, delivery.NewSQLiteExportStore(db), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
+	router := gin.New()
+	group := router.Group("/api/v1/lingdoc")
+	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))
+	RegisterDeliveryExportRoutes(group, NewDeliveryExportHandler(exports))
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	artifact := startExportOf(t, router, snapshot.ID)
+	var row struct {
+		FileBlob []byte `gorm:"column:file_blob"`
+	}
+	if err := db.Table("lingdoc_export_artifacts").Where("id = ?", artifact.ID).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	original := append([]byte(nil), row.FileBlob...)
+	row.FileBlob[0] ^= 1
+	if err := db.Table("lingdoc_export_artifacts").Where("id = ?", artifact.ID).Update("file_blob", row.FileBlob).Error; err != nil {
+		t.Fatal(err)
+	}
+	got := deliveryServe(router, deliveryRequest(http.MethodGet, *artifact.DownloadPath, "", ""))
+	if got.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("corrupt download = %d, want 422", got.Code)
+	}
+	envelope := decodeDeliveryEnvelope(t, got)
+	if envelope.Error == nil || envelope.Error.Code != "invalid_state" || !strings.Contains(got.Body.String(), "请重新导出") {
+		t.Fatalf("unexpected refusal: %+v", envelope.Error)
+	}
+	if err := db.Table("lingdoc_export_artifacts").Where("id = ?", artifact.ID).Update("file_blob", original).Error; err != nil {
+		t.Fatal(err)
+	}
+	restored := deliveryServe(router, deliveryRequest(http.MethodGet, *artifact.DownloadPath, "", ""))
+	if restored.Code != http.StatusOK || !bytes.Equal(restored.Body.Bytes(), original) {
+		t.Fatal("restored file must download exactly")
+	}
+}

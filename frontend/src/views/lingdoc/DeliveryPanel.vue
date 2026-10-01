@@ -253,8 +253,8 @@ async function freeze() {
 
 async function exportSnapshot(snapshot: ReleaseSnapshot) {
   if (busy.value) return
-  if (!canExportSnapshot(snapshot)) {
-    errorMessage.value = '这份快照冻结时的检查已阻断，不能生成 DOCX。请检查并冻结当前内容后再导出。'
+  if (!canExportSnapshot(snapshot, currencyReads.value[snapshot.id])) {
+    errorMessage.value = '这份快照已阻断、属于历史版本或当前性尚未确认，不能生成当前 DOCX。请检查并冻结当前内容后再导出。'
     return
   }
   const projectId = props.project.id
@@ -400,16 +400,16 @@ watch(
               冻结时间 {{ new Date(group.snapshot.created_at).toLocaleString() }}
             </p>
             <p class="muted">检查结果固定于冻结时；当前检查或后续编辑不会自动更新这份快照。</p>
-            <p v-if="!canExportSnapshot(group.snapshot)" role="note" class="warning">
-              该快照冻结时已被阻断，不能从它生成 DOCX。请处理当前内容后重新冻结，再生成文件。
+            <p v-if="!canExportSnapshot(group.snapshot, currencyReads[group.snapshot.id])" role="note" class="warning">
+              该快照已阻断、属于历史版本或当前性尚未确认。请检查并冻结当前内容，再生成 DOCX。
             </p>
             <p v-if="group.snapshot.check.issues.length" class="warning">
               这份快照带着 {{ group.snapshot.check.issues.length }} 条检查记录。
             </p>
 
             <div class="delivery__actions">
-              <button type="button" :disabled="busy || !canExportSnapshot(group.snapshot)"
-                :title="!canExportSnapshot(group.snapshot) ? '请重新检查并冻结当前内容后再生成 DOCX。' : undefined"
+              <button type="button" :disabled="busy || !canExportSnapshot(group.snapshot, currencyReads[group.snapshot.id])"
+                :title="!canExportSnapshot(group.snapshot, currencyReads[group.snapshot.id]) ? '请重新检查并冻结当前内容后再生成 DOCX。' : undefined"
                 @click="exportSnapshot(group.snapshot)">
                 {{ pending === `export:${group.snapshot.id}` ? '生成中…' : '生成 DOCX' }}
               </button>
