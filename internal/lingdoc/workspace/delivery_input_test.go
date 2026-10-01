@@ -287,6 +287,42 @@ func TestDeliveryLinkTurnsAWorkspaceIntoAPassedRelease(t *testing.T) {
 	}
 }
 
+func TestDeliveryLinkSurfacesUnsupportedMarkdownBeforeExport(t *testing.T) {
+	handler, db, assetID := seedBoundSource(t)
+	seedDeliveryWorkspace(t, db,
+		deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID),
+			"- 列表项 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
+		deliveryMethodChapter(),
+	)
+	service := newDeliveryReleaseService(t, handler)
+	ctx := policyContext()
+
+	result, err := service.Check(ctx, deliveryActorID, "project-1", deliveryProjectVersion)
+	if err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if result.Status != delivery.CheckBlocked || !containsIssueCode(result, "unsupported_markdown") {
+		t.Fatalf("Check = status %s issues %v, want unsupported_markdown before export", result.Status, result.Issues)
+	}
+
+	snapshot, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if snapshot.Check.Status != delivery.CheckBlocked || !containsIssueCode(snapshot.Check, "unsupported_markdown") {
+		t.Fatalf("snapshot check = status %s issues %v, want the preflight warning", snapshot.Check.Status, snapshot.Check.Issues)
+	}
+}
+
+func containsIssueCode(result delivery.CheckResult, want string) bool {
+	for _, issue := range result.Issues {
+		if issue.Code == want {
+			return true
+		}
+	}
+	return false
+}
+
 // 引用坏掉时，这一跳的处置与 T11/T12 相反：不整批打回，而是把那条留在章节的
 // source_ids 里、不放进冻结来源，让 T13 把结论落成一份可读的报告。冻结输入是
 // 诊断的输入，不是准入的门——挡在门外，操作者只看到「不通过」，看不到是哪条坏了。

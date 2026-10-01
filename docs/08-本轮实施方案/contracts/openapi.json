@@ -10673,6 +10673,33 @@
                         }
                       }
                     },
+                    "with_unsupported_format": {
+                      "value": {
+                        "data": {
+                          "items": [
+                            {
+                              "id": "export-demo",
+                              "project_id": "p-demo",
+                              "snapshot_id": "snapshot-demo",
+                              "status": "failed",
+                              "file_sha256": null,
+                              "download_path": null,
+                              "error": {
+                                "code": "unsupported_format",
+                                "message": "正文包含 DOCX 不支持的 Markdown。",
+                                "retryable": false
+                              }
+                            }
+                          ],
+                          "truncated": false
+                        },
+                        "request_id": "req-demo",
+                        "meta": {
+                          "replayed": false,
+                          "refresh_required": false
+                        }
+                      }
+                    },
                     "truncated": {
                       "value": {
                         "data": {
@@ -11056,6 +11083,28 @@
                           "code": "render_failed",
                           "message": "文件生成失败。",
                           "retryable": true
+                        }
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "unsupported_format": {
+                    "value": {
+                      "data": {
+                        "id": "export-demo",
+                        "project_id": "p-demo",
+                        "snapshot_id": "snapshot-demo",
+                        "status": "failed",
+                        "file_sha256": null,
+                        "download_path": null,
+                        "error": {
+                          "code": "unsupported_format",
+                          "message": "正文包含 DOCX 不支持的 Markdown。",
+                          "retryable": false
                         }
                       },
                       "request_id": "req-demo",

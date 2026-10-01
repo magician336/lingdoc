@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -366,9 +367,18 @@ func hasUnresolved(ledger Ledger) bool {
 }
 
 // LockLeaseTTL bounds how long a crashed process can keep a ledger blocked.
-// Normal reservations complete well before this lease expires; callers that
-// need a longer operation must use a separate, renewable coordination scheme.
+// Live owners renew the file lease while a provider call is in flight.
 const LockLeaseTTL = 10 * time.Minute
+
+var (
+	lockLeaseHeartbeatInterval = LockLeaseTTL / 3
+	activeLockLeases           sync.Map // map[*os.File]*lockLease
+)
+
+type lockLease struct {
+	stop chan struct{}
+	done chan struct{}
+}
 
 // AcquireLock creates a process-independent lock file and reclaims a lock
 // whose lease has expired. The metadata is diagnostic; the mtime is the lease
@@ -378,18 +388,24 @@ func AcquireLock(ctx context.Context, path string) (*os.File, error) {
 		return nil, err
 	}
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		lock, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
-			_, _ = fmt.Fprintf(lock, "pid=%d acquired_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
+			if _, writeErr := fmt.Fprintf(lock, "pid=%d acquired_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)); writeErr != nil {
+				_ = lock.Close()
+				_ = os.Remove(path)
+				return nil, writeErr
+			}
+			startLockLease(lock)
 			return lock, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if lockLeaseExpired(path) {
-			if removeErr := os.Remove(path); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
-				continue
-			}
+		if reclaimExpiredLock(path) {
+			continue
 		}
 		select {
 		case <-ctx.Done():
@@ -399,15 +415,83 @@ func AcquireLock(ctx context.Context, path string) (*os.File, error) {
 	}
 }
 
-func lockLeaseExpired(path string) bool {
+func lockLeaseExpiredInfo(info os.FileInfo) bool {
+	return info != nil && time.Now().UTC().After(info.ModTime().Add(LockLeaseTTL))
+}
+
+// reclaimExpiredLock moves the exact stale inode out of the lock path before
+// deleting it. A plain Stat followed by Remove could delete a replacement lock
+// created by another waiter in between those calls.
+func reclaimExpiredLock(path string) bool {
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return true
 	}
-	if err != nil {
+	if err != nil || !lockLeaseExpiredInfo(info) {
 		return false
 	}
-	return time.Now().UTC().After(info.ModTime().Add(LockLeaseTTL))
+	quarantine := fmt.Sprintf("%s.reclaim.%d.%d", path, os.Getpid(), time.Now().UnixNano())
+	if err := os.Rename(path, quarantine); err != nil {
+		return false
+	}
+	moved, statErr := os.Stat(quarantine)
+	// Rename is atomic: the file now in quarantine is the exact object that
+	// occupied path at the rename point. Re-check its mtime after the move so a
+	// live owner that renewed during the handoff is restored instead of deleted.
+	if statErr == nil && lockLeaseExpiredInfo(moved) {
+		if err := os.Remove(quarantine); err == nil || errors.Is(err, os.ErrNotExist) {
+			return true
+		}
+	}
+	// The owner renewed between the first stat and the rename, or the path was
+	// not the same inode we observed. Restore it only when no replacement has
+	// appeared; never overwrite a newer owner's lock.
+	if _, pathErr := os.Stat(path); errors.Is(pathErr, os.ErrNotExist) {
+		_ = os.Rename(quarantine, path)
+	} else {
+		_ = os.Remove(quarantine)
+	}
+	return false
+}
+
+func startLockLease(lock *os.File) {
+	lease := &lockLease{stop: make(chan struct{}), done: make(chan struct{})}
+	activeLockLeases.Store(lock, lease)
+	go func() {
+		defer close(lease.done)
+		interval := lockLeaseHeartbeatInterval
+		if interval <= 0 {
+			interval = time.Second
+		}
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-lease.stop:
+				return
+			case <-ticker.C:
+				// Writing through the owner descriptor updates the original
+				// inode even if a stale reclaim has moved the path elsewhere.
+				if _, err := fmt.Fprintf(lock, "heartbeat=%s\n", time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+					return
+				}
+				_ = lock.Sync()
+			}
+		}
+	}()
+}
+
+func stopLockLease(lock *os.File) {
+	if lock == nil {
+		return
+	}
+	value, ok := activeLockLeases.LoadAndDelete(lock)
+	if !ok {
+		return
+	}
+	lease := value.(*lockLease)
+	close(lease.stop)
+	<-lease.done
 }
 
 // ReleaseLock closes and removes a ledger lock. Removal tolerates a prior
@@ -416,6 +500,7 @@ func lockLeaseExpired(path string) bool {
 func ReleaseLock(lock *os.File, path string) error {
 	var owned os.FileInfo
 	if lock != nil {
+		stopLockLease(lock)
 		var err error
 		owned, err = lock.Stat()
 		if err != nil {

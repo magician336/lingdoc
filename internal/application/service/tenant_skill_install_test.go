@@ -894,6 +894,16 @@ func TestReinstallSkillRejectsAnUnknownSkill(t *testing.T) {
 
 func TestInstallSkillReinstallsWhenTheLiveImageNoLongerCarriesTheSkill(t *testing.T) {
 	fx := newInstallFixture(t)
+	// InstallSkill starts the repair asynchronously. Keep the run at its agent
+	// boundary so this assertion observes the accepted/installing state rather
+	// than racing the fake all the way to ready.
+	started := make(chan struct{})
+	release := make(chan struct{})
+	defer close(release)
+	fx.beforeExecute = func() {
+		close(started)
+		<-release
+	}
 	archive := zipBundle(t, map[string]string{
 		"SKILL.md":           validSkillMD,
 		"scripts/extract.py": "print('hi')\n",
@@ -907,11 +917,17 @@ func TestInstallSkillReinstallsWhenTheLiveImageNoLongerCarriesTheSkill(t *testin
 	}))
 	// The pointer was cleared (last-skill removal, or a rebuild from base).
 	// The row still says ready, but the files are gone from every new session.
+	fx.configRepo.entity.Config.SkillImage = nil
 
 	id, err := fx.svc.InstallSkill(context.Background(), 7, "cfg-1", archive)
 
 	require.NoError(t, err)
 	require.Equal(t, "sk-1", id)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background repair did not reach its execution boundary")
+	}
 	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
 	require.NoError(t, getErr)
 	require.Equal(t, types.SkillStatusInstalling, skill.Status,

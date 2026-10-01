@@ -2,6 +2,7 @@ package retriever
 
 import (
 	"context"
+	"errors"
 	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -33,5 +34,29 @@ func TestKeywordOnlyIndexingDoesNotRouteVectorPipeline(t *testing.T) {
 	}
 	if !original.SupportRetriever(types.VectorRetrieverType) || keyword.SupportRetriever(types.VectorRetrieverType) {
 		t.Fatal("filter mutated another routing view or retained vector indexing")
+	}
+}
+
+func TestRetrieverTypeFilteringRejectsMissingRoutesBeforeBatchIndex(t *testing.T) {
+	spy := &indexingRoutingSpy{}
+	original := &CompositeRetrieveEngine{engineInfos: []*engineInfo{{
+		retrieveEngine: spy,
+		retrieverType:  []types.RetrieverType{types.KeywordsRetrieverType},
+	}}}
+
+	for _, allowed := range [][]types.RetrieverType{
+		nil,
+		{types.VectorRetrieverType},
+	} {
+		filtered, err := original.WithRetrieverTypes(allowed)
+		if !errors.Is(err, ErrNoRetrieverForTypes) {
+			t.Fatalf("allowed=%v error = %v, want ErrNoRetrieverForTypes", allowed, err)
+		}
+		if filtered != nil {
+			t.Fatalf("allowed=%v returned a routing view after a missing route", allowed)
+		}
+	}
+	if len(spy.routed) != 0 {
+		t.Fatalf("missing route reached BatchIndex with %v", spy.routed)
 	}
 }

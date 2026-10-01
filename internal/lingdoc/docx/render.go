@@ -56,6 +56,19 @@ var referenceDefinition = regexp.MustCompile(`^\[[^\]\n]+\]:\s*\S+`)
 var inlineHTMLOrAutolink = regexp.MustCompile(`<(?:(?:https?://|mailto:)[^>\n]+|/?[A-Za-z][^>\n]*)>`)
 var inlineMath = regexp.MustCompile(`\$[^$\n]+\$`)
 
+// ValidateMarkdown applies the same plain-paragraph boundary used by Render,
+// without requiring the caller to construct a complete DOCX input. Delivery
+// checks use it before a release is frozen so unsupported structure is visible
+// during preflight instead of only after an export request starts.
+func ValidateMarkdown(markdown string) error {
+	for lineNumber, rawLine := range strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
+		if containsUnsupportedMarkdown(rawLine) {
+			return fmt.Errorf("%w: line %d contains unsupported Markdown", ErrUnsupportedMarkdown, lineNumber+1)
+		}
+	}
+	return nil
+}
+
 // Render creates a standalone WordprocessingML package. The caller remains
 // responsible for authorization, snapshot/currentness checks and file storage.
 func Render(in Input) ([]byte, error) {
@@ -187,6 +200,9 @@ func documentParagraphs(in Input) ([]paragraphSpec, error) {
 		if !validXMLText(chapter.Title) || !validXMLText(chapter.BodyMarkdown) {
 			return nil, fmt.Errorf("chapter %d contains invalid XML text", i+1)
 		}
+		if err := ValidateMarkdown(chapter.BodyMarkdown); err != nil {
+			return nil, fmt.Errorf("chapter %d: %w", i+1, err)
+		}
 		paragraphs = append(paragraphs, paragraphSpec{Style: "Heading1", Text: chapter.Title})
 		declared := map[string]bool{}
 		for _, id := range chapter.SourceIDs {
@@ -203,9 +219,6 @@ func documentParagraphs(in Input) ([]paragraphSpec, error) {
 			line := strings.TrimSpace(rawLine)
 			if line == "" {
 				continue
-			}
-			if containsUnsupportedMarkdown(rawLine) {
-				return nil, fmt.Errorf("%w: chapter %d contains unsupported Markdown", ErrUnsupportedMarkdown, i+1)
 			}
 			matches := marker.FindAllStringSubmatch(line, -1)
 			for _, match := range matches {

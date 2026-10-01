@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
 )
 
 var (
@@ -478,6 +480,10 @@ func checkChapter(chapter SnapshotChapter, input DeliveryInput, issue, advisory 
 	}
 	if strings.TrimSpace(chapter.BodyMarkdown) == "" {
 		issue(RuleChapterNonempty, "chapter_empty", chapter.ChapterID, "章节正文为空")
+	}
+	if err := docx.ValidateMarkdown(chapter.BodyMarkdown); err != nil {
+		issue(RuleChapterNonempty, "unsupported_markdown", chapter.ChapterID,
+			"章节正文包含 DOCX 不支持的 Markdown，请先改为纯段落文本："+err.Error())
 	}
 	ids := map[string]bool{}
 	for _, id := range chapter.SourceIDs {

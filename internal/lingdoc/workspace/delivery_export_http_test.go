@@ -439,8 +439,8 @@ func TestExportRoutesPersistAFailedExportAndRefuseToDownloadIt(t *testing.T) {
 	if artifact.Status != string(delivery.ExportFailed) {
 		t.Fatalf("export status = %q, want failed", artifact.Status)
 	}
-	if artifact.Error == nil || artifact.Error.Code != delivery.FailureUnsupportedFormat {
-		t.Fatalf("failed export carries %+v, want unsupported_format", artifact.Error)
+	if artifact.Error == nil || artifact.Error.Code != delivery.FailureRenderFailed {
+		t.Fatalf("failed export carries %+v, want render_failed", artifact.Error)
 	}
 	if artifact.FileSHA256 != nil || artifact.DownloadPath != nil {
 		t.Fatalf("a failed export published a file: %+v", artifact)
@@ -741,14 +741,14 @@ func TestExportListReportsTruncation(t *testing.T) {
 // exportUnrenderableBody 是一段过得了 T13、却过不了 DOCX 渲染器的正文。
 //
 // demo 模板的五条规则（required_fields / chapter_nonempty / chapter_confirmed /
-// review_items_decided / source_available）没有一条管正文的 Markdown 形态，所以
-// 「加粗」这样的富标记能一路走到渲染器面前；而 T05 的渲染器只支持纯段落，它会拒。
-// F13「导出器产生损坏文件」在这条链路里的真实形状就是它：不是磁盘坏了，是做不出
-// 这份文件。这也是唯一一条能拿**真实**适配器走到的失败路径——另外两个失败码
+// review_items_decided / source_available）不负责 XML 字符合法性，所以控制字符能一路
+// 走到渲染器面前；而 T05 的渲染器会拒绝它。富 Markdown 现在在 T13 预检阶段就会被
+// 明确阻断，另有预检用例覆盖。这条链路仍然守住 F13「导出器产生损坏文件」：不是磁盘坏了，
+// 是做不出这份文件。它也是唯一一条能拿**真实**适配器走到的失败路径——另外两个失败码
 // （empty_file、validation_failed）分别要一个空渲染器与一份被改过的文件。
-const exportUnrenderableBody = "研究问题：**加粗**演示资料包含虚构记录 [[source:source-1]]，不能当作真实结论。"
+const exportUnrenderableBody = "研究问题：\x00演示资料包含虚构记录 [[source:source-1]]，不能当作真实结论。"
 
-// exportRouterWithUnrenderableBody 装一组正文带富标记的工作区。
+// exportRouterWithUnrenderableBody 装一组正文带非法 XML 字符的工作区。
 func exportRouterWithUnrenderableBody(t *testing.T) *gin.Engine {
 	t.Helper()
 	handler, db, assetID := seedBoundSource(t)
