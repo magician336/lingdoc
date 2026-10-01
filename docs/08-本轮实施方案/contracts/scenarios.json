@@ -995,6 +995,47 @@
       "providers": [
         "evidence"
       ]
+    },
+    {
+      "id": "F23",
+      "name": "验收预算与模型边界错误可见",
+      "setup": "验收模式启用真实预算账本；模拟输出不完整、预算耗尽、账本不可用、未知供应商结果和模型配置不匹配。",
+      "steps": [
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "输出达到上限时任务为 failed，错误码明确且不可重试。",
+          "response_example": "generation_incomplete"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "预算耗尽时不再请求供应商，错误码明确且不可重试。",
+          "response_example": "generation_budget_exceeded"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "账本不可用时阻止供应商调用，错误码明确且不可重试。",
+          "response_example": "generation_budget_unavailable"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "供应商结果未知时暂停后续调用，错误码明确且不可重试。",
+          "response_example": "generation_outcome_unknown"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "验收模型不匹配时不调用供应商，错误码明确且不可重试。",
+          "response_example": "generation_model_mismatch"
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace"
+      ]
     }
   ],
   "canonical_fixture": {

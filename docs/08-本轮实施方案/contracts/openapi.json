@@ -6226,6 +6226,96 @@
                       }
                     }
                   },
+                  "generation_incomplete": {
+                    "value": {
+                      "data": {
+                        "id": "run-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "status": "failed",
+                        "candidate_id": null,
+                        "error": {
+                          "code": "generation_incomplete",
+                          "message": "本轮输出达到上限，结果不完整；系统不会自动续写。",
+                          "retryable": false
+                        }
+                      },
+                      "request_id": "req-demo",
+                      "meta": { "replayed": false, "refresh_required": false }
+                    }
+                  },
+                  "generation_budget_exceeded": {
+                    "value": {
+                      "data": {
+                        "id": "run-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "status": "failed",
+                        "candidate_id": null,
+                        "error": {
+                          "code": "generation_budget_exceeded",
+                          "message": "验收预算已到上限或输入超限，未继续请求模型。",
+                          "retryable": false
+                        }
+                      },
+                      "request_id": "req-demo",
+                      "meta": { "replayed": false, "refresh_required": false }
+                    }
+                  },
+                  "generation_budget_unavailable": {
+                    "value": {
+                      "data": {
+                        "id": "run-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "status": "failed",
+                        "candidate_id": null,
+                        "error": {
+                          "code": "generation_budget_unavailable",
+                          "message": "预算账本不可用，模型调用已阻止。",
+                          "retryable": false
+                        }
+                      },
+                      "request_id": "req-demo",
+                      "meta": { "replayed": false, "refresh_required": false }
+                    }
+                  },
+                  "generation_outcome_unknown": {
+                    "value": {
+                      "data": {
+                        "id": "run-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "status": "failed",
+                        "candidate_id": null,
+                        "error": {
+                          "code": "generation_outcome_unknown",
+                          "message": "模型调用结果未能确认，需先核对服务商用量与本地账本。",
+                          "retryable": false
+                        }
+                      },
+                      "request_id": "req-demo",
+                      "meta": { "replayed": false, "refresh_required": false }
+                    }
+                  },
+                  "generation_model_mismatch": {
+                    "value": {
+                      "data": {
+                        "id": "run-demo",
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "status": "failed",
+                        "candidate_id": null,
+                        "error": {
+                          "code": "generation_model_mismatch",
+                          "message": "验收模式未找到符合条件的模型配置；未调用模型。",
+                          "retryable": false
+                        }
+                      },
+                      "request_id": "req-demo",
+                      "meta": { "replayed": false, "refresh_required": false }
+                    }
+                  },
                   "interrupted": {
                     "value": {
                       "data": {

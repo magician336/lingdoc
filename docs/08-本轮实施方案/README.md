@@ -12,7 +12,7 @@
 | 文件 | 用途 |
 |---|---|
 | [openapi.json](contracts/openapi.json) | 拟议 HTTP：25 操作，22 core / 3 optional；x-domain 表示服务职责，不指定人 |
-| [scenarios.json](contracts/scenarios.json) | 21 个行为场景及合成样例；providers 表示参与服务 |
+| [scenarios.json](contracts/scenarios.json) | 23 个行为场景及合成样例；providers 表示参与服务 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |

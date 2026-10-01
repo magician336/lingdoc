@@ -1,6 +1,6 @@
 # T16 MVP交接证据
 
-接续既有任务 `lingdoc-t16-closeout-20260927-01`，分支 `codex/t16-cloud-handoff-20260930`，原检查点 `1c01f983c30440f8f9e103d202479045d991e81e`，父提交 `1992abde95ca5636fdc1a2af39f4565fde358a99`。
+接续既有任务 `lingdoc-t16-closeout-20260927-01`，分支 `codex/t16-cloud-handoff-20260930`；当前源码验证提交 `92d00268ea5536320a11a4351c243a563fbb5c43`，其父提交 `b21d342d425404586ab9f60431f97f3a78fd2b57`，PR base `1992abde95ca5636fdc1a2af39f4565fde358a99`。`1c01f98` 仅是原始真实集成 checkpoint。
 
 [下载完整脱敏验收包](evidence.zip)，解压打开根目录 `验收入口.html`。包含全部T01–T16状态、录屏、DOCX、PDF、关键API/日志、模型账本和manifest。每项未覆盖范围保留，不宣称完整产品全部通过。
 
@@ -20,4 +20,4 @@
 
 可复现付费请求已停止。不要重跑生成以验证这份历史证据。自动/受控测试、实际供应商证据、gong人工反馈和未验证条件分别列明。压缩包不含密码、token、API key或服务凭证文件；清单列每个文件SHA256。
 
-对当前PR提交的自动检查命令与结果见本目录 `pr-validation.json`；真实集成发生于原检查点加未提交修复，运行二进制SHA256 `7c7253de6810b9a9e933d3e14039a8645ef7a53c4b46166898a411659801a5e6`。与PR最终源码关系通过提交差异和证据manifest核对；本次没有重建/重启主服务。
+对当前 PR 的验证清单见本目录 `pr-validation.json`；真实集成二进制仍属于历史 checkpoint，不能替代当前源码验证。manifest 明确列出源码验证提交和逐文件 Git blob；最终 PR head 与 GitHub CI 以远端状态为准。本次没有重跑付费模型或重启主服务。
