@@ -35,7 +35,8 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	v1 := engine.Group("/api/v1")
-	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: true}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
+	enabled := true
+	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
@@ -56,7 +57,8 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	v1 := engine.Group("/api/v1")
-	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: true}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
+	enabled := true
+	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	service := &lingDocRouteServiceStub{}
 	workspaceHandler := workspace.NewHandler(workspace.HandlerDependencies{Service: service})
