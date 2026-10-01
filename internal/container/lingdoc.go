@@ -6,6 +6,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"go.uber.org/dig"
 	"gorm.io/gorm"
 )
 
@@ -39,13 +40,15 @@ func NewLingDocWorkspaceHandler(
 // silently installed in production. Existing delivery consumers supply these
 // ports; this refactor does not add an unimplemented HTTP endpoint.
 type DeliveryDependencies struct {
-	Snapshots   delivery.SnapshotStore
-	Exports     delivery.ExportStore
-	Currentness delivery.CurrentnessChecker
-	Access      delivery.ExportAccessChecker
-	Renderer    delivery.FrozenRenderer
+	dig.In
+	Snapshots   delivery.SnapshotStore       `optional:"true"`
+	Exports     delivery.ExportStore         `optional:"true"`
+	Currentness delivery.CurrentnessChecker  `optional:"true"`
+	Access      delivery.ExportAccessChecker `optional:"true"`
+	Renderer    delivery.FrozenRenderer      `optional:"true"`
 }
 type LingDocDelivery struct {
+	dig.Out
 	Releases delivery.ReleaseApplication
 	Exports  delivery.ExportApplication
 }
