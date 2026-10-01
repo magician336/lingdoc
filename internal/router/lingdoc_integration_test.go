@@ -74,21 +74,10 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, stmt := range strings.Split(string(raw), ";") {
-			// A migration may end with comments after its last SQL statement.
-			// Skip those chunks: modernc returns no result for comment-only SQL.
-			hasSQL := false
-			for _, line := range strings.Split(stmt, "\n") {
-				if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "--") {
-					hasSQL = true
-					break
-				}
-			}
-			if hasSQL {
-				if err := db.Exec(stmt).Error; err != nil {
-					t.Fatal(err)
-				}
-			}
+		// Let SQLite parse the unchanged script, including semicolons inside
+		// comments. database/sql does not inspect a comment-only final result.
+		if _, err := sqlDB.ExecContext(context.Background(), string(raw)); err != nil {
+			t.Fatal(err)
 		}
 	}
 	if err := db.Exec("CREATE TABLE knowledges (id TEXT PRIMARY KEY, tenant_id INTEGER, knowledge_base_id TEXT, title TEXT, parse_status TEXT, file_hash TEXT, file_size INTEGER, processed_at DATETIME, deleted_at DATETIME)").Error; err != nil {
