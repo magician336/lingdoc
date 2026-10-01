@@ -6214,8 +6214,8 @@
                         "status": "failed",
                         "candidate_id": null,
                         "error": {
-                          "code": "model_timeout",
-                          "message": "模型执行超时，可发起新的任务。",
+                          "code": "generation_failed",
+                          "message": "模型调用失败，可发起新的任务。",
                           "retryable": true
                         }
                       },
@@ -6325,8 +6325,8 @@
                         "status": "interrupted",
                         "candidate_id": null,
                         "error": {
-                          "code": "execution_interrupted",
-                          "message": "执行被中断。",
+                          "code": "generation_interrupted",
+                          "message": "生成已中断；可重新发起任务。",
                           "retryable": true
                         }
                       },

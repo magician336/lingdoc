@@ -269,6 +269,7 @@ func TestExecuteStoresAcceptanceStopsAsNonRetryable(t *testing.T) {
 		{name: "truncated output", err: ErrGenerationIncomplete, code: "generation_incomplete"},
 		{name: "exhausted budget", err: ErrAcceptanceBudgetExceeded, code: "generation_budget_exceeded"},
 		{name: "uncertain provider outcome", err: ErrAcceptanceOutcomeUnknown, code: "generation_outcome_unknown"},
+		{name: "cancelled provider with uncertain outcome", err: errors.Join(context.Canceled, ErrAcceptanceOutcomeUnknown), code: "generation_outcome_unknown"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -306,6 +306,11 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		status := StatusFailed
 		failure := RunError{Code: "generation_failed", Message: "生成失败，原始资料和凭据未写入任务错误。", Retryable: true}
 		switch {
+		case errors.Is(generateErr, ErrAcceptanceOutcomeUnknown):
+			// An acceptance-budget call may join context cancellation with this
+			// sentinel: the provider outcome and charge are still unknown. Keep
+			// this terminal and non-retryable until the ledger is reconciled.
+			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
 		case errors.Is(generateErr, context.Canceled) || errors.Is(generateErr, context.DeadlineExceeded):
 			status = StatusInterrupted
 			failure = RunError{Code: "generation_interrupted", Message: "生成已中断；可重新发起任务。", Retryable: true}
@@ -315,8 +320,6 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 			failure = RunError{Code: "generation_budget_exceeded", Message: "本轮验收预算已到上限或输入超限，系统未继续请求模型。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceBudgetUnavailable):
 			failure = RunError{Code: "generation_budget_unavailable", Message: "本轮预算账本不可用，模型调用已阻止。", Retryable: false}
-		case errors.Is(generateErr, ErrAcceptanceOutcomeUnknown):
-			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceModelMismatch):
 			failure = RunError{Code: "generation_model_mismatch", Message: "验收模式未找到唯一且符合条件的 deepseek-flash 配置；未调用模型。", Retryable: false}
 		}

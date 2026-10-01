@@ -214,7 +214,7 @@
     {
       "id": "F09",
       "name": "模型超时或中断",
-      "setup": "模型适配器模拟超时或worker中断。",
+      "setup": "模型适配器模拟可确认的调用失败或worker中断；供应商结果无法确认时转入F23。",
       "steps": [
         {
           "operation_id": "startGeneration",
