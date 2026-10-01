@@ -27,4 +27,3 @@ func TestServiceUsesInjectedRepository(t *testing.T) {
 		t.Fatalf("GetProject() = %#v, want %#v", got, want)
 	}
 }
-

@@ -132,4 +132,3 @@ func TestSpecRetryWaitsForActiveWriter(t *testing.T) {
 		})
 	}
 }
-

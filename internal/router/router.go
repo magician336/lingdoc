@@ -354,4 +354,3 @@ func trustedProxies() []string {
 	}
 	return proxies
 }
-

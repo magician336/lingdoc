@@ -31,4 +31,3 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 		}
 	}
 }
-

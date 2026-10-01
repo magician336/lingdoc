@@ -30,4 +30,3 @@ var (
 func NewService(db *gorm.DB, templates core.TemplateReader) *Service {
 	return core.NewService(db, templates)
 }
-

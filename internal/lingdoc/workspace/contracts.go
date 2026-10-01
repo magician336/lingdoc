@@ -88,4 +88,3 @@ type HandlerDependencies struct {
 	KBShare   interfaces.KBShareService
 	Knowledge KnowledgeSearchService
 }
-

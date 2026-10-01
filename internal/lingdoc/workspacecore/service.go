@@ -596,4 +596,3 @@ func (s *GORMRepository) GenerationContext(ctx context.Context, actor Actor, pro
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return result, err
 }
-

@@ -561,4 +561,3 @@ func (h *Handler) accessStatus(c *gin.Context) {
 	sendOK(c, http.StatusOK, gin.H{"project_id": id, "content_access": "unknown",
 		"recovery_actions": []string{}, "can_create_project": true}, false)
 }
-

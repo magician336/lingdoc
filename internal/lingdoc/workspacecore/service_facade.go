@@ -79,4 +79,3 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 }
 
 var _ Repository = (*GORMRepository)(nil)
-

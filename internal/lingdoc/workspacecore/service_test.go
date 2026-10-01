@@ -340,4 +340,3 @@ func TestManualEditPreservesReviewAndFailsClosedOnExistingSource(t *testing.T) {
 		t.Fatalf("existing source was dropped without T09 recheck: %v", err)
 	}
 }
-

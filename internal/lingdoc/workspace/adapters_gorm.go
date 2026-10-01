@@ -135,4 +135,3 @@ func valueTime(value *time.Time) time.Time {
 
 var _ SourceCatalog = dbSourceCatalog{}
 var _ evidence.KnowledgeReader = dbKnowledgeReader{}
-

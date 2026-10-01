@@ -43,4 +43,3 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 		t.Fatalf("injected service did not receive caller identity: called=%v actor=%#v", service.called, service.actor)
 	}
 }
-
