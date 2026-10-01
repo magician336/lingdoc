@@ -344,6 +344,12 @@
           "response_example": "failed"
         },
         {
+          "operation_id": "getExport",
+          "expected_http": 200,
+          "assertion": "正文含不支持的 Markdown 时保留 failed 产物，明确 unsupported_format 和修改提示，不生成下载字段。",
+          "response_example": "unsupported_format"
+        },
+        {
           "operation_id": "downloadExport",
           "expected_http": 422,
           "assertion": "损坏文件不开放下载；显示恢复动作。",
