@@ -75,7 +75,16 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, stmt := range strings.Split(string(raw), ";") {
-			if strings.TrimSpace(stmt) != "" {
+			// A migration may end with comments after its last SQL statement.
+			// Skip those chunks: modernc returns no result for comment-only SQL.
+			hasSQL := false
+			for _, line := range strings.Split(stmt, "\n") {
+				if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+					hasSQL = true
+					break
+				}
+			}
+			if hasSQL {
 				if err := db.Exec(stmt).Error; err != nil {
 					t.Fatal(err)
 				}
