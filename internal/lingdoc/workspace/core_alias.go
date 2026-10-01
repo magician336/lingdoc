@@ -7,6 +7,9 @@ import (
 
 type Service = core.Service
 type Actor = core.Actor
+type Project = core.Project
+type Chapter = core.Chapter
+type GenerationContext = core.GenerationContext
 type CreateProjectInput = core.CreateProjectInput
 type SaveSpecInput = core.SaveSpecInput
 type ActivateProjectInput = core.ActivateProjectInput
@@ -27,3 +30,4 @@ var (
 func NewService(db *gorm.DB, templates core.TemplateReader) *Service {
 	return core.NewService(db, templates)
 }
+

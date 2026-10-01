@@ -16,6 +16,15 @@ import (
 	_ "modernc.org/sqlite" // Pure Go test driver; production retains the existing SQLite driver.
 )
 
+// testDB exposes the concrete adapter only to same-package persistence tests.
+func (s *Service) testDB() *gorm.DB {
+	repository, ok := s.repository.(*GORMRepository)
+	if !ok {
+		panic("test requires GORMRepository")
+	}
+	return repository.db
+}
+
 func testStore(t *testing.T, path string) *Service {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"},
@@ -51,7 +60,7 @@ func testStore(t *testing.T, path string) *Service {
 
 func seedTenantMember(t *testing.T, svc *Service, actor Actor) {
 	t.Helper()
-	if err := svc.db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, 'active')", actor.TenantID, actor.UserID).Error; err != nil {
+	if err := svc.testDB().Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, 'active')", actor.TenantID, actor.UserID).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -129,7 +138,7 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 		t.Fatalf("chapter response-lost replay: %v %v", replay, err)
 	}
 	var count int64
-	if err := svc.db.Model(&chapterVersionRow{}).Where("chapter_id = ?", chapter.ID).Count(&count).Error; err != nil || count != 1 {
+	if err := svc.testDB().Model(&chapterVersionRow{}).Where("chapter_id = ?", chapter.ID).Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("duplicate version: %d %v", count, err)
 	}
 	contextView, err := svc.GenerationContext(ctx, owner, project.ID, chapter.ID)
@@ -223,7 +232,7 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	member := Actor{TenantID: 12, UserID: "member"}
 	seedTenantMember(t, svc, owner)
 	seedTenantMember(t, svc, member)
-	if err := svc.db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (12, 'inactive', 'inactive')").Error; err != nil {
+	if err := svc.testDB().Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (12, 'inactive', 'inactive')").Error; err != nil {
 		t.Fatal(err)
 	}
 	raw, _, _, err := svc.CreateProject(ctx, owner, "create-members", CreateProjectInput{Name: "协作", TemplateID: "template-demo"})
@@ -264,7 +273,7 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	if _, _, _, err := svc.SaveSpec(ctx, member, id, "member-spec-key", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "共同编辑"}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked replay exposed content: %v", err)
 	}
-	if err := svc.db.Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = 12 AND user_id = 'owner'").Error; err != nil {
+	if err := svc.testDB().Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = 12 AND user_id = 'owner'").Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.GetProject(ctx, owner, id); !errors.Is(err, ErrNotFound) {
@@ -302,10 +311,10 @@ func TestManualEditPreservesReviewAndFailsClosedOnExistingSource(t *testing.T) {
 	initial := chapterVersionRow{ID: "version-with-review", ProjectID: id, ChapterID: chapterID,
 		BodyMarkdown: "待人工核查", SourceIDsJSON: "[]",
 		ReviewItemsJSON: `[{"id":"review-1","statement":"样本量待核实","origin_candidate_id":"candidate-1"}]`}
-	if err := svc.db.Create(&initial).Error; err != nil {
+	if err := svc.testDB().Create(&initial).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.db.Model(&chapterRow{}).Where("id = ?", chapterID).Update("current_version_id", initial.ID).Error; err != nil {
+	if err := svc.testDB().Model(&chapterRow{}).Where("id = ?", chapterID).Update("current_version_id", initial.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	raw, _, _, err = svc.SaveChapter(ctx, actor, id, chapterID, "edit-review", SaveChapterInput{
@@ -319,7 +328,7 @@ func TestManualEditPreservesReviewAndFailsClosedOnExistingSource(t *testing.T) {
 	if err := json.Unmarshal(raw, &edited); err != nil || len(edited.ReviewItems) != 1 || edited.ReviewItems[0].ID != "review-1" {
 		t.Fatalf("review item lost: %+v %v", edited, err)
 	}
-	if err := svc.db.Model(&chapterVersionRow{}).Where("id = ?", *edited.CurrentVersionID).
+	if err := svc.testDB().Model(&chapterVersionRow{}).Where("id = ?", *edited.CurrentVersionID).
 		Updates(map[string]any{"source_ids_json": `["s-demo"]`, "body_markdown": "[[source:s-demo]]"}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -331,3 +340,4 @@ func TestManualEditPreservesReviewAndFailsClosedOnExistingSource(t *testing.T) {
 		t.Fatalf("existing source was dropped without T09 recheck: %v", err)
 	}
 }
+

@@ -9,56 +9,48 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 type Handler struct {
-	service   *Service
-	bindings  *evidence.Bindings
+	service   ApplicationService
+	bindings  BindingStore
 	gateway   evidence.AssetGateway
+	catalog   SourceCatalog
+	origins   evidence.OriginReader
 	kbShares  interfaces.KBShareService
-	knowledge interfaces.KnowledgeBaseService
-	db        *gorm.DB
+	knowledge KnowledgeSearchService
 }
 
-func NewHandler(db *gorm.DB, kbShares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService) *Handler {
-	bindings := evidence.NewBindings(db)
-	bindings.SetKnowledgeSignalReader(dbKnowledgeReader{db: db})
-	authorizer := evidence.NewFixedAuthorizer(bindings, kbReadChecker{shares: kbShares})
+func NewHandler(deps HandlerDependencies) *Handler {
 	return &Handler{
-		service:   NewService(db, ContractDemoTemplate{}),
-		bindings:  bindings,
-		gateway:   evidence.NewAssetGateway(bindings, authorizer),
-		kbShares:  kbShares,
-		knowledge: knowledge,
-		db:        db,
+		service: deps.Service, bindings: deps.Bindings, gateway: deps.Gateway,
+		catalog: deps.Catalog, origins: deps.Origins, kbShares: deps.KBShare,
+		knowledge: deps.Knowledge,
 	}
 }
 
-func (h *Handler) Service() *Service { return h.service }
+func (h *Handler) Service() ApplicationService { return h.service }
 
-func (h *Handler) Register(v1 *gin.RouterGroup) {
-	group := v1.Group("/lingdoc")
-	group.GET("/projects", h.listProjects)
-	group.POST("/projects", h.createProject)
-	group.GET("/projects/:projectId", h.getProject)
-	group.PUT("/projects/:projectId/spec", h.saveSpec)
-	group.POST("/projects/:projectId/activate", h.activateProject)
-	group.PUT("/projects/:projectId/members", h.saveMembers)
-	group.GET("/projects/:projectId/chapters", h.listChapters)
-	group.GET("/projects/:projectId/assets", h.listAssets)
-	group.POST("/projects/:projectId/assets", h.bindAsset)
-	group.POST("/projects/:projectId/retrieval", h.retrieveSources)
-	group.GET("/projects/:projectId/sources/:sourceId", h.getSource)
-	group.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
-	group.GET("/projects/:projectId/access-status", h.accessStatus)
+func (h *Handler) Register(routes RouteGroups) {
+	routes.Read.GET("/projects", h.listProjects)
+	routes.Write.POST("/projects", h.createProject)
+	routes.Read.GET("/projects/:projectId", h.getProject)
+	routes.Write.PUT("/projects/:projectId/spec", h.saveSpec)
+	routes.Write.POST("/projects/:projectId/activate", h.activateProject)
+	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
+	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
+	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
+	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
+	routes.Read.POST("/projects/:projectId/retrieval", h.retrieveSources)
+	routes.Read.GET("/projects/:projectId/sources/:sourceId", h.getSource)
+	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
+	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
 }
 
 type kbReadChecker struct{ shares interfaces.KBShareService }
@@ -334,13 +326,13 @@ func (h *Handler) bindAsset(c *gin.Context) {
 		sendError(c, ErrInvalidRequest)
 		return
 	}
-	var knowledge types.Knowledge
-	if err := h.db.WithContext(c.Request.Context()).Where("id = ? AND deleted_at IS NULL", input.KnowledgeID).First(&knowledge).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			sendError(c, evidence.ErrAssetNotFound)
-		} else {
-			sendError(c, err)
-		}
+	knowledge, err := h.catalog.Knowledge(c.Request.Context(), input.KnowledgeID)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if knowledge == nil {
+		sendError(c, evidence.ErrAssetNotFound)
 		return
 	}
 	if h.knowledge == nil {
@@ -387,13 +379,13 @@ func (h *Handler) getSource(c *gin.Context) {
 		sendError(c, err)
 		return
 	}
-	var chunk types.Chunk
-	if err := h.db.WithContext(c.Request.Context()).Where("id = ?", sourceID).First(&chunk).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			sendError(c, ErrNotFound)
-		} else {
-			sendError(c, err)
-		}
+	chunk, err := h.catalog.Chunk(c.Request.Context(), sourceID)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if chunk == nil {
+		sendError(c, ErrNotFound)
 		return
 	}
 	asset, err := h.bindings.AssetForKnowledge(c.Request.Context(), projectID, chunk.KnowledgeID)
@@ -415,8 +407,7 @@ func (h *Handler) getSource(c *gin.Context) {
 	hit := &types.SearchResult{ID: chunk.ID, KnowledgeID: chunk.KnowledgeID, ChunkIndex: chunk.ChunkIndex,
 		StartAt: chunk.StartAt, EndAt: chunk.EndAt, Content: chunk.Content,
 		ContentRevision: chunk.ContentRevision, KnowledgeTitle: asset.Title}
-	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
-	sources, err := evidence.NewSourceResolver(origins).Resolve(c.Request.Context(), asset, []*types.SearchResult{hit})
+	sources, err := evidence.NewSourceResolver(h.origins).Resolve(c.Request.Context(), asset, []*types.SearchResult{hit})
 	if err != nil || len(sources) != 1 {
 		if err != nil {
 			sendError(c, err)
@@ -426,7 +417,7 @@ func (h *Handler) getSource(c *gin.Context) {
 		return
 	}
 	source := sources[0]
-	policy := evidence.NewSourcePolicy(h.gateway, origins, h.bindings)
+	policy := evidence.NewSourcePolicy(h.gateway, h.origins, h.bindings)
 	checked, err := policy.Validate(c.Request.Context(), projectID, evidenceActor, []evidence.Source{source})
 	if err != nil {
 		sendError(c, err)
@@ -441,74 +432,6 @@ func (h *Handler) getSource(c *gin.Context) {
 		source.Status = unusable.Status
 	}
 	sendOK(c, http.StatusOK, source, false)
-}
-
-type dbKnowledgeReader struct{ db *gorm.DB }
-
-func (r dbKnowledgeReader) KnowledgeForOrigin(ctx context.Context, knowledgeID string) (*types.Knowledge, error) {
-	var knowledge types.Knowledge
-	err := r.db.WithContext(ctx).Where("id = ?", knowledgeID).First(&knowledge).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &knowledge, nil
-}
-
-func (r dbKnowledgeReader) CurrentKnowledgeSignal(ctx context.Context, knowledgeID string) (evidence.KnowledgeSignal, bool, error) {
-	var knowledge types.Knowledge
-	err := r.db.WithContext(ctx).Where("id = ? AND deleted_at IS NULL", knowledgeID).First(&knowledge).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return evidence.KnowledgeSignal{}, false, nil
-	}
-	if err != nil {
-		return evidence.KnowledgeSignal{}, false, err
-	}
-	return evidence.KnowledgeSignal{
-		KnowledgeID: knowledge.ID,
-		ParseStatus: knowledge.ParseStatus,
-		FileHash:    knowledge.FileHash,
-		FileSize:    knowledge.FileSize,
-		ProcessedAt: valueTime(knowledge.ProcessedAt),
-	}, true, nil
-}
-
-func (r dbKnowledgeReader) UsesBuiltinConverter(ctx context.Context, knowledgeID string) (bool, error) {
-	var knowledge types.Knowledge
-	if err := r.db.WithContext(ctx).Where("id = ?", knowledgeID).First(&knowledge).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	if knowledge.KnowledgeBaseID == "" {
-		return false, nil
-	}
-	var kb types.KnowledgeBase
-	if err := r.db.WithContext(ctx).Where("id = ? AND tenant_id = ?", knowledge.KnowledgeBaseID, knowledge.TenantID).First(&kb).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	chunking := kb.ChunkingConfig
-	overrides, err := knowledge.ProcessOverrides()
-	if err != nil {
-		return false, nil
-	}
-	if overrides != nil && len(overrides.ParserEngineRules) > 0 {
-		chunking.ParserEngineRules = overrides.ParserEngineRules
-	}
-	return chunking.ResolveParserEngine(knowledge.FileType) == "", nil
-}
-
-func valueTime(value *time.Time) time.Time {
-	if value == nil {
-		return time.Time{}
-	}
-	return *value
 }
 
 type retrieveSourcesInput struct {
@@ -571,8 +494,7 @@ func (h *Handler) retrieveSources(c *gin.Context) {
 		}
 		assetsByKB[scope.KnowledgeBaseID] = append(assetsByKB[scope.KnowledgeBaseID], asset.KnowledgeID)
 	}
-	origins := evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
-	resolver := evidence.NewSourceResolver(origins)
+	resolver := evidence.NewSourceResolver(h.origins)
 	result := make([]evidence.Source, 0)
 	kbIDs := make([]string, 0, len(assetsByKB))
 	for kbID := range assetsByKB {
@@ -639,3 +561,4 @@ func (h *Handler) accessStatus(c *gin.Context) {
 	sendOK(c, http.StatusOK, gin.H{"project_id": id, "content_access": "unknown",
 		"recovery_actions": []string{}, "can_create_project": true}, false)
 }
+

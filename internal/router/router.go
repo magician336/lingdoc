@@ -312,7 +312,10 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		if params.LingDocWorkspace != nil {
-			params.LingDocWorkspace.Register(v1)
+			lingdoc := v1.Group("/lingdoc")
+			readRoutes := rbacGuards.apiKeyGroup(lingdoc.Group("", rbacGuards.Viewer()), apiKeyFullAccess())
+			writeRoutes := rbacGuards.apiKeyGroup(lingdoc.Group("", rbacGuards.Contributor()), apiKeyFullAccess())
+			params.LingDocWorkspace.Register(workspace.RouteGroups{Read: readRoutes, Write: writeRoutes})
 		}
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
@@ -351,3 +354,4 @@ func trustedProxies() []string {
 	}
 	return proxies
 }
+

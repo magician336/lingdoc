@@ -456,7 +456,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
-	must(container.Provide(workspace.NewHandler))
+	must(container.Provide(workspace.NewGORMHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))
@@ -1826,3 +1826,4 @@ func startAuditLogRetention(
 		return nil
 	})
 }
+

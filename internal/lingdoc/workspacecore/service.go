@@ -17,13 +17,15 @@ import (
 	"gorm.io/gorm"
 )
 
-type Service struct {
+// GORMRepository is the current persistence adapter. Its public contract uses
+// domain values only; callers depend on Repository rather than this type.
+type GORMRepository struct {
 	db        *gorm.DB
 	templates TemplateReader
 }
 
-func NewService(db *gorm.DB, templates TemplateReader) *Service {
-	return &Service{db: db, templates: templates}
+func NewGORMRepository(db *gorm.DB, templates TemplateReader) *GORMRepository {
+	return &GORMRepository{db: db, templates: templates}
 }
 
 func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
@@ -43,7 +45,7 @@ func activeTenantMember(tx *gorm.DB, actor Actor) error {
 	return nil
 }
 
-func (s *Service) findProject(tx *gorm.DB, actor Actor, projectID, capability string) (projectRow, error) {
+func (s *GORMRepository) findProject(tx *gorm.DB, actor Actor, projectID, capability string) (projectRow, error) {
 	if err := activeTenantMember(tx, actor); err != nil {
 		return projectRow{}, err
 	}
@@ -69,7 +71,7 @@ func (s *Service) findProject(tx *gorm.DB, actor Actor, projectID, capability st
 
 // Authorize is deliberately only a project/member check. Source authorization
 // belongs to T09; callers must check sources separately.
-func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
+func (s *GORMRepository) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	if capability != "read" && capability != "write" && capability != "manage" {
 		return ErrInvalidRequest
 	}
@@ -98,7 +100,7 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	return view, nil
 }
 
-func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
+func (s *GORMRepository) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	tx := s.db.WithContext(ctx)
 	row, err := s.findProject(tx, actor, id, "read")
 	if err != nil {
@@ -107,7 +109,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	return projectView(tx, row)
 }
 
-func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
+func (s *GORMRepository) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
 	if err := activeTenantMember(s.db.WithContext(ctx), actor); err != nil {
 		return nil, false, err
 	}
@@ -137,7 +139,7 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 // operation stores the domain write and exact response in one transaction.
 // Current project authorization runs before replay, so revoked users cannot
 // recover cached content by presenting an old Idempotency-Key.
-func (s *Service) operation(
+func (s *GORMRepository) operation(
 	ctx context.Context, actor Actor, op, target, key string, body any,
 	authorize func(*gorm.DB) error,
 	write func(*gorm.DB) (any, int, error),
@@ -198,7 +200,7 @@ type CreateProjectInput struct {
 	TemplateID string `json:"template_id"`
 }
 
-func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, input CreateProjectInput) (json.RawMessage, int, bool, error) {
+func (s *GORMRepository) CreateProject(ctx context.Context, actor Actor, key string, input CreateProjectInput) (json.RawMessage, int, bool, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len([]rune(input.Name)) > 120 {
 		return nil, 0, false, ErrInvalidRequest
@@ -231,7 +233,7 @@ type SaveSpecInput struct {
 	Fields               map[string]string `json:"fields"`
 }
 
-func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error) {
+func (s *GORMRepository) SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.Fields == nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -303,7 +305,7 @@ type SaveMembersInput struct {
 
 // SaveMembers is the optional fixed test group operation. There is no member
 // management UI; only the project owner can select active tenant users.
-func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
+func (s *GORMRepository) SaveMembers(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs == nil || len(input.CollaboratorUserIDs) > 20 {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -367,7 +369,7 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 	})
 }
 
-func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (json.RawMessage, int, bool, error) {
+func (s *GORMRepository) ActivateProject(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -439,7 +441,7 @@ func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
 	return view, nil
 }
 
-func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
+func (s *GORMRepository) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	tx := s.db.WithContext(ctx)
 	if _, err := s.findProject(tx, actor, projectID, "read"); err != nil {
 		return nil, err
@@ -468,7 +470,7 @@ type SaveChapterInput struct {
 
 var sourceMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
 
-func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (json.RawMessage, int, bool, error) {
+func (s *GORMRepository) SaveChapter(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.SourceIDs == nil || len(input.BodyMarkdown) > 200000 {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -564,7 +566,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 
 // GenerationContext is the T08 handoff to T10. Repeatable-read binds the
 // project spec and the current chapter to one database snapshot.
-func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error) {
+func (s *GORMRepository) GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error) {
 	var result GenerationContext
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		project, err := s.findProject(tx, actor, projectID, "read")
@@ -594,3 +596,4 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return result, err
 }
+
