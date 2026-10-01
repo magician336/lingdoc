@@ -35,13 +35,13 @@ test('当前性：读到了才敢下结论，没读到就是未知', () => {
   assert.equal(currencyOf({} as { is_current: boolean }), '当前性未知')
 })
 
-test('只有当前且未阻断的快照可生成 DOCX，历史和读取失败均禁用', () => {
+test('只有当前且检查通过的快照可生成 DOCX，未评估也必须禁用', () => {
   for (const status of ['passed', 'not_evaluated', 'blocked'] as const) {
     const snapshot = { check: { status } }
     assert.equal(canExportSnapshot(snapshot, { is_current: false }), false)
     assert.equal(canExportSnapshot(snapshot, undefined), false)
     assert.equal(canExportSnapshot(snapshot, null), false)
-    assert.equal(canExportSnapshot(snapshot, { is_current: true }), status !== 'blocked')
+    assert.equal(canExportSnapshot(snapshot, { is_current: true }), status === 'passed')
   }
 })
 

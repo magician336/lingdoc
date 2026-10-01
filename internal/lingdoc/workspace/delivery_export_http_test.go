@@ -456,6 +456,38 @@ func TestExportRoutesPersistAFailedExportAndRefuseToDownloadIt(t *testing.T) {
 	}
 }
 
+func TestExportRoutesPersistUnsupportedMarkdownFailureAfterPreflightWarning(t *testing.T) {
+	handler, db, assetID := seedBoundSource(t)
+	router := func() *gin.Engine {
+		seedDeliveryWorkspace(t, db,
+			deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID),
+				"- 列表项 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
+			deliveryMethodChapter(),
+		)
+		return assembleExportRoutes(t, handler, db, deliveryTestAuthorizer{})
+	}()
+
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	if snapshot.Check.Status != delivery.CheckPassed {
+		t.Fatalf("unsupported Markdown preflight status = %s, want passed with warning", snapshot.Check.Status)
+	}
+	unsupportedWarning := false
+	for _, issue := range snapshot.Check.Issues {
+		unsupportedWarning = unsupportedWarning || strings.Contains(issue.Message, "不支持的 Markdown")
+	}
+	if !unsupportedWarning {
+		t.Fatalf("preflight issues = %+v, want unsupported_markdown warning", snapshot.Check.Issues)
+	}
+
+	artifact := startExportOf(t, router, snapshot.ID)
+	if artifact.Status != string(delivery.ExportFailed) || artifact.Error == nil || artifact.Error.Code != delivery.FailureUnsupportedFormat {
+		t.Fatalf("unsupported Markdown export = %+v, want unsupported_format failed artifact", artifact)
+	}
+	if artifact.FileSHA256 != nil || artifact.DownloadPath != nil {
+		t.Fatalf("unsupported Markdown failure published file fields: %+v", artifact)
+	}
+}
+
 // F04：别的项目的导出，在这个项目下就是不存在。
 func TestExportRoutesHideAnotherProjectsExport(t *testing.T) {
 	router, _ := newDeliveryExportHandler(t, deliveryTestAuthorizer{})

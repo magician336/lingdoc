@@ -282,4 +282,14 @@ func TestExecuteStoresAcceptanceStopsAsNonRetryable(t *testing.T) {
 	}
 }
 
+func TestExecuteStoresProviderCancellationAsInterrupted(t *testing.T) {
+	svc, repo := generationFixture()
+	svc.Model = testModel{err: context.Canceled}
+
+	run, err := svc.Execute(context.Background(), repo.run.ID)
+	if err != nil || run.Status != StatusInterrupted || run.Error == nil || run.Error.Code != "generation_interrupted" || !run.Error.Retryable {
+		t.Fatalf("Execute() = (%+v, %v), want retryable interrupted result", run, err)
+	}
+}
+
 func stringPtr(s string) *string { return &s }

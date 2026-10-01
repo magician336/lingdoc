@@ -301,15 +301,15 @@ func TestDeliveryLinkSurfacesUnsupportedMarkdownBeforeExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if result.Status != delivery.CheckBlocked || !containsIssueCode(result, "unsupported_markdown") {
-		t.Fatalf("Check = status %s issues %v, want unsupported_markdown before export", result.Status, result.Issues)
+	if result.Status != delivery.CheckPassed || !containsIssueCode(result, "unsupported_markdown") {
+		t.Fatalf("Check = status %s issues %v, want warning before export", result.Status, result.Issues)
 	}
 
 	snapshot, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion)
 	if err != nil {
 		t.Fatalf("Prepare: %v", err)
 	}
-	if snapshot.Check.Status != delivery.CheckBlocked || !containsIssueCode(snapshot.Check, "unsupported_markdown") {
+	if snapshot.Check.Status != delivery.CheckPassed || !containsIssueCode(snapshot.Check, "unsupported_markdown") {
 		t.Fatalf("snapshot check = status %s issues %v, want the preflight warning", snapshot.Check.Status, snapshot.Check.Issues)
 	}
 }

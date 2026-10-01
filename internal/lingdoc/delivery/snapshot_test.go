@@ -87,14 +87,14 @@ func TestEvaluateSurfacesUnsupportedMarkdownBeforeExport(t *testing.T) {
 	input.Chapters[0].BodyMarkdown = "- 列表项 [[source:source-1]]"
 
 	result := Evaluate(input)
-	if result.Status != CheckBlocked {
-		t.Fatalf("status = %s, want blocked", result.Status)
+	if result.Status != CheckPassed {
+		t.Fatalf("status = %s, want passed with warning", result.Status)
 	}
 	if !reflect.DeepEqual(sortedIssueCodes(result.Issues), []string{"unsupported_markdown"}) {
 		t.Fatalf("issues = %+v, want unsupported_markdown", result.Issues)
 	}
 	issue := result.Issues[0]
-	if issue.RuleID != RuleChapterNonempty || issue.ChapterID != "chapter-question" || issue.Severity != SeverityBlocking {
+	if issue.RuleID != RuleChapterNonempty || issue.ChapterID != "chapter-question" || issue.Severity != SeverityWarning {
 		t.Fatalf("unsupported markdown issue = %+v", issue)
 	}
 }
