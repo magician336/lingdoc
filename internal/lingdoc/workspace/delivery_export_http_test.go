@@ -439,8 +439,8 @@ func TestExportRoutesPersistAFailedExportAndRefuseToDownloadIt(t *testing.T) {
 	if artifact.Status != string(delivery.ExportFailed) {
 		t.Fatalf("export status = %q, want failed", artifact.Status)
 	}
-	if artifact.Error == nil || artifact.Error.Code != delivery.FailureRenderFailed {
-		t.Fatalf("failed export carries %+v, want render_failed", artifact.Error)
+	if artifact.Error == nil || artifact.Error.Code != delivery.FailureUnsupportedFormat {
+		t.Fatalf("failed export carries %+v, want unsupported_format", artifact.Error)
 	}
 	if artifact.FileSHA256 != nil || artifact.DownloadPath != nil {
 		t.Fatalf("a failed export published a file: %+v", artifact)

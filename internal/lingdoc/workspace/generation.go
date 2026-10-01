@@ -407,6 +407,12 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 	if reservation != nil {
 		if callErr != nil {
 			_ = reservation.unknown("outcome_unknown")
+			if errors.Is(callErr, context.Canceled) || errors.Is(callErr, context.DeadlineExceeded) {
+				// The provider outcome remains unknown and the ledger stays blocked,
+				// but the run itself is an interruption so callers can retry with a
+				// fresh run key after reconciliation.
+				return generation.Draft{}, errors.Join(callErr, generation.ErrAcceptanceOutcomeUnknown)
+			}
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}
 		if response == nil || response.Usage.PromptTokens <= 0 || response.Usage.CompletionTokens < 0 {
@@ -469,7 +475,7 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 	for _, statement := range payload.ReviewItems {
 		reviewItems = append(reviewItems, candidateadoption.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement)})
 	}
-	return generation.Draft{BodyMarkdown: plainParagraphs(payload.BodyMarkdown), Sources: used, ReviewItems: reviewItems}, nil
+	return generation.Draft{BodyMarkdown: payload.BodyMarkdown, Sources: used, ReviewItems: reviewItems}, nil
 }
 
 func defaultGenerationModel(models []*types.Model) string {

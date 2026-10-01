@@ -23,12 +23,16 @@ const (
 	QwenEmbedding                 = "qwen3.7-text-embedding"
 	QwenBaseHostTail              = ".cn-beijing.maas.aliyuncs.com"
 	QwenBasePath                  = "/compatible-mode/v1"
+	DeepSeekInputNanoUSDPerToken  = int64(300)
+	DeepSeekOutputNanoUSDPerToken = int64(1200)
+	DeepSeekBudgetFXNanoCNYPerUSD = int64(10)
+	QwenNanoCNYPerToken           = int64(500)
+	DeepSeekPerCallNanoUSD        = int64(InputMax)*DeepSeekInputNanoUSDPerToken + int64(OutputMax)*DeepSeekOutputNanoUSDPerToken
+	DeepSeekTotalNanoUSD          = DeepSeekPerCallNanoUSD * MaxCalls
+	HumanBackstopCNY              = 5
+	MaxBudgetNanoCNY              = int64(5_000_000_000)
 	ledgerVersion                 = 1
-	deepseekInputNanoUSDPerToken  = int64(300)
-	deepseekOutputNanoUSDPerToken = int64(1200)
-	deepseekBudgetFXNanoCNYPerUSD = int64(10)
-	qwenNanoCNYPerToken           = int64(500)
-	maxBudgetNanoCNY              = int64(5_000_000_000)
+	maxBudgetNanoCNY              = MaxBudgetNanoCNY // compatibility alias for package-local checks
 )
 
 var (
@@ -114,21 +118,21 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 		return nil, err
 	}
 	lockPath := b.ledgerPath + ".lock"
-	lock, err := acquireLock(ctx, lockPath)
+	lock, err := AcquireLock(ctx, lockPath)
 	if err != nil {
 		return nil, ErrUnavailable
 	}
 	ledger, err := readLedger(b.ledgerPath)
 	if err != nil || !validLedger(ledger, b.profile) {
-		_ = releaseLock(lock, lockPath)
+		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrUnavailable
 	}
 	if ledger.Blocked || hasUnresolved(ledger) {
-		_ = releaseLock(lock, lockPath)
+		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrBlocked
 	}
-	if len(ledger.Requests) >= MaxCalls || ledger.ReservedNanoCNY+reserveNanoCNY > maxBudgetNanoCNY {
-		_ = releaseLock(lock, lockPath)
+	if len(ledger.Requests) >= MaxCalls || ledger.ReservedNanoCNY+reserveNanoCNY > MaxBudgetNanoCNY {
+		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrCallsSpent
 	}
 	request := Request{
@@ -145,7 +149,7 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	ledger.ReservedNanoCNY += reserveNanoCNY
 	ledger.ReservedNanoUSD += reserveNanoUSD
 	if err := writeLedger(b.ledgerPath, ledger); err != nil {
-		_ = releaseLock(lock, lockPath)
+		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrUnavailable
 	}
 	return &Reservation{budget: b, lockPath: lockPath, lock: lock, requestNum: request.Number, model: model}, nil
@@ -247,20 +251,20 @@ func (r *Reservation) release() {
 		return
 	}
 	r.finished = true
-	_ = releaseLock(r.lock, r.lockPath)
+	_ = ReleaseLock(r.lock, r.lockPath)
 	r.lock = nil
 }
 
 func reserveAmounts(model string, inputUpperBound, outputLimit int) (int64, int64, error) {
 	switch model {
 	case DeepSeekModel:
-		usd := int64(inputUpperBound)*deepseekInputNanoUSDPerToken + int64(outputLimit)*deepseekOutputNanoUSDPerToken
-		return usd * deepseekBudgetFXNanoCNYPerUSD, usd, nil
+		usd := int64(inputUpperBound)*DeepSeekInputNanoUSDPerToken + int64(outputLimit)*DeepSeekOutputNanoUSDPerToken
+		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
 	case QwenEmbedding:
 		if outputLimit != 0 {
 			return 0, 0, ErrWrongModel
 		}
-		return int64(inputUpperBound) * qwenNanoCNYPerToken, 0, nil
+		return int64(inputUpperBound) * QwenNanoCNYPerToken, 0, nil
 	default:
 		return 0, 0, ErrWrongModel
 	}
@@ -272,13 +276,13 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	}
 	switch model {
 	case DeepSeekModel:
-		usd := int64(inputTokens)*deepseekInputNanoUSDPerToken + int64(outputTokens)*deepseekOutputNanoUSDPerToken
-		return usd * deepseekBudgetFXNanoCNYPerUSD, usd, nil
+		usd := int64(inputTokens)*DeepSeekInputNanoUSDPerToken + int64(outputTokens)*DeepSeekOutputNanoUSDPerToken
+		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
 	case QwenEmbedding:
 		if outputTokens != 0 {
 			return 0, 0, ErrWrongModel
 		}
-		return int64(inputTokens) * qwenNanoCNYPerToken, 0, nil
+		return int64(inputTokens) * QwenNanoCNYPerToken, 0, nil
 	default:
 		return 0, 0, ErrWrongModel
 	}
@@ -292,8 +296,8 @@ func freshLedger(profile string) Ledger {
 		InputMaxTokens:     InputMax,
 		OutputMaxTokens:    OutputMax,
 		MaxConcurrency:     MaxConcurrency,
-		FXReserveCNYPerUSD: 10,
-		MaxReserveNanoCNY:  maxBudgetNanoCNY,
+		FXReserveCNYPerUSD: int(DeepSeekBudgetFXNanoCNYPerUSD),
+		MaxReserveNanoCNY:  MaxBudgetNanoCNY,
 		Requests:           []Request{},
 	}
 }
@@ -316,8 +320,8 @@ func readLedger(path string) (Ledger, error) {
 func validLedger(ledger Ledger, profile string) bool {
 	if ledger.SchemaVersion != ledgerVersion || ledger.Profile != profile || ledger.MaxCalls != MaxCalls ||
 		ledger.InputMaxTokens != InputMax || ledger.OutputMaxTokens != OutputMax || ledger.MaxConcurrency != MaxConcurrency ||
-		ledger.FXReserveCNYPerUSD != 10 || ledger.MaxReserveNanoCNY != maxBudgetNanoCNY ||
-		len(ledger.Requests) > MaxCalls || ledger.ReservedNanoCNY < 0 || ledger.ReservedNanoCNY > maxBudgetNanoCNY ||
+		ledger.FXReserveCNYPerUSD != int(DeepSeekBudgetFXNanoCNYPerUSD) || ledger.MaxReserveNanoCNY != MaxBudgetNanoCNY ||
+		len(ledger.Requests) > MaxCalls || ledger.ReservedNanoCNY < 0 || ledger.ReservedNanoCNY > MaxBudgetNanoCNY ||
 		ledger.ActualNanoCNY < 0 || ledger.ActualNanoCNY > ledger.ReservedNanoCNY || ledger.ReservedNanoUSD < 0 ||
 		ledger.ActualNanoUSD < 0 || ledger.ActualNanoUSD > ledger.ReservedNanoUSD {
 		return false
@@ -361,7 +365,15 @@ func hasUnresolved(ledger Ledger) bool {
 	return false
 }
 
-func acquireLock(ctx context.Context, path string) (*os.File, error) {
+// LockLeaseTTL bounds how long a crashed process can keep a ledger blocked.
+// Normal reservations complete well before this lease expires; callers that
+// need a longer operation must use a separate, renewable coordination scheme.
+const LockLeaseTTL = 10 * time.Minute
+
+// AcquireLock creates a process-independent lock file and reclaims a lock
+// whose lease has expired. The metadata is diagnostic; the mtime is the lease
+// clock so a partially written lock file is still recoverable after a crash.
+func AcquireLock(ctx context.Context, path string) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -374,6 +386,11 @@ func acquireLock(ctx context.Context, path string) (*os.File, error) {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
+		if lockLeaseExpired(path) {
+			if removeErr := os.Remove(path); removeErr == nil || errors.Is(removeErr, os.ErrNotExist) {
+				continue
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -382,11 +399,44 @@ func acquireLock(ctx context.Context, path string) (*os.File, error) {
 	}
 }
 
-func releaseLock(lock *os.File, path string) error {
+func lockLeaseExpired(path string) bool {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	if err != nil {
+		return false
+	}
+	return time.Now().UTC().After(info.ModTime().Add(LockLeaseTTL))
+}
+
+// ReleaseLock closes and removes a ledger lock. Removal tolerates a prior
+// stale-lock recovery so a completed owner cannot turn that recovery into an
+// error path.
+func ReleaseLock(lock *os.File, path string) error {
+	var owned os.FileInfo
 	if lock != nil {
+		var err error
+		owned, err = lock.Stat()
+		if err != nil {
+			_ = lock.Close()
+			return err
+		}
 		if err := lock.Close(); err != nil {
 			return err
 		}
+	}
+	current, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	// A stale-lock recovery may have replaced this path while the original
+	// owner was finishing. Never remove the replacement owner's lock.
+	if owned != nil && !os.SameFile(owned, current) {
+		return nil
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err

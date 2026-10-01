@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 
@@ -35,7 +36,8 @@ func (DeliveryDocument) RenderFrozen(input delivery.DeliveryInput) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	return docx.Render(document)
+	data, err := docx.Render(document)
+	return data, normalizeRenderError(err)
 }
 
 // ValidateFrozen 拿渲染器刚产出的字节核对冻结输入。它不问渲染器说了什么，
@@ -45,7 +47,17 @@ func (DeliveryDocument) ValidateFrozen(input delivery.DeliveryInput, file []byte
 	if err != nil {
 		return err
 	}
-	return docx.Validate(document, file)
+	return normalizeRenderError(docx.Validate(document, file))
+}
+
+func normalizeRenderError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, docx.ErrUnsupportedMarkdown) {
+		return fmt.Errorf("%w: %v", delivery.ErrUnsupportedFormat, err)
+	}
+	return err
 }
 
 // documentOf 是这一跳的全部内容。
@@ -93,7 +105,7 @@ func documentChapter(chapter delivery.SnapshotChapter) (docx.Chapter, error) {
 
 	out := docx.Chapter{
 		Title:        chapter.Title,
-		BodyMarkdown: plainParagraphs(chapter.BodyMarkdown),
+		BodyMarkdown: chapter.BodyMarkdown,
 		SourceIDs:    chapter.SourceIDs,
 	}
 	for _, item := range chapter.ReviewItems {

@@ -28,6 +28,10 @@ var (
 	// 里同名的 sentinel 是**不同的值**，传输层必须逐个列出——漏一个就是把 400
 	// 答成 500。口径统一在传输层做，领域层不为了对上 HTTP 而改自己的错误。
 	ErrInvalidRequest = errors.New("invalid export request")
+	// ErrUnsupportedFormat means the frozen input contains Markdown that the
+	// prototype renderer cannot preserve. It must be surfaced as a failed
+	// artifact with an actionable format message.
+	ErrUnsupportedFormat = errors.New("unsupported export format")
 )
 
 type ExportStatus string
@@ -44,9 +48,10 @@ const (
 // 导出是因为传输层要按它决定响应里的 message 与 retryable。让它抄一遍字面量，
 // 就等于把「哪些码存在」这件事变成两处各说各话。
 const (
-	FailureRenderFailed     = "render_failed"
-	FailureEmptyFile        = "empty_file"
-	FailureValidationFailed = "validation_failed"
+	FailureRenderFailed      = "render_failed"
+	FailureEmptyFile         = "empty_file"
+	FailureValidationFailed  = "validation_failed"
+	FailureUnsupportedFormat = "unsupported_format"
 )
 
 // ExportArtifact records the outcome without exposing any bytes for failed
@@ -372,6 +377,9 @@ func (s *ExportService) produce(actorUserID, projectID, snapshotID string) (Expo
 func (s *ExportService) render(input DeliveryInput) ([]byte, string) {
 	data, err := s.renderer.RenderFrozen(input)
 	if err != nil {
+		if errors.Is(err, ErrUnsupportedFormat) {
+			return nil, FailureUnsupportedFormat
+		}
 		return nil, FailureRenderFailed
 	}
 	if len(data) == 0 {

@@ -644,7 +644,11 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		if kb.IsKeywordEnabled() {
 			indexingTypes = append(indexingTypes, types.KeywordsRetrieverType)
 		}
-		err = retrieveEngine.WithRetrieverTypes(indexingTypes).BatchIndex(ctx, embeddingModel, indexInfoList)
+		var indexingEngine *retriever.CompositeRetrieveEngine
+		indexingEngine, err = retrieveEngine.WithRetrieverTypes(indexingTypes)
+		if err == nil {
+			err = indexingEngine.BatchIndex(ctx, embeddingModel, indexInfoList)
+		}
 		if err != nil {
 			knowledge.ParseStatus = types.ParseStatusFailed
 			knowledge.ErrorMessage = err.Error()

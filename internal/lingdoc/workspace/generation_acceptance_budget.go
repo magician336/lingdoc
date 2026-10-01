@@ -17,18 +17,20 @@ import (
 )
 
 const (
-	generationAcceptanceProfileEnv = "LINGDOC_T10_ACCEPTANCE_PROFILE"
-	generationAcceptanceLedgerEnv  = "LINGDOC_T10_ACCEPTANCE_LEDGER"
-	generationAcceptanceProfile    = "lingdoc-t10-deepseek-flash-20260929-v1"
-	generationAcceptanceModel      = "deepseek-flash"
-	generationAcceptanceInputMax   = 16000
-	generationAcceptanceOutputMax  = 6000
-	generationAcceptanceCallsMax   = 6
-	generationAcceptancePerCall    = int64(12_000_000) // $0.012 in nano-USD at the stated peak rates.
-	generationAcceptanceTotal      = int64(72_000_000) // $0.072 maximum reservation for six calls.
+	// These aliases keep the generation ledger readable while ensuring the
+	// acceptance profile has one source of truth in acceptancebudget.
+	generationAcceptanceProfileEnv = acceptancebudget.ProfileEnv
+	generationAcceptanceLedgerEnv  = acceptancebudget.LedgerEnv
+	generationAcceptanceProfile    = acceptancebudget.Profile
+	generationAcceptanceModel      = acceptancebudget.DeepSeekModel
+	generationAcceptanceInputMax   = acceptancebudget.InputMax
+	generationAcceptanceOutputMax  = acceptancebudget.OutputMax
+	generationAcceptanceCallsMax   = acceptancebudget.MaxCalls
+	generationAcceptancePerCall    = acceptancebudget.DeepSeekPerCallNanoUSD
+	generationAcceptanceTotal      = acceptancebudget.DeepSeekTotalNanoUSD
 	generationPromptOverhead       = 1024
-	deepSeekInputNanoUSDPerToken   = int64(300)  // $0.30 / 1M tokens.
-	deepSeekOutputNanoUSDPerToken  = int64(1200) // $1.20 / 1M tokens.
+	deepSeekInputNanoUSDPerToken   = acceptancebudget.DeepSeekInputNanoUSDPerToken
+	deepSeekOutputNanoUSDPerToken  = acceptancebudget.DeepSeekOutputNanoUSDPerToken
 )
 
 var (
@@ -129,14 +131,14 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 		return nil, errAcceptanceInputTooLarge
 	}
 	lockPath := b.ledgerPath + ".lock"
-	lock, err := acquireAcceptanceLedgerLock(ctx, lockPath)
+	lock, err := acceptancebudget.AcquireLock(ctx, lockPath)
 	if err != nil {
 		return nil, errAcceptanceLedgerBusy
 	}
 	releaseOnError := true
 	defer func() {
 		if releaseOnError {
-			_ = releaseAcceptanceLedgerLock(lock, lockPath)
+			_ = acceptancebudget.ReleaseLock(lock, lockPath)
 		}
 	}()
 	ledger, err := readAcceptanceLedger(b.ledgerPath)
@@ -152,7 +154,7 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 	if ledger.Profile != generationAcceptanceProfile || ledger.Model != generationAcceptanceModel ||
 		ledger.InputMax != generationAcceptanceInputMax || ledger.OutputMax != generationAcceptanceOutputMax ||
 		ledger.CallsMax != generationAcceptanceCallsMax || ledger.ReserveMax != generationAcceptanceTotal ||
-		ledger.CNYBackstop != 5 ||
+		ledger.CNYBackstop != acceptancebudget.HumanBackstopCNY ||
 		modelName != generationAcceptanceModel {
 		return nil, errAcceptanceWrongModel
 	}
@@ -293,7 +295,7 @@ func (r *generationAcceptanceReservation) release() {
 		return
 	}
 	r.finished = true
-	_ = releaseAcceptanceLedgerLock(r.lock, r.lockPath)
+	_ = acceptancebudget.ReleaseLock(r.lock, r.lockPath)
 	r.lock = nil
 }
 
@@ -351,39 +353,6 @@ func acceptanceLedgerHasUnknownCall(ledger generationAcceptanceLedger) bool {
 	return false
 }
 
-func acquireAcceptanceLedgerLock(ctx context.Context, path string) (*os.File, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return nil, errAcceptanceLedgerIO
-	}
-	for {
-		lock, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-		if err == nil {
-			_, _ = fmt.Fprintf(lock, "pid=%d acquired_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano))
-			return lock, nil
-		}
-		if !errors.Is(err, os.ErrExist) {
-			return nil, errAcceptanceLedgerIO
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
-}
-
-func releaseAcceptanceLedgerLock(lock *os.File, path string) error {
-	if lock != nil {
-		if err := lock.Close(); err != nil {
-			return errAcceptanceLedgerIO
-		}
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return errAcceptanceLedgerIO
-	}
-	return nil
-}
-
 func readAcceptanceLedger(path string) (generationAcceptanceLedger, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -395,7 +364,7 @@ func readAcceptanceLedger(path string) (generationAcceptanceLedger, error) {
 			InputMax:      generationAcceptanceInputMax,
 			OutputMax:     generationAcceptanceOutputMax,
 			CallsMax:      generationAcceptanceCallsMax,
-			CNYBackstop:   5,
+			CNYBackstop:   acceptancebudget.HumanBackstopCNY,
 			ReserveMax:    generationAcceptanceTotal,
 			Requests:      []generationAcceptanceRequest{},
 		}, nil
@@ -413,7 +382,7 @@ func readAcceptanceLedger(path string) (generationAcceptanceLedger, error) {
 func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {
 	if ledger.SchemaVersion != 1 || ledger.Profile != generationAcceptanceProfile || ledger.Model != generationAcceptanceModel ||
 		ledger.InputMax != generationAcceptanceInputMax || ledger.OutputMax != generationAcceptanceOutputMax ||
-		ledger.CallsMax != generationAcceptanceCallsMax || ledger.CNYBackstop != 5 || ledger.ReserveMax != generationAcceptanceTotal ||
+		ledger.CallsMax != generationAcceptanceCallsMax || ledger.CNYBackstop != acceptancebudget.HumanBackstopCNY || ledger.ReserveMax != generationAcceptanceTotal ||
 		len(ledger.Requests) > generationAcceptanceCallsMax || ledger.Reserved != int64(len(ledger.Requests))*generationAcceptancePerCall ||
 		ledger.Actual < 0 || ledger.Actual > ledger.Reserved {
 		return false

@@ -306,6 +306,9 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		status := StatusFailed
 		failure := RunError{Code: "generation_failed", Message: "生成失败，原始资料和凭据未写入任务错误。", Retryable: true}
 		switch {
+		case errors.Is(generateErr, context.Canceled) || errors.Is(generateErr, context.DeadlineExceeded):
+			status = StatusInterrupted
+			failure = RunError{Code: "generation_interrupted", Message: "生成已中断；可重新发起任务。", Retryable: true}
 		case errors.Is(generateErr, ErrGenerationIncomplete):
 			failure = RunError{Code: "generation_incomplete", Message: "本轮输出达到 6,000 token 上限，结果不完整；系统不会自动续写。缩小输入后重新发起会占用下一次调用额度。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceBudgetExceeded):
@@ -316,9 +319,6 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceModelMismatch):
 			failure = RunError{Code: "generation_model_mismatch", Message: "验收模式未找到唯一且符合条件的 deepseek-flash 配置；未调用模型。", Retryable: false}
-		case errors.Is(generateErr, context.Canceled) || errors.Is(generateErr, context.DeadlineExceeded):
-			status = StatusInterrupted
-			failure = RunError{Code: "generation_interrupted", Message: "生成已中断；可重新发起任务。", Retryable: true}
 		}
 		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, status, failure)
 		if storeErr != nil {

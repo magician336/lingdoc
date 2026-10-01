@@ -21,7 +21,10 @@ func (s *indexingRoutingSpy) BatchIndex(_ context.Context, _ embedding.Embedder,
 func TestKeywordOnlyIndexingDoesNotRouteVectorPipeline(t *testing.T) {
 	spy := &indexingRoutingSpy{}
 	original := &CompositeRetrieveEngine{engineInfos: []*engineInfo{{retrieveEngine: spy, retrieverType: []types.RetrieverType{types.VectorRetrieverType, types.KeywordsRetrieverType}}}}
-	keyword := original.WithRetrieverTypes([]types.RetrieverType{types.KeywordsRetrieverType})
+	keyword, err := original.WithRetrieverTypes([]types.RetrieverType{types.KeywordsRetrieverType})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := keyword.BatchIndex(context.Background(), nil, []*types.IndexInfo{{SourceID: "document-part"}}); err != nil {
 		t.Fatal(err)
 	}

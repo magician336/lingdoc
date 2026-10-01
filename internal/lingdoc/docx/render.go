@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -14,6 +15,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 )
+
+// ErrUnsupportedMarkdown lets the delivery adapter report an explicit format
+// failure instead of silently flattening Markdown structure into plain text.
+var ErrUnsupportedMarkdown = errors.New("unsupported Markdown")
 
 type Input struct {
 	ProjectName  string
@@ -200,7 +205,7 @@ func documentParagraphs(in Input) ([]paragraphSpec, error) {
 				continue
 			}
 			if containsUnsupportedMarkdown(rawLine) {
-				return nil, fmt.Errorf("chapter %d contains unsupported Markdown", i+1)
+				return nil, fmt.Errorf("%w: chapter %d contains unsupported Markdown", ErrUnsupportedMarkdown, i+1)
 			}
 			matches := marker.FindAllStringSubmatch(line, -1)
 			for _, match := range matches {

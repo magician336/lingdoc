@@ -233,6 +233,8 @@ func exportFailureMessage(code string) string {
 		// 这一条要说得比「生成失败」具体：它没失败在生成上，是生成出来的东西
 		// 与冻结内容对不上——§7 要求校验通过才提供下载，这里就是那道闸拦下的。
 		return "文件内容与冻结版本不一致，已阻止下载。"
+	case delivery.FailureUnsupportedFormat:
+		return "正文包含当前导出格式不支持的 Markdown 结构，请改为标题、段落或简单引用后重新导出。"
 	default:
 		return "文件生成失败。"
 	}
