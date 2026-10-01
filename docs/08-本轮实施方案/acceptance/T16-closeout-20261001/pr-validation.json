@@ -4,7 +4,7 @@
   "pr_base_branch": "codex/t09-t12-integration",
   "pr_base_commit": "1992abde95ca5636fdc1a2af39f4565fde358a99",
   "original_checkpoint": "92d00268ea5536320a11a4351c243a563fbb5c43",
-  "validation_commit_scope": "Source validation is pinned to 92d00268ea5536320a11a4351c243a563fbb5c43. Every listed source blob below is resolved from that commit. Contract validation is pinned separately to 8030e992c86b0f870d70735ca38d19b700335a2b. This JSON is a later documentation record and does not self-claim a blob hash for its own file. Current PR CI is reported from GitHub for the final head.",
+  "validation_commit_scope": "Source validation is pinned to 92d00268ea5536320a11a4351c243a563fbb5c43. Every listed source blob below is resolved from that commit. Contract validation is pinned separately to 9c98be578521fe15ac50773d609953a2194dd279. This JSON is a later documentation record and does not self-claim a blob hash for its own file. Current PR CI is reported from GitHub for the final head.",
   "verified_source_blobs": [
     {
       "path": "cmd/server/main.go",
@@ -270,10 +270,11 @@
     {
       "command": "python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py",
       "result": "PASS: 23 scenarios, 586 shape checks",
-      "tested_commit": "8030e992c86b0f870d70735ca38d19b700335a2b"
+      "tested_commit": "9c98be578521fe15ac50773d609953a2194dd279"
     }
   ],
-  "contract_validation_commit": "8030e992c86b0f870d70735ca38d19b700335a2b"
+  "contract_validation_commit": "9c98be578521fe15ac50773d609953a2194dd279"
 }
+
 
 
