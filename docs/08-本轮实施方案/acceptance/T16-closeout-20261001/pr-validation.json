@@ -4,7 +4,7 @@
   "pr_base_branch": "codex/t09-t12-integration",
   "pr_base_commit": "1992abde95ca5636fdc1a2af39f4565fde358a99",
   "original_checkpoint": "92d00268ea5536320a11a4351c243a563fbb5c43",
-  "validation_commit_scope": "Source validation is pinned to 92d00268ea5536320a11a4351c243a563fbb5c43. Every listed source blob below is resolved from that commit. Contract validation is pinned separately to 9c98be578521fe15ac50773d609953a2194dd279. This JSON is a later documentation record and does not self-claim a blob hash for its own file. Current PR CI is reported from GitHub for the final head.",
+  "validation_commit_scope": "Source validation is pinned to 93f4bacd43c32d15915eba9110db70b170d7fa62. Every listed source blob below is resolved from that commit. Contract validation is pinned separately to 9c98be578521fe15ac50773d609953a2194dd279. This JSON is a later documentation record and does not self-claim a blob hash for its own file. Current PR CI is reported from GitHub for the final head.",
   "verified_source_blobs": [
     {
       "path": "cmd/server/main.go",
@@ -108,11 +108,11 @@
     },
     {
       "path": "internal/lingdoc/generation/service.go",
-      "git_blob": "0ec7019a4a8e200ca33cecea9c93f6cbd96777eb"
+      "git_blob": "702b011a1af1e6a628193a6ad7a6c47ce3dee106"
     },
     {
       "path": "internal/lingdoc/generation/service_test.go",
-      "git_blob": "30371f18b70f4004b8bebc9009f5763ed165b3f5"
+      "git_blob": "788f2cc019cfc5772bcb352ccaa414bc2e560cbf"
     },
     {
       "path": "internal/lingdoc/workspace/delivery_export.go",
@@ -255,17 +255,17 @@
   "actual_cloud_supplier_calls": 6,
   "office": "gong Microsoft Word edit/save/close/reopen confirmed; version not provided",
   "merge_and_deploy_authorized": false,
-  "validated_source_commit": "92d00268ea5536320a11a4351c243a563fbb5c43",
+  "validated_source_commit": "93f4bacd43c32d15915eba9110db70b170d7fa62",
   "current_source_checks": [
     {
       "command": "go test ./internal/lingdoc/generation ./internal/lingdoc/delivery ./internal/lingdoc/workspace ./internal/models/acceptancebudget ./internal/application/service/retriever",
       "result": "PASS",
-      "tested_commit": "92d00268ea5536320a11a4351c243a563fbb5c43"
+      "tested_commit": "93f4bacd43c32d15915eba9110db70b170d7fa62"
     },
     {
       "command": "npm test -- src/views/lingdoc/deliveryState.test.ts",
       "result": "PASS: 6 passed, 0 failed",
-      "tested_commit": "92d00268ea5536320a11a4351c243a563fbb5c43"
+      "tested_commit": "93f4bacd43c32d15915eba9110db70b170d7fa62"
     },
     {
       "command": "python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py",

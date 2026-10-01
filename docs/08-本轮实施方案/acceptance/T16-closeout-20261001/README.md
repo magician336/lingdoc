@@ -1,6 +1,6 @@
 # T16 MVP交接证据
 
-接续既有任务 `lingdoc-t16-closeout-20260927-01`，分支 `codex/t16-cloud-handoff-20260930`；当前源码验证提交 `92d00268ea5536320a11a4351c243a563fbb5c43`，其父提交 `b21d342d425404586ab9f60431f97f3a78fd2b57`，PR base `1992abde95ca5636fdc1a2af39f4565fde358a99`。`1c01f98` 仅是原始真实集成 checkpoint。
+接续既有任务 `lingdoc-t16-closeout-20260927-01`，分支 `codex/t16-cloud-handoff-20260930`；当前源码验证提交 `93f4bacd43c32d15915eba9110db70b170d7fa62`，其父提交 `fa910e4df5ce5ef69b6e5c3f4692f7cc75e74b45`，契约静态校验提交 `9c98be578521fe15ac50773d609953a2194dd279`，PR base `1992abde95ca5636fdc1a2af39f4565fde358a99`。`1c01f98` 仅是原始真实集成 checkpoint。
 
 [下载完整脱敏验收包](evidence.zip)，解压打开根目录 `验收入口.html`。包含全部T01–T16状态、录屏、DOCX、PDF、关键API/日志、模型账本和manifest。每项未覆盖范围保留，不宣称完整产品全部通过。
 
