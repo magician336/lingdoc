@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -21,7 +22,7 @@ func NewGORMHandler(db *gorm.DB, kbShares interfaces.KBShareService, knowledge i
 	authorizer := evidence.NewFixedAuthorizer(bindings, kbReadChecker{shares: kbShares})
 
 	return NewHandler(HandlerDependencies{
-		Service:   NewService(db, ContractDemoTemplate{}),
+		Service:   NewService(core.NewGORMRepository(db, ContractDemoTemplate{})),
 		Bindings:  bindings,
 		Gateway:   evidence.NewAssetGateway(bindings, authorizer),
 		Catalog:   dbSourceCatalog{db: db},

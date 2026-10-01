@@ -3,8 +3,6 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
-
-	"gorm.io/gorm"
 )
 
 // Repository is the domain-facing persistence port. Implementations return
@@ -30,11 +28,7 @@ type Service struct {
 	repository Repository
 }
 
-func NewService(db *gorm.DB, templates TemplateReader) *Service {
-	return NewServiceWithRepository(NewGORMRepository(db, templates))
-}
-
-func NewServiceWithRepository(repository Repository) *Service {
+func NewService(repository Repository) *Service {
 	return &Service{repository: repository}
 }
 

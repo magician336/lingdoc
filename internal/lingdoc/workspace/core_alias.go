@@ -2,10 +2,10 @@ package workspace
 
 import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
-	"gorm.io/gorm"
 )
 
 type Service = core.Service
+type Repository = core.Repository
 type Actor = core.Actor
 type Project = core.Project
 type Chapter = core.Chapter
@@ -27,6 +27,6 @@ var (
 	ErrSourceUnavailable   = core.ErrSourceUnavailable
 )
 
-func NewService(db *gorm.DB, templates core.TemplateReader) *Service {
-	return core.NewService(db, templates)
+func NewService(repository Repository) *Service {
+	return core.NewService(repository)
 }

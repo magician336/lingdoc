@@ -17,7 +17,7 @@ func (r repositoryStub) GetProject(context.Context, Actor, string) (Project, err
 
 func TestServiceUsesInjectedRepository(t *testing.T) {
 	want := Project{ID: "project-1", Name: "test"}
-	service := NewServiceWithRepository(repositoryStub{project: want})
+	service := NewService(repositoryStub{project: want})
 
 	got, err := service.GetProject(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, want.ID)
 	if err != nil {
