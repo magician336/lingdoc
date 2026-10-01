@@ -1,0 +1,56 @@
+name: LingDoc Interface Integration
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'internal/lingdoc/**'
+      - 'internal/evidence/**'
+      - 'internal/container/lingdoc*'
+      - 'internal/router/lingdoc*'
+      - '.github/workflows/lingdoc-interface-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: lingdoc-interface-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: lingdoc_test
+          POSTGRES_USER: lingdoc_test
+          POSTGRES_PASSWORD: synthetic_ci_only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lingdoc_test -d lingdoc_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      CGO_ENABLED: '1'
+      LOG_FORMAT: ''
+      LINGDOC_TEST_POSTGRES_DSN: 'host=localhost port=5432 user=lingdoc_test password=synthetic_ci_only dbname=lingdoc_test sslmode=disable'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Real API and database contracts
+        run: go test -race -count=1 -v ./internal/lingdoc/... ./internal/router ./internal/container ./internal/evidence
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Frontend consumers
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npm run type-check
+          npm run build

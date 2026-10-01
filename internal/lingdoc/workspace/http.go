@@ -94,6 +94,18 @@ func sendError(c *gin.Context, err error) {
 	c.JSON(status, gin.H{"error": errorBody, "request_id": requestID(c)})
 }
 
+func sourceErrorStatus(err error) (int, string, string, any, bool) {
+	var denied *DeniedAssetsError
+	if !errors.As(err, &denied) {
+		return 0, "", "", nil, false
+	}
+	items := make([]map[string]string, 0, len(denied.Denied))
+	for _, item := range denied.Denied {
+		items = append(items, map[string]string{"asset_id": item.AssetID, "reason": string(item.Reason)})
+	}
+	return 422, "asset_not_authorized", "请求中存在未获授权的资料，未开始处理。", map[string]any{"denied": items}, true
+}
+
 func identity(c *gin.Context) (Actor, bool) {
 	actor, ok := caller(c)
 	if !ok {

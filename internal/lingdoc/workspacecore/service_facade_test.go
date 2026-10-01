@@ -4,76 +4,145 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"reflect"
+	"maps"
 	"testing"
 )
 
-type repositoryStub struct {
-	Repository
-	project     Project
-	saveChapter func(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
+// A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
+// discards both domain writes and replay records on any callback error.
+type stateRepository struct {
+	project    Project
+	chapter    Chapter
+	active     bool
+	operations map[OperationIdentity]OperationResult
+	writes     int
+	failCommit bool
 }
 
-func (r repositoryStub) GetProject(context.Context, Actor, string) (Project, error) {
-	return r.project, nil
+func (r *stateRepository) Transaction(ctx context.Context, _ TransactionOptions, fn func(Transaction) error) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	tx := *r
+	tx.project.Spec = maps.Clone(r.project.Spec)
+	tx.operations = maps.Clone(r.operations)
+	if err := fn(&stateTransaction{state: &tx}); err != nil {
+		return err
+	}
+	if r.failCommit {
+		return ErrRequestInProgress
+	}
+	*r = tx
+	return nil
 }
 
-func (r repositoryStub) SaveChapter(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (json.RawMessage, int, bool, error) {
-	if r.saveChapter == nil {
-		return nil, 0, false, nil
-	}
-	return r.saveChapter(ctx, actor, projectID, chapterID, key, input)
+type stateTransaction struct {
+	Transaction
+	state *stateRepository
 }
 
-func TestServiceUsesInjectedRepository(t *testing.T) {
-	want := Project{ID: "project-1", Name: "test"}
-	service := NewService(repositoryStub{project: want})
-
-	got, err := service.GetProject(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, want.ID)
-	if err != nil {
-		t.Fatalf("GetProject() error = %v", err)
+func (t *stateTransaction) ActiveMember(Actor) (bool, error) { return t.state.active, nil }
+func (t *stateTransaction) Project(tenant uint64, id string) (Project, error) {
+	if tenant != 1 || t.state.project.ID != id {
+		return Project{}, ErrNotFound
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("GetProject() = %#v, want %#v", got, want)
+	return t.state.project, nil
+}
+func (t *stateTransaction) Chapter(project, id string) (Chapter, error) {
+	if project != t.state.chapter.ProjectID || id != t.state.chapter.ID {
+		return Chapter{}, ErrNotFound
+	}
+	return t.state.chapter, nil
+}
+func (t *stateTransaction) UpdateProject(_ uint64, previous, next Project) error {
+	if t.state.project.ProjectVersion != previous.ProjectVersion {
+		return ErrVersionConflict
+	}
+	t.state.project = next
+	return nil
+}
+func (t *stateTransaction) AppendChapter(previous, next Chapter) error {
+	if !sameVersion(previous.CurrentVersionID, t.state.chapter.CurrentVersionID) {
+		return ErrVersionConflict
+	}
+	t.state.chapter = next
+	t.state.writes++
+	return nil
+}
+func (t *stateTransaction) Operation(id OperationIdentity) (OperationResult, bool, error) {
+	result, found := t.state.operations[id]
+	return result, found, nil
+}
+func (t *stateTransaction) SaveOperation(id OperationIdentity, result OperationResult) error {
+	t.state.operations[id] = result
+	return nil
+}
+func fakeWorkspace() *stateRepository {
+	return &stateRepository{active: true, operations: map[OperationIdentity]OperationResult{}, project: Project{ID: "p", Status: "active", ProjectVersion: 1, SpecRevision: 1, Spec: map[string]string{}, Members: []Member{{UserID: "owner", Role: "owner"}}}, chapter: Chapter{ID: "c", ProjectID: "p", SourceIDs: []string{}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check me", OriginCandidateID: "candidate"}}}}
+}
+func TestServiceRulesWithNonSQLStorage(t *testing.T) {
+	r := fakeWorkspace()
+	s := NewService(r)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	ctx := context.Background()
+	input := SaveChapterInput{ExpectedSpecRevision: 1, BodyMarkdown: "first draft", SourceIDs: []string{}}
+	raw, code, replay, err := s.SaveChapter(ctx, actor, "p", "c", "chapter-save", input)
+	if err != nil || code != 201 || replay || r.writes != 1 {
+		t.Fatalf("save: %s %d %v %v", raw, code, replay, err)
+	}
+	var chapter Chapter
+	if err := json.Unmarshal(raw, &chapter); err != nil {
+		t.Fatal(err)
+	}
+	if chapter.CurrentVersionID == nil || len(chapter.ReviewItems) != 1 || chapter.ConfirmationValid {
+		t.Fatalf("immutable version/review lost: %+v", chapter)
+	}
+	second, _, replay, err := s.SaveChapter(ctx, actor, "p", "c", "chapter-save", input)
+	if err != nil || !replay || string(raw) != string(second) || r.writes != 1 {
+		t.Fatalf("lost-response retry duplicated: %v %v", replay, err)
+	}
+	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "different-key", input); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale version: %v", err)
+	}
+	changed := input
+	changed.BodyMarkdown = "different body"
+	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "chapter-save", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("key conflict: %v", err)
+	}
+	r.active = false
+	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "chapter-save", input); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked replay leaked: %v", err)
+	}
+	r.active = true
+	r.project.Members = nil
+	if _, err := s.GetProject(ctx, actor, "p"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("nonmember read: %v", err)
 	}
 }
-
-func TestServiceSaveChapterPreservesRepositoryOutcomes(t *testing.T) {
-	type outcome struct {
-		body     json.RawMessage
-		status   int
-		replayed bool
-		err      error
+func TestServiceRollbackAndSourceBoundaryWithNonSQLStorage(t *testing.T) {
+	r := fakeWorkspace()
+	s := NewService(r)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	ctx := context.Background()
+	input := SaveChapterInput{ExpectedSpecRevision: 1, BodyMarkdown: "draft", SourceIDs: []string{}}
+	r.failCommit = true
+	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "chapter-save", input); !errors.Is(err, ErrRequestInProgress) {
+		t.Fatalf("commit failure: %v", err)
 	}
-	cases := []struct {
-		name       string
-		response   outcome
-		wantBody   string
-		wantStatus int
-		wantReplay bool
-		wantErr    error
-	}{
-		{name: "successful write", response: outcome{json.RawMessage(`{"version_id":"v1"}`), 201, false, nil}, wantBody: `{"version_id":"v1"}`, wantStatus: 201},
-		{name: "version conflict", response: outcome{err: ErrVersionConflict}, wantErr: ErrVersionConflict},
-		{name: "revoked project access", response: outcome{err: ErrNotFound}, wantErr: ErrNotFound},
-		{name: "source changed", response: outcome{err: ErrSourceUnavailable}, wantErr: ErrSourceUnavailable},
-		{name: "lost response retry", response: outcome{json.RawMessage(`{"version_id":"v1"}`), 201, true, nil}, wantBody: `{"version_id":"v1"}`, wantStatus: 201, wantReplay: true},
+	if r.writes != 0 || r.project.ProjectVersion != 1 || len(r.operations) != 0 {
+		t.Fatal("failed transaction leaked mutations")
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			calls := 0
-			repository := repositoryStub{saveChapter: func(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error) {
-				calls++
-				return tc.response.body, tc.response.status, tc.response.replayed, tc.response.err
-			}}
-			service := NewService(repository)
-			body, status, replayed, err := service.SaveChapter(context.Background(), Actor{TenantID: 1, UserID: "writer"}, "p1", "c1", "save-key-1", SaveChapterInput{})
-			if !errors.Is(err, tc.wantErr) {
-				t.Fatalf("error = %v, want %v", err, tc.wantErr)
-			}
-			if string(body) != tc.wantBody || status != tc.wantStatus || replayed != tc.wantReplay || calls != 1 {
-				t.Fatalf("SaveChapter() = %s/%d/replay=%v/calls=%d, want %s/%d/replay=%v/calls=1", body, status, replayed, calls, tc.wantBody, tc.wantStatus, tc.wantReplay)
-			}
-		})
+	r.failCommit = false
+	if _, _, replay, err := s.SaveChapter(ctx, actor, "p", "c", "chapter-save", input); err != nil || replay {
+		t.Fatalf("retry: %v %v", replay, err)
+	}
+	r.chapter.SourceIDs = []string{"changed-source"}
+	input.ExpectedChapterVersionID = r.chapter.CurrentVersionID
+	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "source-check", input); !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("changed existing source escaped policy: %v", err)
+	}
+	input.BodyMarkdown = "[[source:malformed/id]]"
+	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "source-check", input); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("malformed marker: %v", err)
 	}
 }

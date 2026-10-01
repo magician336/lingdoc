@@ -7,7 +7,6 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/gin-gonic/gin"
 )
 
 // ApplicationService is the HTTP-facing workspace contract. Tests and
@@ -101,19 +100,6 @@ type SourceChunk struct {
 type KnowledgeSearchService interface {
 	GetKnowledgeBaseByIDOnly(context.Context, string) (*types.KnowledgeBase, error)
 	HybridSearch(context.Context, string, types.SearchParams) ([]*types.SearchResult, error)
-}
-
-// RouteRegistrar lets the router attach role and API-key policy before these
-// routes are registered, without making workspace depend on router internals.
-type RouteRegistrar interface {
-	GET(string, ...gin.HandlerFunc) gin.IRoutes
-	POST(string, ...gin.HandlerFunc) gin.IRoutes
-	PUT(string, ...gin.HandlerFunc) gin.IRoutes
-}
-
-type RouteGroups struct {
-	Read  RouteRegistrar
-	Write RouteRegistrar
 }
 
 type HandlerDependencies struct {

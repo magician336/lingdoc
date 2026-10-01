@@ -54,7 +54,7 @@ func testStore(t *testing.T, path string) *Service {
 	if err := db.Exec("CREATE TABLE IF NOT EXISTS tenant_members (tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, deleted_at DATETIME, PRIMARY KEY (tenant_id, user_id))").Error; err != nil {
 		t.Fatal(err)
 	}
-	svc := NewService(NewGORMRepository(db, ContractDemoTemplate{}))
+	svc := NewService(NewGORMRepository(db), ContractDemoTemplate{})
 	return svc
 }
 
