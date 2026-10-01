@@ -18,9 +18,11 @@ import (
 type lingDocRouteServiceStub struct {
 	workspace.ApplicationService
 	createCalls int
+	listCalls   int
 }
 
 func (s *lingDocRouteServiceStub) ListProjects(context.Context, workspace.Actor) ([]workspace.Project, bool, error) {
+	s.listCalls++
 	return []workspace.Project{{ID: "p1", Name: "demo"}}, false, nil
 }
 
@@ -61,10 +63,13 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	registerLingDocWorkspaceRoutes(v1, guards, workspaceHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 
-	request := func(method, path string, role types.TenantRole) *httptest.ResponseRecorder {
+	requestWithAPIKey := func(method, path string, role types.TenantRole, scope *types.TenantAPIKeyScope) *httptest.ResponseRecorder {
 		ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(1))
 		ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
+		if scope != nil {
+			ctx = types.WithTenantAPIKeyScope(ctx, *scope)
+		}
 		body := ""
 		if method == http.MethodPost {
 			body = `{}`
@@ -76,6 +81,9 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 		res := httptest.NewRecorder()
 		engine.ServeHTTP(res, req)
 		return res
+	}
+	request := func(method, path string, role types.TenantRole) *httptest.ResponseRecorder {
+		return requestWithAPIKey(method, path, role, nil)
 	}
 
 	read := request(http.MethodGet, "/api/v1/lingdoc/projects", types.TenantRoleViewer)
@@ -89,5 +97,16 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	write := request(http.MethodPost, "/api/v1/lingdoc/projects", types.TenantRoleContributor)
 	if write.Code != http.StatusCreated || service.createCalls != 1 {
 		t.Fatalf("contributor write = %d calls=%d body=%s, want one routed create", write.Code, service.createCalls, write.Body.String())
+	}
+
+	deniedScopedKey := requestWithAPIKey(http.MethodGet, "/api/v1/lingdoc/projects", types.TenantRoleViewer,
+		&types.TenantAPIKeyScope{Capabilities: types.StringArray{string(types.APIKeyCapabilityChat)}})
+	if deniedScopedKey.Code != http.StatusForbidden || service.listCalls != 1 {
+		t.Fatalf("scoped API key read = %d calls=%d, want 403 before application call", deniedScopedKey.Code, service.listCalls)
+	}
+	fullAccessKey := requestWithAPIKey(http.MethodGet, "/api/v1/lingdoc/projects", types.TenantRoleViewer,
+		&types.TenantAPIKeyScope{FullAccess: true})
+	if fullAccessKey.Code != http.StatusOK || service.listCalls != 2 {
+		t.Fatalf("full-access API key read = %d calls=%d, want routed success", fullAccessKey.Code, service.listCalls)
 	}
 }
