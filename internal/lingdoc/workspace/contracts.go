@@ -30,6 +30,7 @@ type ApplicationService interface {
 // persistence and the underlying knowledge/chunk catalog.
 type BindingStore interface {
 	evidence.BindingSource
+	evidence.RevisionReader
 	BindIdempotent(context.Context, uint64, string, string, string, evidence.BindInput) (evidence.Asset, bool, error)
 	AssetForKnowledge(context.Context, string, string) (evidence.Asset, error)
 	AssetScope(context.Context, string, string) (evidence.AssetScopeRef, error)
