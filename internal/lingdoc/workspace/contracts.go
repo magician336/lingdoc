@@ -26,6 +26,43 @@ type ApplicationService interface {
 	GenerationContext(context.Context, Actor, string, string) (GenerationContext, error)
 }
 
+// SourceApplicationService owns the source and asset use cases consumed by
+// workspace HTTP routes. Keeping these operations behind one port prevents
+// the transport from composing authorization, catalog reads, and search.
+type SourceApplicationService interface {
+	ListAssets(context.Context, Actor, string) ([]evidence.Asset, error)
+	BindAsset(context.Context, Actor, string, string, string) (evidence.Asset, bool, error)
+	GetSource(context.Context, Actor, string, string) (evidence.Source, error)
+	RetrieveSources(context.Context, Actor, string, RetrieveSourcesInput) ([]evidence.Source, error)
+	AccessStatus(context.Context, Actor, string) (AccessStatus, error)
+}
+
+// ProjectAuthorizer is the minimal workspace access port needed by asset and
+// source use cases. It deliberately does not call source authorization itself.
+type ProjectAuthorizer interface {
+	Authorize(context.Context, Actor, string, string) error
+}
+
+type RetrieveSourcesInput struct {
+	Query    string   `json:"query"`
+	AssetIDs []string `json:"asset_ids"`
+}
+
+type AccessStatus struct {
+	ProjectID        string   `json:"project_id"`
+	ContentAccess    string   `json:"content_access"`
+	RecoveryActions  []string `json:"recovery_actions"`
+	CanCreateProject bool     `json:"can_create_project"`
+}
+
+// DeniedAssetsError preserves item-level authorization reasons for the HTTP
+// adapter while keeping Gin/HTTP response types out of the application layer.
+type DeniedAssetsError struct {
+	Denied []evidence.DeniedAsset
+}
+
+func (e *DeniedAssetsError) Error() string { return "one or more requested assets are unavailable" }
+
 // BindingStore and SourceCatalog are replaceable ports around evidence
 // persistence and the underlying knowledge/chunk catalog.
 type BindingStore interface {
@@ -81,11 +118,6 @@ type RouteGroups struct {
 }
 
 type HandlerDependencies struct {
-	Service   ApplicationService
-	Bindings  BindingStore
-	Gateway   evidence.AssetGateway
-	Catalog   SourceCatalog
-	Origins   evidence.OriginReader
-	KBShare   interfaces.KBShareService
-	Knowledge KnowledgeSearchService
+	Service ApplicationService
+	Sources SourceApplicationService
 }

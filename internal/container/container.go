@@ -456,7 +456,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
-	must(container.Provide(workspace.NewGORMHandler))
+	must(container.Provide(NewLingDocWorkspaceHandler))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))

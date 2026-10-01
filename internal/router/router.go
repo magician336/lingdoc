@@ -311,12 +311,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
-		if params.LingDocWorkspace != nil {
-			lingdoc := v1.Group("/lingdoc")
-			readRoutes := rbacGuards.apiKeyGroup(lingdoc.Group("", rbacGuards.Viewer()), apiKeyFullAccess())
-			writeRoutes := rbacGuards.apiKeyGroup(lingdoc.Group("", rbacGuards.Contributor()), apiKeyFullAccess())
-			params.LingDocWorkspace.Register(workspace.RouteGroups{Read: readRoutes, Write: writeRoutes})
-		}
+		registerLingDocWorkspaceRoutes(v1, rbacGuards, params.LingDocWorkspace)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
@@ -327,6 +322,18 @@ func NewRouter(params RouterParams) *gin.Engine {
 	}
 
 	return r
+}
+
+// registerLingDocWorkspaceRoutes is the single route-composition point used
+// by NewRouter and its provider/consumer integration tests.
+func registerLingDocWorkspaceRoutes(v1 *gin.RouterGroup, guards *rbacGuards, handler *workspace.Handler) {
+	if handler == nil {
+		return
+	}
+	lingdoc := v1.Group("/lingdoc")
+	readRoutes := guards.apiKeyGroup(lingdoc.Group("", guards.Viewer()), apiKeyFullAccess())
+	writeRoutes := guards.apiKeyGroup(lingdoc.Group("", guards.Contributor()), apiKeyFullAccess())
+	handler.Register(workspace.RouteGroups{Read: readRoutes, Write: writeRoutes})
 }
 
 // trustedProxies returns the proxy CIDRs/IPs whose X-Forwarded-For headers

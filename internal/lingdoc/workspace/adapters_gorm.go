@@ -6,30 +6,33 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
-	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
 )
 
-// NewGORMHandler is the production composition root for the current storage
-// adapters. HTTP handlers themselves receive only the domain ports in
-// HandlerDependencies.
-func NewGORMHandler(db *gorm.DB, kbShares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService) *Handler {
+// GORMSourcePorts contains the concrete source/evidence adapters used by the
+// container when it assembles the workspace application services.
+type GORMSourcePorts struct {
+	Bindings BindingStore
+	Gateway  evidence.AssetGateway
+	Catalog  SourceCatalog
+	Origins  evidence.OriginReader
+}
+
+// NewGORMSourcePorts constructs GORM-backed source adapters. Application
+// service and HTTP handler composition stays in internal/container.
+func NewGORMSourcePorts(db *gorm.DB, kbShares interfaces.KBShareService) GORMSourcePorts {
 	bindings := evidence.NewBindings(db)
 	knowledgeReader := dbKnowledgeReader{db: db}
 	bindings.SetKnowledgeSignalReader(knowledgeReader)
 	authorizer := evidence.NewFixedAuthorizer(bindings, kbReadChecker{shares: kbShares})
-
-	return NewHandler(HandlerDependencies{
-		Service:   NewService(core.NewGORMRepository(db, ContractDemoTemplate{})),
-		Bindings:  bindings,
-		Gateway:   evidence.NewAssetGateway(bindings, authorizer),
-		Catalog:   dbSourceCatalog{db: db},
-		Origins:   evidence.NewOriginReader(knowledgeReader),
-		KBShare:   kbShares,
-		Knowledge: knowledge,
-	})
+	return GORMSourcePorts{
+		Bindings: bindings,
+		Gateway:  evidence.NewAssetGateway(bindings, authorizer),
+		Catalog:  dbSourceCatalog{db: db},
+		Origins:  evidence.NewOriginReader(knowledgeReader),
+	}
 }
 
 type dbSourceCatalog struct{ db *gorm.DB }
