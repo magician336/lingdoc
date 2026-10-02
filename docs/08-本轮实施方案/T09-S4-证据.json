@@ -1,0 +1,28 @@
+{
+  "package": "internal/lingdoc/workspace",
+  "source": "assets_http_test.go",
+  "total": 20,
+  "passed": 20,
+  "cases": [
+    "listAssets 只回允许集合",
+    "bindAsset 首次 201 与重放 200",
+    "bindAsset 同键不同请求 409",
+    "bindAsset 缺幂等键 400",
+    "bindAsset 未知知识 404",
+    "bindAsset 无知识库读权限也是 404",
+    "retrieveSources 空查询 400",
+    "retrieveSources 空资料范围 400",
+    "retrieveSources 部分授权整批 422 且逐项给出原因",
+    "retrieveSources 全部允许 200",
+    "getSource 撤权后 403",
+    "getSource 未知引用 404",
+    "getSource 坐标漂移是 200 的合法结论",
+    "getSourceContext 展开同族邻居",
+    "getSourceContext 不跨族取父块",
+    "getSourceContext 软删留号码空洞",
+    "getSourceContext 逐字对不上只给位置",
+    "getSourceContext 派生块不展开",
+    "getSourceContext 弱档照样给正文但标注非逐字",
+    "getSourceContext 撤权后 403 且不泄露正文"
+  ]
+}

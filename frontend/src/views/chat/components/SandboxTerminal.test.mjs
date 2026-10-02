@@ -3,6 +3,9 @@ import test from 'node:test'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { findPosixShell } from '../../../test-utils/posixShell.ts'
+
+const posixShell = findPosixShell()
 
 const terminal = readFileSync(new URL('./SandboxTerminal.vue', import.meta.url), 'utf8')
 const theme = readFileSync(new URL('../../../assets/theme/theme.css', import.meta.url), 'utf8')
@@ -71,8 +74,14 @@ test('panel open looks up a running sandbox and only provisions on an explicit c
   assert.doesNotMatch(terminal, /not_started/)
 })
 
-test('interactive bash defines Debian-style ls aliases', () => {
-  const out = execFileSync('bash', [
+test('interactive bash defines Debian-style ls aliases', (t) => {
+  // 'bash' alone is a coin toss on Windows: from Git Bash PATH it is Git's bash, from
+  // PowerShell it is WSL's, which cannot read the D:\ path below — the source then
+  // fails with "No such file or directory", which reads as the script having gone
+  // missing. Picking the shell by capability makes the test independent of how it
+  // was launched.
+  if (!posixShell) return t.skip('no usable POSIX shell on this machine')
+  const out = execFileSync(posixShell, [
     '--norc',
     '--noprofile',
     '-ic',

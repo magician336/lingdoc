@@ -17,6 +17,17 @@ import (
 // 与 T03 同规矩：报告由测试生成，能重跑；散文不能。
 const t09ReportPath = "../../docs/08-本轮实施方案/T09-验证报告.json"
 
+// t09S4EvidencePath 是 S4（HTTP 集成）的结论落点，由
+// internal/lingdoc/workspace/assets_http_test.go 写出。
+//
+// S4 判的是传输层，而它的用例住在另一个包里——本包跑不到那些路由。所以结论走文件：
+// 那边的用例跑绿才写得出这份证据，这边只读它。与 T03-S7 同一条模式。
+const t09S4EvidencePath = "../../docs/08-本轮实施方案/T09-S4-证据.json"
+
+// t09S4MinimumCases 是证据至少要有的条数。低于它说明用例被删过——
+// 判据问的是「覆盖到了」，不是「跑过了」。
+const t09S4MinimumCases = 18
+
 // TestT09VerificationRun 把 T09 的验收各跑一遍并落成报告。
 //
 // 与 T03 那次的关键差别：绑定存储、迁移出来的表、原文读取都是**真实实现**
@@ -32,8 +43,10 @@ func TestT09VerificationRun(t *testing.T) {
 
 	rep := NewReport(ModeMock)
 	rep.Note = "绑定存储、HTTP 适配与界面切片均已有真实实现；权限判定消费已合入 PR#4 的 access.KBPermissions，" +
-		"底座读取端口 KnowledgeReader 在生产接线中由数据库适配器实现。当前报告沿用领域验证基线，" +
-		"未补跑 HTTP 集成与浏览器联调，因此 mode 仍取阶梯里最保守的一档，not_run 只表示本次验证未运行，不表示代码未实现。"
+		"底座读取端口 KnowledgeReader 在生产接线中由数据库适配器实现。" +
+		"S4 的 HTTP 集成已由 internal/lingdoc/workspace/assets_http_test.go 覆盖，结论经 T09-S4-证据.json 读回（见该条）；" +
+		"界面仍未在浏览器里连真后端跑过，因此 mode 仍取阶梯里最保守的一档，" +
+		"not_run 只表示本次验证未运行，不表示代码未实现。"
 
 	record := func(id string, run func() (CheckStatus, string)) {
 		status, detail := run()
@@ -407,9 +420,48 @@ func TestT09VerificationRun(t *testing.T) {
 		return CheckPassed, ""
 	})
 
-	record("T09-S4-HTTP 薄适配与幂等（本次未运行集成验证）", func() (CheckStatus, string) {
-		return CheckNotRun, "S4 已接入工作区路由并复用 lingdoc_operations；本次未运行 HTTP 集成测试。" +
-			"已覆盖代码路径包括空范围/部分授权错误信封、当前知识状态刷新、来源定位和绑定幂等。"
+	// S4 判的是传输层的样子——状态码、错误信封、被拒明细的形状——而它的用例住在
+	// internal/lingdoc/workspace 里（那边才挂得起全组路由）。本包跑不到那些路由，
+	// 所以结论走证据文件：那边跑绿才写得出来，这边只读它。
+	//
+	// 这一条曾经**写死**成 not_run：代码早就接线了，报告却永远说「本次未运行」。
+	// 一条永远不动的结论比没有结论更坏——它看着像一次诚实的缺席。
+	record("T09-S4-HTTP 薄适配与幂等", func() (CheckStatus, string) {
+		raw, err := os.ReadFile(filepath.Clean(t09S4EvidencePath))
+		if err != nil {
+			return CheckNotRun, fmt.Sprintf(
+				"没有 S4 的运行记录（读 %s 失败：%v）。产生它：go test ./internal/lingdoc/workspace/ -run TestT09SourceRoutesHTTP -count=1，"+
+					"用例全绿才会写出证据文件；有红的不写，免得旧结论被当成这一次的",
+				t09S4EvidencePath, err)
+		}
+		var s4 struct {
+			Package string   `json:"package"`
+			Source  string   `json:"source"`
+			Total   int      `json:"total"`
+			Passed  int      `json:"passed"`
+			Cases   []string `json:"cases"`
+		}
+		if err := json.Unmarshal(raw, &s4); err != nil {
+			return CheckFailed, fmt.Sprintf("S4 证据 %s 不是合法 JSON：%v", t09S4EvidencePath, err)
+		}
+		switch {
+		case s4.Package == "" || s4.Source == "":
+			return CheckFailed, fmt.Sprintf("证据 %s 没说清是哪一套用例产出的——无法确认它还是这一份", t09S4EvidencePath)
+		case s4.Total == 0:
+			return CheckFailed, fmt.Sprintf("证据 %s 记了 0 条用例，不构成一次集成验证", t09S4EvidencePath)
+		case s4.Total < t09S4MinimumCases:
+			return CheckFailed, fmt.Sprintf("证据只记了 %d 条用例，低于 T09 验收要求的 %d 条——用例被删过，覆盖不再完整",
+				s4.Total, t09S4MinimumCases)
+		case s4.Passed != s4.Total:
+			return CheckFailed, fmt.Sprintf("S4 的 %d 条用例里有 %d 条没通过——拿一份有红的运行当结论是错的",
+				s4.Total, s4.Total-s4.Passed)
+		case len(s4.Cases) != s4.Total:
+			return CheckFailed, fmt.Sprintf("证据记了 %d 条总数却只列出 %d 个名字，账对不上", s4.Total, len(s4.Cases))
+		}
+		return CheckPassed, fmt.Sprintf(
+			"S4 的 %d 条 HTTP 集成用例全部通过（证据 %s）：绑定 201/200/409/400/404、空范围与部分授权的 422 明细、"+
+				"撤权后的 403、坐标漂移是 200 的合法结论、语境窗口的同族与逐字标注。由 %s 产出",
+			s4.Total, t09S4EvidencePath, s4.Source)
 	})
 
 	record("T09-S5-界面切片（本次未运行浏览器联调）", func() (CheckStatus, string) {

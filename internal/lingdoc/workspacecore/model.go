@@ -52,6 +52,7 @@ type GenerationContext struct {
 	ChapterID        string            `json:"chapter_id"`
 	ChapterVersionID *string           `json:"chapter_version_id"`
 	ChapterBody      string            `json:"chapter_body"`
+	Chapter          Chapter           `json:"chapter"`
 }
 
 type Actor struct {
@@ -68,6 +69,7 @@ type Section struct {
 type Template struct {
 	ID             string
 	Version        string
+	RulesetHash    string
 	Sections       []Section
 	RequiredFields []string
 }
@@ -86,6 +88,7 @@ func (ContractDemoTemplate) Get(id, version string) (Template, error) {
 	}
 	return Template{
 		ID: "template-demo", Version: "1",
+		RulesetHash: "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
 		Sections: []Section{
 			{ID: "question", Title: "研究问题", Required: true},
 			{ID: "method", Title: "研究方案", Required: true},
@@ -138,17 +141,38 @@ type chapterRow struct {
 func (chapterRow) TableName() string { return "lingdoc_chapters" }
 
 type chapterVersionRow struct {
-	ID              string  `gorm:"primaryKey;size:36"`
-	ProjectID       string  `gorm:"not null;index;size:36"`
-	ChapterID       string  `gorm:"not null;index;size:36"`
-	ParentVersionID *string `gorm:"size:36"`
-	BodyMarkdown    string  `gorm:"not null;type:text"`
-	SourceIDsJSON   string  `gorm:"column:source_ids_json;not null;type:text"`
-	ReviewItemsJSON string  `gorm:"column:review_items_json;not null;type:text"`
-	CreatedAt       time.Time
+	ID                string  `gorm:"primaryKey;size:36"`
+	ProjectID         string  `gorm:"not null;index;size:36"`
+	ChapterID         string  `gorm:"not null;index;size:36"`
+	ParentVersionID   *string `gorm:"size:36"`
+	BodyMarkdown      string  `gorm:"not null;type:text"`
+	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
+	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
+	SpecRevision      int64   `gorm:"not null;default:0"`
+	ConfirmationValid bool    `gorm:"not null;default:false"`
+	CreatedAt         time.Time
 }
 
 func (chapterVersionRow) TableName() string { return "lingdoc_chapter_versions" }
+
+type chapterConfirmationRow struct {
+	ID               string `gorm:"primaryKey;size:36"`
+	ChapterID        string `gorm:"not null;size:36"`
+	ChapterVersionID string `gorm:"not null;size:36"`
+	Valid            bool   `gorm:"not null;default:false"`
+	DetailsJSON      string `gorm:"type:text;not null;default:'{}'"`
+	CreatedAt        time.Time
+}
+
+func (chapterConfirmationRow) TableName() string { return "lingdoc_chapter_confirmations" }
+
+type chapterConfirmationDetails struct {
+	ID               string `json:"id"`
+	ChapterVersionID string `json:"chapter_version_id"`
+	SpecRevision     int64  `json:"spec_revision"`
+	TemplateVersion  string `json:"template_version"`
+	Valid            bool   `json:"valid"`
+}
 
 type operationRow struct {
 	TenantID     uint64 `gorm:"primaryKey"`

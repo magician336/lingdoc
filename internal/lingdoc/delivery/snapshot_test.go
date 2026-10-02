@@ -24,7 +24,10 @@ func validDeliveryInput() DeliveryInput {
 func stringPtr(value string) *string { return &value }
 
 func TestPrepareFreezesInputAndDigest(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testPrepareFreezesInputAndDigest)
+}
+
+func testPrepareFreezesInputAndDigest(t *testing.T, store snapshotStoreUnderTest) {
 	service := NewReleaseService(store)
 	service.now = func() time.Time { return time.Date(2026, 9, 24, 0, 0, 0, 0, time.UTC) }
 	input := validDeliveryInput()
@@ -80,8 +83,12 @@ func TestEvaluateRejectsCitationAndSourceDrift(t *testing.T) {
 }
 
 func TestReleaseCurrentnessIsCheckedWhenReadAndPrepared(t *testing.T) {
+	forEachSnapshotStore(t, testReleaseCurrentnessIsCheckedWhenReadAndPrepared)
+}
+
+func testReleaseCurrentnessIsCheckedWhenReadAndPrepared(t *testing.T, store snapshotStoreUnderTest) {
 	current := true
-	service := NewReleaseService(NewMemorySnapshotStore(), CurrentnessFunc(func(DeliveryInput) (bool, error) { return current, nil }))
+	service := NewReleaseService(store, CurrentnessFunc(func(DeliveryInput) (bool, error) { return current, nil }))
 	snapshot, err := service.Prepare(validDeliveryInput())
 	if err != nil {
 		t.Fatal(err)
@@ -100,7 +107,10 @@ func TestReleaseCurrentnessIsCheckedWhenReadAndPrepared(t *testing.T) {
 }
 
 func TestReleaseSnapshotIDsSurviveServiceRestart(t *testing.T) {
-	store := NewMemorySnapshotStore()
+	forEachSnapshotStore(t, testReleaseSnapshotIDsSurviveServiceRestart)
+}
+
+func testReleaseSnapshotIDsSurviveServiceRestart(t *testing.T, store snapshotStoreUnderTest) {
 	first, err := NewReleaseService(store).Prepare(validDeliveryInput())
 	if err != nil {
 		t.Fatal(err)

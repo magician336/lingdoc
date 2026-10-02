@@ -20,10 +20,15 @@ import (
 type Service struct {
 	db        *gorm.DB
 	templates TemplateReader
+	// sources 允许为 nil，但 nil 不是「不校验」而是「带引用的写入一律拒绝」：
+	// 见到 nil 的那处会返回 ErrSourceUnavailable，见 SaveChapter。
+	// 不在这里 panic，是因为构造函数是总函数——装配漏了这一项该在调用点变成一句
+	// 可读的 403，而不是让整个进程在启动日志里留一个 panic。
+	sources SourcePolicy
 }
 
-func NewService(db *gorm.DB, templates TemplateReader) *Service {
-	return &Service{db: db, templates: templates}
+func NewService(db *gorm.DB, templates TemplateReader, sources SourcePolicy) *Service {
+	return &Service{db: db, templates: templates, sources: sources}
 }
 
 func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
@@ -419,7 +424,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 	})
 }
 
-func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
+func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
 	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
 		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
 	if row.CurrentVersionID == nil {
@@ -430,8 +435,32 @@ func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
 		return Chapter{}, err
 	}
 	view.BodyMarkdown = version.BodyMarkdown
+	if version.ConfirmationValid {
+		var confirmations []chapterConfirmationRow
+		if err := tx.Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", row.ID, version.ID, true).
+			Order("created_at DESC, id DESC").Find(&confirmations).Error; err != nil {
+			return Chapter{}, err
+		}
+		for _, confirmation := range confirmations {
+			var details chapterConfirmationDetails
+			if err := json.Unmarshal([]byte(confirmation.DetailsJSON), &details); err != nil {
+				return Chapter{}, fmt.Errorf("decode chapter confirmation %q: %w", confirmation.ID, err)
+			}
+			if details.Valid && details.ID == confirmation.ID && details.ChapterVersionID == version.ID &&
+				details.SpecRevision == project.SpecRevision && details.TemplateVersion == project.TemplateVersion {
+				view.ConfirmationValid = true
+				break
+			}
+		}
+	}
 	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &view.SourceIDs); err != nil {
 		return Chapter{}, err
+	}
+	if view.SourceIDs == nil {
+		// 这一列理论上只由 SaveChapter 写入，而它写的一定是 [] 或 ["…"]。留着这一行是
+		// 因为 json.Unmarshal 会把 null 解成 nil，而 nil 一旦漏出去，上面建立的
+		//「没有引用时是空切片」不变式就断了——调用方按 nil 与空切片分不出同一件事。
+		view.SourceIDs = []string{}
 	}
 	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &view.ReviewItems); err != nil {
 		return Chapter{}, err
@@ -440,21 +469,28 @@ func chapterView(tx *gorm.DB, row chapterRow) (Chapter, error) {
 }
 
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
-	tx := s.db.WithContext(ctx)
-	if _, err := s.findProject(tx, actor, projectID, "read"); err != nil {
-		return nil, err
-	}
-	var rows []chapterRow
-	if err := tx.Where("project_id = ?", projectID).Order("section_id").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	views := make([]Chapter, 0, len(rows))
-	for _, row := range rows {
-		view, err := chapterView(tx, row)
+	var views []Chapter
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		project, err := s.findProject(tx, actor, projectID, "read")
 		if err != nil {
-			return nil, err
+			return err
 		}
-		views = append(views, view)
+		var rows []chapterRow
+		if err := tx.Where("project_id = ?", projectID).Order("section_id").Find(&rows).Error; err != nil {
+			return err
+		}
+		views = make([]Chapter, 0, len(rows))
+		for _, row := range rows {
+			view, err := chapterView(tx, row, project)
+			if err != nil {
+				return err
+			}
+			views = append(views, view)
+		}
+		return nil
+	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, err
 	}
 	return views, nil
 }
@@ -487,14 +523,33 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 	if len(slices.Compact(slices.Clone(declared))) != len(declared) || !slices.Equal(refs, declared) {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	// 成员判定与引用复核共用同一次 auth，因为两者都必须在**重放之前**跑：operation
+	// 的注释（本文件 operation 上方）已经写死了这条顺序的理由——撤权的人拿一枚旧的
+	// Idempotency-Key 重试，不能从缓存里把那次写下的正文换回去。复核要是留在 write 里，
+	// 那道闸就只管得住成员，管不住引用。
+	//
+	// 放在 auth 里还赶在这笔事务的第一次写入之前，不会让 SQLite 的唯一写锁多攥一会儿
+	//（复核读的是底座：分块、绑定、资料网关）。
+	//
+	// 传请求 ctx 而不是事务 ctx：复核要问的是「**这个调用者**此刻还授不授权」，
+	// 资料网关的读权限判据会拿调用者与 actor 逐字对账。
+	//
+	// 只复核本次提交的 declared（它已是排序去重后的那一份）：正文里 [[source:...]]
+	// 标记的集合与它严格相等（上面那段校验），所以它就是这份新正文的全部引用。
+	// 清空引用是用户明确放弃，不必复核；旧版本的未决待核项仍随新版本保留。
 	auth := func(tx *gorm.DB) error {
-		_, err := s.findProject(tx, actor, projectID, "write")
-		return err
+		if _, err := s.findProject(tx, actor, projectID, "write"); err != nil {
+			return err
+		}
+		if len(declared) == 0 {
+			return nil // 空集是「没有可复核的东西」，不是「复核通过」——与复核侧同一语义。
+		}
+		if s.sources == nil {
+			return ErrSourceUnavailable // 装配漏了端口：宁可拒绝带引用的写入。
+		}
+		return s.sources.Validate(ctx, projectID, actor.UserID, declared)
 	}
 	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, auth, func(tx *gorm.DB) (any, int, error) {
-		if len(declared) != 0 {
-			return nil, 0, ErrSourceUnavailable
-		} // T09 must provide current SourcePolicy first.
 		project, err := s.findProject(tx, actor, projectID, "write")
 		if err != nil {
 			return nil, 0, err
@@ -516,12 +571,9 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 			(chapter.CurrentVersionID != nil && *chapter.CurrentVersionID != *input.ExpectedChapterVersionID) {
 			return nil, 0, ErrVersionConflict
 		}
-		old, err := chapterView(tx, chapter)
+		old, err := chapterView(tx, chapter, project)
 		if err != nil {
 			return nil, 0, err
-		}
-		if len(old.SourceIDs) != 0 {
-			return nil, 0, ErrSourceUnavailable // T09 must revalidate existing citations first.
 		}
 		// Serialize chapter and spec writes through the project version row.
 		res := tx.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ?", projectID, actor.TenantID, project.ProjectVersion, project.SpecRevision).
@@ -537,9 +589,16 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		if err != nil {
 			return nil, 0, err
 		}
+		// 引用按**规范序**存：declared 在上面已经排序去重，所以同一组引用无论提交顺序
+		// 如何，落下来的 JSON 逐字节相同——幂等重放的指纹比对与 F01 的 source_ids
+		// 断言都靠这条性质。上面已拒 input.SourceIDs == nil，所以 marshal 不出 null。
+		sourceJSON, err := json.Marshal(declared)
+		if err != nil {
+			return nil, 0, err
+		}
 		version := chapterVersionRow{ID: newVersionID, ProjectID: projectID, ChapterID: chapterID,
 			ParentVersionID: chapter.CurrentVersionID, BodyMarkdown: input.BodyMarkdown,
-			SourceIDsJSON: "[]", ReviewItemsJSON: string(reviewJSON)}
+			SourceIDsJSON: string(sourceJSON), ReviewItemsJSON: string(reviewJSON), SpecRevision: project.SpecRevision}
 		if err := tx.Create(&version).Error; err != nil {
 			return nil, 0, err
 		}
@@ -557,7 +616,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 			return nil, 0, ErrVersionConflict
 		}
 		chapter.CurrentVersionID = &newVersionID
-		view, err := chapterView(tx, chapter)
+		view, err := chapterView(tx, chapter, project)
 		return view, 201, err
 	})
 }
@@ -578,7 +637,7 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 			}
 			return err
 		}
-		view, err := chapterView(tx, chapter)
+		view, err := chapterView(tx, chapter, project)
 		if err != nil {
 			return err
 		}
@@ -589,7 +648,7 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 		result = GenerationContext{ProjectID: projectID, ProjectVersion: project.ProjectVersion,
 			SpecRevision: project.SpecRevision, Spec: spec, TemplateID: project.TemplateID,
 			TemplateVersion: project.TemplateVersion, ChapterID: chapterID,
-			ChapterVersionID: view.CurrentVersionID, ChapterBody: view.BodyMarkdown}
+			ChapterVersionID: view.CurrentVersionID, ChapterBody: view.BodyMarkdown, Chapter: view}
 		return nil
 	}, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
 	return result, err
