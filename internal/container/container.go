@@ -554,8 +554,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 拒绝渲染器自己产出的文件，或者更糟，放行它。
 	//
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore) (workspace.ExportApplication, error) {
-		service := workspace.NewDeliveryExportService(snapshots, exports, workspace.DeliveryDocument{}, inputs, sourceIntegration.WorkspaceSourcePolicy())
+	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
+	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator) (workspace.ExportApplication, error) {
+		service := workspace.NewDeliveryExportServiceWithPorts(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy())
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
