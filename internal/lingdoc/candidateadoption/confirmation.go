@@ -83,7 +83,7 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 	if s.Authorizer == nil {
 		return Confirmation{}, false, ErrInvalidState
 	}
-	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, in.ChapterID); err != nil {
+	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, "write"); err != nil {
 		return Confirmation{}, false, err
 	}
 	// Check replay after current authorization but before reading mutable state,
@@ -111,6 +111,11 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 		workspace.SpecRevision != in.ExpectedSpecRevision || workspace.Basis.SpecRevision != in.ExpectedSpecRevision {
 		return Confirmation{}, false, ErrVersionConflict
 	}
+	// GenerationContext carries every project-bound asset so generation can
+	// choose from them. A confirmation must bind only assets used by this
+	// chapter's sources; otherwise a source-free chapter inherits unrelated
+	// project assets and cannot pass frozen snapshot validation.
+	workspace.Basis.AssetVersions = []AssetVersion{}
 	if len(workspace.Chapter.SourceIDs) > 0 {
 		if s.Sources == nil {
 			return Confirmation{}, false, fmt.Errorf("%w: current source policy is unavailable", ErrInvalidState)
@@ -155,7 +160,7 @@ func validateReviewDecisions(items []ReviewItem, decisions []ReviewDecision) err
 		}
 	}
 	if len(seen) != len(known) {
-		return ErrInvalidRequest
+		return ErrInvalidState
 	}
 	return nil
 }

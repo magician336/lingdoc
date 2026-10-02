@@ -1,0 +1,82 @@
+{
+  "issue": 33,
+  "repository_commit": "39dcfcb34992c91135f973173971bc95feb51aa7",
+  "mode": "black_box_http",
+  "provider_host": "127.0.0.1:8080",
+  "service_binary": {
+    "path": "D:/code_warehouse/Projects/lingdoc-build/WeKnora-issue33.exe",
+    "sha256": "9583cd51c8fda49c537ef343ec9a8ed8e8cc836da0b22299f900e34eee0f19bb"
+  },
+  "report": {
+    "path": "docs/08-本轮实施方案/T15-S7-验证报告.json",
+    "sha256": "ae5552088f544906baaa9343d5c727f7221945ac78caac8767b324a4619b9901"
+  },
+  "scenarios": [
+    {
+      "id": "F11",
+      "verdict": "passed",
+      "steps_passed": 10,
+      "readback": {
+        "request_step_id": "F11-09",
+        "after_step": "F11-08",
+        "operation_id": "getRelease",
+        "path": "/data/is_current",
+        "actual": false,
+        "expected": false
+      },
+      "export_rejection": {
+        "request_step_id": "F11-10",
+        "http": 409,
+        "code": "stale_input"
+      }
+    },
+    {
+      "id": "F21",
+      "verdict": "passed",
+      "steps_passed": 13,
+      "readbacks": [
+        {
+          "request_step_id": "F21-10",
+          "after_step": "F21-07",
+          "operation_id": "getRelease",
+          "path": "/data/is_current",
+          "actual": true,
+          "expected": true
+        },
+        {
+          "request_step_id": "F21-12",
+          "after_step": "F21-11",
+          "operation_id": "getExport",
+          "path": "/data/status",
+          "actual": "verified",
+          "expected": "verified"
+        },
+        {
+          "request_step_id": "F21-13",
+          "after_step": "F21-11",
+          "operation_id": "getRelease",
+          "path": "/data/is_current",
+          "actual": false,
+          "expected": false
+        }
+      ]
+    }
+  ],
+  "validation": {
+    "python_workflow_tests": {
+      "command": "python -m unittest discover -s scripts/lingdoc_mock -p test_workflow*.py",
+      "result": "PASS",
+      "tests": 107
+    },
+    "candidate_adoption_tests": {
+      "command": "go test ./internal/lingdoc/candidateadoption -count=1",
+      "result": "PASS"
+    },
+    "static_contract_validation": {
+      "command": "python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py",
+      "result": "PASS"
+    }
+  },
+  "not_run_scenarios": 20,
+  "scope": "HTTP request and response observations; does not establish desktop Office compatibility of exported DOCX"
+}

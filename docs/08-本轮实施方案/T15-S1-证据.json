@@ -1,0 +1,400 @@
+{
+  "binary": {
+    "bytes": 439969722,
+    "mtime": "2026-09-27T08:45:42+0800",
+    "path": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15.exe",
+    "sha256": "7ffa09fd4bf6bc9400ac8bbd33248c66d2f0d8439934d3af30eb9b6626a95a52"
+  },
+  "build": {
+    "available": true,
+    "output_bytes_all_equal": true,
+    "runs": [
+      {
+        "command": "& 'D:\\code_warehouse\\Projects\\lingdoc-build\\build.ps1' -Packages ./cmd/server -Output 'D:/code_warehouse/Projects/lingdoc-build/WeKnora-t15-coldbuild.exe'",
+        "cwd": "D:\\code_warehouse\\Projects\\lingdoc",
+        "exit_code": 0,
+        "gocache": "C:\\Users\\ASUS\\AppData\\Local\\Temp/t15-gocache-cold-2-1790471644",
+        "label": "cold",
+        "note": "产物写到独立路径，不覆盖被 T15-S1 记录过 sha256 的那个二进制；耗时含进程启动、shim 编译与链接。",
+        "output": "D:/code_warehouse/Projects/lingdoc-build/WeKnora-t15-coldbuild.exe",
+        "output_bytes": 439969722,
+        "ran_at": "2026-09-27T09:16:34+0800",
+        "seconds": 150.44,
+        "tail": [
+          "go build -p 2 -o D:/code_warehouse/Projects/lingdoc-build/WeKnora-t15-coldbuild.exe ./cmd/server",
+          "构建成功，耗时 150s",
+          "产物 D:/code_warehouse/Projects/lingdoc-build/WeKnora-t15-coldbuild.exe = 439969722 B"
+        ]
+      },
+      {
+        "command": "& 'D:\\code_warehouse\\Projects\\lingdoc-build\\build.ps1' -Packages ./cmd/server -Output 'D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15-buildprobe.exe'",
+        "cwd": "D:\\code_warehouse\\Projects\\lingdoc",
+        "exit_code": 0,
+        "gocache": "（go 默认缓存）",
+        "label": "warm",
+        "note": "产物写到独立路径，不覆盖被 T15-S1 记录过 sha256 的那个二进制；耗时含进程启动、shim 编译与链接。",
+        "output": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15-buildprobe.exe",
+        "output_bytes": 439969722,
+        "ran_at": "2026-09-27T09:14:04+0800",
+        "seconds": 1.9,
+        "tail": [
+          "go build -p 2 -o D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15-buildprobe.exe ./cmd/server",
+          "构建成功，耗时 2s",
+          "产物 D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15-buildprobe.exe = 439969722 B"
+        ]
+      }
+    ],
+    "source_note": "构建脚本在仓外，这些是逐次构建的机器记录；label 区分缓存冷热。"
+  },
+  "cold_start": {
+    "available": true,
+    "biggest_gap_before_listening": {
+      "from": "2026-09-27 08:46:01.940",
+      "from_line": "DEBUG[] [] container.go:1679[initNeo4jClient] | NOT SUPPORT RETRIEVE GRAPH",
+      "seconds": 10.68,
+      "to": "2026-09-27 08:46:12.618",
+      "to_line": "INFO [] [] sandbox.go:140[newTenantSandboxResolver] | Tenant sandbox resolver configured: binding=redis"
+    },
+    "first_health_200_at": "2026-09-27 08:46:12.800",
+    "first_log_line_at": "2026-09-27 08:46:01.736",
+    "listening_at": "2026-09-27 08:46:12.661",
+    "migration_line": "INFO [2026-09-27 08:46:01.894] [] migration.go:248[RunMigrationsWithOptions] | Database migrated from version 96 to 103",
+    "note": "这是「进程首行日志 → 开始监听」的跨度；进程启动前的加载开销不含在内。",
+    "seconds_first_line_to_first_health": 11.06,
+    "seconds_first_line_to_listening": 10.93,
+    "source": "D:\\code_warehouse\\Projects\\lingdoc\\.scratch-t15-server.log",
+    "source_note": "该日志被 .gitignore 覆盖，不在仓库里；此块是它的解析结果，随证据入库。"
+  },
+  "command": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15.exe",
+  "command_note": "cwd 必须是仓库根；环境变量由启动者注入（见 env_overrides 与 docs/08-本轮实施方案/T15-真实服务启动.md 的配方）。",
+  "cwd": "D:\\code_warehouse\\Projects\\lingdoc",
+  "dependencies": {
+    "docreader": "127.0.0.1:50051 (WeKnora-docreader-dev)",
+    "postgres": "127.0.0.1:5432 (WeKnora-postgres-dev)",
+    "redis": "127.0.0.1:6379 (WeKnora-redis-dev)"
+  },
+  "dependency_checks": [
+    {
+      "command": "docker ps --format '{{.Names}}\\t{{.Status}}\\t{{.Ports}}'",
+      "exit_code": 0,
+      "output": "WeKnora-docreader-dev\tUp 21 hours (healthy)\t0.0.0.0:50051->50051/tcp, [::]:50051->50051/tcp\nWeKnora-redis-dev\tUp 21 hours\t0.0.0.0:6379->6379/tcp, [::]:6379->6379/tcp\nWeKnora-postgres-dev\tUp 21 hours (healthy)\t0.0.0.0:5432->5432/tcp, [::]:5432->5432/tcp\nhbbr\tUp 21 hours\t0.0.0.0:21117->21117/tcp, [::]"
+    },
+    {
+      "command": "docker exec WeKnora-postgres-dev pg_isready -U postgres -d WeKnora",
+      "exit_code": 0,
+      "output": "/var/run/postgresql:5432 - accepting connections"
+    },
+    {
+      "command": "docker exec WeKnora-redis-dev redis-cli -a $REDIS_PASSWORD --no-auth-warning ping",
+      "exit_code": 0,
+      "output": "PONG"
+    },
+    {
+      "command": "socket.connect_ex(('127.0.0.1', 50051))",
+      "exit_code": 0,
+      "output": "0"
+    }
+  ],
+  "dotenv_provenance": {
+    "dotenv_tracked_by_git": false,
+    "example_key_count": 35,
+    "example_path": ".env.example",
+    "example_tracked_by_git": true,
+    "gitignore_rule": ".gitignore:2:.*\t.env",
+    "keys_only_in_local_env": [
+      "DASHSCOPE_API_KEY",
+      "DEEPSEEK_API_KEY"
+    ],
+    "keys_whose_values_differ": [
+      "JWT_SECRET"
+    ],
+    "local_env_key_count": 37,
+    "note": "两条路都实跑过：start_without_dotenv（什么都不给）与 start_from_env_example（只给入库的那份）。"
+  },
+  "env_overrides": {
+    "DB_HOST": "127.0.0.1",
+    "DOCREADER_ADDR": "127.0.0.1:50051",
+    "LANGFUSE_ENABLED": "false",
+    "LOCAL_STORAGE_BASE_DIR": "D:\\code_warehouse\\Projects\\lingdoc\\.local-data\\files",
+    "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+    "REDIS_ADDR": "127.0.0.1:6379"
+  },
+  "env_variants": {
+    "docreader-default": {
+      "kept_env_value": "docreader:50051",
+      "ready_s": 1.03,
+      "started": true
+    },
+    "langfuse-default": {
+      "kept_env_value": "",
+      "ready_s": 1.04,
+      "started": true
+    },
+    "min": {
+      "kept_env_value": "（无，全部覆盖）",
+      "ready_s": 1.02,
+      "started": true
+    },
+    "ollama-default": {
+      "kept_env_value": "http://host.docker.internal:11434",
+      "ready_s": 1.04,
+      "started": true
+    },
+    "storage-default": {
+      "kept_env_value": "/data/files",
+      "ready_s": 1.03,
+      "started": true
+    }
+  },
+  "host_os": "win32",
+  "host_resolution": [
+    {
+      "addresses": [
+        "10.136.95.160"
+      ],
+      "host": "host.docker.internal",
+      "resolved": true,
+      "seconds": 0.0
+    },
+    {
+      "error": "gaierror: [Errno 11001] getaddrinfo failed",
+      "host": "langfuse-web",
+      "resolved": false,
+      "seconds": 2.71
+    },
+    {
+      "error": "gaierror: [Errno 11001] getaddrinfo failed",
+      "host": "postgres",
+      "resolved": false,
+      "seconds": 2.68
+    }
+  ],
+  "notes": [
+    "服务端自身不读 .env（cmd/server 无 godotenv），环境变量必须由启动者注入。",
+    "migrations/versioned 与 config/config.yaml 都是相对路径，cwd 必须是仓库根。",
+    "就绪判据是 /health 返回 200；容器预热段没有可等的就绪信号。",
+    "请求与响应里的 token / refresh_token / password 一律打码，本文件不含可用凭据；登录用的是本机 dev 库里的 e2e@lingdoc.local 账号。",
+    "env_variants 是把 .env 某一项原样留着时的结果 —— 「不覆盖会怎样」的结论来自这里，不是文档里的转述。",
+    "cold_start 由留着的那份首跑日志解析而来（该日志被 .gitignore 覆盖），冷启动的耗时口径见 T15-真实服务启动.md。",
+    "port_knob_probe：把 APP_PORT 设成 8082 时服务端自报的监听地址 —— 端口由 config/config.yaml 决定，不由 APP_PORT 决定。",
+    "start_without_dotenv / start_from_env_example：前者什么都不给，后者只给入库的 .env.example —— AC-1「别人照着能重复」的依据（.env 本身没入库，见 dotenv_provenance）。",
+    "host_resolution：文档里「解析到某个地址」「解析失败」这类话的出处。",
+    "recipe_check：把文档 §启动 里那段 PowerShell 配方原样跑一遍的结果 —— AC-1 的交付物就是它，不是转述。",
+    "build：仓外构建脚本的单次耗时与产物大小；产物写独立路径，不覆盖 binary 指的那个文件。"
+  ],
+  "port_knob_probe": {
+    "APP_PORT": "8082",
+    "health_on_8080": true,
+    "health_on_8082": false,
+    "log_says_listening_on": "0.0.0.0:8080",
+    "note": "log_says_listening_on 是服务端自报的监听地址，两个 health_* 是实际探测结果。"
+  },
+  "recipe_check": {
+    "available": true,
+    "exit_code": 0,
+    "note": "原样跑文档 §启动 里那段配方（含 .env 注入与三条主机名覆盖）；服务由本脚本收尾。",
+    "output": [
+      "READY 1.07s /health -> {\"status\":\"ok\"}",
+      "pid=21376 env_DB_HOST=127.0.0.1 env_LOCAL_STORAGE_BASE_DIR=D:\\code_warehouse\\Projects\\lingdoc\\.local-data\\files"
+    ],
+    "ready": true,
+    "script": ".scratch-t15-recipe.ps1",
+    "timed_out": false,
+    "wall_seconds": 1.25
+  },
+  "repo": {
+    "commit": "e0985d6dc03bf8efbf86030b68e915b041263041",
+    "committed_at": "2026-09-27T08:39:45+08:00",
+    "note": "二进制按此提交的代码构建；本次运行的改动只有下列文件（文档/证据本身）。",
+    "subject": "docs(agents): configure the engineering skills for this repo",
+    "worktree_dirty_paths": [
+      "docs/08-本轮实施方案/T03-验证报告.json",
+      "docs/08-本轮实施方案/T15-S1-证据.json",
+      "docs/08-本轮实施方案/T15-S2-证据.json",
+      "docs/08-本轮实施方案/T15-真实服务启动.md",
+      "%s",
+      "%s(%s)'",
+      "'",
+      "0",
+      "1500",
+      "3}",
+      "4}",
+      "8}",
+      "rc",
+      "{st}"
+    ]
+  },
+  "run_at": "2026-09-27T09:30:04+0800",
+  "start_from_env_example": {
+    "exit_code": null,
+    "ready_s": 1.22,
+    "started": true
+  },
+  "start_without_dotenv": {
+    "exit_code": 2,
+    "first_error": "/code_warehouse/Projects/lingdoc/internal/container/container.go:734): 连接Redis失败: NOAUTH Authentication required.",
+    "ready_s": null,
+    "started": false
+  },
+  "startup": {
+    "migration_after": "103/false",
+    "migration_before": "103/false",
+    "ready_probe": "GET /health 首次 200",
+    "ready_seconds_max": 1.04,
+    "ready_seconds_min": 1.02,
+    "ready_seconds_samples": [
+      1.04,
+      1.02,
+      1.04
+    ],
+    "warm_ready_seconds_all": [
+      1.04,
+      1.02,
+      1.04,
+      1.02,
+      1.03,
+      1.04,
+      1.04,
+      1.03
+    ],
+    "warm_ready_seconds_max": 1.04,
+    "warm_ready_seconds_min": 1.02
+  },
+  "steps": [
+    {
+      "latency_ms": 22.1,
+      "name": "健康检查（无认证、不触库）",
+      "note": "证明 HTTP 栈已接受连接",
+      "request": {
+        "body": null,
+        "method": "GET",
+        "path": "/health"
+      },
+      "response": {
+        "status": "ok"
+      },
+      "status": 200
+    },
+    {
+      "latency_ms": 14.9,
+      "name": "认证配置（无认证、读 system_settings）",
+      "note": "证明 postgres 读路径通",
+      "request": {
+        "body": null,
+        "method": "GET",
+        "path": "/api/v1/auth/config"
+      },
+      "response": {
+        "complex_password_enabled": false,
+        "registration_mode": "self_serve",
+        "success": true
+      },
+      "status": 200
+    },
+    {
+      "latency_ms": 69.0,
+      "name": "登录（无认证、读写 users/tenants）",
+      "note": "证明 postgres 往返通；同时取得后续矩阵要用的 JWT（token 已打码）",
+      "request": {
+        "body": {
+          "email": "e2e@lingdoc.local",
+          "password": "<redacted 17 chars>"
+        },
+        "method": "POST",
+        "path": "/api/v1/auth/login"
+      },
+      "response": {
+        "active_tenant": {
+          "business": "",
+          "context_config": {
+            "compression_strategy": "",
+            "max_tokens": 0,
+            "recent_message_count": 0,
+            "summarize_threshold": 0
+          },
+          "created_at": "2026-09-23T18:44:26.858738+08:00",
+          "deleted_at": null,
+          "description": "Default workspace",
+          "id": 10000,
+          "name": "e2e's Workspace",
+          "retriever_engines": {
+            "engines": []
+          },
+          "status": "active",
+          "storage_quota": 10737418240,
+          "storage_used": 0,
+          "updated_at": "2026-09-23T18:45:50.865105+08:00"
+        },
+        "memberships": [
+          {
+            "role": "owner",
+            "tenant_id": 10000,
+            "tenant_name": "e2e's Workspace"
+          }
+        ],
+        "message": "Login successful",
+        "refresh_token": "<redacted 216 chars>",
+        "success": true,
+        "token": "<redacted 276 chars>",
+        "user": {
+          "avatar": "",
+          "can_access_all_tenants": false,
+          "created_at": "2026-09-23T18:44:26.870486+08:00",
+          "deleted_at": null,
+          "email": "e2e@lingdoc.local",
+          "id": "0643e749-e5aa-4897-ad8a-3b0af454f9f1",
+          "is_active": true,
+          "is_system_admin": false,
+          "preferences": {},
+          "tenant_id": 10000,
+          "updated_at": "2026-09-23T18:44:26.870486+08:00",
+          "username": "e2e"
+        }
+      },
+      "status": 200
+    },
+    {
+      "latency_ms": 27.3,
+      "name": "矩阵目标路由族：项目列表（需认证）",
+      "note": "F02–F22 走的就是这一族路由，证明已挂载并作答",
+      "request": {
+        "body": null,
+        "method": "GET",
+        "path": "/api/v1/lingdoc/projects"
+      },
+      "response": {
+        "data": {
+          "items": [],
+          "truncated": false
+        },
+        "meta": {
+          "refresh_required": false,
+          "replayed": false
+        },
+        "request_id": "7a714e77-b4d3-4804-b9c1-4f6eaac8a7ec"
+      },
+      "status": 200
+    },
+    {
+      "latency_ms": 3.8,
+      "name": "矩阵目标路由族：章节列表（需认证，项目不存在）",
+      "note": "404 也是有效往返，证明路由存在且按契约返回错误体",
+      "request": {
+        "body": null,
+        "method": "GET",
+        "path": "/api/v1/lingdoc/projects/1/chapters"
+      },
+      "response": {
+        "error": {
+          "code": "not_found",
+          "message": "资源不存在或不可访问。",
+          "retryable": false
+        },
+        "request_id": "532aee1e-6016-4e4d-baf7-14d8e45f7ad9"
+      },
+      "status": 404
+    }
+  ],
+  "task": "T15-01",
+  "what": "cmd/server 在宿主机起一次，连 docker 依赖（postgres/redis/docreader），完成真实 HTTP 往返"
+}

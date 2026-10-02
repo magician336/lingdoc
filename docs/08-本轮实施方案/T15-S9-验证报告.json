@@ -1,0 +1,341 @@
+{
+  "issue": 35,
+  "mode": "real_http_cross_tenant_revocation",
+  "provider_host": "127.0.0.1:8080",
+  "starting_states": {
+    "F07": {
+      "status": "read_back_match",
+      "state": "S5",
+      "build_steps": 4,
+      "readback_steps": 4
+    },
+    "F04": {
+      "state": "S5",
+      "status": "read_back_match"
+    },
+    "F17": {
+      "state": "S1",
+      "status": "read_back_match"
+    }
+  },
+  "scenarios": {
+    "F04": {
+      "verdict": "passed",
+      "steps": [
+        {
+          "step": "project",
+          "operation_id": "getProject",
+          "expected_http": 404,
+          "actual_http": 404,
+          "content_type": "application/json; charset=utf-8",
+          "verdict": "passed"
+        },
+        {
+          "step": "candidate",
+          "operation_id": "getCandidate",
+          "expected_http": 404,
+          "actual_http": 404,
+          "content_type": "application/json; charset=utf-8",
+          "verdict": "passed"
+        },
+        {
+          "step": "export_download",
+          "operation_id": "downloadExport",
+          "expected_http": 404,
+          "actual_http": 404,
+          "content_type": "application/json; charset=utf-8",
+          "verdict": "passed"
+        }
+      ]
+    },
+    "F07": {
+      "verdict": "failed",
+      "steps": [
+        {
+          "step": "source",
+          "operation_id": "getSource",
+          "expected_http": 403,
+          "actual_http": 403,
+          "content_type": "application/json; charset=utf-8",
+          "verdict": "passed"
+        },
+        {
+          "step": "candidate",
+          "operation_id": "getCandidate",
+          "expected_http": 403,
+          "actual_http": 403,
+          "content_type": "application/json; charset=utf-8",
+          "verdict": "passed"
+        },
+        {
+          "step": "chapters",
+          "operation_id": "listChapters",
+          "expected_http": 403,
+          "actual_http": 200,
+          "content_type": "application/json; charset=utf-8",
+          "verdict": "failed"
+        },
+        {
+          "step": "export_download",
+          "operation_id": "downloadExport",
+          "expected_http": 403,
+          "actual_http": 200,
+          "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          "verdict": "failed"
+        }
+      ]
+    },
+    "F17": {
+      "verdict": "passed",
+      "steps": [
+        {
+          "step": "restricted_status",
+          "actual": "restricted",
+          "expected": "restricted",
+          "verdict": "passed"
+        },
+        {
+          "step": "restricted_status_has_no_sensitive_fields",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "recovery_actions",
+          "actual": [
+            "create_clean_project",
+            "restore_source_authorization"
+          ],
+          "expected": [
+            "create_clean_project",
+            "restore_source_authorization"
+          ],
+          "verdict": "passed"
+        },
+        {
+          "step": "restored_status",
+          "actual": "available",
+          "expected": "available",
+          "verdict": "passed"
+        },
+        {
+          "step": "clean_project_has_no_copied_content",
+          "actual": true,
+          "expected": true,
+          "asset_count": 0,
+          "chapter_count": 2,
+          "verdict": "passed"
+        }
+      ]
+    }
+  },
+  "registered_gaps": [
+    {
+      "id": "T15-08-R1",
+      "scenario_step": "F07-03 listChapters",
+      "expected": 403,
+      "actual": 200,
+      "owner": "workspace chapter-read owner (T08), with source authorization supplied by T09",
+      "status": "open"
+    },
+    {
+      "id": "T15-08-R2",
+      "scenario_step": "F07-04 downloadExport",
+      "expected": 403,
+      "actual": 200,
+      "owner": "delivery/export owner (T14)",
+      "status": "open"
+    }
+  ],
+  "cleanup": [
+    {
+      "cleanup": "organization",
+      "http": 200
+    },
+    {
+      "cleanup": "consumer_tenant",
+      "http": 200
+    }
+  ],
+  "scope": "local authenticated HTTP observations; no endpoint implementation changes",
+  "share_preflight": {
+    "consumer_is_organization_member": true,
+    "share_is_visible_to_owner": true
+  },
+  "summary": {
+    "passed": 2,
+    "failed": 1,
+    "not_run": 0
+  },
+  "steps": [
+    {
+      "step": "create-consumer-tenant",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "create-organization",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "invite-consumer-tenant",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "share-source-knowledge-base",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "verify-organization-member",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "verify-knowledge-base-share",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "retrieve-source-before-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "start-generation-before-revoke",
+      "expected_http": 202,
+      "actual_http": 202,
+      "verdict": "passed"
+    },
+    {
+      "step": "poll-generation-before-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "poll-generation-before-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "poll-generation-before-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "poll-generation-before-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "save-source-backed-question",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "confirm-source-backed-question",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "save-source-backed-chapter",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "confirm-source-backed-chapter",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "read-project-version-for-release",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "prepare-source-backed-release",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "start-source-backed-export",
+      "expected_http": 202,
+      "actual_http": 202,
+      "verdict": "passed"
+    },
+    {
+      "step": "poll-export-before-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "revoke-source-share",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "access-status-after-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "restore-source-share",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "access-status-after-restore",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "permanent-source-revoke",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "write-allowed-content-to-clean-project",
+      "expected_http": 201,
+      "actual_http": 201,
+      "verdict": "passed"
+    },
+    {
+      "step": "clean-project-assets",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    },
+    {
+      "step": "clean-project-chapters",
+      "expected_http": 200,
+      "actual_http": 200,
+      "verdict": "passed"
+    }
+  ],
+  "runner_status": "completed"
+}

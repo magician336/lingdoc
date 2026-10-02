@@ -1,0 +1,926 @@
+{
+  "issue": 37,
+  "mode": "real_http_evidence_scenarios",
+  "provider_host": "127.0.0.1:8080",
+  "scenarios": {
+    "F03": {
+      "scenario": "F03",
+      "name": "未就绪资料",
+      "starting_state": "S3",
+      "state": {
+        "state": "S3",
+        "runner_status": "completed",
+        "build_steps": [
+          {
+            "id": "S3-create",
+            "operation_id": "createProject",
+            "http_status": 201,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-spec",
+            "operation_id": "saveSpec",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-activate",
+            "operation_id": "activateProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-asset-1",
+            "operation_id": "bindAsset",
+            "http_status": 201,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "readback_steps": [
+          {
+            "id": "S3-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-read-project",
+            "operation_id": "getProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-read-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-read-assets",
+            "operation_id": "listAssets",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S3-read-asset-1",
+            "operation_id": "retrieveSources",
+            "http_status": 422,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "snapshot": {
+          "project": {
+            "name": "合成起点：绑定未就绪资料",
+            "template_id": "template-demo",
+            "status": "active",
+            "spec": {
+              "research_subject": "公开的合成调查样本",
+              "research_goal": "验证资料到章节的工作流程"
+            },
+            "members": [
+              {
+                "role": "owner"
+              }
+            ]
+          },
+          "chapters": [
+            {
+              "section_id": "method",
+              "body_markdown": "",
+              "source_ids": []
+            },
+            {
+              "section_id": "question",
+              "body_markdown": "",
+              "source_ids": []
+            }
+          ],
+          "assets": [
+            {
+              "knowledge_id": "k-notready"
+            }
+          ]
+        },
+        "snapshot_digest": "7f55ea5f37695751417fe75433b74777b00ddccf0b38723133aaa1256bf52bf1",
+        "observed": {
+          "project_version": 3,
+          "spec_revision": 1,
+          "chapters": [
+            {
+              "section_id": "method",
+              "has_version": false
+            },
+            {
+              "section_id": "question",
+              "has_version": false
+            }
+          ],
+          "assets": [
+            {
+              "knowledge_id": "k-notready",
+              "listed_state": null,
+              "deny_reason": "not_ready"
+            }
+          ]
+        },
+        "observed_digest": "6a6e5f81e9cc1c0271852ca5eb27a0163b8327b75a3d9edc542a4017ee3534ff",
+        "mismatches": [],
+        "unverified": [
+          {
+            "pointer": "/assets/k-notready",
+            "declared": "处理状态 pending",
+            "verified": "不可用（not_ready）",
+            "why": "提供方只答「不可用」；pending / processing / failed / replaced 之间没有任何通道能区分"
+          }
+        ],
+        "cannot_build": [
+          {
+            "part": "template",
+            "reason": "the service ships the demo template; the contract has no request that creates one"
+          },
+          {
+            "part": "source",
+            "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+          },
+          {
+            "part": "candidate",
+            "reason": "a candidate is produced by a generation run, which needs a model adapter"
+          },
+          {
+            "part": "confirmation",
+            "reason": "a chapter confirmation needs the review items a candidate carries"
+          },
+          {
+            "part": "release",
+            "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+          },
+          {
+            "part": "export",
+            "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+          }
+        ],
+        "verification_scope": "declared_state_read_back_only",
+        "provider_semantics_status": "not_verified"
+      },
+      "steps": [
+        {
+          "step_id": "F03-01",
+          "operation_id": "listAssets",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "确认未就绪绑定未被报告为可用资料。",
+          "checks": [
+            {
+              "step_id": "F03-01",
+              "path": "/data",
+              "operator": "length",
+              "intent": "未就绪资料不出现在可用资料列表",
+              "expected": 0,
+              "actual": [],
+              "found": true,
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "step_id": "F03-02",
+          "operation_id": "retrieveSources",
+          "actor": "u-owner",
+          "expected_http": 422,
+          "actual_http": 422,
+          "verdict": "passed",
+          "intent": "检索预检拒绝未就绪资料，不把空解析结果当成证据；本场景只验证 retrieveSources。",
+          "checks": [
+            {
+              "step_id": "F03-02",
+              "path": "/error/code",
+              "operator": "equals",
+              "intent": "检索拒绝尚未就绪的资料；具体原因错分另记为差异",
+              "expected": "asset_not_authorized",
+              "actual": "asset_not_authorized",
+              "found": true,
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "verdict": "passed"
+    },
+    "F18": {
+      "scenario": "F18",
+      "name": "幂等顺序和中间状态",
+      "starting_state": "S5",
+      "state": {
+        "state": "S5",
+        "runner_status": "completed",
+        "build_steps": [
+          {
+            "id": "S5-create",
+            "operation_id": "createProject",
+            "http_status": 201,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S5-spec",
+            "operation_id": "saveSpec",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S5-activate",
+            "operation_id": "activateProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S5-asset-1",
+            "operation_id": "bindAsset",
+            "http_status": 201,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "readback_steps": [
+          {
+            "id": "S5-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S5-read-project",
+            "operation_id": "getProject",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S5-read-chapters",
+            "operation_id": "listChapters",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          },
+          {
+            "id": "S5-read-assets",
+            "operation_id": "listAssets",
+            "http_status": 200,
+            "content_type": "application/json; charset=utf-8"
+          }
+        ],
+        "snapshot": {
+          "project": {
+            "name": "合成起点：绑定可用资料",
+            "template_id": "template-demo",
+            "status": "active",
+            "spec": {
+              "research_subject": "公开的合成调查样本",
+              "research_goal": "验证资料到章节的工作流程"
+            },
+            "members": [
+              {
+                "role": "owner"
+              }
+            ]
+          },
+          "chapters": [
+            {
+              "section_id": "method",
+              "body_markdown": "",
+              "source_ids": []
+            },
+            {
+              "section_id": "question",
+              "body_markdown": "",
+              "source_ids": []
+            }
+          ],
+          "assets": [
+            {
+              "knowledge_id": "k-demo"
+            }
+          ]
+        },
+        "snapshot_digest": "d6ee9068041c20df9d420bc9f5390a0b0389c08c017309ec51fd1658353a9518",
+        "observed": {
+          "project_version": 3,
+          "spec_revision": 1,
+          "chapters": [
+            {
+              "section_id": "method",
+              "has_version": false
+            },
+            {
+              "section_id": "question",
+              "has_version": false
+            }
+          ],
+          "assets": [
+            {
+              "knowledge_id": "k-demo",
+              "listed_state": "ready",
+              "deny_reason": ""
+            }
+          ]
+        },
+        "observed_digest": "f5d21486e9fe18c3cc18c1b0dd0ff11291081e55c6d860475cad1eb9639fc707",
+        "mismatches": [],
+        "unverified": [],
+        "cannot_build": [
+          {
+            "part": "template",
+            "reason": "the service ships the demo template; the contract has no request that creates one"
+          },
+          {
+            "part": "source",
+            "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+          },
+          {
+            "part": "candidate",
+            "reason": "a candidate is produced by a generation run, which needs a model adapter"
+          },
+          {
+            "part": "confirmation",
+            "reason": "a chapter confirmation needs the review items a candidate carries"
+          },
+          {
+            "part": "release",
+            "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+          },
+          {
+            "part": "export",
+            "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+          }
+        ],
+        "verification_scope": "declared_state_read_back_only",
+        "provider_semantics_status": "not_verified"
+      },
+      "steps": [
+        {
+          "step_id": "F18-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed",
+          "intent": "读取待写入章节的初始版本。",
+          "checks": []
+        },
+        {
+          "step_id": "F18-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "第一次提交成功并创建版本。",
+          "checks": []
+        },
+        {
+          "step_id": "F18-03",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed",
+          "intent": "模拟首次响应丢失后的同请求重放。",
+          "checks": [
+            {
+              "step_id": "F18-03",
+              "path": "/meta/replayed",
+              "operator": "equals",
+              "intent": "同键同请求应在过期版本比较之前重放",
+              "expected": true,
+              "actual": true,
+              "found": true,
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "step_id": "F18-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 409,
+          "actual_http": 409,
+          "verdict": "passed",
+          "intent": "同键改正文必须冲突，且不创建第二个版本。",
+          "checks": [
+            {
+              "step_id": "F18-04",
+              "path": "/error/code",
+              "operator": "equals",
+              "intent": "同键不同请求返回冲突",
+              "expected": "idempotency_conflict",
+              "actual": "idempotency_conflict",
+              "found": true,
+              "status": "passed"
+            }
+          ]
+        },
+        {
+          "step_id": "F18-05",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "actual_http": 202,
+          "verdict": "passed",
+          "intent": "提交异步生成任务并记录原始任务 ID。",
+          "checks": []
+        },
+        {
+          "step_id": "F18-06",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "actual_http": 202,
+          "verdict": "passed",
+          "intent": "重放完全相同的异步生成请求，服务返回原任务而不新建任务。",
+          "checks": [
+            {
+              "step_id": "F18-06",
+              "path": "/data/id",
+              "operator": "equals",
+              "intent": "同键异步任务重放原任务",
+              "expected": "{{f18.generation_id}}",
+              "actual": "{{f18.generation_id}}",
+              "found": true,
+              "status": "passed"
+            },
+            {
+              "step_id": "F18-06",
+              "path": "/meta/replayed",
+              "operator": "equals",
+              "intent": "异步任务同键请求标记重放",
+              "expected": true,
+              "actual": true,
+              "found": true,
+              "status": "passed"
+            }
+          ]
+        }
+      ],
+      "verdict": "passed",
+      "not_run_assertions": [
+        "同键未提交 request_in_progress 与 Retry-After 需要可控并发窗口。",
+        "撤权后不重放受限内容需要跨租户撤权 fixture，已在 #35 的 F19 族覆盖。"
+      ]
+    },
+    "F15": {
+      "verdict": "failed",
+      "starting_state": "S5",
+      "steps": [
+        {
+          "step": "read-chapters",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "start-generation",
+          "expected_http": 202,
+          "actual_http": 202,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-generated-candidate",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "candidate-body-has-no-warning",
+          "actual": false,
+          "expected": true,
+          "verdict": "failed"
+        },
+        {
+          "step": "candidate-has-review-items",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "accept-candidate",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "adoption-retains-review-ids",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "manual-edit",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "manual-edit-retains-review-ids",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "confirm-without-decisions",
+          "expected_http": 422,
+          "actual_http": 400,
+          "verdict": "failed"
+        },
+        {
+          "step": "missing-review-decision-rejected",
+          "actual": {
+            "http": 400,
+            "code": "invalid_request"
+          },
+          "expected": {
+            "http": 422,
+            "code": "invalid_state"
+          },
+          "verdict": "failed"
+        },
+        {
+          "step": "confirm-retained-warnings",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "save-method-chapter",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "confirm-method-chapter",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-confirmed-chapters",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "both-current-chapters-confirmed",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-project-version",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "prepare-release",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-back-release",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "release-freezes-warning-and-reason",
+          "actual": {
+            "review_items_match": true,
+            "decisions_match": true,
+            "decision_ids_match": true,
+            "all_retained_warning": true,
+            "reasons_match": true,
+            "review_item_count": 3,
+            "decision_count": 3
+          },
+          "expected": {
+            "review_items_match": true,
+            "decision_ids_match": true,
+            "all_retained_warning": true,
+            "reasons_match": true
+          },
+          "verdict": "passed"
+        },
+        {
+          "step": "frozen-confirmation-binds-to-frozen-chapter",
+          "actual": [
+            {
+              "section_id": null,
+              "version_matches": true,
+              "chapter_matches": true,
+              "spec_matches": true,
+              "template_matches": true,
+              "actor_present": true,
+              "created_at_valid": true,
+              "asset_versions_match": false,
+              "expected_asset_version_count": 0,
+              "actual_asset_version_count": 1,
+              "valid": false
+            },
+            {
+              "section_id": null,
+              "version_matches": true,
+              "chapter_matches": true,
+              "spec_matches": true,
+              "template_matches": true,
+              "actor_present": true,
+              "created_at_valid": true,
+              "asset_versions_match": true,
+              "expected_asset_version_count": 1,
+              "actual_asset_version_count": 1,
+              "valid": true
+            }
+          ],
+          "expected": "every frozen chapter confirmation matches chapter, spec, template, actor, time, and sources",
+          "verdict": "failed"
+        },
+        {
+          "step": "snapshot-check-passed",
+          "actual": "blocked",
+          "blocking_rules": [
+            "chapter-confirmed"
+          ],
+          "confirmation_diagnostics": [
+            "确认记录的资料版本必须与章节冻结来源完全一致"
+          ],
+          "expected": "passed",
+          "verdict": "failed"
+        },
+        {
+          "step": "docx-appendix-content",
+          "actual": "not_run",
+          "reason": "release snapshot check was not passed, so the public API would reject export",
+          "verdict": "not_run"
+        }
+      ],
+      "scope": "real HTTP generation, candidate adoption, manual edit, confirmation, frozen release, DOCX download, and appendix text check",
+      "not_run_assertions": [
+        "原始候选正文是否没有警示由真实模型决定；本次响应本身记录在布尔检查中。"
+      ],
+      "state_readback": {
+        "runner_status": null,
+        "mismatches": 0
+      }
+    },
+    "F20": {
+      "verdict": "passed",
+      "starting_state": "S5",
+      "steps": [
+        {
+          "step": "read-chapters",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "save-initial-human-chapter",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "start-first-generation",
+          "expected_http": 202,
+          "actual_http": 202,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-first-candidate",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "accept-first-candidate",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "confirm-first-candidate",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "manual-edit-old-version",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "manual-edit-inherits-old-review-ids",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "confirm-manually-edited-old-version",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "start-replacement-generation",
+          "expected_http": 202,
+          "actual_http": 202,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-generation",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-replacement-candidate",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "replacement-candidate-basis-matches-current-human-version",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "accept-replacement",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "replacement-preserves-live-candidate-review-set",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "replacement-is-whole-new-version-unconfirmed",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "read-current-chapters",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "current-chapter-matches-replacement",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "archived-version-and-confirmation-unchanged-in-database",
+          "actual": {
+            "version_row_present": true,
+            "confirmation_row_valid": true,
+            "before_after_fingerprints_match": true
+          },
+          "expected": {
+            "version_row_present": true,
+            "confirmation_row_valid": true,
+            "before_after_fingerprints_match": true
+          },
+          "verdict": "passed"
+        }
+      ],
+      "history_readback": {
+        "verdict": "passed",
+        "version_row_present": true,
+        "confirmation_row_valid": true,
+        "before_after_fingerprints_match": true
+      },
+      "candidate_variation": {
+        "replacement_review_item_count": 3,
+        "reference_example_has_empty_review_items": true
+      },
+      "previous_confirmation_observed_before_replacement": true,
+      "not_run_assertions": [
+        "同键未提交 request_in_progress/Retry-After 需要可控并发窗口。",
+        "撤权后不重放受限内容需要跨租户撤权 fixture，属于 #35 场景。"
+      ],
+      "scope": "real HTTP model generation, confirmation, manual edit, whole-chapter replacement, and Postgres row-preservation fingerprints",
+      "state_readback": {
+        "runner_status": null,
+        "mismatches": 0
+      }
+    },
+    "F06": {
+      "verdict": "not_run",
+      "reason": "需要真实模型完成一轮生成并在运行中修改条件；本票将生成期间竞态场景标为 not_run，不使用合成生成结果。"
+    },
+    "F09": {
+      "verdict": "not_run",
+      "reason": "需要可控模型超时或 worker 中断注入；当前真实服务没有公开注入点。"
+    },
+    "F14": {
+      "verdict": "not_run",
+      "reason": "需要真实模型针对只有相关、没有支撑的资料生成带 review_items 的候选，并进行人工质量核查。"
+    }
+  },
+  "registered_gaps": [
+    {
+      "id": "T15-10-R1",
+      "title": "retrieveSources 对未就绪绑定返回 asset_not_authorized",
+      "status": "open",
+      "evidence": "F03 起点读回给出 deny_reason=not_ready；retrieveSources 实际返回 HTTP 422 asset_not_authorized，没有给出 asset_not_ready。"
+    },
+    {
+      "id": "T15-10-R2",
+      "title": "缺少待核决定的确认请求返回 400",
+      "status": "open",
+      "evidence": "F15 实际请求遗漏全部 review_decisions 后返回 HTTP 400 invalid_request；场景契约声明预期 HTTP 422。"
+    },
+    {
+      "id": "T15-10-R3",
+      "title": "F15 快照确认资料版本与冻结来源不一致",
+      "status": "open",
+      "evidence": "F15 当前章节读回显示已确认；冻结快照中问题章确认记录的 asset_versions 与冻结来源集合不一致，快照以 chapter-confirmed 阻断。"
+    }
+  ],
+  "scope": "authenticated local HTTP observations; generated text and provider IDs are excluded",
+  "summary": {
+    "passed": 3,
+    "failed": 1,
+    "not_run": 3
+  },
+  "runner_status": "completed"
+}

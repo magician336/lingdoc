@@ -1,0 +1,124 @@
+{
+  "binary": {
+    "bytes": 439969722,
+    "mtime": "2026-09-27T08:45:42+0800",
+    "path": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15.exe",
+    "sha256": "7ffa09fd4bf6bc9400ac8bbd33248c66d2f0d8439934d3af30eb9b6626a95a52"
+  },
+  "command": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15.exe",
+  "command_note": "每条失败路径都按这个二进制起进程，只是 cwd / 环境变量 / 端口状态不同；cwd 见各条 trigger。",
+  "dns_lookup_of_missing_short_names": {
+    "postgres": {
+      "resolved": false,
+      "seconds": 2.7
+    },
+    "redis": {
+      "resolved": false,
+      "seconds": 2.7
+    }
+  },
+  "host_os": "win32",
+  "notes": [
+    "每条都是进程级实跑；退出码与两个时刻（错误可见 / 退出或就绪）来自同一次运行，20ms 粒度轮询。",
+    "不记「首字节」：日志是缓冲写，首个可读块的时间取决于 flush 时机，不代表进程开始输出那座时刻。",
+    "panic 的最外层函数名是第一个需要该依赖的消费者，不是根因；根因在 root_cause 字段（dig 链尾）。",
+    "依赖连接层之所以要 2-11s 才报错：本机解析不存在的短主机名每次约 2.7s（见 dns_lookup_of_missing_short_names），redis 客户端还会重试若干次。报错快慢是 DNS 超时决定的，不是代码在重试。",
+    "端口占用那条会退避重试 9 次（见 retries），所以比其它几条慢得多。",
+    "迁移失败那条在一次性探针库里跑，跑完即删；dev 库 schema_migrations 前后一致（见 dev_* 字段）。"
+  ],
+  "repo": {
+    "commit": "e0985d6dc03bf8efbf86030b68e915b041263041",
+    "committed_at": "2026-09-27T08:39:45+08:00",
+    "note": "二进制按此提交的代码构建；本次运行的改动只有下列文件（文档/证据本身）。",
+    "subject": "docs(agents): configure the engineering skills for this repo",
+    "worktree_dirty_paths": [
+      "docs/08-本轮实施方案/T03-验证报告.json",
+      "docs/08-本轮实施方案/T15-S1-证据.json",
+      "docs/08-本轮实施方案/T15-S2-证据.json",
+      "docs/08-本轮实施方案/T15-真实服务启动.md",
+      "%s",
+      "'",
+      "0",
+      "1500",
+      "3}",
+      "4}",
+      "8}",
+      "{st}"
+    ]
+  },
+  "repo_root": "D:\\code_warehouse\\Projects\\lingdoc",
+  "run_at": "2026-09-27T09:13:57+0800",
+  "scenarios": [
+    {
+      "error_visible_s": 0.45,
+      "exit_code": 2,
+      "exit_s": 0.45,
+      "layer": "配置层",
+      "ready_s": null,
+      "root_cause": "error reading config file: Config File \"config\" Not Found in \"[C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Temp\\\\t15-failure-probe-1790471591\\\\no-config C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Temp\\\\t15-failure-probe-1790471591\\\\no-config\\\\config C:\\\\Users\\\\ASUS\\\\.appname C:\\\\etc\\\\appname]\"",
+      "scenario": "cwd 不是仓库根",
+      "signal": "panic: could not build arguments for function \"github.com/Tencent/WeKnora/internal/container\".registerPoolCleanup (D:/code_warehouse/Projects/lingdoc/internal/container/container.go:1620): failed to build *ants.Pool: could not build arguments for function \"github.com/Tencent/WeKnora/internal/container\".initAntsPool (D:/code_warehouse/Projects/lingdoc/internal/container/container.go:1601): failed to build *config.Config: received non-nil error from function \"github.com/Tencent/WeKnora/internal/config\".LoadConfig (D:/code_warehouse/Projects/lingdoc/internal/config/config.go:493): error reading config file: Config File \"config\" Not Found in \"[C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Temp\\\\t15-failure-probe-1790471591\\\\no-config C:\\\\Users\\\\ASUS\\\\AppData\\\\Local\\\\Temp\\\\t15-failure-probe-1790471591\\\\no-config\\\\config C:\\\\Users\\\\ASUS\\\\.appname C:\\\\etc\\\\appname]\"",
+      "trigger": "cwd=C:\\Users\\ASUS\\AppData\\Local\\Temp\\t15-failure-probe-1790471591\\no-config（仓外）"
+    },
+    {
+      "dns_lookup_of_dropped_host": {
+        "resolved": false,
+        "seconds": 2.7
+      },
+      "error_visible_s": 3.15,
+      "exit_code": 2,
+      "exit_s": 3.17,
+      "layer": "依赖连接层",
+      "ready_s": null,
+      "root_cause": "/code_warehouse/Projects/lingdoc/internal/container/container.go:770): failed to connect to `user=postgres database=WeKnora`: hostname resolving error: lookup postgres: no such host",
+      "scenario": "DB_HOST 不覆盖",
+      "signal": "panic: could not build arguments for function \"github.com/Tencent/WeKnora/internal/container\".registerModelConcurrencyLimiter (D:/code_warehouse/Projects/lingdoc/internal/container/container.go:706): failed to build interfaces.SystemSettingService: could not build arguments for function \"github.com/Tencent/WeKnora/internal/application/service\".NewSystemSettingService (D:/code_warehouse/Projects/lingdoc/internal/application/service/system_setting.go:356): failed to build interfaces.SystemSettingRepository: could not build arguments for function \"github.com/Tencent/WeKnora/internal/application/repository\".NewSystemSettingRepository (D:/code_warehouse/Projects/lingdoc/internal/application/repository/system_setting.go:23): failed to build *gorm.DB: received non-nil error from function \"github.com/Tencent/WeKnora/internal/container\".initDatabase (D:/code_warehouse/Projects/lingdoc/internal/container/container.go:770): failed to connect to `user=postgres database=WeKnora`: hostname resolving error: lookup postgres: no such host",
+      "trigger": "DB_HOST=postgres（.env 原值）"
+    },
+    {
+      "dns_lookup_of_dropped_host": {
+        "resolved": false,
+        "seconds": 2.7
+      },
+      "error_visible_s": 10.05,
+      "exit_code": 2,
+      "exit_s": 10.07,
+      "layer": "依赖连接层",
+      "ready_s": null,
+      "root_cause": "/code_warehouse/Projects/lingdoc/internal/container/container.go:734): 连接Redis失败: dial tcp: lookup redis: no such host",
+      "scenario": "REDIS_ADDR 不覆盖",
+      "signal": "panic: could not build arguments for function \"github.com/Tencent/WeKnora/internal/container\".registerModelConcurrencyLimiter (D:/code_warehouse/Projects/lingdoc/internal/container/container.go:706): failed to build *redis.Client: received non-nil error from function \"github.com/Tencent/WeKnora/internal/container\".initRedisClient (D:/code_warehouse/Projects/lingdoc/internal/container/container.go:734): 连接Redis失败: dial tcp: lookup redis: no such host",
+      "trigger": "REDIS_ADDR=redis:6379（.env 原值）"
+    },
+    {
+      "error_visible_s": 20.16,
+      "exit_code": 1,
+      "exit_s": 20.16,
+      "layer": "绑定层",
+      "ready_s": null,
+      "retries": 9,
+      "root_cause": "listen tcp 0.0.0.0:8080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.",
+      "scenario": "端口被占",
+      "signal": "FATAL[2026-09-27 09:13:53.678] [] main.go:141[main] | Failed to run application: failed to start server: listen tcp 0.0.0.0:8080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.",
+      "trigger": "8080 已被另一个实例 LISTENING"
+    },
+    {
+      "dev_schema_migrations_after": "103/false",
+      "dev_schema_migrations_before": "103/false",
+      "error_visible_s": 1.05,
+      "exit_code": null,
+      "exit_s": null,
+      "layer": "不阻断",
+      "probe_db_created_and_dropped": true,
+      "probe_schema_migrations_after": "0/false",
+      "ready_s": 1.07,
+      "root_cause": "Migration failed: migration failed: syntax error at or near \"THIS\" (column 1) in line 2: CREATE TABLE t15_probe (id serial primary key);",
+      "scenario": "迁移失败（探针库）",
+      "signal": "WARNING[2026-09-27 09:13:55.679] [] container.go:885[initDatabase] | Continuing with application startup. Please run migrations manually if needed.",
+      "startup_completed": true,
+      "trigger": "探针库里 0001_broken.up.sql 第 2 行是非法 SQL"
+    }
+  ],
+  "task": "T15-01",
+  "what": "cmd/server 起不来时卡在哪一层：四条失败路径 + 一条不阻断，逐条实跑"
+}
