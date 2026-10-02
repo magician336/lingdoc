@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stderr, redirect_stdout
+from dataclasses import replace
 from email.message import Message
 import hashlib
 import io
@@ -12,7 +13,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.lingdoc_mock.run_f01 import F01Runner, WorkflowError, build_url, main, write_report
+from scripts.lingdoc_mock.run_f01 import ScenarioRunner, WorkflowError, build_url, main, spec_from_document, write_report
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,7 +49,7 @@ def small_runner(opener, token="synthetic-test-token"):
         {"id": "read", "operation_id": "getProject", "expected_http": 200,
          "request": {"path_params": {"projectId": "{{project_id}}"}}, "capture": {}},
     ]}
-    return F01Runner(api, workflow, token=token, opener=opener)
+    return ScenarioRunner(api, spec_from_document(workflow, "synthetic specification"), token=token, opener=opener)
 
 
 class WorkflowReportTest(unittest.TestCase):
@@ -57,16 +58,16 @@ class WorkflowReportTest(unittest.TestCase):
             with self.subTest(header=name):
                 json_response = MessageResponse(b'{"data":{"id":"synthetic-id"}}', "application/json", name)
                 runner = small_runner(lambda request, timeout: json_response)
-                _, _, payload = runner._request("GET", runner.base_url, {}, None)
+                _, _, payload = runner.client.request("GET", runner.base_url, {}, None)
                 self.assertEqual(payload, {"data": {"id": "synthetic-id"}})
                 self.assertTrue(json_response.closed)
 
                 data = b"synthetic transport bytes, not proof of a valid DOCX"
                 response = MessageResponse(data, DOCX_TYPE + "; charset=binary", name)
-                runner.opener = lambda request, timeout: response
-                runner.workflow["download_sha256_variable"] = "file_sha256"
+                runner.client.opener = lambda request, timeout: response
+                runner.spec = replace(runner.spec, download_sha256_variable="file_sha256")
                 runner.variables["file_sha256"] = hashlib.sha256(data).hexdigest()
-                _, headers, payload = runner._request("GET", runner.base_url, {}, None)
+                _, headers, payload = runner.client.request("GET", runner.base_url, {}, None)
                 with redirect_stdout(io.StringIO()):
                     runner._verify_download({"id": "download", "expected_binary": {"content_type": DOCX_TYPE}}, payload, headers)
                 self.assertTrue(response.closed)
@@ -88,6 +89,20 @@ class WorkflowReportTest(unittest.TestCase):
         self.assertNotIn("synthetic-test-token", encoded)
         self.assertNotIn("variables", report)
 
+    def test_a_report_with_no_evaluable_expectations_keeps_its_exact_key_set(self):
+        # F01's specification carries no checks and never mismatches, so its record must keep
+        # exactly the shape it had before checks existed. A key that appears only sometimes is a
+        # key no consumer can rely on, and the matrix report is assembled by reading these.
+        responses = [MessageResponse(b'{"data":{"id":"private-project-id"}}', "application/json", status=201),
+                     MessageResponse(b'{"data":{}}', "application/json")]
+        runner = small_runner(lambda request, timeout: responses.pop(0))
+        with redirect_stdout(io.StringIO()):
+            runner.run()
+        report = runner.report("completed")
+        self.assertEqual(sorted(report),
+                         ["completed_steps", "manual_assertions", "provider_semantics_status",
+                          "runner_status", "steps", "total_steps", "verification_scope", "workflow"])
+
     def test_main_creates_report_parent_before_provider_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "new" / "artifacts" / "run.json"
@@ -100,7 +115,7 @@ class WorkflowReportTest(unittest.TestCase):
                 return MessageResponse(b'{"data":{"id":"private-project-id"}}', "application/json", status=201 if len(calls) == 1 else 200)
 
             runner = small_runner(opener)
-            with patch.object(F01Runner, "from_files", return_value=runner), redirect_stdout(io.StringIO()):
+            with patch.object(ScenarioRunner, "from_files", return_value=runner), redirect_stdout(io.StringIO()):
                 status = main(["--report", str(destination)])
             self.assertEqual(status, 0)
             self.assertEqual(calls, ["POST", "GET"])
@@ -117,7 +132,7 @@ class WorkflowReportTest(unittest.TestCase):
             calls = []
             runner = small_runner(lambda request, timeout: calls.append(request))
             stderr = io.StringIO()
-            with patch.object(F01Runner, "from_files", return_value=runner), redirect_stderr(stderr):
+            with patch.object(ScenarioRunner, "from_files", return_value=runner), redirect_stderr(stderr):
                 status = main(["--report", str(parent / "run.json")])
             self.assertEqual(status, 1)
             self.assertEqual(calls, [])
@@ -132,7 +147,7 @@ class WorkflowReportTest(unittest.TestCase):
                          MessageResponse(b'{"error":{"message":"private-provider-error"}}', "application/json", status=503)]
             runner = small_runner(lambda request, timeout: responses.pop(0))
             stderr = io.StringIO()
-            with patch.object(F01Runner, "from_files", return_value=runner), redirect_stderr(stderr), redirect_stdout(io.StringIO()):
+            with patch.object(ScenarioRunner, "from_files", return_value=runner), redirect_stderr(stderr), redirect_stdout(io.StringIO()):
                 status = main(["--report", str(destination)])
             self.assertEqual(status, 1)
             report_text = destination.read_text(encoding="utf-8")

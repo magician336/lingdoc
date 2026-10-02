@@ -760,7 +760,7 @@
           "Idempotency-Key": "f01-confirm-q-0001"
         },
         "json": {
-          "chapter_version_id": "{{question_version}}",
+          "expected_chapter_version_id": "{{question_version}}",
           "expected_spec_revision": "{{spec_revision}}",
           "review_decisions": [
             {
@@ -818,7 +818,7 @@
           "Idempotency-Key": "f01-confirm-m-0001"
         },
         "json": {
-          "chapter_version_id": "{{method_version}}",
+          "expected_chapter_version_id": "{{method_version}}",
           "expected_spec_revision": "{{spec_revision}}",
           "review_decisions": []
         }

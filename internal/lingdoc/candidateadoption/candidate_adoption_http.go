@@ -26,7 +26,7 @@ func NewCandidateAdoptionHandler(service *CandidateAdoptionService, resolveActor
 			if current, ok := service.Sources.(ConfirmationSourcePolicy); ok {
 				sources = current
 			}
-			handler.Confirmations = NewConfirmationService(store, sources, projectWriteConfirmationAuthorizer{projectAuthorizer: service.Authorizer})
+			handler.Confirmations = NewConfirmationService(store, sources, service.Authorizer)
 		}
 	}
 	return handler

@@ -1,0 +1,1136 @@
+{
+  "task": "T15-03",
+  "what": "把声明的起点状态灌进真实服务（建项目、存条件、加协作者、立项、写章节、绑资料），再读回核对；每份声明跑两遍",
+  "run_at": "2026-09-27T11:26:02+0800",
+  "host_os": "win32",
+  "repo_root": "D:\\code_warehouse\\Projects\\lingdoc",
+  "repo": {
+    "commit": "b32bef4576b1c627536903bba69834d7d6b56250",
+    "subject": "refactor(lingdoc): drive the runner from a specification, not a scenario id",
+    "committed_at": "2026-09-27T10:40:20+08:00",
+    "worktree_dirty_paths": [
+      "M .github/workflows/lingdoc-f01-runner.yml",
+      " M docs/08-本轮实施方案/README.md",
+      " M docs/08-本轮实施方案/contracts/scenarios.json",
+      " M docs/08-本轮实施方案/contracts/validate_artifacts.py",
+      " M docs/08-本轮实施方案/contracts/validation-result.json",
+      " M scripts/lingdoc_mock/run_f01.py",
+      " M scripts/lingdoc_mock/test_workflow_reports.py",
+      " M scripts/lingdoc_mock/test_workflow_runner.py",
+      "?? docs/08-本轮实施方案/T15-S4-证据.json",
+      "?? docs/08-本轮实施方案/T15-起点状态装载.md",
+      "?? scripts/lingdoc_mock/load_state.py",
+      "?? scripts/lingdoc_mock/test_workflow_states.py"
+    ]
+  },
+  "target": {
+    "base_url": "http://127.0.0.1:8080/api/v1/lingdoc",
+    "provider_host": "127.0.0.1:8080",
+    "binary": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15.exe",
+    "note": "本机 dev 库 + 本机依赖（postgres 5432 / redis 6379 / docreader 50051），启动配方见 T15-真实服务启动.md"
+  },
+  "command": "python scripts/lingdoc_mock/load_state.py --state <S> --base-url http://127.0.0.1:8080/api/v1/lingdoc <该声明用到的 --knowledge/--member> --report .scratch-t15-03/run-<S>-<轮次>.json（每份声明只绑它自己用到的名字：多给的名字会被拒绝，绑定清单由 .scratch-t15-03/run_states.py 按声明生成）",
+  "environment_bindings": {
+    "k-demo": {
+      "how": "found",
+      "knowledge_id": "2d2b58c7-39fc-44c5-861f-9121ecab980e",
+      "title": "t15-可用材料",
+      "parse_status": "completed",
+      "enable_status": "enabled",
+      "listed": "listAssets 的判据：parse_status==completed 才算 ready"
+    },
+    "k-notready": {
+      "how": "found",
+      "knowledge_id": "78ea548e-4d40-4506-b33b-3ec32ee03fc8",
+      "title": "t15-未发布材料",
+      "parse_status": "draft",
+      "enable_status": "disabled",
+      "listed": "未发布 → 解析没跑过 → 永远不是 ready"
+    }
+  },
+  "environment_member": {
+    "u-member": {
+      "email": "t15-fixture-member@lingdoc.local",
+      "username": "t15-fixture-member",
+      "role": "contributor",
+      "user_id": "0e7b3238-7893-4b10-ad88-fd11c3f1e7d2",
+      "register": "HTTP 400",
+      "add_to_tenant": "HTTP 409 (已是成员)"
+    }
+  },
+  "loader": {
+    "module": "scripts/lingdoc_mock/load_state.py",
+    "sha256": "e53c7d76edfb2f862ec91e0f5262375eb1f7a601cc496dc5fcdb223bb90f7d25",
+    "states_document": "docs/08-本轮实施方案/contracts/scenarios.json",
+    "states_document_sha256": "88380e3e55efaea54599a17cb28093a2f4dc45dec71b559fb7604c07d0ac91a2"
+  },
+  "states": [
+    {
+      "id": "S1",
+      "declared": {
+        "project": {
+          "name": "合成起点：空资料项目",
+          "template_id": "template-demo",
+          "status": "active",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            }
+          ]
+        },
+        "chapters": [
+          {
+            "section_id": "method",
+            "body_markdown": "",
+            "source_ids": []
+          },
+          {
+            "section_id": "question",
+            "body_markdown": "",
+            "source_ids": []
+          }
+        ],
+        "assets": []
+      },
+      "runs": [
+        {
+          "round": "a",
+          "exit_code": 0,
+          "snapshot_digest": "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7",
+          "observed_digest": "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092",
+          "mismatches": 0,
+          "runner_status": "completed"
+        },
+        {
+          "round": "b",
+          "exit_code": 0,
+          "snapshot_digest": "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7",
+          "observed_digest": "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092",
+          "mismatches": 0,
+          "runner_status": "completed"
+        }
+      ],
+      "build_steps": [
+        {
+          "id": "S1-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S1-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S1-activate",
+          "operation_id": "activateProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S1-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S1-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S1-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S1-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "observed": {
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": [
+          {
+            "section_id": "method",
+            "has_version": false
+          },
+          {
+            "section_id": "question",
+            "has_version": false
+          }
+        ],
+        "assets": []
+      },
+      "unverified": [],
+      "provider_host": "127.0.0.1:8080",
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    },
+    {
+      "id": "S2",
+      "declared": {
+        "project": {
+          "name": "合成起点：协作者与人工正文",
+          "template_id": "template-demo",
+          "status": "active",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            },
+            {
+              "role": "collaborator",
+              "user_id": "u-member"
+            }
+          ]
+        },
+        "chapters": [
+          {
+            "section_id": "method",
+            "body_markdown": "",
+            "source_ids": []
+          },
+          {
+            "section_id": "question",
+            "body_markdown": "人工编辑：这是合成测试材料，不是真实研究结果。",
+            "source_ids": []
+          }
+        ],
+        "assets": []
+      },
+      "runs": [
+        {
+          "round": "a",
+          "exit_code": 0,
+          "snapshot_digest": "1e7338682f03333aeb531a72b78eade24839c81aade897793c2b057f60fa62f7",
+          "observed_digest": "4828518cd41d6141509c06acbd7245fae5253d3faa571b77ebf5ac14de77ad33",
+          "mismatches": 0,
+          "runner_status": "completed"
+        },
+        {
+          "round": "b",
+          "exit_code": 0,
+          "snapshot_digest": "1e7338682f03333aeb531a72b78eade24839c81aade897793c2b057f60fa62f7",
+          "observed_digest": "4828518cd41d6141509c06acbd7245fae5253d3faa571b77ebf5ac14de77ad33",
+          "mismatches": 0,
+          "runner_status": "completed"
+        }
+      ],
+      "build_steps": [
+        {
+          "id": "S2-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-members",
+          "operation_id": "saveMembers",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-activate",
+          "operation_id": "activateProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-chapter-1",
+          "operation_id": "saveChapter",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S2-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S2-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "observed": {
+        "project_version": 5,
+        "spec_revision": 1,
+        "chapters": [
+          {
+            "section_id": "method",
+            "has_version": false
+          },
+          {
+            "section_id": "question",
+            "has_version": true
+          }
+        ],
+        "assets": []
+      },
+      "unverified": [],
+      "provider_host": "127.0.0.1:8080",
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    },
+    {
+      "id": "S3",
+      "declared": {
+        "project": {
+          "name": "合成起点：绑定未就绪资料",
+          "template_id": "template-demo",
+          "status": "active",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            }
+          ]
+        },
+        "chapters": [
+          {
+            "section_id": "method",
+            "body_markdown": "",
+            "source_ids": []
+          },
+          {
+            "section_id": "question",
+            "body_markdown": "",
+            "source_ids": []
+          }
+        ],
+        "assets": [
+          {
+            "knowledge_id": "k-notready"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "round": "a",
+          "exit_code": 0,
+          "snapshot_digest": "7f55ea5f37695751417fe75433b74777b00ddccf0b38723133aaa1256bf52bf1",
+          "observed_digest": "6a6e5f81e9cc1c0271852ca5eb27a0163b8327b75a3d9edc542a4017ee3534ff",
+          "mismatches": 0,
+          "runner_status": "completed"
+        },
+        {
+          "round": "b",
+          "exit_code": 0,
+          "snapshot_digest": "7f55ea5f37695751417fe75433b74777b00ddccf0b38723133aaa1256bf52bf1",
+          "observed_digest": "6a6e5f81e9cc1c0271852ca5eb27a0163b8327b75a3d9edc542a4017ee3534ff",
+          "mismatches": 0,
+          "runner_status": "completed"
+        }
+      ],
+      "build_steps": [
+        {
+          "id": "S3-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-activate",
+          "operation_id": "activateProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-asset-1",
+          "operation_id": "bindAsset",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S3-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S3-read-asset-1",
+          "operation_id": "retrieveSources",
+          "http_status": 422,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "observed": {
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": [
+          {
+            "section_id": "method",
+            "has_version": false
+          },
+          {
+            "section_id": "question",
+            "has_version": false
+          }
+        ],
+        "assets": [
+          {
+            "knowledge_id": "k-notready",
+            "listed_state": null,
+            "deny_reason": "not_ready"
+          }
+        ]
+      },
+      "unverified": [
+        {
+          "pointer": "/assets/k-notready",
+          "declared": "处理状态 pending",
+          "verified": "不可用（not_ready）",
+          "why": "提供方只答「不可用」；pending / processing / failed / replaced 之间没有任何通道能区分"
+        }
+      ],
+      "provider_host": "127.0.0.1:8080",
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    },
+    {
+      "id": "S4",
+      "declared": {
+        "project": {
+          "name": "合成起点：草稿已填条件",
+          "template_id": "template-demo",
+          "status": "draft",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            }
+          ]
+        },
+        "chapters": [],
+        "assets": []
+      },
+      "runs": [
+        {
+          "round": "a",
+          "exit_code": 0,
+          "snapshot_digest": "4768d1939c176b0d6df111b2e6877f013f5a4949f2758a91f6b7e0fea847585a",
+          "observed_digest": "e9df5bf6e45250ffda28c9ab8b3aa1e414ffd31d961608c8f1ba9846a781d3e2",
+          "mismatches": 0,
+          "runner_status": "completed"
+        },
+        {
+          "round": "b",
+          "exit_code": 0,
+          "snapshot_digest": "4768d1939c176b0d6df111b2e6877f013f5a4949f2758a91f6b7e0fea847585a",
+          "observed_digest": "e9df5bf6e45250ffda28c9ab8b3aa1e414ffd31d961608c8f1ba9846a781d3e2",
+          "mismatches": 0,
+          "runner_status": "completed"
+        }
+      ],
+      "build_steps": [
+        {
+          "id": "S4-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S4-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S4-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S4-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S4-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "observed": {
+        "project_version": 2,
+        "spec_revision": 1,
+        "chapters": [],
+        "assets": []
+      },
+      "unverified": [],
+      "provider_host": "127.0.0.1:8080",
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    },
+    {
+      "id": "S5",
+      "declared": {
+        "project": {
+          "name": "合成起点：绑定可用资料",
+          "template_id": "template-demo",
+          "status": "active",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            }
+          ]
+        },
+        "chapters": [
+          {
+            "section_id": "method",
+            "body_markdown": "",
+            "source_ids": []
+          },
+          {
+            "section_id": "question",
+            "body_markdown": "",
+            "source_ids": []
+          }
+        ],
+        "assets": [
+          {
+            "knowledge_id": "k-demo"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "round": "a",
+          "exit_code": 0,
+          "snapshot_digest": "d6ee9068041c20df9d420bc9f5390a0b0389c08c017309ec51fd1658353a9518",
+          "observed_digest": "f5d21486e9fe18c3cc18c1b0dd0ff11291081e55c6d860475cad1eb9639fc707",
+          "mismatches": 0,
+          "runner_status": "completed"
+        },
+        {
+          "round": "b",
+          "exit_code": 0,
+          "snapshot_digest": "d6ee9068041c20df9d420bc9f5390a0b0389c08c017309ec51fd1658353a9518",
+          "observed_digest": "f5d21486e9fe18c3cc18c1b0dd0ff11291081e55c6d860475cad1eb9639fc707",
+          "mismatches": 0,
+          "runner_status": "completed"
+        }
+      ],
+      "build_steps": [
+        {
+          "id": "S5-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S5-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S5-activate",
+          "operation_id": "activateProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S5-asset-1",
+          "operation_id": "bindAsset",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S5-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S5-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S5-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S5-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "observed": {
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": [
+          {
+            "section_id": "method",
+            "has_version": false
+          },
+          {
+            "section_id": "question",
+            "has_version": false
+          }
+        ],
+        "assets": [
+          {
+            "knowledge_id": "k-demo",
+            "listed_state": "ready",
+            "deny_reason": ""
+          }
+        ]
+      },
+      "unverified": [],
+      "provider_host": "127.0.0.1:8080",
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    },
+    {
+      "id": "S6",
+      "declared": {
+        "project": {
+          "name": "合成起点：草稿已绑资料",
+          "template_id": "template-demo",
+          "status": "draft",
+          "spec": {
+            "research_subject": "公开的合成调查样本",
+            "research_goal": "验证资料到章节的工作流程"
+          },
+          "members": [
+            {
+              "role": "owner"
+            }
+          ]
+        },
+        "chapters": [],
+        "assets": [
+          {
+            "knowledge_id": "k-demo"
+          }
+        ]
+      },
+      "runs": [
+        {
+          "round": "a",
+          "exit_code": 0,
+          "snapshot_digest": "9e7311fea33c3a78ade2b0ba251baf1b23bedb644c3fb7fced9ad6b729eeca6a",
+          "observed_digest": "bb0e3bd2d52fdc9e346690bd614b80da801eb57c08a58a3ec7a8640720bc09d1",
+          "mismatches": 0,
+          "runner_status": "completed"
+        },
+        {
+          "round": "b",
+          "exit_code": 0,
+          "snapshot_digest": "9e7311fea33c3a78ade2b0ba251baf1b23bedb644c3fb7fced9ad6b729eeca6a",
+          "observed_digest": "bb0e3bd2d52fdc9e346690bd614b80da801eb57c08a58a3ec7a8640720bc09d1",
+          "mismatches": 0,
+          "runner_status": "completed"
+        }
+      ],
+      "build_steps": [
+        {
+          "id": "S6-create",
+          "operation_id": "createProject",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S6-spec",
+          "operation_id": "saveSpec",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S6-asset-1",
+          "operation_id": "bindAsset",
+          "http_status": 201,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "readback_steps": [
+        {
+          "id": "S6-read-project",
+          "operation_id": "getProject",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S6-read-chapters",
+          "operation_id": "listChapters",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        },
+        {
+          "id": "S6-read-assets",
+          "operation_id": "listAssets",
+          "http_status": 200,
+          "content_type": "application/json; charset=utf-8"
+        }
+      ],
+      "observed": {
+        "project_version": 2,
+        "spec_revision": 1,
+        "chapters": [],
+        "assets": [
+          {
+            "knowledge_id": "k-demo",
+            "listed_state": "ready",
+            "deny_reason": ""
+          }
+        ]
+      },
+      "unverified": [],
+      "provider_host": "127.0.0.1:8080",
+      "verification_scope": "declared_state_read_back_only",
+      "provider_semantics_status": "not_verified"
+    }
+  ],
+  "repeatability": {
+    "S1": {
+      "rounds": 2,
+      "digests": [
+        "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7",
+        "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7"
+      ],
+      "observed_digests": [
+        "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092",
+        "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092"
+      ],
+      "same_digest": true,
+      "same_snapshot": true,
+      "same_observed": true,
+      "same_observed_digest": true,
+      "no_mismatches": true,
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    "S2": {
+      "rounds": 2,
+      "digests": [
+        "1e7338682f03333aeb531a72b78eade24839c81aade897793c2b057f60fa62f7",
+        "1e7338682f03333aeb531a72b78eade24839c81aade897793c2b057f60fa62f7"
+      ],
+      "observed_digests": [
+        "4828518cd41d6141509c06acbd7245fae5253d3faa571b77ebf5ac14de77ad33",
+        "4828518cd41d6141509c06acbd7245fae5253d3faa571b77ebf5ac14de77ad33"
+      ],
+      "same_digest": true,
+      "same_snapshot": true,
+      "same_observed": true,
+      "same_observed_digest": true,
+      "no_mismatches": true,
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    "S3": {
+      "rounds": 2,
+      "digests": [
+        "7f55ea5f37695751417fe75433b74777b00ddccf0b38723133aaa1256bf52bf1",
+        "7f55ea5f37695751417fe75433b74777b00ddccf0b38723133aaa1256bf52bf1"
+      ],
+      "observed_digests": [
+        "6a6e5f81e9cc1c0271852ca5eb27a0163b8327b75a3d9edc542a4017ee3534ff",
+        "6a6e5f81e9cc1c0271852ca5eb27a0163b8327b75a3d9edc542a4017ee3534ff"
+      ],
+      "same_digest": true,
+      "same_snapshot": true,
+      "same_observed": true,
+      "same_observed_digest": true,
+      "no_mismatches": true,
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    "S4": {
+      "rounds": 2,
+      "digests": [
+        "4768d1939c176b0d6df111b2e6877f013f5a4949f2758a91f6b7e0fea847585a",
+        "4768d1939c176b0d6df111b2e6877f013f5a4949f2758a91f6b7e0fea847585a"
+      ],
+      "observed_digests": [
+        "e9df5bf6e45250ffda28c9ab8b3aa1e414ffd31d961608c8f1ba9846a781d3e2",
+        "e9df5bf6e45250ffda28c9ab8b3aa1e414ffd31d961608c8f1ba9846a781d3e2"
+      ],
+      "same_digest": true,
+      "same_snapshot": true,
+      "same_observed": true,
+      "same_observed_digest": true,
+      "no_mismatches": true,
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    "S5": {
+      "rounds": 2,
+      "digests": [
+        "d6ee9068041c20df9d420bc9f5390a0b0389c08c017309ec51fd1658353a9518",
+        "d6ee9068041c20df9d420bc9f5390a0b0389c08c017309ec51fd1658353a9518"
+      ],
+      "observed_digests": [
+        "f5d21486e9fe18c3cc18c1b0dd0ff11291081e55c6d860475cad1eb9639fc707",
+        "f5d21486e9fe18c3cc18c1b0dd0ff11291081e55c6d860475cad1eb9639fc707"
+      ],
+      "same_digest": true,
+      "same_snapshot": true,
+      "same_observed": true,
+      "same_observed_digest": true,
+      "no_mismatches": true,
+      "exit_codes": [
+        0,
+        0
+      ]
+    },
+    "S6": {
+      "rounds": 2,
+      "digests": [
+        "9e7311fea33c3a78ade2b0ba251baf1b23bedb644c3fb7fced9ad6b729eeca6a",
+        "9e7311fea33c3a78ade2b0ba251baf1b23bedb644c3fb7fced9ad6b729eeca6a"
+      ],
+      "observed_digests": [
+        "bb0e3bd2d52fdc9e346690bd614b80da801eb57c08a58a3ec7a8640720bc09d1",
+        "bb0e3bd2d52fdc9e346690bd614b80da801eb57c08a58a3ec7a8640720bc09d1"
+      ],
+      "same_digest": true,
+      "same_snapshot": true,
+      "same_observed": true,
+      "same_observed_digest": true,
+      "no_mismatches": true,
+      "exit_codes": [
+        0,
+        0
+      ]
+    }
+  },
+  "runner_refactor": {
+    "exit_code": [
+      1,
+      1
+    ],
+    "report_sha256": [
+      "af7a06975fe9bb0bfbfdb7a1b07be16126b637cf51d8f098cb162a2536fde416",
+      "af7a06975fe9bb0bfbfdb7a1b07be16126b637cf51d8f098cb162a2536fde416"
+    ],
+    "stdout_sha256": [
+      "7621460b90dcda656c9a0eb98f5033cafee2f9c307df03d19446330d85bdc1e7",
+      "7621460b90dcda656c9a0eb98f5033cafee2f9c307df03d19446330d85bdc1e7"
+    ],
+    "stderr_text": [
+      "F01 FAILED: F01-08: timed out waiting for terminal state succeeded",
+      "F01 FAILED: F01-08: timed out waiting for terminal state succeeded"
+    ],
+    "how": "同一台 mock、同一份 openapi/workflow、同样的 --poll-timeout 3；报告按字节比，stdout 按落盘后的 CRLF 文本比",
+    "identical": true
+  },
+  "negative_control": [
+    {
+      "state": "S5",
+      "what": "声明可用、实际绑定不可用资料",
+      "swapped_binding": "k-demo=78ea548e-4d40-4506-b33b-3ec32ee03fc8",
+      "exit_code": 1,
+      "stderr": "MISMATCH /assets/k-demo: declared '已绑定且可用', read back 'listAssets 未列出：资料未就绪（not_ready）'\nS5 FAILED: the built state does not match the declaration (1 difference(s))",
+      "mismatches": [
+        {
+          "pointer": "/assets/k-demo",
+          "declared": "已绑定且可用",
+          "actual": "listAssets 未列出：资料未就绪（not_ready）"
+        }
+      ],
+      "observed": [
+        {
+          "knowledge_id": "k-demo",
+          "listed_state": null,
+          "deny_reason": "not_ready"
+        }
+      ]
+    },
+    {
+      "state": "S3",
+      "what": "声明不可用、实际绑定可用资料",
+      "swapped_binding": "k-notready=2d2b58c7-39fc-44c5-861f-9121ecab980e",
+      "exit_code": 1,
+      "stderr": "MISMATCH /assets/k-notready: declared '不可用（pending）', read back 'listAssets 把它列为可用资料'\nS3 FAILED: the built state does not match the declaration (1 difference(s))",
+      "mismatches": [
+        {
+          "pointer": "/assets/k-notready",
+          "declared": "不可用（pending）",
+          "actual": "listAssets 把它列为可用资料"
+        }
+      ],
+      "observed": [
+        {
+          "knowledge_id": "k-notready",
+          "listed_state": "ready",
+          "deny_reason": ""
+        }
+      ]
+    }
+  ],
+  "provider_check": {
+    "status": "ran",
+    "how": "docker exec WeKnora-postgres-dev psql -U postgres -d WeKnora",
+    "query": "SELECT p.name, p.status, p.project_version, p.spec_revision, (SELECT count(*) FROM lingdoc_chapters c WHERE c.project_id=p.id), (SELECT count(*) FROM lingdoc_chapter_versions v JOIN lingdoc_chapters c ON c.id=v.chapter_id  WHERE c.project_id=p.id), (SELECT count(*) FROM lingdoc_project_assets a WHERE a.project_id=p.id), (SELECT count(*) FROM lingdoc_members m WHERE m.project_id=p.id) FROM lingdoc_projects p WHERE p.name LIKE '合成起点%' ORDER BY p.name, p.created_at",
+    "rows_by_declared_name": {
+      "合成起点：协作者与人工正文": {
+        "rows": 6,
+        "status": "active",
+        "project_version": 5,
+        "spec_revision": 1,
+        "chapters": 2,
+        "chapter_versions": 1,
+        "assets": 0,
+        "members": 2,
+        "identical": true
+      },
+      "合成起点：空资料项目": {
+        "rows": 6,
+        "status": "active",
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": 2,
+        "chapter_versions": 0,
+        "assets": 0,
+        "members": 1,
+        "identical": true
+      },
+      "合成起点：绑定可用资料": {
+        "rows": 8,
+        "status": "active",
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": 2,
+        "chapter_versions": 0,
+        "assets": 1,
+        "members": 1,
+        "identical": true
+      },
+      "合成起点：绑定未就绪资料": {
+        "rows": 8,
+        "status": "active",
+        "project_version": 3,
+        "spec_revision": 1,
+        "chapters": 2,
+        "chapter_versions": 0,
+        "assets": 1,
+        "members": 1,
+        "identical": true
+      },
+      "合成起点：草稿已填条件": {
+        "rows": 6,
+        "status": "draft",
+        "project_version": 2,
+        "spec_revision": 1,
+        "chapters": 0,
+        "chapter_versions": 0,
+        "assets": 0,
+        "members": 1,
+        "identical": true
+      },
+      "合成起点：草稿已绑资料": {
+        "rows": 2,
+        "status": "draft",
+        "project_version": 2,
+        "spec_revision": 1,
+        "chapters": 0,
+        "chapter_versions": 0,
+        "assets": 1,
+        "members": 1,
+        "identical": true
+      }
+    }
+  },
+  "cannot_build": [
+    {
+      "part": "template",
+      "reason": "the service ships the demo template; the contract has no request that creates one"
+    },
+    {
+      "part": "source",
+      "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+    },
+    {
+      "part": "candidate",
+      "reason": "a candidate is produced by a generation run, which needs a model adapter"
+    },
+    {
+      "part": "confirmation",
+      "reason": "a chapter confirmation needs the review items a candidate carries"
+    },
+    {
+      "part": "release",
+      "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+    },
+    {
+      "part": "export",
+      "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+    }
+  ],
+  "cannot_build_probe": {
+    "status": "ran",
+    "declared": "正文里带 [[source:s-demo]]、source_ids=['s-demo']（本项目没有这条来源）",
+    "declaration": {
+      "id": "S9",
+      "name": "正文引用资料（探针）",
+      "project": {
+        "name": "T15-03 探针：正文引用资料",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "带引用的正文 [[source:s-demo]]",
+          "source_ids": [
+            "s-demo"
+          ]
+        }
+      ]
+    },
+    "runner_status": "failed",
+    "build_steps": [
+      {
+        "id": "S9-create",
+        "operation_id": "createProject",
+        "http_status": 201,
+        "content_type": "application/json; charset=utf-8"
+      },
+      {
+        "id": "S9-spec",
+        "operation_id": "saveSpec",
+        "http_status": 200,
+        "content_type": "application/json; charset=utf-8"
+      },
+      {
+        "id": "S9-activate",
+        "operation_id": "activateProject",
+        "http_status": 200,
+        "content_type": "application/json; charset=utf-8"
+      }
+    ],
+    "failed_step": {
+      "id": "S9-chapter-1",
+      "operation_id": "saveChapter"
+    },
+    "provider_answer": "HTTP 403 source_access_denied at saveChapter",
+    "reader": "装载器把提供方的错误码原样报出，并把死在哪个步骤写进报告的 failed_step"
+  },
+  "tests": {
+    "command": "python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py'",
+    "summary": [
+      "Ran 62 tests in 0.147s",
+      "",
+      "OK"
+    ],
+    "exit_code": 0
+  },
+  "contract_validation": {
+    "command": "python docs/08-本轮实施方案/contracts/validate_artifacts.py",
+    "result": "PASS",
+    "exit_code": 0,
+    "starting_states": 6,
+    "negative_static_cases_rejected": 22
+  },
+  "notes": [
+    "检索预检用 asset_ids 指「绑定」，不是指知识：传知识 id 会让服务答 not_found（本项目没有这条绑定），第一次对着真实服务跑就是这么答的。绑定 id 只有一个来源——bindAsset 的响应；listAssets 只列可用资料。",
+    "「起点可重复构造」的判据是提供方那一侧：每轮都退 0 且不一致清单为空，且两轮的 observed 与 observed_digest 相同（repeatability.same_observed / same_observed_digest）。snapshot 只是声明本身，它的摘要相同是同义反复。",
+    "不可用的资料只验证到「不可用 + not_ready」这一层：pending / processing / failed / replaced 互相之间没有通道能区分，所以声明里写 pending 只进报告的 unverified（连原因一起），不算被证实的事实。",
+    "S6 是草稿项目带一条已绑资料：提供方的 bindAsset 只看写权限、不看立项，所以装载器把绑定当独立一步。这条声明就是拿真实服务钉住这条约束的——绑定若依赖立项，S6 会当场失败。",
+    "负向对照是把两边的绑定对调后重跑：S5 声明可用却绑了不可用资料、S3 声明不可用却绑了可用资料，两次都必须报不一致并退 1。",
+    "provider_check 走库不走接口，核对的是「写请求真的落了库，且形状与声明一致」；同一份声明跑多遍应当每遍一行且各行相同。",
+    "runner_refactor 是这次改动碰到执行器的回归核对：把 HTTP 传输抽成 ProviderClient 之后，F01 对着 mock 跑出来的报告字节、stdout、stderr、退出码与 T15-02 记录的那一轮逐项相同——装载器复用执行器的传输层，没有顺手改掉执行器的行为。",
+    "cannot_build_probe 是一条真跑过的探针：声明「正文引用资料」时，真实服务在 saveChapter 上答 403 source_access_denied——source 是检索产物，没有写请求能造，所以「有正文且有引用」的起点目前造不出来。装载器把这条错误原样报出。"
+  ]
+}

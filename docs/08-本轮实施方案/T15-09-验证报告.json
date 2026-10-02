@@ -1,0 +1,1013 @@
+{
+  "issue": 36,
+  "mode": "real_http_delivery_scenarios",
+  "provider_host": "127.0.0.1:8080",
+  "scenarios": {
+    "F10": {
+      "scenario": "F10",
+      "name": "未确认不得导出",
+      "verdict": "passed",
+      "executable": true,
+      "reason": "本次运行驱动的那一条，起点 S8"
+    },
+    "F16": {
+      "scenario": "F16",
+      "name": "空章和一章输入可保留阻断快照",
+      "verdict": "passed",
+      "executable": true,
+      "reason": "本次运行驱动的那一条，起点 S1"
+    },
+    "F19": {
+      "verdict": "failed",
+      "steps": [
+        {
+          "step": "create-consumer-tenant",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "create-organization",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "invite-consumer-tenant",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "share-source-knowledge-base",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "retrieve-source",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "get-source-and-verify-quoted-text-hash",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "quoted_text_utf8_sha256",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "question-v1-save",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "question-v1-confirm",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "method-v1-save",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "method-v1-confirm",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "verify-confirmed-chapters",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "both_chapters_confirmation_valid",
+          "actual": {
+            "method": true,
+            "question": true
+          },
+          "expected": {
+            "question": true,
+            "method": true
+          },
+          "verdict": "passed"
+        },
+        {
+          "step": "prepare-first-release-getProject",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "prepare-first-release",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "first_snapshot_check_status",
+          "actual": "passed",
+          "blocking_rules": [],
+          "blocking_codes": [],
+          "expected": "passed",
+          "verdict": "passed"
+        },
+        {
+          "step": "first_snapshot_canonical_digest",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "source_marker_ids_and_frozen_sources_match",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "frozen_source_hash_matches_utf8_text_and_getSource",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "edit-and-reconfirm-question-listChapters",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "edit-and-reconfirm-question-save",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "edit-and-reconfirm-question-confirm",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "prepare-second-release-getProject",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "prepare-second-release",
+          "expected_http": 201,
+          "actual_http": 201,
+          "verdict": "passed"
+        },
+        {
+          "step": "second_snapshot_check_status",
+          "actual": "passed",
+          "blocking_rules": [],
+          "blocking_codes": [],
+          "expected": "passed",
+          "verdict": "passed"
+        },
+        {
+          "step": "read-back-old-release",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "old_frozen_input_digest_stays_unchanged",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "old_snapshot_is_not_current",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "edited_frozen_input_changes_digest",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "start-export",
+          "expected_http": 202,
+          "actual_http": 202,
+          "verdict": "passed"
+        },
+        {
+          "step": "poll-export",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "export_verified",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "download-and-compare-bytes",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "download_content_type",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "download_sha256_matches_getExport",
+          "actual": true,
+          "expected": true,
+          "verdict": "passed"
+        },
+        {
+          "step": "revoke-share",
+          "expected_http": 200,
+          "actual_http": 200,
+          "verdict": "passed"
+        },
+        {
+          "step": "retry-same-download-after-revocation",
+          "expected_http": 403,
+          "actual_http": 200,
+          "verdict": "failed"
+        }
+      ],
+      "starting_state": "S5",
+      "reason": "F19 已执行至末步；撤销资料分享后重试同一文件下载返回 HTTP 200，预期 403。",
+      "source_display_title_change": {
+        "verdict": "not_run",
+        "reason": "当前公开 API 没有修改来源展示名的操作；未直接改数据库。"
+      }
+    },
+    "F13": {
+      "verdict": "not_run",
+      "blocked_at": "before-startExport",
+      "reason": "真实服务的 renderer 与 validator 使用同一 DeliveryDocument，公开 HTTP 没有注入损坏产物或替换校验器的入口；正常导出始终校验服务生成的同一份字节。"
+    }
+  },
+  "registered_gaps": [
+    {
+      "id": "T15-09-R1",
+      "scenario_step": "F19-17 retry-same-download-after-revocation",
+      "expected_http": 403,
+      "actual_http": 200,
+      "owner": "delivery/export authorization owner (T14)",
+      "related_evidence": "T15-08-R2 / F07-04",
+      "status": "open"
+    }
+  ],
+  "cleanup": [
+    {
+      "item": "organization",
+      "http": 200,
+      "verdict": "passed"
+    },
+    {
+      "item": "consumer_tenant",
+      "http": 200,
+      "verdict": "passed"
+    }
+  ],
+  "scope": "local authenticated HTTP observations; contract steps plus explicit F19 checks",
+  "contract_runner": {
+    "summary": {
+      "passed": 2,
+      "failed": 0,
+      "not_run": 20
+    },
+    "executed": [
+      {
+        "scenario": "F10",
+        "name": "未确认不得导出",
+        "starting_state": "S8",
+        "state": {
+          "state": "S8",
+          "runner_status": "completed",
+          "build_steps": [
+            {
+              "id": "S8-create",
+              "operation_id": "createProject",
+              "http_status": 201,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S8-spec",
+              "operation_id": "saveSpec",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S8-activate",
+              "operation_id": "activateProject",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S8-chapter-1",
+              "operation_id": "saveChapter",
+              "http_status": 201,
+              "content_type": "application/json; charset=utf-8"
+            }
+          ],
+          "readback_steps": [
+            {
+              "id": "S8-chapters",
+              "operation_id": "listChapters",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S8-read-project",
+              "operation_id": "getProject",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S8-read-chapters",
+              "operation_id": "listChapters",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S8-read-assets",
+              "operation_id": "listAssets",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            }
+          ],
+          "snapshot": {
+            "project": {
+              "name": "合成起点：一章正文未确认",
+              "template_id": "template-demo",
+              "status": "active",
+              "spec": {
+                "research_subject": "公开的合成调查样本",
+                "research_goal": "验证资料到章节的工作流程"
+              },
+              "members": [
+                {
+                  "role": "owner"
+                }
+              ]
+            },
+            "chapters": [
+              {
+                "section_id": "method",
+                "body_markdown": "",
+                "source_ids": []
+              },
+              {
+                "section_id": "question",
+                "body_markdown": "人工输入的合成研究问题。",
+                "source_ids": []
+              }
+            ],
+            "assets": []
+          },
+          "snapshot_digest": "b0db7b5a7b5d72f3d16a159731ef2cc2035736357108e15a8e216d245430d652",
+          "observed": {
+            "project_version": 4,
+            "spec_revision": 1,
+            "chapters": [
+              {
+                "section_id": "method",
+                "has_version": false
+              },
+              {
+                "section_id": "question",
+                "has_version": true
+              }
+            ],
+            "assets": []
+          },
+          "observed_digest": "d7ab2e5eac274073d816787dfc753a90aa1e0f306440b36c5d6347d25eba9dc4",
+          "mismatches": [],
+          "unverified": [],
+          "cannot_build": [
+            {
+              "part": "template",
+              "reason": "the service ships the demo template; the contract has no request that creates one"
+            },
+            {
+              "part": "source",
+              "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+            },
+            {
+              "part": "candidate",
+              "reason": "a candidate is produced by a generation run, which needs a model adapter"
+            },
+            {
+              "part": "confirmation",
+              "reason": "a chapter confirmation needs the review items a candidate carries"
+            },
+            {
+              "part": "release",
+              "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+            },
+            {
+              "part": "export",
+              "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+            }
+          ],
+          "verification_scope": "declared_state_read_back_only",
+          "provider_semantics_status": "not_verified"
+        },
+        "steps": [
+          {
+            "step_id": "F10-01",
+            "operation_id": "getProject",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "读取起点项目版本作为交付检查的条件版本。",
+            "checks": []
+          },
+          {
+            "step_id": "F10-02",
+            "operation_id": "checkCurrent",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "未确认正文与空必填章节均进入当前检查结果。",
+            "checks": [
+              {
+                "step_id": "F10-02",
+                "path": "/data/status",
+                "operator": "equals",
+                "intent": "存在未确认或空章节时检查必须阻断",
+                "expected": "blocked",
+                "actual": "blocked",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F10-03",
+            "operation_id": "prepareRelease",
+            "actor": "u-owner",
+            "expected_http": 201,
+            "actual_http": 201,
+            "verdict": "passed",
+            "intent": "保留阻断快照供界面说明原因。",
+            "checks": [
+              {
+                "step_id": "F10-03",
+                "path": "/data/check/status",
+                "operator": "equals",
+                "intent": "阻断检查仍允许留存快照，但不能通过导出",
+                "expected": "{{f10.snapshot_status}}",
+                "actual": "{{f10.snapshot_status}}",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F10-04",
+            "operation_id": "getRelease",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "通过后续读取确认阻断快照已持久化。",
+            "checks": [
+              {
+                "step_id": "F10-04",
+                "path": "/data/id",
+                "operator": "equals",
+                "intent": "读回的是刚保存的历史快照",
+                "expected": "{{f10.snapshot_id}}",
+                "actual": "{{f10.snapshot_id}}",
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F10-04",
+                  "after_step": "F10-03",
+                  "operation_id": "getRelease"
+                }
+              },
+              {
+                "step_id": "F10-04",
+                "path": "/data/check/status",
+                "operator": "equals",
+                "intent": "读回历史快照仍是阻断态",
+                "expected": "{{f10.snapshot_status}}",
+                "actual": "{{f10.snapshot_status}}",
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F10-04",
+                  "after_step": "F10-03",
+                  "operation_id": "getRelease"
+                }
+              }
+            ],
+            "observation": {
+              "kind": "readback",
+              "request_step_id": "F10-04",
+              "after_step": "F10-03",
+              "operation_id": "getRelease"
+            }
+          },
+          {
+            "step_id": "F10-05",
+            "operation_id": "startExport",
+            "actor": "u-owner",
+            "expected_http": 422,
+            "actual_http": 422,
+            "verdict": "passed",
+            "intent": "无导出文件可下载，不用前端按钮状态代替后端判断。",
+            "checks": [
+              {
+                "step_id": "F10-05",
+                "path": "/error/code",
+                "operator": "equals",
+                "intent": "导出被后端阻断项拒绝",
+                "expected": "preflight_{{f10.snapshot_status}}",
+                "actual": "preflight_{{f10.snapshot_status}}",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F10-06",
+            "operation_id": "listExports",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "读回导出历史确认未生成文件。",
+            "checks": [
+              {
+                "step_id": "F10-06",
+                "path": "/data/items",
+                "operator": "length",
+                "intent": "被阻断的快照没有产生可下载产物",
+                "expected": 0,
+                "actual": [],
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F10-06",
+                  "after_step": "F10-05",
+                  "operation_id": "listExports"
+                }
+              }
+            ],
+            "observation": {
+              "kind": "readback",
+              "request_step_id": "F10-06",
+              "after_step": "F10-05",
+              "operation_id": "listExports"
+            }
+          }
+        ],
+        "verdict": "passed"
+      },
+      {
+        "scenario": "F16",
+        "name": "空章和一章输入可保留阻断快照",
+        "starting_state": "S1",
+        "state": {
+          "state": "S1",
+          "runner_status": "completed",
+          "build_steps": [
+            {
+              "id": "S1-create",
+              "operation_id": "createProject",
+              "http_status": 201,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S1-spec",
+              "operation_id": "saveSpec",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S1-activate",
+              "operation_id": "activateProject",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            }
+          ],
+          "readback_steps": [
+            {
+              "id": "S1-chapters",
+              "operation_id": "listChapters",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S1-read-project",
+              "operation_id": "getProject",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S1-read-chapters",
+              "operation_id": "listChapters",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            },
+            {
+              "id": "S1-read-assets",
+              "operation_id": "listAssets",
+              "http_status": 200,
+              "content_type": "application/json; charset=utf-8"
+            }
+          ],
+          "snapshot": {
+            "project": {
+              "name": "合成起点：空资料项目",
+              "template_id": "template-demo",
+              "status": "active",
+              "spec": {
+                "research_subject": "公开的合成调查样本",
+                "research_goal": "验证资料到章节的工作流程"
+              },
+              "members": [
+                {
+                  "role": "owner"
+                }
+              ]
+            },
+            "chapters": [
+              {
+                "section_id": "method",
+                "body_markdown": "",
+                "source_ids": []
+              },
+              {
+                "section_id": "question",
+                "body_markdown": "",
+                "source_ids": []
+              }
+            ],
+            "assets": []
+          },
+          "snapshot_digest": "89d64fbf880ed4a0e861348d58187f0f02ae2fb183296a30244a5d6e007d2df7",
+          "observed": {
+            "project_version": 3,
+            "spec_revision": 1,
+            "chapters": [
+              {
+                "section_id": "method",
+                "has_version": false
+              },
+              {
+                "section_id": "question",
+                "has_version": false
+              }
+            ],
+            "assets": []
+          },
+          "observed_digest": "d9ee7bb9729bf3e46657f06e218c5e5c205a35ba983bde67760213fecee82092",
+          "mismatches": [],
+          "unverified": [],
+          "cannot_build": [
+            {
+              "part": "template",
+              "reason": "the service ships the demo template; the contract has no request that creates one"
+            },
+            {
+              "part": "source",
+              "reason": "a source is a retrieval hit over a usable asset, not a declarable input"
+            },
+            {
+              "part": "candidate",
+              "reason": "a candidate is produced by a generation run, which needs a model adapter"
+            },
+            {
+              "part": "confirmation",
+              "reason": "a chapter confirmation needs the review items a candidate carries"
+            },
+            {
+              "part": "release",
+              "reason": "a release snapshot is frozen by prepareRelease and needs confirmed chapters"
+            },
+            {
+              "part": "export",
+              "reason": "an export artifact is produced by startExport once a snapshot passes its checks"
+            }
+          ],
+          "verification_scope": "declared_state_read_back_only",
+          "provider_semantics_status": "not_verified"
+        },
+        "steps": [
+          {
+            "step_id": "F16-01",
+            "operation_id": "getProject",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "读取空项目的当前版本。",
+            "checks": []
+          },
+          {
+            "step_id": "F16-02",
+            "operation_id": "listChapters",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "读回两章，版本均为 null。",
+            "checks": [
+              {
+                "step_id": "F16-02",
+                "path": "/data/0/current_version_id",
+                "operator": "equals",
+                "intent": "空方法章没有虚构版本 ID",
+                "expected": null,
+                "actual": null,
+                "found": true,
+                "status": "passed"
+              },
+              {
+                "step_id": "F16-02",
+                "path": "/data/1/current_version_id",
+                "operator": "equals",
+                "intent": "空问题章没有虚构版本 ID",
+                "expected": null,
+                "actual": null,
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F16-03",
+            "operation_id": "prepareRelease",
+            "actor": "u-owner",
+            "expected_http": 201,
+            "actual_http": 201,
+            "verdict": "passed",
+            "intent": "空章输入产生有阻断结果的快照。",
+            "checks": [
+              {
+                "step_id": "F16-03",
+                "path": "/data/check/status",
+                "operator": "equals",
+                "intent": "空章输入仍可留存阻断快照",
+                "expected": "{{f16.empty_snapshot_status}}",
+                "actual": "{{f16.empty_snapshot_status}}",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F16-04",
+            "operation_id": "getRelease",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "通过后续 GET 确认空章快照已保存。",
+            "checks": [
+              {
+                "step_id": "F16-04",
+                "path": "/data/id",
+                "operator": "equals",
+                "intent": "按 ID 读回刚保存的空章快照",
+                "expected": "{{f16.empty_snapshot_id}}",
+                "actual": "{{f16.empty_snapshot_id}}",
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F16-04",
+                  "after_step": "F16-03",
+                  "operation_id": "getRelease"
+                }
+              },
+              {
+                "step_id": "F16-04",
+                "path": "/data/check/status",
+                "operator": "equals",
+                "intent": "读回空章快照仍是阻断态",
+                "expected": "{{f16.empty_snapshot_status}}",
+                "actual": "{{f16.empty_snapshot_status}}",
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F16-04",
+                  "after_step": "F16-03",
+                  "operation_id": "getRelease"
+                }
+              }
+            ],
+            "observation": {
+              "kind": "readback",
+              "request_step_id": "F16-04",
+              "after_step": "F16-03",
+              "operation_id": "getRelease"
+            }
+          },
+          {
+            "step_id": "F16-05",
+            "operation_id": "startExport",
+            "actor": "u-owner",
+            "expected_http": 422,
+            "actual_http": 422,
+            "verdict": "passed",
+            "intent": "空章快照被后端拒绝导出。",
+            "checks": [
+              {
+                "step_id": "F16-05",
+                "path": "/error/code",
+                "operator": "equals",
+                "intent": "空章快照不能开始导出",
+                "expected": "preflight_{{f16.empty_snapshot_status}}",
+                "actual": "preflight_{{f16.empty_snapshot_status}}",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F16-06",
+            "operation_id": "saveChapter",
+            "actor": "u-owner",
+            "expected_http": 201,
+            "actual_http": 201,
+            "verdict": "passed",
+            "intent": "只写入问题章，方法章保持空白。",
+            "checks": []
+          },
+          {
+            "step_id": "F16-07",
+            "operation_id": "getProject",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "读取单章编辑后的项目版本。",
+            "checks": []
+          },
+          {
+            "step_id": "F16-08",
+            "operation_id": "prepareRelease",
+            "actor": "u-owner",
+            "expected_http": 201,
+            "actual_http": 201,
+            "verdict": "passed",
+            "intent": "单章输入仍可留存阻断原因。",
+            "checks": [
+              {
+                "step_id": "F16-08",
+                "path": "/data/check/status",
+                "operator": "equals",
+                "intent": "只有一章有正文仍产生阻断快照",
+                "expected": "{{f16.empty_snapshot_status}}",
+                "actual": "{{f16.empty_snapshot_status}}",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F16-09",
+            "operation_id": "getRelease",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "通过后续 GET 确认单章快照已保存。",
+            "checks": [
+              {
+                "step_id": "F16-09",
+                "path": "/data/id",
+                "operator": "equals",
+                "intent": "按 ID 读回刚保存的单章快照",
+                "expected": "{{f16.one_snapshot_id}}",
+                "actual": "{{f16.one_snapshot_id}}",
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F16-09",
+                  "after_step": "F16-08",
+                  "operation_id": "getRelease"
+                }
+              },
+              {
+                "step_id": "F16-09",
+                "path": "/data/check/status",
+                "operator": "equals",
+                "intent": "读回单章快照仍是阻断态",
+                "expected": "{{f16.empty_snapshot_status}}",
+                "actual": "{{f16.empty_snapshot_status}}",
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F16-09",
+                  "after_step": "F16-08",
+                  "operation_id": "getRelease"
+                }
+              }
+            ],
+            "observation": {
+              "kind": "readback",
+              "request_step_id": "F16-09",
+              "after_step": "F16-08",
+              "operation_id": "getRelease"
+            }
+          },
+          {
+            "step_id": "F16-10",
+            "operation_id": "startExport",
+            "actor": "u-owner",
+            "expected_http": 422,
+            "actual_http": 422,
+            "verdict": "passed",
+            "intent": "单章快照被后端拒绝导出。",
+            "checks": [
+              {
+                "step_id": "F16-10",
+                "path": "/error/code",
+                "operator": "equals",
+                "intent": "单章快照不能开始导出",
+                "expected": "preflight_{{f16.empty_snapshot_status}}",
+                "actual": "preflight_{{f16.empty_snapshot_status}}",
+                "found": true,
+                "status": "passed"
+              }
+            ]
+          },
+          {
+            "step_id": "F16-11",
+            "operation_id": "listExports",
+            "actor": "u-owner",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "intent": "读回导出列表确认阻断快照没有文件。",
+            "checks": [
+              {
+                "step_id": "F16-11",
+                "path": "/data/items",
+                "operator": "length",
+                "intent": "空章与单章阻断均未产生导出产物",
+                "expected": 0,
+                "actual": [],
+                "found": true,
+                "status": "passed",
+                "observation": {
+                  "kind": "readback",
+                  "request_step_id": "F16-11",
+                  "after_step": "F16-10",
+                  "operation_id": "listExports"
+                }
+              }
+            ],
+            "observation": {
+              "kind": "readback",
+              "request_step_id": "F16-11",
+              "after_step": "F16-10",
+              "operation_id": "listExports"
+            }
+          }
+        ],
+        "verdict": "passed"
+      }
+    ]
+  },
+  "summary": {
+    "passed": 2,
+    "failed": 1,
+    "not_run": 1
+  },
+  "runner_status": "completed"
+}

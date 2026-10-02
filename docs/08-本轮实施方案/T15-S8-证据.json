@@ -1,0 +1,59 @@
+{
+  "issue": 34,
+  "mode": "http_plus_declared_white_box",
+  "provider_host": "127.0.0.1:8080",
+  "scenario": {
+    "id": "F02",
+    "verdict": "passed",
+    "starting_state": "S1",
+    "starting_state_mismatches": 0,
+    "step": {
+      "id": "F02-01",
+      "operation_id": "startGeneration",
+      "http": 400,
+      "error_code": "invalid_request"
+    }
+  },
+  "white_box_observation": {
+    "id": "F02-WB-01",
+    "classification": "white_box",
+    "observer_test": "internal/lingdoc/generation/service_test.go:TestStartEmptyAssetScopeHasNoDownstreamEffects",
+    "result": "PASS",
+    "observed_counters": {
+      "input_resolver_calls": 0,
+      "repository_find_replay_calls": 0,
+      "repository_create_run_calls": 0,
+      "enqueue_calls": 0,
+      "model_generate_calls": 0
+    },
+    "boundary": "依赖计数来自同一 Service.Start guard 的进程内测试，不代表真实服务进程内探针。"
+  },
+  "validation": {
+    "white_box_and_real_http_runner": {
+      "command": "python scripts/lingdoc_mock/run_f02_white_box.py",
+      "result": "PASS"
+    },
+    "python_workflow_tests": {
+      "command": "python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py'",
+      "result": "PASS",
+      "tests": 110
+    },
+    "lingdoc_go_tests": {
+      "command": "go test ./internal/lingdoc/...",
+      "result": "PASS"
+    },
+    "static_contract_validation": {
+      "command": "python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py",
+      "result": "PASS"
+    },
+    "python_compile": {
+      "command": "python -m py_compile scripts/lingdoc_mock/run_scenario.py scripts/lingdoc_mock/run_f02_white_box.py scripts/lingdoc_mock/test_workflow_scenario.py",
+      "result": "PASS"
+    }
+  },
+  "report": {
+    "path": "docs/08-本轮实施方案/T15-S8-验证报告.json",
+    "sha256": "8a2b7bdaa17fba7f879b7e364c567fc46e7dd34c81ae4eeece22fe23f664a169"
+  },
+  "scope": "F02 HTTP response and declared Service.Start dependency counters; no production service changes, no claim about unobserved side effects or model quality."
+}

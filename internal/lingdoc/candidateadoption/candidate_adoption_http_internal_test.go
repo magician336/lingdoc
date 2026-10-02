@@ -1,6 +1,7 @@
 package candidateadoption
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -22,4 +23,9 @@ func TestDecodeCandidateRequestRejectsUnknownAndTrailingJSON(t *testing.T) {
 			require.Error(t, decodeCandidateRequest(c, &req))
 		})
 	}
+}
+
+func TestCandidateAdoptionHTTPStatusSeparatesInvalidStateFromInvalidRequest(t *testing.T) {
+	require.Equal(t, http.StatusUnprocessableEntity, candidateAdoptionHTTPStatus(ErrInvalidState))
+	require.Equal(t, http.StatusBadRequest, candidateAdoptionHTTPStatus(ErrInvalidRequest))
 }

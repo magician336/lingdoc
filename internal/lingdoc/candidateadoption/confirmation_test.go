@@ -17,26 +17,8 @@ func (s confirmationWorkspaceStub) GenerationContext(context.Context, string, st
 
 type confirmationAuthorizerFunc func(context.Context, string, string, string) error
 
-func (f confirmationAuthorizerFunc) AuthorizeChapter(ctx context.Context, actorID, projectID, chapterID string) error {
-	return f(ctx, actorID, projectID, chapterID)
-}
-
-type confirmationCapabilityRecorder struct{ capability string }
-
-func (r *confirmationCapabilityRecorder) Authorize(_ context.Context, _, _, capability string) error {
-	r.capability = capability
-	return nil
-}
-
-func TestProjectWriteConfirmationAuthorizerUsesWriteCapability(t *testing.T) {
-	recorder := &confirmationCapabilityRecorder{}
-	adapter := projectWriteConfirmationAuthorizer{projectAuthorizer: recorder}
-	if err := adapter.AuthorizeChapter(context.Background(), "user-1", "project-1", "chapter-1"); err != nil {
-		t.Fatalf("AuthorizeChapter returned %v", err)
-	}
-	if recorder.capability != "write" {
-		t.Fatalf("project capability = %q, want write", recorder.capability)
-	}
+func (f confirmationAuthorizerFunc) Authorize(ctx context.Context, actorID, projectID, capability string) error {
+	return f(ctx, actorID, projectID, capability)
 }
 
 func allowConfirmation(context.Context, string, string, string) error { return nil }
@@ -78,17 +60,24 @@ func TestValidateReviewDecisionsRequiresEveryUniqueItem(t *testing.T) {
 	if err := validateReviewDecisions(items, valid); err != nil {
 		t.Fatalf("valid decisions rejected: %v", err)
 	}
-	for name, decisions := range map[string][]ReviewDecision{
-		"duplicate":    {valid[0], valid[0]},
-		"missing":      {valid[0]},
-		"unknown":      {{ReviewItemID: "other", Disposition: "resolved", Reason: "ok"}, valid[1]},
-		"empty reason": {{ReviewItemID: "r1", Disposition: "resolved"}, valid[1]},
+	for name, test := range map[string]struct {
+		decisions []ReviewDecision
+		wantError error
+	}{
+		"duplicate":    {decisions: []ReviewDecision{valid[0], valid[0]}, wantError: ErrInvalidRequest},
+		"missing":      {decisions: []ReviewDecision{valid[0]}, wantError: ErrInvalidState},
+		"empty":        {decisions: nil, wantError: ErrInvalidState},
+		"unknown":      {decisions: []ReviewDecision{{ReviewItemID: "other", Disposition: "resolved", Reason: "ok"}, valid[1]}, wantError: ErrInvalidRequest},
+		"empty reason": {decisions: []ReviewDecision{{ReviewItemID: "r1", Disposition: "resolved"}, valid[1]}, wantError: ErrInvalidRequest},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := validateReviewDecisions(items, decisions); !errors.Is(err, ErrInvalidRequest) {
-				t.Fatalf("got %v, want invalid request", err)
+			if err := validateReviewDecisions(items, test.decisions); !errors.Is(err, test.wantError) {
+				t.Fatalf("got %v, want %v", err, test.wantError)
 			}
 		})
+	}
+	if err := validateReviewDecisions(nil, nil); err != nil {
+		t.Fatalf("empty chapter decisions rejected: %v", err)
 	}
 }
 
@@ -106,6 +95,28 @@ func TestConfirmationServiceFailsClosedWithoutCurrentSourcePolicy(t *testing.T) 
 	}
 	if writer.calls != 0 {
 		t.Fatal("writer called while source-currentness policy was missing")
+	}
+}
+
+func TestConfirmationServiceAuthorizesWriteCapability(t *testing.T) {
+	version := "version-1"
+	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,
+		Basis:   Basis{SpecRevision: 3, ChapterVersionID: &version},
+		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version}}
+	var capability string
+	writer := &confirmationWriterStub{}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace},
+		Authorizer: confirmationAuthorizerFunc(func(_ context.Context, _, _, got string) error {
+			capability = got
+			return nil
+		}), Writer: writer}
+	_, _, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
+		IdempotencyKey: "request-123", ExpectedChapterVersionID: version, ExpectedSpecRevision: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if capability != "write" {
+		t.Fatalf("authorization capability = %q, want write", capability)
 	}
 }
 
@@ -144,6 +155,27 @@ func TestConfirmationServiceCapturesCurrentSourceAssetVersions(t *testing.T) {
 	}
 	if len(got.AssetVersions) != 1 || got.AssetVersions[0] != (AssetVersion{AssetID: "a1", AssetRevision: 7}) {
 		t.Fatalf("confirmation omitted current source asset revision: %#v", got.AssetVersions)
+	}
+}
+
+func TestConfirmationServiceOmitsProjectAssetsWhenChapterHasNoSources(t *testing.T) {
+	version := "version-1"
+	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,
+		Basis:   Basis{SpecRevision: 3, ChapterVersionID: &version, TemplateVersion: "demo-v2", AssetVersions: []AssetVersion{{AssetID: "project-asset", AssetRevision: 4}}},
+		Chapter: Chapter{ID: "c1", ProjectID: "p1", CurrentVersionID: &version}}
+	writer := &confirmationWriterStub{}
+	service := ConfirmationService{Workspace: confirmationWorkspaceStub{value: workspace},
+		Authorizer: confirmationAuthorizerFunc(allowConfirmation), Writer: writer}
+	got, replayed, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{ProjectID: "p1", ChapterID: "c1", ActorID: "u1",
+		IdempotencyKey: "request-123", ExpectedChapterVersionID: version, ExpectedSpecRevision: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed || writer.calls != 1 {
+		t.Fatalf("unexpected calls/replay: writer=%d replay=%v", writer.calls, replayed)
+	}
+	if len(got.AssetVersions) != 0 {
+		t.Fatalf("confirmation captured assets for a chapter with no sources: %#v", got.AssetVersions)
 	}
 }
 

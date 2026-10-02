@@ -1,0 +1,542 @@
+{
+  "report_version": 1,
+  "contract_version": "0.5.0",
+  "scope": "A deterministic consolidation of saved T15 evidence. This command performs no live HTTP, database, model, or browser run. Each verdict describes its referenced observation.",
+  "scenarios": [
+    {
+      "id": "F01",
+      "name": "完整连续闭环",
+      "verdict": "not_run",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-真实服务启动.md",
+        "docs/TEAM_DEVELOPMENT_TASKS.md"
+      ],
+      "observed_steps": 0,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "T15-01 只证明本机真实服务接受了请求，没有运行完整的 23 步 F01；完整页面组合与 F01 接真属于任务池 T16。"
+    },
+    {
+      "id": "F02",
+      "name": "空资料不扩大范围",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S8-验证报告.json"
+      ],
+      "observed_steps": 1,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F03",
+      "name": "未就绪资料",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 2,
+      "red_item_ids": [
+        "T15-04-R1",
+        "T15-10-R1"
+      ],
+      "failed_steps": [],
+      "qualification": "The saved step assertions passed, while T15-10-R1 separately records that the not-ready reason is categorized as asset_not_authorized rather than asset_not_ready."
+    },
+    {
+      "id": "F04",
+      "name": "跨项目访问",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S9-验证报告.json"
+      ],
+      "observed_steps": 3,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F05",
+      "name": "两人同版本保存",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S6-验证报告.json"
+      ],
+      "observed_steps": 5,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F06",
+      "name": "生成期间改条件",
+      "verdict": "not_run",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 0,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "需要真实模型完成一轮生成并在运行中修改条件；本票将生成期间竞态场景标为 not_run，不使用合成生成结果。"
+    },
+    {
+      "id": "F07",
+      "name": "来源撤权影响派生内容",
+      "verdict": "failed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S9-验证报告.json"
+      ],
+      "observed_steps": 4,
+      "red_item_ids": [
+        "T15-08-R1",
+        "T15-08-R2"
+      ],
+      "failed_steps": [
+        {
+          "step": "chapters",
+          "red_item_id": "T15-08-R1",
+          "owner_task": "T08 with T09 authorization support",
+          "owner": "T08 workspace chapter-read task owner; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "operation_id": "listChapters",
+          "expected_http": 403,
+          "actual_http": 200
+        },
+        {
+          "step": "export_download",
+          "red_item_id": "T15-08-R2",
+          "owner_task": "T14",
+          "owner": "T14 delivery/export task owner; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "operation_id": "downloadExport",
+          "expected_http": 403,
+          "actual_http": 200
+        }
+      ]
+    },
+    {
+      "id": "F08",
+      "name": "重复提交与幂等冲突",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S6-验证报告.json"
+      ],
+      "observed_steps": 4,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F09",
+      "name": "模型超时或中断",
+      "verdict": "not_run",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 0,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "需要可控模型超时或 worker 中断注入；当前真实服务没有公开注入点。"
+    },
+    {
+      "id": "F10",
+      "name": "未确认不得导出",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-09-验证报告.json"
+      ],
+      "observed_steps": 6,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "本次运行驱动的那一条，起点 S8"
+    },
+    {
+      "id": "F11",
+      "name": "快照过期",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S7-验证报告.json"
+      ],
+      "observed_steps": 10,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F12",
+      "name": "草稿版本也有效",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S6-验证报告.json"
+      ],
+      "observed_steps": 4,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F13",
+      "name": "文件校验失败",
+      "verdict": "not_run",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-09-验证报告.json"
+      ],
+      "observed_steps": 0,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "真实服务的 renderer 与 validator 使用同一 DeliveryDocument，公开 HTTP 没有注入损坏产物或替换校验器的入口；正常导出始终校验服务生成的同一份字节。"
+    },
+    {
+      "id": "F14",
+      "name": "只有相关没有支撑",
+      "verdict": "not_run",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 0,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "需要真实模型针对只有相关、没有支撑的资料生成带 review_items 的候选，并进行人工质量核查。"
+    },
+    {
+      "id": "F15",
+      "name": "待核项不在正文也不能丢",
+      "verdict": "failed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 27,
+      "red_item_ids": [
+        "F15-MODEL-OUTPUT",
+        "T15-10-R2",
+        "T15-10-R3"
+      ],
+      "failed_steps": [
+        {
+          "step": "candidate-body-has-no-warning",
+          "red_item_id": "F15-MODEL-OUTPUT",
+          "owner_task": "T10",
+          "owner": "T10 generation/model-prompt task owner; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "expected": true,
+          "actual": false
+        },
+        {
+          "step": "confirm-without-decisions",
+          "red_item_id": "T15-10-R2",
+          "owner_task": "T12",
+          "owner": "T12 chapter-confirmation task owner; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "expected_http": 422,
+          "actual_http": 400
+        },
+        {
+          "step": "missing-review-decision-rejected",
+          "red_item_id": "T15-10-R2",
+          "owner_task": "T12",
+          "owner": "T12 chapter-confirmation task owner; no named assignee",
+          "owner_assignment_status": "unassigned"
+        },
+        {
+          "step": "frozen-confirmation-binds-to-frozen-chapter",
+          "red_item_id": "T15-10-R3",
+          "owner_task": "T12/T13",
+          "owner": "T12/T13 confirmation and frozen-snapshot task owners; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "expected": "every frozen chapter confirmation matches chapter, spec, template, actor, time, and sources"
+        },
+        {
+          "step": "snapshot-check-passed",
+          "red_item_id": "T15-10-R3",
+          "owner_task": "T12/T13",
+          "owner": "T12/T13 confirmation and frozen-snapshot task owners; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "expected": "passed",
+          "actual": "blocked"
+        }
+      ],
+      "qualification": "This is the saved pre-remediation live result. Commit 52651d8 changes confirmation handling; the real scenario has not been re-run after that change, so this historical failure is not evidence of a post-fix result."
+    },
+    {
+      "id": "F16",
+      "name": "空章和一章输入可保留阻断快照",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-09-验证报告.json"
+      ],
+      "observed_steps": 11,
+      "red_item_ids": [],
+      "failed_steps": [],
+      "reason": "本次运行驱动的那一条，起点 S1"
+    },
+    {
+      "id": "F17",
+      "name": "撤权后可执行恢复",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S9-验证报告.json"
+      ],
+      "observed_steps": 5,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F18",
+      "name": "幂等顺序和中间状态",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 6,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F19",
+      "name": "冻结输入可复算",
+      "verdict": "failed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-09-验证报告.json"
+      ],
+      "observed_steps": 37,
+      "red_item_ids": [
+        "T15-08-R2",
+        "T15-09-R1"
+      ],
+      "failed_steps": [
+        {
+          "step": "retry-same-download-after-revocation",
+          "red_item_id": "T15-09-R1",
+          "owner_task": "T14",
+          "owner": "T14 delivery/export task owner; no named assignee",
+          "owner_assignment_status": "unassigned",
+          "expected_http": 403,
+          "actual_http": 200
+        }
+      ],
+      "reason": "F19 已执行至末步；撤销资料分享后重试同一文件下载返回 HTTP 200，预期 403。"
+    },
+    {
+      "id": "F20",
+      "name": "已有人工正文再次采纳",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "observed_steps": 26,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F21",
+      "name": "已导出后编辑并刷新历史标签",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S7-验证报告.json"
+      ],
+      "observed_steps": 13,
+      "red_item_ids": [],
+      "failed_steps": []
+    },
+    {
+      "id": "F22",
+      "name": "部分授权不静默成功",
+      "verdict": "passed",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S5-证据.json"
+      ],
+      "observed_steps": 1,
+      "red_item_ids": [
+        "T15-04-R1"
+      ],
+      "failed_steps": []
+    }
+  ],
+  "summary": {
+    "passed": 14,
+    "failed": 3,
+    "not_run": 5,
+    "total": 22
+  },
+  "red_items": [
+    {
+      "id": "F15-MODEL-OUTPUT",
+      "title": "F15 real model candidate included a warning in the chapter body",
+      "scenario_ids": [
+        "F15"
+      ],
+      "owner_task": "T10",
+      "owner": "T10 generation/model-prompt task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "observed_failure",
+      "evidence": "candidate-body-has-no-warning expected true but the saved real run observed false.",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ]
+    },
+    {
+      "id": "T15-04-R1",
+      "title": "startGeneration 声明的整条 422 分支在实现里不存在",
+      "scenario_ids": [
+        "F03",
+        "F22"
+      ],
+      "owner_task": "T10",
+      "owner": "T10 generation task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "open",
+      "source_status": "open",
+      "evidence": "这 5 个形状一条都发不出来：internal/lingdoc/generation/ 里没有任何 422 分支（`grep -rn 422 internal/lingdoc/generation/` 零命中）。对已绑定但不可用的资料答 403 source_access_denied，只有错误码，没有 details.denied",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S5-证据.json",
+        "docs/08-本轮实施方案/T15-S6-验证报告.json",
+        "docs/08-本轮实施方案/T15-S7-验证报告.json",
+        "docs/08-本轮实施方案/T15-S8-验证报告.json"
+      ]
+    },
+    {
+      "id": "T15-08-R1",
+      "title": "T15-08-R1",
+      "scenario_ids": [
+        "F07"
+      ],
+      "owner_task": "T08 with T09 authorization support",
+      "owner": "T08 workspace chapter-read task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "open",
+      "source_status": "open",
+      "evidence": null,
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S9-验证报告.json"
+      ],
+      "scenario_step": "F07-03 listChapters"
+    },
+    {
+      "id": "T15-08-R2",
+      "title": "T15-08-R2",
+      "scenario_ids": [
+        "F07",
+        "F19"
+      ],
+      "owner_task": "T14",
+      "owner": "T14 delivery/export task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "open",
+      "source_status": "open",
+      "evidence": null,
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-S9-验证报告.json"
+      ],
+      "scenario_step": "F07-04 downloadExport"
+    },
+    {
+      "id": "T15-09-R1",
+      "title": "T15-09-R1",
+      "scenario_ids": [
+        "F19"
+      ],
+      "owner_task": "T14",
+      "owner": "T14 delivery/export task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "open",
+      "source_status": "open",
+      "evidence": null,
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-09-验证报告.json"
+      ],
+      "related_gap_id": "T15-08-R2",
+      "scenario_step": "F19-17 retry-same-download-after-revocation"
+    },
+    {
+      "id": "T15-10-R1",
+      "title": "retrieveSources 对未就绪绑定返回 asset_not_authorized",
+      "scenario_ids": [
+        "F03"
+      ],
+      "owner_task": "T09",
+      "owner": "T09 asset/retrieval task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "open",
+      "source_status": "open",
+      "evidence": "F03 起点读回给出 deny_reason=not_ready；retrieveSources 实际返回 HTTP 422 asset_not_authorized，没有给出 asset_not_ready。",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ]
+    },
+    {
+      "id": "T15-10-R2",
+      "title": "缺少待核决定的确认请求返回 400",
+      "scenario_ids": [
+        "F15"
+      ],
+      "owner_task": "T12",
+      "owner": "T12 chapter-confirmation task owner; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "fix_present_retest_pending",
+      "source_status": "open",
+      "evidence": "F15 实际请求遗漏全部 review_decisions 后返回 HTTP 400 invalid_request；场景契约声明预期 HTTP 422。",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "remediation_commit": "52651d8",
+      "retest_required": true
+    },
+    {
+      "id": "T15-10-R3",
+      "title": "F15 快照确认资料版本与冻结来源不一致",
+      "scenario_ids": [
+        "F15"
+      ],
+      "owner_task": "T12/T13",
+      "owner": "T12/T13 confirmation and frozen-snapshot task owners; no named assignee",
+      "owner_assignment_status": "unassigned",
+      "status": "fix_present_retest_pending",
+      "source_status": "open",
+      "evidence": "F15 当前章节读回显示已确认；冻结快照中问题章确认记录的 asset_versions 与冻结来源集合不一致，快照以 chapter-confirmed 阻断。",
+      "source_artifacts": [
+        "docs/08-本轮实施方案/T15-10-验证报告.json"
+      ],
+      "remediation_commit": "52651d8",
+      "retest_required": true
+    }
+  ],
+  "not_run": [
+    {
+      "id": "F01",
+      "reason": "T15-01 只证明本机真实服务接受了请求，没有运行完整的 23 步 F01；完整页面组合与 F01 接真属于任务池 T16。"
+    },
+    {
+      "id": "F06",
+      "reason": "需要真实模型完成一轮生成并在运行中修改条件；本票将生成期间竞态场景标为 not_run，不使用合成生成结果。"
+    },
+    {
+      "id": "F09",
+      "reason": "需要可控模型超时或 worker 中断注入；当前真实服务没有公开注入点。"
+    },
+    {
+      "id": "F13",
+      "reason": "真实服务的 renderer 与 validator 使用同一 DeliveryDocument，公开 HTTP 没有注入损坏产物或替换校验器的入口；正常导出始终校验服务生成的同一份字节。"
+    },
+    {
+      "id": "F14",
+      "reason": "需要真实模型针对只有相关、没有支撑的资料生成带 review_items 的候选，并进行人工质量核查。"
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "source-text",
+      "statement": "Source context expands text stored in the chunk table; it does not re-parse the source file to recover exact original text."
+    },
+    {
+      "id": "browser-real-backend",
+      "statement": "The UI has not been exercised in a browser against the real backend."
+    },
+    {
+      "id": "model-and-async",
+      "statement": "A saved HTTP result does not establish model quality, unobserved worker effects, or unexecuted race/timeout paths."
+    },
+    {
+      "id": "f01",
+      "statement": "The full 23-step F01 remains outside this matrix run and belongs to T16."
+    }
+  ],
+  "task_pool_alignment": {
+    "T15": "T15 records cross-task HTTP behavior, side effects, evidence, and gaps; it does not take over fixes owned by T08-T14.",
+    "T16": "The complete F01 flow and browser composition remain assigned to T16."
+  },
+  "ownership_note": "owner_task and owner identify the responsible task and task-owner role. The task pool deliberately has no named assignees prefilled; each matching task currently has no individual assignee, so no person's name is implied."
+}
