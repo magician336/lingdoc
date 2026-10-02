@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"maps"
+	"slices"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -98,6 +99,49 @@ func TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole(t *testing
 	}
 	if err := service.Authorize(ctx, admin, "p", "manage"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("suspended admin authorization = %v, want ErrNotFound", err)
+	}
+}
+
+func TestMemberAssignmentsPersistCapabilityAndScopeInTransaction(t *testing.T) {
+	repository := fakeWorkspace()
+	service := NewService(repository)
+	input := SaveMembersInput{ExpectedProjectVersion: 1, Members: []Member{{
+		UserID: "author", GovernanceRole: "member", FunctionRoles: []string{"author"},
+		FunctionScopes: map[string][]string{"author": {"c"}},
+	}}}
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, _, err := service.SaveMembers(context.Background(), actor, "p", "assignments-1", input); err != nil {
+		t.Fatalf("save assignments: %v", err)
+	}
+	var found bool
+	for _, got := range repository.project.Members {
+		if got.UserID == "author" {
+			found = true
+			if len(got.FunctionRoles) != 1 || got.FunctionRoles[0] != "author" || got.FunctionScopes["author"][0] != "c" {
+				t.Fatalf("assignment not persisted: %+v", got)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("assignment member missing")
+	}
+}
+
+func TestTransferOwnerIsAtomicAndClearsFunctionAxis(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Members = append(repository.project.Members, Member{UserID: "recipient", Role: "collaborator", GovernanceRole: "member", FunctionRoles: []string{"author"}, FunctionScopes: map[string][]string{"author": {"c"}}})
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, _, err := service.TransferOwner(context.Background(), actor, "p", "transfer-1", TransferOwnerInput{ExpectedProjectVersion: 1, NewOwnerUserID: "recipient"}); err != nil {
+		t.Fatalf("transfer: %v", err)
+	}
+	for _, member := range repository.project.Members {
+		if member.UserID == "recipient" && (member.Role != "owner" || member.GovernanceRole != "owner" || len(member.FunctionRoles) != 0) {
+			t.Fatalf("recipient not promoted: %+v", member)
+		}
+		if member.UserID == "owner" && member.Role != "collaborator" {
+			t.Fatalf("old owner not demoted: %+v", member)
+		}
 	}
 }
 
@@ -237,6 +281,13 @@ type stateTransaction struct {
 }
 
 func (t *stateTransaction) ActiveMember(Actor) (bool, error) { return t.state.active, nil }
+func (t *stateTransaction) Chapters(string) ([]Chapter, error) {
+	return []Chapter{t.state.chapter}, nil
+}
+func (t *stateTransaction) ReplaceMembers(_ string, members []Member) error {
+	t.state.project.Members = slices.Clone(members)
+	return nil
+}
 func (t *stateTransaction) Projects(actor Actor, _ int) ([]Project, error) {
 	if actor.TenantID != 1 || !t.state.active {
 		return nil, ErrNotFound

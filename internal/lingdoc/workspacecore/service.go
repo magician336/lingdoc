@@ -160,10 +160,18 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_revision": next.SpecRevision, "project_version": next.ProjectVersion, "status": next.Status}))
 }
 func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) error {
+	var existing []memberPermissionRow
+	if err := optionalPermissionTable(t.db.Where("project_id = ?", projectID).Find(&existing).Error); err != nil {
+		return err
+	}
+	retained := map[string]memberPermissionRow{}
+	for _, row := range existing {
+		retained[row.UserID] = row
+	}
 	if err := t.db.Where("project_id = ? AND role = ?", projectID, "collaborator").Delete(&memberRow{}).Error; err != nil {
 		return err
 	}
-	if err := optionalPermissionTable(t.db.Where("project_id = ? AND governance_role = ?", projectID, "member").Delete(&memberPermissionRow{}).Error); err != nil {
+	if err := optionalPermissionTable(t.db.Where("project_id = ? AND governance_role <> ?", projectID, "owner").Delete(&memberPermissionRow{}).Error); err != nil {
 		return err
 	}
 	for _, id := range ids {
@@ -172,7 +180,37 @@ func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) er
 		}
 		// Legacy collaborators retain project-level write compatibility; chapter
 		// writes still require an explicit chapter scope through the sidecar.
-		if err := optionalPermissionTable(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: id, GovernanceRole: "member", FunctionRolesJSON: "[\"author\"]", FunctionScopesJSON: "{}", Status: "active"}).Error); err != nil {
+		permission, ok := retained[id]
+		if !ok {
+			permission = memberPermissionRow{ProjectID: projectID, UserID: id, GovernanceRole: "member", FunctionRolesJSON: "[\"author\"]", FunctionScopesJSON: "{}", Status: "active"}
+		}
+		if err := optionalPermissionTable(t.db.Create(&permission).Error); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t gormTransaction) ReplaceMembers(projectID string, members []Member) error {
+	if err := t.db.Where("project_id = ?", projectID).Delete(&memberPermissionRow{}).Error; err != nil {
+		return err
+	}
+	if err := t.db.Where("project_id = ?", projectID).Delete(&memberRow{}).Error; err != nil {
+		return err
+	}
+	for _, member := range members {
+		if err := t.db.Create(&memberRow{ProjectID: projectID, UserID: member.UserID, Role: member.Role}).Error; err != nil {
+			return err
+		}
+		roles, err := json.Marshal(member.FunctionRoles)
+		if err != nil {
+			return err
+		}
+		scopes, err := json.Marshal(member.FunctionScopes)
+		if err != nil {
+			return err
+		}
+		if err := t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: member.GovernanceRole, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: member.Status}).Error; err != nil {
 			return err
 		}
 	}

@@ -30,6 +30,7 @@ type Transaction interface {
 	InsertProject(uint64, Project) error
 	UpdateProject(uint64, Project, Project) error
 	ReplaceCollaborators(string, []string) error
+	ReplaceMembers(string, []Member) error
 	Chapters(string) ([]Chapter, error)
 	Chapter(string, string) (Chapter, error)
 	InsertChapter(Chapter) error
@@ -305,6 +306,7 @@ type ActivateProjectInput struct {
 type SaveMembersInput struct {
 	ExpectedProjectVersion int64    `json:"expected_project_version"`
 	CollaboratorUserIDs    []string `json:"collaborator_user_ids"`
+	Members                []Member `json:"members,omitempty"`
 }
 type SaveChapterInput struct {
 	ExpectedChapterVersionID *string  `json:"expected_chapter_version_id"`
@@ -354,6 +356,9 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 	})
 }
 func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
+	if input.Members != nil {
+		return s.saveMemberPermissions(ctx, actor, projectID, key, input)
+	}
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs == nil || len(input.CollaboratorUserIDs) > 20 {
 		return nil, 0, false, ErrInvalidRequest
 	}
