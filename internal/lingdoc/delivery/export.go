@@ -302,6 +302,8 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 // key 是这次用户动作的幂等键。处理顺序照契约 §6：先判身份，再判是不是已经做过，
 // 最后才比版本、才读工作区。撤权之后不能从「这个键做过」里把旧产物交出去。
 func (s *ExportService) Start(actorUserID, projectID, snapshotID, key string) (ExportArtifact, bool, error) {
+	// Deprecated: production callers must use StartAs so tenant, role and
+	// request context reach authorization audit records.
 	return s.StartAs(context.Background(), Actor{UserID: actorUserID}, projectID, snapshotID, key)
 }
 
@@ -416,6 +418,8 @@ func (s *ExportService) render(input DeliveryInput) ([]byte, string) {
 // 那个字符串。两者其实总是相等（查不到就是 404），但让传输层从产物取，就用不着
 // 在那里写一句「为什么直接拿路径参数是安全的」。
 func (s *ExportService) Download(actorUserID, projectID, exportID string) (ExportArtifact, []byte, error) {
+	// Deprecated: production callers must use DownloadAs so tenant, role and
+	// request context reach authorization audit records.
 	return s.DownloadAs(context.Background(), Actor{UserID: actorUserID}, projectID, exportID)
 }
 
@@ -467,6 +471,8 @@ func auditReason(err error) string {
 // Get 读一份产物的状态。它不返回字节——那要单独走 Download，因为下载必须
 // 在**那一刻**重查一次授权。取不到报 ErrExportNotFound 让传输层答 404。
 func (s *ExportService) Get(actorUserID, projectID, exportID string) (ExportArtifact, error) {
+	// Deprecated: production callers must use GetAs so tenant, role and
+	// request context reach authorization audit records.
 	return s.GetAs(context.Background(), Actor{UserID: actorUserID}, projectID, exportID)
 }
 
