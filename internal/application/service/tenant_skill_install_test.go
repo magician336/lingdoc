@@ -1009,6 +1009,19 @@ func TestInstallSkillSkipsAnInstallThatIsSlowButStillBeating(t *testing.T) {
 
 func TestInstallSkillRetriesAStaleInFlightInstallOfTheSameArchive(t *testing.T) {
 	fx := newInstallFixture(t)
+	// InstallSkill starts the retry asynchronously. Hold the fake installer at
+	// its execution boundary so this assertion observes the accepted/installing
+	// state instead of racing the fast fake all the way to ready.
+	installStarted := make(chan struct{})
+	releaseInstall := make(chan struct{})
+	var startedOnce sync.Once
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseInstall) }) }
+	t.Cleanup(release)
+	fx.beforeExecute = func() {
+		startedOnce.Do(func() { close(installStarted) })
+		<-releaseInstall
+	}
 	archive := zipBundle(t, map[string]string{
 		"SKILL.md":           validSkillMD,
 		"scripts/extract.py": "print('hi')\n",
@@ -1028,6 +1041,11 @@ func TestInstallSkillRetriesAStaleInFlightInstallOfTheSameArchive(t *testing.T) 
 
 	require.NoError(t, err)
 	require.Equal(t, "sk-1", id)
+	select {
+	case <-installStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background stale-install retry did not reach its execution boundary")
+	}
 	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
 	require.NoError(t, getErr)
 	require.Equal(t, types.SkillStatusInstalling, skill.Status)
@@ -1035,6 +1053,11 @@ func TestInstallSkillRetriesAStaleInFlightInstallOfTheSameArchive(t *testing.T) 
 	require.Equal(t, fx.now(), *skill.InstallingSince,
 		"a dead in-flight row must be allowed to start a new run, not wait for the reaper")
 	require.Empty(t, skill.Error)
+	release()
+	require.Eventually(t, func() bool {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		return err == nil && skill != nil && skill.Status == types.SkillStatusReady
+	}, time.Second, time.Millisecond)
 }
 
 // The ledger records which skill an install snapshotted, not which archive, so
