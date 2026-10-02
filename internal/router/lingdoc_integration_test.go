@@ -57,7 +57,7 @@ func (s *integrationShares) CheckTenantKBPermission(context.Context, string, uin
 
 func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: filepath.Join(t.TempDir(), "api.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: filepath.Join(t.TempDir(), "api.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Error)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +65,11 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Authentication asynchronously updates API-key last_used_at. This fixture
+	// tests sequential API semantics, not competing SQLite writers; serialize
+	// its pool so that unrelated auth telemetry cannot invalidate a read-to-write
+	// evidence transaction. Writer contention has dedicated production-port tests.
+	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&types.User{}, &types.AuthToken{}, &types.TenantMember{}, &types.TenantAPIKey{}); err != nil {
 		t.Fatal(err)

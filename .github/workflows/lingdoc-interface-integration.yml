@@ -42,6 +42,8 @@ jobs:
           go-version-file: go.mod
       - name: Real API and database contracts
         run: go test -race -count=1 -v ./internal/lingdoc/... ./internal/router ./internal/container ./internal/evidence
+      - name: Repeat sequential API contract without race instrumentation
+        run: go test -count=20 -run '^TestLingDocRealAPIThroughMainRegistration$' ./internal/router
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
