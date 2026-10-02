@@ -189,6 +189,7 @@ func newAssetsHTTPFixture(t *testing.T) assetsHTTPFixture {
 	router.Use(func(c *gin.Context) {
 		ctx := context.WithValue(c.Request.Context(), types.UserIDContextKey, "reader")
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(7))
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleContributor)
 		c.Request = c.Request.WithContext(ctx)
 	})
 	handler.Register(RouteGroups{Read: router.Group("/api/v1/lingdoc"), Write: router.Group("/api/v1/lingdoc")})

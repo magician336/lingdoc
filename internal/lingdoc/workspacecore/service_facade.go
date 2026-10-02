@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"maps"
 	"regexp"
@@ -42,7 +43,7 @@ type Transaction interface {
 // idempotent writes share one repository transaction; it does not depend on
 // GORM or define a second identity/tenant model.
 type ProjectAuthorizer interface {
-	AuthorizeTenant(Transaction, Actor) error
+	AuthorizeTenant(Transaction, Actor, string) error
 	AuthorizeProject(Transaction, Actor, string, string) (Project, error)
 }
 type OperationIdentity struct {
@@ -93,7 +94,7 @@ func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID !
 
 type transactionProjectAuthorizer struct{}
 
-func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor) error {
+func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor, capability string) error {
 	if !validActor(actor) {
 		return ErrNotFound
 	}
@@ -104,11 +105,26 @@ func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor)
 	if !active {
 		return ErrNotFound
 	}
+	if actor.Role != "" {
+		if !actor.Role.IsValid() {
+			return ErrNotFound
+		}
+		required := map[string]types.TenantRole{
+			"read": types.TenantRoleViewer, "create": types.TenantRoleContributor,
+			"write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin,
+		}[capability]
+		if required == "" {
+			return ErrInvalidRequest
+		}
+		if !actor.Role.HasPermission(required) {
+			return ErrNotFound
+		}
+	}
 	return nil
 }
 
 func (a transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
-	if err := a.AuthorizeTenant(tx, actor); err != nil {
+	if err := a.AuthorizeTenant(tx, actor, capability); err != nil {
 		return Project{}, err
 	}
 	return authorizeProject(tx, actor, projectID, capability)
@@ -149,7 +165,7 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 		if !validActor(actor) {
 			return ErrNotFound
 		}
-		if err := s.authorizer.AuthorizeTenant(tx, actor); err != nil {
+		if err := s.authorizer.AuthorizeTenant(tx, actor, "read"); err != nil {
 			return err
 		}
 		projects, err := tx.Projects(actor, 51)
@@ -184,7 +200,7 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
-			if err := s.authorizer.AuthorizeTenant(tx, actor); err != nil {
+			if err := s.authorizer.AuthorizeTenant(tx, actor, capability); err != nil {
 				return err
 			}
 		} else {
@@ -266,7 +282,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "", func(tx Transaction, _ Project) (any, int, error) {
+	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "create", func(tx Transaction, _ Project) (any, int, error) {
 		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})

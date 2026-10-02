@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/types"
 	"time"
 )
 
@@ -58,6 +59,9 @@ type GenerationContext struct {
 type Actor struct {
 	TenantID uint64
 	UserID   string
+	// Role is resolved by WeKnora authentication. Empty is retained for
+	// trusted internal callers during migration; HTTP auth supplies a role.
+	Role types.TenantRole
 }
 
 type Section struct {

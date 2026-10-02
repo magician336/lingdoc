@@ -48,7 +48,7 @@ func (h *Handler) Register(routes RouteGroups) {
 func caller(c *gin.Context) (Actor, bool) {
 	id, userOK := types.UserIDFromContext(c.Request.Context())
 	tenant, tenantOK := types.TenantIDFromContext(c.Request.Context())
-	return Actor{TenantID: tenant, UserID: id}, userOK && tenantOK && tenant != 0
+	return Actor{TenantID: tenant, UserID: id, Role: types.TenantRoleFromContext(c.Request.Context())}, userOK && tenantOK && tenant != 0
 }
 
 func requestID(c *gin.Context) string {

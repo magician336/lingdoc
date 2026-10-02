@@ -6,7 +6,69 @@ import (
 	"errors"
 	"maps"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
+
+func TestDefaultProjectAuthorizerEnforcesTenantRoleCeiling(t *testing.T) {
+	ctx := context.Background()
+	viewer := Actor{TenantID: 1, UserID: "viewer", Role: types.TenantRoleViewer}
+	if _, _, _, err := NewService(fakeWorkspace()).CreateProject(ctx, viewer, "viewer-create", CreateProjectInput{Name: "拒绝", TemplateID: "template-demo"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("viewer create error = %v, want ErrNotFound", err)
+	}
+	contributor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleContributor}
+	repository := fakeWorkspace()
+	service := NewService(repository)
+	if _, _, replayed, err := service.CreateProject(ctx, contributor, "role-create", CreateProjectInput{Name: "允许", TemplateID: "template-demo"}); err != nil || replayed {
+		t.Fatalf("contributor create: replayed=%v err=%v", replayed, err)
+	}
+	if _, _, _, err := service.SaveSpec(ctx, Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleViewer}, "p", "viewer-write", SaveSpecInput{ExpectedSpecRevision: 1, Fields: map[string]string{"research_subject": "subject"}}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("viewer write error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestTenantRoleMatrixCapsProjectMemberPermissions(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name       string
+		role       types.TenantRole
+		wantManage bool
+	}{
+		{name: "viewer", role: types.TenantRoleViewer},
+		{name: "contributor", role: types.TenantRoleContributor},
+		{name: "admin", role: types.TenantRoleAdmin, wantManage: true},
+		{name: "owner", role: types.TenantRoleOwner, wantManage: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := NewService(fakeWorkspace())
+			actor := Actor{TenantID: 1, UserID: "owner", Role: tt.role}
+			_, _, _, err := service.SaveMembers(ctx, actor, "p", "matrix-"+tt.name, SaveMembersInput{ExpectedProjectVersion: 1, CollaboratorUserIDs: []string{}})
+			if tt.wantManage && err != nil {
+				t.Fatalf("manage: %v", err)
+			}
+			if !tt.wantManage && !errors.Is(err, ErrNotFound) {
+				t.Fatalf("manage error = %v, want ErrNotFound", err)
+			}
+		})
+	}
+}
+
+func TestTenantRoleDowngradeDeniesIdempotentReplay(t *testing.T) {
+	repository := fakeWorkspace()
+	service := NewService(repository)
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleContributor}
+	input := CreateProjectInput{Name: "重放", TemplateID: "template-demo"}
+	if _, _, _, err := service.CreateProject(ctx, actor, "downgrade-key", input); err != nil {
+		t.Fatalf("initial create: %v", err)
+	}
+	downgraded := actor
+	downgraded.Role = types.TenantRoleViewer
+	if _, _, _, err := service.CreateProject(ctx, downgraded, "downgrade-key", input); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("downgraded replay error = %v, want ErrNotFound", err)
+	}
+}
 
 type sourcePolicyStub struct {
 	err   error
@@ -20,7 +82,7 @@ type recordingProjectAuthorizer struct {
 	projectCalls []string
 }
 
-func (a *recordingProjectAuthorizer) AuthorizeTenant(_ Transaction, _ Actor) error {
+func (a *recordingProjectAuthorizer) AuthorizeTenant(_ Transaction, _ Actor, _ string) error {
 	a.tenantCalls++
 	return a.tenantErr
 }
