@@ -1,6 +1,7 @@
 package workspacecore
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -66,6 +67,19 @@ type Actor struct {
 	// Role is resolved by WeKnora authentication. Empty is retained for
 	// trusted internal callers during migration; HTTP auth supplies a role.
 	Role types.TenantRole
+}
+
+type AuditEvent struct {
+	TenantID   uint64 `json:"tenant_id"`
+	UserID     string `json:"user_id"`
+	ProjectID  string `json:"project_id,omitempty"`
+	Capability string `json:"capability"`
+	Decision   string `json:"decision"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type AuditSink interface {
+	Record(context.Context, AuditEvent) error
 }
 
 type Section struct {

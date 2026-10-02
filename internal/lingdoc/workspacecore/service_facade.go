@@ -64,6 +64,7 @@ type Service struct {
 	templates  TemplateReader
 	sources    SourcePolicy
 	authorizer ProjectAuthorizer
+	audit      AuditSink
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -83,13 +84,29 @@ func NewServiceWithSources(repository Repository, reader TemplateReader, sources
 // repository/transaction architecture as the storage boundary. A nil policy
 // uses the compatibility policy implemented by this package.
 func NewServiceWithAuthorizer(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer) *Service {
+	return NewServiceWithAudit(repository, reader, sources, authorizer, nil)
+}
+
+func NewServiceWithAudit(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer, audit AuditSink) *Service {
 	if reader == nil {
 		reader = ContractDemoTemplate{}
 	}
 	if authorizer == nil {
 		authorizer = transactionProjectAuthorizer{}
 	}
-	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer}
+	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer, audit: audit}
+}
+
+func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
+	if s.audit == nil {
+		return nil
+	}
+	event := AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, ProjectID: projectID, Capability: capability, Decision: "allow"}
+	if authErr != nil {
+		event.Decision = "deny"
+		event.Reason = authErr.Error()
+	}
+	return s.audit.Record(ctx, event)
 }
 func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
 
@@ -189,6 +206,9 @@ func authorizeProject(tx Transaction, actor Actor, projectID, capability string)
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		_, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+		if auditErr := s.recordAudit(ctx, actor, projectID, capability, err); err == nil && auditErr != nil {
+			return auditErr
+		}
 		return err
 	})
 }
@@ -196,6 +216,9 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizer.AuthorizeProject(tx, actor, id, "read")
+		if auditErr := s.recordAudit(ctx, actor, id, "read", err); err == nil && auditErr != nil {
+			err = auditErr
+		}
 		return err
 	})
 	return result, err
@@ -207,6 +230,10 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 			return ErrNotFound
 		}
 		if err := s.authorizer.AuthorizeTenant(tx, actor, "read"); err != nil {
+			_ = s.recordAudit(ctx, actor, "", "read", err)
+			return err
+		}
+		if err := s.recordAudit(ctx, actor, "", "read", nil); err != nil {
 			return err
 		}
 		projects, err := tx.Projects(actor, 51)
@@ -242,14 +269,19 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		var p Project
 		if projectID == "" {
 			if err := s.authorizer.AuthorizeTenant(tx, actor, capability); err != nil {
+				_ = s.recordAudit(ctx, actor, projectID, capability, err)
 				return err
 			}
 		} else {
 			var err error
 			p, err = s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
 			if err != nil {
+				_ = s.recordAudit(ctx, actor, projectID, capability, err)
 				return err
 			}
+		}
+		if err := s.recordAudit(ctx, actor, projectID, capability, nil); err != nil {
+			return err
 		}
 		if op == "saveChapter" {
 			input := body.(SaveChapterInput)

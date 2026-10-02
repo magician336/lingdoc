@@ -1,10 +1,13 @@
 package container
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"go.uber.org/dig"
 	"gorm.io/gorm"
@@ -25,9 +28,10 @@ func NewLingDocWorkspaceHandler(
 	db *gorm.DB,
 	kbShares interfaces.KBShareService,
 	knowledge interfaces.KnowledgeBaseService,
+	audit interfaces.AuditLogService,
 ) LingDocWorkspace {
 	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge)
-	projectService := workspacecore.NewServiceWithSources(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
+	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy(), nil, workspaceAuditSink{service: audit})
 	runtime.ConnectProjects(projectService)
 	handler := workspace.NewHandler(workspace.HandlerDependencies{
 		Service:     projectService,
@@ -35,6 +39,21 @@ func NewLingDocWorkspaceHandler(
 		Integration: runtime,
 	})
 	return LingDocWorkspace{Handler: handler, Projects: projectService, Integration: runtime, Runtime: runtime}
+}
+
+type workspaceAuditSink struct{ service interfaces.AuditLogService }
+
+func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.AuditEvent) error {
+	if s.service == nil {
+		return nil
+	}
+	details, _ := json.Marshal(map[string]string{"capability": event.Capability, "decision": event.Decision, "reason": event.Reason})
+	action := types.AuditAction("rbac.lingdoc_authorized")
+	if event.Decision == "deny" {
+		action = types.AuditActionAccessDenied
+	}
+	_ = s.service.Log(ctx, &types.AuditLog{TenantID: event.TenantID, ActorUserID: event.UserID, ActorRole: "", Action: action, ScopeType: "project", ScopeID: event.ProjectID, TargetType: "lingdoc_project", TargetID: event.ProjectID, Outcome: types.AuditOutcomeSuccess, Details: types.JSON(details)})
+	return nil
 }
 
 // DeliveryDependencies keeps persistence, version checks and authorization

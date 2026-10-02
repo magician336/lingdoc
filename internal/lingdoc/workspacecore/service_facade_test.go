@@ -150,6 +150,28 @@ type sourcePolicyStub struct {
 	calls int
 }
 
+type auditSinkStub struct{ events []AuditEvent }
+
+func (s *auditSinkStub) Record(_ context.Context, event AuditEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
+
+func TestAuthorizationAuditRecordsAllowAndDenyDecisions(t *testing.T) {
+	audit := &auditSinkStub{}
+	service := NewServiceWithAudit(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	if err := service.Authorize(context.Background(), actor, "p", "read"); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Authorize(context.Background(), Actor{TenantID: 1, UserID: "missing"}, "p", "read"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deny = %v", err)
+	}
+	if len(audit.events) != 2 || audit.events[0].Decision != "allow" || audit.events[1].Decision != "deny" {
+		t.Fatalf("audit events = %+v", audit.events)
+	}
+}
+
 type recordingProjectAuthorizer struct {
 	tenantErr    error
 	projectErr   error

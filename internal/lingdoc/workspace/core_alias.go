@@ -18,6 +18,8 @@ type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
 type TransferOwnerInput = core.TransferOwnerInput
+type AuditEvent = core.AuditEvent
+type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 
 var (
@@ -36,4 +38,8 @@ func NewService(repository Repository) *Service {
 
 func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer) *Service {
 	return core.NewServiceWithAuthorizer(repository, reader, sources, authorizer)
+}
+
+func NewServiceWithAudit(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink) *Service {
+	return core.NewServiceWithAudit(repository, reader, sources, authorizer, audit)
 }
