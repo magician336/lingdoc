@@ -192,8 +192,13 @@ func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) er
 }
 
 func (t gormTransaction) ReplaceMembers(projectID string, members []Member) error {
+	sidecar := true
 	if err := t.db.Where("project_id = ?", projectID).Delete(&memberPermissionRow{}).Error; err != nil {
-		return err
+		if strings.Contains(err.Error(), "no such table: lingdoc_member_permissions") {
+			sidecar = false
+		} else {
+			return err
+		}
 	}
 	if err := t.db.Where("project_id = ?", projectID).Delete(&memberRow{}).Error; err != nil {
 		return err
@@ -201,6 +206,21 @@ func (t gormTransaction) ReplaceMembers(projectID string, members []Member) erro
 	for _, member := range members {
 		if err := t.db.Create(&memberRow{ProjectID: projectID, UserID: member.UserID, Role: member.Role}).Error; err != nil {
 			return err
+		}
+		if !sidecar {
+			continue
+		}
+		governance := member.GovernanceRole
+		if governance == "" {
+			if member.Role == "owner" {
+				governance = "owner"
+			} else {
+				governance = "member"
+			}
+		}
+		status := member.Status
+		if status == "" {
+			status = "active"
 		}
 		roles, err := json.Marshal(member.FunctionRoles)
 		if err != nil {
@@ -210,7 +230,7 @@ func (t gormTransaction) ReplaceMembers(projectID string, members []Member) erro
 		if err != nil {
 			return err
 		}
-		if err := t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: member.GovernanceRole, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: member.Status}).Error; err != nil {
+		if err := t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error; err != nil {
 			return err
 		}
 	}

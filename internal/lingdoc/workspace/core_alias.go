@@ -17,6 +17,7 @@ type SaveSpecInput = core.SaveSpecInput
 type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
+type TransferOwnerInput = core.TransferOwnerInput
 type ContractDemoTemplate = core.ContractDemoTemplate
 
 var (

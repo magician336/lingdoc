@@ -35,6 +35,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.PUT("/projects/:projectId/spec", h.saveSpec)
 	routes.Write.POST("/projects/:projectId/activate", h.activateProject)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
+	routes.Write.POST("/projects/:projectId/owner-transfer", h.transferOwner)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
@@ -297,6 +298,27 @@ func (h *Handler) saveMembers(c *gin.Context) {
 		return
 	}
 	data, status, replay, err := h.service.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) transferOwner(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input TransferOwnerInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
