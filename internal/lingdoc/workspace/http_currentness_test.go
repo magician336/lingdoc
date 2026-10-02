@@ -117,8 +117,8 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 		t.Fatalf("seed project member: %v", err)
 	}
 
-	handler := NewHandler(db, nil, nil)
-	handler.gateway = evidence.NewAssetGateway(handler.bindings, allowTestAssetAuthorizer{})
+	handler := newTestHandler(db, nil, nil)
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, allowTestAssetAuthorizer{})
 	return handler, db
 }
 
@@ -128,7 +128,7 @@ func TestGetSourceUsesCurrentAssetAfterRefreshingKnowledgeSignal(t *testing.T) {
 	ctx := context.Background()
 	processedAt := time.Date(2026, time.September, 25, 10, 0, 0, 0, time.UTC)
 
-	asset, err := handler.bindings.Bind(ctx, evidence.BindInput{
+	asset, err := testRuntime(handler).bindings.Bind(ctx, evidence.BindInput{
 		TenantID:        7,
 		ProjectID:       "project-1",
 		KnowledgeID:     "knowledge-1",
@@ -189,7 +189,7 @@ func TestGetSourceUsesCurrentAssetAfterRefreshingKnowledgeSignal(t *testing.T) {
 	if response.Data.Status != string(evidence.SourceAvailable) {
 		t.Fatalf("first getSource status = %q, want %q", response.Data.Status, evidence.SourceAvailable)
 	}
-	current, err := handler.bindings.CurrentAsset(ctx, "project-1", asset.ID)
+	current, err := testRuntime(handler).bindings.CurrentAsset(ctx, "project-1", asset.ID)
 	if err != nil {
 		t.Fatalf("read current asset: %v", err)
 	}

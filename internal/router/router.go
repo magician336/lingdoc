@@ -318,22 +318,22 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		if params.LingDocWorkspace != nil {
-			params.LingDocWorkspace.Register(v1)
+			registerLingDocWorkspaceRoutes(v1, rbacGuards, params.LingDocWorkspace)
 		}
 		if params.LingDocDeliveryHandler != nil {
-			lingdoc := v1.Group("/lingdoc")
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
 			workspace.RegisterDeliveryRoutes(lingdoc, params.LingDocDeliveryHandler)
 		}
 		if params.LingDocDeliveryExportHandler != nil {
-			lingdoc := v1.Group("/lingdoc")
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
 			workspace.RegisterDeliveryExportRoutes(lingdoc, params.LingDocDeliveryExportHandler)
 		}
 		if params.LingDocCandidateAdoptionHandler != nil {
-			lingdoc := v1.Group("/lingdoc")
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
 			candidateadoption.RegisterRoutes(lingdoc, params.LingDocCandidateAdoptionHandler)
 		}
 		if params.LingDocGenerationHandler != nil {
-			lingdoc := v1.Group("/lingdoc")
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
 			generation.RegisterRoutes(lingdoc, params.LingDocGenerationHandler)
 		}
 		RegisterChunkerDebugRoutes(v1, rbacGuards)

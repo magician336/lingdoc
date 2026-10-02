@@ -49,7 +49,7 @@ func TestSpecRetryPreservesIdempotencyOrder(t *testing.T) {
 			var lockErrors atomic.Int32
 			for i, writer := range writers {
 				var waited atomic.Bool
-				err := writer.db.Callback().Query().After("gorm:query").Register("test:spec-retry-barrier", func(tx *gorm.DB) {
+				err := writer.testDB().Callback().Query().After("gorm:query").Register("test:spec-retry-barrier", func(tx *gorm.DB) {
 					if tx.Statement.Table != "lingdoc_operations" || !errors.Is(tx.Error, gorm.ErrRecordNotFound) || !waited.CompareAndSwap(false, true) {
 						return
 					}
@@ -63,7 +63,7 @@ func TestSpecRetryPreservesIdempotencyOrder(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := writer.db.Callback().Update().After("gorm:update").Register("test:spec-retry-lock", func(tx *gorm.DB) {
+				if err := writer.testDB().Callback().Update().After("gorm:update").Register("test:spec-retry-lock", func(tx *gorm.DB) {
 					if isSQLiteLockError(tx.Error) {
 						lockErrors.Add(1)
 					}
@@ -119,7 +119,7 @@ func TestSpecRetryPreservesIdempotencyOrder(t *testing.T) {
 				t.Fatalf("first commit = %+v", first)
 			}
 			if tc.revoke {
-				if err := setup.db.Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = ? AND user_id = ?", actor.TenantID, actor.UserID).Error; err != nil {
+				if err := setup.testDB().Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = ? AND user_id = ?", actor.TenantID, actor.UserID).Error; err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -135,14 +135,14 @@ func TestSpecRetryPreservesIdempotencyOrder(t *testing.T) {
 				t.Fatal("test never exercised a real SQLite lock/snapshot failure")
 			}
 			var project projectRow
-			if err := setup.db.Where("id = ?", id).First(&project).Error; err != nil {
+			if err := setup.testDB().Where("id = ?", id).First(&project).Error; err != nil {
 				t.Fatal(err)
 			}
 			if project.SpecRevision != 1 || project.ProjectVersion != 2 || project.SpecJSON != `{"research_goal":"first"}` {
 				t.Fatalf("losing or replayed request changed the committed project: %+v", project)
 			}
 			var count int64
-			if err := setup.db.Model(&operationRow{}).Where("operation = ? AND target = ?", "saveSpec", id).Count(&count).Error; err != nil || count != 1 {
+			if err := setup.testDB().Model(&operationRow{}).Where("operation = ? AND target = ?", "saveSpec", id).Count(&count).Error; err != nil || count != 1 {
 				t.Fatalf("save operation count = %d, err = %v; want exactly one", count, err)
 			}
 		})
@@ -169,7 +169,7 @@ func TestSpecRetryBoundAndCancellation(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			calls := 0
-			if err := svc.db.Callback().Update().Before("gorm:update").Register("test:force-spec-lock", func(tx *gorm.DB) {
+			if err := svc.testDB().Callback().Update().Before("gorm:update").Register("test:force-spec-lock", func(tx *gorm.DB) {
 				calls++
 				_ = tx.AddError(errors.New("database is locked"))
 				if cancelOnLock {
@@ -191,11 +191,11 @@ func TestSpecRetryBoundAndCancellation(t *testing.T) {
 				t.Fatal("persistent contention exhausted retries before the recovery budget")
 			}
 			var project projectRow
-			if err := svc.db.Where("id = ?", id).First(&project).Error; err != nil || project.SpecRevision != 0 || project.ProjectVersion != 1 {
+			if err := svc.testDB().Where("id = ?", id).First(&project).Error; err != nil || project.SpecRevision != 0 || project.ProjectVersion != 1 {
 				t.Fatalf("failed attempts modified project: %+v, %v", project, err)
 			}
 			var count int64
-			if err := svc.db.Model(&operationRow{}).Where("operation = ? AND target = ?", "saveSpec", id).Count(&count).Error; err != nil || count != 0 {
+			if err := svc.testDB().Model(&operationRow{}).Where("operation = ? AND target = ?", "saveSpec", id).Count(&count).Error; err != nil || count != 0 {
 				t.Fatalf("failed attempts persisted %d operations: %v", count, err)
 			}
 		})

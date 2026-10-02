@@ -16,7 +16,8 @@ import (
 type DeliveryExportService struct {
 	snapshots delivery.SnapshotStore
 	exports   delivery.ExportStore
-	document  DeliveryDocument
+	renderer  delivery.FrozenRenderer
+	validator delivery.FrozenValidator
 	inputs    *candidateadoption.DeliveryInputService
 	sources   candidateadoption.SourcePolicy
 }
@@ -35,13 +36,30 @@ func NewDeliveryExportService(
 	inputs *candidateadoption.DeliveryInputService,
 	sources candidateadoption.SourcePolicy,
 ) *DeliveryExportService {
+	return NewDeliveryExportServiceWithPorts(snapshots, exports, document, document, inputs, sources)
+}
+
+// NewDeliveryExportServiceWithPorts keeps the export application independent
+// of the concrete file format. Production uses DeliveryDocument as the DOCX
+// default, while tests or another delivery adapter can replace both ports.
+func NewDeliveryExportServiceWithPorts(
+	snapshots delivery.SnapshotStore,
+	exports delivery.ExportStore,
+	renderer delivery.FrozenRenderer,
+	validator delivery.FrozenValidator,
+	inputs *candidateadoption.DeliveryInputService,
+	sources candidateadoption.SourcePolicy,
+) *DeliveryExportService {
 	if snapshots == nil || exports == nil || inputs == nil || inputs.Reader == nil || inputs.Authorizer == nil || sources == nil {
+		return nil
+	}
+	if renderer == nil || validator == nil {
 		return nil
 	}
 	if _, ok := exports.(delivery.ExportRecorder); !ok {
 		return nil
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, document: document, inputs: inputs, sources: sources}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources}
 }
 
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
@@ -163,8 +181,8 @@ func (s *DeliveryExportService) service(ctx context.Context) *delivery.ExportSer
 	return delivery.NewExportService(
 		s.snapshots,
 		s.exports,
-		s.document,
-		s.document,
+		s.renderer,
+		s.validator,
 		delivery.CurrentnessFunc(func(frozen delivery.DeliveryInput) (bool, error) {
 			return deliveryCurrentness(ctx, s.inputs.Reader, frozen)
 		}),

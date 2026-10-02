@@ -24,7 +24,7 @@ func TestRegisterRoutesComposesWithWorkspaceWithoutDuplicateChapterListing(t *te
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	v1 := r.Group("/api/v1")
-	workspace.NewHandler(nil, nil, nil).Register(v1)
+	workspace.NewHandler(workspace.HandlerDependencies{}).Register(workspace.RouteGroups{Read: v1.Group("/lingdoc"), Write: v1.Group("/lingdoc")})
 	candidateadoption.RegisterRoutes(v1.Group("/lingdoc"), &candidateadoption.CandidateAdoptionHandler{})
 
 	count := 0

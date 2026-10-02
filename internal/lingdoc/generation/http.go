@@ -13,19 +13,24 @@ import (
 
 const maxGenerationRequestBytes = 1 << 20
 
+type RouteRegistrar interface {
+	GET(string, ...gin.HandlerFunc) gin.IRoutes
+	POST(string, ...gin.HandlerFunc) gin.IRoutes
+}
+
 type ActorResolver func(*gin.Context) (Actor, bool)
 
 type Handler struct {
-	Service      *Service
+	Service      Application
 	ResolveActor ActorResolver
 }
 
-func NewHandler(service *Service, resolveActor ActorResolver) *Handler {
+func NewHandler(service Application, resolveActor ActorResolver) *Handler {
 	return &Handler{Service: service, ResolveActor: resolveActor}
 }
 
 // RegisterRoutes mounts generation endpoints below the authenticated LingDoc group.
-func RegisterRoutes(r gin.IRouter, h *Handler) {
+func RegisterRoutes(r RouteRegistrar, h *Handler) {
 	if h == nil {
 		return
 	}

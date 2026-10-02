@@ -46,7 +46,7 @@ func TestAccessStatusReportsContentAccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, db := newSourceCurrentnessHandler(t)
 	authorizer := &flipTestAssetAuthorizer{allow: true}
-	handler.gateway = evidence.NewAssetGateway(handler.bindings, authorizer)
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, authorizer)
 	router := gin.New()
 	router.GET("/projects/:projectId/access-status", handler.accessStatus)
 
@@ -67,7 +67,7 @@ func TestAccessStatusReportsContentAccess(t *testing.T) {
 	}
 
 	// 绑定一份当前可用的资料：还是可用。
-	bindTestSource(t, db, handler.bindings, "project-1")
+	bindTestSource(t, db, testRuntime(handler).bindings, "project-1")
 	status, raw, body = getAccessStatus(t, router, "reader")
 	if status != http.StatusOK {
 		t.Fatalf("bound project: %d %s", status, raw)
@@ -114,12 +114,12 @@ func TestAccessStatusHidesTheProjectFromNonMembers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, _ := newSourceCurrentnessHandler(t)
 	authorizer := &flipTestAssetAuthorizer{allow: false}
-	handler.gateway = evidence.NewAssetGateway(handler.bindings, authorizer)
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, authorizer)
 	router := gin.New()
 	router.GET("/projects/:projectId/access-status", handler.accessStatus)
 
 	// outsider 是本租户的 active 成员，但不是这个项目的成员：这正是「不该看到」的那一类。
-	if err := handler.db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, ?)",
+	if err := testRuntime(handler).db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, ?)",
 		7, "outsider", "active").Error; err != nil {
 		t.Fatalf("seed outsider: %v", err)
 	}

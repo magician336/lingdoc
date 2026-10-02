@@ -106,7 +106,7 @@ import (
 )
 
 type candidateAdoptionWorkspaceAuthorizer struct {
-	service *workspace.Service
+	service workspace.ApplicationService
 }
 
 func (a candidateAdoptionWorkspaceAuthorizer) Authorize(ctx context.Context, actorID, projectID, capability string) error {
@@ -487,13 +487,18 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
-	must(container.Provide(workspace.NewHandler))
-	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) *candidateadoption.CandidateAdoptionHandler {
+	must(container.Provide(NewLingDocWorkspaceHandler))
+	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService, sourceIntegration workspace.WorkspaceIntegration) *candidateadoption.CandidateAdoptionHandler {
 		store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-		authorizer := candidateAdoptionWorkspaceAuthorizer{service: workspaceHandler.Service()}
-		sources := workspaceHandler.CandidateAdoptionSourcePolicy()
+		authorizer := candidateAdoptionWorkspaceAuthorizer{service: projects}
+		sources := sourceIntegration.CandidateAdoptionSourcePolicy()
 		service := candidateadoption.NewCandidateAdoptionService(store, sources, authorizer)
-		return candidateadoption.NewCandidateAdoptionHandler(service, func(c *gin.Context) (string, bool) {
+		confirmationSources, ok := sources.(candidateadoption.ConfirmationSourcePolicy)
+		if !ok {
+			panic("lingdoc confirmation source policy is required")
+		}
+		confirmations := candidateadoption.NewConfirmationService(store, confirmationSources, authorizer)
+		return candidateadoption.NewCandidateAdoptionHandler(service, confirmations, func(c *gin.Context) (string, bool) {
 			return types.UserIDFromContext(c.Request.Context())
 		})
 	}))
@@ -517,17 +522,17 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	// 交付输入服务：T12 的读取侧 + 成员判定。两个交付服务共用同一份，授权口径分家
 	// 是迟早的事——同一份交付在一个入口放行、在另一个入口拦住，那时没人知道该信哪个。
-	must(container.Provide(func(db *gorm.DB, workspaceHandler *workspace.Handler) *candidateadoption.DeliveryInputService {
+	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService) *candidateadoption.DeliveryInputService {
 		return &candidateadoption.DeliveryInputService{
 			Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(db),
-			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: workspaceHandler.Service()},
+			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: projects},
 		}
 	}))
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(workspaceHandler *workspace.Handler, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (*workspace.DeliveryReleaseService, error) {
-		service := workspace.NewDeliveryReleaseService(inputs, workspaceHandler.DeliveryInputBuilder(), snapshots)
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (workspace.ReleaseApplication, error) {
+		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots)
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
@@ -536,7 +541,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		}
 		return service, nil
 	}))
-	must(container.Provide(func(service *workspace.DeliveryReleaseService) (*workspace.DeliveryHandler, error) {
+	must(container.Provide(func(service workspace.ReleaseApplication) (*workspace.DeliveryHandler, error) {
 		handler := workspace.NewDeliveryHandler(service)
 		if handler == nil {
 			return nil, errors.New("lingdoc delivery handler: incomplete dependencies")
@@ -549,23 +554,34 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 拒绝渲染器自己产出的文件，或者更糟，放行它。
 	//
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
-	must(container.Provide(func(workspaceHandler *workspace.Handler, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore) (*workspace.DeliveryExportService, error) {
-		service := workspace.NewDeliveryExportService(snapshots, exports, workspace.DeliveryDocument{}, inputs, workspaceHandler.WorkspaceSourcePolicy())
+	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
+	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator) (workspace.ExportApplication, error) {
+		service := workspace.NewDeliveryExportServiceWithPorts(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy())
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
 		return service, nil
 	}))
-	must(container.Provide(func(service *workspace.DeliveryExportService) (*workspace.DeliveryExportHandler, error) {
+	must(container.Provide(func(service workspace.ExportApplication) (*workspace.DeliveryExportHandler, error) {
 		handler := workspace.NewDeliveryExportHandler(service)
 		if handler == nil {
 			return nil, errors.New("lingdoc delivery export handler: incomplete dependencies")
 		}
 		return handler, nil
 	}))
-	must(container.Provide(workspace.NewGenerationHandler))
-	must(container.Provide(func(h *generation.Handler) interfaces.TaskHandler {
-		return generation.NewTaskHandler(h.Service)
+	must(container.Provide(func(runtime *workspace.SourceRuntime, models interfaces.ModelService, tasks interfaces.TaskEnqueuer) generation.Application {
+		return workspace.NewGenerationApplication(runtime, models, tasks)
+	}))
+	must(container.Provide(func(service generation.Application) *generation.Handler {
+		return generation.NewHandler(service, func(c *gin.Context) (generation.Actor, bool) {
+			userID, userOK := types.UserIDFromContext(c.Request.Context())
+			tenantID, tenantOK := types.TenantIDFromContext(c.Request.Context())
+			return generation.Actor{UserID: userID, TenantID: tenantID}, userOK && tenantOK && userID != "" && tenantID != 0
+		})
+	}))
+	must(container.Provide(func(service generation.Application) interfaces.TaskHandler {
+		return generation.NewTaskHandler(service)
 	}, dig.Name("lingdocGeneration")))
 
 	// Data source handler

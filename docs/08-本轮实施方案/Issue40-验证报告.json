@@ -1,0 +1,75 @@
+{
+  "issue": 40,
+  "pr": 43,
+  "date": "2026-10-02",
+  "scope": "Interface decoupling and current main compatibility; not full product acceptance",
+  "tested_merge_parents": [
+    "37e1df2c1a4724f96839ae62a4061a551dbb3c34",
+    "eaa02e9b744b588eb80c4f60c150aff120a8eab3"
+  ],
+  "application": {
+    "status": "PASS",
+    "command": "go test -race -p 2 -count=1 ./internal/lingdoc/... ./internal/router ./internal/container ./internal/evidence",
+    "environment": "golang:1.26-bookworm; isolated writable source copy; CGO enabled",
+    "route_policies": 30,
+    "sequential_real_api": {
+      "status": "PASS",
+      "repetitions": 20,
+      "environment": "Windows Go 1.27.1 CGO"
+    },
+    "exit_code": 0
+  },
+  "database": {
+    "status": "PASS",
+    "sqlite": {
+      "migration_batches": "000018-000024"
+    },
+    "postgres": {
+      "version": 17,
+      "engine": "isolated Docker test container",
+      "migration_batches": "000097-000103",
+      "schema_isolation": true
+    },
+    "command": "go test -p 2 -count=1 -v -run '^(TestPostgresMigrationAndRepositoryContract|TestSQLiteProductionMigrationBatch)$' ./internal/lingdoc/workspacecore",
+    "fixture_authentication": "synthetic local only; no production database"
+  },
+  "frontend": {
+    "status": "PASS",
+    "tests": {
+      "total": 947,
+      "passed": 945,
+      "failed": 0,
+      "skipped": 2,
+      "skip_reason": "No usable Windows POSIX shell"
+    },
+    "type_check": "PASS",
+    "production_build": "PASS",
+    "dedicated_mock_http_tests": {
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "static_contract": {
+    "status": "PASS",
+    "paths": 28,
+    "operations": 31,
+    "schemas": 65,
+    "scenarios": 23
+  },
+  "formatting_and_whitespace": "PASS",
+  "environment_failures_resolved_or_recorded": [
+    "Windows DuckDB native-library link incompatibility: use Linux validation instead",
+    "Linux first attempt lacked sqlite3.h: provide header from locked go-sqlite3 dependency",
+    "Linux legacy evidence-report tests require writable output: use disposable writable source copy"
+  ],
+  "not_run": [
+    "Full repository test/lint suite outside affected packages",
+    "Real model calls and production knowledge retrieval",
+    "Browser manual walkthrough",
+    "Second-person Word/WPS editing validation",
+    "Independent PR review"
+  ],
+  "publication": "PR branch only; no direct or forced update to main"
+}

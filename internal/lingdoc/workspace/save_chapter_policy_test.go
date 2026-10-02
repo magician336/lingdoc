@@ -103,11 +103,11 @@ func newSaveChapterFixture(t *testing.T) saveChapterFixture {
 		t.Fatalf("seed tenant member: %v", err)
 	}
 
-	handler := NewHandler(db, nil, nil)
+	handler := newTestHandler(db, nil, nil)
 	authorizer := &flipTestAssetAuthorizer{allow: true}
 	// 装配**之后**再换掉 gateway。复核适配器要是装配时抓了一份快照，这一行就白写了：
 	// 它注入的东西复核永远看不到，症状是「复核结论与产出侧对不上」。
-	handler.gateway = evidence.NewAssetGateway(handler.bindings, authorizer)
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, authorizer)
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -115,7 +115,7 @@ func newSaveChapterFixture(t *testing.T) saveChapterFixture {
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(7))
 		c.Request = c.Request.WithContext(ctx)
 	})
-	handler.Register(router.Group("/api/v1"))
+	handler.Register(RouteGroups{Read: router.Group("/api/v1/lingdoc"), Write: router.Group("/api/v1/lingdoc")})
 	return saveChapterFixture{handler: handler, db: db, authorizer: authorizer, router: router}
 }
 
@@ -270,7 +270,7 @@ func TestSaveChapterAcceptsCitationsAndRechecksBeforeReplay(t *testing.T) {
 		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
 	}
 
-	bindTestSource(t, fixture.db, fixture.handler.bindings, projectID)
+	bindTestSource(t, fixture.db, testRuntime(fixture.handler).bindings, projectID)
 
 	_, chapters := doJSON(t, fixture.router, http.MethodGet, chaptersPath, "", nil)
 	items, ok := nested(t, chapters, "data").([]any)
@@ -377,7 +377,7 @@ func TestSaveChapterWithoutPolicyAnswersServiceUnavailable(t *testing.T) {
 	chapterID, _ := first["id"].(string)
 
 	// 把网关抽掉：复核要问的那台判定器没了，装配该答 503 而不是放行。
-	fixture.handler.gateway = nil
+	testRuntime(fixture.handler).gateway = nil
 	recorder, body := doJSON(t, fixture.router, http.MethodPost, chaptersPath+"/"+chapterID+"/versions", "np-cite-1",
 		map[string]any{"expected_chapter_version_id": nil, "expected_spec_revision": 1,
 			"body_markdown": "[[source:source-1]] 的摘录", "source_ids": []string{"source-1"}})

@@ -44,7 +44,7 @@ const (
 func newDeliveryReleaseService(t *testing.T, handler *Handler) *DeliveryReleaseService {
 	t.Helper()
 	inputs := &candidateadoption.DeliveryInputService{
-		Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(handler.db),
+		Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(testRuntime(handler).db),
 		Authorizer: deliveryTestAuthorizer{},
 	}
 	builder := handler.DeliveryInputBuilder()
@@ -192,7 +192,7 @@ func frozenChapter(t *testing.T, input delivery.DeliveryInput, chapterID string)
 // currentAssetRevision 取资料此刻的版本：确认记录与冻结来源都要钉住它。
 func currentAssetRevision(t *testing.T, handler *Handler, assetID string) int {
 	t.Helper()
-	asset, err := handler.bindings.CurrentAsset(context.Background(), "project-1", assetID)
+	asset, err := testRuntime(handler).bindings.CurrentAsset(context.Background(), "project-1", assetID)
 	if err != nil {
 		t.Fatalf("read current asset: %v", err)
 	}

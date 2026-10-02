@@ -25,7 +25,7 @@ const deliveryHistoryLimit = 50
 // 「T12→T13」也就只是两套类型相邻摆着。
 type DeliveryReleaseService struct {
 	inputs  *candidateadoption.DeliveryInputService
-	builder *DeliveryInputBuilder
+	builder DeliveryInputAssembler
 	store   delivery.SnapshotStore
 	freezes delivery.FreezeRecorder
 }
@@ -36,7 +36,7 @@ type DeliveryReleaseService struct {
 // 快照库还必须能记「哪一次动作冻了它」（delivery.FreezeRecorder）。契约把
 // Idempotency-Key 标成 /releases 的必填头，退化成「照冻不误」就等于收下了这个头
 // 却不当回事：一次超时重试会在交付历史里多出一条，而调用方以为自己只冻过一次。
-func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder *DeliveryInputBuilder, store delivery.SnapshotStore) *DeliveryReleaseService {
+func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore) *DeliveryReleaseService {
 	if inputs == nil || builder == nil || store == nil {
 		return nil
 	}

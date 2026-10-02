@@ -34,12 +34,12 @@ const downloadPathPrefix = "/api/v1/lingdoc"
 // 「这个项目导出过什么」。界面上的产物列表只能从服务端来——契约 §7 要求刷新交付页
 // 之后仍能按 snapshot_id 显示当前性，而前端自己记账撑不住刷新。
 type DeliveryExportHandler struct {
-	service *DeliveryExportService
+	service ExportApplication
 }
 
 // NewDeliveryExportHandler 依赖不齐时返回 nil，让装配处报错而不是交出一台会在
 // 调用时空转的 handler。
-func NewDeliveryExportHandler(service *DeliveryExportService) *DeliveryExportHandler {
+func NewDeliveryExportHandler(service ExportApplication) *DeliveryExportHandler {
 	if service == nil {
 		return nil
 	}
@@ -48,7 +48,7 @@ func NewDeliveryExportHandler(service *DeliveryExportService) *DeliveryExportHan
 
 // RegisterDeliveryExportRoutes 把 T14 挂在已认证的 LingDoc 组下面。服务端前缀
 // （契约里的 /api/v1/lingdoc）由调用方那一层的 group 承担。
-func RegisterDeliveryExportRoutes(r gin.IRouter, h *DeliveryExportHandler) {
+func RegisterDeliveryExportRoutes(r RouteRegistrar, h *DeliveryExportHandler) {
 	if h == nil {
 		return
 	}

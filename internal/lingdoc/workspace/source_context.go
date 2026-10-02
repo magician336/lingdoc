@@ -6,7 +6,6 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
@@ -36,10 +35,10 @@ func expandableChunkType(t types.ChunkType) bool {
 //
 // read 必须来自 readSource：窗口是在授权与复核**之后**才读的。这不是纪律问题——
 // 走完那条链才拿得到 sourceRead，而邻居查询只收它作入参。
-func (h *Handler) expandSourceContext(ctx context.Context, read sourceRead) (gin.H, error) {
+func (h *SourceRuntime) expandSourceContext(ctx context.Context, read sourceRead) (map[string]any, error) {
 	// 必须是空切片而不是 nil：契约里 segments 是 array，nil 会序列化成 null，
 	// 界面 .map 直接炸。accessStatus 那里已经栽过一次，注释留在那儿。
-	segments, available := []gin.H{}, false
+	segments, available := []map[string]any{}, false
 	if expandableChunkType(read.Chunk.ChunkType) && read.Source.Status == evidence.SourceAvailable {
 		var err error
 		available, segments, err = h.contextSegments(ctx, read)
@@ -47,16 +46,16 @@ func (h *Handler) expandSourceContext(ctx context.Context, read sourceRead) (gin
 			return nil, err
 		}
 	}
-	return gin.H{
+	return map[string]any{
 		"source":            read.Source,
 		"context_available": available,
-		"window":            gin.H{"before": contextWindow, "after": contextWindow},
+		"window":            map[string]any{"before": contextWindow, "after": contextWindow},
 		"segments":          segments,
 	}, nil
 }
 
 // contextSegments 取引用块两侧的邻居并逐段作答。
-func (h *Handler) contextSegments(ctx context.Context, read sourceRead) (bool, []gin.H, error) {
+func (h *SourceRuntime) contextSegments(ctx context.Context, read sourceRead) (bool, []map[string]any, error) {
 	origin, haveOrigin, err := h.origins().OriginText(ctx, read.Chunk.KnowledgeID)
 	if err != nil {
 		// 底座故障如实报错。把它吞成「没有上下文」等于把一次事故说成「这段没有邻居」。
@@ -66,7 +65,7 @@ func (h *Handler) contextSegments(ctx context.Context, read sourceRead) (bool, [
 	if err != nil {
 		return false, nil, err
 	}
-	segments := make([]gin.H, 0, len(before)+len(after))
+	segments := make([]map[string]any, 0, len(before)+len(after))
 	// before 是倒序取回来的（为了拿到「最靠近引用块的那一段」），这里翻回文档顺序。
 	for i := len(before) - 1; i >= 0; i-- {
 		segments = append(segments, contextSegment(origin, haveOrigin, before[i], "before"))
@@ -87,7 +86,7 @@ func (h *Handler) contextSegments(ctx context.Context, read sourceRead) (bool, [
 // 强档下逐字对不上的（坐标漂移、该块被单独编辑过）**只给位置、不给正文**：那一段
 // 确实不是原文，摆出来就是错的。它仍然留在 segments 里——丢掉它会让窗口看上去是
 // 连续的，而 chunk_index 的号码本来就把这个空洞说清了。
-func contextSegment(origin string, haveOrigin bool, row types.Chunk, relation string) gin.H {
+func contextSegment(origin string, haveOrigin bool, row types.Chunk, relation string) map[string]any {
 	verbatim, text := false, row.Content
 	switch {
 	case !haveOrigin:
@@ -99,7 +98,7 @@ func contextSegment(origin string, haveOrigin bool, row types.Chunk, relation st
 	if utf8.RuneCountInString(text) > maxContextSegmentRunes {
 		verbatim, text = false, ""
 	}
-	return gin.H{
+	return map[string]any{
 		"source_id":   row.ID,
 		"chunk_index": row.ChunkIndex,
 		"relation":    relation,
@@ -119,7 +118,7 @@ func contextSegment(origin string, haveOrigin bool, row types.Chunk, relation st
 //
 // 不看 is_enabled：停用是「不参与检索」，不是「不在原文里」。窗口跳过它，前后两段
 // 看上去就挨着了——那是这个端点最不该给的一种错觉。
-func (h *Handler) contextNeighbours(ctx context.Context, cited types.Chunk, window int) (before, after []types.Chunk, err error) {
+func (h *SourceRuntime) contextNeighbours(ctx context.Context, cited types.Chunk, window int) (before, after []types.Chunk, err error) {
 	base := func() *gorm.DB {
 		return h.db.WithContext(ctx).Model(&types.Chunk{}).
 			Select("id", "chunk_index", "content", "start_at", "end_at").

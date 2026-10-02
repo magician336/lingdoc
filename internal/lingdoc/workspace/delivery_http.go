@@ -24,12 +24,12 @@ import (
 // 启用」。它也是这里唯一不读请求体的操作——问「这个项目交付过什么」不需要调用方先
 // 声明一个版本。
 type DeliveryHandler struct {
-	service *DeliveryReleaseService
+	service ReleaseApplication
 }
 
 // NewDeliveryHandler 依赖不齐时返回 nil，让装配处报错而不是交出一台会在调用时
 // 空转的 handler。
-func NewDeliveryHandler(service *DeliveryReleaseService) *DeliveryHandler {
+func NewDeliveryHandler(service ReleaseApplication) *DeliveryHandler {
 	if service == nil {
 		return nil
 	}
@@ -38,7 +38,7 @@ func NewDeliveryHandler(service *DeliveryReleaseService) *DeliveryHandler {
 
 // RegisterDeliveryRoutes 把 T13 挂在已认证的 LingDoc 组下面。服务端前缀
 // （契约里的 /api/v1/lingdoc）由调用方那一层的 group 承担。
-func RegisterDeliveryRoutes(r gin.IRouter, h *DeliveryHandler) {
+func RegisterDeliveryRoutes(r RouteRegistrar, h *DeliveryHandler) {
 	if h == nil {
 		return
 	}

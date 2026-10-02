@@ -79,7 +79,7 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	handler.Register(router.Group("/api/v1"))
+	handler.Register(RouteGroups{Read: router.Group("/api/v1/lingdoc"), Write: router.Group("/api/v1/lingdoc")})
 	group := router.Group("/api/v1/lingdoc")
 	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))
 	RegisterDeliveryExportRoutes(group, NewDeliveryExportHandler(exports))
@@ -102,7 +102,7 @@ func newDeliveryExportHandlerWithSourceAuthorizer(
 ) (*gin.Engine, *gorm.DB, *Handler) {
 	t.Helper()
 	handler, db, assetID := seedBoundSource(t)
-	handler.gateway = evidence.NewAssetGateway(handler.bindings, sourceAuthorizer)
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, sourceAuthorizer)
 	if len(chapters) == 0 {
 		chapters = []deliveryChapter{
 			deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}),

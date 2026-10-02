@@ -73,8 +73,8 @@ func TestCheckPassedSnapshotCannotDownloadAfterRealKBShareRevocation(t *testing.
 
 	// NewHandler builds the actual FixedAuthorizer -> kbReadChecker -> KB-share
 	// permission chain. Do not replace this gateway with a switchable test authorizer.
-	handler := NewHandler(db, kbShares, nil)
-	asset, err := handler.bindings.Bind(context.Background(), evidence.BindInput{
+	handler := newTestHandler(db, kbShares, nil)
+	asset, err := testRuntime(handler).bindings.Bind(context.Background(), evidence.BindInput{
 		TenantID:        8,
 		ProjectID:       "project-1",
 		KnowledgeID:     "shared-knowledge",

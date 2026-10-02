@@ -2,18 +2,21 @@ package workspace
 
 import (
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
-	"gorm.io/gorm"
 )
 
 type Service = core.Service
+type Repository = core.Repository
+type SourcePolicy = core.SourcePolicy
 type Actor = core.Actor
+type Project = core.Project
+type Chapter = core.Chapter
+type GenerationContext = core.GenerationContext
 type CreateProjectInput = core.CreateProjectInput
 type SaveSpecInput = core.SaveSpecInput
 type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
 type ContractDemoTemplate = core.ContractDemoTemplate
-type SourcePolicy = core.SourcePolicy
 
 var (
 	ErrNotFound            = core.ErrNotFound
@@ -25,6 +28,6 @@ var (
 	ErrSourceUnavailable   = core.ErrSourceUnavailable
 )
 
-func NewService(db *gorm.DB, templates core.TemplateReader, sources SourcePolicy) *Service {
-	return core.NewService(db, templates, sources)
+func NewService(repository Repository) *Service {
+	return core.NewService(repository)
 }

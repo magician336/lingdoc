@@ -34,7 +34,7 @@ type DeliveryInputBuilder struct {
 // DeliveryInputBuilder 交出装配好的构建器；依赖不齐时返回 nil，与同一文件里
 // CandidateAdoptionSourcePolicy 的守卫同一条：宁可让调用方拿到 nil，
 // 也不要交出一个会在运行时静默少一层校验的对象。
-func (h *Handler) DeliveryInputBuilder() *DeliveryInputBuilder {
+func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 	if h == nil || h.db == nil || h.bindings == nil || h.gateway == nil {
 		return nil
 	}

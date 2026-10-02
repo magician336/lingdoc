@@ -28,7 +28,7 @@ import (
 //
 // 装配处把 nil 塞进 SourcePolicy 的后果不是「少一层校验」，而是整条链路对带引用的内容
 // 恒不可用：带 source_ids 的候选采纳恒 403，带引用的章节确认恒 422。
-func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy {
+func (h *SourceRuntime) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy {
 	if h == nil || h.db == nil || h.bindings == nil || h.gateway == nil {
 		return nil
 	}
@@ -44,11 +44,11 @@ func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy
 //
 // 依赖不齐（组装漏了库连接/绑定/网关）时答 ErrDependencyUnavailable：既不去猜一个更宽松的
 // 答案，也不答成「授权被拒」——后者会让一次装配失误看着像用户的权限出了问题。
-func (h *Handler) WorkspaceSourcePolicy() SourcePolicy {
+func (h *SourceRuntime) WorkspaceSourcePolicy() SourcePolicy {
 	return workspaceSourcePolicy{handler: h}
 }
 
-type workspaceSourcePolicy struct{ handler *Handler }
+type workspaceSourcePolicy struct{ handler *SourceRuntime }
 
 // 装配处把 SourcePolicy 交给核心域（core_alias.go 的 NewService），断言失败是静默的
 // ——把「静默少一层校验」变成「编译不过」。
@@ -65,7 +65,7 @@ func (p workspaceSourcePolicy) Validate(ctx context.Context, projectID, actorID 
 
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
 // 它只被那几个带 nil 守卫的装配入口调用。
-func (h *Handler) sourceRevalidator() sourceRevalidator {
+func (h *SourceRuntime) sourceRevalidator() sourceRevalidator {
 	origins := h.origins()
 	return sourceRevalidator{
 		db: h.db, bindings: h.bindings, gateway: h.gateway, origins: origins,
@@ -273,7 +273,7 @@ type sourceRead struct {
 //
 // 返回的全是既有 sentinel（ErrNotFound / ErrSourceUnavailable / 上游 error），
 // 不含任何 HTTP 概念：两个端点走同一个 sendError，状态码不会分叉。
-func (h *Handler) readSource(ctx context.Context, actor Actor, projectID, sourceID string) (sourceRead, error) {
+func (h *SourceRuntime) readSource(ctx context.Context, actor Actor, projectID, sourceID string) (sourceRead, error) {
 	if err := h.service.Authorize(ctx, actor, projectID, "read"); err != nil {
 		return sourceRead{}, err
 	}
@@ -310,7 +310,7 @@ func (h *Handler) readSource(ctx context.Context, actor Actor, projectID, source
 }
 
 // origins 现取原文读取器。装配只有这一处定义——将来换实现不会漏掉某条读路径。
-func (h *Handler) origins() evidence.OriginReader {
+func (h *SourceRuntime) origins() evidence.OriginReader {
 	return evidence.NewOriginReader(dbKnowledgeReader{db: h.db})
 }
 

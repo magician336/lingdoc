@@ -34,9 +34,9 @@ func EnqueueTask(_ context.Context, enqueuer interfaces.TaskEnqueuer, tenantID u
 // TaskHandler adapts the LingDoc worker to WeKnora's shared Asynq/Lite task
 // execution path. Repository claim semantics make duplicate queue deliveries
 // harmless; the task payload itself contains no user-provided generation data.
-type TaskHandler struct{ Service *Service }
+type TaskHandler struct{ Service Application }
 
-func NewTaskHandler(service *Service) *TaskHandler { return &TaskHandler{Service: service} }
+func NewTaskHandler(service Application) *TaskHandler { return &TaskHandler{Service: service} }
 
 func (h *TaskHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	if h == nil || h.Service == nil || task == nil {
@@ -50,10 +50,8 @@ func (h *TaskHandler) Handle(ctx context.Context, task *asynq.Task) error {
 	run, err := h.Service.Execute(ctx, payload.RunID)
 	if err != nil {
 		if errors.Is(err, ErrRunUnavailable) {
-			if delayed, ok := h.Service.Enqueuer.(DelayedEnqueuer); ok {
-				if enqueueErr := delayed.EnqueueGenerationAfter(ctx, payload.TenantID, payload.RunID, claimLeaseDuration+time.Second); enqueueErr == nil {
-					return nil
-				}
+			if enqueueErr := h.Service.Reschedule(ctx, payload.TenantID, payload.RunID, claimLeaseDuration+time.Second); enqueueErr == nil {
+				return nil
 			}
 			// Do not ACK a run that may have lost its only worker.
 			return ErrRunUnavailable

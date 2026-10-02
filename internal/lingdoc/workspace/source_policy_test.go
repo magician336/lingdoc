@@ -33,7 +33,7 @@ func seedBoundSource(t *testing.T) (*Handler, *gorm.DB, string) {
 		t.Fatalf("seed knowledge: %v", err)
 	}
 
-	asset, err := handler.bindings.Bind(ctx, evidence.BindInput{
+	asset, err := testRuntime(handler).bindings.Bind(ctx, evidence.BindInput{
 		TenantID:        7,
 		ProjectID:       "project-1",
 		KnowledgeID:     "knowledge-1",
@@ -95,7 +95,7 @@ func TestCandidateSourcePolicyAcceptsACurrentBoundSource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateCurrent rejected a current bound source: %v", err)
 	}
-	current, err := handler.bindings.CurrentAsset(ctx, "project-1", assetID)
+	current, err := testRuntime(handler).bindings.CurrentAsset(ctx, "project-1", assetID)
 	if err != nil {
 		t.Fatalf("read current asset: %v", err)
 	}
@@ -183,19 +183,23 @@ func TestCandidateSourcePolicyRejectsADeletedKnowledge(t *testing.T) {
 }
 
 // 装配处那行 nil 的验收：适配器必须一路走到确认服务上。
-// NewCandidateAdoptionHandler 里的类型断言失败是**静默**的（candidate_adoption_http.go:26），
-// 断言没过时 Confirmations.Sources 仍是 nil，T12 于是对每一章带引用的确认返回 422。
+// 确认服务由装配点显式提供，不再由 HTTP handler 猜测具体存储类型。
 func TestCandidateAdoptionHandlerReceivesTheSourcePolicy(t *testing.T) {
 	handler, db, _ := seedBoundSource(t)
 	store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
 	service := candidateadoption.NewCandidateAdoptionService(store, handler.CandidateAdoptionSourcePolicy(), nil)
-	adoption := candidateadoption.NewCandidateAdoptionHandler(service, func(*gin.Context) (string, bool) {
+	sources, ok := handler.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy)
+	if !ok {
+		t.Fatal("source adapter does not implement confirmation policy")
+	}
+	confirmations := candidateadoption.NewConfirmationService(store, sources, nil)
+	adoption := candidateadoption.NewCandidateAdoptionHandler(service, confirmations, func(*gin.Context) (string, bool) {
 		return "reader", true
 	})
 	if adoption.Confirmations == nil {
 		t.Fatal("NewCandidateAdoptionHandler 没有建出确认服务")
 	}
-	if adoption.Confirmations.Sources == nil {
+	if confirmations.Sources == nil {
 		t.Fatal("确认服务拿到的仍是 nil：带引用的章节确认会恒返回 422")
 	}
 }

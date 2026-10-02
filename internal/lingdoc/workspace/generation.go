@@ -18,33 +18,27 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"gorm.io/gorm"
 )
 
 const maxGenerationSources = 12
 
-// NewGenerationHandler connects T10 to the application's workspace, source,
-// model and durable task-queue services. The workspace handler remains the
-// owner of the shared T07/T08 and T09 adapters, so generation uses the same
-// authorization and source policy as retrieval and candidate adoption.
-func NewGenerationHandler(
-	db *gorm.DB,
-	kbShares interfaces.KBShareService,
-	knowledge interfaces.KnowledgeBaseService,
+// NewGenerationApplication wires production generation adapters without any
+// transport dependency. The container supplies the shared source runtime.
+func NewGenerationApplication(
+	workspace *SourceRuntime,
 	models interfaces.ModelService,
 	tasks interfaces.TaskEnqueuer,
-) *generation.Handler {
-	workspace := NewHandler(db, kbShares, knowledge)
+) *generation.Service {
+	db := workspace.db
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: db})
 	policy := evidence.NewSourcePolicy(workspace.gateway, origins, workspace.bindings)
 	inputs := &generationInputResolver{
 		workspace: workspace.service,
 		gateway:   workspace.gateway,
 		bindings:  workspace.bindings,
-		knowledge: knowledge,
+		knowledge: workspace.knowledge,
 		templates: core.ContractDemoTemplate{},
 		origins:   evidence.NewSourceResolver(origins),
 	}
@@ -56,13 +50,10 @@ func NewGenerationHandler(
 		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: core.ContractDemoTemplate{}},
 		generationHostModel{models: models, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
-	return generation.NewHandler(service, func(c *gin.Context) (generation.Actor, bool) {
-		actor, ok := caller(c)
-		return generation.Actor{TenantID: actor.TenantID, UserID: actor.UserID}, ok
-	})
+	return service
 }
 
-type generationWorkspaceAuthorizer struct{ workspace *Service }
+type generationWorkspaceAuthorizer struct{ workspace ApplicationService }
 
 func (a generationWorkspaceAuthorizer) AuthorizeGeneration(ctx context.Context, actor generation.Actor, projectID string) error {
 	err := a.workspace.Authorize(ctx, Actor{TenantID: actor.TenantID, UserID: actor.UserID}, projectID, "read")
@@ -73,7 +64,7 @@ func (a generationWorkspaceAuthorizer) AuthorizeGeneration(ctx context.Context, 
 }
 
 type generationInputResolver struct {
-	workspace *Service
+	workspace ApplicationService
 	gateway   evidence.AssetGateway
 	bindings  *evidence.Bindings
 	knowledge interfaces.KnowledgeBaseService
@@ -247,7 +238,7 @@ func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context
 }
 
 type generationCurrentnessChecker struct {
-	workspace *Service
+	workspace ApplicationService
 	gateway   evidence.AssetGateway
 	templates core.TemplateReader
 }

@@ -174,13 +174,13 @@ func newAssetsHTTPFixture(t *testing.T) assetsHTTPFixture {
 		}
 	}
 
-	handler := NewHandler(db, nil, nil)
+	handler := newTestHandler(db, nil, nil)
 	authorizer := &selectTestAssetAuthorizer{denied: map[string]bool{}}
 	// 装配**之后**再换掉 gateway：复核适配器每调用一次现取 h.gateway（WorkspaceSourcePolicy
 	// 的注释写了为什么），这一行才作数。装配时抓快照的写法会让注入的授权判定永远看不到。
-	handler.gateway = evidence.NewAssetGateway(handler.bindings, authorizer)
-	handler.kbShares = stubKBShareService{}
-	handler.knowledge = stubKnowledgeBases{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7}}
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, authorizer)
+	testRuntime(handler).kbShares = stubKBShareService{}
+	testRuntime(handler).knowledge = stubKnowledgeBases{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7}}
 
 	txtAssetID := seedT09TxtKnowledge(t, handler, db)
 	pdfAssetID := seedT09WeakKnowledge(t, handler, db)
@@ -191,7 +191,7 @@ func newAssetsHTTPFixture(t *testing.T) assetsHTTPFixture {
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(7))
 		c.Request = c.Request.WithContext(ctx)
 	})
-	handler.Register(router.Group("/api/v1"))
+	handler.Register(RouteGroups{Read: router.Group("/api/v1/lingdoc"), Write: router.Group("/api/v1/lingdoc")})
 	return assetsHTTPFixture{
 		handler: handler, db: db, router: router, authorizer: authorizer,
 		txtAssetID: txtAssetID, pdfAssetID: pdfAssetID,
@@ -317,7 +317,7 @@ func bindT09Knowledge(t *testing.T, handler *Handler, db *gorm.DB, knowledgeID, 
 	).Error; err != nil {
 		t.Fatalf("seed knowledge %s: %v", knowledgeID, err)
 	}
-	asset, err := handler.bindings.Bind(context.Background(), evidence.BindInput{
+	asset, err := testRuntime(handler).bindings.Bind(context.Background(), evidence.BindInput{
 		TenantID: 7, ProjectID: "project-1", KnowledgeID: knowledgeID, KnowledgeBaseID: "kb-1",
 		Title: title, CreatedBy: "reader",
 		Signal: evidence.KnowledgeSignal{
@@ -545,7 +545,7 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
 		// 知识库属于别的租户：kbReadChecker 放行不了，而**答 404 不答 403**——
 		// 403 等于承认「这个知识库存在」，那是存在性泄露。
-		f.handler.knowledge = stubKnowledgeBases{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 9}}
+		testRuntime(f.handler).knowledge = stubKnowledgeBases{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 9}}
 
 		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets",
 			`{"knowledge_id":"knowledge-txt"}`, "t09-bind-denied-key"), http.StatusNotFound)

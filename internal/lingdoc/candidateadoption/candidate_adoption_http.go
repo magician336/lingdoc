@@ -10,32 +10,27 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type RouteRegistrar interface {
+	GET(string, ...gin.HandlerFunc) gin.IRoutes
+	POST(string, ...gin.HandlerFunc) gin.IRoutes
+}
+
 type ActorResolver func(*gin.Context) (string, bool)
 
 type CandidateAdoptionHandler struct {
-	Service       *CandidateAdoptionService
-	Confirmations *ConfirmationService
+	Service       Application
+	Confirmations ConfirmationApplication
 	ResolveActor  ActorResolver
 }
 
-func NewCandidateAdoptionHandler(service *CandidateAdoptionService, resolveActor ActorResolver) *CandidateAdoptionHandler {
-	handler := &CandidateAdoptionHandler{Service: service, ResolveActor: resolveActor}
-	if service != nil {
-		if store, ok := service.Writer.(*SQLiteCandidateAdoptionStore); ok {
-			var sources ConfirmationSourcePolicy
-			if current, ok := service.Sources.(ConfirmationSourcePolicy); ok {
-				sources = current
-			}
-			handler.Confirmations = NewConfirmationService(store, sources, service.Authorizer)
-		}
-	}
-	return handler
+func NewCandidateAdoptionHandler(service Application, confirmations ConfirmationApplication, resolveActor ActorResolver) *CandidateAdoptionHandler {
+	return &CandidateAdoptionHandler{Service: service, Confirmations: confirmations, ResolveActor: resolveActor}
 }
 
 // RegisterRoutes mounts the contract route below an existing authenticated
 // group. Authentication and tenant membership remain the host application's
 // responsibility; the actor is read from that authenticated context.
-func RegisterRoutes(r gin.IRouter, h *CandidateAdoptionHandler) {
+func RegisterRoutes(r RouteRegistrar, h *CandidateAdoptionHandler) {
 	if h == nil {
 		return
 	}
@@ -152,7 +147,7 @@ func (h *CandidateAdoptionHandler) GetCandidate(c *gin.Context) {
 	if requestID == "" {
 		requestID = "unknown"
 	}
-	if h.Service == nil || h.Service.Candidates == nil {
+	if h.Service == nil {
 		writeCandidateAdoptionError(c, requestID, http.StatusServiceUnavailable, ErrInvalidState)
 		return
 	}
@@ -165,16 +160,8 @@ func (h *CandidateAdoptionHandler) GetCandidate(c *gin.Context) {
 		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
 		return
 	}
-	if err := h.Service.authorize(c.Request.Context(), actor, c.Param("projectId"), "read"); err != nil {
-		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
-		return
-	}
-	candidate, err := h.Service.Candidates.GetCandidate(c.Request.Context(), c.Param("projectId"), c.Param("candidateId"))
+	candidate, err := h.Service.ReadCandidate(c.Request.Context(), actor, c.Param("projectId"), c.Param("candidateId"))
 	if err != nil {
-		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
-		return
-	}
-	if err := h.Service.validateSources(c.Request.Context(), c.Param("projectId"), actor, candidate.SourceIDs); err != nil {
 		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
 		return
 	}
@@ -193,11 +180,6 @@ func (h *CandidateAdoptionHandler) ListChapters(c *gin.Context) {
 		writeCandidateAdoptionError(c, requestID, http.StatusServiceUnavailable, ErrInvalidState)
 		return
 	}
-	reader, ok := h.Service.Workspace.(ChapterReader)
-	if !ok {
-		writeCandidateAdoptionError(c, requestID, http.StatusServiceUnavailable, ErrInvalidState)
-		return
-	}
 	if h.ResolveActor == nil {
 		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
 		return
@@ -207,20 +189,10 @@ func (h *CandidateAdoptionHandler) ListChapters(c *gin.Context) {
 		writeCandidateAdoptionError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
 		return
 	}
-	if err := h.Service.authorize(c.Request.Context(), actor, c.Param("projectId"), "read"); err != nil {
-		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
-		return
-	}
-	chapters, err := reader.ListChapters(c.Request.Context(), c.Param("projectId"))
+	chapters, err := h.Service.ReadChapters(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
 		return
-	}
-	for _, chapter := range chapters {
-		if err := h.Service.validateSources(c.Request.Context(), c.Param("projectId"), actor, chapter.SourceIDs); err != nil {
-			writeCandidateAdoptionError(c, requestID, candidateAdoptionHTTPStatus(err), err)
-			return
-		}
 	}
 	c.JSON(http.StatusOK, gin.H{"data": chapters, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
 }

@@ -85,9 +85,11 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 	if err := db.Exec("CREATE TABLE IF NOT EXISTS tenant_members (tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, deleted_at DATETIME, PRIMARY KEY (tenant_id, user_id))").Error; err != nil {
 		t.Fatal(err)
 	}
-	svc := NewService(db, ContractDemoTemplate{}, policy)
+	svc := NewServiceWithSources(NewGORMRepository(db), ContractDemoTemplate{}, policy)
 	return svc
 }
+
+func (s *Service) testDB() *gorm.DB { return s.repository.(*GORMRepository).db }
 
 func stripSQLLineComments(script string) string {
 	var uncommented strings.Builder
@@ -103,7 +105,7 @@ func stripSQLLineComments(script string) string {
 
 func seedTenantMember(t *testing.T, svc *Service, actor Actor) {
 	t.Helper()
-	if err := svc.db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, 'active')", actor.TenantID, actor.UserID).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, 'active')", actor.TenantID, actor.UserID).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -181,7 +183,7 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 		t.Fatalf("chapter response-lost replay: %v %v", replay, err)
 	}
 	var count int64
-	if err := svc.db.Model(&chapterVersionRow{}).Where("chapter_id = ?", chapter.ID).Count(&count).Error; err != nil || count != 1 {
+	if err := svc.repository.(*GORMRepository).db.Model(&chapterVersionRow{}).Where("chapter_id = ?", chapter.ID).Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("duplicate version: %d %v", count, err)
 	}
 	contextView, err := svc.GenerationContext(ctx, owner, project.ID, chapter.ID)
@@ -293,7 +295,7 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	member := Actor{TenantID: 12, UserID: "member"}
 	seedTenantMember(t, svc, owner)
 	seedTenantMember(t, svc, member)
-	if err := svc.db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (12, 'inactive', 'inactive')").Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (12, 'inactive', 'inactive')").Error; err != nil {
 		t.Fatal(err)
 	}
 	raw, _, _, err := svc.CreateProject(ctx, owner, "create-members", CreateProjectInput{Name: "协作", TemplateID: "template-demo"})
@@ -334,7 +336,7 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	if _, _, _, err := svc.SaveSpec(ctx, member, id, "member-spec-key", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "共同编辑"}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked replay exposed content: %v", err)
 	}
-	if err := svc.db.Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = 12 AND user_id = 'owner'").Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Exec("UPDATE tenant_members SET status = 'inactive' WHERE tenant_id = 12 AND user_id = 'owner'").Error; err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.GetProject(ctx, owner, id); !errors.Is(err, ErrNotFound) {
@@ -372,10 +374,10 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 	initial := chapterVersionRow{ID: "version-with-review", ProjectID: id, ChapterID: chapterID,
 		BodyMarkdown: "待人工核查", SourceIDsJSON: "[]",
 		ReviewItemsJSON: `[{"id":"review-1","statement":"样本量待核实","origin_candidate_id":"candidate-1"}]`}
-	if err := svc.db.Create(&initial).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Create(&initial).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.db.Model(&chapterRow{}).Where("id = ?", chapterID).Update("current_version_id", initial.ID).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Model(&chapterRow{}).Where("id = ?", chapterID).Update("current_version_id", initial.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	raw, _, _, err = svc.SaveChapter(ctx, actor, id, chapterID, "edit-review", SaveChapterInput{
@@ -389,12 +391,12 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 	if err := json.Unmarshal(raw, &edited); err != nil || len(edited.ReviewItems) != 1 || edited.ReviewItems[0].ID != "review-1" {
 		t.Fatalf("review item lost: %+v %v", edited, err)
 	}
-	if err := svc.db.Model(&chapterVersionRow{}).Where("id = ?", *edited.CurrentVersionID).
+	if err := svc.repository.(*GORMRepository).db.Model(&chapterVersionRow{}).Where("id = ?", *edited.CurrentVersionID).
 		Updates(map[string]any{"source_ids_json": `["s-demo"]`, "body_markdown": "[[source:s-demo]]"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	var previous chapterVersionRow
-	if err := svc.db.Where("id = ?", *edited.CurrentVersionID).First(&previous).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", *edited.CurrentVersionID).First(&previous).Error; err != nil {
 		t.Fatal(err)
 	}
 	cited, _, _, err := svc.SaveChapter(ctx, actor, id, chapterID, "edit-source", SaveChapterInput{
@@ -412,7 +414,7 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 		t.Fatalf("citation or review item lost: %+v", editedCited)
 	}
 	var stored chapterVersionRow
-	if err := svc.db.Where("id = ?", *editedCited.CurrentVersionID).First(&stored).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", *editedCited.CurrentVersionID).First(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
 	// 引用按规范序落盘（提交时就这一条，所以看不出排序；排序那条由下面那支用例钉），
@@ -422,7 +424,7 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 	}
 	// 版本不可变：上一版的行逐字未动——正文与引用都还是人手写进去的那一份。
 	var untouched chapterVersionRow
-	if err := svc.db.Where("id = ?", previous.ID).First(&untouched).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", previous.ID).First(&untouched).Error; err != nil {
 		t.Fatal(err)
 	}
 	if untouched.BodyMarkdown != previous.BodyMarkdown || untouched.SourceIDsJSON != previous.SourceIDsJSON {
@@ -490,12 +492,12 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := svc.db.Create(&chapterConfirmationRow{ID: id, ChapterID: chapter.ID,
+		if err := svc.repository.(*GORMRepository).db.Create(&chapterConfirmationRow{ID: id, ChapterID: chapter.ID,
 			ChapterVersionID: *saved.CurrentVersionID, Valid: true, DetailsJSON: string(details)}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := svc.db.Model(&chapterVersionRow{}).Where("id = ?", *saved.CurrentVersionID).Update("confirmation_valid", true).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Model(&chapterVersionRow{}).Where("id = ?", *saved.CurrentVersionID).Update("confirmation_valid", true).Error; err != nil {
 		t.Fatal(err)
 	}
 	insertConfirmation("confirmation-1", project.SpecRevision)
@@ -515,7 +517,7 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 	if err != nil || chapters[0].ConfirmationValid {
 		t.Fatalf("stale confirmation survived spec change: %+v, %v", chapters, err)
 	}
-	if err := svc.db.Model(&chapterConfirmationRow{}).Where("id = ?", "confirmation-1").Update("valid", false).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Model(&chapterConfirmationRow{}).Where("id = ?", "confirmation-1").Update("valid", false).Error; err != nil {
 		t.Fatal(err)
 	}
 	insertConfirmation("confirmation-2", project.SpecRevision)
@@ -586,7 +588,7 @@ func TestSaveChapterRechecksDeclaredSources(t *testing.T) {
 	// 落盘的引用与交出去的是同一份规范序：同一组引用无论提交顺序如何，JSON 逐字节相同。
 	// 幂等重放的指纹比对与 F01 的 source_ids 断言都靠这条性质。
 	var stored chapterVersionRow
-	if err := svc.db.Where("id = ?", *saved.CurrentVersionID).First(&stored).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", *saved.CurrentVersionID).First(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
 	if stored.SourceIDsJSON != `["alpha","beta"]` {
@@ -620,11 +622,11 @@ func TestSaveChapterRecheckRejectionLeavesNoTrace(t *testing.T) {
 	}
 	// 复核跑在这笔事务的第一次写入之前，并且整笔回滚：一行都不该留下。
 	var versions int64
-	if err := svc.db.Model(&chapterVersionRow{}).Where("chapter_id = ?", chapterID).Count(&versions).Error; err != nil || versions != 0 {
+	if err := svc.repository.(*GORMRepository).db.Model(&chapterVersionRow{}).Where("chapter_id = ?", chapterID).Count(&versions).Error; err != nil || versions != 0 {
 		t.Fatalf("rejected save left %d versions: %v", versions, err)
 	}
 	var chapter chapterRow
-	if err := svc.db.Where("id = ?", chapterID).First(&chapter).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", chapterID).First(&chapter).Error; err != nil {
 		t.Fatal(err)
 	}
 	if chapter.CurrentVersionID != nil {
@@ -664,14 +666,14 @@ func TestSaveChapterRecheckRunsBeforeReplay(t *testing.T) {
 	}
 	// 被拒的重放也不动摇已经落下的那一版。
 	var chapter chapterRow
-	if err := svc.db.Where("id = ?", chapterID).First(&chapter).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", chapterID).First(&chapter).Error; err != nil {
 		t.Fatal(err)
 	}
 	if chapter.CurrentVersionID == nil {
 		t.Fatal("the accepted version disappeared")
 	}
 	var stored chapterVersionRow
-	if err := svc.db.Where("id = ?", *chapter.CurrentVersionID).First(&stored).Error; err != nil || stored.SourceIDsJSON != `["alpha"]` {
+	if err := svc.repository.(*GORMRepository).db.Where("id = ?", *chapter.CurrentVersionID).First(&stored).Error; err != nil || stored.SourceIDsJSON != `["alpha"]` {
 		t.Fatalf("stored version damaged by the rejected replay: %+v %v", stored, err)
 	}
 }

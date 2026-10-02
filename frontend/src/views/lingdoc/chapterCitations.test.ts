@@ -46,7 +46,7 @@ test('the marker rule is the server rule, character for character', () => {
     'chapterCitations.ts 的标记正则与约定的那一份不一致',
   )
   const server = readFileSync(
-    new URL('../../../../internal/lingdoc/workspacecore/service.go', import.meta.url), 'utf8')
+    new URL('../../../../internal/lingdoc/workspacecore/service_facade.go', import.meta.url), 'utf8')
   assert.ok(
     server.includes('regexp.MustCompile(`\\[\\[source:([A-Za-z0-9_-]+)\\]\\]`)'),
     'workspacecore 的标记正则变了，界面这一侧必须跟着改',

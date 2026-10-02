@@ -46,7 +46,7 @@ func TestSpecRetryWaitsForActiveWriter(t *testing.T) {
 
 			locked, release, retried := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			var paused atomic.Bool
-			if err := winner.db.Callback().Create().After("gorm:create").Register("test:hold-spec-commit", func(tx *gorm.DB) {
+			if err := winner.testDB().Callback().Create().After("gorm:create").Register("test:hold-spec-commit", func(tx *gorm.DB) {
 				if tx.Error != nil || tx.Statement.Table != "lingdoc_operations" || !paused.CompareAndSwap(false, true) {
 					return
 				}
@@ -60,7 +60,7 @@ func TestSpecRetryWaitsForActiveWriter(t *testing.T) {
 				t.Fatal(err)
 			}
 			var lockFailures atomic.Int32
-			if err := loser.db.Callback().Update().After("gorm:update").Register("test:count-active-writer-locks", func(tx *gorm.DB) {
+			if err := loser.testDB().Callback().Update().After("gorm:update").Register("test:count-active-writer-locks", func(tx *gorm.DB) {
 				if isSQLiteLockError(tx.Error) && lockFailures.Add(1) == 5 {
 					close(retried)
 				}
@@ -126,7 +126,7 @@ func TestSpecRetryWaitsForActiveWriter(t *testing.T) {
 				t.Fatalf("unexpected final project = %+v, %v", project, err)
 			}
 			var count int64
-			if err := setup.db.Model(&operationRow{}).Where("operation = ? AND target = ?", "saveSpec", projectID).Count(&count).Error; err != nil || count != 1 {
+			if err := setup.testDB().Model(&operationRow{}).Where("operation = ? AND target = ?", "saveSpec", projectID).Count(&count).Error; err != nil || count != 1 {
 				t.Fatalf("operation records = %d, err=%v; want exactly one", count, err)
 			}
 		})
