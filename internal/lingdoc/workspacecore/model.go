@@ -9,8 +9,12 @@ import (
 
 // These views match the proposed HTTP contract. IDs are opaque to callers.
 type Member struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+	UserID         string              `json:"user_id"`
+	Role           string              `json:"role"`
+	GovernanceRole string              `json:"governance_role,omitempty"`
+	FunctionRoles  []string            `json:"function_roles,omitempty"`
+	FunctionScopes map[string][]string `json:"function_scopes,omitempty"`
+	Status         string              `json:"status,omitempty"`
 }
 
 type Project struct {
@@ -131,6 +135,18 @@ type memberRow struct {
 	UserID    string `gorm:"primaryKey;size:64"`
 	Role      string `gorm:"not null;size:20"`
 }
+
+// memberPermissionRow is the expand-contract sidecar for the legacy role.
+type memberPermissionRow struct {
+	ProjectID          string `gorm:"primaryKey;size:36"`
+	UserID             string `gorm:"primaryKey;size:64"`
+	GovernanceRole     string `gorm:"not null;size:16"`
+	FunctionRolesJSON  string `gorm:"column:function_roles_json;not null;type:text"`
+	FunctionScopesJSON string `gorm:"column:function_scopes_json;not null;type:text"`
+	Status             string `gorm:"not null;size:24"`
+}
+
+func (memberPermissionRow) TableName() string { return "lingdoc_member_permissions" }
 
 func (memberRow) TableName() string { return "lingdoc_members" }
 

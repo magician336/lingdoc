@@ -109,10 +109,14 @@ func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor,
 		if !actor.Role.IsValid() {
 			return ErrNotFound
 		}
+		baseCapability := capability
+		if before, _, ok := strings.Cut(capability, ":"); ok {
+			baseCapability = before
+		}
 		required := map[string]types.TenantRole{
 			"read": types.TenantRoleViewer, "create": types.TenantRoleContributor,
 			"write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin,
-		}[capability]
+		}[baseCapability]
 		if required == "" {
 			return ErrInvalidRequest
 		}
@@ -131,7 +135,11 @@ func (a transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Act
 }
 
 func authorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
-	if capability != "read" && capability != "write" && capability != "manage" {
+	baseCapability, resource := capability, ""
+	if before, after, ok := strings.Cut(capability, ":"); ok {
+		baseCapability, resource = before, after
+	}
+	if baseCapability != "read" && baseCapability != "write" && baseCapability != "manage" {
 		return Project{}, ErrInvalidRequest
 	}
 	p, err := tx.Project(actor.TenantID, projectID)
@@ -139,9 +147,41 @@ func authorizeProject(tx Transaction, actor Actor, projectID, capability string)
 		return Project{}, err
 	}
 	for _, m := range p.Members {
-		if m.UserID == actor.UserID && (capability != "manage" || m.Role == "owner") {
+		if m.UserID != actor.UserID {
+			continue
+		}
+		if m.Status != "" && m.Status != "active" {
+			return Project{}, ErrNotFound
+		}
+		governance := m.GovernanceRole
+		if governance == "" && m.Role == "owner" {
+			governance = "owner"
+		}
+		if baseCapability == "manage" {
+			if governance == "owner" || governance == "admin" || m.Role == "owner" {
+				return p, nil
+			}
+			return Project{}, ErrNotFound
+		}
+		if baseCapability == "read" || m.Role == "owner" || governance == "owner" {
 			return p, nil
 		}
+		if baseCapability == "write" {
+			for _, role := range m.FunctionRoles {
+				if role != "author" {
+					continue
+				}
+				if resource == "" {
+					return p, nil
+				}
+				for _, allowed := range m.FunctionScopes[role] {
+					if allowed == resource {
+						return p, nil
+					}
+				}
+			}
+		}
+		return Project{}, ErrNotFound
 	}
 	return Project{}, ErrNotFound
 }
@@ -452,7 +492,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 	if len(slices.Compact(slices.Clone(declared))) != len(declared) || !slices.Equal(refs, declared) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID, func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
 		}

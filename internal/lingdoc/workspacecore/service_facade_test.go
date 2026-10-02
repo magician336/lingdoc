@@ -70,6 +70,37 @@ func TestTenantRoleDowngradeDeniesIdempotentReplay(t *testing.T) {
 	}
 }
 
+func TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Members = append(repository.project.Members, Member{
+		UserID: "author", Role: "collaborator", GovernanceRole: "member",
+		FunctionRoles: []string{"author"}, FunctionScopes: map[string][]string{"author": {"c"}},
+	})
+	service := NewService(repository)
+	ctx := context.Background()
+	author := Actor{TenantID: 1, UserID: "author", Role: types.TenantRoleContributor}
+	input := SaveChapterInput{ExpectedSpecRevision: 1, BodyMarkdown: "scoped", SourceIDs: []string{}}
+	if _, _, _, err := service.SaveChapter(ctx, author, "p", "c", "scoped-write", input); err != nil {
+		t.Fatalf("scoped author write: %v", err)
+	}
+	if _, _, _, err := service.SaveChapter(ctx, author, "p", "other", "out-of-scope", input); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("out-of-scope write = %v, want ErrNotFound", err)
+	}
+	admin := Actor{TenantID: 1, UserID: "admin", Role: types.TenantRoleAdmin}
+	repository.project.Members = append(repository.project.Members, Member{UserID: "admin", Role: "collaborator", GovernanceRole: "admin"})
+	if err := service.Authorize(ctx, admin, "p", "manage"); err != nil {
+		t.Fatalf("admin member management: %v", err)
+	}
+	for i := range repository.project.Members {
+		if repository.project.Members[i].UserID == "admin" {
+			repository.project.Members[i].Status = "suspended"
+		}
+	}
+	if err := service.Authorize(ctx, admin, "p", "manage"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("suspended admin authorization = %v, want ErrNotFound", err)
+	}
+}
+
 type sourcePolicyStub struct {
 	err   error
 	calls int
