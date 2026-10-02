@@ -306,14 +306,16 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		status := StatusFailed
 		failure := RunError{Code: "generation_failed", Message: "生成失败，原始资料和凭据未写入任务错误。", Retryable: true}
 		switch {
-		case errors.Is(generateErr, ErrAcceptanceOutcomeUnknown):
-			// An acceptance-budget call may join context cancellation with this
-			// sentinel: the provider outcome and charge are still unknown. Keep
-			// this terminal and non-retryable until the ledger is reconciled.
-			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
 		case errors.Is(generateErr, context.Canceled) || errors.Is(generateErr, context.DeadlineExceeded):
+			// The acceptance ledger is still reconciled as unknown by the model
+			// adapter, but cancellation is an interrupted run and may be retried
+			// with a fresh key after reconciliation.
 			status = StatusInterrupted
 			failure = RunError{Code: "generation_interrupted", Message: "生成已中断；可重新发起任务。", Retryable: true}
+		case errors.Is(generateErr, ErrAcceptanceOutcomeUnknown):
+			// A provider outcome or usage that cannot be confirmed remains
+			// terminal and non-retryable until the ledger is reconciled.
+			failure = RunError{Code: "generation_outcome_unknown", Message: "模型调用结果或用量未能确认；为避免重复扣费，后续调用已暂停，需先核对服务商用量与本地账本。", Retryable: false}
 		case errors.Is(generateErr, ErrGenerationIncomplete):
 			failure = RunError{Code: "generation_incomplete", Message: "本轮输出达到 6,000 token 上限，结果不完整；系统不会自动续写。缩小输入后重新发起会占用下一次调用额度。", Retryable: false}
 		case errors.Is(generateErr, ErrAcceptanceBudgetExceeded):
