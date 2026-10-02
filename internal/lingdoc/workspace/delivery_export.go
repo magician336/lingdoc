@@ -18,6 +18,7 @@ type DeliveryExportService struct {
 	exports   delivery.ExportStore
 	document  DeliveryDocument
 	inputs    *candidateadoption.DeliveryInputService
+	sources   candidateadoption.SourcePolicy
 }
 
 // NewDeliveryExportService 依赖不齐时返回 nil，与同一包里的
@@ -32,14 +33,15 @@ func NewDeliveryExportService(
 	exports delivery.ExportStore,
 	document DeliveryDocument,
 	inputs *candidateadoption.DeliveryInputService,
+	sources candidateadoption.SourcePolicy,
 ) *DeliveryExportService {
-	if snapshots == nil || exports == nil || inputs == nil || inputs.Reader == nil || inputs.Authorizer == nil {
+	if snapshots == nil || exports == nil || inputs == nil || inputs.Reader == nil || inputs.Authorizer == nil || sources == nil {
 		return nil
 	}
 	if _, ok := exports.(delivery.ExportRecorder); !ok {
 		return nil
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, document: document, inputs: inputs}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, document: document, inputs: inputs, sources: sources}
 }
 
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
@@ -49,6 +51,9 @@ func NewDeliveryExportService(
 func (s *DeliveryExportService) Start(ctx context.Context, actorID, projectID, snapshotID, key string) (delivery.ExportArtifact, bool, error) {
 	if s == nil {
 		return delivery.ExportArtifact{}, false, candidateadoption.ErrInvalidState
+	}
+	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshotID); err != nil {
+		return delivery.ExportArtifact{}, false, err
 	}
 	return s.service(ctx).Start(actorID, projectID, snapshotID, key)
 }
@@ -70,7 +75,44 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 	if s == nil {
 		return delivery.ExportArtifact{}, nil, candidateadoption.ErrInvalidState
 	}
+	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		return delivery.ExportArtifact{}, nil, err
+	}
+	artifact, err := s.exports.GetExport(projectID, exportID)
+	if err != nil {
+		return delivery.ExportArtifact{}, nil, err
+	}
+	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
+		return delivery.ExportArtifact{}, nil, err
+	}
 	return s.service(ctx).Download(actorID, projectID, exportID)
+}
+
+func (s *DeliveryExportService) authorizeSnapshotSources(ctx context.Context, actorID, projectID, snapshotID string) error {
+	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(snapshotID) == "" {
+		return candidateadoption.ErrInvalidRequest
+	}
+	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		return err
+	}
+	snapshot, err := s.snapshots.Get(projectID, snapshotID)
+	if err != nil {
+		return err
+	}
+	if snapshot.Check.Status != delivery.CheckPassed {
+		// Keep the established preflight_blocked response for snapshots that were
+		// never eligible for export; no file can be rendered from these inputs.
+		return nil
+	}
+	ids := make([]string, 0)
+	for _, chapter := range snapshot.FrozenInput.Chapters {
+		ids = append(ids, chapter.SourceIDs...)
+	}
+	ids = normalizeSourceIDs(ids)
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.sources.Validate(ctx, projectID, actorID, ids)
 }
 
 // List 列出项目导出过的产物，新的在前。

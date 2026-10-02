@@ -358,7 +358,7 @@
     {
       "id": "F09",
       "name": "模型超时或中断",
-      "setup": "模型适配器模拟超时或worker中断。",
+      "setup": "模型适配器模拟可确认的调用失败或worker中断；供应商结果无法确认时转入F23。",
       "steps": [
         {
           "operation_id": "startGeneration",
@@ -695,6 +695,12 @@
           "expected_http": 200,
           "assertion": "",
           "response_example": "failed"
+        },
+        {
+          "operation_id": "getExport",
+          "expected_http": 200,
+          "assertion": "正文含不支持的 Markdown 时保留 failed 产物，明确 unsupported_format 和修改提示，不生成下载字段。",
+          "response_example": "unsupported_format"
         },
         {
           "operation_id": "downloadExport",
@@ -2190,6 +2196,47 @@
       ],
       "providers": [
         "evidence"
+      ]
+    },
+    {
+      "id": "F23",
+      "name": "验收预算与模型边界错误可见",
+      "setup": "验收模式启用真实预算账本；模拟输出不完整、预算耗尽、账本不可用、未知供应商结果和模型配置不匹配。",
+      "steps": [
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "输出达到上限时任务为 failed，错误码明确且不可重试。",
+          "response_example": "generation_incomplete"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "预算耗尽时不再请求供应商，错误码明确且不可重试。",
+          "response_example": "generation_budget_exceeded"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "账本不可用时阻止供应商调用，错误码明确且不可重试。",
+          "response_example": "generation_budget_unavailable"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "供应商结果未知时暂停后续调用，错误码明确且不可重试。",
+          "response_example": "generation_outcome_unknown"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "验收模型不匹配时不调用供应商，错误码明确且不可重试。",
+          "response_example": "generation_model_mismatch"
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace"
       ]
     }
   ],

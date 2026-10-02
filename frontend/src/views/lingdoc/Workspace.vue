@@ -80,7 +80,7 @@
               被拒的那一份在里面没有痕迹，界面上也就没有它的标题可显示。</p>
           </section>
           <p v-if="searchedNothing" class="muted">暂无可定位来源。</p>
-          <ul v-else-if="sources.length" class="source-list">
+          <ul v-else-if="sources.length" ref="sourceListElement" class="source-list">
             <li v-for="source in sources" :key="source.id">
               <div class="source-head">
                 <span><strong>{{ source.locator }}</strong><small>{{ sourceStatusLabel(source.status) }}</small></span>
@@ -151,6 +151,8 @@
             <pre>{{ generationCandidate.body_markdown }}</pre>
             <p>引用 {{ generationCandidate.source_ids.length }} 条来源 · 待核事项 {{ generationCandidate.review_items.length }} 条 · 生成时状态：{{ generationCandidate.validity }}（采纳时仍会复核当前版本）</p>
             <div class="actions">
+              <button v-for="(sourceId, index) in generationCandidate.source_ids" :key="sourceId" type="button"
+                :disabled="busy || contextBusy" @click="showCandidateSource(sourceId)">查看引用 {{ index + 1 }} 原文</button>
               <button type="button" :disabled="busy" @click="openAdoption">采纳到本章</button>
             </div>
           </article>
@@ -245,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
@@ -280,6 +282,7 @@ const sources = ref<Source[]>([])
 const searchedQuery = ref('')
 const deniedRows = ref<Array<{ assetId: string; label: string; next: string }>>([])
 const bindingNoticeText = ref('')
+const sourceListElement = ref<HTMLElement | null>(null)
 const contextSourceId = ref('')
 const sourceContext = ref<SourceContext | null>(null)
 const contextBusy = ref(false)
@@ -488,6 +491,26 @@ async function searchSources() {
     sources.value = result.data
     searchedQuery.value = query
     closeSourceContext()
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+// Saved citations are read directly, with current source authorization checks.
+async function showCandidateSource(sourceId: string) {
+  if (!project.value || busy.value || contextBusy.value) return
+  const projectId = project.value.id
+  busy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await getSource(projectId, sourceId)
+    if (project.value?.id !== projectId) return
+    const index = sources.value.findIndex(item => item.id === sourceId)
+    if (index < 0) sources.value.push(result.data)
+    else sources.value[index] = result.data
+    await loadSourceContext(sourceId)
+    if (project.value?.id !== projectId) return
+    await nextTick()
+    sourceListElement.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }

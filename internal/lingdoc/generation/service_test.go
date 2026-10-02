@@ -303,4 +303,39 @@ func TestTaskHandlerDelaysRetryWhenLeaseIsStillLive(t *testing.T) {
 	}
 }
 
+func TestExecuteStoresAcceptanceStopsWithCorrectRetryability(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		status    Status
+		code      string
+		retryable bool
+	}{
+		{name: "truncated output", err: ErrGenerationIncomplete, status: StatusFailed, code: "generation_incomplete"},
+		{name: "exhausted budget", err: ErrAcceptanceBudgetExceeded, status: StatusFailed, code: "generation_budget_exceeded"},
+		{name: "uncertain provider outcome", err: ErrAcceptanceOutcomeUnknown, status: StatusFailed, code: "generation_outcome_unknown"},
+		{name: "cancelled provider with uncertain outcome", err: errors.Join(context.Canceled, ErrAcceptanceOutcomeUnknown), status: StatusInterrupted, code: "generation_interrupted", retryable: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, repo := generationFixture()
+			svc.Model = testModel{err: tc.err}
+			run, err := svc.Execute(context.Background(), repo.run.ID)
+			if err != nil || run.Status != tc.status || run.Error == nil || run.Error.Code != tc.code || run.Error.Retryable != tc.retryable {
+				t.Fatalf("Execute() = (%+v, %v), want status=%s code=%s retryable=%v", run, err, tc.status, tc.code, tc.retryable)
+			}
+		})
+	}
+}
+
+func TestExecuteStoresProviderCancellationAsInterrupted(t *testing.T) {
+	svc, repo := generationFixture()
+	svc.Model = testModel{err: context.Canceled}
+
+	run, err := svc.Execute(context.Background(), repo.run.ID)
+	if err != nil || run.Status != StatusInterrupted || run.Error == nil || run.Error.Code != "generation_interrupted" || !run.Error.Retryable {
+		t.Fatalf("Execute() = (%+v, %v), want retryable interrupted result", run, err)
+	}
+}
+
 func stringPtr(s string) *string { return &s }

@@ -7,9 +7,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 )
 
@@ -26,6 +30,7 @@ type OpenAIEmbedder struct {
 	maxRetries                int
 	customHeaders             map[string]string
 	supportsDimensionOverride bool
+	acceptanceBudget          *acceptancebudget.Budget
 	EmbedderPooler
 }
 
@@ -44,6 +49,10 @@ type OpenAIEmbedResponse struct {
 		Embedding []float32 `json:"embedding"`
 		Index     int       `json:"index"`
 	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // NewOpenAIEmbedder creates a new OpenAI embedder
@@ -67,6 +76,16 @@ func NewOpenAIEmbedder(apiKey, baseURL, modelName string,
 	if err := validateEmbeddingBaseURL(baseURL); err != nil {
 		return nil, err
 	}
+	var acceptanceBudget *acceptancebudget.Budget
+	maxRetries := 3
+	if profile := strings.TrimSpace(os.Getenv(acceptancebudget.ProfileEnv)); profile != "" {
+		var err error
+		acceptanceBudget, err = acceptancebudget.NewFromEnv(profile)
+		if err != nil {
+			return nil, acceptancebudget.ErrUnavailable
+		}
+		maxRetries = 0
+	}
 
 	return &OpenAIEmbedder{
 		apiKey:               apiKey,
@@ -78,7 +97,8 @@ func NewOpenAIEmbedder(apiKey, baseURL, modelName string,
 		dimensions:           dimensions,
 		modelID:              modelID,
 		timeout:              timeout,
-		maxRetries:           3, // Maximum retry count
+		maxRetries:           maxRetries,
+		acceptanceBudget:     acceptanceBudget,
 	}, nil
 }
 
@@ -94,6 +114,16 @@ func (e *OpenAIEmbedder) SetSupportsDimensionOverride(supported bool) {
 
 // Embed converts text to vector
 func (e *OpenAIEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
+	if e.acceptanceBudget != nil {
+		embeddings, err := e.BatchEmbed(ctx, []string{text})
+		if err != nil {
+			return nil, err
+		}
+		if len(embeddings) != 1 || len(embeddings[0]) == 0 {
+			return nil, fmt.Errorf("no embedding returned")
+		}
+		return embeddings[0], nil
+	}
 	for range 3 {
 		embeddings, err := e.BatchEmbed(ctx, []string{text})
 		if err != nil {
@@ -177,6 +207,20 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 		logger.GetLogger(ctx).Errorf("OpenAIEmbedder EmbedBatch marshal request error: %v", err)
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}
+	var reservation *acceptancebudget.Reservation
+	if e.acceptanceBudget != nil {
+		if !acceptanceEmbeddingEndpointAllowed(e.modelName, e.baseURL) {
+			return nil, acceptancebudget.ErrWrongModel
+		}
+		inputUpperBound, estimateErr := acceptanceEmbeddingInputUpperBound(texts)
+		if estimateErr != nil {
+			return nil, estimateErr
+		}
+		reservation, err = e.acceptanceBudget.Reserve(ctx, e.modelName, inputUpperBound, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Log request details for debugging
 	logger.GetLogger(ctx).Debugf("OpenAIEmbedder BatchEmbed: model=%s, input_count=%d, truncate_tokens=%d",
@@ -209,6 +253,9 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	// Send request (passing jsonData instead of constructing http.Request)
 	resp, err := e.doRequestWithRetry(ctx, jsonData)
 	if err != nil {
+		if reservation != nil {
+			_ = reservation.Unknown("outcome_unknown")
+		}
 		logger.GetLogger(ctx).Errorf("OpenAIEmbedder EmbedBatch send request error: %v", err)
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -219,11 +266,17 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	// Read response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		if reservation != nil {
+			_ = reservation.Unknown("usage_unknown")
+		}
 		logger.GetLogger(ctx).Errorf("OpenAIEmbedder EmbedBatch read response error: %v", err)
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
+		if reservation != nil {
+			_ = reservation.Unknown("http_error")
+		}
 		// Log detailed error response from OpenAI API
 		bodyStr := string(body)
 		if len(bodyStr) > 1000 {
@@ -236,8 +289,20 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	// Parse response
 	var response OpenAIEmbedResponse
 	if err := json.Unmarshal(body, &response); err != nil {
+		if reservation != nil {
+			_ = reservation.Unknown("usage_unknown")
+		}
 		logger.GetLogger(ctx).Errorf("OpenAIEmbedder EmbedBatch unmarshal response error: %v", err)
 		return nil, fmt.Errorf("unmarshal response: %w", err)
+	}
+	if reservation != nil {
+		if response.Usage.PromptTokens <= 0 {
+			_ = reservation.Unknown("usage_unknown")
+			return nil, fmt.Errorf("embedding provider did not report prompt token usage")
+		}
+		if err := reservation.Complete("response_received", response.Usage.PromptTokens, 0, "", false); err != nil {
+			return nil, err
+		}
 	}
 
 	// Extract embedding vectors
@@ -247,6 +312,33 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	}
 
 	return embeddings, nil
+}
+
+func acceptanceEmbeddingEndpointAllowed(modelName, baseURL string) bool {
+	if modelName != acceptancebudget.QwenEmbedding {
+		return false
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Scheme != "https" || parsed.User != nil || parsed.Port() != "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return strings.HasSuffix(host, acceptancebudget.QwenBaseHostTail) && parsed.EscapedPath() == acceptancebudget.QwenBasePath &&
+		parsed.RawQuery == "" && parsed.Fragment == ""
+}
+
+func acceptanceEmbeddingInputUpperBound(texts []string) (int, error) {
+	upperBound := 1024
+	for _, text := range texts {
+		if strings.TrimSpace(text) == "" {
+			return 0, fmt.Errorf("embedding input is empty")
+		}
+		upperBound += len(text)
+		if upperBound > acceptancebudget.InputMax {
+			return upperBound, acceptancebudget.ErrInputTooLarge
+		}
+	}
+	return upperBound, nil
 }
 
 // GetModelName returns the model name

@@ -2,6 +2,7 @@ package retriever
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -14,6 +15,11 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
+
+// ErrNoRetrieverForTypes means that a requested indexing route cannot be
+// satisfied by the registered engines. Returning this before BatchIndex is
+// important: an empty routing view otherwise looks like a successful no-op.
+var ErrNoRetrieverForTypes = errors.New("no retriever engine supports the requested types")
 
 // engineInfo holds information about a retrieve engine and its supported retriever types
 type engineInfo struct {
@@ -350,4 +356,39 @@ func (c *CompositeRetrieveEngine) MoveKnowledgeIndices(
 			knowledgeType,
 		)
 	})
+}
+
+// WithRetrieverTypes returns an independent routing view restricted to the KB's
+// enabled indexing pipelines. It never changes the registry or other KBs.
+// Every requested type must be represented by at least one engine; otherwise
+// callers would silently report a successful indexing run without writing data.
+func (c *CompositeRetrieveEngine) WithRetrieverTypes(allowed []types.RetrieverType) (*CompositeRetrieveEngine, error) {
+	if len(allowed) == 0 {
+		return nil, fmt.Errorf("%w: no retriever types requested", ErrNoRetrieverForTypes)
+	}
+	out := &CompositeRetrieveEngine{}
+	selectedTypes := make(map[types.RetrieverType]bool, len(allowed))
+	for _, info := range c.engineInfos {
+		if info == nil {
+			continue
+		}
+		var selected []types.RetrieverType
+		for _, kind := range info.retrieverType {
+			if slices.Contains(allowed, kind) {
+				selected = append(selected, kind)
+			}
+		}
+		if len(selected) > 0 {
+			out.engineInfos = append(out.engineInfos, &engineInfo{retrieveEngine: info.retrieveEngine, retrieverType: selected})
+			for _, kind := range selected {
+				selectedTypes[kind] = true
+			}
+		}
+	}
+	for _, kind := range allowed {
+		if !selectedTypes[kind] {
+			return nil, fmt.Errorf("%w: %v", ErrNoRetrieverForTypes, kind)
+		}
+	}
+	return out, nil
 }

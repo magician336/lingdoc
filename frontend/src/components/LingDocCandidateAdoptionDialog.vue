@@ -4,13 +4,13 @@ import type { AcceptCandidateInput, Candidate, Chapter } from '@/api/lingdoc/can
 import { acceptCandidate, listChapters, newIdempotencyKey } from '@/api/lingdoc/candidateAdoption'
 import { keyForAttempt, type AdoptionAttempt } from '@/views/lingdoc/candidateAdoption'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   projectId: string
   chapter: Chapter
   candidate: Candidate
   expectedSpecRevision: number
   open?: boolean
-}>()
+}>(), { open: true })
 
 const emit = defineEmits<{
   adopted: [chapter: Chapter]

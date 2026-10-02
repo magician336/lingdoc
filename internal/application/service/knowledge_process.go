@@ -326,6 +326,12 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		embeddingModel, err = s.modelService.GetEmbeddingModel(ctx, kb.EmbeddingModelID)
 		if err != nil {
 			logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks get embedding model failed")
+			knowledge.ParseStatus = types.ParseStatusFailed
+			knowledge.ErrorMessage = "Embedding model unavailable: " + err.Error()
+			knowledge.UpdatedAt = time.Now()
+			if updateErr := s.updateKnowledgeUnlessSourceReplaced(ctx, knowledge); updateErr != nil {
+				logger.Errorf(ctx, "Failed to persist embedding model failure: %v", updateErr)
+			}
 			return
 		}
 	} else {
@@ -631,7 +637,18 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 			return
 		}
 
-		err = retrieveEngine.BatchIndex(ctx, embeddingModel, indexInfoList)
+		var indexingTypes []types.RetrieverType
+		if kb.IsVectorEnabled() {
+			indexingTypes = append(indexingTypes, types.VectorRetrieverType)
+		}
+		if kb.IsKeywordEnabled() {
+			indexingTypes = append(indexingTypes, types.KeywordsRetrieverType)
+		}
+		var indexingEngine *retriever.CompositeRetrieveEngine
+		indexingEngine, err = retrieveEngine.WithRetrieverTypes(indexingTypes)
+		if err == nil {
+			err = indexingEngine.BatchIndex(ctx, embeddingModel, indexInfoList)
+		}
 		if err != nil {
 			knowledge.ParseStatus = types.ParseStatusFailed
 			knowledge.ErrorMessage = err.Error()

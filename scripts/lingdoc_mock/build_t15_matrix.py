@@ -20,8 +20,11 @@ REPORT_REL = "docs/08-本轮实施方案/T15-11-验证报告.json"
 EVIDENCE_REL = "docs/08-本轮实施方案/T15-11-证据.json"
 
 # Each mode deliberately selects only the scenarios this saved artifact actually ran.
-# The generic scenario runner reports 22 rows, most of them not_run, on every partial run;
+# The generic scenario runner reports 23 rows, most of them not_run, on every partial run;
 # those unselected rows must never overwrite results from another ticket's run.
+# F23 is the T16 acceptance-budget/model-boundary scenario. Its evidence is the Go regression
+# suite, so it is intentionally outside this saved T15 HTTP matrix (which remains F01-F22).
+T15_SCENARIO_IDS = {f"F{i:02d}" for i in range(1, 23)}
 SOURCE_REPORTS = (
     ("docs/08-本轮实施方案/T15-S5-证据.json", "f22_evidence"),
     ("docs/08-本轮实施方案/T15-S6-验证报告.json", "executed"),
@@ -519,6 +522,13 @@ def render_json(document: dict[str, Any]) -> bytes:
 
 def build_report(root: Path = ROOT) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     contract = _read_json(root, CONTRACT_REL)
+    contract = {
+        **contract,
+        "scenarios": [
+            entry for entry in _scenario_entries(contract)
+            if entry["id"] in T15_SCENARIO_IDS
+        ],
+    }
     observations, source_documents = _scenario_sources(root)
     red_items = _load_gap_documents(source_documents)
     report = assemble_matrix(contract, observations, red_items)

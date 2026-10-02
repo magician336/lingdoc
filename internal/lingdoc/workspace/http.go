@@ -160,7 +160,7 @@ func sendError(c *gin.Context, err error) {
 	case errors.Is(err, delivery.ErrExportUnavailable):
 		// F13：产物存在但不可下载（failed，或字节已不在）。这不是 404——
 		// 资源在，是它此刻不能交出去。
-		status, code, message = 422, "invalid_state", "当前阶段不能执行该动作。"
+		status, code, message = 422, "invalid_state", "导出文件不可用或完整性校验失败，请重新导出。"
 	case errors.Is(err, candidateadoption.ErrDependencyUnavailable):
 		// 复核侧「答不出来」的那一档：资料底座读不出结论，或某条引用既没被判可用也没被
 		// 判不可用。它和 403 的区别正是「不是你的授权有问题，是此刻判不了」——所以答 503

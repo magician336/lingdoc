@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/gin-gonic/gin"
@@ -49,6 +50,12 @@ func (a *switchableAuthorizer) AuthorizeProject(context.Context, string, string)
 	return nil
 }
 
+type switchableAssetAuthorizer struct{ revoked bool }
+
+func (a *switchableAssetAuthorizer) CanAccessAsset(context.Context, evidence.Actor, string, evidence.Asset) (bool, error) {
+	return !a.revoked, nil
+}
+
 // assembleExportRoutes 按容器与 router.go 装起来的样子挂载 T13 与 T14 两组。
 //
 // 两组共用同一个快照库。各自建一个的话，刚冻下的快照在导出时取不到，而那看起来
@@ -65,13 +72,14 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 	}
 	snapshots := delivery.NewMemorySnapshotStore()
 	releases := NewDeliveryReleaseService(inputs, builder, snapshots)
-	exports := NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, inputs)
+	exports := NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
 	if releases == nil || exports == nil {
 		t.Fatal("交付链装配不齐：T13 或 T14 仍是断的")
 	}
 
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
+	handler.Register(router.Group("/api/v1"))
 	group := router.Group("/api/v1/lingdoc")
 	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))
 	RegisterDeliveryExportRoutes(group, NewDeliveryExportHandler(exports))
@@ -82,7 +90,19 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 // 那条走得通的默认对（带引用的 question 章 + 陪衬 method 章）。
 func newDeliveryExportHandler(t *testing.T, authorizer candidateadoption.DeliveryInputProjectAuthorizer, chapters ...deliveryChapter) (*gin.Engine, *gorm.DB) {
 	t.Helper()
+	router, db, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, authorizer, &switchableAssetAuthorizer{}, chapters...)
+	return router, db
+}
+
+func newDeliveryExportHandlerWithSourceAuthorizer(
+	t *testing.T,
+	authorizer candidateadoption.DeliveryInputProjectAuthorizer,
+	sourceAuthorizer *switchableAssetAuthorizer,
+	chapters ...deliveryChapter,
+) (*gin.Engine, *gorm.DB, *Handler) {
+	t.Helper()
 	handler, db, assetID := seedBoundSource(t)
+	handler.gateway = evidence.NewAssetGateway(handler.bindings, sourceAuthorizer)
 	if len(chapters) == 0 {
 		chapters = []deliveryChapter{
 			deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}),
@@ -90,7 +110,7 @@ func newDeliveryExportHandler(t *testing.T, authorizer candidateadoption.Deliver
 		}
 	}
 	seedDeliveryWorkspace(t, db, chapters...)
-	return assembleExportRoutes(t, handler, db, authorizer), db
+	return assembleExportRoutes(t, handler, db, authorizer), db, handler
 }
 
 // publishedArtifact 是契约里的 ExportArtifact，按字段原名解回来。
@@ -436,6 +456,38 @@ func TestExportRoutesPersistAFailedExportAndRefuseToDownloadIt(t *testing.T) {
 	}
 }
 
+func TestExportRoutesPersistUnsupportedMarkdownFailureAfterPreflightWarning(t *testing.T) {
+	handler, db, assetID := seedBoundSource(t)
+	router := func() *gin.Engine {
+		seedDeliveryWorkspace(t, db,
+			deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID),
+				"- 列表项 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
+			deliveryMethodChapter(),
+		)
+		return assembleExportRoutes(t, handler, db, deliveryTestAuthorizer{})
+	}()
+
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	if snapshot.Check.Status != delivery.CheckPassed {
+		t.Fatalf("unsupported Markdown preflight status = %s, want passed with warning", snapshot.Check.Status)
+	}
+	unsupportedWarning := false
+	for _, issue := range snapshot.Check.Issues {
+		unsupportedWarning = unsupportedWarning || strings.Contains(issue.Message, "不支持的 Markdown")
+	}
+	if !unsupportedWarning {
+		t.Fatalf("preflight issues = %+v, want unsupported_markdown warning", snapshot.Check.Issues)
+	}
+
+	artifact := startExportOf(t, router, snapshot.ID)
+	if artifact.Status != string(delivery.ExportFailed) || artifact.Error == nil || artifact.Error.Code != delivery.FailureUnsupportedFormat {
+		t.Fatalf("unsupported Markdown export = %+v, want unsupported_format failed artifact", artifact)
+	}
+	if artifact.FileSHA256 != nil || artifact.DownloadPath != nil {
+		t.Fatalf("unsupported Markdown failure published file fields: %+v", artifact)
+	}
+}
+
 // F04：别的项目的导出，在这个项目下就是不存在。
 func TestExportRoutesHideAnotherProjectsExport(t *testing.T) {
 	router, _ := newDeliveryExportHandler(t, deliveryTestAuthorizer{})
@@ -479,6 +531,60 @@ func TestExportRoutesDenyADownloadAfterAccessIsGone(t *testing.T) {
 	status := deliveryServe(router, deliveryRequest(http.MethodGet, deliveryRouteBase+"/exports/"+artifact.ID, "", ""))
 	if status.Code != http.StatusForbidden {
 		t.Fatalf("getExport after revocation = %d, want 403", status.Code)
+	}
+}
+
+func TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked(t *testing.T) {
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	artifact := startExportOf(t, router, snapshot.ID)
+	if artifact.DownloadPath == nil {
+		t.Fatal("the export did not produce a file to revoke access to")
+	}
+
+	sourceAuthorizer.revoked = true
+	download := deliveryServe(router, deliveryRequest(http.MethodGet, *artifact.DownloadPath, "", ""))
+	if download.Code != http.StatusForbidden {
+		t.Fatalf("download after source access revocation = %d, want 403: %s", download.Code, download.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, download).Error; code == nil || code.Code != "source_access_denied" {
+		t.Fatalf("download after source access revocation error = %+v, want source_access_denied", code)
+	}
+}
+
+func TestExportRoutesDenyStartAfterBoundSourceAccessIsRevoked(t *testing.T) {
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+
+	sourceAuthorizer.revoked = true
+	_, envelope, status := startExport(t, router, snapshot.ID, deliveryExportKey)
+	if status != http.StatusForbidden {
+		t.Fatalf("startExport after source access revocation = %d, want 403", status)
+	}
+	if envelope.Error == nil || envelope.Error.Code != "source_access_denied" {
+		t.Fatalf("startExport after source access revocation error = %+v, want source_access_denied", envelope.Error)
+	}
+}
+
+func TestListChaptersDeniesRevokedBoundSource(t *testing.T) {
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
+	path := "/api/v1/lingdoc/projects/project-1/chapters"
+
+	allowed := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("list chapters before revocation = %d, want 200: %s", allowed.Code, allowed.Body.String())
+	}
+
+	sourceAuthorizer.revoked = true
+	denied := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("list chapters after source access revocation = %d, want 403: %s", denied.Code, denied.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, denied).Error; code == nil || code.Code != "source_access_denied" {
+		t.Fatalf("list chapters after source access revocation error = %+v, want source_access_denied", code)
 	}
 }
 
@@ -667,14 +773,14 @@ func TestExportListReportsTruncation(t *testing.T) {
 // exportUnrenderableBody 是一段过得了 T13、却过不了 DOCX 渲染器的正文。
 //
 // demo 模板的五条规则（required_fields / chapter_nonempty / chapter_confirmed /
-// review_items_decided / source_available）没有一条管正文的 Markdown 形态，所以
-// 「加粗」这样的富标记能一路走到渲染器面前；而 T05 的渲染器只支持纯段落，它会拒。
-// F13「导出器产生损坏文件」在这条链路里的真实形状就是它：不是磁盘坏了，是做不出
-// 这份文件。这也是唯一一条能拿**真实**适配器走到的失败路径——另外两个失败码
+// review_items_decided / source_available）不负责 XML 字符合法性，所以控制字符能一路
+// 走到渲染器面前；而 T05 的渲染器会拒绝它。富 Markdown 现在在 T13 预检阶段就会被
+// 明确阻断，另有预检用例覆盖。这条链路仍然守住 F13「导出器产生损坏文件」：不是磁盘坏了，
+// 是做不出这份文件。它也是唯一一条能拿**真实**适配器走到的失败路径——另外两个失败码
 // （empty_file、validation_failed）分别要一个空渲染器与一份被改过的文件。
-const exportUnrenderableBody = "研究问题：**加粗**演示资料包含虚构记录 [[source:source-1]]，不能当作真实结论。"
+const exportUnrenderableBody = "研究问题：\x00演示资料包含虚构记录 [[source:source-1]]，不能当作真实结论。"
 
-// exportRouterWithUnrenderableBody 装一组正文带富标记的工作区。
+// exportRouterWithUnrenderableBody 装一组正文带非法 XML 字符的工作区。
 func exportRouterWithUnrenderableBody(t *testing.T) *gin.Engine {
 	t.Helper()
 	handler, db, assetID := seedBoundSource(t)
@@ -683,4 +789,52 @@ func exportRouterWithUnrenderableBody(t *testing.T) *gin.Engine {
 		deliveryMethodChapter(),
 	)
 	return assembleExportRoutes(t, handler, db, deliveryTestAuthorizer{})
+}
+
+func TestExportDownloadRejectsCorruptedPersistedBytes(t *testing.T) {
+	handler, db, assetID := seedBoundSource(t)
+	seedDeliveryWorkspace(t, db, deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}), deliveryMethodChapter())
+	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000024_lingdoc_delivery_stores.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(migration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
+	snapshots := delivery.NewSQLiteSnapshotStore(db)
+	releases := NewDeliveryReleaseService(inputs, handler.DeliveryInputBuilder(), snapshots)
+	exports := NewDeliveryExportService(snapshots, delivery.NewSQLiteExportStore(db), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
+	router := gin.New()
+	group := router.Group("/api/v1/lingdoc")
+	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))
+	RegisterDeliveryExportRoutes(group, NewDeliveryExportHandler(exports))
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	artifact := startExportOf(t, router, snapshot.ID)
+	var row struct {
+		FileBlob []byte `gorm:"column:file_blob"`
+	}
+	if err := db.Table("lingdoc_export_artifacts").Where("id = ?", artifact.ID).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	original := append([]byte(nil), row.FileBlob...)
+	row.FileBlob[0] ^= 1
+	if err := db.Table("lingdoc_export_artifacts").Where("id = ?", artifact.ID).Update("file_blob", row.FileBlob).Error; err != nil {
+		t.Fatal(err)
+	}
+	got := deliveryServe(router, deliveryRequest(http.MethodGet, *artifact.DownloadPath, "", ""))
+	if got.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("corrupt download = %d, want 422", got.Code)
+	}
+	envelope := decodeDeliveryEnvelope(t, got)
+	if envelope.Error == nil || envelope.Error.Code != "invalid_state" || !strings.Contains(got.Body.String(), "请重新导出") {
+		t.Fatalf("unexpected refusal: %+v", envelope.Error)
+	}
+	if err := db.Table("lingdoc_export_artifacts").Where("id = ?", artifact.ID).Update("file_blob", original).Error; err != nil {
+		t.Fatal(err)
+	}
+	restored := deliveryServe(router, deliveryRequest(http.MethodGet, *artifact.DownloadPath, "", ""))
+	if restored.Code != http.StatusOK || !bytes.Equal(restored.Body.Bytes(), original) {
+		t.Fatal("restored file must download exactly")
+	}
 }

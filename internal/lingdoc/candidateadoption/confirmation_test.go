@@ -17,8 +17,8 @@ func (s confirmationWorkspaceStub) GenerationContext(context.Context, string, st
 
 type confirmationAuthorizerFunc func(context.Context, string, string, string) error
 
-func (f confirmationAuthorizerFunc) Authorize(ctx context.Context, actorID, projectID, chapterID string) error {
-	return f(ctx, actorID, projectID, chapterID)
+func (f confirmationAuthorizerFunc) Authorize(ctx context.Context, actorID, projectID, capability string) error {
+	return f(ctx, actorID, projectID, capability)
 }
 
 func allowConfirmation(context.Context, string, string, string) error { return nil }

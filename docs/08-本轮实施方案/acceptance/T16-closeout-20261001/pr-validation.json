@@ -1,0 +1,277 @@
+{
+  "task_id": "lingdoc-t16-closeout-20260927-01",
+  "recorded_at": "2026-10-01T16:40:17.6824232Z",
+  "pr_base_branch": "codex/t09-t12-integration",
+  "pr_base_commit": "1992abde95ca5636fdc1a2af39f4565fde358a99",
+  "original_checkpoint": "92d00268ea5536320a11a4351c243a563fbb5c43",
+  "validation_commit_scope": "Source validation is pinned to 93f4bacd43c32d15915eba9110db70b170d7fa62. Every listed source blob below is resolved from that commit. Contract validation is pinned separately to 9c98be578521fe15ac50773d609953a2194dd279. This JSON is a later documentation record and does not self-claim a blob hash for its own file. Current PR CI is reported from GitHub for the final head.",
+  "verified_source_blobs": [
+    {
+      "path": "cmd/server/main.go",
+      "git_blob": "4ec6e83b8cf1d403ccc7c2173574f922af8553bd"
+    },
+    {
+      "path": "frontend/src/components/LingDocCandidateAdoptionDialog.vue",
+      "git_blob": "9045cd5733286c69eb775c3c5c591cf7204aa10b"
+    },
+    {
+      "path": "frontend/src/views/lingdoc/DeliveryPanel.vue",
+      "git_blob": "b69049ca61b8cdc55694eff2d31ac2a207400682"
+    },
+    {
+      "path": "frontend/src/views/lingdoc/Workspace.vue",
+      "git_blob": "1049aaa6994c6e0c45ab8477abf7ab290b5ae3e5"
+    },
+    {
+      "path": "frontend/src/views/lingdoc/deliveryState.test.ts",
+      "git_blob": "5f0023e5ad2ac41986b7384cf2fac6b653d1c983"
+    },
+    {
+      "path": "frontend/src/views/lingdoc/deliveryState.ts",
+      "git_blob": "8cd579883cf724c3b06b08d3dde38e4ad703e8de"
+    },
+    {
+      "path": "internal/application/repository/retriever/postgres/structs.go",
+      "git_blob": "2c758db732adea4fc3df778f9f34c3e902da877f"
+    },
+    {
+      "path": "internal/application/repository/retriever/postgres/structs_test.go",
+      "git_blob": "d8a58425f8e1e337c140ea47071234e9f2a8785d"
+    },
+    {
+      "path": "internal/application/service/knowledge_embedding_failure_test.go",
+      "git_blob": "8d302b17300d806d83e45efc2cddb5136776ed95"
+    },
+    {
+      "path": "internal/application/service/knowledge_post_process.go",
+      "git_blob": "20c4d1b368a411ef0bcadc358c021f553d3ab6d2"
+    },
+    {
+      "path": "internal/application/service/knowledge_post_process_graph_chunks_test.go",
+      "git_blob": "abf4c68c4521c2ab96e9bbd87d21e780867508eb"
+    },
+    {
+      "path": "internal/application/service/knowledge_post_process_wiki_enqueue_test.go",
+      "git_blob": "3624f21b37742b791f7da7336531b2334ca1c409"
+    },
+    {
+      "path": "internal/application/service/knowledge_process.go",
+      "git_blob": "ac4631d6390ada4d74e8479b6fecba3ae591898f"
+    },
+    {
+      "path": "internal/application/service/retriever/composite.go",
+      "git_blob": "f781dc25527bf1ba2b504c5a96b12424b77a1bec"
+    },
+    {
+      "path": "internal/application/service/retriever/composite_indexing_types_test.go",
+      "git_blob": "782307c31241fafb00713efb2a62ff743085166e"
+    },
+    {
+      "path": "internal/application/service/tenant_skill_verify_python_test.go",
+      "git_blob": "14eabb0fa143bd6bf576cea5b049d0c70a6aaec3"
+    },
+    {
+      "path": "internal/container/container.go",
+      "git_blob": "ffed38b4f3f17971a512c7a81df03799f7f56669"
+    },
+    {
+      "path": "internal/container/tenant_skill_reaper_test.go",
+      "git_blob": "caa73893456a165621271f4e27556f1b7989bb47"
+    },
+    {
+      "path": "internal/lingdoc/candidateadoption/candidate_adoption_http.go",
+      "git_blob": "9e26054f9cefa21085fa7289c70d55f1afc1356c"
+    },
+    {
+      "path": "internal/lingdoc/candidateadoption/confirmation.go",
+      "git_blob": "a7f9bf67a23d603cd3758a7c7215bbdf1fd42cb9"
+    },
+    {
+      "path": "internal/lingdoc/candidateadoption/confirmation_test.go",
+      "git_blob": "de3d563deff47e26275d418ebd8751c6429464a0"
+    },
+    {
+      "path": "internal/lingdoc/delivery/export.go",
+      "git_blob": "cf09c9ffb1feb906d3d81ba0b3c08d1c5c53cb03"
+    },
+    {
+      "path": "internal/lingdoc/delivery/export_test.go",
+      "git_blob": "f2a8304f79d4f9d8445c7fe502db8d9464325ac2"
+    },
+    {
+      "path": "internal/lingdoc/delivery/postgres_failure_test.go",
+      "git_blob": "d07013a2c777c6408b55dddf4a7da5e062b052ae"
+    },
+    {
+      "path": "internal/lingdoc/generation/postgres_failure_test.go",
+      "git_blob": "15e2ca9a85d401f8cd1dcf205e65a8b02a7eca71"
+    },
+    {
+      "path": "internal/lingdoc/generation/service.go",
+      "git_blob": "702b011a1af1e6a628193a6ad7a6c47ce3dee106"
+    },
+    {
+      "path": "internal/lingdoc/generation/service_test.go",
+      "git_blob": "788f2cc019cfc5772bcb352ccaa414bc2e560cbf"
+    },
+    {
+      "path": "internal/lingdoc/workspace/delivery_export.go",
+      "git_blob": "d20ff5b3c809b2a2676f5d35767742fe842374cb"
+    },
+    {
+      "path": "internal/lingdoc/workspace/delivery_export_http_test.go",
+      "git_blob": "c4228b0316f00f96fa026f9f21f8ad5992a10be2"
+    },
+    {
+      "path": "internal/lingdoc/workspace/delivery_render.go",
+      "git_blob": "01a60be2adb5206525cdd05103b561670213db8d"
+    },
+    {
+      "path": "internal/lingdoc/workspace/delivery_render_test.go",
+      "git_blob": "235065da1ca425542fbb01cb6c9ecf215365f7c0"
+    },
+    {
+      "path": "internal/lingdoc/workspace/generation.go",
+      "git_blob": "3b8f700a49c32b89c006ee46c4a26e81cf30a005"
+    },
+    {
+      "path": "internal/lingdoc/workspace/generation_acceptance_budget.go",
+      "git_blob": "86cecce9d839ba6c5256618e22204b8aaaa97017"
+    },
+    {
+      "path": "internal/lingdoc/workspace/generation_acceptance_budget_test.go",
+      "git_blob": "f1cc3a4a20dd9a92f5b284216e55f3f10b581950"
+    },
+    {
+      "path": "internal/lingdoc/workspace/generation_acceptance_flow_test.go",
+      "git_blob": "6f1a31edacf8f18760b920023abb225bb0f1d8d7"
+    },
+    {
+      "path": "internal/lingdoc/workspace/http.go",
+      "git_blob": "303939a3ee8389adc20d9dec9a3a055d3e4727fc"
+    },
+    {
+      "path": "internal/lingdoc/workspace/postgres_export_failure_test.go",
+      "git_blob": "b35c534b382810419e48b6e9b880250fcea69e1c"
+    },
+    {
+      "path": "internal/lingdoc/workspace/source_revocation_integration_test.go",
+      "git_blob": "05ddac297acc10285ed93b6e88e036abe46a9100"
+    },
+    {
+      "path": "internal/lingdoc/workspacecore/service.go",
+      "git_blob": "e4be5c1b92e01a08f4d2921dd1730a9fa39c7182"
+    },
+    {
+      "path": "internal/models/acceptancebudget/ledger.go",
+      "git_blob": "6502da0f2e3ec57f1eead8aecbcbef57ad73e94f"
+    },
+    {
+      "path": "internal/models/acceptancebudget/ledger_test.go",
+      "git_blob": "9729e966cb86ea347cd07dcbd1c8940b217473f2"
+    },
+    {
+      "path": "internal/models/embedding/openai.go",
+      "git_blob": "45b7efc970a7d93a574f3437ef030a2d2231fe5e"
+    },
+    {
+      "path": "internal/models/embedding/openai_acceptance_test.go",
+      "git_blob": "e7e3fa208e8bf96fce0cc64e7102e08605a3f91b"
+    },
+    {
+      "path": "internal/models/embedding/transport.go",
+      "git_blob": "72dfdfb7759dbf47e79b01de8feb939f50d322f2"
+    },
+    {
+      "path": "internal/models/embedding/transport_proxy_test.go",
+      "git_blob": "7b253ddcc3e6111c77d60551ced7adb4445a4894"
+    },
+    {
+      "path": "internal/lingdoc/delivery/snapshot.go",
+      "git_blob": "28ee01d3d672292ffca8948c335086beeb3836c5"
+    },
+    {
+      "path": "internal/lingdoc/delivery/snapshot_test.go",
+      "git_blob": "a6987a2a02f84b8340a2e0e7294459dd8fc08313"
+    },
+    {
+      "path": "internal/lingdoc/workspace/delivery_input_test.go",
+      "git_blob": "94e10d9b99e8ed5aaa9f3922f461e3712fd5bb38"
+    }
+  ],
+  "checks": [
+    {
+      "command": "go test -race -count=1 ./internal/lingdoc/... ./internal/evidence/...",
+      "exit_code": 0,
+      "log": "full-chain/pr-race-tests.log",
+      "scope": "7 tested packages; template has no tests; opt-in PostgreSQL fault tests skip without dedicated DB environment"
+    },
+    {
+      "command": "go test ./internal/application/service ./internal/application/service/retriever ./internal/application/repository/retriever/postgres ./internal/models/embedding ./internal/models/acceptancebudget",
+      "exit_code": 0,
+      "log": "full-chain/pr-related-package-tests.log"
+    },
+    {
+      "command": "go vet ./internal/lingdoc/... ./internal/evidence/...",
+      "exit_code": 0,
+      "log": "full-chain/pr-go-vet.log"
+    },
+    {
+      "command": "npm run type-check",
+      "exit_code": 0,
+      "log": "full-chain/pr-frontend-typecheck.log"
+    },
+    {
+      "command": "npm test -- src/views/lingdoc/*.test.ts",
+      "result": "40 passed, 0 failed, 0 skipped; frontend sequence completed exit 0",
+      "log": "full-chain/pr-frontend-tests.log"
+    },
+    {
+      "command": "npm run build",
+      "exit_code": 0,
+      "log": "full-chain/pr-frontend-build.log",
+      "warning": "Vite chunks larger than 500 kB; warning preserved, no threshold/validation suppressed"
+    },
+    {
+      "command": "python /tmp/lingdoc-pr-contract-validation/validate_artifacts.py",
+      "exit_code": 0,
+      "log": "full-chain/pr-contract-validation.log",
+      "scope": "fresh static contract and negative cases in temporary copy; not a runtime provider test"
+    },
+    {
+      "command": "go test ./internal/container",
+      "exit_code": 0,
+      "log": "full-chain/pr-container-tests.log"
+    }
+  ],
+  "not_run": [
+    "go test -race ./... (entire multi-module application)",
+    "Word in cloud (gong supplied manual verification instead)",
+    "real supplier timeout or ambiguous billing",
+    "F14 precise only-related-without-support input",
+    "real skill orphan container reap"
+  ],
+  "supplier_requests_during_pr_preparation": 0,
+  "actual_cloud_supplier_calls": 6,
+  "office": "gong Microsoft Word edit/save/close/reopen confirmed; version not provided",
+  "merge_and_deploy_authorized": false,
+  "validated_source_commit": "93f4bacd43c32d15915eba9110db70b170d7fa62",
+  "current_source_checks": [
+    {
+      "command": "go test ./internal/lingdoc/generation ./internal/lingdoc/delivery ./internal/lingdoc/workspace ./internal/models/acceptancebudget ./internal/application/service/retriever",
+      "result": "PASS",
+      "tested_commit": "93f4bacd43c32d15915eba9110db70b170d7fa62"
+    },
+    {
+      "command": "npm test -- src/views/lingdoc/deliveryState.test.ts",
+      "result": "PASS: 6 passed, 0 failed",
+      "tested_commit": "93f4bacd43c32d15915eba9110db70b170d7fa62"
+    },
+    {
+      "command": "python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py",
+      "result": "PASS: 23 scenarios, 586 shape checks",
+      "tested_commit": "9c98be578521fe15ac50773d609953a2194dd279"
+    }
+  ],
+  "contract_validation_commit": "9c98be578521fe15ac50773d609953a2194dd279"
+}

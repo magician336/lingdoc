@@ -3,6 +3,7 @@ package workspace
 import (
 	"archive/zip"
 	"bytes"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -278,4 +279,16 @@ func documentText(t *testing.T, file []byte) string {
 	}
 	t.Fatal("rendered file carries no word/document.xml")
 	return ""
+}
+
+func TestDeliveryDocumentRejectsUnsupportedModelMarkdownWithoutFlattening(t *testing.T) {
+	input := renderableInput()
+	input.Chapters[0].BodyMarkdown = "## 研究方案\n\n### 研究对象\n20份访谈中12份存在检索困难 [[source:source-1]]。\n1. 第1周整理资料 [[source:source-1]]。\n- 4周计划不是已完成结果。"
+	if _, err := deliveryDocument.RenderFrozen(input); !errors.Is(err, delivery.ErrUnsupportedFormat) {
+		t.Fatalf("RenderFrozen error = %v, want unsupported format", err)
+	}
+	// The frozen input is immutable and is no longer normalized before export.
+	if !strings.HasPrefix(input.Chapters[0].BodyMarkdown, "## ") {
+		t.Fatal("frozen body changed")
+	}
 }

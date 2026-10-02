@@ -13,13 +13,14 @@
 | 文件 | 用途 |
 |---|---|
 | [openapi.json](contracts/openapi.json) | 拟议 HTTP：31 操作，28 core / 3 optional；x-domain 表示服务职责，不指定人 |
-| [scenarios.json](contracts/scenarios.json) | 22 个行为场景（F01–F22）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
+| [scenarios.json](contracts/scenarios.json) | 23 个行为场景（F01–F23）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
 | [T15-09 验证报告](T15-09-验证报告.json) | issue #36 的 F10/F16/F19 实跑证据、F13 未运行原因与已登记缺口 |
 | [T15-10 验证报告](T15-10-验证报告.json) | issue #37 的 F03/F15/F18/F20 实跑证据、F06/F09/F14 未运行原因与已登记缺口 |
 | [T15-11 验证报告](T15-11-验证报告.json) / [证据](T15-11-证据.json) | issue #38 的 F01–F22 完整状态矩阵、缺口责任归属与确定性构建证据 |
+| [T16 closeout](T16-closeout-20260930.md) / [验收材料](acceptance/T16-closeout-20261001/README.md) | issue #42 的交付闭环、真实模型演示与验收证据 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
 | [validation-result.json](contracts/validation-result.json) | 本次静态检查结果及未运行范围 |
@@ -34,7 +35,7 @@ python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
 
 脚本只读取同目录合成资料并写回 validation-result.json，不依赖作者本机目录、旧稿或私密数据，不调用模型和真实服务。
 
-检查包含确认章节/模板/资料版本对应、待核及处置 ID 唯一、确认返回与快照对应、整章替换留存、幂等参考顺序和历史标签行为，以及起点状态声明（只许造得出来的部分、章节引用与正文标记一致、草稿不得有章节）。共 22 个静态反例应被拒绝。
+检查包含确认章节/模板/资料版本对应、待核及处置 ID 唯一、确认返回与快照对应、整章替换留存、幂等参考顺序和历史标签行为，以及起点状态声明（只许造得出来的部分、章节引用与正文标记一致、草稿不得有章节）。共 44 个静态反例应被拒绝。
 
 ## 提供方联调执行器（按场景驱动）
 
@@ -77,7 +78,7 @@ python scripts/lingdoc_mock/run_t15_10_live.py --local-facts-path <本地fixture
 
 ### T15-11 全矩阵报告
 
-从仓库根运行下面的命令，合并 T15 已保存的场景证据，生成完整的 F01–F22 矩阵和输入摘要：
+从仓库根运行下面的命令，合并 T15 已保存的场景证据，生成完整的 F01–F22 矩阵和输入摘要；F23 的验收预算与模型边界由 T16 代码测试覆盖：
 
 ```text
 python scripts/lingdoc_mock/build_t15_matrix.py
@@ -124,7 +125,7 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 
 断言是「一个 `path`（JSON 指针）+ 一个算子 + 一句 `intent`」，算子有 `equals` / `length` / `keys` / `one_of`。`intent` 与步骤的 `assertion` 是中文意图说明，原样进报告但不参与求值；报告另写 `expected` 与 `actual`。期望值的现成来源是契约已发布的响应例子，静态校验逐条比对「这条 check 的 `path` 在声明的那个例子里是否存在、值是否一致」，比对不上就拒绝；例子里给不出的运行时值（比如绑定 id）记作留给运行。
 
-报告默认写在 `docs/08-本轮实施方案/T15-验证报告.json`，不含令牌、不含提供方 ID、不含时间戳，**同一输入两次运行的字节相同**。逐条判定分三种：`passed`；`failed` 带 `why`（先写期望与实际的 HTTP 状态码，再逐条写「哪个指针、期望什么、实际读到什么」，读不到的位置明说读不到）；`not_run` 带原因（没有请求定义 / 没有步骤），22 条场景全部出现，没有一条留空。起点读不回来时那一步**不发**，结论直接为失败。改动范围、实跑结论与边界见 [T15-04 场景到报告](T15-场景到报告.md)。
+报告默认写在 `docs/08-本轮实施方案/T15-验证报告.json`，不含令牌、不含提供方 ID、不含时间戳，**同一输入两次运行的字节相同**。逐条判定分三种：`passed`；`failed` 带 `why`（先写期望与实际的 HTTP 状态码，再逐条写「哪个指针、期望什么、实际读到什么」，读不到的位置明说读不到）；`not_run` 带原因（没有请求定义 / 没有步骤），23 条场景全部出现，没有一条留空。起点读不回来时那一步**不发**，结论直接为失败。改动范围、实跑结论与边界见 [T15-04 场景到报告](T15-场景到报告.md)。
 
 `.github/workflows/lingdoc-f01-runner.yml` 对执行器、装载器、场景驱动、相关测试与契约变更运行 `python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py'`（并对这几个模块做 `py_compile`），保留测试日志；它仅使用合成响应，**不运行上面的真实服务命令**，不读取凭据，也不调用真实模型。
 
