@@ -13,6 +13,70 @@ type sourcePolicyStub struct {
 	calls int
 }
 
+type recordingProjectAuthorizer struct {
+	tenantErr    error
+	projectErr   error
+	tenantCalls  int
+	projectCalls []string
+}
+
+func (a *recordingProjectAuthorizer) AuthorizeTenant(_ Transaction, _ Actor) error {
+	a.tenantCalls++
+	return a.tenantErr
+}
+
+func (a *recordingProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	a.projectCalls = append(a.projectCalls, projectID+":"+capability)
+	if a.projectErr != nil {
+		return Project{}, a.projectErr
+	}
+	return tx.Project(actor.TenantID, projectID)
+}
+
+func TestProjectAuthorizerSeamCoversCreateListAndRead(t *testing.T) {
+	repository := fakeWorkspace()
+	authorizer := &recordingProjectAuthorizer{}
+	service := NewServiceWithAuthorizer(repository, ContractDemoTemplate{}, nil, authorizer)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	ctx := context.Background()
+	raw, _, _, err := service.CreateProject(ctx, actor, "create-auth", CreateProjectInput{Name: "授权", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	created := asProject(t, raw)
+	if authorizer.tenantCalls != 1 {
+		t.Fatalf("create tenant calls = %d, want 1", authorizer.tenantCalls)
+	}
+	if _, _, err := service.ListProjects(ctx, actor); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if authorizer.tenantCalls != 2 {
+		t.Fatalf("list tenant calls = %d, want 2", authorizer.tenantCalls)
+	}
+	if _, err := service.GetProject(ctx, actor, created.ID); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if len(authorizer.projectCalls) != 1 || authorizer.projectCalls[0] != created.ID+":read" {
+		t.Fatalf("project calls = %v, want [%s:read]", authorizer.projectCalls, created.ID)
+	}
+}
+
+func TestProjectAuthorizerDeniesBeforeReplay(t *testing.T) {
+	repository := fakeWorkspace()
+	authorizer := &recordingProjectAuthorizer{}
+	service := NewServiceWithAuthorizer(repository, ContractDemoTemplate{}, nil, authorizer)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	ctx := context.Background()
+	input := SaveSpecInput{ExpectedSpecRevision: 1, Fields: map[string]string{"research_subject": "subject"}}
+	if _, _, _, err := service.SaveSpec(ctx, actor, "p", "save-auth", input); err != nil {
+		t.Fatalf("initial save: %v", err)
+	}
+	authorizer.projectErr = ErrNotFound
+	if _, _, _, err := service.SaveSpec(ctx, actor, "p", "save-auth", input); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked replay error = %v, want ErrNotFound", err)
+	}
+}
+
 func (s *sourcePolicyStub) Validate(context.Context, string, string, []string) error {
 	s.calls++
 	return s.err
@@ -80,11 +144,21 @@ type stateTransaction struct {
 }
 
 func (t *stateTransaction) ActiveMember(Actor) (bool, error) { return t.state.active, nil }
+func (t *stateTransaction) Projects(actor Actor, _ int) ([]Project, error) {
+	if actor.TenantID != 1 || !t.state.active {
+		return nil, ErrNotFound
+	}
+	return []Project{t.state.project}, nil
+}
 func (t *stateTransaction) Project(tenant uint64, id string) (Project, error) {
 	if tenant != 1 || t.state.project.ID != id {
 		return Project{}, ErrNotFound
 	}
 	return t.state.project, nil
+}
+func (t *stateTransaction) InsertProject(_ uint64, project Project) error {
+	t.state.project = project
+	return nil
 }
 func (t *stateTransaction) Chapter(project, id string) (Chapter, error) {
 	if project != t.state.chapter.ProjectID || id != t.state.chapter.ID {

@@ -7,6 +7,7 @@ import (
 type Service = core.Service
 type Repository = core.Repository
 type SourcePolicy = core.SourcePolicy
+type CoreProjectAuthorizer = core.ProjectAuthorizer
 type Actor = core.Actor
 type Project = core.Project
 type Chapter = core.Chapter
@@ -30,4 +31,8 @@ var (
 
 func NewService(repository Repository) *Service {
 	return core.NewService(repository)
+}
+
+func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer) *Service {
+	return core.NewServiceWithAuthorizer(repository, reader, sources, authorizer)
 }

@@ -36,6 +36,15 @@ type Transaction interface {
 	Operation(OperationIdentity) (OperationResult, bool, error)
 	SaveOperation(OperationIdentity, OperationResult) error
 }
+
+// ProjectAuthorizer is the application policy seam for LingDoc project
+// access. It operates on the existing Transaction port so authorization and
+// idempotent writes share one repository transaction; it does not depend on
+// GORM or define a second identity/tenant model.
+type ProjectAuthorizer interface {
+	AuthorizeTenant(Transaction, Actor) error
+	AuthorizeProject(Transaction, Actor, string, string) (Project, error)
+}
 type OperationIdentity struct {
 	Actor                  Actor
 	Operation, Target, Key string
@@ -52,6 +61,7 @@ type Service struct {
 	repository Repository
 	templates  TemplateReader
 	sources    SourcePolicy
+	authorizer ProjectAuthorizer
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -59,29 +69,54 @@ func NewService(repository Repository, readers ...TemplateReader) *Service {
 	if len(readers) > 0 && readers[0] != nil {
 		reader = readers[0]
 	}
-	return &Service{repository: repository, templates: reader}
+	return NewServiceWithAuthorizer(repository, reader, nil, nil)
 }
 
 // NewServiceWithSources retains the main-line citation recheck before replay.
 func NewServiceWithSources(repository Repository, reader TemplateReader, sources SourcePolicy) *Service {
-	s := NewService(repository, reader)
-	s.sources = sources
-	return s
+	return NewServiceWithAuthorizer(repository, reader, sources, nil)
+}
+
+// NewServiceWithAuthorizer injects the project policy while keeping the
+// repository/transaction architecture as the storage boundary. A nil policy
+// uses the compatibility policy implemented by this package.
+func NewServiceWithAuthorizer(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer) *Service {
+	if reader == nil {
+		reader = ContractDemoTemplate{}
+	}
+	if authorizer == nil {
+		authorizer = transactionProjectAuthorizer{}
+	}
+	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer}
 }
 func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
-func authorize(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
-	if capability != "read" && capability != "write" && capability != "manage" {
-		return Project{}, ErrInvalidRequest
-	}
+
+type transactionProjectAuthorizer struct{}
+
+func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor) error {
 	if !validActor(actor) {
-		return Project{}, ErrNotFound
+		return ErrNotFound
 	}
 	active, err := tx.ActiveMember(actor)
 	if err != nil {
-		return Project{}, err
+		return err
 	}
 	if !active {
-		return Project{}, ErrNotFound
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (a transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	if err := a.AuthorizeTenant(tx, actor); err != nil {
+		return Project{}, err
+	}
+	return authorizeProject(tx, actor, projectID, capability)
+}
+
+func authorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	if capability != "read" && capability != "write" && capability != "manage" {
+		return Project{}, ErrInvalidRequest
 	}
 	p, err := tx.Project(actor.TenantID, projectID)
 	if err != nil {
@@ -95,11 +130,17 @@ func authorize(tx Transaction, actor Actor, projectID, capability string) (Proje
 	return Project{}, ErrNotFound
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
-	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error { _, err := authorize(tx, actor, projectID, capability); return err })
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		_, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+		return err
+	})
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) { result, err = authorize(tx, actor, id, "read"); return err })
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
+		result, err = s.authorizer.AuthorizeProject(tx, actor, id, "read")
+		return err
+	})
 	return result, err
 }
 func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
@@ -108,14 +149,11 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 		if !validActor(actor) {
 			return ErrNotFound
 		}
-		active, err := tx.ActiveMember(actor)
-		if err != nil {
+		if err := s.authorizer.AuthorizeTenant(tx, actor); err != nil {
 			return err
 		}
-		if !active {
-			return ErrNotFound
-		}
-		result, err = tx.Projects(actor, 51)
+		projects, err := tx.Projects(actor, 51)
+		result = projects
 		return err
 	})
 	if err != nil {
@@ -146,16 +184,12 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
-			active, err := tx.ActiveMember(actor)
-			if err != nil {
+			if err := s.authorizer.AuthorizeTenant(tx, actor); err != nil {
 				return err
-			}
-			if !active {
-				return ErrNotFound
 			}
 		} else {
 			var err error
-			p, err = authorize(tx, actor, projectID, capability)
+			p, err = s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
 			if err != nil {
 				return err
 			}
@@ -356,7 +390,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizer.AuthorizeProject(tx, actor, projectID, "read"); err != nil {
 			return err
 		}
 		var err error
@@ -439,7 +473,7 @@ func sameVersion(a, b *string) bool {
 func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error) {
 	var result GenerationContext
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := authorize(tx, actor, projectID, "read")
+		p, err := s.authorizer.AuthorizeProject(tx, actor, projectID, "read")
 		if err != nil {
 			return err
 		}

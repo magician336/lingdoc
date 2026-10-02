@@ -100,3 +100,29 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 		t.Fatalf("injected service did not receive caller identity: called=%v actor=%#v", service.called, service.actor)
 	}
 }
+
+func TestProjectHTTPReadAllowsActiveMemberAndHidesAfterRevocation(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fixture := newAssetsHTTPFixture(t)
+
+	first := httptest.NewRecorder()
+	fixture.router.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-1", nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("active project read status = %d; body=%s", first.Code, first.Body.String())
+	}
+	if !strings.Contains(first.Body.String(), "project-1") {
+		t.Fatalf("active project read omitted project: %s", first.Body.String())
+	}
+
+	if err := fixture.db.Exec("UPDATE tenant_members SET status = ? WHERE tenant_id = ? AND user_id = ?", "suspended", 7, "reader").Error; err != nil {
+		t.Fatal(err)
+	}
+	second := httptest.NewRecorder()
+	fixture.router.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-1", nil))
+	if second.Code != http.StatusNotFound {
+		t.Fatalf("revoked project read status = %d; body=%s", second.Code, second.Body.String())
+	}
+	if strings.Contains(second.Body.String(), "assets http test") {
+		t.Fatalf("revoked response leaked project content: %s", second.Body.String())
+	}
+}
