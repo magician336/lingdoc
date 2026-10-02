@@ -73,7 +73,7 @@ var queueDefinitions = []QueueDefinition{
 		TypeKnowledgePostProcess,
 	}},
 	{Name: QueueSummary, Pool: WorkerPoolEnrichment, Weight: 2, SharedWeight: 2, TaskTypes: []string{
-		TypeSummaryGeneration, TypeDataTableSummary, TypeKnowledgeAutoTag,
+		TypeSummaryGeneration, TypeDataTableSummary, TypeKnowledgeAutoTag, TypeLingDocGeneration,
 	}},
 	{Name: QueueMultimodal, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeImageMultimodal}},
 	{Name: QueueGraph, Pool: WorkerPoolEnrichment, Weight: 1, SharedWeight: 1, TaskTypes: []string{TypeChunkExtract}},
@@ -254,6 +254,8 @@ const (
 	TypeTemporaryDocumentProcess = "temporary_document:process" // 会话临时文档解析任务
 	// TypeMemoryExtract 长期记忆抽取任务（会话轮次防抖后异步执行）
 	TypeMemoryExtract = "memory:extract"
+	// TypeLingDocGeneration runs one persisted LingDoc generation run.
+	TypeLingDocGeneration = "lingdoc:generation"
 )
 
 // MemoryExtractPayload carries everything the background distillation task

@@ -205,8 +205,8 @@ func (s *KnowledgePostProcessService) Handle(ctx context.Context, task *asynq.Ta
 	//    until wiki generation actually finishes instead of flipping to
 	//    completed while wiki runs minutes later. A wiki op that never
 	//    drains is bounded by the housekeeping finalizing sweep.
-	willSpawnSummary := len(textChunks) > 0
-	willSpawnQuestion := willSpawnSummary && kb.NeedsEmbeddingModel() &&
+	willSpawnSummary := len(textChunks) > 0 && kb.SummaryModelID != ""
+	willSpawnQuestion := len(textChunks) > 0 && kb.NeedsEmbeddingModel() &&
 		eff.QuestionGenerationConfig.Enabled
 	willSpawnWiki := kb.IndexingStrategy.WikiEnabled && len(textChunks) > 0
 	willSpawnAutoTag := kb.Type == types.KnowledgeBaseTypeDocument &&

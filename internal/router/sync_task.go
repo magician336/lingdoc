@@ -131,6 +131,7 @@ type SyncTaskParams struct {
 	WikiIngest           interfaces.TaskHandler `name:"wikiIngest"`
 	TemporaryDocument    interfaces.TemporaryDocumentService
 	MemoryService        interfaces.MemoryService
+	LingDocGeneration    interfaces.TaskHandler `name:"lingdocGeneration"`
 }
 
 // RegisterSyncHandlers registers all task handlers on the SyncTaskExecutor.
@@ -157,5 +158,6 @@ func RegisterSyncHandlers(params SyncTaskParams) {
 	params.Executor.RegisterHandler(types.TypeWikiIngest, params.WikiIngest.Handle)
 	params.Executor.RegisterHandler(types.TypeWikiFinalize, params.WikiIngest.Handle)
 	params.Executor.RegisterHandler(types.TypeMemoryExtract, params.MemoryService.Handle)
+	params.Executor.RegisterHandler(types.TypeLingDocGeneration, params.LingDocGeneration.Handle)
 	logger.Infof(context.Background(), "[SyncTask] All task handlers registered (Lite mode, no Redis)")
 }

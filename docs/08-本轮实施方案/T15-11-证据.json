@@ -1,0 +1,65 @@
+{
+  "evidence_version": 1,
+  "verification_mode": "offline_consolidation_of_saved_evidence",
+  "report_path": "docs/08-本轮实施方案/T15-11-验证报告.json",
+  "report_sha256": "ad8258c68cdcf99c3da60b1b72f245dcd372e71ab41d6dc7fb5b6bf7a6a84e97",
+  "source_artifacts": [
+    {
+      "path": "docs/08-本轮实施方案/02-接口与Mock约定.md",
+      "sha256": "63bad2231c13abfed627d5a65da70b0d15c30b90039dbbfc1dbd493ff81c2641"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-09-验证报告.json",
+      "sha256": "8fa0506df064d82ced05f7763ecef863af4f1deb059cee321927d40e4ba42a33"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-10-验证报告.json",
+      "sha256": "5fa9528c7acce5d085ef607abd810e769b48b366b7d327ff8e05563a0254c81a"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-F02-白盒观察.md",
+      "sha256": "83273b5bafdb166efe1bd84621d227b06f78837f1bf11e255b4b52d89f050e0d"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-S5-证据.json",
+      "sha256": "2576bf3a55ee271327d7707ed9170070017d66211efc491a0e00b4a431e3daa7"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-S6-验证报告.json",
+      "sha256": "b5e5a8cacf8182be06c5b4dcfa8b33944c497e11dd0e80b958513627e540c2d5"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-S7-验证报告.json",
+      "sha256": "63ca441b56ceb116134a9213fc2ba87c7c5d58d95425d97a8d24d7e6998890bd"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-S8-验证报告.json",
+      "sha256": "a7c78ce79753d1094b54878bee211aaa6bac6cdbc891a430bee74c6d8616dad1"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-S9-验证报告.json",
+      "sha256": "6812d9a4c197f1eea4c7333ef36a81deff265df1fe7905747b6023d793ab5184"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-场景到报告.md",
+      "sha256": "b58c6cd7901d21d5285aa3419c65a79b5c8abb242ffaeae338bd8dd5f0639bd1"
+    },
+    {
+      "path": "docs/08-本轮实施方案/T15-真实服务启动.md",
+      "sha256": "bfa7430bac19f591a54d81451a689e9d220f62f68215955fc8ecbdeb623d010a"
+    },
+    {
+      "path": "docs/08-本轮实施方案/contracts/scenarios.json",
+      "sha256": "c434758e73a7d68d83ed93a1c10b07660a53c1ba6571ee4a3d36edf51d91e3a3"
+    },
+    {
+      "path": "docs/TEAM_DEVELOPMENT_TASKS.md",
+      "sha256": "af17dc316bab02027f8a0dd1803e6bb4c10d553d37800a3795617e95bbbcfda5"
+    }
+  ],
+  "determinism": {
+    "first_render_sha256": "ad8258c68cdcf99c3da60b1b72f245dcd372e71ab41d6dc7fb5b6bf7a6a84e97",
+    "second_render_sha256": "ad8258c68cdcf99c3da60b1b72f245dcd372e71ab41d6dc7fb5b6bf7a6a84e97",
+    "identical": true
+  }
+}

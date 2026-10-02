@@ -165,8 +165,9 @@ func newWikiEnqueueTestService(
 	return &KnowledgePostProcessService{
 		knowledgeRepo: repo,
 		kbService: &wikiEnqueueFailureKBService{kb: &types.KnowledgeBase{
-			ID:       "kb-wiki",
-			TenantID: 7,
+			SummaryModelID: "summary-model",
+			ID:             "kb-wiki",
+			TenantID:       7,
 			IndexingStrategy: types.IndexingStrategy{
 				WikiEnabled: true,
 			},
@@ -285,4 +286,13 @@ func TestPostProcessRejectsMovedKnowledgeBeforeWikiOrSpanWrites(t *testing.T) {
 	require.ErrorIs(t, svc.Handle(context.Background(), newWikiEnqueuePostProcessTask(t, "moved-doc")), asynq.SkipRetry)
 	require.Zero(t, repo.expectedSubtasks)
 	require.Equal(t, types.ParseStatusProcessing, repo.knowledge.ParseStatus)
+}
+
+func TestKnowledgePostProcessSkipsUnconfiguredSummary(t *testing.T) {
+	queue := &wikiEnqueueFailureTaskQueue{}
+	service, repo := newWikiEnqueueTestService("no-summary", &wikiEnqueueFailurePendingRepo{}, queue)
+	service.kbService.(*wikiEnqueueFailureKBService).kb.SummaryModelID = ""
+	require.NoError(t, service.Handle(context.Background(), newWikiEnqueuePostProcessTask(t, "no-summary")))
+	assert.Equal(t, 1, repo.expectedSubtasks)
+	assert.Equal(t, []string{types.TypeWikiIngest}, queue.taskTypes)
 }

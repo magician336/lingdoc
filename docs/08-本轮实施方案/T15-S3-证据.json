@@ -1,0 +1,185 @@
+{
+  "task": "T15-02",
+  "what": "执行器按场景驱动，F01 结论不变",
+  "run_at": "2026-09-27T10:40:05+0800",
+  "host_os": "win32",
+  "repo_root": "D:\\code_warehouse\\Projects\\lingdoc",
+  "repo": {
+    "commit": "ff3b3d2b161b4342544120c627f8d8ac49e1100d",
+    "subject": "docs(t15): record the real startup, one real round trip, and the failure layers",
+    "committed_at": "2026-09-27T09:31:00+08:00",
+    "worktree_dirty_paths": [
+      "M .github/workflows/lingdoc-f01-runner.yml",
+      " M docs/08-本轮实施方案/README.md",
+      " M docs/08-本轮实施方案/T15-真实服务启动.md",
+      " M scripts/lingdoc_mock/run_f01.py",
+      " M scripts/lingdoc_mock/test_workflow_reports.py",
+      " M scripts/lingdoc_mock/test_workflow_runner.py",
+      "?? docs/08-本轮实施方案/T15-S3-证据.json",
+      "?? docs/08-本轮实施方案/T15-执行器场景驱动.md",
+      "?? scripts/lingdoc_mock/test_workflow_specs.py"
+    ],
+    "note": "before 侧是此提交的 scripts/lingdoc_mock/run_f01.py 原文；after 侧是工作区版本。"
+  },
+  "executor": {
+    "module": "scripts/lingdoc_mock/run_f01.py",
+    "before_sha256": "14b2e52a0e8077550a0f06d0401c33c88f2511a770893e00eb11ac17592181a7",
+    "after_sha256": "6b1f63cdda88299c4cc67b12d6019909faa90621d75f8420818ba556ec693ae5"
+  },
+  "regression_mock_provider": {
+    "what": "对 loopback 契约 mock（scripts/lingdoc_mock/server.py，固定样例、无写库无鉴权）跑 F01 23 步",
+    "command_note": "每轮的命令原文见 runs[*].argv（按仓库根相对化），工作目录都是仓库根；stdout 与 stderr 分开落盘、分别取 sha256，不受缓冲与合并顺序影响（stderr 里只有那一行 FAILED）。两轮唯一的差别是规格的给法：before 侧是仓外副本，ROOT 解析会偏，所以显式给 --openapi 与 --workflow；after 侧用默认 --openapi 与仓库自带的 workflow.json。mock 返回的 getGeneration 样例是 queued 且不推进，所以第 8 步轮询超时——运行环境事实，不是回归。失败路径不打印 report written，故三轮的 stdout 不受报告路径影响。",
+    "poll_timeout_seconds": 3,
+    "runs": {
+      "before": {
+        "argv": [
+          "E:\\Software\\Scoop\\apps\\miniconda3\\current\\python.exe",
+          ".scratch-t15-02\\run_f01_before.py",
+          "--openapi",
+          "docs\\08-本轮实施方案\\contracts\\openapi.json",
+          "--base-url",
+          "http://127.0.0.1:4017/api/v1/lingdoc",
+          "--poll-timeout",
+          "3",
+          "--report",
+          ".scratch-t15-02\\mock-f01-before.json",
+          "--workflow",
+          "docs\\08-本轮实施方案\\contracts\\workflow.json"
+        ],
+        "exit_code": 1,
+        "report_sha256": "af7a06975fe9bb0bfbfdb7a1b07be16126b637cf51d8f098cb162a2536fde416",
+        "stdout_sha256": "7621460b90dcda656c9a0eb98f5033cafee2f9c307df03d19446330d85bdc1e7",
+        "stderr_sha256": "f32d5abd9512b25dbd064268e8b9042dc8ed7cc98ba7e1ed091fe4e15f662b21",
+        "stderr_text": "F01 FAILED: F01-08: timed out waiting for terminal state succeeded",
+        "completed_steps": 7,
+        "total_steps": 23,
+        "failed_step": {
+          "id": "F01-08",
+          "operation_id": "getGeneration"
+        },
+        "steps": [
+          "F01-01",
+          "F01-02",
+          "F01-03",
+          "F01-04",
+          "F01-05",
+          "F01-06",
+          "F01-07"
+        ]
+      },
+      "after": {
+        "argv": [
+          "E:\\Software\\Scoop\\apps\\miniconda3\\current\\python.exe",
+          "scripts\\lingdoc_mock\\run_f01.py",
+          "--openapi",
+          "docs\\08-本轮实施方案\\contracts\\openapi.json",
+          "--base-url",
+          "http://127.0.0.1:4017/api/v1/lingdoc",
+          "--poll-timeout",
+          "3",
+          "--report",
+          ".scratch-t15-02\\mock-f01-after.json"
+        ],
+        "exit_code": 1,
+        "report_sha256": "af7a06975fe9bb0bfbfdb7a1b07be16126b637cf51d8f098cb162a2536fde416",
+        "stdout_sha256": "7621460b90dcda656c9a0eb98f5033cafee2f9c307df03d19446330d85bdc1e7",
+        "stderr_sha256": "f32d5abd9512b25dbd064268e8b9042dc8ed7cc98ba7e1ed091fe4e15f662b21",
+        "stderr_text": "F01 FAILED: F01-08: timed out waiting for terminal state succeeded",
+        "completed_steps": 7,
+        "total_steps": 23,
+        "failed_step": {
+          "id": "F01-08",
+          "operation_id": "getGeneration"
+        },
+        "steps": [
+          "F01-01",
+          "F01-02",
+          "F01-03",
+          "F01-04",
+          "F01-05",
+          "F01-06",
+          "F01-07"
+        ]
+      },
+      "after_via_scenario": {
+        "argv": [
+          "E:\\Software\\Scoop\\apps\\miniconda3\\current\\python.exe",
+          "scripts\\lingdoc_mock\\run_f01.py",
+          "--openapi",
+          "docs\\08-本轮实施方案\\contracts\\openapi.json",
+          "--base-url",
+          "http://127.0.0.1:4017/api/v1/lingdoc",
+          "--poll-timeout",
+          "3",
+          "--report",
+          ".scratch-t15-02\\mock-f01-via-scenario.json",
+          "--scenario",
+          "F01"
+        ],
+        "exit_code": 1,
+        "report_sha256": "af7a06975fe9bb0bfbfdb7a1b07be16126b637cf51d8f098cb162a2536fde416",
+        "stdout_sha256": "7621460b90dcda656c9a0eb98f5033cafee2f9c307df03d19446330d85bdc1e7",
+        "stderr_sha256": "f32d5abd9512b25dbd064268e8b9042dc8ed7cc98ba7e1ed091fe4e15f662b21",
+        "stderr_text": "F01 FAILED: F01-08: timed out waiting for terminal state succeeded",
+        "completed_steps": 7,
+        "total_steps": 23,
+        "failed_step": {
+          "id": "F01-08",
+          "operation_id": "getGeneration"
+        },
+        "steps": [
+          "F01-01",
+          "F01-02",
+          "F01-03",
+          "F01-04",
+          "F01-05",
+          "F01-06",
+          "F01-07"
+        ]
+      }
+    },
+    "verdict": "report 与 stdout、stderr 均逐字节相同"
+  },
+  "regression_synthetic_trace": {
+    "what": "注入 opener 驱动完整 23 步（与执行器单测同一接缝，不发真网络）",
+    "steps": 23,
+    "before_report_sha256": "7220524b5573858b64b7334e471f3e8ecb4924de0fe8f77680c008230de87e1d",
+    "after_report_sha256": "7220524b5573858b64b7334e471f3e8ecb4924de0fe8f77680c008230de87e1d",
+    "compared_fields": "报告全文 + 每步请求方法与完整 URL",
+    "identical": true
+  },
+  "scenario_selection": {
+    "note": "--scenario 从 scenarios.json 按 id 取规格；F01 条目用 specification_file 指向 workflow.json。",
+    "F22_F17_F99_refusals": [
+      {
+        "scenario": "F22",
+        "exit_code": 1,
+        "message": "F22 FAILED: scenario F22 step 1 has no request definition in the contract; only specifications that declare path, query, header and body inputs can be driven"
+      },
+      {
+        "scenario": "F17",
+        "exit_code": 1,
+        "message": "F17 FAILED: F17 has no executable steps; its contract holds prose assertions only"
+      },
+      {
+        "scenario": "F99",
+        "exit_code": 1,
+        "message": "F99 FAILED: scenarios.json has no scenario F99"
+      }
+    ]
+  },
+  "tests": {
+    "command": "python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py'",
+    "summary": [
+      "Ran 28 tests in 0.086s",
+      "OK"
+    ],
+    "exit_code": 0
+  },
+  "notes": [
+    "契约 mock 返回的 getGeneration 样例是 queued 且不会推进异步状态，所以「对 mock 跑 F01」只能走到第 7 步、第 8 步轮询超时；before/after 的比对因此是「同样的 7 步 + 同样在第 8 步失败」。完整 23 步的比对走注入 opener 的合成轨迹。",
+    "报告的 `workflow` 键名与全部字段保持不变（本票冻结报告格式）；驱动场景时该键的值就是场景 id。给矩阵报告改名是后续票的事。",
+    "F02–F22 现在就不可执行，原因在契约一侧（步骤缺请求定义），不是执行器里的省略；把请求定义与可求值断言补进契约是 #31 的事。",
+    "本票的验证边界：没有对着真实服务跑（T15-01 已证服务能起，但未跑这条流程）；没有覆盖 F02 系的白盒观察点；断言本身仍未被求值，报告里仍是 not_run。"
+  ]
+}

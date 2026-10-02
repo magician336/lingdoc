@@ -11,8 +11,8 @@ type ReleaseApplication interface {
 // Download both check current access. Failed artifacts have no download bytes.
 // Authorization must include sources as well as project membership.
 type ExportApplication interface {
-	Start(actorUserID, projectID, snapshotID string) (ExportArtifact, error)
-	Download(actorUserID, projectID, exportID string) ([]byte, error)
+	Start(actorUserID, projectID, snapshotID, idempotencyKey string) (ExportArtifact, bool, error)
+	Download(actorUserID, projectID, exportID string) (ExportArtifact, []byte, error)
 }
 
 var _ ReleaseApplication = (*ReleaseService)(nil)

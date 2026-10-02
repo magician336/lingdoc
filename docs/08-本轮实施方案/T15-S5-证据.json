@@ -1,0 +1,226 @@
+{
+  "task": "T15-04",
+  "what": "把 F22 从它声明的起点 S7 一路跑到报告：灌起点 → 读回核对 → 按 actor 发那一步 → 逐条判期望 → 写脱敏报告；整条链路跑三遍，比字节",
+  "run_at": "2026-09-27T11:59:20+0800",
+  "host_os": "win32",
+  "repo_root": "D:\\code_warehouse\\Projects\\lingdoc",
+  "repo": {
+    "branch": "codex/t15-error-matrix",
+    "commit": "2498c6216c9bbf98771e2bc1efdc6a2045f08905",
+    "subject": "feat(lingdoc): load a declared starting state into a provider and read it back",
+    "committed_at": "2026-09-27T11:26:14+08:00",
+    "worktree_dirty_paths": [
+      "M .github/workflows/lingdoc-f01-runner.yml",
+      " M docs/08-本轮实施方案/contracts/scenarios.json",
+      " M docs/08-本轮实施方案/contracts/validate_artifacts.py",
+      " M docs/08-本轮实施方案/contracts/validation-result.json",
+      " M scripts/lingdoc_mock/load_state.py",
+      " M scripts/lingdoc_mock/run_f01.py",
+      " M scripts/lingdoc_mock/test_workflow_runner.py",
+      " M scripts/lingdoc_mock/test_workflow_specs.py",
+      "?? docs/08-本轮实施方案/T15-验证报告.json",
+      "?? scripts/lingdoc_mock/run_scenario.py",
+      "?? scripts/lingdoc_mock/test_workflow_scenario.py"
+    ]
+  },
+  "target": {
+    "base_url": "http://127.0.0.1:8080/api/v1/lingdoc",
+    "provider_host": "127.0.0.1:8080",
+    "binary": "D:\\code_warehouse\\Projects\\lingdoc-build\\WeKnora-t15.exe",
+    "note": "本机 dev 库 + 本机依赖（postgres 5432 / redis 6379 / docreader 50051），启动配方见 T15-真实服务启动.md"
+  },
+  "command": "python scripts/lingdoc_mock/run_scenario.py --scenario F22 --base-url http://127.0.0.1:8080/api/v1/lingdoc --knowledge k-demo=<真实知识 id> --knowledge k-notready=<真实知识 id> --identity u-owner=<该账号令牌> --report docs/08-本轮实施方案/T15-验证报告.json\n（实跑时凭证经环境变量与内存注入，不落盘、不进命令行；上面把令牌位置写成占位符）",
+  "environment_bindings": {
+    "k-demo": {
+      "knowledge_id": "2d2b58c7-39fc-44c5-861f-9121ecab980e",
+      "title": "t15-可用材料",
+      "parse_status": "completed",
+      "role": "起点里那条当前可用的资料；绑定后 listAssets 声明为 ready"
+    },
+    "k-notready": {
+      "knowledge_id": "78ea548e-4d40-4506-b33b-3ec32ee03fc8",
+      "title": "t15-未发布材料",
+      "parse_status": "draft",
+      "role": "起点里那条当前不可用的资料；绑定后 listAssets 不列出它，检索预检答 not_ready"
+    }
+  },
+  "identity": {
+    "actor": "u-owner",
+    "account": "e2e@lingdoc.local（本机 dev 库），tenant 10000",
+    "note": "只有这一个身份。F22 的授权维在本构建不可达（见 boundaries B1），不需要第二个身份，S7 因此是单参与者起点。"
+  },
+  "scenario": {
+    "id": "F22",
+    "name": "部分授权不静默成功",
+    "contract_version": "0.5.0",
+    "starting_state": "S7",
+    "steps": 1,
+    "operation_id": "retrieveSources",
+    "actor": "u-owner",
+    "expected_http": 422,
+    "request": {
+      "path_params": {"projectId": "{{project.id}}"},
+      "headers": {"Idempotency-Key": "f22-retrieval-0001"},
+      "json": {"query": "合成起点：一次提交一条可用与一条不可用的资料。", "asset_ids": ["{{asset.k-demo}}", "{{asset.k-notready}}"]},
+      "note": "两条绑定 id 都由本次运行的绑定响应捕获，契约里只写名字。"
+    },
+    "checks": 6,
+    "checks_tied_to_the_published_example": 5,
+    "checks_left_to_the_run": 1
+  },
+  "starting_state": {
+    "state": "S7",
+    "declares": "已立项项目 + 一条可用资料 k-demo + 一条不可用资料 k-notready + question/method 两节存在但正文为空",
+    "build_steps": [
+      {"id": "S7-create", "operation_id": "createProject", "http_status": 201},
+      {"id": "S7-spec", "operation_id": "saveSpec", "http_status": 200},
+      {"id": "S7-activate", "operation_id": "activateProject", "http_status": 200},
+      {"id": "S7-asset-1", "operation_id": "bindAsset", "http_status": 201},
+      {"id": "S7-asset-2", "operation_id": "bindAsset", "http_status": 201}
+    ],
+    "readback_steps": [
+      {"id": "S7-chapters", "operation_id": "listChapters", "http_status": 200},
+      {"id": "S7-read-project", "operation_id": "getProject", "http_status": 200},
+      {"id": "S7-read-chapters", "operation_id": "listChapters", "http_status": 200},
+      {"id": "S7-read-assets", "operation_id": "listAssets", "http_status": 200},
+      {"id": "S7-read-asset-2", "operation_id": "retrieveSources", "http_status": 422}
+    ],
+    "snapshot_digest": "d32e84415d20f3f0c4ec5a64f41eaf137d679ab609a17574eeabcb6745b99c7e",
+    "observed_digest": "161357fc6ae1397075b94690ac5adbceae05540b1db97d2be26f52017c43693e",
+    "mismatches": [],
+    "assets_read_back": [
+      {"knowledge_id": "k-demo", "listed_state": "ready", "deny_reason": ""},
+      {"knowledge_id": "k-notready", "listed_state": null, "deny_reason": "not_ready"}
+    ],
+    "unverified": [
+      {"pointer": "/assets/k-notready", "declared": "处理状态 pending", "verified": "不可用（not_ready）",
+       "why": "提供方只答「不可用」；pending / processing / failed / replaced 之间没有任何通道能区分"}
+    ],
+    "note": "起点这一步不是本票新增的：S7 走的是 T15-03 的装载器，本票只是把它接到了场景驱动前面。读回的 422 是 S7 自己的检索预检，用来把「不可用」与「无权」分开——它发生在场景那一步之前，不是被测的那一步。"
+  },
+  "step_result": {
+    "step_id": "F22-01",
+    "operation_id": "retrieveSources",
+    "actor": "u-owner",
+    "expected_http": 422,
+    "actual_http": 422,
+    "verdict": "passed",
+    "checks": [
+      {"path": "/error/code", "operator": "equals", "expected": "asset_not_authorized", "actual": "asset_not_authorized", "status": "passed"},
+      {"path": "/error/details/denied", "operator": "length", "expected": 1, "actual": [{"asset_id": "asset.k-notready", "reason": "not_ready"}], "status": "passed"},
+      {"path": "/error/details/denied/0/asset_id", "operator": "equals", "expected": "asset.k-notready", "actual": "asset.k-notready", "status": "passed"},
+      {"path": "/error/details/denied/0", "operator": "keys", "expected": ["asset_id", "reason"], "actual": {"asset_id": "asset.k-notready", "reason": "not_ready"}, "status": "passed"},
+      {"path": "/error/details/denied/0/reason", "operator": "one_of", "expected": ["not_authorized", "not_ready", "not_found"], "actual": "not_ready", "status": "passed"},
+      {"path": "/error/retryable", "operator": "equals", "expected": false, "actual": false, "status": "passed"}
+    ],
+    "conclusion": "服务确实做到「整批拒绝 + 逐项带原因」：一次提交两条，被拒名单恰好一条（不可用那条），可用那条不在名单上，原因落在契约词表内。断言不是把中文重述一遍，是读到了具体值。"
+  },
+  "report": {
+    "path": "docs/08-本轮实施方案/T15-验证报告.json",
+    "bytes": 17829,
+    "sha256_disk_crlf": "6026243937412652f0e9aa942eeb8c1278b64c94aafddbf0640b01b2009c6eea",
+    "sha256_git_lf": "e5e598e55fc391d81f2538f368afad9692fa0f37fe11bc840b9d99e2e41e9043",
+    "line_ending_note": "write_report 以文本模式写，Windows 上把 \\n 落成 \\r\\n；归一化后与内存渲染逐字符相同，进 git 的是 LF 那份。跨平台内容相同，字节随平台换行约定变化。",
+    "runs_count": 3,
+    "runs_byte_identical": true,
+    "runs": [
+      {"label": "第 1 遍", "output": ".scratch-t15-04/f22-a.json", "bytes": 17829},
+      {"label": "第 2 遍", "output": ".scratch-t15-04/f22-b.json", "bytes": 17829},
+      {"label": "第 3 遍（发布用）", "output": "docs/08-本轮实施方案/T15-验证报告.json", "bytes": 17829}
+    ],
+    "superseded_run": "审查后报告文字有变（R1 扩充、F01 的理由、not_run 措辞），这 17829 字节是改完之后重跑的三遍；改动前那三遍是 16994 字节，同样逐字节相同。两次都被同一套驱动跑出，结论一致。",
+    "sanitization_audit": {
+      "uuid_shaped_strings": 0,
+      "token_or_bearer": 0,
+      "password_or_account": 0,
+      "timestamp_words": 0,
+      "provider_host": "127.0.0.1:8080（记录的是 host，不是 ID）",
+      "how": "对发布出的字节做正则清点：UUID 形状 0 处；token / Bearer / password / 账号 / timestamp / generated_at / duration / elapsed 全 0 处"
+    },
+    "summary": {"passed": 1, "failed": 0, "not_run": 21},
+    "not_run_note": "其余 21 个场景在报告里逐条给出未跑的原因（没有请求定义 / 没有步骤），不是留空。"
+  },
+  "failure_path": {
+    "requirement": "失败路径要有测试：期望 ≠ 实际时报告怎么写",
+    "tests": [
+      {"name": "test_an_expectation_that_does_not_hold_is_reported_with_what_was_expected_and_what_arrived",
+       "covers": "状态码就不对（期望 422，实际 200）：每个期望都被回答，不是只报第一个；读不到的位置写 <该位置在响应里不存在>"},
+      {"name": "test_a_denial_that_uses_another_code_is_reported_beside_the_status_that_did_match",
+       "covers": "状态码对了、拒绝码不对——正是本票登记的 startGeneration 缺陷换到别处的形状"},
+      {"name": "test_a_state_that_does_not_read_back_fails_the_verdict_before_any_step_is_sent",
+       "covers": "起点没读回来时结论为失败、步骤为空，且场景那一步根本没发出去"}
+    ],
+    "shape": "failed 的步骤带 why 数组：先写「期望 HTTP X，实际 HTTP Y」，再逐条写「<指针>：<期望…>，实际 <观察值>」。通过的步骤不写 why。"
+  },
+  "registered_gap": {
+    "id": "T15-04-R1",
+    "title": "startGeneration 声明的整条 422 分支在实现里不存在",
+    "contract_says": "openapi.json 给 startGeneration 声明了 5 个 422 例子：insufficient_evidence / asset_not_ready / preflight_blocked / invalid_state / asset_not_authorized，其中 asset_not_authorized 还要求被拒资料逐项带原因",
+    "service_does": "这 5 个形状一条都发不出来：internal/lingdoc/generation/ 里没有任何 422 分支（`grep -rn 422 internal/lingdoc/generation/` 零命中）。对已绑定但不可用的资料答 403 source_access_denied，只有错误码，没有 details.denied",
+    "where": "internal/lingdoc/workspace/generation.go 的 ResolveGenerationInput → generation.ErrSourceAccessDenied；internal/lingdoc/generation/http.go 的 generationHTTPStatus / writeGenerationError → 403 source_access_denied",
+    "also_invalidates": "契约里 F03 的第 2 步（startGeneration → 422 asset_not_ready，setup 说「资料仍 processing」）同样落在一条实现里不存在的分支上——受这条作废的不止 F22",
+    "owner": "生成线的实现者",
+    "status": "open",
+    "why_not_fixed_here": "#27 的约定是 T15 记录实跑发现的问题、由拥有该代码的任务修。把断言迁就实现，等于让契约失去发现问题的能力。",
+    "how_it_got_widened": "第一版登记只说「拒绝形状不一致」。审查独立核了 generation 包的错误映射后发现整条 422 分支都不存在，登记随之改写——登记口径本身也是要经得起复核的东西。"
+  },
+  "boundaries": [
+    {"id": "T15-04-B1", "statement": "F22 的授权维在本构建不可达，本票驱动的是可用性那一维",
+     "verified_by": "代码核对 + 实跑：绑定与读取共用 kbReadChecker.CanReadKB；同租户读取无条件放行；租户级分享的有效权限下限是 viewer，同租户两名成员不可能一放一拒；跨租户绑定答 404"},
+    {"id": "T15-04-B2", "statement": "报告只到「HTTP 通道 + 契约里可求值的形状」这一层",
+     "why": "模型质量、数据库副作用、DOCX 可编辑性不在任何通道能证的范围内，所以既不出现在通过里，也不出现在失败里"}
+  ],
+  "tests": {
+    "command": "python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py'",
+    "result": "Ran 96 tests — OK",
+    "new_file": "scripts/lingdoc_mock/test_workflow_scenario.py（16 个用例：逐条判期望、按声明名脱敏、状态码不符、拒绝码不符、起点不符短路、两次运行字节相同、两次运行 id 不同仍字节相同、22 个场景齐、可执行性原因、无 provider id 无时间戳、起点缺失与步骤不可发的拒绝、未使用的环境名拒绝、3 个命令行用例）",
+    "also_new": "scripts/lingdoc_mock/test_workflow_reports.py 新增 1 条：没有可求值期望的规格，报告的键集与 checks 存在之前逐字相同（本票给 report() 加了 checks/failures 两个键，这条钉住它们不会漏进 F01 的报告）"
+  },
+  "contract_validation": {
+    "command": "python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py",
+    "result": "PASS",
+    "scenarios": 22,
+    "starting_states": 7,
+    "scenario_steps_with_requests": 1,
+    "scenario_checks_tied_to_a_published_example": 5,
+    "scenario_checks_left_to_the_run": 1,
+    "negative_static_cases_rejected": 38,
+    "note": "契约版本由 0.4.0 升到 0.5.0：F22 补请求定义与检查、新增起点 S7、校验器新增 16 个反例（其中 2 个是审查后补的：带请求的步骤没有 actor、带请求体的步骤没有 Idempotency-Key）。22 个场景仍全部通过静态校验。"
+  },
+  "review": {
+    "how": "两轴独立子代理审查（Standards / Spec），基线 2498c62，各自读改动、跑测试、构造反例；结论逐条处置在 T15-场景到报告.md 的「审查结论」一节",
+    "fixed_here": [
+      "「两次运行字节相同」那条测试是假通过：测试替身的 id 由计数器生成，两次运行 id 本来就相同，把脱敏整个删掉它照样过。补救=新增用例：两次运行的替身 id 起始不同，断言项目 id 与绑定 id 确实不同、报告仍逐字节相同",
+      "R1 说小了：不是「拒绝形状不一致」，而是整条 422 分支在实现里不存在。登记按 grep 结果改写",
+      "报告把 F01 标成 executable 而理由不实（判定不看 starting_state）。判定补上起点，并定下「先报契约填充进度、再报起点」的顺序",
+      "「第 N 步起」把索引清单当区间念，已进旧交付物 → 改枚举措辞",
+      "「其余 21 个场景」写死在生产代码里，而同报告的计数是算出来的 → 改从 summary 推",
+      "写盘与比对是两处序列化，相等靠字面巧合 → 抽出 render_report，两处共用",
+      "静态校验不承认 actor 与幂等键存在（删掉仍 PASS）→ 加两条检查与两条反例",
+      "README 的「该命令」指向了真实服务命令 → 写全并点明 CI 不跑它",
+      "「凭证不落盘」不实（本机 dev 口令在 scratch 脚本里）→ 按事实改写"
+    ],
+    "verification_of_the_fix": {
+      "how": "把 run_scenario.redactions_from 打桩成返回空映射，对三条用例各跑一遍",
+      "result": "新用例 CAUGHT（失败）；原有的「两次运行字节相同」与「报告不含 provider id 也不含时间戳」两条 BLIND（照过）——既证实了审查的说法，也证实新用例真的覆盖了脱敏这个机制",
+      "when": "修补之后、重跑实跑之前"
+    },
+    "left_to_other_tickets": [
+      "同一路径上并存两套报告形状（占位 3 键 / 成品 12 键）；runner_status / verdict / status 三个词指同一件事",
+      "stop_on_mismatch=False 只兜状态码与检查，轮询超时、capture 指针读不到、下载校验失败仍会 raise，进而把报告换成占位、丢掉已采证据",
+      "算子词表与变量正则在 docs 树与 scripts 树各一份，无一致性检查",
+      "报告里步骤只留第一条 assertion"
+    ],
+    "kept_with_reason": "F22 的名字（「部分授权不静默成功」）与它现在驱动的那一维不再对应：id 与名字是场景的稳定标识，改指的那一维已写进 F22 的 setup，改名会牵动别处引用。"
+  },
+  "notes": [
+    "凭证口径：报告与证据文件都不含可用凭据——token 与密码一律打码。证据文件保留本机 dev 合成环境的业务 id（知识 id、用户 id），因为它的用途是让人能复现这次运行；报告是结论，不含任何 provider id。",
+    "本文件记的是审查后的那一轮：审查发现报告文字有多处不实，改完重跑了三遍（17829 字节）。改动前的三遍是 16994 字节，同样逐字节相同；两轮的结论一致，只有报告的文字变了。",
+    "F22 改指 retrieveSources 而不是把断言迁就 startGeneration：契约承诺的逐项原因在生成那一步拿不到，那是实现的问题，登记为 T15-04-R1，不是改契约的理由。",
+    "报告三条运行逐字节相同（16994 字节）。同一份输入两次得到不同结论的报告，就不是结论。",
+    "报告里 `verification_scope=http_smoke_only`、`provider_semantics_status=not_verified`：这一步证明的是 HTTP 通道上的拒绝形状，不是模型质量或数据库副作用。",
+    "`step_result.conclusion` 里那句「服务确实做到」只覆盖本次运行的那一条路径；未跑的 21 个场景不作任何结论。",
+    "测试跑的是合成响应（SyntheticProvider），实跑跑的是真实服务，两者是两件事：测试证机制，实跑证服务。两者都通过才有本票的结论。",
+    "本轮实跑用的是本机 build 出来的 WeKnora-t15.exe 与 e2e@lingdoc.local 账号，不是云端环境。"
+  ]
+}

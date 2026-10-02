@@ -1,0 +1,223 @@
+{
+  "task": "T15-06",
+  "issue": 32,
+  "what": "在本机真实 LingDoc 服务上分别构建 F08/F05/F12 起点，执行全部请求步骤并验证跨步捕获、幂等与版本冲突。",
+  "run_at": "2026-09-27T13:11:29+08:00",
+  "host_os": "win32",
+  "repo_root": "D:\\code_warehouse\\Projects\\lingdoc",
+  "repo": {
+    "branch": "codex/t15-error-matrix",
+    "commit": "0e95dfeb993a511274918ea6db405905ef506926",
+    "subject": "fix(lingdoc): sanitize scenario execution failures",
+    "artifacts_generated_after_code_commit": [
+      "docs/08-本轮实施方案/T15-S6-验证报告.json",
+      "docs/08-本轮实施方案/T15-S6-证据.json"
+    ]
+  },
+  "target": {
+    "base_url": "http://127.0.0.1:8080/api/v1/lingdoc",
+    "provider_host": "127.0.0.1:8080",
+    "health_http": 200,
+    "note": "本机开发服务与开发数据库；三个场景从声明起点独立构建。"
+  },
+  "command": "python scripts/lingdoc_mock/run_scenario.py --scenario F08 --scenario F05 --scenario F12 --base-url http://127.0.0.1:8080/api/v1/lingdoc --knowledge k-demo=<真实知识 id> --member u-member=<真实成员 id> --identity u-owner=<Owner 令牌> --identity u-member=<协作者令牌> --report docs/08-本轮实施方案/T15-S6-验证报告.json",
+  "fixture_setup": {
+    "account_roles": [
+      "u-owner",
+      "u-member"
+    ],
+    "member_tenant_switch": "合成协作者临时切换到 Owner 测试租户执行 F05，之后恢复其登录时的 home tenant 偏好。",
+    "knowledge": {
+      "k-demo": "现有合成 ready 资料"
+    },
+    "secrets_or_provider_ids_saved": false
+  },
+  "result": {
+    "summary": {
+      "passed": 3,
+      "failed": 0,
+      "not_run": 19
+    },
+    "verification_scope": "http_smoke_only",
+    "provider_semantics_status": "not_verified",
+    "executions": [
+      {
+        "scenario": "F08",
+        "starting_state": "S5",
+        "verdict": "passed",
+        "state_mismatches": [],
+        "steps": [
+          {
+            "step_id": "F08-00",
+            "operation_id": "listChapters",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F08-01",
+            "operation_id": "startGeneration",
+            "expected_http": 202,
+            "actual_http": 202,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F08-02",
+            "operation_id": "startGeneration",
+            "expected_http": 202,
+            "actual_http": 202,
+            "verdict": "passed",
+            "checks_passed": 2,
+            "checks_total": 2,
+            "why": []
+          },
+          {
+            "step_id": "F08-03",
+            "operation_id": "startGeneration",
+            "expected_http": 409,
+            "actual_http": 409,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          }
+        ]
+      },
+      {
+        "scenario": "F05",
+        "starting_state": "S2",
+        "verdict": "passed",
+        "state_mismatches": [],
+        "steps": [
+          {
+            "step_id": "F05-01",
+            "operation_id": "listChapters",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F05-02",
+            "operation_id": "listChapters",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F05-03",
+            "operation_id": "saveChapter",
+            "expected_http": 201,
+            "actual_http": 201,
+            "verdict": "passed",
+            "checks_passed": 0,
+            "checks_total": 0,
+            "why": []
+          },
+          {
+            "step_id": "F05-04",
+            "operation_id": "saveChapter",
+            "expected_http": 409,
+            "actual_http": 409,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F05-05",
+            "operation_id": "listChapters",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 2,
+            "checks_total": 2,
+            "why": []
+          }
+        ]
+      },
+      {
+        "scenario": "F12",
+        "starting_state": "S4",
+        "verdict": "passed",
+        "state_mismatches": [],
+        "steps": [
+          {
+            "step_id": "F12-01",
+            "operation_id": "getProject",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F12-02",
+            "operation_id": "saveSpec",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 0,
+            "checks_total": 0,
+            "why": []
+          },
+          {
+            "step_id": "F12-03",
+            "operation_id": "activateProject",
+            "expected_http": 409,
+            "actual_http": 409,
+            "verdict": "passed",
+            "checks_passed": 1,
+            "checks_total": 1,
+            "why": []
+          },
+          {
+            "step_id": "F12-04",
+            "operation_id": "activateProject",
+            "expected_http": 200,
+            "actual_http": 200,
+            "verdict": "passed",
+            "checks_passed": 2,
+            "checks_total": 2,
+            "why": []
+          }
+        ]
+      }
+    ],
+    "key_observations": [
+      "F08 同键重放的响应检查确认 run_id 与首次响应捕获值相等，meta.replayed=true；改 instruction 返回 409 idempotency_conflict。",
+      "F05 两个 actor 读到相同章节版本；Owner 保存返回 201，协作者旧版本保存返回 409 version_conflict，最终读回保留 Owner 正文和版本。",
+      "F12 草稿保存成功；旧 spec_revision 激活返回 409 version_conflict，新 spec_revision 激活返回 200。"
+    ],
+    "business_task_count": {
+      "table": "lingdoc_generation_runs",
+      "idempotency_key": "f08-generation-0001",
+      "submissions": 2,
+      "same_project": true,
+      "same_run_id": true,
+      "persisted_rows": 1
+    },
+    "not_verified": [
+      "generation worker 的最终状态或生成质量；F08 验证的是 startGeneration 幂等返回",
+      "异步队列内部入队记录数量和竞争写入的并发时序",
+      "非本机数据库、完整 OpenAPI meta-schema、DOCX 输出"
+    ]
+  },
+  "sha256": {
+    "docs/08-本轮实施方案/contracts/scenarios.json": "16a57541136c7b93795c232c1a7213c9b597d132722db668fc435cae39c83c54",
+    "docs/08-本轮实施方案/contracts/openapi.json": "d70f212a92ac4ca33437237ed77d113c47286e202de7f5b2a59976935cffe4fc",
+    "docs\\08-本轮实施方案\\T15-S6-验证报告.json": "2915dc8a2c0889c211ad627988c2aa5ac9c4ac1b7b37b1307bac21a6855ca047"
+  }
+}

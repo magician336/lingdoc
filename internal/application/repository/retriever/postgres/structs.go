@@ -75,6 +75,13 @@ func toDBVectorEmbedding(indexInfo *types.IndexInfo, additionalParams map[string
 			pgVector.Dimension = len(pgVector.Embedding.Slice())
 		}
 	}
+	// Keyword-only rows have no semantic vector. PostgreSQL halfvec rejects an
+	// empty vector and the existing column is NOT NULL, so store a one-element
+	// zero sentinel while retaining dimension=0. Vector searches filter by the
+	// requested positive dimension and cannot retrieve these keyword-only rows.
+	if pgVector.Dimension == 0 {
+		pgVector.Embedding = pgvector.NewHalfVector([]float32{0})
+	}
 	// Get is_enabled from additionalParams if available
 	if additionalParams != nil {
 		if chunkEnabledMap, ok := additionalParams["chunk_enabled"].(map[string]bool); ok {

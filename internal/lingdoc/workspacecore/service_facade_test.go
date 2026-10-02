@@ -8,6 +8,44 @@ import (
 	"testing"
 )
 
+type sourcePolicyStub struct {
+	err   error
+	calls int
+}
+
+func (s *sourcePolicyStub) Validate(context.Context, string, string, []string) error {
+	s.calls++
+	return s.err
+}
+func TestServiceSourceRecheckBeforeReplayWithNonSQLStorage(t *testing.T) {
+	r := fakeWorkspace()
+	policy := &sourcePolicyStub{}
+	s := NewServiceWithSources(r, ContractDemoTemplate{}, policy)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	in := SaveChapterInput{ExpectedSpecRevision: 1, BodyMarkdown: "draft [[source:s1]]", SourceIDs: []string{"s1"}}
+	body, _, replayed, err := s.SaveChapter(context.Background(), actor, "p", "c", "source-save", in)
+	if err != nil || replayed || r.writes != 1 || policy.calls != 1 {
+		t.Fatalf("initial save: %v %v", replayed, err)
+	}
+	policy.err = errors.New("source changed or revoked")
+	if _, _, _, err := s.SaveChapter(context.Background(), actor, "p", "c", "source-save", in); !errors.Is(err, policy.err) {
+		t.Fatalf("source-invalid replay returned saved content: %v", err)
+	}
+	if r.writes != 1 || policy.calls != 2 {
+		t.Fatal("failed recheck mutated state or skipped policy")
+	}
+	policy.err = nil
+	again, _, replayed, err := s.SaveChapter(context.Background(), actor, "p", "c", "source-save", in)
+	if err != nil || !replayed || string(again) != string(body) || r.writes != 1 {
+		t.Fatalf("restored replay: %v %v", replayed, err)
+	}
+	r.active = false
+	previousCalls := policy.calls
+	if _, _, _, err := s.SaveChapter(context.Background(), actor, "p", "c", "source-save", in); !errors.Is(err, ErrNotFound) || policy.calls != previousCalls {
+		t.Fatalf("project authorization did not precede source access: %v", err)
+	}
+}
+
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
 // discards both domain writes and replay records on any callback error.
 type stateRepository struct {
@@ -61,7 +99,7 @@ func (t *stateTransaction) UpdateProject(_ uint64, previous, next Project) error
 	t.state.project = next
 	return nil
 }
-func (t *stateTransaction) AppendChapter(previous, next Chapter) error {
+func (t *stateTransaction) AppendChapter(previous, next Chapter, _ int64) error {
 	if !sameVersion(previous.CurrentVersionID, t.state.chapter.CurrentVersionID) {
 		return ErrVersionConflict
 	}
@@ -138,6 +176,8 @@ func TestServiceRollbackAndSourceBoundaryWithNonSQLStorage(t *testing.T) {
 	}
 	r.chapter.SourceIDs = []string{"changed-source"}
 	input.ExpectedChapterVersionID = r.chapter.CurrentVersionID
+	input.SourceIDs = []string{"changed-source"}
+	input.BodyMarkdown = "[[source:changed-source]]"
 	if _, _, _, err := s.SaveChapter(ctx, actor, "p", "c", "source-check", input); !errors.Is(err, ErrSourceUnavailable) {
 		t.Fatalf("changed existing source escaped policy: %v", err)
 	}

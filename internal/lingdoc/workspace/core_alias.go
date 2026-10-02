@@ -6,6 +6,7 @@ import (
 
 type Service = core.Service
 type Repository = core.Repository
+type SourcePolicy = core.SourcePolicy
 type Actor = core.Actor
 type Project = core.Project
 type Chapter = core.Chapter

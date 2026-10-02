@@ -4,9 +4,15 @@ on:
   pull_request:
     paths:
       - 'scripts/lingdoc_mock/run_f01.py'
+      - 'scripts/lingdoc_mock/load_state.py'
+      - 'scripts/lingdoc_mock/run_scenario.py'
+      - 'scripts/lingdoc_mock/build_t15_matrix.py'
       - 'scripts/lingdoc_mock/test_workflow*.py'
       - 'docs/08-本轮实施方案/contracts/**'
       - 'docs/08-本轮实施方案/README.md'
+      - 'docs/08-本轮实施方案/02-接口与Mock约定.md'
+      - 'docs/08-本轮实施方案/T15-11-验证报告.json'
+      - 'docs/08-本轮实施方案/T15-11-证据.json'
       - '.github/workflows/lingdoc-f01-runner.yml'
 
 permissions:
@@ -35,7 +41,7 @@ jobs:
           set -o pipefail
           mkdir -p artifacts
           python -m unittest discover -s scripts/lingdoc_mock -p 'test_workflow*.py' -v 2>&1 | tee artifacts/f01-runner-tests.log
-          python -m py_compile scripts/lingdoc_mock/run_f01.py scripts/lingdoc_mock/test_workflow_runner.py scripts/lingdoc_mock/test_workflow_reports.py
+          python -m py_compile scripts/lingdoc_mock/run_f01.py scripts/lingdoc_mock/load_state.py scripts/lingdoc_mock/run_scenario.py scripts/lingdoc_mock/build_t15_matrix.py scripts/lingdoc_mock/test_workflow_runner.py scripts/lingdoc_mock/test_workflow_reports.py scripts/lingdoc_mock/test_workflow_specs.py scripts/lingdoc_mock/test_workflow_states.py scripts/lingdoc_mock/test_workflow_scenario.py scripts/lingdoc_mock/test_workflow_matrix.py
       - name: Preserve test evidence
         if: always()
         uses: actions/upload-artifact@v4

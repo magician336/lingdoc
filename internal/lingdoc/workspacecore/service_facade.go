@@ -32,7 +32,7 @@ type Transaction interface {
 	Chapters(string) ([]Chapter, error)
 	Chapter(string, string) (Chapter, error)
 	InsertChapter(Chapter) error
-	AppendChapter(Chapter, Chapter) error
+	AppendChapter(Chapter, Chapter, int64) error
 	Operation(OperationIdentity) (OperationResult, bool, error)
 	SaveOperation(OperationIdentity, OperationResult) error
 }
@@ -51,6 +51,7 @@ type OperationResult struct {
 type Service struct {
 	repository Repository
 	templates  TemplateReader
+	sources    SourcePolicy
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -59,6 +60,13 @@ func NewService(repository Repository, readers ...TemplateReader) *Service {
 		reader = readers[0]
 	}
 	return &Service{repository: repository, templates: reader}
+}
+
+// NewServiceWithSources retains the main-line citation recheck before replay.
+func NewServiceWithSources(repository Repository, reader TemplateReader, sources SourcePolicy) *Service {
+	s := NewService(repository, reader)
+	s.sources = sources
+	return s
 }
 func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
 func authorize(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
@@ -150,6 +158,19 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 			p, err = authorize(tx, actor, projectID, capability)
 			if err != nil {
 				return err
+			}
+		}
+		if op == "saveChapter" {
+			input := body.(SaveChapterInput)
+			if len(input.SourceIDs) > 0 {
+				if s.sources == nil {
+					return ErrSourceUnavailable
+				}
+				ids := slices.Clone(input.SourceIDs)
+				slices.Sort(ids)
+				if err := s.sources.Validate(ctx, projectID, actor.UserID, ids); err != nil {
+					return err
+				}
 			}
 		}
 		previous, found, err := tx.Operation(id)
@@ -342,7 +363,22 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 		result, err = tx.Chapters(projectID)
 		return err
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, c := range result {
+		ids = append(ids, c.SourceIDs...)
+	}
+	if len(ids) > 0 {
+		if s.sources == nil {
+			return nil, ErrSourceUnavailable
+		}
+		if err := s.sources.Validate(ctx, projectID, actor.UserID, ids); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
 }
 
 var sourceMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
@@ -367,10 +403,6 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
-		// Preserve the current fail-closed source-writing boundary.
-		if len(declared) != 0 {
-			return nil, 0, ErrSourceUnavailable
-		}
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
 		}
@@ -384,9 +416,6 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		if !sameVersion(old.CurrentVersionID, input.ExpectedChapterVersionID) {
 			return nil, 0, ErrVersionConflict
 		}
-		if len(old.SourceIDs) != 0 {
-			return nil, 0, ErrSourceUnavailable
-		}
 		nextProject := p
 		nextProject.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, nextProject); err != nil {
@@ -396,8 +425,9 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		id := uuid.NewString()
 		next.CurrentVersionID = &id
 		next.BodyMarkdown = input.BodyMarkdown
+		next.SourceIDs = declared
 		next.ConfirmationValid = false
-		if err := tx.AppendChapter(old, next); err != nil {
+		if err := tx.AppendChapter(old, next, p.SpecRevision); err != nil {
 			return nil, 0, err
 		}
 		return next, 201, nil
@@ -417,7 +447,7 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 		if err != nil {
 			return err
 		}
-		result = GenerationContext{ProjectID: p.ID, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, Spec: p.Spec, TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, ChapterID: chapter.ID, ChapterVersionID: chapter.CurrentVersionID, ChapterBody: chapter.BodyMarkdown}
+		result = GenerationContext{ProjectID: p.ID, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, Spec: p.Spec, TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, ChapterID: chapter.ID, ChapterVersionID: chapter.CurrentVersionID, ChapterBody: chapter.BodyMarkdown, Chapter: chapter}
 		return nil
 	})
 	return result, err

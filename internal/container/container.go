@@ -21,6 +21,7 @@ import (
 	_ "github.com/duckdb/duckdb-go/v2"
 	esv7 "github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v8"
+	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql" // 给 Doris (database/sql) 注册 MySQL 协议驱动
 	"github.com/milvus-io/milvus/client/v2/milvusclient"
 	"github.com/neo4j/neo4j-go-driver/v6/neo4j"
@@ -81,6 +82,10 @@ import (
 	"github.com/Tencent/WeKnora/internal/im/yunzhijia"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/mcp"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -99,6 +104,33 @@ import (
 	"github.com/weaviate/weaviate-go-client/v5/weaviate/auth"
 	wgrpc "github.com/weaviate/weaviate-go-client/v5/weaviate/grpc"
 )
+
+type candidateAdoptionWorkspaceAuthorizer struct {
+	service workspace.ApplicationService
+}
+
+func (a candidateAdoptionWorkspaceAuthorizer) Authorize(ctx context.Context, actorID, projectID, capability string) error {
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok || a.service == nil {
+		return candidateadoption.ErrNotFound
+	}
+	err := a.service.Authorize(ctx, workspace.Actor{TenantID: tenantID, UserID: actorID}, projectID, capability)
+	if errors.Is(err, workspace.ErrNotFound) {
+		return candidateadoption.ErrNotFound
+	}
+	if errors.Is(err, workspace.ErrInvalidRequest) {
+		return candidateadoption.ErrInvalidRequest
+	}
+	return err
+}
+
+// AuthorizeProject 是 T13 读交付输入前的成员校验。
+//
+// 用「读」权限：冻结出来的是一份只读快照，不改动工作区；交付侧本来就只判成员
+// 不判能力（见 delivery 包里的导出访问接口），这里跟着它，不另立一套更强的要求。
+func (a candidateAdoptionWorkspaceAuthorizer) AuthorizeProject(ctx context.Context, actorID, projectID string) error {
+	return a.Authorize(ctx, actorID, projectID, "read")
+}
 
 // BuildContainer constructs the dependency injection container
 // Registers all components, services, repositories and handlers needed by the application
@@ -456,7 +488,99 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
 	must(container.Provide(NewLingDocWorkspaceHandler))
-	must(container.Provide(NewLingDocDelivery))
+	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService, sourceIntegration workspace.WorkspaceIntegration) *candidateadoption.CandidateAdoptionHandler {
+		store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
+		authorizer := candidateAdoptionWorkspaceAuthorizer{service: projects}
+		sources := sourceIntegration.CandidateAdoptionSourcePolicy()
+		service := candidateadoption.NewCandidateAdoptionService(store, sources, authorizer)
+		confirmationSources, ok := sources.(candidateadoption.ConfirmationSourcePolicy)
+		if !ok {
+			panic("lingdoc confirmation source policy is required")
+		}
+		confirmations := candidateadoption.NewConfirmationService(store, confirmationSources, authorizer)
+		return candidateadoption.NewCandidateAdoptionHandler(service, confirmations, func(c *gin.Context) (string, bool) {
+			return types.UserIDFromContext(c.Request.Context())
+		})
+	}))
+	// 快照库单独 Provide，是为了让 T13 与 T14 拿到**同一个**实例：各自建一个的话，
+	// 刚冻下的快照在导出时取不到，而那看起来会像是「快照不存在」而不是「装配错了」。
+	//
+	// 声明成接口、实现落在库上：同一台服务里冻下的快照，重启之后取的时候还得在。
+	// 进程内那一份（NewMemorySnapshotStore）保留下来当测试里的参照实现与被对照的
+	// 一致性套件，但不再进生产装配——它的注释写着「重启即丢」，那正是这一条要修的。
+	//
+	// store 还得分记「哪一次动作冻了它 / 导出了它」——两条路由都收了幂等键就要照它
+	// 办事，那两项能力（FreezeRecorder / ExportRecorder）由各自的构造器断言，
+	// 装不上就在那里报 nil，所以下面两个 Provide 声明的都是完整实现。
+	must(container.Provide(func(db *gorm.DB) delivery.SnapshotStore {
+		return delivery.NewSQLiteSnapshotStore(db)
+	}))
+	// 产物库（含已校验的 DOCX 字节）与快照库同一条：重启之后交付历史还在，
+	// 已导出的文件也还能下载。它与上面的快照库共用同一个 *gorm.DB。
+	must(container.Provide(func(db *gorm.DB) delivery.ExportStore {
+		return delivery.NewSQLiteExportStore(db)
+	}))
+	// 交付输入服务：T12 的读取侧 + 成员判定。两个交付服务共用同一份，授权口径分家
+	// 是迟早的事——同一份交付在一个入口放行、在另一个入口拦住，那时没人知道该信哪个。
+	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService) *candidateadoption.DeliveryInputService {
+		return &candidateadoption.DeliveryInputService{
+			Reader:     candidateadoption.NewSQLiteCandidateAdoptionStore(db),
+			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: projects},
+		}
+	}))
+	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
+	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
+	// 传输层紧跟着用它装出来。
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (workspace.ReleaseApplication, error) {
+		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots)
+		if service == nil {
+			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
+			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
+			// 在第一个消费者出现时才生效——现在消费者是下面的 handler。
+			return nil, errors.New("lingdoc delivery release service: incomplete dependencies")
+		}
+		return service, nil
+	}))
+	must(container.Provide(func(service workspace.ReleaseApplication) (*workspace.DeliveryHandler, error) {
+		handler := workspace.NewDeliveryHandler(service)
+		if handler == nil {
+			return nil, errors.New("lingdoc delivery handler: incomplete dependencies")
+		}
+		return handler, nil
+	}))
+	// T14 的导出与下载（交付链 T13→T14 的组装点）。渲染器与校验器是同一个值
+	// （DeliveryDocument）：两者共用同一跳「冻结输入 → DOCX 输入」的翻译，拆成两个
+	// 类型就得把那一跳写两遍，而两份翻译迟早会在某个字段上分叉——那时校验器会开始
+	// 拒绝渲染器自己产出的文件，或者更糟，放行它。
+	//
+	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore) (workspace.ExportApplication, error) {
+		service := workspace.NewDeliveryExportService(snapshots, exports, workspace.DeliveryDocument{}, inputs, sourceIntegration.WorkspaceSourcePolicy())
+		if service == nil {
+			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
+		}
+		return service, nil
+	}))
+	must(container.Provide(func(service workspace.ExportApplication) (*workspace.DeliveryExportHandler, error) {
+		handler := workspace.NewDeliveryExportHandler(service)
+		if handler == nil {
+			return nil, errors.New("lingdoc delivery export handler: incomplete dependencies")
+		}
+		return handler, nil
+	}))
+	must(container.Provide(func(runtime *workspace.SourceRuntime, models interfaces.ModelService, tasks interfaces.TaskEnqueuer) generation.Application {
+		return workspace.NewGenerationApplication(runtime, models, tasks)
+	}))
+	must(container.Provide(func(service generation.Application) *generation.Handler {
+		return generation.NewHandler(service, func(c *gin.Context) (generation.Actor, bool) {
+			userID, userOK := types.UserIDFromContext(c.Request.Context())
+			tenantID, tenantOK := types.TenantIDFromContext(c.Request.Context())
+			return generation.Actor{UserID: userID, TenantID: tenantID}, userOK && tenantOK && userID != "" && tenantID != 0
+		})
+	}))
+	must(container.Provide(func(service generation.Application) interfaces.TaskHandler {
+		return generation.NewTaskHandler(service)
+	}, dig.Name("lingdocGeneration")))
 
 	// Data source handler
 	must(container.Provide(handler.NewDataSourceHandler))
@@ -1770,12 +1894,30 @@ func startHousekeepingService(svc *service.HousekeepingService, cleaner interfac
 // startTenantSkillReaper starts the stuck-install / orphan-snapshot cron and
 // registers cleanup. Best-effort: a startup error is logged but does NOT abort
 // the container — the rest of the system stays usable.
-func startTenantSkillReaper(svc *service.TenantSkillService, cleaner interfaces.ResourceCleaner) {
+func startTenantSkillReaper(
+	svc *service.TenantSkillService, cleaner interfaces.ResourceCleaner, db *gorm.DB,
+) {
 	if svc == nil {
+		return
+	}
+	if db == nil {
+		logger.Warnf(context.Background(), "[Container] tenant skill reaper disabled: database handle unavailable")
+		return
+	}
+	if !db.Migrator().HasTable(&types.TenantSkillEntity{}) ||
+		!db.Migrator().HasTable(&types.TenantSkillSnapshotEntity{}) {
+		if db.Dialector.Name() == "sqlite" {
+			logger.Infof(context.Background(),
+				"[Container] tenant skill reaper disabled: SQLite schema has no tenant skill ledger tables")
+		} else {
+			logger.Warnf(context.Background(),
+				"[Container] tenant skill reaper disabled: tenant skill ledger tables are missing; apply database migrations")
+		}
 		return
 	}
 	if err := svc.Start(context.Background()); err != nil {
 		logger.Warnf(context.Background(), "[Container] tenant skill reaper start failed: %v", err)
+		return
 	}
 	cleaner.RegisterWithName("TenantSkillReaper", func() error {
 		svc.Stop()

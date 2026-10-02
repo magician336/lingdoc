@@ -16,6 +16,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
+	candidateadoption "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/middleware"
@@ -29,67 +31,71 @@ import (
 type RouterParams struct {
 	dig.In
 
-	Config                       *config.Config
-	FileService                  interfaces.FileService
-	UserService                  interfaces.UserService
-	KBService                    interfaces.KnowledgeBaseService
-	KnowledgeService             interfaces.KnowledgeService
-	ChunkService                 interfaces.ChunkService
-	SessionService               interfaces.SessionService
-	MessageService               interfaces.MessageService
-	ModelService                 interfaces.ModelService
-	EvaluationService            interfaces.EvaluationService
-	KBShareService               interfaces.KBShareService
-	AgentShareService            interfaces.AgentShareService
-	KBHandler                    *handler.KnowledgeBaseHandler
-	KnowledgeHandler             *handler.KnowledgeHandler
-	TenantHandler                *handler.TenantHandler
-	TenantService                interfaces.TenantService
-	TenantAPIKeyService          interfaces.TenantAPIKeyService
-	TenantMemberService          interfaces.TenantMemberService
-	TenantMemberHandler          *handler.TenantMemberHandler
-	TenantInvitationHandler      *handler.TenantInvitationHandler
-	AuditLogHandler              *handler.AuditLogHandler
-	AuditLogService              interfaces.AuditLogService
-	ChunkHandler                 *handler.ChunkHandler
-	SessionHandler               *session.Handler
-	MessageHandler               *handler.MessageHandler
-	MessageSuggestionHandler     *handler.MessageSuggestionHandler
-	ModelHandler                 *handler.ModelHandler
-	ModelCredentialsHandler      *handler.ModelCredentialsHandler
-	SandboxConfigHandler         *handler.SandboxConfigHandler
-	SandboxSkillHandler          *handler.SandboxSkillHandler
-	MeEnvVarHandler              *handler.MeEnvVarHandler
-	EvaluationHandler            *handler.EvaluationHandler
-	AuthHandler                  *handler.AuthHandler
-	InitializationHandler        *handler.InitializationHandler
-	SystemHandler                *handler.SystemHandler
-	MCPServiceHandler            *handler.MCPServiceHandler
-	MCPCredentialsHandler        *handler.MCPCredentialsHandler
-	MCPOAuthHandler              *handler.MCPOAuthHandler
-	WebSearchHandler             *handler.WebSearchHandler
-	WebSearchProviderHandler     *handler.WebSearchProviderHandler
-	WebSearchCredentialsHandler  *handler.WebSearchProviderCredentialsHandler
-	VectorStoreHandler           *handler.VectorStoreHandler
-	StorageBackendHandler        *handler.StorageBackendHandler
-	StorageBackendResolver       interfaces.StorageBackendResolver
-	ResourceCatalog              interfaces.ResourceCatalog
-	FAQHandler                   *handler.FAQHandler
-	TagHandler                   *handler.TagHandler
-	CustomAgentHandler           *handler.CustomAgentHandler
-	UserFavoriteHandler          *handler.UserResourceFavoriteHandler
-	SkillHandler                 *handler.SkillHandler
-	OrganizationHandler          *handler.OrganizationHandler
-	IMHandler                    *handler.IMHandler
-	EmbedChannelHandler          *handler.EmbedChannelHandler
-	EmbedChannelService          interfaces.EmbedChannelService
-	RedisClient                  *redis.Client
-	DataSourceHandler            *handler.DataSourceHandler
-	DataSourceCredentialsHandler *handler.DataSourceCredentialsHandler
-	WeKnoraCloudHandler          *handler.WeKnoraCloudHandler
-	WikiPageHandler              *handler.WikiPageHandler
-	MemoryHandler                *handler.MemoryHandler
-	LingDocWorkspace             *workspace.Handler
+	Config                          *config.Config
+	FileService                     interfaces.FileService
+	UserService                     interfaces.UserService
+	KBService                       interfaces.KnowledgeBaseService
+	KnowledgeService                interfaces.KnowledgeService
+	ChunkService                    interfaces.ChunkService
+	SessionService                  interfaces.SessionService
+	MessageService                  interfaces.MessageService
+	ModelService                    interfaces.ModelService
+	EvaluationService               interfaces.EvaluationService
+	KBShareService                  interfaces.KBShareService
+	AgentShareService               interfaces.AgentShareService
+	KBHandler                       *handler.KnowledgeBaseHandler
+	KnowledgeHandler                *handler.KnowledgeHandler
+	TenantHandler                   *handler.TenantHandler
+	TenantService                   interfaces.TenantService
+	TenantAPIKeyService             interfaces.TenantAPIKeyService
+	TenantMemberService             interfaces.TenantMemberService
+	TenantMemberHandler             *handler.TenantMemberHandler
+	TenantInvitationHandler         *handler.TenantInvitationHandler
+	AuditLogHandler                 *handler.AuditLogHandler
+	AuditLogService                 interfaces.AuditLogService
+	ChunkHandler                    *handler.ChunkHandler
+	SessionHandler                  *session.Handler
+	MessageHandler                  *handler.MessageHandler
+	MessageSuggestionHandler        *handler.MessageSuggestionHandler
+	ModelHandler                    *handler.ModelHandler
+	ModelCredentialsHandler         *handler.ModelCredentialsHandler
+	SandboxConfigHandler            *handler.SandboxConfigHandler
+	SandboxSkillHandler             *handler.SandboxSkillHandler
+	MeEnvVarHandler                 *handler.MeEnvVarHandler
+	EvaluationHandler               *handler.EvaluationHandler
+	AuthHandler                     *handler.AuthHandler
+	InitializationHandler           *handler.InitializationHandler
+	SystemHandler                   *handler.SystemHandler
+	MCPServiceHandler               *handler.MCPServiceHandler
+	MCPCredentialsHandler           *handler.MCPCredentialsHandler
+	MCPOAuthHandler                 *handler.MCPOAuthHandler
+	WebSearchHandler                *handler.WebSearchHandler
+	WebSearchProviderHandler        *handler.WebSearchProviderHandler
+	WebSearchCredentialsHandler     *handler.WebSearchProviderCredentialsHandler
+	VectorStoreHandler              *handler.VectorStoreHandler
+	StorageBackendHandler           *handler.StorageBackendHandler
+	StorageBackendResolver          interfaces.StorageBackendResolver
+	ResourceCatalog                 interfaces.ResourceCatalog
+	FAQHandler                      *handler.FAQHandler
+	TagHandler                      *handler.TagHandler
+	CustomAgentHandler              *handler.CustomAgentHandler
+	UserFavoriteHandler             *handler.UserResourceFavoriteHandler
+	SkillHandler                    *handler.SkillHandler
+	OrganizationHandler             *handler.OrganizationHandler
+	IMHandler                       *handler.IMHandler
+	EmbedChannelHandler             *handler.EmbedChannelHandler
+	EmbedChannelService             interfaces.EmbedChannelService
+	RedisClient                     *redis.Client
+	DataSourceHandler               *handler.DataSourceHandler
+	DataSourceCredentialsHandler    *handler.DataSourceCredentialsHandler
+	WeKnoraCloudHandler             *handler.WeKnoraCloudHandler
+	WikiPageHandler                 *handler.WikiPageHandler
+	MemoryHandler                   *handler.MemoryHandler
+	LingDocWorkspace                *workspace.Handler
+	LingDocDeliveryHandler          *workspace.DeliveryHandler
+	LingDocDeliveryExportHandler    *workspace.DeliveryExportHandler
+	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
+	LingDocGenerationHandler        *generation.Handler `optional:"true"`
 }
 
 // NewRouter 创建新的路由
@@ -311,7 +317,25 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterWeKnoraCloudRoutes(v1, params.WeKnoraCloudHandler, rbacGuards)
 		RegisterWikiPageRoutes(v1, params.WikiPageHandler, rbacGuards)
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
-		registerLingDocWorkspaceRoutes(v1, rbacGuards, params.LingDocWorkspace)
+		if params.LingDocWorkspace != nil {
+			registerLingDocWorkspaceRoutes(v1, rbacGuards, params.LingDocWorkspace)
+		}
+		if params.LingDocDeliveryHandler != nil {
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
+			workspace.RegisterDeliveryRoutes(lingdoc, params.LingDocDeliveryHandler)
+		}
+		if params.LingDocDeliveryExportHandler != nil {
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
+			workspace.RegisterDeliveryExportRoutes(lingdoc, params.LingDocDeliveryExportHandler)
+		}
+		if params.LingDocCandidateAdoptionHandler != nil {
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
+			candidateadoption.RegisterRoutes(lingdoc, params.LingDocCandidateAdoptionHandler)
+		}
+		if params.LingDocGenerationHandler != nil {
+			lingdoc := newLingDocRegistrar(v1, rbacGuards)
+			generation.RegisterRoutes(lingdoc, params.LingDocGenerationHandler)
+		}
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route
@@ -322,18 +346,6 @@ func NewRouter(params RouterParams) *gin.Engine {
 	}
 
 	return r
-}
-
-// registerLingDocWorkspaceRoutes is the single route-composition point used
-// by NewRouter and its provider/consumer integration tests.
-func registerLingDocWorkspaceRoutes(v1 *gin.RouterGroup, guards *rbacGuards, handler *workspace.Handler) {
-	if handler == nil {
-		return
-	}
-	lingdoc := v1.Group("/lingdoc")
-	readRoutes := guards.apiKeyGroup(lingdoc.Group("", guards.Viewer()), apiKeyFullAccess())
-	writeRoutes := guards.apiKeyGroup(lingdoc.Group("", guards.Contributor()), apiKeyFullAccess())
-	handler.Register(workspace.RouteGroups{Read: readRoutes, Write: writeRoutes})
 }
 
 // trustedProxies returns the proxy CIDRs/IPs whose X-Forwarded-For headers

@@ -96,9 +96,9 @@ func main() {
 			sig := <-signals
 			logger.Infof(context.Background(), "Received signal: %v, starting server shutdown...", sig)
 
-			// Close listener first to release port immediately,
-			// so the next process can bind during our graceful drain.
-			listener.Close()
+			// Shutdown closes listeners before draining connections and marks the
+			// server as shutting down, so Serve returns http.ErrServerClosed.
+			// Closing the listener first would bypass that state and abort cleanup.
 
 			shutdownTimeout := cfg.Server.ShutdownTimeout
 			if shutdownTimeout == 0 {

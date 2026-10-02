@@ -8,18 +8,21 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
-	service ApplicationService
-	sources SourceApplicationService
+	service     ApplicationService
+	sources     SourceApplicationService
+	integration WorkspaceIntegration
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
 	return &Handler{
-		service: deps.Service, sources: deps.Sources,
+		service: deps.Service, sources: deps.Sources, integration: deps.Integration,
 	}
 }
 
@@ -37,6 +40,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
 	routes.Read.POST("/projects/:projectId/retrieval", h.retrieveSources)
 	routes.Read.GET("/projects/:projectId/sources/:sourceId", h.getSource)
+	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
 }
@@ -58,13 +62,12 @@ func sendOK(c *gin.Context, code int, data any, replay bool) {
 }
 
 func sendError(c *gin.Context, err error) {
-	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
-	var details any
-	if sourceStatus, sourceCode, sourceMessage, sourceDetails, ok := sourceErrorStatus(err); ok {
-		status, code, message, details = sourceStatus, sourceCode, sourceMessage, sourceDetails
+	if status, code, message, details, ok := sourceErrorStatus(err); ok {
+		sendErrorDetails(c, status, code, message, details)
+		return
 	}
+	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
 	switch {
-	case details != nil:
 	case errors.Is(err, ErrInvalidRequest):
 		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
 	case errors.Is(err, evidence.ErrInvalidBinding):
@@ -83,15 +86,68 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 409, "request_in_progress", "原请求仍在提交，请稍后用相同操作键重试。"
 		c.Header("Retry-After", "1")
 	case errors.Is(err, ErrSourceUnavailable):
-		status, code, message = 403, "source_access_denied", "来源授权尚未接入，不能保存带引用的正文。"
+		// 三处共用这一个结论：保存带引用的正文时复核不过、取来源时该资料不放行、
+		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
+		// 措辞不再提「尚未接入」——来源复核已经接入，答 403 是有判据的拒绝，不是缺席。
+		status, code, message = 403, "source_access_denied", "资料不可用或未获授权。"
 	case errors.Is(err, ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
+	// 交付链（T12 候选采纳 / T13 冻结）的判定。这些是各自包里的 sentinel，
+	// 名字与工作区那几个相同却是**不同的值**，所以必须逐个列出来——漏一个就是把
+	// 409 答成 500。口径统一在传输层做，领域层不为了对上 HTTP 而改自己的错误。
+	case errors.Is(err, candidateadoption.ErrInvalidRequest):
+		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, candidateadoption.ErrNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, delivery.ErrSnapshotNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, candidateadoption.ErrSourceAccessDenied):
+		status, code, message = 403, "source_access_denied", "资料授权已不可用。"
+	case errors.Is(err, candidateadoption.ErrVersionConflict):
+		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
+	case errors.Is(err, candidateadoption.ErrIdempotencyConflict), errors.Is(err, delivery.ErrIdempotencyConflict):
+		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
+	case errors.Is(err, candidateadoption.ErrStaleInput), errors.Is(err, delivery.ErrSnapshotStaleInput):
+		// 读输入与冻结之间工作区被人改过。契约 §7：发生竞争变更返回 409，重新读取。
+		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
+	case errors.Is(err, candidateadoption.ErrInvalidState):
+		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
+	// T14 的导出与下载。与上面同一件事：这些是 delivery 包里**另一个** ErrInvalidRequest，
+	// 必须单独列出来——名字相同、值不同，漏掉就是把 400 答成 500。
+	case errors.Is(err, delivery.ErrInvalidRequest):
+		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, delivery.ErrExportNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, delivery.ErrExportPreflightBlocked):
+		// F10：快照本来就是一份 blocked 的检查结论。要给的是那些 issue，
+		// 而不是一次假下载。
+		status, code, message = 422, "preflight_blocked", "请先处理交付阻断项。"
+	case errors.Is(err, delivery.ErrExportStaleInput):
+		// F11：快照基于的输入已经不是此刻的工作区了。
+		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
+	case errors.Is(err, delivery.ErrExportUnavailable):
+		// F13：产物存在但不可下载（failed，或字节已不在）。这不是 404——
+		// 资源在，是它此刻不能交出去。
+		status, code, message = 422, "invalid_state", "导出文件不可用或完整性校验失败，请重新导出。"
+	case errors.Is(err, candidateadoption.ErrDependencyUnavailable):
+		// 复核侧「答不出来」的那一档：资料底座读不出结论，或某条引用既没被判可用也没被
+		// 判不可用。它和 403 的区别正是「不是你的授权有问题，是此刻判不了」——所以答 503
+		// 且 retryable（契约 §6 单列了这一档）。
+		//
+		// 这原本是一条罕见路径，直到章节保存也走复核（workspaceSourcePolicy）：现在它成了
+		// SaveChapter 的常规失败之一，漏掉映射就是把一句「请稍后重试」答成 500。
+		// generation 包里另有一个同名的 sentinel，走的是 generation 自己的 handler，
+		// 不经过这里——名字相同、值不同，这是本文件反复出现的那类陷阱。
+		status, code, message = 503, "dependency_unavailable", "依赖的服务此刻不可用，请稍后重试。"
 	}
-	errorBody := gin.H{"code": code, "message": message, "retryable": code == "request_in_progress"}
-	if details != nil {
-		errorBody["details"] = details
-	}
-	c.JSON(status, gin.H{"error": errorBody, "request_id": requestID(c)})
+	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message,
+		"retryable": code == "request_in_progress" || code == "dependency_unavailable"},
+		"request_id": requestID(c)})
+}
+
+func sendErrorDetails(c *gin.Context, status int, code, message string, details any) {
+	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": false, "details": details},
+		"request_id": requestID(c)})
 }
 
 func sourceErrorStatus(err error) (int, string, string, any, bool) {
@@ -364,4 +420,35 @@ func (h *Handler) accessStatus(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, status, false)
+}
+
+func (h *Handler) getSourceContext(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	value, err := h.sources.GetSourceContext(c.Request.Context(), actor, c.Param("projectId"), c.Param("sourceId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, 200, value, false)
+}
+func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy {
+	if h.integration == nil {
+		return nil
+	}
+	return h.integration.CandidateAdoptionSourcePolicy()
+}
+func (h *Handler) WorkspaceSourcePolicy() SourcePolicy {
+	if h.integration == nil {
+		return nil
+	}
+	return h.integration.WorkspaceSourcePolicy()
+}
+func (h *Handler) DeliveryInputBuilder() DeliveryInputAssembler {
+	if h.integration == nil {
+		return nil
+	}
+	return h.integration.DeliveryInputBuilder()
 }

@@ -16,17 +16,17 @@ func TestDeliveryRulesSurviveRendererSubstitution(t *testing.T) {
 			t.Fatal(err)
 		}
 		allowed := true
-		exports := NewExportService(store, NewMemoryExportStore(), renderer, CurrentnessFunc(currentExportInput), ExportAccessFunc(func(string, string) error {
+		exports := NewExportService(store, NewMemoryExportStore(), renderer, FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(func(string, string) error {
 			if !allowed {
 				return errors.New("revoked")
 			}
 			return nil
 		}))
-		artifact, err := exports.Start("owner", snapshot.ProjectID, snapshot.ID)
+		artifact, _, err := exports.Start("owner", snapshot.ProjectID, snapshot.ID, "renderer-start")
 		if err != nil || artifact.Status != ExportVerified {
 			t.Fatalf("renderer %T: %+v %v", renderer, artifact, err)
 		}
-		data, err := exports.Download("owner", snapshot.ProjectID, artifact.ID)
+		_, data, err := exports.Download("owner", snapshot.ProjectID, artifact.ID)
 		if err != nil || len(data) == 0 {
 			t.Fatalf("download %T: %v", renderer, err)
 		}
@@ -36,7 +36,7 @@ func TestDeliveryRulesSurviveRendererSubstitution(t *testing.T) {
 			}
 		}
 		allowed = false
-		if _, err := exports.Download("owner", snapshot.ProjectID, artifact.ID); err == nil {
+		if _, _, err := exports.Download("owner", snapshot.ProjectID, artifact.ID); err == nil {
 			t.Fatalf("renderer %T bypassed revoked access", renderer)
 		}
 		allowed = true
@@ -46,7 +46,7 @@ func TestDeliveryRulesSurviveRendererSubstitution(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := exports.Start("owner", blocked.ProjectID, blocked.ID); !errors.Is(err, ErrExportPreflightBlocked) {
+		if _, _, err := exports.Start("owner", blocked.ProjectID, blocked.ID, "blocked-start"); !errors.Is(err, ErrExportPreflightBlocked) {
 			t.Fatalf("renderer %T bypassed blocked snapshot: %v", renderer, err)
 		}
 	}

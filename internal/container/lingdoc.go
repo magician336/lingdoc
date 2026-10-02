@@ -13,26 +13,28 @@ import (
 // NewLingDocWorkspaceHandler is the composition root for LingDoc workspace
 // application services and their production adapters. The HTTP handler itself
 // receives only application ports and has no knowledge of GORM construction.
+type LingDocWorkspace struct {
+	dig.Out
+	Handler     *workspace.Handler
+	Projects    workspace.ApplicationService
+	Integration workspace.WorkspaceIntegration
+	Runtime     *workspace.SourceRuntime
+}
+
 func NewLingDocWorkspaceHandler(
 	db *gorm.DB,
 	kbShares interfaces.KBShareService,
 	knowledge interfaces.KnowledgeBaseService,
-) *workspace.Handler {
-	projectService := workspacecore.NewService(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{})
-	sourcePorts := workspace.NewGORMSourcePorts(db, kbShares)
-	sourceService := workspace.NewSourceService(
-		projectService,
-		sourcePorts.Bindings,
-		sourcePorts.Gateway,
-		sourcePorts.Catalog,
-		sourcePorts.Origins,
-		kbShares,
-		knowledge,
-	)
-	return workspace.NewHandler(workspace.HandlerDependencies{
-		Service: projectService,
-		Sources: sourceService,
+) LingDocWorkspace {
+	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge)
+	projectService := workspacecore.NewServiceWithSources(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
+	runtime.ConnectProjects(projectService)
+	handler := workspace.NewHandler(workspace.HandlerDependencies{
+		Service:     projectService,
+		Sources:     runtime,
+		Integration: runtime,
 	})
+	return LingDocWorkspace{Handler: handler, Projects: projectService, Integration: runtime, Runtime: runtime}
 }
 
 // DeliveryDependencies keeps persistence, version checks and authorization
@@ -46,6 +48,7 @@ type DeliveryDependencies struct {
 	Currentness delivery.CurrentnessChecker  `optional:"true"`
 	Access      delivery.ExportAccessChecker `optional:"true"`
 	Renderer    delivery.FrozenRenderer      `optional:"true"`
+	Validator   delivery.FrozenValidator     `optional:"true"`
 }
 type LingDocDelivery struct {
 	dig.Out
@@ -54,11 +57,11 @@ type LingDocDelivery struct {
 }
 
 func NewLingDocDelivery(deps DeliveryDependencies) (LingDocDelivery, error) {
-	if deps.Snapshots == nil || deps.Exports == nil || deps.Currentness == nil || deps.Access == nil {
+	if deps.Snapshots == nil || deps.Exports == nil || deps.Currentness == nil || deps.Access == nil || deps.Validator == nil {
 		return LingDocDelivery{}, fmt.Errorf("delivery persistence, currentness and access ports are required")
 	}
 	if deps.Renderer == nil {
 		deps.Renderer = delivery.DOCXRenderer{}
 	}
-	return LingDocDelivery{Releases: delivery.NewReleaseService(deps.Snapshots, deps.Currentness), Exports: delivery.NewExportService(deps.Snapshots, deps.Exports, deps.Renderer, deps.Currentness, deps.Access)}, nil
+	return LingDocDelivery{Releases: delivery.NewReleaseService(deps.Snapshots, deps.Currentness), Exports: delivery.NewExportService(deps.Snapshots, deps.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access)}, nil
 }

@@ -9,11 +9,37 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/config"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
+
+func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	v1 := engine.Group("/api/v1")
+	enabled := true
+	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}}
+	routes := newLingDocRegistrar(v1, guards)
+	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
+	workspace.RegisterDeliveryRoutes(routes, &workspace.DeliveryHandler{})
+	workspace.RegisterDeliveryExportRoutes(routes, &workspace.DeliveryExportHandler{})
+	candidateadoption.RegisterRoutes(routes, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
+	generation.RegisterRoutes(routes, generation.NewHandler(nil, nil))
+	guards.assertAPIKeyPoliciesMatchRoutes(engine)
+	if got := len(engine.Routes()); got != 30 {
+		t.Fatalf("registered %d LingDoc routes, want 30", got)
+	}
+	for _, route := range engine.Routes() {
+		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
+		if !ok || !policy.RequireFullAccess {
+			t.Errorf("missing full-access policy: %s %s", route.Method, route.Path)
+		}
+	}
+}
 
 type lingDocRouteServiceStub struct {
 	workspace.ApplicationService

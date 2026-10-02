@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -31,6 +32,7 @@ type SourceApplicationService interface {
 	ListAssets(context.Context, Actor, string) ([]evidence.Asset, error)
 	BindAsset(context.Context, Actor, string, string, string) (evidence.Asset, bool, error)
 	GetSource(context.Context, Actor, string, string) (evidence.Source, error)
+	GetSourceContext(context.Context, Actor, string, string) (map[string]any, error)
 	RetrieveSources(context.Context, Actor, string, RetrieveSourcesInput) ([]evidence.Source, error)
 	AccessStatus(context.Context, Actor, string) (AccessStatus, error)
 }
@@ -103,6 +105,14 @@ type KnowledgeSearchService interface {
 }
 
 type HandlerDependencies struct {
-	Service ApplicationService
-	Sources SourceApplicationService
+	Service     ApplicationService
+	Sources     SourceApplicationService
+	Integration WorkspaceIntegration
+}
+
+// WorkspaceIntegration supplies the same source recheck and frozen-input adapter to all consumers.
+type WorkspaceIntegration interface {
+	CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy
+	WorkspaceSourcePolicy() SourcePolicy
+	DeliveryInputBuilder() DeliveryInputAssembler
 }

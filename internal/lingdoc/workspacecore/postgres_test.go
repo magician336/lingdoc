@@ -47,15 +47,18 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000097_lingdoc_workspace.up.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, stmt := range strings.Split(string(raw), ";") {
-		if strings.TrimSpace(stmt) != "" {
-			if err := db.Exec(stmt).Error; err != nil {
-				t.Fatal(err)
-			}
+	for _, file := range []string{
+		"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
+		"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
+		"000101_lingdoc_generation_claim_token.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
+		"000103_lingdoc_delivery_stores.up.sql",
+	} {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sqlDB.ExecContext(context.Background(), string(raw)); err != nil {
+			t.Fatalf("%s: %v", file, err)
 		}
 	}
 	if err := db.Exec("CREATE TABLE tenant_members (tenant_id BIGINT, user_id TEXT, status TEXT, deleted_at TIMESTAMPTZ)").Error; err != nil {

@@ -219,12 +219,27 @@ func (s *SourceService) AccessStatus(ctx context.Context, actor Actor, projectID
 	if err := s.projects.Authorize(ctx, actor, projectID, "read"); err != nil {
 		return AccessStatus{}, err
 	}
-	// T09 source access is intentionally not inferred from current chunks until
-	// the asset-bound recovery flow is wired; unknown is safer than stale access.
-	return AccessStatus{
-		ProjectID: projectID, ContentAccess: "unknown",
-		RecoveryActions: []string{}, CanCreateProject: true,
-	}, nil
+	state := "available"
+	assets, err := s.bindings.BoundAssets(ctx, projectID)
+	if err != nil {
+		state = "unknown"
+	} else {
+		ids := make([]string, 0, len(assets))
+		for _, a := range assets {
+			ids = append(ids, a.ID)
+		}
+		resolved, err := s.gateway.ResolveAllowed(ctx, projectID, evidenceActor(actor), ids)
+		if err != nil {
+			state = "unknown"
+		} else if len(resolved.Denied) > 0 {
+			state = "restricted"
+		}
+	}
+	actions := []string{}
+	if state == "restricted" {
+		actions = []string{"restore_source_authorization", "create_clean_project"}
+	}
+	return AccessStatus{ProjectID: projectID, ContentAccess: state, RecoveryActions: actions, CanCreateProject: true}, nil
 }
 
 func evidenceActor(actor Actor) evidence.Actor {
@@ -243,6 +258,11 @@ func (a kbReadChecker) CanReadKB(ctx context.Context, actor evidence.Actor, know
 
 func (a kbReadChecker) canReadKnowledgeBase(ctx context.Context, actor Actor, kb *types.KnowledgeBase) (bool, error) {
 	return a.CanReadKB(ctx, evidenceActor(actor), kb.ID, kb.TenantID)
+}
+
+// Context expansion is supplied by the source runtime; fake consumers may override it.
+func (s *SourceService) GetSourceContext(context.Context, Actor, string, string) (map[string]any, error) {
+	return nil, ErrSourceUnavailable
 }
 
 var _ SourceApplicationService = (*SourceService)(nil)
