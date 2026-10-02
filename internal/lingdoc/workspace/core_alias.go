@@ -9,6 +9,7 @@ type Repository = core.Repository
 type SourcePolicy = core.SourcePolicy
 type CoreProjectAuthorizer = core.ProjectAuthorizer
 type Actor = core.Actor
+type AuthorizationMode = core.AuthorizationMode
 type Project = core.Project
 type Chapter = core.Chapter
 type GenerationContext = core.GenerationContext
@@ -21,6 +22,12 @@ type TransferOwnerInput = core.TransferOwnerInput
 type AuditEvent = core.AuditEvent
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
+
+const (
+	AuthorizationModeLog      = core.AuthorizationModeLog
+	AuthorizationModeEnforce  = core.AuthorizationModeEnforce
+	AuthorizationModeRollback = core.AuthorizationModeRollback
+)
 
 var (
 	ErrNotFound            = core.ErrNotFound
@@ -42,4 +49,8 @@ func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader,
 
 func NewServiceWithAudit(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink) *Service {
 	return core.NewServiceWithAudit(repository, reader, sources, authorizer, audit)
+}
+
+func NewServiceWithAuditMode(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink, mode AuthorizationMode) *Service {
+	return core.NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, mode)
 }

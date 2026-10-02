@@ -104,7 +104,8 @@ func TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole(t *testing
 
 func TestMemberAssignmentsPersistCapabilityAndScopeInTransaction(t *testing.T) {
 	repository := fakeWorkspace()
-	service := NewService(repository)
+	audit := &auditSinkStub{}
+	service := NewServiceWithAudit(repository, ContractDemoTemplate{}, nil, nil, audit)
 	input := SaveMembersInput{ExpectedProjectVersion: 1, Members: []Member{{
 		UserID: "author", GovernanceRole: "member", FunctionRoles: []string{"author"},
 		FunctionScopes: map[string][]string{"author": {"c"}},
@@ -124,6 +125,9 @@ func TestMemberAssignmentsPersistCapabilityAndScopeInTransaction(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("assignment member missing")
+	}
+	if len(audit.events) < 2 || audit.events[len(audit.events)-1].Capability != "manage:members" || audit.events[len(audit.events)-1].Details["change"] != "member_permissions_replaced" {
+		t.Fatalf("member change audit = %+v", audit.events)
 	}
 }
 
@@ -157,18 +161,54 @@ func (s *auditSinkStub) Record(_ context.Context, event AuditEvent) error {
 	return nil
 }
 
+type failingAuditSink struct{}
+
+func (failingAuditSink) Record(context.Context, AuditEvent) error {
+	return errors.New("audit unavailable")
+}
+
 func TestAuthorizationAuditRecordsAllowAndDenyDecisions(t *testing.T) {
 	audit := &auditSinkStub{}
 	service := NewServiceWithAudit(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit)
-	actor := Actor{TenantID: 1, UserID: "owner"}
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
 	if err := service.Authorize(context.Background(), actor, "p", "read"); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.Authorize(context.Background(), Actor{TenantID: 1, UserID: "missing"}, "p", "read"); !errors.Is(err, ErrNotFound) {
+	if err := service.Authorize(context.Background(), Actor{TenantID: 1, UserID: "missing", Role: types.TenantRoleViewer}, "p", "read"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("deny = %v", err)
 	}
 	if len(audit.events) != 2 || audit.events[0].Decision != "allow" || audit.events[1].Decision != "deny" {
 		t.Fatalf("audit events = %+v", audit.events)
+	}
+	if audit.events[0].Role != types.TenantRoleAdmin || audit.events[1].Role != types.TenantRoleViewer {
+		t.Fatalf("audit roles = %q/%q", audit.events[0].Role, audit.events[1].Role)
+	}
+}
+
+func TestAuthorizationAuditFailureDoesNotBlockDecision(t *testing.T) {
+	service := NewServiceWithAudit(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, failingAuditSink{})
+	if err := service.Authorize(context.Background(), Actor{TenantID: 1, UserID: "owner"}, "p", "read"); err != nil {
+		t.Fatalf("audit failure changed authorization result: %v", err)
+	}
+}
+
+func TestAuthorizationLogModeFallsBackToLegacyDecision(t *testing.T) {
+	audit := &auditSinkStub{}
+	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleViewer}
+	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); err != nil {
+		t.Fatalf("log mode should preserve the legacy decision while observing the new policy: %v", err)
+	}
+	if len(audit.events) < 2 || audit.events[0].Capability != "shadow:create" || audit.events[0].Decision != "deny" {
+		t.Fatalf("shadow audit = %+v", audit.events)
+	}
+}
+
+func TestAuthorizationRollbackModeStopsNewMemberAssignments(t *testing.T) {
+	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, nil, AuthorizationModeRollback)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, _, err := service.SaveMembers(context.Background(), actor, "p", "rollback-members", SaveMembersInput{ExpectedProjectVersion: 1, Members: []Member{{UserID: "author", GovernanceRole: "member", FunctionRoles: []string{"author"}}}}); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("rollback mode assignment error = %v, want ErrInvalidState", err)
 	}
 }
 

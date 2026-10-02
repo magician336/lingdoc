@@ -1,9 +1,12 @@
 package delivery
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
 type frozenRenderer func(DeliveryInput) ([]byte, error)
@@ -26,6 +29,13 @@ func allowExport(actorUserID, projectID string) error {
 }
 
 func currentExportInput(DeliveryInput) (bool, error) { return true, nil }
+
+type exportAuditSinkStub struct{ events []workspacecore.AuditEvent }
+
+func (s *exportAuditSinkStub) Record(_ context.Context, event workspacecore.AuditEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
 
 // preparedSnapshot 给只跑内存实现的用例用；一致性套件那几条走
 // `forEachStorePair` + `preparedSnapshotOn`（同一路径，库由夹具给）。
@@ -137,12 +147,13 @@ func TestDownloadRechecksCurrentAccess(t *testing.T) {
 func testDownloadRechecksCurrentAccess(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
 	snapshot := preparedSnapshotOn(t, snapshots)
 	allowed := true
+	audit := &exportAuditSinkStub{}
 	service := NewExportService(snapshots, exports, frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("docx"), nil }), FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(func(actorUserID, projectID string) error {
 		if allowed {
 			return nil
 		}
 		return errors.New("project access denied")
-	}))
+	}), audit)
 	artifact, _, err := service.Start("owner", snapshot.ProjectID, snapshot.ID, exportActionKey)
 	if err != nil {
 		t.Fatal(err)
@@ -150,6 +161,9 @@ func testDownloadRechecksCurrentAccess(t *testing.T, snapshots snapshotStoreUnde
 	allowed = false
 	if _, _, err := service.Download("owner", snapshot.ProjectID, artifact.ID); err == nil {
 		t.Fatal("download should require current project access")
+	}
+	if len(audit.events) != 1 || audit.events[0].Capability != "delivery.download" || audit.events[0].Decision != "deny" {
+		t.Fatalf("delivery audit = %+v", audit.events)
 	}
 }
 

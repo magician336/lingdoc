@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
 var (
@@ -255,6 +258,7 @@ type ExportService struct {
 	validator   FrozenValidator
 	currentness CurrentnessChecker
 	access      ExportAccessChecker
+	audit       workspacecore.AuditSink
 	now         func() time.Time
 }
 
@@ -265,7 +269,7 @@ type ExportService struct {
 //   - 产物库还必须能记「哪一次动作产出了它」（ExportRecorder）。契约把
 //     Idempotency-Key 标成 /exports 的必填头，退化成「照渲不误」就等于收下了这个头
 //     却不当回事：一次超时重试会在交付历史里多出一条，而调用方以为自己只导出过一次。
-func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer, validator FrozenValidator, currentness CurrentnessChecker, access ExportAccessChecker) *ExportService {
+func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer, validator FrozenValidator, currentness CurrentnessChecker, access ExportAccessChecker, audits ...workspacecore.AuditSink) *ExportService {
 	if snapshots == nil || exports == nil || renderer == nil || validator == nil || currentness == nil || access == nil {
 		return nil
 	}
@@ -273,9 +277,13 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 	if !ok {
 		return nil
 	}
+	var audit workspacecore.AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
 	return &ExportService{
 		snapshots: snapshots, exports: exports, actions: actions,
-		renderer: renderer, validator: validator, currentness: currentness, access: access,
+		renderer: renderer, validator: validator, currentness: currentness, access: access, audit: audit,
 		now: time.Now,
 	}
 }
@@ -299,6 +307,7 @@ func (s *ExportService) Start(actorUserID, projectID, snapshotID, key string) (E
 	}
 	// 1. 身份与项目能力。
 	if err := s.authorize(actorUserID, projectID); err != nil {
+		s.recordAudit(actorUserID, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
 	}
 	attempt := ExportAttempt{ActorID: actorUserID, ProjectID: projectID, Key: key}
@@ -314,6 +323,7 @@ func (s *ExportService) Start(actorUserID, projectID, snapshotID, key string) (E
 	// 3. 只有新动作才读快照、才比版本、才渲染。
 	artifact, err := s.produce(actorUserID, projectID, snapshotID)
 	if err != nil {
+		s.recordAudit(actorUserID, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
 	}
 	recorded, replayed, err := s.actions.RecordExport(artifact, attempt, requestHash)
@@ -396,6 +406,7 @@ func (s *ExportService) render(input DeliveryInput) ([]byte, string) {
 // 在那里写一句「为什么直接拿路径参数是安全的」。
 func (s *ExportService) Download(actorUserID, projectID, exportID string) (ExportArtifact, []byte, error) {
 	if err := s.authorize(actorUserID, projectID); err != nil {
+		s.recordAudit(actorUserID, projectID, "delivery.download", err)
 		return ExportArtifact{}, nil, err
 	}
 	artifact, err := s.exports.GetExport(projectID, exportID)
@@ -403,6 +414,7 @@ func (s *ExportService) Download(actorUserID, projectID, exportID string) (Expor
 		return ExportArtifact{}, nil, err
 	}
 	if artifact.Status != ExportVerified || len(artifact.file) == 0 {
+		s.recordAudit(actorUserID, projectID, "delivery.download", ErrExportUnavailable)
 		return ExportArtifact{}, nil, ErrExportUnavailable
 	}
 	// A verified status describes the bytes checked at export time. Recheck
@@ -410,15 +422,38 @@ func (s *ExportService) Download(actorUserID, projectID, exportID string) (Expor
 	// boundary; never return any bytes from a mismatched artifact.
 	sum := sha256.Sum256(artifact.file)
 	if artifact.FileSHA256 != fmt.Sprintf("%x", sum) {
+		s.recordAudit(actorUserID, projectID, "delivery.download", ErrExportUnavailable)
 		return ExportArtifact{}, nil, ErrExportUnavailable
 	}
 	return artifact, append([]byte(nil), artifact.file...), nil
+}
+
+func (s *ExportService) recordAudit(userID, projectID, capability string, err error) {
+	if s.audit == nil {
+		return
+	}
+	_ = s.audit.Record(context.Background(), workspacecore.AuditEvent{UserID: userID, ProjectID: projectID, Capability: capability, Decision: auditDecision(err), Reason: auditReason(err)})
+}
+
+func auditDecision(err error) string {
+	if err != nil {
+		return "deny"
+	}
+	return "allow"
+}
+
+func auditReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 // Get 读一份产物的状态。它不返回字节——那要单独走 Download，因为下载必须
 // 在**那一刻**重查一次授权。取不到报 ErrExportNotFound 让传输层答 404。
 func (s *ExportService) Get(actorUserID, projectID, exportID string) (ExportArtifact, error) {
 	if err := s.authorize(actorUserID, projectID); err != nil {
+		s.recordAudit(actorUserID, projectID, "delivery.export.read", err)
 		return ExportArtifact{}, err
 	}
 	return s.exports.GetExport(projectID, exportID)

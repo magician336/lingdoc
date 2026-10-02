@@ -69,13 +69,23 @@ type Actor struct {
 	Role types.TenantRole
 }
 
+type AuthorizationMode string
+
+const (
+	AuthorizationModeLog      AuthorizationMode = "log"
+	AuthorizationModeEnforce  AuthorizationMode = "enforce"
+	AuthorizationModeRollback AuthorizationMode = "rollback"
+)
+
 type AuditEvent struct {
-	TenantID   uint64 `json:"tenant_id"`
-	UserID     string `json:"user_id"`
-	ProjectID  string `json:"project_id,omitempty"`
-	Capability string `json:"capability"`
-	Decision   string `json:"decision"`
-	Reason     string `json:"reason,omitempty"`
+	TenantID   uint64           `json:"tenant_id"`
+	UserID     string           `json:"user_id"`
+	Role       types.TenantRole `json:"role,omitempty"`
+	ProjectID  string           `json:"project_id,omitempty"`
+	Capability string           `json:"capability"`
+	Decision   string           `json:"decision"`
+	Reason     string           `json:"reason,omitempty"`
+	Details    map[string]any   `json:"details,omitempty"`
 }
 
 type AuditSink interface {

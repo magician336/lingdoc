@@ -65,6 +65,7 @@ type Service struct {
 	sources    SourcePolicy
 	authorizer ProjectAuthorizer
 	audit      AuditSink
+	mode       AuthorizationMode
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -88,23 +89,115 @@ func NewServiceWithAuthorizer(repository Repository, reader TemplateReader, sour
 }
 
 func NewServiceWithAudit(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer, audit AuditSink) *Service {
+	return NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, AuthorizationModeEnforce)
+}
+
+func NewServiceWithAuditMode(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer, audit AuditSink, mode AuthorizationMode) *Service {
 	if reader == nil {
 		reader = ContractDemoTemplate{}
 	}
 	if authorizer == nil {
 		authorizer = transactionProjectAuthorizer{}
 	}
-	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer, audit: audit}
+	if mode != AuthorizationModeLog && mode != AuthorizationModeRollback {
+		mode = AuthorizationModeEnforce
+	}
+	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer, audit: audit, mode: mode}
+}
+
+func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, actor Actor, capability string) error {
+	if s.mode == AuthorizationModeRollback {
+		return legacyAuthorizeTenant(tx, actor)
+	}
+	if s.mode != AuthorizationModeLog {
+		return s.authorizer.AuthorizeTenant(tx, actor, capability)
+	}
+	err := s.authorizer.AuthorizeTenant(tx, actor, capability)
+	_ = s.recordAudit(ctx, actor, "", "shadow:"+capability, err)
+	if err == nil {
+		return nil
+	}
+	return legacyAuthorizeTenant(tx, actor)
+}
+
+func (s *Service) authorizeProject(ctx context.Context, tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	if s.mode == AuthorizationModeRollback {
+		return legacyAuthorizeProject(tx, actor, projectID, capability)
+	}
+	if s.mode != AuthorizationModeLog {
+		return s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+	}
+	project, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+	_ = s.recordAudit(ctx, actor, projectID, "shadow:"+capability, err)
+	if err == nil {
+		return project, nil
+	}
+	return legacyAuthorizeProject(tx, actor, projectID, capability)
+}
+
+func legacyAuthorizeTenant(tx Transaction, actor Actor) error {
+	if !validActor(actor) {
+		return ErrNotFound
+	}
+	active, err := tx.ActiveMember(actor)
+	if err != nil || !active {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func legacyAuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	if err := legacyAuthorizeTenant(tx, actor); err != nil {
+		return Project{}, err
+	}
+	baseCapability := capability
+	if before, _, ok := strings.Cut(capability, ":"); ok {
+		baseCapability = before
+	}
+	p, err := tx.Project(actor.TenantID, projectID)
+	if err != nil {
+		return Project{}, err
+	}
+	for _, member := range p.Members {
+		if member.UserID != actor.UserID || (member.Status != "" && member.Status != "active") {
+			continue
+		}
+		if baseCapability == "read" || member.Role == "owner" {
+			return p, nil
+		}
+		if baseCapability == "write" {
+			if member.Role == "owner" || member.Role == "collaborator" {
+				return p, nil
+			}
+		}
+		if baseCapability == "manage" && member.Role == "owner" {
+			return p, nil
+		}
+	}
+	return Project{}, ErrNotFound
 }
 
 func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
+	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
+}
+
+func auditDecision(err error) string {
+	if err != nil {
+		return "deny"
+	}
+	return "allow"
+}
+
+func auditReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error {
 	if s.audit == nil {
 		return nil
-	}
-	event := AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, ProjectID: projectID, Capability: capability, Decision: "allow"}
-	if authErr != nil {
-		event.Decision = "deny"
-		event.Reason = authErr.Error()
 	}
 	return s.audit.Record(ctx, event)
 }
@@ -205,20 +298,16 @@ func authorizeProject(tx Transaction, actor Actor, projectID, capability string)
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		_, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
-		if auditErr := s.recordAudit(ctx, actor, projectID, capability, err); err == nil && auditErr != nil {
-			return auditErr
-		}
+		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
+		_ = s.recordAudit(ctx, actor, projectID, capability, err)
 		return err
 	})
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
-		result, err = s.authorizer.AuthorizeProject(tx, actor, id, "read")
-		if auditErr := s.recordAudit(ctx, actor, id, "read", err); err == nil && auditErr != nil {
-			err = auditErr
-		}
+		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
+		_ = s.recordAudit(ctx, actor, id, "read", err)
 		return err
 	})
 	return result, err
@@ -229,13 +318,11 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 		if !validActor(actor) {
 			return ErrNotFound
 		}
-		if err := s.authorizer.AuthorizeTenant(tx, actor, "read"); err != nil {
+		if err := s.authorizeTenant(ctx, tx, actor, "read"); err != nil {
 			_ = s.recordAudit(ctx, actor, "", "read", err)
 			return err
 		}
-		if err := s.recordAudit(ctx, actor, "", "read", nil); err != nil {
-			return err
-		}
+		_ = s.recordAudit(ctx, actor, "", "read", nil)
 		projects, err := tx.Projects(actor, 51)
 		result = projects
 		return err
@@ -268,21 +355,19 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
-			if err := s.authorizer.AuthorizeTenant(tx, actor, capability); err != nil {
+			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
 				_ = s.recordAudit(ctx, actor, projectID, capability, err)
 				return err
 			}
 		} else {
 			var err error
-			p, err = s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+			p, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
 			if err != nil {
 				_ = s.recordAudit(ctx, actor, projectID, capability, err)
 				return err
 			}
 		}
-		if err := s.recordAudit(ctx, actor, projectID, capability, nil); err != nil {
-			return err
-		}
+		_ = s.recordAudit(ctx, actor, projectID, capability, nil)
 		if op == "saveChapter" {
 			input := body.(SaveChapterInput)
 			if len(input.SourceIDs) > 0 {
@@ -483,7 +568,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizer.AuthorizeProject(tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
 			return err
 		}
 		var err error
@@ -566,7 +651,7 @@ func sameVersion(a, b *string) bool {
 func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error) {
 	var result GenerationContext
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizer.AuthorizeProject(tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
 		if err != nil {
 			return err
 		}

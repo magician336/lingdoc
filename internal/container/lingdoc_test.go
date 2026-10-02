@@ -15,6 +15,7 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		func() *gorm.DB { return &gorm.DB{} },
 		func() interfaces.KBShareService { return nil },
 		func() interfaces.KnowledgeBaseService { return nil },
+		func() interfaces.AuditLogService { return nil },
 		NewLingDocWorkspaceHandler,
 	} {
 		if err := c.Provide(constructor); err != nil {

@@ -16,10 +16,13 @@ type TransferOwnerInput struct {
 // current owner, clearing the new owner's function axis as required by the
 // project permission model.
 func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key string, input TransferOwnerInput) (json.RawMessage, int, bool, error) {
+	if s.mode == AuthorizationModeRollback {
+		return nil, 0, false, ErrInvalidState
+	}
 	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.NewOwnerUserID) != input.NewOwnerUserID || input.NewOwnerUserID == "" || len(input.NewOwnerUserID) > 64 || input.NewOwnerUserID == actor.UserID {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "transferOwner", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	body, status, replayed, err := s.operation(ctx, actor, "transferOwner", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -63,16 +66,23 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 		}
 		return next, 200, nil
 	})
+	if err == nil && !replayed {
+		_ = s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: "manage:members", Decision: "allow", Details: map[string]any{"change": "owner_transfer", "new_owner_user_id": input.NewOwnerUserID}})
+	}
+	return body, status, replayed, err
 }
 
 // saveMemberPermissions replaces non-owner assignments in the same transaction
 // as the project version and replay record. Owner changes use a separate,
 // recipient-confirmed transfer workflow.
 func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
+	if s.mode == AuthorizationModeRollback {
+		return nil, 0, false, ErrInvalidState
+	}
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs != nil || len(input.Members) > 20 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "saveMembers", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	body, status, replayed, err := s.operation(ctx, actor, "saveMembers", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -159,4 +169,16 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 		}
 		return next, 200, nil
 	})
+	if err == nil && !replayed {
+		changes := make([]map[string]any, 0, len(input.Members))
+		for _, member := range input.Members {
+			changes = append(changes, map[string]any{
+				"user_id": member.UserID, "governance_role": member.GovernanceRole,
+				"function_roles": member.FunctionRoles, "function_scopes": member.FunctionScopes,
+				"status": member.Status,
+			})
+		}
+		_ = s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: "manage:members", Decision: "allow", Details: map[string]any{"change": "member_permissions_replaced", "members": changes}})
+	}
+	return body, status, replayed, err
 }
