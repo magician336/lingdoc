@@ -114,9 +114,6 @@ func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, actor Act
 	}
 	err := s.authorizer.AuthorizeTenant(tx, actor, capability)
 	_ = s.recordAudit(ctx, actor, "", "shadow:"+capability, err)
-	if err == nil {
-		return nil
-	}
 	return legacyAuthorizeTenant(tx, actor)
 }
 
@@ -127,11 +124,8 @@ func (s *Service) authorizeProject(ctx context.Context, tx Transaction, actor Ac
 	if s.mode != AuthorizationModeLog {
 		return s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
 	}
-	project, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+	_, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
 	_ = s.recordAudit(ctx, actor, projectID, "shadow:"+capability, err)
-	if err == nil {
-		return project, nil
-	}
 	return legacyAuthorizeProject(tx, actor, projectID, capability)
 }
 

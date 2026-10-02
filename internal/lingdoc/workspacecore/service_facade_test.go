@@ -204,6 +204,20 @@ func TestAuthorizationLogModeFallsBackToLegacyDecision(t *testing.T) {
 	}
 }
 
+func TestAuthorizationLogModeDoesNotAdoptNewAllow(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Members = append(repository.project.Members, Member{UserID: "admin", Role: "collaborator", GovernanceRole: "admin", Status: "active"})
+	audit := &auditSinkStub{}
+	service := NewServiceWithAuditMode(repository, ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
+	actor := Actor{TenantID: 1, UserID: "admin", Role: types.TenantRoleAdmin}
+	if err := service.Authorize(context.Background(), actor, "p", "manage"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("log mode adopted new allow instead of legacy deny: %v", err)
+	}
+	if len(audit.events) == 0 || audit.events[0].Capability != "shadow:manage" || audit.events[0].Decision != "allow" {
+		t.Fatalf("shadow allow audit = %+v", audit.events)
+	}
+}
+
 func TestAuthorizationRollbackModeStopsNewMemberAssignments(t *testing.T) {
 	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, nil, AuthorizationModeRollback)
 	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}

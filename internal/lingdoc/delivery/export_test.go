@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 type frozenRenderer func(DeliveryInput) ([]byte, error)
@@ -159,10 +160,10 @@ func testDownloadRechecksCurrentAccess(t *testing.T, snapshots snapshotStoreUnde
 		t.Fatal(err)
 	}
 	allowed = false
-	if _, _, err := service.Download("owner", snapshot.ProjectID, artifact.ID); err == nil {
+	if _, _, err := service.DownloadAs(context.Background(), Actor{TenantID: 7, UserID: "owner", Role: types.TenantRoleAdmin}, snapshot.ProjectID, artifact.ID); err == nil {
 		t.Fatal("download should require current project access")
 	}
-	if len(audit.events) != 1 || audit.events[0].Capability != "delivery.download" || audit.events[0].Decision != "deny" {
+	if len(audit.events) != 1 || audit.events[0].Capability != "delivery.download" || audit.events[0].Decision != "deny" || audit.events[0].TenantID != 7 || audit.events[0].Role != types.TenantRoleAdmin {
 		t.Fatalf("delivery audit = %+v", audit.events)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var (
@@ -262,6 +263,12 @@ type ExportService struct {
 	now         func() time.Time
 }
 
+type Actor struct {
+	TenantID uint64
+	UserID   string
+	Role     types.TenantRole
+}
+
 // NewExportService 依赖不齐时返回 nil。五个依赖各自都是必需的：
 //
 //   - renderer 与 validator 分别是「产出文件」与「证明文件里确实有该有的东西」，
@@ -295,10 +302,14 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 // key 是这次用户动作的幂等键。处理顺序照契约 §6：先判身份，再判是不是已经做过，
 // 最后才比版本、才读工作区。撤权之后不能从「这个键做过」里把旧产物交出去。
 func (s *ExportService) Start(actorUserID, projectID, snapshotID, key string) (ExportArtifact, bool, error) {
+	return s.StartAs(context.Background(), Actor{UserID: actorUserID}, projectID, snapshotID, key)
+}
+
+func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, snapshotID, key string) (ExportArtifact, bool, error) {
 	if s == nil || s.actions == nil {
 		return ExportArtifact{}, false, ErrExportUnavailable
 	}
-	if strings.TrimSpace(actorUserID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(snapshotID) == "" {
+	if strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(snapshotID) == "" {
 		return ExportArtifact{}, false, fmt.Errorf("%w: export requires actor, project and snapshot", ErrInvalidRequest)
 	}
 	key = strings.TrimSpace(key)
@@ -306,12 +317,12 @@ func (s *ExportService) Start(actorUserID, projectID, snapshotID, key string) (E
 		return ExportArtifact{}, false, fmt.Errorf("%w: idempotency key must be 8..128 characters", ErrInvalidRequest)
 	}
 	// 1. 身份与项目能力。
-	if err := s.authorize(actorUserID, projectID); err != nil {
-		s.recordAudit(actorUserID, projectID, "delivery.export", err)
+	if err := s.authorize(actor.UserID, projectID); err != nil {
+		s.recordAudit(ctx, actor, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
 	}
-	attempt := ExportAttempt{ActorID: actorUserID, ProjectID: projectID, Key: key}
-	requestHash := exportRequestHash(actorUserID, projectID, snapshotID)
+	attempt := ExportAttempt{ActorID: actor.UserID, ProjectID: projectID, Key: key}
+	requestHash := exportRequestHash(actor.UserID, projectID, snapshotID)
 	// 2. 已经做过就换回原结果；同键不同请求是冲突，不是又一次导出。
 	replay, found, err := s.actions.ReplayExport(attempt, requestHash)
 	if err != nil {
@@ -321,9 +332,9 @@ func (s *ExportService) Start(actorUserID, projectID, snapshotID, key string) (E
 		return replay, true, nil
 	}
 	// 3. 只有新动作才读快照、才比版本、才渲染。
-	artifact, err := s.produce(actorUserID, projectID, snapshotID)
+	artifact, err := s.produce(actor.UserID, projectID, snapshotID)
 	if err != nil {
-		s.recordAudit(actorUserID, projectID, "delivery.export", err)
+		s.recordAudit(ctx, actor, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
 	}
 	recorded, replayed, err := s.actions.RecordExport(artifact, attempt, requestHash)
@@ -405,8 +416,12 @@ func (s *ExportService) render(input DeliveryInput) ([]byte, string) {
 // 那个字符串。两者其实总是相等（查不到就是 404），但让传输层从产物取，就用不着
 // 在那里写一句「为什么直接拿路径参数是安全的」。
 func (s *ExportService) Download(actorUserID, projectID, exportID string) (ExportArtifact, []byte, error) {
-	if err := s.authorize(actorUserID, projectID); err != nil {
-		s.recordAudit(actorUserID, projectID, "delivery.download", err)
+	return s.DownloadAs(context.Background(), Actor{UserID: actorUserID}, projectID, exportID)
+}
+
+func (s *ExportService) DownloadAs(ctx context.Context, actor Actor, projectID, exportID string) (ExportArtifact, []byte, error) {
+	if err := s.authorize(actor.UserID, projectID); err != nil {
+		s.recordAudit(ctx, actor, projectID, "delivery.download", err)
 		return ExportArtifact{}, nil, err
 	}
 	artifact, err := s.exports.GetExport(projectID, exportID)
@@ -414,7 +429,7 @@ func (s *ExportService) Download(actorUserID, projectID, exportID string) (Expor
 		return ExportArtifact{}, nil, err
 	}
 	if artifact.Status != ExportVerified || len(artifact.file) == 0 {
-		s.recordAudit(actorUserID, projectID, "delivery.download", ErrExportUnavailable)
+		s.recordAudit(ctx, actor, projectID, "delivery.download", ErrExportUnavailable)
 		return ExportArtifact{}, nil, ErrExportUnavailable
 	}
 	// A verified status describes the bytes checked at export time. Recheck
@@ -422,17 +437,17 @@ func (s *ExportService) Download(actorUserID, projectID, exportID string) (Expor
 	// boundary; never return any bytes from a mismatched artifact.
 	sum := sha256.Sum256(artifact.file)
 	if artifact.FileSHA256 != fmt.Sprintf("%x", sum) {
-		s.recordAudit(actorUserID, projectID, "delivery.download", ErrExportUnavailable)
+		s.recordAudit(ctx, actor, projectID, "delivery.download", ErrExportUnavailable)
 		return ExportArtifact{}, nil, ErrExportUnavailable
 	}
 	return artifact, append([]byte(nil), artifact.file...), nil
 }
 
-func (s *ExportService) recordAudit(userID, projectID, capability string, err error) {
+func (s *ExportService) recordAudit(ctx context.Context, actor Actor, projectID, capability string, err error) {
 	if s.audit == nil {
 		return
 	}
-	_ = s.audit.Record(context.Background(), workspacecore.AuditEvent{UserID: userID, ProjectID: projectID, Capability: capability, Decision: auditDecision(err), Reason: auditReason(err)})
+	_ = s.audit.Record(ctx, workspacecore.AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(err), Reason: auditReason(err)})
 }
 
 func auditDecision(err error) string {
@@ -452,8 +467,12 @@ func auditReason(err error) string {
 // Get 读一份产物的状态。它不返回字节——那要单独走 Download，因为下载必须
 // 在**那一刻**重查一次授权。取不到报 ErrExportNotFound 让传输层答 404。
 func (s *ExportService) Get(actorUserID, projectID, exportID string) (ExportArtifact, error) {
-	if err := s.authorize(actorUserID, projectID); err != nil {
-		s.recordAudit(actorUserID, projectID, "delivery.export.read", err)
+	return s.GetAs(context.Background(), Actor{UserID: actorUserID}, projectID, exportID)
+}
+
+func (s *ExportService) GetAs(ctx context.Context, actor Actor, projectID, exportID string) (ExportArtifact, error) {
+	if err := s.authorize(actor.UserID, projectID); err != nil {
+		s.recordAudit(ctx, actor, projectID, "delivery.export.read", err)
 		return ExportArtifact{}, err
 	}
 	return s.exports.GetExport(projectID, exportID)
