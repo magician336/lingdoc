@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -326,12 +327,14 @@ func TestServiceSourceRecheckBeforeReplayWithNonSQLStorage(t *testing.T) {
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
 // discards both domain writes and replay records on any callback error.
 type stateRepository struct {
-	project    Project
-	chapter    Chapter
-	active     bool
-	operations map[OperationIdentity]OperationResult
-	writes     int
-	failCommit bool
+	project     Project
+	chapter     Chapter
+	workingCopy WorkingCopy
+	versions    []ChapterVersion
+	active      bool
+	operations  map[OperationIdentity]OperationResult
+	writes      int
+	failCommit  bool
 }
 
 func (r *stateRepository) Transaction(ctx context.Context, _ TransactionOptions, fn func(Transaction) error) error {
@@ -341,6 +344,7 @@ func (r *stateRepository) Transaction(ctx context.Context, _ TransactionOptions,
 	tx := *r
 	tx.project.Spec = maps.Clone(r.project.Spec)
 	tx.operations = maps.Clone(r.operations)
+	tx.versions = slices.Clone(r.versions)
 	if err := fn(&stateTransaction{state: &tx}); err != nil {
 		return err
 	}
@@ -386,6 +390,42 @@ func (t *stateTransaction) Chapter(project, id string) (Chapter, error) {
 	}
 	return t.state.chapter, nil
 }
+func (t *stateTransaction) WorkingCopy(project, id string) (WorkingCopy, error) {
+	if project != t.state.workingCopy.ProjectID || id != t.state.workingCopy.ChapterID {
+		return WorkingCopy{}, ErrNotFound
+	}
+	copy := t.state.workingCopy
+	copy.SourceIDs = slices.Clone(copy.SourceIDs)
+	copy.ReviewItems = slices.Clone(copy.ReviewItems)
+	return copy, nil
+}
+func (t *stateTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
+	if previous.WorkingCopyRevision != t.state.workingCopy.WorkingCopyRevision ||
+		!sameVersion(previous.BaseChapterVersionID, t.state.workingCopy.BaseChapterVersionID) {
+		return ErrVersionConflict
+	}
+	next.SourceIDs = slices.Clone(next.SourceIDs)
+	next.ReviewItems = slices.Clone(next.ReviewItems)
+	t.state.workingCopy = next
+	return nil
+}
+func (t *stateTransaction) ChapterVersion(project, chapter, id string) (ChapterVersion, error) {
+	for _, version := range t.state.versions {
+		if version.ProjectID == project && version.ChapterID == chapter && version.ID == id {
+			return version, nil
+		}
+	}
+	return ChapterVersion{}, ErrNotFound
+}
+func (t *stateTransaction) ChapterVersions(project, chapter string) ([]ChapterVersion, error) {
+	versions := make([]ChapterVersion, 0, len(t.state.versions))
+	for _, version := range t.state.versions {
+		if version.ProjectID == project && version.ChapterID == chapter {
+			versions = append(versions, version)
+		}
+	}
+	return versions, nil
+}
 func (t *stateTransaction) UpdateProject(_ uint64, previous, next Project) error {
 	if t.state.project.ProjectVersion != previous.ProjectVersion {
 		return ErrVersionConflict
@@ -398,6 +438,9 @@ func (t *stateTransaction) AppendChapter(previous, next Chapter, _ int64) error 
 		return ErrVersionConflict
 	}
 	t.state.chapter = next
+	t.state.versions = append(t.state.versions, ChapterVersion{ID: *next.CurrentVersionID, ProjectID: next.ProjectID,
+		ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown,
+		SourceIDs: slices.Clone(next.SourceIDs), ReviewItems: slices.Clone(next.ReviewItems), CreatedAt: time.Now().UTC()})
 	t.state.writes++
 	return nil
 }
@@ -410,7 +453,13 @@ func (t *stateTransaction) SaveOperation(id OperationIdentity, result OperationR
 	return nil
 }
 func fakeWorkspace() *stateRepository {
-	return &stateRepository{active: true, operations: map[OperationIdentity]OperationResult{}, project: Project{ID: "p", Status: "active", ProjectVersion: 1, SpecRevision: 1, Spec: map[string]string{}, Members: []Member{{UserID: "owner", Role: "owner"}}}, chapter: Chapter{ID: "c", ProjectID: "p", SourceIDs: []string{}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check me", OriginCandidateID: "candidate"}}}}
+	chapter := Chapter{ID: "c", ProjectID: "p", SourceIDs: []string{}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check me", OriginCandidateID: "candidate"}}}
+	now := time.Now().UTC()
+	return &stateRepository{active: true, operations: map[OperationIdentity]OperationResult{},
+		project: Project{ID: "p", Status: "active", ProjectVersion: 1, SpecRevision: 1, Spec: map[string]string{}, Members: []Member{{UserID: "owner", Role: "owner"}}},
+		chapter: chapter, workingCopy: WorkingCopy{ProjectID: "p", ChapterID: "c", SpecRevision: 1,
+			WorkingCopyRevision: 1, BodyMarkdown: chapter.BodyMarkdown, SourceIDs: []string{},
+			ReviewItems: slices.Clone(chapter.ReviewItems), UpdatedAt: now}}
 }
 func TestServiceRulesWithNonSQLStorage(t *testing.T) {
 	r := fakeWorkspace()

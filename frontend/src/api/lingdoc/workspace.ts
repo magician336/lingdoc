@@ -49,6 +49,67 @@ export interface Chapter {
   confirmation_valid: boolean
 }
 
+export interface WorkingCopy {
+  project_id: string
+  chapter_id: string
+  base_chapter_version_id: string | null
+  spec_revision: number
+  working_copy_revision: number
+  body_markdown: string
+  source_ids: string[]
+  review_items: ReviewItem[]
+  updated_at: string
+}
+
+export interface ChapterVersion {
+  id: string
+  project_id: string
+  chapter_id: string
+  parent_version_id: string | null
+  body_markdown: string
+  source_ids: string[]
+  review_items: ReviewItem[]
+  spec_revision: number
+  confirmation_valid: boolean
+  created_at: string
+}
+
+export interface CommittedChapterVersion {
+  chapter_version_id: string
+  parent_chapter_version_id: string | null
+  committed_working_copy_revision: number
+  next_working_copy_revision: number
+  spec_revision: number
+  body_markdown: string
+  source_ids: string[]
+  review_items: ReviewItem[]
+}
+
+export interface SelectedRewriteCandidate {
+  candidate_id: string
+  project_id: string
+  chapter_id: string
+  status: 'queued' | 'ready' | 'applying' | 'failed' | 'stale'
+  run_mode: 'mock' | 'real_api_fake_model' | 'real'
+  base_chapter_version_id: string | null
+  spec_revision: number
+  working_copy_revision: number
+  selection: { start_utf16: number; end_utf16: number; selected_text: string }
+  replacement_markdown: string
+  source_ids: string[]
+  authorized_sources: Array<{
+    source_id: string
+    asset_id: string
+    asset_revision: number
+    locator: string
+    quoted_text_hash: string
+    authorized_at: string
+  }>
+  review_items: ReviewItem[]
+  error_code: string
+  created_at: string
+}
+
 export interface Asset {
   id: string
   project_id: string
@@ -148,6 +209,53 @@ export const activateProject = (id: string, expected: number, key: string) =>
   post<Result<Project>>(`${base}/${segment(id)}/activate`,
     { expected_spec_revision: expected }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
+export const getWorkingCopy = (projectId: string, chapterId: string) =>
+  get<Result<WorkingCopy>>(`${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy`)
+export const saveWorkingCopy = (projectId: string, chapterId: string, input: {
+  base_chapter_version_id: string | null
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  body_markdown: string
+  source_ids: string[]
+}, key: string) => put<Result<WorkingCopy>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy`, input, keyHeader(key),
+)
+export const commitWorkingCopy = (projectId: string, chapterId: string, input: {
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  expected_chapter_version_id: string | null
+}, key: string) => post<Result<CommittedChapterVersion>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy/commit`, input, keyHeader(key),
+)
+export const listChapterVersions = (projectId: string, chapterId: string) =>
+  get<Result<{ items: ChapterVersion[] }>>(`${base}/${segment(projectId)}/chapters/${segment(chapterId)}/versions`)
+export const restoreWorkingCopy = (projectId: string, chapterId: string, input: {
+  chapter_version_id: string
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  expected_chapter_version_id: string | null
+}, key: string) => post<Result<WorkingCopy>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy/restore`, input, keyHeader(key),
+)
+export const createSelectedRewrite = (projectId: string, chapterId: string, input: {
+  base_chapter_version_id: string | null
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  selection: { start_utf16: number; end_utf16: number; selected_text: string }
+  instruction: string
+  source_ids: string[]
+}, key: string) => post<Result<SelectedRewriteCandidate>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates`, input, keyHeader(key),
+)
+export const getSelectedRewrite = (projectId: string, candidateId: string) =>
+  get<Result<SelectedRewriteCandidate>>(`${base}/${segment(projectId)}/rewrite-candidates/${segment(candidateId)}`)
+export const applySelectedRewrite = (projectId: string, chapterId: string, candidateId: string, input: {
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  base_chapter_version_id: string | null
+}, key: string) => post<Result<WorkingCopy>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates/${segment(candidateId)}/apply`, input, keyHeader(key),
+)
 export const getAccessStatus = (id: string) => get<Result<AccessStatus>>(`${base}/${segment(id)}/access-status`)
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const bindAsset = (id: string, knowledgeId: string, key: string) =>

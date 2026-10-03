@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"gorm.io/gorm"
 	"strings"
+	"time"
 )
 
 // GORMRepository implements atomic persistence, not application rules.
@@ -291,6 +292,101 @@ func (t gormTransaction) Chapter(projectID, chapterID string) (Chapter, error) {
 	}
 	return chapterView(t.db, row, project)
 }
+
+func decodeVersionRow(row chapterVersionRow) (ChapterVersion, error) {
+	version := ChapterVersion{ID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+		ParentVersionID: row.ParentVersionID, BodyMarkdown: row.BodyMarkdown,
+		SpecRevision: row.SpecRevision, ConfirmationValid: row.ConfirmationValid, CreatedAt: row.CreatedAt,
+		SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &version.SourceIDs); err != nil {
+		return ChapterVersion{}, err
+	}
+	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &version.ReviewItems); err != nil {
+		return ChapterVersion{}, err
+	}
+	if version.SourceIDs == nil {
+		version.SourceIDs = []string{}
+	}
+	if version.ReviewItems == nil {
+		version.ReviewItems = []ReviewItem{}
+	}
+	return version, nil
+}
+
+func (t gormTransaction) ChapterVersion(projectID, chapterID, versionID string) (ChapterVersion, error) {
+	var row chapterVersionRow
+	if err := t.db.Where("id = ? AND project_id = ? AND chapter_id = ?", versionID, projectID, chapterID).First(&row).Error; err != nil {
+		return ChapterVersion{}, storageError(err)
+	}
+	return decodeVersionRow(row)
+}
+
+func (t gormTransaction) ChapterVersions(projectID, chapterID string) ([]ChapterVersion, error) {
+	var rows []chapterVersionRow
+	if err := t.db.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).Order("created_at DESC, id DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	versions := make([]ChapterVersion, 0, len(rows))
+	for _, row := range rows {
+		version, err := decodeVersionRow(row)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, version)
+	}
+	return versions, nil
+}
+
+func workingCopyView(row workingCopyRow) (WorkingCopy, error) {
+	copy := WorkingCopy{ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+		BaseChapterVersionID: row.BaseChapterVersionID, SpecRevision: row.SpecRevision,
+		WorkingCopyRevision: row.WorkingCopyRevision, BodyMarkdown: row.BodyMarkdown,
+		UpdatedAt: row.UpdatedAt, SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &copy.SourceIDs); err != nil {
+		return WorkingCopy{}, err
+	}
+	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &copy.ReviewItems); err != nil {
+		return WorkingCopy{}, err
+	}
+	if copy.SourceIDs == nil {
+		copy.SourceIDs = []string{}
+	}
+	if copy.ReviewItems == nil {
+		copy.ReviewItems = []ReviewItem{}
+	}
+	return copy, nil
+}
+
+func (t gormTransaction) WorkingCopy(projectID, chapterID string) (WorkingCopy, error) {
+	var row workingCopyRow
+	if err := t.db.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).First(&row).Error; err != nil {
+		return WorkingCopy{}, storageError(err)
+	}
+	return workingCopyView(row)
+}
+
+func (t gormTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
+	sources, err := json.Marshal(next.SourceIDs)
+	if err != nil {
+		return err
+	}
+	review, err := json.Marshal(next.ReviewItems)
+	if err != nil {
+		return err
+	}
+	query := t.db.Model(&workingCopyRow{}).Where("project_id = ? AND chapter_id = ? AND spec_revision = ? AND working_copy_revision = ?",
+		previous.ProjectID, previous.ChapterID, previous.SpecRevision, previous.WorkingCopyRevision)
+	if previous.BaseChapterVersionID == nil {
+		query = query.Where("base_chapter_version_id IS NULL")
+	} else {
+		query = query.Where("base_chapter_version_id = ?", *previous.BaseChapterVersionID)
+	}
+	return affected(query.Updates(map[string]any{
+		"base_chapter_version_id": next.BaseChapterVersionID, "spec_revision": next.SpecRevision,
+		"working_copy_revision": next.WorkingCopyRevision, "body_markdown": next.BodyMarkdown,
+		"source_ids_json": string(sources), "review_items_json": string(review), "updated_at": next.UpdatedAt,
+	}))
+}
 func (t gormTransaction) Chapters(projectID string) ([]Chapter, error) {
 	var rows []chapterRow
 	if err := t.db.Where("project_id = ?", projectID).Order("section_id").Find(&rows).Error; err != nil {
@@ -311,7 +407,32 @@ func (t gormTransaction) Chapters(projectID string) ([]Chapter, error) {
 	return views, nil
 }
 func (t gormTransaction) InsertChapter(c Chapter) error {
-	return t.db.Create(&chapterRow{ID: c.ID, ProjectID: c.ProjectID, SectionID: c.SectionID, Title: c.Title}).Error
+	var project projectRow
+	if err := t.db.Where("id = ?", c.ProjectID).First(&project).Error; err != nil {
+		return storageError(err)
+	}
+	chapter := chapterRow{ID: c.ID, ProjectID: c.ProjectID, SectionID: c.SectionID, Title: c.Title}
+	if err := t.db.Create(&chapter).Error; err != nil {
+		return err
+	}
+	sources, err := json.Marshal(c.SourceIDs)
+	if err != nil {
+		return err
+	}
+	if c.SourceIDs == nil {
+		sources = []byte("[]")
+	}
+	review, err := json.Marshal(c.ReviewItems)
+	if err != nil {
+		return err
+	}
+	if c.ReviewItems == nil {
+		review = []byte("[]")
+	}
+	now := time.Now().UTC()
+	return t.db.Create(&workingCopyRow{ProjectID: c.ProjectID, ChapterID: c.ID,
+		SpecRevision: project.SpecRevision, WorkingCopyRevision: 1, BodyMarkdown: c.BodyMarkdown,
+		SourceIDsJSON: string(sources), ReviewItemsJSON: string(review), CreatedAt: now, UpdatedAt: now}).Error
 }
 func (t gormTransaction) AppendChapter(previous, next Chapter, specRevision int64) error {
 	sources, err := json.Marshal(next.SourceIDs)

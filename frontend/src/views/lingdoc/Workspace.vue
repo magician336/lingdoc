@@ -208,11 +208,48 @@
           </div>
           <form v-if="chapter" @submit.prevent="saveText" class="chapter-form">
             <label for="chapter-body">{{ chapter.title }}正文</label>
-            <textarea id="chapter-body" v-model="bodyDraft" :disabled="busy" rows="12" placeholder="从这里开始撰写章节" />
-            <p v-if="chapter.review_items.length" class="warning">本章有 {{ chapter.review_items.length }} 条待核事项。保存修改会保留这些事项，仍需逐项核查。</p>
-            <section v-if="chapter.review_items.length" class="review-items" aria-label="待核项处置">
+            <textarea id="chapter-body" v-model="bodyDraft" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading" @input="scheduleWorkingCopySave" rows="12" placeholder="从这里开始撰写章节" />
+            <section class="selected-rewrite" aria-label="选段改写">
+              <h4>选段 AI 改写</h4>
+              <p class="muted">先在正文中选中一段，再填写改写要求。生成只会产生候选，不会直接改正文。</p>
+              <label for="rewrite-instruction">改写要求</label>
+              <textarea id="rewrite-instruction" v-model="rewriteInstruction" :disabled="busy || rewriteBusy" rows="2" maxlength="2000" />
+              <fieldset class="rewrite-sources">
+                <legend>允许候选使用的来源</legend>
+                <label v-for="source in sources" :key="source.id" class="rewrite-source">
+                  <input type="checkbox" :checked="rewriteSourceIds.includes(source.id)" :disabled="source.status !== 'available' || rewriteBusy"
+                    @change="toggleRewriteSource(source.id, $event)" />
+                  <span>{{ source.locator }}<small>{{ source.quoted_text.slice(0, 120) }}</small></span>
+                </label>
+                <p v-if="!sources.length" class="muted">先检索项目资料，或在已有正文中保留来源标记。</p>
+              </fieldset>
+              <button type="button" @click="requestSelectedRewrite" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading || !workingCopy">
+                {{ rewriteBusy ? '正在生成候选…' : '改写选中段落' }}
+              </button>
+              <section v-if="rewriteCandidate" class="rewrite-preview" aria-live="polite">
+                <p class="muted">候选状态：{{ rewriteCandidate.status }} · 运行模式：{{ rewriteCandidate.run_mode }}</p>
+                <p v-if="rewriteCandidate.status === 'failed'" class="warning">候选生成失败（{{ rewriteCandidate.error_code || 'unknown' }}）；可以修改要求后重新生成。</p>
+                <p v-else-if="rewriteCandidate.status === 'stale'" class="warning">候选基于旧工作副本或来源，不能采纳；请重新选择并生成。</p>
+                <template v-else-if="rewriteCandidate.status === 'ready' || rewriteCandidate.status === 'applying'">
+                  <h5>原文选段</h5>
+                  <pre>{{ rewriteCandidate.selection.selected_text }}</pre>
+                  <h5>改写候选</h5>
+                  <pre>{{ rewriteCandidate.replacement_markdown }}</pre>
+                  <p class="muted">候选来源：{{ rewriteCandidate.source_ids.length ? rewriteCandidate.source_ids.join('、') : '无' }}</p>
+                  <ul v-if="rewriteCandidate.review_items.length" class="rewrite-review-list">
+                    <li v-for="item in rewriteCandidate.review_items" :key="item.id">待核：{{ item.statement }}</li>
+                  </ul>
+                  <button type="button" @click="applyRewriteCandidate" :disabled="rewriteBusy || busy || bodyChanged || !workingCopy || (rewriteCandidate.status !== 'applying' && workingCopy.working_copy_revision !== rewriteCandidate.working_copy_revision)">
+                    {{ rewriteCandidate.status === 'applying' ? '重试确认采纳结果' : '接受并应用到工作副本' }}
+                  </button>
+                  <button type="button" @click="rejectRewriteCandidate" :disabled="rewriteBusy || busy || rewriteCandidate.status === 'applying'">拒绝候选</button>
+                </template>
+              </section>
+            </section>
+            <p v-if="displayedReviewItems.length" class="warning">本章有 {{ displayedReviewItems.length }} 条待核事项。保存修改会保留这些事项，仍需逐项核查。</p>
+            <section v-if="displayedReviewItems.length" class="review-items" aria-label="待核项处置">
               <h4>逐项处置待核事项</h4>
-              <fieldset v-for="item in chapter.review_items" :key="item.id" class="review-item">
+              <fieldset v-for="item in displayedReviewItems" :key="item.id" class="review-item">
                 <legend>{{ item.statement }}</legend>
                 <label :for="`disposition-${item.id}`">处理结果</label>
                 <select :id="`disposition-${item.id}`" v-model="reviewDraft(item.id).disposition" :disabled="busy">
@@ -225,16 +262,32 @@
             </section>
             <p v-if="!chapter.current_version_id" class="muted">空章节尚无可确认版本；仍可继续交付检查，检查结果会指出内容缺失。</p>
             <p v-else-if="chapter.confirmation_valid" class="confirmed">当前章节版本已确认。保存新版本后需要重新确认。</p>
-            <p v-else-if="bodyChanged" class="muted">正文有未保存修改，请先保存为新版本，再确认当前版本。</p>
+            <p v-else-if="workingCopyDiffersFromFormal" class="muted">工作副本与正式版本不同；保存工作副本不会创建正式版本。</p>
             <button v-if="chapter.current_version_id" type="button" @click="confirmCurrentChapter"
-              :disabled="busy || bodyChanged || !reviewDecisionsReady">
+              :disabled="busy || workingCopySaving || bodyChanged || workingCopyDiffersFromFormal || !reviewDecisionsReady">
               {{ chapter.confirmation_valid ? '重新确认当前版本' : '确认当前章节版本' }}
             </button>
             <p v-if="draftCitations.malformed" class="warning">{{ MALFORMED_CITATION_MESSAGE }}</p>
             <p v-else-if="draftCitations.sourceIds.length" class="muted">
               本章引用 {{ draftCitations.sourceIds.length }} 条来源。保存时会逐条复核；删掉正文里的标记就等于放弃那一条。
             </p>
-            <button type="submit" :disabled="busy || !bodyChanged">保存为新版本</button>
+            <p v-if="workingCopy" class="muted" role="status">
+              工作副本修订 {{ workingCopy.working_copy_revision }} · {{ workingCopyStatusLabel }}
+              <span v-if="workingCopy.updated_at">· {{ new Date(workingCopy.updated_at).toLocaleString() }}</span>
+            </p>
+            <button type="submit" :disabled="busy || workingCopySaving || !bodyChanged">保存工作副本</button>
+            <button type="button" @click="commitDraft" :disabled="busy || workingCopySaving || bodyChanged || !workingCopyDiffersFromFormal">
+              提交为正式版本
+            </button>
+            <section v-if="chapterVersions.length" class="chapter-history" aria-label="章节版本历史">
+              <h4>正式版本历史</h4>
+              <ul>
+                <li v-for="version in chapterVersions" :key="version.id">
+                  <span>{{ new Date(version.created_at).toLocaleString() }} · {{ version.id.slice(0, 8) }}<small v-if="version.id === chapter.current_version_id"> · 当前版本</small></span>
+                  <button type="button" :disabled="busy || workingCopySaving" @click="restoreVersion(version)">恢复到工作副本</button>
+                </li>
+              </ul>
+            </section>
           </form>
         </div>
 
@@ -263,9 +316,12 @@ import {
 } from './sourceContext'
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
 import {
-  activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource,
-  getSourceContext, listAssets, listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
-  type AccessStatus, type Asset, type Chapter, type Project, type ReviewDecision, type Source, type SourceContext,
+  activateProject, bindAsset, commitWorkingCopy, confirmChapter, createProject, getAccessStatus, getProject,
+  getSource, getSourceContext, getWorkingCopy, listAssets, listChapterVersions, listChapters, listProjects,
+  applySelectedRewrite, createSelectedRewrite, getSelectedRewrite,
+  restoreWorkingCopy, retrieveSources, saveSpec, saveWorkingCopy,
+  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type Project, type ReviewDecision,
+  type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -287,6 +343,15 @@ const contextSourceId = ref('')
 const sourceContext = ref<SourceContext | null>(null)
 const contextBusy = ref(false)
 const chapter = ref<Chapter | null>(null)
+const workingCopy = ref<WorkingCopy | null>(null)
+const chapterVersions = ref<ChapterVersion[]>([])
+const workingCopySaving = ref(false)
+const workingCopyStatus = ref<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
+const workingCopyLoading = ref(false)
+const rewriteCandidate = ref<SelectedRewriteCandidate | null>(null)
+const rewriteInstruction = ref('在不增加无依据结论的前提下，提升表达清晰度与逻辑衔接。')
+const rewriteSourceIds = ref<string[]>([])
+const rewriteBusy = ref(false)
 const newName = ref('')
 const subject = ref('')
 const goal = ref('')
@@ -323,6 +388,7 @@ const contextReason = computed(() => contextNotice(sourceContext.value))
 const contextRows = computed(() => contextLines(sourceContext.value))
 
 let generationTimer: ReturnType<typeof setTimeout> | undefined
+let workingCopyTimer: ReturnType<typeof setTimeout> | undefined
 
 // Keep one key for a retry of the exact same operation and body.
 const attempts = new Map<string, { body: string; key: string }>()
@@ -339,7 +405,17 @@ const specChanged = computed(() => !!project.value && (
   subject.value !== (project.value.spec.research_subject ?? '') ||
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
-const bodyChanged = computed(() => !!chapter.value && bodyDraft.value !== chapter.value.body_markdown)
+const bodyChanged = computed(() => !!workingCopy.value && bodyDraft.value !== workingCopy.value.body_markdown)
+const workingCopyDiffersFromFormal = computed(() => !!workingCopy.value && !!chapter.value && (
+  workingCopy.value.body_markdown !== chapter.value.body_markdown ||
+  JSON.stringify([...workingCopy.value.source_ids].sort()) !== JSON.stringify([...chapter.value.source_ids].sort()) ||
+  JSON.stringify(workingCopy.value.review_items) !== JSON.stringify(chapter.value.review_items) ||
+  workingCopy.value.base_chapter_version_id !== chapter.value.current_version_id
+))
+const displayedReviewItems = computed(() => workingCopy.value?.review_items ?? chapter.value?.review_items ?? [])
+const workingCopyStatusLabel = computed(() => ({
+  saved: '已保存', unsaved: '有待保存修改', saving: '保存中…', error: '保存失败，输入仍保留',
+}[workingCopyStatus.value]))
 
 // 正文里的来源标记：提取与体检一次算完。模板因此不必自己去拆这个联合类型。
 const draftCitations = computed(() => {
@@ -385,6 +461,39 @@ async function loadProjects() {
   finally { loading.value = false }
 }
 
+async function loadChapterDraft(projectId: string, chapterId: string) {
+  workingCopyLoading.value = true
+  try {
+    const [copyResult, versionResult] = await Promise.all([
+      getWorkingCopy(projectId, chapterId), listChapterVersions(projectId, chapterId),
+    ])
+    if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
+    workingCopy.value = copyResult.data
+    chapterVersions.value = versionResult.data.items
+    bodyDraft.value = copyResult.data.body_markdown
+    workingCopyStatus.value = 'saved'
+  } catch (error) {
+    workingCopyStatus.value = 'error'
+    failure(error)
+  } finally {
+    if (project.value?.id === projectId && chapter.value?.id === chapterId) workingCopyLoading.value = false
+  }
+}
+
+function scheduleWorkingCopySave() {
+  if (!workingCopy.value || !chapter.value || !project.value) return
+  if (workingCopyTimer) clearTimeout(workingCopyTimer)
+  if (!bodyChanged.value) {
+    workingCopyStatus.value = 'saved'
+    return
+  }
+  workingCopyStatus.value = 'unsaved'
+  workingCopyTimer = setTimeout(() => {
+    workingCopyTimer = undefined
+    void saveText()
+  }, 900)
+}
+
 async function create() {
   if (busy.value) return
   busy.value = true
@@ -407,6 +516,8 @@ async function selectProject(id: string, force = false) {
   if (force && (specChanged.value || bodyChanged.value) &&
       !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
   if (generationTimer) clearTimeout(generationTimer)
+  if (workingCopyTimer) clearTimeout(workingCopyTimer)
+  workingCopyTimer = undefined
   generationRun.value = null
   generationCandidate.value = null
   generationCandidates.value = []
@@ -430,7 +541,15 @@ async function selectProject(id: string, force = false) {
     bindingNoticeText.value = ''
     closeSourceContext()
     chapter.value = chapters.value[0] ?? null
+    workingCopy.value = null
+    chapterVersions.value = []
+    rewriteCandidate.value = null
+    rewriteSourceIds.value = []
     bodyDraft.value = chapter.value?.body_markdown ?? ''
+    if (chapter.value) {
+      await loadChapterDraft(id, chapter.value.id)
+      await loadSavedRewriteCandidate(id, chapter.value.id)
+    }
     await loadGenerationCandidates(chapter.value?.id)
     await resumeGeneration()
   } catch (error) { failure(error) }
@@ -618,9 +737,15 @@ async function activate() {
 
 function selectChapter(item: Chapter) {
   if (bodyChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
+  if (workingCopyTimer) clearTimeout(workingCopyTimer)
+  workingCopyTimer = undefined
   if (generationTimer) clearTimeout(generationTimer)
   generationTimer = undefined
   chapter.value = item
+  workingCopy.value = null
+  chapterVersions.value = []
+  rewriteCandidate.value = null
+  rewriteSourceIds.value = []
   bodyDraft.value = item.body_markdown
   errorMessage.value = ''
   generationRun.value = null
@@ -629,6 +754,8 @@ function selectChapter(item: Chapter) {
   // 对话框挂着上一个章节的幂等键与失败文案时，props 会被换成新的章节而组件不会重建
   //（同一位置、同一类型）。关掉它，保证每次打开都是干净的一份。
   adoptionOpen.value = false
+  if (project.value) void loadChapterDraft(project.value.id, item.id)
+  if (project.value) void loadSavedRewriteCandidate(project.value.id, item.id)
   void loadGenerationCandidates(item.id)
   void resumeGeneration()
 }
@@ -678,6 +805,8 @@ async function onAdopted(adopted: Chapter) {
   chapter.value = adopted
   // 不同步的话 bodyChanged 为真、保存按钮亮着，用户一点就把刚采纳的正文又存成一版。
   bodyDraft.value = adopted.body_markdown
+  workingCopy.value = null
+  clearRewriteCandidate(projectId, chapterId)
   // 待核项已经换成候选自带那一份，为本章编的逐项处置不再适用。只清本章的：
   // 别的章节的草稿是用户刚写的理由，采纳这一章不该把它抹掉。
   for (const key of Object.keys(reviewDrafts.value)) {
@@ -691,6 +820,7 @@ async function onAdopted(adopted: Chapter) {
     project.value = refreshed.data
     // 旧候选的 validity 是按旧版本算出来的，不重读会继续显示一条已经不成立的 fresh。
     generationCandidates.value = candidates.data
+    await loadChapterDraft(projectId, chapterId)
   } catch (error) { failure(error) }
 }
 
@@ -743,7 +873,7 @@ async function cancelGenerationRun() {
 }
 
 async function confirmCurrentChapter() {
-  if (!project.value || !chapter.value?.current_version_id || busy.value || bodyChanged.value || !reviewDecisionsReady.value) return
+  if (!project.value || !chapter.value?.current_version_id || busy.value || workingCopySaving.value || bodyChanged.value || workingCopyDiffersFromFormal.value || !reviewDecisionsReady.value) return
   const current = chapter.value
   const expectedVersion = current.current_version_id
   if (!expectedVersion) return
@@ -780,6 +910,10 @@ async function confirmCurrentChapter() {
 
 async function startDraft() {
   if (!project.value || !chapter.value || busy.value || !selectedAssetIds.value.length || !generationInstruction.value.trim()) return
+  if (workingCopyDiffersFromFormal.value) {
+    errorMessage.value = '请先提交或恢复当前工作副本，再基于正式版本生成整章候选。'
+    return
+  }
   busy.value = true
   errorMessage.value = ''
   const projectId = project.value.id
@@ -804,7 +938,7 @@ async function startDraft() {
 }
 
 async function saveText() {
-  if (!project.value || !chapter.value || busy.value) return
+  if (!project.value || !chapter.value || busy.value || workingCopySaving.value || !workingCopy.value) return
   // 引用从正文里读，与服务端用同一条规则。写坏的标记在本地就拦下：服务端也会判 400，
   // 但「请求字段不符合约定」说不清是哪里坏了，而这一刻我们完全知道。
   const citations = chapterCitations(bodyDraft.value)
@@ -812,32 +946,211 @@ async function saveText() {
     errorMessage.value = MALFORMED_CITATION_MESSAGE
     return
   }
+  workingCopySaving.value = true
+  workingCopyStatus.value = 'saving'
+  errorMessage.value = ''
+  const projectId = project.value.id
+  const chapterId = chapter.value.id
+  const input = {
+    base_chapter_version_id: workingCopy.value.base_chapter_version_id,
+    expected_spec_revision: project.value.spec_revision,
+    expected_working_copy_revision: workingCopy.value.working_copy_revision,
+    body_markdown: bodyDraft.value,
+    source_ids: citations.sourceIds,
+  }
+  const key = operationKey(`working-copy:${chapterId}`, input)
+  try {
+    const result = await saveWorkingCopy(projectId, chapterId, input, key)
+    attempts.delete(`working-copy:${chapterId}`)
+    if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
+    workingCopy.value = result.data
+    workingCopyStatus.value = 'saved'
+    clearRewriteCandidate(projectId, chapterId)
+    if (result.meta.refresh_required) {
+      errorMessage.value = '工作副本已保存，但服务端要求刷新状态；请重新读取后继续。'
+      await loadChapterDraft(projectId, chapterId)
+    }
+  } catch (error) {
+    workingCopyStatus.value = 'error'
+    failure(error)
+  } finally {
+    workingCopySaving.value = false
+  }
+}
+
+function rewriteCandidateStorageKey(projectId: string, chapterId: string) {
+  return `lingdoc:selected-rewrite:${projectId}:${chapterId}`
+}
+
+function clearRewriteCandidate(projectId = project.value?.id, chapterId = chapter.value?.id) {
+  if (projectId && chapterId) localStorage.removeItem(rewriteCandidateStorageKey(projectId, chapterId))
+  rewriteCandidate.value = null
+}
+
+async function loadSavedRewriteCandidate(projectId: string, chapterId: string) {
+  const storageKey = rewriteCandidateStorageKey(projectId, chapterId)
+  const candidateId = localStorage.getItem(storageKey)
+  if (!candidateId) return
+  try {
+    const result = await getSelectedRewrite(projectId, candidateId)
+    if (project.value?.id === projectId && chapter.value?.id === chapterId) rewriteCandidate.value = result.data
+  } catch {
+    localStorage.removeItem(storageKey)
+  }
+}
+
+function toggleRewriteSource(sourceId: string, event: Event) {
+  const checked = (event.target as HTMLInputElement).checked
+  const next = new Set(rewriteSourceIds.value)
+  if (checked) next.add(sourceId)
+  else next.delete(sourceId)
+  rewriteSourceIds.value = [...next].sort()
+}
+
+async function requestSelectedRewrite() {
+  if (!project.value || !chapter.value || !workingCopy.value || rewriteBusy.value || busy.value) return
+  const editor = document.getElementById('chapter-body') as HTMLTextAreaElement | null
+  const start = editor?.selectionStart ?? -1
+  const end = editor?.selectionEnd ?? -1
+  if (start < 0 || end <= start) {
+    errorMessage.value = '请先在正文编辑框中选中要改写的文字。'
+    return
+  }
+  const selection = { start_utf16: start, end_utf16: end, selected_text: bodyDraft.value.slice(start, end) }
+  if (!selection.selected_text.trim()) {
+    errorMessage.value = '选中的内容为空白，请选择一段正文。'
+    return
+  }
+  if (!rewriteInstruction.value.trim()) {
+    errorMessage.value = '请填写改写要求。'
+    return
+  }
+  const projectId = project.value.id
+  const chapterId = chapter.value.id
+  if (bodyChanged.value) {
+    if (workingCopyTimer) clearTimeout(workingCopyTimer)
+    workingCopyTimer = undefined
+    await saveText()
+    if (bodyChanged.value || workingCopyStatus.value === 'error') return
+  }
+  if (!workingCopy.value || !project.value || project.value.id !== projectId || chapter.value?.id !== chapterId) return
+  const input = {
+    base_chapter_version_id: workingCopy.value.base_chapter_version_id,
+    expected_spec_revision: project.value.spec_revision,
+    expected_working_copy_revision: workingCopy.value.working_copy_revision,
+    selection,
+    instruction: rewriteInstruction.value.trim(),
+    source_ids: [...rewriteSourceIds.value].sort(),
+  }
+  const keyName = `selected-rewrite:${projectId}:${chapterId}`
+  const key = operationKey(keyName, input)
+  clearRewriteCandidate(projectId, chapterId)
+  rewriteBusy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await createSelectedRewrite(projectId, chapterId, input, key)
+    attempts.delete(keyName)
+    if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
+    rewriteCandidate.value = result.data
+    localStorage.setItem(rewriteCandidateStorageKey(projectId, chapterId), result.data.candidate_id)
+  } catch (error) { failure(error) }
+  finally { rewriteBusy.value = false }
+}
+
+async function applyRewriteCandidate() {
+  if (!project.value || !chapter.value || !workingCopy.value || !rewriteCandidate.value || rewriteBusy.value || busy.value || bodyChanged.value) return
+  const candidate = rewriteCandidate.value
+  if (candidate.status !== 'ready' && candidate.status !== 'applying') return
+  if (candidate.status !== 'applying' && workingCopy.value.working_copy_revision !== candidate.working_copy_revision) return
+  if (!window.confirm('只把候选替换到所选文字，并保存为工作副本；不会创建正式版本。确定接受吗？')) return
+  const projectId = project.value.id
+  const chapterId = chapter.value.id
+  const input = {
+    expected_spec_revision: candidate.spec_revision,
+    expected_working_copy_revision: candidate.working_copy_revision,
+    base_chapter_version_id: candidate.base_chapter_version_id,
+  }
+  const keyName = `apply-selected-rewrite:${candidate.candidate_id}`
+  const key = `apply-${candidate.candidate_id}`
+  rewriteBusy.value = true
+  errorMessage.value = ''
+  try {
+    const result = await applySelectedRewrite(projectId, chapterId, candidate.candidate_id, input, key)
+    attempts.delete(keyName)
+    if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
+    workingCopy.value = result.data
+    bodyDraft.value = result.data.body_markdown
+    workingCopyStatus.value = 'saved'
+    clearRewriteCandidate(projectId, chapterId)
+    if (result.meta.refresh_required) await loadChapterDraft(projectId, chapterId)
+  } catch (error) { failure(error) }
+  finally { rewriteBusy.value = false }
+}
+
+function rejectRewriteCandidate() {
+  clearRewriteCandidate()
+}
+
+async function commitDraft() {
+  if (!project.value || !chapter.value || !workingCopy.value || busy.value || workingCopySaving.value || bodyChanged.value) return
+  if (!workingCopyDiffersFromFormal.value) return
+  if (!window.confirm('将当前工作副本提交为新的正式章节版本？提交后需要重新确认本章。')) return
   busy.value = true
   errorMessage.value = ''
   const projectId = project.value.id
   const chapterId = chapter.value.id
   const input = {
-    expected_chapter_version_id: chapter.value.current_version_id,
     expected_spec_revision: project.value.spec_revision,
-    body_markdown: bodyDraft.value,
-    source_ids: citations.sourceIds,
+    expected_working_copy_revision: workingCopy.value.working_copy_revision,
+    expected_chapter_version_id: chapter.value.current_version_id,
   }
-  const key = operationKey(`chapter:${chapterId}`, input)
+  const key = operationKey(`commit-working-copy:${chapterId}`, input)
   try {
-    const result = await saveChapter(projectId, chapterId, input, key)
-    attempts.delete(`chapter:${chapterId}`)
-    const current = chapters.value.findIndex(item => item.id === chapterId)
-    if (current >= 0) chapters.value[current] = result.data
-    chapter.value = result.data
-    const refreshed = await getProject(projectId)
-    project.value = refreshed.data
-    if (result.meta.refresh_required) await selectProject(projectId)
+    await commitWorkingCopy(projectId, chapterId, input, key)
+    attempts.delete(`commit-working-copy:${chapterId}`)
+    const [projectResult, chapterResult] = await Promise.all([getProject(projectId), listChapters(projectId)])
+    if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
+    project.value = projectResult.data
+    chapters.value = chapterResult.data
+    chapter.value = chapterResult.data.find(item => item.id === chapterId) ?? null
+    if (chapter.value) await loadChapterDraft(projectId, chapterId)
+    clearRewriteCandidate(projectId, chapterId)
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function restoreVersion(version: ChapterVersion) {
+  if (!project.value || !chapter.value || !workingCopy.value || busy.value || workingCopySaving.value) return
+  if (bodyChanged.value && !window.confirm('当前还有未保存输入；继续恢复会覆盖编辑框内容，确定吗？')) return
+  if (!window.confirm('将此历史版本恢复到工作副本？历史记录不会被改写；若要生效，还需提交为正式版本。')) return
+  busy.value = true
+  errorMessage.value = ''
+  const projectId = project.value.id
+  const chapterId = chapter.value.id
+  const input = {
+    chapter_version_id: version.id,
+    expected_spec_revision: project.value.spec_revision,
+    expected_working_copy_revision: workingCopy.value.working_copy_revision,
+    expected_chapter_version_id: chapter.value.current_version_id,
+  }
+  const key = operationKey(`restore-working-copy:${chapterId}`, input)
+  try {
+    const result = await restoreWorkingCopy(projectId, chapterId, input, key)
+    attempts.delete(`restore-working-copy:${chapterId}`)
+    if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
+    workingCopy.value = result.data
+    bodyDraft.value = result.data.body_markdown
+    workingCopyStatus.value = 'saved'
+    clearRewriteCandidate(projectId, chapterId)
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
 
 onMounted(loadProjects)
-onUnmounted(() => { if (generationTimer) clearTimeout(generationTimer) })
+onUnmounted(() => {
+  if (generationTimer) clearTimeout(generationTimer)
+  if (workingCopyTimer) clearTimeout(workingCopyTimer)
+})
 </script>
 
 <style scoped>

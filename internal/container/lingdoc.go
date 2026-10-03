@@ -31,15 +31,17 @@ func NewLingDocWorkspaceHandler(
 	kbShares interfaces.KBShareService,
 	knowledge interfaces.KnowledgeBaseService,
 	audit interfaces.AuditLogService,
+	models interfaces.ModelService,
 ) LingDocWorkspace {
 	auditSink := workspaceAuditSink{service: audit}
 	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge, auditSink)
 	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy(), nil, auditSink)
 	runtime.ConnectProjects(projectService)
 	handler := workspace.NewHandler(workspace.HandlerDependencies{
-		Service:     projectService,
-		Sources:     runtime,
-		Integration: runtime,
+		Service:          projectService,
+		Sources:          runtime,
+		Integration:      runtime,
+		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models)),
 	})
 	return LingDocWorkspace{Handler: handler, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}
 }
