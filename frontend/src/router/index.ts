@@ -69,6 +69,12 @@ const router = createRouter({
       meta: { requiresAuth: false, requiresInit: false }
     },
     {
+      path: "/demo/permissions",
+      name: "lingdocPermissionEvidenceDemo",
+      component: () => import("../views/lingdoc/PermissionEvidence.vue"),
+      meta: { requiresAuth: false, requiresInit: false, publicDemo: true }
+    },
+    {
       path: "/onboarding/workspace",
       name: "workspaceOnboarding",
       component: () => import("../views/auth/WorkspaceOnboarding.vue"),
@@ -120,6 +126,12 @@ const router = createRouter({
           path: "lingdoc",
           name: "lingdocWorkspace",
           component: () => import("../views/lingdoc/Workspace.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
+          path: "lingdoc/permissions",
+          name: "lingdocPermissionEvidence",
+          component: () => import("../views/lingdoc/PermissionEvidence.vue"),
           meta: { requiresInit: true, requiresAuth: true }
         },
         {

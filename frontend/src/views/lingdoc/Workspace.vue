@@ -5,7 +5,10 @@
         <h1>灵档项目</h1>
         <p>当前使用两章演示模板，内容仅供团队验证流程。</p>
       </div>
-      <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+      <div class="workspace-head__actions">
+        <RouterLink class="evidence-link" to="/platform/lingdoc/permissions">权限验收</RouterLink>
+        <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+      </div>
     </header>
 
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
@@ -841,6 +844,9 @@ onUnmounted(() => { if (generationTimer) clearTimeout(generationTimer) })
 </script>
 
 <style scoped>
+.workspace-head__actions { display: flex; gap: 10px; align-items: center; }
+.evidence-link { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid #0b8c91; border-radius: 7px; color: #0b6e71; background: #e5f6f2; text-decoration: none; }
+.evidence-link:hover { background: #d5f0ea; }
 .lingdoc-workspace { max-width: 1200px; margin: 0 auto; padding: 32px; color: #24342e; }
 .workspace-head, .section-head, .actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 h1 { margin: 0 0 8px; font-size: 28px; } h2 { margin: 0 0 12px; font-size: 20px; } h3 { margin: 22px 0 14px; font-size: 17px; }
