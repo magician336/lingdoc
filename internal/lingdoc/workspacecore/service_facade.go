@@ -696,7 +696,8 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 		if err != nil {
 			return nil, 0, err
 		}
-		if actor.UserID != currentOwner || !ownerActive {
+		isRecoveryAdmin := actor.SystemAdmin || actor.TenantRole == "admin" || actor.TenantRole == "owner"
+		if actor.UserID != currentOwner && !(isRecoveryAdmin && !ownerActive) {
 			return nil, 0, ErrNotFound
 		}
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.Status == "archived" {

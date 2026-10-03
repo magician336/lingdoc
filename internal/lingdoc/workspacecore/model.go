@@ -157,8 +157,10 @@ type GenerationContext struct {
 }
 
 type Actor struct {
-	TenantID uint64
-	UserID   string
+	TenantID    uint64
+	UserID      string
+	TenantRole  string
+	SystemAdmin bool
 }
 
 type Section struct {

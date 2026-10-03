@@ -165,6 +165,31 @@ func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	}
 }
 
+func TestG1AdminCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-recovery.db"))
+	owner := Actor{TenantID: 88, UserID: "owner"}
+	target := Actor{TenantID: 88, UserID: "target"}
+	admin := Actor{TenantID: 88, UserID: "admin", TenantRole: "admin"}
+	seedTenantMember(t, svc, owner)
+	seedTenantMember(t, svc, target)
+	seedTenantMember(t, svc, admin)
+	created, _, _, err := svc.CreateProject(context.Background(), owner, "g1-create-recovery-08", CreateProjectInput{Name: "G1 recovery", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	if err := svc.repository.(*GORMRepository).db.Exec("UPDATE tenant_members SET status = ? WHERE tenant_id = ? AND user_id = ?", "suspended", owner.TenantID, owner.UserID).Error; err != nil {
+		t.Fatal(err)
+	}
+	raw, _, _, err := svc.RequestOwnerTransfer(context.Background(), admin, project.ID, "g1-recovery-transfer-08", OwnerTransferInput{ToUserID: target.UserID, ExpectedProjectVersion: project.ProjectVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rawOwnerTransfer(t, raw).FromUserID != owner.UserID {
+		t.Fatalf("recovery transfer = %s", raw)
+	}
+}
+
 type g1TemplateReader struct{}
 
 func (g1TemplateReader) Get(id, version string) (Template, error) {
