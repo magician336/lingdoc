@@ -23,6 +23,7 @@ type SourceService struct {
 	origins   evidence.OriginReader
 	kbShares  interfaces.KBShareService
 	knowledge KnowledgeSearchService
+	audit     AuditSink
 }
 
 func NewSourceService(
@@ -33,11 +34,27 @@ func NewSourceService(
 	origins evidence.OriginReader,
 	kbShares interfaces.KBShareService,
 	knowledge KnowledgeSearchService,
+	audits ...AuditSink,
 ) *SourceService {
+	var audit AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
 	return &SourceService{
 		projects: projects, bindings: bindings, gateway: gateway, catalog: catalog,
-		origins: origins, kbShares: kbShares, knowledge: knowledge,
+		origins: origins, kbShares: kbShares, knowledge: knowledge, audit: audit,
 	}
+}
+
+func (s *SourceService) recordSourceAudit(ctx context.Context, actor Actor, projectID, capability string, err error) {
+	if s.audit == nil {
+		return
+	}
+	decision, reason := "allow", ""
+	if err != nil {
+		decision, reason = "deny", err.Error()
+	}
+	_ = s.audit.Record(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: decision, Reason: reason})
 }
 
 func (s *SourceService) ListAssets(ctx context.Context, actor Actor, projectID string) ([]evidence.Asset, error) {
@@ -54,7 +71,11 @@ func (s *SourceService) ListAssets(ctx context.Context, actor Actor, projectID s
 	}
 	resolved, err := s.gateway.ResolveAllowed(ctx, projectID, evidenceActor(actor), requested)
 	if err != nil {
+		s.recordSourceAudit(ctx, actor, projectID, "source.list", err)
 		return nil, err
+	}
+	if len(resolved.Denied) > 0 {
+		s.recordSourceAudit(ctx, actor, projectID, "source.list", ErrSourceUnavailable)
 	}
 	return resolved.Allowed, nil
 }
@@ -116,9 +137,11 @@ func (s *SourceService) GetSource(ctx context.Context, actor Actor, projectID, s
 	actorRef := evidenceActor(actor)
 	resolved, err := s.gateway.ResolveAllowed(ctx, projectID, actorRef, []string{asset.ID})
 	if err != nil {
+		s.recordSourceAudit(ctx, actor, projectID, "source.read", err)
 		return evidence.Source{}, err
 	}
 	if len(resolved.Allowed) != 1 {
+		s.recordSourceAudit(ctx, actor, projectID, "source.read", ErrSourceUnavailable)
 		return evidence.Source{}, ErrSourceUnavailable
 	}
 	asset = resolved.Allowed[0]
@@ -137,11 +160,13 @@ func (s *SourceService) GetSource(ctx context.Context, actor Actor, projectID, s
 	source := sources[0]
 	checked, err := evidence.NewSourcePolicy(s.gateway, s.origins, s.bindings).Validate(ctx, projectID, actorRef, []evidence.Source{source})
 	if err != nil {
+		s.recordSourceAudit(ctx, actor, projectID, "source.read", err)
 		return evidence.Source{}, err
 	}
 	if len(checked.Unusable) > 0 {
 		unusable := checked.Unusable[0]
 		if unusable.AssetDeny != "" {
+			s.recordSourceAudit(ctx, actor, projectID, "source.read", ErrSourceUnavailable)
 			return evidence.Source{}, ErrSourceUnavailable
 		}
 		source.Status = unusable.Status
@@ -168,10 +193,13 @@ func (s *SourceService) RetrieveSources(
 	}
 	resolved, err := s.gateway.ResolveAllowed(ctx, projectID, evidenceActor(actor), input.AssetIDs)
 	if err != nil {
+		s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", err)
 		return nil, err
 	}
 	if len(resolved.Denied) > 0 {
-		return nil, &DeniedAssetsError{Denied: resolved.Denied}
+		err := &DeniedAssetsError{Denied: resolved.Denied}
+		s.recordSourceAudit(ctx, actor, projectID, "source.retrieve", err)
+		return nil, err
 	}
 	if s.knowledge == nil {
 		return nil, ErrSourceUnavailable

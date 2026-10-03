@@ -19,6 +19,7 @@ type ApplicationService interface {
 	CreateProject(context.Context, Actor, string, CreateProjectInput) (json.RawMessage, int, bool, error)
 	SaveSpec(context.Context, Actor, string, string, SaveSpecInput) (json.RawMessage, int, bool, error)
 	SaveMembers(context.Context, Actor, string, string, SaveMembersInput) (json.RawMessage, int, bool, error)
+	TransferOwner(context.Context, Actor, string, string, TransferOwnerInput) (json.RawMessage, int, bool, error)
 	ActivateProject(context.Context, Actor, string, string, ActivateProjectInput) (json.RawMessage, int, bool, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
 	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)

@@ -86,6 +86,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/mcp"
 	"github.com/Tencent/WeKnora/internal/models/chat"
@@ -556,8 +557,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
 	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
 	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator) (workspace.ExportApplication, error) {
-		service := workspace.NewDeliveryExportServiceWithPorts(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy())
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink) (workspace.ExportApplication, error) {
+		service := workspace.NewDeliveryExportServiceWithPorts(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), audit)
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
