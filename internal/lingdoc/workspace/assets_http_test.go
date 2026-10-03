@@ -439,8 +439,10 @@ type contextSegmentView struct {
 
 type sourceContextView struct {
 	Source struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
+		ID             string `json:"id"`
+		Status         string `json:"status"`
+		QuotedText     string `json:"quoted_text"`
+		QuotedTextHash string `json:"quoted_text_hash"`
 	} `json:"source"`
 	ContextAvailable bool `json:"context_available"`
 	Window           struct {
@@ -649,6 +651,17 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 		// 显示成错误，而它描述的是内容本身的状态。
 		if source.Status != string(evidence.SourceStale) {
 			t.Fatalf("status = %q, want stale", source.Status)
+		}
+	})
+
+	record("getSourceContext 失效来源不回传摘录", func(t *testing.T) {
+		f := newAssetsHTTPFixture(t)
+		if err := f.db.Exec("UPDATE chunks SET content_revision = 1 WHERE id = ?", t09SourceID(4)).Error; err != nil {
+			t.Fatalf("edit chunk: %v", err)
+		}
+		view := t09Context(t, f, t09SourceID(4))
+		if view.Source.Status != string(evidence.SourceStale) || view.Source.QuotedText != "" || view.Source.QuotedTextHash != "" {
+			t.Fatalf("stale context source = %+v, want status stale with no excerpt/hash", view.Source)
 		}
 	})
 

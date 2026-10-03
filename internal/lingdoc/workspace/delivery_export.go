@@ -16,13 +16,14 @@ import (
 // 它与 DeliveryReleaseService 共用同一个快照库——各自建一个的话，刚冻下的快照在
 // 导出时取不到，而那看起来会像是「快照不存在」而不是「装配错了」。
 type DeliveryExportService struct {
-	snapshots delivery.SnapshotStore
-	exports   delivery.ExportStore
-	renderer  delivery.FrozenRenderer
-	validator delivery.FrozenValidator
-	inputs    *candidateadoption.DeliveryInputService
-	sources   candidateadoption.SourcePolicy
-	audit     AuditSink
+	snapshots   delivery.SnapshotStore
+	exports     delivery.ExportStore
+	renderer    delivery.FrozenRenderer
+	validator   delivery.FrozenValidator
+	inputs      *candidateadoption.DeliveryInputService
+	sources     candidateadoption.SourcePolicy
+	currentness DeliveryCurrentness
+	audit       AuditSink
 }
 
 // NewDeliveryExportService 依赖不齐时返回 nil，与同一包里的
@@ -55,6 +56,23 @@ func NewDeliveryExportServiceWithPorts(
 	sources candidateadoption.SourcePolicy,
 	audits ...AuditSink,
 ) *DeliveryExportService {
+	return NewDeliveryExportServiceWithCurrentness(snapshots, exports, renderer, validator, inputs, sources, nil, audits...)
+}
+
+// NewDeliveryExportServiceWithCurrentness wires the same frozen-source
+// currentness check used by release reads into export start/get/download. The
+// legacy constructor remains available for small adapters that do not expose
+// the revalidator yet; production passes DeliveryInputBuilder here.
+func NewDeliveryExportServiceWithCurrentness(
+	snapshots delivery.SnapshotStore,
+	exports delivery.ExportStore,
+	renderer delivery.FrozenRenderer,
+	validator delivery.FrozenValidator,
+	inputs *candidateadoption.DeliveryInputService,
+	sources candidateadoption.SourcePolicy,
+	currentness DeliveryCurrentness,
+	audits ...AuditSink,
+) *DeliveryExportService {
 	if snapshots == nil || exports == nil || inputs == nil || inputs.Reader == nil || inputs.Authorizer == nil || sources == nil {
 		return nil
 	}
@@ -68,7 +86,7 @@ func NewDeliveryExportServiceWithPorts(
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, audit: audit}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, currentness: currentness, audit: audit}
 }
 
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
@@ -163,9 +181,32 @@ func (s *DeliveryExportService) authorizeSnapshotSources(ctx context.Context, ac
 	}
 	ids = normalizeSourceIDs(ids)
 	if len(ids) == 0 {
+		if s.currentness == nil {
+			return nil
+		}
+		current, err := s.currentness.Current(ctx, actorID, snapshot.FrozenInput)
+		if err != nil {
+			return err
+		}
+		if !current {
+			return candidateadoption.ErrStaleInput
+		}
 		return nil
 	}
-	return s.sources.Validate(ctx, projectID, actorID, ids)
+	if err := s.sources.Validate(ctx, projectID, actorID, ids); err != nil {
+		return err
+	}
+	if s.currentness == nil {
+		return nil
+	}
+	current, err := s.currentness.Current(ctx, actorID, snapshot.FrozenInput)
+	if err != nil {
+		return err
+	}
+	if !current {
+		return candidateadoption.ErrStaleInput
+	}
+	return nil
 }
 
 // List 列出项目导出过的产物，新的在前。
@@ -222,6 +263,16 @@ func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID 
 			current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
 			if err != nil || !current {
 				return current, err
+			}
+			if s.currentness != nil {
+				current, err := s.currentness.Current(ctx, actorID, frozen)
+				if err != nil {
+					if errors.Is(err, candidateadoption.ErrSourceAccessDenied) || errors.Is(err, candidateadoption.ErrStaleInput) {
+						return false, nil
+					}
+					return false, err
+				}
+				return current, nil
 			}
 			ids := make([]string, 0, len(frozen.Sources))
 			for _, source := range frozen.Sources {

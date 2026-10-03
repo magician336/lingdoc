@@ -72,7 +72,7 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 	}
 	snapshots := delivery.NewMemorySnapshotStore()
 	releases := NewDeliveryReleaseService(inputs, builder, snapshots)
-	exports := NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
+	exports := NewDeliveryExportServiceWithCurrentness(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy(), builder.(DeliveryCurrentness))
 	if releases == nil || exports == nil {
 		t.Fatal("交付链装配不齐：T13 或 T14 仍是断的")
 	}
@@ -421,6 +421,25 @@ func TestExportRoutesRefuseASnapshotTheWorkspaceMovedPast(t *testing.T) {
 		deliveryRouteBase+"/releases/"+snapshot.ID+"/exports", deliveryExportBody, deliveryExportKey))
 	if recorder.Code != http.StatusConflict {
 		t.Fatalf("exporting a stale snapshot = %d, want 409: %s", recorder.Code, recorder.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, recorder).Error; code == nil || code.Code != "stale_input" {
+		t.Fatalf("error = %+v, want stale_input", code)
+	}
+}
+
+func TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts(t *testing.T) {
+	router, db, handler := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, &switchableAssetAuthorizer{})
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	if err := db.Exec("UPDATE chunks SET content_revision = content_revision + 1 WHERE id = ?", deliverySourceID).Error; err != nil {
+		t.Fatalf("drift source: %v", err)
+	}
+	if handler.DeliveryInputBuilder() == nil {
+		t.Fatal("delivery input builder disappeared")
+	}
+	recorder := deliveryServe(router, deliveryRequest(http.MethodPost,
+		deliveryRouteBase+"/releases/"+snapshot.ID+"/exports", deliveryExportBody, "export-source-drift"))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("exporting a source-drifted snapshot = %d, want 409: %s", recorder.Code, recorder.Body.String())
 	}
 	if code := decodeDeliveryEnvelope(t, recorder).Error; code == nil || code.Code != "stale_input" {
 		t.Fatalf("error = %+v, want stale_input", code)
@@ -818,7 +837,7 @@ func TestExportDownloadRejectsCorruptedPersistedBytes(t *testing.T) {
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
 	releases := NewDeliveryReleaseService(inputs, handler.DeliveryInputBuilder(), snapshots)
-	exports := NewDeliveryExportService(snapshots, delivery.NewSQLiteExportStore(db), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
+	exports := NewDeliveryExportServiceWithCurrentness(snapshots, delivery.NewSQLiteExportStore(db), DeliveryDocument{}, DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy(), handler.DeliveryInputBuilder().(DeliveryCurrentness))
 	router := gin.New()
 	group := router.Group("/api/v1/lingdoc")
 	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))
