@@ -155,4 +155,3 @@ print(json.dumps({
     "accepted_examples": results,
     "not_run": ["real service and database", "second developer reproduction", "real model request"],
 }, ensure_ascii=False, indent=2))
-
