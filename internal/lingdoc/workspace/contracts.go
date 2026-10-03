@@ -26,6 +26,8 @@ type ApplicationService interface {
 	ActivationDiff(context.Context, Actor, string, int64) (ActivationDiff, error)
 	RequestOwnerTransfer(context.Context, Actor, string, string, OwnerTransferInput) (json.RawMessage, int, bool, error)
 	AcceptOwnerTransfer(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+	PreviewTemplateMigration(context.Context, Actor, string, TemplateMigrationInput) (TemplateMigrationPreview, error)
+	ChangeTemplate(context.Context, Actor, string, string, TemplateMigrationInput) (json.RawMessage, int, bool, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
 	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
 	GenerationContext(context.Context, Actor, string, string) (GenerationContext, error)

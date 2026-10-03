@@ -101,6 +101,24 @@ type ActivationDiff struct {
 	PendingAIFields       []SpecFieldChange `json:"pending_ai_fields"`
 }
 
+type TemplateMigrationField struct {
+	FieldID string `json:"field_id"`
+	Value   string `json:"value,omitempty"`
+	Status  string `json:"status"`
+}
+
+type TemplateMigrationPreview struct {
+	ProjectID              string                   `json:"project_id"`
+	SourceTemplateID       string                   `json:"source_template_id"`
+	SourceTemplateVersion  string                   `json:"source_template_version"`
+	TargetTemplateID       string                   `json:"target_template_id"`
+	TargetTemplateVersion  string                   `json:"target_template_version"`
+	ExpectedProjectVersion int64                    `json:"expected_project_version"`
+	Fields                 []TemplateMigrationField `json:"fields"`
+	MissingRequired        []string                 `json:"missing_required"`
+	Orphaned               []string                 `json:"orphaned"`
+}
+
 type ReviewItem struct {
 	ID                string `json:"id"`
 	Statement         string `json:"statement"`

@@ -250,6 +250,114 @@ type ActivateProjectInput struct {
 	ExpectedProjectVersion int64 `json:"expected_project_version,omitempty"`
 	ReviewedProjectVersion int64 `json:"reviewed_project_version,omitempty"`
 }
+type TemplateMigrationInput struct {
+	ExpectedProjectVersion int64  `json:"expected_project_version"`
+	TemplateID             string `json:"template_id"`
+	TemplateVersion        string `json:"template_version"`
+}
+
+func templateFieldSet(template Template) map[string]struct{} {
+	fields := make(map[string]struct{}, len(template.RequiredFields))
+	for _, field := range template.RequiredFields {
+		fields[field] = struct{}{}
+	}
+	return fields
+}
+
+func buildTemplateMigrationPreview(p Project, target Template, expectedVersion int64) TemplateMigrationPreview {
+	allowed := templateFieldSet(target)
+	keys := make([]string, 0, len(p.Spec))
+	for key := range p.Spec {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	preview := TemplateMigrationPreview{
+		ProjectID: p.ID, SourceTemplateID: p.TemplateID, SourceTemplateVersion: p.TemplateVersion,
+		TargetTemplateID: target.ID, TargetTemplateVersion: target.Version, ExpectedProjectVersion: expectedVersion,
+		Fields: make([]TemplateMigrationField, 0, len(keys)+len(target.RequiredFields)), MissingRequired: []string{}, Orphaned: []string{},
+	}
+	seen := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		status := "orphaned"
+		if _, ok := allowed[key]; ok {
+			status = "preserved"
+		} else {
+			preview.Orphaned = append(preview.Orphaned, key)
+		}
+		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Value: p.Spec[key], Status: status})
+		seen[key] = struct{}{}
+	}
+	for _, key := range target.RequiredFields {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Status: "missing"})
+		preview.MissingRequired = append(preview.MissingRequired, key)
+	}
+	slices.Sort(preview.MissingRequired)
+	slices.Sort(preview.Orphaned)
+	return preview
+}
+
+func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, projectID string, input TemplateMigrationInput) (TemplateMigrationPreview, error) {
+	if input.ExpectedProjectVersion < 0 || strings.TrimSpace(input.TemplateID) == "" {
+		return TemplateMigrationPreview{}, ErrInvalidRequest
+	}
+	target, err := s.templates.Get(strings.TrimSpace(input.TemplateID), strings.TrimSpace(input.TemplateVersion))
+	if err != nil {
+		return TemplateMigrationPreview{}, err
+	}
+	var result TemplateMigrationPreview
+	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := authorize(tx, actor, projectID, "read")
+		if err != nil {
+			return err
+		}
+		if p.Status != "draft" {
+			return ErrInvalidState
+		}
+		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
+			return ErrVersionConflict
+		}
+		result = buildTemplateMigrationPreview(p, target, p.ProjectVersion)
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (json.RawMessage, int, bool, error) {
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
+	if input.ExpectedProjectVersion < 1 || input.TemplateID == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	target, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return s.operation(ctx, actor, "changeTemplate", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		preview := buildTemplateMigrationPreview(p, target, input.ExpectedProjectVersion)
+		next := p
+		next.TemplateID, next.TemplateVersion = target.ID, target.Version
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.change", Target: projectID, Details: map[string]any{"from": p.TemplateID + "/" + p.TemplateVersion, "to": target.ID + "/" + target.Version, "missing_required": preview.MissingRequired, "orphaned": preview.Orphaned}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
+}
+
 type SaveMembersInput struct {
 	ExpectedProjectVersion int64    `json:"expected_project_version"`
 	CollaboratorUserIDs    []string `json:"collaborator_user_ids"`

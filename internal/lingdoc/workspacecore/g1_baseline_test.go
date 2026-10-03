@@ -151,6 +151,45 @@ func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	}
 }
 
+type g1TemplateReader struct{}
+
+func (g1TemplateReader) Get(id, version string) (Template, error) {
+	if id == "template-alt" && (version == "" || version == "2") {
+		return Template{ID: "template-alt", Version: "2", RequiredFields: []string{"research_subject", "research_method"}, Sections: []Section{{ID: "method", Title: "方法", Required: true}}}, nil
+	}
+	return ContractDemoTemplate{}.Get(id, version)
+}
+
+func TestG1TemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-template-migration.db"))
+	svc.templates = g1TemplateReader{}
+	actor := Actor{TenantID: 85, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-05", CreateProjectInput{Name: "G1 template", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-spec-05", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标", "legacy": "保留"}}); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := svc.PreviewTemplateMigration(context.Background(), actor, project.ID, TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-alt", TemplateVersion: "2"})
+	if err != nil || len(preview.Orphaned) != 2 || len(preview.MissingRequired) != 1 {
+		t.Fatalf("preview = %+v, err=%v", preview, err)
+	}
+	changed, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-05", TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-alt", TemplateVersion: "2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := asProject(t, changed)
+	if result.TemplateID != "template-alt" || result.ProjectVersion != 3 || result.Spec["legacy"] != "保留" {
+		t.Fatalf("changed project = %+v", result)
+	}
+	if _, _, _, err := svc.ChangeTemplate(context.Background(), actor, project.ID, "g1-template-stale", TemplateMigrationInput{ExpectedProjectVersion: 2, TemplateID: "template-demo", TemplateVersion: "1"}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale template change = %v, want %v", err, ErrVersionConflict)
+	}
+}
+
 func rawOwnerTransfer(t *testing.T, raw []byte) OwnerTransfer {
 	t.Helper()
 	var transfer OwnerTransfer

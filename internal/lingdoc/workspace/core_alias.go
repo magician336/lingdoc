@@ -26,6 +26,9 @@ type SpecFieldChange = core.SpecFieldChange
 type ActivationDiff = core.ActivationDiff
 type OwnerTransfer = core.OwnerTransfer
 type OwnerTransferInput = core.OwnerTransferInput
+type TemplateMigrationInput = core.TemplateMigrationInput
+type TemplateMigrationField = core.TemplateMigrationField
+type TemplateMigrationPreview = core.TemplateMigrationPreview
 type ContractDemoTemplate = core.ContractDemoTemplate
 
 var (

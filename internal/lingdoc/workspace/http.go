@@ -39,6 +39,9 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/draft-candidates", h.createDraftCandidate)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
 	routes.Read.GET("/projects/:projectId/activation-diff", h.activationDiff)
+	routes.Read.GET("/projects/:projectId/template-migration/preview", h.previewTemplateMigration)
+	routes.Write.POST("/projects/:projectId/template-migration/preview", h.previewTemplateMigrationPost)
+	routes.Write.POST("/projects/:projectId/template-migration", h.changeTemplate)
 	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
 	routes.Write.POST("/projects/:projectId/owner-transfer/:transferId/accept", h.acceptOwnerTransfer)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
@@ -355,6 +358,64 @@ func (h *Handler) activationDiff(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, diff, false)
+}
+
+func (h *Handler) previewTemplateMigration(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	input := TemplateMigrationInput{TemplateID: c.Query("template_id"), TemplateVersion: c.Query("template_version")}
+	if raw := c.Query("expected_project_version"); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &input.ExpectedProjectVersion); err != nil {
+			sendError(c, ErrInvalidRequest)
+			return
+		}
+	}
+	data, err := h.service.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) previewTemplateMigrationPost(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	var input TemplateMigrationInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, err := h.service.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) changeTemplate(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input TemplateMigrationInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
 }
 
 func (h *Handler) requestOwnerTransfer(c *gin.Context) {
