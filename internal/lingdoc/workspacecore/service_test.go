@@ -68,6 +68,11 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000020_lingdoc_candidate_adoption.up.sql",
 			"000023_lingdoc_chapter_confirmation_requests.up.sql",
 			"000025_lingdoc_member_permissions.up.sql",
+			"000026_lingdoc_project_context_revision.up.sql",
+			"000027_lingdoc_draft_provenance.up.sql",
+			"000028_lingdoc_owner_transfers.up.sql",
+			"000029_lingdoc_project_discard.up.sql",
+			"000030_lingdoc_project_baseline.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
@@ -158,7 +163,7 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	if err != nil || !replay || asProject(t, raw).SpecRevision != 1 {
 		t.Fatalf("response-lost replay: %v %v", replay, err)
 	}
-	raw, _, _, err = svc.ActivateProject(ctx, owner, project.ID, "activate-001", ActivateProjectInput{ExpectedSpecRevision: 1})
+	raw, _, _, err = svc.ActivateProject(ctx, owner, project.ID, "activate-001", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil || asProject(t, raw).Status != "active" {
 		t.Fatalf("activate: %v", err)
 	}
@@ -363,7 +368,7 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = svc.ActivateProject(ctx, actor, id, "review-activate", ActivateProjectInput{ExpectedSpecRevision: 1})
+	_, _, _, err = svc.ActivateProject(ctx, actor, id, "review-activate", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -465,7 +470,7 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 	project = asProject(t, raw)
-	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision}); err != nil {
+	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision, ExpectedProjectVersion: project.ProjectVersion, ReviewedProjectVersion: project.ProjectVersion}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, owner, project.ID)
@@ -507,13 +512,21 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatalf("current confirmation not reported: %+v, %v", chapters, err)
 	}
 
-	raw, _, _, err = svc.SaveSpec(ctx, owner, project.ID, "spec-confirmation-2", SaveSpecInput{
-		ExpectedSpecRevision: project.SpecRevision, Fields: map[string]string{"research_subject": "样本", "research_goal": "新目标"},
-	})
+	// Active projects reject ordinary ProjectSpec saves. Simulate the semantic
+	// revision transition here so this test continues to exercise the read-side
+	// confirmation currentness rule without bypassing the G1 write boundary.
+	project.SpecRevision++
+	project.ProjectVersion++
+	project.Spec["research_goal"] = "新目标"
+	rawSpec, err := json.Marshal(project.Spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	project = asProject(t, raw)
+	if err := svc.repository.(*GORMRepository).db.Model(&projectRow{}).Where("id = ?", project.ID).Updates(map[string]any{
+		"spec_json": string(rawSpec), "spec_revision": project.SpecRevision, "project_version": project.ProjectVersion,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	chapters, err = svc.ListChapters(ctx, owner, project.ID)
 	if err != nil || chapters[0].ConfirmationValid {
 		t.Fatalf("stale confirmation survived spec change: %+v, %v", chapters, err)
@@ -547,7 +560,7 @@ func readyChapter(t *testing.T, svc *Service, actor Actor, prefix string) (strin
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := svc.ActivateProject(ctx, actor, projectID, prefix+"-activate", ActivateProjectInput{ExpectedSpecRevision: 1}); err != nil {
+	if _, _, _, err := svc.ActivateProject(ctx, actor, projectID, prefix+"-activate", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, actor, projectID)

@@ -276,6 +276,7 @@ func TestProjectAuthorizerSeamCoversCreateListAndRead(t *testing.T) {
 
 func TestProjectAuthorizerDeniesBeforeReplay(t *testing.T) {
 	repository := fakeWorkspace()
+	repository.project.Status = "draft"
 	authorizer := &recordingProjectAuthorizer{}
 	service := NewServiceWithAuthorizer(repository, ContractDemoTemplate{}, nil, authorizer)
 	actor := Actor{TenantID: 1, UserID: "owner"}

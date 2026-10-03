@@ -52,9 +52,14 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			status TEXT NOT NULL,
 			project_version INTEGER NOT NULL,
 			spec_revision INTEGER NOT NULL,
+			current_context_revision INTEGER NOT NULL DEFAULT 0,
+			spec_metadata_json TEXT NOT NULL DEFAULT '{}',
 			spec_json TEXT NOT NULL,
 			template_id TEXT NOT NULL,
 			template_version TEXT NOT NULL,
+			discarded_at DATETIME,
+			delivery_status TEXT NOT NULL DEFAULT 'NOT_READY',
+			baseline_confirmation_id TEXT,
 			created_at DATETIME
 		)`,
 		`CREATE TABLE lingdoc_members (
@@ -108,7 +113,7 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 		t.Fatalf("seed tenant member: %v", err)
 	}
 	if err := db.Exec(
-		"INSERT INTO lingdoc_projects (id, tenant_id, name, status, project_version, spec_revision, spec_json, template_id, template_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"INSERT INTO lingdoc_projects (id, tenant_id, name, status, project_version, spec_revision, spec_json, template_id, template_version, discarded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
 		"project-1", 7, "currentness test", "active", 1, 0, "{}", "template-demo", "1",
 	).Error; err != nil {
 		t.Fatalf("seed project: %v", err)
