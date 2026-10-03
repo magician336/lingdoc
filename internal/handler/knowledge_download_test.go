@@ -112,7 +112,7 @@ func runBatchDownload(
 }
 
 func TestBatchDownloadKnowledgeProducesCompleteZIP(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setKnowledgeDownloadTempDir(t)
 	svc := &downloadKnowledgeStub{
 		items: []*types.Knowledge{
 			{ID: "a", TenantID: 7, KnowledgeBaseID: "kb-1", FilePath: "stored-a"},
@@ -213,7 +213,7 @@ func TestBatchDownloadKnowledgeRejectsInvalidSelectionsBeforeReading(t *testing.
 }
 
 func TestBatchDownloadKnowledgeFailureDoesNotReturnPartialZIP(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setKnowledgeDownloadTempDir(t)
 	svc := &downloadKnowledgeStub{
 		items: []*types.Knowledge{
 			{ID: "a", TenantID: 7, KnowledgeBaseID: "kb-1", FilePath: "a"},
@@ -242,7 +242,7 @@ func (r *downloadTrackingReader) Close() error {
 }
 
 func TestBatchDownloadKnowledgeSkipsEntriesWithoutOriginalFiles(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setKnowledgeDownloadTempDir(t)
 	svc := &downloadKnowledgeStub{
 		items: []*types.Knowledge{
 			{ID: "a", TenantID: 7, KnowledgeBaseID: "kb-1", FilePath: "stored-a"},
@@ -261,7 +261,7 @@ func TestBatchDownloadKnowledgeSkipsEntriesWithoutOriginalFiles(t *testing.T) {
 }
 
 func TestBatchDownloadKnowledgeAllowsSharedEditor(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setKnowledgeDownloadTempDir(t)
 	svc := &downloadKnowledgeStub{
 		items:          []*types.Knowledge{{ID: "a", TenantID: 8, KnowledgeBaseID: "kb-1", FilePath: "stored-a"}},
 		names:          map[string]string{"a": "shared.txt"},
@@ -376,7 +376,7 @@ func TestKnowledgeDownloadZipPathKeepsSafeFolders(t *testing.T) {
 }
 
 func TestBatchDownloadKnowledgePreservesFolderPaths(t *testing.T) {
-	t.Setenv("TMPDIR", t.TempDir())
+	setKnowledgeDownloadTempDir(t)
 	svc := &downloadKnowledgeStub{
 		items: []*types.Knowledge{{
 			ID: "a", TenantID: 7, KnowledgeBaseID: "kb-1", FilePath: "stored-a", FolderPath: "docs/spec",
@@ -390,4 +390,16 @@ func TestBatchDownloadKnowledgePreservesFolderPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, reader.File, 1)
 	require.Equal(t, "docs/spec/design.md", reader.File[0].Name)
+}
+
+// os.TempDir uses different environment variables on Unix and Windows. Keep
+// the cleanup assertions scoped to this test's directory on both platforms;
+// inspecting the process-wide system temp directory is racy and fails on a
+// normal Windows developer machine that has unrelated temporary files.
+func setKnowledgeDownloadTempDir(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
+		t.Setenv(name, dir)
+	}
 }
