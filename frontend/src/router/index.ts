@@ -123,6 +123,12 @@ const router = createRouter({
           meta: { requiresInit: true, requiresAuth: true }
         },
         {
+          path: "lingdoc/permissions",
+          name: "lingdocPermissionEvidence",
+          component: () => import("../views/lingdoc/PermissionEvidence.vue"),
+          meta: { requiresInit: true, requiresAuth: true }
+        },
+        {
           path: "knowledge-bases/:kbId",
           name: "knowledgeBaseDetail",
           component: () => import("../views/knowledge/KnowledgeBase.vue"),

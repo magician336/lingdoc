@@ -5,7 +5,10 @@
         <h1>灵档项目</h1>
         <p>当前使用两章演示模板，内容仅供团队验证流程。</p>
       </div>
-      <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+      <div class="workspace-head__actions">
+        <button type="button" class="evidence-link" @click="router.push('/platform/lingdoc/permissions')">权限验收</button>
+        <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+      </div>
     </header>
 
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
@@ -248,6 +251,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
@@ -267,6 +271,8 @@ import {
   getSourceContext, listAssets, listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
   type AccessStatus, type Asset, type Chapter, type Project, type ReviewDecision, type Source, type SourceContext,
 } from '@/api/lingdoc/workspace'
+
+const router = useRouter()
 
 const projects = ref<Project[]>([])
 const truncated = ref(false)
@@ -841,6 +847,8 @@ onUnmounted(() => { if (generationTimer) clearTimeout(generationTimer) })
 </script>
 
 <style scoped>
+.workspace-head__actions { display: flex; gap: 10px; align-items: center; }
+.evidence-link { border-color: #0b8c91; color: #0b6e71; background: #e5f6f2; }
 .lingdoc-workspace { max-width: 1200px; margin: 0 auto; padding: 32px; color: #24342e; }
 .workspace-head, .section-head, .actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 h1 { margin: 0 0 8px; font-size: 28px; } h2 { margin: 0 0 12px; font-size: 20px; } h3 { margin: 22px 0 14px; font-size: 17px; }
