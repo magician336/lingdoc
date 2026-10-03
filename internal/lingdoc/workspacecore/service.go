@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"gorm.io/gorm"
 	"strings"
+	"time"
 )
 
 // GORMRepository implements atomic persistence, not application rules.
@@ -186,6 +187,37 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Details: details, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
+}
+
+func (t gormTransaction) InsertOwnerTransfer(transfer OwnerTransfer) error {
+	return t.db.Create(&ownerTransferRow{ID: transfer.ID, ProjectID: transfer.ProjectID, FromUserID: transfer.FromUserID, ToUserID: transfer.ToUserID, Status: transfer.Status, ExpectedProjectVersion: transfer.ExpectedProjectVersion, CreatedAt: transfer.CreatedAt}).Error
+}
+
+func (t gormTransaction) OwnerTransfer(projectID, id string) (OwnerTransfer, error) {
+	var row ownerTransferRow
+	if err := t.db.Where("project_id = ? AND id = ?", projectID, id).First(&row).Error; err != nil {
+		return OwnerTransfer{}, storageError(err)
+	}
+	return OwnerTransfer{ID: row.ID, ProjectID: row.ProjectID, FromUserID: row.FromUserID, ToUserID: row.ToUserID, Status: row.Status, ExpectedProjectVersion: row.ExpectedProjectVersion, CreatedAt: row.CreatedAt, AcceptedAt: row.AcceptedAt}, nil
+}
+
+func (t gormTransaction) AcceptOwnerTransfer(projectID, id string, version int64, acceptedAt time.Time) error {
+	result := t.db.Model(&ownerTransferRow{}).Where("project_id = ? AND id = ? AND status = ? AND expected_project_version = ?", projectID, id, "pending", version).Updates(map[string]any{"status": "accepted", "accepted_at": acceptedAt})
+	return affected(result)
+}
+
+func (t gormTransaction) SetMemberRole(projectID, userID, role string) error {
+	result := t.db.Model(&memberRow{}).Where("project_id = ? AND user_id = ?", projectID, userID).Update("role", role)
+	return affected(result)
+}
+
+func (t gormTransaction) EnsureMember(projectID, userID, role string) error {
+	var row memberRow
+	err := t.db.Where("project_id = ? AND user_id = ?", projectID, userID).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return t.db.Create(&memberRow{ProjectID: projectID, UserID: userID, Role: role}).Error
+	}
+	return err
 }
 func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
 	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,

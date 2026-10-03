@@ -24,6 +24,8 @@ type DraftCandidateInput = core.DraftCandidateInput
 type AuditEvent = core.AuditEvent
 type SpecFieldChange = core.SpecFieldChange
 type ActivationDiff = core.ActivationDiff
+type OwnerTransfer = core.OwnerTransfer
+type OwnerTransferInput = core.OwnerTransferInput
 type ContractDemoTemplate = core.ContractDemoTemplate
 
 var (

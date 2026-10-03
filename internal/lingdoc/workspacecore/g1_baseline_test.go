@@ -2,6 +2,7 @@ package workspacecore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -106,4 +107,55 @@ func TestG1ActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
 	if _, _, _, err := svc.ActivateProject(context.Background(), actor, project.ID, "g1-activate-03", ActivateProjectInput{ExpectedSpecRevision: 2, ExpectedProjectVersion: diff.CurrentProjectVersion, ReviewedProjectVersion: diff.CurrentProjectVersion}); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale activation error = %v, want %v", err, ErrVersionConflict)
 	}
+}
+
+func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-transfer.db"))
+	owner := Actor{TenantID: 84, UserID: "owner"}
+	target := Actor{TenantID: 84, UserID: "target"}
+	seedTenantMember(t, svc, owner)
+	seedTenantMember(t, svc, target)
+	created, _, _, err := svc.CreateProject(context.Background(), owner, "g1-create-04", CreateProjectInput{Name: "G1 owner", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	raw, _, _, err := svc.RequestOwnerTransfer(context.Background(), owner, project.ID, "g1-transfer-04", OwnerTransferInput{ToUserID: target.UserID, ExpectedProjectVersion: project.ProjectVersion})
+	if err != nil {
+		t.Fatal(err)
+	}
+	transfer := rawOwnerTransfer(t, raw)
+	acceptedRaw, _, _, err := svc.AcceptOwnerTransfer(context.Background(), target, project.ID, transfer.ID, "g1-accept-04")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted := rawOwnerTransfer(t, acceptedRaw)
+	if accepted.Status != "accepted" || accepted.AcceptedAt == nil {
+		t.Fatalf("accepted transfer = %+v", accepted)
+	}
+	if _, _, _, err := svc.AcceptOwnerTransfer(context.Background(), target, project.ID, transfer.ID, "g1-accept-05"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("second accept error = %v, want %v", err, ErrInvalidState)
+	}
+	current, err := svc.GetProject(context.Background(), target, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners := 0
+	for _, member := range current.Members {
+		if member.Role == "owner" {
+			owners++
+		}
+	}
+	if owners != 1 {
+		t.Fatalf("owners = %d, members=%+v", owners, current.Members)
+	}
+}
+
+func rawOwnerTransfer(t *testing.T, raw []byte) OwnerTransfer {
+	t.Helper()
+	var transfer OwnerTransfer
+	if err := json.Unmarshal(raw, &transfer); err != nil {
+		t.Fatal(err)
+	}
+	return transfer
 }

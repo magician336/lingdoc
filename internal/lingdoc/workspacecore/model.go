@@ -72,6 +72,17 @@ type AuditEvent struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
+type OwnerTransfer struct {
+	ID                     string     `json:"id"`
+	ProjectID              string     `json:"project_id"`
+	FromUserID             string     `json:"from_user_id"`
+	ToUserID               string     `json:"to_user_id"`
+	Status                 string     `json:"status"`
+	ExpectedProjectVersion int64      `json:"expected_project_version"`
+	CreatedAt              time.Time  `json:"created_at"`
+	AcceptedAt             *time.Time `json:"accepted_at,omitempty"`
+}
+
 type SpecFieldChange struct {
 	Key        string    `json:"key"`
 	Value      string    `json:"value"`
@@ -224,6 +235,19 @@ type auditEventRow struct {
 }
 
 func (auditEventRow) TableName() string { return "lingdoc_project_audits" }
+
+type ownerTransferRow struct {
+	ID                     string `gorm:"primaryKey;size:36"`
+	ProjectID              string `gorm:"not null;index;size:36"`
+	FromUserID             string `gorm:"not null;size:64"`
+	ToUserID               string `gorm:"not null;size:64"`
+	Status                 string `gorm:"not null;size:16"`
+	ExpectedProjectVersion int64  `gorm:"not null"`
+	CreatedAt              time.Time
+	AcceptedAt             *time.Time
+}
+
+func (ownerTransferRow) TableName() string { return "lingdoc_owner_transfers" }
 
 type chapterRow struct {
 	ID               string  `gorm:"primaryKey;size:36"`

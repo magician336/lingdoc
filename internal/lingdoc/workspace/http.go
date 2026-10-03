@@ -39,6 +39,8 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/draft-candidates", h.createDraftCandidate)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
 	routes.Read.GET("/projects/:projectId/activation-diff", h.activationDiff)
+	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
+	routes.Write.POST("/projects/:projectId/owner-transfer/:transferId/accept", h.acceptOwnerTransfer)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
@@ -353,6 +355,44 @@ func (h *Handler) activationDiff(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, diff, false)
+}
+
+func (h *Handler) requestOwnerTransfer(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input OwnerTransferInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.AcceptOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
 }
 
 func (h *Handler) saveMembers(c *gin.Context) {

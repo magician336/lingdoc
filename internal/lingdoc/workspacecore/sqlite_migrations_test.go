@@ -23,6 +23,7 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		"000024_lingdoc_delivery_stores.up.sql",
 		"000025_lingdoc_project_context_revision.up.sql",
 		"000026_lingdoc_draft_provenance.up.sql",
+		"000027_lingdoc_owner_transfers.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if err != nil {

@@ -47,6 +47,14 @@ type auditTransaction interface {
 	RecordAudit(AuditEvent) error
 	AuditEvents(string) ([]AuditEvent, error)
 }
+
+type ownerTransferTransaction interface {
+	InsertOwnerTransfer(OwnerTransfer) error
+	OwnerTransfer(string, string) (OwnerTransfer, error)
+	AcceptOwnerTransfer(string, string, int64, time.Time) error
+	SetMemberRole(string, string, string) error
+	EnsureMember(string, string, string) error
+}
 type OperationIdentity struct {
 	Actor                  Actor
 	Operation, Target, Key string
@@ -233,6 +241,10 @@ type DraftCandidateInput struct {
 	Level      string            `json:"level"`
 	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
 }
+type OwnerTransferInput struct {
+	ToUserID               string `json:"to_user_id"`
+	ExpectedProjectVersion int64  `json:"expected_project_version"`
+}
 type ActivateProjectInput struct {
 	ExpectedSpecRevision   int64 `json:"expected_spec_revision"`
 	ExpectedProjectVersion int64 `json:"expected_project_version,omitempty"`
@@ -394,6 +406,79 @@ func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID st
 		return err
 	})
 	return result, err
+}
+
+func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (json.RawMessage, int, bool, error) {
+	input.ToUserID = strings.TrimSpace(input.ToUserID)
+	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "requestOwnerTransfer", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.ProjectVersion != input.ExpectedProjectVersion || p.Status == "archived" {
+			return nil, 0, ErrVersionConflict
+		}
+		active, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: input.ToUserID})
+		if err != nil || !active {
+			return nil, 0, ErrInvalidState
+		}
+		transferStore, ok := tx.(ownerTransferTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		transfer := OwnerTransfer{ID: uuid.NewString(), ProjectID: projectID, FromUserID: actor.UserID, ToUserID: input.ToUserID, Status: "pending", ExpectedProjectVersion: p.ProjectVersion, CreatedAt: time.Now().UTC()}
+		if err := transferStore.InsertOwnerTransfer(transfer); err != nil {
+			return nil, 0, err
+		}
+		return transfer, 201, nil
+	})
+}
+
+func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
+	return s.operation(ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, "", "", func(tx Transaction, _ Project) (any, int, error) {
+		if !validActor(actor) {
+			return nil, 0, ErrNotFound
+		}
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		store, ok := tx.(ownerTransferTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		transfer, err := store.OwnerTransfer(projectID, transferID)
+		if err != nil || transfer.Status != "pending" || transfer.ToUserID != actor.UserID {
+			return nil, 0, ErrInvalidState
+		}
+		if transfer.ExpectedProjectVersion != p.ProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		active, err := tx.ActiveMember(actor)
+		if err != nil || !active {
+			return nil, 0, ErrNotFound
+		}
+		if err := store.EnsureMember(projectID, actor.UserID, "collaborator"); err != nil {
+			return nil, 0, err
+		}
+		next := p
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if err := store.SetMemberRole(projectID, transfer.FromUserID, "collaborator"); err != nil {
+			return nil, 0, err
+		}
+		if err := store.SetMemberRole(projectID, actor.UserID, "owner"); err != nil {
+			return nil, 0, err
+		}
+		acceptedAt := time.Now().UTC()
+		if err := store.AcceptOwnerTransfer(projectID, transferID, transfer.ExpectedProjectVersion, acceptedAt); err != nil {
+			return nil, 0, err
+		}
+		transfer.Status = "accepted"
+		transfer.AcceptedAt = &acceptedAt
+		return transfer, 200, nil
+	})
 }
 
 func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
