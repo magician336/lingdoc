@@ -69,6 +69,12 @@ const router = createRouter({
       meta: { requiresAuth: false, requiresInit: false }
     },
     {
+      path: "/demo/permissions",
+      name: "lingdocPermissionEvidenceDemo",
+      component: () => import("../views/lingdoc/PermissionEvidence.vue"),
+      meta: { requiresAuth: false, requiresInit: false, publicDemo: true }
+    },
+    {
       path: "/onboarding/workspace",
       name: "workspaceOnboarding",
       component: () => import("../views/auth/WorkspaceOnboarding.vue"),

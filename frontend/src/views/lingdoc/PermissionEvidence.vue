@@ -7,8 +7,9 @@
         <p class="hero-lede">把“谁能做什么、为什么、是否留下证据”放在同一张可复核的台面上。</p>
       </div>
       <div class="hero-actions">
+        <span v-if="demoMode" class="demo-chip">无需登录 · 预置演示</span>
         <span class="live-chip" :class="{ 'live-chip--busy': loading }">
-          <i aria-hidden="true"></i>{{ loading ? '正在读取证据' : '实时证据' }}
+          <i aria-hidden="true"></i>{{ loading ? '正在读取证据' : demoMode ? '演示证据' : '实时证据' }}
         </span>
         <button class="refresh-button" type="button" :disabled="loading" @click="refreshEvidence">
           {{ loading ? '刷新中…' : '刷新证据' }}
@@ -23,24 +24,24 @@
         <div class="identity-mark" aria-hidden="true">{{ identityInitial }}</div>
         <div>
           <p class="section-kicker">当前请求身份</p>
-          <h2 id="identity-title">{{ authStore.user?.username || authStore.user?.email || '未登录用户' }}</h2>
+          <h2 id="identity-title">{{ displayUserName }}</h2>
           <p class="identity-meta">
-            用户 {{ authStore.currentUserId || '—' }} · 租户 {{ authStore.currentTenantName || '未选择空间' }}
+            用户 {{ displayUserId }} · 租户 {{ displayTenantName }}
           </p>
         </div>
       </div>
       <div class="identity-facts">
         <div>
           <span>租户角色</span>
-          <strong>{{ permissionRoleLabel(authStore.currentTenantRole) }}</strong>
+          <strong>{{ permissionRoleLabel(displayRole) }}</strong>
         </div>
         <div>
           <span>租户 ID</span>
-          <strong>{{ authStore.effectiveTenantId || '—' }}</strong>
+          <strong>{{ displayTenantId }}</strong>
         </div>
         <div>
           <span>系统管理员</span>
-          <strong>{{ authStore.isSystemAdmin ? '是' : '否' }}</strong>
+          <strong>{{ displayIsSystemAdmin ? '是' : '否' }}</strong>
         </div>
       </div>
     </section>
@@ -72,7 +73,7 @@
             <p class="section-kicker">角色矩阵</p>
             <h2 id="matrix-title">当前身份能做什么</h2>
           </div>
-          <span class="matrix-role">{{ permissionRoleLabel(authStore.currentTenantRole) }}</span>
+          <span class="matrix-role">{{ permissionRoleLabel(displayRole) }}</span>
         </div>
         <div class="matrix-scroll">
           <table class="permission-table">
@@ -210,6 +211,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { listAuditLog, type AuditLog, type AuditOutcome } from '@/api/tenant/audit-log'
 import { getAccessStatus, listProjects, type AccessStatus, type Project } from '@/api/lingdoc/workspace'
@@ -225,6 +227,8 @@ import {
 } from './permissionEvidence'
 
 const authStore = useAuthStore()
+const route = useRoute()
+const demoMode = computed(() => route.meta.publicDemo === true)
 const loading = ref(false)
 const accessLoading = ref(false)
 const errorMessage = ref('')
@@ -235,8 +239,113 @@ const auditLogs = ref<AuditLog[]>([])
 const auditState = ref<'idle' | 'ready' | 'forbidden' | 'error'>('idle')
 const auditMessage = ref('')
 
+const DEMO_PROJECTS: Project[] = [
+  {
+    id: 'demo-project-active',
+    name: '研究方案权限演示',
+    status: 'active',
+    project_version: 3,
+    spec_revision: 12,
+    spec: {},
+    template_id: 'template-demo',
+    template_version: '1.2.0',
+    members: [
+      { user_id: 'demo-owner', role: 'owner' },
+      { user_id: 'demo-admin', role: 'collaborator' },
+      { user_id: 'demo-viewer', role: 'collaborator' },
+    ],
+  },
+  {
+    id: 'demo-project-revoked',
+    name: '撤权后的资料集',
+    status: 'active',
+    project_version: 2,
+    spec_revision: 8,
+    spec: {},
+    template_id: 'template-demo',
+    template_version: '1.1.0',
+    members: [{ user_id: 'demo-admin', role: 'collaborator' }],
+  },
+]
+
+const DEMO_ACCESS_STATUS: Record<string, AccessStatus> = {
+  'demo-project-active': {
+    project_id: 'demo-project-active',
+    content_access: 'available',
+    recovery_actions: [],
+    can_create_project: true,
+  },
+  'demo-project-revoked': {
+    project_id: 'demo-project-revoked',
+    content_access: 'restricted',
+    recovery_actions: ['restore_source_authorization', 'create_clean_project'],
+    can_create_project: true,
+  },
+}
+
+const DEMO_AUDIT_LOGS: AuditLog[] = [
+  {
+    id: 3,
+    tenant_id: 42,
+    actor_user_id: 'demo-admin',
+    actor_role: 'admin',
+    action: 'rbac.access_denied',
+    scope_type: 'project',
+    scope_id: 'demo-project-revoked',
+    target_type: 'delivery',
+    target_id: 'export-018',
+    target_user_id: 'demo-viewer',
+    request_path: '/api/v1/lingdoc/projects/demo-project-revoked/export',
+    request_method: 'POST',
+    outcome: 'denied',
+    details: { required_role: 'contributor' },
+    created_at: '2026-10-03T09:42:00+08:00',
+  },
+  {
+    id: 2,
+    tenant_id: 42,
+    actor_user_id: 'demo-owner',
+    actor_role: 'owner',
+    action: 'rbac.member_role_changed',
+    scope_type: 'tenant',
+    scope_id: '42',
+    target_type: 'member',
+    target_id: 'demo-viewer',
+    target_user_id: 'demo-viewer',
+    request_path: '/api/v1/tenants/42/members/demo-viewer',
+    request_method: 'PATCH',
+    outcome: 'success',
+    details: { old_role: 'contributor', new_role: 'viewer' },
+    created_at: '2026-10-03T09:36:00+08:00',
+  },
+  {
+    id: 1,
+    tenant_id: 42,
+    actor_user_id: 'demo-owner',
+    actor_role: 'owner',
+    action: 'rbac.member_added',
+    scope_type: 'tenant',
+    scope_id: '42',
+    target_type: 'member',
+    target_id: 'demo-admin',
+    target_user_id: 'demo-admin',
+    request_path: '/api/v1/tenants/42/members',
+    request_method: 'POST',
+    outcome: 'accepted',
+    details: null,
+    created_at: '2026-10-03T09:28:00+08:00',
+  },
+]
+
+const displayUserName = computed(() => demoMode.value ? 'Lin · 权限演示用户' : authStore.user?.username || authStore.user?.email || '未登录用户')
+const displayUserId = computed(() => demoMode.value ? 'demo-admin' : authStore.currentUserId || '—')
+const displayTenantName = computed(() => demoMode.value ? 'LingDoc 研发空间' : authStore.currentTenantName || '未选择空间')
+const displayRole = computed(() => demoMode.value ? 'admin' : authStore.currentTenantRole)
+const displayTenantId = computed(() => demoMode.value ? '42' : String(authStore.effectiveTenantId || '—'))
+const displayIsSystemAdmin = computed(() => demoMode.value ? false : authStore.isSystemAdmin)
+
 const identityInitial = computed(() => {
-  const value = authStore.user?.username || authStore.user?.email || '?'
+  const value = displayUserName.value || '?'
   return value.slice(0, 1).toUpperCase()
 })
 
@@ -256,15 +365,15 @@ const accessStateDetail = computed(() => {
 const proofSteps = computed(() => [
   {
     title: '身份',
-    detail: authStore.currentUserId ? `已识别用户 ${authStore.currentUserId}` : '等待登录身份',
-    status: authStore.currentUserId ? '已识别' : '待加载',
-    state: authStore.currentUserId ? 'passed' : 'waiting',
+    detail: displayUserId.value ? `已识别用户 ${displayUserId.value}` : '等待登录身份',
+    status: displayUserId.value ? '已识别' : '待加载',
+    state: displayUserId.value ? 'passed' : 'waiting',
   },
   {
     title: '租户角色',
-    detail: authStore.currentTenantRole ? `当前为${permissionRoleLabel(authStore.currentTenantRole)}` : '尚未读取租户成员关系',
-    status: authStore.currentTenantRole ? '已解析' : '待加载',
-    state: authStore.currentTenantRole ? 'passed' : 'waiting',
+    detail: displayRole.value ? `当前为${permissionRoleLabel(displayRole.value)}` : '尚未读取租户成员关系',
+    status: displayRole.value ? '已解析' : '待加载',
+    state: displayRole.value ? 'passed' : 'waiting',
   },
   {
     title: '资源授权',
@@ -312,7 +421,7 @@ const evidenceChecks = computed(() => [
 const evidencePassedCount = computed(() => evidenceChecks.value.filter((item) => item.state === 'passed').length)
 
 function decisionFor(minimumRole: 'viewer' | 'contributor' | 'admin' | 'owner'): PermissionDecision {
-  return permissionDecision(authStore.currentTenantRole, minimumRole)
+  return permissionDecision(displayRole.value, minimumRole)
 }
 
 function errorText(error: unknown): string {
@@ -321,6 +430,13 @@ function errorText(error: unknown): string {
 }
 
 async function loadProjects() {
+  if (demoMode.value) {
+    projects.value = DEMO_PROJECTS
+    if (!selectedProjectId.value || !projects.value.some((item) => item.id === selectedProjectId.value)) {
+      selectedProjectId.value = projects.value[0]?.id || ''
+    }
+    return
+  }
   const response = await listProjects()
   projects.value = response.data?.items || []
   if (!selectedProjectId.value && projects.value[0]) selectedProjectId.value = projects.value[0].id
@@ -332,6 +448,15 @@ async function loadProjects() {
 async function loadAccessStatus() {
   if (!selectedProjectId.value) {
     accessStatus.value = null
+    return
+  }
+  if (demoMode.value) {
+    accessStatus.value = DEMO_ACCESS_STATUS[selectedProjectId.value] || {
+      project_id: selectedProjectId.value,
+      content_access: 'unknown',
+      recovery_actions: [],
+      can_create_project: false,
+    }
     return
   }
   accessLoading.value = true
@@ -347,6 +472,12 @@ async function loadAccessStatus() {
 }
 
 async function loadAudit() {
+  if (demoMode.value) {
+    auditLogs.value = DEMO_AUDIT_LOGS
+    auditState.value = 'ready'
+    auditMessage.value = ''
+    return
+  }
   const tenantId = authStore.effectiveTenantId
   if (!tenantId) {
     auditState.value = 'idle'
@@ -415,6 +546,7 @@ onMounted(() => { void refreshEvidence() })
 .proof-hero h1 { margin: 0; font-size: clamp(34px, 5vw, 62px); line-height: .98; letter-spacing: -.055em; font-weight: 760; }
 .hero-lede { max-width: 590px; margin: 18px 0 0; color: #b9dbd2; font-size: 15px; line-height: 1.7; }
 .hero-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+.demo-chip { display: inline-flex; align-items: center; border: 1px solid rgba(255, 220, 150, .45); border-radius: 999px; padding: 6px 10px; color: #ffe2a9; background: rgba(209, 138, 50, .16); font-size: 11px; font-weight: 750; letter-spacing: .04em; }
 .live-chip { display: inline-flex; gap: 8px; align-items: center; color: #a9eee2; font-size: 12px; font-weight: 700; }
 .live-chip i { width: 8px; height: 8px; border-radius: 50%; background: #5ff4c6; box-shadow: 0 0 0 5px rgba(95, 244, 198, .12); }
 .live-chip--busy i { background: #f1c36a; }
