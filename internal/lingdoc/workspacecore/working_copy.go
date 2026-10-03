@@ -215,4 +215,86 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 				return nil, 0, err
 			}
 			nextCopy := workingCopy
-			nextCopy
+			nextCopy.BaseChapterVersionID = &id
+			nextCopy.WorkingCopyRevision++
+			nextCopy.SpecRevision = p.SpecRevision
+			nextCopy.UpdatedAt = time.Now().UTC()
+			if err := tx.SaveWorkingCopy(workingCopy, nextCopy); err != nil {
+				return nil, 0, err
+			}
+			return CommittedChapterVersion{
+				ChapterVersionID: id, ParentChapterVersionID: chapter.CurrentVersionID,
+				CommittedWorkingCopyRevision: workingCopy.WorkingCopyRevision,
+				NextWorkingCopyRevision:      nextCopy.WorkingCopyRevision, SpecRevision: p.SpecRevision,
+				BodyMarkdown: workingCopy.BodyMarkdown, SourceIDs: slices.Clone(workingCopy.SourceIDs),
+				ReviewItems: slices.Clone(workingCopy.ReviewItems),
+			}, 201, nil
+		})
+}
+
+func (s *Service) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
+	var result []ChapterVersion
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		if _, err := tx.Chapter(projectID, chapterID); err != nil {
+			return err
+		}
+		var err error
+		result, err = tx.ChapterVersions(projectID, chapterID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0)
+	for _, version := range result {
+		ids = append(ids, version.SourceIDs...)
+	}
+	if err := s.checkSources(ctx, actor, projectID, ids); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID, key string, input RestoreWorkingCopyInput) (json.RawMessage, int, bool, error) {
+	if strings.TrimSpace(input.ChapterVersionID) == "" || input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "restoreWorkingCopy", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID,
+		func(tx Transaction, p Project) (any, int, error) {
+			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
+				return nil, 0, ErrVersionConflict
+			}
+			chapter, err := tx.Chapter(projectID, chapterID)
+			if err != nil {
+				return nil, 0, err
+			}
+			workingCopy, err := tx.WorkingCopy(projectID, chapterID)
+			if err != nil {
+				return nil, 0, err
+			}
+			version, err := tx.ChapterVersion(projectID, chapterID, input.ChapterVersionID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if !sameVersion(chapter.CurrentVersionID, input.ExpectedChapterVersionID) ||
+				!sameVersion(workingCopy.BaseChapterVersionID, input.ExpectedChapterVersionID) ||
+				workingCopy.WorkingCopyRevision != input.ExpectedWorkingCopyRevision ||
+				workingCopy.SpecRevision != input.ExpectedSpecRevision {
+				return nil, 0, ErrVersionConflict
+			}
+			next := workingCopy
+			next.WorkingCopyRevision++
+			next.SpecRevision = p.SpecRevision
+			next.BodyMarkdown = version.BodyMarkdown
+			next.SourceIDs = slices.Clone(version.SourceIDs)
+			next.ReviewItems = slices.Clone(version.ReviewItems)
+			next.UpdatedAt = time.Now().UTC()
+			if err := tx.SaveWorkingCopy(workingCopy, next); err != nil {
+				return nil, 0, err
+			}
+			return next, 200, nil
+		})
+}

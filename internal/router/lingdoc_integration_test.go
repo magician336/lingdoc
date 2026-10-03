@@ -170,4 +170,59 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	request(http.MethodGet, path, "", "", full.Token, true, 200)
 	input := `{"expected_spec_revision":0,"fields":{"research_subject":"synthetic","research_goal":"integration"}}`
 	request(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false, 200)
-	rep
+	replayed := request(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false, 200)
+	if !strings.Contains(replayed.Body.String(), `"replayed":true`) {
+		t.Fatal("lost-response replay not reported")
+	}
+	request(http.MethodPut, path+"/spec", input, "save-stale-integration", jwtTokens["a-owner"], false, 409)
+	request(http.MethodPost, path+"/activate", `{"expected_spec_revision":1}`, "activate-integration", jwtTokens["a-owner"], false, 200)
+	chapterEnvelope := struct {
+		Data []workspacecore.Chapter `json:"data"`
+	}{}
+	chapterResponse := request(http.MethodGet, path+"/chapters", "", "", jwtTokens["a-owner"], false, 200)
+	if err := json.Unmarshal(chapterResponse.Body.Bytes(), &chapterEnvelope); err != nil || len(chapterEnvelope.Data) != 2 {
+		t.Fatalf("list chapters for working-copy flow: chapters=%d err=%v", len(chapterEnvelope.Data), err)
+	}
+	chapterID := chapterEnvelope.Data[0].ID
+	chapterPath := path + "/chapters/" + chapterID
+	copyResponse := request(http.MethodGet, chapterPath+"/working-copy", "", "", jwtTokens["a-owner"], false, 200)
+	var initialCopy struct {
+		Data workspacecore.WorkingCopy `json:"data"`
+	}
+	if err := json.Unmarshal(copyResponse.Body.Bytes(), &initialCopy); err != nil || initialCopy.Data.WorkingCopyRevision != 1 {
+		t.Fatalf("read initial working copy: %+v err=%v", initialCopy.Data, err)
+	}
+	request(http.MethodPut, chapterPath+"/working-copy", `{"base_chapter_version_id":null,"expected_spec_revision":1,"expected_working_copy_revision":1,"body_markdown":"synthetic saved draft","source_ids":[]}`, "save-copy-integration", jwtTokens["a-owner"], false, 200)
+	commitResponse := request(http.MethodPost, chapterPath+"/working-copy/commit", `{"expected_spec_revision":1,"expected_working_copy_revision":2,"expected_chapter_version_id":null}`, "commit-copy-integration", jwtTokens["a-owner"], false, 201)
+	if !strings.Contains(commitResponse.Body.String(), `"body_markdown":"synthetic saved draft"`) {
+		t.Fatalf("explicit commit did not persist the working-copy body: %s", commitResponse.Body.String())
+	}
+	request(http.MethodGet, chapterPath+"/versions", "", "", jwtTokens["a-owner"], false, 200)
+	bound := request(http.MethodPost, path+"/assets", `{"knowledge_id":"knowledge"}`, "bind-integration", jwtTokens["a-owner"], false, 201)
+	var asset struct{ Data struct{ ID string } }
+	if err := json.Unmarshal(bound.Body.Bytes(), &asset); err != nil {
+		t.Fatal(err)
+	}
+	if asset.Data.ID == "" {
+		t.Fatal("binding missing real ID")
+	}
+	retrieval := `{"query":"synthetic","asset_ids":["` + asset.Data.ID + `"]}`
+	request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["a-owner"], false, 200)
+	shares.allowed = false
+	request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["a-owner"], false, 422)
+	request(http.MethodPost, path+"/assets", `{"knowledge_id":"knowledge"}`, "bind-integration", jwtTokens["a-owner"], false, 404) // Reauthorization before replay.
+	shares.allowed = true
+	if err := db.Exec("UPDATE knowledges SET parse_status='processing' WHERE id='knowledge'").Error; err != nil {
+		t.Fatal(err)
+	}
+	request(http.MethodPost, path+"/retrieval", retrieval, "", jwtTokens["a-owner"], false, 422)
+	if err := db.Exec("DELETE FROM lingdoc_members WHERE project_id=? AND user_id='a-owner'", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	request(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false, 404)
+	request(http.MethodGet, path, "", "", full.Token, true, 404) // FullAccess is not project membership.
+	var count int64
+	if err := db.Table("lingdoc_projects").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("denied write had side effects: %d %v", count, err)
+	}
+}

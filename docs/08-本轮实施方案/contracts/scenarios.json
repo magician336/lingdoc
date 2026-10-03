@@ -188,4 +188,2790 @@
                       "body_markdown": "协作者尝试写入的不同版本。", "source_ids": []}
           },
           "assertion": "后到的协作者写入必须因旧章节版本发生冲突，而不是被静默覆盖。",
-          "response_exa
+          "response_example": "version_conflict",
+          "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "冲突明确指向章节版本过期"}]
+        },
+        {
+          "id": "F05-05",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {},
+          "assertion": "冲突后重新读取，确认只有 Owner 的新版本成为当前版本且正文未丢失。",
+          "response_example": "success",
+          "checks": [
+            {"path": "/data/1/current_version_id", "equals": "{{f05.written_version}}", "intent": "协作者的冲突写入没有创建另一条当前版本"},
+            {"path": "/data/1/body_markdown", "equals": "{{f05.written_body}}", "intent": "冲突没有覆盖 Owner 已保存的正文"}
+          ]
+        }
+      ],
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
+      "id": "F06",
+      "name": "生成期间改条件",
+      "setup": "生成基于spec_revision=2；执行中Owner改为3。",
+      "steps": [
+        {
+          "operation_id": "startGeneration",
+          "expected_http": 202,
+          "assertion": "",
+          "response_example": "queued"
+        },
+        {
+          "operation_id": "saveSpec",
+          "expected_http": 200,
+          "assertion": "",
+          "response_example": "success"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "",
+          "response_example": "succeeded"
+        },
+        {
+          "operation_id": "getCandidate",
+          "expected_http": 200,
+          "assertion": "",
+          "response_example": "stale"
+        },
+        {
+          "operation_id": "acceptCandidate",
+          "expected_http": 409,
+          "assertion": "不能自动套用旧候选；章版本不变。",
+          "response_example": "stale_input"
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace"
+      ]
+    },
+    {
+      "id": "F07",
+      "name": "来源撤权影响派生内容",
+      "setup": "候选与导出已存在；底座撤销调用者对绑定资料的读取权。",
+      "steps": [
+        {
+          "operation_id": "getSource",
+          "expected_http": 403,
+          "assertion": "",
+          "response_example": "source_access_denied"
+        },
+        {
+          "operation_id": "getCandidate",
+          "expected_http": 403,
+          "assertion": "",
+          "response_example": "source_access_denied"
+        },
+        {
+          "operation_id": "listChapters",
+          "expected_http": 403,
+          "assertion": "",
+          "response_example": "source_access_denied"
+        },
+        {
+          "operation_id": "downloadExport",
+          "expected_http": 403,
+          "assertion": "",
+          "response_example": "source_access_denied"
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F08",
+      "name": "重复提交与幂等冲突",
+      "starting_state": "S5",
+      "setup": "已授权；第一次请求成功，客户端未收到响应。",
+      "steps": [
+        {
+          "id": "F08-00",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f08.chapter_id": "/data/1/id"},
+          "assertion": "从本次起点读取章节资源 ID，后续生成请求使用这个响应捕获值。",
+          "response_example": "success",
+          "checks": [{"path": "/data/1/section_id", "equals": "question", "intent": "生成请求目标是研究问题章节"}]
+        },
+        {
+          "id": "F08-01",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f08-generation-0001"},
+                       "json": {"chapter_id": "{{f08.chapter_id}}", "asset_ids": ["{{asset.k-demo}}"],
+                                "instruction": "幂等场景的固定合成生成请求。", "expected_spec_revision": 1,
+                                "expected_chapter_version_id": null}},
+          "capture": {"f08.first_run_id": "/data/id"},
+          "assertion": "第一次提交成功，记录服务返回的 run_id。",
+          "response_example": "queued",
+          "checks": [{"path": "/meta/replayed", "equals": false, "intent": "首次提交不是重放响应"}]
+        },
+        {
+          "id": "F08-02",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f08-generation-0001"},
+                       "json": {"chapter_id": "{{f08.chapter_id}}", "asset_ids": ["{{asset.k-demo}}"],
+                                "instruction": "幂等场景的固定合成生成请求。", "expected_spec_revision": 1,
+                                "expected_chapter_version_id": null}},
+          "capture": {"f08.replayed_run_id": "/data/id"},
+          "assertion": "同键同请求返回原run_id；只有一条业务任务。",
+          "response_example": "replayed",
+          "checks": [
+            {"path": "/data/id", "equals": "{{f08.first_run_id}}", "intent": "同键重放返回第一次创建的同一个 run_id，因此没有第二条生成任务"},
+            {"path": "/meta/replayed", "equals": true, "intent": "服务明确标记该响应来自幂等重放"}
+          ]
+        },
+        {
+          "id": "F08-03",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 409,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f08-generation-0001"},
+                       "json": {"chapter_id": "{{f08.chapter_id}}", "asset_ids": ["{{asset.k-demo}}"],
+                                "instruction": "改过的请求必须产生幂等冲突。", "expected_spec_revision": 1,
+                                "expected_chapter_version_id": null}},
+          "assertion": "同键改 instruction 必须拒绝，报告区分幂等冲突与成功重放。",
+          "response_example": "idempotency_conflict",
+          "checks": [{"path": "/error/code", "equals": "idempotency_conflict", "intent": "同键不同请求得到幂等冲突，而不是被当成重放"}]
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F09",
+      "name": "模型超时或中断",
+      "setup": "模型适配器模拟可确认的调用失败或worker中断；供应商结果无法确认时转入F23。",
+      "steps": [
+        {
+          "operation_id": "startGeneration",
+          "expected_http": 202,
+          "assertion": "",
+          "response_example": "queued"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "candidate_id为空；不显示生成成功。",
+          "response_example": "failed"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "另一个中断样例；新任务重试使用新键，旧晚到结果不得写新任务。",
+          "response_example": "interrupted"
+        }
+      ],
+      "providers": [
+        "evidence"
+      ]
+    },
+    {
+      "id": "F10",
+      "name": "未确认不得导出",
+      "starting_state": "S8",
+      "setup": "问题章有人工正文但没有确认；另一必填章为空。后端检查与快照都应阻断导出。",
+      "steps": [
+        {
+          "id": "F10-01",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f10.project_version": "/data/project_version"},
+          "assertion": "读取起点项目版本作为交付检查的条件版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F10-02",
+          "operation_id": "checkCurrent",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {},
+                      "json": {"expected_project_version": "{{f10.project_version}}"}},
+          "checks": [
+            {"path": "/data/status", "equals": "blocked", "intent": "存在未确认或空章节时检查必须阻断"}
+          ],
+          "assertion": "未确认正文与空必填章节均进入当前检查结果。",
+          "response_example": "blocked"
+        },
+        {
+          "id": "F10-03",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f10-release-blocked-0001"},
+                      "json": {"expected_project_version": "{{f10.project_version}}"}},
+          "capture": {"f10.snapshot_id": "/data/id", "f10.snapshot_status": "/data/check/status"},
+          "checks": [{"path": "/data/check/status", "equals": "blocked", "intent": "阻断检查仍允许留存快照，但不能通过导出"}],
+          "assertion": "保留阻断快照供界面说明原因。",
+          "response_example": "blocked"
+        },
+        {
+          "id": "F10-04",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f10.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F10-03",
+          "checks": [
+            {"path": "/data/id", "equals": "{{f10.snapshot_id}}", "intent": "读回的是刚保存的历史快照"},
+            {"path": "/data/check/status", "equals": "{{f10.snapshot_status}}", "intent": "读回历史快照仍是阻断态"}
+          ],
+          "assertion": "通过后续读取确认阻断快照已持久化。",
+          "response_example": "historical"
+        },
+        {
+          "id": "F10-05",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 422,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f10.snapshot_id}}"},
+                      "headers": {"Idempotency-Key": "f10-export-blocked-0001"}, "json": {"format": "docx"}},
+          "checks": [{"path": "/error/code", "equals": "preflight_blocked", "intent": "导出被后端阻断项拒绝"}],
+          "assertion": "无导出文件可下载，不用前端按钮状态代替后端判断。",
+          "response_example": "preflight_blocked"
+        },
+        {
+          "id": "F10-06",
+          "operation_id": "listExports",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "readback_of": "F10-05",
+          "checks": [{"path": "/data/items", "length": 0, "intent": "被阻断的快照没有产生可下载产物"}],
+          "assertion": "读回导出历史确认未生成文件。",
+          "response_example": "empty"
+        }
+      ],
+      "providers": [
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F11",
+      "name": "快照过期",
+      "starting_state": "S1",
+      "setup": "已经准备快照，此后章节发生变更。",
+      "steps": [
+        {
+          "id": "F11-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {
+            "f11.method_id": "/data/0/id",
+            "f11.method_version": "/data/0/current_version_id",
+            "f11.question_id": "/data/1/id",
+            "f11.question_version": "/data/1/current_version_id"
+          },
+          "assertion": "从已读回的两个章节开始构造可导出快照。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F11-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.question_id}}"},
+            "headers": {"Idempotency-Key": "f11-question-save-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.question_version}}", "expected_spec_revision": 1,
+                     "body_markdown": "合成演示：研究问题章节，用于验证快照过期。", "source_ids": []}
+          },
+          "capture": {"f11.question_written_version": "/data/current_version_id"},
+          "assertion": "保存首个章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-03",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.question_id}}"},
+            "headers": {"Idempotency-Key": "f11-question-confirm-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.question_written_version}}", "expected_spec_revision": 1,
+                     "review_decisions": []}
+          },
+          "assertion": "确认研究问题章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.method_id}}"},
+            "headers": {"Idempotency-Key": "f11-method-save-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.method_version}}", "expected_spec_revision": 1,
+                     "body_markdown": "合成演示：研究方案章节，用于验证快照过期。", "source_ids": []}
+          },
+          "capture": {"f11.method_written_version": "/data/current_version_id"},
+          "assertion": "保存另一个必需章节。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-05",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.method_id}}"},
+            "headers": {"Idempotency-Key": "f11-method-confirm-0001"},
+            "json": {"expected_chapter_version_id": "{{f11.method_written_version}}", "expected_spec_revision": 1,
+                     "review_decisions": []}
+          },
+          "assertion": "确认研究方案章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-06",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f11.project_version": "/data/project_version"},
+          "assertion": "读取项目的最新版本以准备交付快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-07",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {"Idempotency-Key": "f11-release-0001"},
+            "json": {"expected_project_version": "{{f11.project_version}}"}
+          },
+          "capture": {"f11.snapshot_id": "/data/id"},
+          "checks": [{"path": "/data/check/status", "equals": "passed", "intent": "快照检查可通过，后续导出拒绝由过期引起"}],
+          "assertion": "先构造可导出的快照，隔离章节编辑导致的失效。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-08",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "chapterId": "{{f11.question_id}}"},
+            "headers": {"Idempotency-Key": "f11-question-edit-0002"},
+            "json": {"expected_chapter_version_id": "{{f11.question_written_version}}", "expected_spec_revision": 1,
+                     "body_markdown": "合成演示：快照准备后编辑章节，使快照成为历史版本。", "source_ids": []}
+          },
+          "capture": {"f11.question_edited_version": "/data/current_version_id"},
+          "assertion": "快照准备后保存新章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F11-09",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f11.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F11-08",
+          "checks": [{"path": "/data/is_current", "equals": false, "intent": "通过后续读取快照观察到章节编辑已使快照过期"}],
+          "assertion": "结论来自章节编辑后的 getRelease 读回响应。",
+          "response_example": "historical"
+        },
+        {
+          "id": "F11-10",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 409,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f11.snapshot_id}}"},
+            "headers": {"Idempotency-Key": "f11-export-stale-0001"},
+            "json": {"format": "docx"}
+          },
+          "checks": [{"path": "/error/code", "equals": "stale_input", "intent": "服务端因快照过期拒绝导出"}],
+          "assertion": "历史快照的导出请求被服务端拒绝。",
+          "response_example": "stale_input"
+        }
+      ],
+      "providers": [
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F12",
+      "name": "草稿版本也有效",
+      "starting_state": "S4",
+      "setup": "草稿条件先后保存，spec_revision递增，立项不豁免版本比较。",
+      "steps": [
+        {
+          "id": "F12-01",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f12.initial_spec_revision": "/data/spec_revision"},
+          "assertion": "先读取草稿项目当前版本，后续写入以此作为乐观并发基线。",
+          "response_example": "success",
+          "checks": [{"path": "/data/spec_revision", "equals": 1, "intent": "起点的草稿条件版本为 1"}]
+        },
+        {
+          "id": "F12-02",
+          "operation_id": "saveSpec",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-save-spec-0001"},
+                       "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}",
+                                "fields": {"research_subject": "公开的合成调查样本", "research_goal": "草稿状态下验证条件版本递增与立项"}}},
+          "capture": {"f12.saved_spec_revision": "/data/spec_revision"},
+          "assertion": "草稿状态保存成功，并返回递增后的 spec_revision。",
+          "response_example": "success"
+        },
+        {
+          "id": "F12-03",
+          "operation_id": "activateProject",
+          "actor": "u-owner",
+          "expected_http": 409,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-activate-stale-0001"},
+                       "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}"}},
+          "assertion": "立项请求仍用保存前的旧 spec_revision，必须明确冲突，不得因处于草稿状态而跳过版本比较。",
+          "response_example": "version_conflict",
+          "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "草稿立项明确报告条件版本冲突"}]
+        },
+        {
+          "id": "F12-04",
+          "operation_id": "activateProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-activate-fresh-0001"},
+                       "json": {"expected_spec_revision": "{{f12.saved_spec_revision}}"}},
+          "assertion": "刷新为刚保存的 spec_revision 后，草稿项目可以正常立项。",
+          "response_example": "success",
+          "checks": [
+            {"path": "/data/status", "equals": "active", "intent": "使用最新草稿版本后立项成功"},
+            {"path": "/data/spec_revision", "equals": "{{f12.saved_spec_revision}}", "intent": "立项返回刚保存的条件版本"}
+          ]
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace"
+      ]
+    },
+    {
+      "id": "F13",
+      "name": "文件校验失败",
+      "setup": "快照内容合法，导出器产生损坏文件。",
+      "steps": [
+        {
+          "operation_id": "startExport",
+          "expected_http": 202,
+          "assertion": "",
+          "response_example": "queued"
+        },
+        {
+          "operation_id": "getExport",
+          "expected_http": 200,
+          "assertion": "",
+          "response_example": "failed"
+        },
+        {
+          "operation_id": "getExport",
+          "expected_http": 200,
+          "assertion": "正文含不支持的 Markdown 时保留 failed 产物，明确 unsupported_format 和修改提示，不生成下载字段。",
+          "response_example": "unsupported_format"
+        },
+        {
+          "operation_id": "downloadExport",
+          "expected_http": 422,
+          "assertion": "损坏文件不开放下载；显示恢复动作。",
+          "response_example": "invalid_state"
+        }
+      ],
+      "providers": [
+        "delivery"
+      ]
+    },
+    {
+      "id": "F14",
+      "name": "只有相关没有支撑",
+      "setup": "合成资料主题相关但无法支持指定结论；provider测试和人工质量核查分开。",
+      "steps": [
+        {
+          "operation_id": "startGeneration",
+          "expected_http": 202,
+          "assertion": "",
+          "response_example": "queued"
+        },
+        {
+          "operation_id": "getCandidate",
+          "expected_http": 200,
+          "assertion": "保留review_items；正文相关不等于支持结论；必须实际人工核查。",
+          "response_example": "success"
+        }
+      ],
+      "providers": [
+        "evidence"
+      ]
+    },
+    {
+      "id": "F15",
+      "name": "待核项不在正文也不能丢",
+      "setup": "Candidate正文不写任何警示，仅review_items有一条。",
+      "starting_state": "S5",
+      "steps": [
+        {
+          "id": "F15-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f15.question_id": "/data/1/id", "f15.question_version": "/data/1/current_version_id"},
+          "assertion": "读取空白问题章和其当前版本。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F15-02",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f15-generate-0001"}, "json": {"chapter_id": "{{f15.question_id}}", "asset_ids": ["{{asset.k-demo}}"], "instruction": "正文只写研究问题，不要在正文里写警示；把必须核实的事实单独放入 review_items。", "expected_spec_revision": 1, "expected_chapter_version_id": "{{f15.question_version}}"}},
+          "capture": {"f15.run_id": "/data/id"},
+          "assertion": "提交生成并等待真实候选；本场景要求候选正文没有警示、review_items 中至少一项。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F15-03",
+          "operation_id": "getGeneration",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "runId": "{{f15.run_id}}"}, "headers": {}, "json": null},
+          "capture": {"f15.candidate_id": "/data/candidate_id"},
+          "checks": [{"path": "/data/status", "equals": "succeeded", "intent": "候选来自实际完成的生成任务"}],
+          "assertion": "轮询真实生成任务直到成功或失败；只有 succeeded 才继续。",
+          "response_example": "succeeded"
+        },
+        {
+          "id": "F15-04",
+          "operation_id": "getCandidate",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "candidateId": "{{f15.candidate_id}}"}, "headers": {}, "json": null},
+          "capture": {"f15.candidate_id_readback": "/data/id"},
+          "assertion": "读回真实候选，脚本另核对正文、review_items 和相应采纳确认。",
+          "response_example": "success"
+        },
+        {
+          "id": "F15-05",
+          "operation_id": "acceptCandidate",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-accept-0001"}, "json": {"candidate_id": "{{f15.candidate_id}}", "expected_chapter_version_id": "{{f15.question_version}}", "expected_spec_revision": 1, "replace_existing": false}},
+          "capture": {"f15.adopted_version": "/data/current_version_id"},
+          "assertion": "采纳候选后，正文与待核项分别按候选保存。",
+          "response_example": "success"
+        },
+        {
+          "id": "F15-06",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-edit-0001"}, "json": {"expected_chapter_version_id": "{{f15.adopted_version}}", "expected_spec_revision": 1, "body_markdown": "人工编辑后的合成研究问题，不复制待核警示正文。", "source_ids": []}},
+          "capture": {"f15.edited_version": "/data/current_version_id"},
+          "assertion": "普通编辑后继续继承当前版本全部待核项。",
+          "response_example": "success"
+        },
+        {
+          "id": "F15-07",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 422,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f15.question_id}}"}, "headers": {"Idempotency-Key": "f15-confirm-missing-decision-0001"}, "json": {"expected_chapter_version_id": "{{f15.edited_version}}", "expected_spec_revision": 1, "review_decisions": []}},
+          "assertion": "任意待核项缺少处置决定时拒绝确认。",
+          "response_example": "invalid_state"
+        }
+      ],
+      "assertions": [
+        "采纳和普通编辑继承同ID待核项。",
+        "确认缺少任何一项review_decision则422。",
+        "retained_warning连同原文和理由冻结，并出现在内部演示文件附录。"
+      ],
+      "providers": [
+        "evidence",
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F16",
+      "name": "空章和一章输入可保留阻断快照",
+      "starting_state": "S1",
+      "setup": "同一项目先以空章节输入冻结，再写入单章正文但不确认并再次冻结；两个快照都必须保留阻断原因且不可导出。",
+      "steps": [
+        {
+          "id": "F16-01",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f16.project_version_empty": "/data/project_version"},
+          "assertion": "读取空项目的当前版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F16-02",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "checks": [
+            {"path": "/data/0/current_version_id", "equals": null, "intent": "空方法章没有虚构版本 ID"},
+            {"path": "/data/1/current_version_id", "equals": null, "intent": "空问题章没有虚构版本 ID"}
+          ],
+          "assertion": "读回两章，版本均为 null。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F16-03",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f16-empty-release-0001"},
+                      "json": {"expected_project_version": "{{f16.project_version_empty}}"}},
+          "capture": {"f16.empty_snapshot_id": "/data/id", "f16.empty_snapshot_status": "/data/check/status"},
+          "checks": [{"path": "/data/check/status", "equals": "blocked", "intent": "空章输入仍可留存阻断快照"}],
+          "assertion": "空章输入产生有阻断结果的快照。",
+          "response_example": "empty_chapters"
+        },
+        {
+          "id": "F16-04",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f16.empty_snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F16-03",
+          "checks": [
+            {"path": "/data/id", "equals": "{{f16.empty_snapshot_id}}", "intent": "按 ID 读回刚保存的空章快照"},
+            {"path": "/data/check/status", "equals": "{{f16.empty_snapshot_status}}", "intent": "读回空章快照仍是阻断态"}
+          ],
+          "assertion": "通过后续 GET 确认空章快照已保存。",
+          "response_example": "success"
+        },
+        {
+          "id": "F16-05",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 422,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f16.empty_snapshot_id}}"},
+                      "headers": {"Idempotency-Key": "f16-empty-export-0001"}, "json": {"format": "docx"}},
+          "checks": [{"path": "/error/code", "equals": "preflight_blocked", "intent": "空章快照不能开始导出"}],
+          "assertion": "空章快照被后端拒绝导出。",
+          "response_example": "preflight_blocked"
+        },
+        {
+          "id": "F16-06",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.question}}"},
+                      "headers": {"Idempotency-Key": "f16-one-chapter-save-0001"},
+                      "json": {"expected_chapter_version_id": null, "expected_spec_revision": 1,
+                               "body_markdown": "人工输入的一章合成内容。", "source_ids": []}},
+          "capture": {"f16.question_version": "/data/current_version_id"},
+          "assertion": "只写入问题章，方法章保持空白。",
+          "response_example": "success"
+        },
+        {
+          "id": "F16-07",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f16.project_version_one": "/data/project_version"},
+          "assertion": "读取单章编辑后的项目版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F16-08",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f16-one-release-0001"},
+                      "json": {"expected_project_version": "{{f16.project_version_one}}"}},
+          "capture": {"f16.one_snapshot_id": "/data/id", "f16.one_snapshot_status": "/data/check/status"},
+          "checks": [{"path": "/data/check/status", "equals": "blocked", "intent": "只有一章有正文仍产生阻断快照"}],
+          "assertion": "单章输入仍可留存阻断原因。",
+          "response_example": "one_chapter"
+        },
+        {
+          "id": "F16-09",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f16.one_snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F16-08",
+          "checks": [
+            {"path": "/data/id", "equals": "{{f16.one_snapshot_id}}", "intent": "按 ID 读回刚保存的单章快照"},
+            {"path": "/data/check/status", "equals": "{{f16.one_snapshot_status}}", "intent": "读回单章快照仍是阻断态"}
+          ],
+          "assertion": "通过后续 GET 确认单章快照已保存。",
+          "response_example": "success"
+        },
+        {
+          "id": "F16-10",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 422,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f16.one_snapshot_id}}"},
+                      "headers": {"Idempotency-Key": "f16-one-export-0001"}, "json": {"format": "docx"}},
+          "checks": [{"path": "/error/code", "equals": "preflight_blocked", "intent": "单章快照不能开始导出"}],
+          "assertion": "单章快照被后端拒绝导出。",
+          "response_example": "preflight_blocked"
+        },
+        {
+          "id": "F16-11",
+          "operation_id": "listExports",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "readback_of": "F16-10",
+          "checks": [{"path": "/data/items", "length": 0, "intent": "空章与单章阻断均未产生导出产物"}],
+          "assertion": "读回导出列表确认阻断快照没有文件。",
+          "response_example": "empty"
+        }
+      ],
+      "providers": [
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F17",
+      "name": "撤权后可执行恢复",
+      "assertions": [
+        "getAccessStatus只返回状态与恢复动作，不泄露原文/研究条件/资料标题。",
+        "合法恢复原授权后重新查询状态。",
+        "永久撤权则新建干净项目，手动输入允许内容，不复制旧正文/候选/快照。",
+        "旧派生内容不能通过删除绑定放开。"
+      ],
+      "providers": [
+        "evidence",
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F18",
+      "name": "幂等顺序和中间状态",
+      "starting_state": "S5",
+      "steps": [
+        {
+          "id": "F18-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f18.question_id": "/data/1/id", "f18.initial_version": "/data/1/current_version_id"},
+          "assertion": "读取待写入章节的初始版本。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F18-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f18.question_id}}"}, "headers": {"Idempotency-Key": "f18-save-0001"}, "json": {"expected_chapter_version_id": "{{f18.initial_version}}", "expected_spec_revision": 1, "body_markdown": "幂等顺序合成探针。", "source_ids": []}},
+          "capture": {"f18.saved_version": "/data/current_version_id"},
+          "assertion": "第一次提交成功并创建版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F18-03",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f18.question_id}}"}, "headers": {"Idempotency-Key": "f18-save-0001"}, "json": {"expected_chapter_version_id": "{{f18.initial_version}}", "expected_spec_revision": 1, "body_markdown": "幂等顺序合成探针。", "source_ids": []}},
+          "checks": [{"path": "/meta/replayed", "equals": true, "intent": "同键同请求应在过期版本比较之前重放"}],
+          "assertion": "模拟首次响应丢失后的同请求重放。",
+          "response_example": "replayed"
+        },
+        {
+          "id": "F18-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 409,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f18.question_id}}"}, "headers": {"Idempotency-Key": "f18-save-0001"}, "json": {"expected_chapter_version_id": "{{f18.initial_version}}", "expected_spec_revision": 1, "body_markdown": "不同请求不得复用相同键。", "source_ids": []}},
+          "checks": [{"path": "/error/code", "equals": "idempotency_conflict", "intent": "同键不同请求返回冲突"}],
+          "assertion": "同键改正文必须冲突，且不创建第二个版本。",
+          "response_example": "idempotency_conflict"
+        },
+        {
+          "id": "F18-05",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f18-generation-0001"}, "json": {"chapter_id": "{{f18.question_id}}", "asset_ids": ["{{asset.k-demo}}"], "instruction": "幂等顺序合成生成探针。", "expected_spec_revision": 1, "expected_chapter_version_id": "{{f18.saved_version}}"}},
+          "capture": {"f18.generation_id": "/data/id"},
+          "assertion": "提交异步生成任务并记录原始任务 ID。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F18-06",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f18-generation-0001"}, "json": {"chapter_id": "{{f18.question_id}}", "asset_ids": ["{{asset.k-demo}}"], "instruction": "幂等顺序合成生成探针。", "expected_spec_revision": 1, "expected_chapter_version_id": "{{f18.saved_version}}"}},
+          "checks": [{"path": "/data/id", "equals": "{{f18.generation_id}}", "intent": "同键异步任务重放原任务"}, {"path": "/meta/replayed", "equals": true, "intent": "异步任务同键请求标记重放"}],
+          "assertion": "重放完全相同的异步生成请求，服务返回原任务而不新建任务。",
+          "response_example": "replayed"
+        }
+      ],
+      "assertions": [
+        "先授权；同键同请求已完成时在版本比较之前重放。",
+        "保存/采纳/快照首次响应丢失后不重复写。",
+        "同键未提交返回409 request_in_progress及Retry-After；已提交异步任务直接返回原任务。",
+        "同键不同请求409；撤权后不重放受限内容；历史结果meta要求刷新。"
+      ],
+      "providers": [
+        "evidence",
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F19",
+      "name": "冻结输入可复算",
+      "starting_state": "S5",
+      "setup": "绑定可用合成资料；冻结带来源标记的已确认双章，编辑并重新冻结，再读回旧快照与当前性；真实下载以文件字节核 hash，撤销资料分享后重试同一下载。Source展示名不可通过此 HTTP 面修改，报告要单列该项未验证。",
+      "download_sha256_variable": "f19.export_sha256",
+      "steps": [
+        {
+          "id": "F19-01",
+          "operation_id": "retrieveSources",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {},
+                      "json": {"query": "合成测试材料中的测试内容", "asset_ids": ["{{asset.k-demo}}"]}},
+          "capture": {"f19.source_id": "/data/0/id"},
+          "assertion": "从已授权的可用资料取得真实检索来源。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-02",
+          "operation_id": "getSource",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "sourceId": "{{f19.source_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F19-01",
+          "capture": {"f19.quoted_text_hash": "/data/quoted_text_hash"},
+          "checks": [{"path": "/data/id", "equals": "{{f19.source_id}}", "intent": "来源读取对应这次检索命中的真实来源"}],
+          "assertion": "读回来源文本及其 UTF-8 hash。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-03",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.question}}"},
+                      "headers": {"Idempotency-Key": "f19-question-save-0001"},
+                      "json": {"expected_chapter_version_id": null, "expected_spec_revision": 1,
+                               "body_markdown": "合成冻结复算问题 [[source:{{f19.source_id}}]]。",
+                               "source_ids": ["{{f19.source_id}}"]}},
+          "capture": {"f19.question_version": "/data/current_version_id"},
+          "assertion": "章节正文标记与 source_ids 引用同一条来源。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-04",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.question}}"},
+                      "headers": {"Idempotency-Key": "f19-question-confirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f19.question_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认引用来源的问题章。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-05",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.method}}"},
+                      "headers": {"Idempotency-Key": "f19-method-save-0001"},
+                      "json": {"expected_chapter_version_id": null, "expected_spec_revision": 1,
+                               "body_markdown": "合成方法章节用于冻结摘要测试 [[source:{{f19.source_id}}]]。",
+                               "source_ids": ["{{f19.source_id}}"]}},
+          "capture": {"f19.method_version": "/data/current_version_id"},
+          "assertion": "补齐第二章，形成完整交付输入。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-06",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.method}}"},
+                      "headers": {"Idempotency-Key": "f19-method-confirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f19.method_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认第二章以满足交付前置条件。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-07",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f19.project_version_first": "/data/project_version"},
+          "assertion": "读取两章确认后的项目版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-08",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f19-release-first-0001"},
+                      "json": {"expected_project_version": "{{f19.project_version_first}}"}},
+          "capture": {"f19.first_snapshot_id": "/data/id"},
+          "checks": [{"path": "/data/check/status", "equals": "passed", "intent": "完整确认输入允许冻结"}],
+          "assertion": "冻结首个交付输入。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-09",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f19.first_snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F19-08",
+          "capture": {"f19.first_digest": "/data/snapshot_digest"},
+          "checks": [
+            {"path": "/data/frozen_input/sources", "length": 1, "intent": "冻结输入包含被章节引用的来源"},
+            {"path": "/data/is_current", "equals": true, "intent": "刚创建的快照当前性为真"}
+          ],
+          "assertion": "读回冻结内容、digest 和当前性。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-10",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.question}}"},
+                      "headers": {"Idempotency-Key": "f19-question-edit-0002"},
+                      "json": {"expected_chapter_version_id": "{{f19.question_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成冻结复算问题已编辑 [[source:{{f19.source_id}}]]。",
+                               "source_ids": ["{{f19.source_id}}"]}},
+          "capture": {"f19.question_edited_version": "/data/current_version_id"},
+          "assertion": "编辑当前章节，但不修改已冻结快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-11",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{chapter.question}}"},
+                      "headers": {"Idempotency-Key": "f19-question-reconfirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f19.question_edited_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认新正文以形成第二个可检查输入。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-12",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f19.project_version_second": "/data/project_version"},
+          "assertion": "读取编辑确认后的项目版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-13",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f19-release-second-0001"},
+                      "json": {"expected_project_version": "{{f19.project_version_second}}"}},
+          "capture": {"f19.second_snapshot_id": "/data/id"},
+          "checks": [{"path": "/data/check/status", "equals": "passed", "intent": "编辑后仍可冻结通过检查的内容"}],
+          "assertion": "将已编辑内容冻结为第二个输入。",
+          "response_example": "success"
+        },
+        {
+          "id": "F19-14",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f19.first_snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F19-10",
+          "checks": [
+            {"path": "/data/snapshot_digest", "equals": "{{f19.first_digest}}", "intent": "旧快照摘要不随当前章节编辑变化"},
+            {"path": "/data/is_current", "equals": false, "intent": "旧快照当前性动态变为 false"}
+          ],
+          "assertion": "再读旧快照，比较冻结摘要并读取动态当前性。",
+          "response_example": "historical"
+        },
+        {
+          "id": "F19-15",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f19.second_snapshot_id}}"},
+                      "headers": {"Idempotency-Key": "f19-export-0001"}, "json": {"format": "docx"}},
+          "capture": {"f19.export_id": "/data/id"},
+          "assertion": "为最新通过检查的冻结输入提交导出。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F19-16",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "exportId": "{{f19.export_id}}"},
+                      "headers": {}, "json": null},
+          "capture": {"f19.export_sha256": "/data/file_sha256"},
+          "checks": [{"path": "/data/status", "equals": "verified", "intent": "已验证产物才进入下载检查"}],
+          "assertion": "读取导出摘要供真实字节比对。",
+          "reference_response": {"data": {"status": "verified"}},
+          "response_example": "verified"
+        },
+        {
+          "id": "F19-17",
+          "operation_id": "downloadExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "exportId": "{{f19.export_id}}"},
+                      "headers": {}, "json": null},
+          "expected_binary": {"content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
+          "assertion": "下载 DOCX 并将文件字节 SHA-256 与 getExport 返回值比较。"
+        }
+      ],
+      "assertions": [
+        "实时驱动按规范 canonical JSON 重算 frozen_input digest。",
+        "正文 source 标记集合等于 source_ids；来源 hash 对应 quoted_text UTF-8 字节。",
+        "撤销跨租户资料分享后重试同一文件下载，必须重新授权并拒绝。"
+      ],
+      "providers": [
+        "delivery"
+      ]
+    },
+    {
+      "id": "F20",
+      "name": "已有人工正文再次采纳",
+      "setup": "从 S5 起读取空白问题章并保存人工正文；再以 k-demo 真实生成建立并确认旧待核项，手动编辑后再次以 k-demo 生成并替换整章。参考请求用一条 review_decision 表示数组项结构；真实驱动按实际响应中的每条待核项展开决定。替换候选的待核集合由实际响应决定，必须验证新版本与该候选完整一致。",
+      "starting_state": "S5",
+      "steps": [
+        {
+          "id": "F20-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f20.question_id": "/data/1/id", "f20.previous_version": "/data/1/current_version_id"},
+          "assertion": "读取已有人工正文及其版本。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F20-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-human-seed-0001"}, "json": {"expected_chapter_version_id": "{{f20.previous_version}}", "expected_spec_revision": 1, "body_markdown": "人工撰写的初始合成研究问题。", "source_ids": []}},
+          "capture": {"f20.human_version": "/data/current_version_id"},
+          "assertion": "先创建真实人工正文，后续候选以此版本为起点。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-03",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f20-first-generate-0001"}, "json": {"chapter_id": "{{f20.question_id}}", "asset_ids": ["{{asset.k-demo}}"], "instruction": "生成研究问题；把一个明确不能由合成资料证明的说法单列为 review_item。", "expected_spec_revision": 1, "expected_chapter_version_id": "{{f20.human_version}}"}},
+          "capture": {"f20.first_run_id": "/data/id"},
+          "assertion": "首次真实生成建立旧待核项候选。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F20-04",
+          "operation_id": "getGeneration",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "runId": "{{f20.first_run_id}}"}, "headers": {}, "json": null},
+          "capture": {"f20.first_candidate_id": "/data/candidate_id"},
+          "checks": [{"path": "/data/status", "equals": "succeeded", "intent": "初始候选来自完成的生成任务"}],
+          "assertion": "等待首个真实生成任务成功。",
+          "response_example": "succeeded"
+        },
+        {
+          "id": "F20-05",
+          "operation_id": "getCandidate",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "candidateId": "{{f20.first_candidate_id}}"}, "headers": {}, "json": null},
+          "capture": {"f20.first_candidate_id_readback": "/data/id", "f20.first_review_item_id": "/data/review_items/0/id", "f20.source_ids": "/data/source_ids"},
+          "assertion": "读回首个真实候选及其实际待核项集合。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-06",
+          "operation_id": "acceptCandidate",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-first-accept-0001"}, "json": {"candidate_id": "{{f20.first_candidate_id}}", "expected_chapter_version_id": "{{f20.human_version}}", "expected_spec_revision": 1, "replace_existing": true}},
+          "capture": {"f20.first_accepted_version": "/data/current_version_id"},
+          "assertion": "采纳初始候选，完整保存正文和待核项。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-07",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-first-confirm-0001"}, "json": {"expected_chapter_version_id": "{{f20.first_accepted_version}}", "expected_spec_revision": 1, "review_decisions": [{"review_item_id": "{{f20.first_review_item_id}}", "disposition": "retained_warning", "reason": "仅为内部合成演示，保留该待核项及其原文。"}]}},
+          "assertion": "本例展示单条 review_decision 的参考形状；真实驱动为响应中的每条 review_item 构造处置决定并确认旧版。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-08",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-manual-edit-0001"}, "json": {"expected_chapter_version_id": "{{f20.first_accepted_version}}", "expected_spec_revision": 1, "body_markdown": "人工编辑的当前正文。", "source_ids": "{{f20.source_ids}}"}},
+          "capture": {"f20.human_edited_version": "/data/current_version_id"},
+          "assertion": "编辑正文并继承原待核项 ID。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-09",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-manual-confirm-0001"}, "json": {"expected_chapter_version_id": "{{f20.human_edited_version}}", "expected_spec_revision": 1, "review_decisions": [{"review_item_id": "{{f20.first_review_item_id}}", "disposition": "retained_warning", "reason": "仅为内部合成演示，保留该待核项及其原文。"}]}},
+          "assertion": "本例展示单条 review_decision 的参考形状；真实驱动为响应中的每条 review_item 构造处置决定，再确认编辑后的旧版并作为替换前历史。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-10",
+          "operation_id": "startGeneration",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f20-replacement-generate-0001"}, "json": {"chapter_id": "{{f20.question_id}}", "asset_ids": ["{{asset.k-demo}}"], "instruction": "根据提供的合成资料重写研究问题并引用其中证据；正文保持审慎，不写超出资料支持范围的结论。", "expected_spec_revision": 1, "expected_chapter_version_id": "{{f20.human_edited_version}}"}},
+          "capture": {"f20.run_id": "/data/id"},
+          "assertion": "基于当前人工编辑版本生成第二候选。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F20-11",
+          "operation_id": "getGeneration",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "runId": "{{f20.run_id}}"}, "headers": {}, "json": null},
+          "capture": {"f20.candidate_id": "/data/candidate_id"},
+          "checks": [{"path": "/data/status", "equals": "succeeded", "intent": "替换候选来自完成的生成任务"}],
+          "assertion": "轮询第二个真实生成任务并读取候选 ID。",
+          "response_example": "succeeded"
+        },
+        {
+          "id": "F20-12",
+          "operation_id": "getCandidate",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "candidateId": "{{f20.candidate_id}}"}, "headers": {}, "json": null},
+          "assertion": "读回第二候选；实际待核集合由本次响应决定。执行器核对其与采纳后版本完全一致。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-13",
+          "operation_id": "acceptCandidate",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f20.question_id}}"}, "headers": {"Idempotency-Key": "f20-reaccept-0001"}, "json": {"candidate_id": "{{f20.candidate_id}}", "expected_chapter_version_id": "{{f20.human_edited_version}}", "expected_spec_revision": 1, "replace_existing": true}},
+          "capture": {"f20.new_version": "/data/current_version_id"},
+          "assertion": "明确替换后以候选完整替换正文、来源与待核项，产生未确认的新版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F20-14",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "checks": [{"path": "/data/1/confirmation_valid", "equals": false, "intent": "再次采纳后的新版本必须重新确认"}],
+          "assertion": "读回当前章节，核对版本、正文、来源、待核项及确认失效。",
+          "response_example": "empty_body"
+        }
+      ],
+      "reference": {
+        "previous_chapter": {
+          "id": "ch-question",
+          "project_id": "p-demo",
+          "section_id": "question",
+          "title": "研究问题",
+          "current_version_id": "cv-question-2",
+          "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+          "source_ids": [
+            "s-demo"
+          ],
+          "review_items": [
+            {
+              "id": "review-1",
+              "statement": "100条合成记录不能证明真实研究结论。",
+              "origin_candidate_id": "candidate-demo"
+            }
+          ],
+          "confirmation_valid": true
+        },
+        "previous_confirmation": {
+          "id": "confirm-question",
+          "chapter_id": "ch-question",
+          "chapter_version_id": "cv-question-2",
+          "spec_revision": 1,
+          "asset_versions": [
+            {
+              "asset_id": "a-demo",
+              "asset_revision": 1
+            }
+          ],
+          "template_version": "1",
+          "actor_user_id": "u-owner",
+          "created_at": "2026-09-21T08:00:00Z",
+          "valid": true,
+          "review_decisions": [
+            {
+              "review_item_id": "review-1",
+              "disposition": "retained_warning",
+              "reason": "仅作内部演示，保留该项并随文件明确列出。"
+            }
+          ]
+        },
+        "candidate": {
+          "id": "candidate-second",
+          "project_id": "p-demo",
+          "chapter_id": "ch-question",
+          "run_id": "run-second",
+          "body_markdown": "本章重新组织为待研究的问题，不提出事实结论。",
+          "source_ids": [],
+          "basis": {
+            "spec_revision": 1,
+            "chapter_version_id": "cv-question-2",
+            "template_id": "template-demo",
+            "template_version": "1",
+            "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+            "asset_versions": [
+              {
+                "asset_id": "a-demo",
+                "asset_revision": 1
+              }
+            ]
+          },
+          "validity": "fresh",
+          "review_items": []
+        },
+        "request": {
+          "candidate_id": "candidate-second",
+          "expected_chapter_version_id": "cv-question-2",
+          "expected_spec_revision": 1,
+          "replace_existing": true
+        },
+        "result": {
+          "id": "ch-question",
+          "project_id": "p-demo",
+          "section_id": "question",
+          "title": "研究问题",
+          "current_version_id": "cv-question-3",
+          "body_markdown": "本章重新组织为待研究的问题，不提出事实结论。",
+          "source_ids": [],
+          "review_items": [],
+          "confirmation_valid": false
+        },
+        "archived_chapter": {
+          "id": "ch-question",
+          "project_id": "p-demo",
+          "section_id": "question",
+          "title": "研究问题",
+          "current_version_id": "cv-question-2",
+          "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+          "source_ids": [
+            "s-demo"
+          ],
+          "review_items": [
+            {
+              "id": "review-1",
+              "statement": "100条合成记录不能证明真实研究结论。",
+              "origin_candidate_id": "candidate-demo"
+            }
+          ],
+          "confirmation_valid": true
+        },
+        "archived_confirmation": {
+          "id": "confirm-question",
+          "chapter_id": "ch-question",
+          "chapter_version_id": "cv-question-2",
+          "spec_revision": 1,
+          "asset_versions": [
+            {
+              "asset_id": "a-demo",
+              "asset_revision": 1
+            }
+          ],
+          "template_version": "1",
+          "actor_user_id": "u-owner",
+          "created_at": "2026-09-21T08:00:00Z",
+          "valid": true,
+          "review_decisions": [
+            {
+              "review_item_id": "review-1",
+              "disposition": "retained_warning",
+              "reason": "仅作内部演示，保留该项并随文件明确列出。"
+            }
+          ]
+        }
+      },
+      "assertions": [
+        "界面确认替换正文、引用及待核集合；取消不发送请求。",
+        "已有版本却replace_existing=false返回422 invalid_state；预期版本冲突返回409，均不写入。",
+        "明确确认且版本一致时整章替换；旧章/旧确认不变，新版必须重新确认。",
+        "不允许在采纳操作中混入旧正文；手动编辑仍继承本版本待核项。",
+        "后端真实测试查询旧版记录，静态示例的副本相等不是数据库持久化证据。"
+      ],
+      "providers": [
+        "evidence",
+        "workspace"
+      ]
+    },
+    {
+      "id": "F21",
+      "name": "已导出后编辑并刷新历史标签",
+      "setup": "已有verified文件，随后保存新章节使旧快照成为历史版本。",
+      "starting_state": "S1",
+      "steps": [
+        {
+          "id": "F21-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f21.method_id": "/data/0/id", "f21.method_version": "/data/0/current_version_id",
+                      "f21.question_id": "/data/1/id", "f21.question_version": "/data/1/current_version_id"},
+          "assertion": "从已读回的两个章节开始构造可导出快照。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "F21-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.question_id}}"},
+                      "headers": {"Idempotency-Key": "f21-question-save-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.question_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成演示：研究问题章节，用于验证历史标签刷新。", "source_ids": []}},
+          "capture": {"f21.question_written_version": "/data/current_version_id"},
+          "assertion": "保存首个章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-03",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.question_id}}"},
+                      "headers": {"Idempotency-Key": "f21-question-confirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.question_written_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认研究问题章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-04",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.method_id}}"},
+                      "headers": {"Idempotency-Key": "f21-method-save-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.method_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成演示：研究方案章节，用于验证历史标签刷新。", "source_ids": []}},
+          "capture": {"f21.method_written_version": "/data/current_version_id"},
+          "assertion": "保存另一个必需章节。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-05",
+          "operation_id": "confirmChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.method_id}}"},
+                      "headers": {"Idempotency-Key": "f21-method-confirm-0001"},
+                      "json": {"expected_chapter_version_id": "{{f21.method_written_version}}", "expected_spec_revision": 1,
+                               "review_decisions": []}},
+          "assertion": "确认研究方案章节的刚保存版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-06",
+          "operation_id": "getProject",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {}, "json": null},
+          "capture": {"f21.project_version": "/data/project_version"},
+          "assertion": "读取项目的最新版本以准备交付快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-07",
+          "operation_id": "prepareRelease",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}"},
+                      "headers": {"Idempotency-Key": "f21-release-0001"},
+                      "json": {"expected_project_version": "{{f21.project_version}}"}},
+          "capture": {"f21.snapshot_id": "/data/id"},
+          "checks": [{"path": "/data/check/status", "equals": "passed", "intent": "快照检查可通过，导出可进入真实渲染流程"}],
+          "assertion": "创建可导出的交付快照。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-08",
+          "operation_id": "startExport",
+          "actor": "u-owner",
+          "expected_http": 202,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f21.snapshot_id}}"},
+                      "headers": {"Idempotency-Key": "f21-export-0001"}, "json": {"format": "docx"}},
+          "capture": {"f21.export_id": "/data/id"},
+          "assertion": "提交真实 DOCX 导出任务。",
+          "response_example": "queued"
+        },
+        {
+          "id": "F21-09",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "exportId": "{{f21.export_id}}"},
+                      "headers": {}, "json": null},
+          "checks": [{"path": "/data/status", "equals": "verified", "intent": "确认导出任务真实到达 verified"}],
+          "assertion": "轮询任务直到真实导出状态为 verified。",
+          "reference_response": {"data": {"status": "verified"}},
+          "response_example": "verified"
+        },
+        {
+          "id": "F21-10",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f21.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F21-07",
+          "checks": [{"path": "/data/is_current", "equals": true, "intent": "编辑前读回当前快照标签"}],
+          "assertion": "编辑前通过 getRelease 读取当前标签。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-11",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {"path_params": {"projectId": "{{project.id}}", "chapterId": "{{f21.question_id}}"},
+                      "headers": {"Idempotency-Key": "f21-question-edit-0002"},
+                      "json": {"expected_chapter_version_id": "{{f21.question_written_version}}", "expected_spec_revision": 1,
+                               "body_markdown": "合成演示：导出后编辑章节，刷新旧快照历史标签。", "source_ids": []}},
+          "capture": {"f21.question_edited_version": "/data/current_version_id"},
+          "assertion": "导出完成后保存新章节版本。",
+          "response_example": "success"
+        },
+        {
+          "id": "F21-12",
+          "operation_id": "getExport",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "exportId": "{{f21.export_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F21-11",
+          "checks": [{"path": "/data/status", "equals": "verified", "intent": "编辑后重新读取同一导出仍为 verified"}],
+          "assertion": "刷新历史记录时重新读取导出状态。",
+          "reference_response": {"data": {"status": "verified"}},
+          "response_example": "verified"
+        },
+        {
+          "id": "F21-13",
+          "operation_id": "getRelease",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {"path_params": {"projectId": "{{project.id}}", "snapshotId": "{{f21.snapshot_id}}"},
+                      "headers": {}, "json": null},
+          "readback_of": "F21-11",
+          "checks": [{"path": "/data/is_current", "equals": false, "intent": "章节编辑后读取快照观察到历史标签"}],
+          "assertion": "历史标签结论来自编辑后的 getRelease 读回响应。",
+          "response_example": "historical"
+        }
+      ],
+      "reference": {
+        "export_before": {
+          "id": "export-demo",
+          "project_id": "p-demo",
+          "snapshot_id": "snapshot-demo",
+          "status": "verified",
+          "file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "download_path": "/api/v1/lingdoc/projects/p-demo/exports/export-demo/file"
+        },
+        "release_before": {
+          "id": "snapshot-demo",
+          "project_id": "p-demo",
+          "frozen_input": {
+            "project_id": "p-demo",
+            "project_name": "合成资料演示项目",
+            "project_version": 8,
+            "spec_revision": 1,
+            "spec": {
+              "research_subject": "公开的合成调查样本",
+              "research_goal": "验证资料到章节的工作流程"
+            },
+            "template": {
+              "id": "template-demo",
+              "name": "演示模板：研究问题与研究方案",
+              "version": "1",
+              "is_demo": true,
+              "sections": [
+                {
+                  "section_id": "question",
+                  "title": "研究问题",
+                  "required": true
+                },
+                {
+                  "section_id": "method",
+                  "title": "研究方案",
+                  "required": true
+                }
+              ],
+              "required_fields": [
+                "research_subject",
+                "research_goal"
+              ],
+              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+              "rules": [
+                {
+                  "rule_id": "required-fields",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "required_fields",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "chapter-nonempty",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "nonempty_chapter",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "chapter-confirmed",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "confirmed_chapter",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "review-items-decided",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "review_items_decided",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "source-available",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "source_available",
+                  "parameters": {}
+                }
+              ]
+            },
+            "chapters": [
+              {
+                "chapter_id": "ch-question",
+                "chapter_version_id": "cv-question-2",
+                "title": "研究问题",
+                "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                "source_ids": [
+                  "s-demo"
+                ],
+                "review_items": [
+                  {
+                    "id": "review-1",
+                    "statement": "100条合成记录不能证明真实研究结论。",
+                    "origin_candidate_id": "candidate-demo"
+                  }
+                ],
+                "confirmation": {
+                  "id": "confirm-question",
+                  "chapter_id": "ch-question",
+                  "chapter_version_id": "cv-question-2",
+                  "spec_revision": 1,
+                  "asset_versions": [
+                    {
+                      "asset_id": "a-demo",
+                      "asset_revision": 1
+                    }
+                  ],
+                  "template_version": "1",
+                  "actor_user_id": "u-owner",
+                  "created_at": "2026-09-21T08:00:00Z",
+                  "review_decisions": [
+                    {
+                      "review_item_id": "review-1",
+                      "disposition": "retained_warning",
+                      "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                    }
+                  ]
+                }
+              },
+              {
+                "chapter_id": "ch-method",
+                "chapter_version_id": "cv-method-1",
+                "title": "研究方案",
+                "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                "source_ids": [],
+                "review_items": [],
+                "confirmation": {
+                  "id": "confirm-method",
+                  "chapter_id": "ch-method",
+                  "chapter_version_id": "cv-method-1",
+                  "spec_revision": 1,
+                  "asset_versions": [],
+                  "template_version": "1",
+                  "actor_user_id": "u-owner",
+                  "created_at": "2026-09-21T08:00:00Z",
+                  "review_decisions": []
+                }
+              }
+            ],
+            "sources": [
+              {
+                "id": "s-demo",
+                "project_id": "p-demo",
+                "asset_id": "a-demo",
+                "asset_revision": 1,
+                "locator": "测试段落 1",
+                "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                "display_title": "合成测试材料（不是真实研究证据）"
+              }
+            ],
+            "asset_versions": [
+              {
+                "asset_id": "a-demo",
+                "asset_revision": 1
+              }
+            ],
+            "policy_asset_ids": [
+              "a-demo"
+            ],
+            "delivery_kind": "internal_demo"
+          },
+          "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+          "check": {
+            "project_version": 8,
+            "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+            "status": "passed",
+            "issues": [
+              {
+                "id": "warning-review-1",
+                "rule_id": "review-items-decided",
+                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                "severity": "warning",
+                "target_id": "ch-question",
+                "target_version": "cv-question-2",
+                "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+              }
+            ]
+          },
+          "is_current": true,
+          "created_at": "2026-09-21T08:00:00Z"
+        },
+        "export_after": {
+          "id": "export-demo",
+          "project_id": "p-demo",
+          "snapshot_id": "snapshot-demo",
+          "status": "verified",
+          "file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "download_path": "/api/v1/lingdoc/projects/p-demo/exports/export-demo/file"
+        },
+        "release_after": {
+          "id": "snapshot-demo",
+          "project_id": "p-demo",
+          "frozen_input": {
+            "project_id": "p-demo",
+            "project_name": "合成资料演示项目",
+            "project_version": 8,
+            "spec_revision": 1,
+            "spec": {
+              "research_subject": "公开的合成调查样本",
+              "research_goal": "验证资料到章节的工作流程"
+            },
+            "template": {
+              "id": "template-demo",
+              "name": "演示模板：研究问题与研究方案",
+              "version": "1",
+              "is_demo": true,
+              "sections": [
+                {
+                  "section_id": "question",
+                  "title": "研究问题",
+                  "required": true
+                },
+                {
+                  "section_id": "method",
+                  "title": "研究方案",
+                  "required": true
+                }
+              ],
+              "required_fields": [
+                "research_subject",
+                "research_goal"
+              ],
+              "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+              "rules": [
+                {
+                  "rule_id": "required-fields",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "required_fields",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "chapter-nonempty",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "nonempty_chapter",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "chapter-confirmed",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "confirmed_chapter",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "review-items-decided",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "review_items_decided",
+                  "parameters": {}
+                },
+                {
+                  "rule_id": "source-available",
+                  "kind": "computed",
+                  "severity": "blocking",
+                  "evaluator": "source_available",
+                  "parameters": {}
+                }
+              ]
+            },
+            "chapters": [
+              {
+                "chapter_id": "ch-question",
+                "chapter_version_id": "cv-question-2",
+                "title": "研究问题",
+                "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+                "source_ids": [
+                  "s-demo"
+                ],
+                "review_items": [
+                  {
+                    "id": "review-1",
+                    "statement": "100条合成记录不能证明真实研究结论。",
+                    "origin_candidate_id": "candidate-demo"
+                  }
+                ],
+                "confirmation": {
+                  "id": "confirm-question",
+                  "chapter_id": "ch-question",
+                  "chapter_version_id": "cv-question-2",
+                  "spec_revision": 1,
+                  "asset_versions": [
+                    {
+                      "asset_id": "a-demo",
+                      "asset_revision": 1
+                    }
+                  ],
+                  "template_version": "1",
+                  "actor_user_id": "u-owner",
+                  "created_at": "2026-09-21T08:00:00Z",
+                  "review_decisions": [
+                    {
+                      "review_item_id": "review-1",
+                      "disposition": "retained_warning",
+                      "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                    }
+                  ]
+                }
+              },
+              {
+                "chapter_id": "ch-method",
+                "chapter_version_id": "cv-method-1",
+                "title": "研究方案",
+                "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+                "source_ids": [],
+                "review_items": [],
+                "confirmation": {
+                  "id": "confirm-method",
+                  "chapter_id": "ch-method",
+                  "chapter_version_id": "cv-method-1",
+                  "spec_revision": 1,
+                  "asset_versions": [],
+                  "template_version": "1",
+                  "actor_user_id": "u-owner",
+                  "created_at": "2026-09-21T08:00:00Z",
+                  "review_decisions": []
+                }
+              }
+            ],
+            "sources": [
+              {
+                "id": "s-demo",
+                "project_id": "p-demo",
+                "asset_id": "a-demo",
+                "asset_revision": 1,
+                "locator": "测试段落 1",
+                "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+                "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+                "display_title": "合成测试材料（不是真实研究证据）"
+              }
+            ],
+            "asset_versions": [
+              {
+                "asset_id": "a-demo",
+                "asset_revision": 1
+              }
+            ],
+            "policy_asset_ids": [
+              "a-demo"
+            ],
+            "delivery_kind": "internal_demo"
+          },
+          "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+          "check": {
+            "project_version": 8,
+            "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+            "status": "passed",
+            "issues": [
+              {
+                "id": "warning-review-1",
+                "rule_id": "review-items-decided",
+                "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+                "severity": "warning",
+                "target_id": "ch-question",
+                "target_version": "cv-question-2",
+                "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+              }
+            ]
+          },
+          "is_current": false,
+          "created_at": "2026-09-21T08:00:00Z"
+        },
+        "ui_query_order": [
+          "getExport",
+          "getRelease"
+        ],
+        "expected_label_before": "当前内容",
+        "expected_label_after": "历史版本"
+      },
+      "assertions": [
+        "T14交付界面切片获取ExportArtifact.snapshot_id后读取getRelease；仅verified不等于当前。",
+        "页面刷新/重新打开/本地编辑成功/展示下载入口时刷新对应快照状态，不沿用过期标签。",
+        "getRelease失败或尚未读取时显示当前性未知，不宣称当前。",
+        "is_current变更不改变冻结输入、digest或已生成文件hash。",
+        "这是查询时状态；之后并发修改仍可能发生，下载请求独立重新鉴权。"
+      ],
+      "providers": [
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
+      "id": "F22",
+      "name": "部分授权不静默成功",
+      "starting_state": "S7",
+      "setup": "项目绑定两条资料：一条当前可用、一条当前不可用；调用者一次提交两条。整体必须失败，不得只处理可用子集后返回成功，被拒资料须逐项带原因。本构建可达的拒绝原因是 not_ready——授权维不可达（同租户绑定即放行，绑定与读取用同一判定，租户内两名成员不可能一放一拒），所以 not_authorized 只作契约词表里的一项存在。",
+      "steps": [
+        {
+          "id": "F22-01",
+          "operation_id": "retrieveSources",
+          "actor": "u-owner",
+          "expected_http": 422,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            },
+            "headers": {
+              "Idempotency-Key": "f22-retrieval-0001"
+            },
+            "json": {
+              "query": "合成起点：一次提交一条可用与一条不可用的资料。",
+              "asset_ids": [
+                "{{asset.k-demo}}",
+                "{{asset.k-notready}}"
+              ]
+            }
+          },
+          "assertion": "整体失败，不得只处理可用子集并返回成功；被拒资料须逐项带原因，不得把「返回无错误」当作全部资料通过。本构建可达的只有 not_ready 一侧，断言因此落在「整批拒绝 + 逐项原因」的形状上，而不是「哪条被授权」上。",
+          "response_example": "asset_not_authorized",
+          "checks": [
+            {
+              "path": "/error/code",
+              "equals": "asset_not_authorized",
+              "intent": "整批拒绝用的是契约声明的拒绝码，不是只拒子集后的成功码"
+            },
+            {
+              "path": "/error/details/denied",
+              "length": 1,
+              "intent": "被拒的恰好是那一条不可用资料；既没有悄悄放过它，也没有连可用那条一起拒"
+            },
+            {
+              "path": "/error/details/denied/0/asset_id",
+              "equals": "{{asset.k-notready}}",
+              "intent": "被拒的是声明为不可用的那条，可用那条不在名单上"
+            },
+            {
+              "path": "/error/details/denied/0",
+              "keys": [
+                "asset_id",
+                "reason"
+              ],
+              "intent": "每条被拒资料恰好带 id 与原因两键，没有折叠成一句话"
+            },
+            {
+              "path": "/error/details/denied/0/reason",
+              "one_of": [
+                "not_authorized",
+                "not_ready",
+                "not_found"
+              ],
+              "intent": "原因落在契约给出的词表里，不是实现自造的说法"
+            },
+            {
+              "path": "/error/retryable",
+              "equals": false,
+              "intent": "这次拒绝不声明可重试，调用者不该原样重投"
+            }
+          ]
+        }
+      ],
+      "providers": [
+        "evidence"
+      ]
+    },
+    {
+      "id": "F23",
+      "name": "验收预算与模型边界错误可见",
+      "setup": "验收模式启用真实预算账本；模拟输出不完整、预算耗尽、账本不可用、未知供应商结果和模型配置不匹配。",
+      "steps": [
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "输出达到上限时任务为 failed，错误码明确且不可重试。",
+          "response_example": "generation_incomplete"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "预算耗尽时不再请求供应商，错误码明确且不可重试。",
+          "response_example": "generation_budget_exceeded"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "账本不可用时阻止供应商调用，错误码明确且不可重试。",
+          "response_example": "generation_budget_unavailable"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "供应商结果未知时暂停后续调用，错误码明确且不可重试。",
+          "response_example": "generation_outcome_unknown"
+        },
+        {
+          "operation_id": "getGeneration",
+          "expected_http": 200,
+          "assertion": "验收模型不匹配时不调用供应商，错误码明确且不可重试。",
+          "response_example": "generation_model_mismatch"
+        }
+      ],
+      "providers": [
+        "evidence",
+        "workspace"
+      ]
+    },
+    {
+      "id": "G7-01-chapter-read-write",
+      "name": "G7-01 现有章节接口读写基线",
+      "starting_state": "S1",
+      "setup": "由 runner 构造 S1 两章合成项目，读取研究问题章节，显式保存一次，再读回确认新版本和正文。只核验已实现的章节接口，不代表 G7 工作副本或选段候选接口已经实现。",
+      "steps": [
+        {
+          "id": "G7-01-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {},
+            "json": null
+          },
+          "capture": {
+            "g7.chapter_id": "/data/1/id",
+            "g7.chapter_version_id": "/data/1/current_version_id"
+          },
+          "checks": [
+            {
+              "path": "/data/1/section_id",
+              "equals": "question",
+              "intent": "读取 S1 中的研究问题章节作为写入目标"
+            }
+          ],
+          "assertion": "从运行时读回的 S1 章节 ID 和当前版本开始，不写死动态 ID。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "G7-01-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "chapterId": "{{g7.chapter_id}}"
+            },
+            "headers": {"Idempotency-Key": "g7-01-read-write-0001"},
+            "json": {
+              "expected_chapter_version_id": "{{g7.chapter_version_id}}",
+              "expected_spec_revision": 1,
+              "body_markdown": "G7-01 合成章节读写复现；不是科研事实。",
+              "source_ids": []
+            }
+          },
+          "capture": {
+            "g7.written_version_id": "/data/current_version_id",
+            "g7.written_body": "/data/body_markdown"
+          },
+          "assertion": "通过现有显式版本保存接口写入一段合成正文。",
+          "response_example": "success"
+        },
+        {
+          "id": "G7-01-03",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {},
+            "json": null
+          },
+          "readback_of": "G7-01-02",
+          "checks": [
+            {
+              "path": "/data/1/current_version_id",
+              "equals": "{{g7.written_version_id}}",
+              "intent": "读回章节当前版本确为刚才创建的版本"
+            },
+            {
+              "path": "/data/1/body_markdown",
+              "equals": "{{g7.written_body}}",
+              "intent": "读回正文与保存响应一致"
+            }
+          ],
+          "assertion": "从第二次 GET 读回版本和正文，而非仅凭 POST 返回成功。",
+          "response_example": "success"
+        }
+      ],
+      "providers": ["workspace"]
+    }
+  ],
+  "starting_states_note": "场景的起点状态。只声明能靠写请求造出来的部分：project（含 spec、协作者、是否立项）、assets（绑定资料）、chapters（章节正文——body_markdown 为空表示「这一节存在但还没有正文」，装载器不会为它写版本，读回时会确认它确实没有版本）。template、source、candidate、confirmation、release、export 造不出来——它们要么由服务固定提供，要么是检索、生成、确认、冻结、导出的产物；写进声明的会被装载器连理由一起拒绝，不会被静默忽略。资料与成员用契约里的名字声明，真实 ID 由运行环境注入：k-demo 是一条当前可用的资料，k-notready 是一条当前不可用的资料（解析没跑完），u-member 是一名租户成员。",
+  "starting_states": [
+    {
+      "id": "S1",
+      "name": "空资料项目",
+      "note": "已立项，模板两节都在且都没有正文，没有绑定资料。F02（空资料不扩大范围）与 F16 一类的起点。",
+      "project": {
+        "name": "合成起点：空资料项目",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "",
+          "source_ids": []
+        },
+        {
+          "section_id": "method",
+          "body_markdown": "",
+          "source_ids": []
+        }
+      ]
+    },
+    {
+      "id": "S2",
+      "name": "一名协作者与一章人工正文",
+      "note": "已立项，项目里有一名协作者，研究问题一节已有人工正文（没有引用）。F05（两人同版本保存）一类需要「两个调用者 + 章节已有版本」的起点。",
+      "project": {
+        "name": "合成起点：协作者与人工正文",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        },
+        "members": [
+          "u-member"
+        ]
+      },
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "人工编辑：这是合成测试材料，不是真实研究结果。",
+          "source_ids": []
+        },
+        {
+          "section_id": "method",
+          "body_markdown": "",
+          "source_ids": []
+        }
+      ]
+    },
+    {
+      "id": "S3",
+      "name": "绑定一条不可用资料",
+      "note": "已立项，绑定一条资料，而这条资料当前不可用（解析未完成）。F03（未就绪资料）的起点：可用性判定的否定面——listAssets 不该列出它，检索预检要以 not_ready 拒绝它。",
+      "project": {
+        "name": "合成起点：绑定未就绪资料",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "assets": [
+        {
+          "knowledge_id": "k-notready",
+          "processing_state": "pending"
+        }
+      ],
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "",
+          "source_ids": []
+        },
+        {
+          "section_id": "method",
+          "body_markdown": "",
+          "source_ids": []
+        }
+      ]
+    },
+    {
+      "id": "S4",
+      "name": "草稿已填条件",
+      "note": "草稿项目，条件已保存（spec_revision=1），模板章节尚未生成。F12（草稿版本也有效）一类「还没立项就得比版本」的起点。",
+      "project": {
+        "name": "合成起点：草稿已填条件",
+        "template_id": "template-demo",
+        "status": "draft",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      }
+    },
+    {
+      "id": "S5",
+      "name": "绑定一条可用资料",
+      "note": "已立项，绑定一条资料且这条资料当前可用。F01/F10/F11/F19 一类「有资料可检索」的起点，与 S3 成对：同一种声明形状，只差资料本身可不可用，读回的结论必须跟着翻转。",
+      "project": {
+        "name": "合成起点：绑定可用资料",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "assets": [
+        {
+          "knowledge_id": "k-demo",
+          "processing_state": "ready"
+        }
+      ],
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "",
+          "source_ids": []
+        },
+        {
+          "section_id": "method",
+          "body_markdown": "",
+          "source_ids": []
+        }
+      ]
+    },
+    {
+      "id": "S6",
+      "name": "草稿已绑资料",
+      "note": "草稿项目，条件已保存，资料已绑定而项目还没立项。F12 一类「还没立项就得比版本」的起点，同时钉住一条真实约束：绑定不依赖立项（提供方的 bindAsset 只看写权限），所以装载器把绑定当独立一步，不把它藏在立项之后。",
+      "project": {
+        "name": "合成起点：草稿已绑资料",
+        "template_id": "template-demo",
+        "status": "draft",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "assets": [
+        {
+          "knowledge_id": "k-demo",
+          "processing_state": "ready"
+        }
+      ]
+    },
+    {
+      "id": "S7",
+      "name": "绑定一条可用与一条不可用资料",
+      "note": "已立项，绑定两条资料：一条当前可用、一条当前不可用。F22（部分授权不静默成功）的起点：一次提交两条，检索预检必须整批拒绝并逐项说明哪条被拒、为什么，不得只处理可用子集。它与 S3/S5 是同一种声明形状的合取：可用那条用 canonical fixture 的知识，不可用那条用 k-notready，两条都由装载器各自绑定后读回。",
+      "project": {
+        "name": "合成起点：可用与不可用资料各一条",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "assets": [
+        {
+          "knowledge_id": "k-demo",
+          "processing_state": "ready"
+        },
+        {
+          "knowledge_id": "k-notready",
+          "processing_state": "pending"
+        }
+      ],
+      "chapters": [
+        {
+          "section_id": "question",
+          "body_markdown": "",
+          "source_ids": []
+        },
+        {
+          "section_id": "method",
+          "body_markdown": "",
+          "source_ids": []
+        }
+      ]
+    },
+    {
+      "id": "S8",
+      "name": "一章人工正文未确认",
+      "note": "已立项，问题章有人工正文但没有确认，方法章为空。F10 用来证明阻断项会阻止导出。",
+      "project": {
+        "name": "合成起点：一章正文未确认",
+        "template_id": "template-demo",
+        "status": "active",
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        }
+      },
+      "chapters": [
+        {"section_id": "question", "body_markdown": "人工输入的合成研究问题。", "source_ids": []},
+        {"section_id": "method", "body_markdown": "", "source_ids": []}
+      ]
+    }
+  ],
+  "canonical_fixture": {
+    "template": {
+      "id": "template-demo",
+      "name": "演示模板：研究问题与研究方案",
+      "version": "1",
+      "is_demo": true,
+      "sections": [
+        {
+          "section_id": "question",
+          "title": "研究问题",
+          "required": true
+        },
+        {
+          "section_id": "method",
+          "title": "研究方案",
+          "required": true
+        }
+      ],
+      "required_fields": [
+        "research_subject",
+        "research_goal"
+      ],
+      "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+      "rules": [
+        {
+          "rule_id": "required-fields",
+          "kind": "computed",
+          "severity": "blocking",
+          "evaluator": "required_fields",
+          "parameters": {}
+        },
+        {
+          "rule_id": "chapter-nonempty",
+          "kind": "computed",
+          "severity": "blocking",
+          "evaluator": "nonempty_chapter",
+          "parameters": {}
+        },
+        {
+          "rule_id": "chapter-confirmed",
+          "kind": "computed",
+          "severity": "blocking",
+          "evaluator": "confirmed_chapter",
+          "parameters": {}
+        },
+        {
+          "rule_id": "review-items-decided",
+          "kind": "computed",
+          "severity": "blocking",
+          "evaluator": "review_items_decided",
+          "parameters": {}
+        },
+        {
+          "rule_id": "source-available",
+          "kind": "computed",
+          "severity": "blocking",
+          "evaluator": "source_available",
+          "parameters": {}
+        }
+      ]
+    },
+    "project": {
+      "id": "p-demo",
+      "name": "合成资料演示项目",
+      "status": "active",
+      "project_version": 8,
+      "spec_revision": 1,
+      "spec": {
+        "research_subject": "公开的合成调查样本",
+        "research_goal": "验证资料到章节的工作流程"
+      },
+      "template_id": "template-demo",
+      "template_version": "1",
+      "members": [
+        {
+          "user_id": "u-owner",
+          "role": "owner"
+        }
+      ]
+    },
+    "asset": {
+      "id": "a-demo",
+      "project_id": "p-demo",
+      "knowledge_id": "k-demo",
+      "title": "合成测试材料（不是真实研究证据）",
+      "asset_revision": 1,
+      "processing_state": "ready"
+    },
+    "source": {
+      "id": "s-demo",
+      "project_id": "p-demo",
+      "asset_id": "a-demo",
+      "asset_revision": 1,
+      "locator": "测试段落 1",
+      "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+      "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+      "status": "available"
+    },
+    "candidate": {
+      "id": "candidate-demo",
+      "project_id": "p-demo",
+      "chapter_id": "ch-question",
+      "run_id": "run-demo",
+      "body_markdown": "演示材料有100条虚构记录 [[source:s-demo]]。",
+      "source_ids": [
+        "s-demo"
+      ],
+      "basis": {
+        "spec_revision": 1,
+        "chapter_version_id": null,
+        "template_id": "template-demo",
+        "template_version": "1",
+        "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+        "asset_versions": [
+          {
+            "asset_id": "a-demo",
+            "asset_revision": 1
+          }
+        ]
+      },
+      "validity": "fresh",
+      "review_items": [
+        {
+          "id": "review-1",
+          "statement": "100条合成记录不能证明真实研究结论。",
+          "origin_candidate_id": "candidate-demo"
+        }
+      ]
+    },
+    "chapter": {
+      "id": "ch-question",
+      "project_id": "p-demo",
+      "section_id": "question",
+      "title": "研究问题",
+      "current_version_id": "cv-question-2",
+      "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+      "source_ids": [
+        "s-demo"
+      ],
+      "review_items": [
+        {
+          "id": "review-1",
+          "statement": "100条合成记录不能证明真实研究结论。",
+          "origin_candidate_id": "candidate-demo"
+        }
+      ],
+      "confirmation_valid": true
+    },
+    "method_chapter": {
+      "id": "ch-method",
+      "project_id": "p-demo",
+      "section_id": "method",
+      "title": "研究方案",
+      "current_version_id": "cv-method-1",
+      "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+      "source_ids": [],
+      "review_items": [],
+      "confirmation_valid": true
+    },
+    "confirmation": {
+      "id": "confirm-question",
+      "chapter_id": "ch-question",
+      "chapter_version_id": "cv-question-2",
+      "spec_revision": 1,
+      "asset_versions": [
+        {
+          "asset_id": "a-demo",
+          "asset_revision": 1
+        }
+      ],
+      "template_version": "1",
+      "actor_user_id": "u-owner",
+      "created_at": "2026-09-21T08:00:00Z",
+      "valid": true,
+      "review_decisions": [
+        {
+          "review_item_id": "review-1",
+          "disposition": "retained_warning",
+          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+        }
+      ]
+    },
+    "release": {
+      "id": "snapshot-demo",
+      "project_id": "p-demo",
+      "frozen_input": {
+        "project_id": "p-demo",
+        "project_name": "合成资料演示项目",
+        "project_version": 8,
+        "spec_revision": 1,
+        "spec": {
+          "research_subject": "公开的合成调查样本",
+          "research_goal": "验证资料到章节的工作流程"
+        },
+        "template": {
+          "id": "template-demo",
+          "name": "演示模板：研究问题与研究方案",
+          "version": "1",
+          "is_demo": true,
+          "sections": [
+            {
+              "section_id": "question",
+              "title": "研究问题",
+              "required": true
+            },
+            {
+              "section_id": "method",
+              "title": "研究方案",
+              "required": true
+            }
+          ],
+          "required_fields": [
+            "research_subject",
+            "research_goal"
+          ],
+          "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+          "rules": [
+            {
+              "rule_id": "required-fields",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "required_fields",
+              "parameters": {}
+            },
+            {
+              "rule_id": "chapter-nonempty",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "nonempty_chapter",
+              "parameters": {}
+            },
+            {
+              "rule_id": "chapter-confirmed",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "confirmed_chapter",
+              "parameters": {}
+            },
+            {
+              "rule_id": "review-items-decided",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "review_items_decided",
+              "parameters": {}
+            },
+            {
+              "rule_id": "source-available",
+              "kind": "computed",
+              "severity": "blocking",
+              "evaluator": "source_available",
+              "parameters": {}
+            }
+          ]
+        },
+        "chapters": [
+          {
+            "chapter_id": "ch-question",
+            "chapter_version_id": "cv-question-2",
+            "title": "研究问题",
+            "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+            "source_ids": [
+              "s-demo"
+            ],
+            "review_items": [
+              {
+                "id": "review-1",
+                "statement": "100条合成记录不能证明真实研究结论。",
+                "origin_candidate_id": "candidate-demo"
+              }
+            ],
+            "confirmation": {
+              "id": "confirm-question",
+              "chapter_id": "ch-question",
+              "chapter_version_id": "cv-question-2",
+              "spec_revision": 1,
+              "asset_versions": [
+                {
+                  "asset_id": "a-demo",
+                  "asset_revision": 1
+                }
+              ],
+              "template_version": "1",
+              "actor_user_id": "u-owner",
+              "created_at": "2026-09-21T08:00:00Z",
+              "review_decisions": [
+                {
+                  "review_item_id": "review-1",
+                  "disposition": "retained_warning",
+                  "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                }
+              ]
+            }
+          },
+          {
+            "chapter_id": "ch-method",
+            "chapter_version_id": "cv-method-1",
+            "title": "研究方案",
+            "body_markdown": "使用合成记录检验软件流程，结果仅用于内部演示。",
+            "source_ids": [],
+            "review_items": [],
+            "confirmation": {
+              "id": "confirm-method",
+              "chapter_id": "ch-method",
+              "chapter_version_id": "cv-method-1",
+              "spec_revision": 1,
+              "asset_versions": [],
+              "template_version": "1",
+              "actor_user_id": "u-owner",
+              "created_at": "2026-09-21T08:00:00Z",
+              "review_decisions": []
+            }
+          }
+        ],
+        "sources": [
+          {
+            "id": "s-demo",
+            "project_id": "p-demo",
+            "asset_id": "a-demo",
+            "asset_revision": 1,
+            "locator": "测试段落 1",
+            "quoted_text": "合成测试材料：本样例包含 100 条虚构调查记录，仅用于软件测试。",
+            "quoted_text_hash": "bf00f08d3fc33cad0ad9bc4ab8b2858d9679f58961ae2d7a6964bfc3187f9a04",
+            "display_title": "合成测试材料（不是真实研究证据）"
+          }
+        ],
+        "asset_versions": [
+          {
+            "asset_id": "a-demo",
+            "asset_revision": 1
+          }
+        ],
+        "policy_asset_ids": [
+          "a-demo"
+        ],
+        "delivery_kind": "internal_demo"
+      },
+      "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+      "check": {
+        "project_version": 8,
+        "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+        "status": "passed",
+        "issues": [
+          {
+            "id": "warning-review-1",
+            "rule_id": "review-items-decided",
+            "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
+            "severity": "warning",
+            "target_id": "ch-question",
+            "target_version": "cv-question-2",
+            "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
+          }
+        ]
+      },
+      "is_current": true,
+      "created_at": "2026-09-21T08:00:00Z"
+    },
+    "export": {
+      "id": "export-demo",
+      "project_id": "p-demo",
+      "snapshot_id": "snapshot-demo",
+      "status": "verified",
+      "file_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "download_path": "/api/v1/lingdoc/projects/p-demo/exports/export-demo/file"
+    }
+  },
+  "requests": {
+    "createProject": {
+      "name": "合成资料演示项目",
+      "template_id": "template-demo"
+    },
+    "saveSpec": {
+      "expected_spec_revision": 0,
+      "fields": {
+        "research_subject": "公开的合成调查样本",
+        "research_goal": "验证资料到章节的工作流程"
+      }
+    },
+    "saveMembers": {
+      "expected_project_version": 5,
+      "collaborator_user_ids": [
+        "u-member"
+      ]
+    },
+    "activateProject": {
+      "expected_spec_revision": 1
+    },
+    "saveChapter": {
+      "expected_chapter_version_id": "cv-question-1",
+      "expected_spec_revision": 1,
+      "body_markdown": "人工编辑：演示资料包含100条虚构记录 [[source:s-demo]]。不把它视为真实科研结果。",
+      "source_ids": [
+        "s-demo"
+      ]
+    },
+    "acceptCandidate": {
+      "candidate_id": "candidate-demo",
+      "expected_chapter_version_id": null,
+      "expected_spec_revision": 1,
+      "replace_existing": false
+    },
+    "confirmChapter": {
+      "chapter_version_id": "cv-question-2",
+      "expected_spec_revision": 1,
+      "review_decisions": [
+        {
+          "review_item_id": "review-1",
+          "disposition": "retained_warning",
+          "reason": "仅作内部演示，保留该项并随文件明确列出。"
+        }
+      ]
+    },
+    "bindAsset": {
+      "knowledge_id": "k-demo"
+    },
+    "retrieveSources": {
+      "query": "样例包含多少条记录？",
+      "asset_ids": [
+        "a-demo"
+      ]
+    },
+    "startGeneration": {
+      "chapter_id": "ch-question",
+      "asset_ids": [
+        "a-demo"
+      ],
+      "instruction": "起草研究问题并单列待核事项。",
+      "expected_spec_revision": 1,
+      "expected_chapter_version_id": null
+    },
+    "checkCurrent": {
+      "expected_project_version": 8
+    },
+    "prepareRelease": {
+      "expected_project_version": 8
+    },
+    "startExport": {
+      "format": "docx"
+    }
+  },
+  "note": "除F01的连续规格外，其余是提供方测试的待实现用例。所有示例为合成资料。"
+}

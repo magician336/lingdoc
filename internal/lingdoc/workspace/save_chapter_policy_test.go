@@ -236,4 +236,161 @@ func nested(t *testing.T, body map[string]any, keys ...string) any {
 func equalStrings(raw any, want ...string) bool {
 	items, ok := raw.([]any)
 	if !ok || len(items) != len(want) {
-		r
+		return false
+	}
+	for index, item := range items {
+		if item != want[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestSaveChapterAcceptsCitationsAndRechecksBeforeReplay(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fixture := newSaveChapterFixture(t)
+
+	// 走一遍 T07 的真实入口：新建 → 填研究条件 → 激活。章节由激活时按模板铺出来。
+	created, createdBody := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects", "sc-create-1",
+		map[string]string{"name": "引用复核", "template_id": "template-demo"})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create project: %d %s", created.Code, created.Body.String())
+	}
+	projectID, _ := nested(t, createdBody, "data", "id").(string)
+	if projectID == "" {
+		t.Fatalf("create project returned no id: %s", created.Body.String())
+	}
+	chaptersPath := "/api/v1/lingdoc/projects/" + projectID + "/chapters"
+
+	if recorder, _ := doJSON(t, fixture.router, http.MethodPut, "/api/v1/lingdoc/projects/"+projectID+"/spec", "sc-spec-1",
+		map[string]any{"expected_spec_revision": 0, "fields": map[string]string{"research_subject": "样本", "research_goal": "验证"}},
+	); recorder.Code != http.StatusOK {
+		t.Fatalf("save spec: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder, _ := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects/"+projectID+"/activate", "sc-activate-1",
+		map[string]any{"expected_spec_revision": 1},
+	); recorder.Code != http.StatusOK {
+		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	bindTestSource(t, fixture.db, testRuntime(fixture.handler).bindings, projectID)
+
+	_, chapters := doJSON(t, fixture.router, http.MethodGet, chaptersPath, "", nil)
+	items, ok := nested(t, chapters, "data").([]any)
+	if !ok || len(items) == 0 {
+		t.Fatalf("chapters: %v", chapters)
+	}
+	first, _ := items[0].(map[string]any)
+	chapterID, _ := first["id"].(string)
+	if chapterID == "" {
+		t.Fatalf("chapter has no id: %v", first)
+	}
+	versionsPath := chaptersPath + "/" + chapterID + "/versions"
+
+	cited := map[string]any{
+		"expected_chapter_version_id": nil, "expected_spec_revision": 1,
+		"body_markdown": "[[source:source-1]] 的摘录", "source_ids": []string{"source-1"},
+	}
+	saved, savedBody := doJSON(t, fixture.router, http.MethodPost, versionsPath, "sc-cite-1", cited)
+	if saved.Code != http.StatusCreated {
+		t.Fatalf("cite a bound source: %d %s", saved.Code, saved.Body.String())
+	}
+	if got := nested(t, savedBody, "data", "source_ids"); !equalStrings(got, "source-1") {
+		t.Fatalf("response lost the citation: %v", got)
+	}
+	versionID, _ := nested(t, savedBody, "data", "current_version_id").(string)
+	if versionID == "" {
+		t.Fatalf("cited chapter has no version: %s", saved.Body.String())
+	}
+
+	// 读回来的章节也得带着引用——落库的是真值，不再是写死的 "[]"。
+	_, listed := doJSON(t, fixture.router, http.MethodGet, chaptersPath, "", nil)
+	listedItems, _ := nested(t, listed, "data").([]any)
+	listedFirst, _ := listedItems[0].(map[string]any)
+	if !equalStrings(listedFirst["source_ids"], "source-1") {
+		t.Fatalf("stored citation not read back: %v", listedFirst["source_ids"])
+	}
+
+	// 撤销资料授权，再提交一份**新的**带引用正文：复核必须在写之前把它挡回去。
+	fixture.authorizer.allow = false
+	denied, deniedBody := doJSON(t, fixture.router, http.MethodPost, versionsPath, "sc-cite-2", map[string]any{
+		"expected_chapter_version_id": versionID, "expected_spec_revision": 1,
+		"body_markdown": "改写后的 [[source:source-1]] 摘录", "source_ids": []string{"source-1"},
+	})
+	if denied.Code != http.StatusForbidden {
+		t.Fatalf("revoked source accepted: %d %s", denied.Code, denied.Body.String())
+	}
+	if code, _ := nested(t, deniedBody, "error", "code").(string); code != "source_access_denied" {
+		t.Fatalf("revoked source answered %q: %s", code, denied.Body.String())
+	}
+	var chapter struct {
+		CurrentVersionID *string `gorm:"column:current_version_id"`
+	}
+	if err := fixture.db.Table("lingdoc_chapters").Where("id = ?", chapterID).Scan(&chapter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if chapter.CurrentVersionID == nil || *chapter.CurrentVersionID != versionID {
+		t.Fatalf("rejected save moved the chapter to %v, want %s", chapter.CurrentVersionID, versionID)
+	}
+
+	// 拿第一枚操作键原样重放：授权已经没了，重放不能把那次写下的正文换回来。
+	replay, replayBody := doJSON(t, fixture.router, http.MethodPost, versionsPath, "sc-cite-1", cited)
+	if replay.Code != http.StatusForbidden {
+		t.Fatalf("replay bypassed the recheck: %d %s", replay.Code, replay.Body.String())
+	}
+	if code, _ := nested(t, replayBody, "error", "code").(string); code != "source_access_denied" {
+		t.Fatalf("replay answered %q: %s", code, replay.Body.String())
+	}
+	// 错误响应里没有 data，更没有重放标记——重放要是被服务了，形状会是 201 + data。
+	if _, present := replayBody["data"]; present {
+		t.Fatalf("a replayed payload was served for a revoked source: %s", replay.Body.String())
+	}
+}
+
+// TestSaveChapterWithoutPolicyAnswersServiceUnavailable 钉住「装配漏了端口」在传输层的答法：
+// 不是 403（那会让一次装配失误看着像用户的权限出了问题），而是可重试的 503。
+func TestSaveChapterWithoutPolicyAnswersServiceUnavailable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fixture := newSaveChapterFixture(t)
+
+	created, createdBody := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects", "np-create-1",
+		map[string]string{"name": "漏装端口", "template_id": "template-demo"})
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create project: %d %s", created.Code, created.Body.String())
+	}
+	projectID, _ := nested(t, createdBody, "data", "id").(string)
+	chaptersPath := "/api/v1/lingdoc/projects/" + projectID + "/chapters"
+
+	if recorder, _ := doJSON(t, fixture.router, http.MethodPut, "/api/v1/lingdoc/projects/"+projectID+"/spec", "np-spec-1",
+		map[string]any{"expected_spec_revision": 0, "fields": map[string]string{"research_subject": "样本", "research_goal": "验证"}},
+	); recorder.Code != http.StatusOK {
+		t.Fatalf("save spec: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if recorder, _ := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects/"+projectID+"/activate", "np-activate-1",
+		map[string]any{"expected_spec_revision": 1},
+	); recorder.Code != http.StatusOK {
+		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
+	}
+	_, chapters := doJSON(t, fixture.router, http.MethodGet, chaptersPath, "", nil)
+	items, _ := nested(t, chapters, "data").([]any)
+	if len(items) == 0 {
+		t.Fatalf("chapters: %v", chapters)
+	}
+	first, _ := items[0].(map[string]any)
+	chapterID, _ := first["id"].(string)
+
+	// 把网关抽掉：复核要问的那台判定器没了，装配该答 503 而不是放行。
+	testRuntime(fixture.handler).gateway = nil
+	recorder, body := doJSON(t, fixture.router, http.MethodPost, chaptersPath+"/"+chapterID+"/versions", "np-cite-1",
+		map[string]any{"expected_chapter_version_id": nil, "expected_spec_revision": 1,
+			"body_markdown": "[[source:source-1]] 的摘录", "source_ids": []string{"source-1"}})
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("missing dependency answered %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if code, _ := nested(t, body, "error", "code").(string); code != "dependency_unavailable" {
+		t.Fatalf("missing dependency answered %q: %s", code, recorder.Body.String())
+	}
+	if retryable, _ := nested(t, body, "error", "retryable").(bool); !retryable {
+		t.Fatalf("dependency_unavailable must be retryable: %s", recorder.Body.String())
+	}
+}

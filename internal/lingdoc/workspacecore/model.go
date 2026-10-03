@@ -215,4 +215,74 @@ func (chapterRow) TableName() string { return "lingdoc_chapters" }
 
 type chapterVersionRow struct {
 	ID                string  `gorm:"primaryKey;size:36"`
-	ProjectID         string  `gorm:"not
+	ProjectID         string  `gorm:"not null;index;size:36"`
+	ChapterID         string  `gorm:"not null;index;size:36"`
+	ParentVersionID   *string `gorm:"size:36"`
+	BodyMarkdown      string  `gorm:"not null;type:text"`
+	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
+	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
+	SpecRevision      int64   `gorm:"not null;default:0"`
+	ConfirmationValid bool    `gorm:"not null;default:false"`
+	CreatedAt         time.Time
+}
+
+func (chapterVersionRow) TableName() string { return "lingdoc_chapter_versions" }
+
+type workingCopyRow struct {
+	ProjectID            string  `gorm:"primaryKey;size:36"`
+	ChapterID            string  `gorm:"primaryKey;size:36"`
+	BaseChapterVersionID *string `gorm:"size:36"`
+	SpecRevision         int64   `gorm:"not null"`
+	WorkingCopyRevision  int64   `gorm:"not null"`
+	BodyMarkdown         string  `gorm:"not null;type:text"`
+	SourceIDsJSON        string  `gorm:"column:source_ids_json;not null;type:text"`
+	ReviewItemsJSON      string  `gorm:"column:review_items_json;not null;type:text"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+func (workingCopyRow) TableName() string { return "lingdoc_working_copies" }
+
+type chapterConfirmationRow struct {
+	ID               string `gorm:"primaryKey;size:36"`
+	ChapterID        string `gorm:"not null;size:36"`
+	ChapterVersionID string `gorm:"not null;size:36"`
+	Valid            bool   `gorm:"not null;default:false"`
+	DetailsJSON      string `gorm:"type:text;not null;default:'{}'"`
+	CreatedAt        time.Time
+}
+
+func (chapterConfirmationRow) TableName() string { return "lingdoc_chapter_confirmations" }
+
+type chapterConfirmationDetails struct {
+	ID               string `json:"id"`
+	ChapterVersionID string `json:"chapter_version_id"`
+	SpecRevision     int64  `json:"spec_revision"`
+	TemplateVersion  string `json:"template_version"`
+	Valid            bool   `json:"valid"`
+}
+
+type operationRow struct {
+	TenantID     uint64 `gorm:"primaryKey"`
+	UserID       string `gorm:"primaryKey;size:64"`
+	Operation    string `gorm:"primaryKey;size:40"`
+	Target       string `gorm:"primaryKey;size:100"`
+	Key          string `gorm:"primaryKey;size:128"`
+	BodyHash     string `gorm:"not null;size:64"`
+	ResponseJSON string `gorm:"column:response_json;not null;type:text"`
+	ResponseCode int    `gorm:"not null"`
+	CreatedAt    time.Time
+}
+
+func (operationRow) TableName() string { return "lingdoc_operations" }
+
+func decodeSpec(raw string) (map[string]string, error) {
+	var spec map[string]string
+	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
+		return nil, err
+	}
+	if spec == nil {
+		spec = map[string]string{}
+	}
+	return spec, nil
+}

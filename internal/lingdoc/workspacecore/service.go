@@ -211,4 +211,280 @@ func (t gormTransaction) ReplaceMembers(projectID string, members []Member) erro
 		if !sidecar {
 			continue
 		}
-		go
+		governance := member.GovernanceRole
+		if governance == "" {
+			if member.Role == "owner" {
+				governance = "owner"
+			} else {
+				governance = "member"
+			}
+		}
+		status := member.Status
+		if status == "" {
+			status = "active"
+		}
+		roles, err := json.Marshal(member.FunctionRoles)
+		if err != nil {
+			return err
+		}
+		scopes, err := json.Marshal(member.FunctionScopes)
+		if err != nil {
+			return err
+		}
+		if err := t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
+	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
+		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
+	if row.CurrentVersionID == nil {
+		return view, nil
+	}
+	var version chapterVersionRow
+	if err := tx.Where("id = ? AND project_id = ? AND chapter_id = ?", *row.CurrentVersionID, row.ProjectID, row.ID).First(&version).Error; err != nil {
+		return Chapter{}, err
+	}
+	view.BodyMarkdown = version.BodyMarkdown
+	if version.ConfirmationValid {
+		var confirmations []chapterConfirmationRow
+		if err := tx.Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", row.ID, version.ID, true).
+			Order("created_at DESC, id DESC").Find(&confirmations).Error; err != nil {
+			return Chapter{}, err
+		}
+		for _, confirmation := range confirmations {
+			var details chapterConfirmationDetails
+			if err := json.Unmarshal([]byte(confirmation.DetailsJSON), &details); err != nil {
+				return Chapter{}, fmt.Errorf("decode chapter confirmation %q: %w", confirmation.ID, err)
+			}
+			if details.Valid && details.ID == confirmation.ID && details.ChapterVersionID == version.ID &&
+				details.SpecRevision == project.SpecRevision && details.TemplateVersion == project.TemplateVersion {
+				view.ConfirmationValid = true
+				break
+			}
+		}
+	}
+	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &view.SourceIDs); err != nil {
+		return Chapter{}, err
+	}
+	if view.SourceIDs == nil {
+		// 这一列理论上只由 SaveChapter 写入，而它写的一定是 [] 或 ["…"]。留着这一行是
+		// 因为 json.Unmarshal 会把 null 解成 nil，而 nil 一旦漏出去，上面建立的
+		//「没有引用时是空切片」不变式就断了——调用方按 nil 与空切片分不出同一件事。
+		view.SourceIDs = []string{}
+	}
+	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &view.ReviewItems); err != nil {
+		return Chapter{}, err
+	}
+	return view, nil
+}
+
+func (t gormTransaction) Chapter(projectID, chapterID string) (Chapter, error) {
+	var row chapterRow
+	if err := t.db.Where("id = ? AND project_id = ?", chapterID, projectID).First(&row).Error; err != nil {
+		return Chapter{}, storageError(err)
+	}
+	var project projectRow
+	if err := t.db.Where("id = ?", projectID).First(&project).Error; err != nil {
+		return Chapter{}, storageError(err)
+	}
+	return chapterView(t.db, row, project)
+}
+
+func decodeVersionRow(row chapterVersionRow) (ChapterVersion, error) {
+	version := ChapterVersion{ID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+		ParentVersionID: row.ParentVersionID, BodyMarkdown: row.BodyMarkdown,
+		SpecRevision: row.SpecRevision, ConfirmationValid: row.ConfirmationValid, CreatedAt: row.CreatedAt,
+		SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &version.SourceIDs); err != nil {
+		return ChapterVersion{}, err
+	}
+	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &version.ReviewItems); err != nil {
+		return ChapterVersion{}, err
+	}
+	if version.SourceIDs == nil {
+		version.SourceIDs = []string{}
+	}
+	if version.ReviewItems == nil {
+		version.ReviewItems = []ReviewItem{}
+	}
+	return version, nil
+}
+
+func (t gormTransaction) ChapterVersion(projectID, chapterID, versionID string) (ChapterVersion, error) {
+	var row chapterVersionRow
+	if err := t.db.Where("id = ? AND project_id = ? AND chapter_id = ?", versionID, projectID, chapterID).First(&row).Error; err != nil {
+		return ChapterVersion{}, storageError(err)
+	}
+	return decodeVersionRow(row)
+}
+
+func (t gormTransaction) ChapterVersions(projectID, chapterID string) ([]ChapterVersion, error) {
+	var rows []chapterVersionRow
+	if err := t.db.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).Order("created_at DESC, id DESC").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	versions := make([]ChapterVersion, 0, len(rows))
+	for _, row := range rows {
+		version, err := decodeVersionRow(row)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, version)
+	}
+	return versions, nil
+}
+
+func workingCopyView(row workingCopyRow) (WorkingCopy, error) {
+	copy := WorkingCopy{ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+		BaseChapterVersionID: row.BaseChapterVersionID, SpecRevision: row.SpecRevision,
+		WorkingCopyRevision: row.WorkingCopyRevision, BodyMarkdown: row.BodyMarkdown,
+		UpdatedAt: row.UpdatedAt, SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &copy.SourceIDs); err != nil {
+		return WorkingCopy{}, err
+	}
+	if err := json.Unmarshal([]byte(row.ReviewItemsJSON), &copy.ReviewItems); err != nil {
+		return WorkingCopy{}, err
+	}
+	if copy.SourceIDs == nil {
+		copy.SourceIDs = []string{}
+	}
+	if copy.ReviewItems == nil {
+		copy.ReviewItems = []ReviewItem{}
+	}
+	return copy, nil
+}
+
+func (t gormTransaction) WorkingCopy(projectID, chapterID string) (WorkingCopy, error) {
+	var row workingCopyRow
+	if err := t.db.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).First(&row).Error; err != nil {
+		return WorkingCopy{}, storageError(err)
+	}
+	return workingCopyView(row)
+}
+
+func (t gormTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
+	sources, err := json.Marshal(next.SourceIDs)
+	if err != nil {
+		return err
+	}
+	review, err := json.Marshal(next.ReviewItems)
+	if err != nil {
+		return err
+	}
+	query := t.db.Model(&workingCopyRow{}).Where("project_id = ? AND chapter_id = ? AND spec_revision = ? AND working_copy_revision = ?",
+		previous.ProjectID, previous.ChapterID, previous.SpecRevision, previous.WorkingCopyRevision)
+	if previous.BaseChapterVersionID == nil {
+		query = query.Where("base_chapter_version_id IS NULL")
+	} else {
+		query = query.Where("base_chapter_version_id = ?", *previous.BaseChapterVersionID)
+	}
+	return affected(query.Updates(map[string]any{
+		"base_chapter_version_id": next.BaseChapterVersionID, "spec_revision": next.SpecRevision,
+		"working_copy_revision": next.WorkingCopyRevision, "body_markdown": next.BodyMarkdown,
+		"source_ids_json": string(sources), "review_items_json": string(review), "updated_at": next.UpdatedAt,
+	}))
+}
+func (t gormTransaction) Chapters(projectID string) ([]Chapter, error) {
+	var rows []chapterRow
+	if err := t.db.Where("project_id = ?", projectID).Order("section_id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	var project projectRow
+	if err := t.db.Where("id = ?", projectID).First(&project).Error; err != nil {
+		return nil, storageError(err)
+	}
+	views := make([]Chapter, 0, len(rows))
+	for _, row := range rows {
+		view, err := chapterView(t.db, row, project)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, view)
+	}
+	return views, nil
+}
+func (t gormTransaction) InsertChapter(c Chapter) error {
+	var project projectRow
+	if err := t.db.Where("id = ?", c.ProjectID).First(&project).Error; err != nil {
+		return storageError(err)
+	}
+	chapter := chapterRow{ID: c.ID, ProjectID: c.ProjectID, SectionID: c.SectionID, Title: c.Title}
+	if err := t.db.Create(&chapter).Error; err != nil {
+		return err
+	}
+	sources, err := json.Marshal(c.SourceIDs)
+	if err != nil {
+		return err
+	}
+	if c.SourceIDs == nil {
+		sources = []byte("[]")
+	}
+	review, err := json.Marshal(c.ReviewItems)
+	if err != nil {
+		return err
+	}
+	if c.ReviewItems == nil {
+		review = []byte("[]")
+	}
+	now := time.Now().UTC()
+	return t.db.Create(&workingCopyRow{ProjectID: c.ProjectID, ChapterID: c.ID,
+		SpecRevision: project.SpecRevision, WorkingCopyRevision: 1, BodyMarkdown: c.BodyMarkdown,
+		SourceIDsJSON: string(sources), ReviewItemsJSON: string(review), CreatedAt: now, UpdatedAt: now}).Error
+}
+func (t gormTransaction) AppendChapter(previous, next Chapter, specRevision int64) error {
+	sources, err := json.Marshal(next.SourceIDs)
+	if err != nil {
+		return err
+	}
+	review, err := json.Marshal(next.ReviewItems)
+	if err != nil {
+		return err
+	}
+	version := chapterVersionRow{ID: *next.CurrentVersionID, ProjectID: next.ProjectID, ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown, SourceIDsJSON: string(sources), ReviewItemsJSON: string(review), SpecRevision: specRevision}
+	if err := t.db.Create(&version).Error; err != nil {
+		return err
+	}
+	query := t.db.Model(&chapterRow{}).Where("id = ? AND project_id = ?", previous.ID, previous.ProjectID)
+	if previous.CurrentVersionID == nil {
+		query = query.Where("current_version_id IS NULL")
+	} else {
+		query = query.Where("current_version_id = ?", *previous.CurrentVersionID)
+	}
+	return affected(query.Update("current_version_id", *next.CurrentVersionID))
+}
+func (t gormTransaction) Operation(id OperationIdentity) (OperationResult, bool, error) {
+	var row operationRow
+	err := t.db.Where("tenant_id = ? AND user_id = ? AND operation = ? AND target = ? AND key = ?", id.Actor.TenantID, id.Actor.UserID, id.Operation, id.Target, id.Key).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return OperationResult{}, false, nil
+	}
+	if err != nil {
+		return OperationResult{}, false, err
+	}
+	return OperationResult{BodyHash: row.BodyHash, Body: json.RawMessage(row.ResponseJSON), Status: row.ResponseCode}, true, nil
+}
+func (t gormTransaction) SaveOperation(id OperationIdentity, result OperationResult) error {
+	row := operationRow{TenantID: id.Actor.TenantID, UserID: id.Actor.UserID, Operation: id.Operation, Target: id.Target, Key: id.Key, BodyHash: result.BodyHash, ResponseJSON: string(result.Body), ResponseCode: result.Status}
+	if err := t.db.Create(&row).Error; err != nil {
+		return fmt.Errorf("%w: %v", ErrRequestInProgress, err)
+	}
+	return nil
+}
+func isSQLiteLockError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var codedError interface{ Code() int }
+	if errors.As(err, &codedError) {
+		code := codedError.Code() & 0xff
+		return code == 5 || code == 6
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "database is locked") || strings.Contains(message, "database table is locked")
+}
+
+var _ Repository = (*GORMRepository)(nil)
+var _ Transaction = gormTransaction{}
