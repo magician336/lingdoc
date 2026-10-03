@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 )
 
 // Repository owns atomic commit/rollback and database isolation. Callbacks see
@@ -35,6 +36,16 @@ type Transaction interface {
 	AppendChapter(Chapter, Chapter, int64) error
 	Operation(OperationIdentity) (OperationResult, bool, error)
 	SaveOperation(OperationIdentity, OperationResult) error
+}
+
+type draftCandidateTransaction interface {
+	InsertDraftCandidate(DraftCandidate) error
+	DraftCandidates(string) ([]DraftCandidate, error)
+}
+
+type auditTransaction interface {
+	RecordAudit(AuditEvent) error
+	AuditEvents(string) ([]AuditEvent, error)
 }
 type OperationIdentity struct {
 	Actor                  Actor
@@ -206,8 +217,21 @@ type CreateProjectInput struct {
 	TemplateID string `json:"template_id"`
 }
 type SaveSpecInput struct {
-	ExpectedSpecRevision int64             `json:"expected_spec_revision"`
-	Fields               map[string]string `json:"fields"`
+	ExpectedSpecRevision int64                     `json:"expected_spec_revision"`
+	Fields               map[string]string         `json:"fields"`
+	FieldMetadata        map[string]SpecFieldInput `json:"field_metadata,omitempty"`
+}
+type SpecFieldInput struct {
+	Origin     string            `json:"origin,omitempty"`
+	Status     string            `json:"status,omitempty"`
+	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
+}
+type DraftCandidateInput struct {
+	Kind       string            `json:"kind"`
+	Title      string            `json:"title"`
+	Content    string            `json:"content"`
+	Level      string            `json:"level"`
+	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
 }
 type ActivateProjectInput struct {
 	ExpectedSpecRevision int64 `json:"expected_spec_revision"`
@@ -246,6 +270,11 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}
+	for key, metadata := range input.FieldMetadata {
+		if _, ok := input.Fields[key]; !ok || !validSpecFieldMetadata(metadata) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+	}
 	return s.operation(ctx, actor, "saveSpec", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "draft" {
 			return nil, 0, ErrInvalidState
@@ -253,18 +282,133 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		if p.SpecRevision != input.ExpectedSpecRevision {
 			return nil, 0, ErrVersionConflict
 		}
-		if !maps.Equal(p.Spec, input.Fields) {
+		nextFields := maps.Clone(p.SpecFields)
+		if nextFields == nil {
+			nextFields = map[string]SpecField{}
+		}
+		for key, value := range input.Fields {
+			field := nextFields[key]
+			if field.Value != value || field.Origin == "" {
+				field.Value = value
+				field.ModifiedBy = actor.UserID
+				field.ModifiedAt = time.Now().UTC()
+				if metadata, ok := input.FieldMetadata[key]; ok {
+					field.Origin = metadata.Origin
+					field.Status = metadata.Status
+					field.Provenance = metadata.Provenance
+				} else {
+					field.Origin = "human"
+					field.Status = "draft"
+					field.Provenance = nil
+				}
+			}
+			nextFields[key] = field
+		}
+		if !maps.Equal(p.Spec, input.Fields) || !maps.Equal(p.SpecFields, nextFields) {
 			next := p
 			next.Spec = maps.Clone(input.Fields)
+			next.SpecFields = nextFields
 			next.SpecRevision++
 			next.ProjectVersion++
 			if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 				return nil, 0, err
 			}
+			if audit, ok := tx.(auditTransaction); ok {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_spec.save", Target: projectID, Details: map[string]any{"spec_revision": next.SpecRevision, "field_metadata": next.SpecFields}, CreatedAt: time.Now().UTC()}); err != nil {
+					return nil, 0, err
+				}
+			}
 			p = next
 		}
 		return p, 200, nil
 	})
+}
+
+func validSpecFieldMetadata(input SpecFieldInput) bool {
+	origin := input.Origin
+	if origin == "" {
+		origin = "human"
+	}
+	status := input.Status
+	if status == "" {
+		status = "draft"
+	}
+	validOrigin := origin == "human" || origin == "ai_generated" || origin == "ai_assisted_human"
+	validStatus := status == "draft" || status == "pending_confirmation" || status == "confirmed" || status == "superseded"
+	if !validOrigin || !validStatus {
+		return false
+	}
+	if (origin == "ai_generated" || origin == "ai_assisted_human") && status == "confirmed" {
+		return false
+	}
+	return input.Provenance == nil || input.Provenance.SourceType != "" && input.Provenance.CreatedBy != ""
+}
+
+func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (json.RawMessage, int, bool, error) {
+	input.Kind = strings.TrimSpace(input.Kind)
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Kind == "" || input.Title == "" || input.Content == "" || len(input.Content) > 200000 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if input.Level == "" {
+		input.Level = "background"
+	}
+	if input.Level != "candidate_evidence" && input.Level != "background" && input.Level != "discovery" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "createDraftCandidate", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
+		candidateStore, ok := tx.(draftCandidateTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		candidate := DraftCandidate{ID: uuid.NewString(), ProjectID: projectID, Kind: input.Kind, Title: input.Title, Content: input.Content, Level: input.Level, BasedOnContextRevision: p.CurrentContextRevision, Provenance: input.Provenance, CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
+		if err := candidateStore.InsertDraftCandidate(candidate); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "draft_candidate.create", Target: candidate.ID, Details: map[string]any{"level": candidate.Level, "kind": candidate.Kind}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return candidate, 201, nil
+	})
+}
+
+func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
+	var result []AuditEvent
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		audit, ok := tx.(auditTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = audit.AuditEvents(projectID)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
+	var result []DraftCandidate
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		store, ok := tx.(draftCandidateTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = store.DraftCandidates(projectID)
+		return err
+	})
+	return result, err
 }
 func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs == nil || len(input.CollaboratorUserIDs) > 20 {

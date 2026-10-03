@@ -16,6 +16,12 @@ type SaveSpecInput = core.SaveSpecInput
 type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
+type SpecField = core.SpecField
+type SpecFieldInput = core.SpecFieldInput
+type ProvenanceRecord = core.ProvenanceRecord
+type DraftCandidate = core.DraftCandidate
+type DraftCandidateInput = core.DraftCandidateInput
+type AuditEvent = core.AuditEvent
 type ContractDemoTemplate = core.ContractDemoTemplate
 
 var (

@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -13,16 +14,62 @@ type Member struct {
 }
 
 type Project struct {
+	ID                     string               `json:"id"`
+	Name                   string               `json:"name"`
+	Status                 string               `json:"status"`
+	ProjectVersion         int64                `json:"project_version"`
+	SpecRevision           int64                `json:"spec_revision"`
+	CurrentContextRevision int64                `json:"current_context_revision"`
+	Spec                   map[string]string    `json:"spec"`
+	SpecFields             map[string]SpecField `json:"spec_fields,omitempty"`
+	TemplateID             string               `json:"template_id"`
+	TemplateVersion        string               `json:"template_version"`
+	Members                []Member             `json:"members"`
+}
+
+type ProvenanceRecord struct {
+	SourceType         string    `json:"source_type"`
+	SourceID           string    `json:"source_id,omitempty"`
+	SourceVersion      string    `json:"source_version,omitempty"`
+	Locator            string    `json:"locator,omitempty"`
+	Purpose            string    `json:"purpose,omitempty"`
+	AuthorizationScope string    `json:"authorization_scope,omitempty"`
+	CreatedBy          string    `json:"created_by"`
+	CreatedAt          time.Time `json:"created_at"`
+	Accessible         bool      `json:"accessible"`
+	NeedsReview        bool      `json:"needs_review"`
+}
+
+type SpecField struct {
+	Value      string            `json:"value"`
+	Origin     string            `json:"origin"`
+	Status     string            `json:"status"`
+	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
+	ModifiedBy string            `json:"modified_by"`
+	ModifiedAt time.Time         `json:"modified_at"`
+}
+
+type DraftCandidate struct {
 	ID                     string            `json:"id"`
-	Name                   string            `json:"name"`
-	Status                 string            `json:"status"`
-	ProjectVersion         int64             `json:"project_version"`
-	SpecRevision           int64             `json:"spec_revision"`
-	CurrentContextRevision int64             `json:"current_context_revision"`
-	Spec                   map[string]string `json:"spec"`
-	TemplateID             string            `json:"template_id"`
-	TemplateVersion        string            `json:"template_version"`
-	Members                []Member          `json:"members"`
+	ProjectID              string            `json:"project_id"`
+	Kind                   string            `json:"kind"`
+	Title                  string            `json:"title"`
+	Content                string            `json:"content"`
+	Level                  string            `json:"level"`
+	BasedOnContextRevision int64             `json:"based_on_context_revision"`
+	Provenance             *ProvenanceRecord `json:"provenance,omitempty"`
+	CreatedBy              string            `json:"created_by"`
+	CreatedAt              time.Time         `json:"created_at"`
+}
+
+type AuditEvent struct {
+	ID        string         `json:"id"`
+	ProjectID string         `json:"project_id"`
+	ActorID   string         `json:"actor_id"`
+	Action    string         `json:"action"`
+	Target    string         `json:"target"`
+	Details   map[string]any `json:"details,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 type ReviewItem struct {
@@ -117,6 +164,7 @@ type projectRow struct {
 	SpecRevision           int64  `gorm:"not null"`
 	CurrentContextRevision int64  `gorm:"column:current_context_revision;not null;default:0"`
 	SpecJSON               string `gorm:"column:spec_json;not null;type:text"`
+	SpecMetadataJSON       string `gorm:"column:spec_metadata_json;not null;type:text;default:'{}'"`
 	TemplateID             string `gorm:"not null;size:80"`
 	TemplateVersion        string `gorm:"not null;size:40"`
 	CreatedAt              time.Time
@@ -131,6 +179,33 @@ type memberRow struct {
 }
 
 func (memberRow) TableName() string { return "lingdoc_members" }
+
+type draftCandidateRow struct {
+	ID                     string `gorm:"primaryKey;size:36"`
+	ProjectID              string `gorm:"not null;index;size:36"`
+	Kind                   string `gorm:"not null;size:32"`
+	Title                  string `gorm:"not null;size:255"`
+	Content                string `gorm:"not null;type:text"`
+	Level                  string `gorm:"not null;size:32"`
+	BasedOnContextRevision int64  `gorm:"not null;default:0"`
+	ProvenanceJSON         string `gorm:"column:provenance_json;not null;type:text;default:'{}'"`
+	CreatedBy              string `gorm:"not null;size:64"`
+	CreatedAt              time.Time
+}
+
+func (draftCandidateRow) TableName() string { return "lingdoc_draft_candidates" }
+
+type auditEventRow struct {
+	ID          string `gorm:"primaryKey;size:36"`
+	ProjectID   string `gorm:"not null;index;size:36"`
+	ActorID     string `gorm:"not null;size:64"`
+	Action      string `gorm:"not null;size:64"`
+	Target      string `gorm:"not null;size:128"`
+	DetailsJSON string `gorm:"column:details_json;not null;type:text;default:'{}'"`
+	CreatedAt   time.Time
+}
+
+func (auditEventRow) TableName() string { return "lingdoc_project_audits" }
 
 type chapterRow struct {
 	ID               string  `gorm:"primaryKey;size:36"`
@@ -199,4 +274,28 @@ func decodeSpec(raw string) (map[string]string, error) {
 		spec = map[string]string{}
 	}
 	return spec, nil
+}
+
+func decodeSpecFields(raw string, spec map[string]string) (map[string]SpecField, error) {
+	fields := make(map[string]SpecField)
+	if strings.TrimSpace(raw) != "" && strings.TrimSpace(raw) != "{}" {
+		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+			return nil, err
+		}
+	}
+	for key, value := range spec {
+		field, ok := fields[key]
+		if !ok {
+			field = SpecField{Origin: "human", Status: "draft", ModifiedAt: time.Unix(0, 0).UTC()}
+		}
+		field.Value = value
+		if field.Origin == "" {
+			field.Origin = "human"
+		}
+		if field.Status == "" {
+			field.Status = "draft"
+		}
+		fields[key] = field
+	}
+	return fields, nil
 }

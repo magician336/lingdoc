@@ -47,11 +47,15 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
+	specFields, err := decodeSpecFields(row.SpecMetadataJSON, spec)
+	if err != nil {
+		return Project{}, err
+	}
 	var members []memberRow
 	if err := tx.Where("project_id = ?", row.ID).Order("user_id").Find(&members).Error; err != nil {
 		return Project{}, err
 	}
-	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, Spec: spec, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
+	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
 	for _, m := range members {
 		p.Members = append(p.Members, Member{UserID: m.UserID, Role: m.Role})
 	}
@@ -84,7 +88,11 @@ func (t gormTransaction) InsertProject(tenantID uint64, p Project) error {
 	if err != nil {
 		return err
 	}
-	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, SpecJSON: string(raw), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion}
+	metadata, err := json.Marshal(p.SpecFields)
+	if err != nil {
+		return err
+	}
+	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion}
 	if err := t.db.Create(&row).Error; err != nil {
 		return err
 	}
@@ -109,7 +117,11 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err != nil {
 		return err
 	}
-	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status}))
+	metadata, err := json.Marshal(next.SpecFields)
+	if err != nil {
+		return err
+	}
+	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status}))
 }
 func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) error {
 	if err := t.db.Where("project_id = ? AND role = ?", projectID, "collaborator").Delete(&memberRow{}).Error; err != nil {
@@ -121,6 +133,59 @@ func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) er
 		}
 	}
 	return nil
+}
+
+func (t gormTransaction) InsertDraftCandidate(candidate DraftCandidate) error {
+	provenance, err := json.Marshal(candidate.Provenance)
+	if err != nil {
+		return err
+	}
+	return t.db.Create(&draftCandidateRow{ID: candidate.ID, ProjectID: candidate.ProjectID, Kind: candidate.Kind, Title: candidate.Title, Content: candidate.Content, Level: candidate.Level, BasedOnContextRevision: candidate.BasedOnContextRevision, ProvenanceJSON: string(provenance), CreatedBy: candidate.CreatedBy, CreatedAt: candidate.CreatedAt}).Error
+}
+
+func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, error) {
+	var rows []draftCandidateRow
+	if err := t.db.Where("project_id = ?", projectID).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]DraftCandidate, 0, len(rows))
+	for _, row := range rows {
+		var provenance *ProvenanceRecord
+		if row.ProvenanceJSON != "" && row.ProvenanceJSON != "{}" && row.ProvenanceJSON != "null" {
+			provenance = &ProvenanceRecord{}
+			if err := json.Unmarshal([]byte(row.ProvenanceJSON), provenance); err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, DraftCandidate{ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Title: row.Title, Content: row.Content, Level: row.Level, BasedOnContextRevision: row.BasedOnContextRevision, Provenance: provenance, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt})
+	}
+	return result, nil
+}
+
+func (t gormTransaction) RecordAudit(event AuditEvent) error {
+	details, err := json.Marshal(event.Details)
+	if err != nil {
+		return err
+	}
+	return t.db.Create(&auditEventRow{ID: event.ID, ProjectID: event.ProjectID, ActorID: event.ActorID, Action: event.Action, Target: event.Target, DetailsJSON: string(details), CreatedAt: event.CreatedAt}).Error
+}
+
+func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
+	var rows []auditEventRow
+	if err := t.db.Where("project_id = ?", projectID).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]AuditEvent, 0, len(rows))
+	for _, row := range rows {
+		details := map[string]any{}
+		if row.DetailsJSON != "" && row.DetailsJSON != "{}" {
+			if err := json.Unmarshal([]byte(row.DetailsJSON), &details); err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Details: details, CreatedAt: row.CreatedAt})
+	}
+	return result, nil
 }
 func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
 	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,

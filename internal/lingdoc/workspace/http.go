@@ -34,6 +34,9 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId", h.getProject)
 	routes.Write.PUT("/projects/:projectId/spec", h.saveSpec)
 	routes.Write.POST("/projects/:projectId/activate", h.activateProject)
+	routes.Read.GET("/projects/:projectId/draft-candidates", h.listDraftCandidates)
+	routes.Write.POST("/projects/:projectId/draft-candidates", h.createDraftCandidate)
+	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
@@ -281,6 +284,53 @@ func (h *Handler) activateProject(c *gin.Context) {
 		return
 	}
 	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) listDraftCandidates(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) createDraftCandidate(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input DraftCandidateInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.CreateDraftCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) listAuditEvents(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
 }
 
 func (h *Handler) saveMembers(c *gin.Context) {

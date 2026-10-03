@@ -53,6 +53,7 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			project_version INTEGER NOT NULL,
 			spec_revision INTEGER NOT NULL,
 			current_context_revision INTEGER NOT NULL DEFAULT 0,
+			spec_metadata_json TEXT NOT NULL DEFAULT '{}',
 			spec_json TEXT NOT NULL,
 			template_id TEXT NOT NULL,
 			template_version TEXT NOT NULL,
