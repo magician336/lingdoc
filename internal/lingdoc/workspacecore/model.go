@@ -24,6 +24,7 @@ type Project struct {
 	SpecFields             map[string]SpecField `json:"spec_fields,omitempty"`
 	TemplateID             string               `json:"template_id"`
 	TemplateVersion        string               `json:"template_version"`
+	DiscardedAt            *time.Time           `json:"discarded_at,omitempty"`
 	Members                []Member             `json:"members"`
 }
 
@@ -203,17 +204,18 @@ var (
 )
 
 type projectRow struct {
-	ID                     string `gorm:"primaryKey;size:36"`
-	TenantID               uint64 `gorm:"not null;index"`
-	Name                   string `gorm:"not null;size:120"`
-	Status                 string `gorm:"not null;size:16"`
-	ProjectVersion         int64  `gorm:"not null"`
-	SpecRevision           int64  `gorm:"not null"`
-	CurrentContextRevision int64  `gorm:"column:current_context_revision;not null;default:0"`
-	SpecJSON               string `gorm:"column:spec_json;not null;type:text"`
-	SpecMetadataJSON       string `gorm:"column:spec_metadata_json;not null;type:text;default:'{}'"`
-	TemplateID             string `gorm:"not null;size:80"`
-	TemplateVersion        string `gorm:"not null;size:40"`
+	ID                     string     `gorm:"primaryKey;size:36"`
+	TenantID               uint64     `gorm:"not null;index"`
+	Name                   string     `gorm:"not null;size:120"`
+	Status                 string     `gorm:"not null;size:16"`
+	ProjectVersion         int64      `gorm:"not null"`
+	SpecRevision           int64      `gorm:"not null"`
+	CurrentContextRevision int64      `gorm:"column:current_context_revision;not null;default:0"`
+	SpecJSON               string     `gorm:"column:spec_json;not null;type:text"`
+	SpecMetadataJSON       string     `gorm:"column:spec_metadata_json;not null;type:text;default:'{}'"`
+	TemplateID             string     `gorm:"not null;size:80"`
+	TemplateVersion        string     `gorm:"not null;size:40"`
+	DiscardedAt            *time.Time `gorm:"column:discarded_at"`
 	CreatedAt              time.Time
 }
 

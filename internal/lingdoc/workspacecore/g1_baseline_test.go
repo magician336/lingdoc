@@ -233,6 +233,52 @@ func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
 	}
 }
 
+func TestG1DiscardRestoreBlocksWritesAndMarksRevokedProvenance(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-discard-restore.db"))
+	actor := Actor{TenantID: 87, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-07", CreateProjectInput{Name: "G1 discard", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-spec-07", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题"}, FieldMetadata: map[string]SpecFieldInput{"research_subject": {Origin: "ai_generated", Status: "pending_confirmation", Provenance: &ProvenanceRecord{SourceType: "upload", SourceID: "asset-1", CreatedBy: actor.UserID, Accessible: false}}}}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	field := current.SpecFields["research_subject"]
+	if field.Status != "pending_confirmation" || field.Provenance == nil || !field.Provenance.NeedsReview {
+		t.Fatalf("revoked provenance = %+v", field)
+	}
+	if _, _, _, err := svc.DiscardProject(context.Background(), actor, project.ID, "g1-discard-07", current.ProjectVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-spec-after-discard-07", SaveSpecInput{ExpectedSpecRevision: 1, Fields: map[string]string{"research_subject": "禁止"}}); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("save after discard = %v, want %v", err, ErrInvalidState)
+	}
+	items, _, err := svc.ListProjects(context.Background(), actor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("discarded project still listed = %+v", items)
+	}
+	discarded, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || discarded.DiscardedAt == nil {
+		t.Fatalf("discarded project read = %+v, err=%v", discarded, err)
+	}
+	if _, _, _, err := svc.RestoreProject(context.Background(), actor, project.ID, "g1-restore-07", discarded.ProjectVersion); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || restored.DiscardedAt != nil || restored.Status != "draft" {
+		t.Fatalf("restored project = %+v, err=%v", restored, err)
+	}
+}
+
 func rawOwnerTransfer(t *testing.T, raw []byte) OwnerTransfer {
 	t.Helper()
 	var transfer OwnerTransfer

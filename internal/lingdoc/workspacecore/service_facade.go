@@ -106,6 +106,9 @@ func authorize(tx Transaction, actor Actor, projectID, capability string) (Proje
 	if err != nil {
 		return Project{}, err
 	}
+	if p.DiscardedAt != nil && capability != "read" {
+		return Project{}, ErrInvalidState
+	}
 	for _, m := range p.Members {
 		if m.UserID == actor.UserID && (capability != "manage" || m.Role == "owner") {
 			return p, nil
@@ -145,6 +148,73 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 		result = result[:50]
 	}
 	return result, truncated, nil
+}
+
+func projectOwner(p Project, userID string) bool {
+	for _, member := range p.Members {
+		if member.UserID == userID && member.Role == "owner" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
+	if expectedProjectVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input := map[string]any{"expected_project_version": expectedProjectVersion}
+	return s.operation(ctx, actor, "discardProject", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.ProjectVersion != expectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		if p.DiscardedAt != nil || p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
+		now := time.Now().UTC()
+		next := p
+		next.DiscardedAt = &now
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.discard", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion}, CreatedAt: now}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
+}
+
+func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
+	if expectedProjectVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input := map[string]any{"expected_project_version": expectedProjectVersion}
+	return s.operation(ctx, actor, "restoreProject", projectID, key, input, projectID, "read", func(tx Transaction, p Project) (any, int, error) {
+		if !projectOwner(p, actor.UserID) {
+			return nil, 0, ErrNotFound
+		}
+		if p.DiscardedAt == nil {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != expectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		next := p
+		next.DiscardedAt = nil
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.restore", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
 }
 
 // Current authorization precedes replay; only new operations check expected

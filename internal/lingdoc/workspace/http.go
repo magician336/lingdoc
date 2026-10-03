@@ -42,6 +42,8 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/template-migration/preview", h.previewTemplateMigration)
 	routes.Write.POST("/projects/:projectId/template-migration/preview", h.previewTemplateMigrationPost)
 	routes.Write.POST("/projects/:projectId/template-migration", h.changeTemplate)
+	routes.Write.POST("/projects/:projectId/discard", h.discardProject)
+	routes.Write.POST("/projects/:projectId/restore", h.restoreProject)
 	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
 	routes.Write.POST("/projects/:projectId/owner-transfer/:transferId/accept", h.acceptOwnerTransfer)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
@@ -411,6 +413,52 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 		return
 	}
 	data, status, replay, err := h.service.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) discardProject(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input struct {
+		ExpectedProjectVersion int64 `json:"expected_project_version"`
+	}
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.DiscardProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) restoreProject(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input struct {
+		ExpectedProjectVersion int64 `json:"expected_project_version"`
+	}
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.RestoreProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return

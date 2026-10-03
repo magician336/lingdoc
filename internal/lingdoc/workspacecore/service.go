@@ -52,11 +52,19 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
+	for key, field := range specFields {
+		if field.Provenance != nil && !field.Provenance.Accessible {
+			field.Provenance.NeedsReview = true
+			field.Status = "pending_confirmation"
+			specFields[key] = field
+		}
+	}
 	var members []memberRow
 	if err := tx.Where("project_id = ?", row.ID).Order("user_id").Find(&members).Error; err != nil {
 		return Project{}, err
 	}
 	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
+	p.DiscardedAt = row.DiscardedAt
 	for _, m := range members {
 		p.Members = append(p.Members, Member{UserID: m.UserID, Role: m.Role})
 	}
@@ -71,7 +79,7 @@ func (t gormTransaction) Project(tenantID uint64, id string) (Project, error) {
 }
 func (t gormTransaction) Projects(actor Actor, limit int) ([]Project, error) {
 	var rows []projectRow
-	if err := t.db.Table("lingdoc_projects AS p").Select("p.*").Joins("JOIN lingdoc_members AS m ON m.project_id = p.id").Where("p.tenant_id = ? AND m.user_id = ?", actor.TenantID, actor.UserID).Order("p.created_at DESC, p.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
+	if err := t.db.Table("lingdoc_projects AS p").Select("p.*").Joins("JOIN lingdoc_members AS m ON m.project_id = p.id").Where("p.tenant_id = ? AND m.user_id = ? AND p.discarded_at IS NULL", actor.TenantID, actor.UserID).Order("p.created_at DESC, p.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([]Project, 0, len(rows))
@@ -93,7 +101,7 @@ func (t gormTransaction) InsertProject(tenantID uint64, p Project) error {
 	if err != nil {
 		return err
 	}
-	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion}
+	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, DiscardedAt: p.DiscardedAt}
 	if err := t.db.Create(&row).Error; err != nil {
 		return err
 	}
@@ -122,7 +130,7 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err != nil {
 		return err
 	}
-	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion}))
+	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion, "discarded_at": next.DiscardedAt}))
 }
 func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) error {
 	if err := t.db.Where("project_id = ? AND role = ?", projectID, "collaborator").Delete(&memberRow{}).Error; err != nil {
@@ -156,6 +164,9 @@ func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, er
 			provenance = &ProvenanceRecord{}
 			if err := json.Unmarshal([]byte(row.ProvenanceJSON), provenance); err != nil {
 				return nil, err
+			}
+			if !provenance.Accessible {
+				provenance.NeedsReview = true
 			}
 		}
 		result = append(result, DraftCandidate{ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Title: row.Title, Content: row.Content, Level: row.Level, BasedOnContextRevision: row.BasedOnContextRevision, Provenance: provenance, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt})
