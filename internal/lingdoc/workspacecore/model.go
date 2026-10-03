@@ -72,6 +72,24 @@ type AuditEvent struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
+type SpecFieldChange struct {
+	Key        string    `json:"key"`
+	Value      string    `json:"value"`
+	Origin     string    `json:"origin"`
+	Status     string    `json:"status"`
+	ModifiedBy string    `json:"modified_by"`
+	ModifiedAt time.Time `json:"modified_at"`
+}
+
+type ActivationDiff struct {
+	ProjectID             string            `json:"project_id"`
+	CurrentProjectVersion int64             `json:"current_project_version"`
+	CurrentSpecRevision   int64             `json:"current_spec_revision"`
+	ChangedSinceVersion   int64             `json:"changed_since_version"`
+	ChangedFields         []SpecFieldChange `json:"changed_fields"`
+	PendingAIFields       []SpecFieldChange `json:"pending_ai_fields"`
+}
+
 type ReviewItem struct {
 	ID                string `json:"id"`
 	Statement         string `json:"statement"`

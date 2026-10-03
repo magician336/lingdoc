@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -37,6 +38,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/draft-candidates", h.listDraftCandidates)
 	routes.Write.POST("/projects/:projectId/draft-candidates", h.createDraftCandidate)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
+	routes.Read.GET("/projects/:projectId/activation-diff", h.activationDiff)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
@@ -331,6 +333,26 @@ func (h *Handler) listAuditEvents(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) activationDiff(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	since := int64(0)
+	if raw := c.Query("since_project_version"); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &since); err != nil || since < 0 {
+			sendError(c, ErrInvalidRequest)
+			return
+		}
+	}
+	diff, err := h.service.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, diff, false)
 }
 
 func (h *Handler) saveMembers(c *gin.Context) {

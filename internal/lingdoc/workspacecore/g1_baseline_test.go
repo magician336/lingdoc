@@ -83,3 +83,27 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 		t.Fatalf("audit actions = %+v", audits)
 	}
 }
+
+func TestG1ActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-diff.db"))
+	actor := Actor{TenantID: 83, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	created, _, _, err := svc.CreateProject(context.Background(), actor, "g1-create-03", CreateProjectInput{Name: "G1 diff", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-spec-03", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "subject", "research_goal": "goal"}}); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := svc.ActivationDiff(context.Background(), actor, project.ID, 0)
+	if err != nil || len(diff.ChangedFields) == 0 || diff.CurrentProjectVersion != 2 {
+		t.Fatalf("activation diff = %+v, err=%v", diff, err)
+	}
+	if _, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-spec-04", SaveSpecInput{ExpectedSpecRevision: 1, Fields: map[string]string{"research_subject": "subject", "research_goal": "changed"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.ActivateProject(context.Background(), actor, project.ID, "g1-activate-03", ActivateProjectInput{ExpectedSpecRevision: 2, ExpectedProjectVersion: diff.CurrentProjectVersion, ReviewedProjectVersion: diff.CurrentProjectVersion}); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale activation error = %v, want %v", err, ErrVersionConflict)
+	}
+}

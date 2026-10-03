@@ -22,6 +22,8 @@ type ProvenanceRecord = core.ProvenanceRecord
 type DraftCandidate = core.DraftCandidate
 type DraftCandidateInput = core.DraftCandidateInput
 type AuditEvent = core.AuditEvent
+type SpecFieldChange = core.SpecFieldChange
+type ActivationDiff = core.ActivationDiff
 type ContractDemoTemplate = core.ContractDemoTemplate
 
 var (

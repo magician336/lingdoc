@@ -234,7 +234,9 @@ type DraftCandidateInput struct {
 	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
 }
 type ActivateProjectInput struct {
-	ExpectedSpecRevision int64 `json:"expected_spec_revision"`
+	ExpectedSpecRevision   int64 `json:"expected_spec_revision"`
+	ExpectedProjectVersion int64 `json:"expected_project_version,omitempty"`
+	ReviewedProjectVersion int64 `json:"reviewed_project_version,omitempty"`
 }
 type SaveMembersInput struct {
 	ExpectedProjectVersion int64    `json:"expected_project_version"`
@@ -394,6 +396,33 @@ func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID st
 	return result, err
 }
 
+func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
+	var result ActivationDiff
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := authorize(tx, actor, projectID, "read")
+		if err != nil {
+			return err
+		}
+		if sinceProjectVersion < 0 {
+			return ErrInvalidRequest
+		}
+		result = ActivationDiff{ProjectID: projectID, CurrentProjectVersion: p.ProjectVersion, CurrentSpecRevision: p.SpecRevision, ChangedSinceVersion: sinceProjectVersion, ChangedFields: []SpecFieldChange{}, PendingAIFields: []SpecFieldChange{}}
+		for key, field := range p.SpecFields {
+			change := SpecFieldChange{Key: key, Value: field.Value, Origin: field.Origin, Status: field.Status, ModifiedBy: field.ModifiedBy, ModifiedAt: field.ModifiedAt}
+			if (field.Origin == "ai_generated" || field.Origin == "ai_assisted_human") && field.Status == "pending_confirmation" {
+				result.PendingAIFields = append(result.PendingAIFields, change)
+			}
+			if sinceProjectVersion < p.ProjectVersion {
+				result.ChangedFields = append(result.ChangedFields, change)
+			}
+		}
+		slices.SortFunc(result.ChangedFields, func(a, b SpecFieldChange) int { return strings.Compare(a.Key, b.Key) })
+		slices.SortFunc(result.PendingAIFields, func(a, b SpecFieldChange) int { return strings.Compare(a.Key, b.Key) })
+		return nil
+	})
+	return result, err
+}
+
 func (s *Service) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
 	var result []DraftCandidate
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
@@ -471,6 +500,12 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return s.operation(ctx, actor, "activateProject", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		if input.ReviewedProjectVersion > 0 && p.ProjectVersion != input.ReviewedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
 		if p.SpecRevision != input.ExpectedSpecRevision {
 			return nil, 0, ErrVersionConflict
 		}

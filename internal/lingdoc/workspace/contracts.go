@@ -23,6 +23,7 @@ type ApplicationService interface {
 	CreateDraftCandidate(context.Context, Actor, string, string, DraftCandidateInput) (json.RawMessage, int, bool, error)
 	ListDraftCandidates(context.Context, Actor, string) ([]DraftCandidate, error)
 	ListAuditEvents(context.Context, Actor, string) ([]AuditEvent, error)
+	ActivationDiff(context.Context, Actor, string, int64) (ActivationDiff, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
 	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
 	GenerationContext(context.Context, Actor, string, string) (GenerationContext, error)
