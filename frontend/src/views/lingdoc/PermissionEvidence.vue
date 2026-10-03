@@ -46,6 +46,129 @@
       </div>
     </section>
 
+    <section v-if="demoMode" class="sandbox-card" aria-labelledby="sandbox-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">交互式权限沙盒</p>
+          <h2 id="sandbox-title">切换身份，亲自触发一次授权决策</h2>
+        </div>
+        <span class="section-note">所有结果都是可解释的预置响应</span>
+      </div>
+
+      <div class="sandbox-grid">
+        <article class="sandbox-panel sandbox-panel--role">
+          <div class="sandbox-panel-head">
+            <div>
+              <span class="panel-label">01 / 身份与租户角色</span>
+              <h3>当前模拟身份</h3>
+            </div>
+            <span class="sandbox-status sandbox-status--live">已连接租户</span>
+          </div>
+          <div class="role-switch" role="group" aria-label="切换演示角色">
+            <button
+              v-for="role in PERMISSION_ROLES"
+              :key="role"
+              type="button"
+              :class="{ 'role-switch__item--active': demoRole === role }"
+              @click="selectDemoRole(role)"
+            >
+              {{ PERMISSION_ROLE_LABELS[role] }}
+            </button>
+          </div>
+          <p class="sandbox-help">角色改变后，右侧的本次请求、证据链和 API Key 结果会立即重算。</p>
+        </article>
+
+        <article class="sandbox-panel sandbox-panel--action">
+          <div class="sandbox-panel-head">
+            <div>
+              <span class="panel-label">02 / 业务动作</span>
+              <h3>请求模拟器</h3>
+            </div>
+            <span v-if="lastDecision" class="sandbox-status" :class="lastDecision.allowed ? 'sandbox-status--allow' : 'sandbox-status--deny'">
+              {{ lastDecision.allowed ? 'ALLOW' : 'DENY' }}
+            </span>
+          </div>
+          <div class="action-grid">
+            <button
+              v-for="action in DEMO_ACTIONS"
+              :key="action.id"
+              type="button"
+              class="action-button"
+              @click="simulatePermission(action)"
+            >
+              <span>{{ action.operation }}</span>
+              <small>{{ action.minimumLabel }}</small>
+            </button>
+          </div>
+          <div v-if="lastDecision" class="decision-callout" :class="lastDecision.allowed ? 'decision-callout--allow' : 'decision-callout--deny'">
+            <strong>{{ lastDecision.allowed ? '服务端会放行这次请求' : '服务端会拒绝这次请求' }}</strong>
+            <span><code>{{ lastDecision.code }}</code> · {{ lastDecision.reason }}</span>
+          </div>
+        </article>
+      </div>
+
+      <div class="sandbox-grid sandbox-grid--secondary">
+        <article class="sandbox-panel">
+          <div class="sandbox-panel-head">
+            <div>
+              <span class="panel-label">03 / 资源层授权</span>
+              <h3>知识库共享与资料撤权</h3>
+            </div>
+            <span class="sandbox-status" :class="demoKnowledgeShared ? 'sandbox-status--allow' : 'sandbox-status--deny'">
+              {{ demoKnowledgeShared ? '已共享' : '未共享' }}
+            </span>
+          </div>
+          <div class="resource-toggle-row">
+            <div>
+              <strong>LingDoc 研究资料库</strong>
+              <p>WeKnora 知识库共享决定资源是否进入当前租户。</p>
+            </div>
+            <button type="button" class="toggle-button" :class="{ 'toggle-button--on': demoKnowledgeShared }" @click="toggleKnowledgeShare">
+              <span></span>{{ demoKnowledgeShared ? '撤销共享' : '恢复共享' }}
+            </button>
+          </div>
+          <div class="resource-toggle-row">
+            <div>
+              <strong>当前项目来源授权</strong>
+              <p>撤权后，access-status 变为 restricted，交付会重新拦截。</p>
+            </div>
+            <button type="button" class="toggle-button" :class="{ 'toggle-button--on': !demoSourceRevoked }" @click="toggleSourceRevocation">
+              <span></span>{{ demoSourceRevoked ? '恢复来源' : '模拟撤权' }}
+            </button>
+          </div>
+        </article>
+
+        <article class="sandbox-panel sandbox-panel--key">
+          <div class="sandbox-panel-head">
+            <div>
+              <span class="panel-label">04 / API Key</span>
+              <h3>服务身份不能绕过资源权限</h3>
+            </div>
+            <span class="sandbox-status" :class="demoApiKeyEnabled ? 'sandbox-status--allow' : 'sandbox-status--deny'">
+              {{ demoApiKeyEnabled ? 'Key 有效' : 'Key 已撤销' }}
+            </span>
+          </div>
+          <div class="key-line"><code>{{ demoApiKeyEnabled ? 'ldoc_demo_••••••••••7F2A' : 'ldoc_demo_revoked' }}</code><button type="button" class="text-button" @click="toggleApiKey">{{ demoApiKeyEnabled ? '撤销 Key' : '恢复 Key' }}</button></div>
+          <div class="scope-list" aria-label="API Key scope">
+            <button
+              v-for="scope in DEMO_API_SCOPES"
+              :key="scope.id"
+              type="button"
+              class="scope-chip"
+              :class="{ 'scope-chip--active': demoApiKeyScopes.includes(scope.id) }"
+              @click="toggleApiScope(scope.id)"
+            >
+              {{ scope.label }}
+            </button>
+          </div>
+          <button type="button" class="api-run-button" @click="simulateApiRequest">模拟 API Key 请求</button>
+          <p v-if="apiDecision" class="api-result" :class="apiDecision.allowed ? 'api-result--allow' : 'api-result--deny'">
+            <strong>{{ apiDecision.allowed ? '200 ALLOW' : '403 DENY' }}</strong> · {{ apiDecision.reason }}
+          </p>
+        </article>
+      </div>
+    </section>
+
     <section class="proof-rail" aria-labelledby="rail-title">
       <div class="section-heading">
         <div>
@@ -224,11 +347,17 @@ import {
   permissionRoleLabel,
   roleSatisfies,
   type PermissionDecision,
+  type PermissionEvidenceRow,
+  type PermissionRole,
 } from './permissionEvidence'
 
 const authStore = useAuthStore()
 const route = useRoute()
-const demoMode = computed(() => route.meta.publicDemo === true)
+const demoMode = computed(() => (
+  route.meta.publicDemo === true
+  || route.name === 'lingdocPermissionEvidenceDemo'
+  || route.path === '/demo/permissions'
+))
 const loading = ref(false)
 const accessLoading = ref(false)
 const errorMessage = ref('')
@@ -238,6 +367,27 @@ const accessStatus = ref<AccessStatus | null>(null)
 const auditLogs = ref<AuditLog[]>([])
 const auditState = ref<'idle' | 'ready' | 'forbidden' | 'error'>('idle')
 const auditMessage = ref('')
+const demoRole = ref<PermissionRole>('admin')
+const demoKnowledgeShared = ref(true)
+const demoSourceRevoked = ref(false)
+const demoApiKeyEnabled = ref(true)
+const demoApiKeyScopes = ref<string[]>(['lingdoc:read', 'lingdoc:write', 'lingdoc:deliver'])
+const lastDecision = ref<{ allowed: boolean; code: string; reason: string; action: string } | null>(null)
+const apiDecision = ref<{ allowed: boolean; reason: string } | null>(null)
+
+const DEMO_ACTIONS: Array<PermissionEvidenceRow & { minimumLabel: string; resource: 'kb' | 'source' | 'tenant' }> = [
+  { ...PERMISSION_EVIDENCE_ROWS[0], minimumLabel: 'Viewer+', resource: 'kb' },
+  { ...PERMISSION_EVIDENCE_ROWS[1], minimumLabel: 'Contributor+', resource: 'tenant' },
+  { ...PERMISSION_EVIDENCE_ROWS[2], minimumLabel: 'Admin+', resource: 'tenant' },
+  { ...PERMISSION_EVIDENCE_ROWS[3], minimumLabel: 'Contributor+ · 来源授权', resource: 'source' },
+  { ...PERMISSION_EVIDENCE_ROWS[4], minimumLabel: 'Owner', resource: 'tenant' },
+]
+
+const DEMO_API_SCOPES = [
+  { id: 'lingdoc:read', label: 'lingdoc:read' },
+  { id: 'lingdoc:write', label: 'lingdoc:write' },
+  { id: 'lingdoc:deliver', label: 'lingdoc:deliver' },
+]
 
 const DEMO_PROJECTS: Project[] = [
   {
@@ -340,7 +490,7 @@ const DEMO_AUDIT_LOGS: AuditLog[] = [
 const displayUserName = computed(() => demoMode.value ? 'Lin · 权限演示用户' : authStore.user?.username || authStore.user?.email || '未登录用户')
 const displayUserId = computed(() => demoMode.value ? 'demo-admin' : authStore.currentUserId || '—')
 const displayTenantName = computed(() => demoMode.value ? 'LingDoc 研发空间' : authStore.currentTenantName || '未选择空间')
-const displayRole = computed(() => demoMode.value ? 'admin' : authStore.currentTenantRole)
+const displayRole = computed(() => demoMode.value ? demoRole.value : authStore.currentTenantRole)
 const displayTenantId = computed(() => demoMode.value ? '42' : String(authStore.effectiveTenantId || '—'))
 const displayIsSystemAdmin = computed(() => demoMode.value ? false : authStore.isSystemAdmin)
 
@@ -420,6 +570,104 @@ const evidenceChecks = computed(() => [
 ])
 const evidencePassedCount = computed(() => evidenceChecks.value.filter((item) => item.state === 'passed').length)
 
+function selectDemoRole(role: PermissionRole) {
+  demoRole.value = role
+  lastDecision.value = null
+  apiDecision.value = null
+}
+
+function toggleKnowledgeShare() {
+  demoKnowledgeShared.value = !demoKnowledgeShared.value
+  lastDecision.value = null
+}
+
+function toggleSourceRevocation() {
+  demoSourceRevoked.value = !demoSourceRevoked.value
+  if (selectedProjectId.value === 'demo-project-active') {
+    accessStatus.value = {
+      ...DEMO_ACCESS_STATUS['demo-project-active'],
+      content_access: demoSourceRevoked.value ? 'restricted' : 'available',
+      recovery_actions: demoSourceRevoked.value ? ['restore_source_authorization', 'create_clean_project'] : [],
+    }
+  }
+  lastDecision.value = null
+  apiDecision.value = null
+}
+
+function toggleApiKey() {
+  demoApiKeyEnabled.value = !demoApiKeyEnabled.value
+  apiDecision.value = null
+}
+
+function toggleApiScope(scope: string) {
+  demoApiKeyScopes.value = demoApiKeyScopes.value.includes(scope)
+    ? demoApiKeyScopes.value.filter((item) => item !== scope)
+    : [...demoApiKeyScopes.value, scope]
+  apiDecision.value = null
+}
+
+function appendDemoAudit(action: string, outcome: AuditOutcome, details: Record<string, unknown>) {
+  const now = new Date().toISOString()
+  auditLogs.value = [
+    {
+      id: Math.max(0, ...auditLogs.value.map((item) => item.id)) + 1,
+      tenant_id: 42,
+      actor_user_id: 'demo-admin',
+      actor_role: displayRole.value || 'viewer',
+      action: action as AuditLog['action'],
+      scope_type: 'project',
+      scope_id: selectedProjectId.value || 'demo-project-active',
+      target_type: 'permission_check',
+      target_id: `demo-${Date.now()}`,
+      target_user_id: 'demo-admin',
+      request_path: `/api/v1/lingdoc/demo/${action.replace('rbac.', '')}`,
+      request_method: 'POST',
+      outcome,
+      details,
+      created_at: now,
+    },
+    ...auditLogs.value,
+  ]
+  auditState.value = 'ready'
+}
+
+function simulatePermission(action: PermissionEvidenceRow & { minimumLabel: string; resource: 'kb' | 'source' | 'tenant' }) {
+  const roleDecision = permissionDecision(displayRole.value, action.minimumRole)
+  const resourceAllowed = action.resource !== 'kb' || demoKnowledgeShared.value
+  const sourceAllowed = action.resource !== 'source' || (!demoSourceRevoked.value && accessState.value === 'available')
+  const allowed = roleDecision === 'allowed' && resourceAllowed && sourceAllowed
+  let reason = `当前角色满足 ${action.minimumLabel}`
+  if (roleDecision !== 'allowed') reason = `需要 ${action.minimumLabel}，当前是${permissionRoleLabel(displayRole.value)}`
+  else if (!resourceAllowed) reason = '知识库共享已撤销，资源层授权不成立'
+  else if (!sourceAllowed) reason = '来源已撤权，交付前重查阻断请求'
+  lastDecision.value = { allowed, code: allowed ? '200' : '403', reason, action: action.operation }
+  appendDemoAudit(allowed ? 'rbac.authorization_check' : 'rbac.access_denied', allowed ? 'success' : 'denied', {
+    operation: action.id,
+    required_role: action.minimumRole,
+    resource_allowed: resourceAllowed,
+    source_allowed: sourceAllowed,
+  })
+}
+
+function simulateApiRequest() {
+  const hasReadScope = demoApiKeyScopes.value.includes('lingdoc:read')
+  const roleAllowed = permissionDecision(displayRole.value, 'viewer') === 'allowed'
+  const resourceAllowed = demoKnowledgeShared.value && !demoSourceRevoked.value
+  const allowed = demoApiKeyEnabled.value && hasReadScope && roleAllowed && resourceAllowed
+  let reason = 'API Key scope、租户角色和资料授权均通过'
+  if (!demoApiKeyEnabled.value) reason = 'API Key 已撤销'
+  else if (!hasReadScope) reason = 'API Key 缺少 lingdoc:read scope'
+  else if (!roleAllowed) reason = '当前身份不是项目成员，Key 不能替代租户角色'
+  else if (!demoKnowledgeShared.value) reason = '知识库未共享给当前租户'
+  else if (demoSourceRevoked.value) reason = '来源已撤权，Key 不能绕过 SourcePolicy'
+  apiDecision.value = { allowed, reason }
+  appendDemoAudit(allowed ? 'rbac.authorization_check' : 'rbac.access_denied', allowed ? 'success' : 'denied', {
+    operation: 'api_key.read',
+    scopes: [...demoApiKeyScopes.value],
+    key_active: demoApiKeyEnabled.value,
+  })
+}
+
 function decisionFor(minimumRole: 'viewer' | 'contributor' | 'admin' | 'owner'): PermissionDecision {
   return permissionDecision(displayRole.value, minimumRole)
 }
@@ -451,12 +699,15 @@ async function loadAccessStatus() {
     return
   }
   if (demoMode.value) {
-    accessStatus.value = DEMO_ACCESS_STATUS[selectedProjectId.value] || {
+    const preset = DEMO_ACCESS_STATUS[selectedProjectId.value] || {
       project_id: selectedProjectId.value,
       content_access: 'unknown',
       recovery_actions: [],
       can_create_project: false,
     }
+    accessStatus.value = selectedProjectId.value === 'demo-project-active' && demoSourceRevoked.value
+      ? { ...preset, content_access: 'restricted', recovery_actions: ['restore_source_authorization', 'create_clean_project'] }
+      : preset
     return
   }
   accessLoading.value = true
@@ -515,6 +766,7 @@ async function refreshEvidence() {
 
 function auditActionLabel(action: string): string {
   const labels: Record<string, string> = {
+    'rbac.authorization_check': '授权决策',
     'rbac.access_denied': '权限拒绝',
     'rbac.member_added': '成员加入',
     'rbac.member_removed': '成员移除',
@@ -568,6 +820,33 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .identity-facts div { min-width: 100px; }
 .identity-facts span, .project-label { display: block; color: #78908b; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
 .identity-facts strong { display: block; margin-top: 7px; color: var(--ink); font-size: 15px; }
+.sandbox-card { margin-top: 18px; padding: 24px 26px; border: 1px solid #b9ddd5; border-radius: 18px; background: linear-gradient(135deg, rgba(241, 252, 248, .96), rgba(250, 252, 247, .94)); box-shadow: 0 14px 34px rgba(26, 92, 76, .08); }
+.sandbox-card > .section-heading { margin-bottom: 18px; }
+.sandbox-card .section-kicker { color: #c16d2f; }
+.sandbox-grid { display: grid; grid-template-columns: minmax(250px, .75fr) minmax(0, 1.25fr); gap: 14px; }
+.sandbox-grid--secondary { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 14px; }
+.sandbox-panel { min-width: 0; padding: 18px; border: 1px solid #d7e8e2; border-radius: 14px; background: rgba(255, 255, 255, .8); }
+.sandbox-panel--role { background: #f4fbf8; }.sandbox-panel--action { background: #fffdfa; }.sandbox-panel--key { background: #f9f8ff; }
+.sandbox-panel-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 14px; }
+.panel-label { display: block; margin-bottom: 5px; color: #78908b; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.sandbox-panel h3 { margin: 0; color: var(--ink); font-size: 16px; letter-spacing: -.025em; }
+.sandbox-status { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 8px; color: #86621f; background: #fff0c9; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.sandbox-status--live, .sandbox-status--allow { color: #087467; background: #d8f5e9; }.sandbox-status--deny { color: #a14637; background: #ffe1d9; }
+.role-switch { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.role-switch button, .action-button, .scope-chip, .toggle-button, .text-button, .api-run-button { border: 1px solid #d3e4df; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.role-switch button { padding: 10px 8px; border-radius: 9px; color: #54716b; background: #fff; font-size: 12px; font-weight: 700; }
+.role-switch button:hover, .action-button:hover, .scope-chip:hover, .toggle-button:hover, .api-run-button:hover { transform: translateY(-1px); border-color: #83bcb0; }
+.role-switch button.role-switch__item--active { border-color: #0b8c91; color: #fff; background: #0b8c91; box-shadow: 0 5px 13px rgba(11, 140, 145, .17); }
+.sandbox-help { margin: 13px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
+.action-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.action-button { min-height: 56px; padding: 9px 10px; border-radius: 9px; color: var(--ink); background: #fff; text-align: left; }
+.action-button span, .action-button small { display: block; }.action-button span { font-size: 12px; font-weight: 750; }.action-button small { margin-top: 4px; color: #78908b; font-size: 10px; }
+.decision-callout { display: flex; gap: 10px; align-items: baseline; margin-top: 12px; padding: 10px 12px; border-radius: 9px; font-size: 11px; line-height: 1.45; }.decision-callout--allow { color: #087467; background: #e8f8ef; }.decision-callout--deny { color: #a14637; background: #fff0ed; }.decision-callout strong { white-space: nowrap; }.decision-callout code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-weight: 800; }
+.resource-toggle-row { display: flex; justify-content: space-between; gap: 14px; align-items: center; padding: 12px 0; border-top: 1px solid #dcebe6; }.resource-toggle-row:first-of-type { padding-top: 0; border-top: 0; }.resource-toggle-row strong { display: block; font-size: 12px; }.resource-toggle-row p { margin: 4px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.45; }
+.toggle-button { flex: 0 0 auto; display: inline-flex; gap: 6px; align-items: center; border-radius: 999px; padding: 6px 9px; color: #8f4f35; background: #fff5f0; font-size: 10px; font-weight: 750; }.toggle-button span { width: 7px; height: 7px; border-radius: 50%; background: #c85d4b; }.toggle-button--on { color: #087467; background: #e8f8ef; }.toggle-button--on span { background: #22a67a; }
+.key-line { display: flex; justify-content: space-between; gap: 10px; align-items: center; padding: 9px 10px; border-radius: 8px; background: #f0effb; }.key-line code { overflow: hidden; color: #56507c; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.text-button { border: 0; padding: 0; color: #6d5bb2; background: transparent; font-size: 10px; font-weight: 750; white-space: nowrap; }
+.scope-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }.scope-chip { border-radius: 999px; padding: 5px 8px; color: #756f88; background: #fff; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }.scope-chip--active { border-color: #8d7bce; color: #5b4c9d; background: #eeebff; }
+.api-run-button { border-radius: 8px; padding: 8px 11px; color: #fff; background: #6654ad; font-size: 11px; font-weight: 750; }.api-result { margin: 9px 0 0; font-size: 11px; line-height: 1.45; }.api-result--allow { color: #087467; }.api-result--deny { color: #a14637; }.api-result strong { margin-right: 4px; }
 .proof-rail, .matrix-card, .evidence-card, .project-card, .audit-card { padding: 24px 26px; }
 .section-heading { display: flex; justify-content: space-between; gap: 18px; align-items: flex-end; margin-bottom: 20px; }
 .section-heading--compact { align-items: center; margin-bottom: 16px; }
@@ -598,7 +877,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .empty-proof, .audit-empty { display: flex; gap: 14px; align-items: center; padding: 24px 12px 12px; color: var(--ink-soft); }.empty-mark { display: grid; width: 36px; height: 36px; place-items: center; border: 1px solid var(--line); border-radius: 10px; color: #8aa39d; font-size: 20px; }.empty-proof strong, .audit-empty strong { color: var(--ink); font-size: 14px; }.empty-proof p, .audit-empty p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; }.audit-empty--guarded { background: #fffaf0; border-radius: 10px; }.audit-empty--guarded .empty-mark { color: #a87927; border-color: #ecd69f; }
 .audit-list { border-top: 1px solid var(--line); }.audit-row { display: grid; grid-template-columns: 58px 1fr auto; gap: 14px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); }.audit-outcome { width: 52px; padding: 5px 0; border-radius: 5px; text-align: center; font-size: 10px; font-weight: 800; letter-spacing: .05em; }.audit-outcome--denied { color: #a14637; background: #ffe1d9; }.audit-outcome--success, .audit-outcome--accepted { color: #087467; background: #d8f5e9; }.audit-outcome--failed, .audit-outcome--partial { color: #86621f; background: #fff0c9; }.audit-row strong { font-size: 13px; }.audit-row p { margin: 4px 0 0; color: var(--ink-soft); font-size: 12px; }.audit-row time { color: #7d9690; font-size: 11px; white-space: nowrap; }
 .proof-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 22px; padding: 14px 4px 0; border-top: 1px solid #c8dbd5; color: #708983; font-size: 11px; letter-spacing: .03em; }
-@media (max-width: 960px) { .identity-card, .proof-hero { align-items: flex-start; flex-direction: column; }.hero-actions { align-items: flex-start; }.identity-facts { flex-wrap: wrap; }.rail-grid { grid-template-columns: 1fr; }.rail-step { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); }.rail-step:last-child { border-bottom: 0; }.proof-columns { grid-template-columns: 1fr; }.project-proof { grid-template-columns: 1fr; }.access-state { padding: 12px 0 0; border-top: 3px solid; border-left: 0; } }
-@media (max-width: 600px) { .permission-proof { padding: 16px 12px 32px; }.proof-hero, .identity-card, .proof-rail, .matrix-card, .evidence-card, .project-card, .audit-card { padding: 18px; }.proof-footer { flex-direction: column; gap: 6px; } }
+@media (max-width: 960px) { .identity-card, .proof-hero { align-items: flex-start; flex-direction: column; }.hero-actions { align-items: flex-start; }.identity-facts { flex-wrap: wrap; }.sandbox-grid, .sandbox-grid--secondary { grid-template-columns: 1fr; }.rail-grid { grid-template-columns: 1fr; }.rail-step { min-height: 0; border-right: 0; border-bottom: 1px solid var(--line); }.rail-step:last-child { border-bottom: 0; }.proof-columns { grid-template-columns: 1fr; }.project-proof { grid-template-columns: 1fr; }.access-state { padding: 12px 0 0; border-top: 3px solid; border-left: 0; } }
+@media (max-width: 600px) { .permission-proof { padding: 16px 12px 32px; }.proof-hero, .identity-card, .sandbox-card, .proof-rail, .matrix-card, .evidence-card, .project-card, .audit-card { padding: 18px; }.action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.resource-toggle-row { align-items: flex-start; flex-direction: column; }.proof-footer { flex-direction: column; gap: 6px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; } }
 </style>
