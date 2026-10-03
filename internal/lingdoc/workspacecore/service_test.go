@@ -67,6 +67,7 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000019_lingdoc_evidence_assets.up.sql",
 			"000020_lingdoc_candidate_adoption.up.sql",
 			"000023_lingdoc_chapter_confirmation_requests.up.sql",
+			"000025_lingdoc_project_context_revision.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
@@ -506,13 +507,21 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatalf("current confirmation not reported: %+v, %v", chapters, err)
 	}
 
-	raw, _, _, err = svc.SaveSpec(ctx, owner, project.ID, "spec-confirmation-2", SaveSpecInput{
-		ExpectedSpecRevision: project.SpecRevision, Fields: map[string]string{"research_subject": "样本", "research_goal": "新目标"},
-	})
+	// Active projects reject ordinary ProjectSpec saves. Simulate the semantic
+	// revision transition here so this test continues to exercise the read-side
+	// confirmation currentness rule without bypassing the G1 write boundary.
+	project.SpecRevision++
+	project.ProjectVersion++
+	project.Spec["research_goal"] = "新目标"
+	rawSpec, err := json.Marshal(project.Spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	project = asProject(t, raw)
+	if err := svc.repository.(*GORMRepository).db.Model(&projectRow{}).Where("id = ?", project.ID).Updates(map[string]any{
+		"spec_json": string(rawSpec), "spec_revision": project.SpecRevision, "project_version": project.ProjectVersion,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	chapters, err = svc.ListChapters(ctx, owner, project.ID)
 	if err != nil || chapters[0].ConfirmationValid {
 		t.Fatalf("stale confirmation survived spec change: %+v, %v", chapters, err)

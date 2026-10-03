@@ -233,7 +233,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		return nil, 0, false, err
 	}
 	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "", func(tx Transaction, _ Project) (any, int, error) {
-		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
+		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
 }
@@ -247,6 +247,9 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		}
 	}
 	return s.operation(ctx, actor, "saveSpec", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
 		if p.SpecRevision != input.ExpectedSpecRevision {
 			return nil, 0, ErrVersionConflict
 		}
@@ -341,6 +344,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		}
 		next := p
 		next.Status = "active"
+		next.CurrentContextRevision = 1
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err

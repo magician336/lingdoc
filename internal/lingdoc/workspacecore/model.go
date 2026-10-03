@@ -13,15 +13,16 @@ type Member struct {
 }
 
 type Project struct {
-	ID              string            `json:"id"`
-	Name            string            `json:"name"`
-	Status          string            `json:"status"`
-	ProjectVersion  int64             `json:"project_version"`
-	SpecRevision    int64             `json:"spec_revision"`
-	Spec            map[string]string `json:"spec"`
-	TemplateID      string            `json:"template_id"`
-	TemplateVersion string            `json:"template_version"`
-	Members         []Member          `json:"members"`
+	ID                     string            `json:"id"`
+	Name                   string            `json:"name"`
+	Status                 string            `json:"status"`
+	ProjectVersion         int64             `json:"project_version"`
+	SpecRevision           int64             `json:"spec_revision"`
+	CurrentContextRevision int64             `json:"current_context_revision"`
+	Spec                   map[string]string `json:"spec"`
+	TemplateID             string            `json:"template_id"`
+	TemplateVersion        string            `json:"template_version"`
+	Members                []Member          `json:"members"`
 }
 
 type ReviewItem struct {
@@ -108,16 +109,17 @@ var (
 )
 
 type projectRow struct {
-	ID              string `gorm:"primaryKey;size:36"`
-	TenantID        uint64 `gorm:"not null;index"`
-	Name            string `gorm:"not null;size:120"`
-	Status          string `gorm:"not null;size:16"`
-	ProjectVersion  int64  `gorm:"not null"`
-	SpecRevision    int64  `gorm:"not null"`
-	SpecJSON        string `gorm:"column:spec_json;not null;type:text"`
-	TemplateID      string `gorm:"not null;size:80"`
-	TemplateVersion string `gorm:"not null;size:40"`
-	CreatedAt       time.Time
+	ID                     string `gorm:"primaryKey;size:36"`
+	TenantID               uint64 `gorm:"not null;index"`
+	Name                   string `gorm:"not null;size:120"`
+	Status                 string `gorm:"not null;size:16"`
+	ProjectVersion         int64  `gorm:"not null"`
+	SpecRevision           int64  `gorm:"not null"`
+	CurrentContextRevision int64  `gorm:"column:current_context_revision;not null;default:0"`
+	SpecJSON               string `gorm:"column:spec_json;not null;type:text"`
+	TemplateID             string `gorm:"not null;size:80"`
+	TemplateVersion        string `gorm:"not null;size:40"`
+	CreatedAt              time.Time
 }
 
 func (projectRow) TableName() string { return "lingdoc_projects" }
