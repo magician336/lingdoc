@@ -2238,6 +2238,90 @@
         "evidence",
         "workspace"
       ]
+    },
+    {
+      "id": "G7-01-chapter-read-write",
+      "name": "G7-01 现有章节接口读写基线",
+      "starting_state": "S1",
+      "setup": "由 runner 构造 S1 两章合成项目，读取研究问题章节，显式保存一次，再读回确认新版本和正文。只核验已实现的章节接口，不代表 G7 工作副本或选段候选接口已经实现。",
+      "steps": [
+        {
+          "id": "G7-01-01",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {},
+            "json": null
+          },
+          "capture": {
+            "g7.chapter_id": "/data/1/id",
+            "g7.chapter_version_id": "/data/1/current_version_id"
+          },
+          "checks": [
+            {
+              "path": "/data/1/section_id",
+              "equals": "question",
+              "intent": "读取 S1 中的研究问题章节作为写入目标"
+            }
+          ],
+          "assertion": "从运行时读回的 S1 章节 ID 和当前版本开始，不写死动态 ID。",
+          "response_example": "empty_body"
+        },
+        {
+          "id": "G7-01-02",
+          "operation_id": "saveChapter",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}",
+              "chapterId": "{{g7.chapter_id}}"
+            },
+            "headers": {"Idempotency-Key": "g7-01-read-write-0001"},
+            "json": {
+              "expected_chapter_version_id": "{{g7.chapter_version_id}}",
+              "expected_spec_revision": 1,
+              "body_markdown": "G7-01 合成章节读写复现；不是科研事实。",
+              "source_ids": []
+            }
+          },
+          "capture": {
+            "g7.written_version_id": "/data/current_version_id",
+            "g7.written_body": "/data/body_markdown"
+          },
+          "assertion": "通过现有显式版本保存接口写入一段合成正文。",
+          "response_example": "success"
+        },
+        {
+          "id": "G7-01-03",
+          "operation_id": "listChapters",
+          "actor": "u-owner",
+          "expected_http": 200,
+          "request": {
+            "path_params": {"projectId": "{{project.id}}"},
+            "headers": {},
+            "json": null
+          },
+          "readback_of": "G7-01-02",
+          "checks": [
+            {
+              "path": "/data/1/current_version_id",
+              "equals": "{{g7.written_version_id}}",
+              "intent": "读回章节当前版本确为刚才创建的版本"
+            },
+            {
+              "path": "/data/1/body_markdown",
+              "equals": "{{g7.written_body}}",
+              "intent": "读回正文与保存响应一致"
+            }
+          ],
+          "assertion": "从第二次 GET 读回版本和正文，而非仅凭 POST 返回成功。",
+          "response_example": "success"
+        }
+      ],
+      "providers": ["workspace"]
     }
   ],
   "starting_states_note": "场景的起点状态。只声明能靠写请求造出来的部分：project（含 spec、协作者、是否立项）、assets（绑定资料）、chapters（章节正文——body_markdown 为空表示「这一节存在但还没有正文」，装载器不会为它写版本，读回时会确认它确实没有版本）。template、source、candidate、confirmation、release、export 造不出来——它们要么由服务固定提供，要么是检索、生成、确认、冻结、导出的产物；写进声明的会被装载器连理由一起拒绝，不会被静默忽略。资料与成员用契约里的名字声明，真实 ID 由运行环境注入：k-demo 是一条当前可用的资料，k-notready 是一条当前不可用的资料（解析没跑完），u-member 是一名租户成员。",
@@ -2891,3 +2975,4 @@
   },
   "note": "除F01的连续规格外，其余是提供方测试的待实现用例。所有示例为合成资料。"
 }
+
