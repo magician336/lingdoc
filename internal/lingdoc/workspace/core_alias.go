@@ -7,9 +7,7 @@ import (
 type Service = core.Service
 type Repository = core.Repository
 type SourcePolicy = core.SourcePolicy
-type CoreProjectAuthorizer = core.ProjectAuthorizer
 type Actor = core.Actor
-type AuthorizationMode = core.AuthorizationMode
 type Project = core.Project
 type Chapter = core.Chapter
 type GenerationContext = core.GenerationContext
@@ -19,9 +17,24 @@ type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
 type TransferOwnerInput = core.TransferOwnerInput
+type SpecField = core.SpecField
+type SpecFieldInput = core.SpecFieldInput
+type ProvenanceRecord = core.ProvenanceRecord
+type DraftCandidate = core.DraftCandidate
+type DraftCandidateInput = core.DraftCandidateInput
 type AuditEvent = core.AuditEvent
+type SpecFieldChange = core.SpecFieldChange
+type ActivationDiff = core.ActivationDiff
+type OwnerTransfer = core.OwnerTransfer
+type OwnerTransferInput = core.OwnerTransferInput
+type TemplateMigrationInput = core.TemplateMigrationInput
+type TemplateMigrationField = core.TemplateMigrationField
+type TemplateMigrationPreview = core.TemplateMigrationPreview
+type CoreProjectAuthorizer = core.ProjectAuthorizer
+type AuthorizationMode = core.AuthorizationMode
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
+type TemplateField = core.TemplateField
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

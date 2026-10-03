@@ -53,6 +53,11 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		"000101_lingdoc_generation_claim_token.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
 		"000103_lingdoc_delivery_stores.up.sql",
 		"000104_lingdoc_member_permissions.up.sql",
+		"000105_lingdoc_project_context_revision.up.sql",
+		"000106_lingdoc_draft_provenance.up.sql",
+		"000107_lingdoc_owner_transfers.up.sql",
+		"000108_lingdoc_project_discard.up.sql",
+		"000109_lingdoc_project_baseline.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
@@ -88,7 +93,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-stale-key", spec); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("CAS: %v", err)
 	}
-	if _, _, _, err := s.ActivateProject(ctx, actor, id, "pg-activate-key", ActivateProjectInput{ExpectedSpecRevision: 1}); err != nil {
+	if _, _, _, err := s.ActivateProject(ctx, actor, id, "pg-activate-key", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := s.ListChapters(ctx, actor, id)

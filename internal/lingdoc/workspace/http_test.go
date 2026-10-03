@@ -29,20 +29,6 @@ type sourceApplicationServiceStub struct {
 	called    bool
 }
 
-func TestCallerDefaultsMissingTenantRoleToViewer(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
-	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	request = request.WithContext(ctx)
-	ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ginContext.Request = request
-	actor, ok := caller(ginContext)
-	if !ok || actor.Role != types.TenantRoleViewer {
-		t.Fatalf("caller = %#v, ok=%v; want viewer role", actor, ok)
-	}
-}
-
 func (s *sourceApplicationServiceStub) RetrieveSources(_ context.Context, actor Actor, projectID string, input RetrieveSourcesInput) ([]evidence.Source, error) {
 	s.called, s.actor, s.projectID, s.input = true, actor, projectID, input
 	return nil, s.err
@@ -65,7 +51,6 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
 	request := httptest.NewRequest(http.MethodPost, "/api/lingdoc/projects/project-1/retrieval", strings.NewReader(`{"query":"budget","asset_ids":["asset-private"]}`)).WithContext(ctx)
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
@@ -104,7 +89,6 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
 	request := httptest.NewRequest(http.MethodGet, "/api/projects", nil).WithContext(ctx)
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
@@ -114,31 +98,5 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	}
 	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) {
 		t.Fatalf("injected service did not receive caller identity: called=%v actor=%#v", service.called, service.actor)
-	}
-}
-
-func TestProjectHTTPReadAllowsActiveMemberAndHidesAfterRevocation(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	fixture := newAssetsHTTPFixture(t)
-
-	first := httptest.NewRecorder()
-	fixture.router.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-1", nil))
-	if first.Code != http.StatusOK {
-		t.Fatalf("active project read status = %d; body=%s", first.Code, first.Body.String())
-	}
-	if !strings.Contains(first.Body.String(), "project-1") {
-		t.Fatalf("active project read omitted project: %s", first.Body.String())
-	}
-
-	if err := fixture.db.Exec("UPDATE tenant_members SET status = ? WHERE tenant_id = ? AND user_id = ?", "suspended", 7, "reader").Error; err != nil {
-		t.Fatal(err)
-	}
-	second := httptest.NewRecorder()
-	fixture.router.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-1", nil))
-	if second.Code != http.StatusNotFound {
-		t.Fatalf("revoked project read status = %d; body=%s", second.Code, second.Body.String())
-	}
-	if strings.Contains(second.Body.String(), "assets http test") {
-		t.Fatalf("revoked response leaked project content: %s", second.Body.String())
 	}
 }

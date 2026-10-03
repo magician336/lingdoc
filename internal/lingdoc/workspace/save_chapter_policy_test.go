@@ -128,6 +128,12 @@ func runLingdocMigrations(t *testing.T, db *gorm.DB) {
 		"000018_lingdoc_workspace.up.sql",
 		"000019_lingdoc_evidence_assets.up.sql",
 		"000020_lingdoc_candidate_adoption.up.sql",
+		"000025_lingdoc_member_permissions.up.sql",
+		"000026_lingdoc_project_context_revision.up.sql",
+		"000027_lingdoc_draft_provenance.up.sql",
+		"000028_lingdoc_owner_transfers.up.sql",
+		"000029_lingdoc_project_discard.up.sql",
+		"000030_lingdoc_project_baseline.up.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 		if err != nil {
@@ -266,7 +272,7 @@ func TestSaveChapterAcceptsCitationsAndRechecksBeforeReplay(t *testing.T) {
 		t.Fatalf("save spec: %d %s", recorder.Code, recorder.Body.String())
 	}
 	if recorder, _ := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects/"+projectID+"/activate", "sc-activate-1",
-		map[string]any{"expected_spec_revision": 1},
+		map[string]any{"expected_spec_revision": 1, "expected_project_version": 2, "reviewed_project_version": 2},
 	); recorder.Code != http.StatusOK {
 		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -365,7 +371,7 @@ func TestSaveChapterWithoutPolicyAnswersServiceUnavailable(t *testing.T) {
 		t.Fatalf("save spec: %d %s", recorder.Code, recorder.Body.String())
 	}
 	if recorder, _ := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects/"+projectID+"/activate", "np-activate-1",
-		map[string]any{"expected_spec_revision": 1},
+		map[string]any{"expected_spec_revision": 1, "expected_project_version": 2, "reviewed_project_version": 2},
 	); recorder.Code != http.StatusOK {
 		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
 	}

@@ -8,9 +8,12 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Repository owns atomic commit/rollback and database isolation. Callbacks see
@@ -39,13 +42,27 @@ type Transaction interface {
 	SaveOperation(OperationIdentity, OperationResult) error
 }
 
-// ProjectAuthorizer is the application policy seam for LingDoc project
-// access. It operates on the existing Transaction port so authorization and
-// idempotent writes share one repository transaction; it does not depend on
-// GORM or define a second identity/tenant model.
+type draftCandidateTransaction interface {
+	InsertDraftCandidate(DraftCandidate) error
+	DraftCandidates(string) ([]DraftCandidate, error)
+}
+
+type auditTransaction interface {
+	RecordAudit(AuditEvent) error
+	AuditEvents(string) ([]AuditEvent, error)
+}
+
 type ProjectAuthorizer interface {
 	AuthorizeTenant(Transaction, Actor, string) error
 	AuthorizeProject(Transaction, Actor, string, string) (Project, error)
+}
+
+type ownerTransferTransaction interface {
+	InsertOwnerTransfer(OwnerTransfer) error
+	OwnerTransfer(string, string) (OwnerTransfer, error)
+	AcceptOwnerTransfer(string, string, int64, time.Time) error
+	SetMemberRole(string, string, string) error
+	EnsureMember(string, string, string) error
 }
 type OperationIdentity struct {
 	Actor                  Actor
@@ -81,9 +98,6 @@ func NewServiceWithSources(repository Repository, reader TemplateReader, sources
 	return NewServiceWithAuthorizer(repository, reader, sources, nil)
 }
 
-// NewServiceWithAuthorizer injects the project policy while keeping the
-// repository/transaction architecture as the storage boundary. A nil policy
-// uses the compatibility policy implemented by this package.
 func NewServiceWithAuthorizer(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer) *Service {
 	return NewServiceWithAudit(repository, reader, sources, authorizer, nil)
 }
@@ -103,6 +117,63 @@ func NewServiceWithAuditMode(repository Repository, reader TemplateReader, sourc
 		mode = AuthorizationModeEnforce
 	}
 	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer, audit: audit, mode: mode}
+}
+
+func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
+
+func legacyAuthorizeTenant(tx Transaction, actor Actor) error {
+	if !validActor(actor) {
+		return ErrNotFound
+	}
+	active, err := tx.ActiveMember(actor)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func legacyAuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	if capability != "read" && capability != "write" && capability != "manage" {
+		return Project{}, ErrInvalidRequest
+	}
+	if !validActor(actor) {
+		return Project{}, ErrNotFound
+	}
+	active, err := tx.ActiveMember(actor)
+	if err != nil {
+		return Project{}, err
+	}
+	if !active {
+		return Project{}, ErrNotFound
+	}
+	p, err := tx.Project(actor.TenantID, projectID)
+	if err != nil {
+		return Project{}, err
+	}
+	if p.DiscardedAt != nil {
+		if capability != "read" {
+			return Project{}, ErrInvalidState
+		}
+		owner := false
+		for _, m := range p.Members {
+			if m.UserID == actor.UserID && m.Role == "owner" {
+				owner = true
+				break
+			}
+		}
+		if !owner {
+			return Project{}, ErrNotFound
+		}
+	}
+	for _, m := range p.Members {
+		if m.UserID == actor.UserID && (capability != "manage" || m.Role == "owner") {
+			return p, nil
+		}
+	}
+	return Project{}, ErrNotFound
 }
 
 func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, actor Actor, capability string) error {
@@ -129,117 +200,41 @@ func (s *Service) authorizeProject(ctx context.Context, tx Transaction, actor Ac
 	return legacyAuthorizeProject(tx, actor, projectID, capability)
 }
 
-func legacyAuthorizeTenant(tx Transaction, actor Actor) error {
-	if !validActor(actor) {
-		return ErrNotFound
-	}
-	active, err := tx.ActiveMember(actor)
-	if err != nil || !active {
-		return ErrNotFound
-	}
-	return nil
-}
+type transactionProjectAuthorizer struct{}
 
-func legacyAuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor, capability string) error {
 	if err := legacyAuthorizeTenant(tx, actor); err != nil {
-		return Project{}, err
+		return err
+	}
+	role := actor.Role
+	if role == "" && actor.TenantRole != "" {
+		role = types.TenantRole(actor.TenantRole)
+	}
+	if role == "" {
+		return nil
+	}
+	if !role.IsValid() {
+		return ErrNotFound
 	}
 	baseCapability := capability
 	if before, _, ok := strings.Cut(capability, ":"); ok {
 		baseCapability = before
 	}
-	p, err := tx.Project(actor.TenantID, projectID)
-	if err != nil {
-		return Project{}, err
+	required := map[string]types.TenantRole{"read": types.TenantRoleViewer, "create": types.TenantRoleContributor, "write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin}[baseCapability]
+	if required == "" {
+		return ErrInvalidRequest
 	}
-	for _, member := range p.Members {
-		if member.UserID != actor.UserID || (member.Status != "" && member.Status != "active") {
-			continue
-		}
-		if baseCapability == "read" || member.Role == "owner" {
-			return p, nil
-		}
-		if baseCapability == "write" {
-			if member.Role == "owner" || member.Role == "collaborator" {
-				return p, nil
-			}
-		}
-		if baseCapability == "manage" && member.Role == "owner" {
-			return p, nil
-		}
-	}
-	return Project{}, ErrNotFound
-}
-
-func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
-	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
-}
-
-func auditDecision(err error) string {
-	if err != nil {
-		return "deny"
-	}
-	return "allow"
-}
-
-func auditReason(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error {
-	if s.audit == nil {
-		return nil
-	}
-	return s.audit.Record(ctx, event)
-}
-func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
-
-type transactionProjectAuthorizer struct{}
-
-func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor, capability string) error {
-	if !validActor(actor) {
+	if !role.HasPermission(required) {
 		return ErrNotFound
-	}
-	active, err := tx.ActiveMember(actor)
-	if err != nil {
-		return err
-	}
-	if !active {
-		return ErrNotFound
-	}
-	if actor.Role != "" {
-		if !actor.Role.IsValid() {
-			return ErrNotFound
-		}
-		baseCapability := capability
-		if before, _, ok := strings.Cut(capability, ":"); ok {
-			baseCapability = before
-		}
-		required := map[string]types.TenantRole{
-			"read": types.TenantRoleViewer, "create": types.TenantRoleContributor,
-			"write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin,
-		}[baseCapability]
-		if required == "" {
-			return ErrInvalidRequest
-		}
-		if !actor.Role.HasPermission(required) {
-			return ErrNotFound
-		}
 	}
 	return nil
 }
 
-func (a transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+func (transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	a := transactionProjectAuthorizer{}
 	if err := a.AuthorizeTenant(tx, actor, capability); err != nil {
 		return Project{}, err
 	}
-	return authorizeProject(tx, actor, projectID, capability)
-}
-
-func authorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
 	baseCapability, resource := capability, ""
 	if before, after, ok := strings.Cut(capability, ":"); ok {
 		baseCapability, resource = before, after
@@ -251,12 +246,23 @@ func authorizeProject(tx Transaction, actor Actor, projectID, capability string)
 	if err != nil {
 		return Project{}, err
 	}
-	for _, m := range p.Members {
-		if m.UserID != actor.UserID {
-			continue
+	if p.DiscardedAt != nil {
+		if baseCapability != "read" {
+			return Project{}, ErrInvalidState
 		}
-		if m.Status != "" && m.Status != "active" {
+		owner := false
+		for _, m := range p.Members {
+			if m.UserID == actor.UserID && m.Role == "owner" {
+				owner = true
+			}
+		}
+		if !owner {
 			return Project{}, ErrNotFound
+		}
+	}
+	for _, m := range p.Members {
+		if m.UserID != actor.UserID || (m.Status != "" && m.Status != "active") {
+			continue
 		}
 		governance := m.GovernanceRole
 		if governance == "" && m.Role == "owner" {
@@ -276,19 +282,36 @@ func authorizeProject(tx Transaction, actor Actor, projectID, capability string)
 				if role != "author" {
 					continue
 				}
-				if resource == "" {
+				if resource == "" || slices.Contains(m.FunctionScopes[role], resource) {
 					return p, nil
-				}
-				for _, allowed := range m.FunctionScopes[role] {
-					if allowed == resource {
-						return p, nil
-					}
 				}
 			}
 		}
 		return Project{}, ErrNotFound
 	}
 	return Project{}, ErrNotFound
+}
+
+func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
+	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
+}
+func auditDecision(err error) string {
+	if err != nil {
+		return "deny"
+	}
+	return "allow"
+}
+func auditReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error {
+	if s.audit == nil {
+		return nil
+	}
+	return s.audit.Record(ctx, event)
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
@@ -302,6 +325,10 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
 		_ = s.recordAudit(ctx, actor, id, "read", err)
+		if err == nil && result.DiscardedAt != nil {
+			result.Spec = map[string]string{}
+			result.SpecFields = map[string]SpecField{}
+		}
 		return err
 	})
 	return result, err
@@ -329,6 +356,73 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 		result = result[:50]
 	}
 	return result, truncated, nil
+}
+
+func projectOwner(p Project, userID string) bool {
+	for _, member := range p.Members {
+		if member.UserID == userID && member.Role == "owner" {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
+	if expectedProjectVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input := map[string]any{"expected_project_version": expectedProjectVersion}
+	return s.operation(ctx, actor, "discardProject", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.ProjectVersion != expectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		if p.DiscardedAt != nil || p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
+		now := time.Now().UTC()
+		next := p
+		next.DiscardedAt = &now
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.discard", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion}, CreatedAt: now}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
+}
+
+func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
+	if expectedProjectVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input := map[string]any{"expected_project_version": expectedProjectVersion}
+	return s.operation(ctx, actor, "restoreProject", projectID, key, input, projectID, "read", func(tx Transaction, p Project) (any, int, error) {
+		if !projectOwner(p, actor.UserID) {
+			return nil, 0, ErrNotFound
+		}
+		if p.DiscardedAt == nil {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != expectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		next := p
+		next.DiscardedAt = nil
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.restore", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
 }
 
 // Current authorization precedes replay; only new operations check expected
@@ -408,12 +502,178 @@ type CreateProjectInput struct {
 	TemplateID string `json:"template_id"`
 }
 type SaveSpecInput struct {
-	ExpectedSpecRevision int64             `json:"expected_spec_revision"`
-	Fields               map[string]string `json:"fields"`
+	ExpectedSpecRevision int64                     `json:"expected_spec_revision"`
+	Fields               map[string]string         `json:"fields"`
+	FieldMetadata        map[string]SpecFieldInput `json:"field_metadata,omitempty"`
+}
+type SpecFieldInput struct {
+	Origin     string            `json:"origin,omitempty"`
+	Status     string            `json:"status,omitempty"`
+	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
+}
+type DraftCandidateInput struct {
+	Kind       string            `json:"kind"`
+	Title      string            `json:"title"`
+	Content    string            `json:"content"`
+	Level      string            `json:"level"`
+	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
+}
+type OwnerTransferInput struct {
+	ToUserID               string `json:"to_user_id"`
+	ExpectedProjectVersion int64  `json:"expected_project_version"`
 }
 type ActivateProjectInput struct {
-	ExpectedSpecRevision int64 `json:"expected_spec_revision"`
+	ExpectedSpecRevision   int64 `json:"expected_spec_revision"`
+	ExpectedProjectVersion int64 `json:"expected_project_version,omitempty"`
+	ReviewedProjectVersion int64 `json:"reviewed_project_version,omitempty"`
 }
+type TemplateMigrationInput struct {
+	ExpectedProjectVersion int64  `json:"expected_project_version"`
+	TemplateID             string `json:"template_id"`
+	TemplateVersion        string `json:"template_version"`
+}
+
+func templateFieldDefinitions(template Template) map[string]TemplateField {
+	fields := make(map[string]TemplateField, len(template.RequiredFields))
+	for _, field := range template.Fields {
+		fields[field.ID] = field
+	}
+	for _, field := range template.RequiredFields {
+		value := fields[field]
+		value.ID, value.Required = field, true
+		if value.Type == "" {
+			value.Type = "string"
+		}
+		fields[field] = value
+	}
+	return fields
+}
+
+func compatibleTemplateValue(value string, field TemplateField) bool {
+	switch field.Type {
+	case "", "string", "text":
+		return true
+	case "number", "integer":
+		_, err := strconv.ParseFloat(value, 64)
+		return err == nil
+	case "boolean":
+		_, err := strconv.ParseBool(value)
+		return err == nil
+	default:
+		return false
+	}
+}
+
+func buildTemplateMigrationPreview(p Project, target Template, expectedVersion int64) TemplateMigrationPreview {
+	allowed := templateFieldDefinitions(target)
+	keys := make([]string, 0, len(p.Spec))
+	for key := range p.Spec {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	preview := TemplateMigrationPreview{
+		ProjectID: p.ID, SourceTemplateID: p.TemplateID, SourceTemplateVersion: p.TemplateVersion,
+		TargetTemplateID: target.ID, TargetTemplateVersion: target.Version, ExpectedProjectVersion: expectedVersion,
+		Fields: make([]TemplateMigrationField, 0, len(keys)+len(target.RequiredFields)), MissingRequired: []string{}, Orphaned: []string{}, Incompatible: []string{},
+	}
+	seen := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		status := "orphaned"
+		if field, ok := allowed[key]; ok {
+			status = "preserved"
+			if !compatibleTemplateValue(p.Spec[key], field) {
+				status = "incompatible"
+				preview.Incompatible = append(preview.Incompatible, key)
+				if field.Required {
+					preview.MissingRequired = append(preview.MissingRequired, key)
+				}
+			}
+		} else {
+			preview.Orphaned = append(preview.Orphaned, key)
+		}
+		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Value: p.Spec[key], Status: status})
+		seen[key] = struct{}{}
+	}
+	requiredKeys := make([]string, 0, len(allowed))
+	for key, field := range allowed {
+		if !field.Required {
+			continue
+		}
+		requiredKeys = append(requiredKeys, key)
+	}
+	slices.Sort(requiredKeys)
+	for _, key := range requiredKeys {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Status: "missing"})
+		preview.MissingRequired = append(preview.MissingRequired, key)
+	}
+	slices.Sort(preview.MissingRequired)
+	slices.Sort(preview.Orphaned)
+	slices.Sort(preview.Incompatible)
+	return preview
+}
+
+func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, projectID string, input TemplateMigrationInput) (TemplateMigrationPreview, error) {
+	if input.ExpectedProjectVersion < 0 || strings.TrimSpace(input.TemplateID) == "" {
+		return TemplateMigrationPreview{}, ErrInvalidRequest
+	}
+	target, err := s.templates.Get(strings.TrimSpace(input.TemplateID), strings.TrimSpace(input.TemplateVersion))
+	if err != nil {
+		return TemplateMigrationPreview{}, err
+	}
+	var result TemplateMigrationPreview
+	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		if err != nil {
+			return err
+		}
+		if p.Status != "draft" || p.DiscardedAt != nil {
+			return ErrInvalidState
+		}
+		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
+			return ErrVersionConflict
+		}
+		result = buildTemplateMigrationPreview(p, target, p.ProjectVersion)
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (json.RawMessage, int, bool, error) {
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
+	if input.ExpectedProjectVersion < 1 || input.TemplateID == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	target, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return s.operation(ctx, actor, "changeTemplate", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		preview := buildTemplateMigrationPreview(p, target, input.ExpectedProjectVersion)
+		next := p
+		next.TemplateID, next.TemplateVersion = target.ID, target.Version
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.change", Target: projectID, Details: map[string]any{"from": p.TemplateID + "/" + p.TemplateVersion, "to": target.ID + "/" + target.Version, "missing_required": preview.MissingRequired, "orphaned": preview.Orphaned}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
+}
+
 type SaveMembersInput struct {
 	ExpectedProjectVersion int64    `json:"expected_project_version"`
 	CollaboratorUserIDs    []string `json:"collaborator_user_ids"`
@@ -436,7 +696,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		return nil, 0, false, err
 	}
 	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "create", func(tx Transaction, _ Project) (any, int, error) {
-		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
+		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
 }
@@ -449,22 +709,303 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}
+	for key, metadata := range input.FieldMetadata {
+		if _, ok := input.Fields[key]; !ok || !validSpecFieldMetadata(metadata) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+	}
 	return s.operation(ctx, actor, "saveSpec", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
 		if p.SpecRevision != input.ExpectedSpecRevision {
 			return nil, 0, ErrVersionConflict
 		}
-		if !maps.Equal(p.Spec, input.Fields) {
+		nextFields := maps.Clone(p.SpecFields)
+		if nextFields == nil {
+			nextFields = map[string]SpecField{}
+		}
+		changedFields := make(map[string]struct{})
+		for key, value := range input.Fields {
+			field := nextFields[key]
+			origin, status := field.Origin, field.Status
+			provenance := field.Provenance
+			if metadata, ok := input.FieldMetadata[key]; ok {
+				origin, status, provenance = metadata.Origin, metadata.Status, metadata.Provenance
+				if origin == "" {
+					origin = "human"
+				}
+				if status == "" {
+					status = "draft"
+				}
+			} else {
+				if origin == "" {
+					origin = "human"
+				}
+				if status == "" {
+					status = "draft"
+				}
+				if field.Value != value {
+					provenance = nil
+				}
+			}
+			if field.Value != value || field.Origin != origin || field.Status != status || !reflect.DeepEqual(field.Provenance, provenance) {
+				field.Value = value
+				field.ModifiedBy = actor.UserID
+				field.ModifiedAt = time.Now().UTC()
+				field.Origin, field.Status, field.Provenance = origin, status, provenance
+				changedFields[key] = struct{}{}
+			}
+			nextFields[key] = field
+		}
+		if !maps.Equal(p.Spec, input.Fields) || !maps.Equal(p.SpecFields, nextFields) {
 			next := p
 			next.Spec = maps.Clone(input.Fields)
+			next.SpecFields = nextFields
 			next.SpecRevision++
 			next.ProjectVersion++
+			for key := range changedFields {
+				field := next.SpecFields[key]
+				field.ModifiedProjectVersion = next.ProjectVersion
+				next.SpecFields[key] = field
+			}
 			if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 				return nil, 0, err
+			}
+			if audit, ok := tx.(auditTransaction); ok {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_spec.save", Target: projectID, Details: map[string]any{"spec_revision": next.SpecRevision, "field_metadata": next.SpecFields}, CreatedAt: time.Now().UTC()}); err != nil {
+					return nil, 0, err
+				}
 			}
 			p = next
 		}
 		return p, 200, nil
 	})
+}
+
+func validSpecFieldMetadata(input SpecFieldInput) bool {
+	origin := input.Origin
+	if origin == "" {
+		origin = "human"
+	}
+	status := input.Status
+	if status == "" {
+		status = "draft"
+	}
+	validOrigin := origin == "human" || origin == "ai_generated" || origin == "ai_assisted_human"
+	validStatus := status == "draft" || status == "pending_confirmation" || status == "confirmed" || status == "superseded"
+	if !validOrigin || !validStatus {
+		return false
+	}
+	if (origin == "ai_generated" || origin == "ai_assisted_human") && status == "confirmed" {
+		return false
+	}
+	return input.Provenance == nil || input.Provenance.SourceType != "" && input.Provenance.CreatedBy != ""
+}
+
+func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (json.RawMessage, int, bool, error) {
+	input.Kind = strings.TrimSpace(input.Kind)
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Kind == "" || input.Title == "" || input.Content == "" || len(input.Content) > 200000 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if input.Level == "" {
+		input.Level = "background"
+	}
+	if input.Level != "candidate_evidence" && input.Level != "background" && input.Level != "discovery" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "createDraftCandidate", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" {
+			return nil, 0, ErrInvalidState
+		}
+		candidateStore, ok := tx.(draftCandidateTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		candidate := DraftCandidate{ID: uuid.NewString(), ProjectID: projectID, Kind: input.Kind, Title: input.Title, Content: input.Content, Level: input.Level, BasedOnContextRevision: p.CurrentContextRevision, Provenance: input.Provenance, CreatedBy: actor.UserID, CreatedAt: time.Now().UTC()}
+		if err := candidateStore.InsertDraftCandidate(candidate); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "draft_candidate.create", Target: candidate.ID, Details: map[string]any{"level": candidate.Level, "kind": candidate.Kind}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return candidate, 201, nil
+	})
+}
+
+func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
+	var result []AuditEvent
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		audit, ok := tx.(auditTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = audit.AuditEvents(projectID)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (json.RawMessage, int, bool, error) {
+	input.ToUserID = strings.TrimSpace(input.ToUserID)
+	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "requestOwnerTransfer", projectID, key, input, "", "read", func(tx Transaction, _ Project) (any, int, error) {
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		currentOwner := ""
+		for _, member := range p.Members {
+			if member.Role == "owner" {
+				currentOwner = member.UserID
+				break
+			}
+		}
+		if currentOwner == "" {
+			return nil, 0, ErrInvalidState
+		}
+		ownerActive, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: currentOwner})
+		if err != nil {
+			return nil, 0, err
+		}
+		role := string(actor.Role)
+		if role == "" {
+			role = actor.TenantRole
+		}
+		isRecoveryAdmin := actor.SystemAdmin || role == "admin" || role == "owner"
+		if actor.UserID != currentOwner && !(isRecoveryAdmin && !ownerActive) {
+			return nil, 0, ErrNotFound
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion || p.Status == "archived" {
+			return nil, 0, ErrVersionConflict
+		}
+		if p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
+		active, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: input.ToUserID})
+		if err != nil || !active {
+			return nil, 0, ErrInvalidState
+		}
+		transferStore, ok := tx.(ownerTransferTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		transfer := OwnerTransfer{ID: uuid.NewString(), ProjectID: projectID, FromUserID: currentOwner, ToUserID: input.ToUserID, Status: "pending", ExpectedProjectVersion: p.ProjectVersion, CreatedAt: time.Now().UTC()}
+		if err := transferStore.InsertOwnerTransfer(transfer); err != nil {
+			return nil, 0, err
+		}
+		return transfer, 201, nil
+	})
+}
+
+func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
+	return s.operation(ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, "", "read", func(tx Transaction, _ Project) (any, int, error) {
+		if !validActor(actor) {
+			return nil, 0, ErrNotFound
+		}
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
+		store, ok := tx.(ownerTransferTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		transfer, err := store.OwnerTransfer(projectID, transferID)
+		if err != nil || transfer.Status != "pending" || transfer.ToUserID != actor.UserID {
+			return nil, 0, ErrInvalidState
+		}
+		if transfer.ExpectedProjectVersion != p.ProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		active, err := tx.ActiveMember(actor)
+		if err != nil || !active {
+			return nil, 0, ErrNotFound
+		}
+		if err := store.EnsureMember(projectID, actor.UserID, "collaborator"); err != nil {
+			return nil, 0, err
+		}
+		next := p
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if err := store.SetMemberRole(projectID, transfer.FromUserID, "collaborator"); err != nil {
+			return nil, 0, err
+		}
+		if err := store.SetMemberRole(projectID, actor.UserID, "owner"); err != nil {
+			return nil, 0, err
+		}
+		acceptedAt := time.Now().UTC()
+		if err := store.AcceptOwnerTransfer(projectID, transferID, transfer.ExpectedProjectVersion, acceptedAt); err != nil {
+			return nil, 0, err
+		}
+		transfer.Status = "accepted"
+		transfer.AcceptedAt = &acceptedAt
+		return transfer, 200, nil
+	})
+}
+
+func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
+	var result ActivationDiff
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		if err != nil {
+			return err
+		}
+		if sinceProjectVersion < 0 {
+			return ErrInvalidRequest
+		}
+		result = ActivationDiff{ProjectID: projectID, CurrentProjectVersion: p.ProjectVersion, CurrentSpecRevision: p.SpecRevision, ChangedSinceVersion: sinceProjectVersion, ChangedFields: []SpecFieldChange{}, PendingAIFields: []SpecFieldChange{}}
+		for key, field := range p.SpecFields {
+			change := SpecFieldChange{Key: key, Value: field.Value, Origin: field.Origin, Status: field.Status, ModifiedBy: field.ModifiedBy, ModifiedAt: field.ModifiedAt, ModifiedProjectVersion: field.ModifiedProjectVersion}
+			if (field.Origin == "ai_generated" || field.Origin == "ai_assisted_human") && field.Status == "pending_confirmation" {
+				result.PendingAIFields = append(result.PendingAIFields, change)
+			}
+			if field.ModifiedProjectVersion > sinceProjectVersion || (field.ModifiedProjectVersion == 0 && sinceProjectVersion < p.ProjectVersion) {
+				result.ChangedFields = append(result.ChangedFields, change)
+			}
+		}
+		slices.SortFunc(result.ChangedFields, func(a, b SpecFieldChange) int { return strings.Compare(a.Key, b.Key) })
+		slices.SortFunc(result.PendingAIFields, func(a, b SpecFieldChange) int { return strings.Compare(a.Key, b.Key) })
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
+	var result []DraftCandidate
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return err
+		}
+		if p.DiscardedAt != nil {
+			return ErrInvalidState
+		}
+		store, ok := tx.(draftCandidateTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		result, err = store.DraftCandidates(projectID)
+		return err
+	})
+	return result, err
 }
 func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
 	if input.Members != nil {
@@ -530,6 +1071,25 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return s.operation(ctx, actor, "activateProject", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		owner := false
+		for _, member := range p.Members {
+			if member.UserID == actor.UserID && member.Role == "owner" {
+				owner = true
+				break
+			}
+		}
+		if !owner {
+			return nil, 0, ErrNotFound
+		}
+		if input.ExpectedProjectVersion < 1 || input.ReviewedProjectVersion < 1 {
+			return nil, 0, ErrInvalidRequest
+		}
+		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		if input.ReviewedProjectVersion > 0 && p.ProjectVersion != input.ReviewedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
 		if p.SpecRevision != input.ExpectedSpecRevision {
 			return nil, 0, ErrVersionConflict
 		}
@@ -545,14 +1105,27 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 				return nil, 0, ErrInvalidState
 			}
 		}
+		for fieldID, field := range templateFieldDefinitions(template) {
+			if field.Required && !compatibleTemplateValue(p.Spec[fieldID], field) {
+				return nil, 0, ErrInvalidState
+			}
+		}
 		next := p
 		next.Status = "active"
+		next.CurrentContextRevision = 1
+		next.DeliveryStatus = "NOT_READY"
+		next.BaselineConfirmationID = uuid.NewString()
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err
 		}
 		for _, section := range template.Sections {
 			if err := tx.InsertChapter(Chapter{ID: uuid.NewString(), ProjectID: projectID, SectionID: section.ID, Title: section.Title}); err != nil {
+				return nil, 0, err
+			}
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.activate", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion, "context_revision": next.CurrentContextRevision, "chapter_count": len(template.Sections), "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}, CreatedAt: time.Now().UTC()}); err != nil {
 				return nil, 0, err
 			}
 		}
@@ -648,6 +1221,9 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
 		if err != nil {
 			return err
+		}
+		if p.DiscardedAt != nil {
+			return ErrInvalidState
 		}
 		chapter, err := tx.Chapter(projectID, chapterID)
 		if err != nil {

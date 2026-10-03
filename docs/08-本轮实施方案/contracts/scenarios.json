@@ -15,6 +15,16 @@
       ]
     },
     {
+      "id": "G1",
+      "name": "建项草稿生命周期与交接",
+      "mode": "real_api_static_handoff",
+      "specification_file": "../G1-验收与交接.md",
+      "note": "G1-01～G1-08 的接口与失败矩阵由 G1 交接文档定义；独立 HTTP/重启复现未运行时必须标记 not_run。",
+      "providers": [
+        "workspace"
+      ]
+    },
+    {
       "id": "F02",
       "name": "空资料不扩大范围",
       "starting_state": "S1",
