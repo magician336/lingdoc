@@ -18,11 +18,12 @@ type Handler struct {
 	service     ApplicationService
 	sources     SourceApplicationService
 	integration WorkspaceIntegration
+	rewrites    SelectedRewriteApplication
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
 	return &Handler{
-		service: deps.Service, sources: deps.Sources, integration: deps.Integration,
+		service: deps.Service, sources: deps.Sources, integration: deps.Integration, rewrites: deps.SelectedRewrites,
 	}
 }
 
@@ -37,13 +38,23 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Write.POST("/projects/:projectId/owner-transfer", h.transferOwner)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
+	routes.Read.GET("/projects/:projectId/chapters/:chapterId/working-copy", h.getWorkingCopy)
+	routes.Read.GET("/projects/:projectId/chapters/:chapterId/versions", h.listChapterVersions)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
 	routes.Read.POST("/projects/:projectId/retrieval", h.retrieveSources)
 	routes.Read.GET("/projects/:projectId/sources/:sourceId", h.getSource)
 	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
+	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy", h.saveWorkingCopy)
+	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
+	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
+	if h.rewrites != nil {
+		routes.Read.GET("/projects/:projectId/rewrite-candidates/:candidateId", h.getSelectedRewrite)
+		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates", h.createSelectedRewrite)
+		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates/:candidateId/apply", h.applySelectedRewrite)
+	}
 }
 
 func caller(c *gin.Context) (Actor, bool) {
@@ -86,6 +97,18 @@ func sendError(c *gin.Context, err error) {
 	case errors.Is(err, ErrRequestInProgress):
 		status, code, message = 409, "request_in_progress", "原请求仍在提交，请稍后用相同操作键重试。"
 		c.Header("Retry-After", "1")
+	case errors.Is(err, ErrRewriteInvalidRequest):
+		status, code, message = 400, "invalid_request", "改写请求字段不符合约定。"
+	case errors.Is(err, ErrRewriteNotFound):
+		status, code, message = 404, "not_found", "候选不存在或不可访问。"
+	case errors.Is(err, ErrRewriteConflict), errors.Is(err, ErrRewriteStale):
+		status, code, message = 409, "stale_input", "选区或工作副本已变化，请重新读取后再试。"
+	case errors.Is(err, ErrRewriteKeyConflict):
+		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
+	case errors.Is(err, ErrRewriteSourceDenied):
+		status, code, message = 403, "source_access_denied", "改写候选的来源已失效或当前不可访问。"
+	case errors.Is(err, ErrRewriteUnavailable):
+		status, code, message = 503, "dependency_unavailable", "改写模型暂不可用，请稍后重试。"
 	case errors.Is(err, ErrSourceUnavailable):
 		// 三处共用这一个结论：保存带引用的正文时复核不过、取来源时该资料不放行、
 		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
@@ -113,364 +136,4 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
 	case errors.Is(err, candidateadoption.ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
-	// T14 的导出与下载。与上面同一件事：这些是 delivery 包里**另一个** ErrInvalidRequest，
-	// 必须单独列出来——名字相同、值不同，漏掉就是把 400 答成 500。
-	case errors.Is(err, delivery.ErrInvalidRequest):
-		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
-	case errors.Is(err, delivery.ErrExportNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, delivery.ErrExportPreflightBlocked):
-		// F10：快照本来就是一份 blocked 的检查结论。要给的是那些 issue，
-		// 而不是一次假下载。
-		status, code, message = 422, "preflight_blocked", "请先处理交付阻断项。"
-	case errors.Is(err, delivery.ErrExportStaleInput):
-		// F11：快照基于的输入已经不是此刻的工作区了。
-		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
-	case errors.Is(err, delivery.ErrExportUnavailable):
-		// F13：产物存在但不可下载（failed，或字节已不在）。这不是 404——
-		// 资源在，是它此刻不能交出去。
-		status, code, message = 422, "invalid_state", "导出文件不可用或完整性校验失败，请重新导出。"
-	case errors.Is(err, candidateadoption.ErrDependencyUnavailable):
-		// 复核侧「答不出来」的那一档：资料底座读不出结论，或某条引用既没被判可用也没被
-		// 判不可用。它和 403 的区别正是「不是你的授权有问题，是此刻判不了」——所以答 503
-		// 且 retryable（契约 §6 单列了这一档）。
-		//
-		// 这原本是一条罕见路径，直到章节保存也走复核（workspaceSourcePolicy）：现在它成了
-		// SaveChapter 的常规失败之一，漏掉映射就是把一句「请稍后重试」答成 500。
-		// generation 包里另有一个同名的 sentinel，走的是 generation 自己的 handler，
-		// 不经过这里——名字相同、值不同，这是本文件反复出现的那类陷阱。
-		status, code, message = 503, "dependency_unavailable", "依赖的服务此刻不可用，请稍后重试。"
-	}
-	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message,
-		"retryable": code == "request_in_progress" || code == "dependency_unavailable"},
-		"request_id": requestID(c)})
-}
-
-func sendErrorDetails(c *gin.Context, status int, code, message string, details any) {
-	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": false, "details": details},
-		"request_id": requestID(c)})
-}
-
-func sourceErrorStatus(err error) (int, string, string, any, bool) {
-	var denied *DeniedAssetsError
-	if !errors.As(err, &denied) {
-		return 0, "", "", nil, false
-	}
-	items := make([]map[string]string, 0, len(denied.Denied))
-	for _, item := range denied.Denied {
-		items = append(items, map[string]string{"asset_id": item.AssetID, "reason": string(item.Reason)})
-	}
-	return 422, "asset_not_authorized", "请求中存在未获授权的资料，未开始处理。", map[string]any{"denied": items}, true
-}
-
-func identity(c *gin.Context) (Actor, bool) {
-	actor, ok := caller(c)
-	if !ok {
-		sendError(c, ErrNotFound)
-	}
-	return actor, ok
-}
-
-func decodeBody(c *gin.Context, dst any) bool {
-	decoder := json.NewDecoder(io.LimitReader(c.Request.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(dst); err != nil {
-		sendError(c, ErrInvalidRequest)
-		return false
-	}
-	var tail any
-	if err := decoder.Decode(&tail); err != io.EOF {
-		sendError(c, ErrInvalidRequest)
-		return false
-	}
-	return true
-}
-
-func idempotencyKey(c *gin.Context) (string, bool) {
-	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	if len(key) < 8 || len(key) > 128 {
-		sendError(c, ErrInvalidRequest)
-		return "", false
-	}
-	return key, true
-}
-
-func (h *Handler) listProjects(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	items, truncated, err := h.service.ListProjects(c.Request.Context(), actor)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, 200, gin.H{"items": items, "truncated": truncated}, false)
-}
-
-func (h *Handler) createProject(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input CreateProjectInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.CreateProject(c.Request.Context(), actor, key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) getProject(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	project, err := h.service.GetProject(c.Request.Context(), actor, c.Param("projectId"))
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, 200, project, false)
-}
-
-func (h *Handler) saveSpec(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input SaveSpecInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.SaveSpec(c.Request.Context(), actor, c.Param("projectId"), key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) activateProject(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input ActivateProjectInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.ActivateProject(c.Request.Context(), actor, c.Param("projectId"), key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) saveMembers(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input SaveMembersInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) transferOwner(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input TransferOwnerInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) listChapters(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	data, err := h.service.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, 200, data, false)
-}
-
-func (h *Handler) listAssets(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	assets, err := h.sources.ListAssets(c.Request.Context(), actor, c.Param("projectId"))
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, http.StatusOK, assets, false)
-}
-
-func (h *Handler) bindAsset(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input struct {
-		KnowledgeID string `json:"knowledge_id"`
-	}
-	if !decodeBody(c, &input) {
-		return
-	}
-	asset, replay, err := h.sources.BindAsset(c.Request.Context(), actor, c.Param("projectId"), key, input.KnowledgeID)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	status := http.StatusCreated
-	if replay {
-		status = http.StatusOK
-	}
-	sendOK(c, status, asset, replay)
-}
-
-func (h *Handler) getSource(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	source, err := h.sources.GetSource(c.Request.Context(), actor, c.Param("projectId"), c.Param("sourceId"))
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, http.StatusOK, source, false)
-}
-
-func (h *Handler) retrieveSources(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	var input RetrieveSourcesInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	result, err := h.sources.RetrieveSources(c.Request.Context(), actor, c.Param("projectId"), input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, http.StatusOK, result, false)
-}
-
-func (h *Handler) saveChapter(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input SaveChapterInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.SaveChapter(c.Request.Context(), actor,
-		c.Param("projectId"), c.Param("chapterId"), key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) accessStatus(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	status, err := h.sources.AccessStatus(c.Request.Context(), actor, c.Param("projectId"))
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, http.StatusOK, status, false)
-}
-
-func (h *Handler) getSourceContext(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	value, err := h.sources.GetSourceContext(c.Request.Context(), actor, c.Param("projectId"), c.Param("sourceId"))
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, 200, value, false)
-}
-func (h *Handler) CandidateAdoptionSourcePolicy() candidateadoption.SourcePolicy {
-	if h.integration == nil {
-		return nil
-	}
-	return h.integration.CandidateAdoptionSourcePolicy()
-}
-func (h *Handler) WorkspaceSourcePolicy() SourcePolicy {
-	if h.integration == nil {
-		return nil
-	}
-	return h.integration.WorkspaceSourcePolicy()
-}
-func (h *Handler) DeliveryInputBuilder() DeliveryInputAssembler {
-	if h.integration == nil {
-		return nil
-	}
-	return h.integration.DeliveryInputBuilder()
-}
+	// T14 的导出与下载。与上面同一件事：这些是 delivery 包里**另一个** ErrInvalidReques

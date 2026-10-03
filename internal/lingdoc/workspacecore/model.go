@@ -48,6 +48,35 @@ type Chapter struct {
 	ConfirmationValid bool         `json:"confirmation_valid"`
 }
 
+// WorkingCopy is the mutable, restart-safe draft for a chapter. It is kept
+// separate from ChapterVersion so autosave and candidate adoption never
+// create a formal version.
+type WorkingCopy struct {
+	ProjectID            string       `json:"project_id"`
+	ChapterID            string       `json:"chapter_id"`
+	BaseChapterVersionID *string      `json:"base_chapter_version_id"`
+	SpecRevision         int64        `json:"spec_revision"`
+	WorkingCopyRevision  int64        `json:"working_copy_revision"`
+	BodyMarkdown         string       `json:"body_markdown"`
+	SourceIDs            []string     `json:"source_ids"`
+	ReviewItems          []ReviewItem `json:"review_items"`
+	UpdatedAt            time.Time    `json:"updated_at"`
+}
+
+// ChapterVersion is an immutable historical chapter snapshot.
+type ChapterVersion struct {
+	ID                string       `json:"id"`
+	ProjectID         string       `json:"project_id"`
+	ChapterID         string       `json:"chapter_id"`
+	ParentVersionID   *string      `json:"parent_version_id"`
+	BodyMarkdown      string       `json:"body_markdown"`
+	SourceIDs         []string     `json:"source_ids"`
+	ReviewItems       []ReviewItem `json:"review_items"`
+	SpecRevision      int64        `json:"spec_revision"`
+	ConfirmationValid bool         `json:"confirmation_valid"`
+	CreatedAt         time.Time    `json:"created_at"`
+}
+
 type GenerationContext struct {
 	ProjectID        string            `json:"project_id"`
 	ProjectVersion   int64             `json:"project_version"`
@@ -186,59 +215,4 @@ func (chapterRow) TableName() string { return "lingdoc_chapters" }
 
 type chapterVersionRow struct {
 	ID                string  `gorm:"primaryKey;size:36"`
-	ProjectID         string  `gorm:"not null;index;size:36"`
-	ChapterID         string  `gorm:"not null;index;size:36"`
-	ParentVersionID   *string `gorm:"size:36"`
-	BodyMarkdown      string  `gorm:"not null;type:text"`
-	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
-	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
-	SpecRevision      int64   `gorm:"not null;default:0"`
-	ConfirmationValid bool    `gorm:"not null;default:false"`
-	CreatedAt         time.Time
-}
-
-func (chapterVersionRow) TableName() string { return "lingdoc_chapter_versions" }
-
-type chapterConfirmationRow struct {
-	ID               string `gorm:"primaryKey;size:36"`
-	ChapterID        string `gorm:"not null;size:36"`
-	ChapterVersionID string `gorm:"not null;size:36"`
-	Valid            bool   `gorm:"not null;default:false"`
-	DetailsJSON      string `gorm:"type:text;not null;default:'{}'"`
-	CreatedAt        time.Time
-}
-
-func (chapterConfirmationRow) TableName() string { return "lingdoc_chapter_confirmations" }
-
-type chapterConfirmationDetails struct {
-	ID               string `json:"id"`
-	ChapterVersionID string `json:"chapter_version_id"`
-	SpecRevision     int64  `json:"spec_revision"`
-	TemplateVersion  string `json:"template_version"`
-	Valid            bool   `json:"valid"`
-}
-
-type operationRow struct {
-	TenantID     uint64 `gorm:"primaryKey"`
-	UserID       string `gorm:"primaryKey;size:64"`
-	Operation    string `gorm:"primaryKey;size:40"`
-	Target       string `gorm:"primaryKey;size:100"`
-	Key          string `gorm:"primaryKey;size:128"`
-	BodyHash     string `gorm:"not null;size:64"`
-	ResponseJSON string `gorm:"column:response_json;not null;type:text"`
-	ResponseCode int    `gorm:"not null"`
-	CreatedAt    time.Time
-}
-
-func (operationRow) TableName() string { return "lingdoc_operations" }
-
-func decodeSpec(raw string) (map[string]string, error) {
-	var spec map[string]string
-	if err := json.Unmarshal([]byte(raw), &spec); err != nil {
-		return nil, err
-	}
-	if spec == nil {
-		spec = map[string]string{}
-	}
-	return spec, nil
-}
+	ProjectID         string  `gorm:"not

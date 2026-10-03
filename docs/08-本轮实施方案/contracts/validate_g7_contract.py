@@ -143,15 +143,4 @@ for step in smoke["steps"]:
     for name, pointer in step.get("capture", {}).items():
         assert pointer.startswith("/"), f"{step['id']}: capture pointer must be a JSON pointer"
         available.add(name)
-assert len(smoke["steps"]) == 3, "G7-01 smoke unexpectedly grew beyond read/write/readback"
-
-print(json.dumps({
-    "result": "PASS",
-    "scope": "G7 declared JSON Schema subset and synthetic examples only; no service behavior verified",
-    "baseline_main_sha": contract["baseline_main_sha"],
-    "examples_checked": len(contract["examples"]),
-    "semantic_cases_checked": len(contract["semantic_cases"]),
-    "existing_chapter_smoke_steps_checked": len(smoke["steps"]),
-    "accepted_examples": results,
-    "not_run": ["real service and database", "second developer reproduction", "real model request"],
-}, ensure_ascii=False, indent=2))
+assert len(smoke["steps"]) == 3, "G7-01 sm

@@ -1,6 +1,6 @@
 {
   "contract_version": "1.0.0",
-  "status": "proposed_not_implemented",
+  "status": "implementation_in_progress_runtime_unverified",
   "baseline_main_sha": "e328c56bb47d22e348850589e4dc9ddbad8d265e",
   "scope": "G7-01 contract freeze for working copy, selected rewrite, local apply, and explicit immutable-version commit",
   "source_format": "body_markdown with [[source:<source_id>]] markers",
@@ -23,6 +23,24 @@
       "requires_idempotency_key": true,
       "side_effect": "create a mutable work-copy checkpoint only; never create a ChapterVersion",
       "authorization": ["current project write", "recheck every referenced source before write and replay"]
+    },
+    {
+      "operation_id": "listChapterVersions",
+      "method": "GET",
+      "path": "/projects/{projectId}/chapters/{chapterId}/versions",
+      "response_schema": "ChapterVersionList",
+      "side_effect": "none",
+      "authorization": ["current project read", "current authorization for every referenced source"]
+    },
+    {
+      "operation_id": "restoreWorkingCopy",
+      "method": "POST",
+      "path": "/projects/{projectId}/chapters/{chapterId}/working-copy/restore",
+      "request_schema": "RestoreWorkingCopyRequest",
+      "response_schema": "WorkingCopy",
+      "requires_idempotency_key": true,
+      "side_effect": "copy an immutable chapter version into the current working copy; do not create or alter a ChapterVersion",
+      "authorization": ["current project write", "recheck every referenced source before restore and replay"]
     },
     {
       "operation_id": "requestSelectedRewrite",
@@ -77,6 +95,8 @@
     "WorkingCopy": {
       "type": "object",
       "properties": {
+        "project_id": {"type": "string", "minLength": 1},
+        "chapter_id": {"type": "string", "minLength": 1},
         "base_chapter_version_id": {"type": ["string", "null"]},
         "spec_revision": {"type": "integer", "minimum": 0},
         "working_copy_revision": {"type": "integer", "minimum": 1},
@@ -85,7 +105,7 @@
         "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}},
         "updated_at": {"type": "string", "format": "date-time"}
       },
-      "required": ["base_chapter_version_id", "spec_revision", "working_copy_revision", "body_markdown", "source_ids", "review_items", "updated_at"],
+      "required": ["project_id", "chapter_id", "base_chapter_version_id", "spec_revision", "working_copy_revision", "body_markdown", "source_ids", "review_items", "updated_at"],
       "additionalProperties": false
     },
     "SaveWorkingCopyRequest": {
@@ -93,11 +113,45 @@
       "properties": {
         "base_chapter_version_id": {"type": ["string", "null"]},
         "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 0},
+        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
         "body_markdown": {"type": "string"},
         "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
       },
       "required": ["base_chapter_version_id", "expected_spec_revision", "expected_working_copy_revision", "body_markdown", "source_ids"],
+      "additionalProperties": false
+    },
+    "ChapterVersion": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "project_id": {"type": "string", "minLength": 1},
+        "chapter_id": {"type": "string", "minLength": 1},
+        "parent_version_id": {"type": ["string", "null"]},
+        "spec_revision": {"type": "integer", "minimum": 0},
+        "body_markdown": {"type": "string"},
+        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}},
+        "confirmation_valid": {"type": "boolean"},
+        "created_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["id", "project_id", "chapter_id", "parent_version_id", "spec_revision", "body_markdown", "source_ids", "review_items", "confirmation_valid", "created_at"],
+      "additionalProperties": false
+    },
+    "ChapterVersionList": {
+      "type": "object",
+      "properties": {"items": {"type": "array", "items": {"$ref": "#/schemas/ChapterVersion"}}},
+      "required": ["items"],
+      "additionalProperties": false
+    },
+    "RestoreWorkingCopyRequest": {
+      "type": "object",
+      "properties": {
+        "chapter_version_id": {"type": "string", "minLength": 1},
+        "expected_chapter_version_id": {"type": ["string", "null"]},
+        "expected_spec_revision": {"type": "integer", "minimum": 0},
+        "expected_working_copy_revision": {"type": "integer", "minimum": 1}
+      },
+      "required": ["chapter_version_id", "expected_chapter_version_id", "expected_spec_revision", "expected_working_copy_revision"],
       "additionalProperties": false
     },
     "Selection": {
@@ -105,268 +159,4 @@
       "properties": {
         "start_utf16": {"type": "integer", "minimum": 0},
         "end_utf16": {"type": "integer", "minimum": 1},
-        "selected_text": {"type": "string", "minLength": 1}
-      },
-      "required": ["start_utf16", "end_utf16", "selected_text"],
-      "additionalProperties": false
-    },
-    "SelectedRewriteRequest": {
-      "type": "object",
-      "properties": {
-        "base_chapter_version_id": {"type": ["string", "null"]},
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "selection": {"$ref": "#/schemas/Selection"},
-        "instruction": {"type": "string", "minLength": 1, "maxLength": 2000},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
-      },
-      "required": ["base_chapter_version_id", "expected_spec_revision", "expected_working_copy_revision", "selection", "instruction", "source_ids"],
-      "additionalProperties": false
-    },
-    "AuthorizedSourceSnapshot": {
-      "type": "object",
-      "properties": {
-        "source_id": {"type": "string", "minLength": 1},
-        "asset_id": {"type": "string", "minLength": 1},
-        "asset_revision": {"type": "integer", "minimum": 1},
-        "locator": {"type": "string", "minLength": 1},
-        "quoted_text_hash": {"type": "string", "minLength": 1},
-        "authorized_at": {"type": "string", "format": "date-time"}
-      },
-      "required": ["source_id", "asset_id", "asset_revision", "locator", "quoted_text_hash", "authorized_at"],
-      "additionalProperties": false
-    },
-    "RewriteCandidate": {
-      "type": "object",
-      "properties": {
-        "candidate_id": {"type": "string", "minLength": 1},
-        "project_id": {"type": "string", "minLength": 1},
-        "chapter_id": {"type": "string", "minLength": 1},
-        "status": {"enum": ["queued", "ready", "failed", "stale"]},
-        "run_mode": {"enum": ["mock", "real_api_fake_model", "real"], "description": "服务端记录的实际运行模式；不可由客户端声明"},
-        "base_chapter_version_id": {"type": ["string", "null"]},
-        "spec_revision": {"type": "integer", "minimum": 0},
-        "working_copy_revision": {"type": "integer", "minimum": 1},
-        "selection": {"$ref": "#/schemas/Selection"},
-        "replacement_markdown": {"type": ["string", "null"]},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "authorized_sources": {"type": "array", "items": {"$ref": "#/schemas/AuthorizedSourceSnapshot"}, "uniqueItems": true},
-        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}},
-        "error_code": {"type": ["string", "null"]}
-      },
-      "required": ["candidate_id", "project_id", "chapter_id", "status", "run_mode", "base_chapter_version_id", "spec_revision", "working_copy_revision", "selection", "replacement_markdown", "source_ids", "authorized_sources", "review_items", "error_code"],
-      "additionalProperties": false
-    },
-    "ApplySelectedRewriteRequest": {
-      "type": "object",
-      "properties": {
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "base_chapter_version_id": {"type": ["string", "null"]}
-      },
-      "required": ["expected_spec_revision", "expected_working_copy_revision", "base_chapter_version_id"],
-      "additionalProperties": false
-    },
-    "CommitWorkingCopyRequest": {
-      "type": "object",
-      "properties": {
-        "expected_spec_revision": {"type": "integer", "minimum": 0},
-        "expected_working_copy_revision": {"type": "integer", "minimum": 1},
-        "expected_chapter_version_id": {"type": ["string", "null"]}
-      },
-      "required": ["expected_spec_revision", "expected_working_copy_revision", "expected_chapter_version_id"],
-      "additionalProperties": false
-    },
-    "CommittedChapterVersion": {
-      "type": "object",
-      "properties": {
-        "chapter_version_id": {"type": "string", "minLength": 1},
-        "parent_chapter_version_id": {"type": ["string", "null"]},
-        "committed_working_copy_revision": {"type": "integer", "minimum": 1},
-        "next_working_copy_revision": {"type": "integer", "minimum": 2},
-        "spec_revision": {"type": "integer", "minimum": 0},
-        "body_markdown": {"type": "string"},
-        "source_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
-        "review_items": {"type": "array", "items": {"$ref": "#/schemas/ReviewItem"}}
-      },
-      "required": ["chapter_version_id", "parent_chapter_version_id", "committed_working_copy_revision", "next_working_copy_revision", "spec_revision", "body_markdown", "source_ids", "review_items"],
-      "additionalProperties": false
-    },
-    "ApiErrorResponse": {
-      "type": "object",
-      "properties": {
-        "error": {
-          "type": "object",
-          "properties": {
-            "code": {"type": "string", "minLength": 1},
-            "message": {"type": "string"},
-            "retryable": {"type": "boolean"}
-          },
-          "required": ["code", "message", "retryable"],
-          "additionalProperties": false
-        },
-        "request_id": {"type": "string", "minLength": 1}
-      },
-      "required": ["error", "request_id"],
-      "additionalProperties": false
-    }
-  },
-  "examples": [
-    {
-      "id": "save-working-copy-valid",
-      "schema": "SaveWorkingCopyRequest",
-      "accepted": true,
-      "value": {
-        "base_chapter_version_id": null,
-        "expected_spec_revision": 1,
-        "expected_working_copy_revision": 0,
-        "body_markdown": "🧪合成研究问题 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"]
-      }
-    },
-    {
-      "id": "working-copy-readback-valid",
-      "schema": "WorkingCopy",
-      "accepted": true,
-      "value": {
-        "base_chapter_version_id": null,
-        "spec_revision": 1,
-        "working_copy_revision": 1,
-        "body_markdown": "🧪合成研究问题 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
-        "review_items": [],
-        "updated_at": "2026-10-03T09:00:00Z"
-      }
-    },
-    {
-      "id": "selected-rewrite-valid-utf16",
-      "schema": "SelectedRewriteRequest",
-      "accepted": true,
-      "value": {
-        "base_chapter_version_id": null,
-        "expected_spec_revision": 1,
-        "expected_working_copy_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
-        "instruction": "将选中内容改写得更清晰，不增加事实。",
-        "source_ids": ["src-synthetic-1"]
-      }
-    },
-    {
-      "id": "selected-rewrite-missing-revision-rejected",
-      "schema": "SelectedRewriteRequest",
-      "accepted": false,
-      "value": {
-        "base_chapter_version_id": null,
-        "expected_spec_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
-        "instruction": "改写",
-        "source_ids": []
-      }
-    },
-    {
-      "id": "selected-rewrite-unknown-client-identity-rejected",
-      "schema": "SelectedRewriteRequest",
-      "accepted": false,
-      "value": {
-        "base_chapter_version_id": null,
-        "expected_spec_revision": 1,
-        "expected_working_copy_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
-        "instruction": "改写",
-        "source_ids": [],
-        "client_user_id": "u-owner"
-      }
-    },
-    {
-      "id": "candidate-ready-valid",
-      "schema": "RewriteCandidate",
-      "accepted": true,
-      "value": {
-        "candidate_id": "cand-synthetic-1",
-        "project_id": "project-synthetic-1",
-        "chapter_id": "chapter-question-synthetic-1",
-        "status": "ready",
-        "run_mode": "real_api_fake_model",
-        "base_chapter_version_id": null,
-        "spec_revision": 1,
-        "working_copy_revision": 1,
-        "selection": {"start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案"},
-        "replacement_markdown": "🧪本合成章节用于验证选段改写流程。 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
-        "authorized_sources": [{"source_id": "src-synthetic-1", "asset_id": "asset-synthetic-1", "asset_revision": 1, "locator": "synthetic/page/1", "quoted_text_hash": "sha256-synthetic", "authorized_at": "2026-10-03T09:00:00Z"}],
-        "review_items": [],
-        "error_code": null
-      }
-    },
-    {
-      "id": "apply-selected-rewrite-valid",
-      "schema": "ApplySelectedRewriteRequest",
-      "accepted": true,
-      "value": {"expected_spec_revision": 1, "expected_working_copy_revision": 1, "base_chapter_version_id": null}
-    },
-    {
-      "id": "apply-selected-rewrite-readback-valid",
-      "schema": "WorkingCopy",
-      "accepted": true,
-      "value": {
-        "base_chapter_version_id": null,
-        "spec_revision": 1,
-        "working_copy_revision": 2,
-        "body_markdown": "🧪本合成章节用于验证选段改写流程。 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
-        "review_items": [],
-        "updated_at": "2026-10-03T09:01:00Z"
-      }
-    },
-    {
-      "id": "commit-working-copy-valid",
-      "schema": "CommitWorkingCopyRequest",
-      "accepted": true,
-      "value": {"expected_spec_revision": 1, "expected_working_copy_revision": 2, "expected_chapter_version_id": null}
-    },
-    {
-      "id": "commit-working-copy-response-valid",
-      "schema": "CommittedChapterVersion",
-      "accepted": true,
-      "value": {
-        "chapter_version_id": "cv-synthetic-1",
-        "parent_chapter_version_id": null,
-        "committed_working_copy_revision": 2,
-        "next_working_copy_revision": 3,
-        "spec_revision": 1,
-        "body_markdown": "🧪本合成章节用于验证选段改写流程。 [[source:src-synthetic-1]]",
-        "source_ids": ["src-synthetic-1"],
-        "review_items": []
-      }
-    },
-    {
-      "id": "existing-save-chapter-valid",
-      "schema": "ExistingSaveChapter",
-      "accepted": true,
-      "value": {"expected_chapter_version_id": "cv-question-1", "expected_spec_revision": 1, "body_markdown": "🧪合成研究问题", "source_ids": []}
-    },
-    {
-      "id": "work-copy-conflict-error",
-      "schema": "ApiErrorResponse",
-      "accepted": true,
-      "value": {"error": {"code": "version_conflict", "message": "Working copy or chapter baseline changed; reload before retrying.", "retryable": false}, "request_id": "req-synthetic-409"}
-    },
-    {
-      "id": "source-revoked-does-not-return-content",
-      "schema": "ApiErrorResponse",
-      "accepted": true,
-      "value": {"error": {"code": "source_not_authorized", "message": "One or more sources are no longer available.", "retryable": false}, "request_id": "req-synthetic-403"}
-    },
-    {
-      "id": "stale-candidate-error",
-      "schema": "ApiErrorResponse",
-      "accepted": true,
-      "value": {"error": {"code": "candidate_stale", "message": "The working copy changed after this candidate was created.", "retryable": false}, "request_id": "req-synthetic-stale"}
-    }
-  ],
-  "semantic_cases": [
-    {"id": "emoji-range-counts-utf16-code-units", "start_utf16": 0, "end_utf16": 6, "selected_text": "🧪研究方案", "accepted": true},
-    {"id": "emoji-range-must-not-count-code-points", "start_utf16": 0, "end_utf16": 5, "selected_text": "🧪研究方案", "accepted": false},
-    {"id": "selection-range-must-not-be-empty", "start_utf16": 4, "end_utf16": 4, "selected_text": "", "accepted": false}
-  ]
-}
+        "s

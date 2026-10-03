@@ -15,7 +15,8 @@ import (
 // 000063 knowledge multi-tags, 000093 browser authorization,
 // 000097 LingDoc workspace, 000098 LingDoc evidence assets,
 // 000099 LingDoc candidate adoption, 000100/000101 LingDoc generation runs,
-// 000102 LingDoc confirmation requests, 000103 LingDoc delivery stores.
+// 000102 LingDoc confirmation requests, 000103 LingDoc delivery stores,
+// 000104 LingDoc member permissions, 000105 LingDoc working copies, 000106 LingDoc selected rewrites.
 var versionedSQLiteTables = []string{
 	"memory_extraction_sessions",
 	"task_pending_ops",
@@ -40,6 +41,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_generation_runs",
 	"lingdoc_release_snapshots",
 	"lingdoc_export_artifacts",
+	"lingdoc_working_copies",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -58,7 +60,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_generation_runs": {"claim_token", "cancel_requested"}, // 000101
 }
 
-const expectedSQLiteMigrationVersion = 24
+const expectedSQLiteMigrationVersion = 27
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
@@ -226,63 +228,4 @@ func assertSQLiteShareLinkInvitationsWork(t *testing.T, db *sql.DB) {
 	require.Equal(t, 2, count)
 }
 
-func assertSQLiteMCPOAuthPrincipalUpsertWorks(t *testing.T, db *sql.DB) {
-	t.Helper()
-	_, err := db.Exec(
-		"INSERT INTO mcp_services (id, tenant_id, name, transport_type) VALUES (?, 1, 'svc', 'http')",
-		"svc-migration-1",
-	)
-	require.NoError(t, err)
-
-	tokenInsertPrefix := "INSERT INTO mcp_oauth_tokens " +
-		"(id, tenant_id, user_id, service_id, principal_type, principal_id, access_token) "
-	_, err = db.Exec(
-		tokenInsertPrefix +
-			"VALUES ('tok-1', 1, 'u1', 'svc-migration-1', 'web_user', 'u1', 'token-1')",
-	)
-	require.NoError(t, err)
-
-	_, err = db.Exec(
-		tokenInsertPrefix +
-			"VALUES ('tok-2', 1, 'u1', 'svc-migration-1', 'web_user', 'u1', 'token-2') " +
-			"ON CONFLICT(tenant_id, principal_type, principal_id, service_id) " +
-			"DO UPDATE SET access_token = excluded.access_token",
-	)
-	require.NoError(t, err)
-
-	var accessToken string
-	require.NoError(t, db.QueryRow(
-		"SELECT access_token FROM mcp_oauth_tokens "+
-			"WHERE tenant_id = 1 AND principal_type = 'web_user' "+
-			"AND principal_id = 'u1' AND service_id = 'svc-migration-1'",
-	).Scan(&accessToken))
-	require.Equal(t, "token-2", accessToken)
-
-	var rowCount int
-	require.NoError(t, db.QueryRow(
-		"SELECT COUNT(*) FROM mcp_oauth_tokens WHERE tenant_id = 1 AND service_id = 'svc-migration-1'",
-	).Scan(&rowCount))
-	require.Equal(t, 1, rowCount)
-}
-
-func copySQLiteMigrationsV4(t *testing.T, repoRoot string) string {
-	t.Helper()
-	dest := t.TempDir()
-	srcDir := filepath.Join(repoRoot, "migrations", "sqlite")
-	destDir := filepath.Join(dest, "migrations", "sqlite")
-	require.NoError(t, os.MkdirAll(destDir, 0o755))
-
-	legacy := []string{
-		"000000_init.up.sql",
-		"000001_remove_wiki_log.up.sql",
-		"000002_knowledge_folder_path.up.sql",
-		"000003_knowledge_base_auto_tag_config.up.sql",
-		"000004_memory.up.sql",
-	}
-	for _, name := range legacy {
-		data, err := os.ReadFile(filepath.Join(srcDir, name))
-		require.NoError(t, err)
-		require.NoError(t, os.WriteFile(filepath.Join(destDir, name), data, 0o600))
-	}
-	return dest
-}
+func assertSQLiteMCPOAuthPrincipalUpsertWorks(
