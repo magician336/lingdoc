@@ -27,7 +27,7 @@
   "cleanup": "Synthetic test tenants, users, invitations, memberships, and projects were removed from the dev database after the run.",
   "not_run": [
     "real browser UI flow for a dedicated G1 screen",
-    "real supplier revocation event from an external source provider",
+    "provider-specific connector webhook or credential-revocation notification (out of G1 scope; KB share revocation is covered separately)",
     "real model generation and source-backed chapter writing"
   ],
   "credentials": "No token, password, provider ID, or dynamic project ID is stored in this evidence."
