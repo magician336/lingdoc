@@ -620,6 +620,9 @@ func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectI
 		if err != nil {
 			return nil, 0, err
 		}
+		if p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
 		store, ok := tx.(ownerTransferTransaction)
 		if !ok {
 			return nil, 0, ErrInvalidState
