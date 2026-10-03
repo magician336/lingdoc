@@ -190,6 +190,49 @@ func TestG1TemplateMigrationPreviewsAndCommitsWithoutDroppingOrphans(t *testing.
 	}
 }
 
+func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g1-activation-gate.db"))
+	owner := Actor{TenantID: 86, UserID: "owner"}
+	collaborator := Actor{TenantID: 86, UserID: "collaborator"}
+	seedTenantMember(t, svc, owner)
+	seedTenantMember(t, svc, collaborator)
+	created, _, _, err := svc.CreateProject(context.Background(), owner, "g1-create-06", CreateProjectInput{Name: "G1 activation", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	if _, _, _, err := svc.SaveMembers(context.Background(), owner, project.ID, "g1-members-06", SaveMembersInput{ExpectedProjectVersion: 1, CollaboratorUserIDs: []string{collaborator.UserID}}); err != nil {
+		t.Fatal(err)
+	}
+	current, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.SaveSpec(context.Background(), collaborator, project.ID, "g1-spec-06", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.ActivateProject(context.Background(), collaborator, project.ID, "g1-activate-collaborator-06", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: current.ProjectVersion + 1}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("collaborator activation error = %v, want %v", err, ErrNotFound)
+	}
+	latest, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if latest.Status != "draft" {
+		t.Fatalf("failed activation changed status = %s", latest.Status)
+	}
+	if _, _, _, err := svc.ActivateProject(context.Background(), owner, project.ID, "g1-activate-owner-06", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: latest.ProjectVersion, ReviewedProjectVersion: latest.ProjectVersion}); err != nil {
+		t.Fatal(err)
+	}
+	audits, err := svc.ListAuditEvents(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(audits) == 0 || audits[len(audits)-1].Action != "project.activate" {
+		t.Fatalf("activation audit = %+v", audits)
+	}
+}
+
 func rawOwnerTransfer(t *testing.T, raw []byte) OwnerTransfer {
 	t.Helper()
 	var transfer OwnerTransfer

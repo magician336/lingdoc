@@ -693,6 +693,16 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return s.operation(ctx, actor, "activateProject", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		owner := false
+		for _, member := range p.Members {
+			if member.UserID == actor.UserID && member.Role == "owner" {
+				owner = true
+				break
+			}
+		}
+		if !owner {
+			return nil, 0, ErrNotFound
+		}
 		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -723,6 +733,11 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		}
 		for _, section := range template.Sections {
 			if err := tx.InsertChapter(Chapter{ID: uuid.NewString(), ProjectID: projectID, SectionID: section.ID, Title: section.Title}); err != nil {
+				return nil, 0, err
+			}
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.activate", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion, "context_revision": next.CurrentContextRevision, "chapter_count": len(template.Sections)}, CreatedAt: time.Now().UTC()}); err != nil {
 				return nil, 0, err
 			}
 		}
