@@ -10,6 +10,12 @@ type DeliveryInputAssembler interface {
 	Build(context.Context, string, candidateadoption.WorkspaceDeliveryInput) (delivery.DeliveryInput, error)
 }
 
+// DeliveryCurrentness rechecks the frozen source records at read/export time;
+// chapter/project versions alone cannot detect revocation or re-parsing.
+type DeliveryCurrentness interface {
+	Current(context.Context, string, delivery.DeliveryInput) (bool, error)
+}
+
 type ReleaseApplication interface {
 	Check(context.Context, string, string, int64) (delivery.CheckResult, error)
 	Prepare(context.Context, string, string, string, int64) (delivery.ReleaseSnapshot, bool, error)

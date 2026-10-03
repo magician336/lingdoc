@@ -1,0 +1,1 @@
+ALTER TABLE lingdoc_chapter_versions DROP COLUMN citation_usages_json;

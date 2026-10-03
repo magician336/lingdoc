@@ -322,7 +322,7 @@ func (t gormTransaction) EnsureMember(projectID, userID, role string) error {
 }
 func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
 	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
-		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
+		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, CitationUsages: []CitationUsage{}, CitationStatuses: []CitationStatus{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
 	if row.CurrentVersionID == nil {
 		return view, nil
 	}
@@ -357,6 +357,14 @@ func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, erro
 		// 因为 json.Unmarshal 会把 null 解成 nil，而 nil 一旦漏出去，上面建立的
 		//「没有引用时是空切片」不变式就断了——调用方按 nil 与空切片分不出同一件事。
 		view.SourceIDs = []string{}
+	}
+	if version.CitationUsagesJSON != "" {
+		if err := json.Unmarshal([]byte(version.CitationUsagesJSON), &view.CitationUsages); err != nil {
+			return Chapter{}, err
+		}
+		if view.CitationUsages == nil {
+			view.CitationUsages = []CitationUsage{}
+		}
 	}
 	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &view.ReviewItems); err != nil {
 		return Chapter{}, err
@@ -406,7 +414,11 @@ func (t gormTransaction) AppendChapter(previous, next Chapter, specRevision int6
 	if err != nil {
 		return err
 	}
-	version := chapterVersionRow{ID: *next.CurrentVersionID, ProjectID: next.ProjectID, ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown, SourceIDsJSON: string(sources), ReviewItemsJSON: string(review), SpecRevision: specRevision}
+	usages, err := json.Marshal(next.CitationUsages)
+	if err != nil {
+		return err
+	}
+	version := chapterVersionRow{ID: *next.CurrentVersionID, ProjectID: next.ProjectID, ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown, SourceIDsJSON: string(sources), CitationUsagesJSON: string(usages), ReviewItemsJSON: string(review), SpecRevision: specRevision}
 	if err := t.db.Create(&version).Error; err != nil {
 		return err
 	}

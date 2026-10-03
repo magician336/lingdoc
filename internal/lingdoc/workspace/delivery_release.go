@@ -99,7 +99,7 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	}
 	// 4. 冻结与「这次动作冻了什么」一起落。并发的同键请求只会有一个落笔，
 	// 输的那一方拿回赢家的那一份，而不是自己手里这份。
-	snapshot, err := s.releases(ctx).Freeze(input)
+	snapshot, err := s.releases(ctx, actorID).Freeze(input)
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
@@ -138,7 +138,7 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
 		return delivery.ReleaseSnapshot{}, err
 	}
-	return s.releases(ctx).Get(projectID, snapshotID)
+	return s.releases(ctx, actorID).Get(projectID, snapshotID)
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。
@@ -177,7 +177,7 @@ func (s *DeliveryReleaseService) List(ctx context.Context, actorID, projectID st
 		snapshots = snapshots[:deliveryHistoryLimit]
 	}
 	for index := range snapshots {
-		current, err := s.stillCurrent(ctx, snapshots[index].FrozenInput)
+		current, err := s.stillCurrent(ctx, actorID, snapshots[index].FrozenInput)
 		if err != nil {
 			return nil, false, err
 		}
@@ -211,16 +211,23 @@ func (s *DeliveryReleaseService) assemble(ctx context.Context, actorID, projectI
 // 必须带身份去读工作区（T12 的读取侧要在调用者的调用者上下文里跑）。所以上下文在
 // 构造时钉住：这一台只服务这一次调用，不跨请求复用。快照库是共享的那个，
 // 否则刚冻下的快照下一次就取不到了。
-func (s *DeliveryReleaseService) releases(ctx context.Context) *delivery.ReleaseService {
+func (s *DeliveryReleaseService) releases(ctx context.Context, actorID string) *delivery.ReleaseService {
 	return delivery.NewReleaseService(s.store, delivery.CurrentnessFunc(func(frozen delivery.DeliveryInput) (bool, error) {
-		return s.stillCurrent(ctx, frozen)
+		return s.stillCurrent(ctx, actorID, frozen)
 	}))
 }
 
 // stillCurrent 直接读 Reader 而不再判一次成员：本次调用的入口（Check/Prepare/Get）
 // 已经在读之前判过同一个项目，且用的是同一个调用者上下文里的身份。
-func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, frozen delivery.DeliveryInput) (bool, error) {
-	return deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
+	current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+	if err != nil || !current {
+		return current, err
+	}
+	if checker, ok := s.builder.(DeliveryCurrentness); ok {
+		return checker.Current(ctx, actorID, frozen)
+	}
+	return current, nil
 }
 
 // deliveryCurrentness 拿冻结输入记下的项目版本、研究条件与逐章版本去对此刻的工作区。

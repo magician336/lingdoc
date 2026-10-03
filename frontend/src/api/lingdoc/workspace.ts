@@ -24,6 +24,18 @@ export interface ReviewDecision {
   reason: string
 }
 
+export interface CitationUsage {
+  source_id: string
+  purpose: string
+  limitation: string
+}
+
+export interface CitationStatus {
+  source_id: string
+  status: 'available' | 'needs_review' | 'unavailable'
+  detail?: string
+}
+
 export interface Confirmation {
   id: string
   chapter_id: string
@@ -45,6 +57,8 @@ export interface Chapter {
   current_version_id: string | null
   body_markdown: string
   source_ids: string[]
+  citation_usages?: CitationUsage[]
+  citation_statuses?: CitationStatus[]
   review_items: ReviewItem[]
   confirmation_valid: boolean
 }
@@ -163,6 +177,7 @@ export const saveChapter = (projectId: string, chapterId: string, input: {
   expected_spec_revision: number
   body_markdown: string
   source_ids: string[]
+  citation_usages: CitationUsage[]
 }, key: string) => post<Result<Chapter>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/versions`, input, keyHeader(key),
 )

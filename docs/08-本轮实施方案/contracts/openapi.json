@@ -2443,6 +2443,7 @@
                           "source_ids": [
                             "s-demo"
                           ],
+                          "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                           "review_items": [
                             {
                               "id": "review-1",
@@ -2817,6 +2818,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -2845,6 +2847,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -3203,6 +3206,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -3231,6 +3235,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -7481,6 +7486,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -7554,7 +7560,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7669,6 +7675,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -7742,7 +7749,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7857,6 +7864,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -7897,7 +7905,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                              "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
                               "check": {
                                 "project_version": 5,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8021,6 +8029,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -8094,7 +8103,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8195,6 +8204,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -8268,7 +8278,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8682,6 +8692,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -8755,7 +8766,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8865,6 +8876,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -8905,7 +8917,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                        "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9157,6 +9169,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -9197,7 +9210,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                        "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9316,6 +9329,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -9389,7 +9403,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9813,6 +9827,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -9886,7 +9901,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9996,6 +10011,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -10069,7 +10085,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -12513,6 +12529,26 @@
         ],
         "additionalProperties": false
       },
+      "CitationUsage": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "purpose": { "type": "string", "maxLength": 2000 },
+          "limitation": { "type": "string", "maxLength": 2000 }
+        },
+        "required": ["source_id"],
+        "additionalProperties": false
+      },
+      "CitationStatus": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["available", "needs_review", "unavailable"] },
+          "detail": { "type": "string" }
+        },
+        "required": ["source_id", "status"],
+        "additionalProperties": false
+      },
       "Chapter": {
         "type": "object",
         "properties": {
@@ -12544,6 +12580,16 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
+            "uniqueItems": true
+          },
+          "citation_statuses": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationStatus" },
+            "uniqueItems": true
           },
           "confirmation_valid": {
             "type": "boolean"
@@ -12693,6 +12739,11 @@
             "items": {
               "$ref": "#/components/schemas/ReviewItem"
             },
+            "uniqueItems": true
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
             "uniqueItems": true
           }
         },
@@ -12886,6 +12937,11 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
+            "uniqueItems": true
           },
           "review_items": {
             "type": "array",
@@ -13129,6 +13185,11 @@
               "type": "string",
               "minLength": 1
             },
+            "uniqueItems": true
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
             "uniqueItems": true
           }
         },

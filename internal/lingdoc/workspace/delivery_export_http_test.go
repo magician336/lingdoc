@@ -568,7 +568,7 @@ func TestExportRoutesDenyStartAfterBoundSourceAccessIsRevoked(t *testing.T) {
 	}
 }
 
-func TestListChaptersDeniesRevokedBoundSource(t *testing.T) {
+func TestListChaptersRedactsRevokedBoundSource(t *testing.T) {
 	sourceAuthorizer := &switchableAssetAuthorizer{}
 	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
 	path := "/api/v1/lingdoc/projects/project-1/chapters"
@@ -579,12 +579,26 @@ func TestListChaptersDeniesRevokedBoundSource(t *testing.T) {
 	}
 
 	sourceAuthorizer.revoked = true
-	denied := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
-	if denied.Code != http.StatusForbidden {
-		t.Fatalf("list chapters after source access revocation = %d, want 403: %s", denied.Code, denied.Body.String())
+	redacted := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
+	if redacted.Code != http.StatusOK {
+		t.Fatalf("list chapters after source access revocation = %d, want 200: %s", redacted.Code, redacted.Body.String())
 	}
-	if code := decodeDeliveryEnvelope(t, denied).Error; code == nil || code.Code != "source_access_denied" {
-		t.Fatalf("list chapters after source access revocation error = %+v, want source_access_denied", code)
+	var payload struct {
+		Data []struct {
+			BodyMarkdown     string `json:"body_markdown"`
+			CitationUsages   []any  `json:"citation_usages"`
+			CitationStatuses []struct {
+				Status string `json:"status"`
+			} `json:"citation_statuses"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(redacted.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, chapter := range payload.Data {
+		if len(chapter.CitationStatuses) > 0 && (chapter.BodyMarkdown != "" || len(chapter.CitationUsages) != 0 || chapter.CitationStatuses[0].Status != "unavailable") {
+			t.Fatalf("revoked chapter was not redacted: %+v", chapter)
+		}
 	}
 }
 

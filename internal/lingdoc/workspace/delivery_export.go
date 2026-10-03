@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
@@ -82,7 +83,7 @@ func (s *DeliveryExportService) Start(ctx context.Context, actorID, projectID, s
 		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.export", err)
 		return delivery.ExportArtifact{}, false, err
 	}
-	return s.service(ctx).StartAs(ctx, s.deliveryActor(ctx, actorID), projectID, snapshotID, key)
+	return s.service(ctx, actorID, projectID).StartAs(ctx, s.deliveryActor(ctx, actorID), projectID, snapshotID, key)
 }
 
 // Get 读一份产物的状态。它不返回字节——下载要单独走一次，因为**下载那一刻**的
@@ -91,7 +92,7 @@ func (s *DeliveryExportService) Get(ctx context.Context, actorID, projectID, exp
 	if s == nil {
 		return delivery.ExportArtifact{}, candidateadoption.ErrInvalidState
 	}
-	return s.service(ctx).GetAs(ctx, s.deliveryActor(ctx, actorID), projectID, exportID)
+	return s.service(ctx, actorID, projectID).GetAs(ctx, s.deliveryActor(ctx, actorID), projectID, exportID)
 }
 
 // Download 交出一份已校验文件的字节与它自己的产物记录。
@@ -114,7 +115,7 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
 		return delivery.ExportArtifact{}, nil, err
 	}
-	return s.service(ctx).DownloadAs(ctx, s.deliveryActor(ctx, actorID), projectID, exportID)
+	return s.service(ctx, actorID, projectID).DownloadAs(ctx, s.deliveryActor(ctx, actorID), projectID, exportID)
 }
 
 func (s *DeliveryExportService) deliveryActor(ctx context.Context, actorID string) delivery.Actor {
@@ -211,14 +212,31 @@ func (s *DeliveryExportService) List(ctx context.Context, actorID, projectID str
 //
 // 两个判定都接回 T12 那一份：授权是 T07 交给它的成员判定，当前性是**与 T13 同一个**
 // deliveryCurrentness。导出侧不另立一套口径。
-func (s *DeliveryExportService) service(ctx context.Context) *delivery.ExportService {
+func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID string) *delivery.ExportService {
 	return delivery.NewExportService(
 		s.snapshots,
 		s.exports,
 		s.renderer,
 		s.validator,
 		delivery.CurrentnessFunc(func(frozen delivery.DeliveryInput) (bool, error) {
-			return deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+			current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+			if err != nil || !current {
+				return current, err
+			}
+			ids := make([]string, 0, len(frozen.Sources))
+			for _, source := range frozen.Sources {
+				ids = append(ids, source.ID)
+			}
+			if len(ids) == 0 {
+				return true, nil
+			}
+			if err := s.sources.Validate(ctx, projectID, actorID, ids); err != nil {
+				if errors.Is(err, candidateadoption.ErrSourceAccessDenied) || errors.Is(err, candidateadoption.ErrStaleInput) {
+					return false, nil
+				}
+				return false, err
+			}
+			return true, nil
 		}),
 		delivery.ExportAccessFunc(func(actorUserID, projectID string) error {
 			return s.inputs.Authorizer.AuthorizeProject(ctx, actorUserID, projectID)
