@@ -30,6 +30,7 @@ type TemplateMigrationInput = core.TemplateMigrationInput
 type TemplateMigrationField = core.TemplateMigrationField
 type TemplateMigrationPreview = core.TemplateMigrationPreview
 type ContractDemoTemplate = core.ContractDemoTemplate
+type TemplateField = core.TemplateField
 
 var (
 	ErrNotFound            = core.ErrNotFound

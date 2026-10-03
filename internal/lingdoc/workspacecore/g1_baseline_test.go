@@ -21,12 +21,12 @@ func TestG1ActiveProjectRejectsOrdinarySpecSave(t *testing.T) {
 	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-01", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "subject", "research_goal": "goal"}}); err != nil {
 		t.Fatal(err)
 	}
-	activated, _, _, err := svc.ActivateProject(context.Background(), actor, projectID, "g1-activate-01", ActivateProjectInput{ExpectedSpecRevision: 1})
+	activated, _, _, err := svc.ActivateProject(context.Background(), actor, projectID, "g1-activate-01", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
 	active := asProject(t, activated)
-	if active.Status != "active" || active.CurrentContextRevision != 1 {
+	if active.Status != "active" || active.CurrentContextRevision != 1 || active.DeliveryStatus != "NOT_READY" || active.BaselineConfirmationID == "" {
 		t.Fatalf("activation baseline = %+v", active)
 	}
 	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-active-01", SaveSpecInput{ExpectedSpecRevision: 1, Fields: map[string]string{"research_subject": "changed", "research_goal": "goal"}}); !errors.Is(err, ErrInvalidState) {
@@ -69,15 +69,25 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 	if _, _, _, err := svc.CreateDraftCandidate(context.Background(), actor, projectID, "g1-candidate-02", DraftCandidateInput{Kind: "retrieval", Title: "背景线索", Content: "原文线索", Level: "background", Provenance: provenance}); err != nil {
 		t.Fatal(err)
 	}
+	revoked := *provenance
+	revoked.Accessible = false
+	if _, _, _, err := svc.CreateDraftCandidate(context.Background(), actor, projectID, "g1-candidate-03", DraftCandidateInput{Kind: "retrieval", Title: "受限线索", Content: "受限正文", Level: "background", Provenance: &revoked}); err != nil {
+		t.Fatal(err)
+	}
 	candidates, err := svc.ListDraftCandidates(context.Background(), actor, projectID)
-	if err != nil || len(candidates) != 1 {
+	if err != nil || len(candidates) != 2 {
 		t.Fatalf("candidates = %+v, err=%v", candidates, err)
 	}
 	if candidates[0].BasedOnContextRevision != 0 || candidates[0].Level != "background" || candidates[0].Provenance == nil {
 		t.Fatalf("candidate = %+v", candidates[0])
 	}
+	for _, candidate := range candidates {
+		if candidate.Title == "受限线索" && (candidate.Content != "" || candidate.Provenance == nil || !candidate.Provenance.NeedsReview) {
+			t.Fatalf("revoked candidate = %+v", candidate)
+		}
+	}
 	audits, err := svc.ListAuditEvents(context.Background(), actor, projectID)
-	if err != nil || len(audits) != 2 {
+	if err != nil || len(audits) != 3 {
 		t.Fatalf("audits = %+v, err=%v", audits, err)
 	}
 	if audits[0].Action != "project_spec.save" || audits[1].Action != "draft_candidate.create" {
@@ -103,6 +113,10 @@ func TestG1ActivationDiffBindsConfirmationToProjectVersion(t *testing.T) {
 	}
 	if _, _, _, err := svc.SaveSpec(context.Background(), actor, project.ID, "g1-spec-04", SaveSpecInput{ExpectedSpecRevision: 1, Fields: map[string]string{"research_subject": "subject", "research_goal": "changed"}}); err != nil {
 		t.Fatal(err)
+	}
+	latestDiff, err := svc.ActivationDiff(context.Background(), actor, project.ID, diff.CurrentProjectVersion)
+	if err != nil || len(latestDiff.ChangedFields) != 1 || latestDiff.ChangedFields[0].Key != "research_goal" {
+		t.Fatalf("precise activation diff = %+v, err=%v", latestDiff, err)
 	}
 	if _, _, _, err := svc.ActivateProject(context.Background(), actor, project.ID, "g1-activate-03", ActivateProjectInput{ExpectedSpecRevision: 2, ExpectedProjectVersion: diff.CurrentProjectVersion, ReviewedProjectVersion: diff.CurrentProjectVersion}); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale activation error = %v, want %v", err, ErrVersionConflict)
@@ -250,7 +264,7 @@ func TestG1DiscardRestoreBlocksWritesAndMarksRevokedProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	field := current.SpecFields["research_subject"]
-	if field.Status != "pending_confirmation" || field.Provenance == nil || !field.Provenance.NeedsReview {
+	if field.Status != "pending_confirmation" || field.Value != "" || current.Spec["research_subject"] != "" || field.Provenance == nil || !field.Provenance.NeedsReview {
 		t.Fatalf("revoked provenance = %+v", field)
 	}
 	if _, _, _, err := svc.DiscardProject(context.Background(), actor, project.ID, "g1-discard-07", current.ProjectVersion); err != nil {

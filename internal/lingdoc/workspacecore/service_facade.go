@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"github.com/google/uuid"
 	"maps"
+	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -106,8 +108,20 @@ func authorize(tx Transaction, actor Actor, projectID, capability string) (Proje
 	if err != nil {
 		return Project{}, err
 	}
-	if p.DiscardedAt != nil && capability != "read" {
-		return Project{}, ErrInvalidState
+	if p.DiscardedAt != nil {
+		if capability != "read" {
+			return Project{}, ErrInvalidState
+		}
+		owner := false
+		for _, m := range p.Members {
+			if m.UserID == actor.UserID && m.Role == "owner" {
+				owner = true
+				break
+			}
+		}
+		if !owner {
+			return Project{}, ErrNotFound
+		}
 	}
 	for _, m := range p.Members {
 		if m.UserID == actor.UserID && (capability != "manage" || m.Role == "owner") {
@@ -117,11 +131,24 @@ func authorize(tx Transaction, actor Actor, projectID, capability string) (Proje
 	return Project{}, ErrNotFound
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
-	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error { _, err := authorize(tx, actor, projectID, capability); return err })
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := authorize(tx, actor, projectID, capability)
+		if err == nil && p.DiscardedAt != nil {
+			return ErrInvalidState
+		}
+		return err
+	})
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) { result, err = authorize(tx, actor, id, "read"); return err })
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
+		result, err = authorize(tx, actor, id, "read")
+		if err == nil && result.DiscardedAt != nil {
+			result.Spec = map[string]string{}
+			result.SpecFields = map[string]SpecField{}
+		}
+		return err
+	})
 	return result, err
 }
 func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
@@ -326,16 +353,39 @@ type TemplateMigrationInput struct {
 	TemplateVersion        string `json:"template_version"`
 }
 
-func templateFieldSet(template Template) map[string]struct{} {
-	fields := make(map[string]struct{}, len(template.RequiredFields))
+func templateFieldDefinitions(template Template) map[string]TemplateField {
+	fields := make(map[string]TemplateField, len(template.RequiredFields))
+	for _, field := range template.Fields {
+		fields[field.ID] = field
+	}
 	for _, field := range template.RequiredFields {
-		fields[field] = struct{}{}
+		value := fields[field]
+		value.ID, value.Required = field, true
+		if value.Type == "" {
+			value.Type = "string"
+		}
+		fields[field] = value
 	}
 	return fields
 }
 
+func compatibleTemplateValue(value string, field TemplateField) bool {
+	switch field.Type {
+	case "", "string", "text":
+		return true
+	case "number", "integer":
+		_, err := strconv.ParseFloat(value, 64)
+		return err == nil
+	case "boolean":
+		_, err := strconv.ParseBool(value)
+		return err == nil
+	default:
+		return false
+	}
+}
+
 func buildTemplateMigrationPreview(p Project, target Template, expectedVersion int64) TemplateMigrationPreview {
-	allowed := templateFieldSet(target)
+	allowed := templateFieldDefinitions(target)
 	keys := make([]string, 0, len(p.Spec))
 	for key := range p.Spec {
 		keys = append(keys, key)
@@ -344,20 +394,35 @@ func buildTemplateMigrationPreview(p Project, target Template, expectedVersion i
 	preview := TemplateMigrationPreview{
 		ProjectID: p.ID, SourceTemplateID: p.TemplateID, SourceTemplateVersion: p.TemplateVersion,
 		TargetTemplateID: target.ID, TargetTemplateVersion: target.Version, ExpectedProjectVersion: expectedVersion,
-		Fields: make([]TemplateMigrationField, 0, len(keys)+len(target.RequiredFields)), MissingRequired: []string{}, Orphaned: []string{},
+		Fields: make([]TemplateMigrationField, 0, len(keys)+len(target.RequiredFields)), MissingRequired: []string{}, Orphaned: []string{}, Incompatible: []string{},
 	}
 	seen := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
 		status := "orphaned"
-		if _, ok := allowed[key]; ok {
+		if field, ok := allowed[key]; ok {
 			status = "preserved"
+			if !compatibleTemplateValue(p.Spec[key], field) {
+				status = "incompatible"
+				preview.Incompatible = append(preview.Incompatible, key)
+				if field.Required {
+					preview.MissingRequired = append(preview.MissingRequired, key)
+				}
+			}
 		} else {
 			preview.Orphaned = append(preview.Orphaned, key)
 		}
 		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Value: p.Spec[key], Status: status})
 		seen[key] = struct{}{}
 	}
-	for _, key := range target.RequiredFields {
+	requiredKeys := make([]string, 0, len(allowed))
+	for key, field := range allowed {
+		if !field.Required {
+			continue
+		}
+		requiredKeys = append(requiredKeys, key)
+	}
+	slices.Sort(requiredKeys)
+	for _, key := range requiredKeys {
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -366,6 +431,7 @@ func buildTemplateMigrationPreview(p Project, target Template, expectedVersion i
 	}
 	slices.Sort(preview.MissingRequired)
 	slices.Sort(preview.Orphaned)
+	slices.Sort(preview.Incompatible)
 	return preview
 }
 
@@ -383,7 +449,7 @@ func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, pro
 		if err != nil {
 			return err
 		}
-		if p.Status != "draft" {
+		if p.Status != "draft" || p.DiscardedAt != nil {
 			return ErrInvalidState
 		}
 		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
@@ -405,7 +471,7 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, "changeTemplate", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return s.operation(ctx, actor, "changeTemplate", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "draft" {
 			return nil, 0, ErrInvalidState
 		}
@@ -449,7 +515,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		return nil, 0, false, err
 	}
 	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "", func(tx Transaction, _ Project) (any, int, error) {
-		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
+		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
 }
@@ -478,21 +544,36 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		if nextFields == nil {
 			nextFields = map[string]SpecField{}
 		}
+		changedFields := make(map[string]struct{})
 		for key, value := range input.Fields {
 			field := nextFields[key]
-			if field.Value != value || field.Origin == "" {
+			origin, status := field.Origin, field.Status
+			provenance := field.Provenance
+			if metadata, ok := input.FieldMetadata[key]; ok {
+				origin, status, provenance = metadata.Origin, metadata.Status, metadata.Provenance
+				if origin == "" {
+					origin = "human"
+				}
+				if status == "" {
+					status = "draft"
+				}
+			} else {
+				if origin == "" {
+					origin = "human"
+				}
+				if status == "" {
+					status = "draft"
+				}
+				if field.Value != value {
+					provenance = nil
+				}
+			}
+			if field.Value != value || field.Origin != origin || field.Status != status || !reflect.DeepEqual(field.Provenance, provenance) {
 				field.Value = value
 				field.ModifiedBy = actor.UserID
 				field.ModifiedAt = time.Now().UTC()
-				if metadata, ok := input.FieldMetadata[key]; ok {
-					field.Origin = metadata.Origin
-					field.Status = metadata.Status
-					field.Provenance = metadata.Provenance
-				} else {
-					field.Origin = "human"
-					field.Status = "draft"
-					field.Provenance = nil
-				}
+				field.Origin, field.Status, field.Provenance = origin, status, provenance
+				changedFields[key] = struct{}{}
 			}
 			nextFields[key] = field
 		}
@@ -502,6 +583,11 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 			next.SpecFields = nextFields
 			next.SpecRevision++
 			next.ProjectVersion++
+			for key := range changedFields {
+				field := next.SpecFields[key]
+				field.ModifiedProjectVersion = next.ProjectVersion
+				next.SpecFields[key] = field
+			}
 			if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 				return nil, 0, err
 			}
@@ -591,9 +677,33 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "requestOwnerTransfer", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return s.operation(ctx, actor, "requestOwnerTransfer", projectID, key, input, "", "", func(tx Transaction, _ Project) (any, int, error) {
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		currentOwner := ""
+		for _, member := range p.Members {
+			if member.Role == "owner" {
+				currentOwner = member.UserID
+				break
+			}
+		}
+		if currentOwner == "" {
+			return nil, 0, ErrInvalidState
+		}
+		ownerActive, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: currentOwner})
+		if err != nil {
+			return nil, 0, err
+		}
+		if actor.UserID != currentOwner || !ownerActive {
+			return nil, 0, ErrNotFound
+		}
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.Status == "archived" {
 			return nil, 0, ErrVersionConflict
+		}
+		if p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
 		}
 		active, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: input.ToUserID})
 		if err != nil || !active {
@@ -603,7 +713,7 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 		if !ok {
 			return nil, 0, ErrInvalidState
 		}
-		transfer := OwnerTransfer{ID: uuid.NewString(), ProjectID: projectID, FromUserID: actor.UserID, ToUserID: input.ToUserID, Status: "pending", ExpectedProjectVersion: p.ProjectVersion, CreatedAt: time.Now().UTC()}
+		transfer := OwnerTransfer{ID: uuid.NewString(), ProjectID: projectID, FromUserID: currentOwner, ToUserID: input.ToUserID, Status: "pending", ExpectedProjectVersion: p.ProjectVersion, CreatedAt: time.Now().UTC()}
 		if err := transferStore.InsertOwnerTransfer(transfer); err != nil {
 			return nil, 0, err
 		}
@@ -674,11 +784,11 @@ func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID str
 		}
 		result = ActivationDiff{ProjectID: projectID, CurrentProjectVersion: p.ProjectVersion, CurrentSpecRevision: p.SpecRevision, ChangedSinceVersion: sinceProjectVersion, ChangedFields: []SpecFieldChange{}, PendingAIFields: []SpecFieldChange{}}
 		for key, field := range p.SpecFields {
-			change := SpecFieldChange{Key: key, Value: field.Value, Origin: field.Origin, Status: field.Status, ModifiedBy: field.ModifiedBy, ModifiedAt: field.ModifiedAt}
+			change := SpecFieldChange{Key: key, Value: field.Value, Origin: field.Origin, Status: field.Status, ModifiedBy: field.ModifiedBy, ModifiedAt: field.ModifiedAt, ModifiedProjectVersion: field.ModifiedProjectVersion}
 			if (field.Origin == "ai_generated" || field.Origin == "ai_assisted_human") && field.Status == "pending_confirmation" {
 				result.PendingAIFields = append(result.PendingAIFields, change)
 			}
-			if sinceProjectVersion < p.ProjectVersion {
+			if field.ModifiedProjectVersion > sinceProjectVersion || (field.ModifiedProjectVersion == 0 && sinceProjectVersion < p.ProjectVersion) {
 				result.ChangedFields = append(result.ChangedFields, change)
 			}
 		}
@@ -695,11 +805,17 @@ func (s *Service) ListDraftCandidates(ctx context.Context, actor Actor, projectI
 		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
 			return err
 		}
+		p, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return err
+		}
+		if p.DiscardedAt != nil {
+			return ErrInvalidState
+		}
 		store, ok := tx.(draftCandidateTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		var err error
 		result, err = store.DraftCandidates(projectID)
 		return err
 	})
@@ -776,6 +892,9 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		if !owner {
 			return nil, 0, ErrNotFound
 		}
+		if input.ExpectedProjectVersion < 1 || input.ReviewedProjectVersion < 1 {
+			return nil, 0, ErrInvalidRequest
+		}
 		if input.ExpectedProjectVersion > 0 && p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -797,9 +916,16 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 				return nil, 0, ErrInvalidState
 			}
 		}
+		for fieldID, field := range templateFieldDefinitions(template) {
+			if field.Required && !compatibleTemplateValue(p.Spec[fieldID], field) {
+				return nil, 0, ErrInvalidState
+			}
+		}
 		next := p
 		next.Status = "active"
 		next.CurrentContextRevision = 1
+		next.DeliveryStatus = "NOT_READY"
+		next.BaselineConfirmationID = uuid.NewString()
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err
@@ -810,7 +936,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 			}
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.activate", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion, "context_revision": next.CurrentContextRevision, "chapter_count": len(template.Sections)}, CreatedAt: time.Now().UTC()}); err != nil {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.activate", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion, "context_revision": next.CurrentContextRevision, "chapter_count": len(template.Sections), "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}, CreatedAt: time.Now().UTC()}); err != nil {
 				return nil, 0, err
 			}
 		}
@@ -906,6 +1032,9 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 		p, err := authorize(tx, actor, projectID, "read")
 		if err != nil {
 			return err
+		}
+		if p.DiscardedAt != nil {
+			return ErrInvalidState
 		}
 		chapter, err := tx.Chapter(projectID, chapterID)
 		if err != nil {

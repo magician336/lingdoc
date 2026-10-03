@@ -56,14 +56,20 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 		if field.Provenance != nil && !field.Provenance.Accessible {
 			field.Provenance.NeedsReview = true
 			field.Status = "pending_confirmation"
+			field.Value = ""
 			specFields[key] = field
+			spec[key] = ""
 		}
 	}
 	var members []memberRow
 	if err := tx.Where("project_id = ?", row.ID).Order("user_id").Find(&members).Error; err != nil {
 		return Project{}, err
 	}
-	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
+	deliveryStatus := row.DeliveryStatus
+	if deliveryStatus == "" {
+		deliveryStatus = "NOT_READY"
+	}
+	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, DeliveryStatus: deliveryStatus, BaselineConfirmationID: row.BaselineConfirmationID, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
 	p.DiscardedAt = row.DiscardedAt
 	for _, m := range members {
 		p.Members = append(p.Members, Member{UserID: m.UserID, Role: m.Role})
@@ -101,7 +107,7 @@ func (t gormTransaction) InsertProject(tenantID uint64, p Project) error {
 	if err != nil {
 		return err
 	}
-	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, DiscardedAt: p.DiscardedAt}
+	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, DeliveryStatus: p.DeliveryStatus, BaselineConfirmationID: p.BaselineConfirmationID, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, DiscardedAt: p.DiscardedAt}
 	if err := t.db.Create(&row).Error; err != nil {
 		return err
 	}
@@ -130,7 +136,7 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err != nil {
 		return err
 	}
-	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion, "discarded_at": next.DiscardedAt}))
+	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion, "discarded_at": next.DiscardedAt, "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}))
 }
 func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) error {
 	if err := t.db.Where("project_id = ? AND role = ?", projectID, "collaborator").Delete(&memberRow{}).Error; err != nil {
@@ -167,6 +173,7 @@ func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, er
 			}
 			if !provenance.Accessible {
 				provenance.NeedsReview = true
+				row.Content = ""
 			}
 		}
 		result = append(result, DraftCandidate{ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Title: row.Title, Content: row.Content, Level: row.Level, BasedOnContextRevision: row.BasedOnContextRevision, Provenance: provenance, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt})

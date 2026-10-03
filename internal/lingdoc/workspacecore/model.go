@@ -20,6 +20,8 @@ type Project struct {
 	ProjectVersion         int64                `json:"project_version"`
 	SpecRevision           int64                `json:"spec_revision"`
 	CurrentContextRevision int64                `json:"current_context_revision"`
+	DeliveryStatus         string               `json:"delivery_status"`
+	BaselineConfirmationID string               `json:"baseline_confirmation_id,omitempty"`
 	Spec                   map[string]string    `json:"spec"`
 	SpecFields             map[string]SpecField `json:"spec_fields,omitempty"`
 	TemplateID             string               `json:"template_id"`
@@ -42,12 +44,13 @@ type ProvenanceRecord struct {
 }
 
 type SpecField struct {
-	Value      string            `json:"value"`
-	Origin     string            `json:"origin"`
-	Status     string            `json:"status"`
-	Provenance *ProvenanceRecord `json:"provenance,omitempty"`
-	ModifiedBy string            `json:"modified_by"`
-	ModifiedAt time.Time         `json:"modified_at"`
+	Value                  string            `json:"value"`
+	Origin                 string            `json:"origin"`
+	Status                 string            `json:"status"`
+	Provenance             *ProvenanceRecord `json:"provenance,omitempty"`
+	ModifiedBy             string            `json:"modified_by"`
+	ModifiedAt             time.Time         `json:"modified_at"`
+	ModifiedProjectVersion int64             `json:"modified_project_version,omitempty"`
 }
 
 type DraftCandidate struct {
@@ -85,12 +88,13 @@ type OwnerTransfer struct {
 }
 
 type SpecFieldChange struct {
-	Key        string    `json:"key"`
-	Value      string    `json:"value"`
-	Origin     string    `json:"origin"`
-	Status     string    `json:"status"`
-	ModifiedBy string    `json:"modified_by"`
-	ModifiedAt time.Time `json:"modified_at"`
+	Key                    string    `json:"key"`
+	Value                  string    `json:"value"`
+	Origin                 string    `json:"origin"`
+	Status                 string    `json:"status"`
+	ModifiedBy             string    `json:"modified_by"`
+	ModifiedAt             time.Time `json:"modified_at"`
+	ModifiedProjectVersion int64     `json:"modified_project_version,omitempty"`
 }
 
 type ActivationDiff struct {
@@ -118,6 +122,7 @@ type TemplateMigrationPreview struct {
 	Fields                 []TemplateMigrationField `json:"fields"`
 	MissingRequired        []string                 `json:"missing_required"`
 	Orphaned               []string                 `json:"orphaned"`
+	Incompatible           []string                 `json:"incompatible"`
 }
 
 type ReviewItem struct {
@@ -168,6 +173,13 @@ type Template struct {
 	RulesetHash    string
 	Sections       []Section
 	RequiredFields []string
+	Fields         []TemplateField
+}
+
+type TemplateField struct {
+	ID       string
+	Type     string
+	Required bool
 }
 
 type TemplateReader interface {
@@ -190,6 +202,7 @@ func (ContractDemoTemplate) Get(id, version string) (Template, error) {
 			{ID: "method", Title: "研究方案", Required: true},
 		},
 		RequiredFields: []string{"research_subject", "research_goal"},
+		Fields:         []TemplateField{{ID: "research_subject", Type: "string", Required: true}, {ID: "research_goal", Type: "string", Required: true}},
 	}, nil
 }
 
@@ -211,6 +224,8 @@ type projectRow struct {
 	ProjectVersion         int64      `gorm:"not null"`
 	SpecRevision           int64      `gorm:"not null"`
 	CurrentContextRevision int64      `gorm:"column:current_context_revision;not null;default:0"`
+	DeliveryStatus         string     `gorm:"column:delivery_status;not null;default:NOT_READY"`
+	BaselineConfirmationID string     `gorm:"column:baseline_confirmation_id;size:36"`
 	SpecJSON               string     `gorm:"column:spec_json;not null;type:text"`
 	SpecMetadataJSON       string     `gorm:"column:spec_metadata_json;not null;type:text;default:'{}'"`
 	TemplateID             string     `gorm:"not null;size:80"`

@@ -58,6 +58,8 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			template_id TEXT NOT NULL,
 			template_version TEXT NOT NULL,
 			discarded_at DATETIME,
+			delivery_status TEXT NOT NULL DEFAULT 'NOT_READY',
+			baseline_confirmation_id TEXT,
 			created_at DATETIME
 		)`,
 		`CREATE TABLE lingdoc_members (

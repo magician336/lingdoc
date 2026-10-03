@@ -87,7 +87,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-stale-key", spec); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("CAS: %v", err)
 	}
-	if _, _, _, err := s.ActivateProject(ctx, actor, id, "pg-activate-key", ActivateProjectInput{ExpectedSpecRevision: 1}); err != nil {
+	if _, _, _, err := s.ActivateProject(ctx, actor, id, "pg-activate-key", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := s.ListChapters(ctx, actor, id)

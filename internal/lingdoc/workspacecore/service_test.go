@@ -71,6 +71,7 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000026_lingdoc_draft_provenance.up.sql",
 			"000027_lingdoc_owner_transfers.up.sql",
 			"000028_lingdoc_project_discard.up.sql",
+			"000029_lingdoc_project_baseline.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
@@ -161,7 +162,7 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	if err != nil || !replay || asProject(t, raw).SpecRevision != 1 {
 		t.Fatalf("response-lost replay: %v %v", replay, err)
 	}
-	raw, _, _, err = svc.ActivateProject(ctx, owner, project.ID, "activate-001", ActivateProjectInput{ExpectedSpecRevision: 1})
+	raw, _, _, err = svc.ActivateProject(ctx, owner, project.ID, "activate-001", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil || asProject(t, raw).Status != "active" {
 		t.Fatalf("activate: %v", err)
 	}
@@ -366,7 +367,7 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = svc.ActivateProject(ctx, actor, id, "review-activate", ActivateProjectInput{ExpectedSpecRevision: 1})
+	_, _, _, err = svc.ActivateProject(ctx, actor, id, "review-activate", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +469,7 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 	project = asProject(t, raw)
-	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision}); err != nil {
+	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision, ExpectedProjectVersion: project.ProjectVersion, ReviewedProjectVersion: project.ProjectVersion}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, owner, project.ID)
@@ -558,7 +559,7 @@ func readyChapter(t *testing.T, svc *Service, actor Actor, prefix string) (strin
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := svc.ActivateProject(ctx, actor, projectID, prefix+"-activate", ActivateProjectInput{ExpectedSpecRevision: 1}); err != nil {
+	if _, _, _, err := svc.ActivateProject(ctx, actor, projectID, prefix+"-activate", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, actor, projectID)
