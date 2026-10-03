@@ -20,12 +20,12 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		"000018_lingdoc_workspace.up.sql", "000019_lingdoc_evidence_assets.up.sql",
 		"000020_lingdoc_candidate_adoption.up.sql", "000021_lingdoc_generation_runs.up.sql",
 		"000022_lingdoc_generation_claim_token.up.sql", "000023_lingdoc_chapter_confirmation_requests.up.sql",
-		"000024_lingdoc_delivery_stores.up.sql",
-		"000025_lingdoc_project_context_revision.up.sql",
-		"000026_lingdoc_draft_provenance.up.sql",
-		"000027_lingdoc_owner_transfers.up.sql",
-		"000028_lingdoc_project_discard.up.sql",
-		"000029_lingdoc_project_baseline.up.sql",
+		"000024_lingdoc_delivery_stores.up.sql", "000025_lingdoc_member_permissions.up.sql",
+		"000026_lingdoc_project_context_revision.up.sql",
+		"000027_lingdoc_draft_provenance.up.sql",
+		"000028_lingdoc_owner_transfers.up.sql",
+		"000029_lingdoc_project_discard.up.sql",
+		"000030_lingdoc_project_baseline.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -35,7 +35,7 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 	}
-	for _, table := range []string{"lingdoc_projects", "lingdoc_members", "lingdoc_chapters", "lingdoc_chapter_versions", "lingdoc_operations", "lingdoc_project_assets", "lingdoc_asset_revisions", "lingdoc_candidates", "lingdoc_chapter_confirmations", "lingdoc_generation_runs", "lingdoc_release_snapshots", "lingdoc_export_artifacts"} {
+	for _, table := range []string{"lingdoc_projects", "lingdoc_members", "lingdoc_member_permissions", "lingdoc_chapters", "lingdoc_chapter_versions", "lingdoc_operations", "lingdoc_project_assets", "lingdoc_asset_revisions", "lingdoc_candidates", "lingdoc_chapter_confirmations", "lingdoc_generation_runs", "lingdoc_release_snapshots", "lingdoc_export_artifacts"} {
 		var count int
 		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("migration did not create %s: count=%d error=%v", table, count, err)

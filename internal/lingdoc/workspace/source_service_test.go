@@ -14,6 +14,13 @@ type projectAuthorizerStub struct {
 	calls int
 }
 
+type sourceAuditSinkStub struct{ events []AuditEvent }
+
+func (s *sourceAuditSinkStub) Record(_ context.Context, event AuditEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
+
 func (s *projectAuthorizerStub) Authorize(context.Context, Actor, string, string) error {
 	s.calls++
 	return s.err
@@ -105,7 +112,8 @@ func TestSourceServiceRejectsPartiallyDeniedAssetsBeforeSearch(t *testing.T) {
 		Denied:    []evidence.DeniedAsset{{AssetID: "revoked-2", Reason: evidence.DenyNotAuthorized}},
 	}}
 	search := &knowledgeSearchStub{}
-	service := NewSourceService(projects, nil, gateway, nil, nil, nil, search)
+	audit := &sourceAuditSinkStub{}
+	service := NewSourceService(projects, nil, gateway, nil, nil, nil, search, audit)
 
 	_, err := service.RetrieveSources(context.Background(), Actor{TenantID: 7, UserID: "writer"}, "project-1", RetrieveSourcesInput{
 		Query: "budget", AssetIDs: []string{"allowed-1", "revoked-2"},
@@ -119,6 +127,9 @@ func TestSourceServiceRejectsPartiallyDeniedAssetsBeforeSearch(t *testing.T) {
 	}
 	if projects.calls != 1 || gateway.calls != 1 || search.calls != 0 {
 		t.Fatalf("project/gateway/search calls = %d/%d/%d, want 1/1/0", projects.calls, gateway.calls, search.calls)
+	}
+	if len(audit.events) != 1 || audit.events[0].Capability != "source.retrieve" || audit.events[0].Decision != "deny" {
+		t.Fatalf("source audit = %+v", audit.events)
 	}
 }
 

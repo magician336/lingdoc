@@ -60,7 +60,7 @@ func (h *Handler) Register(routes RouteGroups) {
 func caller(c *gin.Context) (Actor, bool) {
 	id, userOK := types.UserIDFromContext(c.Request.Context())
 	tenant, tenantOK := types.TenantIDFromContext(c.Request.Context())
-	return Actor{TenantID: tenant, UserID: id, TenantRole: string(types.TenantRoleFromContext(c.Request.Context())), SystemAdmin: types.IsSystemAdminFromContext(c.Request.Context())}, userOK && tenantOK && tenant != 0
+	return Actor{TenantID: tenant, UserID: id, Role: types.TenantRoleFromContext(c.Request.Context()), SystemAdmin: types.IsSystemAdminFromContext(c.Request.Context())}, userOK && tenantOK && tenant != 0
 }
 
 func requestID(c *gin.Context) string {
@@ -475,11 +475,23 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	var input OwnerTransferInput
+	var input struct {
+		ToUserID               string `json:"to_user_id"`
+		NewOwnerUserID         string `json:"new_owner_user_id"`
+		ExpectedProjectVersion int64  `json:"expected_project_version"`
+	}
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	var data json.RawMessage
+	var status int
+	var replay bool
+	var err error
+	if input.NewOwnerUserID != "" {
+		data, status, replay, err = h.service.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+	} else {
+		data, status, replay, err = h.service.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+	}
 	if err != nil {
 		sendError(c, err)
 		return

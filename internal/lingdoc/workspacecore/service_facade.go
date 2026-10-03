@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"maps"
 	"reflect"
@@ -32,6 +33,7 @@ type Transaction interface {
 	InsertProject(uint64, Project) error
 	UpdateProject(uint64, Project, Project) error
 	ReplaceCollaborators(string, []string) error
+	ReplaceMembers(string, []Member) error
 	Chapters(string) ([]Chapter, error)
 	Chapter(string, string) (Chapter, error)
 	InsertChapter(Chapter) error
@@ -48,6 +50,11 @@ type draftCandidateTransaction interface {
 type auditTransaction interface {
 	RecordAudit(AuditEvent) error
 	AuditEvents(string) ([]AuditEvent, error)
+}
+
+type ProjectAuthorizer interface {
+	AuthorizeTenant(Transaction, Actor, string) error
+	AuthorizeProject(Transaction, Actor, string, string) (Project, error)
 }
 
 type ownerTransferTransaction interface {
@@ -73,6 +80,9 @@ type Service struct {
 	repository Repository
 	templates  TemplateReader
 	sources    SourcePolicy
+	authorizer ProjectAuthorizer
+	audit      AuditSink
+	mode       AuthorizationMode
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -80,17 +90,52 @@ func NewService(repository Repository, readers ...TemplateReader) *Service {
 	if len(readers) > 0 && readers[0] != nil {
 		reader = readers[0]
 	}
-	return &Service{repository: repository, templates: reader}
+	return NewServiceWithAuthorizer(repository, reader, nil, nil)
 }
 
 // NewServiceWithSources retains the main-line citation recheck before replay.
 func NewServiceWithSources(repository Repository, reader TemplateReader, sources SourcePolicy) *Service {
-	s := NewService(repository, reader)
-	s.sources = sources
-	return s
+	return NewServiceWithAuthorizer(repository, reader, sources, nil)
 }
+
+func NewServiceWithAuthorizer(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer) *Service {
+	return NewServiceWithAudit(repository, reader, sources, authorizer, nil)
+}
+
+func NewServiceWithAudit(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer, audit AuditSink) *Service {
+	return NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, AuthorizationModeEnforce)
+}
+
+func NewServiceWithAuditMode(repository Repository, reader TemplateReader, sources SourcePolicy, authorizer ProjectAuthorizer, audit AuditSink, mode AuthorizationMode) *Service {
+	if reader == nil {
+		reader = ContractDemoTemplate{}
+	}
+	if authorizer == nil {
+		authorizer = transactionProjectAuthorizer{}
+	}
+	if mode != AuthorizationModeLog && mode != AuthorizationModeRollback {
+		mode = AuthorizationModeEnforce
+	}
+	return &Service{repository: repository, templates: reader, sources: sources, authorizer: authorizer, audit: audit, mode: mode}
+}
+
 func validActor(actor Actor) bool { return actor.TenantID != 0 && actor.UserID != "" }
-func authorize(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+
+func legacyAuthorizeTenant(tx Transaction, actor Actor) error {
+	if !validActor(actor) {
+		return ErrNotFound
+	}
+	active, err := tx.ActiveMember(actor)
+	if err != nil {
+		return err
+	}
+	if !active {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func legacyAuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
 	if capability != "read" && capability != "write" && capability != "manage" {
 		return Project{}, ErrInvalidRequest
 	}
@@ -130,19 +175,156 @@ func authorize(tx Transaction, actor Actor, projectID, capability string) (Proje
 	}
 	return Project{}, ErrNotFound
 }
+
+func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, actor Actor, capability string) error {
+	if s.mode == AuthorizationModeRollback {
+		return legacyAuthorizeTenant(tx, actor)
+	}
+	if s.mode != AuthorizationModeLog {
+		return s.authorizer.AuthorizeTenant(tx, actor, capability)
+	}
+	err := s.authorizer.AuthorizeTenant(tx, actor, capability)
+	_ = s.recordAudit(ctx, actor, "", "shadow:"+capability, err)
+	return legacyAuthorizeTenant(tx, actor)
+}
+
+func (s *Service) authorizeProject(ctx context.Context, tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	if s.mode == AuthorizationModeRollback {
+		return legacyAuthorizeProject(tx, actor, projectID, capability)
+	}
+	if s.mode != AuthorizationModeLog {
+		return s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+	}
+	_, err := s.authorizer.AuthorizeProject(tx, actor, projectID, capability)
+	_ = s.recordAudit(ctx, actor, projectID, "shadow:"+capability, err)
+	return legacyAuthorizeProject(tx, actor, projectID, capability)
+}
+
+type transactionProjectAuthorizer struct{}
+
+func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor, capability string) error {
+	if err := legacyAuthorizeTenant(tx, actor); err != nil {
+		return err
+	}
+	role := actor.Role
+	if role == "" && actor.TenantRole != "" {
+		role = types.TenantRole(actor.TenantRole)
+	}
+	if role == "" {
+		return nil
+	}
+	if !role.IsValid() {
+		return ErrNotFound
+	}
+	baseCapability := capability
+	if before, _, ok := strings.Cut(capability, ":"); ok {
+		baseCapability = before
+	}
+	required := map[string]types.TenantRole{"read": types.TenantRoleViewer, "create": types.TenantRoleContributor, "write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin}[baseCapability]
+	if required == "" {
+		return ErrInvalidRequest
+	}
+	if !role.HasPermission(required) {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
+	a := transactionProjectAuthorizer{}
+	if err := a.AuthorizeTenant(tx, actor, capability); err != nil {
+		return Project{}, err
+	}
+	baseCapability, resource := capability, ""
+	if before, after, ok := strings.Cut(capability, ":"); ok {
+		baseCapability, resource = before, after
+	}
+	if baseCapability != "read" && baseCapability != "write" && baseCapability != "manage" {
+		return Project{}, ErrInvalidRequest
+	}
+	p, err := tx.Project(actor.TenantID, projectID)
+	if err != nil {
+		return Project{}, err
+	}
+	if p.DiscardedAt != nil {
+		if baseCapability != "read" {
+			return Project{}, ErrInvalidState
+		}
+		owner := false
+		for _, m := range p.Members {
+			if m.UserID == actor.UserID && m.Role == "owner" {
+				owner = true
+			}
+		}
+		if !owner {
+			return Project{}, ErrNotFound
+		}
+	}
+	for _, m := range p.Members {
+		if m.UserID != actor.UserID || (m.Status != "" && m.Status != "active") {
+			continue
+		}
+		governance := m.GovernanceRole
+		if governance == "" && m.Role == "owner" {
+			governance = "owner"
+		}
+		if baseCapability == "manage" {
+			if governance == "owner" || governance == "admin" || m.Role == "owner" {
+				return p, nil
+			}
+			return Project{}, ErrNotFound
+		}
+		if baseCapability == "read" || m.Role == "owner" || governance == "owner" {
+			return p, nil
+		}
+		if baseCapability == "write" {
+			for _, role := range m.FunctionRoles {
+				if role != "author" {
+					continue
+				}
+				if resource == "" || slices.Contains(m.FunctionScopes[role], resource) {
+					return p, nil
+				}
+			}
+		}
+		return Project{}, ErrNotFound
+	}
+	return Project{}, ErrNotFound
+}
+
+func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
+	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
+}
+func auditDecision(err error) string {
+	if err != nil {
+		return "deny"
+	}
+	return "allow"
+}
+func auditReason(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error {
+	if s.audit == nil {
+		return nil
+	}
+	return s.audit.Record(ctx, event)
+}
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := authorize(tx, actor, projectID, capability)
-		if err == nil && p.DiscardedAt != nil {
-			return ErrInvalidState
-		}
+		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
+		_ = s.recordAudit(ctx, actor, projectID, capability, err)
 		return err
 	})
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
-		result, err = authorize(tx, actor, id, "read")
+		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
+		_ = s.recordAudit(ctx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
 			result.Spec = map[string]string{}
 			result.SpecFields = map[string]SpecField{}
@@ -157,14 +339,13 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 		if !validActor(actor) {
 			return ErrNotFound
 		}
-		active, err := tx.ActiveMember(actor)
-		if err != nil {
+		if err := s.authorizeTenant(ctx, tx, actor, "read"); err != nil {
+			_ = s.recordAudit(ctx, actor, "", "read", err)
 			return err
 		}
-		if !active {
-			return ErrNotFound
-		}
-		result, err = tx.Projects(actor, 51)
+		_ = s.recordAudit(ctx, actor, "", "read", nil)
+		projects, err := tx.Projects(actor, 51)
+		result = projects
 		return err
 	})
 	if err != nil {
@@ -262,20 +443,19 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
-			active, err := tx.ActiveMember(actor)
-			if err != nil {
+			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
+				_ = s.recordAudit(ctx, actor, projectID, capability, err)
 				return err
-			}
-			if !active {
-				return ErrNotFound
 			}
 		} else {
 			var err error
-			p, err = authorize(tx, actor, projectID, capability)
+			p, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
 			if err != nil {
+				_ = s.recordAudit(ctx, actor, projectID, capability, err)
 				return err
 			}
 		}
+		_ = s.recordAudit(ctx, actor, projectID, capability, nil)
 		if op == "saveChapter" {
 			input := body.(SaveChapterInput)
 			if len(input.SourceIDs) > 0 {
@@ -445,7 +625,7 @@ func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, pro
 	}
 	var result TemplateMigrationPreview
 	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := authorize(tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
 		if err != nil {
 			return err
 		}
@@ -497,6 +677,7 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 type SaveMembersInput struct {
 	ExpectedProjectVersion int64    `json:"expected_project_version"`
 	CollaboratorUserIDs    []string `json:"collaborator_user_ids"`
+	Members                []Member `json:"members,omitempty"`
 }
 type SaveChapterInput struct {
 	ExpectedChapterVersionID *string  `json:"expected_chapter_version_id"`
@@ -514,7 +695,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "", func(tx Transaction, _ Project) (any, int, error) {
+	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "create", func(tx Transaction, _ Project) (any, int, error) {
 		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
@@ -658,7 +839,7 @@ func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, project
 func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
 	var result []AuditEvent
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
 			return err
 		}
 		audit, ok := tx.(auditTransaction)
@@ -677,7 +858,7 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "requestOwnerTransfer", projectID, key, input, "", "", func(tx Transaction, _ Project) (any, int, error) {
+	return s.operation(ctx, actor, "requestOwnerTransfer", projectID, key, input, "", "read", func(tx Transaction, _ Project) (any, int, error) {
 		p, err := tx.Project(actor.TenantID, projectID)
 		if err != nil {
 			return nil, 0, err
@@ -696,7 +877,11 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 		if err != nil {
 			return nil, 0, err
 		}
-		isRecoveryAdmin := actor.SystemAdmin || actor.TenantRole == "admin" || actor.TenantRole == "owner"
+		role := string(actor.Role)
+		if role == "" {
+			role = actor.TenantRole
+		}
+		isRecoveryAdmin := actor.SystemAdmin || role == "admin" || role == "owner"
 		if actor.UserID != currentOwner && !(isRecoveryAdmin && !ownerActive) {
 			return nil, 0, ErrNotFound
 		}
@@ -723,7 +908,7 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 }
 
 func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
-	return s.operation(ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, "", "", func(tx Transaction, _ Project) (any, int, error) {
+	return s.operation(ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, "", "read", func(tx Transaction, _ Project) (any, int, error) {
 		if !validActor(actor) {
 			return nil, 0, ErrNotFound
 		}
@@ -776,7 +961,7 @@ func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectI
 func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
 	var result ActivationDiff
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := authorize(tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
 		if err != nil {
 			return err
 		}
@@ -803,7 +988,7 @@ func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID str
 func (s *Service) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
 	var result []DraftCandidate
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
 			return err
 		}
 		p, err := tx.Project(actor.TenantID, projectID)
@@ -823,6 +1008,9 @@ func (s *Service) ListDraftCandidates(ctx context.Context, actor Actor, projectI
 	return result, err
 }
 func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (json.RawMessage, int, bool, error) {
+	if input.Members != nil {
+		return s.saveMemberPermissions(ctx, actor, projectID, key, input)
+	}
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs == nil || len(input.CollaboratorUserIDs) > 20 {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -947,7 +1135,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := authorize(tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
 			return err
 		}
 		var err error
@@ -993,7 +1181,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 	if len(slices.Compact(slices.Clone(declared))) != len(declared) || !slices.Equal(refs, declared) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID, func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
 		}
@@ -1030,7 +1218,7 @@ func sameVersion(a, b *string) bool {
 func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error) {
 	var result GenerationContext
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := authorize(tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
 		if err != nil {
 			return err
 		}

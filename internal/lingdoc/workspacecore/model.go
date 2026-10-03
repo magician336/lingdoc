@@ -1,16 +1,23 @@
 package workspacecore
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // These views match the proposed HTTP contract. IDs are opaque to callers.
 type Member struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+	UserID         string              `json:"user_id"`
+	Role           string              `json:"role"`
+	GovernanceRole string              `json:"governance_role,omitempty"`
+	FunctionRoles  []string            `json:"function_roles,omitempty"`
+	FunctionScopes map[string][]string `json:"function_scopes,omitempty"`
+	Status         string              `json:"status,omitempty"`
 }
 
 type Project struct {
@@ -67,13 +74,19 @@ type DraftCandidate struct {
 }
 
 type AuditEvent struct {
-	ID        string         `json:"id"`
-	ProjectID string         `json:"project_id"`
-	ActorID   string         `json:"actor_id"`
-	Action    string         `json:"action"`
-	Target    string         `json:"target"`
-	Details   map[string]any `json:"details,omitempty"`
-	CreatedAt time.Time      `json:"created_at"`
+	ID         string           `json:"id,omitempty"`
+	ProjectID  string           `json:"project_id,omitempty"`
+	ActorID    string           `json:"actor_id,omitempty"`
+	Action     string           `json:"action,omitempty"`
+	Target     string           `json:"target,omitempty"`
+	Details    map[string]any   `json:"details,omitempty"`
+	CreatedAt  time.Time        `json:"created_at,omitempty"`
+	TenantID   uint64           `json:"tenant_id,omitempty"`
+	UserID     string           `json:"user_id,omitempty"`
+	Role       types.TenantRole `json:"role,omitempty"`
+	Capability string           `json:"capability,omitempty"`
+	Decision   string           `json:"decision,omitempty"`
+	Reason     string           `json:"reason,omitempty"`
 }
 
 type OwnerTransfer struct {
@@ -161,6 +174,22 @@ type Actor struct {
 	UserID      string
 	TenantRole  string
 	SystemAdmin bool
+	Role        types.TenantRole
+}
+
+type AuthorizationMode string
+
+const (
+	AuthorizationModeLog      AuthorizationMode = "log"
+	AuthorizationModeEnforce  AuthorizationMode = "enforce"
+	AuthorizationModeRollback AuthorizationMode = "rollback"
+)
+
+// AuditSink is the application seam for authorization decisions. Project
+// audit rows and authorization audit records intentionally share the domain
+// event shape so callers can use one append-only sink.
+type AuditSink interface {
+	Record(context.Context, AuditEvent) error
 }
 
 type Section struct {
@@ -243,6 +272,18 @@ type memberRow struct {
 	UserID    string `gorm:"primaryKey;size:64"`
 	Role      string `gorm:"not null;size:20"`
 }
+
+// memberPermissionRow is the expand-contract sidecar for the legacy role.
+type memberPermissionRow struct {
+	ProjectID          string `gorm:"primaryKey;size:36"`
+	UserID             string `gorm:"primaryKey;size:64"`
+	GovernanceRole     string `gorm:"not null;size:16"`
+	FunctionRolesJSON  string `gorm:"column:function_roles_json;not null;type:text"`
+	FunctionScopesJSON string `gorm:"column:function_scopes_json;not null;type:text"`
+	Status             string `gorm:"not null;size:24"`
+}
+
+func (memberPermissionRow) TableName() string { return "lingdoc_member_permissions" }
 
 func (memberRow) TableName() string { return "lingdoc_members" }
 

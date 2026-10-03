@@ -30,8 +30,8 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	candidateadoption.RegisterRoutes(routes, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
 	generation.RegisterRoutes(routes, generation.NewHandler(nil, nil))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
-	if got := len(engine.Routes()); got != 30 {
-		t.Fatalf("registered %d LingDoc routes, want 30", got)
+	if got := len(engine.Routes()); got != 31 {
+		t.Fatalf("registered %d LingDoc routes, want 31", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)

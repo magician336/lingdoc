@@ -52,6 +52,12 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
 		"000101_lingdoc_generation_claim_token.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
 		"000103_lingdoc_delivery_stores.up.sql",
+		"000104_lingdoc_member_permissions.up.sql",
+		"000105_lingdoc_project_context_revision.up.sql",
+		"000106_lingdoc_draft_provenance.up.sql",
+		"000107_lingdoc_owner_transfers.up.sql",
+		"000108_lingdoc_project_discard.up.sql",
+		"000109_lingdoc_project_baseline.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {

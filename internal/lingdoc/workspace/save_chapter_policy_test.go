@@ -113,6 +113,7 @@ func newSaveChapterFixture(t *testing.T) saveChapterFixture {
 	router.Use(func(c *gin.Context) {
 		ctx := context.WithValue(c.Request.Context(), types.UserIDContextKey, "reader")
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(7))
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleContributor)
 		c.Request = c.Request.WithContext(ctx)
 	})
 	handler.Register(RouteGroups{Read: router.Group("/api/v1/lingdoc"), Write: router.Group("/api/v1/lingdoc")})
@@ -127,11 +128,12 @@ func runLingdocMigrations(t *testing.T, db *gorm.DB) {
 		"000018_lingdoc_workspace.up.sql",
 		"000019_lingdoc_evidence_assets.up.sql",
 		"000020_lingdoc_candidate_adoption.up.sql",
-		"000025_lingdoc_project_context_revision.up.sql",
-		"000026_lingdoc_draft_provenance.up.sql",
-		"000027_lingdoc_owner_transfers.up.sql",
-		"000028_lingdoc_project_discard.up.sql",
-		"000029_lingdoc_project_baseline.up.sql",
+		"000025_lingdoc_member_permissions.up.sql",
+		"000026_lingdoc_project_context_revision.up.sql",
+		"000027_lingdoc_draft_provenance.up.sql",
+		"000028_lingdoc_owner_transfers.up.sql",
+		"000029_lingdoc_project_discard.up.sql",
+		"000030_lingdoc_project_baseline.up.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 		if err != nil {

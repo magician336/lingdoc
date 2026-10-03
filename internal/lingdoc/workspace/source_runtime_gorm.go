@@ -16,18 +16,23 @@ type SourceRuntime struct {
 	kbShares  interfaces.KBShareService
 	knowledge interfaces.KnowledgeBaseService
 	db        *gorm.DB
+	audit     AuditSink
 }
 
-func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService) *SourceRuntime {
+func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService, audits ...AuditSink) *SourceRuntime {
 	ports := NewGORMSourcePorts(db, shares)
-	return &SourceRuntime{db: db, service: service, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge}
+	var audit AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
+	return &SourceRuntime{db: db, service: service, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, audit: audit}
 }
 
 // ConnectProjects is called only at composition time to connect the mutually
 // dependent project authorization and current source-recheck ports.
 func (r *SourceRuntime) ConnectProjects(service ApplicationService) { r.service = service }
 func (r *SourceRuntime) application() *SourceService {
-	return NewSourceService(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge)
+	return NewSourceService(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.audit)
 }
 func (r *SourceRuntime) ListAssets(ctx context.Context, a Actor, p string) ([]evidence.Asset, error) {
 	return r.application().ListAssets(ctx, a, p)

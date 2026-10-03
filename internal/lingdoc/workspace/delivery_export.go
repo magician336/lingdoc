@@ -6,6 +6,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // DeliveryExportService 是 T14 被装配起来之后的那一份：从 T13 的快照渲染一份真实
@@ -20,6 +21,7 @@ type DeliveryExportService struct {
 	validator delivery.FrozenValidator
 	inputs    *candidateadoption.DeliveryInputService
 	sources   candidateadoption.SourcePolicy
+	audit     AuditSink
 }
 
 // NewDeliveryExportService 依赖不齐时返回 nil，与同一包里的
@@ -35,8 +37,9 @@ func NewDeliveryExportService(
 	document DeliveryDocument,
 	inputs *candidateadoption.DeliveryInputService,
 	sources candidateadoption.SourcePolicy,
+	audits ...AuditSink,
 ) *DeliveryExportService {
-	return NewDeliveryExportServiceWithPorts(snapshots, exports, document, document, inputs, sources)
+	return NewDeliveryExportServiceWithPorts(snapshots, exports, document, document, inputs, sources, audits...)
 }
 
 // NewDeliveryExportServiceWithPorts keeps the export application independent
@@ -49,6 +52,7 @@ func NewDeliveryExportServiceWithPorts(
 	validator delivery.FrozenValidator,
 	inputs *candidateadoption.DeliveryInputService,
 	sources candidateadoption.SourcePolicy,
+	audits ...AuditSink,
 ) *DeliveryExportService {
 	if snapshots == nil || exports == nil || inputs == nil || inputs.Reader == nil || inputs.Authorizer == nil || sources == nil {
 		return nil
@@ -59,7 +63,11 @@ func NewDeliveryExportServiceWithPorts(
 	if _, ok := exports.(delivery.ExportRecorder); !ok {
 		return nil
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources}
+	var audit AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, audit: audit}
 }
 
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
@@ -71,9 +79,10 @@ func (s *DeliveryExportService) Start(ctx context.Context, actorID, projectID, s
 		return delivery.ExportArtifact{}, false, candidateadoption.ErrInvalidState
 	}
 	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshotID); err != nil {
+		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.export", err)
 		return delivery.ExportArtifact{}, false, err
 	}
-	return s.service(ctx).Start(actorID, projectID, snapshotID, key)
+	return s.service(ctx).StartAs(ctx, s.deliveryActor(ctx, actorID), projectID, snapshotID, key)
 }
 
 // Get 读一份产物的状态。它不返回字节——下载要单独走一次，因为**下载那一刻**的
@@ -82,7 +91,7 @@ func (s *DeliveryExportService) Get(ctx context.Context, actorID, projectID, exp
 	if s == nil {
 		return delivery.ExportArtifact{}, candidateadoption.ErrInvalidState
 	}
-	return s.service(ctx).Get(actorID, projectID, exportID)
+	return s.service(ctx).GetAs(ctx, s.deliveryActor(ctx, actorID), projectID, exportID)
 }
 
 // Download 交出一份已校验文件的字节与它自己的产物记录。
@@ -94,6 +103,7 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 		return delivery.ExportArtifact{}, nil, candidateadoption.ErrInvalidState
 	}
 	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
 		return delivery.ExportArtifact{}, nil, err
 	}
 	artifact, err := s.exports.GetExport(projectID, exportID)
@@ -101,9 +111,33 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 		return delivery.ExportArtifact{}, nil, err
 	}
 	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
+		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
 		return delivery.ExportArtifact{}, nil, err
 	}
-	return s.service(ctx).Download(actorID, projectID, exportID)
+	return s.service(ctx).DownloadAs(ctx, s.deliveryActor(ctx, actorID), projectID, exportID)
+}
+
+func (s *DeliveryExportService) deliveryActor(ctx context.Context, actorID string) delivery.Actor {
+	caller := types.CallerFromContext(ctx)
+	if caller.UserID == "" {
+		caller.UserID = actorID
+	}
+	return delivery.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}
+}
+
+func (s *DeliveryExportService) recordDeliveryAudit(ctx context.Context, actorID, projectID, capability string, err error) {
+	if s.audit == nil {
+		return
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.UserID == "" {
+		caller.UserID = actorID
+	}
+	decision, reason := "allow", ""
+	if err != nil {
+		decision, reason = "deny", err.Error()
+	}
+	_ = s.audit.Record(ctx, AuditEvent{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, ProjectID: projectID, Capability: capability, Decision: decision, Reason: reason})
 }
 
 func (s *DeliveryExportService) authorizeSnapshotSources(ctx context.Context, actorID, projectID, snapshotID string) error {
@@ -189,5 +223,6 @@ func (s *DeliveryExportService) service(ctx context.Context) *delivery.ExportSer
 		delivery.ExportAccessFunc(func(actorUserID, projectID string) error {
 			return s.inputs.Authorizer.AuthorizeProject(ctx, actorUserID, projectID)
 		}),
+		s.audit,
 	)
 }

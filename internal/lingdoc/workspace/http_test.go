@@ -58,7 +58,7 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 	if response.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
 	}
-	if !sources.called || sources.actor != (Actor{TenantID: 42, UserID: "user-7", TenantRole: "viewer"}) || sources.projectID != "project-1" || sources.input.Query != "budget" || len(sources.input.AssetIDs) != 1 || sources.input.AssetIDs[0] != "asset-private" {
+	if !sources.called || sources.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) || sources.projectID != "project-1" || sources.input.Query != "budget" || len(sources.input.AssetIDs) != 1 || sources.input.AssetIDs[0] != "asset-private" {
 		t.Fatalf("source use case input = called:%v actor:%#v project:%q input:%#v", sources.called, sources.actor, sources.projectID, sources.input)
 	}
 	var body struct {
@@ -96,7 +96,7 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
 	}
-	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "user-7", TenantRole: "viewer"}) {
+	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) {
 		t.Fatalf("injected service did not receive caller identity: called=%v actor=%#v", service.called, service.actor)
 	}
 }

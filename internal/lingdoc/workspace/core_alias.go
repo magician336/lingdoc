@@ -16,6 +16,7 @@ type SaveSpecInput = core.SaveSpecInput
 type ActivateProjectInput = core.ActivateProjectInput
 type SaveChapterInput = core.SaveChapterInput
 type SaveMembersInput = core.SaveMembersInput
+type TransferOwnerInput = core.TransferOwnerInput
 type SpecField = core.SpecField
 type SpecFieldInput = core.SpecFieldInput
 type ProvenanceRecord = core.ProvenanceRecord
@@ -29,8 +30,17 @@ type OwnerTransferInput = core.OwnerTransferInput
 type TemplateMigrationInput = core.TemplateMigrationInput
 type TemplateMigrationField = core.TemplateMigrationField
 type TemplateMigrationPreview = core.TemplateMigrationPreview
+type CoreProjectAuthorizer = core.ProjectAuthorizer
+type AuthorizationMode = core.AuthorizationMode
+type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 type TemplateField = core.TemplateField
+
+const (
+	AuthorizationModeLog      = core.AuthorizationModeLog
+	AuthorizationModeEnforce  = core.AuthorizationModeEnforce
+	AuthorizationModeRollback = core.AuthorizationModeRollback
+)
 
 var (
 	ErrNotFound            = core.ErrNotFound
@@ -44,4 +54,16 @@ var (
 
 func NewService(repository Repository) *Service {
 	return core.NewService(repository)
+}
+
+func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer) *Service {
+	return core.NewServiceWithAuthorizer(repository, reader, sources, authorizer)
+}
+
+func NewServiceWithAudit(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink) *Service {
+	return core.NewServiceWithAudit(repository, reader, sources, authorizer, audit)
+}
+
+func NewServiceWithAuditMode(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink, mode AuthorizationMode) *Service {
+	return core.NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, mode)
 }
