@@ -77,7 +77,7 @@ export interface ChangeSet {
   project_id: string
   created_by: string
   reason: string
-  status: 'draft' | 'assessed' | 'applied' | 'rejected' | 'stale'
+  status: 'assessed' | 'applied' | 'rejected' | 'stale'
   base_context_revision: number
   target_context_revision?: number
   base_spec_revision: number

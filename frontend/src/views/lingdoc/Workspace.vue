@@ -421,7 +421,6 @@ const uncheckedChapterTitles = computed(() => chapters.value.filter(item => !sel
 const bodyChanged = computed(() => !!chapter.value && bodyDraft.value !== chapter.value.body_markdown)
 function changeSetStatusLabel(status: ChangeSet['status']): string {
   const labels: Record<ChangeSet['status'], string> = {
-    draft: '保存为草稿',
     assessed: '生成预览',
     applied: '应用',
     rejected: '驳回',
