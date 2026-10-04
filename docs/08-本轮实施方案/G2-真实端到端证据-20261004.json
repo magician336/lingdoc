@@ -1,0 +1,47 @@
+{
+  "title": "G2 真实端到端证据",
+  "run_at": "2026-10-04",
+  "mode": "real_http_authenticated_synthetic_fixture",
+  "repository_commit": "4a22bb05322b44211a65376ead1092816d913566",
+  "binary_sha256": "7EC381AA75DEFDAA88F5DE8A39D93632374FDC69CC407174BCF906D8402981CD",
+  "environment": {
+    "service_health": "passed",
+    "postgres": "healthy",
+    "redis": "running",
+    "docreader": "healthy",
+    "migration_version": 110,
+    "migration_dirty": false
+  },
+  "steps": [
+    {"name": "authenticated_login", "verdict": "passed"},
+    {"name": "create_spec_activate_project", "verdict": "passed"},
+    {"name": "bind_ready_asset_and_retrieve_source", "verdict": "passed"},
+    {"name": "get_source_quoted_text_hash_check", "verdict": "passed"},
+    {"name": "save_two_chapters_with_citation_usages", "verdict": "passed", "chapters": 2},
+    {"name": "confirm_two_chapters", "verdict": "passed", "chapters": 2},
+    {"name": "citation_status_available_before_restart", "verdict": "passed"},
+    {"name": "restart_service_and_read_back", "verdict": "passed"},
+    {"name": "prepare_release_check", "verdict": "passed"},
+    {"name": "docx_export_verified", "verdict": "passed"},
+    {"name": "docx_download_sha256_matches", "verdict": "passed"},
+    {"name": "docx_zip_integrity", "verdict": "passed"},
+    {"name": "source_revision_drift_redacts_chapters", "verdict": "passed", "observed_status": "needs_review"},
+    {"name": "stale_snapshot_currentness", "verdict": "passed", "observed_is_current": false},
+    {"name": "stale_export_blocked", "verdict": "passed", "observed_http": 409, "observed_code": "stale_input"},
+    {"name": "source_revision_restore", "verdict": "passed"},
+    {"name": "re_save_and_reconfirm_two_chapters", "verdict": "passed", "chapters": 2},
+    {"name": "recovered_release_check", "verdict": "passed"}
+  ],
+  "cleanup": {
+    "temporary_revision_restored": true,
+    "temporary_server_stopped": true,
+    "repository_fixture_files_committed": false,
+    "secrets_or_source_text_recorded": false
+  },
+  "not_run": [
+    "Word/WPS manual edit-save-reopen",
+    "second human reviewer",
+    "production PostgreSQL migration"
+  ]
+}
+
