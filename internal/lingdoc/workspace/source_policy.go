@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	workspacecore "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 )
@@ -61,6 +62,39 @@ func (p workspaceSourcePolicy) Validate(ctx context.Context, projectID, actorID 
 		return candidateadoption.ErrDependencyUnavailable
 	}
 	return policy.Validate(ctx, projectID, actorID, sourceIDs)
+}
+
+func (p workspaceSourcePolicy) CitationStatuses(ctx context.Context, projectID, actorID string, sourceIDs []string) ([]workspacecore.CitationStatus, error) {
+	policy := p.handler.CandidateAdoptionSourcePolicy()
+	if policy == nil {
+		return nil, candidateadoption.ErrDependencyUnavailable
+	}
+	concrete, ok := policy.(*candidateAdoptionSourcePolicy)
+	if !ok {
+		return nil, candidateadoption.ErrDependencyUnavailable
+	}
+	checked, actor, ok := recheckContext(ctx, actorID)
+	if !ok || strings.TrimSpace(projectID) == "" {
+		return nil, candidateadoption.ErrSourceAccessDenied
+	}
+	verdicts, err := concrete.revalidate(checked, projectID, actor, sourceIDs)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make([]workspacecore.CitationStatus, 0, len(verdicts))
+	for _, verdict := range verdicts {
+		status := workspacecore.CitationStatus{SourceID: verdict.SourceID, Status: "unavailable", Detail: "来源当前不可用，请重新选择资料片段"}
+		switch {
+		case verdict.Usable:
+			status.Status = "available"
+			status.Detail = "来源当前可用"
+		case verdict.AssetDeny == "" && verdict.Status == evidence.SourceStale:
+			status.Status = "needs_review"
+			status.Detail = "来源定位或资料版本已变化，请重新核对"
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses, nil
 }
 
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：

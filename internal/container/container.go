@@ -558,7 +558,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
 	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
 	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink) (workspace.ExportApplication, error) {
-		service := workspace.NewDeliveryExportServiceWithPorts(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), audit)
+		currentness, ok := sourceIntegration.DeliveryInputBuilder().(workspace.DeliveryCurrentness)
+		if !ok || currentness == nil {
+			return nil, errors.New("lingdoc delivery export service: incomplete currentness dependency")
+		}
+		service := workspace.NewDeliveryExportServiceWithCurrentness(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), currentness, audit)
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}

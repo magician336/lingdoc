@@ -237,7 +237,25 @@
             <p v-else-if="draftCitations.sourceIds.length" class="muted">
               本章引用 {{ draftCitations.sourceIds.length }} 条来源。保存时会逐条复核；删掉正文里的标记就等于放弃那一条。
             </p>
-            <button type="submit" :disabled="busy || !bodyChanged">保存为新版本</button>
+            <section v-if="draftCitations.sourceIds.length" class="citation-usages" aria-label="引用用途和限制">
+              <h4>引用用途与限制</h4>
+              <p class="muted">这些备注随章节版本保存，帮助审阅者理解引用支持的范围；它们不会替代来源复核。</p>
+              <article v-for="sourceId in draftCitations.sourceIds" :key="sourceId" class="citation-usage">
+                <strong>{{ sourceId }}</strong>
+                <p v-if="citationStatus(sourceId)" class="citation-status" :class="`citation-status--${citationStatus(sourceId)?.status}`">
+                  {{ citationStatus(sourceId)?.detail }}
+                </p>
+                <label :for="`citation-purpose-${sourceId}`">用途</label>
+                <p v-if="!citationUsageDraft(sourceId).purpose" class="muted">尚未补充用途</p>
+                <textarea :id="`citation-purpose-${sourceId}`" v-model="citationUsageDraft(sourceId).purpose"
+                  :disabled="busy" rows="2" maxlength="2000" placeholder="这条依据在本章支持什么" />
+                <label :for="`citation-limitation-${sourceId}`">限制</label>
+                <p v-if="!citationUsageDraft(sourceId).limitation" class="muted">尚未补充限制</p>
+                <textarea :id="`citation-limitation-${sourceId}`" v-model="citationUsageDraft(sourceId).limitation"
+                  :disabled="busy" rows="2" maxlength="2000" placeholder="它不能支持什么，或仍需核对什么" />
+              </article>
+            </section>
+            <button type="submit" :disabled="busy || !chapterChanged">保存为新版本</button>
           </form>
         </div>
 
@@ -268,7 +286,7 @@ import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './s
 import {
   activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource,
   getSourceContext, listAssets, listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
-  type AccessStatus, type Asset, type Chapter, type Project, type ReviewDecision, type Source, type SourceContext,
+  type AccessStatus, type Asset, type Chapter, type CitationUsage, type Project, type ReviewDecision, type Source, type SourceContext,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -298,6 +316,7 @@ const busy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 const reviewDrafts = ref<Record<string, { disposition: ReviewDecision['disposition']; reason: string }>>({})
+const citationUsageDrafts = ref<Record<string, CitationUsage>>({})
 const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
 const generationRun = ref<GenerationRun | null>(null)
 const generationCandidate = ref<Candidate | null>(null)
@@ -343,6 +362,29 @@ const specChanged = computed(() => !!project.value && (
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
 const bodyChanged = computed(() => !!chapter.value && bodyDraft.value !== chapter.value.body_markdown)
+const citationUsagesChanged = computed(() => {
+  if (!chapter.value) return false
+  const parsed = chapterCitations(bodyDraft.value)
+  if (parsed.kind === 'malformed') return false
+  const current = chapter.value.citation_usages ?? []
+  const next = parsed.sourceIds.map(sourceId => citationUsageDrafts.value[sourceId] ?? { source_id: sourceId, purpose: '', limitation: '' })
+  return JSON.stringify(next) !== JSON.stringify(current)
+})
+const chapterChanged = computed(() => bodyChanged.value || citationUsagesChanged.value)
+
+function hydrateCitationUsages(item: Chapter | null) {
+  const next: Record<string, CitationUsage> = {}
+  for (const usage of item?.citation_usages ?? []) next[usage.source_id] = { ...usage }
+  citationUsageDrafts.value = next
+}
+
+function citationUsageDraft(sourceId: string): CitationUsage {
+  return citationUsageDrafts.value[sourceId] ??= { source_id: sourceId, purpose: '', limitation: '' }
+}
+
+function citationStatus(sourceId: string) {
+  return chapter.value?.citation_statuses?.find(item => item.source_id === sourceId)
+}
 
 // 正文里的来源标记：提取与体检一次算完。模板因此不必自己去拆这个联合类型。
 const draftCitations = computed(() => {
@@ -405,9 +447,9 @@ async function create() {
 }
 
 async function selectProject(id: string, force = false) {
-  if (!force && ((specChanged.value && project.value?.id !== id) || bodyChanged.value) &&
+  if (!force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value) &&
       !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
-  if (force && (specChanged.value || bodyChanged.value) &&
+  if (force && (specChanged.value || chapterChanged.value) &&
       !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
   if (generationTimer) clearTimeout(generationTimer)
   generationRun.value = null
@@ -434,6 +476,7 @@ async function selectProject(id: string, force = false) {
     closeSourceContext()
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
+    hydrateCitationUsages(chapter.value)
     await loadGenerationCandidates(chapter.value?.id)
     await resumeGeneration()
   } catch (error) { failure(error) }
@@ -620,11 +663,12 @@ async function activate() {
 }
 
 function selectChapter(item: Chapter) {
-  if (bodyChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
+  if (chapterChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
   if (generationTimer) clearTimeout(generationTimer)
   generationTimer = undefined
   chapter.value = item
   bodyDraft.value = item.body_markdown
+  hydrateCitationUsages(item)
   errorMessage.value = ''
   generationRun.value = null
   generationCandidate.value = null
@@ -681,6 +725,7 @@ async function onAdopted(adopted: Chapter) {
   chapter.value = adopted
   // 不同步的话 bodyChanged 为真、保存按钮亮着，用户一点就把刚采纳的正文又存成一版。
   bodyDraft.value = adopted.body_markdown
+  hydrateCitationUsages(adopted)
   // 待核项已经换成候选自带那一份，为本章编的逐项处置不再适用。只清本章的：
   // 别的章节的草稿是用户刚写的理由，采纳这一章不该把它抹掉。
   for (const key of Object.keys(reviewDrafts.value)) {
@@ -746,7 +791,7 @@ async function cancelGenerationRun() {
 }
 
 async function confirmCurrentChapter() {
-  if (!project.value || !chapter.value?.current_version_id || busy.value || bodyChanged.value || !reviewDecisionsReady.value) return
+  if (!project.value || !chapter.value?.current_version_id || busy.value || chapterChanged.value || !reviewDecisionsReady.value) return
   const current = chapter.value
   const expectedVersion = current.current_version_id
   if (!expectedVersion) return
@@ -771,7 +816,10 @@ async function confirmCurrentChapter() {
     const result = await listChapters(projectId)
     chapters.value = result.data
     chapter.value = result.data.find(item => item.id === current.id) ?? null
-    if (chapter.value) bodyDraft.value = chapter.value.body_markdown
+    if (chapter.value) {
+      bodyDraft.value = chapter.value.body_markdown
+      hydrateCitationUsages(chapter.value)
+    }
     // 确认会推进项目版本（确认记在项目上），所以项目必须跟着重读一次。少了这一步，
     // 紧接着的交付检查与冻结会拿着一个过期的 expected_project_version 去问，换来一个
     // 409——而用户什么都没做错。保存章节那条路径早就在重读，确认这条一直漏着。
@@ -824,6 +872,7 @@ async function saveText() {
     expected_spec_revision: project.value.spec_revision,
     body_markdown: bodyDraft.value,
     source_ids: citations.sourceIds,
+    citation_usages: citations.sourceIds.map(sourceId => ({ ...citationUsageDraft(sourceId) })),
   }
   const key = operationKey(`chapter:${chapterId}`, input)
   try {
@@ -832,6 +881,7 @@ async function saveText() {
     const current = chapters.value.findIndex(item => item.id === chapterId)
     if (current >= 0) chapters.value[current] = result.data
     chapter.value = result.data
+    hydrateCitationUsages(result.data)
     const refreshed = await getProject(projectId)
     project.value = refreshed.data
     if (result.meta.refresh_required) await selectProject(projectId)
@@ -876,6 +926,11 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .candidate-list { margin-top: 14px; }
 .candidate-list ul { display: grid; gap: 6px; padding-left: 20px; }
 .candidate-preview { margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
+.citation-usages { display: grid; gap: 10px; margin: 14px 0; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
+.citation-usage { display: grid; gap: 6px; padding: 10px; border: 1px solid #e5ece7; border-radius: 6px; background: white; }
+.citation-status { margin: 0; font-size: 12px; }
+.citation-status--available { color: #238a52; }
+.citation-status--needs_review, .citation-status--unavailable { color: #8b5b10; }
 .candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .binding-notice { padding: 10px 12px; background: #fff8ec; border: 1px solid #e6c98a; border-radius: 7px; color: #6b5a2e; font-size: 13px; }
 .denied-sources { margin: 12px 0; padding: 12px 16px; background: #fff1ee; border: 1px solid #eea99e; border-radius: 8px; font-size: 13px; }

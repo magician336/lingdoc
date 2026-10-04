@@ -61,3 +61,12 @@ test('saving sends the citations read from the draft instead of an empty list', 
   // 写坏的标记在本地就拦下：不发请求，给一句比 400 更有用的提示。
   assert.match(workspace, /MALFORMED_CITATION_MESSAGE/)
 })
+
+test('the citation usage editor saves both fields and labels empty notes', () => {
+  assert.match(workspace, /citation_usages: citations\.sourceIds\.map\(sourceId => \(\{ \.\.\.citationUsageDraft\(sourceId\) \}\)\)/)
+  assert.match(workspace, /尚未补充用途/)
+  assert.match(workspace, /尚未补充限制/)
+  assert.match(workspace, /hydrateCitationUsages\(result\.data\)/)
+  assert.match(workspace, /citationStatus\(sourceId\)/)
+  assert.match(workspace, /needs_review/)
+})

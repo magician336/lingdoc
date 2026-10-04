@@ -31,6 +31,41 @@ type DeliveryInputBuilder struct {
 	templates delivery.TemplateReader
 }
 
+func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
+	if b == nil {
+		return false, candidateadoption.ErrInvalidState
+	}
+	checked, actor, ok := recheckContext(ctx, actorID)
+	if !ok {
+		return false, candidateadoption.ErrSourceAccessDenied
+	}
+	ids := make([]string, 0, len(frozen.Sources))
+	for _, source := range frozen.Sources {
+		ids = append(ids, source.ID)
+	}
+	verdicts, err := b.revalidate(checked, frozen.ProjectID, actor, ids)
+	if err != nil {
+		return false, err
+	}
+	byID := make(map[string]revalidated, len(verdicts))
+	for _, verdict := range verdicts {
+		byID[verdict.SourceID] = verdict
+	}
+	for _, frozenSource := range frozen.Sources {
+		verdict, ok := byID[frozenSource.ID]
+		if !ok || !verdict.Usable {
+			return false, nil
+		}
+		current := verdict.Source
+		if current.ProjectID != frozenSource.ProjectID || current.AssetID != frozenSource.AssetID ||
+			current.AssetRevision != frozenSource.AssetRevision || current.Locator != frozenSource.Locator ||
+			current.QuotedTextHash != frozenSource.QuotedTextHash {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // DeliveryInputBuilder 交出装配好的构建器；依赖不齐时返回 nil，与同一文件里
 // CandidateAdoptionSourcePolicy 的守卫同一条：宁可让调用方拿到 nil，
 // 也不要交出一个会在运行时静默少一层校验的对象。
@@ -159,11 +194,20 @@ func frozenChapters(chapters []candidateadoption.WorkspaceDeliveryChapter) []del
 			// 与复核同一套归一政策：正文里的 [[source:x]] 标记是原样的，
 			// 这里若留着空白或重复，T13 会判 citation_mismatch 或 invalid_source_ids
 			// ——那是在报一个由我们自己引入的毛病。
-			SourceIDs:   normalizeSourceIDs(chapter.SourceIDs),
-			ReviewItems: frozenReviewItems(chapter.ReviewItems),
+			SourceIDs:      normalizeSourceIDs(chapter.SourceIDs),
+			CitationUsages: frozenCitationUsages(chapter.CitationUsages),
+			ReviewItems:    frozenReviewItems(chapter.ReviewItems),
 			// 没有确认就留 nil：T13 据此报 confirmation_stale，而不是当成「已确认」。
 			Confirmation: frozenConfirmation(chapter.Confirmation),
 		})
+	}
+	return out
+}
+
+func frozenCitationUsages(values []candidateadoption.CitationUsage) []delivery.CitationUsage {
+	out := make([]delivery.CitationUsage, 0, len(values))
+	for _, value := range values {
+		out = append(out, delivery.CitationUsage{SourceID: value.SourceID, Purpose: value.Purpose, Limitation: value.Limitation})
 	}
 	return out
 }

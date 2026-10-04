@@ -680,10 +680,11 @@ type SaveMembersInput struct {
 	Members                []Member `json:"members,omitempty"`
 }
 type SaveChapterInput struct {
-	ExpectedChapterVersionID *string  `json:"expected_chapter_version_id"`
-	ExpectedSpecRevision     int64    `json:"expected_spec_revision"`
-	BodyMarkdown             string   `json:"body_markdown"`
-	SourceIDs                []string `json:"source_ids"`
+	ExpectedChapterVersionID *string         `json:"expected_chapter_version_id"`
+	ExpectedSpecRevision     int64           `json:"expected_spec_revision"`
+	BodyMarkdown             string          `json:"body_markdown"`
+	SourceIDs                []string        `json:"source_ids"`
+	CitationUsages           []CitationUsage `json:"citation_usages,omitempty"`
 }
 
 func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, input CreateProjectInput) (json.RawMessage, int, bool, error) {
@@ -1153,6 +1154,39 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 		if s.sources == nil {
 			return nil, ErrSourceUnavailable
 		}
+		if statusPolicy, ok := s.sources.(CitationStatusPolicy); ok {
+			statuses, err := statusPolicy.CitationStatuses(ctx, projectID, actor.UserID, ids)
+			if err != nil {
+				return nil, err
+			}
+			bySource := make(map[string]CitationStatus, len(statuses))
+			for _, status := range statuses {
+				bySource[status.SourceID] = status
+			}
+			for i := range result {
+				if len(result[i].SourceIDs) == 0 {
+					continue
+				}
+				result[i].CitationStatuses = make([]CitationStatus, 0, len(result[i].SourceIDs))
+				redact := false
+				for _, sourceID := range result[i].SourceIDs {
+					status, ok := bySource[sourceID]
+					if !ok {
+						return nil, ErrSourceUnavailable
+					}
+					result[i].CitationStatuses = append(result[i].CitationStatuses, status)
+					if status.Status != "available" {
+						redact = true
+					}
+				}
+				if redact {
+					result[i].BodyMarkdown = ""
+					result[i].CitationUsages = []CitationUsage{}
+					result[i].ConfirmationValid = false
+				}
+			}
+			return result, nil
+		}
 		if err := s.sources.Validate(ctx, projectID, actor.UserID, ids); err != nil {
 			return nil, err
 		}
@@ -1181,6 +1215,10 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 	if len(slices.Compact(slices.Clone(declared))) != len(declared) || !slices.Equal(refs, declared) {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	usages, err := normalizeCitationUsages(input.CitationUsages, declared)
+	if err != nil {
+		return nil, 0, false, err
+	}
 	return s.operation(ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID, func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
@@ -1195,6 +1233,19 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		if !sameVersion(old.CurrentVersionID, input.ExpectedChapterVersionID) {
 			return nil, 0, ErrVersionConflict
 		}
+		if input.CitationUsages == nil {
+			allowed := make(map[string]struct{}, len(declared))
+			for _, sourceID := range declared {
+				allowed[sourceID] = struct{}{}
+			}
+			usages = usages[:0]
+			for _, usage := range old.CitationUsages {
+				if _, ok := allowed[usage.SourceID]; ok {
+					usages = append(usages, usage)
+				}
+			}
+			usages = completeCitationUsages(usages, declared)
+		}
 		nextProject := p
 		nextProject.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, nextProject); err != nil {
@@ -1205,12 +1256,58 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		next.CurrentVersionID = &id
 		next.BodyMarkdown = input.BodyMarkdown
 		next.SourceIDs = declared
+		next.CitationUsages = usages
 		next.ConfirmationValid = false
 		if err := tx.AppendChapter(old, next, p.SpecRevision); err != nil {
 			return nil, 0, err
 		}
 		return next, 201, nil
 	})
+}
+
+func normalizeCitationUsages(values []CitationUsage, sourceIDs []string) ([]CitationUsage, error) {
+	if values == nil {
+		return []CitationUsage{}, nil
+	}
+	allowed := make(map[string]struct{}, len(sourceIDs))
+	for _, id := range sourceIDs {
+		allowed[id] = struct{}{}
+	}
+	result := make([]CitationUsage, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value.SourceID = strings.TrimSpace(value.SourceID)
+		value.Purpose = strings.TrimSpace(value.Purpose)
+		value.Limitation = strings.TrimSpace(value.Limitation)
+		if value.SourceID == "" || len([]rune(value.Purpose)) > 2000 || len([]rune(value.Limitation)) > 2000 {
+			return nil, ErrInvalidRequest
+		}
+		if _, ok := allowed[value.SourceID]; !ok {
+			return nil, ErrInvalidRequest
+		}
+		if _, ok := seen[value.SourceID]; ok {
+			return nil, ErrInvalidRequest
+		}
+		seen[value.SourceID] = struct{}{}
+		result = append(result, value)
+	}
+	result = completeCitationUsages(result, sourceIDs)
+	slices.SortFunc(result, func(a, b CitationUsage) int { return strings.Compare(a.SourceID, b.SourceID) })
+	return result, nil
+}
+
+func completeCitationUsages(values []CitationUsage, sourceIDs []string) []CitationUsage {
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		seen[value.SourceID] = struct{}{}
+	}
+	for _, sourceID := range sourceIDs {
+		if _, ok := seen[sourceID]; ok {
+			continue
+		}
+		values = append(values, CitationUsage{SourceID: sourceID})
+	}
+	return values
 }
 func sameVersion(a, b *string) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)

@@ -45,18 +45,19 @@ type chapterRow struct {
 }
 
 type chapterVersionRow struct {
-	ID                string  `gorm:"primaryKey;size:36"`
-	ProjectID         string  `gorm:"not null;index;size:36"`
-	ChapterID         string  `gorm:"not null;index;size:36"`
-	ParentVersionID   *string `gorm:"size:36"`
-	CandidateID       string  `gorm:"index;size:36"`
-	BodyMarkdown      string  `gorm:"not null;type:text"`
-	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
-	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
-	SpecRevision      int64   `gorm:"not null;default:0"`
-	ConfirmationValid bool    `gorm:"not null;default:false"`
-	CreatedBy         string  `gorm:"not null;default:'';size:128"`
-	CreatedAt         time.Time
+	ID                 string  `gorm:"primaryKey;size:36"`
+	ProjectID          string  `gorm:"not null;index;size:36"`
+	ChapterID          string  `gorm:"not null;index;size:36"`
+	ParentVersionID    *string `gorm:"size:36"`
+	CandidateID        string  `gorm:"index;size:36"`
+	BodyMarkdown       string  `gorm:"not null;type:text"`
+	SourceIDsJSON      string  `gorm:"column:source_ids_json;not null;type:text"`
+	CitationUsagesJSON string  `gorm:"column:citation_usages_json;not null;type:text"`
+	ReviewItemsJSON    string  `gorm:"column:review_items_json;not null;type:text"`
+	SpecRevision       int64   `gorm:"not null;default:0"`
+	ConfirmationValid  bool    `gorm:"not null;default:false"`
+	CreatedBy          string  `gorm:"not null;default:'';size:128"`
+	CreatedAt          time.Time
 }
 
 type confirmationRow struct {
@@ -398,7 +399,8 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			ID: newVersionID, ProjectID: in.ProjectID, ChapterID: in.ChapterID,
 			ParentVersionID: oldVersionID, CandidateID: candidate.ID,
 			BodyMarkdown: candidate.BodyMarkdown, SourceIDsJSON: string(sourceJSON),
-			ReviewItemsJSON: string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),
+			CitationUsagesJSON: "[]",
+			ReviewItemsJSON:    string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),
 			ConfirmationValid: false, CreatedBy: in.ActorID,
 		}
 		if err := tx.Create(&version).Error; err != nil {
@@ -496,6 +498,7 @@ func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRo
 	chapter := Chapter{
 		ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
 		CurrentVersionID: row.CurrentVersionID, SourceIDs: []string{}, ReviewItems: []ReviewItem{},
+		CitationUsages: []CitationUsage{},
 	}
 	if row.CurrentVersionID == nil {
 		return chapter, nil
@@ -508,6 +511,14 @@ func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRo
 	chapter.ConfirmationValid = version.ConfirmationValid
 	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &chapter.SourceIDs); err != nil {
 		return Chapter{}, err
+	}
+	if version.CitationUsagesJSON != "" {
+		if err := json.Unmarshal([]byte(version.CitationUsagesJSON), &chapter.CitationUsages); err != nil {
+			return Chapter{}, err
+		}
+		if chapter.CitationUsages == nil {
+			chapter.CitationUsages = []CitationUsage{}
+		}
 	}
 	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &chapter.ReviewItems); err != nil {
 		return Chapter{}, err

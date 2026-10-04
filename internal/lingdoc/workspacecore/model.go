@@ -144,16 +144,27 @@ type ReviewItem struct {
 	OriginCandidateID string `json:"origin_candidate_id"`
 }
 
+// CitationUsage records the human context for one source used by a chapter.
+// It is versioned with the chapter and does not assert that the source proves
+// a research claim.
+type CitationUsage struct {
+	SourceID   string `json:"source_id"`
+	Purpose    string `json:"purpose,omitempty"`
+	Limitation string `json:"limitation,omitempty"`
+}
+
 type Chapter struct {
-	ID                string       `json:"id"`
-	ProjectID         string       `json:"project_id"`
-	SectionID         string       `json:"section_id"`
-	Title             string       `json:"title"`
-	CurrentVersionID  *string      `json:"current_version_id"`
-	BodyMarkdown      string       `json:"body_markdown"`
-	SourceIDs         []string     `json:"source_ids"`
-	ReviewItems       []ReviewItem `json:"review_items"`
-	ConfirmationValid bool         `json:"confirmation_valid"`
+	ID                string           `json:"id"`
+	ProjectID         string           `json:"project_id"`
+	SectionID         string           `json:"section_id"`
+	Title             string           `json:"title"`
+	CurrentVersionID  *string          `json:"current_version_id"`
+	BodyMarkdown      string           `json:"body_markdown"`
+	SourceIDs         []string         `json:"source_ids"`
+	CitationUsages    []CitationUsage  `json:"citation_usages"`
+	CitationStatuses  []CitationStatus `json:"citation_statuses,omitempty"`
+	ReviewItems       []ReviewItem     `json:"review_items"`
+	ConfirmationValid bool             `json:"confirmation_valid"`
 }
 
 type GenerationContext struct {
@@ -338,16 +349,17 @@ type chapterRow struct {
 func (chapterRow) TableName() string { return "lingdoc_chapters" }
 
 type chapterVersionRow struct {
-	ID                string  `gorm:"primaryKey;size:36"`
-	ProjectID         string  `gorm:"not null;index;size:36"`
-	ChapterID         string  `gorm:"not null;index;size:36"`
-	ParentVersionID   *string `gorm:"size:36"`
-	BodyMarkdown      string  `gorm:"not null;type:text"`
-	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
-	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
-	SpecRevision      int64   `gorm:"not null;default:0"`
-	ConfirmationValid bool    `gorm:"not null;default:false"`
-	CreatedAt         time.Time
+	ID                 string  `gorm:"primaryKey;size:36"`
+	ProjectID          string  `gorm:"not null;index;size:36"`
+	ChapterID          string  `gorm:"not null;index;size:36"`
+	ParentVersionID    *string `gorm:"size:36"`
+	BodyMarkdown       string  `gorm:"not null;type:text"`
+	SourceIDsJSON      string  `gorm:"column:source_ids_json;not null;type:text"`
+	CitationUsagesJSON string  `gorm:"column:citation_usages_json;not null;type:text"`
+	ReviewItemsJSON    string  `gorm:"column:review_items_json;not null;type:text"`
+	SpecRevision       int64   `gorm:"not null;default:0"`
+	ConfirmationValid  bool    `gorm:"not null;default:false"`
+	CreatedAt          time.Time
 }
 
 func (chapterVersionRow) TableName() string { return "lingdoc_chapter_versions" }
