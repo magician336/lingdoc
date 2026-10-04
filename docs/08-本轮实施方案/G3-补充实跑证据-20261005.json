@@ -1,0 +1,43 @@
+{
+  "commit": "3030567",
+  "scope": "G3 supplementary runtime evidence",
+  "post_restart_http": {
+    "status": "passed",
+    "transport": "real HTTP against current HEAD Windows binary",
+    "steps": [
+      "login",
+      "create project and two chapters",
+      "restart service",
+      "list/get project and change sets",
+      "create assessed change sets",
+      "apply first change set",
+      "successful apply replay",
+      "concurrent stale apply returns 409 version_conflict",
+      "both current chapter confirmations invalidated",
+      "re-confirm both chapters",
+      "check and prepare release"
+    ]
+  },
+  "postgres": {
+    "status": "passed",
+    "test": "TestPostgresMigrationAndRepositoryContract"
+  },
+  "real_provider": {
+    "status": "passed",
+    "test": "TestRemoteAPIChat/DeepSeek_API/Basic_Chat",
+    "request_budget": "100 max_tokens",
+    "usage_tokens": 44,
+    "credential_storage": "not recorded"
+  },
+  "docx": {
+    "download_http": 200,
+    "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "zip_parts": 5,
+    "programmatic_roundtrip": "python-docx open/save/reopen passed",
+    "manual_word_or_wps": "not_run"
+  },
+  "race": {
+    "g3_scope": "passed",
+    "full_repository": "blocked_by_unrelated_internal/application/service test races"
+  }
+}
