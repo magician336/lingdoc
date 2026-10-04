@@ -104,6 +104,38 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("replay response = %+v, first=%+v", replayed, created)
 	}
 
+	request = httptest.NewRequest(http.MethodGet, "/api/projects/project-1/change-sets", nil).WithContext(g3HTTPContext("reader"))
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list status = %d; body=%s", response.Code, response.Body.String())
+	}
+	var listed struct {
+		Data []ChangeSet `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(listed.Data) != 1 || listed.Data[0].ID != created.Data.ID || listed.Data[0].Status != "assessed" {
+		t.Fatalf("list response = %+v", listed)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/projects/project-1/change-sets/"+created.Data.ID, nil).WithContext(g3HTTPContext("reader"))
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("get status = %d; body=%s", response.Code, response.Body.String())
+	}
+	var fetched struct {
+		Data ChangeSet `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &fetched); err != nil {
+		t.Fatalf("decode get response: %v", err)
+	}
+	if fetched.Data.ID != created.Data.ID || fetched.Data.Status != "assessed" || len(fetched.Data.Impacts) != 2 {
+		t.Fatalf("get response = %+v", fetched)
+	}
+
 	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", strings.NewReader(`{}`)).WithContext(g3HTTPContext("reader"))
 	request.Header.Set("Idempotency-Key", "g3-http-apply-1")
 	response = httptest.NewRecorder()
