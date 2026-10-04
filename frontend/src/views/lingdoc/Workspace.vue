@@ -183,6 +183,48 @@
           <p v-if="specChanged && project.status === 'draft'" class="muted">立项前请先保存研究条件。</p>
         </form>
 
+        <section v-if="project.status === 'active' && (specChanged || lastChangeSet)" class="change-set-panel" aria-label="研究条件变更复核">
+          <div v-if="specChanged">
+            <h3>提交研究条件变更</h3>
+            <p class="muted">研究条件变更会使选中章节的旧确认失效，完成重新确认后才能继续冻结和导出。</p>
+            <label for="change-reason">变更理由</label>
+            <input id="change-reason" v-model="changeReason" :disabled="busy" maxlength="2000" placeholder="说明为什么需要变更" />
+            <fieldset :disabled="busy">
+              <legend>需要重新复核的章节</legend>
+              <label v-for="item in chapters" :key="item.id" class="chapter-impact-choice">
+                <input v-model="selectedImpactChapterIds" type="checkbox" :value="item.id" />
+                {{ item.title }}
+              </label>
+            </fieldset>
+            <button type="button" :disabled="busy || !changeReason.trim() || selectedImpactChapterIds.length === 0" @click="createConditionsChangePreview">
+              生成变更预览
+            </button>
+            <div v-if="pendingChangeSet" class="change-set-preview">
+              <p><strong>语义变更</strong></p>
+              <ul>
+                <li v-for="field in pendingChangeSet.fields" :key="field.key">
+                  {{ field.key }}：{{ field.old_value }} → {{ field.new_value }}
+                </li>
+              </ul>
+              <p><strong>已登记受影响章节</strong></p>
+              <ul>
+                <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
+              </ul>
+              <p class="muted">尚未核对范围：{{ uncheckedChapterTitles.length > 0 ? uncheckedChapterTitles.join('、') : '无（已登记章节覆盖当前章节列表）' }}</p>
+              <div class="change-set-actions">
+                <button type="button" :disabled="busy || !pendingDraftMatches" @click="applyConditionsChange">
+                  应用预览并开始复核
+                </button>
+                <button type="button" :disabled="busy" @click="rejectConditionsChange">
+                  驳回预览
+                </button>
+              </div>
+              <p v-if="!pendingDraftMatches" class="muted">研究条件已改变，请重新生成预览。</p>
+            </div>
+          </div>
+          <p v-if="lastChangeSet" class="muted" role="status">变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}；请重新确认受影响章节。</p>
+        </section>
+
         <!-- 撤权提示（§8）。只在服务端判 restricted 时出现，且它是一条**提示**而不是拦截：
              本轮只有 access-status 这一条读路径带资料层判定，别的端点仍会照常返回内容
              （差额记在 02-接口与Mock约定 §8）。所以这里给的是恢复入口，不是封锁——写成
@@ -285,8 +327,8 @@ import {
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
 import {
   activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource,
-  getSourceContext, listAssets, listChapters, listProjects, retrieveSources, saveChapter, saveSpec,
-  type AccessStatus, type Asset, type Chapter, type CitationUsage, type Project, type ReviewDecision, type Source, type SourceContext,
+  applyChangeSet, createChangeSet, getSourceContext, listAssets, listChapters, listProjects, rejectChangeSet, retrieveSources, saveChapter, saveSpec,
+  type AccessStatus, type Asset, type Chapter, type ChangeSet, type CitationUsage, type Project, type ReviewDecision, type Source, type SourceContext,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
@@ -311,6 +353,11 @@ const chapter = ref<Chapter | null>(null)
 const newName = ref('')
 const subject = ref('')
 const goal = ref('')
+const changeReason = ref('')
+const selectedImpactChapterIds = ref<string[]>([])
+const pendingChangeSet = ref<ChangeSet | null>(null)
+const pendingDraft = ref<{ subject: string; goal: string; reason: string; chapterIds: string[] } | null>(null)
+const lastChangeSet = ref<ChangeSet | null>(null)
 const bodyDraft = ref('')
 const busy = ref(false)
 const loading = ref(false)
@@ -361,7 +408,25 @@ const specChanged = computed(() => !!project.value && (
   subject.value !== (project.value.spec.research_subject ?? '') ||
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
+const pendingDraftMatches = computed(() => {
+  if (!pendingDraft.value) return false
+  const chapterIds = [...selectedImpactChapterIds.value].sort()
+  return pendingDraft.value.subject === subject.value && pendingDraft.value.goal === goal.value &&
+    pendingDraft.value.reason === changeReason.value.trim() &&
+    JSON.stringify(pendingDraft.value.chapterIds) === JSON.stringify(chapterIds)
+})
+const uncheckedChapterTitles = computed(() => chapters.value.filter(item => !selectedImpactChapterIds.value.includes(item.id)).map(item => item.title))
 const bodyChanged = computed(() => !!chapter.value && bodyDraft.value !== chapter.value.body_markdown)
+function changeSetStatusLabel(status: ChangeSet['status']): string {
+  const labels: Record<ChangeSet['status'], string> = {
+    draft: '保存为草稿',
+    assessed: '生成预览',
+    applied: '应用',
+    rejected: '驳回',
+    stale: '标记为过期',
+  }
+  return labels[status]
+}
 const citationUsagesChanged = computed(() => {
   if (!chapter.value) return false
   const parsed = chapterCitations(bodyDraft.value)
@@ -477,6 +542,11 @@ async function selectProject(id: string, force = false) {
     chapter.value = chapters.value[0] ?? null
     bodyDraft.value = chapter.value?.body_markdown ?? ''
     hydrateCitationUsages(chapter.value)
+    changeReason.value = ''
+    selectedImpactChapterIds.value = chapters.value.map(item => item.id)
+    pendingChangeSet.value = null
+    pendingDraft.value = null
+    lastChangeSet.value = null
     await loadGenerationCandidates(chapter.value?.id)
     await resumeGeneration()
   } catch (error) { failure(error) }
@@ -630,6 +700,10 @@ async function bindProjectAsset() {
 
 async function saveConditions() {
   if (!project.value || busy.value) return
+  if (project.value.status === 'active') {
+	    await createConditionsChangePreview()
+    return
+  }
   busy.value = true
   errorMessage.value = ''
   const id = project.value.id
@@ -642,6 +716,69 @@ async function saveConditions() {
     project.value = result.data
     await loadProjects()
     if (result.meta.refresh_required) await selectProject(id)
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function createConditionsChangePreview() {
+  if (!project.value || busy.value || !specChanged.value || project.value.status !== 'active') return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const fields: Record<string, { old_value: string; new_value: string }> = {}
+  const oldSubject = project.value.spec.research_subject ?? ''
+  const oldGoal = project.value.spec.research_goal ?? ''
+  if (subject.value !== oldSubject) fields.research_subject = { old_value: oldSubject, new_value: subject.value }
+  if (goal.value !== oldGoal) fields.research_goal = { old_value: oldGoal, new_value: goal.value }
+  const input = {
+    expected_context_revision: project.value.current_context_revision,
+    fields,
+    affected_chapter_ids: [...selectedImpactChapterIds.value],
+    reason: changeReason.value.trim(),
+  }
+    const createKey = operationKey(`change-set-create:${id}`, input)
+  try {
+    const created = await createChangeSet(id, input, createKey)
+    pendingChangeSet.value = created.data
+    pendingDraft.value = { subject: subject.value, goal: goal.value, reason: changeReason.value.trim(), chapterIds: [...selectedImpactChapterIds.value].sort() }
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function applyConditionsChange() {
+  if (!project.value || busy.value || !pendingChangeSet.value || !pendingDraftMatches.value) return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const changeSetId = pendingChangeSet.value.id
+  const applyKey = operationKey(`change-set-apply:${id}:${changeSetId}`, { change_set_id: changeSetId })
+  try {
+    const applied = await applyChangeSet(id, changeSetId, applyKey)
+    attempts.delete(`change-set-create:${id}`)
+    attempts.delete(`change-set-apply:${id}:${changeSetId}`)
+    pendingChangeSet.value = null
+    pendingDraft.value = null
+    await selectProject(id)
+    lastChangeSet.value = applied.data
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function rejectConditionsChange() {
+  if (!project.value || busy.value || !pendingChangeSet.value) return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const changeSetId = pendingChangeSet.value.id
+  const rejectKey = operationKey(`change-set-reject:${id}:${changeSetId}`, { change_set_id: changeSetId })
+  try {
+    const rejected = await rejectChangeSet(id, changeSetId, rejectKey)
+    attempts.delete(`change-set-create:${id}`)
+    attempts.delete(`change-set-reject:${id}:${changeSetId}`)
+    pendingChangeSet.value = null
+    pendingDraft.value = null
+    await selectProject(id)
+    lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }

@@ -55,6 +55,11 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
+	routes.Read.GET("/projects/:projectId/change-sets", h.listChangeSets)
+	routes.Read.GET("/projects/:projectId/change-sets/:changeSetId", h.getChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets", h.createChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/apply", h.applyChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reject", h.rejectChangeSet)
 }
 
 func caller(c *gin.Context) (Actor, bool) {
@@ -653,6 +658,94 @@ func (h *Handler) accessStatus(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, status, false)
+}
+
+func (h *Handler) listChangeSets(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) getChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) createChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input CreateChangeSetInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) applyChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.ApplyChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if status == http.StatusConflict {
+		// The service commits the stale marker before returning its conflict
+		// status, so the caller can GET the ChangeSet and inspect the durable
+		// stale state. Keep the write endpoint on the workspace error envelope.
+		sendError(c, ErrVersionConflict)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) rejectChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.RejectChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
 }
 
 func (h *Handler) getSourceContext(c *gin.Context) {

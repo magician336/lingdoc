@@ -34,6 +34,11 @@ type ApplicationService interface {
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
 	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
 	GenerationContext(context.Context, Actor, string, string) (GenerationContext, error)
+	CreateChangeSet(context.Context, Actor, string, string, CreateChangeSetInput) (json.RawMessage, int, bool, error)
+	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
+	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ApplyChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 }
 
 // SourceApplicationService owns the source and asset use cases consumed by

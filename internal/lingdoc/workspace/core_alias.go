@@ -35,6 +35,11 @@ type AuthorizationMode = core.AuthorizationMode
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 type TemplateField = core.TemplateField
+type ChangeSet = core.ChangeSet
+type ChangeImpact = core.ChangeImpact
+type ChangeFieldInput = core.ChangeFieldInput
+type ChangeFieldDelta = core.ChangeFieldDelta
+type CreateChangeSetInput = core.CreateChangeSetInput
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

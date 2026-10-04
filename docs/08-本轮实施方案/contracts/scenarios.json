@@ -25,6 +25,17 @@
       ]
     },
     {
+      "id": "G3",
+      "name": "首版最小变更复核",
+      "mode": "real_api_change_review",
+      "specification_file": "../G3-首版最小变更复核.md",
+      "note": "覆盖变更预览、Owner 原子应用、当前章节确认失效和交付恢复；实际行为证据与未运行项见 ../G3-验收与交接.md，静态场景文件不冒充真实 provider 执行。",
+      "providers": [
+        "workspace",
+        "delivery"
+      ]
+    },
+    {
       "id": "F02",
       "name": "空资料不扩大范围",
       "starting_state": "S1",

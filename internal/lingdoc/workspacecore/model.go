@@ -119,6 +119,48 @@ type ActivationDiff struct {
 	PendingAIFields       []SpecFieldChange `json:"pending_ai_fields"`
 }
 
+type ChangeFieldInput struct {
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+}
+
+type ChangeFieldDelta struct {
+	Key      string `json:"key"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+}
+
+type ChangeImpact struct {
+	ChapterID        string  `json:"chapter_id"`
+	ChapterVersionID *string `json:"chapter_version_id,omitempty"`
+	Title            string  `json:"title"`
+	Reason           string  `json:"reason"`
+	Status           string  `json:"status"`
+}
+
+type ChangeSet struct {
+	ID                    string             `json:"id"`
+	ProjectID             string             `json:"project_id"`
+	CreatedBy             string             `json:"created_by"`
+	Reason                string             `json:"reason"`
+	Status                string             `json:"status"`
+	BaseContextRevision   int64              `json:"base_context_revision"`
+	TargetContextRevision *int64             `json:"target_context_revision,omitempty"`
+	BaseSpecRevision      int64              `json:"base_spec_revision"`
+	TargetSpecRevision    *int64             `json:"target_spec_revision,omitempty"`
+	Fields                []ChangeFieldDelta `json:"fields"`
+	Impacts               []ChangeImpact     `json:"impacts"`
+	CreatedAt             time.Time          `json:"created_at"`
+	AppliedAt             *time.Time         `json:"applied_at,omitempty"`
+}
+
+type CreateChangeSetInput struct {
+	ExpectedContextRevision int64                       `json:"expected_context_revision"`
+	Fields                  map[string]ChangeFieldInput `json:"fields"`
+	AffectedChapterIDs      []string                    `json:"affected_chapter_ids"`
+	Reason                  string                      `json:"reason"`
+}
+
 type TemplateMigrationField struct {
 	FieldID string `json:"field_id"`
 	Value   string `json:"value,omitempty"`
@@ -382,6 +424,24 @@ type chapterConfirmationDetails struct {
 	TemplateVersion  string `json:"template_version"`
 	Valid            bool   `json:"valid"`
 }
+
+type changeSetRow struct {
+	ID                    string `gorm:"primaryKey;size:36"`
+	ProjectID             string `gorm:"not null;index;size:36"`
+	CreatedBy             string `gorm:"not null;size:64"`
+	Reason                string `gorm:"not null;type:text"`
+	Status                string `gorm:"not null;size:16"`
+	BaseContextRevision   int64  `gorm:"not null"`
+	TargetContextRevision *int64 `gorm:"column:target_context_revision"`
+	BaseSpecRevision      int64  `gorm:"not null"`
+	TargetSpecRevision    *int64 `gorm:"column:target_spec_revision"`
+	FieldsJSON            string `gorm:"column:fields_json;not null;type:text"`
+	ImpactsJSON           string `gorm:"column:impacts_json;not null;type:text"`
+	CreatedAt             time.Time
+	AppliedAt             *time.Time `gorm:"column:applied_at"`
+}
+
+func (changeSetRow) TableName() string { return "lingdoc_change_sets" }
 
 type operationRow struct {
 	TenantID     uint64 `gorm:"primaryKey"`
