@@ -222,7 +222,9 @@
               <p v-if="!pendingDraftMatches" class="muted">研究条件已改变，请重新生成预览。</p>
             </div>
           </div>
-          <p v-if="lastChangeSet" class="muted" role="status">变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}；请重新确认受影响章节。</p>
+          <p v-if="lastChangeSet" class="muted" role="status">
+            变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}<template v-if="lastChangeSet.status === 'applied'">；请重新确认受影响章节。</template><template v-else-if="lastChangeSet.status === 'stale'">；基线已过期，请重新生成预览。</template><template v-else>。</template>
+          </p>
         </section>
 
         <!-- 撤权提示（§8）。只在服务端判 restricted 时出现，且它是一条**提示**而不是拦截：
@@ -327,7 +329,7 @@ import {
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
 import {
   activateProject, bindAsset, confirmChapter, createProject, getAccessStatus, getProject, getSource,
-  applyChangeSet, createChangeSet, getSourceContext, listAssets, listChapters, listProjects, rejectChangeSet, retrieveSources, saveChapter, saveSpec,
+  applyChangeSet, createChangeSet, getChangeSet, getSourceContext, listAssets, listChapters, listChangeSets, listProjects, rejectChangeSet, retrieveSources, saveChapter, saveSpec,
   type AccessStatus, type Asset, type Chapter, type ChangeSet, type CitationUsage, type Project, type ReviewDecision, type Source, type SourceContext,
 } from '@/api/lingdoc/workspace'
 
@@ -530,6 +532,7 @@ async function selectProject(id: string, force = false) {
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
+    const changeSetsResult = await listChangeSets(id)
     assets.value = assetResult.data ?? []
     selectedAssetIds.value = readyAssets.value.map(item => item.id)
     // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
@@ -546,7 +549,8 @@ async function selectProject(id: string, force = false) {
     selectedImpactChapterIds.value = chapters.value.map(item => item.id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    lastChangeSet.value = null
+    const changeSets = changeSetsResult.data ?? []
+    lastChangeSet.value = changeSets.length ? changeSets[changeSets.length - 1] : null
     await loadGenerationCandidates(chapter.value?.id)
     await resumeGeneration()
   } catch (error) { failure(error) }
@@ -760,7 +764,23 @@ async function applyConditionsChange() {
     pendingDraft.value = null
     await selectProject(id)
     lastChangeSet.value = applied.data
-  } catch (error) { failure(error) }
+  } catch (error) {
+    const item = error as { status?: number }
+    if (item?.status === 409) {
+      try {
+        const current = await getChangeSet(id, changeSetId)
+        if (current.data.status === 'stale') {
+          pendingChangeSet.value = null
+          pendingDraft.value = null
+          lastChangeSet.value = current.data
+        }
+      } catch (readError) {
+        failure(readError)
+        return
+      }
+    }
+    failure(error)
+  }
   finally { busy.value = false }
 }
 
