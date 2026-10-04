@@ -120,4 +120,24 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 	if applied.Data.Status != "applied" || applied.Data.TargetContextRevision == nil || *applied.Data.TargetContextRevision != 2 {
 		t.Fatalf("apply response = %+v", applied)
 	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", strings.NewReader(`{}`)).WithContext(g3HTTPContext("reader"))
+	request.Header.Set("Idempotency-Key", "g3-http-apply-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("apply replay status = %d; body=%s", response.Code, response.Body.String())
+	}
+	var appliedReplay struct {
+		Data ChangeSet `json:"data"`
+		Meta struct {
+			Replayed bool `json:"replayed"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &appliedReplay); err != nil {
+		t.Fatalf("decode apply replay response: %v", err)
+	}
+	if !appliedReplay.Meta.Replayed || appliedReplay.Data.ID != applied.Data.ID || appliedReplay.Data.TargetContextRevision == nil || *appliedReplay.Data.TargetContextRevision != 2 {
+		t.Fatalf("apply replay response = %+v, first=%+v", appliedReplay, applied)
+	}
 }

@@ -51,6 +51,11 @@ func TestChangeSetApplyAdvancesRevisionAndInvalidatesImpacts(t *testing.T) {
 	if err != nil || status != 200 || replay {
 		t.Fatalf("apply changeset: status=%d replay=%v err=%v", status, replay, err)
 	}
+	firstApply := append([]byte(nil), raw...)
+	replayedApply, replayStatus, replayed, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, change.ID, "g3-apply")
+	if err != nil || replayStatus != 200 || !replayed || string(replayedApply) != string(firstApply) {
+		t.Fatalf("apply replay: status=%d replay=%v same_response=%v err=%v", replayStatus, replayed, string(replayedApply) == string(firstApply), err)
+	}
 	project, err = svc.GetProject(context.Background(), actor, project.ID)
 	if err != nil || project.CurrentContextRevision != 2 || project.SpecRevision != 2 || project.Spec["research_subject"] != "新主题" {
 		t.Fatalf("project after apply: %+v %v", project, err)
