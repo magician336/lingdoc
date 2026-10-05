@@ -327,11 +327,36 @@ class G6RunTest(unittest.TestCase):
                   "modes": [{"runtime_mode": mode, "result": "PASS",
                              "dependency_status": "verified",
                              "provider_semantics_status": "verified",
-                             "verification_scope": "observed"}
+                             "verification_scope": "observed",
+                             "scenario_evidence": {
+                                 "main_path": {"result": "PASS", "fixture_id": "F01:S1",
+                                               "completed_steps": 23, "verification_scope": "observed"},
+                                 "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
+                                                 "actual_http": 409, "no_formal_side_effect": True,
+                                                 "readback_status": "unchanged"},
+                             }}
                             for mode in ("mock", "real_api_fake_model", "real")]}
         report = g6_run.build_g6_report(runtime_matrix_report=matrix)
         self.assertEqual(report["gate_results"]["G6-02"], "PASS")
         self.assertNotIn("SECRET_TOKEN", json.dumps(report))
+
+    def test_runtime_matrix_requires_main_and_failure_evidence_per_mode(self):
+        dependency_matrix = {
+            mode: {"required": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "verified": list(g6_run.RUNTIME_DEPENDENCIES[mode]), "missing": [], "status": "verified"}
+            for mode in g6_run.RUNTIME_MODES
+        }
+        matrix = {"runtime_modes": list(g6_run.RUNTIME_MODES), "result": "PASS",
+                  "shared_fixture": True, "fixture_ids": ["F01:S1"],
+                  "dependency_matrix": dependency_matrix,
+                  "modes": [{"runtime_mode": mode, "result": "PASS",
+                             "dependency_status": "verified", "provider_semantics_status": "verified",
+                             "verification_scope": "observed"}
+                            for mode in g6_run.RUNTIME_MODES]}
+        report = g6_run.build_g6_report(runtime_matrix_report=matrix)
+        self.assertEqual(report["gate_results"]["G6-02"], "BLOCKED")
+        self.assertTrue(all(mode["scenario_evidence"]["main_path"]["result"] == "BLOCKED"
+                            for mode in report["gates"]["G6-02"]["modes"]))
 
     def test_runtime_matrix_requires_all_three_modes_and_redaction(self):
         incomplete = {"runtime_modes": ["mock"], "result": "PASS"}

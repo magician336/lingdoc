@@ -23,6 +23,8 @@ from scripts.lingdoc_mock.run_scenario import RUNTIME_DEPENDENCIES
 SENSITIVE_KEYS = frozenset({"body", "content", "quoted_text", "source_text", "token",
                             "authorization", "prompt", "completion", "model_input"})
 MATRIX_ID = re.compile(r"(?:[A-Z][A-Z0-9-]{1,31}:[A-Za-z0-9_.-]{1,64}|[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64})")
+SCENARIO_SCOPES = {"observed", "scenario_runner_matrix", "http_smoke_only", "contract_fixture_only"}
+SAFE_READBACK_STATUS = {"unchanged", "not_recorded", "observed", "blocked", "unknown"}
 
 
 def _read_json(path: Path | None, label: str, default: Any) -> Any:
@@ -76,6 +78,59 @@ def _empty_runtime_matrix() -> dict[str, Any]:
     }
 
 
+def _normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str]) -> tuple[dict[str, Any], str]:
+    """Keep only status-shaped main/failure evidence and require both for a mode PASS."""
+    raw = entry.get("scenario_evidence")
+    blocked = {
+        "main_path": {"result": "BLOCKED", "fixture_id": None, "verification_scope": "not_recorded"},
+        "key_failure": {"result": "BLOCKED", "fixture_id": None, "http_status": None,
+                         "no_formal_side_effect": None, "readback_status": "not_recorded"},
+    }
+    if not isinstance(raw, dict):
+        return blocked, "BLOCKED"
+    main = raw.get("main_path")
+    failure = raw.get("key_failure")
+    if not isinstance(main, dict) or not isinstance(failure, dict):
+        return blocked, "BLOCKED"
+    main_id = main.get("fixture_id")
+    failure_id = failure.get("fixture_id")
+    main_result = main.get("result") if main.get("result") in {"PASS", "FAIL", "NOT RUN", "BLOCKED"} else "BLOCKED"
+    failure_result = failure.get("result") if failure.get("result") in {"PASS", "FAIL", "NOT RUN", "BLOCKED"} else "BLOCKED"
+    main_scope = main.get("verification_scope") if main.get("verification_scope") in SCENARIO_SCOPES else "not_recorded"
+    main_steps = main.get("completed_steps", 0)
+    main_complete = (main_result == "PASS" and isinstance(main_id, str)
+                     and MATRIX_ID.fullmatch(main_id) and main_id in fixture_ids
+                     and isinstance(main_steps, int) and not isinstance(main_steps, bool) and main_steps > 0
+                     and main_scope in {"observed", "scenario_runner_matrix"})
+    actual_http = failure.get("actual_http")
+    readback_status = failure.get("readback_status")
+    failure_complete = (failure_result == "PASS" and isinstance(failure_id, str)
+                        and MATRIX_ID.fullmatch(failure_id) and failure_id in fixture_ids
+                        and isinstance(actual_http, int) and not isinstance(actual_http, bool)
+                        and 400 <= actual_http <= 599
+                        and failure.get("no_formal_side_effect") is True
+                        and readback_status in SAFE_READBACK_STATUS
+                        and readback_status == "unchanged")
+    normalized = {
+        "main_path": {
+            "result": main_result, "fixture_id": main_id if isinstance(main_id, str) and MATRIX_ID.fullmatch(main_id) else None,
+            "completed_steps": main_steps if isinstance(main_steps, int) and not isinstance(main_steps, bool) else 0,
+            "verification_scope": main_scope,
+        },
+        "key_failure": {
+            "result": failure_result,
+            "fixture_id": failure_id if isinstance(failure_id, str) and MATRIX_ID.fullmatch(failure_id) else None,
+            "http_status": actual_http if isinstance(actual_http, int) and not isinstance(actual_http, bool) else None,
+            "no_formal_side_effect": failure.get("no_formal_side_effect") if isinstance(failure.get("no_formal_side_effect"), bool) else None,
+            "readback_status": readback_status if readback_status in SAFE_READBACK_STATUS else "not_recorded",
+        },
+    }
+    evidence_result = reduce_results([main_result, failure_result])
+    if main_complete and failure_complete:
+        return normalized, evidence_result
+    return normalized, "BLOCKED" if evidence_result != "FAIL" else "FAIL"
+
+
 def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
     """Wrap a scenario-runner matrix in the common G6 evidence shape."""
     matrix = matrix or _empty_runtime_matrix()
@@ -93,9 +148,12 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
     all_modes_present = sorted(modes) == sorted(RUNTIME_MODES)
     shared_fixture = matrix.get("shared_fixture") is True and all_modes_present
     fixture_ids = matrix.get("fixture_ids", [])
-    if (not isinstance(fixture_ids, list) or not fixture_ids
-            or not all(isinstance(value, str) and MATRIX_ID.fullmatch(value) for value in fixture_ids)):
+    valid_fixture_ids = ([value for value in fixture_ids
+                          if isinstance(value, str) and MATRIX_ID.fullmatch(value)]
+                         if isinstance(fixture_ids, list) else [])
+    if not valid_fixture_ids or len(valid_fixture_ids) != (len(fixture_ids) if isinstance(fixture_ids, list) else 0):
         shared_fixture = False
+    fixture_ids = sorted(set(valid_fixture_ids))
     dependency_matrix = matrix.get("dependency_matrix")
     if not isinstance(dependency_matrix, dict):
         dependency_matrix = {}
@@ -144,7 +202,9 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
             shared_fixture = False
             mode_results.append("BLOCKED")
             continue
-        mode_results.append(entry["result"])
+        scenario_evidence, scenario_result = _normalize_scenario_evidence(entry, fixture_ids)
+        mode_result = reduce_results([entry["result"], scenario_result])
+        mode_results.append(mode_result)
         semantics = entry.get("provider_semantics_status", "not_verified")
         if semantics not in {"verified", "not_verified"}:
             semantics = "not_verified"
@@ -155,7 +215,7 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
             semantics_verified = False
         normalized_modes.append({
             "runtime_mode": mode,
-            "result": entry["result"],
+            "result": mode_result,
             "dependency_status": dependency_status,
             "provider_semantics_status": semantics,
             "verification_scope": (entry.get("verification_scope")
@@ -164,6 +224,7 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
                                                                           "scenario_runner_matrix",
                                                                           "observed"}
                                    else "not_recorded"),
+            "scenario_evidence": scenario_evidence,
         })
     result = reduce_results(mode_results)
     if supplied_result == "FAIL":
@@ -184,7 +245,8 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
         "quality_evidence": build_evidence(
             fixture_id="G6-RUNTIME-MATRIX-01", runtime_mode="mock", result=result,
             input_value={"runtime_modes": modes, "fixture_ids": matrix.get("fixture_ids", [])},
-            output_value={"result": result, "dependency_matrix": matrix.get("dependency_matrix", {})},
+            output_value={"result": result, "dependency_matrix": normalized_dependencies,
+                          "modes": normalized_modes},
             attribution=["runtime"] if result in {"BLOCKED", "NOT RUN"} else ["domain_logic"],
             evidence_refs=["runtime_modes", "dependency_matrix", "modes"],
             owner="quality-operations", reviewer="unassigned",

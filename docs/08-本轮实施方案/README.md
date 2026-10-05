@@ -73,7 +73,7 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 
 矩阵不把 mock 的 `PASS` 合并成真实模式的通过结论；每个模式的 `quality_evidence`、执行摘要和验证范围都在自己的条目中保存。
 
-矩阵还输出 `dependency_matrix`：`mock` 要求契约证据，`real_api_fake_model` 要求 API、权限、队列和文件依赖，`real` 另外要求模型、WeKnora 和 DOCX 依赖；缺任一项即为 `BLOCKED`。
+矩阵还输出 `dependency_matrix`：`mock` 要求契约证据，`real_api_fake_model` 要求 API、权限、队列和文件依赖，`real` 另外要求模型、WeKnora 和 DOCX 依赖；缺任一项即为 `BLOCKED`。每个模式还必须提交脱敏的 `scenario_evidence.main_path` 与 `scenario_evidence.key_failure`：主路径需有正步数和外部观察范围，关键失败需有 4xx/5xx、`no_formal_side_effect=true` 及 `readback_status=unchanged`；任一模式缺少这两段证据，矩阵不能为 `PASS`。
 
 真实模式还必须显式提供每个依赖和 `provider_semantics=verified` 证据；只有命令行/报告同时满足这些条件时，模式才可能得到 `PASS`。仅填写依赖存在布尔值或仅有 mock 结果不能冒充真实接入。
 
