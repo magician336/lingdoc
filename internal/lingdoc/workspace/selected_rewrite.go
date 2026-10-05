@@ -225,60 +225,91 @@ type SelectedRewriteService struct {
 	workspace ApplicationService
 	sources   SourceApplicationService
 	model     SelectedRewriteModel
+	audit     AuditSink
 	now       func() time.Time
 }
 
-func NewSelectedRewriteService(db *gorm.DB, workspace ApplicationService, sources SourceApplicationService, model SelectedRewriteModel) *SelectedRewriteService {
-	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, sources: sources, model: model, now: func() time.Time { return time.Now().UTC() }}
+func NewSelectedRewriteService(db *gorm.DB, workspace ApplicationService, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
+	var audit AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
+	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
+}
+
+func (s *SelectedRewriteService) recordAudit(ctx context.Context, actor Actor, projectID, capability, decision, reason string, details map[string]any) {
+	if s == nil || s.audit == nil {
+		return
+	}
+	_ = s.audit.Record(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
+		ProjectID: projectID, Capability: capability, Decision: decision, Reason: reason, Details: details})
 }
 
 var rewriteCitationMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
 
 func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest) (SelectedRewriteCandidate, error) {
+	auditDetails := map[string]any{"chapter_id": chapterID, "idempotency_key": key, "spec_revision": input.ExpectedSpecRevision,
+		"working_copy_revision": input.ExpectedWorkingCopyRevision}
+	auditDecision := "allow"
+	auditReason := ""
+	defer func() {
+		s.recordAudit(ctx, actor, projectID, "selected_rewrite.create", auditDecision, auditReason, auditDetails)
+	}()
 	if s == nil || s.store == nil || s.workspace == nil || s.sources == nil || s.model == nil ||
 		actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(chapterID) == "" {
+		auditDecision, auditReason = "deny", ErrRewriteUnavailable.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
 	}
 	key = strings.TrimSpace(key)
 	if err := validateSelectedRewriteInput(key, input); err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.SourceIDs = slices.Clone(input.SourceIDs)
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write"); err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
 	project, err := s.workspace.GetProject(ctx, actor, projectID)
 	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 	}
 	copy, err := s.workspace.GetWorkingCopy(ctx, actor, projectID, chapterID)
 	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 	}
 	if project.Status != "active" || project.SpecRevision != input.ExpectedSpecRevision ||
 		copy.SpecRevision != input.ExpectedSpecRevision || copy.WorkingCopyRevision != input.ExpectedWorkingCopyRevision ||
 		!sameOptionalVersion(copy.BaseChapterVersionID, input.BaseChapterVersionID) {
+		auditDecision, auditReason = "deny", ErrRewriteConflict.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteConflict
 	}
 	_, _, before, after, ok := selectedRewriteContextWindow(copy.BodyMarkdown, input.Selection)
 	if !ok {
+		auditDecision, auditReason = "deny", ErrRewriteStale.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteStale
 	}
 	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
 	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
 	mode := s.model.RunMode()
 	if !validRewriteMode(mode) {
+		auditDecision, auditReason = "deny", ErrRewriteUnavailable.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
 	}
 	hash, err := selectedRewriteRequestHash(input)
 	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
 	seed, err := s.createRow(actor, projectID, chapterID, key, input, hash, snapshots)
 	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
 	seed.RunMode = mode
@@ -289,55 +320,84 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	if !created {
 		row, err = s.staleIfNeeded(ctx, actor, projectID, chapterID, row)
 		if err != nil {
+			auditDecision, auditReason = "deny", err.Error()
 			return SelectedRewriteCandidate{}, selectedRewriteContextError(err)
 		}
 		if row.Status == "ready" && s.recheckSources(ctx, actor, projectID, mustDecodeSnapshots(row.AuthorizedSourcesJSON)) != nil {
+			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
+		auditDetails["candidate_id"], auditDetails["run_mode"], auditDetails["status"] = row.ID, row.RunMode, row.Status
 		return selectedRewriteView(row)
 	}
 	if err := s.store.update(ctx, row); err != nil {
+		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
+	auditDetails["candidate_id"] = row.ID
+	auditDetails["run_mode"] = row.RunMode
 	output, modelErr := s.model.RewriteSelected(ctx, actor, SelectedRewritePrompt{
 		Selection: input.Selection, Instruction: input.Instruction, ContextBefore: before, ContextAfter: after, Sources: sources,
 	})
 	if modelErr != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "rewrite_failed", ""
+		auditDecision, auditReason = "deny", row.ErrorCode
+		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if output.RunMode != "" {
 		if !validRewriteMode(output.RunMode) {
 			row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "invalid_run_mode", ""
+			auditDecision, auditReason = "deny", row.ErrorCode
+			auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 			return s.updateCandidate(context.WithoutCancel(ctx), row)
 		}
 		row.RunMode = output.RunMode
 	}
 	if err := validateRewriteOutput(output, input.SourceIDs); err != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", selectedRewriteFailureCode(err), ""
+		auditDecision, auditReason = "deny", row.ErrorCode
+		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "source_access_denied", ""
+		auditDecision, auditReason = "deny", row.ErrorCode
+		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write"); err != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "authorization_changed", ""
+		auditDecision, auditReason = "deny", row.ErrorCode
+		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	currentCopy, err := s.workspace.GetWorkingCopy(ctx, actor, projectID, chapterID)
 	if err != nil || !workingCopyIsCandidateBasis(currentCopy, row) {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "stale_input", ""
+		auditDecision, auditReason = "deny", row.ErrorCode
+		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := writeRewriteResult(&row, output); err != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", selectedRewriteFailureCode(err), ""
+		auditDecision, auditReason = "deny", row.ErrorCode
+		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
+	auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 	return s.updateCandidate(context.WithoutCancel(ctx), row)
 }
 
-func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID, candidateID string) (SelectedRewriteCandidate, error) {
+func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID, candidateID string) (result SelectedRewriteCandidate, err error) {
+	details := map[string]any{"candidate_id": candidateID}
+	defer func() {
+		decision, reason := "allow", ""
+		if err != nil {
+			decision, reason = "deny", err.Error()
+		}
+		s.recordAudit(ctx, actor, projectID, "selected_rewrite.get", decision, reason, details)
+	}()
 	if s == nil || s.store == nil || s.workspace == nil || s.sources == nil || actor.TenantID == 0 {
 		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
 	}
@@ -348,6 +408,8 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	if err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
+	details["run_mode"], details["status"] = row.RunMode, row.Status
+	details["spec_revision"], details["working_copy_revision"] = row.SpecRevision, row.WorkingCopyRevision
 	if row.ApplyPendingKey == "" {
 		row, err = s.staleIfNeeded(ctx, actor, projectID, row.ChapterID, row)
 		if err != nil {
@@ -363,7 +425,16 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	return selectedRewriteView(row)
 }
 
-func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, projectID, chapterID, candidateID, key string, input ApplySelectedRewriteInput) (core.WorkingCopy, bool, error) {
+func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, projectID, chapterID, candidateID, key string, input ApplySelectedRewriteInput) (result core.WorkingCopy, replayed bool, err error) {
+	details := map[string]any{"chapter_id": chapterID, "candidate_id": candidateID, "idempotency_key": key,
+		"spec_revision": input.ExpectedSpecRevision, "working_copy_revision": input.ExpectedWorkingCopyRevision}
+	defer func() {
+		decision, reason := "allow", ""
+		if err != nil {
+			decision, reason = "deny", err.Error()
+		}
+		s.recordAudit(ctx, actor, projectID, "selected_rewrite.apply", decision, reason, details)
+	}()
 	if s == nil || s.store == nil || s.workspace == nil || s.sources == nil || actor.TenantID == 0 || len(key) < 8 || len(key) > 128 {
 		return core.WorkingCopy{}, false, ErrRewriteInvalidRequest
 	}
@@ -374,6 +445,8 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	if err != nil {
 		return core.WorkingCopy{}, false, err
 	}
+	details["run_mode"], details["status"] = row.RunMode, row.Status
+	details["base_chapter_version_id"] = row.BaseChapterVersionID
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
 		return core.WorkingCopy{}, false, ErrRewriteSourceDenied

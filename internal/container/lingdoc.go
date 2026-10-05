@@ -41,7 +41,7 @@ func NewLingDocWorkspaceHandler(
 		Service:          projectService,
 		Sources:          runtime,
 		Integration:      runtime,
-		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models)),
+		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
 	})
 	return LingDocWorkspace{Handler: handler, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}
 }
