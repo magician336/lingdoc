@@ -265,12 +265,16 @@ class G6MainPathTest(unittest.TestCase):
     def test_main_path_evidence_drops_untrusted_report_payloads(self):
         main = self._complete_report()
         main["steps"][0]["response"] = "SECRET_DOCUMENT"
+        main["verification_scope"] = "SECRET_SCOPE"
+        main["workflow"] = "SECRET_WORKFLOW"
         report = g6_main_path.build_main_path_report(
-            main_report=main,
+            main_report={**main, "workflow": "F01"},
             failure_observation={"failure_case": "duplicate_formal_write", "expected_http": 409,
                                  "actual_http": 409, "no_formal_side_effect": True,
                                  "readback": {"status": "unchanged"}})
         self.assertNotIn("SECRET_DOCUMENT", json.dumps(report))
+        self.assertNotIn("SECRET_SCOPE", json.dumps(report))
+        self.assertNotIn("SECRET_WORKFLOW", json.dumps(report))
 
     def test_failure_readback_rejects_unredacted_status_values(self):
         report = g6_main_path.build_main_path_report(

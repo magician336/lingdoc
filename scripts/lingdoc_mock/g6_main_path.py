@@ -34,6 +34,9 @@ OPERATION_PARTS = {
 REDACTED_VALUE = re.compile(r"(?:[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64})")
 SAFE_STATUS = {"unchanged", "not_recorded", "observed", "failed", "blocked", "ok", "unknown", "active", "passed"}
 FIXTURE_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")
+SAFE_WORKFLOWS = {"F01"}
+SAFE_RUNNER_STATUSES = {"completed", "failed", "not_run", "blocked"}
+SAFE_VERIFICATION_SCOPES = {"contract_fixture_only", "http_smoke_only", "observed", "not_recorded"}
 
 
 def _safe_fixture_state(value: Any) -> dict[str, Any]:
@@ -74,11 +77,11 @@ def _safe_main_report(report: dict[str, Any]) -> dict[str, Any]:
             item["actual_http"] = step["actual_http"]
         steps.append(item)
     return {
-        "workflow": report.get("workflow"),
-        "runner_status": report.get("runner_status"),
-        "completed_steps": report.get("completed_steps", 0),
-        "total_steps": report.get("total_steps", 0),
-        "verification_scope": report.get("verification_scope", "not_recorded"),
+        "workflow": report.get("workflow") if report.get("workflow") in SAFE_WORKFLOWS else "unknown",
+        "runner_status": report.get("runner_status") if report.get("runner_status") in SAFE_RUNNER_STATUSES else "unknown",
+        "completed_steps": report.get("completed_steps", 0) if isinstance(report.get("completed_steps", 0), int) else 0,
+        "total_steps": report.get("total_steps", 0) if isinstance(report.get("total_steps", 0), int) else 0,
+        "verification_scope": report.get("verification_scope") if report.get("verification_scope") in SAFE_VERIFICATION_SCOPES else "not_recorded",
         "steps": steps,
         "fixture_state": _safe_fixture_state(report.get("fixture_state")),
     }
@@ -246,9 +249,9 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
         "fixture_coverage": coverage,
         "main_path": {
             "result": main_result,
-            "completed_steps": main_report.get("completed_steps", 0),
-            "total_steps": main_report.get("total_steps", 0),
-            "verification_scope": main_report.get("verification_scope", "not_recorded"),
+            "completed_steps": safe_main_report["completed_steps"],
+            "total_steps": safe_main_report["total_steps"],
+            "verification_scope": safe_main_report["verification_scope"],
         },
         "fixture_state": fixture_state,
         "failure_path": failure,
@@ -266,7 +269,7 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             dependency_versions=metadata.get("dependency_versions"),
             object_versions=metadata.get("object_versions"),
             input_summary={"required_parts": len(REQUIRED_PARTS)},
-            output_summary={"completed_steps": main_report.get("completed_steps", 0),
+            output_summary={"completed_steps": safe_main_report["completed_steps"],
                             "failure_side_effect_status": failure["status"],
                             "fixture_parts_observed": sorted(fixture_state)},
         ),
