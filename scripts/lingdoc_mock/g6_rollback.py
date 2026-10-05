@@ -63,7 +63,7 @@ def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, 
         and observations.get("duration_ms") >= 0
         and observations.get("recovery_verified") is True
         and isinstance(observations.get("uncovered_risks"), list)
-        and all(isinstance(value, str) and len(value) <= 128
+        and all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", value)
                 for value in observations.get("uncovered_risks", []))
     )
     overall = ("FAIL" if "FAIL" in results else "BLOCKED"
@@ -78,6 +78,13 @@ def build_rollback_report(*, observations: dict[str, Any] | None = None,
     evaluated = evaluate_rehearsal(observations)
     plan = {
         "pause_scope": ["tenant", "project", "template_version", "ruleset_hash", "runtime_mode"],
+        "migration_compatibility": {
+            "old_version_read": "required",
+            "new_version_write": "versioned",
+            "rollback_window": "explicit",
+            "failure_cleanup": "required",
+            "unknown_default": "UNKNOWN",
+        },
         "write_policy": "stop_new_version_writes_only",
         "preserve": ["published_template", "frozen_snapshot", "historical_file", "audit", "revision_pointer"],
         "recovery": ["inverse_changeset", "compatibility_read", "permission_recheck", "download_recheck"],

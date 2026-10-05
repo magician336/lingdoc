@@ -161,6 +161,18 @@ class G6RollbackTest(unittest.TestCase):
         }
         self.assertEqual(g6_rollback.build_rollback_report(observations=observations)["result"], "BLOCKED")
 
+    def test_rehearsal_risk_labels_are_codes_and_plan_exposes_compatibility_edges(self):
+        observations = {
+            "drill_id": "rollback.id", "severity": "P1", "impact_scope": ["tenant.id"],
+            "duration_ms": 1200, "recovery_verified": True, "uncovered_risks": ["wps-reopen"],
+            "checks": {check_id: True for check_id, _ in g6_rollback.CHECKS},
+        }
+        report = g6_rollback.build_rollback_report(observations=observations)
+        self.assertEqual(report["result"], "PASS")
+        self.assertEqual(report["plan"]["migration_compatibility"]["unknown_default"], "UNKNOWN")
+        observations["uncovered_risks"] = ["secret document text"]
+        self.assertEqual(g6_rollback.build_rollback_report(observations=observations)["result"], "BLOCKED")
+
 
 class G6MetricsTest(unittest.TestCase):
     WINDOW = {
