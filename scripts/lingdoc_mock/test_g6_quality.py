@@ -268,6 +268,9 @@ class G6MetricsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "uncovered_risks"):
             g6_metrics.build_beta_report(samples=[], window={**self.WINDOW,
                                                               "uncovered_risks": ["secret document"]})
+        with self.assertRaisesRegex(ValueError, "redaction"):
+            g6_metrics.build_beta_report(samples=[], window={**self.WINDOW,
+                                                              "redaction": "raw document text"})
 
     def test_missing_sample_values_are_reported_and_block_effect_rates(self):
         sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",

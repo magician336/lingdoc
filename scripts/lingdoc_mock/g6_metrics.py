@@ -64,8 +64,9 @@ def _sanitize_window(window: dict[str, Any]) -> dict[str, Any]:
         value = window.get(field)
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             raise ValueError(f"{field} must be a non-negative integer")
-    if not isinstance(window.get("redaction"), str) or not window["redaction"].strip():
-        raise ValueError("redaction must be a non-empty label")
+    if not isinstance(window.get("redaction"), str) or not re.fullmatch(
+            r"[A-Za-z0-9_.:-]{1,64}", window["redaction"]):
+        raise ValueError("redaction must be a short safe label")
     risks = window.get("uncovered_risks")
     if not isinstance(risks, list) or not all(
             isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", value)
