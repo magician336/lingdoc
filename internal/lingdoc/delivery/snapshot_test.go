@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
 
 func validDeliveryInput() DeliveryInput {
@@ -170,5 +172,60 @@ func TestFrozenInputJSONUsesStablePublicNames(t *testing.T) {
 	asset := assets[0].(map[string]any)
 	if _, exists := asset["revision"]; exists || asset["asset_revision"] != float64(4) {
 		t.Fatalf("asset version JSON = %#v", asset)
+	}
+}
+
+func TestTemplateCheckAndPreflightShareDeterministicRuleEvaluation(t *testing.T) {
+	input := validDeliveryInput()
+	input.Template.Rules = append(input.Template.Rules, lingdoctemplate.Rule{
+		ID: "project-goal-pattern", Kind: "pattern", Severity: SeverityWarning,
+		Parameters: map[string]any{"target_kind": "field", "target_id": "research_goal", "pattern": "^approved:"},
+	})
+	definition, err := lingdoctemplate.WithHashes(input.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template = definition
+	input.TemplateCopyID, input.TemplateCopyVersion, input.TemplateCopyContentHash = "copy-1", 1, definition.ContentHash
+
+	first, err := EvaluateTemplate(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EvaluateTemplate(input)
+	if err != nil || !reflect.DeepEqual(first, second) {
+		t.Fatalf("template evaluation is not deterministic: first=%+v second=%+v err=%v", first, second, err)
+	}
+	var ruleEvaluation *lingdoctemplate.Evaluation
+	for i := range first.Evaluations {
+		if first.Evaluations[i].RuleID == "project-goal-pattern" {
+			ruleEvaluation = &first.Evaluations[i]
+			break
+		}
+	}
+	if ruleEvaluation == nil || ruleEvaluation.Status != lingdoctemplate.EvaluationIssue || ruleEvaluation.Severity != SeverityWarning || ruleEvaluation.TargetVersion == "" || ruleEvaluation.RulesetHash != definition.RulesetHash || ruleEvaluation.EvaluatorVersion != lingdoctemplate.EvaluatorVersion {
+		t.Fatalf("missing versioned, explainable custom-rule result: %+v", first)
+	}
+
+	check, err := EvaluateTemplate(input)
+	if err != nil || check.Status != TemplateCheckPassed || check.TemplateCopyID != "copy-1" || check.TemplateCopyVersion != 1 || check.ContentHash != definition.ContentHash {
+		t.Fatalf("template check result = %+v err=%v", check, err)
+	}
+	preflight := Evaluate(input)
+	var finding *CheckIssue
+	for i := range preflight.Issues {
+		if preflight.Issues[i].RuleID == "project-goal-pattern" {
+			finding = &preflight.Issues[i]
+			break
+		}
+	}
+	if finding == nil || finding.Severity != SeverityWarning || finding.Code != "template_rule_issue" {
+		t.Fatalf("preflight did not apply the same custom-rule result: %+v", preflight)
+	}
+	repeated := Evaluate(input)
+	for _, issue := range repeated.Issues {
+		if issue.RuleID == "project-goal-pattern" && issue.ID != finding.ID {
+			t.Fatalf("custom finding identity changed: %s != %s", issue.ID, finding.ID)
+		}
 	}
 }

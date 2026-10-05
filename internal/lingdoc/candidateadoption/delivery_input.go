@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 )
 
@@ -14,14 +15,19 @@ import (
 // input consumed by T13. Template rules and current source records are resolved
 // by their owning providers after this consistent read.
 type WorkspaceDeliveryInput struct {
-	ProjectID       string                     `json:"project_id"`
-	ProjectName     string                     `json:"project_name"`
-	ProjectVersion  int64                      `json:"project_version"`
-	SpecRevision    int                        `json:"spec_revision"`
-	Spec            map[string]string          `json:"spec"`
-	TemplateID      string                     `json:"template_id"`
-	TemplateVersion string                     `json:"template_version"`
-	Chapters        []WorkspaceDeliveryChapter `json:"chapters"`
+	ProjectID               string                     `json:"project_id"`
+	ProjectName             string                     `json:"project_name"`
+	ProjectVersion          int64                      `json:"project_version"`
+	SpecRevision            int                        `json:"spec_revision"`
+	Spec                    map[string]string          `json:"spec"`
+	TemplateID              string                     `json:"template_id"`
+	TemplateVersion         string                     `json:"template_version"`
+	TemplateCopyID          string                     `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64                      `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string                     `json:"template_copy_content_hash,omitempty"`
+	TemplateCopyRulesetHash string                     `json:"template_copy_ruleset_hash,omitempty"`
+	TemplateDefinition      *lingdoctemplate.Template  `json:"template_definition,omitempty"`
+	Chapters                []WorkspaceDeliveryChapter `json:"chapters"`
 }
 
 // WorkspaceDeliveryChapter deliberately allows a nil chapter version and a
@@ -95,6 +101,22 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 			SpecRevision: int(project.SpecRevision), Spec: spec,
 			TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion,
 			Chapters: []WorkspaceDeliveryChapter{},
+		}
+		if project.TemplateCopyVersion > 0 {
+			var copy projectTemplateCopyRow
+			if err := tx.Where("project_id = ? AND version = ?", projectID, project.TemplateCopyVersion).First(&copy).Error; err != nil {
+				return err
+			}
+			var definition lingdoctemplate.Template
+			if err := json.Unmarshal([]byte(copy.DefinitionJSON), &definition); err != nil {
+				return err
+			}
+			result.TemplateCopyID, result.TemplateCopyVersion = copy.ID, copy.Version
+			result.TemplateCopyContentHash, result.TemplateCopyRulesetHash = copy.ContentHash, copy.RulesetHash
+			result.TemplateDefinition = &definition
+			if copy.Status != "bound" {
+				return ErrInvalidState
+			}
 		}
 		var rows []chapterRow
 		if err := tx.Where("project_id = ?", projectID).Order("section_id ASC, id ASC").Find(&rows).Error; err != nil {

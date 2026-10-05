@@ -60,6 +60,16 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 	return delivery.Evaluate(input), nil
 }
 
+// TemplateCheck returns the shared declarative evaluator's evidence for the
+// current editing input. It is advisory and never freezes or releases output.
+func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.TemplateCheckResult, error) {
+	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
+	if err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	return delivery.EvaluateTemplate(input)
+}
+
 // Prepare 冻结一份快照并落存，返回它是不是这次动作的重放。key 是这次用户动作的
 // 幂等键——契约把 Idempotency-Key 标成 /releases 的必填头。
 //

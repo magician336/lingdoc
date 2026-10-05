@@ -22,6 +22,12 @@ type ReleaseApplication interface {
 	Get(context.Context, string, string, string) (delivery.ReleaseSnapshot, error)
 	List(context.Context, string, string) ([]delivery.ReleaseSnapshot, bool, error)
 }
+
+// TemplateCheckApplication exposes explainable G4 rule evidence without
+// changing the stable T13 CheckResult schema or granting export permission.
+type TemplateCheckApplication interface {
+	TemplateCheck(context.Context, string, string, int64) (delivery.TemplateCheckResult, error)
+}
 type ExportApplication interface {
 	Start(context.Context, string, string, string, string) (delivery.ExportArtifact, bool, error)
 	Get(context.Context, string, string, string) (delivery.ExportArtifact, error)
@@ -30,4 +36,5 @@ type ExportApplication interface {
 }
 
 var _ ReleaseApplication = (*DeliveryReleaseService)(nil)
+var _ TemplateCheckApplication = (*DeliveryReleaseService)(nil)
 var _ ExportApplication = (*DeliveryExportService)(nil)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
 
 // DeliveryInputBuilder 是 T12→T13 那一段：把工作区的交付输入补成 T13 的冻结输入。
@@ -94,11 +95,23 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 	if !ok {
 		return delivery.DeliveryInput{}, candidateadoption.ErrSourceAccessDenied
 	}
-	template, err := b.templates.Get(input.TemplateID, input.TemplateVersion)
-	if err != nil {
-		// 模板取不到不是「检查不通过」，是装配或数据错了：冻结输入离开模板没有意义
-		// （ruleset_hash 与规则声明都由它来）。如实报错，别冻一份没有判据的快照。
-		return delivery.DeliveryInput{}, fmt.Errorf("%w: read frozen template %q version %q: %v", candidateadoption.ErrInvalidState, input.TemplateID, input.TemplateVersion, err)
+	var template lingdoctemplate.Template
+	if input.TemplateDefinition != nil {
+		template = *input.TemplateDefinition
+		contentHash, rulesetHash, hashErr := lingdoctemplate.Hashes(template)
+		if hashErr != nil || input.TemplateCopyID == "" || input.TemplateCopyVersion < 1 ||
+			contentHash != input.TemplateCopyContentHash || rulesetHash != input.TemplateCopyRulesetHash ||
+			template.ID != input.TemplateID || template.Version != input.TemplateVersion {
+			return delivery.DeliveryInput{}, fmt.Errorf("%w: project template copy is invalid or stale", candidateadoption.ErrInvalidState)
+		}
+	} else {
+		var err error
+		template, err = b.templates.Get(input.TemplateID, input.TemplateVersion)
+		if err != nil {
+			// 模板取不到不是「检查不通过」，是装配或数据错了：冻结输入离开模板没有意义
+			// （ruleset_hash 与规则声明都由它来）。如实报错，别冻一份没有判据的快照。
+			return delivery.DeliveryInput{}, fmt.Errorf("%w: read frozen template %q version %q: %v", candidateadoption.ErrInvalidState, input.TemplateID, input.TemplateVersion, err)
+		}
 	}
 
 	verdicts, err := b.revalidate(checked, input.ProjectID, actor, referencedSourceIDs(input.Chapters))
@@ -108,16 +121,19 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 	sources := frozenSources(verdicts)
 	versions := assetVersionsOfSources(sources)
 	return delivery.DeliveryInput{
-		ProjectID:      input.ProjectID,
-		ProjectName:    input.ProjectName,
-		ProjectVersion: int(input.ProjectVersion),
-		SpecRevision:   input.SpecRevision,
-		Spec:           cloneStringMap(input.Spec),
-		Template:       template,
-		Chapters:       frozenChapters(input.Chapters),
-		Sources:        sources,
-		AssetVersions:  versions,
-		PolicyAssetIDs: policyAssetIDsOf(versions),
+		ProjectID:               input.ProjectID,
+		ProjectName:             input.ProjectName,
+		ProjectVersion:          int(input.ProjectVersion),
+		SpecRevision:            input.SpecRevision,
+		Spec:                    cloneStringMap(input.Spec),
+		Template:                template,
+		TemplateCopyID:          input.TemplateCopyID,
+		TemplateCopyVersion:     input.TemplateCopyVersion,
+		TemplateCopyContentHash: input.TemplateCopyContentHash,
+		Chapters:                frozenChapters(input.Chapters),
+		Sources:                 sources,
+		AssetVersions:           versions,
+		PolicyAssetIDs:          policyAssetIDsOf(versions),
 		// 契约里 prepareRelease 的请求体只有 expected_project_version，没有交付种类；
 		// 而这套演示只放行一种交付（delivery.DeliveryKindInternalDemo）。
 		DeliveryKind: delivery.DeliveryKindInternalDemo,

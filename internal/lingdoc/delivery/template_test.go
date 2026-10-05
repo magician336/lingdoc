@@ -25,7 +25,10 @@ func TestFixedTemplateReaderReturnsDemoContract(t *testing.T) {
 		Name:           "演示模板：研究问题与研究方案",
 		Version:        "1",
 		IsDemo:         true,
-		Sections:       []Section{{ID: "question", Title: "研究问题", Required: true}, {ID: "method", Title: "研究方案", Required: true}},
+		Source:         "lingdoc_builtin",
+		Scope:          "internal-demo",
+		Sections:       []Section{{ID: "question", Title: "研究问题", Order: 1, Required: true}, {ID: "method", Title: "研究方案", Order: 2, Required: true}},
+		Fields:         []lingdoctemplate.Field{{ID: "research_subject", Label: "研究对象", Type: "string", Order: 1, Required: true}, {ID: "research_goal", Label: "研究目标", Type: "string", Order: 2, Required: true}},
 		RequiredFields: []string{"research_subject", "research_goal"},
 		RulesetHash:    "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
 		Rules: []Rule{
@@ -77,11 +80,12 @@ func TestFixedTemplateReaderReturnsIndependentCopies(t *testing.T) {
 	}
 }
 
-func TestCloneParametersCopiesNestedJSONValues(t *testing.T) {
+func TestCloneTemplateCopiesNestedRuleParameters(t *testing.T) {
 	original := map[string]any{
 		"nested": map[string]any{"items": []any{map[string]any{"value": "original"}}},
 	}
-	copy := cloneParameters(original)
+	cloned := lingdoctemplate.Clone(lingdoctemplate.Template{Rules: []lingdoctemplate.Rule{{Parameters: original}}})
+	copy := cloned.Rules[0].Parameters
 	copy["nested"].(map[string]any)["items"].([]any)[0].(map[string]any)["value"] = "mutated"
 
 	if got := original["nested"].(map[string]any)["items"].([]any)[0].(map[string]any)["value"]; got != "original" {

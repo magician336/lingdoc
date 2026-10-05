@@ -24,17 +24,30 @@ func NewSQLiteCandidateAdoptionStore(db *gorm.DB) *SQLiteCandidateAdoptionStore 
 func (s *SQLiteCandidateAdoptionStore) DB() *gorm.DB { return s.db }
 
 type projectRow struct {
-	ID              string `gorm:"primaryKey;size:36"`
-	TenantID        uint64 `gorm:"not null;index"`
-	Name            string `gorm:"not null;size:120"`
-	Status          string `gorm:"not null;size:16"`
-	ProjectVersion  int64  `gorm:"not null"`
-	SpecRevision    int64  `gorm:"not null"`
-	SpecJSON        string `gorm:"column:spec_json;not null;type:text"`
-	TemplateID      string `gorm:"not null;size:80"`
-	TemplateVersion string `gorm:"not null;size:40"`
-	CreatedAt       time.Time
+	ID                  string `gorm:"primaryKey;size:36"`
+	TenantID            uint64 `gorm:"not null;index"`
+	Name                string `gorm:"not null;size:120"`
+	Status              string `gorm:"not null;size:16"`
+	ProjectVersion      int64  `gorm:"not null"`
+	SpecRevision        int64  `gorm:"not null"`
+	SpecJSON            string `gorm:"column:spec_json;not null;type:text"`
+	TemplateID          string `gorm:"not null;size:80"`
+	TemplateVersion     string `gorm:"not null;size:40"`
+	TemplateCopyVersion int64  `gorm:"column:template_copy_version;not null;default:0"`
+	CreatedAt           time.Time
 }
+
+type projectTemplateCopyRow struct {
+	ID             string `gorm:"primaryKey;size:36"`
+	ProjectID      string `gorm:"not null;size:36"`
+	Version        int64  `gorm:"not null"`
+	ContentHash    string `gorm:"not null;size:64"`
+	RulesetHash    string `gorm:"not null;size:64"`
+	Status         string `gorm:"not null;size:16"`
+	DefinitionJSON string `gorm:"column:definition_json;not null;type:text"`
+}
+
+func (projectTemplateCopyRow) TableName() string { return "lingdoc_project_template_copies" }
 
 type chapterRow struct {
 	ID               string  `gorm:"primaryKey;size:36"`

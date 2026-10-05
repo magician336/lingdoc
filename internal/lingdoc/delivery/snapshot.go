@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
 
 var (
@@ -28,17 +29,20 @@ var (
 
 // DeliveryInput is the immutable value captured for checking and export.
 type DeliveryInput struct {
-	ProjectID      string            `json:"project_id"`
-	ProjectName    string            `json:"project_name"`
-	ProjectVersion int               `json:"project_version"`
-	SpecRevision   int               `json:"spec_revision"`
-	Spec           map[string]string `json:"spec"`
-	Template       Template          `json:"template"`
-	Chapters       []SnapshotChapter `json:"chapters"`
-	Sources        []FrozenSource    `json:"sources"`
-	AssetVersions  []AssetVersion    `json:"asset_versions"`
-	PolicyAssetIDs []string          `json:"policy_asset_ids"`
-	DeliveryKind   string            `json:"delivery_kind"`
+	ProjectID               string            `json:"project_id"`
+	ProjectName             string            `json:"project_name"`
+	ProjectVersion          int               `json:"project_version"`
+	SpecRevision            int               `json:"spec_revision"`
+	Spec                    map[string]string `json:"spec"`
+	Template                Template          `json:"template"`
+	TemplateCopyID          string            `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64             `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string            `json:"template_copy_content_hash,omitempty"`
+	Chapters                []SnapshotChapter `json:"chapters"`
+	Sources                 []FrozenSource    `json:"sources"`
+	AssetVersions           []AssetVersion    `json:"asset_versions"`
+	PolicyAssetIDs          []string          `json:"policy_asset_ids"`
+	DeliveryKind            string            `json:"delivery_kind"`
 }
 type SnapshotChapter struct {
 	ChapterID        string          `json:"chapter_id"`
@@ -372,12 +376,29 @@ func Evaluate(input DeliveryInput) CheckResult {
 		return result
 	}
 	versions := chapterVersionIDs(input.Chapters)
-	add := func(severity, ruleID, code, chapterID, message string) {
-		target, targetVersion := issueTarget(input, versions, chapterID)
-		result.Issues = append(result.Issues, CheckIssue{ID: fmt.Sprintf("%s-%s-%d", code, target, len(result.Issues)+1), RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: targetVersion, Message: message, Code: code, ChapterID: chapterID})
+	seenIssues := make(map[string]int)
+	addTarget := func(severity, ruleID, code, target, chapterID string, targetVersion *string, message string) {
+		version := "<none>"
+		if targetVersion != nil {
+			version = *targetVersion
+		}
+		identity := ruleID + "\x00" + target + "\x00" + version + "\x00" + code
+		if index, exists := seenIssues[identity]; exists {
+			if message != "" && !strings.Contains(result.Issues[index].Message, message) {
+				result.Issues[index].Message += "; " + message
+			}
+			return
+		}
+		seenIssues[identity] = len(result.Issues)
+		sum := sha256.Sum256([]byte(identity))
+		result.Issues = append(result.Issues, CheckIssue{ID: "vi-" + hex.EncodeToString(sum[:12]), RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Message: message, Code: code, ChapterID: chapterID})
 		if severity == SeverityBlocking {
 			result.Status = CheckBlocked
 		}
+	}
+	add := func(severity, ruleID, code, chapterID, message string) {
+		target, targetVersion := issueTarget(input, versions, chapterID)
+		addTarget(severity, ruleID, code, target, chapterID, targetVersion, message)
 	}
 	issue := func(ruleID, code, chapterID, message string) {
 		add(ruleSeverity(severities, ruleID), ruleID, code, chapterID, message)
@@ -386,6 +407,43 @@ func Evaluate(input DeliveryInput) CheckResult {
 	// result must still carry the item forward to the exported file.
 	advisory := func(ruleID, code, chapterID, message string) {
 		add(SeverityWarning, ruleID, code, chapterID, message)
+	}
+	evaluated, evaluationErr := EvaluateTemplate(input)
+	if evaluationErr != nil {
+		issue(RuleRequiredFields, "template_rules_invalid", "", "模板规则结构无效，无法安全执行检查")
+	} else {
+		for _, evaluation := range evaluated.Evaluations {
+			if evaluation.Status != lingdoctemplate.EvaluationIssue || isLegacyTemplateRule(evaluation.RuleID) {
+				continue
+			}
+			kind, id, _ := strings.Cut(evaluation.TargetRef, "/")
+			target, chapterID := id, ""
+			switch kind {
+			case "project":
+				target = input.ProjectID
+			case "chapter":
+				for _, chapter := range input.Chapters {
+					if chapter.SectionID == id {
+						target, chapterID = chapter.ChapterID, chapter.ChapterID
+						break
+					}
+				}
+			case "review_item":
+				for _, chapter := range input.Chapters {
+					for _, item := range chapter.ReviewItems {
+						if item.ID == id {
+							chapterID = chapter.ChapterID
+							break
+						}
+					}
+					if chapterID != "" {
+						break
+					}
+				}
+			}
+			version := evaluation.TargetVersion
+			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message)
+		}
 	}
 
 	if input.ProjectID == "" || input.DeliveryKind != DeliveryKindInternalDemo {
@@ -411,6 +469,15 @@ func Evaluate(input DeliveryInput) CheckResult {
 		}
 	}
 	return result
+}
+
+func isLegacyTemplateRule(id string) bool {
+	switch id {
+	case RuleRequiredFields, RuleChapterNonempty, RuleChapterConfirmed, RuleReviewItemsDecided, RuleSourceAvailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func ruleSeverities(rules []Rule) map[string]string {
@@ -617,7 +684,7 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 	for key, value := range input.Spec {
 		copy.Spec[key] = value
 	}
-	copy.Template = cloneTemplate(input.Template)
+	copy.Template = lingdoctemplate.Clone(input.Template)
 	copy.Chapters = make([]SnapshotChapter, len(input.Chapters))
 	for i, chapter := range input.Chapters {
 		copy.Chapters[i] = cloneChapter(chapter)

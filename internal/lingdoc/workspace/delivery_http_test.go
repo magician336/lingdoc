@@ -321,6 +321,12 @@ func TestDeliveryRoutesAnswerTheShapeTheContractPublished(t *testing.T) {
 	}
 	compareWithPublishedExample(t, "checkCurrent", "200", decodeDeliveryEnvelope(t, checks).Data)
 
+	templateCheck := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/template-checks", deliveryReadVersionBody, ""))
+	if templateCheck.Code != http.StatusOK {
+		t.Fatalf("POST template-checks = %d, want 200: %s", templateCheck.Code, templateCheck.Body.String())
+	}
+	compareWithPublishedExample(t, "checkProjectTemplateRules", "200", decodeDeliveryEnvelope(t, templateCheck).Data)
+
 	prepared := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/releases", deliveryReadVersionBody, deliveryFreezeKey))
 	if prepared.Code != http.StatusCreated {
 		t.Fatalf("POST releases = %d, want 201: %s", prepared.Code, prepared.Body.String())

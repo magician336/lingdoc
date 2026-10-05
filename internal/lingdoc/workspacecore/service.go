@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"gorm.io/gorm"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -84,8 +85,24 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	if deliveryStatus == "" {
 		deliveryStatus = "NOT_READY"
 	}
-	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, DeliveryStatus: deliveryStatus, BaselineConfirmationID: row.BaselineConfirmationID, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
+	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, DeliveryStatus: deliveryStatus, BaselineConfirmationID: row.BaselineConfirmationID, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, TemplateCopyVersion: row.TemplateCopyVersion, Members: make([]Member, 0, len(members))}
 	p.DiscardedAt = row.DiscardedAt
+	if row.TemplateCopyVersion > 0 {
+		var copyRow projectTemplateCopyRow
+		if err := tx.Where("project_id = ? AND version = ?", row.ID, row.TemplateCopyVersion).First(&copyRow).Error; err != nil {
+			return Project{}, storageError(err)
+		}
+		var definition Template
+		if err := json.Unmarshal([]byte(copyRow.DefinitionJSON), &definition); err != nil {
+			return Project{}, err
+		}
+		p.TemplateCopy = &ProjectTemplateCopy{
+			ID: copyRow.ID, ProjectID: copyRow.ProjectID, SourceTemplateID: copyRow.SourceTemplateID,
+			SourceTemplateVersion: copyRow.SourceTemplateVersion, Version: copyRow.Version, Status: copyRow.Status,
+			ContentHash: copyRow.ContentHash, RulesetHash: copyRow.RulesetHash, Definition: definition,
+			CreatedBy: copyRow.CreatedBy, CreatedAt: copyRow.CreatedAt,
+		}
+	}
 	for _, m := range members {
 		member := Member{UserID: m.UserID, Role: m.Role}
 		if m.Role == "owner" {
@@ -114,6 +131,25 @@ func (t gormTransaction) Project(tenantID uint64, id string) (Project, error) {
 	}
 	return projectView(t.db, row)
 }
+func (t gormTransaction) ProjectTemplateCopy(tenantID uint64, projectID string, version int64) (ProjectTemplateCopy, error) {
+	var row projectTemplateCopyRow
+	query := t.db.Table("lingdoc_project_template_copies AS c").
+		Select("c.*").Joins("JOIN lingdoc_projects AS p ON p.id = c.project_id").
+		Where("p.tenant_id = ? AND c.project_id = ? AND c.version = ?", tenantID, projectID, version)
+	if err := query.First(&row).Error; err != nil {
+		return ProjectTemplateCopy{}, storageError(err)
+	}
+	var definition Template
+	if err := json.Unmarshal([]byte(row.DefinitionJSON), &definition); err != nil {
+		return ProjectTemplateCopy{}, err
+	}
+	return ProjectTemplateCopy{
+		ID: row.ID, ProjectID: row.ProjectID, SourceTemplateID: row.SourceTemplateID,
+		SourceTemplateVersion: row.SourceTemplateVersion, Version: row.Version, Status: row.Status,
+		ContentHash: row.ContentHash, RulesetHash: row.RulesetHash, Definition: definition,
+		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt,
+	}, nil
+}
 func (t gormTransaction) Projects(actor Actor, limit int) ([]Project, error) {
 	var rows []projectRow
 	if err := t.db.Table("lingdoc_projects AS p").Select("p.*").Joins("JOIN lingdoc_members AS m ON m.project_id = p.id").Where("p.tenant_id = ? AND m.user_id = ? AND p.discarded_at IS NULL", actor.TenantID, actor.UserID).Order("p.created_at DESC, p.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
@@ -138,9 +174,17 @@ func (t gormTransaction) InsertProject(tenantID uint64, p Project) error {
 	if err != nil {
 		return err
 	}
-	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, DeliveryStatus: p.DeliveryStatus, BaselineConfirmationID: p.BaselineConfirmationID, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, DiscardedAt: p.DiscardedAt}
+	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, DeliveryStatus: p.DeliveryStatus, BaselineConfirmationID: p.BaselineConfirmationID, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, TemplateCopyVersion: p.TemplateCopyVersion, DiscardedAt: p.DiscardedAt}
 	if err := t.db.Create(&row).Error; err != nil {
 		return err
+	}
+	if p.TemplateCopy != nil {
+		if p.TemplateCopy.ProjectID != p.ID || p.TemplateCopy.Version != p.TemplateCopyVersion || p.TemplateCopy.Status != TemplateCopyDraft || validateProjectTemplateCopy(p.TemplateCopy) != nil {
+			return ErrInvalidState
+		}
+		if err := t.insertProjectTemplateCopy(*p.TemplateCopy); err != nil {
+			return err
+		}
 	}
 	for _, m := range p.Members {
 		if err := t.db.Create(&memberRow{ProjectID: p.ID, UserID: m.UserID, Role: m.Role}).Error; err != nil {
@@ -184,7 +228,57 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err != nil {
 		return err
 	}
-	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion, "discarded_at": next.DiscardedAt, "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}))
+	result := t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion, "template_copy_version": next.TemplateCopyVersion, "discarded_at": next.DiscardedAt, "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID})
+	if err := affected(result); err != nil {
+		return err
+	}
+	return t.persistTemplateCopyTransition(previous, next)
+}
+
+func (t gormTransaction) insertProjectTemplateCopy(copy ProjectTemplateCopy) error {
+	raw, err := json.Marshal(copy.Definition)
+	if err != nil {
+		return err
+	}
+	return t.db.Create(&projectTemplateCopyRow{
+		ID: copy.ID, ProjectID: copy.ProjectID, Version: copy.Version,
+		SourceTemplateID: copy.SourceTemplateID, SourceTemplateVersion: copy.SourceTemplateVersion,
+		Status: copy.Status, ContentHash: copy.ContentHash, RulesetHash: copy.RulesetHash,
+		DefinitionJSON: string(raw), CreatedBy: copy.CreatedBy, CreatedAt: copy.CreatedAt,
+	}).Error
+}
+
+func (t gormTransaction) persistTemplateCopyTransition(previous, next Project) error {
+	if next.TemplateCopyVersion == previous.TemplateCopyVersion {
+		if previous.TemplateCopy == nil && next.TemplateCopy == nil {
+			return nil
+		}
+		if previous.TemplateCopy == nil || next.TemplateCopy == nil || previous.TemplateCopy.ID != next.TemplateCopy.ID ||
+			previous.TemplateCopy.ContentHash != next.TemplateCopy.ContentHash || previous.TemplateCopy.RulesetHash != next.TemplateCopy.RulesetHash ||
+			previous.TemplateCopy.SourceTemplateID != next.TemplateCopy.SourceTemplateID || previous.TemplateCopy.SourceTemplateVersion != next.TemplateCopy.SourceTemplateVersion ||
+			previous.TemplateCopy.Version != next.TemplateCopy.Version || previous.TemplateCopy.CreatedBy != next.TemplateCopy.CreatedBy ||
+			!previous.TemplateCopy.CreatedAt.Equal(next.TemplateCopy.CreatedAt) || !reflect.DeepEqual(previous.TemplateCopy.Definition, next.TemplateCopy.Definition) {
+			return ErrInvalidState
+		}
+		if previous.TemplateCopy.Status == next.TemplateCopy.Status {
+			return nil
+		}
+		allowedTransition := (previous.TemplateCopy.Status == TemplateCopyDraft && (next.TemplateCopy.Status == TemplateCopyBound || next.TemplateCopy.Status == TemplateCopySuperseded || next.TemplateCopy.Status == TemplateCopyDiscarded)) ||
+			(previous.TemplateCopy.Status == TemplateCopyBound && next.TemplateCopy.Status == TemplateCopySuperseded)
+		if !allowedTransition {
+			return ErrInvalidState
+		}
+		return affected(t.db.Model(&projectTemplateCopyRow{}).Where("id = ? AND project_id = ? AND version = ? AND status = ?", previous.TemplateCopy.ID, previous.ID, previous.TemplateCopyVersion, previous.TemplateCopy.Status).Update("status", next.TemplateCopy.Status))
+	}
+	if next.TemplateCopy == nil || next.TemplateCopy.ProjectID != next.ID || next.TemplateCopy.Version != next.TemplateCopyVersion || next.TemplateCopyVersion != previous.TemplateCopyVersion+1 {
+		return ErrInvalidState
+	}
+	if previous.TemplateCopy != nil && previous.TemplateCopy.Status != TemplateCopySuperseded && previous.TemplateCopy.Status != TemplateCopyDiscarded {
+		if err := affected(t.db.Model(&projectTemplateCopyRow{}).Where("id = ? AND project_id = ? AND version = ? AND status = ?", previous.TemplateCopy.ID, previous.ID, previous.TemplateCopyVersion, previous.TemplateCopy.Status).Update("status", TemplateCopySuperseded)); err != nil {
+			return err
+		}
+	}
+	return t.insertProjectTemplateCopy(*next.TemplateCopy)
 }
 func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) error {
 	if err := t.db.Where("project_id = ? AND role = ?", projectID, "collaborator").Delete(&memberRow{}).Error; err != nil {

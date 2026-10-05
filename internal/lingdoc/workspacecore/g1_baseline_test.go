@@ -194,7 +194,7 @@ type g1TemplateReader struct{}
 
 func (g1TemplateReader) Get(id, version string) (Template, error) {
 	if id == "template-alt" && (version == "" || version == "2") {
-		return Template{ID: "template-alt", Version: "2", RequiredFields: []string{"research_subject", "research_method"}, Sections: []Section{{ID: "method", Title: "方法", Required: true}}}, nil
+		return Template{ID: "template-alt", Name: "替代演示模板", Version: "2", RequiredFields: []string{"research_subject", "research_method"}, Sections: []Section{{ID: "method", Title: "方法", Required: true}}}, nil
 	}
 	return ContractDemoTemplate{}.Get(id, version)
 }

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -84,6 +85,7 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000030_lingdoc_project_baseline.up.sql",
 			"000031_lingdoc_citation_usages.up.sql",
 			"000032_lingdoc_change_sets.up.sql",
+			"000033_lingdoc_project_template_copies.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
@@ -343,6 +345,9 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	if _, err := svc.GetProject(ctx, member, id); err != nil {
 		t.Fatalf("member cannot read: %v", err)
 	}
+	if _, err := svc.GetTemplateCopy(ctx, member, id, 1); err != nil {
+		t.Fatalf("member cannot read the bound template copy: %v", err)
+	}
 	if _, _, _, err := svc.SaveMembers(ctx, member, id, "members-own", SaveMembersInput{ExpectedProjectVersion: 2, CollaboratorUserIDs: []string{}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("collaborator managed members: %v", err)
 	}
@@ -360,6 +365,9 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	}
 	if _, err := svc.GetProject(ctx, member, id); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked member read: %v", err)
+	}
+	if _, err := svc.GetTemplateCopy(ctx, member, id, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked member read template copy: %v", err)
 	}
 	// The old operation exists; current authorization must still run first.
 	if _, _, _, err := svc.SaveSpec(ctx, member, id, "member-spec-key", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "共同编辑"}}); !errors.Is(err, ErrNotFound) {
@@ -799,5 +807,239 @@ func TestSaveChapterWithoutSourcePolicyFailsClosed(t *testing.T) {
 		BodyMarkdown: "[[source:alpha]] 的摘录", SourceIDs: []string{"alpha"},
 	}); !errors.Is(err, ErrSourceUnavailable) {
 		t.Fatalf("citation accepted without a source policy: %v", err)
+	}
+}
+
+func TestProjectTemplateCopyIsPrivateVersionedAndDurable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "template-copy.db")
+	svc := testStore(t, path)
+	ctx := context.Background()
+	owner := Actor{TenantID: 88, UserID: "owner"}
+	outsider := Actor{TenantID: 88, UserID: "outsider"}
+	seedTenantMember(t, svc, owner)
+	seedTenantMember(t, svc, outsider)
+
+	created, _, replayed, err := svc.CreateProject(ctx, owner, "copy-create-1", CreateProjectInput{Name: "副本隔离", TemplateID: lingdoctemplate.DemoTemplateID})
+	if err != nil || replayed {
+		t.Fatalf("create project: replay=%v err=%v", replayed, err)
+	}
+	project := asProject(t, created)
+	if project.TemplateCopy == nil || project.TemplateCopy.Version != 1 || project.TemplateCopy.Status != TemplateCopyDraft || project.TemplateCopy.ContentHash == "" || project.TemplateCopy.RulesetHash == "" {
+		t.Fatalf("project copy was not created from a pinned template: %+v", project.TemplateCopy)
+	}
+	specRaw, _, _, err := svc.SaveSpec(ctx, owner, project.ID, "copy-spec-1", SaveSpecInput{
+		ExpectedSpecRevision: 0,
+		Fields:               map[string]string{"research_subject": "合成研究对象", "research_goal": "验证可追溯写作"},
+	})
+	if err != nil {
+		t.Fatalf("save project fields: %v", err)
+	}
+	project = asProject(t, specRaw)
+	original := *project.TemplateCopy
+
+	// A second service instance proves that the immutable copy is stored, not held in process memory.
+	restarted := testStore(t, path)
+	persisted, err := restarted.GetTemplateCopy(ctx, owner, project.ID, 1)
+	if err != nil || persisted.ContentHash != original.ContentHash || persisted.Definition.Name != original.Definition.Name {
+		t.Fatalf("copy did not survive service restart: %+v %v", persisted, err)
+	}
+
+	definition := original.Definition
+	definition.Fields = append([]lingdoctemplate.Field(nil), definition.Fields...)
+	definition.Sections = append([]lingdoctemplate.Section(nil), definition.Sections...)
+	definition.Terms = append([]lingdoctemplate.Term{}, definition.Terms...)
+	definition.Rules = append([]lingdoctemplate.Rule(nil), definition.Rules...)
+	definition.Fields[0].Label = "新的研究对象标签"
+	definition.Sections[0].Title = "新版研究问题"
+	edit := TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: original.Version,
+		Fields: definition.Fields, Sections: definition.Sections, Terms: definition.Terms,
+		RequiredFields: definition.RequiredFields, Rules: definition.Rules,
+	}
+	preview, err := svc.PreviewTemplateCopyEdit(ctx, owner, project.ID, edit)
+	if err != nil || preview.TargetCopyVersion != 2 || preview.RulesetChanged || preview.TargetRulesetHash == "" || len(preview.SectionChanges) != 1 || preview.SectionChanges[0].Status != "changed" {
+		t.Fatalf("copy edit preview is incomplete: %+v %v", preview, err)
+	}
+	preservedField := false
+	for _, field := range preview.Fields {
+		if field.FieldID == "research_subject" && (field.Status != "preserved" || field.Value != "合成研究对象") {
+			t.Fatalf("migration preview did not show preserved user data: %+v", field)
+		}
+		if field.FieldID == "research_subject" {
+			preservedField = true
+		}
+	}
+	if !preservedField {
+		t.Fatal("migration preview omitted the user's existing research_subject value")
+	}
+	updatedRaw, _, replayed, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-1", edit)
+	if err != nil || replayed {
+		t.Fatalf("save copy edit: replay=%v err=%v", replayed, err)
+	}
+	updated := asProject(t, updatedRaw)
+	if updated.ProjectVersion != project.ProjectVersion+1 || updated.TemplateCopyVersion != 2 || updated.TemplateCopy.ContentHash == original.ContentHash {
+		t.Fatalf("edited copy did not advance atomically: %+v", updated)
+	}
+	replayedRaw, _, replayed, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-1", edit)
+	if err != nil || !replayed || string(replayedRaw) != string(updatedRaw) {
+		t.Fatalf("same edit was not idempotent: replay=%v err=%v", replayed, err)
+	}
+	if _, _, _, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-stale", edit); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("stale copy edit was accepted: %v", err)
+	}
+
+	historic, err := restarted.GetTemplateCopy(ctx, owner, project.ID, 1)
+	if err != nil || historic.ContentHash != original.ContentHash || historic.Definition.Fields[0].Label != original.Definition.Fields[0].Label || historic.Status != TemplateCopySuperseded {
+		t.Fatalf("old copy was mutated instead of retained: %+v %v", historic, err)
+	}
+	if _, err := svc.GetTemplateCopy(ctx, outsider, project.ID, 1); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("cross-project copy access leaked: %v", err)
+	}
+
+	secondRaw, _, _, err := svc.CreateProject(ctx, owner, "copy-create-2", CreateProjectInput{Name: "另一项目", TemplateID: lingdoctemplate.DemoTemplateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := asProject(t, secondRaw)
+	if second.TemplateCopy.ID == original.ID || second.TemplateCopy.Definition.Fields[0].Label != original.Definition.Fields[0].Label {
+		t.Fatalf("two projects share a mutable template copy: first=%+v second=%+v", updated.TemplateCopy, second.TemplateCopy)
+	}
+
+	blockingRules := append([]lingdoctemplate.Rule(nil), updated.TemplateCopy.Definition.Rules...)
+	blockingRules = append(blockingRules, lingdoctemplate.Rule{ID: "project-blocking", Kind: "presence", Severity: lingdoctemplate.SeverityBlocking, Parameters: map[string]any{"target_kind": "field", "target_id": "research_goal"}})
+	unsafeEdit := TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: updated.ProjectVersion, ExpectedTemplateCopyVersion: updated.TemplateCopyVersion,
+		Fields: updated.TemplateCopy.Definition.Fields, Sections: updated.TemplateCopy.Definition.Sections,
+		Terms: updated.TemplateCopy.Definition.Terms, RequiredFields: updated.TemplateCopy.Definition.RequiredFields, Rules: blockingRules,
+	}
+	if _, _, _, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-blocking", unsafeEdit); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("project-authored blocking rule was accepted: %v", err)
+	}
+}
+
+func TestConcurrentProjectCreationCreatesOneTemplateCopyForAnIdempotencyKey(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "template-copy-race.db"))
+	ctx := context.Background()
+	owner := Actor{TenantID: 90, UserID: "owner"}
+	seedTenantMember(t, svc, owner)
+
+	type outcome struct {
+		body     json.RawMessage
+		status   int
+		replayed bool
+		err      error
+	}
+	const attempts = 6
+	start := make(chan struct{})
+	results := make(chan outcome, attempts)
+	var workers sync.WaitGroup
+	for range attempts {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			<-start
+			body, status, replayed, err := svc.CreateProject(ctx, owner, "template-copy-race-key", CreateProjectInput{
+				Name: "并发副本创建", TemplateID: lingdoctemplate.DemoTemplateID,
+			})
+			results <- outcome{body: body, status: status, replayed: replayed, err: err}
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+
+	projectID := ""
+	created := 0
+	for result := range results {
+		if result.err != nil {
+			if errors.Is(result.err, ErrRequestInProgress) {
+				continue
+			}
+			t.Fatalf("concurrent project create: %v", result.err)
+		}
+		if result.status != 201 {
+			t.Fatalf("project create status = %d, want 201", result.status)
+		}
+		var project Project
+		if err := json.Unmarshal(result.body, &project); err != nil {
+			t.Fatal(err)
+		}
+		if project.TemplateCopy == nil || project.TemplateCopy.ProjectID != project.ID || project.TemplateCopy.Version != 1 {
+			t.Fatalf("project response lost its atomic template binding: %+v", project)
+		}
+		if projectID == "" {
+			projectID = project.ID
+		} else if project.ID != projectID {
+			t.Fatalf("same idempotency key created multiple projects: %q and %q", projectID, project.ID)
+		}
+		if !result.replayed {
+			created++
+		}
+	}
+	if projectID == "" || created != 1 {
+		t.Fatalf("project creation outcomes: id=%q non-replayed creates=%d, want exactly one", projectID, created)
+	}
+	var copies int64
+	if err := svc.repository.(*GORMRepository).db.Model(&projectTemplateCopyRow{}).Where("project_id = ?", projectID).Count(&copies).Error; err != nil {
+		t.Fatal(err)
+	}
+	if copies != 1 {
+		t.Fatalf("persisted template copies = %d, want one atomic project binding", copies)
+	}
+}
+
+func TestTemplateCopyMigrationPreviewExplainsFieldChangesWithoutDroppingValues(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "template-migration.db"))
+	ctx := context.Background()
+	owner := Actor{TenantID: 89, UserID: "owner"}
+	seedTenantMember(t, svc, owner)
+
+	created, _, _, err := svc.CreateProject(ctx, owner, "migration-create", CreateProjectInput{Name: "迁移预览", TemplateID: lingdoctemplate.DemoTemplateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	updated, _, _, err := svc.SaveSpec(ctx, owner, project.ID, "migration-spec", SaveSpecInput{
+		ExpectedSpecRevision: 0,
+		Fields:               map[string]string{"research_subject": "合成研究对象", "research_goal": "验证可追溯写作"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, updated)
+	definition := project.TemplateCopy.Definition
+	definition.Fields = []lingdoctemplate.Field{
+		{ID: "research_subject", Label: "数值主题", Type: "number", Order: 1, Required: true},
+		{ID: "research_year", Label: "研究年份", Type: "integer", Order: 2, Required: true},
+		{ID: "optional_note", Label: "补充说明", Type: "string", Order: 3},
+	}
+	definition.RequiredFields = []string{"research_subject", "research_year"}
+	edit := TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		Fields: definition.Fields, Sections: definition.Sections, Terms: append([]lingdoctemplate.Term{}, definition.Terms...),
+		RequiredFields: definition.RequiredFields, Rules: definition.Rules,
+	}
+	preview, err := svc.PreviewTemplateCopyEdit(ctx, owner, project.ID, edit)
+	if err != nil {
+		t.Fatalf("preview template migration: %v", err)
+	}
+	byID := make(map[string]TemplateMigrationField, len(preview.Fields))
+	for _, field := range preview.Fields {
+		byID[field.FieldID] = field
+	}
+	if field := byID["research_subject"]; field.Status != "incompatible" || field.OldType != "string" || field.NewType != "number" || field.Value != "合成研究对象" {
+		t.Fatalf("type change preview = %+v", field)
+	}
+	if field := byID["research_goal"]; field.Status != "orphaned" || field.Value != "验证可追溯写作" || field.Before == "" {
+		t.Fatalf("deleted field was not preserved as an orphan: %+v", field)
+	}
+	if field := byID["research_year"]; field.Status != "missing" || field.NewType != "integer" {
+		t.Fatalf("new required field preview = %+v", field)
+	}
+	if field := byID["optional_note"]; field.Status != "added" || field.NewType != "string" {
+		t.Fatalf("new optional field was omitted from preview: %+v", field)
+	}
+	if !slices.Contains(preview.MissingRequired, "research_subject") || !slices.Contains(preview.MissingRequired, "research_year") || !slices.Contains(preview.Orphaned, "research_goal") || !slices.Contains(preview.Incompatible, "research_subject") {
+		t.Fatalf("migration summary omitted required/type/orphan impacts: %+v", preview)
 	}
 }
