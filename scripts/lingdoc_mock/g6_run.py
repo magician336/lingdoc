@@ -274,7 +274,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-matrix", type=Path)
     parser.add_argument("--samples", type=Path)
     parser.add_argument("--window", type=Path)
-    parser.add_argument("--runtime-mode", choices=("mock", "real_api_fake_model", "real"), default="mock")
+    parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, default="mock")
     args = parser.parse_args(argv)
     try:
         report = build_g6_report(
