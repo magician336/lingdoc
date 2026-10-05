@@ -234,7 +234,8 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
     constructed_fixture_parts.sort()
     observed = state_report.get("observed", {})
     steps = executed.get("steps", [])
-    failed_steps = [step.get("step_id") for step in steps if step.get("verdict") == "failed"]
+    failed_steps = [_safe_label(step.get("step_id"), "step.id")
+                    for step in steps if isinstance(step, dict) and step.get("verdict") == "failed"]
     input_summary = {
         "scenario": scenario_id,
         "starting_state": state_id,
