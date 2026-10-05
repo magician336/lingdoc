@@ -367,7 +367,7 @@ import {
   getSource, getSourceContext, getWorkingCopy, listAssets, listChapterVersions, listChapters, listProjects,
   applySelectedRewrite, createSelectedRewrite, getSelectedRewrite,
   restoreWorkingCopy, retrieveSources, saveSpec, saveWorkingCopy,
-  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type Project, type ReviewDecision,
+  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type CitationUsage, type Project, type ReviewDecision,
   type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
@@ -1098,6 +1098,7 @@ async function saveText() {
     expected_working_copy_revision: workingCopy.value.working_copy_revision,
     body_markdown: bodyDraft.value,
     source_ids: citations.sourceIds,
+    citation_usages: citations.sourceIds.map(sourceId => ({ ...citationUsageDraft(sourceId) })),
   }
   const key = operationKey(`working-copy:${chapterId}`, input)
   try {
