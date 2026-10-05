@@ -24,7 +24,7 @@ METRICS = (
 
 WINDOW_FIELDS = frozenset({"window_id", "target_samples", "minimum_reportable_samples", "template_version",
                            "ruleset_hash", "redaction", "included_projects", "included_users",
-                           "runtime_modes", "rollback_result", "uncovered_risks"})
+                           "runtime_modes", "rollback_result", "uncovered_risks", "process_evidence"})
 SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
                               "prompt", "completion", "model_input"})
 ALIAS_PATTERN = re.compile(r"[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+|sha256:[0-9a-f]{64}")
@@ -66,8 +66,18 @@ def _sanitize_window(window: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"{field} must be a non-negative integer")
     if not isinstance(window.get("redaction"), str) or not window["redaction"].strip():
         raise ValueError("redaction must be a non-empty label")
-    if not isinstance(window.get("uncovered_risks"), list):
-        raise ValueError("uncovered_risks must be a list")
+    risks = window.get("uncovered_risks")
+    if not isinstance(risks, list) or not all(
+            isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_.-]{0,127}", value)
+            for value in risks):
+        raise ValueError("uncovered_risks must contain redacted short codes")
+    process = window.get("process_evidence")
+    required_process = ("authorization", "main_path", "failure_path", "manual_review",
+                        "repair_or_rollback", "key_scenario_rerun")
+    if not isinstance(process, dict) or set(process) != set(required_process):
+        raise ValueError("process_evidence must cover authorization, main_path, failure_path, manual_review, repair_or_rollback and key_scenario_rerun")
+    if any(value not in {"observed", "not_run", "blocked"} for value in process.values()):
+        raise ValueError("process_evidence values must be observed, not_run or blocked")
     return {key: window[key] for key in sorted(window)}
 
 
@@ -106,7 +116,7 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
         _validate_sample(sample)
     required_window = ("window_id", "target_samples", "minimum_reportable_samples", "template_version",
                        "ruleset_hash", "redaction", "included_projects", "included_users", "runtime_modes",
-                       "rollback_result", "uncovered_risks")
+                       "rollback_result", "uncovered_risks", "process_evidence")
     missing_window = [key for key in required_window
                       if key not in window or window[key] in (None, "")]
     real_samples = [sample for sample in samples if sample.get("runtime_mode") == "real"]
@@ -202,6 +212,9 @@ def main() -> int:
         "template_version": "template.unknown", "ruleset_hash": "rules.unknown", "redaction": "fixture-v1",
         "included_projects": [], "included_users": [], "runtime_modes": ["real"],
         "rollback_result": "unknown", "uncovered_risks": ["no_samples"],
+        "process_evidence": {"authorization": "not_run", "main_path": "not_run",
+                              "failure_path": "not_run", "manual_review": "not_run",
+                              "repair_or_rollback": "not_run", "key_scenario_rerun": "not_run"},
     })
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if report["result"] == "PASS" else 1

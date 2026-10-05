@@ -181,6 +181,9 @@ class G6MetricsTest(unittest.TestCase):
         "included_projects": ["project.id", "project.key"],
         "included_users": ["user.id"], "runtime_modes": ["real"],
         "rollback_result": "PASS", "uncovered_risks": ["wps-reopen"],
+        "process_evidence": {"authorization": "observed", "main_path": "observed",
+                              "failure_path": "observed", "manual_review": "observed",
+                              "repair_or_rollback": "observed", "key_scenario_rerun": "observed"},
     }
 
     def test_non_real_samples_do_not_enter_effect_rates(self):
@@ -242,6 +245,14 @@ class G6MetricsTest(unittest.TestCase):
                   "supported_claims": 1.5, "total_claims": 2}
         with self.assertRaisesRegex(ValueError, "non-negative integer"):
             g6_metrics.build_beta_report(samples=[sample], window=self.WINDOW)
+
+    def test_beta_window_requires_process_evidence_and_redacted_risks(self):
+        incomplete = {key: value for key, value in self.WINDOW.items() if key != "process_evidence"}
+        with self.assertRaisesRegex(ValueError, "process_evidence"):
+            g6_metrics.build_beta_report(samples=[], window=incomplete)
+        with self.assertRaisesRegex(ValueError, "uncovered_risks"):
+            g6_metrics.build_beta_report(samples=[], window={**self.WINDOW,
+                                                              "uncovered_risks": ["secret document"]})
 
     def test_missing_sample_values_are_reported_and_block_effect_rates(self):
         sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",

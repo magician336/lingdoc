@@ -291,6 +291,9 @@ def build_g6_report(*, main_path_report: dict[str, Any] | None = None,
             "template_version": "template.v1", "ruleset_hash": "rules.key", "redaction": "fixture-v1",
             "included_projects": [], "included_users": [], "runtime_modes": ["real"],
             "rollback_result": "unknown", "uncovered_risks": ["no_window_observation"],
+            "process_evidence": {"authorization": "not_run", "main_path": "not_run",
+                                  "failure_path": "not_run", "manual_review": "not_run",
+                                  "repair_or_rollback": "not_run", "key_scenario_rerun": "not_run"},
         }
     gates["G6-06"] = build_beta_report(samples=samples or [], window=window)
     results = [gate["result"] for gate in gates.values()]
