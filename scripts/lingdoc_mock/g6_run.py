@@ -128,6 +128,8 @@ def build_runtime_matrix_from_main_path_reports(
                                                         "fixture_id": modes[index]["scenario_evidence"]["main_path"].get("fixture_id")}}
                     for index, mode in enumerate(RUNTIME_MODES)],
     }
+
+
 def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
     """Wrap a scenario-runner matrix in the common G6 evidence shape."""
     matrix = matrix or _empty_runtime_matrix()
