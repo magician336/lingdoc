@@ -84,6 +84,8 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000030_lingdoc_project_baseline.up.sql",
 			"000031_lingdoc_citation_usages.up.sql",
 			"000032_lingdoc_change_sets.up.sql",
+			"000033_lingdoc_working_copies.up.sql",
+			"000034_lingdoc_selected_rewrites.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {

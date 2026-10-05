@@ -19,11 +19,12 @@ type Handler struct {
 	service     ApplicationService
 	sources     SourceApplicationService
 	integration WorkspaceIntegration
+	rewrites    SelectedRewriteApplication
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
 	return &Handler{
-		service: deps.Service, sources: deps.Sources, integration: deps.Integration,
+		service: deps.Service, sources: deps.Sources, integration: deps.Integration, rewrites: deps.SelectedRewrites,
 	}
 }
 
@@ -37,6 +38,11 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/activate", h.activateProject)
 	routes.Read.GET("/projects/:projectId/draft-candidates", h.listDraftCandidates)
 	routes.Write.POST("/projects/:projectId/draft-candidates", h.createDraftCandidate)
+	routes.Read.GET("/projects/:projectId/change-sets", h.listChangeSets)
+	routes.Read.GET("/projects/:projectId/change-sets/:changeSetId", h.getChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets", h.createChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/apply", h.applyChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reject", h.rejectChangeSet)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
 	routes.Read.GET("/projects/:projectId/activation-diff", h.activationDiff)
 	routes.Read.GET("/projects/:projectId/template-migration/preview", h.previewTemplateMigration)
@@ -48,18 +54,23 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/owner-transfer/:transferId/accept", h.acceptOwnerTransfer)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
+	routes.Read.GET("/projects/:projectId/chapters/:chapterId/working-copy", h.getWorkingCopy)
+	routes.Read.GET("/projects/:projectId/chapters/:chapterId/versions", h.listChapterVersions)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
 	routes.Read.POST("/projects/:projectId/retrieval", h.retrieveSources)
 	routes.Read.GET("/projects/:projectId/sources/:sourceId", h.getSource)
 	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
+	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy", h.saveWorkingCopy)
+	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
+	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
-	routes.Read.GET("/projects/:projectId/change-sets", h.listChangeSets)
-	routes.Read.GET("/projects/:projectId/change-sets/:changeSetId", h.getChangeSet)
-	routes.Write.POST("/projects/:projectId/change-sets", h.createChangeSet)
-	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/apply", h.applyChangeSet)
-	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reject", h.rejectChangeSet)
+	if h.rewrites != nil {
+		routes.Read.GET("/projects/:projectId/rewrite-candidates/:candidateId", h.getSelectedRewrite)
+		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates", h.createSelectedRewrite)
+		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates/:candidateId/apply", h.applySelectedRewrite)
+	}
 }
 
 func caller(c *gin.Context) (Actor, bool) {
@@ -102,6 +113,18 @@ func sendError(c *gin.Context, err error) {
 	case errors.Is(err, ErrRequestInProgress):
 		status, code, message = 409, "request_in_progress", "原请求仍在提交，请稍后用相同操作键重试。"
 		c.Header("Retry-After", "1")
+	case errors.Is(err, ErrRewriteInvalidRequest):
+		status, code, message = 400, "invalid_request", "改写请求字段不符合约定。"
+	case errors.Is(err, ErrRewriteNotFound):
+		status, code, message = 404, "not_found", "候选不存在或不可访问。"
+	case errors.Is(err, ErrRewriteConflict), errors.Is(err, ErrRewriteStale):
+		status, code, message = 409, "stale_input", "选区或工作副本已变化，请重新读取后再试。"
+	case errors.Is(err, ErrRewriteKeyConflict):
+		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
+	case errors.Is(err, ErrRewriteSourceDenied):
+		status, code, message = 403, "source_access_denied", "改写候选的来源已失效或当前不可访问。"
+	case errors.Is(err, ErrRewriteUnavailable):
+		status, code, message = 503, "dependency_unavailable", "改写模型暂不可用，请稍后重试。"
 	case errors.Is(err, ErrSourceUnavailable):
 		// 三处共用这一个结论：保存带引用的正文时复核不过、取来源时该资料不放行、
 		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
@@ -640,6 +663,150 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	}
 	data, status, replay, err := h.service.SaveChapter(c.Request.Context(), actor,
 		c.Param("projectId"), c.Param("chapterId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) getWorkingCopy(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	workingCopy, err := h.service.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, workingCopy, false)
+}
+
+func (h *Handler) createSelectedRewrite(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input SelectedRewriteRequest
+	if !decodeBody(c, &input) {
+		return
+	}
+	candidate, err := h.rewrites.Create(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusCreated, candidate, false)
+}
+
+func (h *Handler) getSelectedRewrite(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	candidate, err := h.rewrites.Get(c.Request.Context(), actor, c.Param("projectId"), c.Param("candidateId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, candidate, false)
+}
+
+func (h *Handler) applySelectedRewrite(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input ApplySelectedRewriteInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	workingCopy, replayed, err := h.rewrites.Apply(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), c.Param("candidateId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, workingCopy, replayed)
+}
+
+func (h *Handler) saveWorkingCopy(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input SaveWorkingCopyInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.SaveWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) commitWorkingCopy(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input CommitWorkingCopyInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.CommitWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) listChapterVersions(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	versions, err := h.service.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, gin.H{"items": versions}, false)
+}
+
+func (h *Handler) restoreWorkingCopy(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input RestoreWorkingCopyInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.RestoreWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return

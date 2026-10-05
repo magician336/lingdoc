@@ -209,6 +209,37 @@ type Chapter struct {
 	ConfirmationValid bool             `json:"confirmation_valid"`
 }
 
+// WorkingCopy is the mutable, restart-safe draft for a chapter. It is kept
+// separate from ChapterVersion so autosave and candidate adoption never
+// create a formal version.
+type WorkingCopy struct {
+	CitationUsages       []CitationUsage `json:"citation_usages"`
+	ProjectID            string          `json:"project_id"`
+	ChapterID            string          `json:"chapter_id"`
+	BaseChapterVersionID *string         `json:"base_chapter_version_id"`
+	SpecRevision         int64           `json:"spec_revision"`
+	WorkingCopyRevision  int64           `json:"working_copy_revision"`
+	BodyMarkdown         string          `json:"body_markdown"`
+	SourceIDs            []string        `json:"source_ids"`
+	ReviewItems          []ReviewItem    `json:"review_items"`
+	UpdatedAt            time.Time       `json:"updated_at"`
+}
+
+// ChapterVersion is an immutable historical chapter snapshot.
+type ChapterVersion struct {
+	CitationUsages    []CitationUsage `json:"citation_usages"`
+	ID                string          `json:"id"`
+	ProjectID         string          `json:"project_id"`
+	ChapterID         string          `json:"chapter_id"`
+	ParentVersionID   *string         `json:"parent_version_id"`
+	BodyMarkdown      string          `json:"body_markdown"`
+	SourceIDs         []string        `json:"source_ids"`
+	ReviewItems       []ReviewItem    `json:"review_items"`
+	SpecRevision      int64           `json:"spec_revision"`
+	ConfirmationValid bool            `json:"confirmation_valid"`
+	CreatedAt         time.Time       `json:"created_at"`
+}
+
 type GenerationContext struct {
 	ProjectID        string            `json:"project_id"`
 	ProjectVersion   int64             `json:"project_version"`
@@ -405,6 +436,22 @@ type chapterVersionRow struct {
 }
 
 func (chapterVersionRow) TableName() string { return "lingdoc_chapter_versions" }
+
+type workingCopyRow struct {
+	CitationUsagesJSON   string  `gorm:"column:citation_usages_json;not null;type:text;default:'[]'"`
+	ProjectID            string  `gorm:"primaryKey;size:36"`
+	ChapterID            string  `gorm:"primaryKey;size:36"`
+	BaseChapterVersionID *string `gorm:"size:36"`
+	SpecRevision         int64   `gorm:"not null"`
+	WorkingCopyRevision  int64   `gorm:"not null"`
+	BodyMarkdown         string  `gorm:"not null;type:text"`
+	SourceIDsJSON        string  `gorm:"column:source_ids_json;not null;type:text"`
+	ReviewItemsJSON      string  `gorm:"column:review_items_json;not null;type:text"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+func (workingCopyRow) TableName() string { return "lingdoc_working_copies" }
 
 type chapterConfirmationRow struct {
 	ID               string `gorm:"primaryKey;size:36"`

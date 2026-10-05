@@ -215,7 +215,11 @@ class ScenarioReportTest(unittest.TestCase):
         verdicts = {entry["scenario"]: entry["verdict"] for entry in report["scenarios"]}
         self.assertEqual(verdicts["F22"], "passed")
         self.assertEqual({sid for sid, verdict in verdicts.items() if verdict != "not_run"}, {"F22"})
-        self.assertEqual(report["summary"], {"passed": 1, "failed": 0, "not_run": 24})
+        self.assertEqual(report["summary"], {
+            "passed": 1,
+            "failed": 0,
+            "not_run": len(document["scenarios"]) - 1,
+        })
 
     def test_a_scenario_that_cannot_be_driven_says_which_part_is_missing(self):
         report, _ = drive()
@@ -385,7 +389,12 @@ class ScenarioReportTest(unittest.TestCase):
             token="synthetic-owner-token", opener=synthetic.open)
 
         self.assertEqual([item["scenario"] for item in report["executed"]], ["F08", "F05", "F12"])
-        self.assertEqual(report["summary"], {"passed": 3, "failed": 0, "not_run": 22})
+        total_scenarios = len(json.loads(SCENARIOS_PATH.read_text(encoding="utf-8"))["scenarios"])
+        self.assertEqual(report["summary"], {
+            "passed": 3,
+            "failed": 0,
+            "not_run": total_scenarios - 3,
+        })
         f08 = report["executed"][0]
         self.assertEqual([step["actual_http"] for step in f08["steps"]], [200, 202, 202, 409])
         self.assertEqual([check["status"] for step in f08["steps"] for check in step["checks"]],
