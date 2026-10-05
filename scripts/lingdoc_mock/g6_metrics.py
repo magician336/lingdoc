@@ -1,32 +1,56 @@
 """Auditable Beta-window metrics with sample and denominator guards."""
 from __future__ import annotations
 
-import hashlib
 import json
+import re
 from typing import Any
 
+from scripts.lingdoc_mock.g6_evidence import build_evidence
+
 METRICS = (
+    ("manual_effort_minutes", "manual_minutes", "projects"),
     ("source_support_rate", "supported_claims", "total_claims"),
+    ("missed_edit_rate", "missed_edits", "changesets"),
     ("false_positive_rate", "dismissed_issues", "issues_reviewed"),
     ("unconfirmed_rate", "unconfirmed_items", "snapshots"),
     ("export_loss_rate", "export_loss_items", "export_checks"),
 )
 
-
-def _digest(value: Any) -> str:
-    payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
-                         separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
+WINDOW_FIELDS = frozenset({"window_id", "target_samples", "minimum_reportable_samples", "template_version",
+                           "ruleset_hash", "redaction", "included_projects", "included_users",
+                           "runtime_modes", "rollback_result", "uncovered_risks"})
+SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
+                              "prompt", "completion", "model_input"})
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
     return None if denominator <= 0 else numerator / denominator
 
 
+def _sanitize_window(window: dict[str, Any]) -> dict[str, Any]:
+    leaked = sorted(SENSITIVE_FIELDS.intersection(window))
+    if leaked:
+        raise ValueError("sensitive window fields are forbidden: " + ", ".join(leaked))
+    unknown = sorted(set(window) - WINDOW_FIELDS)
+    if unknown:
+        raise ValueError("unsupported window fields: " + ", ".join(unknown))
+    for field in ("included_projects", "included_users"):
+        values = window.get(field, [])
+        if not isinstance(values, list) or not all(
+                isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_.-]*\.(?:id|key)", value)
+                for value in values):
+            raise ValueError(f"{field} must contain redacted aliases")
+    modes = window.get("runtime_modes", [])
+    if modes != ["real"]:
+        raise ValueError("effect window runtime_modes must be exactly ['real']")
+    return {key: window[key] for key in sorted(window)}
+
+
 def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) -> dict[str, Any]:
     """Aggregate only eligible real samples and preserve raw counts for all samples."""
+    window = _sanitize_window(window)
     required_window = ("window_id", "target_samples", "minimum_reportable_samples", "template_version",
-                       "ruleset_hash", "redaction", "included_projects")
+                       "ruleset_hash", "redaction", "included_projects", "included_users", "runtime_modes")
     missing_window = [key for key in required_window if not window.get(key)]
     real_samples = [sample for sample in samples if sample.get("runtime_mode") == "real"]
     excluded = [sample for sample in samples if sample.get("runtime_mode") != "real"]
@@ -57,46 +81,49 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     missing_denominators = sorted(name for name, values in metrics.items() if values["denominator"] == 0)
     minimum = int(window.get("minimum_reportable_samples", 0) or 0)
     if missing_window:
-        result, decision = "NOT READY", "continue_trial"
+        result, decision, readiness = "BLOCKED", "continue_trial", "NOT READY"
         reason = "window metadata is incomplete"
     elif p0_p1 or dependency_blocked:
-        result, decision = "BLOCKED", "pause"
+        result, decision, readiness = "BLOCKED", "pause", "BLOCKED"
         reason = "unresolved P0/P1 or blocked real dependency"
     elif len(eligible) < minimum or missing_denominators:
-        result, decision = "NOT READY", "continue_trial"
+        result, decision, readiness = "BLOCKED", "continue_trial", "NOT READY"
         reason = "sample or denominator minimum is not met"
     else:
-        result, decision = "PASS", "expand"
+        result, decision, readiness = "PASS", "expand", "READY"
         reason = "eligible real sample and denominator gates passed"
     return {
         "report_version": 1,
         "scope": "one locked Beta trial window; only eligible real samples enter effect rates",
         "window": dict(window),
         "result": result,
+        "readiness": readiness,
         "decision": decision,
         "decision_reason": reason,
         "raw_counts": raw_counts,
         "excluded_sample_ids": [sample.get("sample_id", "unknown") for sample in excluded],
         "missing_denominators": missing_denominators,
         "metrics": metrics,
-        "quality_evidence": {
-            "evidence_version": 1,
-            "fixture_id": f"G6-BETA-{window.get('window_id', 'unknown')}",
-            "runtime_mode": "real",
-            "result": result,
-            "input_hash": _digest({"window": window, "samples": samples}),
-            "output_hash": _digest({"raw_counts": raw_counts, "metrics": metrics}),
-            "attribution": ["fixture_or_test"] if result == "NOT READY" else ["permission", "runtime"]
+        "quality_evidence": build_evidence(
+            fixture_id=f"G6-BETA-{window.get('window_id', 'unknown')}", runtime_mode="real",
+            result=result, input_value={"window": window, "samples": samples},
+            output_value={"raw_counts": raw_counts, "metrics": metrics},
+            attribution=["fixture_or_test"] if result == "BLOCKED" else ["permission", "runtime"]
             if result == "BLOCKED" else ["domain_logic"],
-            "evidence_refs": ["window", "raw_counts", "metrics", "decision"],
-            "owner": "product-and-qa",
-            "reviewer": "unassigned",
-        },
+            evidence_refs=["window", "raw_counts", "metrics", "decision"],
+            owner="product-and-qa", reviewer="unassigned",
+            input_summary={"sample_count": len(samples)}, output_summary={"decision": decision},
+        ),
     }
 
 
 def main() -> int:
-    report = build_beta_report(samples=[], window={})
+    report = build_beta_report(samples=[], window={
+        "window_id": "manual", "target_samples": 0, "minimum_reportable_samples": 1,
+        "template_version": "unknown", "ruleset_hash": "unknown", "redaction": "fixture-v1",
+        "included_projects": [], "included_users": [], "runtime_modes": ["real"],
+        "rollback_result": "unknown", "uncovered_risks": ["no_samples"],
+    })
     print(json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True))
     return 0 if report["result"] == "PASS" else 1
 

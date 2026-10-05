@@ -6,9 +6,10 @@ the caller supplies observed status codes for the same fixture.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any
+
+from scripts.lingdoc_mock.g6_evidence import build_evidence, digest
 
 RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
 RESULTS = ("PASS", "FAIL", "NOT RUN", "BLOCKED")
@@ -41,12 +42,6 @@ SECURITY_CASES = (
 )
 
 
-def _digest(value: Any) -> str:
-    payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
-                         separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
-
-
 def _redact(value: Any) -> Any:
     if isinstance(value, dict):
         sensitive = {"token", "authorization", "cookie", "body", "content", "quoted_text",
@@ -61,6 +56,9 @@ def _redact(value: Any) -> Any:
 def _result(case: dict[str, Any], observation: dict[str, Any] | None) -> str:
     if not observation or "actual_http" not in observation:
         return "BLOCKED"
+    if case["expected_decision"] == "allow_metadata_only" and any(
+            key in observation for key in {"body", "content", "quoted_text", "source_text"}):
+        return "FAIL"
     if observation["actual_http"] != case["expected_http"]:
         return "FAIL"
     if observation.get("decision") not in {None, case["expected_decision"]}:
@@ -74,6 +72,7 @@ def build_security_report(*, runtime_mode: str = "real", fixture_id: str = "G6-S
     if runtime_mode not in RUNTIME_MODES:
         raise ValueError(f"runtime_mode must be one of {', '.join(RUNTIME_MODES)}")
     observations = observations or {}
+    fixture_digest = digest([case["id"] for case in SECURITY_CASES])
     cases = []
     for definition in SECURITY_CASES:
         observation = observations.get(definition["id"])
@@ -84,7 +83,7 @@ def build_security_report(*, runtime_mode: str = "real", fixture_id: str = "G6-S
             "result": result,
             "actual_http": observation.get("actual_http") if observation else None,
             "observed_decision": observation.get("decision") if observation else None,
-            "response_digest": _digest(_redact(observation)) if observation else None,
+            "response_digest": digest(_redact(observation)) if observation else None,
             "evidence_refs": ["security_matrix", definition["id"]],
             "attribution": "permission" if result in {"FAIL", "BLOCKED"} else "domain_logic",
         })
@@ -96,24 +95,20 @@ def build_security_report(*, runtime_mode: str = "real", fixture_id: str = "G6-S
     return {
         "report_version": 1,
         "fixture_id": fixture_id,
-        "fixture_digest": _digest([case["id"] for case in SECURITY_CASES]),
+        "fixture_digest": fixture_digest,
         "scope": "current-permission security checks for body, source, export, download and audit metadata",
         "runtime_mode": runtime_mode,
         "result": overall,
         "severity_counts": severity_counts,
         "cases": cases,
-        "quality_evidence": {
-            "evidence_version": 1,
-            "fixture_id": fixture_id,
-            "runtime_mode": runtime_mode,
-            "result": overall,
-            "attribution": ["permission"],
-            "input_hash": _digest({"fixture_id": fixture_id, "cases": [case["id"] for case in cases]}),
-            "output_hash": _digest(cases),
-            "evidence_refs": ["cases", "severity_counts"],
-            "owner": "security",
-            "reviewer": "unassigned",
-        },
+        "quality_evidence": build_evidence(
+            fixture_id=fixture_id, runtime_mode=runtime_mode, result=overall,
+            input_value={"fixture_id": fixture_id, "cases": [case["id"] for case in cases]},
+            output_value=cases, attribution=["permission"],
+            evidence_refs=["cases", "severity_counts"], owner="security", reviewer="unassigned",
+            fixture_digest=fixture_digest, permission_snapshot={"status": "observed_status_only"},
+            input_summary={"case_count": len(cases)}, output_summary={"severity_counts": severity_counts},
+        ),
         "redaction": {"body": "forbidden", "source_text": "forbidden", "token": "forbidden",
                       "stored_fields": ["status", "severity", "decision", "response_digest"]},
     }

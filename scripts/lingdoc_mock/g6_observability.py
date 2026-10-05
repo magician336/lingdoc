@@ -1,9 +1,11 @@
 """Small, deterministic observability contract for G6 runtime evidence."""
 from __future__ import annotations
 
-import hashlib
 import json
+import re
 from typing import Any
+
+from scripts.lingdoc_mock.g6_evidence import build_evidence, digest
 
 EVENT_TYPES = (
     "request", "task", "changeset", "validation", "snapshot", "export", "download", "audit",
@@ -17,6 +19,8 @@ ALLOWED_FIELDS = frozenset({
 })
 SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
                               "prompt", "completion", "model_input"})
+ID_FIELDS = frozenset({"causation_id", "request_id", "task_id", "changeset_id", "snapshot_id", "export_id",
+                       "tenant_id", "project_id", "context_revision", "target_revision"})
 
 ALERT_ACTIONS = (
     {"signal": "permission_denied_or_revocation_block", "action": "pause_affected_flow"},
@@ -25,12 +29,6 @@ ALERT_ACTIONS = (
     {"signal": "docx_loss_detected", "action": "block_export"},
     {"signal": "external_dependency_unavailable", "action": "mark_blocked_and_notify_owner"},
 )
-
-
-def _digest(value: Any) -> str:
-    payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
-                         separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(payload).hexdigest()
 
 
 def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -50,12 +48,38 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported event_type")
     if not isinstance(event["correlation_id"], str) or len(event["correlation_id"]) > 128:
         raise ValueError("correlation_id must be a short string")
+    for field in ID_FIELDS.intersection(event):
+        value = event[field]
+        if not isinstance(value, str) or not re.fullmatch(
+                r"(?:[a-z][a-z0-9_.-]*\.(?:id|key)|corr-[A-Za-z0-9_.-]+|sha256:[0-9a-f]{64})", value):
+            raise ValueError(f"{field} must be a redacted alias or digest")
     return {key: event[key] for key in sorted(event)}
 
 
 def _chain_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
     types = {event["event_type"] for event in events}
     return {event_type: event_type in types for event_type in EVENT_TYPES}
+
+
+def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
+    return {
+        "request_outcome": any(event.get("status") in {"ok", "denied", "conflict"}
+                                for event in events),
+        "async_failure_retry": any(event["event_type"] == "task"
+                                    and (event.get("status") in {"failed", "retry"}
+                                         or int(event.get("retry_count", 0)) > 0)
+                                    for event in events),
+        "stale_or_duplicate": any(event.get("stale") is not None
+                                   or event.get("duplicate_side_effect") is not None for event in events),
+        "permission_or_revocation": any(event.get("permission_decision") in {"allow", "deny"}
+                                         for event in events),
+        "download_reauthorization": any(event["event_type"] == "download"
+                                         and event.get("download_reauthorized") is not None
+                                         for event in events),
+        "docx_loss": any(event.get("file_loss_class") is not None for event in events),
+        "external_dependency": any(event.get("provider") or event.get("result_code")
+                                    for event in events),
+    }
 
 
 def build_observability_report(*, events: list[dict[str, Any]] | None = None,
@@ -65,9 +89,11 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
     sanitized = [sanitize_event(event) for event in events]
     correlation_ids = sorted({event["correlation_id"] for event in sanitized})
     coverage = _chain_coverage(sanitized)
-    complete = bool(sanitized) and all(coverage.values()) and len(correlation_ids) == 1
+    signals = _signal_coverage(sanitized)
+    complete = (bool(sanitized) and all(coverage.values()) and all(signals.values())
+                and len(correlation_ids) == 1)
     result = "PASS" if complete else "BLOCKED"
-    if any(event.get("file_loss_class") for event in sanitized):
+    if any(event.get("file_loss_class") not in {None, "none"} for event in sanitized):
         result = "FAIL"
     return {
         "report_version": 1,
@@ -76,20 +102,17 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
         "result": result,
         "correlation_ids": correlation_ids,
         "chain_coverage": coverage,
+        "signal_coverage": signals,
         "events": sanitized,
         "alerts": list(ALERT_ACTIONS),
-        "quality_evidence": {
-            "evidence_version": 1,
-            "fixture_id": "G6-OBS-01",
-            "runtime_mode": runtime_mode,
-            "result": result,
-            "input_hash": _digest(sanitized),
-            "output_hash": _digest({"coverage": coverage, "alerts": ALERT_ACTIONS}),
-            "attribution": ["runtime", "external_service"] if result == "BLOCKED" else ["domain_logic"],
-            "evidence_refs": ["events", "chain_coverage", "alerts"],
-            "owner": "quality-operations",
-            "reviewer": "unassigned",
-        },
+        "quality_evidence": build_evidence(
+                fixture_id="G6-OBS-01", runtime_mode=runtime_mode, result=result,
+                input_value=sanitized, output_value={"coverage": coverage, "signals": signals},
+                attribution=["runtime", "external_service"] if result == "BLOCKED" else ["domain_logic"],
+                evidence_refs=["events", "chain_coverage", "signal_coverage", "alerts"],
+                owner="quality-operations", reviewer="unassigned",
+                input_summary={"event_count": len(sanitized)}, output_summary={"chain_coverage": coverage},
+            ),
         "redaction": {
             "forbidden_fields": sorted(SENSITIVE_FIELDS),
             "allowed_shape": sorted(ALLOWED_FIELDS),
