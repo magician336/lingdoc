@@ -102,6 +102,12 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["result"], "BLOCKED")
         self.assertEqual(report["decision"], "pause")
 
+    def test_blocked_real_dependency_prevents_not_ready_from_looking_harmless(self):
+        sample = {"sample_id": "real-blocked", "runtime_mode": "real", "quality_result": "BLOCKED"}
+        report = g6_metrics.build_beta_report(samples=[sample], window=self.WINDOW)
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(report["decision"], "pause")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -32,7 +32,9 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     excluded = [sample for sample in samples if sample.get("runtime_mode") != "real"]
     eligible = [sample for sample in real_samples if sample.get("quality_result") == "PASS"]
     p0_p1 = [sample for sample in real_samples if sample.get("severity") in {"P0", "P1"}]
-    dependency_blocked = [sample for sample in real_samples if sample.get("dependency_status") == "BLOCKED"]
+    dependency_blocked = [sample for sample in real_samples
+                          if sample.get("dependency_status") == "BLOCKED"
+                          or sample.get("quality_result") in {"BLOCKED", "NOT RUN"}]
     raw_counts = {
         "submitted": len(samples),
         "real": len(real_samples),
