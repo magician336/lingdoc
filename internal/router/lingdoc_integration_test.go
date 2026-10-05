@@ -84,6 +84,7 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		"000029_lingdoc_project_discard.up.sql",
 		"000030_lingdoc_project_baseline.up.sql",
 		"000031_lingdoc_citation_usages.up.sql",
+		"000032_lingdoc_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {

@@ -6,6 +6,7 @@ export interface Project {
   status: 'draft' | 'active'
   project_version: number
   spec_revision: number
+  current_context_revision: number
   spec: Record<string, string>
   template_id: string
   template_version: string
@@ -61,6 +62,30 @@ export interface Chapter {
   citation_statuses?: CitationStatus[]
   review_items: ReviewItem[]
   confirmation_valid: boolean
+}
+
+export interface ChangeImpact {
+  chapter_id: string
+  chapter_version_id?: string | null
+  title: string
+  reason: string
+  status: 'open' | 'reviewed' | 'stale'
+}
+
+export interface ChangeSet {
+  id: string
+  project_id: string
+  created_by: string
+  reason: string
+  status: 'assessed' | 'applied' | 'rejected' | 'stale'
+  base_context_revision: number
+  target_context_revision?: number
+  base_spec_revision: number
+  target_spec_revision?: number
+  fields: Array<{ key: string; old_value: string; new_value: string }>
+  impacts: ChangeImpact[]
+  created_at: string
+  applied_at?: string
 }
 
 export interface Asset {
@@ -163,6 +188,21 @@ export const activateProject = (id: string, expected: number, key: string) =>
     { expected_spec_revision: expected }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
 export const getAccessStatus = (id: string) => get<Result<AccessStatus>>(`${base}/${segment(id)}/access-status`)
+export const listChangeSets = (id: string) => get<Result<ChangeSet[]>>(`${base}/${segment(id)}/change-sets`)
+export const getChangeSet = (projectId: string, changeSetId: string) =>
+  get<Result<ChangeSet>>(`${base}/${segment(projectId)}/change-sets/${segment(changeSetId)}`)
+export const createChangeSet = (projectId: string, input: {
+  expected_context_revision: number
+  fields: Record<string, { old_value: string; new_value: string }>
+  affected_chapter_ids: string[]
+  reason: string
+}, key: string) => post<Result<ChangeSet>>(
+  `${base}/${segment(projectId)}/change-sets`, input, keyHeader(key),
+)
+export const applyChangeSet = (projectId: string, changeSetId: string, key: string) =>
+  post<Result<ChangeSet>>(`${base}/${segment(projectId)}/change-sets/${segment(changeSetId)}/apply`, {}, keyHeader(key))
+export const rejectChangeSet = (projectId: string, changeSetId: string, key: string) =>
+  post<Result<ChangeSet>>(`${base}/${segment(projectId)}/change-sets/${segment(changeSetId)}/reject`, {}, keyHeader(key))
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const bindAsset = (id: string, knowledgeId: string, key: string) =>
   post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))

@@ -2,6 +2,7 @@ package workspacecore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -59,6 +60,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		"000108_lingdoc_project_discard.up.sql",
 		"000109_lingdoc_project_baseline.up.sql",
 		"000110_lingdoc_citation_usages.up.sql",
+		"000111_lingdoc_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
@@ -105,6 +107,29 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if _, _, _, err := s.SaveChapter(ctx, actor, id, chapters[0].ID, "pg-chapter-key", chapterInput); err != nil {
 		t.Fatal(err)
 	}
+	project, err := s.GetProject(ctx, actor, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeRaw, code, replay, err := s.CreateChangeSet(ctx, actor, id, "pg-g3-change-key", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: "synthetic", NewValue: "synthetic-next"}},
+		AffectedChapterIDs:      []string{chapters[0].ID},
+		Reason:                  "PostgreSQL G3 persistence",
+	})
+	if err != nil || code != 201 || replay {
+		t.Fatalf("G3 create: code=%d replay=%v err=%v", code, replay, err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(changeRaw, &change); err != nil || change.Status != "assessed" {
+		t.Fatalf("G3 preview: %+v %v", change, err)
+	}
+	if _, code, replay, err := s.ApplyChangeSet(ctx, actor, id, change.ID, "pg-g3-apply-key"); err != nil || code != 200 || replay {
+		t.Fatalf("G3 apply: code=%d replay=%v err=%v", code, replay, err)
+	}
+	if _, code, replay, err := s.ApplyChangeSet(ctx, actor, id, change.ID, "pg-g3-apply-key"); err != nil || code != 200 || !replay {
+		t.Fatalf("G3 apply replay: code=%d replay=%v err=%v", code, replay, err)
+	}
 	// New pool/service proves read-back is not process-local state.
 	reopened, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -115,9 +140,14 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopenedSQL.Close()
-	read, err := NewService(NewGORMRepository(reopened)).GenerationContext(ctx, actor, id, chapters[0].ID)
+	reopenedService := NewService(NewGORMRepository(reopened))
+	read, err := reopenedService.GenerationContext(ctx, actor, id, chapters[0].ID)
 	if err != nil || read.ChapterBody != "durable text" || read.ChapterVersionID == nil {
 		t.Fatalf("reopen: %+v %v", read, err)
+	}
+	readChange, err := reopenedService.GetChangeSet(ctx, actor, id, change.ID)
+	if err != nil || readChange.Status != "applied" || readChange.TargetContextRevision == nil || *readChange.TargetContextRevision != 2 {
+		t.Fatalf("reopen G3 changeset: %+v %v", readChange, err)
 	}
 	if err := db.Exec("UPDATE tenant_members SET status='inactive' WHERE user_id='owner'").Error; err != nil {
 		t.Fatal(err)

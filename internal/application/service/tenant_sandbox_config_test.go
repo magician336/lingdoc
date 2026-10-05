@@ -231,6 +231,8 @@ func TestSandboxIdentityChangedJudgesUnreachableOldEndpoint(t *testing.T) {
 // that prevents old credentials from being overwritten while they still own
 // provider resources.
 type fakeConfigRepo struct {
+	mu sync.Mutex
+
 	entity *types.TenantSandboxConfigEntity
 	policy *types.TenantSandboxConfigEntity
 	others []*types.TenantSandboxConfigEntity
@@ -258,6 +260,8 @@ func (f *fakeConfigRepo) Create(_ context.Context, e *types.TenantSandboxConfigE
 func (f *fakeConfigRepo) GetByID(
 	_ context.Context, _ uint64, _ string,
 ) (*types.TenantSandboxConfigEntity, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.events = append(f.events, "get")
 	return f.entity, nil
 }

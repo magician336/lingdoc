@@ -112,6 +112,22 @@ type confirmationIdempotencyRow struct {
 	CreatedAt    time.Time
 }
 
+// projectAuditRow mirrors the workspace audit table without importing
+// workspacecore (which would create a package cycle). The table is shared by
+// the workspace and candidate-adoption transactions; keeping this small row
+// local lets a chapter re-confirmation appear in the same project audit feed.
+type projectAuditRow struct {
+	ID          string `gorm:"primaryKey;size:36"`
+	ProjectID   string `gorm:"not null;index;size:36"`
+	ActorID     string `gorm:"not null;size:64"`
+	Action      string `gorm:"not null;size:64"`
+	Target      string `gorm:"not null;size:128"`
+	DetailsJSON string `gorm:"column:details_json;not null;type:text;default:'{}'"`
+	CreatedAt   time.Time
+}
+
+func (projectAuditRow) TableName() string { return "lingdoc_project_audits" }
+
 func (projectRow) TableName() string                 { return "lingdoc_projects" }
 func (chapterRow) TableName() string                 { return "lingdoc_chapters" }
 func (chapterVersionRow) TableName() string          { return "lingdoc_chapter_versions" }
@@ -158,6 +174,10 @@ func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in Co
 	var result Confirmation
 	replayed := false
 	hash := confirmationRequestHash(in)
+	// Candidate-adoption unit tests intentionally use a focused schema without
+	// the workspace audit table. Production migrations do create it, so detect
+	// the optional table once and write the review event only when it exists.
+	auditEnabled := s.db.Migrator().HasTable((projectAuditRow{}).TableName())
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var previous confirmationIdempotencyRow
 		err := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error
@@ -222,6 +242,24 @@ func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in Co
 		}
 		if projectUpdate.RowsAffected != 1 {
 			return ErrVersionConflict
+		}
+		if auditEnabled {
+			details, err := json.Marshal(map[string]any{
+				"chapter_id":         in.ChapterID,
+				"chapter_version_id": in.ExpectedChapterVersionID,
+				"spec_revision":      in.ExpectedSpecRevision,
+				"confirmation_id":    result.ID,
+			})
+			if err != nil {
+				return err
+			}
+			if err := tx.Create(&projectAuditRow{
+				ID: uuid.NewString(), ProjectID: in.ProjectID, ActorID: in.ActorID,
+				Action: "project.change_set.review", Target: in.ChapterID,
+				DetailsJSON: string(details), CreatedAt: result.CreatedAt,
+			}).Error; err != nil {
+				return err
+			}
 		}
 		response, err := json.Marshal(result)
 		if err != nil {

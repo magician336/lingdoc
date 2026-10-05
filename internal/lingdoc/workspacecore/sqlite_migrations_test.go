@@ -27,6 +27,7 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		"000029_lingdoc_project_discard.up.sql",
 		"000030_lingdoc_project_baseline.up.sql",
 		"000031_lingdoc_citation_usages.up.sql",
+		"000032_lingdoc_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -36,7 +37,7 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 	}
-	for _, table := range []string{"lingdoc_projects", "lingdoc_members", "lingdoc_member_permissions", "lingdoc_chapters", "lingdoc_chapter_versions", "lingdoc_operations", "lingdoc_project_assets", "lingdoc_asset_revisions", "lingdoc_candidates", "lingdoc_chapter_confirmations", "lingdoc_generation_runs", "lingdoc_release_snapshots", "lingdoc_export_artifacts"} {
+	for _, table := range []string{"lingdoc_projects", "lingdoc_members", "lingdoc_member_permissions", "lingdoc_chapters", "lingdoc_chapter_versions", "lingdoc_operations", "lingdoc_project_assets", "lingdoc_asset_revisions", "lingdoc_candidates", "lingdoc_chapter_confirmations", "lingdoc_generation_runs", "lingdoc_release_snapshots", "lingdoc_export_artifacts", "lingdoc_change_sets"} {
 		var count int
 		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("migration did not create %s: count=%d error=%v", table, count, err)

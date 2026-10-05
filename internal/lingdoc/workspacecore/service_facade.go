@@ -52,6 +52,14 @@ type auditTransaction interface {
 	AuditEvents(string) ([]AuditEvent, error)
 }
 
+type changeSetTransaction interface {
+	InsertChangeSet(ChangeSet) error
+	ChangeSet(string, string) (ChangeSet, error)
+	ChangeSets(string) ([]ChangeSet, error)
+	UpdateChangeSet(ChangeSet, ChangeSet) error
+	InvalidateChapterConfirmations(string, []string) error
+}
+
 type ProjectAuthorizer interface {
 	AuthorizeTenant(Transaction, Actor, string) error
 	AuthorizeProject(Transaction, Actor, string, string) (Project, error)
@@ -784,6 +792,272 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 	})
 }
 
+func validateChangeSetInput(input CreateChangeSetInput) error {
+	if input.ExpectedContextRevision < 1 || len(input.Fields) == 0 || len(input.Fields) > 2 || len(input.AffectedChapterIDs) == 0 || strings.TrimSpace(input.Reason) == "" || len([]rune(input.Reason)) > 2000 {
+		return ErrInvalidRequest
+	}
+	seen := make(map[string]struct{}, len(input.AffectedChapterIDs))
+	for _, id := range input.AffectedChapterIDs {
+		if strings.TrimSpace(id) == "" {
+			return ErrInvalidRequest
+		}
+		if _, ok := seen[id]; ok {
+			return ErrInvalidRequest
+		}
+		seen[id] = struct{}{}
+	}
+	for key, delta := range input.Fields {
+		if key != "research_subject" && key != "research_goal" {
+			return ErrInvalidRequest
+		}
+		if delta.OldValue == delta.NewValue || len(delta.NewValue) > 10000 {
+			return ErrInvalidRequest
+		}
+	}
+	return nil
+}
+
+func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
+	if err := validateChangeSetInput(input); err != nil {
+		return nil, 0, false, err
+	}
+	return s.operation(ctx, actor, "createChangeSet", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "active" || p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
+		if p.CurrentContextRevision != input.ExpectedContextRevision {
+			return nil, 0, ErrVersionConflict
+		}
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		keys := make([]string, 0, len(input.Fields))
+		for key := range input.Fields {
+			keys = append(keys, key)
+		}
+		slices.Sort(keys)
+		fields := make([]ChangeFieldDelta, 0, len(keys))
+		for _, key := range keys {
+			delta := input.Fields[key]
+			if p.Spec[key] != delta.OldValue {
+				return nil, 0, ErrVersionConflict
+			}
+			fields = append(fields, ChangeFieldDelta{Key: key, OldValue: delta.OldValue, NewValue: delta.NewValue})
+		}
+		impacts := make([]ChangeImpact, 0, len(input.AffectedChapterIDs))
+		for _, chapterID := range input.AffectedChapterIDs {
+			chapter, err := tx.Chapter(projectID, chapterID)
+			if err != nil {
+				return nil, 0, err
+			}
+			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: "研究条件变化，需要重新复核", Status: "open"})
+		}
+		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, Reason: strings.TrimSpace(input.Reason), Status: "assessed", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, CreatedAt: time.Now().UTC()}
+		if err := store.InsertChangeSet(change); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.create", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts}, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return change, 201, nil
+	})
+}
+
+func (s *Service) ListChangeSets(ctx context.Context, actor Actor, projectID string) ([]ChangeSet, error) {
+	var result []ChangeSet
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = store.ChangeSets(projectID)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, changeSetID string) (ChangeSet, error) {
+	var result ChangeSet
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = store.ChangeSet(projectID, changeSetID)
+		return err
+	})
+	return result, err
+}
+
+func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	if strings.TrimSpace(changeSetID) == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "applyChangeSet", projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "active" || p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
+		if !projectOwner(p, actor.UserID) {
+			return nil, 0, ErrNotFound
+		}
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		change, err := store.ChangeSet(projectID, changeSetID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if change.Status == "applied" {
+			return change, 200, nil
+		}
+		if change.Status != "assessed" {
+			return nil, 0, ErrInvalidState
+		}
+		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
+			stale := change
+			stale.Status = "stale"
+			if err := store.UpdateChangeSet(change, stale); err != nil {
+				return nil, 0, err
+			}
+			if audit, ok := tx.(auditTransaction); ok {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision}, CreatedAt: time.Now().UTC()}); err != nil {
+					return nil, 0, err
+				}
+			}
+			return stale, 409, nil
+		}
+		for _, impact := range change.Impacts {
+			chapter, err := tx.Chapter(projectID, impact.ChapterID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if !sameVersion(impact.ChapterVersionID, chapter.CurrentVersionID) {
+				stale := change
+				stale.Status = "stale"
+				if err := store.UpdateChangeSet(change, stale); err != nil {
+					return nil, 0, err
+				}
+				if audit, ok := tx.(auditTransaction); ok {
+					if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"chapter_id": impact.ChapterID, "chapter_version_id": impact.ChapterVersionID}, CreatedAt: time.Now().UTC()}); err != nil {
+						return nil, 0, err
+					}
+				}
+				return stale, 409, nil
+			}
+		}
+		next := p
+		next.Spec = maps.Clone(p.Spec)
+		next.SpecFields = maps.Clone(p.SpecFields)
+		if next.Spec == nil {
+			next.Spec = map[string]string{}
+		}
+		if next.SpecFields == nil {
+			next.SpecFields = map[string]SpecField{}
+		}
+		for _, field := range change.Fields {
+			next.Spec[field.Key] = field.NewValue
+			metadata := next.SpecFields[field.Key]
+			metadata.Value = field.NewValue
+			metadata.Origin = "human"
+			metadata.Status = "pending_confirmation"
+			metadata.ModifiedBy = actor.UserID
+			metadata.ModifiedAt = time.Now().UTC()
+			next.SpecFields[field.Key] = metadata
+		}
+		next.SpecRevision++
+		next.CurrentContextRevision++
+		next.ProjectVersion++
+		for _, field := range change.Fields {
+			metadata := next.SpecFields[field.Key]
+			metadata.ModifiedProjectVersion = next.ProjectVersion
+			next.SpecFields[field.Key] = metadata
+		}
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		targetContext, targetSpec := next.CurrentContextRevision, next.SpecRevision
+		now := time.Now().UTC()
+		previousChange := change
+		change.Status = "applied"
+		change.TargetContextRevision = &targetContext
+		change.TargetSpecRevision = &targetSpec
+		change.AppliedAt = &now
+		for i := range change.Impacts {
+			change.Impacts[i].Status = "open"
+		}
+		if err := store.UpdateChangeSet(previousChange, change); err != nil {
+			return nil, 0, err
+		}
+		chapterIDs := make([]string, 0, len(change.Impacts))
+		for _, impact := range change.Impacts {
+			chapterIDs = append(chapterIDs, impact.ChapterID)
+		}
+		if err := store.InvalidateChapterConfirmations(projectID, chapterIDs); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec}, CreatedAt: now}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return change, 200, nil
+	})
+}
+
+// RejectChangeSet records the current owner's decision not to apply an
+// assessed proposal. It intentionally shares the same operation/idempotency
+// boundary as apply so a lost response cannot create a second decision audit.
+func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	if strings.TrimSpace(changeSetID) == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "rejectChangeSet", projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "active" || p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
+		if !projectOwner(p, actor.UserID) {
+			return nil, 0, ErrNotFound
+		}
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		change, err := store.ChangeSet(projectID, changeSetID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if change.Status == "rejected" {
+			return change, 200, nil
+		}
+		if change.Status != "assessed" {
+			return nil, 0, ErrInvalidState
+		}
+		previous := change
+		change.Status = "rejected"
+		if err := store.UpdateChangeSet(previous, change); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reject", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision}, Reason: change.Reason, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return change, 200, nil
+	})
+}
+
 func validSpecFieldMetadata(input SpecFieldInput) bool {
 	origin := input.Origin
 	if origin == "" {
@@ -1312,6 +1586,15 @@ func completeCitationUsages(values []CitationUsage, sourceIDs []string) []Citati
 func sameVersion(a, b *string) bool {
 	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
+
+func cloneString(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	copy := *value
+	return &copy
+}
+
 func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error) {
 	var result GenerationContext
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
