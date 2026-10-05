@@ -54,6 +54,19 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
+	specFields, err := decodeSpecFields(row.SpecMetadataJSON, spec)
+	if err != nil {
+		return Project{}, err
+	}
+	for key, field := range specFields {
+		if field.Provenance != nil && !field.Provenance.Accessible {
+			field.Provenance.NeedsReview = true
+			field.Status = "pending_confirmation"
+			field.Value = ""
+			specFields[key] = field
+			spec[key] = ""
+		}
+	}
 	var members []memberRow
 	if err := tx.Where("project_id = ?", row.ID).Order("user_id").Find(&members).Error; err != nil {
 		return Project{}, err
@@ -67,7 +80,12 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	} else if !strings.Contains(err.Error(), "no such table: lingdoc_member_permissions") {
 		return Project{}, err
 	}
-	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, Spec: spec, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
+	deliveryStatus := row.DeliveryStatus
+	if deliveryStatus == "" {
+		deliveryStatus = "NOT_READY"
+	}
+	p := Project{ID: row.ID, Name: row.Name, Status: row.Status, ProjectVersion: row.ProjectVersion, SpecRevision: row.SpecRevision, CurrentContextRevision: row.CurrentContextRevision, DeliveryStatus: deliveryStatus, BaselineConfirmationID: row.BaselineConfirmationID, Spec: spec, SpecFields: specFields, TemplateID: row.TemplateID, TemplateVersion: row.TemplateVersion, Members: make([]Member, 0, len(members))}
+	p.DiscardedAt = row.DiscardedAt
 	for _, m := range members {
 		member := Member{UserID: m.UserID, Role: m.Role}
 		if m.Role == "owner" {
@@ -98,7 +116,7 @@ func (t gormTransaction) Project(tenantID uint64, id string) (Project, error) {
 }
 func (t gormTransaction) Projects(actor Actor, limit int) ([]Project, error) {
 	var rows []projectRow
-	if err := t.db.Table("lingdoc_projects AS p").Select("p.*").Joins("JOIN lingdoc_members AS m ON m.project_id = p.id").Where("p.tenant_id = ? AND m.user_id = ?", actor.TenantID, actor.UserID).Order("p.created_at DESC, p.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
+	if err := t.db.Table("lingdoc_projects AS p").Select("p.*").Joins("JOIN lingdoc_members AS m ON m.project_id = p.id").Where("p.tenant_id = ? AND m.user_id = ? AND p.discarded_at IS NULL", actor.TenantID, actor.UserID).Order("p.created_at DESC, p.id DESC").Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	views := make([]Project, 0, len(rows))
@@ -116,7 +134,11 @@ func (t gormTransaction) InsertProject(tenantID uint64, p Project) error {
 	if err != nil {
 		return err
 	}
-	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, SpecJSON: string(raw), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion}
+	metadata, err := json.Marshal(p.SpecFields)
+	if err != nil {
+		return err
+	}
+	row := projectRow{ID: p.ID, TenantID: tenantID, Name: p.Name, Status: p.Status, ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, CurrentContextRevision: p.CurrentContextRevision, DeliveryStatus: p.DeliveryStatus, BaselineConfirmationID: p.BaselineConfirmationID, SpecJSON: string(raw), SpecMetadataJSON: string(metadata), TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, DiscardedAt: p.DiscardedAt}
 	if err := t.db.Create(&row).Error; err != nil {
 		return err
 	}
@@ -158,34 +180,21 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err != nil {
 		return err
 	}
-	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_revision": next.SpecRevision, "project_version": next.ProjectVersion, "status": next.Status}))
+	metadata, err := json.Marshal(next.SpecFields)
+	if err != nil {
+		return err
+	}
+	return affected(t.db.Model(&projectRow{}).Where("id = ? AND tenant_id = ? AND project_version = ? AND spec_revision = ? AND status = ?", previous.ID, tenantID, previous.ProjectVersion, previous.SpecRevision, previous.Status).Updates(map[string]any{"spec_json": string(raw), "spec_metadata_json": string(metadata), "spec_revision": next.SpecRevision, "current_context_revision": next.CurrentContextRevision, "project_version": next.ProjectVersion, "status": next.Status, "template_id": next.TemplateID, "template_version": next.TemplateVersion, "discarded_at": next.DiscardedAt, "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}))
 }
 func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) error {
-	var existing []memberPermissionRow
-	if err := optionalPermissionTable(t.db.Where("project_id = ?", projectID).Find(&existing).Error); err != nil {
-		return err
-	}
-	retained := map[string]memberPermissionRow{}
-	for _, row := range existing {
-		retained[row.UserID] = row
-	}
 	if err := t.db.Where("project_id = ? AND role = ?", projectID, "collaborator").Delete(&memberRow{}).Error; err != nil {
-		return err
-	}
-	if err := optionalPermissionTable(t.db.Where("project_id = ? AND governance_role <> ?", projectID, "owner").Delete(&memberPermissionRow{}).Error); err != nil {
 		return err
 	}
 	for _, id := range ids {
 		if err := t.db.Create(&memberRow{ProjectID: projectID, UserID: id, Role: "collaborator"}).Error; err != nil {
 			return err
 		}
-		// Legacy collaborators retain project-level write compatibility; chapter
-		// writes still require an explicit chapter scope through the sidecar.
-		permission, ok := retained[id]
-		if !ok {
-			permission = memberPermissionRow{ProjectID: projectID, UserID: id, GovernanceRole: "member", FunctionRolesJSON: "[\"author\"]", FunctionScopesJSON: "{}", Status: "active"}
-		}
-		if err := optionalPermissionTable(t.db.Create(&permission).Error); err != nil {
+		if err := optionalPermissionTable(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: id, GovernanceRole: "member", FunctionRolesJSON: "[\"author\"]", FunctionScopesJSON: "{}", Status: "active"}).Error); err != nil {
 			return err
 		}
 	}
@@ -193,24 +202,18 @@ func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) er
 }
 
 func (t gormTransaction) ReplaceMembers(projectID string, members []Member) error {
-	sidecar := true
-	if err := t.db.Where("project_id = ?", projectID).Delete(&memberPermissionRow{}).Error; err != nil {
-		if strings.Contains(err.Error(), "no such table: lingdoc_member_permissions") {
-			sidecar = false
-		} else {
-			return err
-		}
-	}
 	if err := t.db.Where("project_id = ?", projectID).Delete(&memberRow{}).Error; err != nil {
+		return err
+	}
+	if err := optionalPermissionTable(t.db.Where("project_id = ?", projectID).Delete(&memberPermissionRow{}).Error); err != nil {
 		return err
 	}
 	for _, member := range members {
 		if err := t.db.Create(&memberRow{ProjectID: projectID, UserID: member.UserID, Role: member.Role}).Error; err != nil {
 			return err
 		}
-		if !sidecar {
-			continue
-		}
+		roles, _ := json.Marshal(member.FunctionRoles)
+		scopes, _ := json.Marshal(member.FunctionScopes)
 		governance := member.GovernanceRole
 		if governance == "" {
 			if member.Role == "owner" {
@@ -223,23 +226,246 @@ func (t gormTransaction) ReplaceMembers(projectID string, members []Member) erro
 		if status == "" {
 			status = "active"
 		}
-		roles, err := json.Marshal(member.FunctionRoles)
-		if err != nil {
-			return err
-		}
-		scopes, err := json.Marshal(member.FunctionScopes)
-		if err != nil {
-			return err
-		}
-		if err := t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error; err != nil {
+		if err := optionalPermissionTable(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error); err != nil {
 			return err
 		}
 	}
 	return nil
 }
+
+func (t gormTransaction) InsertDraftCandidate(candidate DraftCandidate) error {
+	provenance, err := json.Marshal(candidate.Provenance)
+	if err != nil {
+		return err
+	}
+	return t.db.Create(&draftCandidateRow{ID: candidate.ID, ProjectID: candidate.ProjectID, Kind: candidate.Kind, Title: candidate.Title, Content: candidate.Content, Level: candidate.Level, BasedOnContextRevision: candidate.BasedOnContextRevision, ProvenanceJSON: string(provenance), CreatedBy: candidate.CreatedBy, CreatedAt: candidate.CreatedAt}).Error
+}
+
+func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, error) {
+	var rows []draftCandidateRow
+	if err := t.db.Where("project_id = ?", projectID).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]DraftCandidate, 0, len(rows))
+	for _, row := range rows {
+		var provenance *ProvenanceRecord
+		if row.ProvenanceJSON != "" && row.ProvenanceJSON != "{}" && row.ProvenanceJSON != "null" {
+			provenance = &ProvenanceRecord{}
+			if err := json.Unmarshal([]byte(row.ProvenanceJSON), provenance); err != nil {
+				return nil, err
+			}
+			if !provenance.Accessible {
+				provenance.NeedsReview = true
+				row.Content = ""
+			}
+		}
+		result = append(result, DraftCandidate{ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Title: row.Title, Content: row.Content, Level: row.Level, BasedOnContextRevision: row.BasedOnContextRevision, Provenance: provenance, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt})
+	}
+	return result, nil
+}
+
+func (t gormTransaction) RecordAudit(event AuditEvent) error {
+	details, err := json.Marshal(event.Details)
+	if err != nil {
+		return err
+	}
+	return t.db.Create(&auditEventRow{ID: event.ID, ProjectID: event.ProjectID, ActorID: event.ActorID, Action: event.Action, Target: event.Target, DetailsJSON: string(details), CreatedAt: event.CreatedAt}).Error
+}
+
+func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
+	var rows []auditEventRow
+	if err := t.db.Where("project_id = ?", projectID).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]AuditEvent, 0, len(rows))
+	for _, row := range rows {
+		details := map[string]any{}
+		if row.DetailsJSON != "" && row.DetailsJSON != "{}" {
+			if err := json.Unmarshal([]byte(row.DetailsJSON), &details); err != nil {
+				return nil, err
+			}
+		}
+		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Details: details, CreatedAt: row.CreatedAt})
+	}
+	return result, nil
+}
+
+func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
+	var fields []ChangeFieldDelta
+	if err := json.Unmarshal([]byte(row.FieldsJSON), &fields); err != nil {
+		return ChangeSet{}, err
+	}
+	var impacts []ChangeImpact
+	if err := json.Unmarshal([]byte(row.ImpactsJSON), &impacts); err != nil {
+		return ChangeSet{}, err
+	}
+	if fields == nil {
+		fields = []ChangeFieldDelta{}
+	}
+	if impacts == nil {
+		impacts = []ChangeImpact{}
+	}
+	return ChangeSet{ID: row.ID, ProjectID: row.ProjectID, CreatedBy: row.CreatedBy, Reason: row.Reason,
+		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
+		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision, Fields: fields, Impacts: impacts,
+		CreatedAt: row.CreatedAt, AppliedAt: row.AppliedAt}, nil
+}
+
+func (t gormTransaction) InsertChangeSet(change ChangeSet) error {
+	fields, err := json.Marshal(change.Fields)
+	if err != nil {
+		return err
+	}
+	impacts, err := json.Marshal(change.Impacts)
+	if err != nil {
+		return err
+	}
+	return t.db.Create(&changeSetRow{ID: change.ID, ProjectID: change.ProjectID, CreatedBy: change.CreatedBy,
+		Reason: change.Reason, Status: change.Status, BaseContextRevision: change.BaseContextRevision,
+		TargetContextRevision: change.TargetContextRevision, BaseSpecRevision: change.BaseSpecRevision,
+		TargetSpecRevision: change.TargetSpecRevision, FieldsJSON: string(fields), ImpactsJSON: string(impacts),
+		CreatedAt: change.CreatedAt, AppliedAt: change.AppliedAt}).Error
+}
+
+func (t gormTransaction) ChangeSet(projectID, id string) (ChangeSet, error) {
+	var row changeSetRow
+	if err := t.db.Where("project_id = ? AND id = ?", projectID, id).First(&row).Error; err != nil {
+		return ChangeSet{}, storageError(err)
+	}
+	change, err := decodeChangeSet(row)
+	if err != nil {
+		return ChangeSet{}, err
+	}
+	return t.withCurrentImpactStatus(change)
+}
+
+func (t gormTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
+	var rows []changeSetRow
+	if err := t.db.Where("project_id = ?", projectID).Order("created_at, id").Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	result := make([]ChangeSet, 0, len(rows))
+	for _, row := range rows {
+		change, err := decodeChangeSet(row)
+		if err != nil {
+			return nil, err
+		}
+		change, err = t.withCurrentImpactStatus(change)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, change)
+	}
+	return result, nil
+}
+
+// withCurrentImpactStatus derives review state from the current immutable
+// chapter version. The stored ChangeSet remains an audit record; a read should
+// reflect a newly completed confirmation without rewriting historical JSON.
+func (t gormTransaction) withCurrentImpactStatus(change ChangeSet) (ChangeSet, error) {
+	if change.Status != "applied" || change.TargetSpecRevision == nil {
+		return change, nil
+	}
+	for i := range change.Impacts {
+		impact := &change.Impacts[i]
+		var chapter chapterRow
+		if err := t.db.Where("project_id = ? AND id = ?", change.ProjectID, impact.ChapterID).First(&chapter).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return ChangeSet{}, err
+		}
+		if chapter.CurrentVersionID == nil {
+			continue
+		}
+		var version chapterVersionRow
+		if err := t.db.Where("project_id = ? AND chapter_id = ? AND id = ?", change.ProjectID, impact.ChapterID, *chapter.CurrentVersionID).First(&version).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return ChangeSet{}, err
+		}
+		if version.SpecRevision == *change.TargetSpecRevision && version.ConfirmationValid {
+			impact.Status = "reviewed"
+		} else {
+			impact.Status = "open"
+		}
+	}
+	return change, nil
+}
+
+func (t gormTransaction) UpdateChangeSet(previous, next ChangeSet) error {
+	fields, err := json.Marshal(next.Fields)
+	if err != nil {
+		return err
+	}
+	impacts, err := json.Marshal(next.Impacts)
+	if err != nil {
+		return err
+	}
+	result := t.db.Model(&changeSetRow{}).Where("id = ? AND project_id = ? AND status = ?", previous.ID, previous.ProjectID, previous.Status).
+		Updates(map[string]any{"status": next.Status, "target_context_revision": next.TargetContextRevision,
+			"target_spec_revision": next.TargetSpecRevision, "fields_json": string(fields), "impacts_json": string(impacts), "applied_at": next.AppliedAt})
+	return affected(result)
+}
+
+func (t gormTransaction) InvalidateChapterConfirmations(projectID string, chapterIDs []string) error {
+	if len(chapterIDs) == 0 {
+		return nil
+	}
+	var chapters []chapterRow
+	if err := t.db.Where("project_id = ? AND id IN ?", projectID, chapterIDs).Find(&chapters).Error; err != nil {
+		return err
+	}
+	currentVersionIDs := make([]string, 0, len(chapters))
+	for _, chapter := range chapters {
+		if chapter.CurrentVersionID != nil {
+			currentVersionIDs = append(currentVersionIDs, *chapter.CurrentVersionID)
+		}
+	}
+	if len(currentVersionIDs) == 0 {
+		return nil
+	}
+	if err := t.db.Model(&chapterVersionRow{}).Where("project_id = ? AND id IN ?", projectID, currentVersionIDs).
+		Update("confirmation_valid", false).Error; err != nil {
+		return err
+	}
+	return t.db.Model(&chapterConfirmationRow{}).Where("chapter_id IN ? AND chapter_version_id IN ?", chapterIDs, currentVersionIDs).Update("valid", false).Error
+}
+
+func (t gormTransaction) InsertOwnerTransfer(transfer OwnerTransfer) error {
+	return t.db.Create(&ownerTransferRow{ID: transfer.ID, ProjectID: transfer.ProjectID, FromUserID: transfer.FromUserID, ToUserID: transfer.ToUserID, Status: transfer.Status, ExpectedProjectVersion: transfer.ExpectedProjectVersion, CreatedAt: transfer.CreatedAt}).Error
+}
+
+func (t gormTransaction) OwnerTransfer(projectID, id string) (OwnerTransfer, error) {
+	var row ownerTransferRow
+	if err := t.db.Where("project_id = ? AND id = ?", projectID, id).First(&row).Error; err != nil {
+		return OwnerTransfer{}, storageError(err)
+	}
+	return OwnerTransfer{ID: row.ID, ProjectID: row.ProjectID, FromUserID: row.FromUserID, ToUserID: row.ToUserID, Status: row.Status, ExpectedProjectVersion: row.ExpectedProjectVersion, CreatedAt: row.CreatedAt, AcceptedAt: row.AcceptedAt}, nil
+}
+
+func (t gormTransaction) AcceptOwnerTransfer(projectID, id string, version int64, acceptedAt time.Time) error {
+	result := t.db.Model(&ownerTransferRow{}).Where("project_id = ? AND id = ? AND status = ? AND expected_project_version = ?", projectID, id, "pending", version).Updates(map[string]any{"status": "accepted", "accepted_at": acceptedAt})
+	return affected(result)
+}
+
+func (t gormTransaction) SetMemberRole(projectID, userID, role string) error {
+	result := t.db.Model(&memberRow{}).Where("project_id = ? AND user_id = ?", projectID, userID).Update("role", role)
+	return affected(result)
+}
+
+func (t gormTransaction) EnsureMember(projectID, userID, role string) error {
+	var row memberRow
+	err := t.db.Where("project_id = ? AND user_id = ?", projectID, userID).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return t.db.Create(&memberRow{ProjectID: projectID, UserID: userID, Role: role}).Error
+	}
+	return err
+}
 func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, error) {
 	view := Chapter{ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
-		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
+		CurrentVersionID: row.CurrentVersionID, BodyMarkdown: "", SourceIDs: []string{}, CitationUsages: []CitationUsage{}, CitationStatuses: []CitationStatus{}, ReviewItems: []ReviewItem{}, ConfirmationValid: false}
 	if row.CurrentVersionID == nil {
 		return view, nil
 	}
@@ -274,6 +500,14 @@ func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, erro
 		// 因为 json.Unmarshal 会把 null 解成 nil，而 nil 一旦漏出去，上面建立的
 		//「没有引用时是空切片」不变式就断了——调用方按 nil 与空切片分不出同一件事。
 		view.SourceIDs = []string{}
+	}
+	if version.CitationUsagesJSON != "" {
+		if err := json.Unmarshal([]byte(version.CitationUsagesJSON), &view.CitationUsages); err != nil {
+			return Chapter{}, err
+		}
+		if view.CitationUsages == nil {
+			view.CitationUsages = []CitationUsage{}
+		}
 	}
 	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &view.ReviewItems); err != nil {
 		return Chapter{}, err
@@ -443,7 +677,11 @@ func (t gormTransaction) AppendChapter(previous, next Chapter, specRevision int6
 	if err != nil {
 		return err
 	}
-	version := chapterVersionRow{ID: *next.CurrentVersionID, ProjectID: next.ProjectID, ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown, SourceIDsJSON: string(sources), ReviewItemsJSON: string(review), SpecRevision: specRevision}
+	usages, err := json.Marshal(next.CitationUsages)
+	if err != nil {
+		return err
+	}
+	version := chapterVersionRow{ID: *next.CurrentVersionID, ProjectID: next.ProjectID, ChapterID: next.ID, ParentVersionID: previous.CurrentVersionID, BodyMarkdown: next.BodyMarkdown, SourceIDsJSON: string(sources), CitationUsagesJSON: string(usages), ReviewItemsJSON: string(review), SpecRevision: specRevision}
 	if err := t.db.Create(&version).Error; err != nil {
 		return err
 	}

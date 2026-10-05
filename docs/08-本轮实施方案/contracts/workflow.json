@@ -2,6 +2,13 @@
   "id": "F01",
   "version": "0.4.0",
   "mode": "specification_not_executed_against_provider",
+  "related_scenarios": [
+    {
+      "id": "G1",
+      "specification_file": "../G1-验收与交接.md",
+      "execution_status": "not_run_until_independent_reproduction"
+    }
+  ],
   "setup": {
     "actor": "u-owner",
     "tenant": "isolated-test-tenant",

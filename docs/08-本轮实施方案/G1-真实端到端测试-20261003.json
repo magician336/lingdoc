@@ -1,0 +1,34 @@
+{
+  "result": "PASS",
+  "scope": "real_http_postgres_e2e",
+  "date": "2026-10-03",
+  "service_commit": "4e3d4de",
+  "database": {
+    "engine": "PostgreSQL",
+    "migration_before": 103,
+    "migration_after": 109,
+    "dirty": false
+  },
+  "dependencies": ["PostgreSQL", "Redis", "docreader"],
+  "steps_total": 32,
+  "steps_passed": 32,
+  "flows": [
+    "health and auth configuration",
+    "real user registration and login",
+    "tenant invitation, acceptance, and tenant switch",
+    "draft project creation and idempotent replay",
+    "draft specification with provenance and pending AI field",
+    "activation diff, draft candidate, and audit readback",
+    "template migration preview and commit with orphaned field preservation",
+    "project collaborator and transactional Owner transfer",
+    "Owner activation with Context Revision 1 and chapter skeleton",
+    "discarded draft write rejection and restore"
+  ],
+  "cleanup": "Synthetic test tenants, users, invitations, memberships, and projects were removed from the dev database after the run.",
+  "not_run": [
+    "real browser UI flow for a dedicated G1 screen",
+    "provider-specific connector webhook or credential-revocation notification (out of G1 scope; KB share revocation is covered separately)",
+    "real model generation and source-backed chapter writing"
+  ],
+  "credentials": "No token, password, provider ID, or dynamic project ID is stored in this evidence."
+}

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -440,7 +441,7 @@ func (h *Handler) acquireDesktopSlot(
 	if err != nil {
 		return func() {}, false, nil, err
 	}
-	got, err := redislock.TryAcquire(ctx, h.redis, key, token, desktopSlotLease)
+	got, err := redislock.TryAcquire(ctx, h.redis, key, token, time.Duration(desktopSlotLease.Load()))
 	if err != nil {
 		return func() {}, false, nil, err
 	}
@@ -470,7 +471,7 @@ func renewDesktopSlot(
 	client redis.UniversalClient,
 	key, token string,
 ) {
-	ticker := time.NewTicker(desktopSlotRenew)
+	ticker := time.NewTicker(time.Duration(desktopSlotRenew.Load()))
 	defer ticker.Stop()
 	lastOK := time.Now()
 	for {
@@ -478,13 +479,13 @@ func renewDesktopSlot(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			ok, rerr := redislock.Renew(ctx, client, key, token, desktopSlotLease)
+			ok, rerr := redislock.Renew(ctx, client, key, token, time.Duration(desktopSlotLease.Load()))
 			if rerr != nil {
 				if stderrors.Is(rerr, context.Canceled) && ctx.Err() != nil {
 					return
 				}
 				logger.Warnf(ctx, "[sandbox-desktop] slot renew failed key=%s: %v", key, rerr)
-				if time.Since(lastOK) >= desktopSlotLease {
+				if time.Since(lastOK) >= time.Duration(desktopSlotLease.Load()) {
 					cancelHold(rerr)
 					return
 				}
@@ -503,9 +504,14 @@ var (
 	// desktopSlotLease outlives a network blip; desktopSlotRenew keeps it
 	// alive while the relay runs. Tests shorten both so a stolen or expired
 	// key is observed without waiting on the production 90s lease.
-	desktopSlotLease = 90 * time.Second
-	desktopSlotRenew = 30 * time.Second
+	desktopSlotLease atomic.Int64
+	desktopSlotRenew atomic.Int64
 )
+
+func init() {
+	desktopSlotLease.Store(int64(90 * time.Second))
+	desktopSlotRenew.Store(int64(30 * time.Second))
+}
 
 func desktopSlotKey(sessionID string) string {
 	return "weknora:desktop-slot:" + sessionID

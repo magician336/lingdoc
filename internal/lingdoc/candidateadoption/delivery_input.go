@@ -28,14 +28,15 @@ type WorkspaceDeliveryInput struct {
 // nil confirmation. Empty or unconfirmed chapters must reach T13 so it can
 // persist an actionable blocked snapshot rather than hiding incomplete work.
 type WorkspaceDeliveryChapter struct {
-	ChapterID        string        `json:"chapter_id"`
-	SectionID        string        `json:"section_id"`
-	Title            string        `json:"title"`
-	ChapterVersionID *string       `json:"chapter_version_id"`
-	BodyMarkdown     string        `json:"body_markdown"`
-	SourceIDs        []string      `json:"source_ids"`
-	ReviewItems      []ReviewItem  `json:"review_items"`
-	Confirmation     *Confirmation `json:"confirmation,omitempty"`
+	ChapterID        string          `json:"chapter_id"`
+	SectionID        string          `json:"section_id"`
+	Title            string          `json:"title"`
+	ChapterVersionID *string         `json:"chapter_version_id"`
+	BodyMarkdown     string          `json:"body_markdown"`
+	SourceIDs        []string        `json:"source_ids"`
+	CitationUsages   []CitationUsage `json:"citation_usages"`
+	ReviewItems      []ReviewItem    `json:"review_items"`
+	Confirmation     *Confirmation   `json:"confirmation,omitempty"`
 }
 
 // DeliveryInputReader is the T12 handoff to T13. Implementations must return
@@ -108,7 +109,7 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 			frozen := WorkspaceDeliveryChapter{
 				ChapterID: chapter.ID, SectionID: chapter.SectionID, Title: chapter.Title,
 				ChapterVersionID: cloneString(chapter.CurrentVersionID), BodyMarkdown: chapter.BodyMarkdown,
-				SourceIDs: append([]string{}, chapter.SourceIDs...), ReviewItems: append([]ReviewItem{}, chapter.ReviewItems...),
+				SourceIDs: append([]string{}, chapter.SourceIDs...), CitationUsages: append([]CitationUsage{}, chapter.CitationUsages...), ReviewItems: append([]ReviewItem{}, chapter.ReviewItems...),
 			}
 			if chapter.CurrentVersionID != nil {
 				confirmation, err := currentConfirmation(tx, chapter.ID, *chapter.CurrentVersionID, int(project.SpecRevision), project.TemplateVersion)

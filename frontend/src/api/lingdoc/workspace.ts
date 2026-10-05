@@ -6,6 +6,7 @@ export interface Project {
   status: 'draft' | 'active'
   project_version: number
   spec_revision: number
+  current_context_revision: number
   spec: Record<string, string>
   template_id: string
   template_version: string
@@ -22,6 +23,18 @@ export interface ReviewDecision {
   review_item_id: string
   disposition: 'resolved' | 'retained_warning'
   reason: string
+}
+
+export interface CitationUsage {
+  source_id: string
+  purpose: string
+  limitation: string
+}
+
+export interface CitationStatus {
+  source_id: string
+  status: 'available' | 'needs_review' | 'unavailable'
+  detail?: string
 }
 
 export interface Confirmation {
@@ -45,6 +58,8 @@ export interface Chapter {
   current_version_id: string | null
   body_markdown: string
   source_ids: string[]
+  citation_usages?: CitationUsage[]
+  citation_statuses?: CitationStatus[]
   review_items: ReviewItem[]
   confirmation_valid: boolean
 }
@@ -257,6 +272,21 @@ export const applySelectedRewrite = (projectId: string, chapterId: string, candi
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates/${segment(candidateId)}/apply`, input, keyHeader(key),
 )
 export const getAccessStatus = (id: string) => get<Result<AccessStatus>>(`${base}/${segment(id)}/access-status`)
+export const listChangeSets = (id: string) => get<Result<ChangeSet[]>>(`${base}/${segment(id)}/change-sets`)
+export const getChangeSet = (projectId: string, changeSetId: string) =>
+  get<Result<ChangeSet>>(`${base}/${segment(projectId)}/change-sets/${segment(changeSetId)}`)
+export const createChangeSet = (projectId: string, input: {
+  expected_context_revision: number
+  fields: Record<string, { old_value: string; new_value: string }>
+  affected_chapter_ids: string[]
+  reason: string
+}, key: string) => post<Result<ChangeSet>>(
+  `${base}/${segment(projectId)}/change-sets`, input, keyHeader(key),
+)
+export const applyChangeSet = (projectId: string, changeSetId: string, key: string) =>
+  post<Result<ChangeSet>>(`${base}/${segment(projectId)}/change-sets/${segment(changeSetId)}/apply`, {}, keyHeader(key))
+export const rejectChangeSet = (projectId: string, changeSetId: string, key: string) =>
+  post<Result<ChangeSet>>(`${base}/${segment(projectId)}/change-sets/${segment(changeSetId)}/reject`, {}, keyHeader(key))
 export const listAssets = (id: string) => get<Result<Asset[]>>(`${base}/${segment(id)}/assets`)
 export const bindAsset = (id: string, knowledgeId: string, key: string) =>
   post<Result<Asset>>(`${base}/${segment(id)}/assets`, { knowledge_id: knowledgeId }, keyHeader(key))
@@ -271,6 +301,7 @@ export const saveChapter = (projectId: string, chapterId: string, input: {
   expected_spec_revision: number
   body_markdown: string
   source_ids: string[]
+  citation_usages: CitationUsage[]
 }, key: string) => post<Result<Chapter>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/versions`, input, keyHeader(key),
 )

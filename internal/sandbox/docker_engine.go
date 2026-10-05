@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -264,12 +265,28 @@ func ValidateDockerHost(host string, allowPrivate bool) error {
 	scheme, address, found := strings.Cut(trimmed, "://")
 	if !found {
 		return fmt.Errorf(
-			"sandbox: docker host %q must include a scheme (unix:// or tcp://)", host)
+			"sandbox: docker host %q must include a scheme (unix://, npipe://, or tcp://)", host)
 	}
 	switch strings.ToLower(scheme) {
 	case "unix":
 		if !strings.HasPrefix(address, "/") {
 			return fmt.Errorf("sandbox: docker unix socket path %q must be absolute", address)
+		}
+		return nil
+	case "npipe":
+		if runtime.GOOS != "windows" {
+			return fmt.Errorf("sandbox: npipe docker hosts are only supported on Windows")
+		}
+		// Docker Desktop exposes a local named pipe as
+		// npipe:////./pipe/docker_engine (or the equivalent //?/pipe form).
+		// Only those local pipe namespaces are accepted; a named-pipe URI must
+		// never become a way to connect to a remote host.
+		if !strings.HasPrefix(address, "//./pipe/") && !strings.HasPrefix(address, "//?/pipe/") {
+			return fmt.Errorf("sandbox: docker npipe path %q must be a local Windows named pipe", address)
+		}
+		pipeName := strings.TrimPrefix(strings.TrimPrefix(address, "//./pipe/"), "//?/pipe/")
+		if pipeName == "" {
+			return fmt.Errorf("sandbox: docker npipe path %q must name a pipe", address)
 		}
 		return nil
 	case "tcp", "http", "https":

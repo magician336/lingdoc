@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -363,6 +364,11 @@ func TestRegisterCatalogDoesNotMoveTheDefinitionWhenPinFails(t *testing.T) {
 	require.NoError(t, err)
 	catalogID := installed.CatalogID
 	firstRef := fx.catalogRefFor(t, catalogID)
+	require.Eventually(t, func() bool {
+		row, getErr := fx.skillRepo.GetSkill(ctx, 7, "cfg-1", skillID)
+		return getErr == nil && row != nil && row.Status == types.SkillStatusReady
+	}, 5*time.Second, time.Millisecond,
+		"the first background install must finish before changing the fake's failure policy")
 
 	fx.skillRepo.updateFailsWhen = func(e *types.TenantSkillEntity) bool {
 		return strings.TrimSpace(e.BundleRef) == firstRef

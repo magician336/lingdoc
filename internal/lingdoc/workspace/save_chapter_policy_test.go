@@ -268,7 +268,7 @@ func TestSaveChapterAcceptsCitationsAndRechecksBeforeReplay(t *testing.T) {
 		t.Fatalf("save spec: %d %s", recorder.Code, recorder.Body.String())
 	}
 	if recorder, _ := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects/"+projectID+"/activate", "sc-activate-1",
-		map[string]any{"expected_spec_revision": 1},
+		map[string]any{"expected_spec_revision": 1, "expected_project_version": 2, "reviewed_project_version": 2},
 	); recorder.Code != http.StatusOK {
 		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -367,7 +367,7 @@ func TestSaveChapterWithoutPolicyAnswersServiceUnavailable(t *testing.T) {
 		t.Fatalf("save spec: %d %s", recorder.Code, recorder.Body.String())
 	}
 	if recorder, _ := doJSON(t, fixture.router, http.MethodPost, "/api/v1/lingdoc/projects/"+projectID+"/activate", "np-activate-1",
-		map[string]any{"expected_spec_revision": 1},
+		map[string]any{"expected_spec_revision": 1, "expected_project_version": 2, "reviewed_project_version": 2},
 	); recorder.Code != http.StatusOK {
 		t.Fatalf("activate: %d %s", recorder.Code, recorder.Body.String())
 	}

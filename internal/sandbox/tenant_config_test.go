@@ -516,6 +516,9 @@ func TestResolveEffectiveConfigDetectsLocalDockerHostWhenBlank(t *testing.T) {
 }
 
 func TestResolveEffectiveConfigMapsDockerNoneToDeniedEgress(t *testing.T) {
+	// Keep this test about network mode. An ambient Windows DOCKER_HOST often
+	// points at Docker Desktop's npipe endpoint and must not change this fixture.
+	t.Setenv("DOCKER_HOST", "unix:///tmp/from-env.sock")
 	effective, err := ResolveEffectiveConfig(&types.TenantSandboxConfig{
 		SandboxType: "docker",
 		Docker: &types.DockerSandboxConfig{

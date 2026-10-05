@@ -36,6 +36,12 @@ type ReviewItem struct {
 	OriginCandidateID string `json:"origin_candidate_id"`
 }
 
+type CitationUsage struct {
+	SourceID   string `json:"source_id"`
+	Purpose    string `json:"purpose,omitempty"`
+	Limitation string `json:"limitation,omitempty"`
+}
+
 type AssetVersion struct {
 	AssetID       string `json:"asset_id"`
 	AssetRevision int    `json:"asset_revision"`
@@ -71,15 +77,16 @@ type CandidateSummary struct {
 }
 
 type Chapter struct {
-	ID                string       `json:"id"`
-	ProjectID         string       `json:"project_id"`
-	SectionID         string       `json:"section_id"`
-	Title             string       `json:"title"`
-	CurrentVersionID  *string      `json:"current_version_id"`
-	BodyMarkdown      string       `json:"body_markdown"`
-	SourceIDs         []string     `json:"source_ids"`
-	ReviewItems       []ReviewItem `json:"review_items"`
-	ConfirmationValid bool         `json:"confirmation_valid"`
+	ID                string          `json:"id"`
+	ProjectID         string          `json:"project_id"`
+	SectionID         string          `json:"section_id"`
+	Title             string          `json:"title"`
+	CurrentVersionID  *string         `json:"current_version_id"`
+	BodyMarkdown      string          `json:"body_markdown"`
+	SourceIDs         []string        `json:"source_ids"`
+	CitationUsages    []CitationUsage `json:"citation_usages"`
+	ReviewItems       []ReviewItem    `json:"review_items"`
+	ConfirmationValid bool            `json:"confirmation_valid"`
 }
 
 type GenerationContext struct {

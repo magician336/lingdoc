@@ -41,19 +41,25 @@ type DeliveryInput struct {
 	DeliveryKind   string            `json:"delivery_kind"`
 }
 type SnapshotChapter struct {
-	ChapterID        string        `json:"chapter_id"`
-	ChapterVersionID *string       `json:"chapter_version_id"`
-	SectionID        string        `json:"-"`
-	Title            string        `json:"title"`
-	BodyMarkdown     string        `json:"body_markdown"`
-	SourceIDs        []string      `json:"source_ids"`
-	ReviewItems      []ReviewItem  `json:"review_items"`
-	Confirmation     *Confirmation `json:"confirmation,omitempty"`
+	ChapterID        string          `json:"chapter_id"`
+	ChapterVersionID *string         `json:"chapter_version_id"`
+	SectionID        string          `json:"-"`
+	Title            string          `json:"title"`
+	BodyMarkdown     string          `json:"body_markdown"`
+	SourceIDs        []string        `json:"source_ids"`
+	CitationUsages   []CitationUsage `json:"citation_usages,omitempty"`
+	ReviewItems      []ReviewItem    `json:"review_items"`
+	Confirmation     *Confirmation   `json:"confirmation,omitempty"`
 }
 type ReviewItem struct {
 	ID                string `json:"id"`
 	Statement         string `json:"statement"`
 	OriginCandidateID string `json:"origin_candidate_id"`
+}
+type CitationUsage struct {
+	SourceID   string `json:"source_id"`
+	Purpose    string `json:"purpose,omitempty"`
+	Limitation string `json:"limitation,omitempty"`
 }
 type ReviewDecision struct {
 	ReviewItemID string `json:"review_item_id"`
@@ -625,6 +631,7 @@ func cloneChapter(chapter SnapshotChapter) SnapshotChapter {
 	copy := chapter
 	copy.ChapterVersionID = cloneVersion(chapter.ChapterVersionID)
 	copy.SourceIDs = cloneSlice(chapter.SourceIDs)
+	copy.CitationUsages = cloneSlice(chapter.CitationUsages)
 	copy.ReviewItems = cloneSlice(chapter.ReviewItems)
 	if chapter.Confirmation != nil {
 		confirmation := *chapter.Confirmation

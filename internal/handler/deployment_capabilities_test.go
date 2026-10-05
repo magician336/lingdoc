@@ -89,11 +89,14 @@ func readFrontendDeploymentCapabilityKeys() ([]string, error) {
 
 	var keys []string
 	for _, line := range strings.Split(string(match[1]), "\n") {
+		// The frontend file is CRLF on Windows. Trim whitespace before the
+		// comma so the parser also works when the line ends in "\r\n".
+		line = strings.TrimSpace(line)
 		line = strings.TrimSpace(strings.TrimRight(line, ","))
 		if line == "" {
 			continue
 		}
-		line = strings.Trim(line, `'`)
+		line = strings.Trim(line, `'"`)
 		keys = append(keys, line)
 	}
 	return keys, nil

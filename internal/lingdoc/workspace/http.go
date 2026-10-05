@@ -3,6 +3,7 @@ package workspace
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -35,8 +36,18 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId", h.getProject)
 	routes.Write.PUT("/projects/:projectId/spec", h.saveSpec)
 	routes.Write.POST("/projects/:projectId/activate", h.activateProject)
+	routes.Read.GET("/projects/:projectId/draft-candidates", h.listDraftCandidates)
+	routes.Write.POST("/projects/:projectId/draft-candidates", h.createDraftCandidate)
+	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
+	routes.Read.GET("/projects/:projectId/activation-diff", h.activationDiff)
+	routes.Read.GET("/projects/:projectId/template-migration/preview", h.previewTemplateMigration)
+	routes.Write.POST("/projects/:projectId/template-migration/preview", h.previewTemplateMigrationPost)
+	routes.Write.POST("/projects/:projectId/template-migration", h.changeTemplate)
+	routes.Write.POST("/projects/:projectId/discard", h.discardProject)
+	routes.Write.POST("/projects/:projectId/restore", h.restoreProject)
+	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
+	routes.Write.POST("/projects/:projectId/owner-transfer/:transferId/accept", h.acceptOwnerTransfer)
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
-	routes.Write.POST("/projects/:projectId/owner-transfer", h.transferOwner)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/working-copy", h.getWorkingCopy)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/versions", h.listChapterVersions)
@@ -60,7 +71,7 @@ func (h *Handler) Register(routes RouteGroups) {
 func caller(c *gin.Context) (Actor, bool) {
 	id, userOK := types.UserIDFromContext(c.Request.Context())
 	tenant, tenantOK := types.TenantIDFromContext(c.Request.Context())
-	return Actor{TenantID: tenant, UserID: id, Role: types.TenantRoleFromContext(c.Request.Context())}, userOK && tenantOK && tenant != 0
+	return Actor{TenantID: tenant, UserID: id, Role: types.TenantRoleFromContext(c.Request.Context()), SystemAdmin: types.IsSystemAdminFromContext(c.Request.Context())}, userOK && tenantOK && tenant != 0
 }
 
 func requestID(c *gin.Context) string {
@@ -307,6 +318,227 @@ func (h *Handler) activateProject(c *gin.Context) {
 	sendOK(c, status, data, replay)
 }
 
+func (h *Handler) listDraftCandidates(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) createDraftCandidate(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input DraftCandidateInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.CreateDraftCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) listAuditEvents(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) activationDiff(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	since := int64(0)
+	if raw := c.Query("since_project_version"); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &since); err != nil || since < 0 {
+			sendError(c, ErrInvalidRequest)
+			return
+		}
+	}
+	diff, err := h.service.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, diff, false)
+}
+
+func (h *Handler) previewTemplateMigration(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	input := TemplateMigrationInput{TemplateID: c.Query("template_id"), TemplateVersion: c.Query("template_version")}
+	if raw := c.Query("expected_project_version"); raw != "" {
+		if _, err := fmt.Sscanf(raw, "%d", &input.ExpectedProjectVersion); err != nil {
+			sendError(c, ErrInvalidRequest)
+			return
+		}
+	}
+	data, err := h.service.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) previewTemplateMigrationPost(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	var input TemplateMigrationInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, err := h.service.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) changeTemplate(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input TemplateMigrationInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) discardProject(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input struct {
+		ExpectedProjectVersion int64 `json:"expected_project_version"`
+	}
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.DiscardProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) restoreProject(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input struct {
+		ExpectedProjectVersion int64 `json:"expected_project_version"`
+	}
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.RestoreProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) requestOwnerTransfer(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input struct {
+		ToUserID               string `json:"to_user_id"`
+		NewOwnerUserID         string `json:"new_owner_user_id"`
+		ExpectedProjectVersion int64  `json:"expected_project_version"`
+	}
+	if !decodeBody(c, &input) {
+		return
+	}
+	var data json.RawMessage
+	var status int
+	var replay bool
+	var err error
+	if input.NewOwnerUserID != "" {
+		data, status, replay, err = h.service.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+	} else {
+		data, status, replay, err = h.service.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+	}
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.AcceptOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
 func (h *Handler) saveMembers(c *gin.Context) {
 	actor, ok := identity(c)
 	if !ok {
@@ -321,27 +553,6 @@ func (h *Handler) saveMembers(c *gin.Context) {
 		return
 	}
 	data, status, replay, err := h.service.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)
-	if err != nil {
-		sendError(c, err)
-		return
-	}
-	sendOK(c, status, data, replay)
-}
-
-func (h *Handler) transferOwner(c *gin.Context) {
-	actor, ok := identity(c)
-	if !ok {
-		return
-	}
-	key, ok := idempotencyKey(c)
-	if !ok {
-		return
-	}
-	var input TransferOwnerInput
-	if !decodeBody(c, &input) {
-		return
-	}
-	data, status, replay, err := h.service.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -609,6 +820,94 @@ func (h *Handler) accessStatus(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, status, false)
+}
+
+func (h *Handler) listChangeSets(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) getChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	data, err := h.service.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, data, false)
+}
+
+func (h *Handler) createChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input CreateChangeSetInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) applyChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.ApplyChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	if status == http.StatusConflict {
+		// The service commits the stale marker before returning its conflict
+		// status, so the caller can GET the ChangeSet and inspect the durable
+		// stale state. Keep the write endpoint on the workspace error envelope.
+		sendError(c, ErrVersionConflict)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) rejectChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.RejectChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
 }
 
 func (h *Handler) getSourceContext(c *gin.Context) {

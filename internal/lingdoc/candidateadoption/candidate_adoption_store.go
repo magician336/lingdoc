@@ -45,18 +45,19 @@ type chapterRow struct {
 }
 
 type chapterVersionRow struct {
-	ID                string  `gorm:"primaryKey;size:36"`
-	ProjectID         string  `gorm:"not null;index;size:36"`
-	ChapterID         string  `gorm:"not null;index;size:36"`
-	ParentVersionID   *string `gorm:"size:36"`
-	CandidateID       string  `gorm:"index;size:36"`
-	BodyMarkdown      string  `gorm:"not null;type:text"`
-	SourceIDsJSON     string  `gorm:"column:source_ids_json;not null;type:text"`
-	ReviewItemsJSON   string  `gorm:"column:review_items_json;not null;type:text"`
-	SpecRevision      int64   `gorm:"not null;default:0"`
-	ConfirmationValid bool    `gorm:"not null;default:false"`
-	CreatedBy         string  `gorm:"not null;default:'';size:128"`
-	CreatedAt         time.Time
+	ID                 string  `gorm:"primaryKey;size:36"`
+	ProjectID          string  `gorm:"not null;index;size:36"`
+	ChapterID          string  `gorm:"not null;index;size:36"`
+	ParentVersionID    *string `gorm:"size:36"`
+	CandidateID        string  `gorm:"index;size:36"`
+	BodyMarkdown       string  `gorm:"not null;type:text"`
+	SourceIDsJSON      string  `gorm:"column:source_ids_json;not null;type:text"`
+	CitationUsagesJSON string  `gorm:"column:citation_usages_json;not null;type:text"`
+	ReviewItemsJSON    string  `gorm:"column:review_items_json;not null;type:text"`
+	SpecRevision       int64   `gorm:"not null;default:0"`
+	ConfirmationValid  bool    `gorm:"not null;default:false"`
+	CreatedBy          string  `gorm:"not null;default:'';size:128"`
+	CreatedAt          time.Time
 }
 
 type confirmationRow struct {
@@ -111,6 +112,22 @@ type confirmationIdempotencyRow struct {
 	CreatedAt    time.Time
 }
 
+// projectAuditRow mirrors the workspace audit table without importing
+// workspacecore (which would create a package cycle). The table is shared by
+// the workspace and candidate-adoption transactions; keeping this small row
+// local lets a chapter re-confirmation appear in the same project audit feed.
+type projectAuditRow struct {
+	ID          string `gorm:"primaryKey;size:36"`
+	ProjectID   string `gorm:"not null;index;size:36"`
+	ActorID     string `gorm:"not null;size:64"`
+	Action      string `gorm:"not null;size:64"`
+	Target      string `gorm:"not null;size:128"`
+	DetailsJSON string `gorm:"column:details_json;not null;type:text;default:'{}'"`
+	CreatedAt   time.Time
+}
+
+func (projectAuditRow) TableName() string { return "lingdoc_project_audits" }
+
 func (projectRow) TableName() string                 { return "lingdoc_projects" }
 func (chapterRow) TableName() string                 { return "lingdoc_chapters" }
 func (chapterVersionRow) TableName() string          { return "lingdoc_chapter_versions" }
@@ -157,6 +174,10 @@ func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in Co
 	var result Confirmation
 	replayed := false
 	hash := confirmationRequestHash(in)
+	// Candidate-adoption unit tests intentionally use a focused schema without
+	// the workspace audit table. Production migrations do create it, so detect
+	// the optional table once and write the review event only when it exists.
+	auditEnabled := s.db.Migrator().HasTable((projectAuditRow{}).TableName())
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var previous confirmationIdempotencyRow
 		err := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&previous).Error
@@ -221,6 +242,24 @@ func (s *SQLiteCandidateAdoptionStore) ConfirmChapter(ctx context.Context, in Co
 		}
 		if projectUpdate.RowsAffected != 1 {
 			return ErrVersionConflict
+		}
+		if auditEnabled {
+			details, err := json.Marshal(map[string]any{
+				"chapter_id":         in.ChapterID,
+				"chapter_version_id": in.ExpectedChapterVersionID,
+				"spec_revision":      in.ExpectedSpecRevision,
+				"confirmation_id":    result.ID,
+			})
+			if err != nil {
+				return err
+			}
+			if err := tx.Create(&projectAuditRow{
+				ID: uuid.NewString(), ProjectID: in.ProjectID, ActorID: in.ActorID,
+				Action: "project.change_set.review", Target: in.ChapterID,
+				DetailsJSON: string(details), CreatedAt: result.CreatedAt,
+			}).Error; err != nil {
+				return err
+			}
 		}
 		response, err := json.Marshal(result)
 		if err != nil {
@@ -398,7 +437,8 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			ID: newVersionID, ProjectID: in.ProjectID, ChapterID: in.ChapterID,
 			ParentVersionID: oldVersionID, CandidateID: candidate.ID,
 			BodyMarkdown: candidate.BodyMarkdown, SourceIDsJSON: string(sourceJSON),
-			ReviewItemsJSON: string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),
+			CitationUsagesJSON: "[]",
+			ReviewItemsJSON:    string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),
 			ConfirmationValid: false, CreatedBy: in.ActorID,
 		}
 		if err := tx.Create(&version).Error; err != nil {
@@ -496,6 +536,7 @@ func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRo
 	chapter := Chapter{
 		ID: row.ID, ProjectID: row.ProjectID, SectionID: row.SectionID, Title: row.Title,
 		CurrentVersionID: row.CurrentVersionID, SourceIDs: []string{}, ReviewItems: []ReviewItem{},
+		CitationUsages: []CitationUsage{},
 	}
 	if row.CurrentVersionID == nil {
 		return chapter, nil
@@ -508,6 +549,14 @@ func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRo
 	chapter.ConfirmationValid = version.ConfirmationValid
 	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &chapter.SourceIDs); err != nil {
 		return Chapter{}, err
+	}
+	if version.CitationUsagesJSON != "" {
+		if err := json.Unmarshal([]byte(version.CitationUsagesJSON), &chapter.CitationUsages); err != nil {
+			return Chapter{}, err
+		}
+		if chapter.CitationUsages == nil {
+			chapter.CitationUsages = []CitationUsage{}
+		}
 	}
 	if err := json.Unmarshal([]byte(version.ReviewItemsJSON), &chapter.ReviewItems); err != nil {
 		return Chapter{}, err

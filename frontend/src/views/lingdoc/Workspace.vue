@@ -5,7 +5,10 @@
         <h1>灵档项目</h1>
         <p>当前使用两章演示模板，内容仅供团队验证流程。</p>
       </div>
-      <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+      <div class="workspace-head__actions">
+        <RouterLink class="evidence-link" to="/platform/lingdoc/permissions">权限验收</RouterLink>
+        <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+      </div>
     </header>
 
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
@@ -179,6 +182,50 @@
           </div>
           <p v-if="specChanged && project.status === 'draft'" class="muted">立项前请先保存研究条件。</p>
         </form>
+
+        <section v-if="project.status === 'active' && (specChanged || lastChangeSet)" class="change-set-panel" aria-label="研究条件变更复核">
+          <div v-if="specChanged">
+            <h3>提交研究条件变更</h3>
+            <p class="muted">研究条件变更会使选中章节的旧确认失效，完成重新确认后才能继续冻结和导出。</p>
+            <label for="change-reason">变更理由</label>
+            <input id="change-reason" v-model="changeReason" :disabled="busy" maxlength="2000" placeholder="说明为什么需要变更" />
+            <fieldset :disabled="busy">
+              <legend>需要重新复核的章节</legend>
+              <label v-for="item in chapters" :key="item.id" class="chapter-impact-choice">
+                <input v-model="selectedImpactChapterIds" type="checkbox" :value="item.id" />
+                {{ item.title }}
+              </label>
+            </fieldset>
+            <button type="button" :disabled="busy || !changeReason.trim() || selectedImpactChapterIds.length === 0" @click="createConditionsChangePreview">
+              生成变更预览
+            </button>
+            <div v-if="pendingChangeSet" class="change-set-preview">
+              <p><strong>语义变更</strong></p>
+              <ul>
+                <li v-for="field in pendingChangeSet.fields" :key="field.key">
+                  {{ field.key }}：{{ field.old_value }} → {{ field.new_value }}
+                </li>
+              </ul>
+              <p><strong>已登记受影响章节</strong></p>
+              <ul>
+                <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
+              </ul>
+              <p class="muted">尚未核对范围：{{ uncheckedChapterTitles.length > 0 ? uncheckedChapterTitles.join('、') : '无（已登记章节覆盖当前章节列表）' }}</p>
+              <div class="change-set-actions">
+                <button type="button" :disabled="busy || !pendingDraftMatches" @click="applyConditionsChange">
+                  应用预览并开始复核
+                </button>
+                <button type="button" :disabled="busy" @click="rejectConditionsChange">
+                  驳回预览
+                </button>
+              </div>
+              <p v-if="!pendingDraftMatches" class="muted">研究条件已改变，请重新生成预览。</p>
+            </div>
+          </div>
+          <p v-if="lastChangeSet" class="muted" role="status">
+            变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}<template v-if="lastChangeSet.status === 'applied'">；请重新确认受影响章节。</template><template v-else-if="lastChangeSet.status === 'stale'">；基线已过期，请重新生成预览。</template><template v-else>。</template>
+          </p>
+        </section>
 
         <!-- 撤权提示（§8）。只在服务端判 restricted 时出现，且它是一条**提示**而不是拦截：
              本轮只有 access-status 这一条读路径带资料层判定，别的端点仍会照常返回内容
@@ -355,11 +402,17 @@ const rewriteBusy = ref(false)
 const newName = ref('')
 const subject = ref('')
 const goal = ref('')
+const changeReason = ref('')
+const selectedImpactChapterIds = ref<string[]>([])
+const pendingChangeSet = ref<ChangeSet | null>(null)
+const pendingDraft = ref<{ subject: string; goal: string; reason: string; chapterIds: string[] } | null>(null)
+const lastChangeSet = ref<ChangeSet | null>(null)
 const bodyDraft = ref('')
 const busy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 const reviewDrafts = ref<Record<string, { disposition: ReviewDecision['disposition']; reason: string }>>({})
+const citationUsageDrafts = ref<Record<string, CitationUsage>>({})
 const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
 const generationRun = ref<GenerationRun | null>(null)
 const generationCandidate = ref<Candidate | null>(null)
@@ -511,9 +564,9 @@ async function create() {
 }
 
 async function selectProject(id: string, force = false) {
-  if (!force && ((specChanged.value && project.value?.id !== id) || bodyChanged.value) &&
+  if (!force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value) &&
       !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
-  if (force && (specChanged.value || bodyChanged.value) &&
+  if (force && (specChanged.value || chapterChanged.value) &&
       !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
   if (generationTimer) clearTimeout(generationTimer)
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
@@ -531,6 +584,7 @@ async function selectProject(id: string, force = false) {
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
+    const changeSetsResult = await listChangeSets(id)
     assets.value = assetResult.data ?? []
     selectedAssetIds.value = readyAssets.value.map(item => item.id)
     // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
@@ -703,6 +757,10 @@ async function bindProjectAsset() {
 
 async function saveConditions() {
   if (!project.value || busy.value) return
+  if (project.value.status === 'active') {
+	    await createConditionsChangePreview()
+    return
+  }
   busy.value = true
   errorMessage.value = ''
   const id = project.value.id
@@ -715,6 +773,85 @@ async function saveConditions() {
     project.value = result.data
     await loadProjects()
     if (result.meta.refresh_required) await selectProject(id)
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function createConditionsChangePreview() {
+  if (!project.value || busy.value || !specChanged.value || project.value.status !== 'active') return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const fields: Record<string, { old_value: string; new_value: string }> = {}
+  const oldSubject = project.value.spec.research_subject ?? ''
+  const oldGoal = project.value.spec.research_goal ?? ''
+  if (subject.value !== oldSubject) fields.research_subject = { old_value: oldSubject, new_value: subject.value }
+  if (goal.value !== oldGoal) fields.research_goal = { old_value: oldGoal, new_value: goal.value }
+  const input = {
+    expected_context_revision: project.value.current_context_revision,
+    fields,
+    affected_chapter_ids: [...selectedImpactChapterIds.value],
+    reason: changeReason.value.trim(),
+  }
+    const createKey = operationKey(`change-set-create:${id}`, input)
+  try {
+    const created = await createChangeSet(id, input, createKey)
+    pendingChangeSet.value = created.data
+    pendingDraft.value = { subject: subject.value, goal: goal.value, reason: changeReason.value.trim(), chapterIds: [...selectedImpactChapterIds.value].sort() }
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+
+async function applyConditionsChange() {
+  if (!project.value || busy.value || !pendingChangeSet.value || !pendingDraftMatches.value) return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const changeSetId = pendingChangeSet.value.id
+  const applyKey = operationKey(`change-set-apply:${id}:${changeSetId}`, { change_set_id: changeSetId })
+  try {
+    const applied = await applyChangeSet(id, changeSetId, applyKey)
+    attempts.delete(`change-set-create:${id}`)
+    attempts.delete(`change-set-apply:${id}:${changeSetId}`)
+    pendingChangeSet.value = null
+    pendingDraft.value = null
+    await selectProject(id)
+    lastChangeSet.value = applied.data
+  } catch (error) {
+    const item = error as { status?: number }
+    if (item?.status === 409) {
+      try {
+        const current = await getChangeSet(id, changeSetId)
+        if (current.data.status === 'stale') {
+          pendingChangeSet.value = null
+          pendingDraft.value = null
+          lastChangeSet.value = current.data
+        }
+      } catch (readError) {
+        failure(readError)
+        return
+      }
+    }
+    failure(error)
+  }
+  finally { busy.value = false }
+}
+
+async function rejectConditionsChange() {
+  if (!project.value || busy.value || !pendingChangeSet.value) return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const changeSetId = pendingChangeSet.value.id
+  const rejectKey = operationKey(`change-set-reject:${id}:${changeSetId}`, { change_set_id: changeSetId })
+  try {
+    const rejected = await rejectChangeSet(id, changeSetId, rejectKey)
+    attempts.delete(`change-set-create:${id}`)
+    attempts.delete(`change-set-reject:${id}:${changeSetId}`)
+    pendingChangeSet.value = null
+    pendingDraft.value = null
+    await selectProject(id)
+    lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
@@ -747,6 +884,7 @@ function selectChapter(item: Chapter) {
   rewriteCandidate.value = null
   rewriteSourceIds.value = []
   bodyDraft.value = item.body_markdown
+  hydrateCitationUsages(item)
   errorMessage.value = ''
   generationRun.value = null
   generationCandidate.value = null
@@ -898,7 +1036,10 @@ async function confirmCurrentChapter() {
     const result = await listChapters(projectId)
     chapters.value = result.data
     chapter.value = result.data.find(item => item.id === current.id) ?? null
-    if (chapter.value) bodyDraft.value = chapter.value.body_markdown
+    if (chapter.value) {
+      bodyDraft.value = chapter.value.body_markdown
+      hydrateCitationUsages(chapter.value)
+    }
     // 确认会推进项目版本（确认记在项目上），所以项目必须跟着重读一次。少了这一步，
     // 紧接着的交付检查与冻结会拿着一个过期的 expected_project_version 去问，换来一个
     // 409——而用户什么都没做错。保存章节那条路径早就在重读，确认这条一直漏着。
@@ -1154,6 +1295,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.workspace-head__actions { display: flex; gap: 10px; align-items: center; }
+.evidence-link { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid #0b8c91; border-radius: 7px; color: #0b6e71; background: #e5f6f2; text-decoration: none; }
+.evidence-link:hover { background: #d5f0ea; }
 .lingdoc-workspace { max-width: 1200px; margin: 0 auto; padding: 32px; color: #24342e; }
 .workspace-head, .section-head, .actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 h1 { margin: 0 0 8px; font-size: 28px; } h2 { margin: 0 0 12px; font-size: 20px; } h3 { margin: 22px 0 14px; font-size: 17px; }
@@ -1183,6 +1327,11 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .candidate-list { margin-top: 14px; }
 .candidate-list ul { display: grid; gap: 6px; padding-left: 20px; }
 .candidate-preview { margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
+.citation-usages { display: grid; gap: 10px; margin: 14px 0; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; }
+.citation-usage { display: grid; gap: 6px; padding: 10px; border: 1px solid #e5ece7; border-radius: 6px; background: white; }
+.citation-status { margin: 0; font-size: 12px; }
+.citation-status--available { color: #238a52; }
+.citation-status--needs_review, .citation-status--unavailable { color: #8b5b10; }
 .candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .binding-notice { padding: 10px 12px; background: #fff8ec; border: 1px solid #e6c98a; border-radius: 7px; color: #6b5a2e; font-size: 13px; }
 .denied-sources { margin: 12px 0; padding: 12px 16px; background: #fff1ee; border: 1px solid #eea99e; border-radius: 8px; font-size: 13px; }

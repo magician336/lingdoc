@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"gorm.io/gorm"
@@ -68,6 +69,7 @@ type deliveryChapter struct {
 	id, sectionID, title, versionID string
 	body                            string
 	sourceIDs                       []string
+	citationUsages                  []candidateadoption.CitationUsage
 	items                           []candidateadoption.ReviewItem
 	assetVersions                   []candidateadoption.AssetVersion
 	decisions                       []candidateadoption.ReviewDecision
@@ -80,9 +82,10 @@ func deliveryQuestionChapter(assetID string, revision int, body string, sourceID
 	return deliveryChapter{
 		id: deliveryChapterID, sectionID: "question", title: "研究问题", versionID: deliveryVersionID,
 		body: body, sourceIDs: sourceIDs,
-		items:         []candidateadoption.ReviewItem{{ID: deliveryReviewID, Statement: "100条合成记录不能证明真实研究结论。", OriginCandidateID: "candidate-1"}},
-		assetVersions: []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: revision}},
-		decisions:     []candidateadoption.ReviewDecision{{ReviewItemID: deliveryReviewID, Disposition: "retained_warning", Reason: "仅作内部演示，保留该项并随文件明确列出。"}},
+		citationUsages: []candidateadoption.CitationUsage{{SourceID: deliverySourceID, Purpose: "支持研究问题背景", Limitation: "仅用于流程演示"}},
+		items:          []candidateadoption.ReviewItem{{ID: deliveryReviewID, Statement: "100条合成记录不能证明真实研究结论。", OriginCandidateID: "candidate-1"}},
+		assetVersions:  []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: revision}},
+		decisions:      []candidateadoption.ReviewDecision{{ReviewItemID: deliveryReviewID, Disposition: "retained_warning", Reason: "仅作内部演示，保留该项并随文件明确列出。"}},
 	}
 }
 
@@ -139,9 +142,13 @@ func seedDeliveryWorkspace(t *testing.T, db *gorm.DB, chapters ...deliveryChapte
 		if err != nil {
 			t.Fatal(err)
 		}
+		citationUsages, err := json.Marshal(orEmpty(chapter.citationUsages))
+		if err != nil {
+			t.Fatal(err)
+		}
 		exec(
-			"INSERT INTO lingdoc_chapter_versions (id, project_id, chapter_id, body_markdown, source_ids_json, review_items_json, spec_revision, confirmation_valid, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-			chapter.versionID, "project-1", chapter.id, chapter.body, string(sourceIDs), string(reviewItems),
+			"INSERT INTO lingdoc_chapter_versions (id, project_id, chapter_id, body_markdown, source_ids_json, citation_usages_json, review_items_json, spec_revision, confirmation_valid, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			chapter.versionID, "project-1", chapter.id, chapter.body, string(sourceIDs), string(citationUsages), string(reviewItems),
 			deliverySpecRevision, true, deliveryActorID, createdAt,
 		)
 
@@ -260,6 +267,10 @@ func TestDeliveryLinkTurnsAWorkspaceIntoAPassedRelease(t *testing.T) {
 	}
 	if source.Locator == "" || source.DisplayTitle == "" {
 		t.Fatalf("frozen source lacks locator/display title: %+v", source)
+	}
+	question := frozenChapter(t, frozen, deliveryChapterID)
+	if len(question.CitationUsages) != 1 || question.CitationUsages[0].Purpose != "支持研究问题背景" || question.CitationUsages[0].Limitation != "仅用于流程演示" {
+		t.Fatalf("frozen citation usages = %+v", question.CitationUsages)
 	}
 	if want := []delivery.AssetVersion{{AssetID: assetID, Revision: source.AssetRevision}}; len(frozen.AssetVersions) != 1 || frozen.AssetVersions[0] != want[0] {
 		t.Fatalf("asset versions = %+v, want %+v", frozen.AssetVersions, want)
@@ -420,6 +431,30 @@ func TestDeliveryLinkReportsDriftAfterTheWorkspaceMoves(t *testing.T) {
 	}
 	if got.FrozenInput.ProjectVersion != deliveryProjectVersion {
 		t.Fatalf("frozen project version = %d, want the frozen one", got.FrozenInput.ProjectVersion)
+	}
+}
+
+func TestDeliveryLinkReportsSourceRevocationAsNotCurrent(t *testing.T) {
+	handler, db, assetID := seedBoundSource(t)
+	sourceAuthorizer := &switchableAssetAuthorizer{}
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, sourceAuthorizer)
+	seedDeliveryWorkspace(t, db,
+		deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}),
+		deliveryMethodChapter(),
+	)
+	service := newDeliveryReleaseService(t, handler)
+	ctx := policyContext()
+	snapshot, _, err := service.Prepare(ctx, deliveryActorID, "project-1", deliveryFreezeKey, deliveryProjectVersion)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	sourceAuthorizer.revoked = true
+	got, err := service.Get(ctx, deliveryActorID, "project-1", snapshot.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.IsCurrent {
+		t.Fatal("revoked source kept the frozen snapshot current")
 	}
 }
 

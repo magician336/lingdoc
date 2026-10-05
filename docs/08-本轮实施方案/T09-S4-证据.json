@@ -1,8 +1,8 @@
 {
   "package": "internal/lingdoc/workspace",
   "source": "assets_http_test.go",
-  "total": 20,
-  "passed": 20,
+  "total": 21,
+  "passed": 21,
   "cases": [
     "listAssets 只回允许集合",
     "bindAsset 首次 201 与重放 200",
@@ -17,6 +17,7 @@
     "getSource 撤权后 403",
     "getSource 未知引用 404",
     "getSource 坐标漂移是 200 的合法结论",
+    "getSourceContext 失效来源不回传摘录",
     "getSourceContext 展开同族邻居",
     "getSourceContext 不跨族取父块",
     "getSourceContext 软删留号码空洞",

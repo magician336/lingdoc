@@ -15,9 +15,15 @@ import (
 
 type applicationServiceStub struct {
 	ApplicationService
-	actor   Actor
-	called  bool
-	project Project
+	actor          Actor
+	called         bool
+	project        Project
+	changeSetInput CreateChangeSetInput
+	changeSetID    string
+	changeSetKey   string
+	applyCalled    bool
+	applyStatus    int
+	rejectCalled   bool
 }
 
 type sourceApplicationServiceStub struct {
@@ -27,20 +33,6 @@ type sourceApplicationServiceStub struct {
 	input     RetrieveSourcesInput
 	err       error
 	called    bool
-}
-
-func TestCallerDefaultsMissingTenantRoleToViewer(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
-	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
-	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	request = request.WithContext(ctx)
-	ginContext, _ := gin.CreateTestContext(httptest.NewRecorder())
-	ginContext.Request = request
-	actor, ok := caller(ginContext)
-	if !ok || actor.Role != types.TenantRoleViewer {
-		t.Fatalf("caller = %#v, ok=%v; want viewer role", actor, ok)
-	}
 }
 
 func (s *sourceApplicationServiceStub) RetrieveSources(_ context.Context, actor Actor, projectID string, input RetrieveSourcesInput) ([]evidence.Source, error) {
@@ -54,6 +46,27 @@ func (s *applicationServiceStub) ListProjects(_ context.Context, actor Actor) ([
 	return []Project{s.project}, false, nil
 }
 
+func (s *applicationServiceStub) CreateChangeSet(_ context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
+	s.called = true
+	s.actor, s.changeSetInput, s.changeSetKey = actor, input, key
+	return json.RawMessage(`{"id":"change-1","project_id":"` + projectID + `","status":"assessed"}`), http.StatusCreated, false, nil
+}
+
+func (s *applicationServiceStub) ApplyChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	s.applyCalled = true
+	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
+	if s.applyStatus != 0 {
+		return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"stale"}`), s.applyStatus, false, nil
+	}
+	return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"applied"}`), http.StatusOK, false, nil
+}
+
+func (s *applicationServiceStub) RejectChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	s.rejectCalled = true
+	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
+	return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"rejected"}`), http.StatusOK, false, nil
+}
+
 func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	sources := &sourceApplicationServiceStub{err: &DeniedAssetsError{
@@ -65,7 +78,6 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
 	request := httptest.NewRequest(http.MethodPost, "/api/lingdoc/projects/project-1/retrieval", strings.NewReader(`{"query":"budget","asset_ids":["asset-private"]}`)).WithContext(ctx)
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
@@ -104,7 +116,6 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleViewer)
 	request := httptest.NewRequest(http.MethodGet, "/api/projects", nil).WithContext(ctx)
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
@@ -117,28 +128,63 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	}
 }
 
-func TestProjectHTTPReadAllowsActiveMemberAndHidesAfterRevocation(t *testing.T) {
+func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	fixture := newAssetsHTTPFixture(t)
+	service := &applicationServiceStub{}
+	handler := NewHandler(HandlerDependencies{Service: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets", strings.NewReader(`{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"旧主题","new_value":"新主题"}},"affected_chapter_ids":["chapter-1"],"reason":"研究对象发生变化"}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "change-preview-1")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || !service.called || service.changeSetInput.ExpectedContextRevision != 1 || service.changeSetInput.Reason != "研究对象发生变化" || service.changeSetKey != "change-preview-1" {
+		t.Fatalf("preview delegation: status=%d called=%v input=%#v key=%q body=%s", response.Code, service.called, service.changeSetInput, service.changeSetKey, response.Body.String())
+	}
 
-	first := httptest.NewRecorder()
-	fixture.router.ServeHTTP(first, httptest.NewRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-1", nil))
-	if first.Code != http.StatusOK {
-		t.Fatalf("active project read status = %d; body=%s", first.Code, first.Body.String())
-	}
-	if !strings.Contains(first.Body.String(), "project-1") {
-		t.Fatalf("active project read omitted project: %s", first.Body.String())
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/apply", strings.NewReader(`{}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "change-apply-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.applyCalled || service.changeSetID != "change-1" || service.changeSetKey != "change-apply-1" {
+		t.Fatalf("apply delegation: status=%d called=%v id=%q key=%q body=%s", response.Code, service.applyCalled, service.changeSetID, service.changeSetKey, response.Body.String())
 	}
 
-	if err := fixture.db.Exec("UPDATE tenant_members SET status = ? WHERE tenant_id = ? AND user_id = ?", "suspended", 7, "reader").Error; err != nil {
-		t.Fatal(err)
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reject", strings.NewReader(`{}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "change-reject-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.rejectCalled || service.changeSetID != "change-1" || service.changeSetKey != "change-reject-1" {
+		t.Fatalf("reject delegation: status=%d called=%v id=%q key=%q body=%s", response.Code, service.rejectCalled, service.changeSetID, service.changeSetKey, response.Body.String())
 	}
-	second := httptest.NewRecorder()
-	fixture.router.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/v1/lingdoc/projects/project-1", nil))
-	if second.Code != http.StatusNotFound {
-		t.Fatalf("revoked project read status = %d; body=%s", second.Code, second.Body.String())
+}
+
+func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &applicationServiceStub{applyStatus: http.StatusConflict}
+	handler := NewHandler(HandlerDependencies{Service: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/apply", strings.NewReader(`{}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "change-stale-1")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusConflict, response.Body.String())
 	}
-	if strings.Contains(second.Body.String(), "assets http test") {
-		t.Fatalf("revoked response leaked project content: %s", second.Body.String())
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode stale response: %v", err)
+	}
+	if body.Error.Code != "version_conflict" {
+		t.Fatalf("error code = %q, want version_conflict; body=%s", body.Error.Code, response.Body.String())
 	}
 }

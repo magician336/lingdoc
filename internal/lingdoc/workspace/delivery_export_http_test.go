@@ -72,7 +72,7 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 	}
 	snapshots := delivery.NewMemorySnapshotStore()
 	releases := NewDeliveryReleaseService(inputs, builder, snapshots)
-	exports := NewDeliveryExportService(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
+	exports := NewDeliveryExportServiceWithCurrentness(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy(), builder.(DeliveryCurrentness))
 	if releases == nil || exports == nil {
 		t.Fatal("交付链装配不齐：T13 或 T14 仍是断的")
 	}
@@ -427,6 +427,25 @@ func TestExportRoutesRefuseASnapshotTheWorkspaceMovedPast(t *testing.T) {
 	}
 }
 
+func TestExportRoutesRefuseASnapshotWhenAFrozenSourceDrifts(t *testing.T) {
+	router, db, handler := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, &switchableAssetAuthorizer{})
+	snapshot := freezeRelease(t, router, deliveryFreezeKey)
+	if err := db.Exec("UPDATE chunks SET content_revision = content_revision + 1 WHERE id = ?", deliverySourceID).Error; err != nil {
+		t.Fatalf("drift source: %v", err)
+	}
+	if handler.DeliveryInputBuilder() == nil {
+		t.Fatal("delivery input builder disappeared")
+	}
+	recorder := deliveryServe(router, deliveryRequest(http.MethodPost,
+		deliveryRouteBase+"/releases/"+snapshot.ID+"/exports", deliveryExportBody, "export-source-drift"))
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("exporting a source-drifted snapshot = %d, want 409: %s", recorder.Code, recorder.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, recorder).Error; code == nil || code.Code != "stale_input" {
+		t.Fatalf("error = %+v, want stale_input", code)
+	}
+}
+
 // F13：导出失败不提供假下载。产物落成 failed（202 里的终态），下载答 422 invalid_state。
 func TestExportRoutesPersistAFailedExportAndRefuseToDownloadIt(t *testing.T) {
 	router := exportRouterWithUnrenderableBody(t)
@@ -568,7 +587,7 @@ func TestExportRoutesDenyStartAfterBoundSourceAccessIsRevoked(t *testing.T) {
 	}
 }
 
-func TestListChaptersDeniesRevokedBoundSource(t *testing.T) {
+func TestListChaptersRedactsRevokedBoundSource(t *testing.T) {
 	sourceAuthorizer := &switchableAssetAuthorizer{}
 	router, _, _ := newDeliveryExportHandlerWithSourceAuthorizer(t, deliveryTestAuthorizer{}, sourceAuthorizer)
 	path := "/api/v1/lingdoc/projects/project-1/chapters"
@@ -579,12 +598,26 @@ func TestListChaptersDeniesRevokedBoundSource(t *testing.T) {
 	}
 
 	sourceAuthorizer.revoked = true
-	denied := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
-	if denied.Code != http.StatusForbidden {
-		t.Fatalf("list chapters after source access revocation = %d, want 403: %s", denied.Code, denied.Body.String())
+	redacted := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
+	if redacted.Code != http.StatusOK {
+		t.Fatalf("list chapters after source access revocation = %d, want 200: %s", redacted.Code, redacted.Body.String())
 	}
-	if code := decodeDeliveryEnvelope(t, denied).Error; code == nil || code.Code != "source_access_denied" {
-		t.Fatalf("list chapters after source access revocation error = %+v, want source_access_denied", code)
+	var payload struct {
+		Data []struct {
+			BodyMarkdown     string `json:"body_markdown"`
+			CitationUsages   []any  `json:"citation_usages"`
+			CitationStatuses []struct {
+				Status string `json:"status"`
+			} `json:"citation_statuses"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(redacted.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, chapter := range payload.Data {
+		if len(chapter.CitationStatuses) > 0 && (chapter.BodyMarkdown != "" || len(chapter.CitationUsages) != 0 || chapter.CitationStatuses[0].Status != "unavailable") {
+			t.Fatalf("revoked chapter was not redacted: %+v", chapter)
+		}
 	}
 }
 
@@ -804,7 +837,7 @@ func TestExportDownloadRejectsCorruptedPersistedBytes(t *testing.T) {
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
 	releases := NewDeliveryReleaseService(inputs, handler.DeliveryInputBuilder(), snapshots)
-	exports := NewDeliveryExportService(snapshots, delivery.NewSQLiteExportStore(db), DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy())
+	exports := NewDeliveryExportServiceWithCurrentness(snapshots, delivery.NewSQLiteExportStore(db), DeliveryDocument{}, DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy(), handler.DeliveryInputBuilder().(DeliveryCurrentness))
 	router := gin.New()
 	group := router.Group("/api/v1/lingdoc")
 	RegisterDeliveryRoutes(group, NewDeliveryHandler(releases))

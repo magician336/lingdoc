@@ -22,6 +22,16 @@ type ApplicationService interface {
 	SaveMembers(context.Context, Actor, string, string, SaveMembersInput) (json.RawMessage, int, bool, error)
 	TransferOwner(context.Context, Actor, string, string, TransferOwnerInput) (json.RawMessage, int, bool, error)
 	ActivateProject(context.Context, Actor, string, string, ActivateProjectInput) (json.RawMessage, int, bool, error)
+	CreateDraftCandidate(context.Context, Actor, string, string, DraftCandidateInput) (json.RawMessage, int, bool, error)
+	ListDraftCandidates(context.Context, Actor, string) ([]DraftCandidate, error)
+	ListAuditEvents(context.Context, Actor, string) ([]AuditEvent, error)
+	ActivationDiff(context.Context, Actor, string, int64) (ActivationDiff, error)
+	RequestOwnerTransfer(context.Context, Actor, string, string, OwnerTransferInput) (json.RawMessage, int, bool, error)
+	AcceptOwnerTransfer(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+	PreviewTemplateMigration(context.Context, Actor, string, TemplateMigrationInput) (TemplateMigrationPreview, error)
+	ChangeTemplate(context.Context, Actor, string, string, TemplateMigrationInput) (json.RawMessage, int, bool, error)
+	DiscardProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
+	RestoreProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
 	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
 	GetWorkingCopy(context.Context, Actor, string, string) (WorkingCopy, error)
@@ -31,6 +41,11 @@ type ApplicationService interface {
 	ListChapterVersions(context.Context, Actor, string, string) ([]ChapterVersion, error)
 	RestoreWorkingCopy(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (json.RawMessage, int, bool, error)
 	GenerationContext(context.Context, Actor, string, string) (GenerationContext, error)
+	CreateChangeSet(context.Context, Actor, string, string, CreateChangeSetInput) (json.RawMessage, int, bool, error)
+	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
+	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ApplyChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 }
 
 // SourceApplicationService owns the source and asset use cases consumed by

@@ -1,0 +1,2 @@
+-- SQLite does not support DROP COLUMN on every version used by LingDoc.
+-- The forward migration is append-only; rollback is handled by recreating the table.

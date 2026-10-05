@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -53,6 +54,9 @@ func TestEnvdMaintenanceFilesystemIdentity(t *testing.T) {
 }
 
 func TestWorkspaceBootstrapDoesNotRemoveOrMoveFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("workspace bootstrap uses POSIX /bin/sh semantics")
+	}
 	root := t.TempDir()
 	blocked := filepath.Join(root, "existing-file")
 	require.NoError(t, os.WriteFile(blocked, []byte("keep this"), 0600))

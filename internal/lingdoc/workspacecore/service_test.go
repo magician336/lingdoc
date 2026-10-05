@@ -31,6 +31,15 @@ type fakeSources struct {
 	calls   []fakeSourceCall
 }
 
+type citationStatusSources struct {
+	fakeSources
+	statuses []CitationStatus
+}
+
+func (f *citationStatusSources) CitationStatuses(context.Context, string, string, []string) ([]CitationStatus, error) {
+	return slices.Clone(f.statuses), nil
+}
+
 type fakeSourceCall struct {
 	projectID string
 	actorID   string
@@ -160,7 +169,7 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	if err != nil || !replay || asProject(t, raw).SpecRevision != 1 {
 		t.Fatalf("response-lost replay: %v %v", replay, err)
 	}
-	raw, _, _, err = svc.ActivateProject(ctx, owner, project.ID, "activate-001", ActivateProjectInput{ExpectedSpecRevision: 1})
+	raw, _, _, err = svc.ActivateProject(ctx, owner, project.ID, "activate-001", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil || asProject(t, raw).Status != "active" {
 		t.Fatalf("activate: %v", err)
 	}
@@ -201,6 +210,7 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	cited := SaveChapterInput{
 		ExpectedChapterVersionID: saved.CurrentVersionID, ExpectedSpecRevision: 1,
 		BodyMarkdown: "[[source:s-demo]] 的摘录", SourceIDs: []string{"s-demo"},
+		CitationUsages: []CitationUsage{{SourceID: "s-demo", Purpose: "支撑研究问题中的背景事实", Limitation: "仅覆盖演示资料中的合成样本"}},
 	}
 	raw, _, replay, err = svc.SaveChapter(ctx, owner, project.ID, chapter.ID, "chapter-003", cited)
 	if err != nil || replay {
@@ -213,6 +223,16 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	if !slices.Equal(citedChapter.SourceIDs, []string{"s-demo"}) {
 		t.Fatalf("citation not returned: %+v", citedChapter.SourceIDs)
 	}
+	if len(citedChapter.CitationUsages) != 1 || citedChapter.CitationUsages[0].Purpose != "支撑研究问题中的背景事实" {
+		t.Fatalf("citation usage not returned: %+v", citedChapter.CitationUsages)
+	}
+	if _, _, _, err := svc.SaveChapter(ctx, owner, project.ID, chapter.ID, "chapter-usage-invalid", SaveChapterInput{
+		ExpectedChapterVersionID: citedChapter.CurrentVersionID, ExpectedSpecRevision: 1,
+		BodyMarkdown: cited.BodyMarkdown, SourceIDs: cited.SourceIDs,
+		CitationUsages: []CitationUsage{{SourceID: "other-source", Purpose: "越权备注"}},
+	}); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("usage for an unreferenced source accepted: %v", err)
+	}
 	if _, _, _, err := svc.SaveChapter(ctx, owner, project.ID, chapter.ID, "chapter-004", SaveChapterInput{
 		ExpectedChapterVersionID: citedChapter.CurrentVersionID, ExpectedSpecRevision: 1,
 		BodyMarkdown: "[[source:s-demo/invalid]]", SourceIDs: []string{},
@@ -223,7 +243,8 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	reopened := testStore(t, path)
 	fromDisk, err := reopened.ListChapters(ctx, owner, project.ID)
 	if err != nil || fromDisk[0].CurrentVersionID == nil ||
-		fromDisk[0].BodyMarkdown != cited.BodyMarkdown || !slices.Equal(fromDisk[0].SourceIDs, []string{"s-demo"}) {
+		fromDisk[0].BodyMarkdown != cited.BodyMarkdown || !slices.Equal(fromDisk[0].SourceIDs, []string{"s-demo"}) ||
+		len(fromDisk[0].CitationUsages) != 1 || fromDisk[0].CitationUsages[0].Limitation != "仅覆盖演示资料中的合成样本" {
 		t.Fatalf("restart readback: %+v %v", fromDisk, err)
 	}
 	// 同一枚操作键在新进程里重放：拿回的还是那次写下的那一份，且标记为重放。
@@ -365,7 +386,7 @@ func TestManualEditPreservesReviewAndCitesSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, _, err = svc.ActivateProject(ctx, actor, id, "review-activate", ActivateProjectInput{ExpectedSpecRevision: 1})
+	_, _, _, err = svc.ActivateProject(ctx, actor, id, "review-activate", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -467,7 +488,7 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatal(err)
 	}
 	project = asProject(t, raw)
-	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision}); err != nil {
+	if _, _, _, err := svc.ActivateProject(ctx, owner, project.ID, "activate-confirmation", ActivateProjectInput{ExpectedSpecRevision: project.SpecRevision, ExpectedProjectVersion: project.ProjectVersion, ReviewedProjectVersion: project.ProjectVersion}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, owner, project.ID)
@@ -509,13 +530,21 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 		t.Fatalf("current confirmation not reported: %+v, %v", chapters, err)
 	}
 
-	raw, _, _, err = svc.SaveSpec(ctx, owner, project.ID, "spec-confirmation-2", SaveSpecInput{
-		ExpectedSpecRevision: project.SpecRevision, Fields: map[string]string{"research_subject": "样本", "research_goal": "新目标"},
-	})
+	// Active projects reject ordinary ProjectSpec saves. Simulate the semantic
+	// revision transition here so this test continues to exercise the read-side
+	// confirmation currentness rule without bypassing the G1 write boundary.
+	project.SpecRevision++
+	project.ProjectVersion++
+	project.Spec["research_goal"] = "新目标"
+	rawSpec, err := json.Marshal(project.Spec)
 	if err != nil {
 		t.Fatal(err)
 	}
-	project = asProject(t, raw)
+	if err := svc.repository.(*GORMRepository).db.Model(&projectRow{}).Where("id = ?", project.ID).Updates(map[string]any{
+		"spec_json": string(rawSpec), "spec_revision": project.SpecRevision, "project_version": project.ProjectVersion,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	chapters, err = svc.ListChapters(ctx, owner, project.ID)
 	if err != nil || chapters[0].ConfirmationValid {
 		t.Fatalf("stale confirmation survived spec change: %+v, %v", chapters, err)
@@ -549,7 +578,7 @@ func readyChapter(t *testing.T, svc *Service, actor Actor, prefix string) (strin
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := svc.ActivateProject(ctx, actor, projectID, prefix+"-activate", ActivateProjectInput{ExpectedSpecRevision: 1}); err != nil {
+	if _, _, _, err := svc.ActivateProject(ctx, actor, projectID, prefix+"-activate", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, actor, projectID)
@@ -557,6 +586,66 @@ func readyChapter(t *testing.T, svc *Service, actor Actor, prefix string) (strin
 		t.Fatalf("chapters: %+v %v", chapters, err)
 	}
 	return projectID, chapters[0].ID
+}
+
+func TestNormalizeCitationUsagesRejectsInvalid(t *testing.T) {
+	longText := strings.Repeat("x", 2001)
+	tests := []struct {
+		name  string
+		value []CitationUsage
+	}{
+		{name: "blank source", value: []CitationUsage{{SourceID: "   "}}},
+		{name: "duplicate source", value: []CitationUsage{{SourceID: "alpha"}, {SourceID: "alpha"}}},
+		{name: "purpose too long", value: []CitationUsage{{SourceID: "alpha", Purpose: longText}}},
+		{name: "limitation too long", value: []CitationUsage{{SourceID: "alpha", Limitation: longText}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := normalizeCitationUsages(tt.value, []string{"alpha"}); !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("normalizeCitationUsages() error = %v, want %v", err, ErrInvalidRequest)
+			}
+		})
+	}
+}
+
+func TestNormalizeCitationUsagesCompletesDeclaredSources(t *testing.T) {
+	got, err := normalizeCitationUsages([]CitationUsage{{SourceID: "alpha", Purpose: "支持"}}, []string{"alpha", "beta"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got, []CitationUsage{{SourceID: "alpha", Purpose: "支持"}, {SourceID: "beta"}}) {
+		t.Fatalf("normalizeCitationUsages() = %#v", got)
+	}
+}
+
+func TestListChaptersReportsCitationStatusesAndRedactsUnavailableContent(t *testing.T) {
+	policy := &citationStatusSources{statuses: []CitationStatus{{SourceID: "alpha", Status: "unavailable", Detail: "来源已撤权"}}}
+	svc := testStoreWithPolicy(t, filepath.Join(t.TempDir(), "citation-status.db"), policy)
+	ctx := context.Background()
+	actor := Actor{TenantID: 71, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	projectID, chapterID := readyChapter(t, svc, actor, "citation-status")
+	if _, _, _, err := svc.SaveChapter(ctx, actor, projectID, chapterID, "citation-status-save", SaveChapterInput{
+		ExpectedSpecRevision: 1, BodyMarkdown: "受限正文 [[source:alpha]]", SourceIDs: []string{"alpha"},
+		CitationUsages: []CitationUsage{{SourceID: "alpha", Purpose: "敏感用途"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	chapters, err := svc.ListChapters(ctx, actor, projectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(chapters) == 0 || chapters[0].BodyMarkdown != "" || len(chapters[0].CitationUsages) != 0 || len(chapters[0].CitationStatuses) != 1 {
+		t.Fatalf("redacted chapter = %+v", chapters)
+	}
+	if chapters[0].CitationStatuses[0].Status != "unavailable" {
+		t.Fatalf("citation status = %+v", chapters[0].CitationStatuses)
+	}
+	policy.statuses = []CitationStatus{{SourceID: "alpha", Status: "needs_review", Detail: "来源版本已变化"}}
+	chapters, err = svc.ListChapters(ctx, actor, projectID)
+	if err != nil || len(chapters) == 0 || chapters[0].BodyMarkdown != "" || len(chapters[0].CitationUsages) != 0 {
+		t.Fatalf("stale citation was not redacted: %+v, %v", chapters, err)
+	}
 }
 
 func TestSaveChapterRechecksDeclaredSources(t *testing.T) {

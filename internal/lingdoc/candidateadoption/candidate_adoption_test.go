@@ -145,6 +145,41 @@ func TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore(t *testing.T) {
 	require.Error(t, store.DB().Create(&duplicate).Error, "the focused SQLite schema must enforce the same composite idempotency key as production migrations")
 }
 
+func TestConfirmationWritesProjectReviewAuditWhenWorkspaceAuditTablePresent(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	require.NoError(t, store.DB().Exec(`CREATE TABLE lingdoc_project_audits (
+		id TEXT PRIMARY KEY,
+		project_id TEXT NOT NULL,
+		actor_id TEXT NOT NULL,
+		action TEXT NOT NULL,
+		target TEXT NOT NULL,
+		details_json TEXT NOT NULL DEFAULT '{}',
+		created_at DATETIME
+	)`).Error)
+	require.NoError(t, store.UpsertProject(context.Background(), "project-1", 3))
+	version := "chapter-version-1"
+	require.NoError(t, store.UpsertChapter(context.Background(), Chapter{
+		ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "研究问题", CurrentVersionID: &version,
+	}, 2))
+	require.NoError(t, store.DB().Create(&chapterVersionRow{
+		ID: version, ProjectID: "project-1", ChapterID: "chapter-1", BodyMarkdown: "正文",
+		SourceIDsJSON: "[]", ReviewItemsJSON: "[]", SpecRevision: 2,
+	}).Error)
+
+	service := NewConfirmationService(store, nil, confirmationAuthorizerFunc(allowConfirmation))
+	confirmation, replayed, err := service.ConfirmChapter(context.Background(), ConfirmChapterInput{
+		ProjectID: "project-1", ChapterID: "chapter-1", ActorID: "reviewer",
+		IdempotencyKey: "review-audit-0001", ExpectedChapterVersionID: version, ExpectedSpecRevision: 2,
+	})
+	require.NoError(t, err)
+	require.False(t, replayed)
+	var audit projectAuditRow
+	require.NoError(t, store.DB().Where("project_id = ? AND action = ?", "project-1", "project.change_set.review").First(&audit).Error)
+	require.Equal(t, "reviewer", audit.ActorID)
+	require.Equal(t, "chapter-1", audit.Target)
+	require.Contains(t, audit.DetailsJSON, confirmation.ID)
+}
+
 func TestReadDeliveryInputReturnsCurrentSnapshotAndEmptyChapters(t *testing.T) {
 	store := newCandidateAdoptionStore(t)
 	version := "chapter-version-1"

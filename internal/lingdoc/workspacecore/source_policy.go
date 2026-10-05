@@ -19,3 +19,17 @@ import "context"
 type SourcePolicy interface {
 	Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error
 }
+
+// CitationStatusPolicy is an optional read-side extension for workspaces that
+// can report one current verdict per cited source. Implementations must still
+// use the same SourcePolicy判据; this interface only changes presentation from
+// all-or-nothing failure to item-level status.
+type CitationStatusPolicy interface {
+	CitationStatuses(ctx context.Context, projectID, actorID string, sourceIDs []string) ([]CitationStatus, error)
+}
+
+type CitationStatus struct {
+	SourceID string `json:"source_id"`
+	Status   string `json:"status"`
+	Detail   string `json:"detail,omitempty"`
+}

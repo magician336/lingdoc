@@ -2443,6 +2443,7 @@
                           "source_ids": [
                             "s-demo"
                           ],
+                          "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                           "review_items": [
                             {
                               "id": "review-1",
@@ -2817,6 +2818,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -2845,6 +2847,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -3203,6 +3206,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -3231,6 +3235,7 @@
                         "source_ids": [
                           "s-demo"
                         ],
+                        "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                         "review_items": [
                           {
                             "id": "review-1",
@@ -7481,6 +7486,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -7554,7 +7560,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7669,6 +7675,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -7742,7 +7749,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7857,6 +7864,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -7897,7 +7905,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                              "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
                               "check": {
                                 "project_version": 5,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8021,6 +8029,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -8094,7 +8103,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8195,6 +8204,7 @@
                                     "source_ids": [
                                       "s-demo"
                                     ],
+                                    "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                                     "review_items": [
                                       {
                                         "id": "review-1",
@@ -8268,7 +8278,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8682,6 +8692,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -8755,7 +8766,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8865,6 +8876,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -8905,7 +8917,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                        "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9157,6 +9169,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -9197,7 +9210,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "79dddaf247c262383ed568ff772a938d836a7008eb3de7ec1f0ee35d66fb43fd",
+                        "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9316,6 +9329,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -9389,7 +9403,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9813,6 +9827,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -9886,7 +9901,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9996,6 +10011,7 @@
                               "source_ids": [
                                 "s-demo"
                               ],
+                              "citation_usages": [{"source_id": "s-demo", "purpose": "支持流程说明", "limitation": "仅作演示"}],
                               "review_items": [
                                 {
                                   "id": "review-1",
@@ -10069,7 +10085,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -12144,7 +12160,20 @@
         "x-delivery-phase": "core",
         "x-domain": "workspace"
       }
-    }
+    },
+    "/projects/{projectId}/draft-candidates": {"get":{"operationId":"listDraftCandidates","tags":["workspace"],"summary":"列出草稿候选","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"createDraftCandidate","tags":["workspace"],"summary":"创建草稿候选","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/audit": {"get":{"operationId":"listAuditEvents","tags":["workspace"],"summary":"读取项目审计事件","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/activation-diff": {"get":{"operationId":"getActivationDiff","tags":["workspace"],"summary":"读取立项确认差异","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/template-migration/preview": {"get":{"operationId":"previewTemplateMigration","tags":["workspace"],"summary":"预览草稿模板迁移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"previewTemplateMigrationPost","tags":["workspace"],"summary":"提交模板迁移预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/template-migration": {"post":{"operationId":"changeTemplate","tags":["workspace"],"summary":"提交草稿模板迁移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/owner-transfer": {"post":{"operationId":"requestOwnerTransfer","tags":["workspace"],"summary":"请求 Owner 转移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/owner-transfer/{transferId}/accept": {"post":{"operationId":"acceptOwnerTransfer","tags":["workspace"],"summary":"接受 Owner 转移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"transferId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/discard": {"post":{"operationId":"discardProject","tags":["workspace"],"summary":"软丢弃草稿项目","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/restore": {"post":{"operationId":"restoreProject","tags":["workspace"],"summary":"恢复已丢弃草稿项目","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
+    "/projects/{projectId}/change-sets": {"get":{"operationId":"listChangeSets","tags":["workspace"],"summary":"读取项目变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更集列表"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"createChangeSet","tags":["workspace"],"summary":"创建研究条件变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["expected_context_revision","fields","affected_chapter_ids","reason"],"properties":{"expected_context_revision":{"type":"integer","minimum":1},"fields":{"type":"object","minProperties":1,"maxProperties":2,"propertyNames":{"enum":["research_subject","research_goal"]},"additionalProperties":{"type":"object","required":["old_value","new_value"],"properties":{"old_value":{"type":"string"},"new_value":{"type":"string"}}}},"affected_chapter_ids":{"type":"array","minItems":1,"items":{"type":"string"}},"reason":{"type":"string","minLength":1}}},"example":{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"旧主题","new_value":"新主题"}},"affected_chapter_ids":["chapter-1"],"reason":"研究对象发生变化"}}}},"responses":{"201":{"description":"已生成变更预览"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"版本或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets/{changeSetId}": {"get":{"operationId":"getChangeSet","tags":["workspace"],"summary":"读取变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更预览"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets/{changeSetId}/apply": {"post":{"operationId":"applyChangeSet","tags":["workspace"],"summary":"Owner 应用变更并开始复核","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已原子应用"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"基线过期或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets/{changeSetId}/reject": {"post":{"operationId":"rejectChangeSet","tags":["workspace"],"summary":"Owner 驳回变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已驳回"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}}
   },
   "components": {
     "securitySchemes": {
@@ -12504,6 +12533,26 @@
         ],
         "additionalProperties": false
       },
+      "CitationUsage": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "purpose": { "type": "string", "maxLength": 2000 },
+          "limitation": { "type": "string", "maxLength": 2000 }
+        },
+        "required": ["source_id"],
+        "additionalProperties": false
+      },
+      "CitationStatus": {
+        "type": "object",
+        "properties": {
+          "source_id": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["available", "needs_review", "unavailable"] },
+          "detail": { "type": "string" }
+        },
+        "required": ["source_id", "status"],
+        "additionalProperties": false
+      },
       "Chapter": {
         "type": "object",
         "properties": {
@@ -12535,6 +12584,16 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
+            "uniqueItems": true
+          },
+          "citation_statuses": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationStatus" },
+            "uniqueItems": true
           },
           "confirmation_valid": {
             "type": "boolean"
@@ -12684,6 +12743,11 @@
             "items": {
               "$ref": "#/components/schemas/ReviewItem"
             },
+            "uniqueItems": true
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
             "uniqueItems": true
           }
         },
@@ -12877,6 +12941,11 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
+            "uniqueItems": true
           },
           "review_items": {
             "type": "array",
@@ -13120,6 +13189,11 @@
               "type": "string",
               "minLength": 1
             },
+            "uniqueItems": true
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/CitationUsage" },
             "uniqueItems": true
           }
         },

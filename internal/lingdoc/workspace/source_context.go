@@ -47,11 +47,22 @@ func (h *SourceRuntime) expandSourceContext(ctx context.Context, read sourceRead
 		}
 	}
 	return map[string]any{
-		"source":            read.Source,
+		"source":            contextSource(read.Source),
 		"context_available": available,
 		"window":            map[string]any{"before": contextWindow, "after": contextWindow},
 		"segments":          segments,
 	}, nil
+}
+
+// contextSource never returns an excerpt or hash for a source that failed the
+// currentness check. The status and locator remain useful for explaining the
+// stale reference, while the quoted text is no longer trusted evidence.
+func contextSource(source evidence.Source) evidence.Source {
+	if source.Status != evidence.SourceAvailable {
+		source.QuotedText = ""
+		source.QuotedTextHash = ""
+	}
+	return source
 }
 
 // contextSegments 取引用块两侧的邻居并逐段作答。

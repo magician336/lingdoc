@@ -105,10 +105,12 @@ func TestDesktopSlotReleaseIsIdempotent(t *testing.T) {
 
 func withDesktopSlotTiming(t *testing.T, lease, renew time.Duration) {
 	t.Helper()
-	origLease, origRenew := desktopSlotLease, desktopSlotRenew
-	desktopSlotLease, desktopSlotRenew = lease, renew
+	origLease, origRenew := time.Duration(desktopSlotLease.Load()), time.Duration(desktopSlotRenew.Load())
+	desktopSlotLease.Store(int64(lease))
+	desktopSlotRenew.Store(int64(renew))
 	t.Cleanup(func() {
-		desktopSlotLease, desktopSlotRenew = origLease, origRenew
+		desktopSlotLease.Store(int64(origLease))
+		desktopSlotRenew.Store(int64(origRenew))
 	})
 }
 

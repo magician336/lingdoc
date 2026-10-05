@@ -9,6 +9,7 @@ import (
 	"io"
 	"iter"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1088,6 +1089,13 @@ func TestValidateDockerHost(t *testing.T) {
 	require.Error(t, ValidateDockerHost("tcp://10.0.0.5:2376", false),
 		"a private daemon address needs the explicit private-endpoint opt-in")
 	require.NoError(t, ValidateDockerHost("tcp://10.0.0.5:2376", true))
+	if runtime.GOOS == "windows" {
+		require.NoError(t, ValidateDockerHost("npipe:////./pipe/docker_engine", false))
+		require.NoError(t, ValidateDockerHost("npipe:////?/pipe/docker_engine", false))
+		require.Error(t, ValidateDockerHost("npipe:////remote/pipe/docker_engine", false))
+	} else {
+		require.Error(t, ValidateDockerHost("npipe:////./pipe/docker_engine", false))
+	}
 }
 
 func TestValidateDockerRemoteTLS(t *testing.T) {
