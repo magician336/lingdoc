@@ -32,7 +32,56 @@ OPERATION_PARTS = {
     "downloadExport": ("download",),
 }
 REDACTED_VALUE = re.compile(r"(?:[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64})")
-SAFE_STATUS = {"unchanged", "not_recorded", "observed", "failed", "blocked", "ok", "unknown"}
+SAFE_STATUS = {"unchanged", "not_recorded", "observed", "failed", "blocked", "ok", "unknown", "active", "passed"}
+FIXTURE_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")
+
+
+def _safe_fixture_state(value: Any) -> dict[str, Any]:
+    """Keep only redacted, status-shaped fixture state in the quality report."""
+    if not isinstance(value, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for part in FIXTURE_PARTS:
+        entry = value.get(part)
+        if not isinstance(entry, dict):
+            continue
+        safe_entry: dict[str, Any] = {}
+        for key, item in sorted(entry.items()):
+            if key in {"id", "version", "snapshot"} and isinstance(item, str) and REDACTED_VALUE.fullmatch(item):
+                safe_entry[key] = item
+            elif key in {"status", "permission"} and isinstance(item, str) and item in SAFE_STATUS | {"allow", "deny", "pending", "ready"}:
+                safe_entry[key] = item
+            elif key in {"reauthorized", "unchanged"} and isinstance(item, bool):
+                safe_entry[key] = item
+        if safe_entry:
+            safe[part] = safe_entry
+    return safe
+
+
+def _safe_main_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Serialize only outcome fields from an F01 report into G6 evidence."""
+    steps = []
+    for step in report.get("steps", []):
+        if not isinstance(step, dict):
+            continue
+        operation_id = step.get("operation_id")
+        verdict = step.get("verdict")
+        item = {
+            "operation_id": operation_id if operation_id in OPERATION_PARTS else "unknown",
+            "verdict": verdict if verdict in {"passed", "failed", "not_run"} else "unknown",
+        }
+        if isinstance(step.get("actual_http"), int):
+            item["actual_http"] = step["actual_http"]
+        steps.append(item)
+    return {
+        "workflow": report.get("workflow"),
+        "runner_status": report.get("runner_status"),
+        "completed_steps": report.get("completed_steps", 0),
+        "total_steps": report.get("total_steps", 0),
+        "verification_scope": report.get("verification_scope", "not_recorded"),
+        "steps": steps,
+        "fixture_state": _safe_fixture_state(report.get("fixture_state")),
+    }
 
 
 def _observed_result(report: dict[str, Any]) -> str:
@@ -152,6 +201,15 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
             "object_versions": {"project": "project.v1", "spec": "spec.revision",
                                  "chapter": "chapter.v1", "asset": "asset.v1"},
         },
+        "fixture_state": {
+            "project": {"id": "project.id", "version": "project.v1", "status": "active"},
+            "asset": {"id": "asset.id", "permission": "allow", "status": "ready"},
+            "chapter": {"id": "chapter.id", "version": "chapter.v1", "status": "ready"},
+            "check": {"id": "check.id", "status": "passed"},
+            "release": {"id": "release.id", "snapshot": "snapshot.id", "status": "ready"},
+            "export": {"id": "export.id", "status": "ready"},
+            "download": {"id": "export.id", "reauthorized": True},
+        },
         "steps": steps,
     }
     failure_observation = {
@@ -173,6 +231,8 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
     main_result = _observed_result(main_report)
     failure = _failure_path(failure_observation)
     metadata = main_report.get("fixture_metadata", {})
+    fixture_state = _safe_fixture_state(main_report.get("fixture_state"))
+    safe_main_report = _safe_main_report(main_report)
     result = main_result if main_result != "PASS" else failure["result"]
     if not coverage["constructed_complete"]:
         result = "BLOCKED"
@@ -190,11 +250,12 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             "total_steps": main_report.get("total_steps", 0),
             "verification_scope": main_report.get("verification_scope", "not_recorded"),
         },
+        "fixture_state": fixture_state,
         "failure_path": failure,
         "quality_evidence": build_evidence(
             fixture_id=fixture_id, runtime_mode=runtime_mode, result=result,
             input_value={"fixture_id": fixture_id, "coverage": coverage},
-            output_value={"main_path": main_report, "failure_path": failure},
+            output_value={"main_path": safe_main_report, "failure_path": failure},
             attribution=["fixture_or_test"] if result == "BLOCKED" else ["domain_logic"],
             evidence_refs=["fixture_coverage", "main_path", "failure_path"],
             owner="quality-operations", reviewer="unassigned",
@@ -206,7 +267,8 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             object_versions=metadata.get("object_versions"),
             input_summary={"required_parts": len(REQUIRED_PARTS)},
             output_summary={"completed_steps": main_report.get("completed_steps", 0),
-                            "failure_side_effect_status": failure["status"]},
+                            "failure_side_effect_status": failure["status"],
+                            "fixture_parts_observed": sorted(fixture_state)},
         ),
     }
 

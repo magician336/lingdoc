@@ -258,7 +258,19 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(evidence["template_version"], "template.v1")
         self.assertEqual(evidence["object_versions"]["project"], "project.v1")
         self.assertEqual(evidence["permission_snapshot"]["status"], "mock")
+        self.assertEqual(sorted(report["fixture_state"]),
+                         ["asset", "chapter", "check", "download", "export", "project", "release"])
         self.assertNotIn("duplicate_formal_write", json.dumps(report))
+
+    def test_main_path_evidence_drops_untrusted_report_payloads(self):
+        main = self._complete_report()
+        main["steps"][0]["response"] = "SECRET_DOCUMENT"
+        report = g6_main_path.build_main_path_report(
+            main_report=main,
+            failure_observation={"failure_case": "duplicate_formal_write", "expected_http": 409,
+                                 "actual_http": 409, "no_formal_side_effect": True,
+                                 "readback": {"status": "unchanged"}})
+        self.assertNotIn("SECRET_DOCUMENT", json.dumps(report))
 
     def test_failure_readback_rejects_unredacted_status_values(self):
         report = g6_main_path.build_main_path_report(
