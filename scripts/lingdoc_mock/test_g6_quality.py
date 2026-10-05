@@ -148,6 +148,10 @@ class G6ObservabilityTest(unittest.TestCase):
             g6_observability.sanitize_event({"event_type": "request", "status": "ok",
                                               "correlation_id": "corr-1", "runtime_mode": "real",
                                               "request_id": "request.id", "duration_ms": "slow"})
+        with self.assertRaisesRegex(ValueError, "duration_ms"):
+            g6_observability.sanitize_event({"event_type": "request", "status": "ok",
+                                              "correlation_id": "corr-1", "runtime_mode": "real",
+                                              "request_id": "request.id", "duration_ms": float("nan")})
 
 
 class G6RollbackTest(unittest.TestCase):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 import sys
@@ -75,7 +76,9 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
     if event.get("runtime_mode") not in RUNTIME_MODES:
         raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
     if "duration_ms" in event and (not isinstance(event["duration_ms"], (int, float))
-                                   or isinstance(event["duration_ms"], bool) or event["duration_ms"] < 0):
+                                   or isinstance(event["duration_ms"], bool)
+                                   or not math.isfinite(event["duration_ms"])
+                                   or event["duration_ms"] < 0):
         raise ValueError("duration_ms must be a non-negative number")
     missing_link_ids = [field for field in EVENT_REQUIRED_IDS[event["event_type"]]
                         if not event.get(field)]

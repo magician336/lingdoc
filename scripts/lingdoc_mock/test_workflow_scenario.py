@@ -190,11 +190,45 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(matrix["result"], "BLOCKED")
         self.assertTrue(matrix["shared_fixture"])
         self.assertEqual([item["runtime_mode"] for item in matrix["modes"]], ["mock", "real"])
-        self.assertEqual([item["result"] for item in matrix["modes"]], ["PASS", "BLOCKED"])
+        self.assertEqual([item["result"] for item in matrix["modes"]], ["BLOCKED", "BLOCKED"])
         self.assertEqual(len(matrix["reports"]), 2)
         self.assertEqual({item["quality_evidence"]["fixture_id"] for item in matrix["modes"]}, {"F22:S7"})
         self.assertEqual(matrix["dependency_matrix"]["mock"]["status"], "verified")
         self.assertEqual(matrix["dependency_matrix"]["real"]["missing"], ["api", "docx", "file", "model", "permissions", "queue", "weknora"])
+
+    def test_mode_matrix_accepts_status_only_scenario_evidence_and_redacts_it(self):
+        synthetic = provider()
+        evidence = {
+            "mock": {
+                "main_path": {"result": "PASS", "fixture_id": "F22:S7", "completed_steps": 1,
+                               "verification_scope": "contract_fixture_only"},
+                "key_failure": {"result": "PASS", "fixture_id": "F22:S7", "actual_http": 422,
+                                 "no_formal_side_effect": True, "readback_status": "unchanged"},
+            }
+        }
+        matrix = module.run_mode_matrix(
+            ["F22"], SCENARIOS_PATH, OPENAPI_PATH, runtime_modes=["mock"], knowledge=dict(KNOWLEDGE), member={},
+            identities=dict(IDENTITIES), base_url="http://127.0.0.1:8080/api/v1/lingdoc",
+            opener=synthetic.open, scenario_evidence=evidence,
+        )
+        mode_evidence = matrix["modes"][0]["scenario_evidence"]
+        self.assertEqual(mode_evidence["main_path"]["result"], "PASS")
+        self.assertEqual(mode_evidence["key_failure"]["http_status"], 422)
+        self.assertNotIn("actual_http", mode_evidence["key_failure"])
+
+    def test_mode_matrix_cannot_pass_dependencies_without_scenario_evidence(self):
+        synthetic = provider()
+        dependencies = {mode: {name: True for name in module.RUNTIME_DEPENDENCIES[mode]}
+                        for mode in module.RUNTIME_MODES}
+        matrix = module.run_mode_matrix(
+            ["F22"], SCENARIOS_PATH, OPENAPI_PATH, runtime_modes=list(module.RUNTIME_MODES),
+            runtime_dependencies=dependencies,
+            provider_semantics={mode: "verified" for mode in module.RUNTIME_MODES},
+            knowledge=dict(KNOWLEDGE), member={}, identities=dict(IDENTITIES),
+            base_url="http://127.0.0.1:8080/api/v1/lingdoc", opener=synthetic.open,
+        )
+        self.assertEqual(matrix["result"], "BLOCKED")
+        self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
 
     def test_the_declared_asset_name_is_what_the_report_publishes(self):
         report, synthetic = drive()
@@ -439,6 +473,11 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual([item["scenario"] for item in combined["executed"]], ["F08", "F05", "F12"])
         self.assertEqual([item["verdict"] for item in combined["executed"]], ["passed", "failed", "passed"])
         self.assertEqual(combined["summary"], {"passed": 2, "failed": 1, "not_run": 0})
+        fallback = combined["quality_evidence"][1]
+        self.assertEqual(fallback["result"], "BLOCKED")
+        self.assertRegex(fallback["fixture_id"], r"^scenario\.[0-9a-f]{16}$")
+        self.assertIn("input_hash", fallback)
+        self.assertNotIn("synthetic failure", json.dumps(fallback))
 
     def test_duplicate_scenario_ids_are_rejected_before_any_scenario_runs(self):
         with patch.object(module, "run_scenario") as run_one:

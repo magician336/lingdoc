@@ -52,16 +52,16 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
     scenario_entry,
     write_report,
 )
+from scripts.lingdoc_mock.g6_evidence import (  # noqa: E402
+    RUNTIME_DEPENDENCIES,
+    RUNTIME_MODES,
+    build_evidence,
+    digest,
+    normalize_scenario_evidence,
+)
 
 
 REPORT_PATH = ROOT / "docs/08-本轮实施方案/T15-验证报告.json"
-RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
-RUNTIME_DEPENDENCIES = {
-    "mock": ("contract",),
-    "real_api_fake_model": ("api", "permissions", "queue", "file"),
-    "real": ("api", "permissions", "queue", "file", "model", "weknora", "docx"),
-}
-
 # The gaps this run found in the service, registered here rather than fixed here: #27's
 # agreement is that T15 records what a scenario run turns up, and the line that owns the
 # code fixes it. The evidence column points at the report section that shows it.
@@ -577,6 +577,26 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     }
 
 
+def _blocked_quality_evidence(scenario_id: str, state_id: str, runtime_mode: str,
+                              owner: str = "unassigned", reviewer: str = "unassigned") -> dict[str, Any]:
+    if runtime_mode not in RUNTIME_MODES:
+        runtime_mode = "mock"
+    fixture_id = f"scenario.{digest({'scenario': scenario_id, 'starting_state': state_id})[:16]}"
+    return build_evidence(
+        fixture_id=fixture_id,
+        runtime_mode=runtime_mode,
+        result="BLOCKED",
+        input_value={"scenario": scenario_id, "starting_state": state_id},
+        output_value={"status": "not_started", "reason": "initialization_failed"},
+        attribution=["runtime"],
+        evidence_refs=["executed", "scenarios", "summary"],
+        owner=owner,
+        reviewer=reviewer,
+        input_summary={"status": "not_started"},
+        output_summary={"status": "not_started"},
+    )
+
+
 def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path, **kwargs: Any) -> dict[str, Any]:
     """Run independent declared starting states and combine their per-scenario conclusions.
 
@@ -650,6 +670,11 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
             entries = scenario_verdicts(document, scenario_id, state_id, "failed")
             summary = {verdict: sum(entry["verdict"] == verdict for entry in entries)
                        for verdict in ("passed", "failed", "not_run")}
+            fallback_evidence = _blocked_quality_evidence(
+                scenario_id, state_id, kwargs.get("runtime_mode", "mock"),
+                scenario.get("quality_owner", "unassigned"),
+                scenario.get("quality_reviewer", "unassigned"),
+            )
             report = {
                 "report_version": 1,
                 "contract_version": document.get("contract_version"),
@@ -658,16 +683,7 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
                 "scenarios": entries,
                 "summary": summary,
                 "not_run": ["本场景没有完整执行轨迹；检查命令行错误后重跑"],
-                "quality_evidence": {
-                    "evidence_version": 1,
-                    "fixture_id": f"{scenario_id}:{state_id}",
-                    "runtime_mode": kwargs.get("runtime_mode", "mock"),
-                    "result": "BLOCKED",
-                    "attribution": ["runtime"],
-                    "evidence_refs": ["executed", "scenarios", "summary"],
-                    "owner": scenario.get("quality_owner", "unassigned"),
-                    "reviewer": scenario.get("quality_reviewer", "unassigned"),
-                },
+                "quality_evidence": fallback_evidence,
             }
         reports.append(report)
     if len(reports) == 1:
@@ -686,16 +702,12 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
     merged.update({
         "scope": "multiple independent scenarios driven from their declared starting states",
         "executed": [report["executed"] for report in reports],
-        "quality_evidence": [report.get("quality_evidence", {
-            "evidence_version": 1,
-            "fixture_id": f"{report['executed']['scenario']}:unknown",
-            "runtime_mode": kwargs.get("runtime_mode", "mock"),
-            "result": _quality_result(report["executed"].get("verdict", "blocked")),
-            "attribution": _quality_attribution(report["executed"]),
-            "evidence_refs": ["executed", "scenarios", "summary"],
-            "owner": "unassigned",
-            "reviewer": "unassigned",
-        }) for report in reports],
+        "quality_evidence": [report.get(
+            "quality_evidence",
+            _blocked_quality_evidence(report["executed"]["scenario"],
+                                      report["executed"].get("starting_state", "unknown"),
+                                      kwargs.get("runtime_mode", "mock")),
+        ) for report in reports],
         "scenarios": scenarios,
         "summary": summary,
         "not_run": ["模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
@@ -712,6 +724,7 @@ def _matrix_result(results: list[str]) -> str:
 def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Path, *,
                     runtime_modes: list[str], runtime_dependencies: dict[str, dict[str, Any]] | None = None,
                     provider_semantics: dict[str, str] | None = None,
+                    scenario_evidence: dict[str, dict[str, Any]] | None = None,
                     **kwargs: Any) -> dict[str, Any]:
     """Run the same declared scenarios independently for each quality runtime mode.
 
@@ -756,6 +769,14 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
         }
         if runtime_mode != "mock" and missing:
             mode_result = "BLOCKED"
+        mode_fixture_ids = sorted({item.get("fixture_id") for item in evidence
+                                   if isinstance(item, dict) and item.get("fixture_id")})
+        normalized_scenario_evidence, scenario_result = normalize_scenario_evidence(
+            {"scenario_evidence": (scenario_evidence or {}).get(runtime_mode)},
+            mode_fixture_ids,
+            runtime_mode,
+        )
+        mode_result = _matrix_result([mode_result, scenario_result])
         mode_reports.append({
             "runtime_mode": runtime_mode,
             "result": mode_result,
@@ -764,6 +785,7 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
             "verification_scope": report.get("verification_scope", "not_recorded"),
             "provider_semantics_status": report.get("provider_semantics_status", "not_verified"),
             "dependency_status": dependency_status,
+            "scenario_evidence": normalized_scenario_evidence,
             "report": report,
         })
 
@@ -819,6 +841,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="mark one named dependency as observed for a mode; repeatable")
     parser.add_argument("--provider-semantics", action="append", default=[], metavar="MODE=STATUS",
                         help="set provider semantics status (verified or not_verified) per mode")
+    parser.add_argument("--scenario-evidence", type=Path,
+                        help="status-only JSON object keyed by runtime mode with main_path and key_failure evidence")
     parser.add_argument("--report", type=Path, default=REPORT_PATH, help="where the matrix report is written")
     args = parser.parse_args(argv)
     report_started = False
@@ -851,6 +875,12 @@ def main(argv: list[str] | None = None) -> int:
             if mode not in RUNTIME_MODES or status not in {"verified", "not_verified"}:
                 raise WorkflowError("--provider-semantics requires a valid mode and status")
             provider_semantics[mode] = status
+        scenario_evidence = None
+        if args.scenario_evidence:
+            scenario_evidence = read_json_object(args.scenario_evidence, "scenario evidence")
+            if any(mode not in RUNTIME_MODES or not isinstance(value, dict)
+                   for mode, value in scenario_evidence.items()):
+                raise WorkflowError("--scenario-evidence must be an object keyed by runtime mode")
         if len(runtime_modes) == 1:
             report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
                                    identities=identities, base_url=args.base_url, token=args.token,
@@ -862,7 +892,8 @@ def main(argv: list[str] | None = None) -> int:
                                      knowledge=knowledge, member=member, identities=identities,
                                      base_url=args.base_url, token=args.token, timeout=args.request_timeout,
                                      runtime_dependencies=runtime_dependencies,
-                                     provider_semantics=provider_semantics)
+                                     provider_semantics=provider_semantics,
+                                     scenario_evidence=scenario_evidence)
         write_report(args.report, report)
         if "modes" in report:
             verdict = "passed" if report["result"] == "PASS" else "failed"
