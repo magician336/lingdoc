@@ -19,6 +19,7 @@ through one HTTP transport (run_f01.py).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -54,6 +55,7 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
 
 
 REPORT_PATH = ROOT / "docs/08-本轮实施方案/T15-验证报告.json"
+RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
 
 # The gaps this run found in the service, registered here rather than fixed here: #27's
 # agreement is that T15 records what a scenario run turns up, and the line that owns the
@@ -101,6 +103,145 @@ BOUNDARIES = (
                "模型质量、DOCX 可编辑性以及观察点以外的副作用仍不能由这些通道判定。",
     },
 )
+
+
+def _stable_digest(value: Any) -> str:
+    """Hash a JSON value without publishing its contents in the evidence report."""
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _file_digest(path: Path) -> str:
+    """Return a stable digest for a contract dependency, independent of its local path."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _quality_result(verdict: str) -> str:
+    return {"passed": "PASS", "failed": "FAIL", "not_run": "NOT RUN"}.get(verdict, "BLOCKED")
+
+
+def _quality_attribution(executed: dict[str, Any]) -> list[str]:
+    """Classify observed failures without exposing provider details or raw responses."""
+    categories: set[str] = set()
+    state = executed.get("state") or {}
+    if state.get("mismatches"):
+        categories.add("fixture_or_test")
+    for step in executed.get("steps", []):
+        if step.get("verdict") != "failed":
+            if step.get("verdict") == "not_run":
+                categories.add("runtime")
+            continue
+        checks = step.get("checks", [])
+        if any("authoriz" in str(check.get("path", "")).lower()
+               or "permission" in str(check.get("path", "")).lower()
+               for check in checks):
+            categories.add("permission")
+        elif step.get("operation_id") in {"startGeneration", "getGeneration", "getCandidate"}:
+            categories.add("model_quality")
+        elif step.get("operation_id") in {"startExport", "getExport", "downloadExport"}:
+            categories.add("file_fidelity")
+        elif step.get("operation_id") in {"retrieveSources", "getSource"}:
+            categories.add("external_service")
+        else:
+            categories.add("domain_logic")
+    if executed.get("verdict") == "failed" and not categories:
+        categories.add("runtime")
+    return sorted(categories)
+
+
+def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scenario_id: str,
+                     state_id: str, spec: Any, state_report: dict[str, Any], executed: dict[str, Any],
+                     loader: StateLoader, states_path: Path, openapi_path: Path,
+                     runtime_mode: str) -> dict[str, Any]:
+    """Build the stable, redacted G6 evidence record for one scenario execution."""
+    if runtime_mode not in RUNTIME_MODES:
+        raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
+    canonical_fixture = document.get("canonical_fixture", {})
+    template = canonical_fixture.get("template", {}) if isinstance(canonical_fixture, dict) else {}
+    required_fixture_parts = ("project", "asset", "chapter", "check", "release", "export", "download")
+    declared_fixture_parts = [part for part in ("project", "asset", "chapter", "release", "export")
+                              if part in canonical_fixture]
+    if isinstance(canonical_fixture.get("release"), dict) and canonical_fixture["release"].get("check"):
+        declared_fixture_parts.append("check")
+    if isinstance(canonical_fixture.get("export"), dict) and canonical_fixture["export"].get("download_path"):
+        declared_fixture_parts.append("download")
+    declared_fixture_parts = sorted(set(declared_fixture_parts))
+    constructed_fixture_parts = ["project"]
+    if loader.state.assets:
+        constructed_fixture_parts.append("asset")
+    if loader.state.chapters:
+        constructed_fixture_parts.append("chapter")
+    constructed_fixture_parts.sort()
+    observed = state_report.get("observed", {})
+    steps = executed.get("steps", [])
+    failed_steps = [step.get("step_id") for step in steps if step.get("verdict") == "failed"]
+    input_summary = {
+        "scenario": scenario_id,
+        "starting_state": state_id,
+        "step_count": len(spec.steps),
+        "asset_count": len(loader.state.assets),
+        "chapter_count": len(loader.state.chapters),
+        "spec_fields": sorted(loader.state.spec),
+    }
+    output_summary = {
+        "result": _quality_result(executed.get("verdict", "blocked")),
+        "executed_steps": len([step for step in steps if step.get("verdict") != "not_run"]),
+        "declared_steps": len(steps),
+        "failed_steps": failed_steps,
+        "state_mismatches": len((state_report.get("mismatches") or [])),
+    }
+    observed_result = output_summary["result"]
+    result = observed_result if runtime_mode == "mock" or observed_result != "PASS" else "BLOCKED"
+    output_summary["result"] = result
+    return {
+        "evidence_version": 1,
+        "fixture_id": f"{scenario_id}:{state_id}",
+        "fixture_digest": _stable_digest({"scenario": scenario, "state": state_id,
+                                           "canonical_fixture": canonical_fixture}),
+        "fixture_coverage": {
+            "required_parts": list(required_fixture_parts),
+            "declared_parts": declared_fixture_parts,
+            "declared_complete": declared_fixture_parts == sorted(required_fixture_parts),
+            "constructed_parts": constructed_fixture_parts,
+            "executed_complete": constructed_fixture_parts == sorted(required_fixture_parts),
+            "missing_for_execution": sorted(set(required_fixture_parts) - set(constructed_fixture_parts)),
+        },
+        "project_id": "project.id",
+        "template_version": template.get("version"),
+        "ruleset_hash": template.get("ruleset_hash"),
+        "object_versions": {
+            "project_version": observed.get("project_version"),
+            "spec_revision": observed.get("spec_revision"),
+            "chapters": observed.get("chapters", []),
+            "assets": observed.get("assets", []),
+        },
+        "permission_snapshot": {
+            "status": "declared_only",
+            "actors": sorted({step.get("actor") for step in spec.steps if step.get("actor")}),
+            "members": list(loader.state.members),
+            "assets": sorted(loader.asset_ids),
+        },
+        "runtime_mode": runtime_mode,
+        "runtime_status": "contract_only" if runtime_mode == "mock" else "real_dependency_not_verified",
+        "dependency_versions": {
+            "contract_version": document.get("contract_version"),
+            "openapi_sha256": _file_digest(openapi_path),
+            "states_sha256": _file_digest(states_path),
+            "weknora": "unknown",
+            "model": "unknown",
+        },
+        "context": {"context_revision": None, "target_version": None, "status": "not_available"},
+        "input_summary": input_summary,
+        "output_summary": {**output_summary, "result": result},
+        "input_hash": _stable_digest(input_summary),
+        "output_hash": _stable_digest(output_summary),
+        "execution_window": {"start": None, "end": None, "status": "not_recorded"},
+        "result": result,
+        "attribution": _quality_attribution(executed),
+        "evidence_refs": ["executed.state", "executed.steps", "scenarios", "summary"],
+        "owner": scenario.get("quality_owner", "unassigned"),
+        "reviewer": scenario.get("quality_reviewer", "unassigned"),
+    }
 
 
 def executability(scenario: dict[str, Any]) -> tuple[bool, str]:
@@ -297,8 +438,10 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
                  knowledge: dict[str, str], member: dict[str, str],
                  identities: dict[str, str] | None = None,
                  base_url: str | None = None, token: str | None = None, timeout: float = 20,
-                 opener=None) -> dict[str, Any]:
+                 opener=None, runtime_mode: str = "mock") -> dict[str, Any]:
     """Build the declared state, send the declared steps, and return the report for both halves."""
+    if runtime_mode not in RUNTIME_MODES:
+        raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
     document = read_json_object(states_path, "states document")
     scenario = scenario_entry(document, scenario_id, states_path.name)
     observation = scenario.get("white_box_observation")
@@ -388,6 +531,10 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     entries = scenario_verdicts(document, scenario_id, state_id, executed["verdict"])
     summary = {verdict: sum(entry["verdict"] == verdict for entry in entries)
                for verdict in ("passed", "failed", "not_run")}
+    evidence = quality_evidence(document=document, scenario=scenario, scenario_id=scenario_id,
+                                state_id=state_id, spec=spec, state_report=state_report,
+                                executed=executed, loader=loader, states_path=states_path,
+                                openapi_path=openapi_path, runtime_mode=runtime_mode)
     return {
         "report_version": 1,
         "contract_version": document.get("contract_version"),
@@ -401,6 +548,7 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         "verification_scope": ("http_smoke_plus_declared_f02_white_box" if observation
                                 else "http_smoke_only"),
         "provider_semantics_status": "not_verified",
+        "quality_evidence": evidence,
         # Counted from the summary rather than written down: the sentence has to keep telling the
         # truth the next time somebody fills a request definition into the contract.
         "not_run": ["模型质量、DOCX 可打开性及 F02 白盒观察点以外的数据库副作用：当前通道未观测",
@@ -489,6 +637,16 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
                 "scenarios": entries,
                 "summary": summary,
                 "not_run": ["本场景没有完整执行轨迹；检查命令行错误后重跑"],
+                "quality_evidence": {
+                    "evidence_version": 1,
+                    "fixture_id": f"{scenario_id}:{state_id}",
+                    "runtime_mode": kwargs.get("runtime_mode", "mock"),
+                    "result": "BLOCKED",
+                    "attribution": ["runtime"],
+                    "evidence_refs": ["executed", "scenarios", "summary"],
+                    "owner": scenario.get("quality_owner", "unassigned"),
+                    "reviewer": scenario.get("quality_reviewer", "unassigned"),
+                },
             }
         reports.append(report)
     if len(reports) == 1:
@@ -507,6 +665,16 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
     merged.update({
         "scope": "multiple independent scenarios driven from their declared starting states",
         "executed": [report["executed"] for report in reports],
+        "quality_evidence": [report.get("quality_evidence", {
+            "evidence_version": 1,
+            "fixture_id": f"{report['executed']['scenario']}:unknown",
+            "runtime_mode": kwargs.get("runtime_mode", "mock"),
+            "result": _quality_result(report["executed"].get("verdict", "blocked")),
+            "attribution": _quality_attribution(report["executed"]),
+            "evidence_refs": ["executed", "scenarios", "summary"],
+            "owner": "unassigned",
+            "reviewer": "unassigned",
+        }) for report in reports],
         "scenarios": scenarios,
         "summary": summary,
         "not_run": ["模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
@@ -530,6 +698,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--member", action="append", default=[], metavar="NAME=ID",
                         help="bind a declared member name to a real user id (repeatable)")
     parser.add_argument("--request-timeout", type=float, default=20)
+    parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, default="mock",
+                        help="quality evidence mode: mock, real_api_fake_model, or real")
     parser.add_argument("--report", type=Path, default=REPORT_PATH, help="where the matrix report is written")
     args = parser.parse_args(argv)
     report_started = False
@@ -545,7 +715,7 @@ def main(argv: list[str] | None = None) -> int:
         report_started = True
         report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
                                identities=identities, base_url=args.base_url, token=args.token,
-                               timeout=args.request_timeout)
+                               timeout=args.request_timeout, runtime_mode=args.runtime_mode)
         write_report(args.report, report)
         executions = report["executed"] if isinstance(report["executed"], list) else [report["executed"]]
         verdict = "failed" if any(execution["verdict"] != "passed" for execution in executions) else "passed"

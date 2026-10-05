@@ -127,6 +127,48 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual({check["path"] for check in step["checks"]}, DENIED)
         self.assertEqual({check["status"] for check in step["checks"]}, {"passed"})
 
+    def test_quality_evidence_records_versions_permissions_and_summaries(self):
+        report, _ = drive()
+
+        evidence = report["quality_evidence"]
+
+        self.assertEqual(evidence["result"], "PASS")
+        self.assertEqual(evidence["runtime_mode"], "mock")
+        self.assertEqual(evidence["fixture_id"], "F22:S7")
+        self.assertTrue(evidence["fixture_coverage"]["declared_complete"])
+        self.assertFalse(evidence["fixture_coverage"]["executed_complete"])
+        self.assertIn("download", evidence["fixture_coverage"]["missing_for_execution"])
+        self.assertEqual(evidence["project_id"], "project.id")
+        self.assertEqual(evidence["template_version"], "1")
+        self.assertRegex(evidence["ruleset_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(evidence["permission_snapshot"]["status"], "declared_only")
+        self.assertEqual(evidence["input_summary"]["asset_count"], 2)
+        self.assertEqual(evidence["output_summary"]["executed_steps"], 1)
+        self.assertEqual(evidence["evidence_refs"], [
+            "executed.state",
+            "executed.steps",
+            "scenarios",
+            "summary",
+        ])
+
+    def test_quality_evidence_uses_fail_result_and_safe_attribution(self):
+        report, _ = drive(provider=AnswersThePreflightWrongly(answered_with_200))
+
+        evidence = report["quality_evidence"]
+
+        self.assertEqual(evidence["result"], "FAIL")
+        self.assertEqual(evidence["attribution"], ["external_service"])
+        self.assertNotIn(PROVIDER_IDS["k-demo"], module.render_report(report))
+        self.assertNotIn("synthetic-owner-token", module.render_report(report))
+
+    def test_real_mode_cannot_claim_pass_without_real_dependency_evidence(self):
+        report, _ = drive(runtime_mode="real")
+
+        evidence = report["quality_evidence"]
+
+        self.assertEqual(evidence["result"], "BLOCKED")
+        self.assertEqual(evidence["runtime_status"], "real_dependency_not_verified")
+
     def test_the_declared_asset_name_is_what_the_report_publishes(self):
         report, synthetic = drive()
         checks = report["executed"]["steps"][0]["checks"]
