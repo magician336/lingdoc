@@ -106,6 +106,8 @@ class G6ObservabilityTest(unittest.TestCase):
         self.assertTrue(report["signal_coverage"]["request_denied"])
         self.assertTrue(report["signal_coverage"]["request_conflict"])
         self.assertTrue(report["signal_coverage"]["revocation_intercept"])
+        self.assertTrue(all(report["alert_coverage"].values()))
+        self.assertEqual(report["uncovered_scope"], [])
 
     def test_sensitive_event_field_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "sensitive"):
@@ -125,6 +127,12 @@ class G6ObservabilityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "link fields"):
             g6_observability.sanitize_event({"event_type": "request", "status": "ok",
                                               "correlation_id": "corr-1", "runtime_mode": "real"})
+
+    def test_event_duration_must_be_non_negative(self):
+        with self.assertRaisesRegex(ValueError, "duration_ms"):
+            g6_observability.sanitize_event({"event_type": "request", "status": "ok",
+                                              "correlation_id": "corr-1", "runtime_mode": "real",
+                                              "request_id": "request.id", "duration_ms": "slow"})
 
 
 class G6RollbackTest(unittest.TestCase):

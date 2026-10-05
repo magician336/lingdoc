@@ -22,7 +22,7 @@ ALLOWED_FIELDS = frozenset({
     "export_id", "resource_type", "tenant_id", "project_id", "context_revision", "target_revision",
     "template_version", "ruleset_hash", "error_code", "retry_count", "stale", "duplicate_side_effect",
     "permission_decision", "download_reauthorized", "file_loss_class", "provider", "result_code",
-    "permission_reason",
+    "permission_reason", "duration_ms",
 })
 SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
                               "prompt", "completion", "model_input"})
@@ -39,13 +39,21 @@ EVENT_REQUIRED_IDS = {
     "audit": ("request_id",),
 }
 
+ACTIONABLE_SIGNALS = (
+    "request_denied", "request_conflict", "async_failure_retry", "stale_or_duplicate",
+    "permission_denied", "revocation_intercept", "download_reauthorization", "docx_loss",
+    "external_dependency",
+)
 ALERT_ACTIONS = (
-    {"signal": "request_denied_or_conflict", "action": "notify_owner"},
-    {"signal": "permission_denied_or_revocation_block", "action": "pause_affected_flow"},
-    {"signal": "async_failure_or_retry_spike", "action": "retry_then_notify_owner"},
-    {"signal": "stale_or_duplicate_side_effect", "action": "stop_write_and_open_incident"},
-    {"signal": "docx_loss_detected", "action": "block_export"},
-    {"signal": "external_dependency_unavailable", "action": "mark_blocked_and_notify_owner"},
+    {"signal": "request_denied", "action": "notify_owner"},
+    {"signal": "request_conflict", "action": "notify_owner"},
+    {"signal": "permission_denied", "action": "pause_affected_flow"},
+    {"signal": "revocation_intercept", "action": "pause_affected_flow"},
+    {"signal": "async_failure_retry", "action": "retry_then_notify_owner"},
+    {"signal": "stale_or_duplicate", "action": "rollback_or_stop_write"},
+    {"signal": "download_reauthorization", "action": "recheck_permission_before_download"},
+    {"signal": "docx_loss", "action": "block_export"},
+    {"signal": "external_dependency", "action": "mark_blocked_and_notify_owner"},
 )
 
 
@@ -66,6 +74,9 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported event_type")
     if event.get("runtime_mode") not in RUNTIME_MODES:
         raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
+    if "duration_ms" in event and (not isinstance(event["duration_ms"], (int, float))
+                                   or isinstance(event["duration_ms"], bool) or event["duration_ms"] < 0):
+        raise ValueError("duration_ms must be a non-negative number")
     missing_link_ids = [field for field in EVENT_REQUIRED_IDS[event["event_type"]]
                         if not event.get(field)]
     if missing_link_ids:
@@ -84,6 +95,14 @@ def _chain_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
 
 
 def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
+    retry_observed = any(
+        event["event_type"] == "task"
+        and (event.get("status") in {"failed", "retry"}
+             or (isinstance(event.get("retry_count", 0), int)
+                 and not isinstance(event.get("retry_count", 0), bool)
+                 and event.get("retry_count", 0) > 0))
+        for event in events
+    )
     return {
         "request_success": any(event["event_type"] == "request" and event.get("status") == "ok"
                                 for event in events),
@@ -91,10 +110,7 @@ def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
                                for event in events),
         "request_conflict": any(event["event_type"] == "request" and event.get("status") == "conflict"
                                  for event in events),
-        "async_failure_retry": any(event["event_type"] == "task"
-                                    and (event.get("status") in {"failed", "retry"}
-                                         or int(event.get("retry_count", 0)) > 0)
-                                    for event in events),
+        "async_failure_retry": retry_observed,
         "stale_or_duplicate": any(event.get("stale") is not None
                                    or event.get("duplicate_side_effect") is not None for event in events),
         "permission_denied": any(event.get("permission_decision") == "deny"
@@ -119,7 +135,13 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
     correlation_ids = sorted({event["correlation_id"] for event in sanitized})
     coverage = _chain_coverage(sanitized)
     signals = _signal_coverage(sanitized)
+    alert_signals = {alert["signal"] for alert in ALERT_ACTIONS}
+    alert_coverage = {signal: signal in alert_signals for signal in ACTIONABLE_SIGNALS}
+    uncovered_scope = ([f"event:{event_type}" for event_type, observed in coverage.items() if not observed]
+                       + [f"signal:{signal}" for signal, observed in signals.items() if not observed]
+                       + [f"alert:{signal}" for signal, observed in alert_coverage.items() if not observed])
     complete = (bool(sanitized) and all(coverage.values()) and all(signals.values())
+                and all(alert_coverage.values())
                 and len(correlation_ids) == 1)
     result = "PASS" if complete else "BLOCKED"
     if any(event.get("file_loss_class") not in {None, "none"} for event in sanitized):
@@ -132,6 +154,8 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
         "correlation_ids": correlation_ids,
         "chain_coverage": coverage,
         "signal_coverage": signals,
+        "alert_coverage": alert_coverage,
+        "uncovered_scope": uncovered_scope,
         "events": sanitized,
         "alerts": list(ALERT_ACTIONS),
         "quality_evidence": build_evidence(
