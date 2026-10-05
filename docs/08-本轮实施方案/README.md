@@ -59,6 +59,20 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 
 `mock` 只证明契约和失败语义；当前 `real_api_fake_model` 和 `real` 在尚未接入依赖证据时会保留 `BLOCKED`，不能把 mock 结果当成真实能力通过。多场景运行时，`quality_evidence` 是按执行顺序排列的每条场景证据列表。
 
+## G6-02 运行模式矩阵
+
+同一组场景可以重复传入 `--runtime-mode`，执行器会为每种模式保留独立报告，并在顶层输出 `modes`、`reports`、`fixture_ids` 和 `shared_fixture`。只有所有模式共用同一个 `fixture_id` 时，矩阵才可用于横向比较；矩阵结果按 `FAIL`、`BLOCKED`、`NOT RUN`、`PASS` 的优先级汇总，真实依赖尚未提供证据时仍为 `BLOCKED`：
+
+```text
+python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
+  --runtime-mode mock --runtime-mode real \
+  --knowledge k-demo=<真实知识 id> --knowledge k-notready=<真实知识 id> \
+  --identity u-owner=<该账号令牌> \
+  --report artifacts/g6-02-f22-matrix.json
+```
+
+矩阵不把 mock 的 `PASS` 合并成真实模式的通过结论；每个模式的 `quality_evidence`、执行摘要和验证范围都在自己的条目中保存。
+
 ## 提供方联调执行器（按场景驱动）
 
 `scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 与规格文档读取请求定义，对隔离的提供方测试环境逐步发请求。规格有两种给法：默认的 workflow.json 是 F01 的 23 步连续规格；`--scenario` 则按 id 从 scenarios.json 取一条，F01 在契约里指向 workflow.json，所以两种给法等价。先启动提供方测试环境，并只使用合成资料与短期测试凭证：

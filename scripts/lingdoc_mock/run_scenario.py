@@ -683,6 +683,86 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
     return merged
 
 
+def _matrix_result(results: list[str]) -> str:
+    """Reduce independent mode verdicts without turning an unverified run into PASS."""
+    if "FAIL" in results:
+        return "FAIL"
+    if "BLOCKED" in results:
+        return "BLOCKED"
+    if "NOT RUN" in results:
+        return "NOT RUN"
+    if results and all(result == "PASS" for result in results):
+        return "PASS"
+    return "BLOCKED"
+
+
+def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Path, *,
+                    runtime_modes: list[str], **kwargs: Any) -> dict[str, Any]:
+    """Run the same declared scenarios independently for each quality runtime mode.
+
+    Reports remain separate so a mock PASS cannot hide a real dependency BLOCKED result. The
+    fixture IDs are compared after every run, making a matrix with divergent inputs explicitly
+    unusable for cross-mode comparison.
+    """
+    if not runtime_modes:
+        raise WorkflowError("at least one --runtime-mode is required")
+    if len(runtime_modes) != len(set(runtime_modes)):
+        raise WorkflowError("--runtime-mode contains a duplicate runtime mode")
+    invalid_modes = sorted(set(runtime_modes) - set(RUNTIME_MODES))
+    if invalid_modes:
+        raise WorkflowError("--runtime-mode must be one of " + ", ".join(RUNTIME_MODES))
+
+    mode_reports = []
+    for runtime_mode in runtime_modes:
+        mode_kwargs = dict(kwargs)
+        mode_kwargs.pop("runtime_mode", None)
+        report = run_scenarios(scenario_ids, states_path, openapi_path,
+                               runtime_mode=runtime_mode, **mode_kwargs)
+        evidence = report.get("quality_evidence", [])
+        if isinstance(evidence, dict):
+            evidence = [evidence]
+        evidence = list(evidence)
+        mode_result = _matrix_result([item.get("result", "BLOCKED") for item in evidence])
+        mode_reports.append({
+            "runtime_mode": runtime_mode,
+            "result": mode_result,
+            "summary": report.get("summary", {}),
+            "quality_evidence": evidence[0] if len(evidence) == 1 else evidence,
+            "verification_scope": report.get("verification_scope", "not_recorded"),
+            "provider_semantics_status": report.get("provider_semantics_status", "not_verified"),
+            "report": report,
+        })
+
+    mode_fixture_ids = [
+        {
+            item["fixture_id"]
+            for item in (mode["quality_evidence"] if isinstance(mode["quality_evidence"], list)
+                         else [mode["quality_evidence"]])
+            if isinstance(item, dict) and item.get("fixture_id")
+        }
+        for mode in mode_reports
+    ]
+    fixture_ids = sorted(set().union(*mode_fixture_ids)) if mode_fixture_ids else []
+    shared_fixture = bool(fixture_ids) and all(ids == mode_fixture_ids[0] for ids in mode_fixture_ids)
+    results = [mode["result"] for mode in mode_reports]
+    result = _matrix_result(results)
+    if not shared_fixture:
+        result = "BLOCKED"
+
+    return {
+        "report_version": 1,
+        "scope": "same scenarios driven independently for each runtime mode",
+        "runtime_modes": list(runtime_modes),
+        "result": result,
+        "shared_fixture": shared_fixture,
+        "fixture_ids": fixture_ids,
+        "modes": [{key: value for key, value in mode.items() if key != "report"}
+                  for mode in mode_reports],
+        "reports": [{"runtime_mode": mode["runtime_mode"], "report": mode["report"]}
+                    for mode in mode_reports],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Drive contract scenarios from their declared states to a report.")
     parser.add_argument("--scenario", required=True, action="append",
@@ -698,8 +778,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--member", action="append", default=[], metavar="NAME=ID",
                         help="bind a declared member name to a real user id (repeatable)")
     parser.add_argument("--request-timeout", type=float, default=20)
-    parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, default="mock",
-                        help="quality evidence mode: mock, real_api_fake_model, or real")
+    parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, action="append", default=None,
+                        help="quality evidence mode; repeat to run a mode matrix")
     parser.add_argument("--report", type=Path, default=REPORT_PATH, help="where the matrix report is written")
     args = parser.parse_args(argv)
     report_started = False
@@ -713,22 +793,39 @@ def main(argv: list[str] | None = None) -> int:
         write_report(args.report, {"report_version": 1, "runner_status": "not_started",
                                    "scenarios": args.scenario})
         report_started = True
-        report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
-                               identities=identities, base_url=args.base_url, token=args.token,
-                               timeout=args.request_timeout, runtime_mode=args.runtime_mode)
+        runtime_modes = args.runtime_mode or ["mock"]
+        if len(runtime_modes) == 1:
+            report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
+                                   identities=identities, base_url=args.base_url, token=args.token,
+                                   timeout=args.request_timeout, runtime_mode=runtime_modes[0])
+        else:
+            report = run_mode_matrix(args.scenario, args.states, args.openapi, runtime_modes=runtime_modes,
+                                     knowledge=knowledge, member=member, identities=identities,
+                                     base_url=args.base_url, token=args.token, timeout=args.request_timeout)
         write_report(args.report, report)
-        executions = report["executed"] if isinstance(report["executed"], list) else [report["executed"]]
-        verdict = "failed" if any(execution["verdict"] != "passed" for execution in executions) else "passed"
-        print(f"{scenario_label} {verdict}; report written to {args.report}")
-        for execution in executions:
-            for step in execution["steps"]:
-                print(f"{execution['scenario']} {step['step_id']} {step['verdict'].upper()} {step['operation_id']} "
-                      f"HTTP {step['actual_http']} (expected {step['expected_http']})")
-                for line in step.get("why", []):
-                    print(f"  {line}")
-            for mismatch in execution["state"]["mismatches"]:
-                print(f"{execution['scenario']} MISMATCH {mismatch['pointer']}: declared {mismatch['declared']!r}, "
-                      f"read back {mismatch['actual']!r}", file=sys.stderr)
+        if "modes" in report:
+            verdict = "passed" if report["result"] == "PASS" else "failed"
+            print(f"{scenario_label} {verdict}; report written to {args.report}")
+            for mode in report["modes"]:
+                print(f"{mode['runtime_mode']} {mode['result']}")
+        else:
+            executions = report["executed"] if isinstance(report["executed"], list) else [report["executed"]]
+            evidence = report.get("quality_evidence", [])
+            evidence_items = evidence if isinstance(evidence, list) else [evidence]
+            evidence_results = [item.get("result") for item in evidence_items if isinstance(item, dict)]
+            verdict = ("failed" if any(execution["verdict"] != "passed" for execution in executions)
+                       or any(result != "PASS" for result in evidence_results)
+                       else "passed")
+            print(f"{scenario_label} {verdict}; report written to {args.report}")
+            for execution in executions:
+                for step in execution["steps"]:
+                    print(f"{execution['scenario']} {step['step_id']} {step['verdict'].upper()} {step['operation_id']} "
+                          f"HTTP {step['actual_http']} (expected {step['expected_http']})")
+                    for line in step.get("why", []):
+                        print(f"  {line}")
+                for mismatch in execution["state"]["mismatches"]:
+                    print(f"{execution['scenario']} MISMATCH {mismatch['pointer']}: declared {mismatch['declared']!r}, "
+                          f"read back {mismatch['actual']!r}", file=sys.stderr)
     except (WorkflowError, OSError) as error:
         print(f"{scenario_label if 'scenario_label' in locals() else args.scenario} FAILED: {error}", file=sys.stderr)
         if report_started:

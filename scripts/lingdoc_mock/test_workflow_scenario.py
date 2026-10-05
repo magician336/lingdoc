@@ -169,6 +169,23 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(evidence["result"], "BLOCKED")
         self.assertEqual(evidence["runtime_status"], "real_dependency_not_verified")
 
+    def test_mode_matrix_keeps_shared_fixture_and_mode_results_separate(self):
+        synthetic = provider()
+
+        matrix = module.run_mode_matrix(
+            ["F22"], SCENARIOS_PATH, OPENAPI_PATH,
+            runtime_modes=["mock", "real"], knowledge=dict(KNOWLEDGE), member={},
+            identities=dict(IDENTITIES), base_url="http://127.0.0.1:8080/api/v1/lingdoc",
+            opener=synthetic.open,
+        )
+
+        self.assertEqual(matrix["result"], "BLOCKED")
+        self.assertTrue(matrix["shared_fixture"])
+        self.assertEqual([item["runtime_mode"] for item in matrix["modes"]], ["mock", "real"])
+        self.assertEqual([item["result"] for item in matrix["modes"]], ["PASS", "BLOCKED"])
+        self.assertEqual(len(matrix["reports"]), 2)
+        self.assertEqual({item["quality_evidence"]["fixture_id"] for item in matrix["modes"]}, {"F22:S7"})
+
     def test_the_declared_asset_name_is_what_the_report_publishes(self):
         report, synthetic = drive()
         checks = report["executed"]["steps"][0]["checks"]
