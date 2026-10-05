@@ -37,7 +37,13 @@ def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, 
     check_observations = observations.get("checks", observations)
     if not isinstance(check_observations, dict):
         raise ValueError("rollback checks must be an object")
-    unknown_checks = sorted(set(check_observations) - {check_id for check_id, _ in CHECKS})
+    known_check_ids = {check_id for check_id, _ in CHECKS}
+    allowed_top_level = known_check_ids | set(REHEARSAL_METADATA)
+    unknown_top_level = sorted(set(observations) - (allowed_top_level | {"checks"}))
+    if unknown_top_level:
+        raise ValueError("rollback observations contain unsupported fields: " + ", ".join(unknown_top_level))
+    unknown_checks = sorted(set(check_observations) - (known_check_ids if "checks" in observations
+                                                       else allowed_top_level))
     if unknown_checks:
         raise ValueError("rollback checks contain unsupported fields: " + ", ".join(unknown_checks))
     rows = []
