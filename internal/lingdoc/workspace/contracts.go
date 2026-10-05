@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -36,6 +37,12 @@ type ApplicationService interface {
 	RestoreProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
 	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
+	GetWorkingCopy(context.Context, Actor, string, string) (WorkingCopy, error)
+	SaveWorkingCopy(context.Context, Actor, string, string, string, SaveWorkingCopyInput) (json.RawMessage, int, bool, error)
+	ApplyRewrite(context.Context, Actor, string, string, string, core.SaveWorkingCopyInput, []core.ReviewItem) (json.RawMessage, int, bool, error)
+	CommitWorkingCopy(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (json.RawMessage, int, bool, error)
+	ListChapterVersions(context.Context, Actor, string, string) ([]ChapterVersion, error)
+	RestoreWorkingCopy(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (json.RawMessage, int, bool, error)
 	GenerationContext(context.Context, Actor, string, string) (GenerationContext, error)
 	CreateChangeSet(context.Context, Actor, string, string, CreateChangeSetInput) (json.RawMessage, int, bool, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
@@ -124,9 +131,10 @@ type KnowledgeSearchService interface {
 }
 
 type HandlerDependencies struct {
-	Service     ApplicationService
-	Sources     SourceApplicationService
-	Integration WorkspaceIntegration
+	Service          ApplicationService
+	Sources          SourceApplicationService
+	Integration      WorkspaceIntegration
+	SelectedRewrites SelectedRewriteApplication
 }
 
 // WorkspaceIntegration supplies the same source recheck and frozen-input adapter to all consumers.

@@ -74,18 +74,7 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	if err := db.AutoMigrate(&types.User{}, &types.AuthToken{}, &types.TenantMember{}, &types.TenantAPIKey{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{
-		"000018_lingdoc_workspace.up.sql",
-		"000019_lingdoc_evidence_assets.up.sql",
-		"000025_lingdoc_member_permissions.up.sql",
-		"000026_lingdoc_project_context_revision.up.sql",
-		"000027_lingdoc_draft_provenance.up.sql",
-		"000028_lingdoc_owner_transfers.up.sql",
-		"000029_lingdoc_project_discard.up.sql",
-		"000030_lingdoc_project_baseline.up.sql",
-		"000031_lingdoc_citation_usages.up.sql",
-		"000032_lingdoc_change_sets.up.sql",
-	} {
+	for _, file := range []string{"000018_lingdoc_workspace.up.sql", "000019_lingdoc_evidence_assets.up.sql", "000020_lingdoc_candidate_adoption.up.sql", "000025_lingdoc_member_permissions.up.sql", "000026_lingdoc_project_context_revision.up.sql", "000027_lingdoc_draft_provenance.up.sql", "000028_lingdoc_owner_transfers.up.sql", "000029_lingdoc_project_discard.up.sql", "000030_lingdoc_project_baseline.up.sql", "000031_lingdoc_citation_usages.up.sql", "000032_lingdoc_change_sets.up.sql", "000033_lingdoc_working_copies.up.sql", "000034_lingdoc_selected_rewrites.up.sql", "000035_lingdoc_project_template_copies.up.sql"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {
 			t.Fatal(err)
@@ -186,6 +175,29 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		t.Fatal("lost-response replay not reported")
 	}
 	request(http.MethodPut, path+"/spec", input, "save-stale-integration", jwtTokens["a-owner"], false, 409)
+	request(http.MethodPost, path+"/activate", `{"expected_spec_revision":1}`, "activate-integration", jwtTokens["a-owner"], false, 200)
+	chapterEnvelope := struct {
+		Data []workspacecore.Chapter `json:"data"`
+	}{}
+	chapterResponse := request(http.MethodGet, path+"/chapters", "", "", jwtTokens["a-owner"], false, 200)
+	if err := json.Unmarshal(chapterResponse.Body.Bytes(), &chapterEnvelope); err != nil || len(chapterEnvelope.Data) != 2 {
+		t.Fatalf("list chapters for working-copy flow: chapters=%d err=%v", len(chapterEnvelope.Data), err)
+	}
+	chapterID := chapterEnvelope.Data[0].ID
+	chapterPath := path + "/chapters/" + chapterID
+	copyResponse := request(http.MethodGet, chapterPath+"/working-copy", "", "", jwtTokens["a-owner"], false, 200)
+	var initialCopy struct {
+		Data workspacecore.WorkingCopy `json:"data"`
+	}
+	if err := json.Unmarshal(copyResponse.Body.Bytes(), &initialCopy); err != nil || initialCopy.Data.WorkingCopyRevision != 1 {
+		t.Fatalf("read initial working copy: %+v err=%v", initialCopy.Data, err)
+	}
+	request(http.MethodPut, chapterPath+"/working-copy", `{"base_chapter_version_id":null,"expected_spec_revision":1,"expected_working_copy_revision":1,"body_markdown":"synthetic saved draft","source_ids":[]}`, "save-copy-integration", jwtTokens["a-owner"], false, 200)
+	commitResponse := request(http.MethodPost, chapterPath+"/working-copy/commit", `{"expected_spec_revision":1,"expected_working_copy_revision":2,"expected_chapter_version_id":null}`, "commit-copy-integration", jwtTokens["a-owner"], false, 201)
+	if !strings.Contains(commitResponse.Body.String(), `"body_markdown":"synthetic saved draft"`) {
+		t.Fatalf("explicit commit did not persist the working-copy body: %s", commitResponse.Body.String())
+	}
+	request(http.MethodGet, chapterPath+"/versions", "", "", jwtTokens["a-owner"], false, 200)
 	bound := request(http.MethodPost, path+"/assets", `{"knowledge_id":"knowledge"}`, "bind-integration", jwtTokens["a-owner"], false, 201)
 	var asset struct{ Data struct{ ID string } }
 	if err := json.Unmarshal(bound.Body.Bytes(), &asset); err != nil {

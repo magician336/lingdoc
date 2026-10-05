@@ -16,7 +16,7 @@ import (
 // 000097 LingDoc workspace, 000098 LingDoc evidence assets,
 // 000099 LingDoc candidate adoption, 000100/000101 LingDoc generation runs,
 // 000102 LingDoc confirmation requests, 000103 LingDoc delivery stores,
-// 000104-000109 LingDoc permissions and project lifecycle state.
+// 000104 LingDoc member permissions, 000105 LingDoc working copies, 000106 LingDoc selected rewrites.
 var versionedSQLiteTables = []string{
 	"memory_extraction_sessions",
 	"task_pending_ops",
@@ -41,11 +41,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_generation_runs",
 	"lingdoc_release_snapshots",
 	"lingdoc_export_artifacts",
-	"lingdoc_member_permissions",
-	"lingdoc_draft_candidates",
-	"lingdoc_project_audits",
-	"lingdoc_owner_transfers",
-	"lingdoc_change_sets",
+	"lingdoc_working_copies",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
@@ -66,7 +62,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_projects":         {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
 }
 
-const expectedSQLiteMigrationVersion = 32
+const expectedSQLiteMigrationVersion = 34
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

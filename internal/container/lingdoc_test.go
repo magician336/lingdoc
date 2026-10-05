@@ -16,6 +16,7 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		func() interfaces.KBShareService { return nil },
 		func() interfaces.KnowledgeBaseService { return nil },
 		func() interfaces.AuditLogService { return nil },
+		func() interfaces.ModelService { return nil },
 		NewLingDocWorkspaceHandler,
 	} {
 		if err := c.Provide(constructor); err != nil {

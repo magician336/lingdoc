@@ -13,7 +13,7 @@
 | 文件 | 用途 |
 |---|---|
 | [openapi.json](contracts/openapi.json) | 拟议 HTTP：31 操作，28 core / 3 optional；x-domain 表示服务职责，不指定人 |
-| [scenarios.json](contracts/scenarios.json) | 23 个行为场景（F01–F23）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
+| [scenarios.json](contracts/scenarios.json) | 24 个行为场景（F01–F23、G7-01 基线读写）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
@@ -21,8 +21,10 @@
 | [T15-10 验证报告](T15-10-验证报告.json) | issue #37 的 F03/F15/F18/F20 实跑证据、F06/F09/F14 未运行原因与已登记缺口 |
 | [T15-11 验证报告](T15-11-验证报告.json) / [证据](T15-11-证据.json) | issue #38 的 F01–F22 完整状态矩阵、缺口责任归属与确定性构建证据 |
 | [T16 closeout](T16-closeout-20260930.md) / [验收材料](acceptance/T16-closeout-20261001/README.md) | issue #42 的交付闭环、真实模型演示与验收证据 |
+| [G7 首版持续写作计划](../06-灵档产品开发规划/20-G7持续写作开发计划.md) / [G7 写作契约](contracts/g7-writing-contract.json) | issues #53–#61；实现集中在 PR #75，真实服务、数据库、模型和第二开发者验收仍需补证 |
 | [frozen-input.canonical.json](contracts/frozen-input.canonical.json)、[sha256](contracts/frozen-input.sha256) | 冻结内容与摘要对照 |
 | [validate_artifacts.py](contracts/validate_artifacts.py) | 形状、引用、连续参考状态和关键反例静态检查 |
+| [validate_g7_contract.py](contracts/validate_g7_contract.py) | G7 工作副本、版本历史/恢复、选段候选、局部采纳、显式提交契约样例及反例检查 |
 | [validation-result.json](contracts/validation-result.json) | 本次静态检查结果及未运行范围 |
 
 ## 复现静态检查
@@ -31,7 +33,10 @@
 
 ```text
 python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
+python -X utf8 docs/08-本轮实施方案/contracts/validate_g7_contract.py
 ```
+
+其中 G7 单独契约检查仅依赖 Python 标准库；上面的仓库级设计检查仍需要 `jsonschema`。G7 检查只验证契约声明子集与合成样例，不会请求本地服务，也不证明任何新路由已经实现。
 
 脚本只读取同目录合成资料并写回 validation-result.json，不依赖作者本机目录、旧稿或私密数据，不调用模型和真实服务。
 

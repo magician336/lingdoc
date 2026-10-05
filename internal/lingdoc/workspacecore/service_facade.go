@@ -38,6 +38,10 @@ type Transaction interface {
 	ReplaceMembers(string, []Member) error
 	Chapters(string) ([]Chapter, error)
 	Chapter(string, string) (Chapter, error)
+	WorkingCopy(string, string) (WorkingCopy, error)
+	SaveWorkingCopy(WorkingCopy, WorkingCopy) error
+	ChapterVersions(string, string) ([]ChapterVersion, error)
+	ChapterVersion(string, string, string) (ChapterVersion, error)
 	InsertChapter(Chapter) error
 	AppendChapter(Chapter, Chapter, int64) error
 	Operation(OperationIdentity) (OperationResult, bool, error)
@@ -477,27 +481,65 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 			}
 		}
 		_ = s.recordAudit(ctx, actor, projectID, capability, nil)
-		if op == "saveChapter" {
-			input := body.(SaveChapterInput)
-			if len(input.SourceIDs) > 0 {
-				if s.sources == nil {
-					return ErrSourceUnavailable
-				}
-				ids := slices.Clone(input.SourceIDs)
-				slices.Sort(ids)
-				if err := s.sources.Validate(ctx, projectID, actor.UserID, ids); err != nil {
-					return err
-				}
-			}
-		}
 		previous, found, err := tx.Operation(id)
 		if err != nil {
 			return err
 		}
-		if found {
-			if previous.BodyHash != hashString {
-				return ErrIdempotencyConflict
+		if found && previous.BodyHash != hashString {
+			return ErrIdempotencyConflict
+		}
+		var sourceIDs []string
+		switch op {
+		case "saveChapter":
+			sourceIDs = body.(SaveChapterInput).SourceIDs
+		case "saveWorkingCopy":
+			sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
+		case "applySelectedRewrite":
+			if found {
+				var response WorkingCopy
+				if err := json.Unmarshal(previous.Body, &response); err != nil {
+					return err
+				}
+				sourceIDs = response.SourceIDs
+			} else {
+				sourceIDs = body.(ApplyRewriteInput).WorkingCopy.SourceIDs
 			}
+		case "commitWorkingCopy":
+			if found {
+				var response CommittedChapterVersion
+				if err := json.Unmarshal(previous.Body, &response); err != nil {
+					return err
+				}
+				sourceIDs = response.SourceIDs
+			} else {
+				chapterID := strings.TrimPrefix(target, projectID+"/")
+				workingCopy, err := tx.WorkingCopy(projectID, chapterID)
+				if err != nil {
+					return err
+				}
+				sourceIDs = workingCopy.SourceIDs
+			}
+		case "restoreWorkingCopy":
+			if found {
+				var response WorkingCopy
+				if err := json.Unmarshal(previous.Body, &response); err != nil {
+					return err
+				}
+				sourceIDs = response.SourceIDs
+			} else {
+				chapterID := strings.TrimPrefix(target, projectID+"/")
+				versionID := body.(RestoreWorkingCopyInput).ChapterVersionID
+				version, err := tx.ChapterVersion(projectID, chapterID, versionID)
+				if err != nil {
+					return err
+				}
+				sourceIDs = version.SourceIDs
+			}
+		}
+		if err := s.checkSources(ctx, actor, projectID, sourceIDs); err != nil {
+			return err
+		}
+		if found {
 			result, replayed = previous, true
 			return nil
 		}
@@ -949,6 +991,46 @@ type SaveChapterInput struct {
 	BodyMarkdown             string          `json:"body_markdown"`
 	SourceIDs                []string        `json:"source_ids"`
 	CitationUsages           []CitationUsage `json:"citation_usages,omitempty"`
+}
+
+type SaveWorkingCopyInput struct {
+	CitationUsages              []CitationUsage `json:"citation_usages,omitempty"`
+	BaseChapterVersionID        *string         `json:"base_chapter_version_id"`
+	ExpectedSpecRevision        int64           `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64           `json:"expected_working_copy_revision"`
+	BodyMarkdown                string          `json:"body_markdown"`
+	SourceIDs                   []string        `json:"source_ids"`
+}
+
+type CommitWorkingCopyInput struct {
+	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
+	ExpectedChapterVersionID    *string `json:"expected_chapter_version_id"`
+}
+
+type RestoreWorkingCopyInput struct {
+	ChapterVersionID            string  `json:"chapter_version_id"`
+	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
+	ExpectedChapterVersionID    *string `json:"expected_chapter_version_id"`
+}
+
+// ApplyRewriteInput is internal to the selected-rewrite application port; the
+// HTTP client cannot choose or replace server-managed review items.
+type ApplyRewriteInput struct {
+	WorkingCopy SaveWorkingCopyInput `json:"working_copy"`
+	ReviewItems []ReviewItem         `json:"review_items"`
+}
+
+type CommittedChapterVersion struct {
+	ChapterVersionID             string       `json:"chapter_version_id"`
+	ParentChapterVersionID       *string      `json:"parent_chapter_version_id"`
+	CommittedWorkingCopyRevision int64        `json:"committed_working_copy_revision"`
+	NextWorkingCopyRevision      int64        `json:"next_working_copy_revision"`
+	SpecRevision                 int64        `json:"spec_revision"`
+	BodyMarkdown                 string       `json:"body_markdown"`
+	SourceIDs                    []string     `json:"source_ids"`
+	ReviewItems                  []ReviewItem `json:"review_items"`
 }
 
 func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, input CreateProjectInput) (json.RawMessage, int, bool, error) {
@@ -1623,6 +1705,15 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		if !owner {
 			return nil, 0, ErrNotFound
 		}
+		// G7 callers predate the project-version review fields. Treat omitted
+		// values as the current version while still enforcing explicit stale
+		// values for G3 clients.
+		if input.ExpectedProjectVersion == 0 {
+			input.ExpectedProjectVersion = p.ProjectVersion
+		}
+		if input.ReviewedProjectVersion == 0 {
+			input.ReviewedProjectVersion = p.ProjectVersion
+		}
 		if input.ExpectedProjectVersion < 1 || input.ReviewedProjectVersion < 1 {
 			return nil, 0, ErrInvalidRequest
 		}
@@ -1819,6 +1910,22 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		next.CitationUsages = usages
 		next.ConfirmationValid = false
 		if err := tx.AppendChapter(old, next, p.SpecRevision); err != nil {
+			return nil, 0, err
+		}
+		workingCopy, err := tx.WorkingCopy(projectID, chapterID)
+		if err != nil {
+			return nil, 0, err
+		}
+		nextCopy := workingCopy
+		nextCopy.BaseChapterVersionID = &id
+		nextCopy.SpecRevision = p.SpecRevision
+		nextCopy.WorkingCopyRevision++
+		nextCopy.BodyMarkdown = input.BodyMarkdown
+		nextCopy.SourceIDs = slices.Clone(declared)
+		nextCopy.CitationUsages = slices.Clone(usages)
+		nextCopy.ReviewItems = slices.Clone(old.ReviewItems)
+		nextCopy.UpdatedAt = time.Now().UTC()
+		if err := tx.SaveWorkingCopy(workingCopy, nextCopy); err != nil {
 			return nil, 0, err
 		}
 		return next, 201, nil
