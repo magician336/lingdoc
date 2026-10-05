@@ -185,6 +185,8 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual([item["result"] for item in matrix["modes"]], ["PASS", "BLOCKED"])
         self.assertEqual(len(matrix["reports"]), 2)
         self.assertEqual({item["quality_evidence"]["fixture_id"] for item in matrix["modes"]}, {"F22:S7"})
+        self.assertEqual(matrix["dependency_matrix"]["mock"]["status"], "verified")
+        self.assertEqual(matrix["dependency_matrix"]["real"]["missing"], ["api", "docx", "file", "model", "permissions", "queue", "weknora"])
 
     def test_the_declared_asset_name_is_what_the_report_publishes(self):
         report, synthetic = drive()

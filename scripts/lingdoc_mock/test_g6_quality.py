@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from scripts.lingdoc_mock import g6_metrics, g6_observability, g6_rollback, g6_security
+from scripts.lingdoc_mock import g6_main_path, g6_metrics, g6_observability, g6_rollback, g6_security
 
 
 class G6SecurityTest(unittest.TestCase):
@@ -156,16 +156,46 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["result"], "BLOCKED")
         self.assertEqual(report["decision"], "pause")
 
-    def test_sensitive_window_field_is_rejected(self):
-        with self.assertRaisesRegex(ValueError, "sensitive"):
-            g6_metrics.build_beta_report(samples=[], window={**self.WINDOW, "body": "secret"})
-
     def test_blocked_real_dependency_prevents_not_ready_from_looking_harmless(self):
         sample = {"sample_id": "sample.blocked", "runtime_mode": "real", "quality_result": "BLOCKED"}
         report = g6_metrics.build_beta_report(samples=[sample], window=self.WINDOW)
         self.assertEqual(report["result"], "BLOCKED")
         self.assertEqual(report["decision"], "pause")
 
+    def test_sensitive_window_field_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "sensitive"):
+            g6_metrics.build_beta_report(samples=[], window={**self.WINDOW, "body": "secret"})
+
+
+class G6MainPathTest(unittest.TestCase):
+    def _complete_report(self):
+        operations = [
+            "createProject", "bindAsset", "saveChapter", "confirmChapter", "prepareRelease",
+            "startExport", "getExport", "downloadExport",
+        ]
+        return {"runner_status": "completed", "completed_steps": len(operations),
+                "workflow": "F01",
+                "total_steps": len(operations), "verification_scope": "http_smoke_only",
+                "steps": [{"operation_id": operation, "verdict": "passed"} for operation in operations]}
+
+    def test_complete_path_stays_blocked_until_failure_side_effect_is_read_back(self):
+        pending = g6_main_path.build_main_path_report(main_report=self._complete_report())
+        self.assertEqual(pending["fixture_coverage"]["constructed_complete"], True)
+        self.assertEqual(pending["result"], "BLOCKED")
+        verified = g6_main_path.build_main_path_report(
+            main_report=self._complete_report(),
+            failure_observation={"no_formal_side_effect": True, "readback": {"status": "unchanged"}},
+        )
+        self.assertEqual(verified["result"], "PASS")
+
+    def test_missing_export_part_cannot_claim_main_path_pass(self):
+        report = self._complete_report()
+        report["steps"] = [step for step in report["steps"] if step["operation_id"] != "downloadExport"]
+        report["completed_steps"] -= 1
+        result = g6_main_path.build_main_path_report(main_report=report,
+                                                     failure_observation={"no_formal_side_effect": True})
+        self.assertEqual(result["result"], "BLOCKED")
+        self.assertIn("download", result["fixture_coverage"]["missing_parts"])
 
 if __name__ == "__main__":
     unittest.main()

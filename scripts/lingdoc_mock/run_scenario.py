@@ -56,6 +56,11 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
 
 REPORT_PATH = ROOT / "docs/08-本轮实施方案/T15-验证报告.json"
 RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
+RUNTIME_DEPENDENCIES = {
+    "mock": ("contract",),
+    "real_api_fake_model": ("api", "permissions", "queue", "file"),
+    "real": ("api", "permissions", "queue", "file", "model", "weknora", "docx"),
+}
 
 # The gaps this run found in the service, registered here rather than fixed here: #27's
 # agreement is that T15 records what a scenario run turns up, and the line that owns the
@@ -697,7 +702,8 @@ def _matrix_result(results: list[str]) -> str:
 
 
 def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Path, *,
-                    runtime_modes: list[str], **kwargs: Any) -> dict[str, Any]:
+                    runtime_modes: list[str], runtime_dependencies: dict[str, dict[str, Any]] | None = None,
+                    **kwargs: Any) -> dict[str, Any]:
     """Run the same declared scenarios independently for each quality runtime mode.
 
     Reports remain separate so a mock PASS cannot hide a real dependency BLOCKED result. The
@@ -712,7 +718,9 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
     if invalid_modes:
         raise WorkflowError("--runtime-mode must be one of " + ", ".join(RUNTIME_MODES))
 
+    runtime_dependencies = runtime_dependencies or {}
     mode_reports = []
+    dependency_matrix = {}
     for runtime_mode in runtime_modes:
         mode_kwargs = dict(kwargs)
         mode_kwargs.pop("runtime_mode", None)
@@ -723,6 +731,20 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
             evidence = [evidence]
         evidence = list(evidence)
         mode_result = _matrix_result([item.get("result", "BLOCKED") for item in evidence])
+        supplied = runtime_dependencies.get(runtime_mode, {})
+        if runtime_mode == "mock" and not supplied:
+            supplied = {"contract": True}
+        required = RUNTIME_DEPENDENCIES[runtime_mode]
+        missing = sorted(name for name in required if not supplied.get(name))
+        dependency_status = "verified" if not missing else "not_verified"
+        dependency_matrix[runtime_mode] = {
+            "required": list(required),
+            "verified": sorted(name for name in required if name not in missing),
+            "missing": missing,
+            "status": dependency_status,
+        }
+        if runtime_mode != "mock" and missing:
+            mode_result = "BLOCKED"
         mode_reports.append({
             "runtime_mode": runtime_mode,
             "result": mode_result,
@@ -730,6 +752,7 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
             "quality_evidence": evidence[0] if len(evidence) == 1 else evidence,
             "verification_scope": report.get("verification_scope", "not_recorded"),
             "provider_semantics_status": report.get("provider_semantics_status", "not_verified"),
+            "dependency_status": dependency_status,
             "report": report,
         })
 
@@ -756,6 +779,7 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
         "result": result,
         "shared_fixture": shared_fixture,
         "fixture_ids": fixture_ids,
+        "dependency_matrix": dependency_matrix,
         "modes": [{key: value for key, value in mode.items() if key != "report"}
                   for mode in mode_reports],
         "reports": [{"runtime_mode": mode["runtime_mode"], "report": mode["report"]}
