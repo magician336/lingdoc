@@ -108,6 +108,7 @@ BOUNDARIES = (
                "模型质量、DOCX 可编辑性以及观察点以外的副作用仍不能由这些通道判定。",
     },
 )
+from scripts.lingdoc_mock.g6_evidence import reduce_results  # noqa: E402
 
 
 def _stable_digest(value: Any) -> str:
@@ -157,7 +158,8 @@ def _quality_attribution(executed: dict[str, Any]) -> list[str]:
 def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scenario_id: str,
                      state_id: str, spec: Any, state_report: dict[str, Any], executed: dict[str, Any],
                      loader: StateLoader, states_path: Path, openapi_path: Path,
-                     runtime_mode: str) -> dict[str, Any]:
+                     runtime_mode: str, runtime_dependencies: dict[str, Any] | None = None,
+                     provider_semantics_status: str = "not_verified") -> dict[str, Any]:
     """Build the stable, redacted G6 evidence record for one scenario execution."""
     if runtime_mode not in RUNTIME_MODES:
         raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
@@ -196,7 +198,12 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
         "state_mismatches": len((state_report.get("mismatches") or [])),
     }
     observed_result = output_summary["result"]
-    result = observed_result if runtime_mode == "mock" or observed_result != "PASS" else "BLOCKED"
+    required_dependencies = RUNTIME_DEPENDENCIES[runtime_mode]
+    dependencies_verified = runtime_mode == "mock" or all(
+        bool((runtime_dependencies or {}).get(name)) for name in required_dependencies)
+    real_evidence_verified = dependencies_verified and provider_semantics_status == "verified"
+    result = (observed_result if runtime_mode == "mock" or observed_result != "PASS"
+              else "PASS" if real_evidence_verified else "BLOCKED")
     output_summary["result"] = result
     return {
         "evidence_version": 1,
@@ -227,13 +234,18 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
             "assets": sorted(loader.asset_ids),
         },
         "runtime_mode": runtime_mode,
-        "runtime_status": "contract_only" if runtime_mode == "mock" else "real_dependency_not_verified",
+        "runtime_status": ("contract_only" if runtime_mode == "mock"
+                           else "verified" if real_evidence_verified else "real_dependency_not_verified"),
         "dependency_versions": {
             "contract_version": document.get("contract_version"),
             "openapi_sha256": _file_digest(openapi_path),
             "states_sha256": _file_digest(states_path),
             "weknora": "unknown",
             "model": "unknown",
+        },
+        "dependency_status": {
+            name: "verified" if bool((runtime_dependencies or {}).get(name)) else "not_verified"
+            for name in required_dependencies
         },
         "context": {"context_revision": None, "target_version": None, "status": "not_available"},
         "input_summary": input_summary,
@@ -443,7 +455,9 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
                  knowledge: dict[str, str], member: dict[str, str],
                  identities: dict[str, str] | None = None,
                  base_url: str | None = None, token: str | None = None, timeout: float = 20,
-                 opener=None, runtime_mode: str = "mock") -> dict[str, Any]:
+                 opener=None, runtime_mode: str = "mock",
+                 runtime_dependencies: dict[str, Any] | None = None,
+                 provider_semantics_status: str = "not_verified") -> dict[str, Any]:
     """Build the declared state, send the declared steps, and return the report for both halves."""
     if runtime_mode not in RUNTIME_MODES:
         raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
@@ -539,7 +553,9 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     evidence = quality_evidence(document=document, scenario=scenario, scenario_id=scenario_id,
                                 state_id=state_id, spec=spec, state_report=state_report,
                                 executed=executed, loader=loader, states_path=states_path,
-                                openapi_path=openapi_path, runtime_mode=runtime_mode)
+                                openapi_path=openapi_path, runtime_mode=runtime_mode,
+                                runtime_dependencies=runtime_dependencies,
+                                provider_semantics_status=provider_semantics_status)
     return {
         "report_version": 1,
         "contract_version": document.get("contract_version"),
@@ -552,7 +568,7 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         "boundaries": list(BOUNDARIES),
         "verification_scope": ("http_smoke_plus_declared_f02_white_box" if observation
                                 else "http_smoke_only"),
-        "provider_semantics_status": "not_verified",
+        "provider_semantics_status": provider_semantics_status,
         "quality_evidence": evidence,
         # Counted from the summary rather than written down: the sentence has to keep telling the
         # truth the next time somebody fills a request definition into the contract.
@@ -690,19 +706,12 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
 
 def _matrix_result(results: list[str]) -> str:
     """Reduce independent mode verdicts without turning an unverified run into PASS."""
-    if "FAIL" in results:
-        return "FAIL"
-    if "BLOCKED" in results:
-        return "BLOCKED"
-    if "NOT RUN" in results:
-        return "NOT RUN"
-    if results and all(result == "PASS" for result in results):
-        return "PASS"
-    return "BLOCKED"
+    return reduce_results(results)
 
 
 def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Path, *,
                     runtime_modes: list[str], runtime_dependencies: dict[str, dict[str, Any]] | None = None,
+                    provider_semantics: dict[str, str] | None = None,
                     **kwargs: Any) -> dict[str, Any]:
     """Run the same declared scenarios independently for each quality runtime mode.
 
@@ -724,6 +733,9 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
     for runtime_mode in runtime_modes:
         mode_kwargs = dict(kwargs)
         mode_kwargs.pop("runtime_mode", None)
+        supplied = runtime_dependencies.get(runtime_mode, {})
+        mode_kwargs["runtime_dependencies"] = supplied
+        mode_kwargs["provider_semantics_status"] = (provider_semantics or {}).get(runtime_mode, "not_verified")
         report = run_scenarios(scenario_ids, states_path, openapi_path,
                                runtime_mode=runtime_mode, **mode_kwargs)
         evidence = report.get("quality_evidence", [])
@@ -731,7 +743,6 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
             evidence = [evidence]
         evidence = list(evidence)
         mode_result = _matrix_result([item.get("result", "BLOCKED") for item in evidence])
-        supplied = runtime_dependencies.get(runtime_mode, {})
         if runtime_mode == "mock" and not supplied:
             supplied = {"contract": True}
         required = RUNTIME_DEPENDENCIES[runtime_mode]
@@ -804,6 +815,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--request-timeout", type=float, default=20)
     parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, action="append", default=None,
                         help="quality evidence mode; repeat to run a mode matrix")
+    parser.add_argument("--dependency", action="append", default=[], metavar="MODE=DEPENDENCY",
+                        help="mark one named dependency as observed for a mode; repeatable")
+    parser.add_argument("--provider-semantics", action="append", default=[], metavar="MODE=STATUS",
+                        help="set provider semantics status (verified or not_verified) per mode")
     parser.add_argument("--report", type=Path, default=REPORT_PATH, help="where the matrix report is written")
     args = parser.parse_args(argv)
     report_started = False
@@ -818,14 +833,36 @@ def main(argv: list[str] | None = None) -> int:
                                    "scenarios": args.scenario})
         report_started = True
         runtime_modes = args.runtime_mode or ["mock"]
+        runtime_dependencies: dict[str, dict[str, bool]] = {}
+        for item in args.dependency:
+            try:
+                mode, dependency = item.split("=", 1)
+            except ValueError as error:
+                raise WorkflowError("--dependency must use MODE=DEPENDENCY") from error
+            if mode not in RUNTIME_MODES or dependency not in RUNTIME_DEPENDENCIES[mode]:
+                raise WorkflowError("--dependency names an unknown mode or dependency")
+            runtime_dependencies.setdefault(mode, {})[dependency] = True
+        provider_semantics = {}
+        for item in args.provider_semantics:
+            try:
+                mode, status = item.split("=", 1)
+            except ValueError as error:
+                raise WorkflowError("--provider-semantics must use MODE=STATUS") from error
+            if mode not in RUNTIME_MODES or status not in {"verified", "not_verified"}:
+                raise WorkflowError("--provider-semantics requires a valid mode and status")
+            provider_semantics[mode] = status
         if len(runtime_modes) == 1:
             report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
                                    identities=identities, base_url=args.base_url, token=args.token,
-                                   timeout=args.request_timeout, runtime_mode=runtime_modes[0])
+                                   timeout=args.request_timeout, runtime_mode=runtime_modes[0],
+                                   runtime_dependencies=runtime_dependencies.get(runtime_modes[0], {}),
+                                   provider_semantics_status=provider_semantics.get(runtime_modes[0], "not_verified"))
         else:
             report = run_mode_matrix(args.scenario, args.states, args.openapi, runtime_modes=runtime_modes,
                                      knowledge=knowledge, member=member, identities=identities,
-                                     base_url=args.base_url, token=args.token, timeout=args.request_timeout)
+                                     base_url=args.base_url, token=args.token, timeout=args.request_timeout,
+                                     runtime_dependencies=runtime_dependencies,
+                                     provider_semantics=provider_semantics)
         write_report(args.report, report)
         if "modes" in report:
             verdict = "passed" if report["result"] == "PASS" else "failed"

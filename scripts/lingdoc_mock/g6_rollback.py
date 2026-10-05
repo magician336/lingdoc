@@ -26,12 +26,17 @@ CHECKS = (
 
 REHEARSAL_METADATA = ("drill_id", "severity", "impact_scope", "duration_ms",
                       "recovery_verified", "uncovered_risks")
+REDACTED_ID = re.compile(r"[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64}")
 
 
 def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, Any]:
     """Evaluate status-only rehearsal observations without mutating repository data."""
     observations = observations or {}
+    if not isinstance(observations, dict):
+        raise ValueError("rollback observations must be an object")
     check_observations = observations.get("checks", observations)
+    if not isinstance(check_observations, dict):
+        raise ValueError("rollback checks must be an object")
     rows = []
     for check_id, requirement in CHECKS:
         observed = check_observations.get(check_id)
@@ -46,12 +51,15 @@ def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, 
     metadata_complete = all(key in observations and observations[key] not in (None, "")
                             for key in REHEARSAL_METADATA)
     metadata_valid = (
-        observations.get("severity") in {"P0", "P1"}
+        isinstance(observations.get("drill_id"), str)
+        and bool(REDACTED_ID.fullmatch(observations.get("drill_id", "")))
+        and observations.get("severity") in {"P0", "P1"}
         and isinstance(observations.get("impact_scope"), list)
         and bool(observations.get("impact_scope"))
         and all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_.-]*\.(?:id|key)", value)
                 for value in observations.get("impact_scope", []))
         and isinstance(observations.get("duration_ms"), (int, float))
+        and not isinstance(observations.get("duration_ms"), bool)
         and observations.get("duration_ms") >= 0
         and observations.get("recovery_verified") is True
         and isinstance(observations.get("uncovered_risks"), list)

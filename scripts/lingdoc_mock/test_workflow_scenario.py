@@ -169,6 +169,14 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(evidence["result"], "BLOCKED")
         self.assertEqual(evidence["runtime_status"], "real_dependency_not_verified")
 
+    def test_real_mode_requires_explicit_dependency_and_provider_semantics_evidence(self):
+        dependencies = {name: True for name in module.RUNTIME_DEPENDENCIES["real"]}
+        report, _ = drive(runtime_mode="real", runtime_dependencies=dependencies,
+                          provider_semantics_status="verified")
+        evidence = report["quality_evidence"]
+        self.assertEqual(evidence["result"], "PASS")
+        self.assertEqual(evidence["runtime_status"], "verified")
+
     def test_mode_matrix_keeps_shared_fixture_and_mode_results_separate(self):
         synthetic = provider()
 

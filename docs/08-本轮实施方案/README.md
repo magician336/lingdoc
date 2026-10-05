@@ -75,7 +75,9 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 
 矩阵还输出 `dependency_matrix`：`mock` 要求契约证据，`real_api_fake_model` 要求 API、权限、队列和文件依赖，`real` 另外要求模型、WeKnora 和 DOCX 依赖；缺任一项即为 `BLOCKED`。
 
-G6-03 至 G6-06 的安全矩阵、结构化观测、迁移/回退和 Beta 指标门禁见 [G6 质量运行门禁](G6-质量运行门禁.md)。这些入口默认在缺少真实观测时输出 `BLOCKED`，Beta 指标用 `readiness=NOT READY` 表示样本或分母不足，并保留可审计的原始计数与失败动作。
+真实模式还必须显式提供每个依赖和 `provider_semantics=verified` 证据；只有命令行/报告同时满足这些条件时，模式才可能得到 `PASS`。仅填写依赖存在布尔值或仅有 mock 结果不能冒充真实接入。
+
+G6-01 至 G6-06 的主路径、运行矩阵、安全矩阵、结构化观测、迁移/回退和 Beta 指标门禁见 [G6 质量运行门禁](G6-质量运行门禁.md)。统一入口 `g6_run.py` 会保留六个门禁的独立结果；这些入口默认在缺少真实观测时输出 `BLOCKED`，Beta 指标用 `readiness=NOT READY` 表示样本或分母不足，并保留可审计的原始计数与失败动作。
 
 ## 提供方联调执行器（按场景驱动）
 

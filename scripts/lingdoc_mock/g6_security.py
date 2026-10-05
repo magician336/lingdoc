@@ -15,10 +15,9 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import build_evidence, digest
+from scripts.lingdoc_mock.g6_evidence import build_evidence, digest, reduce_results
 
 RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
-RESULTS = ("PASS", "FAIL", "NOT RUN", "BLOCKED")
 
 SECURITY_CASES = (
     {"id": "SEC-01", "name": "revoked_source_read", "severity": "P0",
@@ -61,7 +60,7 @@ def _redact(value: Any) -> Any:
 
 def _contains_restricted_content(value: Any) -> bool:
     if isinstance(value, dict):
-        sensitive = {"body", "content", "quoted_text", "source_text"}
+        sensitive = {"body", "content", "quoted_text", "source_text", "token", "authorization"}
         return bool(sensitive.intersection(key.lower() for key in value)) or any(
             _contains_restricted_content(item) for item in value.values())
     if isinstance(value, list):
@@ -72,7 +71,7 @@ def _contains_restricted_content(value: Any) -> bool:
 def _result(case: dict[str, Any], observation: dict[str, Any] | None) -> str:
     if not observation or "actual_http" not in observation:
         return "BLOCKED"
-    if case["expected_decision"] == "allow_metadata_only" and _contains_restricted_content(observation):
+    if _contains_restricted_content(observation):
         return "FAIL"
     if observation["actual_http"] != case["expected_http"]:
         return "FAIL"
@@ -103,8 +102,7 @@ def build_security_report(*, runtime_mode: str = "real", fixture_id: str = "G6-S
             "attribution": "permission" if result in {"FAIL", "BLOCKED"} else "domain_logic",
         })
     results = [case["result"] for case in cases]
-    overall = ("FAIL" if "FAIL" in results else "BLOCKED" if "BLOCKED" in results
-               else "PASS")
+    overall = reduce_results(results)
     severity_counts = {severity: sum(case["severity"] == severity for case in cases)
                        for severity in ("P0", "P1", "P2")}
     return {

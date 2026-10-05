@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import build_evidence, digest
+from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence, digest
 
 EVENT_TYPES = (
     "request", "task", "changeset", "validation", "snapshot", "export", "download", "audit",
@@ -22,13 +22,25 @@ ALLOWED_FIELDS = frozenset({
     "export_id", "resource_type", "tenant_id", "project_id", "context_revision", "target_revision",
     "template_version", "ruleset_hash", "error_code", "retry_count", "stale", "duplicate_side_effect",
     "permission_decision", "download_reauthorized", "file_loss_class", "provider", "result_code",
+    "permission_reason",
 })
 SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
                               "prompt", "completion", "model_input"})
 ID_FIELDS = frozenset({"correlation_id", "causation_id", "request_id", "task_id", "changeset_id", "snapshot_id", "export_id",
                        "tenant_id", "project_id", "context_revision", "target_revision"})
+EVENT_REQUIRED_IDS = {
+    "request": ("request_id",),
+    "task": ("task_id",),
+    "changeset": ("changeset_id",),
+    "validation": ("task_id",),
+    "snapshot": ("snapshot_id",),
+    "export": ("export_id",),
+    "download": ("export_id",),
+    "audit": ("request_id",),
+}
 
 ALERT_ACTIONS = (
+    {"signal": "request_denied_or_conflict", "action": "notify_owner"},
     {"signal": "permission_denied_or_revocation_block", "action": "pause_affected_flow"},
     {"signal": "async_failure_or_retry_spike", "action": "retry_then_notify_owner"},
     {"signal": "stale_or_duplicate_side_effect", "action": "stop_write_and_open_incident"},
@@ -52,6 +64,12 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("event contains unsupported fields: " + ", ".join(unknown))
     if event["event_type"] not in EVENT_TYPES:
         raise ValueError("unsupported event_type")
+    if event.get("runtime_mode") not in RUNTIME_MODES:
+        raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
+    missing_link_ids = [field for field in EVENT_REQUIRED_IDS[event["event_type"]]
+                        if not event.get(field)]
+    if missing_link_ids:
+        raise ValueError("event is missing link fields: " + ", ".join(missing_link_ids))
     for field in ID_FIELDS.intersection(event):
         value = event[field]
         if not isinstance(value, str) or not re.fullmatch(
@@ -67,16 +85,23 @@ def _chain_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
 
 def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
     return {
-        "request_outcome": any(event.get("status") in {"ok", "denied", "conflict"}
+        "request_success": any(event["event_type"] == "request" and event.get("status") == "ok"
                                 for event in events),
+        "request_denied": any(event["event_type"] == "request" and event.get("status") == "denied"
+                               for event in events),
+        "request_conflict": any(event["event_type"] == "request" and event.get("status") == "conflict"
+                                 for event in events),
         "async_failure_retry": any(event["event_type"] == "task"
                                     and (event.get("status") in {"failed", "retry"}
                                          or int(event.get("retry_count", 0)) > 0)
                                     for event in events),
         "stale_or_duplicate": any(event.get("stale") is not None
                                    or event.get("duplicate_side_effect") is not None for event in events),
-        "permission_or_revocation": any(event.get("permission_decision") in {"allow", "deny"}
-                                         for event in events),
+        "permission_denied": any(event.get("permission_decision") == "deny"
+                                  for event in events),
+        "revocation_intercept": any(event.get("permission_decision") == "deny"
+                                     and event.get("permission_reason") == "revoked"
+                                     for event in events),
         "download_reauthorization": any(event["event_type"] == "download"
                                          and event.get("download_reauthorized") is not None
                                          for event in events),
