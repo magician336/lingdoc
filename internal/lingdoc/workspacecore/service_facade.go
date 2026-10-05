@@ -1437,6 +1437,15 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		if !owner {
 			return nil, 0, ErrNotFound
 		}
+		// G7 callers predate the project-version review fields. Treat omitted
+		// values as the current version while still enforcing explicit stale
+		// values for G3 clients.
+		if input.ExpectedProjectVersion == 0 {
+			input.ExpectedProjectVersion = p.ProjectVersion
+		}
+		if input.ReviewedProjectVersion == 0 {
+			input.ReviewedProjectVersion = p.ProjectVersion
+		}
 		if input.ExpectedProjectVersion < 1 || input.ReviewedProjectVersion < 1 {
 			return nil, 0, ErrInvalidRequest
 		}

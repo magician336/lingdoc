@@ -74,7 +74,7 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	if err := db.AutoMigrate(&types.User{}, &types.AuthToken{}, &types.TenantMember{}, &types.TenantAPIKey{}); err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{"000018_lingdoc_workspace.up.sql", "000019_lingdoc_evidence_assets.up.sql", "000020_lingdoc_candidate_adoption.up.sql", "000026_lingdoc_working_copies.up.sql", "000027_lingdoc_selected_rewrites.up.sql"} {
+	for _, file := range []string{"000018_lingdoc_workspace.up.sql", "000019_lingdoc_evidence_assets.up.sql", "000020_lingdoc_candidate_adoption.up.sql", "000025_lingdoc_member_permissions.up.sql", "000026_lingdoc_project_context_revision.up.sql", "000027_lingdoc_draft_provenance.up.sql", "000028_lingdoc_owner_transfers.up.sql", "000029_lingdoc_project_discard.up.sql", "000030_lingdoc_project_baseline.up.sql", "000031_lingdoc_citation_usages.up.sql", "000032_lingdoc_change_sets.up.sql", "000033_lingdoc_working_copies.up.sql", "000034_lingdoc_selected_rewrites.up.sql"} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", file))
 		if err != nil {
 			t.Fatal(err)
