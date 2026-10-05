@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Any
 
@@ -36,6 +37,12 @@ def digest(value: Any) -> str:
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
                          separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def is_finite_number(value: Any) -> bool:
+    """Accept measurable numeric observations while rejecting bool/NaN/Infinity."""
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
 
 
 def normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str],

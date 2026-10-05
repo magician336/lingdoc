@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence
+from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence, is_finite_number
 
 METRICS = (
     ("manual_effort_minutes", "manual_minutes", "projects"),
@@ -102,7 +102,7 @@ def _validate_sample(sample: dict[str, Any]) -> None:
         raise ValueError("sample severity must be P0, P1, P2 or P3")
     for field in NUMERIC_FIELDS:
         value = sample.get(field)
-        if value is not None and (not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0):
+        if value is not None and (not is_finite_number(value) or value < 0):
             raise ValueError(f"sample {field} must be a non-negative number")
         if field in COUNT_FIELDS and value is not None and not isinstance(value, int):
             raise ValueError(f"sample {field} must be a non-negative integer")

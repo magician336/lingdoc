@@ -15,9 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import build_evidence, digest, reduce_results
-
-RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
+from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence, digest, reduce_results
 
 SECURITY_CASES = (
     {"id": "SEC-01", "name": "revoked_source_read", "severity": "P0",
@@ -92,7 +90,18 @@ def build_security_report(*, runtime_mode: str = "real", fixture_id: str = "G6-S
     """Build a stable security report from optional status-only live observations."""
     if runtime_mode not in RUNTIME_MODES:
         raise ValueError(f"runtime_mode must be one of {', '.join(RUNTIME_MODES)}")
-    observations = observations or {}
+    if observations is None:
+        observations = {}
+    if not isinstance(observations, dict):
+        raise ValueError("security observations must be an object keyed by case id")
+    known_cases = {case["id"] for case in SECURITY_CASES}
+    unknown_cases = sorted(set(observations) - known_cases)
+    if unknown_cases:
+        raise ValueError("security observations contain unsupported cases: " + ", ".join(unknown_cases))
+    invalid_cases = sorted(case_id for case_id, observation in observations.items()
+                           if not isinstance(observation, dict))
+    if invalid_cases:
+        raise ValueError("security observations must be objects: " + ", ".join(invalid_cases))
     fixture_digest = digest([case["id"] for case in SECURITY_CASES])
     cases = []
     for definition in SECURITY_CASES:

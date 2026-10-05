@@ -40,6 +40,10 @@ class G6SecurityTest(unittest.TestCase):
         self.assertEqual(report["result"], "FAIL")
         self.assertEqual(next(case for case in report["cases"] if case["id"] == "SEC-01")["result"], "FAIL")
 
+    def test_unknown_security_case_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "unsupported cases"):
+            g6_security.build_security_report(observations={"SEC-UNKNOWN": {"actual_http": 403}})
+
     def test_metadata_query_with_body_is_a_security_failure(self):
         observations = {
             case["id"]: {"actual_http": case["expected_http"],
@@ -152,6 +156,10 @@ class G6ObservabilityTest(unittest.TestCase):
             g6_observability.sanitize_event({"event_type": "request", "status": "ok",
                                               "correlation_id": "corr-1", "runtime_mode": "real",
                                               "request_id": "request.id", "duration_ms": float("nan")})
+        with self.assertRaisesRegex(ValueError, "retry_count"):
+            g6_observability.sanitize_event({"event_type": "task", "status": "retry",
+                                              "correlation_id": "corr-1", "runtime_mode": "real",
+                                              "task_id": "task.id", "retry_count": float("inf")})
 
 
 class G6RollbackTest(unittest.TestCase):
@@ -191,6 +199,18 @@ class G6RollbackTest(unittest.TestCase):
         self.assertEqual(report["plan"]["migration_compatibility"]["unknown_default"], "UNKNOWN")
         observations["uncovered_risks"] = ["secret document text"]
         self.assertEqual(g6_rollback.build_rollback_report(observations=observations)["result"], "BLOCKED")
+
+    def test_rehearsal_rejects_non_finite_duration_and_redacts_invalid_metadata(self):
+        observations = {
+            "drill_id": "rollback.id", "severity": "P1", "impact_scope": ["tenant.id"],
+            "duration_ms": float("nan"), "recovery_verified": True,
+            "uncovered_risks": ["secret document text"],
+            "checks": {check_id: True for check_id, _ in g6_rollback.CHECKS},
+        }
+        report = g6_rollback.build_rollback_report(observations=observations)
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertIsNone(report["drill"]["duration_ms"])
+        self.assertEqual(report["drill"]["uncovered_risks"], [])
 
 
 class G6MetricsTest(unittest.TestCase):
@@ -278,6 +298,13 @@ class G6MetricsTest(unittest.TestCase):
                   "runtime_mode": "real", "quality_result": "PASS",
                   "supported_claims": 1.5, "total_claims": 2}
         with self.assertRaisesRegex(ValueError, "non-negative integer"):
+            g6_metrics.build_beta_report(samples=[sample], window=self.WINDOW)
+
+    def test_non_finite_sample_values_are_rejected(self):
+        sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",
+                  "runtime_mode": "real", "quality_result": "PASS",
+                  "manual_minutes": float("inf"), "projects": 1}
+        with self.assertRaisesRegex(ValueError, "non-negative number"):
             g6_metrics.build_beta_report(samples=[sample], window=self.WINDOW)
 
     def test_beta_window_requires_process_evidence_and_redacted_risks(self):

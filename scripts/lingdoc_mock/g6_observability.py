@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from pathlib import Path
 import sys
@@ -12,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence, digest
+from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, build_evidence, digest, is_finite_number
 
 EVENT_TYPES = (
     "request", "task", "changeset", "validation", "snapshot", "export", "download", "audit",
@@ -75,11 +74,13 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported event_type")
     if event.get("runtime_mode") not in RUNTIME_MODES:
         raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
-    if "duration_ms" in event and (not isinstance(event["duration_ms"], (int, float))
-                                   or isinstance(event["duration_ms"], bool)
-                                   or not math.isfinite(event["duration_ms"])
+    if "duration_ms" in event and (not is_finite_number(event["duration_ms"])
                                    or event["duration_ms"] < 0):
         raise ValueError("duration_ms must be a non-negative number")
+    if "retry_count" in event and (not isinstance(event["retry_count"], int)
+                                    or isinstance(event["retry_count"], bool)
+                                    or event["retry_count"] < 0):
+        raise ValueError("retry_count must be a non-negative integer")
     missing_link_ids = [field for field in EVENT_REQUIRED_IDS[event["event_type"]]
                         if not event.get(field)]
     if missing_link_ids:

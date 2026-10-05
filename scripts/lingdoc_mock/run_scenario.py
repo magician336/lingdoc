@@ -739,6 +739,12 @@ def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Pa
     invalid_modes = sorted(set(runtime_modes) - set(RUNTIME_MODES))
     if invalid_modes:
         raise WorkflowError("--runtime-mode must be one of " + ", ".join(RUNTIME_MODES))
+    if scenario_evidence is not None:
+        if not isinstance(scenario_evidence, dict):
+            raise WorkflowError("scenario_evidence must be an object keyed by runtime mode")
+        invalid_evidence_modes = sorted(set(scenario_evidence) - set(RUNTIME_MODES))
+        if invalid_evidence_modes or any(not isinstance(value, dict) for value in scenario_evidence.values()):
+            raise WorkflowError("scenario_evidence must be keyed by runtime mode with object values")
 
     runtime_dependencies = runtime_dependencies or {}
     mode_reports = []
@@ -881,6 +887,8 @@ def main(argv: list[str] | None = None) -> int:
             if any(mode not in RUNTIME_MODES or not isinstance(value, dict)
                    for mode, value in scenario_evidence.items()):
                 raise WorkflowError("--scenario-evidence must be an object keyed by runtime mode")
+            if len(runtime_modes) == 1:
+                raise WorkflowError("--scenario-evidence requires a runtime-mode matrix")
         if len(runtime_modes) == 1:
             report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
                                    identities=identities, base_url=args.base_url, token=args.token,
