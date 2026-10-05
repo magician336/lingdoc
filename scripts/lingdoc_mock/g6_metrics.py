@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
+import sys
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from scripts.lingdoc_mock.g6_evidence import build_evidence
 
@@ -136,8 +142,8 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
 
 def main() -> int:
     report = build_beta_report(samples=[], window={
-        "window_id": "manual", "target_samples": 0, "minimum_reportable_samples": 1,
-        "template_version": "unknown", "ruleset_hash": "unknown", "redaction": "fixture-v1",
+        "window_id": "window.manual", "target_samples": 0, "minimum_reportable_samples": 1,
+        "template_version": "template.unknown", "ruleset_hash": "rules.unknown", "redaction": "fixture-v1",
         "included_projects": [], "included_users": [], "runtime_modes": ["real"],
         "rollback_result": "unknown", "uncovered_risks": ["no_samples"],
     })

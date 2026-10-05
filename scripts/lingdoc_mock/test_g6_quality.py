@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import unittest
 
-from scripts.lingdoc_mock import g6_main_path, g6_metrics, g6_observability, g6_rollback, g6_security
+from scripts.lingdoc_mock import g6_main_path, g6_metrics, g6_observability, g6_rollback, g6_run, g6_security
 
 
 class G6SecurityTest(unittest.TestCase):
@@ -196,6 +196,23 @@ class G6MainPathTest(unittest.TestCase):
                                                      failure_observation={"no_formal_side_effect": True})
         self.assertEqual(result["result"], "BLOCKED")
         self.assertIn("download", result["fixture_coverage"]["missing_parts"])
+
+
+class G6RunTest(unittest.TestCase):
+    def test_default_run_is_explicitly_blocked_and_contains_all_gates(self):
+        report = g6_run.build_g6_report()
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(set(report["gates"]), {"G6-01", "G6-03", "G6-04", "G6-05", "G6-06"})
+        self.assertNotIn("secret-token", json.dumps(report))
+
+    def test_failures_take_precedence_over_blocked_gates(self):
+        observations = {
+            case["id"]: {"actual_http": 500, "decision": "deny"}
+            for case in g6_security.SECURITY_CASES
+        }
+        report = g6_run.build_g6_report(security_observations=observations)
+        self.assertEqual(report["gate_results"]["G6-03"], "FAIL")
+        self.assertEqual(report["result"], "FAIL")
 
 if __name__ == "__main__":
     unittest.main()
