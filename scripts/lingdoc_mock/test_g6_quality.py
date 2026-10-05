@@ -39,6 +39,15 @@ class G6SecurityTest(unittest.TestCase):
         self.assertEqual(report["result"], "FAIL")
         self.assertEqual(next(case for case in report["cases"] if case["id"] == "SEC-12")["result"], "FAIL")
 
+    def test_nested_metadata_body_is_a_security_failure(self):
+        observations = {
+            case["id"]: {"actual_http": case["expected_http"],
+                          "decision": case["expected_decision"]}
+            for case in g6_security.SECURITY_CASES
+        }
+        observations["SEC-12"]["response"] = {"body": "restricted source"}
+        self.assertEqual(g6_security.build_security_report(observations=observations)["result"], "FAIL")
+
 
 class G6ObservabilityTest(unittest.TestCase):
     def test_missing_chain_is_blocked(self):
@@ -88,11 +97,23 @@ class G6RollbackTest(unittest.TestCase):
         }
         self.assertEqual(g6_rollback.build_rollback_report(observations=observations)["result"], "PASS")
 
+    def test_unknown_runtime_mode_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "runtime_mode"):
+            g6_rollback.build_rollback_report(runtime_mode="arbitrary")
+
+    def test_rehearsal_requires_valid_p0_or_p1_metadata(self):
+        observations = {
+            "drill_id": "rollback-drill-1", "severity": "P3", "impact_scope": ["tenant.id"],
+            "duration_ms": "unknown", "recovery_verified": False, "uncovered_risks": [],
+            "checks": {check_id: True for check_id, _ in g6_rollback.CHECKS},
+        }
+        self.assertEqual(g6_rollback.build_rollback_report(observations=observations)["result"], "BLOCKED")
+
 
 class G6MetricsTest(unittest.TestCase):
     WINDOW = {
-        "window_id": "w1", "target_samples": 2, "minimum_reportable_samples": 2,
-        "template_version": "template-1", "ruleset_hash": "rules-1", "redaction": "fixture-v1",
+        "window_id": "window.id", "target_samples": 2, "minimum_reportable_samples": 2,
+        "template_version": "template.v1", "ruleset_hash": "rules.key", "redaction": "fixture-v1",
         "included_projects": ["project.id", "project.key"],
         "included_users": ["user.id"], "runtime_modes": ["real"],
         "rollback_result": "PASS", "uncovered_risks": ["wps-reopen"],
@@ -100,7 +121,7 @@ class G6MetricsTest(unittest.TestCase):
 
     def test_non_real_samples_do_not_enter_effect_rates(self):
         report = g6_metrics.build_beta_report(samples=[{
-            "sample_id": "mock-1", "runtime_mode": "mock", "quality_result": "PASS",
+            "sample_id": "sample.mock", "runtime_mode": "mock", "quality_result": "PASS",
             "supported_claims": 10, "total_claims": 10,
         }], window=self.WINDOW)
         self.assertEqual(report["result"], "BLOCKED")
@@ -110,11 +131,11 @@ class G6MetricsTest(unittest.TestCase):
 
     def test_real_samples_with_complete_denominators_can_expand(self):
         samples = [
-            {"sample_id": "real-1", "runtime_mode": "real", "quality_result": "PASS",
+            {"sample_id": "sample.real1", "runtime_mode": "real", "quality_result": "PASS",
              "supported_claims": 9, "total_claims": 10, "dismissed_issues": 1, "issues_reviewed": 5,
              "unconfirmed_items": 1, "snapshots": 2, "export_loss_items": 0, "export_checks": 4,
              "manual_minutes": 20, "projects": 1, "missed_edits": 1, "changesets": 2},
-            {"sample_id": "real-2", "runtime_mode": "real", "quality_result": "PASS",
+            {"sample_id": "sample.real2", "runtime_mode": "real", "quality_result": "PASS",
              "supported_claims": 8, "total_claims": 10, "dismissed_issues": 0, "issues_reviewed": 5,
              "unconfirmed_items": 0, "snapshots": 2, "export_loss_items": 0, "export_checks": 4,
              "manual_minutes": 15, "projects": 1, "missed_edits": 0, "changesets": 2},
@@ -125,7 +146,7 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["metrics"]["source_support_rate"]["numerator"], 17)
 
     def test_p0_blocks_even_with_enough_samples(self):
-        samples = [{"sample_id": "real-1", "runtime_mode": "real", "quality_result": "PASS",
+        samples = [{"sample_id": "sample.real1", "runtime_mode": "real", "quality_result": "PASS",
                     "severity": "P0", "supported_claims": 1, "total_claims": 1,
                     "dismissed_issues": 0, "issues_reviewed": 1, "unconfirmed_items": 0,
                     "snapshots": 1, "export_loss_items": 0, "export_checks": 1,
@@ -140,7 +161,7 @@ class G6MetricsTest(unittest.TestCase):
             g6_metrics.build_beta_report(samples=[], window={**self.WINDOW, "body": "secret"})
 
     def test_blocked_real_dependency_prevents_not_ready_from_looking_harmless(self):
-        sample = {"sample_id": "real-blocked", "runtime_mode": "real", "quality_result": "BLOCKED"}
+        sample = {"sample_id": "sample.blocked", "runtime_mode": "real", "quality_result": "BLOCKED"}
         report = g6_metrics.build_beta_report(samples=[sample], window=self.WINDOW)
         self.assertEqual(report["result"], "BLOCKED")
         self.assertEqual(report["decision"], "pause")

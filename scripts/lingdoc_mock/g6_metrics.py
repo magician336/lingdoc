@@ -21,6 +21,7 @@ WINDOW_FIELDS = frozenset({"window_id", "target_samples", "minimum_reportable_sa
                            "runtime_modes", "rollback_result", "uncovered_risks"})
 SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
                               "prompt", "completion", "model_input"})
+ALIAS_PATTERN = re.compile(r"[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+|sha256:[0-9a-f]{64}")
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
@@ -34,6 +35,10 @@ def _sanitize_window(window: dict[str, Any]) -> dict[str, Any]:
     unknown = sorted(set(window) - WINDOW_FIELDS)
     if unknown:
         raise ValueError("unsupported window fields: " + ", ".join(unknown))
+    for field in ("window_id", "template_version", "ruleset_hash"):
+        value = window.get(field)
+        if not isinstance(value, str) or not ALIAS_PATTERN.fullmatch(value):
+            raise ValueError(f"{field} must be a redacted alias or digest")
     for field in ("included_projects", "included_users"):
         values = window.get(field, [])
         if not isinstance(values, list) or not all(
@@ -46,16 +51,27 @@ def _sanitize_window(window: dict[str, Any]) -> dict[str, Any]:
     return {key: window[key] for key in sorted(window)}
 
 
+def _redacted_sample_id(value: Any) -> str:
+    if not isinstance(value, str) or not ALIAS_PATTERN.fullmatch(value):
+        raise ValueError("sample_id must be a redacted alias or digest")
+    return value
+
+
 def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) -> dict[str, Any]:
     """Aggregate only eligible real samples and preserve raw counts for all samples."""
     window = _sanitize_window(window)
+    for sample in samples:
+        _redacted_sample_id(sample.get("sample_id"))
     required_window = ("window_id", "target_samples", "minimum_reportable_samples", "template_version",
-                       "ruleset_hash", "redaction", "included_projects", "included_users", "runtime_modes")
-    missing_window = [key for key in required_window if not window.get(key)]
+                       "ruleset_hash", "redaction", "included_projects", "included_users", "runtime_modes",
+                       "rollback_result", "uncovered_risks")
+    missing_window = [key for key in required_window
+                      if key not in window or window[key] in (None, "")]
     real_samples = [sample for sample in samples if sample.get("runtime_mode") == "real"]
     excluded = [sample for sample in samples if sample.get("runtime_mode") != "real"]
     eligible = [sample for sample in real_samples if sample.get("quality_result") == "PASS"]
     p0_p1 = [sample for sample in real_samples if sample.get("severity") in {"P0", "P1"}]
+    p2 = [sample for sample in real_samples if sample.get("severity") == "P2"]
     dependency_blocked = [sample for sample in real_samples
                           if sample.get("dependency_status") == "BLOCKED"
                           or sample.get("quality_result") in {"BLOCKED", "NOT RUN"}]
@@ -65,6 +81,7 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
         "eligible_real": len(eligible),
         "excluded_non_real": len(excluded),
         "p0_p1": len(p0_p1),
+        "p2": len(p2),
         "dependency_blocked": len(dependency_blocked),
     }
     totals = {name: 0 for name, _, _ in METRICS}
@@ -83,9 +100,9 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     if missing_window:
         result, decision, readiness = "BLOCKED", "continue_trial", "NOT READY"
         reason = "window metadata is incomplete"
-    elif p0_p1 or dependency_blocked:
+    elif p0_p1 or dependency_blocked or window.get("rollback_result") != "PASS":
         result, decision, readiness = "BLOCKED", "pause", "BLOCKED"
-        reason = "unresolved P0/P1 or blocked real dependency"
+        reason = "unresolved P0/P1, blocked real dependency or unverified rollback"
     elif len(eligible) < minimum or missing_denominators:
         result, decision, readiness = "BLOCKED", "continue_trial", "NOT READY"
         reason = "sample or denominator minimum is not met"
@@ -101,7 +118,7 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
         "decision": decision,
         "decision_reason": reason,
         "raw_counts": raw_counts,
-        "excluded_sample_ids": [sample.get("sample_id", "unknown") for sample in excluded],
+        "excluded_sample_ids": [_redacted_sample_id(sample.get("sample_id")) for sample in excluded],
         "missing_denominators": missing_denominators,
         "metrics": metrics,
         "quality_evidence": build_evidence(

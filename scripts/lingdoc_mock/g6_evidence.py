@@ -5,6 +5,8 @@ import hashlib
 import json
 from typing import Any
 
+RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
+
 
 def digest(value: Any) -> str:
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True,
@@ -23,6 +25,8 @@ def build_evidence(*, fixture_id: str, runtime_mode: str, result: str,
                    context_revision: str | None = None, target_version: str | None = None) -> dict[str, Any]:
     if result not in {"PASS", "FAIL", "NOT RUN", "BLOCKED"}:
         raise ValueError("G6 quality result must be PASS, FAIL, NOT RUN or BLOCKED")
+    if runtime_mode not in RUNTIME_MODES:
+        raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
     return {
         "evidence_version": 1,
         "fixture_id": fixture_id,
@@ -30,7 +34,7 @@ def build_evidence(*, fixture_id: str, runtime_mode: str, result: str,
         "project_id": "project.id",
         "template_version": template_version,
         "ruleset_hash": ruleset_hash,
-        "object_versions": {},
+        "object_versions": {"status": "not_observed"},
         "permission_snapshot": permission_snapshot or {"status": "not_observed"},
         "runtime_mode": runtime_mode,
         "dependency_versions": dependency_versions or {"weknora": "unknown", "model": "unknown"},

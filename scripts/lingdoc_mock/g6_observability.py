@@ -19,7 +19,7 @@ ALLOWED_FIELDS = frozenset({
 })
 SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "token", "authorization",
                               "prompt", "completion", "model_input"})
-ID_FIELDS = frozenset({"causation_id", "request_id", "task_id", "changeset_id", "snapshot_id", "export_id",
+ID_FIELDS = frozenset({"correlation_id", "causation_id", "request_id", "task_id", "changeset_id", "snapshot_id", "export_id",
                        "tenant_id", "project_id", "context_revision", "target_revision"})
 
 ALERT_ACTIONS = (
@@ -46,8 +46,6 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("event contains unsupported fields: " + ", ".join(unknown))
     if event["event_type"] not in EVENT_TYPES:
         raise ValueError("unsupported event_type")
-    if not isinstance(event["correlation_id"], str) or len(event["correlation_id"]) > 128:
-        raise ValueError("correlation_id must be a short string")
     for field in ID_FIELDS.intersection(event):
         value = event[field]
         if not isinstance(value, str) or not re.fullmatch(

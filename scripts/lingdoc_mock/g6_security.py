@@ -53,11 +53,20 @@ def _redact(value: Any) -> Any:
     return value
 
 
+def _contains_restricted_content(value: Any) -> bool:
+    if isinstance(value, dict):
+        sensitive = {"body", "content", "quoted_text", "source_text"}
+        return bool(sensitive.intersection(key.lower() for key in value)) or any(
+            _contains_restricted_content(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_restricted_content(item) for item in value)
+    return False
+
+
 def _result(case: dict[str, Any], observation: dict[str, Any] | None) -> str:
     if not observation or "actual_http" not in observation:
         return "BLOCKED"
-    if case["expected_decision"] == "allow_metadata_only" and any(
-            key in observation for key in {"body", "content", "quoted_text", "source_text"}):
+    if case["expected_decision"] == "allow_metadata_only" and _contains_restricted_content(observation):
         return "FAIL"
     if observation["actual_http"] != case["expected_http"]:
         return "FAIL"

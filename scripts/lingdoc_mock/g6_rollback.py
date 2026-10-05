@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from scripts.lingdoc_mock.g6_evidence import build_evidence
@@ -38,11 +39,24 @@ def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, 
     results = [row["result"] for row in rows]
     metadata_complete = all(key in observations and observations[key] not in (None, "")
                             for key in REHEARSAL_METADATA)
+    metadata_valid = (
+        observations.get("severity") in {"P0", "P1"}
+        and isinstance(observations.get("impact_scope"), list)
+        and bool(observations.get("impact_scope"))
+        and all(isinstance(value, str) and re.fullmatch(r"[a-z][a-z0-9_.-]*\.(?:id|key)", value)
+                for value in observations.get("impact_scope", []))
+        and isinstance(observations.get("duration_ms"), (int, float))
+        and observations.get("duration_ms") >= 0
+        and observations.get("recovery_verified") is True
+        and isinstance(observations.get("uncovered_risks"), list)
+        and all(isinstance(value, str) and len(value) <= 128
+                for value in observations.get("uncovered_risks", []))
+    )
     overall = ("FAIL" if "FAIL" in results else "BLOCKED"
-               if "BLOCKED" in results or not metadata_complete else "PASS")
+               if "BLOCKED" in results or not metadata_complete or not metadata_valid else "PASS")
     return {"checks": rows, "result": overall,
             "drill": {key: observations.get(key) for key in REHEARSAL_METADATA},
-            "metadata_complete": metadata_complete}
+            "metadata_complete": metadata_complete, "metadata_valid": metadata_valid}
 
 
 def build_rollback_report(*, observations: dict[str, Any] | None = None,
