@@ -28,6 +28,10 @@ SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "
                               "prompt", "completion", "model_input"})
 ID_FIELDS = frozenset({"correlation_id", "causation_id", "request_id", "task_id", "changeset_id", "snapshot_id", "export_id",
                        "tenant_id", "project_id", "context_revision", "target_revision"})
+SAFE_STATUSES = frozenset({"ok", "success", "denied", "conflict", "failed", "error", "retry",
+                           "blocked", "pending", "completed", "skipped", "unknown", "not_run"})
+SAFE_CODE_FIELDS = frozenset({"resource_type", "template_version", "ruleset_hash", "error_code", "provider",
+                              "result_code", "permission_reason", "file_loss_class"})
 EVENT_REQUIRED_IDS = {
     "request": ("request_id",),
     "task": ("task_id",),
@@ -74,6 +78,12 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("unsupported event_type")
     if event.get("runtime_mode") not in RUNTIME_MODES:
         raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
+    if event.get("status") not in SAFE_STATUSES:
+        raise ValueError("status must be a safe structured-log status")
+    for field in SAFE_CODE_FIELDS.intersection(event):
+        value = event[field]
+        if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.:-]{0,127}", value):
+            raise ValueError(f"{field} must be a safe structured-log code")
     if "duration_ms" in event and (not is_finite_number(event["duration_ms"])
                                    or event["duration_ms"] < 0):
         raise ValueError("duration_ms must be a non-negative number")

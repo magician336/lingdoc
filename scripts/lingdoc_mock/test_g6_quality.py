@@ -143,6 +143,12 @@ class G6ObservabilityTest(unittest.TestCase):
                                               "request_id": "request.id",
                                               "body": "secret"})
 
+    def test_unstructured_event_status_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "safe structured-log status"):
+            g6_observability.sanitize_event({"event_type": "request", "status": "secret body",
+                                              "correlation_id": "corr-1", "runtime_mode": "real",
+                                              "request_id": "request.id"})
+
     def test_unredacted_resource_id_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "redacted"):
             g6_observability.sanitize_event({"event_type": "request", "status": "ok",
