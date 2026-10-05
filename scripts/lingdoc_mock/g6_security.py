@@ -107,12 +107,18 @@ def build_security_report(*, runtime_mode: str = "real", fixture_id: str = "G6-S
     for definition in SECURITY_CASES:
         observation = observations.get(definition["id"])
         result = _result(definition, observation)
+        actual_http = observation.get("actual_http") if observation else None
+        if type(actual_http) is not int:
+            actual_http = None
+        observed_decision = observation.get("decision") if observation else None
+        if observed_decision not in {"deny", "allow_metadata_only"}:
+            observed_decision = None
         cases.append({
             **definition,
             "runtime_mode": runtime_mode,
             "result": result,
-            "actual_http": observation.get("actual_http") if observation else None,
-            "observed_decision": observation.get("decision") if observation else None,
+            "actual_http": actual_http,
+            "observed_decision": observed_decision,
             "response_digest": digest(_redact(observation)) if observation else None,
             "evidence_refs": ["security_matrix", definition["id"]],
             "attribution": "permission" if result in {"FAIL", "BLOCKED"} else "domain_logic",

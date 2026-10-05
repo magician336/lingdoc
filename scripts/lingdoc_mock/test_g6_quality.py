@@ -44,6 +44,14 @@ class G6SecurityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported cases"):
             g6_security.build_security_report(observations={"SEC-UNKNOWN": {"actual_http": 403}})
 
+    def test_invalid_security_status_values_are_not_echoed(self):
+        report = g6_security.build_security_report(observations={
+            "SEC-01": {"actual_http": "secret-status", "decision": "secret-decision"},
+        })
+        case = next(case for case in report["cases"] if case["id"] == "SEC-01")
+        self.assertIsNone(case["actual_http"])
+        self.assertIsNone(case["observed_decision"])
+
     def test_metadata_query_with_body_is_a_security_failure(self):
         observations = {
             case["id"]: {"actual_http": case["expected_http"],
@@ -211,6 +219,13 @@ class G6RollbackTest(unittest.TestCase):
         self.assertEqual(report["result"], "BLOCKED")
         self.assertIsNone(report["drill"]["duration_ms"])
         self.assertEqual(report["drill"]["uncovered_risks"], [])
+
+    def test_invalid_rollback_check_values_are_not_echoed(self):
+        report = g6_rollback.build_rollback_report(observations={
+            "checks": {"old_objects_readable": "secret-check"},
+        })
+        check = next(check for check in report["checks"] if check["id"] == "old_objects_readable")
+        self.assertIsNone(check["observed"])
 
 
 class G6MetricsTest(unittest.TestCase):
@@ -412,6 +427,21 @@ class G6MainPathTest(unittest.TestCase):
                                                      failure_observation={"no_formal_side_effect": True})
         self.assertEqual(result["result"], "BLOCKED")
         self.assertIn("download", result["fixture_coverage"]["missing_parts"])
+
+    def test_main_path_rejects_non_object_failure_and_boolean_step_numbers(self):
+        with self.assertRaisesRegex(ValueError, "failure observation must be an object"):
+            g6_main_path.build_main_path_report(main_report=self._complete_report(), failure_observation=[])
+        report = self._complete_report()
+        report["completed_steps"] = True
+        report["steps"][0]["actual_http"] = True
+        result = g6_main_path.build_main_path_report(
+            main_report=report,
+            failure_observation={"failure_case": "duplicate_formal_write", "expected_http": 409,
+                                 "actual_http": 409, "no_formal_side_effect": True,
+                                 "readback": {"status": "unchanged"}},
+        )
+        self.assertEqual(result["main_path"]["completed_steps"], 0)
+        self.assertNotIn("actual_http", result["main_path"])
 
 
 class G6RunTest(unittest.TestCase):

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import SAFE_FIXTURE_ID, build_evidence, digest
+from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, SAFE_FIXTURE_ID, build_evidence, digest
 from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, WORKFLOW_PATH, ScenarioRunner, WorkflowError, write_report
 
 REQUIRED_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")
@@ -97,7 +97,10 @@ def _safe_metadata(value: Any) -> dict[str, Any]:
 def _safe_main_report(report: dict[str, Any]) -> dict[str, Any]:
     """Serialize only outcome fields from an F01 report into G6 evidence."""
     steps = []
-    for step in report.get("steps", []):
+    source_steps = report.get("steps", [])
+    if not isinstance(source_steps, list):
+        source_steps = []
+    for step in source_steps:
         if not isinstance(step, dict):
             continue
         operation_id = step.get("operation_id")
@@ -106,14 +109,19 @@ def _safe_main_report(report: dict[str, Any]) -> dict[str, Any]:
             "operation_id": operation_id if operation_id in OPERATION_PARTS else "unknown",
             "verdict": verdict if verdict in {"passed", "failed", "not_run"} else "unknown",
         }
-        if isinstance(step.get("actual_http"), int):
+        if (isinstance(step.get("actual_http"), int) and not isinstance(step.get("actual_http"), bool)
+                and 100 <= step["actual_http"] <= 599):
             item["actual_http"] = step["actual_http"]
         steps.append(item)
+    completed_steps = report.get("completed_steps", 0)
+    total_steps = report.get("total_steps", 0)
     return {
         "workflow": report.get("workflow") if report.get("workflow") in SAFE_WORKFLOWS else "unknown",
         "runner_status": report.get("runner_status") if report.get("runner_status") in SAFE_RUNNER_STATUSES else "unknown",
-        "completed_steps": report.get("completed_steps", 0) if isinstance(report.get("completed_steps", 0), int) else 0,
-        "total_steps": report.get("total_steps", 0) if isinstance(report.get("total_steps", 0), int) else 0,
+        "completed_steps": completed_steps if isinstance(completed_steps, int)
+        and not isinstance(completed_steps, bool) and completed_steps >= 0 else 0,
+        "total_steps": total_steps if isinstance(total_steps, int)
+        and not isinstance(total_steps, bool) and total_steps >= 0 else 0,
         "verification_scope": report.get("verification_scope") if report.get("verification_scope") in SAFE_VERIFICATION_SCOPES else "not_recorded",
         "steps": steps,
         "fixture_state": _safe_fixture_state(report.get("fixture_state")),
@@ -123,14 +131,22 @@ def _safe_main_report(report: dict[str, Any]) -> dict[str, Any]:
 def _observed_result(report: dict[str, Any]) -> str:
     if report.get("runner_status") != "completed":
         return "BLOCKED"
-    verdicts = [step.get("verdict") for step in report.get("steps", [])]
+    steps = report.get("steps", [])
+    if not isinstance(steps, list):
+        return "BLOCKED"
+    verdicts = [step.get("verdict") for step in steps if isinstance(step, dict)]
+    if len(verdicts) != len(steps):
+        return "BLOCKED"
     if any(verdict == "failed" for verdict in verdicts):
         return "FAIL"
     return "PASS" if verdicts and all(verdict == "passed" for verdict in verdicts) else "BLOCKED"
 
 
 def _coverage(report: dict[str, Any]) -> dict[str, Any]:
-    operations = {step.get("operation_id") for step in report.get("steps", [])}
+    steps = report.get("steps", [])
+    if not isinstance(steps, list):
+        steps = []
+    operations = {step.get("operation_id") for step in steps if isinstance(step, dict)}
     constructed = sorted({part for operation, parts in OPERATION_PARTS.items() if operation in operations
                           for part in parts})
     missing = sorted(set(REQUIRED_PARTS) - set(constructed))
@@ -150,6 +166,8 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
             "no_formal_side_effect": None,
             "evidence_refs": ["failure_path"],
         }
+    if not isinstance(observation, dict):
+        raise ValueError("failure observation must be an object")
     required = ("failure_case", "expected_http", "actual_http", "no_formal_side_effect", "readback")
     missing = [field for field in required if field not in observation]
     if missing:
@@ -261,6 +279,8 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
 def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "mock",
                            failure_observation: dict[str, Any] | None = None,
                            fixture_id: str = "G6-F01-v1") -> dict[str, Any]:
+    if not isinstance(main_report, dict):
+        raise ValueError("main path report must be an object")
     if main_report.get("workflow") != "F01":
         raise ValueError("G6 main path must be derived from the committed F01 workflow")
     if not isinstance(fixture_id, str) or not SAFE_FIXTURE_ID.fullmatch(fixture_id):
@@ -315,7 +335,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the canonical G6 F01 main path and write a quality report.")
     parser.add_argument("--base-url")
     parser.add_argument("--token")
-    parser.add_argument("--runtime-mode", choices=("mock", "real_api_fake_model", "real"), default="mock")
+    parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, default="mock")
     parser.add_argument("--failure-observation", type=Path,
                         help="脱敏的失败副作用读回 JSON；缺少时主路径保持 BLOCKED")
     parser.add_argument("--mock-fixture", action="store_true",

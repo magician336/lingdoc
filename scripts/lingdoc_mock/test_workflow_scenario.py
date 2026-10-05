@@ -99,6 +99,10 @@ def scenario_requests(synthetic):
 
 
 class ScenarioReportTest(unittest.TestCase):
+    def test_unsafe_scenario_fixture_ids_are_hashed(self):
+        self.assertEqual(module._scenario_fixture_id("scenario/secret", "state with secret")[:9], "scenario.")
+        self.assertRegex(module._scenario_fixture_id("F22", "S7"), r"^F22:S7$")
+
     def test_report_redaction_removes_document_fields_by_key(self):
         self.assertEqual(redact({"body_markdown": "private text", "content": "source text",
                                  "nested": {"token": "secret"}}, {}),

@@ -55,6 +55,7 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
 from scripts.lingdoc_mock.g6_evidence import (  # noqa: E402
     RUNTIME_DEPENDENCIES,
     RUNTIME_MODES,
+    SAFE_FIXTURE_ID,
     build_evidence,
     digest,
     normalize_scenario_evidence,
@@ -155,6 +156,13 @@ def _quality_attribution(executed: dict[str, Any]) -> list[str]:
     return sorted(categories)
 
 
+def _scenario_fixture_id(scenario_id: str, state_id: str) -> str:
+    candidate = f"{scenario_id}:{state_id}"
+    if SAFE_FIXTURE_ID.fullmatch(candidate):
+        return candidate
+    return f"scenario.{digest({'scenario': scenario_id, 'starting_state': state_id})[:16]}"
+
+
 def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scenario_id: str,
                      state_id: str, spec: Any, state_report: dict[str, Any], executed: dict[str, Any],
                      loader: StateLoader, states_path: Path, openapi_path: Path,
@@ -207,7 +215,7 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
     output_summary["result"] = result
     return {
         "evidence_version": 1,
-        "fixture_id": f"{scenario_id}:{state_id}",
+        "fixture_id": _scenario_fixture_id(scenario_id, state_id),
         "fixture_digest": _stable_digest({"scenario": scenario, "state": state_id,
                                            "canonical_fixture": canonical_fixture}),
         "fixture_coverage": {

@@ -46,7 +46,7 @@ def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, 
         rows.append({
             "id": check_id,
             "requirement": requirement,
-            "observed": observed,
+            "observed": observed if isinstance(observed, bool) else None,
             "result": "PASS" if observed is True else "FAIL" if observed is False else "BLOCKED",
             "evidence_ref": f"rollback:{check_id}",
         })

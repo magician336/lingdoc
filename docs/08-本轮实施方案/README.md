@@ -65,7 +65,7 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 
 ```text
 python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
-  --runtime-mode mock --runtime-mode real \
+  --runtime-mode mock --runtime-mode real_api_fake_model --runtime-mode real \
   --knowledge k-demo=<真实知识 id> --knowledge k-notready=<真实知识 id> \
   --identity u-owner=<该账号令牌> \
   --report artifacts/g6-02-f22-matrix.json
