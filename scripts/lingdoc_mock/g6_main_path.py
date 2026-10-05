@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import build_evidence, digest
+from scripts.lingdoc_mock.g6_evidence import SAFE_FIXTURE_ID, build_evidence, digest
 from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, WORKFLOW_PATH, ScenarioRunner, WorkflowError, write_report
 
 REQUIRED_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")
@@ -31,12 +31,13 @@ OPERATION_PARTS = {
     "getExport": ("export",),
     "downloadExport": ("download",),
 }
-REDACTED_VALUE = re.compile(r"(?:[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64})")
+REDACTED_VALUE = re.compile(r"(?:[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+|sha256:[0-9a-f]{64})")
 SAFE_STATUS = {"unchanged", "not_recorded", "observed", "failed", "blocked", "ok", "unknown", "active", "passed"}
 FIXTURE_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")
 SAFE_WORKFLOWS = {"F01"}
 SAFE_RUNNER_STATUSES = {"completed", "failed", "not_run", "blocked"}
 SAFE_VERIFICATION_SCOPES = {"contract_fixture_only", "http_smoke_only", "observed", "not_recorded"}
+SAFE_METADATA_STATUSES = {"mock", "not_run", "unknown", "observed", "not_observed"}
 
 
 def _safe_fixture_state(value: Any) -> dict[str, Any]:
@@ -58,6 +59,38 @@ def _safe_fixture_state(value: Any) -> dict[str, Any]:
                 safe_entry[key] = item
         if safe_entry:
             safe[part] = safe_entry
+    return safe
+
+
+def _safe_metadata(value: Any) -> dict[str, Any]:
+    """Keep version and permission metadata to aliases/statuses before evidence serialization."""
+    if not isinstance(value, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    for key in ("template_version", "ruleset_hash"):
+        item = value.get(key)
+        if isinstance(item, str) and REDACTED_VALUE.fullmatch(item):
+            safe[key] = item
+    permission = value.get("permission_snapshot")
+    if isinstance(permission, dict):
+        safe_permission = {}
+        for key, item in sorted(permission.items()):
+            if key == "status" and isinstance(item, str) and item in SAFE_METADATA_STATUSES:
+                safe_permission[key] = item
+            elif key in {"project", "actor"} and isinstance(item, str) and REDACTED_VALUE.fullmatch(item):
+                safe_permission[key] = item
+        if safe_permission:
+            safe["permission_snapshot"] = safe_permission
+    for field in ("dependency_versions", "object_versions"):
+        values = value.get(field)
+        if not isinstance(values, dict):
+            continue
+        safe_values = {}
+        for key, item in sorted(values.items()):
+            if isinstance(item, str) and (item in SAFE_METADATA_STATUSES or REDACTED_VALUE.fullmatch(item)):
+                safe_values[key] = item
+        if safe_values:
+            safe[field] = safe_values
     return safe
 
 
@@ -230,10 +263,12 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
                            fixture_id: str = "G6-F01-v1") -> dict[str, Any]:
     if main_report.get("workflow") != "F01":
         raise ValueError("G6 main path must be derived from the committed F01 workflow")
+    if not isinstance(fixture_id, str) or not SAFE_FIXTURE_ID.fullmatch(fixture_id):
+        raise ValueError("fixture_id must be a redacted fixture alias or digest")
     coverage = _coverage(main_report)
     main_result = _observed_result(main_report)
     failure = _failure_path(failure_observation)
-    metadata = main_report.get("fixture_metadata", {})
+    metadata = _safe_metadata(main_report.get("fixture_metadata", {}))
     fixture_state = _safe_fixture_state(main_report.get("fixture_state"))
     safe_main_report = _safe_main_report(main_report)
     result = main_result if main_result != "PASS" else failure["result"]

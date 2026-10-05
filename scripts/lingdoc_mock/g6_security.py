@@ -45,6 +45,7 @@ SECURITY_CASES = (
     {"id": "SEC-12", "name": "audit_metadata_after_revoke", "severity": "P2",
      "expected_http": 200, "expected_decision": "allow_metadata_only", "action": "retain_audit_access"},
 )
+OBSERVATION_FIELDS = frozenset({"actual_http", "decision", "metadata_only"})
 
 
 def _redact(value: Any) -> Any:
@@ -73,12 +74,16 @@ def _result(case: dict[str, Any], observation: dict[str, Any] | None) -> str:
         return "BLOCKED"
     if _contains_restricted_content(observation):
         return "FAIL"
+    if set(observation) - OBSERVATION_FIELDS:
+        return "FAIL"
     if type(observation["actual_http"]) is not int or observation["actual_http"] != case["expected_http"]:
         return "FAIL"
     if "decision" not in observation:
         return "BLOCKED"
     if observation["decision"] != case["expected_decision"]:
         return "FAIL"
+    if case["id"] == "SEC-12" and observation.get("metadata_only") is not True:
+        return "BLOCKED"
     return "PASS"
 
 

@@ -20,6 +20,8 @@ class G6SecurityTest(unittest.TestCase):
         for case in g6_security.SECURITY_CASES:
             observation = {"actual_http": case["expected_http"],
                            "decision": case["expected_decision"]}
+            if case["id"] == "SEC-12":
+                observation["metadata_only"] = True
             observations[case["id"]] = observation
         report = g6_security.build_security_report(observations=observations)
         self.assertEqual(report["result"], "PASS")
@@ -29,7 +31,8 @@ class G6SecurityTest(unittest.TestCase):
     def test_restricted_content_in_any_security_observation_fails(self):
         observations = {
             case["id"]: {"actual_http": case["expected_http"],
-                          "decision": case["expected_decision"]}
+                          "decision": case["expected_decision"],
+                          **({"metadata_only": True} if case["id"] == "SEC-12" else {})}
             for case in g6_security.SECURITY_CASES
         }
         observations["SEC-01"]["body"] = "secret body"
@@ -40,7 +43,8 @@ class G6SecurityTest(unittest.TestCase):
     def test_metadata_query_with_body_is_a_security_failure(self):
         observations = {
             case["id"]: {"actual_http": case["expected_http"],
-                          "decision": case["expected_decision"]}
+                          "decision": case["expected_decision"],
+                          **({"metadata_only": True} if case["id"] == "SEC-12" else {})}
             for case in g6_security.SECURITY_CASES
         }
         observations["SEC-12"]["body"] = "restricted source"
@@ -51,7 +55,8 @@ class G6SecurityTest(unittest.TestCase):
     def test_nested_metadata_body_is_a_security_failure(self):
         observations = {
             case["id"]: {"actual_http": case["expected_http"],
-                          "decision": case["expected_decision"]}
+                          "decision": case["expected_decision"],
+                          **({"metadata_only": True} if case["id"] == "SEC-12" else {})}
             for case in g6_security.SECURITY_CASES
         }
         observations["SEC-12"]["response"] = {"body": "restricted source"}
@@ -65,6 +70,16 @@ class G6SecurityTest(unittest.TestCase):
         report = g6_security.build_security_report(observations=observations)
         self.assertEqual(report["result"], "BLOCKED")
         self.assertTrue(all(case["result"] == "BLOCKED" for case in report["cases"]))
+
+    def test_audit_metadata_observation_requires_metadata_only_marker(self):
+        observations = {
+            case["id"]: {"actual_http": case["expected_http"],
+                          "decision": case["expected_decision"]}
+            for case in g6_security.SECURITY_CASES
+        }
+        report = g6_security.build_security_report(observations=observations)
+        sec12 = next(case for case in report["cases"] if case["id"] == "SEC-12")
+        self.assertEqual(sec12["result"], "BLOCKED")
 
     def test_security_fixture_id_must_be_redacted(self):
         with self.assertRaisesRegex(ValueError, "fixture_id"):
@@ -319,6 +334,16 @@ class G6MainPathTest(unittest.TestCase):
         self.assertNotIn("SECRET_DOCUMENT", json.dumps(report))
         self.assertNotIn("SECRET_SCOPE", json.dumps(report))
         self.assertNotIn("SECRET_WORKFLOW", json.dumps(report))
+
+    def test_main_path_metadata_is_redacted_before_evidence(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        main["fixture_metadata"]["permission_snapshot"]["project"] = "tenant/secret-project"
+        main["fixture_metadata"]["dependency_versions"]["api"] = "Bearer SECRET"
+        report = g6_main_path.build_main_path_report(main_report=main, failure_observation=failure)
+        encoded = json.dumps(report)
+        self.assertNotIn("tenant/secret-project", encoded)
+        self.assertNotIn("Bearer SECRET", encoded)
+        self.assertEqual(report["quality_evidence"]["permission_snapshot"]["status"], "mock")
 
     def test_failure_readback_rejects_unredacted_status_values(self):
         report = g6_main_path.build_main_path_report(
