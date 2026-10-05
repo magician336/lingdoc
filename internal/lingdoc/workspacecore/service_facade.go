@@ -738,11 +738,12 @@ type SaveChapterInput struct {
 }
 
 type SaveWorkingCopyInput struct {
-	BaseChapterVersionID        *string  `json:"base_chapter_version_id"`
-	ExpectedSpecRevision        int64    `json:"expected_spec_revision"`
-	ExpectedWorkingCopyRevision int64    `json:"expected_working_copy_revision"`
-	BodyMarkdown                string   `json:"body_markdown"`
-	SourceIDs                   []string `json:"source_ids"`
+	CitationUsages              []CitationUsage `json:"citation_usages,omitempty"`
+	BaseChapterVersionID        *string         `json:"base_chapter_version_id"`
+	ExpectedSpecRevision        int64           `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64           `json:"expected_working_copy_revision"`
+	BodyMarkdown                string          `json:"body_markdown"`
+	SourceIDs                   []string        `json:"source_ids"`
 }
 
 type CommitWorkingCopyInput struct {
@@ -1635,6 +1636,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		nextCopy.WorkingCopyRevision++
 		nextCopy.BodyMarkdown = input.BodyMarkdown
 		nextCopy.SourceIDs = slices.Clone(declared)
+		nextCopy.CitationUsages = slices.Clone(usages)
 		nextCopy.ReviewItems = slices.Clone(old.ReviewItems)
 		nextCopy.UpdatedAt = time.Now().UTC()
 		if err := tx.SaveWorkingCopy(workingCopy, nextCopy); err != nil {

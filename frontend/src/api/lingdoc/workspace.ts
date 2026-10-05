@@ -37,6 +37,30 @@ export interface CitationStatus {
   detail?: string
 }
 
+export interface ChangeImpact {
+  chapter_id: string
+  chapter_version_id?: string | null
+  title: string
+  reason: string
+  status: 'open' | 'reviewed' | 'stale'
+}
+
+export interface ChangeSet {
+  id: string
+  project_id: string
+  created_by: string
+  reason: string
+  status: 'assessed' | 'applied' | 'rejected' | 'stale'
+  base_context_revision: number
+  target_context_revision?: number
+  base_spec_revision: number
+  target_spec_revision?: number
+  fields: Array<{ key: string; old_value: string; new_value: string }>
+  impacts: ChangeImpact[]
+  created_at: string
+  applied_at?: string
+}
+
 export interface Confirmation {
   id: string
   chapter_id: string
@@ -65,6 +89,7 @@ export interface Chapter {
 }
 
 export interface WorkingCopy {
+  citation_usages?: CitationUsage[]
   project_id: string
   chapter_id: string
   base_chapter_version_id: string | null
@@ -220,13 +245,14 @@ export const getProject = (id: string) => get<Result<Project>>(`${base}/${segmen
 export const saveSpec = (id: string, expected: number, fields: Record<string, string>, key: string) =>
   put<Result<Project>>(`${base}/${segment(id)}/spec`,
     { expected_spec_revision: expected, fields }, keyHeader(key))
-export const activateProject = (id: string, expected: number, key: string) =>
+export const activateProject = (id: string, expected: number, key: string, projectVersion: number) =>
   post<Result<Project>>(`${base}/${segment(id)}/activate`,
-    { expected_spec_revision: expected }, keyHeader(key))
+    { expected_spec_revision: expected, expected_project_version: projectVersion, reviewed_project_version: projectVersion }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
 export const getWorkingCopy = (projectId: string, chapterId: string) =>
   get<Result<WorkingCopy>>(`${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy`)
 export const saveWorkingCopy = (projectId: string, chapterId: string, input: {
+  citation_usages?: CitationUsage[]
   base_chapter_version_id: string | null
   expected_spec_revision: number
   expected_working_copy_revision: number

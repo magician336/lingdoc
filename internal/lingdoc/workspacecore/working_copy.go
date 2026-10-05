@@ -83,6 +83,10 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 	if err != nil {
 		return nil, 0, false, err
 	}
+	usages, err := normalizeCitationUsages(input.CitationUsages, declared)
+	if err != nil {
+		return nil, 0, false, err
+	}
 	input.SourceIDs = declared
 	return s.operation(ctx, actor, "saveWorkingCopy", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID,
 		func(tx Transaction, p Project) (any, int, error) {
@@ -107,6 +111,16 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 			next.WorkingCopyRevision++
 			next.BodyMarkdown = input.BodyMarkdown
 			next.SourceIDs = slices.Clone(input.SourceIDs)
+			next.CitationUsages = usages
+			if input.CitationUsages == nil {
+				next.CitationUsages = []CitationUsage{}
+				for _, usage := range previous.CitationUsages {
+					if slices.Contains(declared, usage.SourceID) {
+						next.CitationUsages = append(next.CitationUsages, usage)
+					}
+				}
+				next.CitationUsages = completeCitationUsages(next.CitationUsages, declared)
+			}
 			// Review items are server-managed and survive autosave unchanged.
 			next.UpdatedAt = time.Now().UTC()
 			if err := tx.SaveWorkingCopy(previous, next); err != nil {
@@ -124,6 +138,10 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 		return nil, 0, false, ErrInvalidRequest
 	}
 	declared, err := validateWorkingCopyBody(input.BodyMarkdown, input.SourceIDs)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	usages, err := normalizeCitationUsages(input.CitationUsages, declared)
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -157,6 +175,16 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 			next.SpecRevision = input.ExpectedSpecRevision
 			next.BodyMarkdown = input.BodyMarkdown
 			next.SourceIDs = slices.Clone(input.SourceIDs)
+			next.CitationUsages = usages
+			if input.CitationUsages == nil {
+				next.CitationUsages = []CitationUsage{}
+				for _, usage := range previous.CitationUsages {
+					if slices.Contains(declared, usage.SourceID) {
+						next.CitationUsages = append(next.CitationUsages, usage)
+					}
+				}
+				next.CitationUsages = completeCitationUsages(next.CitationUsages, declared)
+			}
 			seen := make(map[string]struct{}, len(next.ReviewItems)+len(reviewItems))
 			for _, item := range next.ReviewItems {
 				seen[item.ID] = struct{}{}
@@ -204,6 +232,7 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 			nextChapter.CurrentVersionID = &id
 			nextChapter.BodyMarkdown = workingCopy.BodyMarkdown
 			nextChapter.SourceIDs = slices.Clone(workingCopy.SourceIDs)
+			nextChapter.CitationUsages = slices.Clone(workingCopy.CitationUsages)
 			nextChapter.ReviewItems = slices.Clone(workingCopy.ReviewItems)
 			nextChapter.ConfirmationValid = false
 			nextProject := p
@@ -290,6 +319,7 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 			next.SpecRevision = p.SpecRevision
 			next.BodyMarkdown = version.BodyMarkdown
 			next.SourceIDs = slices.Clone(version.SourceIDs)
+			next.CitationUsages = slices.Clone(version.CitationUsages)
 			next.ReviewItems = slices.Clone(version.ReviewItems)
 			next.UpdatedAt = time.Now().UTC()
 			if err := tx.SaveWorkingCopy(workingCopy, next); err != nil {

@@ -532,6 +532,14 @@ func decodeVersionRow(row chapterVersionRow) (ChapterVersion, error) {
 		ParentVersionID: row.ParentVersionID, BodyMarkdown: row.BodyMarkdown,
 		SpecRevision: row.SpecRevision, ConfirmationValid: row.ConfirmationValid, CreatedAt: row.CreatedAt,
 		SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+	if row.CitationUsagesJSON != "" {
+		if err := json.Unmarshal([]byte(row.CitationUsagesJSON), &version.CitationUsages); err != nil {
+			return ChapterVersion{}, err
+		}
+	}
+	if version.CitationUsages == nil {
+		version.CitationUsages = []CitationUsage{}
+	}
 	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &version.SourceIDs); err != nil {
 		return ChapterVersion{}, err
 	}
@@ -576,6 +584,14 @@ func workingCopyView(row workingCopyRow) (WorkingCopy, error) {
 		BaseChapterVersionID: row.BaseChapterVersionID, SpecRevision: row.SpecRevision,
 		WorkingCopyRevision: row.WorkingCopyRevision, BodyMarkdown: row.BodyMarkdown,
 		UpdatedAt: row.UpdatedAt, SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+	if row.CitationUsagesJSON != "" {
+		if err := json.Unmarshal([]byte(row.CitationUsagesJSON), &copy.CitationUsages); err != nil {
+			return WorkingCopy{}, err
+		}
+	}
+	if copy.CitationUsages == nil {
+		copy.CitationUsages = []CitationUsage{}
+	}
 	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &copy.SourceIDs); err != nil {
 		return WorkingCopy{}, err
 	}
@@ -600,6 +616,10 @@ func (t gormTransaction) WorkingCopy(projectID, chapterID string) (WorkingCopy, 
 }
 
 func (t gormTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
+	usages, err := json.Marshal(next.CitationUsages)
+	if err != nil {
+		return err
+	}
 	sources, err := json.Marshal(next.SourceIDs)
 	if err != nil {
 		return err
@@ -618,7 +638,7 @@ func (t gormTransaction) SaveWorkingCopy(previous, next WorkingCopy) error {
 	return affected(query.Updates(map[string]any{
 		"base_chapter_version_id": next.BaseChapterVersionID, "spec_revision": next.SpecRevision,
 		"working_copy_revision": next.WorkingCopyRevision, "body_markdown": next.BodyMarkdown,
-		"source_ids_json": string(sources), "review_items_json": string(review), "updated_at": next.UpdatedAt,
+		"source_ids_json": string(sources), "citation_usages_json": string(usages), "review_items_json": string(review), "updated_at": next.UpdatedAt,
 	}))
 }
 func (t gormTransaction) Chapters(projectID string) ([]Chapter, error) {
@@ -666,7 +686,7 @@ func (t gormTransaction) InsertChapter(c Chapter) error {
 	now := time.Now().UTC()
 	return t.db.Create(&workingCopyRow{ProjectID: c.ProjectID, ChapterID: c.ID,
 		SpecRevision: project.SpecRevision, WorkingCopyRevision: 1, BodyMarkdown: c.BodyMarkdown,
-		SourceIDsJSON: string(sources), ReviewItemsJSON: string(review), CreatedAt: now, UpdatedAt: now}).Error
+		SourceIDsJSON: string(sources), CitationUsagesJSON: "[]", ReviewItemsJSON: string(review), CreatedAt: now, UpdatedAt: now}).Error
 }
 func (t gormTransaction) AppendChapter(previous, next Chapter, specRevision int64) error {
 	sources, err := json.Marshal(next.SourceIDs)

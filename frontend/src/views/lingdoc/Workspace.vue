@@ -256,6 +256,19 @@
           <form v-if="chapter" @submit.prevent="saveText" class="chapter-form">
             <label for="chapter-body">{{ chapter.title }}正文</label>
             <textarea id="chapter-body" v-model="bodyDraft" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading" @input="scheduleWorkingCopySave" rows="12" placeholder="从这里开始撰写章节" />
+            <section v-if="draftCitations.sourceIds.length" class="citation-usages" aria-label="引用用途与限制">
+              <h4>引用用途与限制</h4>
+              <article v-for="sourceId in draftCitations.sourceIds" :key="sourceId">
+                <strong>{{ sourceId }}</strong>
+                <p v-if="citationStatus(sourceId)">{{ citationStatus(sourceId)?.detail }}</p>
+                <label :for="`citation-purpose-${sourceId}`">用途</label>
+                <p v-if="!citationUsageDraft(sourceId).purpose" class="muted">尚未补充用途</p>
+                <textarea :id="`citation-purpose-${sourceId}`" v-model="citationUsageDraft(sourceId).purpose" :disabled="busy || workingCopySaving" @input="scheduleWorkingCopySave" maxlength="2000" />
+                <label :for="`citation-limitation-${sourceId}`">限制</label>
+                <p v-if="!citationUsageDraft(sourceId).limitation" class="muted">尚未补充限制</p>
+                <textarea :id="`citation-limitation-${sourceId}`" v-model="citationUsageDraft(sourceId).limitation" :disabled="busy || workingCopySaving" @input="scheduleWorkingCopySave" maxlength="2000" />
+              </article>
+            </section>
             <section class="selected-rewrite" aria-label="选段改写">
               <h4>选段 AI 改写</h4>
               <p class="muted">先在正文中选中一段，再填写改写要求。生成只会产生候选，不会直接改正文。</p>
@@ -286,7 +299,7 @@
                   <ul v-if="rewriteCandidate.review_items.length" class="rewrite-review-list">
                     <li v-for="item in rewriteCandidate.review_items" :key="item.id">待核：{{ item.statement }}</li>
                   </ul>
-                  <button type="button" @click="applyRewriteCandidate" :disabled="rewriteBusy || busy || bodyChanged || !workingCopy || (rewriteCandidate.status !== 'applying' && workingCopy.working_copy_revision !== rewriteCandidate.working_copy_revision)">
+                  <button type="button" @click="applyRewriteCandidate" :disabled="rewriteBusy || busy || chapterChanged || !workingCopy || (rewriteCandidate.status !== 'applying' && workingCopy.working_copy_revision !== rewriteCandidate.working_copy_revision)">
                     {{ rewriteCandidate.status === 'applying' ? '重试确认采纳结果' : '接受并应用到工作副本' }}
                   </button>
                   <button type="button" @click="rejectRewriteCandidate" :disabled="rewriteBusy || busy || rewriteCandidate.status === 'applying'">拒绝候选</button>
@@ -311,7 +324,7 @@
             <p v-else-if="chapter.confirmation_valid" class="confirmed">当前章节版本已确认。保存新版本后需要重新确认。</p>
             <p v-else-if="workingCopyDiffersFromFormal" class="muted">工作副本与正式版本不同；保存工作副本不会创建正式版本。</p>
             <button v-if="chapter.current_version_id" type="button" @click="confirmCurrentChapter"
-              :disabled="busy || workingCopySaving || bodyChanged || workingCopyDiffersFromFormal || !reviewDecisionsReady">
+              :disabled="busy || workingCopySaving || chapterChanged || workingCopyDiffersFromFormal || !reviewDecisionsReady">
               {{ chapter.confirmation_valid ? '重新确认当前版本' : '确认当前章节版本' }}
             </button>
             <p v-if="draftCitations.malformed" class="warning">{{ MALFORMED_CITATION_MESSAGE }}</p>
@@ -322,8 +335,8 @@
               工作副本修订 {{ workingCopy.working_copy_revision }} · {{ workingCopyStatusLabel }}
               <span v-if="workingCopy.updated_at">· {{ new Date(workingCopy.updated_at).toLocaleString() }}</span>
             </p>
-            <button type="submit" :disabled="busy || workingCopySaving || !bodyChanged">保存工作副本</button>
-            <button type="button" @click="commitDraft" :disabled="busy || workingCopySaving || bodyChanged || !workingCopyDiffersFromFormal">
+            <button type="submit" :disabled="busy || workingCopySaving || !chapterChanged">保存工作副本</button>
+            <button type="button" @click="commitDraft" :disabled="busy || workingCopySaving || chapterChanged || !workingCopyDiffersFromFormal">
               提交为正式版本
             </button>
             <section v-if="chapterVersions.length" class="chapter-history" aria-label="章节版本历史">
@@ -363,11 +376,11 @@ import {
 } from './sourceContext'
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
 import {
-  activateProject, bindAsset, commitWorkingCopy, confirmChapter, createProject, getAccessStatus, getProject,
-  getSource, getSourceContext, getWorkingCopy, listAssets, listChapterVersions, listChapters, listProjects,
+  activateProject, applyChangeSet, bindAsset, commitWorkingCopy, confirmChapter, createChangeSet, createProject, getAccessStatus, getProject,
+  getSource, getSourceContext, getWorkingCopy, getChangeSet, listAssets, listChangeSets, listChapterVersions, listChapters, listProjects,
   applySelectedRewrite, createSelectedRewrite, getSelectedRewrite,
-  restoreWorkingCopy, retrieveSources, saveSpec, saveWorkingCopy,
-  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type CitationUsage, type Project, type ReviewDecision,
+  rejectChangeSet, restoreWorkingCopy, retrieveSources, saveSpec, saveWorkingCopy,
+  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type ChangeSet, type CitationUsage, type Project, type ReviewDecision,
   type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
@@ -459,10 +472,39 @@ const specChanged = computed(() => !!project.value && (
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
 const bodyChanged = computed(() => !!workingCopy.value && bodyDraft.value !== workingCopy.value.body_markdown)
+const pendingDraftMatches = computed(() => {
+  if (!pendingDraft.value) return false
+  return pendingDraft.value.subject === subject.value && pendingDraft.value.goal === goal.value &&
+    pendingDraft.value.reason === changeReason.value.trim() &&
+    JSON.stringify(pendingDraft.value.chapterIds) === JSON.stringify([...selectedImpactChapterIds.value].sort())
+})
+const uncheckedChapterTitles = computed(() => chapters.value.filter(item => !selectedImpactChapterIds.value.includes(item.id)).map(item => item.title))
+const citationUsagesChanged = computed(() => {
+  const parsed = chapterCitations(bodyDraft.value)
+  if (parsed.kind === 'malformed') return false
+  const next = parsed.sourceIds.map(sourceId => citationUsageDrafts.value[sourceId] ?? { source_id: sourceId, purpose: '', limitation: '' })
+  return JSON.stringify(next) !== JSON.stringify(workingCopy.value?.citation_usages ?? [])
+})
+const chapterChanged = computed(() => bodyChanged.value || citationUsagesChanged.value)
+function changeSetStatusLabel(status: ChangeSet['status']): string {
+  return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
+}
+function hydrateCitationUsages(item: { citation_usages?: CitationUsage[] } | null) {
+  const next: Record<string, CitationUsage> = {}
+  for (const usage of item?.citation_usages ?? []) next[usage.source_id] = { ...usage }
+  citationUsageDrafts.value = next
+}
+function citationUsageDraft(sourceId: string): CitationUsage {
+  return citationUsageDrafts.value[sourceId] ??= { source_id: sourceId, purpose: '', limitation: '' }
+}
+function citationStatus(sourceId: string) {
+  return chapter.value?.citation_statuses?.find(item => item.source_id === sourceId)
+}
 const workingCopyDiffersFromFormal = computed(() => !!workingCopy.value && !!chapter.value && (
   workingCopy.value.body_markdown !== chapter.value.body_markdown ||
   JSON.stringify([...workingCopy.value.source_ids].sort()) !== JSON.stringify([...chapter.value.source_ids].sort()) ||
   JSON.stringify(workingCopy.value.review_items) !== JSON.stringify(chapter.value.review_items) ||
+  JSON.stringify(workingCopy.value.citation_usages ?? []) !== JSON.stringify(chapter.value.citation_usages ?? []) ||
   workingCopy.value.base_chapter_version_id !== chapter.value.current_version_id
 ))
 const displayedReviewItems = computed(() => workingCopy.value?.review_items ?? chapter.value?.review_items ?? [])
@@ -522,6 +564,7 @@ async function loadChapterDraft(projectId: string, chapterId: string) {
     ])
     if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
     workingCopy.value = copyResult.data
+    hydrateCitationUsages(copyResult.data)
     chapterVersions.value = versionResult.data.items
     bodyDraft.value = copyResult.data.body_markdown
     workingCopyStatus.value = 'saved'
@@ -536,7 +579,7 @@ async function loadChapterDraft(projectId: string, chapterId: string) {
 function scheduleWorkingCopySave() {
   if (!workingCopy.value || !chapter.value || !project.value) return
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
-  if (!bodyChanged.value) {
+  if (!chapterChanged.value) {
     workingCopyStatus.value = 'saved'
     return
   }
@@ -864,7 +907,7 @@ async function activate() {
   const expected = project.value.spec_revision
   const key = operationKey(`activate:${id}`, { expected_spec_revision: expected })
   try {
-    await activateProject(id, expected, key)
+    await activateProject(id, expected, key, project.value.project_version)
     attempts.delete(`activate:${id}`)
     await loadProjects()
     await selectProject(id)
@@ -873,7 +916,7 @@ async function activate() {
 }
 
 function selectChapter(item: Chapter) {
-  if (bodyChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
+  if (chapterChanged.value && !window.confirm('当前章节尚未保存，确定切换吗？')) return
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
   workingCopyTimer = undefined
   if (generationTimer) clearTimeout(generationTimer)
@@ -1011,7 +1054,7 @@ async function cancelGenerationRun() {
 }
 
 async function confirmCurrentChapter() {
-  if (!project.value || !chapter.value?.current_version_id || busy.value || workingCopySaving.value || bodyChanged.value || workingCopyDiffersFromFormal.value || !reviewDecisionsReady.value) return
+  if (!project.value || !chapter.value?.current_version_id || busy.value || workingCopySaving.value || chapterChanged.value || workingCopyDiffersFromFormal.value || !reviewDecisionsReady.value) return
   const current = chapter.value
   const expectedVersion = current.current_version_id
   if (!expectedVersion) return
@@ -1106,6 +1149,7 @@ async function saveText() {
     attempts.delete(`working-copy:${chapterId}`)
     if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
     workingCopy.value = result.data
+    hydrateCitationUsages(result.data)
     workingCopyStatus.value = 'saved'
     clearRewriteCandidate(projectId, chapterId)
     if (result.meta.refresh_required) {
@@ -1169,11 +1213,11 @@ async function requestSelectedRewrite() {
   }
   const projectId = project.value.id
   const chapterId = chapter.value.id
-  if (bodyChanged.value) {
+  if (chapterChanged.value) {
     if (workingCopyTimer) clearTimeout(workingCopyTimer)
     workingCopyTimer = undefined
     await saveText()
-    if (bodyChanged.value || workingCopyStatus.value === 'error') return
+    if (chapterChanged.value || workingCopyStatus.value === 'error') return
   }
   if (!workingCopy.value || !project.value || project.value.id !== projectId || chapter.value?.id !== chapterId) return
   const input = {
@@ -1200,7 +1244,7 @@ async function requestSelectedRewrite() {
 }
 
 async function applyRewriteCandidate() {
-  if (!project.value || !chapter.value || !workingCopy.value || !rewriteCandidate.value || rewriteBusy.value || busy.value || bodyChanged.value) return
+  if (!project.value || !chapter.value || !workingCopy.value || !rewriteCandidate.value || rewriteBusy.value || busy.value || chapterChanged.value) return
   const candidate = rewriteCandidate.value
   if (candidate.status !== 'ready' && candidate.status !== 'applying') return
   if (candidate.status !== 'applying' && workingCopy.value.working_copy_revision !== candidate.working_copy_revision) return
@@ -1221,6 +1265,7 @@ async function applyRewriteCandidate() {
     attempts.delete(keyName)
     if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
     workingCopy.value = result.data
+    hydrateCitationUsages(result.data)
     bodyDraft.value = result.data.body_markdown
     workingCopyStatus.value = 'saved'
     clearRewriteCandidate(projectId, chapterId)
@@ -1234,7 +1279,7 @@ function rejectRewriteCandidate() {
 }
 
 async function commitDraft() {
-  if (!project.value || !chapter.value || !workingCopy.value || busy.value || workingCopySaving.value || bodyChanged.value) return
+  if (!project.value || !chapter.value || !workingCopy.value || busy.value || workingCopySaving.value || chapterChanged.value) return
   if (!workingCopyDiffersFromFormal.value) return
   if (!window.confirm('将当前工作副本提交为新的正式章节版本？提交后需要重新确认本章。')) return
   busy.value = true
@@ -1263,7 +1308,7 @@ async function commitDraft() {
 
 async function restoreVersion(version: ChapterVersion) {
   if (!project.value || !chapter.value || !workingCopy.value || busy.value || workingCopySaving.value) return
-  if (bodyChanged.value && !window.confirm('当前还有未保存输入；继续恢复会覆盖编辑框内容，确定吗？')) return
+  if (chapterChanged.value && !window.confirm('当前还有未保存输入；继续恢复会覆盖编辑框内容，确定吗？')) return
   if (!window.confirm('将此历史版本恢复到工作副本？历史记录不会被改写；若要生效，还需提交为正式版本。')) return
   busy.value = true
   errorMessage.value = ''
@@ -1281,6 +1326,7 @@ async function restoreVersion(version: ChapterVersion) {
     attempts.delete(`restore-working-copy:${chapterId}`)
     if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
     workingCopy.value = result.data
+    hydrateCitationUsages(result.data)
     bodyDraft.value = result.data.body_markdown
     workingCopyStatus.value = 'saved'
     clearRewriteCandidate(projectId, chapterId)

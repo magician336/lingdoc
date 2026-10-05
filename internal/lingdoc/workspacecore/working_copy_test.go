@@ -22,7 +22,7 @@ func TestWorkingCopySaveCommitHistoryRestoreAndReplay(t *testing.T) {
 	if _, _, _, err := service.SaveSpec(ctx, actor, project.ID, "spec-workcopy", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "synthetic", "research_goal": "test"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := service.ActivateProject(ctx, actor, project.ID, "activate-workcopy", ActivateProjectInput{ExpectedSpecRevision: 1}); err != nil {
+	if _, _, _, err := service.ActivateProject(ctx, actor, project.ID, "activate-workcopy", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := service.ListChapters(ctx, actor, project.ID)
