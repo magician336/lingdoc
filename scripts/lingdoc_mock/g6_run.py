@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.lingdoc_mock.g6_evidence import (RUNTIME_DEPENDENCIES, RUNTIME_MODES, SAFE_FIXTURE_ID,
                                                build_evidence, digest,
+                                               main_path_report_to_scenario_evidence,
                                                normalize_scenario_evidence, reduce_results)
 from scripts.lingdoc_mock.g6_main_path import build_main_path_report
 from scripts.lingdoc_mock.g6_metrics import build_beta_report
@@ -76,6 +77,57 @@ def _empty_runtime_matrix() -> dict[str, Any]:
     }
 
 
+def build_runtime_matrix_from_main_path_reports(
+        reports: dict[str, dict[str, Any]],
+        dependency_matrix: dict[str, dict[str, Any]] | None = None,
+        provider_semantics: dict[str, str] | None = None) -> dict[str, Any]:
+    """Assemble a G6-02 matrix directly from one sanitized F01 report per runtime mode."""
+    if not isinstance(reports, dict) or set(reports) != set(RUNTIME_MODES):
+        raise ValueError("main path reports must contain mock, real_api_fake_model and real")
+    dependencies = dependency_matrix or {
+        mode: {"required": list(RUNTIME_DEPENDENCIES[mode]), "verified": [],
+               "missing": list(RUNTIME_DEPENDENCIES[mode]), "status": "not_verified"}
+        for mode in RUNTIME_MODES
+    }
+    modes = []
+    fixture_ids = []
+    for mode in RUNTIME_MODES:
+        report = reports[mode]
+        if not isinstance(report, dict):
+            raise ValueError(f"main path report for {mode} must be an object")
+        report_mode = report.get("runtime_mode")
+        result = report.get("result") if report.get("result") in {"PASS", "FAIL", "NOT RUN", "BLOCKED"} else "BLOCKED"
+        evidence = main_path_report_to_scenario_evidence(report)
+        fixture_id = evidence["main_path"].get("fixture_id")
+        if fixture_id:
+            fixture_ids.append(fixture_id)
+        main_scope = evidence["main_path"].get("verification_scope", "not_recorded")
+        modes.append({
+            "runtime_mode": mode,
+            "result": result if report_mode in {None, mode} else "BLOCKED",
+            "dependency_status": (dependencies.get(mode, {}) or {}).get("status", "not_verified"),
+            "provider_semantics_status": (provider_semantics or {}).get(mode, "not_verified"),
+            "verification_scope": main_scope,
+            "scenario_evidence": evidence,
+            "quality_evidence": {"result": result, "fixture_id": fixture_id},
+            "summary": {"main_path_result": evidence["main_path"]["result"],
+                        "failure_path_result": evidence["key_failure"]["result"]},
+        })
+    unique_fixture_ids = sorted(set(fixture_ids))
+    result = reduce_results([mode["result"] for mode in modes])
+    return {
+        "report_version": 1,
+        "scope": "same F01 main path reports independently for each runtime mode",
+        "runtime_modes": list(RUNTIME_MODES),
+        "result": result,
+        "shared_fixture": len(unique_fixture_ids) == 1 and len(fixture_ids) == len(RUNTIME_MODES),
+        "fixture_ids": unique_fixture_ids,
+        "dependency_matrix": dependencies,
+        "modes": modes,
+        "reports": [{"runtime_mode": mode, "report": {"result": modes[index]["result"],
+                                                        "fixture_id": modes[index]["scenario_evidence"]["main_path"].get("fixture_id")}}
+                    for index, mode in enumerate(RUNTIME_MODES)],
+    }
 def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
     """Wrap a scenario-runner matrix in the common G6 evidence shape."""
     matrix = matrix or _empty_runtime_matrix()
@@ -281,15 +333,34 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-matrix", type=Path)
     parser.add_argument("--samples", type=Path)
     parser.add_argument("--window", type=Path)
+    parser.add_argument("--main-path-reports", type=Path,
+                        help="JSON object keyed by runtime mode containing sanitized F01 reports")
+    parser.add_argument("--runtime-dependencies", type=Path,
+                        help="optional dependency_matrix JSON used with --main-path-reports")
+    parser.add_argument("--provider-semantics", type=Path,
+                        help="optional provider semantics JSON keyed by runtime mode")
     parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, default="mock")
     args = parser.parse_args(argv)
     try:
+        if args.main_path_reports and args.runtime_matrix:
+            raise ValueError("--main-path-reports and --runtime-matrix are mutually exclusive")
+        runtime_matrix = _read_json(args.runtime_matrix, "runtime matrix", None)
+        if args.main_path_reports:
+            main_path_reports = _read_json(args.main_path_reports, "main path reports", None)
+            dependencies = _read_json(args.runtime_dependencies, "runtime dependencies", None)
+            semantics = _read_json(args.provider_semantics, "provider semantics", None)
+            if dependencies is not None and not isinstance(dependencies, dict):
+                raise ValueError("runtime dependencies must be an object")
+            if semantics is not None and not isinstance(semantics, dict):
+                raise ValueError("provider semantics must be an object")
+            runtime_matrix = build_runtime_matrix_from_main_path_reports(
+                main_path_reports, dependency_matrix=dependencies, provider_semantics=semantics)
         report = build_g6_report(
             main_path_report=_read_json(args.main_path_report, "main path report", None),
             security_observations=_read_json(args.security_observations, "security observations", None),
             events=_read_json(args.events, "events", None),
             rollback_observations=_read_json(args.rollback_observations, "rollback observations", None),
-            runtime_matrix_report=_read_json(args.runtime_matrix, "runtime matrix", None),
+            runtime_matrix_report=runtime_matrix,
             samples=_read_json(args.samples, "samples", None),
             window=_read_json(args.window, "window", None),
             runtime_mode=args.runtime_mode,

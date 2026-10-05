@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import unittest
 
 from scripts.lingdoc_mock import g6_main_path, g6_metrics, g6_observability, g6_rollback, g6_run, g6_security
@@ -451,6 +452,30 @@ class G6MainPathTest(unittest.TestCase):
 
 
 class G6RunTest(unittest.TestCase):
+    def test_f01_reports_can_be_assembled_into_a_runtime_matrix(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        reports = {}
+        for mode in g6_run.RUNTIME_MODES:
+            report = g6_main_path.build_main_path_report(
+                main_report=copy.deepcopy(main), failure_observation=copy.deepcopy(failure),
+                runtime_mode=mode, fixture_id="F01:S1")
+            if mode != "mock":
+                report["main_path"]["verification_scope"] = "observed"
+            reports[mode] = report
+        dependencies = {
+            mode: {"required": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "verified": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "missing": [], "status": "verified"}
+            for mode in g6_run.RUNTIME_MODES
+        }
+        matrix = g6_run.build_runtime_matrix_from_main_path_reports(
+            reports, dependency_matrix=dependencies,
+            provider_semantics={mode: "verified" for mode in g6_run.RUNTIME_MODES})
+        self.assertEqual(matrix["fixture_ids"], ["F01:S1"])
+        self.assertTrue(matrix["shared_fixture"])
+        report = g6_run.build_g6_report(runtime_matrix_report=matrix)
+        self.assertEqual(report["gate_results"]["G6-02"], "PASS")
+
     def test_default_run_is_explicitly_blocked_and_contains_all_gates(self):
         report = g6_run.build_g6_report()
         self.assertEqual(report["result"], "BLOCKED")

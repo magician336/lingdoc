@@ -104,6 +104,40 @@ def normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str],
     return normalized, "BLOCKED" if evidence_result != "FAIL" else "FAIL"
 
 
+def main_path_report_to_scenario_evidence(report: dict[str, Any]) -> dict[str, Any]:
+    """Convert a sanitized F01 report into the two status-only matrix evidence sections."""
+    if not isinstance(report, dict):
+        raise ValueError("main path report must be an object")
+    fixture_id = report.get("fixture_id") if isinstance(report.get("fixture_id"), str) \
+        and SAFE_FIXTURE_ID.fullmatch(report["fixture_id"]) else None
+    main = report.get("main_path") if isinstance(report.get("main_path"), dict) else {}
+    failure = report.get("failure_path") if isinstance(report.get("failure_path"), dict) else {}
+    main_result = main.get("result") if main.get("result") in RESULT_SET else "BLOCKED"
+    failure_result = failure.get("result") if failure.get("result") in RESULT_SET else "BLOCKED"
+    completed_steps = main.get("completed_steps")
+    if not isinstance(completed_steps, int) or isinstance(completed_steps, bool) or completed_steps < 0:
+        completed_steps = 0
+    scope = main.get("verification_scope") if main.get("verification_scope") in SCENARIO_SCOPES else "not_recorded"
+    actual_http = failure.get("actual_http")
+    if not isinstance(actual_http, int) or isinstance(actual_http, bool):
+        actual_http = None
+    readback = failure.get("readback")
+    readback_status = "not_recorded"
+    if isinstance(readback, dict) and readback.get("status") in SAFE_READBACK_STATUS:
+        readback_status = readback["status"]
+    elif isinstance(readback, str) and readback in SAFE_READBACK_STATUS:
+        readback_status = readback
+    return {
+        "main_path": {"result": main_result, "fixture_id": fixture_id,
+                      "completed_steps": completed_steps, "verification_scope": scope},
+        "key_failure": {"result": failure_result, "fixture_id": fixture_id,
+                         "actual_http": actual_http,
+                         "no_formal_side_effect": failure.get("no_formal_side_effect")
+                         if isinstance(failure.get("no_formal_side_effect"), bool) else None,
+                         "readback_status": readback_status},
+    }
+
+
 def build_evidence(*, fixture_id: str, runtime_mode: str, result: str,
                    input_value: Any, output_value: Any, attribution: list[str],
                    evidence_refs: list[str], owner: str, reviewer: str,
