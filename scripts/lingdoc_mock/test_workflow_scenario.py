@@ -156,6 +156,9 @@ class ScenarioReportTest(unittest.TestCase):
             "scenarios",
             "summary",
         ])
+        serialized = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn(PROVIDER_IDS["k-demo"], serialized)
+        self.assertNotIn("synthetic-owner-token", serialized)
 
     def test_quality_evidence_uses_fail_result_and_safe_attribution(self):
         report, _ = drive(provider=AnswersThePreflightWrongly(answered_with_200))
