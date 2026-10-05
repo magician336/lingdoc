@@ -414,10 +414,11 @@ class G6RunTest(unittest.TestCase):
                   "modes": [{"runtime_mode": mode, "result": "PASS",
                              "dependency_status": "verified",
                              "provider_semantics_status": "verified",
-                             "verification_scope": "observed",
+                             "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23, "verification_scope": "observed"},
+                                               "completed_steps": 23,
+                                               "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,
                                                  "readback_status": "unchanged"},

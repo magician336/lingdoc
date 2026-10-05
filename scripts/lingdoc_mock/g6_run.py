@@ -78,7 +78,7 @@ def _empty_runtime_matrix() -> dict[str, Any]:
     }
 
 
-def _normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str]) -> tuple[dict[str, Any], str]:
+def _normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str], runtime_mode: str) -> tuple[dict[str, Any], str]:
     """Keep only status-shaped main/failure evidence and require both for a mode PASS."""
     raw = entry.get("scenario_evidence")
     blocked = {
@@ -98,10 +98,13 @@ def _normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str]) 
     failure_result = failure.get("result") if failure.get("result") in {"PASS", "FAIL", "NOT RUN", "BLOCKED"} else "BLOCKED"
     main_scope = main.get("verification_scope") if main.get("verification_scope") in SCENARIO_SCOPES else "not_recorded"
     main_steps = main.get("completed_steps", 0)
+    allowed_main_scopes = {"observed", "scenario_runner_matrix"}
+    if runtime_mode == "mock":
+        allowed_main_scopes.add("contract_fixture_only")
     main_complete = (main_result == "PASS" and isinstance(main_id, str)
                      and MATRIX_ID.fullmatch(main_id) and main_id in fixture_ids
                      and isinstance(main_steps, int) and not isinstance(main_steps, bool) and main_steps > 0
-                     and main_scope in {"observed", "scenario_runner_matrix"})
+                     and main_scope in allowed_main_scopes)
     actual_http = failure.get("actual_http")
     readback_status = failure.get("readback_status")
     failure_complete = (failure_result == "PASS" and isinstance(failure_id, str)
@@ -202,7 +205,7 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
             shared_fixture = False
             mode_results.append("BLOCKED")
             continue
-        scenario_evidence, scenario_result = _normalize_scenario_evidence(entry, fixture_ids)
+        scenario_evidence, scenario_result = _normalize_scenario_evidence(entry, fixture_ids, mode)
         mode_result = reduce_results([entry["result"], scenario_result])
         mode_results.append(mode_result)
         semantics = entry.get("provider_semantics_status", "not_verified")
