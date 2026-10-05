@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 RUNTIME_MODES = ("mock", "real_api_fake_model", "real")
 RESULTS = ("PASS", "FAIL", "NOT RUN", "BLOCKED")
 RESULT_SET = frozenset(RESULTS)
+SAFE_FIXTURE_ID = re.compile(
+    r"(?:[A-Za-z][A-Za-z0-9_.-]{1,63}(?::[A-Za-z0-9_.-]{1,64})?|[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64})"
+)
 
 
 def reduce_results(results: list[str]) -> str:
@@ -41,6 +45,8 @@ def build_evidence(*, fixture_id: str, runtime_mode: str, result: str,
         raise ValueError("G6 quality result must be PASS, FAIL, NOT RUN or BLOCKED")
     if runtime_mode not in RUNTIME_MODES:
         raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
+    if not isinstance(fixture_id, str) or not SAFE_FIXTURE_ID.fullmatch(fixture_id):
+        raise ValueError("fixture_id must be a redacted fixture alias or digest")
     return {
         "evidence_version": 1,
         "fixture_id": fixture_id,

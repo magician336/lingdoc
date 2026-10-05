@@ -73,9 +73,11 @@ def _result(case: dict[str, Any], observation: dict[str, Any] | None) -> str:
         return "BLOCKED"
     if _contains_restricted_content(observation):
         return "FAIL"
-    if observation["actual_http"] != case["expected_http"]:
+    if type(observation["actual_http"]) is not int or observation["actual_http"] != case["expected_http"]:
         return "FAIL"
-    if observation.get("decision") not in {None, case["expected_decision"]}:
+    if "decision" not in observation:
+        return "BLOCKED"
+    if observation["decision"] != case["expected_decision"]:
         return "FAIL"
     return "PASS"
 

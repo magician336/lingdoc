@@ -57,6 +57,19 @@ class G6SecurityTest(unittest.TestCase):
         observations["SEC-12"]["response"] = {"body": "restricted source"}
         self.assertEqual(g6_security.build_security_report(observations=observations)["result"], "FAIL")
 
+    def test_security_observation_requires_explicit_permission_decision(self):
+        observations = {
+            case["id"]: {"actual_http": case["expected_http"]}
+            for case in g6_security.SECURITY_CASES
+        }
+        report = g6_security.build_security_report(observations=observations)
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertTrue(all(case["result"] == "BLOCKED" for case in report["cases"]))
+
+    def test_security_fixture_id_must_be_redacted(self):
+        with self.assertRaisesRegex(ValueError, "fixture_id"):
+            g6_security.build_security_report(fixture_id="tenant/secret/project")
+
 
 class G6ObservabilityTest(unittest.TestCase):
     def test_missing_chain_is_blocked(self):
