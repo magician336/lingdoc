@@ -17,7 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.lingdoc_mock import run_scenario as module
-from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, PROVIDER_ID, SCENARIOS_PATH, WorkflowError, write_report
+from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, PROVIDER_ID, SCENARIOS_PATH, WorkflowError, redact, write_report
 from scripts.lingdoc_mock.test_workflow_states import MEMBER_ID, PROVIDER_IDS, Response, SyntheticProvider
 
 KNOWLEDGE = {name: resolved for name, resolved in PROVIDER_IDS.items()}
@@ -99,6 +99,12 @@ def scenario_requests(synthetic):
 
 
 class ScenarioReportTest(unittest.TestCase):
+    def test_report_redaction_removes_document_fields_by_key(self):
+        self.assertEqual(redact({"body_markdown": "private text", "content": "source text",
+                                 "nested": {"token": "secret"}}, {}),
+                         {"body_markdown": "<redacted>", "content": "<redacted>",
+                          "nested": {"token": "<redacted>"}})
+
     def test_execution_errors_are_sanitized_before_they_reach_reports(self):
         private_id = "f838a8d9-03a1-4951-bd35-1da51ba802d3"
         error = WorkflowError(f"request failed for http://127.0.0.1/projects/{private_id}: connection reset")
