@@ -231,6 +231,21 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["decision"], "expand")
         self.assertEqual(report["metrics"]["source_support_rate"]["numerator"], 17)
 
+    def test_incomplete_trial_process_keeps_effect_rates_unready(self):
+        sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",
+                  "runtime_mode": "real", "quality_result": "PASS",
+                  "supported_claims": 1, "total_claims": 1, "dismissed_issues": 0,
+                  "issues_reviewed": 1, "unconfirmed_items": 0, "snapshots": 1,
+                  "export_loss_items": 0, "export_checks": 1, "manual_minutes": 10,
+                  "projects": 1, "missed_edits": 0, "changesets": 1}
+        process = {**self.WINDOW["process_evidence"], "manual_review": "not_run"}
+        report = g6_metrics.build_beta_report(samples=[sample], window={**self.WINDOW,
+                                                                        "minimum_reportable_samples": 1,
+                                                                        "process_evidence": process})
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(report["readiness"], "NOT READY")
+        self.assertIsNone(report["metrics"]["source_support_rate"]["rate"])
+
     def test_p0_blocks_even_with_enough_samples(self):
         samples = [{"sample_id": "sample.real1", "sample_version": "sample.v1",
                     "runtime_mode": "real", "quality_result": "PASS",

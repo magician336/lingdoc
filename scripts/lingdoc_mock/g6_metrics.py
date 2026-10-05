@@ -162,9 +162,17 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     missing_denominators = sorted(name for name, values in metrics.items()
                                   if values["denominator"] == 0 or name in missing_metric_values)
     minimum = int(window.get("minimum_reportable_samples", 0) or 0)
+    process_incomplete = any(value != "observed" for value in window["process_evidence"].values())
+    if process_incomplete:
+        for values in metrics.values():
+            values["rate"] = None
+        missing_denominators = sorted(set(missing_denominators) | set(metrics))
     if missing_window:
         result, decision, readiness = "BLOCKED", "continue_trial", "NOT READY"
         reason = "window metadata is incomplete"
+    elif process_incomplete:
+        result, decision, readiness = "BLOCKED", "continue_trial", "NOT READY"
+        reason = "trial process evidence is incomplete"
     elif p0_p1 or dependency_blocked or window.get("rollback_result") != "PASS":
         result, decision, readiness = "BLOCKED", "pause", "BLOCKED"
         reason = "unresolved P0/P1, blocked real dependency or unverified rollback"
