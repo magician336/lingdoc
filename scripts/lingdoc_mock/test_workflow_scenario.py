@@ -103,6 +103,18 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(module._scenario_fixture_id("scenario/secret", "state with secret")[:9], "scenario.")
         self.assertRegex(module._scenario_fixture_id("F22", "S7"), r"^F22:S7$")
 
+    def test_quality_metadata_uses_safe_version_and_object_status_values(self):
+        self.assertEqual(module._safe_version("Bearer SECRET", "template.unknown"), "template.unknown")
+        safe = module._safe_object_versions({
+            "project_version": "secret project version",
+            "spec_revision": 3,
+            "assets": [{"knowledge_id": "asset.demo", "listed_state": "secret", "deny_reason": "secret"}],
+        })
+        self.assertEqual(safe["project_version"], "project.version.unknown")
+        self.assertEqual(safe["spec_revision"], 3)
+        self.assertEqual(safe["assets"][0]["listed_state"], "unknown")
+        self.assertEqual(safe["assets"][0]["deny_reason"], "unknown")
+
     def test_report_redaction_removes_document_fields_by_key(self):
         self.assertEqual(redact({"body_markdown": "private text", "content": "source text",
                                  "nested": {"token": "secret"}}, {}),

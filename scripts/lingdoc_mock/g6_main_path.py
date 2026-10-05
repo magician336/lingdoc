@@ -182,7 +182,7 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
     actual_http = observation.get("actual_http")
     if (not isinstance(expected_http, int) or isinstance(expected_http, bool)
             or not isinstance(actual_http, int) or isinstance(actual_http, bool)
-            or expected_http != actual_http or expected_http < 400):
+            or expected_http != actual_http or not 400 <= expected_http <= 599):
         return {
             "result": "FAIL",
             "status": "observed",

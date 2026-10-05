@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -63,6 +64,8 @@ from scripts.lingdoc_mock.g6_evidence import (  # noqa: E402
 
 
 REPORT_PATH = ROOT / "docs/08-本轮实施方案/T15-验证报告.json"
+SAFE_LABEL = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
+SAFE_HASH = re.compile(r"[0-9a-f]{64}")
 # The gaps this run found in the service, registered here rather than fixed here: #27's
 # agreement is that T15 records what a scenario run turns up, and the line that owns the
 # code fixes it. The evidence column points at the report section that shows it.
@@ -163,6 +166,46 @@ def _scenario_fixture_id(scenario_id: str, state_id: str) -> str:
     return f"scenario.{digest({'scenario': scenario_id, 'starting_state': state_id})[:16]}"
 
 
+def _safe_label(value: Any, fallback: str) -> str:
+    return value if isinstance(value, str) and SAFE_LABEL.fullmatch(value) else fallback
+
+
+def _safe_version(value: Any, fallback: str) -> Any:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    if isinstance(value, str) and (SAFE_LABEL.fullmatch(value) or SAFE_HASH.fullmatch(value)
+                                   or re.fullmatch(r"[0-9]{1,16}", value)):
+        return value
+    return fallback
+
+
+def _safe_object_versions(observed: Any) -> dict[str, Any]:
+    if not isinstance(observed, dict):
+        return {"status": "not_observed"}
+    safe: dict[str, Any] = {
+        "project_version": _safe_version(observed.get("project_version"), "project.version.unknown"),
+        "spec_revision": _safe_version(observed.get("spec_revision"), "spec.revision.unknown"),
+    }
+    chapters = observed.get("chapters", [])
+    if isinstance(chapters, list):
+        safe["chapters"] = [
+            {"section_id": _safe_label(item.get("section_id"), "chapter.section"),
+             "has_version": item.get("has_version") if isinstance(item.get("has_version"), bool) else False}
+            for item in chapters if isinstance(item, dict)
+        ]
+    assets = observed.get("assets", [])
+    if isinstance(assets, list):
+        safe["assets"] = [
+            {"knowledge_id": _safe_label(item.get("knowledge_id"), "asset.unknown"),
+             "listed_state": item.get("listed_state")
+             if item.get("listed_state") in {None, "ready", "processing", "blocked", "unknown"} else "unknown",
+             "deny_reason": item.get("deny_reason")
+             if item.get("deny_reason") in {None, "", "not_ready", "not_authorized", "not_found"} else "unknown"}
+            for item in assets if isinstance(item, dict)
+        ]
+    return safe
+
+
 def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scenario_id: str,
                      state_id: str, spec: Any, state_report: dict[str, Any], executed: dict[str, Any],
                      loader: StateLoader, states_path: Path, openapi_path: Path,
@@ -173,6 +216,8 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
         raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
     canonical_fixture = document.get("canonical_fixture", {})
     template = canonical_fixture.get("template", {}) if isinstance(canonical_fixture, dict) else {}
+    if not isinstance(template, dict):
+        template = {}
     required_fixture_parts = ("project", "asset", "chapter", "check", "release", "export", "download")
     declared_fixture_parts = [part for part in ("project", "asset", "chapter", "release", "export")
                               if part in canonical_fixture]
@@ -213,6 +258,15 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
     result = (observed_result if runtime_mode == "mock" or observed_result != "PASS"
               else "PASS" if real_evidence_verified else "BLOCKED")
     output_summary["result"] = result
+    safe_scenario_id = _safe_label(scenario_id, "scenario.id")
+    safe_state_id = _safe_label(state_id, "state.id")
+    safe_actors = sorted({_safe_label(step.get("actor"), "actor.id")
+                          for step in spec.steps if step.get("actor")})
+    safe_members = sorted({_safe_label(value, "member.id") for value in loader.state.members})
+    safe_assets = sorted({_safe_label(value, "asset.id") for value in loader.asset_ids})
+    template_version = _safe_version(template.get("version"), "template.unknown")
+    ruleset_hash = template.get("ruleset_hash") if isinstance(template.get("ruleset_hash"), str) \
+        and SAFE_HASH.fullmatch(template["ruleset_hash"]) else "rules.unknown"
     return {
         "evidence_version": 1,
         "fixture_id": _scenario_fixture_id(scenario_id, state_id),
@@ -227,19 +281,14 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
             "missing_for_execution": sorted(set(required_fixture_parts) - set(constructed_fixture_parts)),
         },
         "project_id": "project.id",
-        "template_version": template.get("version"),
-        "ruleset_hash": template.get("ruleset_hash"),
-        "object_versions": {
-            "project_version": observed.get("project_version"),
-            "spec_revision": observed.get("spec_revision"),
-            "chapters": observed.get("chapters", []),
-            "assets": observed.get("assets", []),
-        },
+        "template_version": template_version,
+        "ruleset_hash": ruleset_hash,
+        "object_versions": _safe_object_versions(observed),
         "permission_snapshot": {
             "status": "declared_only",
-            "actors": sorted({step.get("actor") for step in spec.steps if step.get("actor")}),
-            "members": list(loader.state.members),
-            "assets": sorted(loader.asset_ids),
+            "actors": safe_actors,
+            "members": safe_members,
+            "assets": safe_assets,
         },
         "runtime_mode": runtime_mode,
         "runtime_status": ("contract_only" if runtime_mode == "mock"
@@ -256,7 +305,7 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
             for name in required_dependencies
         },
         "context": {"context_revision": None, "target_version": None, "status": "not_available"},
-        "input_summary": input_summary,
+        "input_summary": {**input_summary, "scenario": safe_scenario_id, "starting_state": safe_state_id},
         "output_summary": {**output_summary, "result": result},
         "input_hash": _stable_digest(input_summary),
         "output_hash": _stable_digest(output_summary),
@@ -264,8 +313,8 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
         "result": result,
         "attribution": _quality_attribution(executed),
         "evidence_refs": ["executed.state", "executed.steps", "scenarios", "summary"],
-        "owner": scenario.get("quality_owner", "unassigned"),
-        "reviewer": scenario.get("quality_reviewer", "unassigned"),
+        "owner": _safe_label(scenario.get("quality_owner"), "unassigned"),
+        "reviewer": _safe_label(scenario.get("quality_reviewer"), "unassigned"),
     }
 
 
