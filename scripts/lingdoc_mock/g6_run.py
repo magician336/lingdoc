@@ -156,8 +156,15 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
         dependency_status = entry.get("dependency_status", "not_verified")
         if dependency_status not in {"verified", "not_verified"}:
             dependency_status = "not_verified"
+        dependency_status = ("verified" if dependency_status == "verified"
+                             and normalized_dependencies[mode]["status"] == "verified"
+                             else "not_verified")
+        if dependency_status != "verified":
+            mode_result = "BLOCKED" if mode_result != "FAIL" else "FAIL"
         if mode != "mock" and semantics != "verified":
             semantics_verified = False
+            if mode_result != "FAIL":
+                mode_result = "BLOCKED"
         normalized_modes.append({
             "runtime_mode": mode,
             "result": mode_result,
