@@ -504,6 +504,27 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertIn("input_hash", fallback)
         self.assertNotIn("synthetic failure", json.dumps(fallback))
 
+    def test_startup_failure_redacts_untrusted_quality_owner_and_reviewer(self):
+        original_entry = module.scenario_entry
+
+        def scenario_with_sensitive_labels(document, scenario_id, source_name):
+            scenario = dict(original_entry(document, scenario_id, source_name))
+            scenario["quality_owner"] = "Bearer_SECRET_TOKEN"
+            scenario["quality_reviewer"] = "reviewer/private path"
+            return scenario
+
+        with patch.object(module, "scenario_entry", side_effect=scenario_with_sensitive_labels), \
+                patch.object(module, "run_scenario", side_effect=WorkflowError("synthetic failure")):
+            report = module.run_scenarios(
+                ["F22"], SCENARIOS_PATH, OPENAPI_PATH,
+                knowledge={}, member={}, identities={})
+
+        evidence = report["quality_evidence"]
+        self.assertEqual(evidence["owner"], "unassigned")
+        self.assertEqual(evidence["reviewer"], "unassigned")
+        self.assertNotIn("Bearer_SECRET_TOKEN", json.dumps(evidence))
+        self.assertNotIn("private path", json.dumps(evidence))
+
     def test_duplicate_scenario_ids_are_rejected_before_any_scenario_runs(self):
         with patch.object(module, "run_scenario") as run_one:
             with self.assertRaisesRegex(WorkflowError, "duplicate"):

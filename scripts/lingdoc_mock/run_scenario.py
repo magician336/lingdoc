@@ -170,6 +170,16 @@ def _safe_label(value: Any, fallback: str) -> str:
     return value if isinstance(value, str) and SAFE_LABEL.fullmatch(value) else fallback
 
 
+def _safe_quality_label(value: Any) -> str:
+    """Keep short owner aliases while rejecting labels that resemble credentials."""
+    if not isinstance(value, str) or not SAFE_LABEL.fullmatch(value):
+        return "unassigned"
+    if re.search(r"(?:bearer|token|secret|password|authorization|cookie|api[_-]?key)",
+                 value, flags=re.IGNORECASE):
+        return "unassigned"
+    return value
+
+
 def _safe_version(value: Any, fallback: str) -> Any:
     if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
@@ -648,8 +658,8 @@ def _blocked_quality_evidence(scenario_id: str, state_id: str, runtime_mode: str
         output_value={"status": "not_started", "reason": "initialization_failed"},
         attribution=["runtime"],
         evidence_refs=["executed", "scenarios", "summary"],
-        owner=owner,
-        reviewer=reviewer,
+        owner=_safe_quality_label(owner),
+        reviewer=_safe_quality_label(reviewer),
         input_summary={"status": "not_started"},
         output_summary={"status": "not_started"},
     )
