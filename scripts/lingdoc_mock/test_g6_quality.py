@@ -455,6 +455,10 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(first, second)
         report = g6_main_path.build_main_path_report(
             main_report=first[0], failure_observation=first[1])
+        repeat = g6_main_path.build_main_path_report(
+            main_report=second[0], failure_observation=second[1])
+        self.assertEqual(json.dumps(report, ensure_ascii=False, sort_keys=True),
+                         json.dumps(repeat, ensure_ascii=False, sort_keys=True))
         self.assertEqual(report["result"], "PASS")
         evidence = report["quality_evidence"]
         self.assertEqual(evidence["template_version"], "template.v1")
