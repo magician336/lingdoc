@@ -42,6 +42,7 @@ SAFE_RUNNER_STATUSES = {"completed", "failed", "not_run", "blocked"}
 SAFE_VERIFICATION_SCOPES = {"contract_fixture_only", "http_smoke_only", "observed", "not_recorded"}
 SAFE_METADATA_STATUSES = {"mock", "not_run", "unknown", "observed", "not_observed"}
 SAFE_STEP_ID = re.compile(r"F01-[0-9]{2}")
+SAFE_FAILURE_CASE = re.compile(r"[a-z][a-z0-9_.-]{1,63}")
 
 
 def _step_id(step: dict[str, Any]) -> str | None:
@@ -222,6 +223,9 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
         raise ValueError("failure observation must be an object")
     required = ("failure_case", "expected_http", "actual_http", "no_formal_side_effect", "readback")
     missing = [field for field in required if field not in observation]
+    failure_case = observation.get("failure_case")
+    safe_failure_case = (failure_case if isinstance(failure_case, str)
+                         and SAFE_FAILURE_CASE.fullmatch(failure_case) else None)
     if missing:
         no_side_effect = (observation.get("no_formal_side_effect")
                           if isinstance(observation.get("no_formal_side_effect"), bool)
@@ -229,6 +233,7 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
         return {
             "result": "BLOCKED",
             "status": "incomplete",
+            "failure_case": safe_failure_case,
             "no_formal_side_effect": no_side_effect,
             "missing_fields": missing,
             "evidence_refs": ["failure_path", "side_effect_readback"],
@@ -241,6 +246,7 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
         return {
             "result": "FAIL",
             "status": "observed",
+            "failure_case": safe_failure_case,
             "no_formal_side_effect": observation.get("no_formal_side_effect") is True,
             "expected_http": expected_http,
             "actual_http": actual_http,
@@ -266,9 +272,10 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
         readback = {"status": readback}
     else:
         readback = {}
-    if not isinstance(observation.get("failure_case"), str) or not observation["failure_case"].strip():
+    if safe_failure_case is None:
         return {
-            "result": "FAIL", "status": "observed", "no_formal_side_effect": no_side_effect,
+            "result": "FAIL", "status": "observed", "failure_case": None,
+            "no_formal_side_effect": no_side_effect,
             "expected_http": expected_http, "actual_http": actual_http,
             "evidence_refs": ["failure_path"],
         }
@@ -285,6 +292,7 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
     return {
         "result": result,
         "status": "observed",
+        "failure_case": safe_failure_case,
         "no_formal_side_effect": no_side_effect,
         "expected_http": expected_http,
         "actual_http": actual_http,
@@ -365,6 +373,7 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
         "fixture_state": fixture_state,
         "main_steps": safe_main_report["steps"],
         "failure_shape": {
+            "failure_case": failure.get("failure_case"),
             "expected_http": failure.get("expected_http"),
             "actual_http": failure.get("actual_http"),
             "no_formal_side_effect": failure.get("no_formal_side_effect"),

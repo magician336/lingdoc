@@ -504,7 +504,7 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(evidence["permission_snapshot"]["status"], "mock")
         self.assertEqual(sorted(report["fixture_state"]),
                          ["asset", "chapter", "check", "download", "export", "project", "release"])
-        self.assertNotIn("duplicate_formal_write", json.dumps(report))
+        self.assertEqual(report["failure_path"]["failure_case"], "duplicate_formal_write")
 
     def test_runner_shaped_http_status_steps_are_accepted(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
@@ -625,6 +625,16 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(report["result"], "FAIL")
         self.assertEqual(report["failure_path"]["readback"], {})
         self.assertNotIn("secret body", json.dumps(report))
+
+    def test_failure_case_keeps_only_a_safe_alias(self):
+        report = g6_main_path.build_main_path_report(
+            main_report=self._complete_report(),
+            failure_observation={"failure_case": "raw failure body", "expected_http": 409,
+                                 "actual_http": 409, "no_formal_side_effect": True,
+                                 "readback": {"status": "unchanged"}})
+        self.assertIsNone(report["failure_path"]["failure_case"])
+        self.assertEqual(report["result"], "FAIL")
+        self.assertNotIn("raw failure body", json.dumps(report))
 
     def test_failure_readback_requires_explicit_unchanged_status(self):
         for readback in ("secret body", "observed", ["unchanged"], {"unchanged": True}):
