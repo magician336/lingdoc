@@ -32,6 +32,8 @@ SAFE_STATUSES = frozenset({"ok", "success", "denied", "conflict", "failed", "err
                            "blocked", "pending", "completed", "skipped", "unknown", "not_run"})
 SAFE_CODE_FIELDS = frozenset({"resource_type", "template_version", "ruleset_hash", "error_code", "provider",
                               "result_code", "permission_reason", "file_loss_class"})
+BOOLEAN_FIELDS = frozenset({"stale", "duplicate_side_effect", "download_reauthorized"})
+PERMISSION_DECISIONS = frozenset({"allow", "deny", "allow_metadata_only"})
 EVENT_REQUIRED_IDS = {
     "request": ("request_id",),
     "task": ("task_id",),
@@ -91,6 +93,11 @@ def sanitize_event(event: dict[str, Any]) -> dict[str, Any]:
                                     or isinstance(event["retry_count"], bool)
                                     or event["retry_count"] < 0):
         raise ValueError("retry_count must be a non-negative integer")
+    for field in BOOLEAN_FIELDS.intersection(event):
+        if not isinstance(event[field], bool):
+            raise ValueError(f"{field} must be a boolean")
+    if "permission_decision" in event and event["permission_decision"] not in PERMISSION_DECISIONS:
+        raise ValueError("permission_decision must be an allowed decision")
     missing_link_ids = [field for field in EVENT_REQUIRED_IDS[event["event_type"]]
                         if not event.get(field)]
     if missing_link_ids:

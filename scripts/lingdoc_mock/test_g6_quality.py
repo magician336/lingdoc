@@ -178,6 +178,15 @@ class G6ObservabilityTest(unittest.TestCase):
                                               "correlation_id": "corr-1", "runtime_mode": "real",
                                               "task_id": "task.id", "retry_count": float("inf")})
 
+    def test_event_signal_fields_have_status_only_shapes(self):
+        event = {"event_type": "task", "status": "retry", "correlation_id": "corr-1",
+                 "runtime_mode": "real", "task_id": "task.id"}
+        for field in ("stale", "duplicate_side_effect", "download_reauthorized"):
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, field):
+                g6_observability.sanitize_event({**event, field: "yes"})
+        with self.assertRaisesRegex(ValueError, "permission_decision"):
+            g6_observability.sanitize_event({**event, "permission_decision": "secret"})
+
 
 class G6RollbackTest(unittest.TestCase):
     def test_default_rehearsal_is_blocked_until_observed(self):
