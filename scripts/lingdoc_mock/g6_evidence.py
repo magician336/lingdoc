@@ -73,7 +73,9 @@ def normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str],
                      and SAFE_FIXTURE_ID.fullmatch(main_id) and main_id in fixture_ids
                      and isinstance(main_steps, int) and not isinstance(main_steps, bool) and main_steps > 0
                      and main_scope in allowed_main_scopes)
-    actual_http = failure.get("actual_http")
+    # Accept the raw assembler spelling and the already-normalized spelling so
+    # independently generated matrices can pass through the gate once more.
+    actual_http = failure.get("actual_http", failure.get("http_status"))
     readback_status = failure.get("readback_status")
     failure_complete = (failure_result == "PASS" and isinstance(failure_id, str)
                         and SAFE_FIXTURE_ID.fullmatch(failure_id) and failure_id in fixture_ids

@@ -114,6 +114,16 @@ def build_runtime_matrix_from_main_path_reports(
                         "failure_path_result": evidence["key_failure"]["result"]},
         })
     unique_fixture_ids = sorted(set(fixture_ids))
+    for mode in modes:
+        scenario_evidence, scenario_result = normalize_scenario_evidence(
+            mode, unique_fixture_ids, mode["runtime_mode"])
+        mode["scenario_evidence"] = scenario_evidence
+        mode["result"] = reduce_results([mode["result"], scenario_result])
+        mode["quality_evidence"]["result"] = mode["result"]
+        mode["summary"] = {
+            "main_path_result": scenario_evidence["main_path"]["result"],
+            "failure_path_result": scenario_evidence["key_failure"]["result"],
+        }
     result = reduce_results([mode["result"] for mode in modes])
     return {
         "report_version": 1,

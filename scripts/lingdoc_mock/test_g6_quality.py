@@ -476,6 +476,21 @@ class G6RunTest(unittest.TestCase):
         report = g6_run.build_g6_report(runtime_matrix_report=matrix)
         self.assertEqual(report["gate_results"]["G6-02"], "PASS")
 
+    def test_f01_report_assembly_cannot_pass_without_failure_side_effect_evidence(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        reports = {}
+        for mode in g6_run.RUNTIME_MODES:
+            report = g6_main_path.build_main_path_report(
+                main_report=copy.deepcopy(main), failure_observation=copy.deepcopy(failure),
+                runtime_mode=mode, fixture_id="F01:S1")
+            report["failure_path"]["no_formal_side_effect"] = False
+            reports[mode] = report
+
+        matrix = g6_run.build_runtime_matrix_from_main_path_reports(reports)
+
+        self.assertEqual(matrix["result"], "BLOCKED")
+        self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
+
     def test_default_run_is_explicitly_blocked_and_contains_all_gates(self):
         report = g6_run.build_g6_report()
         self.assertEqual(report["result"], "BLOCKED")
