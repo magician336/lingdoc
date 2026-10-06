@@ -96,6 +96,40 @@ def _dependency_row_complete(row: Any, runtime_mode: str) -> bool:
     return set(required) == expected and set(verified) == expected and not missing
 
 
+def _normalize_dependency_matrix(value: Any) -> dict[str, dict[str, Any]]:
+    """Keep only dependency status fields allowed in a runtime matrix."""
+    normalized: dict[str, dict[str, Any]] = {}
+    for mode in RUNTIME_MODES:
+        row = value.get(mode) if isinstance(value, dict) else None
+        if not isinstance(row, dict):
+            normalized[mode] = {"required": [], "verified": [], "missing": [],
+                                "status": "not_verified"}
+            continue
+        required = row.get("required", [])
+        verified = row.get("verified", [])
+        missing = row.get("missing", [])
+        status = row.get("status")
+        allowed = set(RUNTIME_DEPENDENCIES[mode])
+        valid_shape = (
+            all(isinstance(items, list) and all(isinstance(item, str) for item in items)
+                for items in (required, verified, missing))
+            and status in {"verified", "not_verified"}
+            and all(item in allowed for item in [*required, *verified, *missing])
+        )
+        required = sorted({item for item in required if item in allowed}) if isinstance(required, list) else []
+        verified = sorted({item for item in verified if item in allowed}) if isinstance(verified, list) else []
+        missing = sorted({item for item in missing if item in allowed}) if isinstance(missing, list) else []
+        complete = (valid_shape and set(required) == allowed and set(verified) == allowed
+                    and not missing and status == "verified")
+        normalized[mode] = {
+            "required": required,
+            "verified": verified,
+            "missing": missing,
+            "status": "verified" if complete else "not_verified",
+        }
+    return normalized
+
+
 def _safe_version_map(value: Any) -> tuple[dict[str, str], bool]:
     """Normalize version labels and report whether the source had a safe shape."""
     if not isinstance(value, dict) or not value:
@@ -143,6 +177,7 @@ def build_runtime_matrix_from_main_path_reports(
     }
     if not isinstance(dependencies, dict):
         raise ValueError("dependency matrix must be an object keyed by runtime mode")
+    dependencies = _normalize_dependency_matrix(dependencies)
     modes = []
     fixture_ids = []
     for mode in RUNTIME_MODES:
@@ -237,35 +272,11 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
     dependency_matrix = matrix.get("dependency_matrix")
     if not isinstance(dependency_matrix, dict):
         dependency_matrix = {}
-    normalized_dependencies = {}
-    dependencies_verified = True
-    for mode in RUNTIME_MODES:
-        row = dependency_matrix.get(mode)
-        if not isinstance(row, dict):
-            dependencies_verified = False
-            normalized_dependencies[mode] = {"required": [], "verified": [], "missing": [],
-                                             "status": "not_verified"}
-            continue
-        required = row.get("required", [])
-        verified = row.get("verified", [])
-        missing = row.get("missing", [])
-        status = row.get("status")
-        allowed_dependencies = set(RUNTIME_DEPENDENCIES[mode])
-        if (not all(isinstance(values, list) and all(isinstance(value, str) for value in values)
-                    for values in (required, verified, missing))
-                or status not in {"verified", "not_verified"}
-                or any(value not in allowed_dependencies for value in [*required, *verified, *missing])):
-            dependencies_verified = False
-        required = [value for value in required if value in allowed_dependencies]
-        verified = [value for value in verified if value in allowed_dependencies]
-        missing = [value for value in missing if value in allowed_dependencies]
-        if set(required) != allowed_dependencies or status != "verified" or missing or set(required) != set(verified):
-            dependencies_verified = False
-        normalized_dependencies[mode] = {
-            "required": sorted(required), "verified": sorted(verified),
-            "missing": sorted(missing), "status": status if status in {"verified", "not_verified"}
-            else "not_verified",
-        }
+    normalized_dependencies = _normalize_dependency_matrix(dependency_matrix)
+    dependencies_verified = all(
+        _dependency_row_complete(normalized_dependencies[mode], mode)
+        for mode in RUNTIME_MODES
+    )
     mode_entries = matrix.get("modes")
     normalized_modes = []
     mode_results = []

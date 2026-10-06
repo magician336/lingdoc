@@ -739,6 +739,27 @@ class G6RunTest(unittest.TestCase):
         self.assertEqual(matrix["result"], "BLOCKED")
         self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
 
+    def test_direct_matrix_assembly_drops_unknown_dependency_fields(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        reports = {
+            mode: g6_main_path.build_main_path_report(
+                main_report=copy.deepcopy(main), failure_observation=copy.deepcopy(failure),
+                runtime_mode=mode, fixture_id="F01:S1")
+            for mode in g6_run.RUNTIME_MODES
+        }
+        dependencies = {
+            mode: {"required": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "verified": list(g6_run.RUNTIME_DEPENDENCIES[mode]), "missing": [],
+                   "status": "verified", "token": "SECRET_TOKEN"}
+            for mode in g6_run.RUNTIME_MODES
+        }
+        matrix = g6_run.build_runtime_matrix_from_main_path_reports(
+            reports, dependency_matrix=dependencies,
+            provider_semantics={mode: "verified" for mode in g6_run.RUNTIME_MODES})
+        encoded = json.dumps(matrix)
+        self.assertNotIn("SECRET_TOKEN", encoded)
+        self.assertNotIn("token", matrix["dependency_matrix"]["mock"])
+
     def test_f01_report_conversion_accepts_state_shaped_readback(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
         failure = copy.deepcopy(failure)
