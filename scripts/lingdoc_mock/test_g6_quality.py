@@ -7,7 +7,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.lingdoc_mock import g6_main_path, g6_metrics, g6_observability, g6_rollback, g6_run, g6_security
+from scripts.lingdoc_mock import (g6_evidence, g6_main_path, g6_metrics, g6_observability,
+                                   g6_rollback, g6_run, g6_security)
 
 
 class G6SecurityTest(unittest.TestCase):
@@ -99,6 +100,16 @@ class G6SecurityTest(unittest.TestCase):
     def test_security_fixture_id_must_be_redacted(self):
         with self.assertRaisesRegex(ValueError, "fixture_id"):
             g6_security.build_security_report(fixture_id="tenant/secret/project")
+
+
+class G6EvidenceTest(unittest.TestCase):
+    def test_shared_evidence_boundary_rejects_sensitive_metadata(self):
+        with self.assertRaisesRegex(ValueError, "sensitive"):
+            g6_evidence.build_evidence(
+                fixture_id="G6:E1", runtime_mode="mock", result="BLOCKED",
+                input_value={}, output_value={}, attribution=["runtime"],
+                evidence_refs=[], owner="quality", reviewer="qa",
+                dependency_versions={"token": "secret"})
 
 
 class G6ObservabilityTest(unittest.TestCase):

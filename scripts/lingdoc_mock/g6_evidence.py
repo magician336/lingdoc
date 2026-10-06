@@ -20,6 +20,8 @@ SAFE_READBACK_STATUS = {"unchanged", "not_recorded", "observed", "blocked", "unk
 SAFE_FIXTURE_ID = re.compile(
     r"(?:[A-Za-z][A-Za-z0-9_.-]{1,63}(?::[A-Za-z0-9_.-]{1,64})?|[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64})"
 )
+SENSITIVE_KEYS = frozenset({"body", "content", "quoted_text", "source_text", "token",
+                            "authorization", "prompt", "completion", "model_input", "cookie"})
 
 
 def reduce_results(results: list[str]) -> str:
@@ -43,6 +45,18 @@ def is_finite_number(value: Any) -> bool:
     """Accept measurable numeric observations while rejecting bool/NaN/Infinity."""
     return (isinstance(value, (int, float)) and not isinstance(value, bool)
             and math.isfinite(value))
+
+
+def _reject_sensitive(value: Any, label: str) -> None:
+    if isinstance(value, dict):
+        leaked = SENSITIVE_KEYS.intersection(str(key).lower() for key in value)
+        if leaked:
+            raise ValueError(f"{label} contains sensitive fields: {', '.join(sorted(leaked))}")
+        for child in value.values():
+            _reject_sensitive(child, label)
+    elif isinstance(value, list):
+        for child in value:
+            _reject_sensitive(child, label)
 
 
 def normalize_scenario_evidence(entry: dict[str, Any], fixture_ids: list[str],
@@ -160,6 +174,13 @@ def build_evidence(*, fixture_id: str, runtime_mode: str, result: str,
         raise ValueError("runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
     if not isinstance(fixture_id, str) or not SAFE_FIXTURE_ID.fullmatch(fixture_id):
         raise ValueError("fixture_id must be a redacted fixture alias or digest")
+    for label, value in (("permission_snapshot", permission_snapshot),
+                         ("object_versions", object_versions),
+                         ("dependency_versions", dependency_versions),
+                         ("environment_versions", environment_versions),
+                         ("input_summary", input_summary),
+                         ("output_summary", output_summary)):
+        _reject_sensitive(value, label)
     return {
         "evidence_version": 1,
         "fixture_id": fixture_id,
