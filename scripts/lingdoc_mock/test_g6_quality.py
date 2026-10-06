@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import copy
+from pathlib import Path
+import tempfile
 import unittest
 
 from scripts.lingdoc_mock import g6_main_path, g6_metrics, g6_observability, g6_rollback, g6_run, g6_security
@@ -490,6 +492,44 @@ class G6RunTest(unittest.TestCase):
 
         self.assertEqual(matrix["result"], "BLOCKED")
         self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
+
+    def test_cli_assembles_main_path_report_files_into_g6_02(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        reports = {}
+        for mode in g6_run.RUNTIME_MODES:
+            report = g6_main_path.build_main_path_report(
+                main_report=copy.deepcopy(main), failure_observation=copy.deepcopy(failure),
+                runtime_mode=mode, fixture_id="F01:S1")
+            if mode != "mock":
+                report["main_path"]["verification_scope"] = "observed"
+            reports[mode] = report
+        dependencies = {
+            mode: {"required": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "verified": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "missing": [], "status": "verified"}
+            for mode in g6_run.RUNTIME_MODES
+        }
+        semantics = {mode: "verified" for mode in g6_run.RUNTIME_MODES}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            reports_path = root / "reports.json"
+            dependencies_path = root / "dependencies.json"
+            semantics_path = root / "semantics.json"
+            output_path = root / "g6.json"
+            reports_path.write_text(json.dumps(reports), encoding="utf-8")
+            dependencies_path.write_text(json.dumps(dependencies), encoding="utf-8")
+            semantics_path.write_text(json.dumps(semantics), encoding="utf-8")
+
+            status = g6_run.main([
+                "--output", str(output_path),
+                "--main-path-reports", str(reports_path),
+                "--runtime-dependencies", str(dependencies_path),
+                "--provider-semantics", str(semantics_path),
+            ])
+
+            self.assertEqual(status, 1, "other G6 gates remain blocked without live evidence")
+            output = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(output["gate_results"]["G6-02"], "PASS")
 
     def test_default_run_is_explicitly_blocked_and_contains_all_gates(self):
         report = g6_run.build_g6_report()
