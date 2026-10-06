@@ -59,7 +59,7 @@ ALERT_ACTIONS = (
     {"signal": "revocation_intercept", "action": "pause_affected_flow"},
     {"signal": "async_failure_retry", "action": "retry_then_notify_owner"},
     {"signal": "stale_or_duplicate", "action": "rollback_or_stop_write"},
-    {"signal": "download_reauthorization", "action": "recheck_permission_before_download"},
+    {"signal": "download_reauthorization", "action": "block_download_until_reauthorized"},
     {"signal": "docx_loss", "action": "block_export"},
     {"signal": "external_dependency", "action": "mark_blocked_and_notify_owner"},
 )

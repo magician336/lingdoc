@@ -181,6 +181,9 @@ class G6ObservabilityTest(unittest.TestCase):
         self.assertTrue(report["signal_coverage"]["revocation_intercept"])
         self.assertTrue(all(report["alert_coverage"].values()))
         self.assertEqual(report["uncovered_scope"], [])
+        self.assertEqual(next(alert["action"] for alert in report["alerts"]
+                              if alert["signal"] == "download_reauthorization"),
+                         "block_download_until_reauthorized")
         self.assertEqual(report["latency"]["sample_count"], len(g6_observability.EVENT_TYPES))
         self.assertEqual(report["latency"]["p95_ms"], 8)
         self.assertEqual(report["latency"]["p99_ms"], 8)
