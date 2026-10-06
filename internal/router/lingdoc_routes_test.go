@@ -30,8 +30,8 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	candidateadoption.RegisterRoutes(routes, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
 	generation.RegisterRoutes(routes, generation.NewHandler(nil, nil))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
-	if got := len(engine.Routes()); got != 51 {
-		t.Fatalf("registered %d LingDoc routes, want 51", got)
+	if got := len(engine.Routes()); got != 52 {
+		t.Fatalf("registered %d LingDoc routes, want 52", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
@@ -68,6 +68,7 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 
 	for _, route := range []struct{ method, path string }{
+		{http.MethodGet, "/api/v1/lingdoc/templates/:templateId"},
 		{http.MethodGet, "/api/v1/lingdoc/projects"},
 		{http.MethodPost, "/api/v1/lingdoc/projects"},
 		{http.MethodPost, "/api/v1/lingdoc/projects/:projectId/retrieval"},

@@ -184,6 +184,9 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	if err != nil || len(chapters) != 2 || chapters[0].CurrentVersionID != nil {
 		t.Fatalf("chapters: %+v %v", chapters, err)
 	}
+	if chapters[0].SectionID != "question" || chapters[1].SectionID != "method" {
+		t.Fatalf("chapters order: got %q then %q, want template order question then method", chapters[0].SectionID, chapters[1].SectionID)
+	}
 	chapter := chapters[0]
 	text := SaveChapterInput{ExpectedChapterVersionID: nil, ExpectedSpecRevision: 1, BodyMarkdown: "第一稿", SourceIDs: []string{}}
 	version, _, replay, err := svc.SaveChapter(ctx, owner, project.ID, chapter.ID, "chapter-001", text)
