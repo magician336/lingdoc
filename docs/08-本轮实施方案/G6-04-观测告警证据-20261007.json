@@ -1,0 +1,325 @@
+{
+  "alert_coverage": {
+    "async_failure_retry": true,
+    "docx_loss": true,
+    "download_reauthorization": true,
+    "external_dependency": true,
+    "permission_denied": true,
+    "request_conflict": true,
+    "request_denied": true,
+    "revocation_intercept": true,
+    "stale_or_duplicate": true
+  },
+  "alerts": [
+    {
+      "action": "notify_owner",
+      "signal": "request_denied"
+    },
+    {
+      "action": "notify_owner",
+      "signal": "request_conflict"
+    },
+    {
+      "action": "pause_affected_flow",
+      "signal": "permission_denied"
+    },
+    {
+      "action": "pause_affected_flow",
+      "signal": "revocation_intercept"
+    },
+    {
+      "action": "retry_then_notify_owner",
+      "signal": "async_failure_retry"
+    },
+    {
+      "action": "rollback_or_stop_write",
+      "signal": "stale_or_duplicate"
+    },
+    {
+      "action": "block_download_until_reauthorized",
+      "signal": "download_reauthorization"
+    },
+    {
+      "action": "block_export",
+      "signal": "docx_loss"
+    },
+    {
+      "action": "mark_blocked_and_notify_owner",
+      "signal": "external_dependency"
+    }
+  ],
+  "chain_coverage": {
+    "audit": true,
+    "changeset": true,
+    "download": true,
+    "export": true,
+    "request": true,
+    "snapshot": true,
+    "task": true,
+    "validation": true
+  },
+  "correlation_ids": [
+    "corr-g6-obs-20261007"
+  ],
+  "events": [
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 3.990191,
+      "event_type": "request",
+      "request_id": "request.g6.id",
+      "resource_type": "lingdoc.request",
+      "runtime_mode": "real",
+      "status": "success"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 4.390815,
+      "event_type": "task",
+      "provider": "deepseek",
+      "resource_type": "generation",
+      "runtime_mode": "real",
+      "status": "completed",
+      "task_id": "task.g6.id"
+    },
+    {
+      "changeset_id": "changeset.g6.id",
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 6.213035,
+      "event_type": "changeset",
+      "resource_type": "project.change_set",
+      "runtime_mode": "real",
+      "status": "completed"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 3.990191,
+      "event_type": "validation",
+      "resource_type": "release.validation",
+      "runtime_mode": "real",
+      "status": "completed",
+      "task_id": "task.g6.id"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 4.154034,
+      "event_type": "snapshot",
+      "resource_type": "release.snapshot",
+      "runtime_mode": "real",
+      "snapshot_id": "snapshot.g6.id",
+      "stale": false,
+      "status": "success"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 3.237976,
+      "event_type": "export",
+      "export_id": "export.g6.id",
+      "provider": "docx",
+      "resource_type": "docx.export",
+      "runtime_mode": "real",
+      "status": "completed"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "download_reauthorized": true,
+      "duration_ms": 15.977332,
+      "event_type": "download",
+      "export_id": "export.g6.id",
+      "resource_type": "docx.file",
+      "runtime_mode": "real",
+      "status": "success"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 3.990191,
+      "event_type": "audit",
+      "request_id": "request.g6.id",
+      "resource_type": "audit.event",
+      "runtime_mode": "real",
+      "status": "success"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 1.0,
+      "event_type": "request",
+      "permission_decision": "deny",
+      "permission_reason": "tenant_scope",
+      "request_id": "request.g6.id",
+      "resource_type": "tenant.scope",
+      "runtime_mode": "real",
+      "status": "denied"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duplicate_side_effect": false,
+      "duration_ms": 4.390815,
+      "event_type": "task",
+      "resource_type": "generation",
+      "retry_count": 0,
+      "runtime_mode": "real",
+      "status": "success",
+      "task_id": "task.g6.id"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duplicate_side_effect": false,
+      "duration_ms": 7.579749,
+      "event_type": "request",
+      "request_id": "request.g6.id",
+      "resource_type": "idempotency",
+      "runtime_mode": "real",
+      "status": "conflict"
+    }
+  ],
+  "evidence_sources": [
+    "fixed-correlation-F01-real",
+    "fixed-correlation-change-set-rehearsal",
+    "docker-structured-request-log"
+  ],
+  "latency": {
+    "p95_ms": 15.977332,
+    "p99_ms": 15.977332,
+    "sample_count": 11,
+    "status": "observed"
+  },
+  "observed_log_records": 53,
+  "open_gaps": [
+    "async_failure_retry was not induced in the real service",
+    "docx_loss was not induced in the real renderer",
+    "revocation_intercept was observed in T15-08 but not under this fixed correlation chain"
+  ],
+  "quality_evidence": {
+    "attribution": [
+      "runtime",
+      "external_service"
+    ],
+    "context": {
+      "context_revision": null,
+      "status": "not_available",
+      "target_version": null
+    },
+    "dependency_versions": {
+      "model": "unknown",
+      "weknora": "unknown"
+    },
+    "environment_versions": {
+      "status": "not_observed"
+    },
+    "evidence_refs": [
+      "events",
+      "chain_coverage",
+      "signal_coverage",
+      "latency",
+      "alerts"
+    ],
+    "evidence_version": 1,
+    "execution_window": {
+      "end": null,
+      "start": null,
+      "status": "not_recorded"
+    },
+    "fixture_digest": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
+    "fixture_id": "G6-OBS-01",
+    "input_hash": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
+    "input_summary": {
+      "event_count": 11
+    },
+    "object_versions": {
+      "status": "not_observed"
+    },
+    "output_hash": "2f32c57635f3061153bf9489e4ea775a4a55c8eaaf409e1ec77b9703a3a00baa",
+    "output_summary": {
+      "chain_coverage": {
+        "audit": true,
+        "changeset": true,
+        "download": true,
+        "export": true,
+        "request": true,
+        "snapshot": true,
+        "task": true,
+        "validation": true
+      },
+      "latency": {
+        "p95_ms": 15.977332,
+        "p99_ms": 15.977332,
+        "sample_count": 11,
+        "status": "observed"
+      }
+    },
+    "owner": "quality-operations",
+    "permission_snapshot": {
+      "status": "not_observed"
+    },
+    "project_id": "project.id",
+    "result": "BLOCKED",
+    "reviewer": "unassigned",
+    "ruleset_hash": null,
+    "runtime_mode": "real",
+    "template_version": null
+  },
+  "redaction": {
+    "allowed_shape": [
+      "causation_id",
+      "changeset_id",
+      "context_revision",
+      "correlation_id",
+      "download_reauthorized",
+      "duplicate_side_effect",
+      "duration_ms",
+      "error_code",
+      "event_type",
+      "export_id",
+      "file_loss_class",
+      "permission_decision",
+      "permission_reason",
+      "project_id",
+      "provider",
+      "request_id",
+      "resource_type",
+      "result_code",
+      "retry_count",
+      "ruleset_hash",
+      "runtime_mode",
+      "snapshot_id",
+      "stale",
+      "status",
+      "target_revision",
+      "task_id",
+      "template_version",
+      "tenant_id"
+    ],
+    "forbidden_fields": [
+      "authorization",
+      "body",
+      "completion",
+      "content",
+      "model_input",
+      "prompt",
+      "quoted_text",
+      "source_text",
+      "token"
+    ]
+  },
+  "report_version": 1,
+  "result": "BLOCKED",
+  "runtime_mode": "real",
+  "scope": "redacted request-to-download correlation and executable quality alerts",
+  "signal_coverage": {
+    "async_failure_retry": false,
+    "docx_loss": false,
+    "download_reauthorization": true,
+    "external_dependency": true,
+    "latency_p95_p99": true,
+    "permission_denied": true,
+    "request_conflict": true,
+    "request_denied": true,
+    "request_success": true,
+    "revocation_intercept": false,
+    "stale_or_duplicate": true
+  },
+  "uncovered_scope": [
+    "signal:async_failure_retry",
+    "signal:revocation_intercept",
+    "signal:docx_loss"
+  ]
+}

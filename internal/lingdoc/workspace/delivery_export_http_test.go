@@ -599,25 +599,11 @@ func TestListChaptersRedactsRevokedBoundSource(t *testing.T) {
 
 	sourceAuthorizer.revoked = true
 	redacted := deliveryServe(router, deliveryRequest(http.MethodGet, path, "", ""))
-	if redacted.Code != http.StatusOK {
-		t.Fatalf("list chapters after source access revocation = %d, want 200: %s", redacted.Code, redacted.Body.String())
+	if redacted.Code != http.StatusForbidden {
+		t.Fatalf("list chapters after source access revocation = %d, want 403: %s", redacted.Code, redacted.Body.String())
 	}
-	var payload struct {
-		Data []struct {
-			BodyMarkdown     string `json:"body_markdown"`
-			CitationUsages   []any  `json:"citation_usages"`
-			CitationStatuses []struct {
-				Status string `json:"status"`
-			} `json:"citation_statuses"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(redacted.Body.Bytes(), &payload); err != nil {
-		t.Fatal(err)
-	}
-	for _, chapter := range payload.Data {
-		if len(chapter.CitationStatuses) > 0 && (chapter.BodyMarkdown != "" || len(chapter.CitationUsages) != 0 || chapter.CitationStatuses[0].Status != "unavailable") {
-			t.Fatalf("revoked chapter was not redacted: %+v", chapter)
-		}
+	if code := decodeDeliveryEnvelope(t, redacted).Error; code == nil || code.Code != "source_access_denied" {
+		t.Fatalf("list chapters after source access revocation error = %+v, want source_access_denied", code)
 	}
 }
 

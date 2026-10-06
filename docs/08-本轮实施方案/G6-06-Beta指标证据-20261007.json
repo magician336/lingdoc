@@ -1,0 +1,199 @@
+{
+  "decision": "pause",
+  "decision_evidence": {
+    "eligible_real_sample_ids": [],
+    "p0_p1_sample_ids": [],
+    "p2_sample_ids": [
+      "sample.g6.real.01"
+    ],
+    "real_sample_ids": [
+      "sample.g6.real.01"
+    ],
+    "rollback_result": "FAIL",
+    "uncovered_risks": [
+      "semantic_hypothesis_gap",
+      "grey_pause_not_exercised",
+      "insufficient_denominators"
+    ]
+  },
+  "decision_reason": "unresolved P0/P1, blocked real dependency or unverified rollback",
+  "evidence_sources": [
+    "g6-real-manual-assertions",
+    "g6-rollback-real-report",
+    "g6-observability-real-report"
+  ],
+  "excluded_sample_ids": [],
+  "metrics": {
+    "export_loss_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null
+    },
+    "false_positive_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null
+    },
+    "manual_effort_minutes": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null
+    },
+    "missed_edit_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null
+    },
+    "source_support_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null
+    },
+    "unconfirmed_rate": {
+      "denominator": 0,
+      "numerator": 0,
+      "rate": null
+    }
+  },
+  "missing_denominators": [
+    "export_loss_rate",
+    "false_positive_rate",
+    "manual_effort_minutes",
+    "missed_edit_rate",
+    "source_support_rate",
+    "unconfirmed_rate"
+  ],
+  "missing_values": [
+    {
+      "missing_fields": [
+        "changesets",
+        "dismissed_issues",
+        "export_checks",
+        "export_loss_items",
+        "issues_reviewed",
+        "manual_minutes",
+        "missed_edits",
+        "projects",
+        "snapshots",
+        "supported_claims",
+        "total_claims",
+        "unconfirmed_items"
+      ],
+      "sample_id": "sample.g6.real.01",
+      "sample_version": "sample-version.g6.01"
+    }
+  ],
+  "quality_evidence": {
+    "attribution": [
+      "permission",
+      "runtime"
+    ],
+    "context": {
+      "context_revision": null,
+      "status": "not_available",
+      "target_version": null
+    },
+    "dependency_versions": {
+      "model": "unknown",
+      "weknora": "unknown"
+    },
+    "environment_versions": {
+      "status": "not_observed"
+    },
+    "evidence_refs": [
+      "window",
+      "raw_counts",
+      "metrics",
+      "decision"
+    ],
+    "evidence_version": 1,
+    "execution_window": {
+      "end": null,
+      "start": null,
+      "status": "not_recorded"
+    },
+    "fixture_digest": "9c69986bd08b89717b89a758ef1a251280af0a91e38ef03577472d6b2cb3f830",
+    "fixture_id": "G6-BETA-window.g6.beta.20261007",
+    "input_hash": "9c69986bd08b89717b89a758ef1a251280af0a91e38ef03577472d6b2cb3f830",
+    "input_summary": {
+      "sample_count": 1
+    },
+    "object_versions": {
+      "status": "not_observed"
+    },
+    "output_hash": "72b3413da6066b3ae7cb0362d1fd128978853d5f0fc40b75aaa15635faad0da7",
+    "output_summary": {
+      "decision": "pause"
+    },
+    "owner": "product-and-qa",
+    "permission_snapshot": {
+      "status": "not_observed"
+    },
+    "project_id": "project.id",
+    "result": "BLOCKED",
+    "reviewer": "unassigned",
+    "ruleset_hash": null,
+    "runtime_mode": "real",
+    "template_version": null
+  },
+  "raw_counts": {
+    "dependency_blocked": 1,
+    "eligible_real": 0,
+    "excluded_non_real": 0,
+    "p0_p1": 0,
+    "p2": 1,
+    "quality_pass_real": 0,
+    "real": 1,
+    "samples_with_missing_values": 1,
+    "submitted": 1
+  },
+  "readiness": "BLOCKED",
+  "report_version": 1,
+  "result": "BLOCKED",
+  "sample_versions": [
+    {
+      "eligible": false,
+      "quality_result": "BLOCKED",
+      "runtime_mode": "real",
+      "sample_id": "sample.g6.real.01",
+      "sample_version": "sample-version.g6.01",
+      "severity": "P2"
+    }
+  ],
+  "scope": "one locked Beta trial window; only eligible real samples enter effect rates",
+  "semantic_quality_gap": {
+    "action": "continue_trial_with_explicit_hypothesis_variable_review",
+    "real_model_output_has_hypothesis_or_variables": false
+  },
+  "window": {
+    "included_projects": [
+      "project.g6.id"
+    ],
+    "included_users": [
+      "user.g6.id"
+    ],
+    "minimum_reportable_samples": 3,
+    "process_evidence": {
+      "authorization": "observed",
+      "failure_path": "observed",
+      "key_scenario_rerun": "observed",
+      "main_path": "observed",
+      "manual_review": "observed",
+      "repair_or_rollback": "blocked"
+    },
+    "redaction": "g6-beta-20261007",
+    "rollback_result": "FAIL",
+    "ruleset_hash": "rules.key",
+    "runtime_modes": [
+      "real"
+    ],
+    "target_samples": 10,
+    "template_version": "template.v1",
+    "uncovered_risks": [
+      "semantic_hypothesis_gap",
+      "grey_pause_not_exercised",
+      "insufficient_denominators"
+    ],
+    "window_id": "window.g6.beta.20261007"
+  }
+}

@@ -1,0 +1,159 @@
+{
+  "checks": [
+    {
+      "evidence_ref": "rollback:old_objects_readable",
+      "id": "old_objects_readable",
+      "observed": true,
+      "requirement": "old-version objects remain readable during the compatibility window",
+      "result": "PASS"
+    },
+    {
+      "evidence_ref": "rollback:new_fields_unknown_safe",
+      "id": "new_fields_unknown_safe",
+      "observed": null,
+      "requirement": "missing fields default to UNKNOWN or pending migration",
+      "result": "BLOCKED"
+    },
+    {
+      "evidence_ref": "rollback:unknown_state_not_confirmed",
+      "id": "unknown_state_not_confirmed",
+      "observed": null,
+      "requirement": "unknown permission/version/provenance never confirms delivery",
+      "result": "BLOCKED"
+    },
+    {
+      "evidence_ref": "rollback:flag_pause_by_scope",
+      "id": "flag_pause_by_scope",
+      "observed": null,
+      "requirement": "tenant/project/template/ruleset/runtime flag can pause new writes",
+      "result": "BLOCKED"
+    },
+    {
+      "evidence_ref": "rollback:history_immutable",
+      "id": "history_immutable",
+      "observed": true,
+      "requirement": "published templates, frozen snapshots, files and audit remain unchanged",
+      "result": "PASS"
+    },
+    {
+      "evidence_ref": "rollback:reverse_changeset",
+      "id": "reverse_changeset",
+      "observed": true,
+      "requirement": "applied changes restore through an inverse change rather than pointer edits",
+      "result": "PASS"
+    },
+    {
+      "evidence_ref": "rollback:post_rollback_verification",
+      "id": "post_rollback_verification",
+      "observed": null,
+      "requirement": "recovery reruns permission, snapshot and download checks",
+      "result": "BLOCKED"
+    }
+  ],
+  "drill": {
+    "drill_id": null,
+    "duration_ms": 0,
+    "impact_scope": [
+      "project.id",
+      "template_version.id"
+    ],
+    "recovery_verified": true,
+    "severity": "P1",
+    "uncovered_risks": [
+      "gray_pause_not_exercised",
+      "post_rollback_download_not_exercised"
+    ]
+  },
+  "fixture_id": "G6-ROLLBACK-01",
+  "live_rehearsal": {
+    "context_revision_increased": true,
+    "forward_apply_status": "applied",
+    "inverse_apply_status": "applied",
+    "restored_research_goal": true
+  },
+  "plan": {
+    "migration_compatibility": {
+      "failure_cleanup": "required",
+      "new_version_write": "versioned",
+      "old_version_read": "required",
+      "rollback_window": "explicit",
+      "unknown_default": "UNKNOWN"
+    },
+    "pause_scope": [
+      "tenant",
+      "project",
+      "template_version",
+      "ruleset_hash",
+      "runtime_mode"
+    ],
+    "preserve": [
+      "published_template",
+      "frozen_snapshot",
+      "historical_file",
+      "audit",
+      "revision_pointer"
+    ],
+    "recovery": [
+      "inverse_changeset",
+      "compatibility_read",
+      "permission_recheck",
+      "download_recheck"
+    ],
+    "write_policy": "stop_new_version_writes_only"
+  },
+  "quality_evidence": {
+    "attribution": [
+      "runtime"
+    ],
+    "context": {
+      "context_revision": null,
+      "status": "not_available",
+      "target_version": null
+    },
+    "dependency_versions": {
+      "model": "unknown",
+      "weknora": "unknown"
+    },
+    "environment_versions": {
+      "status": "not_observed"
+    },
+    "evidence_refs": [
+      "plan",
+      "checks"
+    ],
+    "evidence_version": 1,
+    "execution_window": {
+      "end": null,
+      "start": null,
+      "status": "not_recorded"
+    },
+    "fixture_digest": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
+    "fixture_id": "G6-ROLLBACK-01",
+    "input_hash": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
+    "input_summary": {
+      "check_count": 7
+    },
+    "object_versions": {
+      "status": "not_observed"
+    },
+    "output_hash": "0d2af67d2ebaf50fa774349a6df95cfb5ec16e33e1facea45676e41fef719892",
+    "output_summary": {
+      "result": "BLOCKED"
+    },
+    "owner": "release-operations",
+    "permission_snapshot": {
+      "status": "not_observed"
+    },
+    "project_id": "project.id",
+    "result": "BLOCKED",
+    "reviewer": "unassigned",
+    "ruleset_hash": null,
+    "runtime_mode": "real",
+    "template_version": null
+  },
+  "report_version": 1,
+  "result": "BLOCKED",
+  "runtime_mode": "real",
+  "safety_boundary": "This report never edits migration state, revision pointers or published artifacts.",
+  "scope": "migration compatibility, grey pause and P0/P1 rollback rehearsal"
+}

@@ -628,7 +628,7 @@ func TestNormalizeCitationUsagesCompletesDeclaredSources(t *testing.T) {
 	}
 }
 
-func TestListChaptersReportsCitationStatusesAndRedactsUnavailableContent(t *testing.T) {
+func TestListChaptersDeniesRevokedSourceAndRedactsStaleContent(t *testing.T) {
 	policy := &citationStatusSources{statuses: []CitationStatus{{SourceID: "alpha", Status: "unavailable", Detail: "来源已撤权"}}}
 	svc := testStoreWithPolicy(t, filepath.Join(t.TempDir(), "citation-status.db"), policy)
 	ctx := context.Background()
@@ -642,14 +642,8 @@ func TestListChaptersReportsCitationStatusesAndRedactsUnavailableContent(t *test
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, actor, projectID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(chapters) == 0 || chapters[0].BodyMarkdown != "" || len(chapters[0].CitationUsages) != 0 || len(chapters[0].CitationStatuses) != 1 {
-		t.Fatalf("redacted chapter = %+v", chapters)
-	}
-	if chapters[0].CitationStatuses[0].Status != "unavailable" {
-		t.Fatalf("citation status = %+v", chapters[0].CitationStatuses)
+	if !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("revoked citation should deny chapter list, got chapters=%+v err=%v", chapters, err)
 	}
 	policy.statuses = []CitationStatus{{SourceID: "alpha", Status: "needs_review", Detail: "来源版本已变化"}}
 	chapters, err = svc.ListChapters(ctx, actor, projectID)

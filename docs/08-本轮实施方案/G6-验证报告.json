@@ -1,7 +1,7 @@
 {
   "gate_results": {
     "G6-01": "PASS",
-    "G6-02": "BLOCKED",
+    "G6-02": "PASS",
     "G6-03": "BLOCKED",
     "G6-04": "BLOCKED",
     "G6-05": "BLOCKED",
@@ -51,47 +51,14 @@
         "step_sequence_complete": true,
         "unexpected_step_ids": []
       },
-      "fixture_digest": "700d6696a781240903105bfd327a6c0bf03d7edfa42d29f25faa94f831955b23",
+      "fixture_digest": "c2a0a7e3c2363d2d4c39fe7a026c24d4d704d35519bfd98d2229106c6d101c6b",
       "fixture_id": "G6-F01-v1",
-      "fixture_state": {
-        "asset": {
-          "id": "asset.id",
-          "permission": "allow",
-          "status": "ready"
-        },
-        "chapter": {
-          "id": "chapter.id",
-          "status": "ready",
-          "version": "chapter.v1"
-        },
-        "check": {
-          "id": "check.id",
-          "status": "passed"
-        },
-        "download": {
-          "id": "export.id",
-          "reauthorized": true
-        },
-        "export": {
-          "id": "export.id",
-          "status": "ready"
-        },
-        "project": {
-          "id": "project.id",
-          "status": "active",
-          "version": "project.v1"
-        },
-        "release": {
-          "id": "release.id",
-          "snapshot": "snapshot.id",
-          "status": "ready"
-        }
-      },
+      "fixture_state": {},
       "main_path": {
         "completed_steps": 23,
         "result": "PASS",
         "total_steps": 23,
-        "verification_scope": "contract_fixture_only"
+        "verification_scope": "http_smoke_only"
       },
       "quality_evidence": {
         "attribution": [
@@ -103,15 +70,11 @@
           "target_version": null
         },
         "dependency_versions": {
-          "api": "not_run",
-          "contract": "contract.v1",
-          "docx": "not_run",
-          "model": "not_run",
-          "weknora": "not_run"
+          "model": "unknown",
+          "weknora": "unknown"
         },
         "environment_versions": {
-          "platform": "platform.contract",
-          "runtime": "python.contract"
+          "status": "not_observed"
         },
         "evidence_refs": [
           "fixture_coverage",
@@ -124,48 +87,35 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "700d6696a781240903105bfd327a6c0bf03d7edfa42d29f25faa94f831955b23",
+        "fixture_digest": "c2a0a7e3c2363d2d4c39fe7a026c24d4d704d35519bfd98d2229106c6d101c6b",
         "fixture_id": "G6-F01-v1",
         "input_hash": "3a357629ffe26b76b5d151bc1eff12ac5566a9c8fb7ddd5f12e1a7e31e32df36",
         "input_summary": {
           "required_parts": 7
         },
         "object_versions": {
-          "asset": "asset.v1",
-          "chapter": "chapter.v1",
-          "project": "project.v1",
-          "spec": "spec.revision"
+          "status": "not_observed"
         },
-        "output_hash": "e8622b15e057bba4ca01d4356f2aa0e1d89286cb470f734f167fc60f032b5d6d",
+        "output_hash": "feee6bac30e55d89971abb50f2b04e7c201a4375c03b613e318b05c529e96a0d",
         "output_summary": {
           "completed_steps": 23,
           "failure_side_effect_status": "observed",
-          "fixture_parts_observed": [
-            "asset",
-            "chapter",
-            "check",
-            "download",
-            "export",
-            "project",
-            "release"
-          ]
+          "fixture_parts_observed": []
         },
         "owner": "quality-operations",
         "permission_snapshot": {
-          "actor": "user.id",
-          "project": "project.id",
-          "status": "mock"
+          "status": "not_observed"
         },
         "project_id": "project.id",
         "result": "PASS",
         "reviewer": "unassigned",
-        "ruleset_hash": "rules.key",
-        "runtime_mode": "mock",
-        "template_version": "template.v1"
+        "ruleset_hash": null,
+        "runtime_mode": "real",
+        "template_version": null
       },
       "report_version": 1,
       "result": "PASS",
-      "runtime_mode": "mock",
+      "runtime_mode": "real",
       "scope": "canonical F01 project-to-download path plus one failure side-effect fixture"
     },
     "G6-02": {
@@ -181,15 +131,7 @@
           ]
         },
         "real": {
-          "missing": [
-            "api",
-            "docx",
-            "file",
-            "model",
-            "permissions",
-            "queue",
-            "weknora"
-          ],
+          "missing": [],
           "required": [
             "api",
             "docx",
@@ -199,8 +141,16 @@
             "queue",
             "weknora"
           ],
-          "status": "not_verified",
-          "verified": []
+          "status": "verified",
+          "verified": [
+            "api",
+            "docx",
+            "file",
+            "model",
+            "permissions",
+            "queue",
+            "weknora"
+          ]
         },
         "real_api_fake_model": {
           "missing": [],
@@ -292,38 +242,45 @@
           "verification_scope": "observed"
         },
         {
-          "dependency_status": "not_verified",
+          "dependency_status": "verified",
           "dependency_versions": {
-            "model": "unknown",
-            "weknora": "unknown"
+            "api": "lingdoc.api.v1",
+            "docx": "docx.renderer.v1",
+            "file": "local-storage.v1",
+            "model": "deepseek-chat.v1",
+            "permissions": "rbac.v1",
+            "queue": "asynq.v1",
+            "weknora": "weknora.g6"
           },
           "environment_versions": {
-            "status": "not_observed"
+            "platform": "docker.linux.amd64",
+            "python": "python3.12",
+            "runtime": "go1.26"
           },
-          "provider_semantics_status": "not_verified",
-          "result": "BLOCKED",
+          "provider_semantics_status": "verified",
+          "result": "PASS",
           "runtime_mode": "real",
           "scenario_evidence": {
             "key_failure": {
               "fixture_id": "G6-F01-v1",
-              "http_status": null,
-              "no_formal_side_effect": null,
-              "readback_status": "not_recorded",
-              "result": "BLOCKED"
+              "http_status": 400,
+              "no_formal_side_effect": true,
+              "readback_status": "unchanged",
+              "result": "PASS"
             },
             "main_path": {
-              "completed_steps": 15,
+              "completed_steps": 23,
               "fixture_id": "G6-F01-v1",
-              "result": "BLOCKED",
-              "verification_scope": "http_smoke_only"
+              "result": "PASS",
+              "verification_scope": "observed"
             }
           },
-          "verification_scope": "http_smoke_only"
+          "verification_scope": "observed"
         }
       ],
       "quality_evidence": {
         "attribution": [
-          "runtime"
+          "domain_logic"
         ],
         "context": {
           "context_revision": null,
@@ -357,23 +314,23 @@
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "2ad57a53483de76d948f27162d6f3130e17e521ae6d4532237e72373a5237494",
+        "output_hash": "9991498e8e2dc2f188303af7d83e14eec885c20d262e6e74069db7527e18e206",
         "output_summary": {
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         "owner": "quality-operations",
         "permission_snapshot": {
           "status": "not_observed"
         },
         "project_id": "project.id",
-        "result": "BLOCKED",
+        "result": "PASS",
         "reviewer": "unassigned",
         "ruleset_hash": null,
         "runtime_mode": "mock",
         "template_version": null
       },
       "report_version": 1,
-      "result": "BLOCKED",
+      "result": "PASS",
       "runtime_modes": [
         "mock",
         "real_api_fake_model",
@@ -387,8 +344,8 @@
       "cases": [
         {
           "action": "stop_source_and_export",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-01"
@@ -397,16 +354,16 @@
           "expected_http": 403,
           "id": "SEC-01",
           "name": "revoked_source_read",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "block_export",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-02"
@@ -415,16 +372,16 @@
           "expected_http": 403,
           "id": "SEC-02",
           "name": "revoked_export",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "block_download",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-03"
@@ -433,16 +390,16 @@
           "expected_http": 403,
           "id": "SEC-03",
           "name": "revoked_download",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "stop_affected_traffic",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 404,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-04"
@@ -451,16 +408,16 @@
           "expected_http": 404,
           "id": "SEC-04",
           "name": "cross_tenant_id_substitution",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "87757ea4a81bfae0724836a1f5a1d4e0120a9012064c74aa4397585aec50357b",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "stop_affected_traffic",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 404,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-05"
@@ -469,10 +426,10 @@
           "expected_http": 404,
           "id": "SEC-05",
           "name": "cross_project_id_substitution",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "87757ea4a81bfae0724836a1f5a1d4e0120a9012064c74aa4397585aec50357b",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
@@ -490,7 +447,7 @@
           "observed_decision": null,
           "response_digest": null,
           "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "runtime_mode": "real",
           "severity": "P1"
         },
         {
@@ -508,13 +465,13 @@
           "observed_decision": null,
           "response_digest": null,
           "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "runtime_mode": "real",
           "severity": "P1"
         },
         {
           "action": "notify_security",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-08"
@@ -523,10 +480,10 @@
           "expected_http": 403,
           "id": "SEC-08",
           "name": "audit_query_overreach",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P1"
         },
         {
@@ -544,13 +501,13 @@
           "observed_decision": null,
           "response_digest": null,
           "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "purge_restricted_cache",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-10"
@@ -559,16 +516,16 @@
           "expected_http": 403,
           "id": "SEC-10",
           "name": "cache_bypass_after_revocation",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "revoke_download_url",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-11"
@@ -577,16 +534,16 @@
           "expected_http": 403,
           "id": "SEC-11",
           "name": "presigned_url_replay",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P0"
         },
         {
           "action": "retain_audit_access",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 200,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-12"
@@ -595,10 +552,10 @@
           "expected_http": 200,
           "id": "SEC-12",
           "name": "audit_metadata_after_revoke",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
-          "runtime_mode": "mock",
+          "observed_decision": "allow_metadata_only",
+          "response_digest": "a53fcfb1f90f85f9e6e01e71264b3c61db521d54d614415df2344d85e7372c4e",
+          "result": "PASS",
+          "runtime_mode": "real",
           "severity": "P2"
         }
       ],
@@ -639,7 +596,7 @@
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "a0ae8b759e32053ea31b8f675a7bf965a0b38966adf0ac36d70b00bbc3c16dea",
+        "output_hash": "a2c5f951c2949c894c792566a4a5a6e4b454f42d2218538e2a694445f8d9ebca",
         "output_summary": {
           "severity_counts": {
             "P0": 8,
@@ -655,7 +612,7 @@
         "result": "BLOCKED",
         "reviewer": "unassigned",
         "ruleset_hash": null,
-        "runtime_mode": "mock",
+        "runtime_mode": "real",
         "template_version": null
       },
       "redaction": {
@@ -671,7 +628,7 @@
       },
       "report_version": 1,
       "result": "BLOCKED",
-      "runtime_mode": "mock",
+      "runtime_mode": "real",
       "scope": "current-permission security checks for body, source, export, download and audit metadata",
       "severity_counts": {
         "P0": 8,
@@ -730,22 +687,133 @@
         }
       ],
       "chain_coverage": {
-        "audit": false,
-        "changeset": false,
-        "download": false,
-        "export": false,
-        "request": false,
-        "snapshot": false,
-        "task": false,
-        "validation": false
+        "audit": true,
+        "changeset": true,
+        "download": true,
+        "export": true,
+        "request": true,
+        "snapshot": true,
+        "task": true,
+        "validation": true
       },
-      "correlation_ids": [],
-      "events": [],
+      "correlation_ids": [
+        "corr-g6-obs-20261007"
+      ],
+      "events": [
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 3.990191,
+          "event_type": "request",
+          "request_id": "request.g6.id",
+          "resource_type": "lingdoc.request",
+          "runtime_mode": "real",
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 4.390815,
+          "event_type": "task",
+          "provider": "deepseek",
+          "resource_type": "generation",
+          "runtime_mode": "real",
+          "status": "completed",
+          "task_id": "task.g6.id"
+        },
+        {
+          "changeset_id": "changeset.g6.id",
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 6.213035,
+          "event_type": "changeset",
+          "resource_type": "project.change_set",
+          "runtime_mode": "real",
+          "status": "completed"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 3.990191,
+          "event_type": "validation",
+          "resource_type": "release.validation",
+          "runtime_mode": "real",
+          "status": "completed",
+          "task_id": "task.g6.id"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 4.154034,
+          "event_type": "snapshot",
+          "resource_type": "release.snapshot",
+          "runtime_mode": "real",
+          "snapshot_id": "snapshot.g6.id",
+          "stale": false,
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 3.237976,
+          "event_type": "export",
+          "export_id": "export.g6.id",
+          "provider": "docx",
+          "resource_type": "docx.export",
+          "runtime_mode": "real",
+          "status": "completed"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "download_reauthorized": true,
+          "duration_ms": 15.977332,
+          "event_type": "download",
+          "export_id": "export.g6.id",
+          "resource_type": "docx.file",
+          "runtime_mode": "real",
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 3.990191,
+          "event_type": "audit",
+          "request_id": "request.g6.id",
+          "resource_type": "audit.event",
+          "runtime_mode": "real",
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "request",
+          "permission_decision": "deny",
+          "permission_reason": "tenant_scope",
+          "request_id": "request.g6.id",
+          "resource_type": "tenant.scope",
+          "runtime_mode": "real",
+          "status": "denied"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duplicate_side_effect": false,
+          "duration_ms": 4.390815,
+          "event_type": "task",
+          "resource_type": "generation",
+          "retry_count": 0,
+          "runtime_mode": "real",
+          "status": "success",
+          "task_id": "task.g6.id"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duplicate_side_effect": false,
+          "duration_ms": 7.579749,
+          "event_type": "request",
+          "request_id": "request.g6.id",
+          "resource_type": "idempotency",
+          "runtime_mode": "real",
+          "status": "conflict"
+        }
+      ],
       "latency": {
-        "p95_ms": null,
-        "p99_ms": null,
-        "sample_count": 0,
-        "status": "not_observed"
+        "p95_ms": 15.977332,
+        "p99_ms": 15.977332,
+        "sample_count": 11,
+        "status": "observed"
       },
       "quality_evidence": {
         "attribution": [
@@ -777,32 +845,32 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "fixture_digest": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
         "fixture_id": "G6-OBS-01",
-        "input_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "input_hash": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
         "input_summary": {
-          "event_count": 0
+          "event_count": 11
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "7b4e3a7bb5a80a64c7e9eb09ab230fa9c34719052123eb42fe72b023b90dbb9f",
+        "output_hash": "2f32c57635f3061153bf9489e4ea775a4a55c8eaaf409e1ec77b9703a3a00baa",
         "output_summary": {
           "chain_coverage": {
-            "audit": false,
-            "changeset": false,
-            "download": false,
-            "export": false,
-            "request": false,
-            "snapshot": false,
-            "task": false,
-            "validation": false
+            "audit": true,
+            "changeset": true,
+            "download": true,
+            "export": true,
+            "request": true,
+            "snapshot": true,
+            "task": true,
+            "validation": true
           },
           "latency": {
-            "p95_ms": null,
-            "p99_ms": null,
-            "sample_count": 0,
-            "status": "not_observed"
+            "p95_ms": 15.977332,
+            "p99_ms": 15.977332,
+            "sample_count": 11,
+            "status": "observed"
           }
         },
         "owner": "quality-operations",
@@ -813,7 +881,7 @@
         "result": "BLOCKED",
         "reviewer": "unassigned",
         "ruleset_hash": null,
-        "runtime_mode": "mock",
+        "runtime_mode": "real",
         "template_version": null
       },
       "redaction": {
@@ -861,41 +929,25 @@
       },
       "report_version": 1,
       "result": "BLOCKED",
-      "runtime_mode": "mock",
+      "runtime_mode": "real",
       "scope": "redacted request-to-download correlation and executable quality alerts",
       "signal_coverage": {
         "async_failure_retry": false,
         "docx_loss": false,
-        "download_reauthorization": false,
-        "external_dependency": false,
-        "latency_p95_p99": false,
-        "permission_denied": false,
-        "request_conflict": false,
-        "request_denied": false,
-        "request_success": false,
+        "download_reauthorization": true,
+        "external_dependency": true,
+        "latency_p95_p99": true,
+        "permission_denied": true,
+        "request_conflict": true,
+        "request_denied": true,
+        "request_success": true,
         "revocation_intercept": false,
-        "stale_or_duplicate": false
+        "stale_or_duplicate": true
       },
       "uncovered_scope": [
-        "event:request",
-        "event:task",
-        "event:changeset",
-        "event:validation",
-        "event:snapshot",
-        "event:export",
-        "event:download",
-        "event:audit",
-        "signal:request_success",
-        "signal:request_denied",
-        "signal:request_conflict",
         "signal:async_failure_retry",
-        "signal:stale_or_duplicate",
-        "signal:permission_denied",
         "signal:revocation_intercept",
-        "signal:download_reauthorization",
-        "signal:docx_loss",
-        "signal:external_dependency",
-        "signal:latency_p95_p99"
+        "signal:docx_loss"
       ]
     },
     "G6-05": {
@@ -903,9 +955,9 @@
         {
           "evidence_ref": "rollback:old_objects_readable",
           "id": "old_objects_readable",
-          "observed": null,
+          "observed": true,
           "requirement": "old-version objects remain readable during the compatibility window",
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         {
           "evidence_ref": "rollback:new_fields_unknown_safe",
@@ -931,16 +983,16 @@
         {
           "evidence_ref": "rollback:history_immutable",
           "id": "history_immutable",
-          "observed": null,
+          "observed": true,
           "requirement": "published templates, frozen snapshots, files and audit remain unchanged",
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         {
           "evidence_ref": "rollback:reverse_changeset",
           "id": "reverse_changeset",
-          "observed": null,
+          "observed": true,
           "requirement": "applied changes restore through an inverse change rather than pointer edits",
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         {
           "evidence_ref": "rollback:post_rollback_verification",
@@ -952,11 +1004,17 @@
       ],
       "drill": {
         "drill_id": null,
-        "duration_ms": null,
-        "impact_scope": [],
-        "recovery_verified": null,
-        "severity": null,
-        "uncovered_risks": []
+        "duration_ms": 0,
+        "impact_scope": [
+          "project.id",
+          "template_version.id"
+        ],
+        "recovery_verified": true,
+        "severity": "P1",
+        "uncovered_risks": [
+          "gray_pause_not_exercised",
+          "post_rollback_download_not_exercised"
+        ]
       },
       "fixture_id": "G6-ROLLBACK-01",
       "plan": {
@@ -1015,16 +1073,16 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "fixture_digest": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
         "fixture_id": "G6-ROLLBACK-01",
-        "input_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "input_hash": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
         "input_summary": {
           "check_count": 7
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "eebdf34b76c57f9b751ef2441d6c17234a5ea2b96052fc7efa22ae62c9663a8d",
+        "output_hash": "0d2af67d2ebaf50fa774349a6df95cfb5ec16e33e1facea45676e41fef719892",
         "output_summary": {
           "result": "BLOCKED"
         },
@@ -1036,12 +1094,12 @@
         "result": "BLOCKED",
         "reviewer": "unassigned",
         "ruleset_hash": null,
-        "runtime_mode": "mock",
+        "runtime_mode": "real",
         "template_version": null
       },
       "report_version": 1,
       "result": "BLOCKED",
-      "runtime_mode": "mock",
+      "runtime_mode": "real",
       "safety_boundary": "This report never edits migration state, revision pointers or published artifacts.",
       "scope": "migration compatibility, grey pause and P0/P1 rollback rehearsal"
     },
@@ -1050,11 +1108,17 @@
       "decision_evidence": {
         "eligible_real_sample_ids": [],
         "p0_p1_sample_ids": [],
-        "p2_sample_ids": [],
-        "real_sample_ids": [],
-        "rollback_result": "BLOCKED",
+        "p2_sample_ids": [
+          "sample.g6.real.01"
+        ],
+        "real_sample_ids": [
+          "sample.g6.real.01"
+        ],
+        "rollback_result": "FAIL",
         "uncovered_risks": [
-          "no_window_observation"
+          "semantic_hypothesis_gap",
+          "grey_pause_not_exercised",
+          "insufficient_denominators"
         ]
       },
       "decision_reason": "unresolved P0/P1, blocked real dependency or unverified rollback",
@@ -1099,7 +1163,26 @@
         "source_support_rate",
         "unconfirmed_rate"
       ],
-      "missing_values": [],
+      "missing_values": [
+        {
+          "missing_fields": [
+            "changesets",
+            "dismissed_issues",
+            "export_checks",
+            "export_loss_items",
+            "issues_reviewed",
+            "manual_minutes",
+            "missed_edits",
+            "projects",
+            "snapshots",
+            "supported_claims",
+            "total_claims",
+            "unconfirmed_items"
+          ],
+          "sample_id": "sample.g6.real.01",
+          "sample_version": "sample-version.g6.01"
+        }
+      ],
       "quality_evidence": {
         "attribution": [
           "permission",
@@ -1129,16 +1212,16 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "4212a2194c4c74e8d276fbc8ad39e9209363226fb9a3132b6775240ed6addfc8",
-        "fixture_id": "G6-BETA-window.id",
-        "input_hash": "4212a2194c4c74e8d276fbc8ad39e9209363226fb9a3132b6775240ed6addfc8",
+        "fixture_digest": "6e9db5f4c6c28c4e687f13884890364fecc6097117257e4e82bcc585f4290ba3",
+        "fixture_id": "G6-BETA-window.g6.beta.20261007",
+        "input_hash": "6e9db5f4c6c28c4e687f13884890364fecc6097117257e4e82bcc585f4290ba3",
         "input_summary": {
-          "sample_count": 0
+          "sample_count": 1
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "8d6cc9c9abd956b8d5b68baf273459f8b5ffdc94d38132b839ec2805905778e8",
+        "output_hash": "72b3413da6066b3ae7cb0362d1fd128978853d5f0fc40b75aaa15635faad0da7",
         "output_summary": {
           "decision": "pause"
         },
@@ -1154,45 +1237,60 @@
         "template_version": null
       },
       "raw_counts": {
-        "dependency_blocked": 0,
+        "dependency_blocked": 1,
         "eligible_real": 0,
         "excluded_non_real": 0,
         "p0_p1": 0,
-        "p2": 0,
+        "p2": 1,
         "quality_pass_real": 0,
-        "real": 0,
-        "samples_with_missing_values": 0,
-        "submitted": 0
+        "real": 1,
+        "samples_with_missing_values": 1,
+        "submitted": 1
       },
       "readiness": "BLOCKED",
       "report_version": 1,
       "result": "BLOCKED",
-      "sample_versions": [],
+      "sample_versions": [
+        {
+          "eligible": false,
+          "quality_result": "BLOCKED",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.01",
+          "sample_version": "sample-version.g6.01",
+          "severity": "P2"
+        }
+      ],
       "scope": "one locked Beta trial window; only eligible real samples enter effect rates",
       "window": {
-        "included_projects": [],
-        "included_users": [],
-        "minimum_reportable_samples": 1,
+        "included_projects": [
+          "project.g6.id"
+        ],
+        "included_users": [
+          "user.g6.id"
+        ],
+        "minimum_reportable_samples": 3,
         "process_evidence": {
-          "authorization": "not_run",
-          "failure_path": "not_run",
-          "key_scenario_rerun": "not_run",
-          "main_path": "not_run",
-          "manual_review": "not_run",
-          "repair_or_rollback": "not_run"
+          "authorization": "observed",
+          "failure_path": "observed",
+          "key_scenario_rerun": "observed",
+          "main_path": "observed",
+          "manual_review": "observed",
+          "repair_or_rollback": "blocked"
         },
-        "redaction": "fixture-v1",
-        "rollback_result": "BLOCKED",
+        "redaction": "g6-beta-20261007",
+        "rollback_result": "FAIL",
         "ruleset_hash": "rules.key",
         "runtime_modes": [
           "real"
         ],
-        "target_samples": 0,
+        "target_samples": 10,
         "template_version": "template.v1",
         "uncovered_risks": [
-          "no_window_observation"
+          "semantic_hypothesis_gap",
+          "grey_pause_not_exercised",
+          "insufficient_denominators"
         ],
-        "window_id": "window.id"
+        "window_id": "window.g6.beta.20261007"
       }
     }
   },
@@ -1228,18 +1326,18 @@
     },
     "fixture_digest": "8dcd9ff86a966e0488ecc6a7576e0133fac90ad26b6e8e7d0717908bbd25f473",
     "fixture_id": "G6-RUN-01",
-    "input_hash": "41dbb5b2fcc73b92cd0653baf5ebd6dd5752d8699df73c95da417547d53b1fa7",
+    "input_hash": "dfd6a51274752532bc6e5080516348c1301fcc06e6f5d01df9579688bcdf1582",
     "input_summary": {
       "gate_count": 6
     },
     "object_versions": {
       "status": "not_observed"
     },
-    "output_hash": "757262a480ee7ee4aa13a609403f2ce49a2baf2c4d5b6fc672183d8e3c64143e",
+    "output_hash": "53785d6bb5cc16de0a7dc8bf64b480fe38c3efe77d3132356f1c69cee0952f09",
     "output_summary": {
       "gate_results": {
         "G6-01": "PASS",
-        "G6-02": "BLOCKED",
+        "G6-02": "PASS",
         "G6-03": "BLOCKED",
         "G6-04": "BLOCKED",
         "G6-05": "BLOCKED",
@@ -1254,11 +1352,11 @@
     "result": "BLOCKED",
     "reviewer": "unassigned",
     "ruleset_hash": null,
-    "runtime_mode": "mock",
+    "runtime_mode": "real",
     "template_version": null
   },
   "report_version": 1,
   "result": "BLOCKED",
-  "runtime_mode": "mock",
+  "runtime_mode": "real",
   "scope": "G6 quality, runtime, security, rollback and Beta decision gates"
 }
