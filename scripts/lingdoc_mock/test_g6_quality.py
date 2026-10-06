@@ -482,6 +482,23 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(report["main_path"]["result"], "PASS")
         self.assertEqual(report["result"], "PASS")
 
+    def test_actual_f01_runner_report_shape_is_accepted(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        runner = g6_main_path.ScenarioRunner.from_files(
+            g6_main_path.OPENAPI_PATH, g6_main_path.WORKFLOW_PATH,
+            base_url="http://127.0.0.1:8080/api/v1/lingdoc")
+        runner.step_results = [
+            {"id": step["step_id"], "operation_id": step["operation_id"],
+             "http_status": step["actual_http"], "content_type": "application/json"}
+            for step in main["steps"]
+        ]
+        raw_report = runner.report("completed")
+        report = g6_main_path.build_main_path_report(
+            main_report=raw_report, failure_observation=failure,
+            runtime_mode="real_api_fake_model")
+        self.assertEqual(report["main_path"]["result"], "PASS")
+        self.assertEqual(report["result"], "PASS")
+
     def test_fixture_digest_changes_when_redacted_fixture_state_changes(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
         first = g6_main_path.build_main_path_report(
@@ -518,6 +535,14 @@ class G6MainPathTest(unittest.TestCase):
         report = g6_main_path.build_main_path_report(
             main_report=main, failure_observation=failure)
         self.assertEqual(report["main_path"]["result"], "BLOCKED")
+
+    def test_inconsistent_f01_step_counts_are_blocked(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        main["completed_steps"] = 0
+        report = g6_main_path.build_main_path_report(
+            main_report=main, failure_observation=failure)
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertFalse(report["fixture_coverage"]["step_counts_complete"])
 
     def test_main_path_evidence_drops_untrusted_report_payloads(self):
         main = self._complete_report()

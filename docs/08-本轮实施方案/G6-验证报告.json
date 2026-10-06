@@ -63,6 +63,7 @@
           "export",
           "download"
         ],
+        "step_counts_complete": false,
         "step_sequence_complete": false,
         "unexpected_step_ids": []
       },
@@ -104,7 +105,7 @@
         },
         "fixture_digest": "aeef24b8b33664d6263ec73c704d017a163ecd0cbbcec5757c6acf384d0f358c",
         "fixture_id": "G6-F01-v1",
-        "input_hash": "22104a66c7e2819e278bf8b0578d3abcfa21e455ec49a9f7bb1cd146342d9ce0",
+        "input_hash": "1cd1c67fa1aa09b2a1ad8751e5dedf32f381017dcd6105f14b2b4f281f8cc528",
         "input_summary": {
           "required_parts": 7
         },

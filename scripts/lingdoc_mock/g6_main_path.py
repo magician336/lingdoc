@@ -186,6 +186,14 @@ def _coverage(report: dict[str, Any]) -> dict[str, Any]:
     unexpected_step_ids = sorted({step_id for step_id in observed_step_ids if step_id is not None}
                                  - set(expected_step_ids))
     step_sequence_complete = observed_step_ids == expected_step_ids
+    completed_steps = report.get("completed_steps")
+    total_steps = report.get("total_steps")
+    step_counts_complete = (
+        len(steps) == len(expected_step_ids)
+        and isinstance(completed_steps, int) and not isinstance(completed_steps, bool)
+        and isinstance(total_steps, int) and not isinstance(total_steps, bool)
+        and completed_steps == total_steps == len(expected_step_ids)
+    )
     operations = {step.get("operation_id") for step in steps if isinstance(step, dict)}
     constructed = sorted({part for operation, parts in OPERATION_PARTS.items() if operation in operations
                           for part in parts})
@@ -196,6 +204,7 @@ def _coverage(report: dict[str, Any]) -> dict[str, Any]:
         "constructed_complete": not missing,
         "missing_parts": missing,
         "step_sequence_complete": step_sequence_complete,
+        "step_counts_complete": step_counts_complete,
         "missing_step_ids": missing_step_ids,
         "unexpected_step_ids": unexpected_step_ids,
     }
@@ -364,7 +373,8 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
     }
     fixture_digest = digest(fixture_definition)
     result = main_result if main_result != "PASS" else failure["result"]
-    if not coverage["constructed_complete"] or not coverage["step_sequence_complete"]:
+    if (not coverage["constructed_complete"] or not coverage["step_sequence_complete"]
+            or not coverage["step_counts_complete"]):
         result = "BLOCKED"
     return {
         "report_version": 1,
