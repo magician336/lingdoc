@@ -264,12 +264,12 @@ class G6MetricsTest(unittest.TestCase):
     def test_real_samples_with_complete_denominators_can_expand(self):
         samples = [
             {"sample_id": "sample.real1", "sample_version": "sample.v1",
-             "runtime_mode": "real", "quality_result": "PASS",
+             "runtime_mode": "real", "quality_result": "PASS", "dependency_status": "verified",
              "supported_claims": 9, "total_claims": 10, "dismissed_issues": 1, "issues_reviewed": 5,
              "unconfirmed_items": 1, "snapshots": 2, "export_loss_items": 0, "export_checks": 4,
              "manual_minutes": 20, "projects": 1, "missed_edits": 1, "changesets": 2},
             {"sample_id": "sample.real2", "sample_version": "sample.v1",
-             "runtime_mode": "real", "quality_result": "PASS",
+             "runtime_mode": "real", "quality_result": "PASS", "dependency_status": "verified",
              "supported_claims": 8, "total_claims": 10, "dismissed_issues": 0, "issues_reviewed": 5,
              "unconfirmed_items": 0, "snapshots": 2, "export_loss_items": 0, "export_checks": 4,
              "manual_minutes": 15, "projects": 1, "missed_edits": 0, "changesets": 2},
@@ -278,6 +278,20 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["result"], "PASS")
         self.assertEqual(report["decision"], "expand")
         self.assertEqual(report["metrics"]["source_support_rate"]["numerator"], 17)
+
+    def test_unverified_real_dependency_blocks_expand_and_clears_rates(self):
+        sample = {"sample_id": "sample.unverified", "sample_version": "sample.v1",
+                  "runtime_mode": "real", "quality_result": "PASS", "dependency_status": "not_verified",
+                  "supported_claims": 9, "total_claims": 10, "dismissed_issues": 0, "issues_reviewed": 1,
+                  "unconfirmed_items": 0, "snapshots": 1, "export_loss_items": 0, "export_checks": 1,
+                  "manual_minutes": 10, "projects": 1, "missed_edits": 0, "changesets": 1}
+        report = g6_metrics.build_beta_report(
+            samples=[sample], window={**self.WINDOW, "minimum_reportable_samples": 1})
+
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(report["decision"], "pause")
+        self.assertEqual(report["raw_counts"]["dependency_blocked"], 1)
+        self.assertTrue(all(values["rate"] is None for values in report["metrics"].values()))
 
     def test_incomplete_trial_process_keeps_effect_rates_unready(self):
         sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",
@@ -344,7 +358,7 @@ class G6MetricsTest(unittest.TestCase):
 
     def test_missing_sample_values_are_reported_and_block_effect_rates(self):
         sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",
-                  "runtime_mode": "real", "quality_result": "PASS",
+                  "runtime_mode": "real", "quality_result": "PASS", "dependency_status": "verified",
                   "supported_claims": 1, "total_claims": 2}
         report = g6_metrics.build_beta_report(samples=[sample], window={**self.WINDOW,
                                                                           "minimum_reportable_samples": 1})

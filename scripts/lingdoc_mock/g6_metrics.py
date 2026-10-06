@@ -98,6 +98,9 @@ def _validate_sample(sample: dict[str, Any]) -> None:
         raise ValueError("sample runtime_mode must be one of " + ", ".join(RUNTIME_MODES))
     if sample.get("quality_result") not in RESULTS:
         raise ValueError("sample quality_result must be PASS, FAIL, NOT RUN or BLOCKED")
+    if (sample.get("dependency_status") is not None
+            and sample.get("dependency_status") not in {"verified", "not_verified", "BLOCKED"}):
+        raise ValueError("sample dependency_status must be verified, not_verified or BLOCKED")
     if sample.get("severity") is not None and sample["severity"] not in {"P0", "P1", "P2", "P3"}:
         raise ValueError("sample severity must be P0, P1, P2 or P3")
     for field in NUMERIC_FIELDS:
@@ -126,7 +129,7 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     p0_p1 = [sample for sample in real_samples if sample.get("severity") in {"P0", "P1"}]
     p2 = [sample for sample in real_samples if sample.get("severity") == "P2"]
     dependency_blocked = [sample for sample in real_samples
-                          if sample.get("dependency_status") == "BLOCKED"
+                          if sample.get("dependency_status") != "verified"
                           or sample.get("quality_result") in {"BLOCKED", "NOT RUN"}]
     raw_counts = {
         "submitted": len(samples),
@@ -163,7 +166,7 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
                                   if values["denominator"] == 0 or name in missing_metric_values)
     minimum = int(window.get("minimum_reportable_samples", 0) or 0)
     process_incomplete = any(value != "observed" for value in window["process_evidence"].values())
-    if process_incomplete:
+    if process_incomplete or dependency_blocked:
         for values in metrics.values():
             values["rate"] = None
         missing_denominators = sorted(set(missing_denominators) | set(metrics))
