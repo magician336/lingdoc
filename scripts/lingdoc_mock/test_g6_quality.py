@@ -356,6 +356,12 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["result"], "PASS")
         self.assertEqual(report["decision"], "expand")
         self.assertEqual(report["metrics"]["source_support_rate"]["numerator"], 17)
+        self.assertEqual(report["decision_evidence"]["real_sample_ids"],
+                         ["sample.real1", "sample.real2"])
+        self.assertEqual(report["decision_evidence"]["eligible_real_sample_ids"],
+                         ["sample.real1", "sample.real2"])
+        self.assertEqual(report["decision_evidence"]["rollback_result"], "PASS")
+        self.assertEqual(report["decision_evidence"]["uncovered_risks"], ["wps-reopen"])
 
     def test_unverified_real_dependency_blocks_expand_and_clears_rates(self):
         sample = {"sample_id": "sample.unverified", "sample_version": "sample.v1",
@@ -452,6 +458,9 @@ class G6MetricsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "redaction"):
             g6_metrics.build_beta_report(samples=[], window={**self.WINDOW,
                                                               "redaction": "raw document text"})
+        with self.assertRaisesRegex(ValueError, "rollback_result"):
+            g6_metrics.build_beta_report(samples=[], window={**self.WINDOW,
+                                                              "rollback_result": "raw rehearsal text"})
 
     def test_missing_sample_values_are_reported_and_block_effect_rates(self):
         sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",

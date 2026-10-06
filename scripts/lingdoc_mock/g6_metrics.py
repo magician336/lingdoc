@@ -29,6 +29,7 @@ SENSITIVE_FIELDS = frozenset({"body", "content", "quoted_text", "source_text", "
                               "prompt", "completion", "model_input"})
 ALIAS_PATTERN = re.compile(r"[a-z][a-z0-9_.-]*\.[a-z0-9_.-]+|sha256:[0-9a-f]{64}")
 RESULTS = {"PASS", "FAIL", "NOT RUN", "BLOCKED"}
+ROLLBACK_RESULTS = RESULTS
 NUMERIC_FIELDS = frozenset(field for _, numerator, denominator in METRICS
                             for field in (numerator, denominator))
 COUNT_FIELDS = NUMERIC_FIELDS - {"manual_minutes"}
@@ -51,6 +52,8 @@ def _sanitize_window(window: dict[str, Any]) -> dict[str, Any]:
         value = window.get(field)
         if not isinstance(value, str) or not ALIAS_PATTERN.fullmatch(value):
             raise ValueError(f"{field} must be a redacted alias or digest")
+    if window.get("rollback_result") not in ROLLBACK_RESULTS:
+        raise ValueError("rollback_result must be PASS, FAIL, NOT RUN or BLOCKED")
     for field in ("included_projects", "included_users"):
         values = window.get(field, [])
         if not isinstance(values, list) or not all(
@@ -204,8 +207,17 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
         "sample_versions": [{"sample_id": sample["sample_id"], "sample_version": sample["sample_version"],
                              "runtime_mode": sample["runtime_mode"],
                              "quality_result": sample["quality_result"],
+                             "severity": sample.get("severity"),
                              "eligible": sample in eligible}
                             for sample in samples],
+        "decision_evidence": {
+            "real_sample_ids": [sample["sample_id"] for sample in real_samples],
+            "eligible_real_sample_ids": [sample["sample_id"] for sample in eligible],
+            "p0_p1_sample_ids": [sample["sample_id"] for sample in p0_p1],
+            "p2_sample_ids": [sample["sample_id"] for sample in p2],
+            "rollback_result": window["rollback_result"],
+            "uncovered_risks": list(window["uncovered_risks"]),
+        },
         "missing_values": missing_values,
         "missing_denominators": missing_denominators,
         "metrics": metrics,
@@ -226,7 +238,7 @@ def main() -> int:
         "window_id": "window.manual", "target_samples": 0, "minimum_reportable_samples": 1,
         "template_version": "template.unknown", "ruleset_hash": "rules.unknown", "redaction": "fixture-v1",
         "included_projects": [], "included_users": [], "runtime_modes": ["real"],
-        "rollback_result": "unknown", "uncovered_risks": ["no_samples"],
+        "rollback_result": "BLOCKED", "uncovered_risks": ["no_samples"],
         "process_evidence": {"authorization": "not_run", "main_path": "not_run",
                               "failure_path": "not_run", "manual_review": "not_run",
                               "repair_or_rollback": "not_run", "key_scenario_rerun": "not_run"},

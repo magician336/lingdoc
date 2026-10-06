@@ -913,6 +913,16 @@
     },
     "G6-06": {
       "decision": "pause",
+      "decision_evidence": {
+        "eligible_real_sample_ids": [],
+        "p0_p1_sample_ids": [],
+        "p2_sample_ids": [],
+        "real_sample_ids": [],
+        "rollback_result": "BLOCKED",
+        "uncovered_risks": [
+          "no_window_observation"
+        ]
+      },
       "decision_reason": "unresolved P0/P1, blocked real dependency or unverified rollback",
       "excluded_sample_ids": [],
       "metrics": {
@@ -985,9 +995,9 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "8c301cfae5829869866b699eb2fece85f9a6cf04771b381c4124452671bf5c6d",
+        "fixture_digest": "4212a2194c4c74e8d276fbc8ad39e9209363226fb9a3132b6775240ed6addfc8",
         "fixture_id": "G6-BETA-window.id",
-        "input_hash": "8c301cfae5829869866b699eb2fece85f9a6cf04771b381c4124452671bf5c6d",
+        "input_hash": "4212a2194c4c74e8d276fbc8ad39e9209363226fb9a3132b6775240ed6addfc8",
         "input_summary": {
           "sample_count": 0
         },
@@ -1038,7 +1048,7 @@
           "repair_or_rollback": "not_run"
         },
         "redaction": "fixture-v1",
-        "rollback_result": "unknown",
+        "rollback_result": "BLOCKED",
         "ruleset_hash": "rules.key",
         "runtime_modes": [
           "real"
