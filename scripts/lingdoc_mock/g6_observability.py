@@ -118,14 +118,15 @@ def _chain_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
 def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
     retry_observed = any(
         event["event_type"] == "task"
-        and (event.get("status") in {"failed", "retry"}
+        and (event.get("status") in {"failed", "error", "retry"}
              or (isinstance(event.get("retry_count", 0), int)
                  and not isinstance(event.get("retry_count", 0), bool)
                  and event.get("retry_count", 0) > 0))
         for event in events
     )
     return {
-        "request_success": any(event["event_type"] == "request" and event.get("status") == "ok"
+        "request_success": any(event["event_type"] == "request"
+                                and event.get("status") in {"ok", "success"}
                                 for event in events),
         "request_denied": any(event["event_type"] == "request" and event.get("status") == "denied"
                                for event in events),

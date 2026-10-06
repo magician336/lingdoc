@@ -187,6 +187,17 @@ class G6ObservabilityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "permission_decision"):
             g6_observability.sanitize_event({**event, "permission_decision": "secret"})
 
+    def test_observability_accepts_success_and_error_status_aliases(self):
+        events = [
+            {"event_type": "request", "status": "success", "correlation_id": "corr-1",
+             "runtime_mode": "real", "request_id": "request.id"},
+            {"event_type": "task", "status": "error", "correlation_id": "corr-1",
+             "runtime_mode": "real", "task_id": "task.id", "retry_count": 1},
+        ]
+        signals = g6_observability.build_observability_report(events=events)["signal_coverage"]
+        self.assertTrue(signals["request_success"])
+        self.assertTrue(signals["async_failure_retry"])
+
 
 class G6RollbackTest(unittest.TestCase):
     def test_default_rehearsal_is_blocked_until_observed(self):
