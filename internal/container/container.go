@@ -901,12 +901,11 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// Run base migrations (all versioned migrations including embeddings)
 		// The embeddings migration will be conditionally executed based on skip_embedding parameter in DSN
 		if err := database.RunMigrationsWithOptions(migrateDSN, migrationOpts); err != nil {
-			// Log warning but don't fail startup - migrations might be handled externally
-			logger.Warnf(context.Background(), "Database migration failed: %v", err)
-			logger.Warnf(
-				context.Background(),
-				"Continuing with application startup. Please run migrations manually if needed.",
-			)
+			// Do not serve an older binary against a newer schema. That state can
+			// expose a partial API surface (including missing LingDoc routes) and
+			// may write data using stale contracts. Operators can explicitly disable
+			// automatic migrations when they manage them out of band.
+			return nil, fmt.Errorf("database migration failed; refusing to start: %w", err)
 		}
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
