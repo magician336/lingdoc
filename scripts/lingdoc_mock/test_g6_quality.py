@@ -14,13 +14,13 @@ from scripts.lingdoc_mock import (g6_evidence, g6_main_path, g6_metrics, g6_obse
 def complete_observability_events():
     events = [
         {"event_type": event_type, "status": "ok", "correlation_id": "corr-1",
-         "runtime_mode": "real", "resource_type": event_type,
+         "runtime_mode": "real", "resource_type": event_type, "duration_ms": index + 1,
          **({"request_id": "request.id"} if event_type in {"request", "audit"} else {}),
          **({"task_id": "task.id"} if event_type in {"task", "validation"} else {}),
          **({"changeset_id": "changeset.id"} if event_type == "changeset" else {}),
          **({"snapshot_id": "snapshot.id"} if event_type == "snapshot" else {}),
          **({"export_id": "export.id"} if event_type in {"export", "download"} else {})}
-        for event_type in g6_observability.EVENT_TYPES
+        for index, event_type in enumerate(g6_observability.EVENT_TYPES)
     ]
     events[1].update({"status": "retry", "retry_count": 1, "stale": False,
                       "provider": "weknora", "result_code": "ok"})
@@ -153,13 +153,13 @@ class G6ObservabilityTest(unittest.TestCase):
     def test_complete_redacted_chain_passes(self):
         events = [
             {"event_type": event_type, "status": "ok", "correlation_id": "corr-1",
-             "runtime_mode": "real", "resource_type": event_type,
+             "runtime_mode": "real", "resource_type": event_type, "duration_ms": index + 1,
              **({"request_id": "request.id"} if event_type in {"request", "audit"} else {}),
              **({"task_id": "task.id"} if event_type in {"task", "validation"} else {}),
              **({"changeset_id": "changeset.id"} if event_type == "changeset" else {}),
              **({"snapshot_id": "snapshot.id"} if event_type == "snapshot" else {}),
              **({"export_id": "export.id"} if event_type in {"export", "download"} else {})}
-            for event_type in g6_observability.EVENT_TYPES
+            for index, event_type in enumerate(g6_observability.EVENT_TYPES)
         ]
         events[1].update({"status": "retry", "retry_count": 1, "stale": False})
         events[2]["permission_decision"] = "deny"
@@ -181,6 +181,18 @@ class G6ObservabilityTest(unittest.TestCase):
         self.assertTrue(report["signal_coverage"]["revocation_intercept"])
         self.assertTrue(all(report["alert_coverage"].values()))
         self.assertEqual(report["uncovered_scope"], [])
+        self.assertEqual(report["latency"]["sample_count"], len(g6_observability.EVENT_TYPES))
+        self.assertEqual(report["latency"]["p95_ms"], 8)
+        self.assertEqual(report["latency"]["p99_ms"], 8)
+
+    def test_missing_latency_observation_blocks_complete_chain(self):
+        events = complete_observability_events()
+        for event in events:
+            event.pop("duration_ms", None)
+        report = g6_observability.build_observability_report(events=events)
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(report["latency"]["status"], "not_observed")
+        self.assertIn("signal:latency_p95_p99", report["uncovered_scope"])
 
     def test_sensitive_event_field_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "sensitive"):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from pathlib import Path
 import sys
@@ -50,6 +51,7 @@ ACTIONABLE_SIGNALS = (
     "permission_denied", "revocation_intercept", "download_reauthorization", "docx_loss",
     "external_dependency",
 )
+LATENCY_SIGNAL = "latency_p95_p99"
 ALERT_ACTIONS = (
     {"signal": "request_denied", "action": "notify_owner"},
     {"signal": "request_conflict", "action": "notify_owner"},
@@ -115,6 +117,28 @@ def _chain_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
     return {event_type: event_type in types for event_type in EVENT_TYPES}
 
 
+def _latency_summary(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize observed request/task durations without retaining timestamps or payloads."""
+    durations = sorted(
+        event["duration_ms"] for event in events
+        if isinstance(event.get("duration_ms"), (int, float))
+        and not isinstance(event.get("duration_ms"), bool)
+    )
+    if not durations:
+        return {"sample_count": 0, "p95_ms": None, "p99_ms": None, "status": "not_observed"}
+
+    def nearest_rank(percentile: float) -> int | float:
+        rank = max(1, math.ceil(percentile * len(durations)))
+        return durations[rank - 1]
+
+    return {
+        "sample_count": len(durations),
+        "p95_ms": nearest_rank(0.95),
+        "p99_ms": nearest_rank(0.99),
+        "status": "observed",
+    }
+
+
 def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
     retry_observed = any(
         event["event_type"] == "task"
@@ -146,6 +170,7 @@ def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
         "docx_loss": any(event.get("file_loss_class") is not None for event in events),
         "external_dependency": any(event.get("provider") or event.get("result_code")
                                     for event in events),
+        LATENCY_SIGNAL: any("duration_ms" in event for event in events),
     }
 
 
@@ -157,6 +182,7 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
     correlation_ids = sorted({event["correlation_id"] for event in sanitized})
     coverage = _chain_coverage(sanitized)
     signals = _signal_coverage(sanitized)
+    latency = _latency_summary(sanitized)
     alert_signals = {alert["signal"] for alert in ALERT_ACTIONS}
     alert_coverage = {signal: signal in alert_signals for signal in ACTIONABLE_SIGNALS}
     uncovered_scope = ([f"event:{event_type}" for event_type, observed in coverage.items() if not observed]
@@ -176,6 +202,7 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
         "correlation_ids": correlation_ids,
         "chain_coverage": coverage,
         "signal_coverage": signals,
+        "latency": latency,
         "alert_coverage": alert_coverage,
         "uncovered_scope": uncovered_scope,
         "events": sanitized,
@@ -186,7 +213,8 @@ def build_observability_report(*, events: list[dict[str, Any]] | None = None,
                 attribution=["runtime", "external_service"] if result == "BLOCKED" else ["domain_logic"],
                 evidence_refs=["events", "chain_coverage", "signal_coverage", "alerts"],
                 owner="quality-operations", reviewer="unassigned",
-                input_summary={"event_count": len(sanitized)}, output_summary={"chain_coverage": coverage},
+                input_summary={"event_count": len(sanitized)},
+                output_summary={"chain_coverage": coverage, "latency": latency},
             ),
         "redaction": {
             "forbidden_fields": sorted(SENSITIVE_FIELDS),
