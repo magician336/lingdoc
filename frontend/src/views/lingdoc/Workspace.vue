@@ -39,6 +39,56 @@
         </div>
         <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
 
+        <section class="template-copy-panel" aria-label="项目模板副本">
+          <h3>项目模板副本</h3>
+          <template v-if="project.template_copy">
+            <p class="muted">来源 {{ project.template_copy.source_template_id }} · 原始版本 {{ project.template_copy.source_template_version }} · 项目副本第 {{ project.template_copy.version }} 版（{{ templateCopyStatusLabel(project.template_copy.status) }}）</p>
+            <p class="template-hash">内容摘要：{{ project.template_copy.content_hash }}</p>
+            <p class="template-hash">规则集摘要：{{ project.template_copy.ruleset_hash }}</p>
+            <p v-if="project.status !== 'draft'" class="muted">项目已立项；当前版本只读。模板升级需要 G3/G5 的正式变更与权限流程，不能从这里直接改写。</p>
+            <template v-else-if="templateCopyDraft">
+              <p class="muted">这里只能调整展示名称；字段 ID、字段类型和规则保持原样。改动先预览，再保存为新的不可变草稿版本。</p>
+              <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
+                <legend>字段名称</legend>
+                <label v-for="field in templateCopyDraft.fields" :key="field.field_id" class="template-editor__item">
+                  <span>{{ field.field_id }} <small>· {{ field.type }}{{ field.required ? ' · 必填' : '' }}</small></span>
+                  <input v-model="field.label" :aria-label="`${field.field_id} 显示名称`" maxlength="120" />
+                </label>
+              </fieldset>
+              <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
+                <legend>章节名称</legend>
+                <label v-for="section in templateCopyDraft.sections" :key="section.section_id" class="template-editor__item">
+                  <span>{{ section.section_id }} <small>· {{ section.required ? '必需章节' : '可选章节' }}</small></span>
+                  <input v-model="section.title" :aria-label="`${section.section_id} 章节名称`" maxlength="120" />
+                </label>
+              </fieldset>
+              <div class="actions">
+                <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="previewTemplateCopy">{{ templateCopyBusy ? '处理中…' : '预览改动' }}</button>
+                <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未保存改动</button>
+                <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged || !templateCopyPreviewCurrent" @click="saveTemplateCopy">保存为新版本</button>
+              </div>
+              <p v-if="templateCopyNotice" class="binding-notice" role="status">{{ templateCopyNotice }}</p>
+              <section v-if="templateCopyPreview" class="template-preview" aria-label="模板改动预览" aria-live="polite">
+                <h4>版本 {{ templateCopyPreview.source_copy_version }} → {{ templateCopyPreview.target_copy_version }} 预览</h4>
+                <p v-if="!templateCopyPreviewCurrent" class="warning" role="status">草稿在预览后又有改动；当前预览已失效，请重新预览后保存。</p>
+                <ul v-if="templateCopyPreview.section_changes.length">
+                  <li v-for="change in templateCopyPreview.section_changes" :key="change.section_id">
+                    章节 {{ change.section_id }}：{{ change.before || '（无）' }} → {{ change.after || '（无）' }}
+                  </li>
+                </ul>
+                <p v-else class="muted">章节标题没有变化。</p>
+                <p>字段：{{ templateCopyPreview.fields.length }} 项；规则集{{ templateCopyPreview.ruleset_changed ? '发生变化' : '保持不变' }}。</p>
+                <p v-if="templateCopyPreview.missing_required.length" class="warning">缺少必填项：{{ templateCopyPreview.missing_required.join('、') }}</p>
+                <p v-if="templateCopyPreview.orphaned.length" class="warning">保留的孤立字段：{{ templateCopyPreview.orphaned.join('、') }}</p>
+                <p v-if="templateCopyPreview.incompatible.length" class="warning">类型不兼容：{{ templateCopyPreview.incompatible.join('、') }}</p>
+                <p class="template-hash">新内容摘要：{{ templateCopyPreview.target_content_hash }}</p>
+                <p class="template-hash">新规则集摘要：{{ templateCopyPreview.target_ruleset_hash }}</p>
+              </section>
+            </template>
+          </template>
+          <p v-else class="muted">此项目没有可读取的模板副本；请重新读取项目状态。</p>
+        </section>
+
         <section class="assets">
           <h3>项目资料</h3>
           <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
@@ -379,14 +429,20 @@ import {
   activateProject, applyChangeSet, bindAsset, commitWorkingCopy, confirmChapter, createChangeSet, createProject, getAccessStatus, getProject,
   getSource, getSourceContext, getWorkingCopy, getChangeSet, listAssets, listChangeSets, listChapterVersions, listChapters, listProjects,
   applySelectedRewrite, createSelectedRewrite, getSelectedRewrite,
-  rejectChangeSet, restoreWorkingCopy, retrieveSources, saveSpec, saveWorkingCopy,
+  previewTemplateCopyEdit, rejectChangeSet, restoreWorkingCopy, retrieveSources, saveSpec, saveTemplateCopyEdit, saveWorkingCopy,
   type AccessStatus, type Asset, type Chapter, type ChapterVersion, type ChangeSet, type CitationUsage, type Project, type ReviewDecision,
+  type TemplateCopyDefinition, type TemplateCopyEditInput, type TemplateMigrationPreview,
   type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
 const truncated = ref(false)
 const project = ref<Project | null>(null)
+const templateCopyDraft = ref<TemplateCopyDefinition | null>(null)
+const templateCopyPreview = ref<TemplateMigrationPreview | null>(null)
+const templateCopyPreviewFingerprint = ref('')
+const templateCopyBusy = ref(false)
+const templateCopyNotice = ref('')
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const selectedAssetIds = ref<string[]>([])
@@ -471,6 +527,14 @@ const specChanged = computed(() => !!project.value && (
   subject.value !== (project.value.spec.research_subject ?? '') ||
   goal.value !== (project.value.spec.research_goal ?? '')
 ))
+const templateCopyFingerprint = computed(() => JSON.stringify(templateCopyDraft.value))
+const templateCopyChanged = computed(() => {
+  const definition = project.value?.template_copy?.definition
+  if (!definition || !templateCopyDraft.value) return false
+  return JSON.stringify(templateCopyDraft.value) !== JSON.stringify(editableTemplateCopy(definition))
+})
+const templateCopyPreviewCurrent = computed(() => !!templateCopyPreview.value &&
+  templateCopyPreviewFingerprint.value === templateCopyFingerprint.value)
 const bodyChanged = computed(() => !!workingCopy.value && bodyDraft.value !== workingCopy.value.body_markdown)
 const pendingDraftMatches = computed(() => {
   if (!pendingDraft.value) return false
@@ -493,6 +557,63 @@ function hydrateCitationUsages(item: { citation_usages?: CitationUsage[] } | nul
   const next: Record<string, CitationUsage> = {}
   for (const usage of item?.citation_usages ?? []) next[usage.source_id] = { ...usage }
   citationUsageDrafts.value = next
+}
+function editableTemplateCopy(definition: NonNullable<Project['template_copy']>['definition']): TemplateCopyDefinition {
+  return JSON.parse(JSON.stringify({
+    fields: definition.fields ?? [], sections: definition.sections ?? [], terms: definition.terms ?? [],
+    required_fields: definition.required_fields ?? [], rules: definition.rules ?? [],
+  })) as TemplateCopyDefinition
+}
+function templateCopyStatusLabel(status: NonNullable<Project['template_copy']>['status']): string {
+  return ({ draft: '草稿', bound: '已绑定', superseded: '已被新版本替代', discarded: '已放弃' })[status]
+}
+function hydrateTemplateCopyDraft(item: Project | null) {
+  templateCopyDraft.value = item?.template_copy ? editableTemplateCopy(item.template_copy.definition) : null
+  templateCopyPreview.value = null
+  templateCopyPreviewFingerprint.value = ''
+  templateCopyNotice.value = ''
+}
+function templateCopyInput(): TemplateCopyEditInput | null {
+  if (!project.value || !project.value.template_copy || !templateCopyDraft.value) return null
+  return {
+    expected_project_version: project.value.project_version,
+    expected_template_copy_version: project.value.template_copy.version,
+    ...JSON.parse(JSON.stringify(templateCopyDraft.value)) as TemplateCopyDefinition,
+  }
+}
+async function previewTemplateCopy() {
+  if (!project.value || !templateCopyChanged.value || templateCopyBusy.value) return
+  const input = templateCopyInput()
+  if (!input) return
+  templateCopyBusy.value = true
+  templateCopyNotice.value = ''
+  errorMessage.value = ''
+  try {
+    const result = await previewTemplateCopyEdit(project.value.id, input)
+    templateCopyPreview.value = result.data
+    templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+  } catch (error) { failure(error) }
+  finally { templateCopyBusy.value = false }
+}
+function discardTemplateCopyDraft() {
+  hydrateTemplateCopyDraft(project.value)
+}
+async function saveTemplateCopy() {
+  if (!project.value || !templateCopyChanged.value || !templateCopyPreviewCurrent.value || templateCopyBusy.value) return
+  const input = templateCopyInput()
+  if (!input) return
+  templateCopyBusy.value = true
+  templateCopyNotice.value = ''
+  errorMessage.value = ''
+  try {
+    const result = await saveTemplateCopyEdit(project.value.id, input, operationKey('template-copy', input))
+    attempts.delete('template-copy')
+    project.value = result.data
+    projects.value = projects.value.map(item => item.id === result.data.id ? result.data : item)
+    hydrateTemplateCopyDraft(result.data)
+    templateCopyNotice.value = `已保存为第 ${result.data.template_copy_version} 版；旧版本仍保留。`
+  } catch (error) { failure(error) }
+  finally { templateCopyBusy.value = false }
 }
 function citationUsageDraft(sourceId: string): CitationUsage {
   return citationUsageDrafts.value[sourceId] ??= { source_id: sourceId, purpose: '', limitation: '' }
@@ -607,9 +728,9 @@ async function create() {
 }
 
 async function selectProject(id: string, force = false) {
-  if (!force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value) &&
+  if (!force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value || (project.value?.id !== id && templateCopyChanged.value)) &&
       !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
-  if (force && (specChanged.value || chapterChanged.value) &&
+  if (force && (specChanged.value || chapterChanged.value || templateCopyChanged.value) &&
       !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
   if (generationTimer) clearTimeout(generationTimer)
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
@@ -622,6 +743,7 @@ async function selectProject(id: string, force = false) {
   try {
     const result = await getProject(id)
     project.value = result.data
+    hydrateTemplateCopyDraft(result.data)
     subject.value = result.data.spec.research_subject ?? ''
     goal.value = result.data.spec.research_goal ?? ''
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
@@ -1352,6 +1474,15 @@ p { margin: 6px 0; } .muted { color: #6b7670; font-size: 13px; } .warning { colo
 .alert { padding: 12px 16px; margin: 20px 0; background: #fff1ee; border: 1px solid #eea99e; border-radius: 8px; }
 .workspace-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 20px; margin-top: 24px; }
 .panel { background: #fff; border: 1px solid #dbe5dd; border-radius: 12px; padding: 22px; min-width: 0; }
+.template-copy-panel { margin: 18px 0; padding: 14px 16px; border: 1px solid #dbe5dd; border-radius: 8px; background: #fbfdfb; }
+.template-copy-panel h3 { margin-top: 0; }
+.template-hash { overflow-wrap: anywhere; color: #6b7670; font-size: 12px; }
+.template-editor { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; }
+.template-editor__item { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, 2fr); align-items: center; gap: 12px; font-weight: 400; }
+.template-editor__item small { color: #6b7670; font-weight: 400; }
+.template-preview { margin-top: 14px; padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; background: #fff; }
+.template-preview h4 { margin: 0 0 8px; }
+.template-preview ul { padding-left: 20px; }
 .create-form, .spec-form, .chapter-form, .generation-form { display: flex; flex-direction: column; gap: 10px; }
 label { font-weight: 600; font-size: 14px; }
 input, textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid #becdc3; border-radius: 7px; font: inherit; }
@@ -1408,5 +1539,5 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .access-warning__actions span { color: #6b7670; font-size: 13px; }
 .access-warning button { justify-self: start; }
 .empty-work { display: grid; place-items: center; min-height: 300px; color: #6b7670; }
-@media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } }
+@media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } .template-editor__item { grid-template-columns: 1fr; gap: 5px; } }
 </style>

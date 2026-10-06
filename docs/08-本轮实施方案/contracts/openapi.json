@@ -7083,6 +7083,8 @@
                             "severity": "warning",
                             "target_id": "ch-question",
                             "target_version": "cv-question-2",
+                            "evidence": [],
+                            "evaluator_version": "lingdoc-rules/1",
                             "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                           }
                         ]
@@ -7108,6 +7110,8 @@
                             "severity": "blocking",
                             "target_id": "ch-question",
                             "target_version": "cv-question-2",
+                            "evidence": [],
+                            "evaluator_version": "lingdoc-rules/1",
                             "message": "章节未确认。"
                           }
                         ]
@@ -7651,6 +7655,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -7860,6 +7866,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -8036,6 +8044,8 @@
                                     "severity": "blocking",
                                     "target_id": "ch-method",
                                     "target_version": null,
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "章节尚无正文版本。"
                                   },
                                   {
@@ -8045,6 +8055,8 @@
                                     "severity": "blocking",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "已填写章节仍未确认。"
                                   }
                                 ]
@@ -8254,6 +8266,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -8449,6 +8463,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -8957,6 +8973,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -9128,6 +9146,8 @@
                               "severity": "blocking",
                               "target_id": "ch-method",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             },
                             {
@@ -9137,6 +9157,8 @@
                               "severity": "blocking",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "已填写章节仍未确认。"
                             }
                           ]
@@ -9281,6 +9303,8 @@
                               "severity": "blocking",
                               "target_id": "ch-question",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             },
                             {
@@ -9290,6 +9314,8 @@
                               "severity": "blocking",
                               "target_id": "ch-method",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             }
                           ]
@@ -9461,6 +9487,8 @@
                               "severity": "blocking",
                               "target_id": "ch-method",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             },
                             {
@@ -9470,6 +9498,8 @@
                               "severity": "blocking",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "已填写章节仍未确认。"
                             }
                           ]
@@ -9674,6 +9704,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -10192,6 +10224,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -10396,6 +10430,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]

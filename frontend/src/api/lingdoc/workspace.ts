@@ -10,7 +10,96 @@ export interface Project {
   spec: Record<string, string>
   template_id: string
   template_version: string
+  template_copy_version?: number
+  template_copy?: ProjectTemplateCopy
   members: Array<{ user_id: string; role: 'owner' | 'collaborator' }>
+}
+
+export interface TemplateField {
+  field_id: string
+  label: string
+  description?: string
+  type: string
+  order?: number
+  required: boolean
+  options?: string[]
+}
+
+export interface TemplateSection {
+  section_id: string
+  title: string
+  description?: string
+  order?: number
+  required: boolean
+}
+
+export interface TemplateTerm {
+  term_id: string
+  preferred: string
+  variants: string[]
+}
+
+export interface TemplateRule {
+  rule_id: string
+  kind: string
+  severity: string
+  evaluator: string
+  message?: string
+  parameters: Record<string, unknown>
+}
+
+export interface TemplateCopyDefinition {
+  fields: TemplateField[]
+  sections: TemplateSection[]
+  terms: TemplateTerm[]
+  required_fields: string[]
+  rules: TemplateRule[]
+}
+
+export interface ProjectTemplateCopy {
+  id: string
+  project_id: string
+  source_template_id: string
+  source_template_version: string
+  version: number
+  status: 'draft' | 'bound' | 'superseded' | 'discarded'
+  content_hash: string
+  ruleset_hash: string
+  definition: TemplateCopyDefinition & { id: string; name: string; version: string; is_demo: boolean }
+  created_by: string
+  created_at: string
+}
+
+export interface TemplateCopyEditInput extends TemplateCopyDefinition {
+  expected_project_version: number
+  expected_template_copy_version: number
+}
+
+export interface TemplateMigrationPreview {
+  project_id: string
+  source_template_id: string
+  source_template_version: string
+  source_copy_version: number
+  target_template_id: string
+  target_template_version: string
+  target_copy_version: number
+  target_content_hash: string
+  target_ruleset_hash: string
+  ruleset_changed: boolean
+  expected_project_version: number
+  fields: Array<{
+    field_id: string
+    value?: string
+    before?: string
+    after?: string
+    old_type?: string
+    new_type?: string
+    status: string
+  }>
+  section_changes: Array<{ section_id: string; before?: string; after?: string; status: 'added' | 'removed' | 'changed' }>
+  missing_required: string[]
+  orphaned: string[]
+  incompatible: string[]
 }
 
 export interface ReviewItem {
@@ -242,6 +331,12 @@ export const listProjects = () => get<Result<{ items: Project[]; truncated: bool
 export const createProject = (name: string, key: string) =>
   post<Result<Project>>(base, { name, template_id: 'template-demo' }, keyHeader(key))
 export const getProject = (id: string) => get<Result<Project>>(`${base}/${segment(id)}`)
+export const getTemplateCopy = (projectId: string, version: number) =>
+  get<Result<ProjectTemplateCopy>>(`${base}/${segment(projectId)}/template-copies/${version}`)
+export const previewTemplateCopyEdit = (projectId: string, input: TemplateCopyEditInput) =>
+  post<Result<TemplateMigrationPreview>>(`${base}/${segment(projectId)}/template-copy/preview`, input)
+export const saveTemplateCopyEdit = (projectId: string, input: TemplateCopyEditInput, key: string) =>
+  put<Result<Project>>(`${base}/${segment(projectId)}/template-copy`, input, keyHeader(key))
 export const saveSpec = (id: string, expected: number, fields: Record<string, string>, key: string) =>
   put<Result<Project>>(`${base}/${segment(id)}/spec`,
     { expected_spec_revision: expected, fields }, keyHeader(key))
