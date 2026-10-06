@@ -864,6 +864,10 @@ class G6RunTest(unittest.TestCase):
         self.assertEqual(set(report["gates"]), {"G6-01", "G6-02", "G6-03", "G6-04", "G6-05", "G6-06"})
         self.assertNotIn("secret-token", json.dumps(report))
 
+    def test_non_list_beta_samples_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "samples must be a list"):
+            g6_run.build_g6_report(samples=())
+
     def test_runtime_matrix_is_a_first_class_gate(self):
         matrix = {"runtime_modes": ["mock", "real_api_fake_model", "real"],
                   "result": "BLOCKED", "shared_fixture": True,

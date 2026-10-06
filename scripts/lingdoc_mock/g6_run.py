@@ -404,7 +404,7 @@ def build_g6_report(*, main_path_report: dict[str, Any] | None = None,
                                   "failure_path": "not_run", "manual_review": "not_run",
                                   "repair_or_rollback": "not_run", "key_scenario_rerun": "not_run"},
         }
-    gates["G6-06"] = build_beta_report(samples=samples or [], window=window)
+    gates["G6-06"] = build_beta_report(samples=[] if samples is None else samples, window=window)
     results = [gate["result"] for gate in gates.values()]
     result = _overall_result(results)
     return {
