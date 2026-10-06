@@ -9,7 +9,8 @@ COPY scripts/build_browserskill.sh scripts/browserskill-release.json ./scripts/
 COPY patches/browserskill ./patches/browserskill
 ARG TARGETOS
 ARG TARGETARCH
-RUN bash scripts/build_browserskill.sh /opt/weknora/browserskill "${TARGETOS}/${TARGETARCH}"
+RUN sed -i 's/\r$//' scripts/build_browserskill.sh patches/browserskill/remote-extension-connection.patch && \
+    bash scripts/build_browserskill.sh /opt/weknora/browserskill "${TARGETOS}/${TARGETARCH}"
 
 # Build stage
 FROM golang:1.26-bookworm AS builder
@@ -31,8 +32,9 @@ ENV GOSUMDB=${GOSUMDB_ARG}
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
         sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
-    apt-get update && \
-    apt-get install -y git build-essential libsqlite3-dev curl
+    sed -i 's@^URIs: http://@URIs: https://@' /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=10 update && \
+    apt-get -o Acquire::Retries=10 install -y git build-essential libsqlite3-dev curl
 
 # Install migrate tool
 RUN go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
@@ -45,6 +47,9 @@ RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY cmd/download cmd/download
 RUN go run cmd/download/duckdb/duckdb.go
 COPY . .
+RUN find ./scripts -type f -name '*.sh' -exec sed -i 's/\r$//' {} + && \
+    sed -i 's/\r$//' ./licenses/sources/modules.tsv ./go.mod ./go.sum && \
+    bash ./scripts/check_migration_pairs.sh
 RUN --mount=type=cache,target=/go/pkg/mod bash ./scripts/copy-licenses.sh /license-bundle
 
 # Get version and commit info for build injection
@@ -89,6 +94,15 @@ FROM debian:12.12-slim
 WORKDIR /app
 
 ARG APK_MIRROR_ARG
+ARG VERSION_ARG=unknown
+ARG COMMIT_ID_ARG=unknown
+ARG BUILD_TIME_ARG=unknown
+
+LABEL org.opencontainers.image.version="$VERSION_ARG" \
+      org.opencontainers.image.revision="$COMMIT_ID_ARG" \
+      org.opencontainers.image.created="$BUILD_TIME_ARG" \
+      org.weknora.migrations="validated-at-build" \
+      org.weknora.lingdoc="compiled-from-source"
 
 # Pairing derives the gateway URL from the user's page origin by default.
 ENV BROWSERSKILL_BINARY=/opt/weknora/browserskill/bsk \
@@ -98,9 +112,13 @@ COPY --from=browserskill /opt/weknora/browserskill /opt/weknora/browserskill
 # Create a non-root user first
 RUN useradd -m -s /bin/bash appuser
 
-# First, install ca-certificates without mirror to ensure HTTPS works
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ca-certificates && \
+# Bootstrap the runtime trust store from the Debian builder before the first
+# package request. The slim runtime image has no CA bundle yet, so HTTPS apt
+# cannot be used until this file is present.
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+RUN sed -i 's@^URIs: http://@URIs: https://@' /etc/apt/sources.list.d/debian.sources && \
+    apt-get -o Acquire::Retries=10 update && \
+    apt-get -o Acquire::Retries=10 install -y --no-install-recommends ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 # Then switch to mirror if specified and install other packages.
@@ -108,8 +126,9 @@ RUN apt-get update && \
 # responses rewritten (apt reports "502 Bad Gateway" / connection
 # timeouts), while :443 works. See the T03 build notes.
 RUN if [ -n "$APK_MIRROR_ARG" ]; then \
-        sed -i -e "s@deb.debian.org@${APK_MIRROR_ARG}@g" -e "s@^URIs: http://@URIs: https://@" /etc/apt/sources.list.d/debian.sources; \
+        sed -i "s@deb.debian.org@${APK_MIRROR_ARG}@g" /etc/apt/sources.list.d/debian.sources; \
     fi && \
+    sed -i 's@^URIs: http://@URIs: https://@' /etc/apt/sources.list.d/debian.sources && \
     apt-get -o Acquire::Retries=10 update && \
     apt-get -o Acquire::Retries=10 install -y --no-install-recommends \
         build-essential postgresql-client default-mysql-client tzdata sed curl bash vim wget \

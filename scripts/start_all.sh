@@ -350,6 +350,16 @@ ensure_sandbox_image() {
     return 0
 }
 
+# Pass the checked-out source identity into the app image labels. This makes a
+# stale pre-LingDoc image visible in `docker image inspect` instead of silently
+# reusing it under the floating `latest` tag.
+set_build_metadata() {
+    export VERSION_ARG="${VERSION_ARG:-$(tr -d '\n' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo unknown)}"
+    export COMMIT_ID_ARG="${COMMIT_ID_ARG:-$(git -C "$PROJECT_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+    export BUILD_TIME_ARG="${BUILD_TIME_ARG:-$(date -u '+%Y-%m-%d %H:%M:%S UTC')}"
+    export GO_VERSION_ARG="${GO_VERSION_ARG:-$(go version 2>/dev/null || echo unknown)}"
+}
+
 # 启动Docker容器
 start_docker() {
     log_info "正在启动Docker容器..."
@@ -372,6 +382,8 @@ start_docker() {
 	# 进入项目根目录再执行docker-compose命令
     cd "$PROJECT_ROOT"
 
+    set_build_metadata
+
     export_frontend_build_args
     
     # 启动基本服务
@@ -382,9 +394,10 @@ start_docker() {
 		log_info "跳过镜像拉取，使用本地镜像..."
 		PLATFORM=$PLATFORM "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD up --build -d
 	else
-		# 拉取最新镜像
-		log_info "拉取最新镜像..."
-		PLATFORM=$PLATFORM "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD up --pull always -d
+		# 拉取基础镜像并从当前源码重建应用。仅拉取 :latest 会复用旧的
+		# WeKnora-app 镜像，可能缺少当前分支的 LingDoc 路由和迁移文件。
+		log_info "拉取基础镜像并按当前源码重建..."
+		PLATFORM=$PLATFORM "$DOCKER_COMPOSE_BIN" $DOCKER_COMPOSE_SUBCMD up --pull always --build -d
 	fi
     if [ $? -ne 0 ]; then
         log_error "Docker容器启动失败"
@@ -515,6 +528,8 @@ restart_container() {
     
     # 进入项目根目录再执行docker-compose命令
     cd "$PROJECT_ROOT"
+
+    set_build_metadata
 
     export_frontend_build_args
     
