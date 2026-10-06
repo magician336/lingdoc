@@ -177,7 +177,10 @@ def _signal_coverage(events: list[dict[str, Any]]) -> dict[str, bool]:
 def build_observability_report(*, events: list[dict[str, Any]] | None = None,
                                runtime_mode: str = "real") -> dict[str, Any]:
     """Validate a redacted event stream and attach executable alert actions."""
-    events = events or []
+    if events is None:
+        events = []
+    if not isinstance(events, list):
+        raise ValueError("events must be a list")
     sanitized = [sanitize_event(event) for event in events]
     correlation_ids = sorted({event["correlation_id"] for event in sanitized})
     coverage = _chain_coverage(sanitized)

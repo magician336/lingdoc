@@ -197,6 +197,10 @@ class G6ObservabilityTest(unittest.TestCase):
         self.assertEqual(report["latency"]["status"], "not_observed")
         self.assertIn("signal:latency_p95_p99", report["uncovered_scope"])
 
+    def test_non_list_observability_input_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "events must be a list"):
+            g6_observability.build_observability_report(events=())
+
     def test_sensitive_event_field_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "sensitive"):
             g6_observability.sanitize_event({"event_type": "request", "status": "ok",
