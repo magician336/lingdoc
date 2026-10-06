@@ -171,14 +171,14 @@
     "G6-02": {
       "dependency_matrix": {
         "mock": {
-          "missing": [
-            "contract"
-          ],
+          "missing": [],
           "required": [
             "contract"
           ],
-          "status": "not_verified",
-          "verified": []
+          "status": "verified",
+          "verified": [
+            "contract"
+          ]
         },
         "real": {
           "missing": [
@@ -203,24 +203,124 @@
           "verified": []
         },
         "real_api_fake_model": {
-          "missing": [
-            "api",
-            "file",
-            "permissions",
-            "queue"
-          ],
+          "missing": [],
           "required": [
             "api",
             "file",
             "permissions",
             "queue"
           ],
-          "status": "not_verified",
-          "verified": []
+          "status": "verified",
+          "verified": [
+            "api",
+            "file",
+            "permissions",
+            "queue"
+          ]
         }
       },
-      "fixture_ids": [],
-      "modes": [],
+      "fixture_ids": [
+        "G6-F01-v1"
+      ],
+      "modes": [
+        {
+          "dependency_status": "verified",
+          "dependency_versions": {
+            "api": "not_run",
+            "contract": "contract.v1",
+            "docx": "not_run",
+            "model": "not_run",
+            "weknora": "not_run"
+          },
+          "environment_versions": {
+            "platform": "platform.contract",
+            "runtime": "python.contract"
+          },
+          "provider_semantics_status": "not_verified",
+          "result": "PASS",
+          "runtime_mode": "mock",
+          "scenario_evidence": {
+            "key_failure": {
+              "fixture_id": "G6-F01-v1",
+              "http_status": 409,
+              "no_formal_side_effect": true,
+              "readback_status": "unchanged",
+              "result": "PASS"
+            },
+            "main_path": {
+              "completed_steps": 23,
+              "fixture_id": "G6-F01-v1",
+              "result": "PASS",
+              "verification_scope": "contract_fixture_only"
+            }
+          },
+          "verification_scope": "not_recorded"
+        },
+        {
+          "dependency_status": "verified",
+          "dependency_versions": {
+            "api": "lingdoc.api.v1",
+            "file": "local-storage.v1",
+            "model": "g6.fake-model.v1",
+            "permissions": "rbac.v1",
+            "queue": "asynq.v1",
+            "weknora": "weknora.g6"
+          },
+          "environment_versions": {
+            "platform": "docker.linux.amd64",
+            "python": "python3.12",
+            "runtime": "go1.26"
+          },
+          "provider_semantics_status": "verified",
+          "result": "PASS",
+          "runtime_mode": "real_api_fake_model",
+          "scenario_evidence": {
+            "key_failure": {
+              "fixture_id": "G6-F01-v1",
+              "http_status": 400,
+              "no_formal_side_effect": true,
+              "readback_status": "unchanged",
+              "result": "PASS"
+            },
+            "main_path": {
+              "completed_steps": 23,
+              "fixture_id": "G6-F01-v1",
+              "result": "PASS",
+              "verification_scope": "observed"
+            }
+          },
+          "verification_scope": "observed"
+        },
+        {
+          "dependency_status": "not_verified",
+          "dependency_versions": {
+            "model": "unknown",
+            "weknora": "unknown"
+          },
+          "environment_versions": {
+            "status": "not_observed"
+          },
+          "provider_semantics_status": "not_verified",
+          "result": "BLOCKED",
+          "runtime_mode": "real",
+          "scenario_evidence": {
+            "key_failure": {
+              "fixture_id": "G6-F01-v1",
+              "http_status": null,
+              "no_formal_side_effect": null,
+              "readback_status": "not_recorded",
+              "result": "BLOCKED"
+            },
+            "main_path": {
+              "completed_steps": 15,
+              "fixture_id": "G6-F01-v1",
+              "result": "BLOCKED",
+              "verification_scope": "http_smoke_only"
+            }
+          },
+          "verification_scope": "http_smoke_only"
+        }
+      ],
       "quality_evidence": {
         "attribution": [
           "runtime"
@@ -250,14 +350,14 @@
         },
         "fixture_digest": "4c848aa1e12948e5a982600b2ca0fd5599224c7b6dcef93171cb0185a6aba32f",
         "fixture_id": "G6-RUNTIME-MATRIX-01",
-        "input_hash": "7325dd619aa18544315e04797104c31269f4c38c074b8b87c825fd835cb21928",
+        "input_hash": "877e64bdc5563f201c3cf048fb1e221cdf33b704cd82a899eac5d2f47abb9357",
         "input_summary": {
           "mode_count": 3
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "fcb3cf47c912ca509d1df32ccb26202a95b7082ac9b5cc648c719d72e8723d46",
+        "output_hash": "2ad57a53483de76d948f27162d6f3130e17e521ae6d4532237e72373a5237494",
         "output_summary": {
           "result": "BLOCKED"
         },
@@ -280,7 +380,7 @@
         "real"
       ],
       "scope": "same scenarios driven independently for each runtime mode",
-      "shared_fixture": false,
+      "shared_fixture": true,
       "verification_scope": "scenario_runner_matrix"
     },
     "G6-03": {
