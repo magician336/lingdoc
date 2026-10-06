@@ -544,6 +544,16 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(report["result"], "BLOCKED")
         self.assertFalse(report["fixture_coverage"]["step_counts_complete"])
 
+    def test_observed_main_path_failure_keeps_fail_precedence(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        main["steps"][0]["actual_http"] = 500
+        main["steps"] = main["steps"][:-1]
+        main["completed_steps"] -= 1
+        report = g6_main_path.build_main_path_report(
+            main_report=main, failure_observation=failure)
+        self.assertEqual(report["main_path"]["result"], "FAIL")
+        self.assertEqual(report["result"], "FAIL")
+
     def test_main_path_evidence_drops_untrusted_report_payloads(self):
         main = self._complete_report()
         main["steps"][0]["response"] = "SECRET_DOCUMENT"

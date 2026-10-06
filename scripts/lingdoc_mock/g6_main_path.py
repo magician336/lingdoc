@@ -373,8 +373,9 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
     }
     fixture_digest = digest(fixture_definition)
     result = main_result if main_result != "PASS" else failure["result"]
-    if (not coverage["constructed_complete"] or not coverage["step_sequence_complete"]
-            or not coverage["step_counts_complete"]):
+    if (result != "FAIL" and
+            (not coverage["constructed_complete"] or not coverage["step_sequence_complete"]
+             or not coverage["step_counts_complete"])):
         result = "BLOCKED"
     return {
         "report_version": 1,
