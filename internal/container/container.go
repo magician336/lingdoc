@@ -533,7 +533,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
 	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (workspace.ReleaseApplication, error) {
-		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots)
+		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, sourceIntegration.CandidateAdoptionSourcePolicy())
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫

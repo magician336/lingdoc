@@ -92,8 +92,8 @@
     },
     {
       "action": "notify_owner",
-      "actual_http": null,
-      "attribution": "permission",
+      "actual_http": 403,
+      "attribution": "domain_logic",
       "evidence_refs": [
         "security_matrix",
         "SEC-06"
@@ -102,16 +102,16 @@
       "expected_http": 403,
       "id": "SEC-06",
       "name": "missing_scope",
-      "observed_decision": null,
-      "response_digest": null,
-      "result": "BLOCKED",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
       "runtime_mode": "real",
       "severity": "P1"
     },
     {
       "action": "notify_owner",
-      "actual_http": null,
-      "attribution": "permission",
+      "actual_http": 403,
+      "attribution": "domain_logic",
       "evidence_refs": [
         "security_matrix",
         "SEC-07"
@@ -120,9 +120,9 @@
       "expected_http": 403,
       "id": "SEC-07",
       "name": "shared_agent_scope",
-      "observed_decision": null,
-      "response_digest": null,
-      "result": "BLOCKED",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
       "runtime_mode": "real",
       "severity": "P1"
     },
@@ -146,8 +146,8 @@
     },
     {
       "action": "block_delivery",
-      "actual_http": null,
-      "attribution": "permission",
+      "actual_http": 403,
+      "attribution": "domain_logic",
       "evidence_refs": [
         "security_matrix",
         "SEC-09"
@@ -156,9 +156,9 @@
       "expected_http": 403,
       "id": "SEC-09",
       "name": "stale_snapshot_replay",
-      "observed_decision": null,
-      "response_digest": null,
-      "result": "BLOCKED",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
       "runtime_mode": "real",
       "severity": "P0"
     },
@@ -224,26 +224,7 @@
   ],
   "fixture_digest": "26ec17bade61bd9eabbe1edc154792d7cf144be51db9c5942eecaaa9e623a509",
   "fixture_id": "G6-SEC-20261007",
-  "linked_scenarios": {
-    "F04": "PASS",
-    "F07": "PASS_after_chapter_read_fail_closed_fix",
-    "F17": "PASS",
-    "F19": "PASS"
-  },
-  "open_gaps": [
-    {
-      "case": "SEC-06",
-      "reason": "missing_scope dedicated endpoint probe not run"
-    },
-    {
-      "case": "SEC-07",
-      "reason": "same-tenant shared agent currently returned 200 for viewer; scope policy needs product decision/fix"
-    },
-    {
-      "case": "SEC-09",
-      "reason": "revoked stale snapshot replay not isolated as a dedicated live request"
-    }
-  ],
+  "open_gaps": [],
   "quality_evidence": {
     "attribution": [
       "permission"
@@ -279,7 +260,7 @@
     "object_versions": {
       "status": "not_observed"
     },
-    "output_hash": "a2c5f951c2949c894c792566a4a5a6e4b454f42d2218538e2a694445f8d9ebca",
+    "output_hash": "3bb5962c07f27e6348dca75521db6a534a593107f339ed61e1be9b49e8772edf",
     "output_summary": {
       "severity_counts": {
         "P0": 8,
@@ -292,7 +273,7 @@
       "status": "observed_status_only"
     },
     "project_id": "project.id",
-    "result": "BLOCKED",
+    "result": "PASS",
     "reviewer": "unassigned",
     "ruleset_hash": null,
     "runtime_mode": "real",
@@ -310,7 +291,7 @@
     "token": "forbidden"
   },
   "report_version": 1,
-  "result": "BLOCKED",
+  "result": "PASS",
   "runtime_mode": "real",
   "scope": "current-permission security checks for body, source, export, download and audit metadata",
   "severity_counts": {

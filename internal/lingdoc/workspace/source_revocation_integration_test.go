@@ -117,6 +117,14 @@ func TestCheckPassedSnapshotCannotDownloadAfterRealKBShareRevocation(t *testing.
 	if err := handler.WorkspaceSourcePolicy().Validate(policyContext(), "project-1", deliveryActorID, []string{deliverySourceID}); err == nil {
 		t.Fatal("production-composed SourcePolicy still permits the source after share revocation")
 	}
+	staleRead := deliveryServe(router, deliveryRequest(http.MethodGet,
+		deliveryRouteBase+"/releases/"+snapshot.ID, "", ""))
+	if staleRead.Code != http.StatusForbidden {
+		t.Fatalf("getRelease after share revocation = %d, want 403: %s", staleRead.Code, staleRead.Body.String())
+	}
+	if code := decodeDeliveryEnvelope(t, staleRead).Error; code == nil || code.Code != "source_access_denied" {
+		t.Fatalf("getRelease after revocation error = %+v, want source_access_denied", code)
+	}
 
 	// A second export proves CheckPassed does not short-circuit current source
 	// authorization. The first export proves a frozen file cannot be downloaded

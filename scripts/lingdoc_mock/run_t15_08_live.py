@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import runpy
 import time
 import urllib.error
@@ -57,7 +58,11 @@ class LiveRun:
              headers: dict[str, str] | None = None) -> tuple[int, Any, dict[str, str]]:
         method, template = self.operations[operation]
         url = build_url(self.base_url, template, params or {}, {})
-        status, response_headers, payload = self.client.request(method, url, headers or {}, body)
+        request_headers = dict(headers or {})
+        correlation_id = os.environ.get("G6_CORRELATION_ID", "").strip()
+        if correlation_id:
+            request_headers.setdefault("X-Request-ID", correlation_id)
+        status, response_headers, payload = self.client.request(method, url, request_headers, body)
         return status, payload, response_headers
 
     def control(self, method: str, path: str, body: Any = None) -> tuple[int, Any]:

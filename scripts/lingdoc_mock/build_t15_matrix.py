@@ -366,7 +366,10 @@ def _collect_gaps(source_documents: list[dict[str, Any]]) -> list[dict[str, Any]
             if responsibility is None:
                 raise MatrixError(f"registered gap has no task/owner mapping: {gap_id}")
             if gap_id not in found:
-                status = policy["status"]
+                source_status = candidate.get("status")
+                status = source_status if source_status in {
+                    "open", "resolved", "fix_present_retest_pending"
+                } else policy["status"]
                 item: dict[str, Any] = {
                     "id": gap_id,
                     "title": candidate.get("title", gap_id),

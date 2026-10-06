@@ -353,17 +353,18 @@ class G6MetricsTest(unittest.TestCase):
              "runtime_mode": "real", "quality_result": "PASS", "dependency_status": "verified",
              "supported_claims": 9, "total_claims": 10, "dismissed_issues": 1, "issues_reviewed": 5,
              "unconfirmed_items": 1, "snapshots": 2, "export_loss_items": 0, "export_checks": 4,
-             "manual_minutes": 20, "projects": 1, "missed_edits": 1, "changesets": 2},
+             "manual_minutes": 20.5, "projects": 1, "missed_edits": 1, "changesets": 2},
             {"sample_id": "sample.real2", "sample_version": "sample.v1",
              "runtime_mode": "real", "quality_result": "PASS", "dependency_status": "verified",
              "supported_claims": 8, "total_claims": 10, "dismissed_issues": 0, "issues_reviewed": 5,
              "unconfirmed_items": 0, "snapshots": 2, "export_loss_items": 0, "export_checks": 4,
-             "manual_minutes": 15, "projects": 1, "missed_edits": 0, "changesets": 2},
+             "manual_minutes": 15.25, "projects": 1, "missed_edits": 0, "changesets": 2},
         ]
         report = g6_metrics.build_beta_report(samples=samples, window=self.WINDOW)
         self.assertEqual(report["result"], "PASS")
         self.assertEqual(report["decision"], "expand")
         self.assertEqual(report["metrics"]["source_support_rate"]["numerator"], 17)
+        self.assertAlmostEqual(report["metrics"]["manual_effort_minutes"]["numerator"], 35.75)
         self.assertEqual(report["decision_evidence"]["real_sample_ids"],
                          ["sample.real1", "sample.real2"])
         self.assertEqual(report["decision_evidence"]["eligible_real_sample_ids"],

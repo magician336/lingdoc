@@ -71,7 +71,7 @@ func assembleExportRoutes(t *testing.T, handler *Handler, db *gorm.DB, authorize
 		t.Fatal("装配处拿不到交付输入构建器")
 	}
 	snapshots := delivery.NewMemorySnapshotStore()
-	releases := NewDeliveryReleaseService(inputs, builder, snapshots)
+	releases := NewDeliveryReleaseService(inputs, builder, snapshots, handler.CandidateAdoptionSourcePolicy())
 	exports := NewDeliveryExportServiceWithCurrentness(snapshots, delivery.NewMemoryExportStore(), DeliveryDocument{}, DeliveryDocument{}, inputs, handler.WorkspaceSourcePolicy(), builder.(DeliveryCurrentness))
 	if releases == nil || exports == nil {
 		t.Fatal("交付链装配不齐：T13 或 T14 仍是断的")

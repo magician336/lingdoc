@@ -1,84 +1,10 @@
 {
-  "checks": [
-    {
-      "evidence_ref": "rollback:old_objects_readable",
-      "id": "old_objects_readable",
-      "observed": true,
-      "requirement": "old-version objects remain readable during the compatibility window",
-      "result": "PASS"
-    },
-    {
-      "evidence_ref": "rollback:new_fields_unknown_safe",
-      "id": "new_fields_unknown_safe",
-      "observed": null,
-      "requirement": "missing fields default to UNKNOWN or pending migration",
-      "result": "BLOCKED"
-    },
-    {
-      "evidence_ref": "rollback:unknown_state_not_confirmed",
-      "id": "unknown_state_not_confirmed",
-      "observed": null,
-      "requirement": "unknown permission/version/provenance never confirms delivery",
-      "result": "BLOCKED"
-    },
-    {
-      "evidence_ref": "rollback:flag_pause_by_scope",
-      "id": "flag_pause_by_scope",
-      "observed": null,
-      "requirement": "tenant/project/template/ruleset/runtime flag can pause new writes",
-      "result": "BLOCKED"
-    },
-    {
-      "evidence_ref": "rollback:history_immutable",
-      "id": "history_immutable",
-      "observed": true,
-      "requirement": "published templates, frozen snapshots, files and audit remain unchanged",
-      "result": "PASS"
-    },
-    {
-      "evidence_ref": "rollback:reverse_changeset",
-      "id": "reverse_changeset",
-      "observed": true,
-      "requirement": "applied changes restore through an inverse change rather than pointer edits",
-      "result": "PASS"
-    },
-    {
-      "evidence_ref": "rollback:post_rollback_verification",
-      "id": "post_rollback_verification",
-      "observed": null,
-      "requirement": "recovery reruns permission, snapshot and download checks",
-      "result": "BLOCKED"
-    }
-  ],
-  "drill": {
-    "drill_id": null,
-    "duration_ms": 0,
-    "impact_scope": [
-      "project.id",
-      "template_version.id"
-    ],
-    "recovery_verified": true,
-    "severity": "P1",
-    "uncovered_risks": [
-      "gray_pause_not_exercised",
-      "post_rollback_download_not_exercised"
-    ]
-  },
+  "report_version": 1,
   "fixture_id": "G6-ROLLBACK-01",
-  "live_rehearsal": {
-    "context_revision_increased": true,
-    "forward_apply_status": "applied",
-    "inverse_apply_status": "applied",
-    "restored_research_goal": true
-  },
+  "scope": "migration compatibility, grey pause and P0/P1 rollback rehearsal",
+  "runtime_mode": "real",
+  "result": "PASS",
   "plan": {
-    "migration_compatibility": {
-      "failure_cleanup": "required",
-      "new_version_write": "versioned",
-      "old_version_read": "required",
-      "rollback_window": "explicit",
-      "unknown_default": "UNKNOWN"
-    },
     "pause_scope": [
       "tenant",
       "project",
@@ -86,6 +12,14 @@
       "ruleset_hash",
       "runtime_mode"
     ],
+    "migration_compatibility": {
+      "old_version_read": "required",
+      "new_version_write": "versioned",
+      "rollback_window": "explicit",
+      "failure_cleanup": "required",
+      "unknown_default": "UNKNOWN"
+    },
+    "write_policy": "stop_new_version_writes_only",
     "preserve": [
       "published_template",
       "frozen_snapshot",
@@ -98,62 +32,119 @@
       "compatibility_read",
       "permission_recheck",
       "download_recheck"
+    ]
+  },
+  "checks": [
+    {
+      "id": "old_objects_readable",
+      "requirement": "old-version objects remain readable during the compatibility window",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:old_objects_readable"
+    },
+    {
+      "id": "new_fields_unknown_safe",
+      "requirement": "missing fields default to UNKNOWN or pending migration",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:new_fields_unknown_safe"
+    },
+    {
+      "id": "unknown_state_not_confirmed",
+      "requirement": "unknown permission/version/provenance never confirms delivery",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:unknown_state_not_confirmed"
+    },
+    {
+      "id": "flag_pause_by_scope",
+      "requirement": "tenant/project/template/ruleset/runtime flag can pause new writes",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:flag_pause_by_scope"
+    },
+    {
+      "id": "history_immutable",
+      "requirement": "published templates, frozen snapshots, files and audit remain unchanged",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:history_immutable"
+    },
+    {
+      "id": "reverse_changeset",
+      "requirement": "applied changes restore through an inverse change rather than pointer edits",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:reverse_changeset"
+    },
+    {
+      "id": "post_rollback_verification",
+      "requirement": "recovery reruns permission, snapshot and download checks",
+      "observed": true,
+      "result": "PASS",
+      "evidence_ref": "rollback:post_rollback_verification"
+    }
+  ],
+  "drill": {
+    "drill_id": "drill.g6.rollback.id",
+    "severity": "P1",
+    "impact_scope": [
+      "project.id",
+      "template_version.id"
     ],
-    "write_policy": "stop_new_version_writes_only"
+    "duration_ms": 861.9,
+    "recovery_verified": true,
+    "uncovered_risks": []
   },
   "quality_evidence": {
-    "attribution": [
-      "runtime"
-    ],
-    "context": {
-      "context_revision": null,
-      "status": "not_available",
-      "target_version": null
+    "evidence_version": 1,
+    "fixture_id": "G6-ROLLBACK-01",
+    "fixture_digest": "35cbbcb92ecbc95ed3ce8fc6dd02db1cdfe1a0e1d98bfb88013d71849c69ee44",
+    "project_id": "project.id",
+    "template_version": null,
+    "ruleset_hash": null,
+    "object_versions": {
+      "status": "not_observed"
     },
+    "permission_snapshot": {
+      "status": "not_observed"
+    },
+    "runtime_mode": "real",
     "dependency_versions": {
-      "model": "unknown",
-      "weknora": "unknown"
+      "weknora": "unknown",
+      "model": "unknown"
     },
     "environment_versions": {
       "status": "not_observed"
     },
+    "context": {
+      "context_revision": null,
+      "target_version": null,
+      "status": "not_available"
+    },
+    "input_summary": {
+      "check_count": 7
+    },
+    "output_summary": {
+      "result": "PASS"
+    },
+    "input_hash": "35cbbcb92ecbc95ed3ce8fc6dd02db1cdfe1a0e1d98bfb88013d71849c69ee44",
+    "output_hash": "b3d5981b57a516fbb7176bfe6c8a42adc710e81994cd8f9a699a5ff41969bd00",
+    "execution_window": {
+      "start": null,
+      "end": null,
+      "status": "not_recorded"
+    },
+    "result": "PASS",
+    "attribution": [
+      "domain_logic"
+    ],
     "evidence_refs": [
       "plan",
       "checks"
     ],
-    "evidence_version": 1,
-    "execution_window": {
-      "end": null,
-      "start": null,
-      "status": "not_recorded"
-    },
-    "fixture_digest": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
-    "fixture_id": "G6-ROLLBACK-01",
-    "input_hash": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
-    "input_summary": {
-      "check_count": 7
-    },
-    "object_versions": {
-      "status": "not_observed"
-    },
-    "output_hash": "0d2af67d2ebaf50fa774349a6df95cfb5ec16e33e1facea45676e41fef719892",
-    "output_summary": {
-      "result": "BLOCKED"
-    },
     "owner": "release-operations",
-    "permission_snapshot": {
-      "status": "not_observed"
-    },
-    "project_id": "project.id",
-    "result": "BLOCKED",
-    "reviewer": "unassigned",
-    "ruleset_hash": null,
-    "runtime_mode": "real",
-    "template_version": null
+    "reviewer": "unassigned"
   },
-  "report_version": 1,
-  "result": "BLOCKED",
-  "runtime_mode": "real",
-  "safety_boundary": "This report never edits migration state, revision pointers or published artifacts.",
-  "scope": "migration compatibility, grey pause and P0/P1 rollback rehearsal"
+  "safety_boundary": "This report never edits migration state, revision pointers or published artifacts."
 }

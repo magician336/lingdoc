@@ -28,6 +28,7 @@ type DeliveryReleaseService struct {
 	builder DeliveryInputAssembler
 	store   delivery.SnapshotStore
 	freezes delivery.FreezeRecorder
+	sources candidateadoption.SourcePolicy
 }
 
 // NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
@@ -36,7 +37,7 @@ type DeliveryReleaseService struct {
 // 快照库还必须能记「哪一次动作冻了它」（delivery.FreezeRecorder）。契约把
 // Idempotency-Key 标成 /releases 的必填头，退化成「照冻不误」就等于收下了这个头
 // 却不当回事：一次超时重试会在交付历史里多出一条，而调用方以为自己只冻过一次。
-func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore) *DeliveryReleaseService {
+func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sourcePolicies ...candidateadoption.SourcePolicy) *DeliveryReleaseService {
 	if inputs == nil || builder == nil || store == nil {
 		return nil
 	}
@@ -44,7 +45,11 @@ func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, b
 	if !ok {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes}
+	var sources candidateadoption.SourcePolicy
+	if len(sourcePolicies) > 0 {
+		sources = sourcePolicies[0]
+	}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -138,7 +143,45 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
 		return delivery.ReleaseSnapshot{}, err
 	}
+	snapshot, err := s.store.Get(projectID, snapshotID)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, err
+	}
+	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshot); err != nil {
+		return delivery.ReleaseSnapshot{}, err
+	}
 	return s.releases(ctx, actorID).Get(projectID, snapshotID)
+}
+
+// authorizeSnapshotSources rechecks the source permission at release-read
+// time. A frozen snapshot is immutable, but access to the sources it quotes is
+// revocable; returning the old frozen body after revocation would be a stale
+// snapshot replay. The optional policy keeps the small in-memory adapters used
+// by legacy unit tests compatible while production wires the same policy used
+// by chapter confirmation and export.
+func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
+	if s == nil || s.sources == nil {
+		return nil
+	}
+	ids := make([]string, 0)
+	seen := make(map[string]struct{})
+	for _, chapter := range snapshot.FrozenInput.Chapters {
+		for _, id := range chapter.SourceIDs {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.sources.Validate(ctx, projectID, actorID, ids)
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。

@@ -160,7 +160,12 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     numerators = {name: 0 for name, _, _ in METRICS}
     for sample in eligible:
         for name, numerator_key, denominator_key in METRICS:
-            numerators[name] += int(sample.get(numerator_key, 0))
+            numerator = sample.get(numerator_key, 0)
+            # Manual effort is measured in minutes and may be fractional for
+            # short real runs. Preserve that precision; the other numerators
+            # are event counts and remain integers.
+            numerators[name] += (float(numerator) if numerator_key == "manual_minutes"
+                                  else int(numerator))
             totals[name] += int(sample.get(denominator_key, 0))
     metrics = {
         name: {"numerator": numerators[name], "denominator": totals[name],

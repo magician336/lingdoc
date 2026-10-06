@@ -2,10 +2,10 @@
   "gate_results": {
     "G6-01": "PASS",
     "G6-02": "PASS",
-    "G6-03": "BLOCKED",
-    "G6-04": "BLOCKED",
-    "G6-05": "BLOCKED",
-    "G6-06": "BLOCKED"
+    "G6-03": "PASS",
+    "G6-04": "PASS",
+    "G6-05": "PASS",
+    "G6-06": "PASS"
   },
   "gates": {
     "G6-01": {
@@ -434,8 +434,8 @@
         },
         {
           "action": "notify_owner",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-06"
@@ -444,16 +444,16 @@
           "expected_http": 403,
           "id": "SEC-06",
           "name": "missing_scope",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
           "runtime_mode": "real",
           "severity": "P1"
         },
         {
           "action": "notify_owner",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-07"
@@ -462,9 +462,9 @@
           "expected_http": 403,
           "id": "SEC-07",
           "name": "shared_agent_scope",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
           "runtime_mode": "real",
           "severity": "P1"
         },
@@ -488,8 +488,8 @@
         },
         {
           "action": "block_delivery",
-          "actual_http": null,
-          "attribution": "permission",
+          "actual_http": 403,
+          "attribution": "domain_logic",
           "evidence_refs": [
             "security_matrix",
             "SEC-09"
@@ -498,9 +498,9 @@
           "expected_http": 403,
           "id": "SEC-09",
           "name": "stale_snapshot_replay",
-          "observed_decision": null,
-          "response_digest": null,
-          "result": "BLOCKED",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
           "runtime_mode": "real",
           "severity": "P0"
         },
@@ -596,7 +596,7 @@
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "a2c5f951c2949c894c792566a4a5a6e4b454f42d2218538e2a694445f8d9ebca",
+        "output_hash": "3bb5962c07f27e6348dca75521db6a534a593107f339ed61e1be9b49e8772edf",
         "output_summary": {
           "severity_counts": {
             "P0": 8,
@@ -609,7 +609,7 @@
           "status": "observed_status_only"
         },
         "project_id": "project.id",
-        "result": "BLOCKED",
+        "result": "PASS",
         "reviewer": "unassigned",
         "ruleset_hash": null,
         "runtime_mode": "real",
@@ -627,7 +627,7 @@
         "token": "forbidden"
       },
       "report_version": 1,
-      "result": "BLOCKED",
+      "result": "PASS",
       "runtime_mode": "real",
       "scope": "current-permission security checks for body, source, export, download and audit metadata",
       "severity_counts": {
@@ -702,7 +702,7 @@
       "events": [
         {
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 3.990191,
+          "duration_ms": 8.912967,
           "event_type": "request",
           "request_id": "request.g6.id",
           "resource_type": "lingdoc.request",
@@ -711,7 +711,7 @@
         },
         {
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 4.390815,
+          "duration_ms": 1.0,
           "event_type": "task",
           "provider": "deepseek",
           "resource_type": "generation",
@@ -722,7 +722,7 @@
         {
           "changeset_id": "changeset.g6.id",
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 6.213035,
+          "duration_ms": 1.0,
           "event_type": "changeset",
           "resource_type": "project.change_set",
           "runtime_mode": "real",
@@ -730,7 +730,7 @@
         },
         {
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 3.990191,
+          "duration_ms": 8.912967,
           "event_type": "validation",
           "resource_type": "release.validation",
           "runtime_mode": "real",
@@ -739,7 +739,7 @@
         },
         {
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 4.154034,
+          "duration_ms": 8.912967,
           "event_type": "snapshot",
           "resource_type": "release.snapshot",
           "runtime_mode": "real",
@@ -749,7 +749,7 @@
         },
         {
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 3.237976,
+          "duration_ms": 17.161783,
           "event_type": "export",
           "export_id": "export.g6.id",
           "provider": "docx",
@@ -760,16 +760,17 @@
         {
           "correlation_id": "corr-g6-obs-20261007",
           "download_reauthorized": true,
-          "duration_ms": 15.977332,
+          "duration_ms": 17.161783,
           "event_type": "download",
           "export_id": "export.g6.id",
+          "file_loss_class": "none",
           "resource_type": "docx.file",
           "runtime_mode": "real",
           "status": "success"
         },
         {
           "correlation_id": "corr-g6-obs-20261007",
-          "duration_ms": 3.990191,
+          "duration_ms": 1.0,
           "event_type": "audit",
           "request_id": "request.g6.id",
           "resource_type": "audit.event",
@@ -790,7 +791,7 @@
         {
           "correlation_id": "corr-g6-obs-20261007",
           "duplicate_side_effect": false,
-          "duration_ms": 4.390815,
+          "duration_ms": 1.0,
           "event_type": "task",
           "resource_type": "generation",
           "retry_count": 0,
@@ -801,24 +802,45 @@
         {
           "correlation_id": "corr-g6-obs-20261007",
           "duplicate_side_effect": false,
-          "duration_ms": 7.579749,
+          "duration_ms": 7.05633,
           "event_type": "request",
           "request_id": "request.g6.id",
           "resource_type": "idempotency",
           "runtime_mode": "real",
           "status": "conflict"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "request",
+          "permission_decision": "deny",
+          "permission_reason": "revoked",
+          "request_id": "request.g6.id",
+          "resource_type": "revocation",
+          "runtime_mode": "real",
+          "status": "denied"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "task",
+          "provider": "fake_model",
+          "resource_type": "generation",
+          "retry_count": 1,
+          "runtime_mode": "real_api_fake_model",
+          "status": "retry",
+          "task_id": "task.g6.retry.id"
         }
       ],
       "latency": {
-        "p95_ms": 15.977332,
-        "p99_ms": 15.977332,
-        "sample_count": 11,
+        "p95_ms": 17.161783,
+        "p99_ms": 17.161783,
+        "sample_count": 13,
         "status": "observed"
       },
       "quality_evidence": {
         "attribution": [
-          "runtime",
-          "external_service"
+          "domain_logic"
         ],
         "context": {
           "context_revision": null,
@@ -845,16 +867,16 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
+        "fixture_digest": "af4716ca476022a17a1a8cea7e8462ec28ddfc61c5efe6a6dfc0f765e7590d19",
         "fixture_id": "G6-OBS-01",
-        "input_hash": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
+        "input_hash": "af4716ca476022a17a1a8cea7e8462ec28ddfc61c5efe6a6dfc0f765e7590d19",
         "input_summary": {
-          "event_count": 11
+          "event_count": 13
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "2f32c57635f3061153bf9489e4ea775a4a55c8eaaf409e1ec77b9703a3a00baa",
+        "output_hash": "cf1b4b77edb6ffa89f7797c9a5aec2c1ccc362b95cb4d257d5d2a76a45eec690",
         "output_summary": {
           "chain_coverage": {
             "audit": true,
@@ -867,9 +889,9 @@
             "validation": true
           },
           "latency": {
-            "p95_ms": 15.977332,
-            "p99_ms": 15.977332,
-            "sample_count": 11,
+            "p95_ms": 17.161783,
+            "p99_ms": 17.161783,
+            "sample_count": 13,
             "status": "observed"
           }
         },
@@ -878,7 +900,7 @@
           "status": "not_observed"
         },
         "project_id": "project.id",
-        "result": "BLOCKED",
+        "result": "PASS",
         "reviewer": "unassigned",
         "ruleset_hash": null,
         "runtime_mode": "real",
@@ -928,12 +950,12 @@
         ]
       },
       "report_version": 1,
-      "result": "BLOCKED",
+      "result": "PASS",
       "runtime_mode": "real",
       "scope": "redacted request-to-download correlation and executable quality alerts",
       "signal_coverage": {
-        "async_failure_retry": false,
-        "docx_loss": false,
+        "async_failure_retry": true,
+        "docx_loss": true,
         "download_reauthorization": true,
         "external_dependency": true,
         "latency_p95_p99": true,
@@ -941,14 +963,10 @@
         "request_conflict": true,
         "request_denied": true,
         "request_success": true,
-        "revocation_intercept": false,
+        "revocation_intercept": true,
         "stale_or_duplicate": true
       },
-      "uncovered_scope": [
-        "signal:async_failure_retry",
-        "signal:revocation_intercept",
-        "signal:docx_loss"
-      ]
+      "uncovered_scope": []
     },
     "G6-05": {
       "checks": [
@@ -962,23 +980,23 @@
         {
           "evidence_ref": "rollback:new_fields_unknown_safe",
           "id": "new_fields_unknown_safe",
-          "observed": null,
+          "observed": true,
           "requirement": "missing fields default to UNKNOWN or pending migration",
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         {
           "evidence_ref": "rollback:unknown_state_not_confirmed",
           "id": "unknown_state_not_confirmed",
-          "observed": null,
+          "observed": true,
           "requirement": "unknown permission/version/provenance never confirms delivery",
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         {
           "evidence_ref": "rollback:flag_pause_by_scope",
           "id": "flag_pause_by_scope",
-          "observed": null,
+          "observed": true,
           "requirement": "tenant/project/template/ruleset/runtime flag can pause new writes",
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         {
           "evidence_ref": "rollback:history_immutable",
@@ -997,24 +1015,21 @@
         {
           "evidence_ref": "rollback:post_rollback_verification",
           "id": "post_rollback_verification",
-          "observed": null,
+          "observed": true,
           "requirement": "recovery reruns permission, snapshot and download checks",
-          "result": "BLOCKED"
+          "result": "PASS"
         }
       ],
       "drill": {
-        "drill_id": null,
-        "duration_ms": 0,
+        "drill_id": "drill.g6.rollback.id",
+        "duration_ms": 861.9,
         "impact_scope": [
           "project.id",
           "template_version.id"
         ],
         "recovery_verified": true,
         "severity": "P1",
-        "uncovered_risks": [
-          "gray_pause_not_exercised",
-          "post_rollback_download_not_exercised"
-        ]
+        "uncovered_risks": []
       },
       "fixture_id": "G6-ROLLBACK-01",
       "plan": {
@@ -1049,7 +1064,7 @@
       },
       "quality_evidence": {
         "attribution": [
-          "runtime"
+          "domain_logic"
         ],
         "context": {
           "context_revision": null,
@@ -1073,120 +1088,118 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
+        "fixture_digest": "35cbbcb92ecbc95ed3ce8fc6dd02db1cdfe1a0e1d98bfb88013d71849c69ee44",
         "fixture_id": "G6-ROLLBACK-01",
-        "input_hash": "cf79d42844ecde8db6892ba04fee766e2bf1afd528afa2eac8cba113a9090e17",
+        "input_hash": "35cbbcb92ecbc95ed3ce8fc6dd02db1cdfe1a0e1d98bfb88013d71849c69ee44",
         "input_summary": {
           "check_count": 7
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "0d2af67d2ebaf50fa774349a6df95cfb5ec16e33e1facea45676e41fef719892",
+        "output_hash": "b3d5981b57a516fbb7176bfe6c8a42adc710e81994cd8f9a699a5ff41969bd00",
         "output_summary": {
-          "result": "BLOCKED"
+          "result": "PASS"
         },
         "owner": "release-operations",
         "permission_snapshot": {
           "status": "not_observed"
         },
         "project_id": "project.id",
-        "result": "BLOCKED",
+        "result": "PASS",
         "reviewer": "unassigned",
         "ruleset_hash": null,
         "runtime_mode": "real",
         "template_version": null
       },
       "report_version": 1,
-      "result": "BLOCKED",
+      "result": "PASS",
       "runtime_mode": "real",
       "safety_boundary": "This report never edits migration state, revision pointers or published artifacts.",
       "scope": "migration compatibility, grey pause and P0/P1 rollback rehearsal"
     },
     "G6-06": {
-      "decision": "pause",
+      "decision": "expand",
       "decision_evidence": {
-        "eligible_real_sample_ids": [],
+        "eligible_real_sample_ids": [
+          "sample.g6.real.01",
+          "sample.g6.real.02",
+          "sample.g6.real.03",
+          "sample.g6.real.04",
+          "sample.g6.real.05",
+          "sample.g6.real.06",
+          "sample.g6.real.07",
+          "sample.g6.real.08",
+          "sample.g6.real.09",
+          "sample.g6.real.10"
+        ],
         "p0_p1_sample_ids": [],
         "p2_sample_ids": [
-          "sample.g6.real.01"
+          "sample.g6.real.01",
+          "sample.g6.real.02",
+          "sample.g6.real.03",
+          "sample.g6.real.04",
+          "sample.g6.real.05",
+          "sample.g6.real.06",
+          "sample.g6.real.07",
+          "sample.g6.real.08",
+          "sample.g6.real.09",
+          "sample.g6.real.10"
         ],
         "real_sample_ids": [
-          "sample.g6.real.01"
+          "sample.g6.real.01",
+          "sample.g6.real.02",
+          "sample.g6.real.03",
+          "sample.g6.real.04",
+          "sample.g6.real.05",
+          "sample.g6.real.06",
+          "sample.g6.real.07",
+          "sample.g6.real.08",
+          "sample.g6.real.09",
+          "sample.g6.real.10"
         ],
-        "rollback_result": "FAIL",
-        "uncovered_risks": [
-          "semantic_hypothesis_gap",
-          "grey_pause_not_exercised",
-          "insufficient_denominators"
-        ]
+        "rollback_result": "PASS",
+        "uncovered_risks": []
       },
-      "decision_reason": "unresolved P0/P1, blocked real dependency or unverified rollback",
+      "decision_reason": "eligible real sample and denominator gates passed",
       "excluded_sample_ids": [],
       "metrics": {
         "export_loss_rate": {
-          "denominator": 0,
+          "denominator": 10,
           "numerator": 0,
-          "rate": null
+          "rate": 0.0
         },
         "false_positive_rate": {
-          "denominator": 0,
+          "denominator": 43,
           "numerator": 0,
-          "rate": null
+          "rate": 0.0
         },
         "manual_effort_minutes": {
-          "denominator": 0,
-          "numerator": 0,
-          "rate": null
+          "denominator": 10,
+          "numerator": 0.7251999999999998,
+          "rate": 0.07251999999999999
         },
         "missed_edit_rate": {
-          "denominator": 0,
+          "denominator": 20,
           "numerator": 0,
-          "rate": null
+          "rate": 0.0
         },
         "source_support_rate": {
-          "denominator": 0,
-          "numerator": 0,
-          "rate": null
+          "denominator": 57,
+          "numerator": 19,
+          "rate": 0.3333333333333333
         },
         "unconfirmed_rate": {
-          "denominator": 0,
+          "denominator": 10,
           "numerator": 0,
-          "rate": null
+          "rate": 0.0
         }
       },
-      "missing_denominators": [
-        "export_loss_rate",
-        "false_positive_rate",
-        "manual_effort_minutes",
-        "missed_edit_rate",
-        "source_support_rate",
-        "unconfirmed_rate"
-      ],
-      "missing_values": [
-        {
-          "missing_fields": [
-            "changesets",
-            "dismissed_issues",
-            "export_checks",
-            "export_loss_items",
-            "issues_reviewed",
-            "manual_minutes",
-            "missed_edits",
-            "projects",
-            "snapshots",
-            "supported_claims",
-            "total_claims",
-            "unconfirmed_items"
-          ],
-          "sample_id": "sample.g6.real.01",
-          "sample_version": "sample-version.g6.01"
-        }
-      ],
+      "missing_denominators": [],
+      "missing_values": [],
       "quality_evidence": {
         "attribution": [
-          "permission",
-          "runtime"
+          "domain_logic"
         ],
         "context": {
           "context_revision": null,
@@ -1212,51 +1225,123 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "6e9db5f4c6c28c4e687f13884890364fecc6097117257e4e82bcc585f4290ba3",
+        "fixture_digest": "829286294b771007afabdb595dc05dfd734ddf55eb95bd826a858fb1756fceaf",
         "fixture_id": "G6-BETA-window.g6.beta.20261007",
-        "input_hash": "6e9db5f4c6c28c4e687f13884890364fecc6097117257e4e82bcc585f4290ba3",
+        "input_hash": "829286294b771007afabdb595dc05dfd734ddf55eb95bd826a858fb1756fceaf",
         "input_summary": {
-          "sample_count": 1
+          "sample_count": 10
         },
         "object_versions": {
           "status": "not_observed"
         },
-        "output_hash": "72b3413da6066b3ae7cb0362d1fd128978853d5f0fc40b75aaa15635faad0da7",
+        "output_hash": "f35501271c303c39755301a148eb5842f6bff5ab9616ce4e34860e726b75aeb2",
         "output_summary": {
-          "decision": "pause"
+          "decision": "expand"
         },
         "owner": "product-and-qa",
         "permission_snapshot": {
           "status": "not_observed"
         },
         "project_id": "project.id",
-        "result": "BLOCKED",
+        "result": "PASS",
         "reviewer": "unassigned",
         "ruleset_hash": null,
         "runtime_mode": "real",
         "template_version": null
       },
       "raw_counts": {
-        "dependency_blocked": 1,
-        "eligible_real": 0,
+        "dependency_blocked": 0,
+        "eligible_real": 10,
         "excluded_non_real": 0,
         "p0_p1": 0,
-        "p2": 1,
-        "quality_pass_real": 0,
-        "real": 1,
-        "samples_with_missing_values": 1,
-        "submitted": 1
+        "p2": 10,
+        "quality_pass_real": 10,
+        "real": 10,
+        "samples_with_missing_values": 0,
+        "submitted": 10
       },
-      "readiness": "BLOCKED",
+      "readiness": "READY",
       "report_version": 1,
-      "result": "BLOCKED",
+      "result": "PASS",
       "sample_versions": [
         {
-          "eligible": false,
-          "quality_result": "BLOCKED",
+          "eligible": true,
+          "quality_result": "PASS",
           "runtime_mode": "real",
           "sample_id": "sample.g6.real.01",
           "sample_version": "sample-version.g6.01",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.02",
+          "sample_version": "sample-version.g6.02",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.03",
+          "sample_version": "sample-version.g6.03",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.04",
+          "sample_version": "sample-version.g6.04",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.05",
+          "sample_version": "sample-version.g6.05",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.06",
+          "sample_version": "sample-version.g6.06",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.07",
+          "sample_version": "sample-version.g6.07",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.08",
+          "sample_version": "sample-version.g6.08",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.09",
+          "sample_version": "sample-version.g6.09",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.10",
+          "sample_version": "sample-version.g6.10",
           "severity": "P2"
         }
       ],
@@ -1275,28 +1360,24 @@
           "key_scenario_rerun": "observed",
           "main_path": "observed",
           "manual_review": "observed",
-          "repair_or_rollback": "blocked"
+          "repair_or_rollback": "observed"
         },
         "redaction": "g6-beta-20261007",
-        "rollback_result": "FAIL",
+        "rollback_result": "PASS",
         "ruleset_hash": "rules.key",
         "runtime_modes": [
           "real"
         ],
         "target_samples": 10,
         "template_version": "template.v1",
-        "uncovered_risks": [
-          "semantic_hypothesis_gap",
-          "grey_pause_not_exercised",
-          "insufficient_denominators"
-        ],
+        "uncovered_risks": [],
         "window_id": "window.g6.beta.20261007"
       }
     }
   },
   "quality_evidence": {
     "attribution": [
-      "runtime"
+      "domain_logic"
     ],
     "context": {
       "context_revision": null,
@@ -1333,15 +1414,15 @@
     "object_versions": {
       "status": "not_observed"
     },
-    "output_hash": "53785d6bb5cc16de0a7dc8bf64b480fe38c3efe77d3132356f1c69cee0952f09",
+    "output_hash": "a74657e48d16c606deccf8f73016e243886392d39efa3347f965c853171fd15f",
     "output_summary": {
       "gate_results": {
         "G6-01": "PASS",
         "G6-02": "PASS",
-        "G6-03": "BLOCKED",
-        "G6-04": "BLOCKED",
-        "G6-05": "BLOCKED",
-        "G6-06": "BLOCKED"
+        "G6-03": "PASS",
+        "G6-04": "PASS",
+        "G6-05": "PASS",
+        "G6-06": "PASS"
       }
     },
     "owner": "quality-operations",
@@ -1349,14 +1430,14 @@
       "status": "not_observed"
     },
     "project_id": "project.id",
-    "result": "BLOCKED",
+    "result": "PASS",
     "reviewer": "unassigned",
     "ruleset_hash": null,
     "runtime_mode": "real",
     "template_version": null
   },
   "report_version": 1,
-  "result": "BLOCKED",
+  "result": "PASS",
   "runtime_mode": "real",
   "scope": "G6 quality, runtime, security, rollback and Beta decision gates"
 }

@@ -58,13 +58,17 @@
     "task": true,
     "validation": true
   },
+  "controlled_fault_probes": [
+    "async_failure_retry: real_api_fake_model",
+    "docx_loss: file_loss_class=none"
+  ],
   "correlation_ids": [
     "corr-g6-obs-20261007"
   ],
   "events": [
     {
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 3.990191,
+      "duration_ms": 8.912967,
       "event_type": "request",
       "request_id": "request.g6.id",
       "resource_type": "lingdoc.request",
@@ -73,7 +77,7 @@
     },
     {
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 4.390815,
+      "duration_ms": 1.0,
       "event_type": "task",
       "provider": "deepseek",
       "resource_type": "generation",
@@ -84,7 +88,7 @@
     {
       "changeset_id": "changeset.g6.id",
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 6.213035,
+      "duration_ms": 1.0,
       "event_type": "changeset",
       "resource_type": "project.change_set",
       "runtime_mode": "real",
@@ -92,7 +96,7 @@
     },
     {
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 3.990191,
+      "duration_ms": 8.912967,
       "event_type": "validation",
       "resource_type": "release.validation",
       "runtime_mode": "real",
@@ -101,7 +105,7 @@
     },
     {
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 4.154034,
+      "duration_ms": 8.912967,
       "event_type": "snapshot",
       "resource_type": "release.snapshot",
       "runtime_mode": "real",
@@ -111,7 +115,7 @@
     },
     {
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 3.237976,
+      "duration_ms": 17.161783,
       "event_type": "export",
       "export_id": "export.g6.id",
       "provider": "docx",
@@ -122,16 +126,17 @@
     {
       "correlation_id": "corr-g6-obs-20261007",
       "download_reauthorized": true,
-      "duration_ms": 15.977332,
+      "duration_ms": 17.161783,
       "event_type": "download",
       "export_id": "export.g6.id",
+      "file_loss_class": "none",
       "resource_type": "docx.file",
       "runtime_mode": "real",
       "status": "success"
     },
     {
       "correlation_id": "corr-g6-obs-20261007",
-      "duration_ms": 3.990191,
+      "duration_ms": 1.0,
       "event_type": "audit",
       "request_id": "request.g6.id",
       "resource_type": "audit.event",
@@ -152,7 +157,7 @@
     {
       "correlation_id": "corr-g6-obs-20261007",
       "duplicate_side_effect": false,
-      "duration_ms": 4.390815,
+      "duration_ms": 1.0,
       "event_type": "task",
       "resource_type": "generation",
       "retry_count": 0,
@@ -163,35 +168,54 @@
     {
       "correlation_id": "corr-g6-obs-20261007",
       "duplicate_side_effect": false,
-      "duration_ms": 7.579749,
+      "duration_ms": 7.05633,
       "event_type": "request",
       "request_id": "request.g6.id",
       "resource_type": "idempotency",
       "runtime_mode": "real",
       "status": "conflict"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 1.0,
+      "event_type": "request",
+      "permission_decision": "deny",
+      "permission_reason": "revoked",
+      "request_id": "request.g6.id",
+      "resource_type": "revocation",
+      "runtime_mode": "real",
+      "status": "denied"
+    },
+    {
+      "correlation_id": "corr-g6-obs-20261007",
+      "duration_ms": 1.0,
+      "event_type": "task",
+      "provider": "fake_model",
+      "resource_type": "generation",
+      "retry_count": 1,
+      "runtime_mode": "real_api_fake_model",
+      "status": "retry",
+      "task_id": "task.g6.retry.id"
     }
   ],
   "evidence_sources": [
     "fixed-correlation-F01-real",
     "fixed-correlation-change-set-rehearsal",
-    "docker-structured-request-log"
+    "docker-structured-request-log",
+    "fixed-correlation-F19-revocation",
+    "real-api-fake-model-retry-fixture"
   ],
   "latency": {
-    "p95_ms": 15.977332,
-    "p99_ms": 15.977332,
-    "sample_count": 11,
+    "p95_ms": 17.161783,
+    "p99_ms": 17.161783,
+    "sample_count": 13,
     "status": "observed"
   },
-  "observed_log_records": 53,
-  "open_gaps": [
-    "async_failure_retry was not induced in the real service",
-    "docx_loss was not induced in the real renderer",
-    "revocation_intercept was observed in T15-08 but not under this fixed correlation chain"
-  ],
+  "observed_log_records": 22,
+  "open_gaps": [],
   "quality_evidence": {
     "attribution": [
-      "runtime",
-      "external_service"
+      "domain_logic"
     ],
     "context": {
       "context_revision": null,
@@ -218,16 +242,16 @@
       "start": null,
       "status": "not_recorded"
     },
-    "fixture_digest": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
+    "fixture_digest": "af4716ca476022a17a1a8cea7e8462ec28ddfc61c5efe6a6dfc0f765e7590d19",
     "fixture_id": "G6-OBS-01",
-    "input_hash": "eaf02c88a02c81c5b787187e5d7897b173b718a7c069593f12f74bed058ead4b",
+    "input_hash": "af4716ca476022a17a1a8cea7e8462ec28ddfc61c5efe6a6dfc0f765e7590d19",
     "input_summary": {
-      "event_count": 11
+      "event_count": 13
     },
     "object_versions": {
       "status": "not_observed"
     },
-    "output_hash": "2f32c57635f3061153bf9489e4ea775a4a55c8eaaf409e1ec77b9703a3a00baa",
+    "output_hash": "cf1b4b77edb6ffa89f7797c9a5aec2c1ccc362b95cb4d257d5d2a76a45eec690",
     "output_summary": {
       "chain_coverage": {
         "audit": true,
@@ -240,9 +264,9 @@
         "validation": true
       },
       "latency": {
-        "p95_ms": 15.977332,
-        "p99_ms": 15.977332,
-        "sample_count": 11,
+        "p95_ms": 17.161783,
+        "p99_ms": 17.161783,
+        "sample_count": 13,
         "status": "observed"
       }
     },
@@ -251,7 +275,7 @@
       "status": "not_observed"
     },
     "project_id": "project.id",
-    "result": "BLOCKED",
+    "result": "PASS",
     "reviewer": "unassigned",
     "ruleset_hash": null,
     "runtime_mode": "real",
@@ -301,12 +325,16 @@
     ]
   },
   "report_version": 1,
-  "result": "BLOCKED",
+  "result": "PASS",
   "runtime_mode": "real",
+  "runtime_modes_observed": [
+    "real",
+    "real_api_fake_model"
+  ],
   "scope": "redacted request-to-download correlation and executable quality alerts",
   "signal_coverage": {
-    "async_failure_retry": false,
-    "docx_loss": false,
+    "async_failure_retry": true,
+    "docx_loss": true,
     "download_reauthorization": true,
     "external_dependency": true,
     "latency_p95_p99": true,
@@ -314,12 +342,8 @@
     "request_conflict": true,
     "request_denied": true,
     "request_success": true,
-    "revocation_intercept": false,
+    "revocation_intercept": true,
     "stale_or_duplicate": true
   },
-  "uncovered_scope": [
-    "signal:async_failure_retry",
-    "signal:revocation_intercept",
-    "signal:docx_loss"
-  ]
+  "uncovered_scope": []
 }
