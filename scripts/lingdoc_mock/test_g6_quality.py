@@ -500,6 +500,21 @@ class G6MainPathTest(unittest.TestCase):
         self.assertFalse(report["fixture_coverage"]["step_sequence_complete"])
         self.assertIn("F01-01", report["fixture_coverage"]["missing_step_ids"])
 
+    def test_canonical_step_status_cannot_be_overridden_by_verdict(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        main["steps"][0]["actual_http"] = 500
+        report = g6_main_path.build_main_path_report(
+            main_report=main, failure_observation=failure)
+        self.assertEqual(report["main_path"]["result"], "FAIL")
+        self.assertEqual(report["result"], "FAIL")
+
+    def test_canonical_step_without_http_status_is_blocked(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        main["steps"][0].pop("actual_http")
+        report = g6_main_path.build_main_path_report(
+            main_report=main, failure_observation=failure)
+        self.assertEqual(report["main_path"]["result"], "BLOCKED")
+
     def test_main_path_evidence_drops_untrusted_report_payloads(self):
         main = self._complete_report()
         main["steps"][0]["response"] = "SECRET_DOCUMENT"

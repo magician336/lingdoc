@@ -56,10 +56,13 @@ def _step_http(step: dict[str, Any]) -> int | None:
 
 def _step_verdict(step: dict[str, Any]) -> str:
     verdict = step.get("verdict")
-    if verdict in {"passed", "failed", "not_run"}:
-        return verdict
     step_id = _step_id(step)
     status = _step_http(step)
+    if (verdict == "passed" and step_id is not None and status is not None
+            and EXPECTED_STEP_HTTP.get(step_id) != status):
+        return "failed"
+    if verdict in {"passed", "failed", "not_run"}:
+        return verdict
     if step_id is not None and status is not None:
         return "passed" if EXPECTED_STEP_HTTP.get(step_id) == status else "failed"
     return "unknown"
@@ -161,6 +164,9 @@ def _observed_result(report: dict[str, Any]) -> str:
         return "BLOCKED"
     steps = report.get("steps", [])
     if not isinstance(steps, list):
+        return "BLOCKED"
+    if any(_step_id(step) is not None and _step_http(step) is None
+           for step in steps if isinstance(step, dict)):
         return "BLOCKED"
     verdicts = [_step_verdict(step) for step in steps if isinstance(step, dict)]
     if len(verdicts) != len(steps):
