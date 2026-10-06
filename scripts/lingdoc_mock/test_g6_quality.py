@@ -11,6 +11,32 @@ from scripts.lingdoc_mock import (g6_evidence, g6_main_path, g6_metrics, g6_obse
                                    g6_rollback, g6_run, g6_security)
 
 
+def complete_observability_events():
+    events = [
+        {"event_type": event_type, "status": "ok", "correlation_id": "corr-1",
+         "runtime_mode": "real", "resource_type": event_type,
+         **({"request_id": "request.id"} if event_type in {"request", "audit"} else {}),
+         **({"task_id": "task.id"} if event_type in {"task", "validation"} else {}),
+         **({"changeset_id": "changeset.id"} if event_type == "changeset" else {}),
+         **({"snapshot_id": "snapshot.id"} if event_type == "snapshot" else {}),
+         **({"export_id": "export.id"} if event_type in {"export", "download"} else {})}
+        for event_type in g6_observability.EVENT_TYPES
+    ]
+    events[1].update({"status": "retry", "retry_count": 1, "stale": False,
+                      "provider": "weknora", "result_code": "ok"})
+    events[2]["permission_decision"] = "deny"
+    events[4]["file_loss_class"] = "none"
+    events[6].update({"download_reauthorized": True, "permission_decision": "deny",
+                      "permission_reason": "revoked"})
+    events.extend([
+        {"event_type": "request", "status": "denied", "correlation_id": "corr-1",
+         "runtime_mode": "real", "request_id": "request.denied.id", "resource_type": "request"},
+        {"event_type": "request", "status": "conflict", "correlation_id": "corr-1",
+         "runtime_mode": "real", "request_id": "request.conflict.id", "resource_type": "request"},
+    ])
+    return events
+
+
 class G6SecurityTest(unittest.TestCase):
     def test_unobserved_security_cases_are_blocked_and_redacted(self):
         report = g6_security.build_security_report()
@@ -751,6 +777,24 @@ class G6RunTest(unittest.TestCase):
             output = json.loads(output_path.read_text(encoding="utf-8"))
             self.assertEqual(output["gate_results"]["G6-02"], "PASS")
 
+    def test_cli_accepts_main_path_failure_observation_for_g6_01(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            main_path = root / "main.json"
+            failure_path = root / "failure.json"
+            output_path = root / "g6.json"
+            main_path.write_text(json.dumps(main), encoding="utf-8")
+            failure_path.write_text(json.dumps(failure), encoding="utf-8")
+            status = g6_run.main([
+                "--output", str(output_path),
+                "--main-path-report", str(main_path),
+                "--failure-observation", str(failure_path),
+            ])
+            self.assertEqual(status, 1, "other G6 gates remain blocked without live evidence")
+            output = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(output["gate_results"]["G6-01"], "PASS")
+
     def test_default_run_is_explicitly_blocked_and_contains_all_gates(self):
         report = g6_run.build_g6_report()
         self.assertEqual(report["result"], "BLOCKED")
@@ -888,6 +932,64 @@ class G6RunTest(unittest.TestCase):
             "runtime_modes": ["mock", "real_api_fake_model", "real"],
             "result": "BLOCKED", "reports": [{"response": "SECRET_TOKEN"}]})
         self.assertNotIn("SECRET_TOKEN", json.dumps(report))
+
+    def test_complete_redacted_evidence_bundle_can_pass_all_gates(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        reports = {}
+        for mode in g6_run.RUNTIME_MODES:
+            mode_main = copy.deepcopy(main)
+            if mode != "mock":
+                mode_main["fixture_metadata"]["dependency_versions"] = {
+                    dependency: f"{dependency}.v1"
+                    for dependency in g6_run.RUNTIME_DEPENDENCIES[mode]
+                }
+                mode_main["fixture_metadata"]["environment_versions"] = {"runtime": "python.v1"}
+            report = g6_main_path.build_main_path_report(
+                main_report=mode_main, failure_observation=copy.deepcopy(failure),
+                runtime_mode=mode, fixture_id="F01:S1")
+            if mode != "mock":
+                report["main_path"]["verification_scope"] = "observed"
+            reports[mode] = report
+        dependencies = {
+            mode: {"required": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "verified": list(g6_run.RUNTIME_DEPENDENCIES[mode]),
+                   "missing": [], "status": "verified"}
+            for mode in g6_run.RUNTIME_MODES
+        }
+        matrix = g6_run.build_runtime_matrix_from_main_path_reports(
+            reports, dependency_matrix=dependencies,
+            provider_semantics={mode: "verified" for mode in g6_run.RUNTIME_MODES})
+        security = {
+            case["id"]: {"actual_http": case["expected_http"],
+                          "decision": case["expected_decision"],
+                          **({"metadata_only": True} if case["id"] == "SEC-12" else {})}
+            for case in g6_security.SECURITY_CASES
+        }
+        rollback = {"checks": {check_id: True for check_id, _ in g6_rollback.CHECKS},
+                    "drill_id": "drill.id", "severity": "P1", "impact_scope": ["project.id"],
+                    "duration_ms": 10, "recovery_verified": True, "uncovered_risks": []}
+        window = {
+            "window_id": "window.id", "target_samples": 1, "minimum_reportable_samples": 1,
+            "template_version": "template.v1", "ruleset_hash": "rules.key", "redaction": "fixture-v1",
+            "included_projects": ["project.id"], "included_users": ["user.id"],
+            "runtime_modes": ["real"], "rollback_result": "PASS", "uncovered_risks": [],
+            "process_evidence": {field: "observed" for field in (
+                "authorization", "main_path", "failure_path", "manual_review",
+                "repair_or_rollback", "key_scenario_rerun")},
+        }
+        sample = {"sample_id": "sample.id", "sample_version": "sample.v1",
+                  "runtime_mode": "real", "quality_result": "PASS",
+                  "dependency_status": "verified", "severity": "P3",
+                  "manual_minutes": 10, "projects": 1, "supported_claims": 1, "total_claims": 1,
+                  "missed_edits": 0, "changesets": 1, "dismissed_issues": 0,
+                  "issues_reviewed": 1, "unconfirmed_items": 0, "snapshots": 1,
+                  "export_loss_items": 0, "export_checks": 1}
+        report = g6_run.build_g6_report(
+            main_path_report=main, failure_observation=failure, runtime_matrix_report=matrix,
+            security_observations=security, events=complete_observability_events(),
+            rollback_observations=rollback, samples=[sample], window=window)
+        self.assertEqual(report["result"], "PASS", report["gate_results"])
+        self.assertTrue(all(result == "PASS" for result in report["gate_results"].values()))
 
     def test_failures_take_precedence_over_blocked_gates(self):
         observations = {

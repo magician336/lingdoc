@@ -366,6 +366,7 @@ def _reject_sensitive(value: Any) -> None:
 
 
 def build_g6_report(*, main_path_report: dict[str, Any] | None = None,
+                    failure_observation: dict[str, Any] | None = None,
                     security_observations: dict[str, dict[str, Any]] | None = None,
                     events: list[dict[str, Any]] | None = None,
                     rollback_observations: dict[str, Any] | None = None,
@@ -375,7 +376,8 @@ def build_g6_report(*, main_path_report: dict[str, Any] | None = None,
                     runtime_mode: str = "mock") -> dict[str, Any]:
     gates = {
         "G6-01": (build_main_path_report(main_report=main_path_report or _empty_f01_report(),
-                                           runtime_mode=runtime_mode)),
+                                           runtime_mode=runtime_mode,
+                                           failure_observation=failure_observation)),
         "G6-02": _runtime_matrix_gate(runtime_matrix_report),
         "G6-03": build_security_report(runtime_mode=runtime_mode, observations=security_observations),
         "G6-04": build_observability_report(events=events, runtime_mode=runtime_mode),
@@ -419,6 +421,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Assemble one redacted G6 gate report.")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--main-path-report", type=Path)
+    parser.add_argument("--failure-observation", type=Path,
+                        help="脱敏的关键失败副作用读回 JSON，与 --main-path-report 一起使用")
     parser.add_argument("--security-observations", type=Path)
     parser.add_argument("--events", type=Path)
     parser.add_argument("--rollback-observations", type=Path)
@@ -449,6 +453,7 @@ def main(argv: list[str] | None = None) -> int:
                 main_path_reports, dependency_matrix=dependencies, provider_semantics=semantics)
         report = build_g6_report(
             main_path_report=_read_json(args.main_path_report, "main path report", None),
+            failure_observation=_read_json(args.failure_observation, "failure observation", None),
             security_observations=_read_json(args.security_observations, "security observations", None),
             events=_read_json(args.events, "events", None),
             rollback_observations=_read_json(args.rollback_observations, "rollback observations", None),
