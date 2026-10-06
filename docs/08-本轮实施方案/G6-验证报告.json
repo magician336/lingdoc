@@ -1,6 +1,6 @@
 {
   "gate_results": {
-    "G6-01": "BLOCKED",
+    "G6-01": "PASS",
     "G6-02": "BLOCKED",
     "G6-03": "BLOCKED",
     "G6-04": "BLOCKED",
@@ -10,17 +10,24 @@
   "gates": {
     "G6-01": {
       "failure_path": {
+        "actual_http": 400,
         "evidence_refs": [
-          "failure_path"
+          "failure_path",
+          "side_effect_readback"
         ],
-        "no_formal_side_effect": null,
-        "result": "BLOCKED",
-        "status": "not_run"
+        "expected_http": 400,
+        "failure_case": "invalid_project_name",
+        "no_formal_side_effect": true,
+        "readback": {
+          "status": "unchanged",
+          "unchanged": true
+        },
+        "result": "PASS",
+        "status": "observed"
       },
       "fixture_coverage": {
-        "constructed_complete": false,
-        "constructed_parts": [],
-        "missing_parts": [
+        "constructed_complete": true,
+        "constructed_parts": [
           "asset",
           "chapter",
           "check",
@@ -29,31 +36,8 @@
           "project",
           "release"
         ],
-        "missing_step_ids": [
-          "F01-01",
-          "F01-02",
-          "F01-03",
-          "F01-04",
-          "F01-05",
-          "F01-06",
-          "F01-07",
-          "F01-08",
-          "F01-09",
-          "F01-10",
-          "F01-11",
-          "F01-12",
-          "F01-13",
-          "F01-14",
-          "F01-15",
-          "F01-16",
-          "F01-17",
-          "F01-18",
-          "F01-19",
-          "F01-20",
-          "F01-21",
-          "F01-22",
-          "F01-23"
-        ],
+        "missing_parts": [],
+        "missing_step_ids": [],
         "required_parts": [
           "project",
           "asset",
@@ -63,22 +47,55 @@
           "export",
           "download"
         ],
-        "step_counts_complete": false,
-        "step_sequence_complete": false,
+        "step_counts_complete": true,
+        "step_sequence_complete": true,
         "unexpected_step_ids": []
       },
-      "fixture_digest": "391751cd2ff5363e15f156101d254bda4af8f0422e76bdddcb5dd40e344294d7",
+      "fixture_digest": "700d6696a781240903105bfd327a6c0bf03d7edfa42d29f25faa94f831955b23",
       "fixture_id": "G6-F01-v1",
-      "fixture_state": {},
+      "fixture_state": {
+        "asset": {
+          "id": "asset.id",
+          "permission": "allow",
+          "status": "ready"
+        },
+        "chapter": {
+          "id": "chapter.id",
+          "status": "ready",
+          "version": "chapter.v1"
+        },
+        "check": {
+          "id": "check.id",
+          "status": "passed"
+        },
+        "download": {
+          "id": "export.id",
+          "reauthorized": true
+        },
+        "export": {
+          "id": "export.id",
+          "status": "ready"
+        },
+        "project": {
+          "id": "project.id",
+          "status": "active",
+          "version": "project.v1"
+        },
+        "release": {
+          "id": "release.id",
+          "snapshot": "snapshot.id",
+          "status": "ready"
+        }
+      },
       "main_path": {
-        "completed_steps": 0,
-        "result": "BLOCKED",
+        "completed_steps": 23,
+        "result": "PASS",
         "total_steps": 23,
-        "verification_scope": "not_recorded"
+        "verification_scope": "contract_fixture_only"
       },
       "quality_evidence": {
         "attribution": [
-          "fixture_or_test"
+          "domain_logic"
         ],
         "context": {
           "context_revision": null,
@@ -86,11 +103,15 @@
           "target_version": null
         },
         "dependency_versions": {
-          "model": "unknown",
-          "weknora": "unknown"
+          "api": "not_run",
+          "contract": "contract.v1",
+          "docx": "not_run",
+          "model": "not_run",
+          "weknora": "not_run"
         },
         "environment_versions": {
-          "status": "not_observed"
+          "platform": "platform.contract",
+          "runtime": "python.contract"
         },
         "evidence_refs": [
           "fixture_coverage",
@@ -103,34 +124,47 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "391751cd2ff5363e15f156101d254bda4af8f0422e76bdddcb5dd40e344294d7",
+        "fixture_digest": "700d6696a781240903105bfd327a6c0bf03d7edfa42d29f25faa94f831955b23",
         "fixture_id": "G6-F01-v1",
-        "input_hash": "1cd1c67fa1aa09b2a1ad8751e5dedf32f381017dcd6105f14b2b4f281f8cc528",
+        "input_hash": "3a357629ffe26b76b5d151bc1eff12ac5566a9c8fb7ddd5f12e1a7e31e32df36",
         "input_summary": {
           "required_parts": 7
         },
         "object_versions": {
-          "status": "not_observed"
+          "asset": "asset.v1",
+          "chapter": "chapter.v1",
+          "project": "project.v1",
+          "spec": "spec.revision"
         },
-        "output_hash": "8b745a86a0f63b0e527ab3de6fca95e3e35b5b45d11a14b3f3eb5f37fa6689bf",
+        "output_hash": "e8622b15e057bba4ca01d4356f2aa0e1d89286cb470f734f167fc60f032b5d6d",
         "output_summary": {
-          "completed_steps": 0,
-          "failure_side_effect_status": "not_run",
-          "fixture_parts_observed": []
+          "completed_steps": 23,
+          "failure_side_effect_status": "observed",
+          "fixture_parts_observed": [
+            "asset",
+            "chapter",
+            "check",
+            "download",
+            "export",
+            "project",
+            "release"
+          ]
         },
         "owner": "quality-operations",
         "permission_snapshot": {
-          "status": "not_observed"
+          "actor": "user.id",
+          "project": "project.id",
+          "status": "mock"
         },
         "project_id": "project.id",
-        "result": "BLOCKED",
+        "result": "PASS",
         "reviewer": "unassigned",
-        "ruleset_hash": null,
+        "ruleset_hash": "rules.key",
         "runtime_mode": "mock",
-        "template_version": null
+        "template_version": "template.v1"
       },
       "report_version": 1,
-      "result": "BLOCKED",
+      "result": "PASS",
       "runtime_mode": "mock",
       "scope": "canonical F01 project-to-download path plus one failure side-effect fixture"
     },
@@ -1101,10 +1135,10 @@
     "object_versions": {
       "status": "not_observed"
     },
-    "output_hash": "4da13337a99de70a22bc714d6c3dc969372f5536a83ff24ce38a1f73584e8d15",
+    "output_hash": "757262a480ee7ee4aa13a609403f2ce49a2baf2c4d5b6fc672183d8e3c64143e",
     "output_summary": {
       "gate_results": {
-        "G6-01": "BLOCKED",
+        "G6-01": "PASS",
         "G6-02": "BLOCKED",
         "G6-03": "BLOCKED",
         "G6-04": "BLOCKED",

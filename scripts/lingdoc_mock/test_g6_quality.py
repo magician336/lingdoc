@@ -526,6 +526,28 @@ class G6MainPathTest(unittest.TestCase):
                          ["asset", "chapter", "check", "download", "export", "project", "release"])
         self.assertEqual(report["failure_path"]["failure_case"], "duplicate_formal_write")
 
+    def test_mock_fixture_accepts_observed_failure_override(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            failure_path = root / "failure.json"
+            report_path = root / "report.json"
+            failure_path.write_text(json.dumps({
+                "failure_case": "invalid_project_name",
+                "expected_http": 400,
+                "actual_http": 400,
+                "no_formal_side_effect": True,
+                "readback": {"status": "unchanged", "unchanged": True},
+            }), encoding="utf-8")
+            status = g6_main_path.main([
+                "--mock-fixture",
+                "--failure-observation", str(failure_path),
+                "--report", str(report_path),
+            ])
+            self.assertEqual(status, 0)
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(report["result"], "PASS")
+            self.assertEqual(report["failure_path"]["failure_case"], "invalid_project_name")
+
     def test_runner_shaped_http_status_steps_are_accepted(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
         runner_shaped = copy.deepcopy(main)

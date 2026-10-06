@@ -441,6 +441,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.runtime_mode != "mock":
                 raise ValueError("--mock-fixture only supports runtime-mode=mock")
             main_report, failure = build_mock_main_path_fixture()
+            if args.failure_observation:
+                try:
+                    failure = json.loads(args.failure_observation.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError) as error:
+                    raise WorkflowError(f"cannot read failure observation: {error}") from error
+                if not isinstance(failure, dict):
+                    raise WorkflowError("failure observation must be an object")
             report = build_main_path_report(main_report=main_report, runtime_mode="mock",
                                              failure_observation=failure)
             write_report(args.report, report)
