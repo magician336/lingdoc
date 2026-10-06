@@ -516,6 +516,18 @@ class G6RunTest(unittest.TestCase):
         self.assertEqual(matrix["result"], "BLOCKED")
         self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
 
+    def test_f01_report_conversion_accepts_state_shaped_readback(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        failure = copy.deepcopy(failure)
+        failure["readback"] = {"state": "unchanged"}
+        report = g6_main_path.build_main_path_report(
+            main_report=main, failure_observation=failure,
+            runtime_mode="mock", fixture_id="F01:S1")
+
+        evidence = g6_run.main_path_report_to_scenario_evidence(report)
+
+        self.assertEqual(evidence["key_failure"]["readback_status"], "unchanged")
+
     def test_cli_assembles_main_path_report_files_into_g6_02(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
         reports = {}

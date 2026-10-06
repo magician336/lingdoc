@@ -125,8 +125,11 @@ def main_path_report_to_scenario_evidence(report: dict[str, Any]) -> dict[str, A
         actual_http = None
     readback = failure.get("readback")
     readback_status = "not_recorded"
-    if isinstance(readback, dict) and readback.get("status") in SAFE_READBACK_STATUS:
-        readback_status = readback["status"]
+    if isinstance(readback, dict):
+        for field in ("status", "state"):
+            if readback.get(field) in SAFE_READBACK_STATUS:
+                readback_status = readback[field]
+                break
     elif isinstance(readback, str) and readback in SAFE_READBACK_STATUS:
         readback_status = readback
     return {
