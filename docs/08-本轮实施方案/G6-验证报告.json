@@ -67,7 +67,7 @@
         "step_sequence_complete": false,
         "unexpected_step_ids": []
       },
-      "fixture_digest": "aeef24b8b33664d6263ec73c704d017a163ecd0cbbcec5757c6acf384d0f358c",
+      "fixture_digest": "391751cd2ff5363e15f156101d254bda4af8f0422e76bdddcb5dd40e344294d7",
       "fixture_id": "G6-F01-v1",
       "fixture_state": {},
       "main_path": {
@@ -103,7 +103,7 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "aeef24b8b33664d6263ec73c704d017a163ecd0cbbcec5757c6acf384d0f358c",
+        "fixture_digest": "391751cd2ff5363e15f156101d254bda4af8f0422e76bdddcb5dd40e344294d7",
         "fixture_id": "G6-F01-v1",
         "input_hash": "1cd1c67fa1aa09b2a1ad8751e5dedf32f381017dcd6105f14b2b4f281f8cc528",
         "input_summary": {
@@ -583,7 +583,7 @@
           "signal": "stale_or_duplicate"
         },
         {
-          "action": "recheck_permission_before_download",
+          "action": "block_download_until_reauthorized",
           "signal": "download_reauthorization"
         },
         {
