@@ -79,6 +79,8 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 
 G6-01 至 G6-06 的主路径、运行矩阵、安全矩阵、结构化观测、迁移/回退和 Beta 指标门禁见 [G6 质量运行门禁](G6-质量运行门禁.md)。统一入口 `g6_run.py` 会保留六个门禁的独立结果；这些入口默认在缺少真实观测时输出 `BLOCKED`，Beta 指标用 `readiness=NOT READY` 表示样本或分母不足，并保留可审计的原始计数与失败动作。
 
+若要让统一入口评估 G6-01 的完整主路径，需同时传入脱敏的 `--main-path-report` 和 `--failure-observation`；后者必须包含关键失败的 HTTP 状态、无正式副作用断言和读回状态。
+
 ## 提供方联调执行器（按场景驱动）
 
 `scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 与规格文档读取请求定义，对隔离的提供方测试环境逐步发请求。规格有两种给法：默认的 workflow.json 是 F01 的 23 步连续规格；`--scenario` 则按 id 从 scenarios.json 取一条，F01 在契约里指向 workflow.json，所以两种给法等价。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
