@@ -31,7 +31,7 @@ REDACTED_ID = re.compile(r"[a-z][a-z0-9_.-]*\.(?:id|key)|sha256:[0-9a-f]{64}")
 
 def evaluate_rehearsal(observations: dict[str, Any] | None = None) -> dict[str, Any]:
     """Evaluate status-only rehearsal observations without mutating repository data."""
-    observations = observations or {}
+    observations = {} if observations is None else observations
     if not isinstance(observations, dict):
         raise ValueError("rollback observations must be an object")
     check_observations = observations.get("checks", observations)

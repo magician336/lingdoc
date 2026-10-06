@@ -314,6 +314,10 @@ class G6RollbackTest(unittest.TestCase):
         check = next(check for check in report["checks"] if check["id"] == "old_objects_readable")
         self.assertIsNone(check["observed"])
 
+    def test_non_object_rollback_observations_are_rejected(self):
+        with self.assertRaisesRegex(ValueError, "must be an object"):
+            g6_rollback.build_rollback_report(observations=[])
+
 
 class G6MetricsTest(unittest.TestCase):
     WINDOW = {
