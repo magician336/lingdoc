@@ -125,7 +125,9 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
                       if key not in window or window[key] in (None, "")]
     real_samples = [sample for sample in samples if sample.get("runtime_mode") == "real"]
     excluded = [sample for sample in samples if sample.get("runtime_mode") != "real"]
-    eligible = [sample for sample in real_samples if sample.get("quality_result") == "PASS"]
+    quality_pass_real = [sample for sample in real_samples if sample.get("quality_result") == "PASS"]
+    eligible = [sample for sample in quality_pass_real
+                if sample.get("dependency_status") == "verified"]
     p0_p1 = [sample for sample in real_samples if sample.get("severity") in {"P0", "P1"}]
     p2 = [sample for sample in real_samples if sample.get("severity") == "P2"]
     dependency_blocked = [sample for sample in real_samples
@@ -134,6 +136,7 @@ def build_beta_report(*, samples: list[dict[str, Any]], window: dict[str, Any]) 
     raw_counts = {
         "submitted": len(samples),
         "real": len(real_samples),
+        "quality_pass_real": len(quality_pass_real),
         "eligible_real": len(eligible),
         "excluded_non_real": len(excluded),
         "p0_p1": len(p0_p1),

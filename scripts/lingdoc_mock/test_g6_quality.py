@@ -322,6 +322,8 @@ class G6MetricsTest(unittest.TestCase):
         self.assertEqual(report["result"], "BLOCKED")
         self.assertEqual(report["decision"], "pause")
         self.assertEqual(report["raw_counts"]["dependency_blocked"], 1)
+        self.assertEqual(report["raw_counts"]["quality_pass_real"], 1)
+        self.assertEqual(report["raw_counts"]["eligible_real"], 0)
         self.assertTrue(all(values["rate"] is None for values in report["metrics"].values()))
 
     def test_incomplete_trial_process_keeps_effect_rates_unready(self):
