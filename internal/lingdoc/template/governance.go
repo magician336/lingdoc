@@ -60,6 +60,7 @@ type EvaluationInput struct {
 // Evaluation is an explainable, version-bound result. Severity and hashes are
 // copied from the validated server-side definition, never from request input.
 type Evaluation struct {
+	ID               string           `json:"id,omitempty"`
 	RuleID           string           `json:"rule_id"`
 	TargetRef        string           `json:"target_ref"`
 	TargetVersion    string           `json:"target_version"`
@@ -515,7 +516,17 @@ func result(rule Rule, target, version, ruleset string, status EvaluationStatus,
 	if rule.Message != "" {
 		message = rule.Message
 	}
-	return Evaluation{RuleID: rule.ID, TargetRef: target, TargetVersion: version, RulesetHash: ruleset, Status: status, Severity: rule.Severity, Message: message, Evidence: append([]string(nil), evidence...), EvaluatorVersion: EvaluatorVersion}
+	evaluation := Evaluation{RuleID: rule.ID, TargetRef: target, TargetVersion: version, RulesetHash: ruleset, Status: status, Severity: rule.Severity, Message: message, Evidence: append([]string(nil), evidence...), EvaluatorVersion: EvaluatorVersion}
+	if status == EvaluationIssue {
+		identity := struct {
+			RuleID, TargetRef, TargetVersion, RulesetHash, EvaluatorVersion string
+			Evidence                                                        []string
+		}{rule.ID, target, version, ruleset, EvaluatorVersion, append([]string(nil), evidence...)}
+		sort.Strings(identity.Evidence)
+		canonical, _ := json.Marshal(identity)
+		evaluation.ID = "vi-" + digest(canonical)[:24]
+	}
+	return evaluation
 }
 
 func findChapter(chapters []ChapterInput, id string) (ChapterInput, bool) {

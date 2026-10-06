@@ -99,8 +99,30 @@ func TestEvaluateProducesStableVersionBoundResults(t *testing.T) {
 		if result.TargetVersion == "" || result.RulesetHash == "" || result.EvaluatorVersion != EvaluatorVersion {
 			t.Fatalf("result is missing server-owned version evidence: %#v", result)
 		}
+		if result.Status == EvaluationIssue && result.ID == "" {
+			t.Fatalf("issue result is missing a stable ValidationIssue ID: %#v", result)
+		}
 		if result.RuleID == "term-consistency" && result.Status != EvaluationIssue {
 			t.Fatalf("term result = %s, want ISSUE", result.Status)
+		}
+	}
+	var termIssue Evaluation
+	for _, result := range first {
+		if result.RuleID == "term-consistency" {
+			termIssue = result
+			break
+		}
+	}
+	versionChanged, err := Evaluate(definition, EvaluationInput{
+		ProjectID: "project-1", TargetVersion: "copy/2",
+		Fields: map[string]string{"research_goal": "Study a synthetic clinical experiment"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range versionChanged {
+		if result.RuleID == "term-consistency" && result.ID == termIssue.ID {
+			t.Fatalf("ValidationIssue ID was reused across target versions: %q", result.ID)
 		}
 	}
 

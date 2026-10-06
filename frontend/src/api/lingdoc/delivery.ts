@@ -22,6 +22,8 @@ export interface ValidationIssue {
    */
   target_id: string
   target_version: string | null
+  evidence: string[]
+  evaluator_version: string
   message: string
 }
 
@@ -30,6 +32,29 @@ export interface CheckResult {
   ruleset_hash: string
   status: CheckStatus
   issues: ValidationIssue[]
+}
+
+export type TemplateEvaluationStatus = 'PASS' | 'ISSUE' | 'UNKNOWN' | 'NOT_APPLICABLE'
+export interface TemplateRuleEvaluation {
+  id?: string
+  rule_id: string
+  target_ref: string
+  target_version: string
+  ruleset_hash: string
+  status: TemplateEvaluationStatus
+  severity: IssueSeverity | 'info'
+  message: string
+  evidence: string[]
+  evaluator_version: string
+}
+export interface TemplateCheckResult {
+  project_version: number
+  template_copy_id?: string
+  template_copy_version?: number
+  content_hash?: string
+  ruleset_hash: string
+  status: CheckStatus
+  evaluations: TemplateRuleEvaluation[]
 }
 
 /**
@@ -105,6 +130,11 @@ const keyHeader = (key: string) => ({ headers: { 'Idempotency-Key': key } })
 
 export const checkDelivery = (projectId: string, expectedProjectVersion: number) =>
   post<Result<CheckResult>>(`${base}/${segment(projectId)}/checks`,
+    { expected_project_version: expectedProjectVersion })
+
+/** Evaluates the project template's rules and evidence; this advisory result never authorizes export. */
+export const checkTemplate = (projectId: string, expectedProjectVersion: number) =>
+  post<Result<TemplateCheckResult>>(`${base}/${segment(projectId)}/template-checks`,
     { expected_project_version: expectedProjectVersion })
 
 export const prepareRelease = (projectId: string, expectedProjectVersion: number, key: string) =>

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -124,15 +125,17 @@ type CheckResult struct {
 
 // CheckIssue is the shared ValidationIssue shape. Code and ChapterID stay internal for tests.
 type CheckIssue struct {
-	ID            string  `json:"id"`
-	RuleID        string  `json:"rule_id"`
-	RulesetHash   string  `json:"ruleset_hash"`
-	Severity      string  `json:"severity"`
-	TargetID      string  `json:"target_id"`
-	TargetVersion *string `json:"target_version"`
-	Message       string  `json:"message"`
-	Code          string  `json:"-"`
-	ChapterID     string  `json:"-"`
+	ID               string   `json:"id"`
+	RuleID           string   `json:"rule_id"`
+	RulesetHash      string   `json:"ruleset_hash"`
+	Severity         string   `json:"severity"`
+	TargetID         string   `json:"target_id"`
+	TargetVersion    *string  `json:"target_version"`
+	Evidence         []string `json:"evidence"`
+	EvaluatorVersion string   `json:"evaluator_version"`
+	Message          string   `json:"message"`
+	Code             string   `json:"-"`
+	ChapterID        string   `json:"-"`
 }
 type ReleaseSnapshot struct {
 	ID             string        `json:"id"`
@@ -377,28 +380,40 @@ func Evaluate(input DeliveryInput) CheckResult {
 	}
 	versions := chapterVersionIDs(input.Chapters)
 	seenIssues := make(map[string]int)
-	addTarget := func(severity, ruleID, code, target, chapterID string, targetVersion *string, message string) {
+	addTarget := func(severity, ruleID, code, target, chapterID string, targetVersion *string, message string, evidence []string, stableID string) {
 		version := "<none>"
 		if targetVersion != nil {
 			version = *targetVersion
 		}
-		identity := ruleID + "\x00" + target + "\x00" + version + "\x00" + code
+		identity := ruleID + "\x00" + target + "\x00" + version + "\x00" + input.Template.RulesetHash + "\x00" + code
 		if index, exists := seenIssues[identity]; exists {
 			if message != "" && !strings.Contains(result.Issues[index].Message, message) {
 				result.Issues[index].Message += "; " + message
 			}
+			for _, item := range evidence {
+				if item != "" && !slices.Contains(result.Issues[index].Evidence, item) {
+					result.Issues[index].Evidence = append(result.Issues[index].Evidence, item)
+				}
+			}
+			sort.Strings(result.Issues[index].Evidence)
 			return
 		}
 		seenIssues[identity] = len(result.Issues)
 		sum := sha256.Sum256([]byte(identity))
-		result.Issues = append(result.Issues, CheckIssue{ID: "vi-" + hex.EncodeToString(sum[:12]), RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Message: message, Code: code, ChapterID: chapterID})
+		id := "vi-" + hex.EncodeToString(sum[:12])
+		if stableID != "" {
+			id = stableID
+		}
+		canonicalEvidence := append([]string{}, evidence...)
+		sort.Strings(canonicalEvidence)
+		result.Issues = append(result.Issues, CheckIssue{ID: id, RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Evidence: canonicalEvidence, EvaluatorVersion: lingdoctemplate.EvaluatorVersion, Message: message, Code: code, ChapterID: chapterID})
 		if severity == SeverityBlocking {
 			result.Status = CheckBlocked
 		}
 	}
 	add := func(severity, ruleID, code, chapterID, message string) {
 		target, targetVersion := issueTarget(input, versions, chapterID)
-		addTarget(severity, ruleID, code, target, chapterID, targetVersion, message)
+		addTarget(severity, ruleID, code, target, chapterID, targetVersion, message, nil, "")
 	}
 	issue := func(ruleID, code, chapterID, message string) {
 		add(ruleSeverity(severities, ruleID), ruleID, code, chapterID, message)
@@ -442,7 +457,7 @@ func Evaluate(input DeliveryInput) CheckResult {
 				}
 			}
 			version := evaluation.TargetVersion
-			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message)
+			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
 		}
 	}
 
@@ -731,6 +746,10 @@ func cloneIssues(issues []CheckIssue) []CheckIssue {
 	for i, issue := range issues {
 		out[i] = issue
 		out[i].TargetVersion = cloneVersion(issue.TargetVersion)
+		out[i].Evidence = append([]string{}, issue.Evidence...)
+		if out[i].EvaluatorVersion == "" {
+			out[i].EvaluatorVersion = "unknown"
+		}
 	}
 	return out
 }

@@ -2,9 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { Chapter, Project } from '@/api/lingdoc/workspace'
 import {
-  checkDelivery, downloadExport, getExport, getRelease, listExports, listReleases, newDeliveryKey,
+  checkDelivery, checkTemplate, downloadExport, getExport, getRelease, listExports, listReleases, newDeliveryKey,
   prepareRelease, startExport,
-  type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot,
+  type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot, type TemplateCheckResult,
 } from '@/api/lingdoc/delivery'
 import { canExportSnapshot, currencyOf, issueTargetLabel, viewOf, type Currency } from './deliveryState'
 
@@ -47,6 +47,7 @@ interface ArtifactRow {
 }
 
 const checks = ref<CheckResult | null>(null)
+const templateChecks = ref<TemplateCheckResult | null>(null)
 const snapshots = ref<ReleaseSnapshot[]>([])
 const artifacts = ref<ExportArtifact[]>([])
 const historyTruncated = ref(false)
@@ -228,6 +229,22 @@ async function runCheck() {
   } finally { pending.value = '' }
 }
 
+async function runTemplateCheck() {
+  if (busy.value) return
+  const projectId = props.project.id
+  const expected = props.project.project_version
+  pending.value = 'template-check'
+  errorMessage.value = ''
+  try {
+    const result = await checkTemplate(projectId, expected)
+    if (projectId !== props.project.id) return
+    templateChecks.value = result.data
+  } catch (error) {
+    if (projectId !== props.project.id) return
+    if (!recoverVersionConflict(error)) fail(error, '模板规则检查失败，请重试。')
+  } finally { pending.value = '' }
+}
+
 async function freeze() {
   if (busy.value) return
   const projectId = props.project.id
@@ -338,6 +355,7 @@ watch(
     // 那份结论就不再是「当前内容的检查结果」——把它留在屏幕上，用户会以为自己刚做的
     // 改动已经通过了检查。这与快照的当前性是同一件事：结论只在它被算出的那一刻成立。
     checks.value = null
+    templateChecks.value = null
     void load()
   },
   { immediate: true },
@@ -354,6 +372,9 @@ watch(
     <div class="delivery__actions">
       <button type="button" :disabled="busy" @click="runCheck">
         {{ pending === 'check' ? '检查中…' : '交付检查' }}
+      </button>
+      <button type="button" :disabled="busy" @click="runTemplateCheck">
+        {{ pending === 'template-check' ? '规则检查中…' : '查看模板规则证据' }}
       </button>
       <button type="button" :disabled="busy" @click="freeze">
         {{ pending === 'freeze' ? '冻结中…' : '冻结当前内容' }}
@@ -376,6 +397,21 @@ watch(
         </li>
       </ul>
       <p v-else class="muted">没有发现问题。</p>
+    </section>
+
+    <section v-if="templateChecks" class="delivery__result" aria-label="模板规则证据">
+      <p>模板副本版本 {{ templateChecks.template_copy_version ?? '未提供' }} · 规则集 {{ templateChecks.ruleset_hash.slice(0, 12) }} · 结果仅供修订参考，不授予导出权限。</p>
+      <ul v-if="templateChecks.evaluations.length" class="delivery__issues">
+        <li v-for="item in templateChecks.evaluations" :key="item.id || `${item.rule_id}:${item.target_ref}:${item.target_version}`">
+          <span class="delivery__target">{{ item.rule_id }} · {{ item.target_ref }}（{{ item.target_version }}）</span>
+          <em :class="['delivery__severity', { 'delivery__severity--blocking': item.severity === 'blocking' && item.status === 'ISSUE' }]">
+            {{ item.status }} · {{ item.severity }}
+          </em>
+          <p>{{ item.message }}</p>
+          <small>证据：{{ item.evidence.length ? item.evidence.join('；') : '无额外证据' }} · {{ item.evaluator_version }}</small>
+        </li>
+      </ul>
+      <p v-else class="muted">此模板没有配置可执行规则。</p>
     </section>
 
     <p v-if="!groups.length" class="muted">还没有冻结过交付快照。</p>
