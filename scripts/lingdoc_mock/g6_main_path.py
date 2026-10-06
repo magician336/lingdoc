@@ -21,6 +21,9 @@ from scripts.lingdoc_mock.g6_evidence import RUNTIME_MODES, SAFE_FIXTURE_ID, bui
 from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, WORKFLOW_PATH, ScenarioRunner, WorkflowError, write_report
 
 REQUIRED_PARTS = ("project", "asset", "chapter", "check", "release", "export", "download")
+_WORKFLOW_DOCUMENT = json.loads(WORKFLOW_PATH.read_text(encoding="utf-8"))
+REQUIRED_STEP_IDS = tuple(step["id"] for step in _WORKFLOW_DOCUMENT["steps"])
+EXPECTED_STEP_HTTP = {step["id"]: step["expected_http"] for step in _WORKFLOW_DOCUMENT["steps"]}
 OPERATION_PARTS = {
     "createProject": ("project",),
     "bindAsset": ("asset",),
@@ -38,6 +41,28 @@ SAFE_WORKFLOWS = {"F01"}
 SAFE_RUNNER_STATUSES = {"completed", "failed", "not_run", "blocked"}
 SAFE_VERIFICATION_SCOPES = {"contract_fixture_only", "http_smoke_only", "observed", "not_recorded"}
 SAFE_METADATA_STATUSES = {"mock", "not_run", "unknown", "observed", "not_observed"}
+SAFE_STEP_ID = re.compile(r"F01-[0-9]{2}")
+
+
+def _step_id(step: dict[str, Any]) -> str | None:
+    value = step.get("id", step.get("step_id"))
+    return value if isinstance(value, str) and SAFE_STEP_ID.fullmatch(value) else None
+
+
+def _step_http(step: dict[str, Any]) -> int | None:
+    value = step.get("http_status", step.get("actual_http"))
+    return value if isinstance(value, int) and not isinstance(value, bool) and 100 <= value <= 599 else None
+
+
+def _step_verdict(step: dict[str, Any]) -> str:
+    verdict = step.get("verdict")
+    if verdict in {"passed", "failed", "not_run"}:
+        return verdict
+    step_id = _step_id(step)
+    status = _step_http(step)
+    if step_id is not None and status is not None:
+        return "passed" if EXPECTED_STEP_HTTP.get(step_id) == status else "failed"
+    return "unknown"
 
 
 def _safe_fixture_state(value: Any) -> dict[str, Any]:
@@ -104,14 +129,17 @@ def _safe_main_report(report: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(step, dict):
             continue
         operation_id = step.get("operation_id")
-        verdict = step.get("verdict")
+        step_id = _step_id(step)
+        verdict = _step_verdict(step)
         item = {
             "operation_id": operation_id if operation_id in OPERATION_PARTS else "unknown",
             "verdict": verdict if verdict in {"passed", "failed", "not_run"} else "unknown",
         }
-        if (isinstance(step.get("actual_http"), int) and not isinstance(step.get("actual_http"), bool)
-                and 100 <= step["actual_http"] <= 599):
-            item["actual_http"] = step["actual_http"]
+        if step_id is not None:
+            item["step_id"] = step_id
+        status = _step_http(step)
+        if status is not None:
+            item["actual_http"] = status
         steps.append(item)
     completed_steps = report.get("completed_steps", 0)
     total_steps = report.get("total_steps", 0)
@@ -134,7 +162,7 @@ def _observed_result(report: dict[str, Any]) -> str:
     steps = report.get("steps", [])
     if not isinstance(steps, list):
         return "BLOCKED"
-    verdicts = [step.get("verdict") for step in steps if isinstance(step, dict)]
+    verdicts = [_step_verdict(step) for step in steps if isinstance(step, dict)]
     if len(verdicts) != len(steps):
         return "BLOCKED"
     if any(verdict == "failed" for verdict in verdicts):
@@ -146,6 +174,12 @@ def _coverage(report: dict[str, Any]) -> dict[str, Any]:
     steps = report.get("steps", [])
     if not isinstance(steps, list):
         steps = []
+    observed_step_ids = [_step_id(step) for step in steps if isinstance(step, dict)]
+    expected_step_ids = list(REQUIRED_STEP_IDS)
+    missing_step_ids = sorted(set(expected_step_ids) - set(observed_step_ids))
+    unexpected_step_ids = sorted({step_id for step_id in observed_step_ids if step_id is not None}
+                                 - set(expected_step_ids))
+    step_sequence_complete = observed_step_ids == expected_step_ids
     operations = {step.get("operation_id") for step in steps if isinstance(step, dict)}
     constructed = sorted({part for operation, parts in OPERATION_PARTS.items() if operation in operations
                           for part in parts})
@@ -155,6 +189,9 @@ def _coverage(report: dict[str, Any]) -> dict[str, Any]:
         "constructed_parts": constructed,
         "constructed_complete": not missing,
         "missing_parts": missing,
+        "step_sequence_complete": step_sequence_complete,
+        "missing_step_ids": missing_step_ids,
+        "unexpected_step_ids": unexpected_step_ids,
     }
 
 
@@ -305,14 +342,29 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
     metadata = _safe_metadata(main_report.get("fixture_metadata", {}))
     fixture_state = _safe_fixture_state(main_report.get("fixture_state"))
     safe_main_report = _safe_main_report(main_report)
+    fixture_definition = {
+        "fixture_id": fixture_id,
+        "required_parts": list(REQUIRED_PARTS),
+        "required_step_ids": list(REQUIRED_STEP_IDS),
+        "metadata": metadata,
+        "fixture_state": fixture_state,
+        "main_steps": safe_main_report["steps"],
+        "failure_shape": {
+            "expected_http": failure.get("expected_http"),
+            "actual_http": failure.get("actual_http"),
+            "no_formal_side_effect": failure.get("no_formal_side_effect"),
+            "readback": failure.get("readback", {}),
+        },
+    }
+    fixture_digest = digest(fixture_definition)
     result = main_result if main_result != "PASS" else failure["result"]
-    if not coverage["constructed_complete"]:
+    if not coverage["constructed_complete"] or not coverage["step_sequence_complete"]:
         result = "BLOCKED"
     return {
         "report_version": 1,
         "scope": "canonical F01 project-to-download path plus one failure side-effect fixture",
         "fixture_id": fixture_id,
-        "fixture_digest": digest({"fixture_id": fixture_id, "required_parts": REQUIRED_PARTS}),
+        "fixture_digest": fixture_digest,
         "runtime_mode": runtime_mode,
         "result": result,
         "fixture_coverage": coverage,
@@ -331,7 +383,7 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             attribution=["fixture_or_test"] if result == "BLOCKED" else ["domain_logic"],
             evidence_refs=["fixture_coverage", "main_path", "failure_path"],
             owner="quality-operations", reviewer="unassigned",
-            fixture_digest=digest({"fixture_id": fixture_id, "required_parts": REQUIRED_PARTS}),
+            fixture_digest=fixture_digest,
             template_version=metadata.get("template_version"),
             ruleset_hash=metadata.get("ruleset_hash"),
             permission_snapshot=metadata.get("permission_snapshot"),

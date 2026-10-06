@@ -29,6 +29,31 @@
           "project",
           "release"
         ],
+        "missing_step_ids": [
+          "F01-01",
+          "F01-02",
+          "F01-03",
+          "F01-04",
+          "F01-05",
+          "F01-06",
+          "F01-07",
+          "F01-08",
+          "F01-09",
+          "F01-10",
+          "F01-11",
+          "F01-12",
+          "F01-13",
+          "F01-14",
+          "F01-15",
+          "F01-16",
+          "F01-17",
+          "F01-18",
+          "F01-19",
+          "F01-20",
+          "F01-21",
+          "F01-22",
+          "F01-23"
+        ],
         "required_parts": [
           "project",
           "asset",
@@ -37,9 +62,11 @@
           "release",
           "export",
           "download"
-        ]
+        ],
+        "step_sequence_complete": false,
+        "unexpected_step_ids": []
       },
-      "fixture_digest": "1860db41def409262f1408ff276387995772f3c10efa87c8a78fccec9c864407",
+      "fixture_digest": "aeef24b8b33664d6263ec73c704d017a163ecd0cbbcec5757c6acf384d0f358c",
       "fixture_id": "G6-F01-v1",
       "fixture_state": {},
       "main_path": {
@@ -75,9 +102,9 @@
           "start": null,
           "status": "not_recorded"
         },
-        "fixture_digest": "1860db41def409262f1408ff276387995772f3c10efa87c8a78fccec9c864407",
+        "fixture_digest": "aeef24b8b33664d6263ec73c704d017a163ecd0cbbcec5757c6acf384d0f358c",
         "fixture_id": "G6-F01-v1",
-        "input_hash": "684acd2fa8969a2e8b017771db575159ba5b21f94ecc6afaa18548ef39e22c8b",
+        "input_hash": "22104a66c7e2819e278bf8b0578d3abcfa21e455ec49a9f7bb1cd146342d9ce0",
         "input_summary": {
           "required_parts": 7
         },

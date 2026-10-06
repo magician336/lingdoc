@@ -428,14 +428,14 @@ class G6MetricsTest(unittest.TestCase):
 
 class G6MainPathTest(unittest.TestCase):
     def _complete_report(self):
-        operations = [
-            "createProject", "bindAsset", "saveChapter", "confirmChapter", "prepareRelease",
-            "startExport", "getExport", "downloadExport",
-        ]
-        return {"runner_status": "completed", "completed_steps": len(operations),
+        workflow = json.loads(g6_main_path.WORKFLOW_PATH.read_text(encoding="utf-8"))
+        steps = [{"id": step["id"], "operation_id": step["operation_id"],
+                  "verdict": "passed", "actual_http": step["expected_http"]}
+                 for step in workflow["steps"]]
+        return {"runner_status": "completed", "completed_steps": len(steps),
                 "workflow": "F01",
-                "total_steps": len(operations), "verification_scope": "http_smoke_only",
-                "steps": [{"operation_id": operation, "verdict": "passed"} for operation in operations]}
+                "total_steps": len(steps), "verification_scope": "http_smoke_only",
+                "steps": steps}
 
     def test_complete_path_stays_blocked_until_failure_side_effect_is_read_back(self):
         pending = g6_main_path.build_main_path_report(main_report=self._complete_report())
@@ -463,6 +463,42 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(sorted(report["fixture_state"]),
                          ["asset", "chapter", "check", "download", "export", "project", "release"])
         self.assertNotIn("duplicate_formal_write", json.dumps(report))
+
+    def test_runner_shaped_http_status_steps_are_accepted(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        runner_shaped = copy.deepcopy(main)
+        runner_shaped["steps"] = [
+            {"id": step["step_id"], "operation_id": step["operation_id"],
+             "http_status": step["actual_http"]}
+            for step in runner_shaped["steps"]
+        ]
+        runner_shaped["verification_scope"] = "http_smoke_only"
+        report = g6_main_path.build_main_path_report(
+            main_report=runner_shaped, failure_observation=failure)
+        self.assertEqual(report["main_path"]["result"], "PASS")
+        self.assertEqual(report["result"], "PASS")
+
+    def test_fixture_digest_changes_when_redacted_fixture_state_changes(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        first = g6_main_path.build_main_path_report(
+            main_report=copy.deepcopy(main), failure_observation=copy.deepcopy(failure))
+        changed = copy.deepcopy(main)
+        changed["fixture_state"]["project"]["version"] = "project.v2"
+        second = g6_main_path.build_main_path_report(
+            main_report=changed, failure_observation=copy.deepcopy(failure))
+        self.assertNotEqual(first["fixture_digest"], second["fixture_digest"])
+        self.assertNotEqual(first["quality_evidence"]["fixture_digest"],
+                            second["quality_evidence"]["fixture_digest"])
+
+    def test_incomplete_f01_step_sequence_is_blocked(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        main["steps"] = main["steps"][1:]
+        main["completed_steps"] -= 1
+        report = g6_main_path.build_main_path_report(
+            main_report=main, failure_observation=failure)
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertFalse(report["fixture_coverage"]["step_sequence_complete"])
+        self.assertIn("F01-01", report["fixture_coverage"]["missing_step_ids"])
 
     def test_main_path_evidence_drops_untrusted_report_payloads(self):
         main = self._complete_report()
