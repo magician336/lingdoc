@@ -324,8 +324,8 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
         "result": result,
         "attribution": _quality_attribution(executed),
         "evidence_refs": ["executed.state", "executed.steps", "scenarios", "summary"],
-        "owner": _safe_label(scenario.get("quality_owner"), "unassigned"),
-        "reviewer": _safe_label(scenario.get("quality_reviewer"), "unassigned"),
+        "owner": _safe_quality_label(scenario.get("quality_owner")),
+        "reviewer": _safe_quality_label(scenario.get("quality_reviewer")),
     }
 
 

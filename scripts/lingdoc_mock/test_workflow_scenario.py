@@ -186,6 +186,24 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertNotIn(PROVIDER_IDS["k-demo"], module.render_report(report))
         self.assertNotIn("synthetic-owner-token", module.render_report(report))
 
+    def test_success_quality_evidence_redacts_credential_like_labels(self):
+        original_entry = module.scenario_entry
+
+        def scenario_with_sensitive_labels(document, scenario_id, source_name):
+            scenario = dict(original_entry(document, scenario_id, source_name))
+            scenario["quality_owner"] = "secret123"
+            scenario["quality_reviewer"] = "BearerToken"
+            return scenario
+
+        with patch.object(module, "scenario_entry", side_effect=scenario_with_sensitive_labels):
+            report, _ = drive()
+
+        evidence = report["quality_evidence"]
+        self.assertEqual(evidence["owner"], "unassigned")
+        self.assertEqual(evidence["reviewer"], "unassigned")
+        self.assertNotIn("secret123", json.dumps(evidence))
+        self.assertNotIn("BearerToken", json.dumps(evidence))
+
     def test_real_mode_cannot_claim_pass_without_real_dependency_evidence(self):
         report, _ = drive(runtime_mode="real")
 
