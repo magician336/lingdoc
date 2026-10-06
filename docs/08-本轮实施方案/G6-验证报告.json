@@ -634,6 +634,7 @@
           "events",
           "chain_coverage",
           "signal_coverage",
+          "latency",
           "alerts"
         ],
         "evidence_version": 1,
