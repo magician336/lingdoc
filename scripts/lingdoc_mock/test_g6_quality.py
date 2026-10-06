@@ -305,6 +305,7 @@ class G6MetricsTest(unittest.TestCase):
     def test_incomplete_trial_process_keeps_effect_rates_unready(self):
         sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",
                   "runtime_mode": "real", "quality_result": "PASS",
+                  "dependency_status": "verified",
                   "supported_claims": 1, "total_claims": 1, "dismissed_issues": 0,
                   "issues_reviewed": 1, "unconfirmed_items": 0, "snapshots": 1,
                   "export_loss_items": 0, "export_checks": 1, "manual_minutes": 10,
@@ -328,6 +329,22 @@ class G6MetricsTest(unittest.TestCase):
                                                window={**self.WINDOW, "minimum_reportable_samples": 1})
         self.assertEqual(report["result"], "BLOCKED")
         self.assertEqual(report["decision"], "pause")
+
+    def test_p0_or_dependency_block_takes_pause_precedence_over_incomplete_process(self):
+        sample = {"sample_id": "sample.real1", "sample_version": "sample.v1",
+                  "runtime_mode": "real", "quality_result": "PASS",
+                  "severity": "P1", "dependency_status": "not_verified",
+                  "supported_claims": 1, "total_claims": 1, "dismissed_issues": 0,
+                  "issues_reviewed": 1, "unconfirmed_items": 0, "snapshots": 1,
+                  "export_loss_items": 0, "export_checks": 1, "manual_minutes": 10,
+                  "projects": 1, "missed_edits": 0, "changesets": 1}
+        process = {**self.WINDOW["process_evidence"], "manual_review": "not_run"}
+        report = g6_metrics.build_beta_report(
+            samples=[sample], window={**self.WINDOW, "minimum_reportable_samples": 1,
+                                      "process_evidence": process})
+        self.assertEqual(report["result"], "BLOCKED")
+        self.assertEqual(report["decision"], "pause")
+        self.assertEqual(report["readiness"], "BLOCKED")
 
     def test_blocked_real_dependency_prevents_not_ready_from_looking_harmless(self):
         sample = {"sample_id": "sample.blocked", "sample_version": "sample.v1",
@@ -451,6 +468,37 @@ class G6MainPathTest(unittest.TestCase):
         self.assertEqual(report["failure_path"]["readback"], {})
         self.assertNotIn("secret body", json.dumps(report))
 
+    def test_failure_readback_requires_explicit_unchanged_status(self):
+        for readback in ("secret body", "observed", ["unchanged"], {"unchanged": True}):
+            with self.subTest(readback=readback):
+                report = g6_main_path.build_main_path_report(
+                    main_report=self._complete_report(),
+                    failure_observation={"failure_case": "duplicate_formal_write",
+                                         "expected_http": 409, "actual_http": 409,
+                                         "no_formal_side_effect": True,
+                                         "readback": readback})
+                self.assertEqual(report["result"], "FAIL")
+
+    def test_failure_readback_accepts_status_and_state_unchanged_shapes(self):
+        for readback in ("unchanged", {"status": "unchanged"}, {"state": "unchanged"}):
+            with self.subTest(readback=readback):
+                report = g6_main_path.build_main_path_report(
+                    main_report=self._complete_report(),
+                    failure_observation={"failure_case": "duplicate_formal_write",
+                                         "expected_http": 409, "actual_http": 409,
+                                         "no_formal_side_effect": True,
+                                         "readback": readback})
+                self.assertEqual(report["result"], "PASS")
+
+    def test_incomplete_failure_observation_redacts_non_boolean_side_effect(self):
+        report = g6_main_path.build_main_path_report(
+            main_report=self._complete_report(),
+            failure_observation={"failure_case": "duplicate_formal_write",
+                                 "expected_http": 409, "actual_http": 409,
+                                 "no_formal_side_effect": "secret body"})
+        self.assertIsNone(report["failure_path"]["no_formal_side_effect"])
+        self.assertNotIn("secret body", json.dumps(report))
+
     def test_missing_export_part_cannot_claim_main_path_pass(self):
         report = self._complete_report()
         report["steps"] = [step for step in report["steps"] if step["operation_id"] != "downloadExport"]
@@ -512,6 +560,23 @@ class G6RunTest(unittest.TestCase):
             reports[mode] = report
 
         matrix = g6_run.build_runtime_matrix_from_main_path_reports(reports)
+
+        self.assertEqual(matrix["result"], "BLOCKED")
+        self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
+
+    def test_f01_report_assembly_cannot_pass_without_dependency_and_provider_evidence(self):
+        main, failure = g6_main_path.build_mock_main_path_fixture()
+        reports = {}
+        for mode in g6_run.RUNTIME_MODES:
+            report = g6_main_path.build_main_path_report(
+                main_report=copy.deepcopy(main), failure_observation=copy.deepcopy(failure),
+                runtime_mode=mode, fixture_id="F01:S1")
+            if mode != "mock":
+                report["main_path"]["verification_scope"] = "observed"
+            reports[mode] = report
+
+        matrix = g6_run.build_runtime_matrix_from_main_path_reports(
+            reports, provider_semantics={mode: "verified" for mode in g6_run.RUNTIME_MODES})
 
         self.assertEqual(matrix["result"], "BLOCKED")
         self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))

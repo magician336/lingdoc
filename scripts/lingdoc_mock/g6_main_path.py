@@ -171,10 +171,13 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
     required = ("failure_case", "expected_http", "actual_http", "no_formal_side_effect", "readback")
     missing = [field for field in required if field not in observation]
     if missing:
+        no_side_effect = (observation.get("no_formal_side_effect")
+                          if isinstance(observation.get("no_formal_side_effect"), bool)
+                          else None)
         return {
             "result": "BLOCKED",
             "status": "incomplete",
-            "no_formal_side_effect": observation.get("no_formal_side_effect"),
+            "no_formal_side_effect": no_side_effect,
             "missing_fields": missing,
             "evidence_refs": ["failure_path", "side_effect_readback"],
         }
@@ -205,15 +208,25 @@ def _failure_path(observation: dict[str, Any] | None) -> dict[str, Any]:
             elif key == "unchanged" and isinstance(value, bool):
                 safe_readback[key] = value
         readback = safe_readback
-    elif readback is not None:
-        readback = {"status": "observed"}
+    elif isinstance(readback, str) and readback in SAFE_STATUS:
+        # Accept the compact status-only shape emitted by some F01 adapters, but
+        # never turn an arbitrary string or payload into an observed read-back.
+        readback = {"status": readback}
+    else:
+        readback = {}
     if not isinstance(observation.get("failure_case"), str) or not observation["failure_case"].strip():
         return {
             "result": "FAIL", "status": "observed", "no_formal_side_effect": no_side_effect,
             "expected_http": expected_http, "actual_http": actual_http,
             "evidence_refs": ["failure_path"],
         }
-    if not no_side_effect or not readback:
+    readback_status = "not_recorded"
+    if isinstance(readback, dict):
+        for field in ("status", "state"):
+            if readback.get(field) in SAFE_STATUS:
+                readback_status = readback[field]
+                break
+    if not no_side_effect or readback_status != "unchanged":
         result = "FAIL"
     else:
         result = "PASS"

@@ -77,6 +77,20 @@ def _empty_runtime_matrix() -> dict[str, Any]:
     }
 
 
+def _dependency_row_complete(row: Any, runtime_mode: str) -> bool:
+    """Return whether a mode's dependency observation covers its full contract."""
+    if not isinstance(row, dict) or row.get("status") != "verified":
+        return False
+    required = row.get("required")
+    verified = row.get("verified")
+    missing = row.get("missing")
+    if not all(isinstance(values, list) and all(isinstance(value, str) for value in values)
+               for values in (required, verified, missing)):
+        return False
+    expected = set(RUNTIME_DEPENDENCIES[runtime_mode])
+    return set(required) == expected and set(verified) == expected and not missing
+
+
 def build_runtime_matrix_from_main_path_reports(
         reports: dict[str, dict[str, Any]],
         dependency_matrix: dict[str, dict[str, Any]] | None = None,
@@ -89,6 +103,8 @@ def build_runtime_matrix_from_main_path_reports(
                "missing": list(RUNTIME_DEPENDENCIES[mode]), "status": "not_verified"}
         for mode in RUNTIME_MODES
     }
+    if not isinstance(dependencies, dict):
+        raise ValueError("dependency matrix must be an object keyed by runtime mode")
     modes = []
     fixture_ids = []
     for mode in RUNTIME_MODES:
@@ -119,6 +135,17 @@ def build_runtime_matrix_from_main_path_reports(
             mode, unique_fixture_ids, mode["runtime_mode"])
         mode["scenario_evidence"] = scenario_evidence
         mode["result"] = reduce_results([mode["result"], scenario_result])
+        dependency = dependencies.get(mode["runtime_mode"], {})
+        dependency_complete = _dependency_row_complete(dependency, mode["runtime_mode"])
+        if not dependency_complete:
+            mode["result"] = "BLOCKED" if mode["result"] != "FAIL" else "FAIL"
+        provider_status = (provider_semantics or {}).get(mode["runtime_mode"], "not_verified")
+        if mode["runtime_mode"] != "mock" and provider_status != "verified":
+            mode["result"] = "BLOCKED" if mode["result"] != "FAIL" else "FAIL"
+        mode["dependency_status"] = "verified" if dependency_complete else "not_verified"
+        mode["provider_semantics_status"] = (provider_status
+                                               if provider_status in {"verified", "not_verified"}
+                                               else "not_verified")
         mode["quality_evidence"]["result"] = mode["result"]
         mode["summary"] = {
             "main_path_result": scenario_evidence["main_path"]["result"],
