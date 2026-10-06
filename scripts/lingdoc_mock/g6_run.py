@@ -16,6 +16,7 @@ from scripts.lingdoc_mock.g6_evidence import (RUNTIME_DEPENDENCIES, RUNTIME_MODE
                                                build_evidence, digest,
                                                main_path_report_to_scenario_evidence,
                                                normalize_scenario_evidence, reduce_results)
+from scripts.lingdoc_mock.g6_evidence import SENSITIVE_VALUE_PATTERN
 from scripts.lingdoc_mock.g6_main_path import build_main_path_report
 from scripts.lingdoc_mock.g6_metrics import build_beta_report
 from scripts.lingdoc_mock.g6_observability import build_observability_report
@@ -104,7 +105,8 @@ def _safe_version_map(value: Any) -> tuple[dict[str, str], bool]:
     for key, item in value.items():
         if (not isinstance(key, str) or key.lower() in SENSITIVE_VERSION_KEYS
                 or not SAFE_VERSION_KEY.fullmatch(key)
-                or not isinstance(item, str) or not SAFE_VERSION_VALUE.fullmatch(item)):
+                or not isinstance(item, str) or not SAFE_VERSION_VALUE.fullmatch(item)
+                or SENSITIVE_VALUE_PATTERN.search(item)):
             valid = False
             continue
         safe[key] = item

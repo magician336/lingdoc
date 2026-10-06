@@ -22,6 +22,8 @@ SAFE_FIXTURE_ID = re.compile(
 )
 SENSITIVE_KEYS = frozenset({"body", "content", "quoted_text", "source_text", "token",
                             "authorization", "prompt", "completion", "model_input", "cookie"})
+SENSITIVE_VALUE_PATTERN = re.compile(
+    r"(?:bearer|token|secret|password|authorization|cookie|api[_-]?key)", re.IGNORECASE)
 
 
 def reduce_results(results: list[str]) -> str:
@@ -48,6 +50,8 @@ def is_finite_number(value: Any) -> bool:
 
 
 def _reject_sensitive(value: Any, label: str) -> None:
+    if isinstance(value, str) and SENSITIVE_VALUE_PATTERN.search(value):
+        raise ValueError(f"{label} contains credential-like values")
     if isinstance(value, dict):
         leaked = SENSITIVE_KEYS.intersection(str(key).lower() for key in value)
         if leaked:

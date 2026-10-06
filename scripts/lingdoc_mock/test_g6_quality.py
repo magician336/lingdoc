@@ -110,6 +110,12 @@ class G6EvidenceTest(unittest.TestCase):
                 input_value={}, output_value={}, attribution=["runtime"],
                 evidence_refs=[], owner="quality", reviewer="qa",
                 dependency_versions={"token": "secret"})
+        with self.assertRaisesRegex(ValueError, "credential-like"):
+            g6_evidence.build_evidence(
+                fixture_id="G6:E1", runtime_mode="mock", result="BLOCKED",
+                input_value={}, output_value={}, attribution=["runtime"],
+                evidence_refs=[], owner="quality", reviewer="qa",
+                dependency_versions={"api": "SECRET_TOKEN"})
 
 
 class G6ObservabilityTest(unittest.TestCase):
@@ -755,6 +761,11 @@ class G6RunTest(unittest.TestCase):
         self.assertEqual(report["gates"]["G6-02"]["modes"][0]["result"], "PASS")
         self.assertTrue(all(mode["result"] == "BLOCKED"
                             for mode in report["gates"]["G6-02"]["modes"][1:]))
+
+    def test_runtime_version_values_reject_credential_like_labels(self):
+        safe, valid = g6_run._safe_version_map({"api": "SECRET_TOKEN"})
+        self.assertFalse(valid)
+        self.assertEqual(safe, {"status": "not_observed"})
 
     def test_runtime_matrix_requires_main_and_failure_evidence_per_mode(self):
         dependency_matrix = {
