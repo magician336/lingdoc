@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -24,6 +25,9 @@ from scripts.lingdoc_mock.g6_security import build_security_report
 SENSITIVE_KEYS = frozenset({"body", "content", "quoted_text", "source_text", "token",
                             "authorization", "prompt", "completion", "model_input"})
 MATRIX_ID = SAFE_FIXTURE_ID
+SAFE_VERSION_KEY = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
+SAFE_VERSION_VALUE = re.compile(r"(?:[A-Za-z][A-Za-z0-9_.:-]{0,127}|[0-9a-f]{64}|sha256:[0-9a-f]{64})")
+SENSITIVE_VERSION_KEYS = frozenset({"token", "authorization", "secret", "password", "cookie", "api_key"})
 
 
 def _read_json(path: Path | None, label: str, default: Any) -> Any:
@@ -91,6 +95,38 @@ def _dependency_row_complete(row: Any, runtime_mode: str) -> bool:
     return set(required) == expected and set(verified) == expected and not missing
 
 
+def _safe_version_map(value: Any) -> tuple[dict[str, str], bool]:
+    """Normalize version labels and report whether the source had a safe shape."""
+    if not isinstance(value, dict) or not value:
+        return {"status": "not_observed"}, False
+    safe: dict[str, str] = {}
+    valid = True
+    for key, item in value.items():
+        if (not isinstance(key, str) or key.lower() in SENSITIVE_VERSION_KEYS
+                or not SAFE_VERSION_KEY.fullmatch(key)
+                or not isinstance(item, str) or not SAFE_VERSION_VALUE.fullmatch(item)):
+            valid = False
+            continue
+        safe[key] = item
+    observed = any(key != "status" and item not in {"not_observed", "unknown", "not_run"}
+                   for key, item in safe.items())
+    return (safe or {"status": "not_observed"}), valid and observed
+
+
+def _report_versions(report: dict[str, Any]) -> tuple[dict[str, str], bool, dict[str, str], bool]:
+    """Extract redacted version maps from a sanitized F01 report."""
+    quality = report.get("quality_evidence")
+    if isinstance(quality, list):
+        quality = quality[0] if quality and isinstance(quality[0], dict) else {}
+    if not isinstance(quality, dict):
+        quality = {}
+    dependency = report.get("dependency_versions", quality.get("dependency_versions"))
+    environment = report.get("environment_versions", quality.get("environment_versions"))
+    dependency_safe, dependency_valid = _safe_version_map(dependency)
+    environment_safe, environment_valid = _safe_version_map(environment)
+    return dependency_safe, dependency_valid, environment_safe, environment_valid
+
+
 def build_runtime_matrix_from_main_path_reports(
         reports: dict[str, dict[str, Any]],
         dependency_matrix: dict[str, dict[str, Any]] | None = None,
@@ -114,6 +150,7 @@ def build_runtime_matrix_from_main_path_reports(
         report_mode = report.get("runtime_mode")
         result = report.get("result") if report.get("result") in {"PASS", "FAIL", "NOT RUN", "BLOCKED"} else "BLOCKED"
         evidence = main_path_report_to_scenario_evidence(report)
+        dependency_versions, dependency_versions_valid, environment_versions, environment_versions_valid = _report_versions(report)
         fixture_id = evidence["main_path"].get("fixture_id")
         if fixture_id:
             fixture_ids.append(fixture_id)
@@ -123,6 +160,9 @@ def build_runtime_matrix_from_main_path_reports(
             "result": result if report_mode in {None, mode} else "BLOCKED",
             "dependency_status": (dependencies.get(mode, {}) or {}).get("status", "not_verified"),
             "provider_semantics_status": (provider_semantics or {}).get(mode, "not_verified"),
+            "dependency_versions": dependency_versions,
+            "environment_versions": environment_versions,
+            "version_evidence_valid": dependency_versions_valid and environment_versions_valid,
             "verification_scope": main_scope,
             "scenario_evidence": evidence,
             "quality_evidence": {"result": result, "fixture_id": fixture_id},
@@ -141,6 +181,8 @@ def build_runtime_matrix_from_main_path_reports(
             mode["result"] = "BLOCKED" if mode["result"] != "FAIL" else "FAIL"
         provider_status = (provider_semantics or {}).get(mode["runtime_mode"], "not_verified")
         if mode["runtime_mode"] != "mock" and provider_status != "verified":
+            mode["result"] = "BLOCKED" if mode["result"] != "FAIL" else "FAIL"
+        if mode["runtime_mode"] != "mock" and not mode.get("version_evidence_valid", False):
             mode["result"] = "BLOCKED" if mode["result"] != "FAIL" else "FAIL"
         mode["dependency_status"] = "verified" if dependency_complete else "not_verified"
         mode["provider_semantics_status"] = (provider_status
@@ -240,7 +282,6 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
             continue
         scenario_evidence, scenario_result = normalize_scenario_evidence(entry, fixture_ids, mode)
         mode_result = reduce_results([entry["result"], scenario_result])
-        mode_results.append(mode_result)
         semantics = entry.get("provider_semantics_status", "not_verified")
         if semantics not in {"verified", "not_verified"}:
             semantics = "not_verified"
@@ -256,11 +297,21 @@ def _runtime_matrix_gate(matrix: dict[str, Any] | None) -> dict[str, Any]:
             semantics_verified = False
             if mode_result != "FAIL":
                 mode_result = "BLOCKED"
+        dependency_versions, dependency_versions_valid = _safe_version_map(
+            entry.get("dependency_versions"))
+        environment_versions, environment_versions_valid = _safe_version_map(
+            entry.get("environment_versions"))
+        if mode != "mock" and not (dependency_versions_valid and environment_versions_valid):
+            if mode_result != "FAIL":
+                mode_result = "BLOCKED"
+        mode_results.append(mode_result)
         normalized_modes.append({
             "runtime_mode": mode,
             "result": mode_result,
             "dependency_status": dependency_status,
             "provider_semantics_status": semantics,
+            "dependency_versions": dependency_versions,
+            "environment_versions": environment_versions,
             "verification_scope": (entry.get("verification_scope")
                                    if entry.get("verification_scope") in {"http_smoke_only",
                                                                           "http_smoke_plus_declared_f02_white_box",

@@ -164,6 +164,8 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(evidence["template_version"], "1")
         self.assertRegex(evidence["ruleset_hash"], r"^[0-9a-f]{64}$")
         self.assertEqual(evidence["permission_snapshot"]["status"], "declared_only")
+        self.assertRegex(evidence["environment_versions"]["runtime"], r"^python\.")
+        self.assertRegex(evidence["environment_versions"]["platform"], r"^platform\.")
         self.assertEqual(evidence["input_summary"]["asset_count"], 2)
         self.assertEqual(evidence["output_summary"]["executed_steps"], 1)
         self.assertEqual(evidence["evidence_refs"], [

@@ -81,7 +81,7 @@ def _safe_metadata(value: Any) -> dict[str, Any]:
                 safe_permission[key] = item
         if safe_permission:
             safe["permission_snapshot"] = safe_permission
-    for field in ("dependency_versions", "object_versions"):
+    for field in ("dependency_versions", "environment_versions", "object_versions"):
         values = value.get(field)
         if not isinstance(values, dict):
             continue
@@ -265,6 +265,7 @@ def build_mock_main_path_fixture() -> tuple[dict[str, Any], dict[str, Any]]:
             "permission_snapshot": {"status": "mock", "project": "project.id", "actor": "user.id"},
             "dependency_versions": {"contract": "contract.v1", "api": "not_run",
                                      "model": "not_run", "weknora": "not_run", "docx": "not_run"},
+            "environment_versions": {"runtime": "python.contract", "platform": "platform.contract"},
             "object_versions": {"project": "project.v1", "spec": "spec.revision",
                                  "chapter": "chapter.v1", "asset": "asset.v1"},
         },
@@ -335,6 +336,7 @@ def build_main_path_report(*, main_report: dict[str, Any], runtime_mode: str = "
             ruleset_hash=metadata.get("ruleset_hash"),
             permission_snapshot=metadata.get("permission_snapshot"),
             dependency_versions=metadata.get("dependency_versions"),
+            environment_versions=metadata.get("environment_versions"),
             object_versions=metadata.get("object_versions"),
             input_summary={"required_parts": len(REQUIRED_PARTS)},
             output_summary={"completed_steps": safe_main_report["completed_steps"],

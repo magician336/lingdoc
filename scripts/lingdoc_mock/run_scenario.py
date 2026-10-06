@@ -22,6 +22,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import subprocess
@@ -310,6 +311,10 @@ def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scen
             "states_sha256": _file_digest(states_path),
             "weknora": "unknown",
             "model": "unknown",
+        },
+        "environment_versions": {
+            "runtime": f"python.{platform.python_version()}",
+            "platform": f"platform.{sys.platform}",
         },
         "dependency_status": {
             name: "verified" if bool((runtime_dependencies or {}).get(name)) else "not_verified"
