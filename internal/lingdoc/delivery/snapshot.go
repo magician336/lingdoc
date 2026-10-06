@@ -125,17 +125,27 @@ type CheckResult struct {
 
 // CheckIssue is the shared ValidationIssue shape. Code and ChapterID stay internal for tests.
 type CheckIssue struct {
-	ID               string   `json:"id"`
-	RuleID           string   `json:"rule_id"`
-	RulesetHash      string   `json:"ruleset_hash"`
-	Severity         string   `json:"severity"`
-	TargetID         string   `json:"target_id"`
-	TargetVersion    *string  `json:"target_version"`
-	Evidence         []string `json:"evidence"`
-	EvaluatorVersion string   `json:"evaluator_version"`
-	Message          string   `json:"message"`
-	Code             string   `json:"-"`
-	ChapterID        string   `json:"-"`
+	ID               string            `json:"id"`
+	RuleID           string            `json:"rule_id"`
+	RulesetHash      string            `json:"ruleset_hash"`
+	Severity         string            `json:"severity"`
+	TargetID         string            `json:"target_id"`
+	TargetVersion    *string           `json:"target_version"`
+	Evidence         []string          `json:"evidence"`
+	EvaluatorVersion string            `json:"evaluator_version"`
+	Message          string            `json:"message"`
+	Disposition      *IssueDisposition `json:"disposition,omitempty"`
+	Code             string            `json:"-"`
+	ChapterID        string            `json:"-"`
+}
+
+// IssueDisposition is human workflow metadata attached to a finding. It does
+// not change the evaluator's status or satisfy any confirmation/export gate.
+type IssueDisposition struct {
+	Action    string    `json:"action"`
+	Reason    string    `json:"reason"`
+	ActorID   string    `json:"actor_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 type ReleaseSnapshot struct {
 	ID             string        `json:"id"`
@@ -746,6 +756,10 @@ func cloneIssues(issues []CheckIssue) []CheckIssue {
 	for i, issue := range issues {
 		out[i] = issue
 		out[i].TargetVersion = cloneVersion(issue.TargetVersion)
+		if issue.Disposition != nil {
+			copy := *issue.Disposition
+			out[i].Disposition = &copy
+		}
 		out[i].Evidence = append([]string{}, issue.Evidence...)
 		if out[i].EvaluatorVersion == "" {
 			out[i].EvaluatorVersion = "unknown"

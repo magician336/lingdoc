@@ -7435,6 +7435,33 @@
         "x-delivery-phase": "core"
       }
     },
+    "/projects/{projectId}/issues/{issueId}/disposition": {
+      "post": {
+        "operationId": "setValidationIssueDisposition",
+        "tags": ["delivery"],
+        "summary": "记录当前校验问题的人工处置",
+        "description": "服务端会按 expected_project_version 重新运行检查并派生规则、严重级别、目标和目标版本绑定；成功决定写入追加式审计。重复处置、过期版本和撤销权限均拒绝。处置不改变检查结论，也不会关闭 G3 影响任务、章节确认或解除冻结/导出门禁。阻断问题不能 waive；reviewer 仅能在获授权范围内 dismiss 阻断问题。",
+        "parameters": [
+          {"name": "projectId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}},
+          {"name": "issueId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}},
+          {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8, "maxLength": 128}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ValidationIssueDispositionInput"}, "example": {"expected_project_version": 8, "action": "dismiss", "reason": "经核对，该规则对此章节不适用。"}}}
+        },
+        "responses": {
+          "201": {"description": "处置已记录", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ValidationIssueDispositionResponse"}}}},
+          "400": {"description": "请求无效、原因为空或试图豁免阻断问题。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "401": {"description": "需要登录。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "项目不存在或调用者无处置权限。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "项目版本或问题绑定已过期。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "422": {"description": "该问题版本已经记录过处置。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/releases": {
       "get": {
           "operationId": "listReleases",
@@ -12507,7 +12534,34 @@
     "/projects/{projectId}/template-copies/{version}": {"get":{"operationId":"getProjectTemplateCopy","tags":["workspace"],"summary":"读取项目模板副本的不可变历史版本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"version","in":"path","required":true,"schema":{"type":"integer","minimum":1}}],"responses":{"200":{"description":"项目模板副本版本","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectTemplateCopyResponse"}}}},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
     "/projects/{projectId}/template-copy/preview": {"post":{"operationId":"previewProjectTemplateCopyEdit","tags":["workspace"],"summary":"预览项目模板副本编辑与字段迁移影响","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateCopyDefinitionInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"fields":[{"field_id":"research_subject","label":"研究对象","type":"string","order":1,"required":true},{"field_id":"research_goal","label":"研究目标","type":"string","order":2,"required":true}],"sections":[{"section_id":"question","title":"研究问题","order":1,"required":true},{"section_id":"method","title":"研究方案","order":2,"required":true}],"terms":[],"required_fields":["research_subject","research_goal"],"rules":[{"rule_id":"required-fields","kind":"computed","severity":"blocking","evaluator":"required_fields","parameters":{}},{"rule_id":"chapter-nonempty","kind":"computed","severity":"blocking","evaluator":"nonempty_chapter","parameters":{}},{"rule_id":"chapter-confirmed","kind":"computed","severity":"blocking","evaluator":"confirmed_chapter","parameters":{}},{"rule_id":"review-items-decided","kind":"computed","severity":"blocking","evaluator":"review_items_decided","parameters":{}},{"rule_id":"source-available","kind":"computed","severity":"blocking","evaluator":"source_available","parameters":{}}]}}}},"responses":{"200":{"description":"编辑迁移预览","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateMigrationPreviewResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
     "/projects/{projectId}/template-copy": {"put":{"operationId":"saveProjectTemplateCopyEdit","tags":["workspace"],"summary":"追加项目模板副本的新草稿版本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateCopyDefinitionInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"fields":[{"field_id":"research_subject","label":"研究对象","type":"string","order":1,"required":true},{"field_id":"research_goal","label":"研究目标","type":"string","order":2,"required":true}],"sections":[{"section_id":"question","title":"研究问题","order":1,"required":true},{"section_id":"method","title":"研究方案","order":2,"required":true}],"terms":[],"required_fields":["research_subject","research_goal"],"rules":[{"rule_id":"required-fields","kind":"computed","severity":"blocking","evaluator":"required_fields","parameters":{}},{"rule_id":"chapter-nonempty","kind":"computed","severity":"blocking","evaluator":"nonempty_chapter","parameters":{}},{"rule_id":"chapter-confirmed","kind":"computed","severity":"blocking","evaluator":"confirmed_chapter","parameters":{}},{"rule_id":"review-items-decided","kind":"computed","severity":"blocking","evaluator":"review_items_decided","parameters":{}},{"rule_id":"source-available","kind":"computed","severity":"blocking","evaluator":"source_available","parameters":{}}]}}}},"responses":{"200":{"description":"副本已版本化保存","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
-    "/projects/{projectId}/change-sets": {"get":{"operationId":"listChangeSets","tags":["workspace"],"summary":"读取项目变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更集列表"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"createChangeSet","tags":["workspace"],"summary":"创建研究条件变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["expected_context_revision","fields","affected_chapter_ids","reason"],"properties":{"expected_context_revision":{"type":"integer","minimum":1},"fields":{"type":"object","minProperties":1,"maxProperties":2,"propertyNames":{"enum":["research_subject","research_goal"]},"additionalProperties":{"type":"object","required":["old_value","new_value"],"properties":{"old_value":{"type":"string"},"new_value":{"type":"string"}}}},"affected_chapter_ids":{"type":"array","minItems":1,"items":{"type":"string"}},"reason":{"type":"string","minLength":1}}},"example":{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"旧主题","new_value":"新主题"}},"affected_chapter_ids":["chapter-1"],"reason":"研究对象发生变化"}}}},"responses":{"201":{"description":"已生成变更预览"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"版本或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets": {
+      "get": {
+        "operationId": "listChangeSets",
+        "tags": ["workspace"],
+        "summary": "读取项目变更预览",
+        "parameters": [{"name": "projectId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "变更集列表"}, "404": {"description": "资源不存在或不可访问"}},
+        "x-domain": "workspace", "x-delivery-phase": "core"
+      },
+      "post": {
+        "operationId": "createChangeSet",
+        "tags": ["workspace"],
+        "summary": "创建研究条件或模板升级评估",
+        "parameters": [
+          {"name": "projectId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8}}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateChangeSetInput"}, "example": {"expected_context_revision": 1, "fields": {}, "affected_chapter_ids": [], "reason": "按团队评审升级模板副本", "template_upgrade": {"expected_project_version": 8, "expected_template_copy_version": 2, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "order": 1, "required": true}], "sections": [{"section_id": "question", "title": "研究问题", "order": 1, "required": true}], "terms": [], "required_fields": ["research_subject"], "rules": [], "field_values": {}}}}}},
+        "responses": {
+          "201": {"description": "已生成变更预览与迁移/影响摘要"},
+          "400": {"description": "请求错误或迁移失败"},
+          "404": {"description": "资源不存在或不可访问"},
+          "409": {"description": "版本或幂等冲突"},
+          "422": {"description": "当前状态不允许"}
+        },
+        "x-domain": "workspace", "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/change-sets/{changeSetId}": {"get":{"operationId":"getChangeSet","tags":["workspace"],"summary":"读取变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更预览"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/apply": {"post":{"operationId":"applyChangeSet","tags":["workspace"],"summary":"Owner 应用变更并开始复核","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已原子应用"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"基线过期或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/reject": {"post":{"operationId":"rejectChangeSet","tags":["workspace"],"summary":"Owner 驳回变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已驳回"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}}
@@ -12736,6 +12790,55 @@
           "status": {"type": "string", "enum": ["added", "removed", "changed"]}
         },
         "required": ["section_id", "status"],
+        "additionalProperties": false
+      },
+      "TemplateUpgradeImpact": {
+        "type": "object",
+        "properties": {
+          "affected_field_ids": {"type": "array", "items": {"type": "string"}},
+          "affected_section_ids": {"type": "array", "items": {"type": "string"}},
+          "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
+          "invalidated_confirmation_chapter_ids": {"type": "array", "items": {"type": "string"}},
+          "changed_rule_ids": {"type": "array", "items": {"type": "string"}},
+          "validation_issue_effect": {"type": "string"},
+          "delivery_snapshot_effect": {"type": "string"}
+        },
+        "required": ["affected_field_ids", "affected_section_ids", "affected_chapter_ids", "invalidated_confirmation_chapter_ids", "changed_rule_ids", "validation_issue_effect", "delivery_snapshot_effect"],
+        "additionalProperties": false
+      },
+      "TemplateUpgradeInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {"type": "integer", "minimum": 1},
+          "expected_template_copy_version": {"type": "integer", "minimum": 1},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateField"}},
+          "sections": {"type": "array", "items": {"$ref": "#/components/schemas/Section"}},
+          "terms": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateTerm"}},
+          "required_fields": {"type": "array", "items": {"type": "string"}},
+          "rules": {"type": "array", "items": {"$ref": "#/components/schemas/Rule"}},
+          "field_values": {"type": "object", "additionalProperties": {"type": "string"}}
+        },
+        "required": ["expected_project_version", "expected_template_copy_version", "fields", "sections", "terms", "required_fields", "rules"],
+        "additionalProperties": false
+      },
+      "CreateChangeSetInput": {
+        "type": "object",
+        "properties": {
+          "expected_context_revision": {"type": "integer", "minimum": 1},
+          "fields": {
+            "type": "object", "maxProperties": 2,
+            "propertyNames": {"enum": ["research_subject", "research_goal"]},
+            "additionalProperties": {"type": "object", "required": ["old_value", "new_value"], "properties": {"old_value": {"type": "string"}, "new_value": {"type": "string"}}}
+          },
+          "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "template_upgrade": {"$ref": "#/components/schemas/TemplateUpgradeInput"}
+        },
+        "required": ["expected_context_revision", "reason"],
+        "oneOf": [
+          {"required": ["fields", "affected_chapter_ids"], "not": {"required": ["template_upgrade"]}},
+          {"required": ["template_upgrade"], "properties": {"fields": {"maxProperties": 0}, "affected_chapter_ids": {"maxItems": 0}}}
+        ],
         "additionalProperties": false
       },
       "TemplateMigrationPreview": {
@@ -13345,6 +13448,9 @@
           },
           "message": {
             "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/IssueDispositionSummary"
           }
         },
         "required": [
@@ -13356,6 +13462,45 @@
           "target_version",
           "message"
         ],
+        "additionalProperties": false
+      },
+      "ValidationIssueDisposition": {
+        "type": "object",
+        "properties": {
+          "issue_id": {"type": "string", "minLength": 1},
+          "rule_id": {"type": "string", "minLength": 1},
+          "ruleset_hash": {"type": "string", "minLength": 1},
+          "severity": {"type": "string", "enum": ["blocking", "warning", "info"]},
+          "target_id": {"type": "string", "minLength": 1},
+          "target_version": {"type": "string", "nullable": true},
+          "project_version": {"type": "integer", "minimum": 1},
+          "action": {"type": "string", "enum": ["resolve", "dismiss", "waive"]},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "actor_id": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["issue_id", "rule_id", "ruleset_hash", "severity", "target_id", "target_version", "project_version", "action", "reason", "actor_id", "created_at"],
+        "additionalProperties": false
+      },
+      "IssueDispositionSummary": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string", "enum": ["resolve", "dismiss", "waive"]},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "actor_id": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["action", "reason", "actor_id", "created_at"],
+        "additionalProperties": false
+      },
+      "ValidationIssueDispositionInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {"type": "integer", "minimum": 1},
+          "action": {"type": "string", "enum": ["resolve", "dismiss", "waive"]},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000}
+        },
+        "required": ["expected_project_version", "action", "reason"],
         "additionalProperties": false
       },
       "CheckResult": {
@@ -14083,6 +14228,16 @@
           "request_id",
           "meta"
         ],
+        "additionalProperties": false
+      },
+      "ValidationIssueDispositionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/ValidationIssueDisposition"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
         "additionalProperties": false
       },
       "TemplateCheckResultResponse": {

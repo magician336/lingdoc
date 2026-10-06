@@ -102,6 +102,16 @@ export interface TemplateMigrationPreview {
   incompatible: string[]
 }
 
+export interface TemplateUpgradeImpact {
+  affected_field_ids: string[]
+  affected_section_ids: string[]
+  affected_chapter_ids: string[]
+  invalidated_confirmation_chapter_ids: string[]
+  changed_rule_ids: string[]
+  validation_issue_effect: string
+  delivery_snapshot_effect: string
+}
+
 export interface ReviewItem {
   id: string
   statement: string
@@ -146,6 +156,13 @@ export interface ChangeSet {
   target_spec_revision?: number
   fields: Array<{ key: string; old_value: string; new_value: string }>
   impacts: ChangeImpact[]
+  template_upgrade?: {
+    base_template_copy_version: number
+    definition: ProjectTemplateCopy['definition']
+    field_values: Record<string, string>
+    preview: TemplateMigrationPreview
+    impact?: TemplateUpgradeImpact
+  }
   created_at: string
   applied_at?: string
 }
@@ -401,6 +418,7 @@ export const createChangeSet = (projectId: string, input: {
   fields: Record<string, { old_value: string; new_value: string }>
   affected_chapter_ids: string[]
   reason: string
+  template_upgrade?: TemplateCopyEditInput & { field_values?: Record<string, string> }
 }, key: string) => post<Result<ChangeSet>>(
   `${base}/${segment(projectId)}/change-sets`, input, keyHeader(key),
 )

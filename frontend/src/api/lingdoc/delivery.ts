@@ -8,7 +8,14 @@ import type { Result } from './workspace'
 // listExports / getExport / downloadExport）。
 
 export type CheckStatus = 'passed' | 'blocked' | 'not_evaluated'
-export type IssueSeverity = 'blocking' | 'warning'
+export type IssueSeverity = 'blocking' | 'warning' | 'info'
+
+export interface ValidationIssueDisposition {
+  action: 'resolve' | 'dismiss' | 'waive'
+  reason: string
+  actor_id: string
+  created_at: string
+}
 
 /** 契约 §3 的 ValidationIssue。target_id 是「阻断原因可定位」的抓手。 */
 export interface ValidationIssue {
@@ -25,6 +32,7 @@ export interface ValidationIssue {
   evidence: string[]
   evaluator_version: string
   message: string
+  disposition?: ValidationIssueDisposition | null
 }
 
 export interface CheckResult {
@@ -136,6 +144,19 @@ export const checkDelivery = (projectId: string, expectedProjectVersion: number)
 export const checkTemplate = (projectId: string, expectedProjectVersion: number) =>
   post<Result<TemplateCheckResult>>(`${base}/${segment(projectId)}/template-checks`,
     { expected_project_version: expectedProjectVersion })
+
+export const setIssueDisposition = (
+  projectId: string,
+  issueId: string,
+  expectedProjectVersion: number,
+  action: ValidationIssueDisposition['action'],
+  reason: string,
+  key: string,
+) => post<Result<ValidationIssueDisposition>>(
+  `${base}/${segment(projectId)}/issues/${segment(issueId)}/disposition`,
+  { expected_project_version: expectedProjectVersion, action, reason },
+  keyHeader(key),
+)
 
 export const prepareRelease = (projectId: string, expectedProjectVersion: number, key: string) =>
   post<Result<ReleaseSnapshot>>(`${base}/${segment(projectId)}/releases`,

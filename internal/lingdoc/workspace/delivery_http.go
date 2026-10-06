@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/gin-gonic/gin"
@@ -47,9 +48,51 @@ func RegisterDeliveryRoutes(r RouteRegistrar, h *DeliveryHandler) {
 	if _, ok := h.service.(TemplateCheckApplication); ok {
 		r.POST("/projects/:projectId/template-checks", h.TemplateCheck)
 	}
+	if _, ok := h.service.(IssueDispositionApplication); ok {
+		r.POST("/projects/:projectId/issues/:issueId/disposition", h.SetIssueDisposition)
+	}
 	r.POST("/projects/:projectId/releases", h.Prepare)
 	r.GET("/projects/:projectId/releases", h.List)
 	r.GET("/projects/:projectId/releases/:snapshotId", h.Get)
+}
+
+type issueDispositionRequest struct {
+	ExpectedProjectVersion *int64 `json:"expected_project_version"`
+	Action                 string `json:"action"`
+	Reason                 string `json:"reason"`
+}
+
+// SetIssueDisposition asks the server to reevaluate a finding at the supplied
+// project revision; clients never submit rule/severity/target binding fields.
+func (h *DeliveryHandler) SetIssueDisposition(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var request issueDispositionRequest
+	if !decodeBody(c, &request) {
+		return
+	}
+	if request.ExpectedProjectVersion == nil || *request.ExpectedProjectVersion < 1 || strings.TrimSpace(request.Action) == "" || strings.TrimSpace(request.Reason) == "" {
+		sendError(c, ErrInvalidRequest)
+		return
+	}
+	service, ok := h.service.(IssueDispositionApplication)
+	if !ok {
+		sendError(c, candidateadoption.ErrInvalidState)
+		return
+	}
+	disposition, replayed, err := service.SetIssueDisposition(c.Request.Context(), actor.UserID, c.Param("projectId"), c.Param("issueId"), key,
+		IssueDispositionRequest{ExpectedProjectVersion: *request.ExpectedProjectVersion, Action: request.Action, Reason: request.Reason})
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusCreated, disposition, replayed)
 }
 
 // readVersion 是契约里 /checks 与 /releases 的请求体，只有 expected_project_version。

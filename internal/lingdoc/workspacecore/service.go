@@ -385,28 +385,52 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 }
 
 func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
-	var fields []ChangeFieldDelta
-	if err := json.Unmarshal([]byte(row.FieldsJSON), &fields); err != nil {
-		return ChangeSet{}, err
+	var fieldData struct {
+		Fields          []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+	}
+	// Earlier ChangeSets stored a bare array. Continue reading that shape while
+	// new records use an envelope to keep the schema migration-free.
+	if err := json.Unmarshal([]byte(row.FieldsJSON), &fieldData); err != nil {
+		if legacyErr := json.Unmarshal([]byte(row.FieldsJSON), &fieldData.Fields); legacyErr != nil {
+			return ChangeSet{}, err
+		}
+	} else if fieldData.Fields == nil {
+		// Old records are bare arrays; an object without fields is malformed.
+		var legacy []ChangeFieldDelta
+		if err := json.Unmarshal([]byte(row.FieldsJSON), &legacy); err == nil {
+			fieldData.Fields = legacy
+		} else if strings.HasPrefix(strings.TrimSpace(row.FieldsJSON), "{") {
+			return ChangeSet{}, err
+		}
 	}
 	var impacts []ChangeImpact
 	if err := json.Unmarshal([]byte(row.ImpactsJSON), &impacts); err != nil {
 		return ChangeSet{}, err
 	}
-	if fields == nil {
-		fields = []ChangeFieldDelta{}
+	if fieldData.Fields == nil {
+		fieldData.Fields = []ChangeFieldDelta{}
 	}
 	if impacts == nil {
 		impacts = []ChangeImpact{}
 	}
 	return ChangeSet{ID: row.ID, ProjectID: row.ProjectID, CreatedBy: row.CreatedBy, Reason: row.Reason,
 		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
-		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision, Fields: fields, Impacts: impacts,
+		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision,
+		Fields: fieldData.Fields, TemplateUpgrade: fieldData.TemplateUpgrade, Impacts: impacts,
 		CreatedAt: row.CreatedAt, AppliedAt: row.AppliedAt}, nil
 }
 
+func encodeChangeSetFields(change ChangeSet) (string, error) {
+	raw, err := json.Marshal(struct {
+		Fields          []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade})
+	return string(raw), err
+}
+
 func (t gormTransaction) InsertChangeSet(change ChangeSet) error {
-	fields, err := json.Marshal(change.Fields)
+	fields, err := encodeChangeSetFields(change)
 	if err != nil {
 		return err
 	}
@@ -417,7 +441,7 @@ func (t gormTransaction) InsertChangeSet(change ChangeSet) error {
 	return t.db.Create(&changeSetRow{ID: change.ID, ProjectID: change.ProjectID, CreatedBy: change.CreatedBy,
 		Reason: change.Reason, Status: change.Status, BaseContextRevision: change.BaseContextRevision,
 		TargetContextRevision: change.TargetContextRevision, BaseSpecRevision: change.BaseSpecRevision,
-		TargetSpecRevision: change.TargetSpecRevision, FieldsJSON: string(fields), ImpactsJSON: string(impacts),
+		TargetSpecRevision: change.TargetSpecRevision, FieldsJSON: fields, ImpactsJSON: string(impacts),
 		CreatedAt: change.CreatedAt, AppliedAt: change.AppliedAt}).Error
 }
 
@@ -489,7 +513,7 @@ func (t gormTransaction) withCurrentImpactStatus(change ChangeSet) (ChangeSet, e
 }
 
 func (t gormTransaction) UpdateChangeSet(previous, next ChangeSet) error {
-	fields, err := json.Marshal(next.Fields)
+	fields, err := encodeChangeSetFields(next)
 	if err != nil {
 		return err
 	}
@@ -499,7 +523,7 @@ func (t gormTransaction) UpdateChangeSet(previous, next ChangeSet) error {
 	}
 	result := t.db.Model(&changeSetRow{}).Where("id = ? AND project_id = ? AND status = ?", previous.ID, previous.ProjectID, previous.Status).
 		Updates(map[string]any{"status": next.Status, "target_context_revision": next.TargetContextRevision,
-			"target_spec_revision": next.TargetSpecRevision, "fields_json": string(fields), "impacts_json": string(impacts), "applied_at": next.AppliedAt})
+			"target_spec_revision": next.TargetSpecRevision, "fields_json": fields, "impacts_json": string(impacts), "applied_at": next.AppliedAt})
 	return affected(result)
 }
 

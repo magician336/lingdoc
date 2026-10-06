@@ -45,9 +45,9 @@
             <p class="muted">来源 {{ project.template_copy.source_template_id }} · 原始版本 {{ project.template_copy.source_template_version }} · 项目副本第 {{ project.template_copy.version }} 版（{{ templateCopyStatusLabel(project.template_copy.status) }}）</p>
             <p class="template-hash">内容摘要：{{ project.template_copy.content_hash }}</p>
             <p class="template-hash">规则集摘要：{{ project.template_copy.ruleset_hash }}</p>
-            <p v-if="project.status !== 'draft'" class="muted">项目已立项；当前版本只读。模板升级需要 G3/G5 的正式变更与权限流程，不能从这里直接改写。</p>
-            <template v-else-if="templateCopyDraft">
-              <p class="muted">这里只能调整展示名称；字段 ID、字段类型和规则保持原样。改动先预览，再保存为新的不可变草稿版本。</p>
+            <p v-if="project.status === 'active'" class="muted">项目已立项；普通保存不可用。模板改动会创建 ChangeSet，列出受影响章节并由 Owner 确认应用。</p>
+            <template v-if="templateCopyDraft">
+              <p class="muted">这里只能调整展示名称；字段 ID、字段类型和规则保持原样。{{ project.status === 'draft' ? '改动先预览，再保存为新的不可变草稿版本。' : '改动需经过模板升级 ChangeSet，应用后旧版本和章节确认历史仍保留。' }}</p>
               <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
                 <legend>字段名称</legend>
                 <label v-for="field in templateCopyDraft.fields" :key="field.field_id" class="template-editor__item">
@@ -62,10 +62,18 @@
                   <input v-model="section.title" :aria-label="`${section.section_id} 章节名称`" maxlength="120" />
                 </label>
               </fieldset>
+              <label v-if="project.status === 'active'" for="template-upgrade-reason">升级理由</label>
+              <input v-if="project.status === 'active'" id="template-upgrade-reason" v-model="templateUpgradeReason" :disabled="busy || templateCopyBusy" maxlength="2000" placeholder="说明模板调整原因" />
               <div class="actions">
-                <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="previewTemplateCopy">{{ templateCopyBusy ? '处理中…' : '预览改动' }}</button>
-                <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未保存改动</button>
-                <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged || !templateCopyPreviewCurrent" @click="saveTemplateCopy">保存为新版本</button>
+                <template v-if="project.status === 'draft'">
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="previewTemplateCopy">{{ templateCopyBusy ? '处理中…' : '预览改动' }}</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未保存改动</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged || !templateCopyPreviewCurrent" @click="saveTemplateCopy">保存为新版本</button>
+                </template>
+                <template v-else>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged || !templateUpgradeReason.trim() || pendingChangeSet?.status === 'assessed'" @click="createTemplateUpgradeChangeSet">{{ templateCopyBusy ? '处理中…' : '创建模板升级评估' }}</button>
+                  <button type="button" :disabled="busy || templateCopyBusy || !templateCopyChanged" @click="discardTemplateCopyDraft">放弃未提交改动</button>
+                </template>
               </div>
               <p v-if="templateCopyNotice" class="binding-notice" role="status">{{ templateCopyNotice }}</p>
               <section v-if="templateCopyPreview" class="template-preview" aria-label="模板改动预览" aria-live="polite">
@@ -83,6 +91,26 @@
                 <p v-if="templateCopyPreview.incompatible.length" class="warning">类型不兼容：{{ templateCopyPreview.incompatible.join('、') }}</p>
                 <p class="template-hash">新内容摘要：{{ templateCopyPreview.target_content_hash }}</p>
                 <p class="template-hash">新规则集摘要：{{ templateCopyPreview.target_ruleset_hash }}</p>
+              </section>
+              <section v-if="project.status === 'active' && pendingChangeSet?.template_upgrade" class="change-set-preview" aria-label="待应用的模板升级">
+                <p><strong>模板升级评估 {{ pendingChangeSet.id.slice(0, 8) }}</strong></p>
+                <p>将影响 {{ pendingChangeSet.impacts.length }} 个章节，并使这些章节的旧确认失效。</p>
+                <template v-if="pendingChangeSet.template_upgrade.impact">
+                  <p>字段 {{ pendingChangeSet.template_upgrade.impact.affected_field_ids.length }} 项 · 模板章节 {{ pendingChangeSet.template_upgrade.impact.affected_section_ids.length }} 项 · 规则 {{ pendingChangeSet.template_upgrade.impact.changed_rule_ids.length }} 项有变化。</p>
+                  <p>将失效的旧确认：{{ pendingChangeSet.template_upgrade.impact.invalidated_confirmation_chapter_ids.length }} 章；问题处置：{{ pendingChangeSet.template_upgrade.impact.validation_issue_effect }}</p>
+                  <p>{{ pendingChangeSet.template_upgrade.impact.delivery_snapshot_effect }}</p>
+                  <p v-if="pendingChangeSet.template_upgrade.preview.missing_required.length || pendingChangeSet.template_upgrade.preview.incompatible.length" class="warning">
+                    当前迁移失败：缺少必填 {{ pendingChangeSet.template_upgrade.preview.missing_required.join('、') || '无' }}；类型不兼容 {{ pendingChangeSet.template_upgrade.preview.incompatible.join('、') || '无' }}。
+                  </p>
+                </template>
+                <ul>
+                  <li v-for="impact in pendingChangeSet.impacts" :key="impact.chapter_id">{{ impact.title }}：{{ impact.reason }}</li>
+                </ul>
+                <div class="change-set-actions">
+                  <button type="button" :disabled="busy || !pendingTemplateUpgradeMatches" @click="applyTemplateUpgrade">由 Owner 应用并开始复核</button>
+                  <button type="button" :disabled="busy" @click="rejectTemplateUpgrade">驳回评估</button>
+                </div>
+                <p v-if="!pendingTemplateUpgradeMatches" class="muted">模板草稿或理由已变化；请重新创建评估后再应用。</p>
               </section>
             </template>
           </template>
@@ -443,6 +471,8 @@ const templateCopyPreview = ref<TemplateMigrationPreview | null>(null)
 const templateCopyPreviewFingerprint = ref('')
 const templateCopyBusy = ref(false)
 const templateCopyNotice = ref('')
+const templateUpgradeReason = ref('')
+const pendingTemplateUpgrade = ref<{ fingerprint: string; reason: string } | null>(null)
 const chapters = ref<Chapter[]>([])
 const assets = ref<Asset[]>([])
 const selectedAssetIds = ref<string[]>([])
@@ -535,6 +565,9 @@ const templateCopyChanged = computed(() => {
 })
 const templateCopyPreviewCurrent = computed(() => !!templateCopyPreview.value &&
   templateCopyPreviewFingerprint.value === templateCopyFingerprint.value)
+const pendingTemplateUpgradeMatches = computed(() => !!pendingChangeSet.value?.template_upgrade && !!pendingTemplateUpgrade.value &&
+  pendingTemplateUpgrade.value.fingerprint === templateCopyFingerprint.value &&
+  pendingTemplateUpgrade.value.reason === templateUpgradeReason.value.trim())
 const bodyChanged = computed(() => !!workingCopy.value && bodyDraft.value !== workingCopy.value.body_markdown)
 const pendingDraftMatches = computed(() => {
   if (!pendingDraft.value) return false
@@ -614,6 +647,66 @@ async function saveTemplateCopy() {
     templateCopyNotice.value = `已保存为第 ${result.data.template_copy_version} 版；旧版本仍保留。`
   } catch (error) { failure(error) }
   finally { templateCopyBusy.value = false }
+}
+async function createTemplateUpgradeChangeSet() {
+  if (!project.value || project.value.status !== 'active' || !templateCopyChanged.value || !templateUpgradeReason.value.trim() || templateCopyBusy.value || pendingChangeSet.value?.status === 'assessed') return
+  const definition = templateCopyInput()
+  if (!definition) return
+  templateCopyBusy.value = true
+  templateCopyNotice.value = ''
+  errorMessage.value = ''
+  const input = {
+    expected_context_revision: project.value.current_context_revision,
+    fields: {},
+    affected_chapter_ids: [],
+    reason: templateUpgradeReason.value.trim(),
+    template_upgrade: { ...definition, field_values: {} },
+  }
+  try {
+    const result = await createChangeSet(project.value.id, input, operationKey(`template-upgrade:${project.value.id}`, input))
+    pendingChangeSet.value = result.data
+    pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: templateUpgradeReason.value.trim() }
+    templateCopyPreview.value = result.data.template_upgrade?.preview ?? null
+    templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+    templateCopyNotice.value = '已生成升级评估；当前模板未变更，需由 Owner 应用后才会生效。'
+  } catch (error) { failure(error) }
+  finally { templateCopyBusy.value = false }
+}
+async function applyTemplateUpgrade() {
+  if (!project.value || busy.value || !pendingChangeSet.value?.template_upgrade || !pendingTemplateUpgradeMatches.value) return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const changeSetId = pendingChangeSet.value.id
+  const applyKey = operationKey(`change-set-apply:${id}:${changeSetId}`, { change_set_id: changeSetId })
+  try {
+    const applied = await applyChangeSet(id, changeSetId, applyKey)
+    attempts.delete(`change-set-apply:${id}:${changeSetId}`)
+    pendingChangeSet.value = null
+    pendingTemplateUpgrade.value = null
+    await selectProject(id, true, true)
+    lastChangeSet.value = applied.data
+    templateCopyNotice.value = `模板升级已应用为第 ${project.value?.template_copy_version ?? ''} 版；受影响章节需重新确认。`
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
+}
+async function rejectTemplateUpgrade() {
+  if (!project.value || busy.value || !pendingChangeSet.value?.template_upgrade) return
+  busy.value = true
+  errorMessage.value = ''
+  const id = project.value.id
+  const changeSetId = pendingChangeSet.value.id
+  const rejectKey = operationKey(`change-set-reject:${id}:${changeSetId}`, { change_set_id: changeSetId })
+  try {
+    const rejected = await rejectChangeSet(id, changeSetId, rejectKey)
+    attempts.delete(`change-set-reject:${id}:${changeSetId}`)
+    pendingChangeSet.value = null
+    pendingTemplateUpgrade.value = null
+    templateUpgradeReason.value = ''
+    await selectProject(id, true, true)
+    lastChangeSet.value = rejected.data
+  } catch (error) { failure(error) }
+  finally { busy.value = false }
 }
 function citationUsageDraft(sourceId: string): CitationUsage {
   return citationUsageDrafts.value[sourceId] ??= { source_id: sourceId, purpose: '', limitation: '' }
@@ -727,10 +820,10 @@ async function create() {
   finally { busy.value = false }
 }
 
-async function selectProject(id: string, force = false) {
-  if (!force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value || (project.value?.id !== id && templateCopyChanged.value)) &&
+async function selectProject(id: string, force = false, skipConfirm = false) {
+  if (!skipConfirm && !force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value || (project.value?.id !== id && templateCopyChanged.value)) &&
       !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
-  if (force && (specChanged.value || chapterChanged.value || templateCopyChanged.value) &&
+  if (!skipConfirm && force && (specChanged.value || chapterChanged.value || templateCopyChanged.value) &&
       !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
   if (generationTimer) clearTimeout(generationTimer)
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
@@ -740,6 +833,10 @@ async function selectProject(id: string, force = false) {
   generationCandidates.value = []
   adoptionOpen.value = false
   errorMessage.value = ''
+  pendingChangeSet.value = null
+  pendingDraft.value = null
+  pendingTemplateUpgrade.value = null
+  templateUpgradeReason.value = ''
   try {
     const result = await getProject(id)
     project.value = result.data
@@ -750,6 +847,15 @@ async function selectProject(id: string, force = false) {
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
     const changeSetsResult = await listChangeSets(id)
+    const assessedTemplateUpgrade = [...(changeSetsResult.data ?? [])].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
+    if (assessedTemplateUpgrade?.template_upgrade) {
+      templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
+      templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
+      templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+      templateUpgradeReason.value = assessedTemplateUpgrade.reason
+      pendingChangeSet.value = assessedTemplateUpgrade
+      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason }
+    }
     assets.value = assetResult.data ?? []
     selectedAssetIds.value = readyAssets.value.map(item => item.id)
     // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：

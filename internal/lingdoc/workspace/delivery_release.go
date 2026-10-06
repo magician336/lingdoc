@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // deliveryHistoryLimit 是交付历史列表的上限，快照与产物共用。契约 §3：列表面向
@@ -24,10 +26,11 @@ const deliveryHistoryLimit = 50
 // 这一层就是那些领域函数的组装点：没有它，T13 的检查与冻结在仓里没有一个生产调用者，
 // 「T12→T13」也就只是两套类型相邻摆着。
 type DeliveryReleaseService struct {
-	inputs  *candidateadoption.DeliveryInputService
-	builder DeliveryInputAssembler
-	store   delivery.SnapshotStore
-	freezes delivery.FreezeRecorder
+	inputs       *candidateadoption.DeliveryInputService
+	builder      DeliveryInputAssembler
+	store        delivery.SnapshotStore
+	freezes      delivery.FreezeRecorder
+	dispositions ValidationIssueDispositionCore
 }
 
 // NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
@@ -36,7 +39,7 @@ type DeliveryReleaseService struct {
 // 快照库还必须能记「哪一次动作冻了它」（delivery.FreezeRecorder）。契约把
 // Idempotency-Key 标成 /releases 的必填头，退化成「照冻不误」就等于收下了这个头
 // 却不当回事：一次超时重试会在交付历史里多出一条，而调用方以为自己只冻过一次。
-func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore) *DeliveryReleaseService {
+func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, dispositionCores ...ValidationIssueDispositionCore) *DeliveryReleaseService {
 	if inputs == nil || builder == nil || store == nil {
 		return nil
 	}
@@ -44,7 +47,11 @@ func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, b
 	if !ok {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes}
+	service := &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes}
+	if len(dispositionCores) > 0 {
+		service.dispositions = dispositionCores[0]
+	}
+	return service
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -57,7 +64,11 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 	if err != nil {
 		return delivery.CheckResult{}, err
 	}
-	return delivery.Evaluate(input), nil
+	result := delivery.Evaluate(input)
+	if err := s.attachIssueDispositions(ctx, actorID, projectID, &result); err != nil {
+		return delivery.CheckResult{}, err
+	}
+	return result, nil
 }
 
 // TemplateCheck returns the shared declarative evaluator's evidence for the
@@ -113,11 +124,101 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
+	if err := s.attachIssueDispositions(ctx, actorID, projectID, &snapshot.Check); err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
 	recorded, replayed, err := s.freezes.RecordFreeze(snapshot, attempt, requestHash)
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
 	return recorded, replayed, nil
+}
+
+// SetIssueDisposition reevaluates the current issue at the caller's expected
+// project version, derives its immutable rule/target binding server-side, then
+// lets workspacecore recheck the write permission and append the audit event.
+func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorID, projectID, issueID, key string, request IssueDispositionRequest) (ValidationIssueDisposition, bool, error) {
+	if s == nil || s.dispositions == nil || strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(issueID) == "" {
+		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidState
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID == 0 || caller.UserID == "" || caller.UserID != actorID {
+		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidRequest
+	}
+	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
+	replayedBody, _, replayed, found, err := s.dispositions.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key,
+		request.Action, request.Reason, request.ExpectedProjectVersion)
+	if err != nil {
+		return ValidationIssueDisposition{}, replayed, err
+	}
+	if found {
+		var replayedDisposition ValidationIssueDisposition
+		if err := json.Unmarshal(replayedBody, &replayedDisposition); err != nil {
+			return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
+		}
+		return replayedDisposition, replayed, nil
+	}
+	result, err := s.Check(ctx, actorID, projectID, request.ExpectedProjectVersion)
+	if err != nil {
+		return ValidationIssueDisposition{}, false, err
+	}
+	var current *delivery.CheckIssue
+	for index := range result.Issues {
+		if result.Issues[index].ID == issueID {
+			current = &result.Issues[index]
+			break
+		}
+	}
+	if current == nil {
+		return ValidationIssueDisposition{}, false, candidateadoption.ErrVersionConflict
+	}
+	projectVersion := int64(result.ProjectVersion)
+	binding := ValidationIssueBinding{IssueID: current.ID, RuleID: current.RuleID, RulesetHash: current.RulesetHash,
+		Severity: current.Severity, TargetID: current.TargetID, TargetVersion: cloneIssueVersion(current.TargetVersion), ProjectVersion: projectVersion}
+	input := ValidationIssueDispositionInput{ExpectedProjectVersion: projectVersion, ValidationIssueBinding: binding, Action: request.Action, Reason: request.Reason}
+	raw, _, replayed, err := s.dispositions.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ValidationIssueDisposition{}, replayed, err
+	}
+	var disposition ValidationIssueDisposition
+	if err := json.Unmarshal(raw, &disposition); err != nil {
+		return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
+	}
+	return disposition, replayed, nil
+}
+
+func (s *DeliveryReleaseService) attachIssueDispositions(ctx context.Context, actorID, projectID string, result *delivery.CheckResult) error {
+	if s == nil || s.dispositions == nil || result == nil || len(result.Issues) == 0 {
+		return nil
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID == 0 || caller.UserID == "" || caller.UserID != actorID {
+		return candidateadoption.ErrInvalidRequest
+	}
+	bindings := make([]ValidationIssueBinding, 0, len(result.Issues))
+	for _, issue := range result.Issues {
+		bindings = append(bindings, ValidationIssueBinding{IssueID: issue.ID, RuleID: issue.RuleID, RulesetHash: issue.RulesetHash,
+			Severity: issue.Severity, TargetID: issue.TargetID, TargetVersion: cloneIssueVersion(issue.TargetVersion), ProjectVersion: int64(result.ProjectVersion)})
+	}
+	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
+	current, err := s.dispositions.ValidationIssueDispositions(ctx, actor, projectID, bindings)
+	if err != nil {
+		return err
+	}
+	for index := range result.Issues {
+		if disposition, ok := current[result.Issues[index].ID]; ok {
+			result.Issues[index].Disposition = &delivery.IssueDisposition{Action: disposition.Action, Reason: disposition.Reason, ActorID: disposition.ActorID, CreatedAt: disposition.CreatedAt}
+		}
+	}
+	return nil
+}
+
+func cloneIssueVersion(version *string) *string {
+	if version == nil {
+		return nil
+	}
+	copy := *version
+	return &copy
 }
 
 // freezeRequestHash 是这次动作请求体的规范指纹。契约 §6 要求把它与键一起记下：

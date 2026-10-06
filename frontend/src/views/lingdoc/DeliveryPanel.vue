@@ -2,9 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { Chapter, Project } from '@/api/lingdoc/workspace'
 import {
-  checkDelivery, checkTemplate, downloadExport, getExport, getRelease, listExports, listReleases, newDeliveryKey,
+  checkDelivery, checkTemplate, downloadExport, getExport, getRelease, listExports, listReleases, newDeliveryKey, setIssueDisposition,
   prepareRelease, startExport,
-  type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot, type TemplateCheckResult,
+  type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot, type TemplateCheckResult, type ValidationIssueDisposition,
 } from '@/api/lingdoc/delivery'
 import { canExportSnapshot, currencyOf, issueTargetLabel, viewOf, type Currency } from './deliveryState'
 
@@ -69,6 +69,9 @@ const errorMessage = ref('')
 
 /** 冻结：同一个待冻结状态重试时复用同一个键，成功之后下一次冻结是一个新动作。 */
 const freezeAttempt = ref<{ signature: string; key: string } | null>(null)
+const dispositionActions = ref<Record<string, ValidationIssueDisposition['action']>>({})
+const dispositionReasons = ref<Record<string, string>>({})
+const dispositionAttempts = new Map<string, { signature: string; key: string }>()
 
 /** 导出：每个快照各自一条。键在成功后清掉，所以「再导一份」是新动作而不是重放。 */
 const exportAttempts = new Map<string, { signature: string; key: string }>()
@@ -245,6 +248,44 @@ async function runTemplateCheck() {
   } finally { pending.value = '' }
 }
 
+function dispositionKey(issueId: string, expected: number, action: string, reason: string): string {
+  const signature = JSON.stringify({ project: props.project.id, issueId, expected, action, reason })
+  const previous = dispositionAttempts.get(issueId)
+  if (previous?.signature === signature) return previous.key
+  const key = newDeliveryKey()
+  dispositionAttempts.set(issueId, { signature, key })
+  return key
+}
+
+async function submitDisposition(issue: CheckResult['issues'][number]) {
+  if (busy.value || issue.disposition) return
+  const projectId = props.project.id
+  const expected = props.project.project_version
+  const action = dispositionActions.value[issue.id] || 'dismiss'
+  const reason = (dispositionReasons.value[issue.id] || '').trim()
+  if (!reason) {
+    errorMessage.value = '请填写处置原因。'
+    return
+  }
+  if (action === 'waive' && issue.severity === 'blocking') {
+    errorMessage.value = '阻断问题不能豁免。'
+    return
+  }
+  pending.value = `issue:${issue.id}`
+  errorMessage.value = ''
+  try {
+    await setIssueDisposition(projectId, issue.id, expected, action, reason,
+      dispositionKey(issue.id, expected, action, reason))
+    dispositionAttempts.delete(issue.id)
+    const refreshed = await checkDelivery(projectId, expected)
+    if (projectId !== props.project.id) return
+    checks.value = refreshed.data
+  } catch (error) {
+    if (projectId !== props.project.id) return
+    if (!recoverVersionConflict(error)) fail(error, '提交问题处置失败；请检查权限和当前版本后重试。')
+  } finally { pending.value = '' }
+}
+
 async function freeze() {
   if (busy.value) return
   const projectId = props.project.id
@@ -394,6 +435,24 @@ watch(
             {{ issue.severity === 'blocking' ? '阻断' : '提示' }}
           </em>
           <p>{{ issue.message }}</p>
+          <p v-if="issue.disposition" class="delivery__disposition">
+            已记录「{{ issue.disposition.action }}」：{{ issue.disposition.reason }} · {{ issue.disposition.actor_id }}
+          </p>
+          <div v-else class="delivery__disposition-form">
+            <label>处理方式
+              <select v-model="dispositionActions[issue.id]" :disabled="busy">
+                <option value="resolve">已修复</option>
+                <option value="dismiss">误报 / 不适用</option>
+                <option value="waive" :disabled="issue.severity === 'blocking'">接受风险（非阻断）</option>
+              </select>
+            </label>
+            <label>原因
+              <input v-model="dispositionReasons[issue.id]" :disabled="busy" maxlength="2000" placeholder="说明处置依据" />
+            </label>
+            <button type="button" :disabled="busy || !dispositionReasons[issue.id]?.trim()" @click="submitDisposition(issue)">
+              {{ pending === `issue:${issue.id}` ? '提交中…' : '记录处置' }}
+            </button>
+          </div>
         </li>
       </ul>
       <p v-else class="muted">没有发现问题。</p>
@@ -509,6 +568,10 @@ watch(
 .delivery__severity { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: #eef2f0; color: #4a564f; font-size: 12px; font-style: normal; }
 .delivery__severity--blocking { background: #fdecea; color: #b3261e; }
 .delivery__issues p { margin: 4px 0; }
+.delivery__disposition-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 8px; }
+.delivery__disposition-form label { display: grid; gap: 4px; }
+.delivery__disposition-form input { min-width: 220px; }
+.delivery__disposition { color: #52616b; font-size: 0.92em; }
 .delivery__history { margin: 12px 0 0; padding: 0; list-style: none; }
 .delivery__snapshot { margin-bottom: 14px; padding: 16px; border: 1px solid #dbe5dd; border-radius: 10px; background: #fff; }
 .delivery__snapshot-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }

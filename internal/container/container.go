@@ -532,8 +532,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (workspace.ReleaseApplication, error) {
-		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots)
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService) (workspace.ReleaseApplication, error) {
+		var dispositions []workspace.ValidationIssueDispositionCore
+		if core, ok := projects.(workspace.ValidationIssueDispositionCore); ok {
+			dispositions = append(dispositions, core)
+		}
+		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, dispositions...)
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫

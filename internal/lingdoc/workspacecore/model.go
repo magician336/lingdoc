@@ -116,6 +116,34 @@ type AuditEvent struct {
 	Reason     string           `json:"reason,omitempty"`
 }
 
+// ValidationIssueBinding pins a disposition to the exact rule, target, and
+// version that was evaluated. A changed ruleset or target version therefore
+// cannot inherit an old human decision.
+type ValidationIssueBinding struct {
+	IssueID        string  `json:"issue_id"`
+	RuleID         string  `json:"rule_id"`
+	RulesetHash    string  `json:"ruleset_hash"`
+	Severity       string  `json:"severity"`
+	TargetID       string  `json:"target_id"`
+	TargetVersion  *string `json:"target_version"`
+	ProjectVersion int64   `json:"project_version"`
+}
+
+type ValidationIssueDispositionInput struct {
+	ExpectedProjectVersion int64 `json:"expected_project_version"`
+	ValidationIssueBinding
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+}
+
+type ValidationIssueDisposition struct {
+	ValidationIssueBinding
+	Action    string    `json:"action"`
+	Reason    string    `json:"reason"`
+	ActorID   string    `json:"actor_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type OwnerTransfer struct {
 	ID                     string     `json:"id"`
 	ProjectID              string     `json:"project_id"`
@@ -177,8 +205,44 @@ type ChangeSet struct {
 	TargetSpecRevision    *int64             `json:"target_spec_revision,omitempty"`
 	Fields                []ChangeFieldDelta `json:"fields"`
 	Impacts               []ChangeImpact     `json:"impacts"`
+	TemplateUpgrade       *TemplateUpgrade   `json:"template_upgrade,omitempty"`
 	CreatedAt             time.Time          `json:"created_at"`
 	AppliedAt             *time.Time         `json:"applied_at,omitempty"`
+}
+
+// TemplateUpgrade pins the exact project-copy definition proposed by an
+// active-project ChangeSet. It is persisted with the ChangeSet, so apply never
+// trusts a definition resent by the browser after review.
+type TemplateUpgrade struct {
+	BaseTemplateCopyVersion int64                    `json:"base_template_copy_version"`
+	Definition              lingdoctemplate.Template `json:"definition"`
+	FieldValues             map[string]string        `json:"field_values"`
+	Preview                 TemplateMigrationPreview `json:"preview"`
+	Impact                  TemplateUpgradeImpact    `json:"impact"`
+}
+
+// TemplateUpgradeImpact makes the non-field consequences reviewable before
+// an owner applies the new copy. Frozen deliveries remain immutable history;
+// checks and dispositions are reevaluated against the new revision.
+type TemplateUpgradeImpact struct {
+	AffectedFieldIDs                  []string `json:"affected_field_ids"`
+	AffectedSectionIDs                []string `json:"affected_section_ids"`
+	AffectedChapterIDs                []string `json:"affected_chapter_ids"`
+	InvalidatedConfirmationChapterIDs []string `json:"invalidated_confirmation_chapter_ids"`
+	ChangedRuleIDs                    []string `json:"changed_rule_ids"`
+	ValidationIssueEffect             string   `json:"validation_issue_effect"`
+	DeliverySnapshotEffect            string   `json:"delivery_snapshot_effect"`
+}
+
+type TemplateUpgradeInput struct {
+	ExpectedProjectVersion      int64                     `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64                     `json:"expected_template_copy_version"`
+	Fields                      []lingdoctemplate.Field   `json:"fields"`
+	Sections                    []lingdoctemplate.Section `json:"sections"`
+	Terms                       []lingdoctemplate.Term    `json:"terms"`
+	RequiredFields              []string                  `json:"required_fields"`
+	Rules                       []lingdoctemplate.Rule    `json:"rules"`
+	FieldValues                 map[string]string         `json:"field_values,omitempty"`
 }
 
 type CreateChangeSetInput struct {
@@ -186,6 +250,7 @@ type CreateChangeSetInput struct {
 	Fields                  map[string]ChangeFieldInput `json:"fields"`
 	AffectedChapterIDs      []string                    `json:"affected_chapter_ids"`
 	Reason                  string                      `json:"reason"`
+	TemplateUpgrade         *TemplateUpgradeInput       `json:"template_upgrade,omitempty"`
 }
 
 type TemplateMigrationField struct {

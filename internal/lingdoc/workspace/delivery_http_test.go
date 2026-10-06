@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -139,6 +142,110 @@ func TestDeliveryRoutesFreezeAReleaseAndReadItBack(t *testing.T) {
 	}
 	if readBack.ID != snapshot.ID || readBack.SnapshotDigest != snapshot.SnapshotDigest || !readBack.IsCurrent {
 		t.Fatalf("read back %+v, want %s unchanged and current", readBack, snapshot.ID)
+	}
+}
+
+func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
+	handler, db, _ := seedBoundSource(t)
+	seedDeliveryWorkspace(t, db, deliveryEmptyChapter(), deliveryMethodChapter())
+	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS lingdoc_operations (
+			tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, operation TEXT NOT NULL,
+			target TEXT NOT NULL, key TEXT NOT NULL, body_hash TEXT NOT NULL,
+			response_json TEXT NOT NULL, response_code INTEGER NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (tenant_id, user_id, operation, target, key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
+			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare workspacecore persistence: %v", err)
+		}
+	}
+	core, ok := handler.Service().(*Service)
+	if !ok {
+		t.Fatalf("workspace application = %T, want *Service", handler.Service())
+	}
+	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
+	release := NewDeliveryReleaseService(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), core)
+	router := deliveryRoutes(NewDeliveryHandler(release))
+	request := deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, "")
+	request = request.WithContext(context.WithValue(request.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	checked := deliveryServe(router, request)
+	if checked.Code != http.StatusOK {
+		t.Fatalf("POST checks = %d: %s", checked.Code, checked.Body.String())
+	}
+	var result delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, checked).Data, &result); err != nil || result.Status != delivery.CheckBlocked || len(result.Issues) == 0 {
+		t.Fatalf("check = %+v err=%v, want actionable blocked issues", result, err)
+	}
+	issue := result.Issues[0]
+	dispositionRequest := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"dismiss","reason":"经核对属于不适用项"}`, "issue-action-001")
+	dispositionRequest = dispositionRequest.WithContext(context.WithValue(dispositionRequest.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	response := deliveryServe(router, dispositionRequest)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("POST issue disposition = %d: %s", response.Code, response.Body.String())
+	}
+	var stored ValidationIssueDisposition
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, response).Data, &stored); err != nil || stored.IssueID != issue.ID || stored.ProjectVersion != 8 || stored.Reason != "经核对属于不适用项" {
+		t.Fatalf("stored disposition = %+v err=%v", stored, err)
+	}
+
+	request = deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, "")
+	request = request.WithContext(context.WithValue(request.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	checkedAgain := deliveryServe(router, request)
+	if checkedAgain.Code != http.StatusOK {
+		t.Fatalf("repeat check = %d: %s", checkedAgain.Code, checkedAgain.Body.String())
+	}
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, checkedAgain).Data, &result); err != nil || result.Status != delivery.CheckBlocked {
+		t.Fatalf("disposition changed the blocking gate: result=%+v err=%v", result, err)
+	}
+	var found bool
+	for _, current := range result.Issues {
+		if current.ID == issue.ID {
+			found = current.Disposition != nil && current.Disposition.Action == "dismiss"
+		}
+	}
+	if !found {
+		t.Fatal("current check did not expose the persisted matching disposition")
+	}
+	retry := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"dismiss","reason":"经核对属于不适用项"}`, "issue-action-001")
+	retry = retry.WithContext(context.WithValue(retry.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	retryResponse := deliveryServe(router, retry)
+	if retryResponse.Code != http.StatusCreated || !decodeDeliveryEnvelope(t, retryResponse).Meta.Replayed {
+		t.Fatalf("same-key retry = %d replay=%v: %s", retryResponse.Code, decodeDeliveryEnvelope(t, retryResponse).Meta.Replayed, retryResponse.Body.String())
+	}
+
+	duplicate := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"resolve","reason":"第二次处理"}`, "issue-action-002")
+	duplicate = duplicate.WithContext(context.WithValue(duplicate.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	if response := deliveryServe(router, duplicate); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("duplicate action = %d, want 422: %s", response.Code, response.Body.String())
+	}
+
+	frozen := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/releases", deliveryReadVersionBody, deliveryFreezeKey))
+	if frozen.Code != http.StatusCreated {
+		t.Fatalf("POST releases = %d: %s", frozen.Code, frozen.Body.String())
+	}
+	var snapshot delivery.ReleaseSnapshot
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, frozen).Data, &snapshot); err != nil || snapshot.Check.Status != delivery.CheckBlocked {
+		t.Fatalf("frozen disposition gate = %+v err=%v", snapshot.Check, err)
+	}
+	if err := db.Exec("UPDATE lingdoc_projects SET project_version = project_version + 1 WHERE id = ?", "project-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	lateRetry := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"dismiss","reason":"经核对属于不适用项"}`, "issue-action-001")
+	lateRetry = lateRetry.WithContext(context.WithValue(lateRetry.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	lateResponse := deliveryServe(router, lateRetry)
+	if lateResponse.Code != http.StatusCreated || !decodeDeliveryEnvelope(t, lateResponse).Meta.Replayed {
+		t.Fatalf("late same-key retry after project advanced = %d: %s", lateResponse.Code, lateResponse.Body.String())
 	}
 }
 

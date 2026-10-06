@@ -45,10 +45,16 @@ type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 type TemplateField = core.TemplateField
 type ChangeSet = core.ChangeSet
+type TemplateUpgrade = core.TemplateUpgrade
+type TemplateUpgradeInput = core.TemplateUpgradeInput
+type TemplateUpgradeImpact = core.TemplateUpgradeImpact
 type ChangeImpact = core.ChangeImpact
 type ChangeFieldInput = core.ChangeFieldInput
 type ChangeFieldDelta = core.ChangeFieldDelta
 type CreateChangeSetInput = core.CreateChangeSetInput
+type ValidationIssueBinding = core.ValidationIssueBinding
+type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
+type ValidationIssueDisposition = core.ValidationIssueDisposition
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

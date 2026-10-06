@@ -6,6 +6,9 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func seedActiveG3Project(t *testing.T, svc *Service, actor Actor) Project {
@@ -76,6 +79,159 @@ func TestChangeSetApplyAdvancesRevisionAndInvalidatesImpacts(t *testing.T) {
 	if err := json.Unmarshal(raw, &applied); err != nil || applied.Status != "applied" || applied.TargetContextRevision == nil || *applied.TargetContextRevision != 2 {
 		t.Fatalf("applied changeset: %+v %v", applied, err)
 	}
+}
+
+func TestActiveTemplateCopyUpgradeUsesOwnerChangeSetAndKeepsHistory(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-template-upgrade.db"))
+	owner := Actor{TenantID: 309, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, owner)
+	if project.TemplateCopy == nil || project.TemplateCopy.Status != TemplateCopyBound {
+		t.Fatalf("active project has no bound template copy: %+v", project.TemplateCopy)
+	}
+	chapters, err := svc.ListChapters(context.Background(), owner, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	fields := append([]lingdoctemplate.Field{}, project.TemplateCopy.Definition.Fields...)
+	fields[0].Label += "（升级）"
+	upgrade := &TemplateUpgradeInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		Fields: fields, Sections: append([]lingdoctemplate.Section{}, project.TemplateCopy.Definition.Sections...),
+		Terms:          append([]lingdoctemplate.Term{}, project.TemplateCopy.Definition.Terms...),
+		RequiredFields: append([]string{}, project.TemplateCopy.Definition.RequiredFields...),
+		Rules:          append([]lingdoctemplate.Rule{}, project.TemplateCopy.Definition.Rules...),
+	}
+	if _, _, _, err := svc.SaveTemplateCopy(context.Background(), owner, project.ID, "g3-active-copy-write", TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		Fields: upgrade.Fields, Sections: upgrade.Sections, Terms: upgrade.Terms,
+		RequiredFields: upgrade.RequiredFields, Rules: upgrade.Rules,
+	}); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("direct active copy edit error = %v, want ErrInvalidState", err)
+	}
+	createdRaw, status, replay, err := svc.CreateChangeSet(context.Background(), owner, project.ID, "g3-template-upgrade-create", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "按团队评审更新章节和字段显示名", TemplateUpgrade: upgrade,
+	})
+	if err != nil || status != 201 || replay {
+		t.Fatalf("create template ChangeSet: status=%d replay=%v err=%v", status, replay, err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(createdRaw, &change); err != nil || change.TemplateUpgrade == nil || len(change.Impacts) != len(chapters) {
+		t.Fatalf("template ChangeSet preview: impacts=%d upgrade=%+v err=%v", len(change.Impacts), change.TemplateUpgrade, err)
+	}
+	impact := change.TemplateUpgrade.Impact
+	if len(impact.AffectedChapterIDs) != len(chapters) || len(impact.AffectedFieldIDs) != 1 || impact.AffectedFieldIDs[0] != fields[0].ID ||
+		impact.ValidationIssueEffect == "" || impact.DeliverySnapshotEffect == "" {
+		t.Fatalf("template upgrade impact is incomplete: %+v", impact)
+	}
+	if _, status, replay, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "g3-template-upgrade-apply"); err != nil || status != 200 || replay {
+		t.Fatalf("apply template ChangeSet: status=%d replay=%v err=%v", status, replay, err)
+	}
+	updated, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil || updated.CurrentContextRevision != project.CurrentContextRevision+1 || updated.SpecRevision != project.SpecRevision+1 || updated.TemplateCopyVersion != project.TemplateCopyVersion+1 {
+		t.Fatalf("project after template upgrade: revision=%d spec=%d copy=%d err=%v", updated.CurrentContextRevision, updated.SpecRevision, updated.TemplateCopyVersion, err)
+	}
+	if updated.TemplateCopy.Definition.Fields[0].Label != fields[0].Label || updated.TemplateCopy.Status != TemplateCopyBound {
+		t.Fatalf("new template copy not bound: %+v", updated.TemplateCopy)
+	}
+	oldCopy, err := svc.GetTemplateCopy(context.Background(), owner, project.ID, project.TemplateCopyVersion)
+	if err != nil || oldCopy.Status != TemplateCopySuperseded || oldCopy.Definition.Fields[0].Label == fields[0].Label {
+		t.Fatalf("old template copy history was not retained: %+v err=%v", oldCopy, err)
+	}
+}
+
+func TestTemplateUpgradeRejectsUnmappedRequiredField(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-template-upgrade-required.db"))
+	owner := Actor{TenantID: 310, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, owner)
+	fields := append([]lingdoctemplate.Field{}, project.TemplateCopy.Definition.Fields...)
+	newField := fields[0]
+	newField.ID, newField.Label, newField.Required = "new_required", "新增必填字段", true
+	fields = append(fields, newField)
+	required := append(append([]string{}, project.TemplateCopy.Definition.RequiredFields...), "new_required")
+	_, _, _, err := svc.CreateChangeSet(context.Background(), owner, project.ID, "g3-template-upgrade-missing", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "新增必填字段",
+		TemplateUpgrade: &TemplateUpgradeInput{ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+			Fields: fields, Sections: append([]lingdoctemplate.Section{}, project.TemplateCopy.Definition.Sections...),
+			Terms: append([]lingdoctemplate.Term{}, project.TemplateCopy.Definition.Terms...), RequiredFields: required,
+			Rules: append([]lingdoctemplate.Rule{}, project.TemplateCopy.Definition.Rules...)},
+	})
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("unmapped required field error = %v, want ErrInvalidRequest", err)
+	}
+}
+
+func TestTemplateUpgradeApplyRejectsStaleOrRevokedAndRollsBackMidWrite(t *testing.T) {
+	newAssessedUpgrade := func(t *testing.T, name string) (*Service, Actor, Project, ChangeSet) {
+		t.Helper()
+		svc := testStore(t, filepath.Join(t.TempDir(), name+".db"))
+		owner := Actor{TenantID: 311, UserID: "owner", Role: types.TenantRoleOwner}
+		project := seedActiveG3Project(t, svc, owner)
+		fields := append([]lingdoctemplate.Field{}, project.TemplateCopy.Definition.Fields...)
+		fields[0].Label += "（升级）"
+		raw, _, _, err := svc.CreateChangeSet(context.Background(), owner, project.ID, name+"-create", CreateChangeSetInput{
+			ExpectedContextRevision: project.CurrentContextRevision, Reason: "评审后的模板副本更新",
+			TemplateUpgrade: &TemplateUpgradeInput{ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+				Fields: fields, Sections: append([]lingdoctemplate.Section{}, project.TemplateCopy.Definition.Sections...),
+				Terms: append([]lingdoctemplate.Term{}, project.TemplateCopy.Definition.Terms...), RequiredFields: append([]string{}, project.TemplateCopy.Definition.RequiredFields...),
+				Rules: append([]lingdoctemplate.Rule{}, project.TemplateCopy.Definition.Rules...)},
+		})
+		if err != nil {
+			t.Fatalf("create %s upgrade: %v", name, err)
+		}
+		var change ChangeSet
+		if err := json.Unmarshal(raw, &change); err != nil {
+			t.Fatal(err)
+		}
+		return svc, owner, project, change
+	}
+
+	t.Run("stale baseline", func(t *testing.T) {
+		svc, owner, project, change := newAssessedUpgrade(t, "template-upgrade-stale")
+		if err := svc.testDB().Exec("UPDATE lingdoc_projects SET current_context_revision = current_context_revision + 1, project_version = project_version + 1 WHERE id = ?", project.ID).Error; err != nil {
+			t.Fatal(err)
+		}
+		raw, status, _, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "template-upgrade-stale-apply")
+		var stale ChangeSet
+		if decodeErr := json.Unmarshal(raw, &stale); decodeErr != nil || err != nil || status != 409 || stale.Status != "stale" {
+			t.Fatalf("stale apply: status=%d change=%+v err=%v decode=%v", status, stale, err, decodeErr)
+		}
+		current, err := svc.GetProject(context.Background(), owner, project.ID)
+		if err != nil || current.TemplateCopyVersion != project.TemplateCopyVersion || current.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash {
+			t.Fatalf("stale apply mutated active copy: %+v err=%v", current.TemplateCopy, err)
+		}
+	})
+
+	t.Run("permission revoked", func(t *testing.T) {
+		svc, owner, project, change := newAssessedUpgrade(t, "template-upgrade-revoked")
+		if err := svc.testDB().Exec("UPDATE lingdoc_member_permissions SET status = 'suspended' WHERE project_id = ? AND user_id = ?", project.ID, owner.UserID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "template-upgrade-revoked-apply"); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("apply after permission loss = %v, want ErrNotFound", err)
+		}
+		var copyVersion int64
+		if err := svc.testDB().Raw("SELECT template_copy_version FROM lingdoc_projects WHERE id = ?", project.ID).Scan(&copyVersion).Error; err != nil || copyVersion != project.TemplateCopyVersion {
+			t.Fatalf("revoked apply changed active copy version to %d (read err=%v)", copyVersion, err)
+		}
+	})
+
+	t.Run("mid-write failure rolls back", func(t *testing.T) {
+		svc, owner, project, change := newAssessedUpgrade(t, "template-upgrade-rollback")
+		if err := svc.testDB().Exec(`CREATE TRIGGER fail_template_copy_insert BEFORE INSERT ON lingdoc_project_template_copies BEGIN SELECT RAISE(ABORT, 'injected insert failure'); END`).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, _, _, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "template-upgrade-rollback-apply"); err == nil {
+			t.Fatal("injected mid-write failure was not returned")
+		}
+		current, err := svc.GetProject(context.Background(), owner, project.ID)
+		if err != nil || current.TemplateCopyVersion != project.TemplateCopyVersion || current.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash {
+			t.Fatalf("failed apply partially changed active copy: %+v err=%v", current.TemplateCopy, err)
+		}
+		stored, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+		if err != nil || stored.Status != "assessed" {
+			t.Fatalf("failed apply changed ChangeSet: %+v err=%v", stored, err)
+		}
+	})
 }
 
 func TestChangeSetStaleApplyDoesNotMutateProject(t *testing.T) {
