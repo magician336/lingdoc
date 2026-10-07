@@ -414,6 +414,12 @@ func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 	if impacts == nil {
 		impacts = []ChangeImpact{}
 	}
+	// ChangeSets created before section_changes became mandatory may decode
+	// with a nil preview slice. Normalize legacy records before returning them
+	// so the JSON API remains safe for clients that read .length.
+	if fieldData.TemplateUpgrade != nil && fieldData.TemplateUpgrade.Preview.SectionChanges == nil {
+		fieldData.TemplateUpgrade.Preview.SectionChanges = []TemplateSectionChange{}
+	}
 	return ChangeSet{ID: row.ID, ProjectID: row.ProjectID, CreatedBy: row.CreatedBy, Reason: row.Reason,
 		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
 		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision,

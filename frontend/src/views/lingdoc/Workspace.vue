@@ -47,7 +47,7 @@
             <p class="template-hash">规则集摘要：{{ project.template_copy.ruleset_hash }}</p>
             <p v-if="project.status === 'active'" class="muted">项目已立项；普通保存不可用。模板改动会创建 ChangeSet，列出受影响章节并由 Owner 确认应用。</p>
             <template v-if="templateCopyDraft">
-              <p class="muted">这里只能调整展示名称；字段 ID、字段类型和规则保持原样。{{ project.status === 'draft' ? '改动先预览，再保存为新的不可变草稿版本。' : '改动需经过模板升级 ChangeSet，应用后旧版本和章节确认历史仍保留。' }}</p>
+              <p class="muted">可编辑字段、章节结构与顺序、术语和声明式规则。字段 ID 与类型保持稳定；{{ project.status === 'draft' ? '改动先预览，再保存为新的不可变草稿版本。' : '改动需经过模板升级 ChangeSet，应用后旧版本和章节确认历史仍保留。' }}</p>
               <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
                 <legend>字段名称</legend>
                 <label v-for="field in templateCopyDraft.fields" :key="field.field_id" class="template-editor__item">
@@ -55,13 +55,31 @@
                   <input v-model="field.label" :aria-label="`${field.field_id} 显示名称`" maxlength="120" />
                 </label>
               </fieldset>
-              <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
-                <legend>章节名称</legend>
-                <label v-for="section in templateCopyDraft.sections" :key="section.section_id" class="template-editor__item">
-                  <span>{{ section.section_id }} <small>· {{ section.required ? '必需章节' : '可选章节' }}</small></span>
-                  <input v-model="section.title" :aria-label="`${section.section_id} 章节名称`" maxlength="120" />
-                </label>
-              </fieldset>
+                <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
+                  <legend>章节名称</legend>
+                  <label v-for="section in templateCopyDraft.sections" :key="section.section_id" class="template-editor__item">
+                    <span>{{ section.section_id }} <small>· {{ section.required ? '必需章节' : '可选章节' }}</small></span>
+                    <input v-model="section.title" :aria-label="`${section.section_id} 章节名称`" maxlength="120" />
+                    <input v-model.number="section.order" type="number" min="1" :aria-label="`${section.section_id} 章节顺序`" />
+                  </label>
+                </fieldset>
+                <fieldset v-if="templateCopyDraft.terms.length" class="template-editor" :disabled="busy || templateCopyBusy">
+                  <legend>术语表</legend>
+                  <label v-for="term in templateCopyDraft.terms" :key="term.term_id" class="template-editor__item">
+                    <span>{{ term.term_id }}</span>
+                    <input v-model="term.preferred" :aria-label="`${term.term_id} 首选术语`" maxlength="120" />
+                    <input :value="term.variants.join('、')" :aria-label="`${term.term_id} 术语变体`" placeholder="变体用逗号分隔" @input="updateTermVariants(term, $event)" />
+                  </label>
+                </fieldset>
+                <fieldset v-if="templateCopyDraft.rules.length" class="template-editor" :disabled="busy || templateCopyBusy">
+                  <legend>声明式规则</legend>
+                  <label v-for="rule in templateCopyDraft.rules" :key="rule.rule_id" class="template-editor__item">
+                    <span>{{ rule.rule_id }} <small>· {{ rule.kind }}</small></span>
+                    <input v-model="rule.severity" :aria-label="`${rule.rule_id} 严重级别`" maxlength="40" />
+                    <input v-model="rule.evaluator" :aria-label="`${rule.rule_id} 评估器`" maxlength="120" />
+                    <input v-model="rule.message" :aria-label="`${rule.rule_id} 规则说明`" maxlength="500" />
+                  </label>
+                </fieldset>
               <label v-if="project.status === 'active'" for="template-upgrade-reason">升级理由</label>
               <input v-if="project.status === 'active'" id="template-upgrade-reason" v-model="templateUpgradeReason" :disabled="busy || templateCopyBusy" maxlength="2000" placeholder="说明模板调整原因" />
               <div class="actions">
@@ -597,6 +615,35 @@ function editableTemplateCopy(definition: NonNullable<Project['template_copy']>[
     required_fields: definition.required_fields ?? [], rules: definition.rules ?? [],
   })) as TemplateCopyDefinition
 }
+function updateTermVariants(term: TemplateCopyDefinition['terms'][number], event: Event) {
+  const value = (event.target as HTMLInputElement | null)?.value ?? ''
+  term.variants = value.split(/[、,，]/).map(item => item.trim()).filter(Boolean)
+}
+function normalizeChangeSet(change: ChangeSet): ChangeSet {
+  if (!change.template_upgrade) return { ...change, fields: change.fields ?? [], impacts: change.impacts ?? [] }
+  const upgrade = change.template_upgrade
+  const preview = upgrade.preview ?? {} as TemplateMigrationPreview
+  const impact = upgrade.impact
+  return {
+    ...change,
+    fields: change.fields ?? [],
+    impacts: change.impacts ?? [],
+    template_upgrade: {
+      ...upgrade,
+      preview: {
+        ...preview,
+        fields: preview.fields ?? [], section_changes: preview.section_changes ?? [],
+        missing_required: preview.missing_required ?? [], orphaned: preview.orphaned ?? [], incompatible: preview.incompatible ?? [],
+      },
+      impact: impact ? {
+        ...impact,
+        affected_field_ids: impact.affected_field_ids ?? [], affected_section_ids: impact.affected_section_ids ?? [],
+        affected_chapter_ids: impact.affected_chapter_ids ?? [], invalidated_confirmation_chapter_ids: impact.invalidated_confirmation_chapter_ids ?? [],
+        changed_rule_ids: impact.changed_rule_ids ?? [],
+      } : undefined,
+    },
+  }
+}
 function templateCopyStatusLabel(status: NonNullable<Project['template_copy']>['status']): string {
   return ({ draft: '草稿', bound: '已绑定', superseded: '已被新版本替代', discarded: '已放弃' })[status]
 }
@@ -664,7 +711,7 @@ async function createTemplateUpgradeChangeSet() {
   }
   try {
     const result = await createChangeSet(project.value.id, input, operationKey(`template-upgrade:${project.value.id}`, input))
-    pendingChangeSet.value = result.data
+    pendingChangeSet.value = normalizeChangeSet(result.data)
     pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: templateUpgradeReason.value.trim() }
     templateCopyPreview.value = result.data.template_upgrade?.preview ?? null
     templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
@@ -847,7 +894,8 @@ async function selectProject(id: string, force = false, skipConfirm = false) {
     chapters.value = chapterResult?.data ?? []
     const assetResult = await listAssets(id)
     const changeSetsResult = await listChangeSets(id)
-    const assessedTemplateUpgrade = [...(changeSetsResult.data ?? [])].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
+    const changeSets = (changeSetsResult.data ?? []).map(normalizeChangeSet)
+    const assessedTemplateUpgrade = [...changeSets].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
     if (assessedTemplateUpgrade?.template_upgrade) {
       templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
       templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
