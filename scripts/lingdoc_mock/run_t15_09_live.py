@@ -360,6 +360,25 @@ def run_live(token: str, source_tenant_id: int, knowledge_base_id: str,
                     "status": "open",
                 })
 
+            # Keep stale-snapshot replay as a separate observation from the
+            # presigned/file download retry above. A consumer must not be able
+            # to read the old release after the source share is revoked.
+            f19_stage = "replay-old-snapshot-after-revocation"
+            status, _, _ = consumer.call("getRelease", {
+                "projectId": project_id, "snapshotId": first_id,
+            })
+            record(f19_steps, f19_stage, status, 403)
+            if status != 403:
+                report["registered_gaps"].append({
+                    "id": "T15-09-R2",
+                    "scenario_step": "F19-18 replay-old-snapshot-after-revocation",
+                    "expected_http": 403,
+                    "actual_http": status,
+                    "owner": "delivery/release authorization owner (T14)",
+                    "related_evidence": "G6-03 / SEC-09",
+                    "status": "open",
+                })
+
             report["scenarios"]["F19"] = {
                 "verdict": "passed" if all(item["verdict"] == "passed" for item in f19_steps) else "failed",
                 "steps": f19_steps,

@@ -1501,12 +1501,20 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		project, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		if err != nil {
 			return err
 		}
-		var err error
 		result, err = tx.Chapters(projectID)
-		return err
+		if err != nil {
+			return err
+		}
+		template, err := s.templates.Get(project.TemplateID, project.TemplateVersion)
+		if err != nil {
+			return err
+		}
+		orderChapters(result, template)
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -1540,6 +1548,12 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 						return nil, ErrSourceUnavailable
 					}
 					result[i].CitationStatuses = append(result[i].CitationStatuses, status)
+					if status.Status == "unavailable" {
+						// A revoked source invalidates the derived chapter read.  Returning
+						// a redacted 200 here leaves a caller with a seemingly readable
+						// chapter list and violates F07's fail-closed contract.
+						return nil, ErrSourceUnavailable
+					}
 					if status.Status != "available" {
 						redact = true
 					}
@@ -1557,6 +1571,36 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 		}
 	}
 	return result, nil
+}
+
+// orderChapters keeps the API order aligned with the template's section order.
+// Section IDs are opaque identifiers; sorting them lexicographically can put a
+// later section before an earlier one (for example, "method" before "question").
+func orderChapters(chapters []Chapter, template Template) {
+	ranks := make(map[string]int, len(template.Sections))
+	for index, section := range template.Sections {
+		ranks[section.ID] = index
+	}
+	slices.SortStableFunc(chapters, func(left, right Chapter) int {
+		leftRank, leftKnown := ranks[left.SectionID]
+		rightRank, rightKnown := ranks[right.SectionID]
+		if leftKnown && rightKnown {
+			if leftRank < rightRank {
+				return -1
+			}
+			if leftRank > rightRank {
+				return 1
+			}
+			return strings.Compare(left.SectionID, right.SectionID)
+		}
+		if leftKnown {
+			return -1
+		}
+		if rightKnown {
+			return 1
+		}
+		return strings.Compare(left.SectionID, right.SectionID)
+	})
 }
 
 var sourceMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)

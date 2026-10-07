@@ -1,0 +1,1443 @@
+{
+  "gate_results": {
+    "G6-01": "PASS",
+    "G6-02": "PASS",
+    "G6-03": "PASS",
+    "G6-04": "PASS",
+    "G6-05": "PASS",
+    "G6-06": "PASS"
+  },
+  "gates": {
+    "G6-01": {
+      "failure_path": {
+        "actual_http": 400,
+        "evidence_refs": [
+          "failure_path",
+          "side_effect_readback"
+        ],
+        "expected_http": 400,
+        "failure_case": "invalid_project_name",
+        "no_formal_side_effect": true,
+        "readback": {
+          "status": "unchanged",
+          "unchanged": true
+        },
+        "result": "PASS",
+        "status": "observed"
+      },
+      "fixture_coverage": {
+        "constructed_complete": true,
+        "constructed_parts": [
+          "asset",
+          "chapter",
+          "check",
+          "download",
+          "export",
+          "project",
+          "release"
+        ],
+        "missing_parts": [],
+        "missing_step_ids": [],
+        "required_parts": [
+          "project",
+          "asset",
+          "chapter",
+          "check",
+          "release",
+          "export",
+          "download"
+        ],
+        "step_counts_complete": true,
+        "step_sequence_complete": true,
+        "unexpected_step_ids": []
+      },
+      "fixture_digest": "c2a0a7e3c2363d2d4c39fe7a026c24d4d704d35519bfd98d2229106c6d101c6b",
+      "fixture_id": "G6-F01-v1",
+      "fixture_state": {},
+      "main_path": {
+        "completed_steps": 23,
+        "result": "PASS",
+        "total_steps": 23,
+        "verification_scope": "http_smoke_only"
+      },
+      "quality_evidence": {
+        "attribution": [
+          "domain_logic"
+        ],
+        "context": {
+          "context_revision": null,
+          "status": "not_available",
+          "target_version": null
+        },
+        "dependency_versions": {
+          "model": "unknown",
+          "weknora": "unknown"
+        },
+        "environment_versions": {
+          "status": "not_observed"
+        },
+        "evidence_refs": [
+          "fixture_coverage",
+          "main_path",
+          "failure_path"
+        ],
+        "evidence_version": 1,
+        "execution_window": {
+          "end": null,
+          "start": null,
+          "status": "not_recorded"
+        },
+        "fixture_digest": "c2a0a7e3c2363d2d4c39fe7a026c24d4d704d35519bfd98d2229106c6d101c6b",
+        "fixture_id": "G6-F01-v1",
+        "input_hash": "3a357629ffe26b76b5d151bc1eff12ac5566a9c8fb7ddd5f12e1a7e31e32df36",
+        "input_summary": {
+          "required_parts": 7
+        },
+        "object_versions": {
+          "status": "not_observed"
+        },
+        "output_hash": "feee6bac30e55d89971abb50f2b04e7c201a4375c03b613e318b05c529e96a0d",
+        "output_summary": {
+          "completed_steps": 23,
+          "failure_side_effect_status": "observed",
+          "fixture_parts_observed": []
+        },
+        "owner": "quality-operations",
+        "permission_snapshot": {
+          "status": "not_observed"
+        },
+        "project_id": "project.id",
+        "result": "PASS",
+        "reviewer": "unassigned",
+        "ruleset_hash": null,
+        "runtime_mode": "real",
+        "template_version": null
+      },
+      "report_version": 1,
+      "result": "PASS",
+      "runtime_mode": "real",
+      "scope": "canonical F01 project-to-download path plus one failure side-effect fixture"
+    },
+    "G6-02": {
+      "dependency_matrix": {
+        "mock": {
+          "missing": [],
+          "required": [
+            "contract"
+          ],
+          "status": "verified",
+          "verified": [
+            "contract"
+          ]
+        },
+        "real": {
+          "missing": [],
+          "required": [
+            "api",
+            "docx",
+            "file",
+            "model",
+            "permissions",
+            "queue",
+            "weknora"
+          ],
+          "status": "verified",
+          "verified": [
+            "api",
+            "docx",
+            "file",
+            "model",
+            "permissions",
+            "queue",
+            "weknora"
+          ]
+        },
+        "real_api_fake_model": {
+          "missing": [],
+          "required": [
+            "api",
+            "file",
+            "permissions",
+            "queue"
+          ],
+          "status": "verified",
+          "verified": [
+            "api",
+            "file",
+            "permissions",
+            "queue"
+          ]
+        }
+      },
+      "fixture_ids": [
+        "G6-F01-v1"
+      ],
+      "modes": [
+        {
+          "dependency_status": "verified",
+          "dependency_versions": {
+            "api": "not_run",
+            "contract": "contract.v1",
+            "docx": "not_run",
+            "model": "not_run",
+            "weknora": "not_run"
+          },
+          "environment_versions": {
+            "platform": "platform.contract",
+            "runtime": "python.contract"
+          },
+          "provider_semantics_status": "not_verified",
+          "result": "PASS",
+          "runtime_mode": "mock",
+          "scenario_evidence": {
+            "key_failure": {
+              "fixture_id": "G6-F01-v1",
+              "http_status": 409,
+              "no_formal_side_effect": true,
+              "readback_status": "unchanged",
+              "result": "PASS"
+            },
+            "main_path": {
+              "completed_steps": 23,
+              "fixture_id": "G6-F01-v1",
+              "result": "PASS",
+              "verification_scope": "contract_fixture_only"
+            }
+          },
+          "verification_scope": "not_recorded"
+        },
+        {
+          "dependency_status": "verified",
+          "dependency_versions": {
+            "api": "lingdoc.api.v1",
+            "file": "local-storage.v1",
+            "model": "g6.fake-model.v1",
+            "permissions": "rbac.v1",
+            "queue": "asynq.v1",
+            "weknora": "weknora.g6"
+          },
+          "environment_versions": {
+            "platform": "docker.linux.amd64",
+            "python": "python3.12",
+            "runtime": "go1.26"
+          },
+          "provider_semantics_status": "verified",
+          "result": "PASS",
+          "runtime_mode": "real_api_fake_model",
+          "scenario_evidence": {
+            "key_failure": {
+              "fixture_id": "G6-F01-v1",
+              "http_status": 400,
+              "no_formal_side_effect": true,
+              "readback_status": "unchanged",
+              "result": "PASS"
+            },
+            "main_path": {
+              "completed_steps": 23,
+              "fixture_id": "G6-F01-v1",
+              "result": "PASS",
+              "verification_scope": "observed"
+            }
+          },
+          "verification_scope": "observed"
+        },
+        {
+          "dependency_status": "verified",
+          "dependency_versions": {
+            "api": "lingdoc.api.v1",
+            "docx": "docx.renderer.v1",
+            "file": "local-storage.v1",
+            "model": "deepseek-chat.v1",
+            "permissions": "rbac.v1",
+            "queue": "asynq.v1",
+            "weknora": "weknora.g6"
+          },
+          "environment_versions": {
+            "platform": "docker.linux.amd64",
+            "python": "python3.12",
+            "runtime": "go1.26"
+          },
+          "provider_semantics_status": "verified",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "scenario_evidence": {
+            "key_failure": {
+              "fixture_id": "G6-F01-v1",
+              "http_status": 400,
+              "no_formal_side_effect": true,
+              "readback_status": "unchanged",
+              "result": "PASS"
+            },
+            "main_path": {
+              "completed_steps": 23,
+              "fixture_id": "G6-F01-v1",
+              "result": "PASS",
+              "verification_scope": "observed"
+            }
+          },
+          "verification_scope": "observed"
+        }
+      ],
+      "quality_evidence": {
+        "attribution": [
+          "domain_logic"
+        ],
+        "context": {
+          "context_revision": null,
+          "status": "not_available",
+          "target_version": null
+        },
+        "dependency_versions": {
+          "model": "unknown",
+          "weknora": "unknown"
+        },
+        "environment_versions": {
+          "status": "not_observed"
+        },
+        "evidence_refs": [
+          "runtime_modes",
+          "dependency_matrix",
+          "modes"
+        ],
+        "evidence_version": 1,
+        "execution_window": {
+          "end": null,
+          "start": null,
+          "status": "not_recorded"
+        },
+        "fixture_digest": "4c848aa1e12948e5a982600b2ca0fd5599224c7b6dcef93171cb0185a6aba32f",
+        "fixture_id": "G6-RUNTIME-MATRIX-01",
+        "input_hash": "877e64bdc5563f201c3cf048fb1e221cdf33b704cd82a899eac5d2f47abb9357",
+        "input_summary": {
+          "mode_count": 3
+        },
+        "object_versions": {
+          "status": "not_observed"
+        },
+        "output_hash": "9991498e8e2dc2f188303af7d83e14eec885c20d262e6e74069db7527e18e206",
+        "output_summary": {
+          "result": "PASS"
+        },
+        "owner": "quality-operations",
+        "permission_snapshot": {
+          "status": "not_observed"
+        },
+        "project_id": "project.id",
+        "result": "PASS",
+        "reviewer": "unassigned",
+        "ruleset_hash": null,
+        "runtime_mode": "mock",
+        "template_version": null
+      },
+      "report_version": 1,
+      "result": "PASS",
+      "runtime_modes": [
+        "mock",
+        "real_api_fake_model",
+        "real"
+      ],
+      "scope": "same scenarios driven independently for each runtime mode",
+      "shared_fixture": true,
+      "verification_scope": "scenario_runner_matrix"
+    },
+    "G6-03": {
+      "cases": [
+        {
+          "action": "stop_source_and_export",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-01"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-01",
+          "name": "revoked_source_read",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "block_export",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-02"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-02",
+          "name": "revoked_export",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "block_download",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-03"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-03",
+          "name": "revoked_download",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "stop_affected_traffic",
+          "actual_http": 404,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-04"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 404,
+          "id": "SEC-04",
+          "name": "cross_tenant_id_substitution",
+          "observed_decision": "deny",
+          "response_digest": "87757ea4a81bfae0724836a1f5a1d4e0120a9012064c74aa4397585aec50357b",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "stop_affected_traffic",
+          "actual_http": 404,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-05"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 404,
+          "id": "SEC-05",
+          "name": "cross_project_id_substitution",
+          "observed_decision": "deny",
+          "response_digest": "87757ea4a81bfae0724836a1f5a1d4e0120a9012064c74aa4397585aec50357b",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "notify_owner",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-06"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-06",
+          "name": "missing_scope",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P1"
+        },
+        {
+          "action": "notify_owner",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-07"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-07",
+          "name": "shared_agent_scope",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P1"
+        },
+        {
+          "action": "notify_security",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-08"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-08",
+          "name": "audit_query_overreach",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P1"
+        },
+        {
+          "action": "block_delivery",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-09"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-09",
+          "name": "stale_snapshot_replay",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "purge_restricted_cache",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-10"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-10",
+          "name": "cache_bypass_after_revocation",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "revoke_download_url",
+          "actual_http": 403,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-11"
+          ],
+          "expected_decision": "deny",
+          "expected_http": 403,
+          "id": "SEC-11",
+          "name": "presigned_url_replay",
+          "observed_decision": "deny",
+          "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P0"
+        },
+        {
+          "action": "retain_audit_access",
+          "actual_http": 200,
+          "attribution": "domain_logic",
+          "evidence_refs": [
+            "security_matrix",
+            "SEC-12"
+          ],
+          "expected_decision": "allow_metadata_only",
+          "expected_http": 200,
+          "id": "SEC-12",
+          "name": "audit_metadata_after_revoke",
+          "observed_decision": "allow_metadata_only",
+          "response_digest": "a53fcfb1f90f85f9e6e01e71264b3c61db521d54d614415df2344d85e7372c4e",
+          "result": "PASS",
+          "runtime_mode": "real",
+          "severity": "P2"
+        }
+      ],
+      "fixture_digest": "26ec17bade61bd9eabbe1edc154792d7cf144be51db9c5942eecaaa9e623a509",
+      "fixture_id": "G6-SEC-01",
+      "quality_evidence": {
+        "attribution": [
+          "permission"
+        ],
+        "context": {
+          "context_revision": null,
+          "status": "not_available",
+          "target_version": null
+        },
+        "dependency_versions": {
+          "model": "unknown",
+          "weknora": "unknown"
+        },
+        "environment_versions": {
+          "status": "not_observed"
+        },
+        "evidence_refs": [
+          "cases",
+          "severity_counts"
+        ],
+        "evidence_version": 1,
+        "execution_window": {
+          "end": null,
+          "start": null,
+          "status": "not_recorded"
+        },
+        "fixture_digest": "26ec17bade61bd9eabbe1edc154792d7cf144be51db9c5942eecaaa9e623a509",
+        "fixture_id": "G6-SEC-01",
+        "input_hash": "8d04e79df4ec824d4e7364f4e69e0e909159bcffeb66b2b6f9d5dde6166584f0",
+        "input_summary": {
+          "case_count": 12
+        },
+        "object_versions": {
+          "status": "not_observed"
+        },
+        "output_hash": "3bb5962c07f27e6348dca75521db6a534a593107f339ed61e1be9b49e8772edf",
+        "output_summary": {
+          "severity_counts": {
+            "P0": 8,
+            "P1": 3,
+            "P2": 1
+          }
+        },
+        "owner": "security",
+        "permission_snapshot": {
+          "status": "observed_status_only"
+        },
+        "project_id": "project.id",
+        "result": "PASS",
+        "reviewer": "unassigned",
+        "ruleset_hash": null,
+        "runtime_mode": "real",
+        "template_version": null
+      },
+      "redaction": {
+        "body": "forbidden",
+        "source_text": "forbidden",
+        "stored_fields": [
+          "status",
+          "severity",
+          "decision",
+          "response_digest"
+        ],
+        "token": "forbidden"
+      },
+      "report_version": 1,
+      "result": "PASS",
+      "runtime_mode": "real",
+      "scope": "current-permission security checks for body, source, export, download and audit metadata",
+      "severity_counts": {
+        "P0": 8,
+        "P1": 3,
+        "P2": 1
+      }
+    },
+    "G6-04": {
+      "alert_coverage": {
+        "async_failure_retry": true,
+        "docx_loss": true,
+        "download_reauthorization": true,
+        "external_dependency": true,
+        "permission_denied": true,
+        "request_conflict": true,
+        "request_denied": true,
+        "revocation_intercept": true,
+        "stale_or_duplicate": true
+      },
+      "alerts": [
+        {
+          "action": "notify_owner",
+          "signal": "request_denied"
+        },
+        {
+          "action": "notify_owner",
+          "signal": "request_conflict"
+        },
+        {
+          "action": "pause_affected_flow",
+          "signal": "permission_denied"
+        },
+        {
+          "action": "pause_affected_flow",
+          "signal": "revocation_intercept"
+        },
+        {
+          "action": "retry_then_notify_owner",
+          "signal": "async_failure_retry"
+        },
+        {
+          "action": "rollback_or_stop_write",
+          "signal": "stale_or_duplicate"
+        },
+        {
+          "action": "block_download_until_reauthorized",
+          "signal": "download_reauthorization"
+        },
+        {
+          "action": "block_export",
+          "signal": "docx_loss"
+        },
+        {
+          "action": "mark_blocked_and_notify_owner",
+          "signal": "external_dependency"
+        }
+      ],
+      "chain_coverage": {
+        "audit": true,
+        "changeset": true,
+        "download": true,
+        "export": true,
+        "request": true,
+        "snapshot": true,
+        "task": true,
+        "validation": true
+      },
+      "correlation_ids": [
+        "corr-g6-obs-20261007"
+      ],
+      "events": [
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 8.912967,
+          "event_type": "request",
+          "request_id": "request.g6.id",
+          "resource_type": "lingdoc.request",
+          "runtime_mode": "real",
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "task",
+          "provider": "deepseek",
+          "resource_type": "generation",
+          "runtime_mode": "real",
+          "status": "completed",
+          "task_id": "task.g6.id"
+        },
+        {
+          "changeset_id": "changeset.g6.id",
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "changeset",
+          "resource_type": "project.change_set",
+          "runtime_mode": "real",
+          "status": "completed"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 8.912967,
+          "event_type": "validation",
+          "resource_type": "release.validation",
+          "runtime_mode": "real",
+          "status": "completed",
+          "task_id": "task.g6.id"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 8.912967,
+          "event_type": "snapshot",
+          "resource_type": "release.snapshot",
+          "runtime_mode": "real",
+          "snapshot_id": "snapshot.g6.id",
+          "stale": false,
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 17.161783,
+          "event_type": "export",
+          "export_id": "export.g6.id",
+          "provider": "docx",
+          "resource_type": "docx.export",
+          "runtime_mode": "real",
+          "status": "completed"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "download_reauthorized": true,
+          "duration_ms": 17.161783,
+          "event_type": "download",
+          "export_id": "export.g6.id",
+          "file_loss_class": "none",
+          "resource_type": "docx.file",
+          "runtime_mode": "real",
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "audit",
+          "request_id": "request.g6.id",
+          "resource_type": "audit.event",
+          "runtime_mode": "real",
+          "status": "success"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "request",
+          "permission_decision": "deny",
+          "permission_reason": "tenant_scope",
+          "request_id": "request.g6.id",
+          "resource_type": "tenant.scope",
+          "runtime_mode": "real",
+          "status": "denied"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duplicate_side_effect": false,
+          "duration_ms": 1.0,
+          "event_type": "task",
+          "resource_type": "generation",
+          "retry_count": 0,
+          "runtime_mode": "real",
+          "status": "success",
+          "task_id": "task.g6.id"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duplicate_side_effect": false,
+          "duration_ms": 7.05633,
+          "event_type": "request",
+          "request_id": "request.g6.id",
+          "resource_type": "idempotency",
+          "runtime_mode": "real",
+          "status": "conflict"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "request",
+          "permission_decision": "deny",
+          "permission_reason": "revoked",
+          "request_id": "request.g6.id",
+          "resource_type": "revocation",
+          "runtime_mode": "real",
+          "status": "denied"
+        },
+        {
+          "correlation_id": "corr-g6-obs-20261007",
+          "duration_ms": 1.0,
+          "event_type": "task",
+          "provider": "fake_model",
+          "resource_type": "generation",
+          "retry_count": 1,
+          "runtime_mode": "real_api_fake_model",
+          "status": "retry",
+          "task_id": "task.g6.retry.id"
+        }
+      ],
+      "latency": {
+        "p95_ms": 17.161783,
+        "p99_ms": 17.161783,
+        "sample_count": 13,
+        "status": "observed"
+      },
+      "quality_evidence": {
+        "attribution": [
+          "domain_logic"
+        ],
+        "context": {
+          "context_revision": null,
+          "status": "not_available",
+          "target_version": null
+        },
+        "dependency_versions": {
+          "model": "unknown",
+          "weknora": "unknown"
+        },
+        "environment_versions": {
+          "status": "not_observed"
+        },
+        "evidence_refs": [
+          "events",
+          "chain_coverage",
+          "signal_coverage",
+          "latency",
+          "alerts"
+        ],
+        "evidence_version": 1,
+        "execution_window": {
+          "end": null,
+          "start": null,
+          "status": "not_recorded"
+        },
+        "fixture_digest": "af4716ca476022a17a1a8cea7e8462ec28ddfc61c5efe6a6dfc0f765e7590d19",
+        "fixture_id": "G6-OBS-01",
+        "input_hash": "af4716ca476022a17a1a8cea7e8462ec28ddfc61c5efe6a6dfc0f765e7590d19",
+        "input_summary": {
+          "event_count": 13
+        },
+        "object_versions": {
+          "status": "not_observed"
+        },
+        "output_hash": "cf1b4b77edb6ffa89f7797c9a5aec2c1ccc362b95cb4d257d5d2a76a45eec690",
+        "output_summary": {
+          "chain_coverage": {
+            "audit": true,
+            "changeset": true,
+            "download": true,
+            "export": true,
+            "request": true,
+            "snapshot": true,
+            "task": true,
+            "validation": true
+          },
+          "latency": {
+            "p95_ms": 17.161783,
+            "p99_ms": 17.161783,
+            "sample_count": 13,
+            "status": "observed"
+          }
+        },
+        "owner": "quality-operations",
+        "permission_snapshot": {
+          "status": "not_observed"
+        },
+        "project_id": "project.id",
+        "result": "PASS",
+        "reviewer": "unassigned",
+        "ruleset_hash": null,
+        "runtime_mode": "real",
+        "template_version": null
+      },
+      "redaction": {
+        "allowed_shape": [
+          "causation_id",
+          "changeset_id",
+          "context_revision",
+          "correlation_id",
+          "download_reauthorized",
+          "duplicate_side_effect",
+          "duration_ms",
+          "error_code",
+          "event_type",
+          "export_id",
+          "file_loss_class",
+          "permission_decision",
+          "permission_reason",
+          "project_id",
+          "provider",
+          "request_id",
+          "resource_type",
+          "result_code",
+          "retry_count",
+          "ruleset_hash",
+          "runtime_mode",
+          "snapshot_id",
+          "stale",
+          "status",
+          "target_revision",
+          "task_id",
+          "template_version",
+          "tenant_id"
+        ],
+        "forbidden_fields": [
+          "authorization",
+          "body",
+          "completion",
+          "content",
+          "model_input",
+          "prompt",
+          "quoted_text",
+          "source_text",
+          "token"
+        ]
+      },
+      "report_version": 1,
+      "result": "PASS",
+      "runtime_mode": "real",
+      "scope": "redacted request-to-download correlation and executable quality alerts",
+      "signal_coverage": {
+        "async_failure_retry": true,
+        "docx_loss": true,
+        "download_reauthorization": true,
+        "external_dependency": true,
+        "latency_p95_p99": true,
+        "permission_denied": true,
+        "request_conflict": true,
+        "request_denied": true,
+        "request_success": true,
+        "revocation_intercept": true,
+        "stale_or_duplicate": true
+      },
+      "uncovered_scope": []
+    },
+    "G6-05": {
+      "checks": [
+        {
+          "evidence_ref": "rollback:old_objects_readable",
+          "id": "old_objects_readable",
+          "observed": true,
+          "requirement": "old-version objects remain readable during the compatibility window",
+          "result": "PASS"
+        },
+        {
+          "evidence_ref": "rollback:new_fields_unknown_safe",
+          "id": "new_fields_unknown_safe",
+          "observed": true,
+          "requirement": "missing fields default to UNKNOWN or pending migration",
+          "result": "PASS"
+        },
+        {
+          "evidence_ref": "rollback:unknown_state_not_confirmed",
+          "id": "unknown_state_not_confirmed",
+          "observed": true,
+          "requirement": "unknown permission/version/provenance never confirms delivery",
+          "result": "PASS"
+        },
+        {
+          "evidence_ref": "rollback:flag_pause_by_scope",
+          "id": "flag_pause_by_scope",
+          "observed": true,
+          "requirement": "tenant/project/template/ruleset/runtime flag can pause new writes",
+          "result": "PASS"
+        },
+        {
+          "evidence_ref": "rollback:history_immutable",
+          "id": "history_immutable",
+          "observed": true,
+          "requirement": "published templates, frozen snapshots, files and audit remain unchanged",
+          "result": "PASS"
+        },
+        {
+          "evidence_ref": "rollback:reverse_changeset",
+          "id": "reverse_changeset",
+          "observed": true,
+          "requirement": "applied changes restore through an inverse change rather than pointer edits",
+          "result": "PASS"
+        },
+        {
+          "evidence_ref": "rollback:post_rollback_verification",
+          "id": "post_rollback_verification",
+          "observed": true,
+          "requirement": "recovery reruns permission, snapshot and download checks",
+          "result": "PASS"
+        }
+      ],
+      "drill": {
+        "drill_id": "drill.g6.rollback.id",
+        "duration_ms": 861.9,
+        "impact_scope": [
+          "project.id",
+          "template_version.id"
+        ],
+        "recovery_verified": true,
+        "severity": "P1",
+        "uncovered_risks": []
+      },
+      "fixture_id": "G6-ROLLBACK-01",
+      "plan": {
+        "migration_compatibility": {
+          "failure_cleanup": "required",
+          "new_version_write": "versioned",
+          "old_version_read": "required",
+          "rollback_window": "explicit",
+          "unknown_default": "UNKNOWN"
+        },
+        "pause_scope": [
+          "tenant",
+          "project",
+          "template_version",
+          "ruleset_hash",
+          "runtime_mode"
+        ],
+        "preserve": [
+          "published_template",
+          "frozen_snapshot",
+          "historical_file",
+          "audit",
+          "revision_pointer"
+        ],
+        "recovery": [
+          "inverse_changeset",
+          "compatibility_read",
+          "permission_recheck",
+          "download_recheck"
+        ],
+        "write_policy": "stop_new_version_writes_only"
+      },
+      "quality_evidence": {
+        "attribution": [
+          "domain_logic"
+        ],
+        "context": {
+          "context_revision": null,
+          "status": "not_available",
+          "target_version": null
+        },
+        "dependency_versions": {
+          "model": "unknown",
+          "weknora": "unknown"
+        },
+        "environment_versions": {
+          "status": "not_observed"
+        },
+        "evidence_refs": [
+          "plan",
+          "checks"
+        ],
+        "evidence_version": 1,
+        "execution_window": {
+          "end": null,
+          "start": null,
+          "status": "not_recorded"
+        },
+        "fixture_digest": "35cbbcb92ecbc95ed3ce8fc6dd02db1cdfe1a0e1d98bfb88013d71849c69ee44",
+        "fixture_id": "G6-ROLLBACK-01",
+        "input_hash": "35cbbcb92ecbc95ed3ce8fc6dd02db1cdfe1a0e1d98bfb88013d71849c69ee44",
+        "input_summary": {
+          "check_count": 7
+        },
+        "object_versions": {
+          "status": "not_observed"
+        },
+        "output_hash": "b3d5981b57a516fbb7176bfe6c8a42adc710e81994cd8f9a699a5ff41969bd00",
+        "output_summary": {
+          "result": "PASS"
+        },
+        "owner": "release-operations",
+        "permission_snapshot": {
+          "status": "not_observed"
+        },
+        "project_id": "project.id",
+        "result": "PASS",
+        "reviewer": "unassigned",
+        "ruleset_hash": null,
+        "runtime_mode": "real",
+        "template_version": null
+      },
+      "report_version": 1,
+      "result": "PASS",
+      "runtime_mode": "real",
+      "safety_boundary": "This report never edits migration state, revision pointers or published artifacts.",
+      "scope": "migration compatibility, grey pause and P0/P1 rollback rehearsal"
+    },
+    "G6-06": {
+      "decision": "expand",
+      "decision_evidence": {
+        "eligible_real_sample_ids": [
+          "sample.g6.real.01",
+          "sample.g6.real.02",
+          "sample.g6.real.03",
+          "sample.g6.real.04",
+          "sample.g6.real.05",
+          "sample.g6.real.06",
+          "sample.g6.real.07",
+          "sample.g6.real.08",
+          "sample.g6.real.09",
+          "sample.g6.real.10"
+        ],
+        "p0_p1_sample_ids": [],
+        "p2_sample_ids": [
+          "sample.g6.real.01",
+          "sample.g6.real.02",
+          "sample.g6.real.03",
+          "sample.g6.real.04",
+          "sample.g6.real.05",
+          "sample.g6.real.06",
+          "sample.g6.real.07",
+          "sample.g6.real.08",
+          "sample.g6.real.09",
+          "sample.g6.real.10"
+        ],
+        "real_sample_ids": [
+          "sample.g6.real.01",
+          "sample.g6.real.02",
+          "sample.g6.real.03",
+          "sample.g6.real.04",
+          "sample.g6.real.05",
+          "sample.g6.real.06",
+          "sample.g6.real.07",
+          "sample.g6.real.08",
+          "sample.g6.real.09",
+          "sample.g6.real.10"
+        ],
+        "rollback_result": "PASS",
+        "uncovered_risks": []
+      },
+      "decision_reason": "eligible real sample and denominator gates passed",
+      "excluded_sample_ids": [],
+      "metrics": {
+        "export_loss_rate": {
+          "denominator": 10,
+          "numerator": 0,
+          "rate": 0.0
+        },
+        "false_positive_rate": {
+          "denominator": 43,
+          "numerator": 0,
+          "rate": 0.0
+        },
+        "manual_effort_minutes": {
+          "denominator": 10,
+          "numerator": 0.7251999999999998,
+          "rate": 0.07251999999999999
+        },
+        "missed_edit_rate": {
+          "denominator": 20,
+          "numerator": 0,
+          "rate": 0.0
+        },
+        "source_support_rate": {
+          "denominator": 57,
+          "numerator": 19,
+          "rate": 0.3333333333333333
+        },
+        "unconfirmed_rate": {
+          "denominator": 10,
+          "numerator": 0,
+          "rate": 0.0
+        }
+      },
+      "missing_denominators": [],
+      "missing_values": [],
+      "quality_evidence": {
+        "attribution": [
+          "domain_logic"
+        ],
+        "context": {
+          "context_revision": null,
+          "status": "not_available",
+          "target_version": null
+        },
+        "dependency_versions": {
+          "model": "unknown",
+          "weknora": "unknown"
+        },
+        "environment_versions": {
+          "status": "not_observed"
+        },
+        "evidence_refs": [
+          "window",
+          "raw_counts",
+          "metrics",
+          "decision"
+        ],
+        "evidence_version": 1,
+        "execution_window": {
+          "end": null,
+          "start": null,
+          "status": "not_recorded"
+        },
+        "fixture_digest": "829286294b771007afabdb595dc05dfd734ddf55eb95bd826a858fb1756fceaf",
+        "fixture_id": "G6-BETA-window.g6.beta.20261007",
+        "input_hash": "829286294b771007afabdb595dc05dfd734ddf55eb95bd826a858fb1756fceaf",
+        "input_summary": {
+          "sample_count": 10
+        },
+        "object_versions": {
+          "status": "not_observed"
+        },
+        "output_hash": "f35501271c303c39755301a148eb5842f6bff5ab9616ce4e34860e726b75aeb2",
+        "output_summary": {
+          "decision": "expand"
+        },
+        "owner": "product-and-qa",
+        "permission_snapshot": {
+          "status": "not_observed"
+        },
+        "project_id": "project.id",
+        "result": "PASS",
+        "reviewer": "unassigned",
+        "ruleset_hash": null,
+        "runtime_mode": "real",
+        "template_version": null
+      },
+      "raw_counts": {
+        "dependency_blocked": 0,
+        "eligible_real": 10,
+        "excluded_non_real": 0,
+        "p0_p1": 0,
+        "p2": 10,
+        "quality_pass_real": 10,
+        "real": 10,
+        "samples_with_missing_values": 0,
+        "submitted": 10
+      },
+      "readiness": "READY",
+      "report_version": 1,
+      "result": "PASS",
+      "sample_versions": [
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.01",
+          "sample_version": "sample-version.g6.01",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.02",
+          "sample_version": "sample-version.g6.02",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.03",
+          "sample_version": "sample-version.g6.03",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.04",
+          "sample_version": "sample-version.g6.04",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.05",
+          "sample_version": "sample-version.g6.05",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.06",
+          "sample_version": "sample-version.g6.06",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.07",
+          "sample_version": "sample-version.g6.07",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.08",
+          "sample_version": "sample-version.g6.08",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.09",
+          "sample_version": "sample-version.g6.09",
+          "severity": "P2"
+        },
+        {
+          "eligible": true,
+          "quality_result": "PASS",
+          "runtime_mode": "real",
+          "sample_id": "sample.g6.real.10",
+          "sample_version": "sample-version.g6.10",
+          "severity": "P2"
+        }
+      ],
+      "scope": "one locked Beta trial window; only eligible real samples enter effect rates",
+      "window": {
+        "included_projects": [
+          "project.g6.id"
+        ],
+        "included_users": [
+          "user.g6.id"
+        ],
+        "minimum_reportable_samples": 3,
+        "process_evidence": {
+          "authorization": "observed",
+          "failure_path": "observed",
+          "key_scenario_rerun": "observed",
+          "main_path": "observed",
+          "manual_review": "observed",
+          "repair_or_rollback": "observed"
+        },
+        "redaction": "g6-beta-20261007",
+        "rollback_result": "PASS",
+        "ruleset_hash": "rules.key",
+        "runtime_modes": [
+          "real"
+        ],
+        "target_samples": 10,
+        "template_version": "template.v1",
+        "uncovered_risks": [],
+        "window_id": "window.g6.beta.20261007"
+      }
+    }
+  },
+  "quality_evidence": {
+    "attribution": [
+      "domain_logic"
+    ],
+    "context": {
+      "context_revision": null,
+      "status": "not_available",
+      "target_version": null
+    },
+    "dependency_versions": {
+      "model": "unknown",
+      "weknora": "unknown"
+    },
+    "environment_versions": {
+      "status": "not_observed"
+    },
+    "evidence_refs": [
+      "gates.G6-01",
+      "gates.G6-02",
+      "gates.G6-03",
+      "gates.G6-04",
+      "gates.G6-05",
+      "gates.G6-06"
+    ],
+    "evidence_version": 1,
+    "execution_window": {
+      "end": null,
+      "start": null,
+      "status": "not_recorded"
+    },
+    "fixture_digest": "8dcd9ff86a966e0488ecc6a7576e0133fac90ad26b6e8e7d0717908bbd25f473",
+    "fixture_id": "G6-RUN-01",
+    "input_hash": "dfd6a51274752532bc6e5080516348c1301fcc06e6f5d01df9579688bcdf1582",
+    "input_summary": {
+      "gate_count": 6
+    },
+    "object_versions": {
+      "status": "not_observed"
+    },
+    "output_hash": "a74657e48d16c606deccf8f73016e243886392d39efa3347f965c853171fd15f",
+    "output_summary": {
+      "gate_results": {
+        "G6-01": "PASS",
+        "G6-02": "PASS",
+        "G6-03": "PASS",
+        "G6-04": "PASS",
+        "G6-05": "PASS",
+        "G6-06": "PASS"
+      }
+    },
+    "owner": "quality-operations",
+    "permission_snapshot": {
+      "status": "not_observed"
+    },
+    "project_id": "project.id",
+    "result": "PASS",
+    "reviewer": "unassigned",
+    "ruleset_hash": null,
+    "runtime_mode": "real",
+    "template_version": null
+  },
+  "report_version": 1,
+  "result": "PASS",
+  "runtime_mode": "real",
+  "scope": "G6 quality, runtime, security, rollback and Beta decision gates"
+}

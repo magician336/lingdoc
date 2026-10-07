@@ -18,7 +18,7 @@
       "reason": "本次运行驱动的那一条，起点 S1"
     },
     "F19": {
-      "verdict": "failed",
+      "verdict": "passed",
       "steps": [
         {
           "step": "create-consumer-tenant",
@@ -95,8 +95,8 @@
         {
           "step": "both_chapters_confirmation_valid",
           "actual": {
-            "method": true,
-            "question": true
+            "question": true,
+            "method": true
           },
           "expected": {
             "question": true,
@@ -249,12 +249,18 @@
         {
           "step": "retry-same-download-after-revocation",
           "expected_http": 403,
-          "actual_http": 200,
-          "verdict": "failed"
+          "actual_http": 403,
+          "verdict": "passed"
+        },
+        {
+          "step": "replay-old-snapshot-after-revocation",
+          "expected_http": 403,
+          "actual_http": 403,
+          "verdict": "passed"
         }
       ],
       "starting_state": "S5",
-      "reason": "F19 已执行至末步；撤销资料分享后重试同一文件下载返回 HTTP 200，预期 403。",
+      "reason": null,
       "source_display_title_change": {
         "verdict": "not_run",
         "reason": "当前公开 API 没有修改来源展示名的操作；未直接改数据库。"
@@ -271,10 +277,11 @@
       "id": "T15-09-R1",
       "scenario_step": "F19-17 retry-same-download-after-revocation",
       "expected_http": 403,
-      "actual_http": 200,
+      "actual_http": 403,
       "owner": "delivery/export authorization owner (T14)",
-      "related_evidence": "T15-08-R2 / F07-04",
-      "status": "open"
+      "related_evidence": "G6-03 / SEC-09",
+      "status": "resolved",
+      "resolution": "release and export reads recheck current source authorization after revocation"
     }
   ],
   "cleanup": [
@@ -294,7 +301,7 @@
     "summary": {
       "passed": 2,
       "failed": 0,
-      "not_run": 20
+      "not_run": 24
     },
     "executed": [
       {
@@ -374,12 +381,12 @@
             "chapters": [
               {
                 "section_id": "method",
-                "body_markdown": "",
+                "body_markdown": "<redacted>",
                 "source_ids": []
               },
               {
                 "section_id": "question",
-                "body_markdown": "人工输入的合成研究问题。",
+                "body_markdown": "<redacted>",
                 "source_ids": []
               }
             ],
@@ -663,12 +670,12 @@
             "chapters": [
               {
                 "section_id": "method",
-                "body_markdown": "",
+                "body_markdown": "<redacted>",
                 "source_ids": []
               },
               {
                 "section_id": "question",
-                "body_markdown": "",
+                "body_markdown": "<redacted>",
                 "source_ids": []
               }
             ],
@@ -1005,8 +1012,8 @@
     ]
   },
   "summary": {
-    "passed": 2,
-    "failed": 1,
+    "passed": 3,
+    "failed": 0,
     "not_run": 1
   },
   "runner_status": "completed"

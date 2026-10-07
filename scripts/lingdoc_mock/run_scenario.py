@@ -19,9 +19,12 @@ through one HTTP transport (run_f01.py).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import platform
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Any
@@ -51,10 +54,19 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
     scenario_entry,
     write_report,
 )
+from scripts.lingdoc_mock.g6_evidence import (  # noqa: E402
+    RUNTIME_DEPENDENCIES,
+    RUNTIME_MODES,
+    SAFE_FIXTURE_ID,
+    build_evidence,
+    digest,
+    normalize_scenario_evidence,
+)
 
 
 REPORT_PATH = ROOT / "docs/08-本轮实施方案/T15-验证报告.json"
-
+SAFE_LABEL = re.compile(r"[A-Za-z][A-Za-z0-9_.-]{0,63}")
+SAFE_HASH = re.compile(r"[0-9a-f]{64}")
 # The gaps this run found in the service, registered here rather than fixed here: #27's
 # agreement is that T15 records what a scenario run turns up, and the line that owns the
 # code fixes it. The evidence column points at the report section that shows it.
@@ -101,6 +113,225 @@ BOUNDARIES = (
                "模型质量、DOCX 可编辑性以及观察点以外的副作用仍不能由这些通道判定。",
     },
 )
+from scripts.lingdoc_mock.g6_evidence import reduce_results  # noqa: E402
+
+
+def _stable_digest(value: Any) -> str:
+    """Hash a JSON value without publishing its contents in the evidence report."""
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _file_digest(path: Path) -> str:
+    """Return a stable digest for a contract dependency, independent of its local path."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _quality_result(verdict: str) -> str:
+    return {"passed": "PASS", "failed": "FAIL", "not_run": "NOT RUN"}.get(verdict, "BLOCKED")
+
+
+def _quality_attribution(executed: dict[str, Any]) -> list[str]:
+    """Classify observed failures without exposing provider details or raw responses."""
+    categories: set[str] = set()
+    state = executed.get("state") or {}
+    if state.get("mismatches"):
+        categories.add("fixture_or_test")
+    for step in executed.get("steps", []):
+        if step.get("verdict") != "failed":
+            if step.get("verdict") == "not_run":
+                categories.add("runtime")
+            continue
+        checks = step.get("checks", [])
+        if any("authoriz" in str(check.get("path", "")).lower()
+               or "permission" in str(check.get("path", "")).lower()
+               for check in checks):
+            categories.add("permission")
+        elif step.get("operation_id") in {"startGeneration", "getGeneration", "getCandidate"}:
+            categories.add("model_quality")
+        elif step.get("operation_id") in {"startExport", "getExport", "downloadExport"}:
+            categories.add("file_fidelity")
+        elif step.get("operation_id") in {"retrieveSources", "getSource"}:
+            categories.add("external_service")
+        else:
+            categories.add("domain_logic")
+    if executed.get("verdict") == "failed" and not categories:
+        categories.add("runtime")
+    return sorted(categories)
+
+
+def _scenario_fixture_id(scenario_id: str, state_id: str) -> str:
+    candidate = f"{scenario_id}:{state_id}"
+    if SAFE_FIXTURE_ID.fullmatch(candidate):
+        return candidate
+    return f"scenario.{digest({'scenario': scenario_id, 'starting_state': state_id})[:16]}"
+
+
+def _safe_label(value: Any, fallback: str) -> str:
+    return value if isinstance(value, str) and SAFE_LABEL.fullmatch(value) else fallback
+
+
+def _safe_quality_label(value: Any) -> str:
+    """Keep short owner aliases while rejecting labels that resemble credentials."""
+    if not isinstance(value, str) or not SAFE_LABEL.fullmatch(value):
+        return "unassigned"
+    if re.search(r"(?:bearer|token|secret|password|authorization|cookie|api[_-]?key)",
+                 value, flags=re.IGNORECASE):
+        return "unassigned"
+    return value
+
+
+def _safe_version(value: Any, fallback: str) -> Any:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    if isinstance(value, str) and (SAFE_LABEL.fullmatch(value) or SAFE_HASH.fullmatch(value)
+                                   or re.fullmatch(r"[0-9]{1,16}", value)):
+        return value
+    return fallback
+
+
+def _safe_object_versions(observed: Any) -> dict[str, Any]:
+    if not isinstance(observed, dict):
+        return {"status": "not_observed"}
+    safe: dict[str, Any] = {
+        "project_version": _safe_version(observed.get("project_version"), "project.version.unknown"),
+        "spec_revision": _safe_version(observed.get("spec_revision"), "spec.revision.unknown"),
+    }
+    chapters = observed.get("chapters", [])
+    if isinstance(chapters, list):
+        safe["chapters"] = [
+            {"section_id": _safe_label(item.get("section_id"), "chapter.section"),
+             "has_version": item.get("has_version") if isinstance(item.get("has_version"), bool) else False}
+            for item in chapters if isinstance(item, dict)
+        ]
+    assets = observed.get("assets", [])
+    if isinstance(assets, list):
+        safe["assets"] = [
+            {"knowledge_id": _safe_label(item.get("knowledge_id"), "asset.unknown"),
+             "listed_state": item.get("listed_state")
+             if item.get("listed_state") in {None, "ready", "processing", "blocked", "unknown"} else "unknown",
+             "deny_reason": item.get("deny_reason")
+             if item.get("deny_reason") in {None, "", "not_ready", "not_authorized", "not_found"} else "unknown"}
+            for item in assets if isinstance(item, dict)
+        ]
+    return safe
+
+
+def quality_evidence(*, document: dict[str, Any], scenario: dict[str, Any], scenario_id: str,
+                     state_id: str, spec: Any, state_report: dict[str, Any], executed: dict[str, Any],
+                     loader: StateLoader, states_path: Path, openapi_path: Path,
+                     runtime_mode: str, runtime_dependencies: dict[str, Any] | None = None,
+                     provider_semantics_status: str = "not_verified") -> dict[str, Any]:
+    """Build the stable, redacted G6 evidence record for one scenario execution."""
+    if runtime_mode not in RUNTIME_MODES:
+        raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
+    canonical_fixture = document.get("canonical_fixture", {})
+    template = canonical_fixture.get("template", {}) if isinstance(canonical_fixture, dict) else {}
+    if not isinstance(template, dict):
+        template = {}
+    required_fixture_parts = ("project", "asset", "chapter", "check", "release", "export", "download")
+    declared_fixture_parts = [part for part in ("project", "asset", "chapter", "release", "export")
+                              if part in canonical_fixture]
+    if isinstance(canonical_fixture.get("release"), dict) and canonical_fixture["release"].get("check"):
+        declared_fixture_parts.append("check")
+    if isinstance(canonical_fixture.get("export"), dict) and canonical_fixture["export"].get("download_path"):
+        declared_fixture_parts.append("download")
+    declared_fixture_parts = sorted(set(declared_fixture_parts))
+    constructed_fixture_parts = ["project"]
+    if loader.state.assets:
+        constructed_fixture_parts.append("asset")
+    if loader.state.chapters:
+        constructed_fixture_parts.append("chapter")
+    constructed_fixture_parts.sort()
+    observed = state_report.get("observed", {})
+    steps = executed.get("steps", [])
+    failed_steps = [_safe_label(step.get("step_id"), "step.id")
+                    for step in steps if isinstance(step, dict) and step.get("verdict") == "failed"]
+    input_summary = {
+        "scenario": scenario_id,
+        "starting_state": state_id,
+        "step_count": len(spec.steps),
+        "asset_count": len(loader.state.assets),
+        "chapter_count": len(loader.state.chapters),
+        "spec_fields": sorted(loader.state.spec),
+    }
+    output_summary = {
+        "result": _quality_result(executed.get("verdict", "blocked")),
+        "executed_steps": len([step for step in steps if step.get("verdict") != "not_run"]),
+        "declared_steps": len(steps),
+        "failed_steps": failed_steps,
+        "state_mismatches": len((state_report.get("mismatches") or [])),
+    }
+    observed_result = output_summary["result"]
+    required_dependencies = RUNTIME_DEPENDENCIES[runtime_mode]
+    dependencies_verified = runtime_mode == "mock" or all(
+        bool((runtime_dependencies or {}).get(name)) for name in required_dependencies)
+    real_evidence_verified = dependencies_verified and provider_semantics_status == "verified"
+    result = (observed_result if runtime_mode == "mock" or observed_result != "PASS"
+              else "PASS" if real_evidence_verified else "BLOCKED")
+    output_summary["result"] = result
+    safe_scenario_id = _safe_label(scenario_id, "scenario.id")
+    safe_state_id = _safe_label(state_id, "state.id")
+    safe_actors = sorted({_safe_label(step.get("actor"), "actor.id")
+                          for step in spec.steps if step.get("actor")})
+    safe_members = sorted({_safe_label(value, "member.id") for value in loader.state.members})
+    safe_assets = sorted({_safe_label(value, "asset.id") for value in loader.asset_ids})
+    template_version = _safe_version(template.get("version"), "template.unknown")
+    ruleset_hash = template.get("ruleset_hash") if isinstance(template.get("ruleset_hash"), str) \
+        and SAFE_HASH.fullmatch(template["ruleset_hash"]) else "rules.unknown"
+    return {
+        "evidence_version": 1,
+        "fixture_id": _scenario_fixture_id(scenario_id, state_id),
+        "fixture_digest": _stable_digest({"scenario": scenario, "state": state_id,
+                                           "canonical_fixture": canonical_fixture}),
+        "fixture_coverage": {
+            "required_parts": list(required_fixture_parts),
+            "declared_parts": declared_fixture_parts,
+            "declared_complete": declared_fixture_parts == sorted(required_fixture_parts),
+            "constructed_parts": constructed_fixture_parts,
+            "executed_complete": constructed_fixture_parts == sorted(required_fixture_parts),
+            "missing_for_execution": sorted(set(required_fixture_parts) - set(constructed_fixture_parts)),
+        },
+        "project_id": "project.id",
+        "template_version": template_version,
+        "ruleset_hash": ruleset_hash,
+        "object_versions": _safe_object_versions(observed),
+        "permission_snapshot": {
+            "status": "declared_only",
+            "actors": safe_actors,
+            "members": safe_members,
+            "assets": safe_assets,
+        },
+        "runtime_mode": runtime_mode,
+        "runtime_status": ("contract_only" if runtime_mode == "mock"
+                           else "verified" if real_evidence_verified else "real_dependency_not_verified"),
+        "dependency_versions": {
+            "contract_version": document.get("contract_version"),
+            "openapi_sha256": _file_digest(openapi_path),
+            "states_sha256": _file_digest(states_path),
+            "weknora": "unknown",
+            "model": "unknown",
+        },
+        "environment_versions": {
+            "runtime": f"python.{platform.python_version()}",
+            "platform": f"platform.{sys.platform}",
+        },
+        "dependency_status": {
+            name: "verified" if bool((runtime_dependencies or {}).get(name)) else "not_verified"
+            for name in required_dependencies
+        },
+        "context": {"context_revision": None, "target_version": None, "status": "not_available"},
+        "input_summary": {**input_summary, "scenario": safe_scenario_id, "starting_state": safe_state_id},
+        "output_summary": {**output_summary, "result": result},
+        "input_hash": _stable_digest(input_summary),
+        "output_hash": _stable_digest(output_summary),
+        "execution_window": {"start": None, "end": None, "status": "not_recorded"},
+        "result": result,
+        "attribution": _quality_attribution(executed),
+        "evidence_refs": ["executed.state", "executed.steps", "scenarios", "summary"],
+        "owner": _safe_quality_label(scenario.get("quality_owner")),
+        "reviewer": _safe_quality_label(scenario.get("quality_reviewer")),
+    }
 
 
 def executability(scenario: dict[str, Any]) -> tuple[bool, str]:
@@ -297,8 +528,12 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
                  knowledge: dict[str, str], member: dict[str, str],
                  identities: dict[str, str] | None = None,
                  base_url: str | None = None, token: str | None = None, timeout: float = 20,
-                 opener=None) -> dict[str, Any]:
+                 opener=None, runtime_mode: str = "mock",
+                 runtime_dependencies: dict[str, Any] | None = None,
+                 provider_semantics_status: str = "not_verified") -> dict[str, Any]:
     """Build the declared state, send the declared steps, and return the report for both halves."""
+    if runtime_mode not in RUNTIME_MODES:
+        raise WorkflowError(f"runtime mode must be one of {', '.join(RUNTIME_MODES)}")
     document = read_json_object(states_path, "states document")
     scenario = scenario_entry(document, scenario_id, states_path.name)
     observation = scenario.get("white_box_observation")
@@ -388,6 +623,12 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
     entries = scenario_verdicts(document, scenario_id, state_id, executed["verdict"])
     summary = {verdict: sum(entry["verdict"] == verdict for entry in entries)
                for verdict in ("passed", "failed", "not_run")}
+    evidence = quality_evidence(document=document, scenario=scenario, scenario_id=scenario_id,
+                                state_id=state_id, spec=spec, state_report=state_report,
+                                executed=executed, loader=loader, states_path=states_path,
+                                openapi_path=openapi_path, runtime_mode=runtime_mode,
+                                runtime_dependencies=runtime_dependencies,
+                                provider_semantics_status=provider_semantics_status)
     return {
         "report_version": 1,
         "contract_version": document.get("contract_version"),
@@ -400,12 +641,33 @@ def run_scenario(scenario_id: str, states_path: Path, openapi_path: Path, *,
         "boundaries": list(BOUNDARIES),
         "verification_scope": ("http_smoke_plus_declared_f02_white_box" if observation
                                 else "http_smoke_only"),
-        "provider_semantics_status": "not_verified",
+        "provider_semantics_status": provider_semantics_status,
+        "quality_evidence": evidence,
         # Counted from the summary rather than written down: the sentence has to keep telling the
         # truth the next time somebody fills a request definition into the contract.
         "not_run": ["模型质量、DOCX 可打开性及 F02 白盒观察点以外的数据库副作用：当前通道未观测",
                     f"其余 {summary['not_run']} 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"],
     }
+
+
+def _blocked_quality_evidence(scenario_id: str, state_id: str, runtime_mode: str,
+                              owner: str = "unassigned", reviewer: str = "unassigned") -> dict[str, Any]:
+    if runtime_mode not in RUNTIME_MODES:
+        runtime_mode = "mock"
+    fixture_id = f"scenario.{digest({'scenario': scenario_id, 'starting_state': state_id})[:16]}"
+    return build_evidence(
+        fixture_id=fixture_id,
+        runtime_mode=runtime_mode,
+        result="BLOCKED",
+        input_value={"scenario": scenario_id, "starting_state": state_id},
+        output_value={"status": "not_started", "reason": "initialization_failed"},
+        attribution=["runtime"],
+        evidence_refs=["executed", "scenarios", "summary"],
+        owner=_safe_quality_label(owner),
+        reviewer=_safe_quality_label(reviewer),
+        input_summary={"status": "not_started"},
+        output_summary={"status": "not_started"},
+    )
 
 
 def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path, **kwargs: Any) -> dict[str, Any]:
@@ -481,6 +743,11 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
             entries = scenario_verdicts(document, scenario_id, state_id, "failed")
             summary = {verdict: sum(entry["verdict"] == verdict for entry in entries)
                        for verdict in ("passed", "failed", "not_run")}
+            fallback_evidence = _blocked_quality_evidence(
+                scenario_id, state_id, kwargs.get("runtime_mode", "mock"),
+                scenario.get("quality_owner", "unassigned"),
+                scenario.get("quality_reviewer", "unassigned"),
+            )
             report = {
                 "report_version": 1,
                 "contract_version": document.get("contract_version"),
@@ -489,6 +756,7 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
                 "scenarios": entries,
                 "summary": summary,
                 "not_run": ["本场景没有完整执行轨迹；检查命令行错误后重跑"],
+                "quality_evidence": fallback_evidence,
             }
         reports.append(report)
     if len(reports) == 1:
@@ -507,12 +775,128 @@ def run_scenarios(scenario_ids: list[str], states_path: Path, openapi_path: Path
     merged.update({
         "scope": "multiple independent scenarios driven from their declared starting states",
         "executed": [report["executed"] for report in reports],
+        "quality_evidence": [report.get(
+            "quality_evidence",
+            _blocked_quality_evidence(report["executed"]["scenario"],
+                                      report["executed"].get("starting_state", "unknown"),
+                                      kwargs.get("runtime_mode", "mock")),
+        ) for report in reports],
         "scenarios": scenarios,
         "summary": summary,
         "not_run": ["模型质量、数据库副作用、DOCX 可打开性：没有任何通道能证",
                     f"其余 {summary['not_run']} 个场景：没跑的原因逐条写在 scenarios 里它自己的 reason 字段"],
     })
     return merged
+
+
+def _matrix_result(results: list[str]) -> str:
+    """Reduce independent mode verdicts without turning an unverified run into PASS."""
+    return reduce_results(results)
+
+
+def run_mode_matrix(scenario_ids: list[str], states_path: Path, openapi_path: Path, *,
+                    runtime_modes: list[str], runtime_dependencies: dict[str, dict[str, Any]] | None = None,
+                    provider_semantics: dict[str, str] | None = None,
+                    scenario_evidence: dict[str, dict[str, Any]] | None = None,
+                    **kwargs: Any) -> dict[str, Any]:
+    """Run the same declared scenarios independently for each quality runtime mode.
+
+    Reports remain separate so a mock PASS cannot hide a real dependency BLOCKED result. The
+    fixture IDs are compared after every run, making a matrix with divergent inputs explicitly
+    unusable for cross-mode comparison.
+    """
+    if not runtime_modes:
+        raise WorkflowError("at least one --runtime-mode is required")
+    if len(runtime_modes) != len(set(runtime_modes)):
+        raise WorkflowError("--runtime-mode contains a duplicate runtime mode")
+    invalid_modes = sorted(set(runtime_modes) - set(RUNTIME_MODES))
+    if invalid_modes:
+        raise WorkflowError("--runtime-mode must be one of " + ", ".join(RUNTIME_MODES))
+    if scenario_evidence is not None:
+        if not isinstance(scenario_evidence, dict):
+            raise WorkflowError("scenario_evidence must be an object keyed by runtime mode")
+        invalid_evidence_modes = sorted(set(scenario_evidence) - set(RUNTIME_MODES))
+        if invalid_evidence_modes or any(not isinstance(value, dict) for value in scenario_evidence.values()):
+            raise WorkflowError("scenario_evidence must be keyed by runtime mode with object values")
+
+    runtime_dependencies = runtime_dependencies or {}
+    mode_reports = []
+    dependency_matrix = {}
+    for runtime_mode in runtime_modes:
+        mode_kwargs = dict(kwargs)
+        mode_kwargs.pop("runtime_mode", None)
+        supplied = runtime_dependencies.get(runtime_mode, {})
+        mode_kwargs["runtime_dependencies"] = supplied
+        mode_kwargs["provider_semantics_status"] = (provider_semantics or {}).get(runtime_mode, "not_verified")
+        report = run_scenarios(scenario_ids, states_path, openapi_path,
+                               runtime_mode=runtime_mode, **mode_kwargs)
+        evidence = report.get("quality_evidence", [])
+        if isinstance(evidence, dict):
+            evidence = [evidence]
+        evidence = list(evidence)
+        mode_result = _matrix_result([item.get("result", "BLOCKED") for item in evidence])
+        if runtime_mode == "mock" and not supplied:
+            supplied = {"contract": True}
+        required = RUNTIME_DEPENDENCIES[runtime_mode]
+        missing = sorted(name for name in required if not supplied.get(name))
+        dependency_status = "verified" if not missing else "not_verified"
+        dependency_matrix[runtime_mode] = {
+            "required": list(required),
+            "verified": sorted(name for name in required if name not in missing),
+            "missing": missing,
+            "status": dependency_status,
+        }
+        if runtime_mode != "mock" and missing:
+            mode_result = "BLOCKED"
+        mode_fixture_ids = sorted({item.get("fixture_id") for item in evidence
+                                   if isinstance(item, dict) and item.get("fixture_id")})
+        normalized_scenario_evidence, scenario_result = normalize_scenario_evidence(
+            {"scenario_evidence": (scenario_evidence or {}).get(runtime_mode)},
+            mode_fixture_ids,
+            runtime_mode,
+        )
+        mode_result = _matrix_result([mode_result, scenario_result])
+        mode_reports.append({
+            "runtime_mode": runtime_mode,
+            "result": mode_result,
+            "summary": report.get("summary", {}),
+            "quality_evidence": evidence[0] if len(evidence) == 1 else evidence,
+            "verification_scope": report.get("verification_scope", "not_recorded"),
+            "provider_semantics_status": report.get("provider_semantics_status", "not_verified"),
+            "dependency_status": dependency_status,
+            "scenario_evidence": normalized_scenario_evidence,
+            "report": report,
+        })
+
+    mode_fixture_ids = [
+        {
+            item["fixture_id"]
+            for item in (mode["quality_evidence"] if isinstance(mode["quality_evidence"], list)
+                         else [mode["quality_evidence"]])
+            if isinstance(item, dict) and item.get("fixture_id")
+        }
+        for mode in mode_reports
+    ]
+    fixture_ids = sorted(set().union(*mode_fixture_ids)) if mode_fixture_ids else []
+    shared_fixture = bool(fixture_ids) and all(ids == mode_fixture_ids[0] for ids in mode_fixture_ids)
+    results = [mode["result"] for mode in mode_reports]
+    result = _matrix_result(results)
+    if not shared_fixture:
+        result = "BLOCKED"
+
+    return {
+        "report_version": 1,
+        "scope": "same scenarios driven independently for each runtime mode",
+        "runtime_modes": list(runtime_modes),
+        "result": result,
+        "shared_fixture": shared_fixture,
+        "fixture_ids": fixture_ids,
+        "dependency_matrix": dependency_matrix,
+        "modes": [{key: value for key, value in mode.items() if key != "report"}
+                  for mode in mode_reports],
+        "reports": [{"runtime_mode": mode["runtime_mode"], "report": mode["report"]}
+                    for mode in mode_reports],
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -530,6 +914,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--member", action="append", default=[], metavar="NAME=ID",
                         help="bind a declared member name to a real user id (repeatable)")
     parser.add_argument("--request-timeout", type=float, default=20)
+    parser.add_argument("--runtime-mode", choices=RUNTIME_MODES, action="append", default=None,
+                        help="quality evidence mode; repeat to run a mode matrix")
+    parser.add_argument("--dependency", action="append", default=[], metavar="MODE=DEPENDENCY",
+                        help="mark one named dependency as observed for a mode; repeatable")
+    parser.add_argument("--provider-semantics", action="append", default=[], metavar="MODE=STATUS",
+                        help="set provider semantics status (verified or not_verified) per mode")
+    parser.add_argument("--scenario-evidence", type=Path,
+                        help="status-only JSON object keyed by runtime mode with main_path and key_failure evidence")
     parser.add_argument("--report", type=Path, default=REPORT_PATH, help="where the matrix report is written")
     args = parser.parse_args(argv)
     report_started = False
@@ -543,22 +935,70 @@ def main(argv: list[str] | None = None) -> int:
         write_report(args.report, {"report_version": 1, "runner_status": "not_started",
                                    "scenarios": args.scenario})
         report_started = True
-        report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
-                               identities=identities, base_url=args.base_url, token=args.token,
-                               timeout=args.request_timeout)
+        runtime_modes = args.runtime_mode or ["mock"]
+        runtime_dependencies: dict[str, dict[str, bool]] = {}
+        for item in args.dependency:
+            try:
+                mode, dependency = item.split("=", 1)
+            except ValueError as error:
+                raise WorkflowError("--dependency must use MODE=DEPENDENCY") from error
+            if mode not in RUNTIME_MODES or dependency not in RUNTIME_DEPENDENCIES[mode]:
+                raise WorkflowError("--dependency names an unknown mode or dependency")
+            runtime_dependencies.setdefault(mode, {})[dependency] = True
+        provider_semantics = {}
+        for item in args.provider_semantics:
+            try:
+                mode, status = item.split("=", 1)
+            except ValueError as error:
+                raise WorkflowError("--provider-semantics must use MODE=STATUS") from error
+            if mode not in RUNTIME_MODES or status not in {"verified", "not_verified"}:
+                raise WorkflowError("--provider-semantics requires a valid mode and status")
+            provider_semantics[mode] = status
+        scenario_evidence = None
+        if args.scenario_evidence:
+            scenario_evidence = read_json_object(args.scenario_evidence, "scenario evidence")
+            if any(mode not in RUNTIME_MODES or not isinstance(value, dict)
+                   for mode, value in scenario_evidence.items()):
+                raise WorkflowError("--scenario-evidence must be an object keyed by runtime mode")
+            if len(runtime_modes) == 1:
+                raise WorkflowError("--scenario-evidence requires a runtime-mode matrix")
+        if len(runtime_modes) == 1:
+            report = run_scenarios(args.scenario, args.states, args.openapi, knowledge=knowledge, member=member,
+                                   identities=identities, base_url=args.base_url, token=args.token,
+                                   timeout=args.request_timeout, runtime_mode=runtime_modes[0],
+                                   runtime_dependencies=runtime_dependencies.get(runtime_modes[0], {}),
+                                   provider_semantics_status=provider_semantics.get(runtime_modes[0], "not_verified"))
+        else:
+            report = run_mode_matrix(args.scenario, args.states, args.openapi, runtime_modes=runtime_modes,
+                                     knowledge=knowledge, member=member, identities=identities,
+                                     base_url=args.base_url, token=args.token, timeout=args.request_timeout,
+                                     runtime_dependencies=runtime_dependencies,
+                                     provider_semantics=provider_semantics,
+                                     scenario_evidence=scenario_evidence)
         write_report(args.report, report)
-        executions = report["executed"] if isinstance(report["executed"], list) else [report["executed"]]
-        verdict = "failed" if any(execution["verdict"] != "passed" for execution in executions) else "passed"
-        print(f"{scenario_label} {verdict}; report written to {args.report}")
-        for execution in executions:
-            for step in execution["steps"]:
-                print(f"{execution['scenario']} {step['step_id']} {step['verdict'].upper()} {step['operation_id']} "
-                      f"HTTP {step['actual_http']} (expected {step['expected_http']})")
-                for line in step.get("why", []):
-                    print(f"  {line}")
-            for mismatch in execution["state"]["mismatches"]:
-                print(f"{execution['scenario']} MISMATCH {mismatch['pointer']}: declared {mismatch['declared']!r}, "
-                      f"read back {mismatch['actual']!r}", file=sys.stderr)
+        if "modes" in report:
+            verdict = "passed" if report["result"] == "PASS" else "failed"
+            print(f"{scenario_label} {verdict}; report written to {args.report}")
+            for mode in report["modes"]:
+                print(f"{mode['runtime_mode']} {mode['result']}")
+        else:
+            executions = report["executed"] if isinstance(report["executed"], list) else [report["executed"]]
+            evidence = report.get("quality_evidence", [])
+            evidence_items = evidence if isinstance(evidence, list) else [evidence]
+            evidence_results = [item.get("result") for item in evidence_items if isinstance(item, dict)]
+            verdict = ("failed" if any(execution["verdict"] != "passed" for execution in executions)
+                       or any(result != "PASS" for result in evidence_results)
+                       else "passed")
+            print(f"{scenario_label} {verdict}; report written to {args.report}")
+            for execution in executions:
+                for step in execution["steps"]:
+                    print(f"{execution['scenario']} {step['step_id']} {step['verdict'].upper()} {step['operation_id']} "
+                          f"HTTP {step['actual_http']} (expected {step['expected_http']})")
+                    for line in step.get("why", []):
+                        print(f"  {line}")
+                for mismatch in execution["state"]["mismatches"]:
+                    print(f"{execution['scenario']} MISMATCH {mismatch['pointer']}: declared {mismatch['declared']!r}, "
+                          f"read back {mismatch['actual']!r}", file=sys.stderr)
     except (WorkflowError, OSError) as error:
         print(f"{scenario_label if 'scenario_label' in locals() else args.scenario} FAILED: {error}", file=sys.stderr)
         if report_started:

@@ -78,7 +78,10 @@ def redact(value: Any, names: dict[str, str]) -> Any:
     passed through: an unexplained identifier is exactly what must not leave the machine.
     """
     if isinstance(value, dict):
-        return {key: redact(child, names) for key, child in value.items()}
+        sensitive_keys = {"body", "body_markdown", "content", "quoted_text", "source_text",
+                          "token", "authorization", "cookie", "prompt", "completion", "model_input"}
+        return {key: "<redacted>" if key.lower() in sensitive_keys else redact(child, names)
+                for key, child in value.items()}
     if isinstance(value, list):
         return [redact(child, names) for child in value]
     if not isinstance(value, str):

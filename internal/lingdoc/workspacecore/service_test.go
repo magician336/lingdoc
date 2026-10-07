@@ -184,6 +184,9 @@ func TestProjectChapterDurabilityAndReplay(t *testing.T) {
 	if err != nil || len(chapters) != 2 || chapters[0].CurrentVersionID != nil {
 		t.Fatalf("chapters: %+v %v", chapters, err)
 	}
+	if chapters[0].SectionID != "question" || chapters[1].SectionID != "method" {
+		t.Fatalf("chapters order: got %q then %q, want template order question then method", chapters[0].SectionID, chapters[1].SectionID)
+	}
 	chapter := chapters[0]
 	text := SaveChapterInput{ExpectedChapterVersionID: nil, ExpectedSpecRevision: 1, BodyMarkdown: "第一稿", SourceIDs: []string{}}
 	version, _, replay, err := svc.SaveChapter(ctx, owner, project.ID, chapter.ID, "chapter-001", text)
@@ -625,7 +628,7 @@ func TestNormalizeCitationUsagesCompletesDeclaredSources(t *testing.T) {
 	}
 }
 
-func TestListChaptersReportsCitationStatusesAndRedactsUnavailableContent(t *testing.T) {
+func TestListChaptersDeniesRevokedSourceAndRedactsStaleContent(t *testing.T) {
 	policy := &citationStatusSources{statuses: []CitationStatus{{SourceID: "alpha", Status: "unavailable", Detail: "来源已撤权"}}}
 	svc := testStoreWithPolicy(t, filepath.Join(t.TempDir(), "citation-status.db"), policy)
 	ctx := context.Background()
@@ -639,14 +642,8 @@ func TestListChaptersReportsCitationStatusesAndRedactsUnavailableContent(t *test
 		t.Fatal(err)
 	}
 	chapters, err := svc.ListChapters(ctx, actor, projectID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(chapters) == 0 || chapters[0].BodyMarkdown != "" || len(chapters[0].CitationUsages) != 0 || len(chapters[0].CitationStatuses) != 1 {
-		t.Fatalf("redacted chapter = %+v", chapters)
-	}
-	if chapters[0].CitationStatuses[0].Status != "unavailable" {
-		t.Fatalf("citation status = %+v", chapters[0].CitationStatuses)
+	if !errors.Is(err, ErrSourceUnavailable) {
+		t.Fatalf("revoked citation should deny chapter list, got chapters=%+v err=%v", chapters, err)
 	}
 	policy.statuses = []CitationStatus{{SourceID: "alpha", Status: "needs_review", Detail: "来源版本已变化"}}
 	chapters, err = svc.ListChapters(ctx, actor, projectID)

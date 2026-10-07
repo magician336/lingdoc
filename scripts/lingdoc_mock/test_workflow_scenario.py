@@ -17,7 +17,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.lingdoc_mock import run_scenario as module
-from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, PROVIDER_ID, SCENARIOS_PATH, WorkflowError, write_report
+from scripts.lingdoc_mock.run_f01 import OPENAPI_PATH, PROVIDER_ID, SCENARIOS_PATH, WorkflowError, redact, write_report
 from scripts.lingdoc_mock.test_workflow_states import MEMBER_ID, PROVIDER_IDS, Response, SyntheticProvider
 
 KNOWLEDGE = {name: resolved for name, resolved in PROVIDER_IDS.items()}
@@ -99,6 +99,28 @@ def scenario_requests(synthetic):
 
 
 class ScenarioReportTest(unittest.TestCase):
+    def test_unsafe_scenario_fixture_ids_are_hashed(self):
+        self.assertEqual(module._scenario_fixture_id("scenario/secret", "state with secret")[:9], "scenario.")
+        self.assertRegex(module._scenario_fixture_id("F22", "S7"), r"^F22:S7$")
+
+    def test_quality_metadata_uses_safe_version_and_object_status_values(self):
+        self.assertEqual(module._safe_version("Bearer SECRET", "template.unknown"), "template.unknown")
+        safe = module._safe_object_versions({
+            "project_version": "secret project version",
+            "spec_revision": 3,
+            "assets": [{"knowledge_id": "asset.demo", "listed_state": "secret", "deny_reason": "secret"}],
+        })
+        self.assertEqual(safe["project_version"], "project.version.unknown")
+        self.assertEqual(safe["spec_revision"], 3)
+        self.assertEqual(safe["assets"][0]["listed_state"], "unknown")
+        self.assertEqual(safe["assets"][0]["deny_reason"], "unknown")
+
+    def test_report_redaction_removes_document_fields_by_key(self):
+        self.assertEqual(redact({"body_markdown": "private text", "content": "source text",
+                                 "nested": {"token": "secret"}}, {}),
+                         {"body_markdown": "<redacted>", "content": "<redacted>",
+                          "nested": {"token": "<redacted>"}})
+
     def test_execution_errors_are_sanitized_before_they_reach_reports(self):
         private_id = "f838a8d9-03a1-4951-bd35-1da51ba802d3"
         error = WorkflowError(f"request failed for http://127.0.0.1/projects/{private_id}: connection reset")
@@ -126,6 +148,132 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertNotIn("why", step)
         self.assertEqual({check["path"] for check in step["checks"]}, DENIED)
         self.assertEqual({check["status"] for check in step["checks"]}, {"passed"})
+
+    def test_quality_evidence_records_versions_permissions_and_summaries(self):
+        report, _ = drive()
+
+        evidence = report["quality_evidence"]
+
+        self.assertEqual(evidence["result"], "PASS")
+        self.assertEqual(evidence["runtime_mode"], "mock")
+        self.assertEqual(evidence["fixture_id"], "F22:S7")
+        self.assertTrue(evidence["fixture_coverage"]["declared_complete"])
+        self.assertFalse(evidence["fixture_coverage"]["executed_complete"])
+        self.assertIn("download", evidence["fixture_coverage"]["missing_for_execution"])
+        self.assertEqual(evidence["project_id"], "project.id")
+        self.assertEqual(evidence["template_version"], "1")
+        self.assertRegex(evidence["ruleset_hash"], r"^[0-9a-f]{64}$")
+        self.assertEqual(evidence["permission_snapshot"]["status"], "declared_only")
+        self.assertRegex(evidence["environment_versions"]["runtime"], r"^python\.")
+        self.assertRegex(evidence["environment_versions"]["platform"], r"^platform\.")
+        self.assertEqual(evidence["input_summary"]["asset_count"], 2)
+        self.assertEqual(evidence["output_summary"]["executed_steps"], 1)
+        self.assertEqual(evidence["evidence_refs"], [
+            "executed.state",
+            "executed.steps",
+            "scenarios",
+            "summary",
+        ])
+        serialized = json.dumps(report, ensure_ascii=False)
+        self.assertNotIn(PROVIDER_IDS["k-demo"], serialized)
+        self.assertNotIn("synthetic-owner-token", serialized)
+
+    def test_quality_evidence_uses_fail_result_and_safe_attribution(self):
+        report, _ = drive(provider=AnswersThePreflightWrongly(answered_with_200))
+
+        evidence = report["quality_evidence"]
+
+        self.assertEqual(evidence["result"], "FAIL")
+        self.assertEqual(evidence["attribution"], ["external_service"])
+        self.assertNotIn(PROVIDER_IDS["k-demo"], module.render_report(report))
+        self.assertNotIn("synthetic-owner-token", module.render_report(report))
+
+    def test_success_quality_evidence_redacts_credential_like_labels(self):
+        original_entry = module.scenario_entry
+
+        def scenario_with_sensitive_labels(document, scenario_id, source_name):
+            scenario = dict(original_entry(document, scenario_id, source_name))
+            scenario["quality_owner"] = "secret123"
+            scenario["quality_reviewer"] = "BearerToken"
+            return scenario
+
+        with patch.object(module, "scenario_entry", side_effect=scenario_with_sensitive_labels):
+            report, _ = drive()
+
+        evidence = report["quality_evidence"]
+        self.assertEqual(evidence["owner"], "unassigned")
+        self.assertEqual(evidence["reviewer"], "unassigned")
+        self.assertNotIn("secret123", json.dumps(evidence))
+        self.assertNotIn("BearerToken", json.dumps(evidence))
+
+    def test_real_mode_cannot_claim_pass_without_real_dependency_evidence(self):
+        report, _ = drive(runtime_mode="real")
+
+        evidence = report["quality_evidence"]
+
+        self.assertEqual(evidence["result"], "BLOCKED")
+        self.assertEqual(evidence["runtime_status"], "real_dependency_not_verified")
+
+    def test_real_mode_requires_explicit_dependency_and_provider_semantics_evidence(self):
+        dependencies = {name: True for name in module.RUNTIME_DEPENDENCIES["real"]}
+        report, _ = drive(runtime_mode="real", runtime_dependencies=dependencies,
+                          provider_semantics_status="verified")
+        evidence = report["quality_evidence"]
+        self.assertEqual(evidence["result"], "PASS")
+        self.assertEqual(evidence["runtime_status"], "verified")
+
+    def test_mode_matrix_keeps_shared_fixture_and_mode_results_separate(self):
+        synthetic = provider()
+
+        matrix = module.run_mode_matrix(
+            ["F22"], SCENARIOS_PATH, OPENAPI_PATH,
+            runtime_modes=["mock", "real"], knowledge=dict(KNOWLEDGE), member={},
+            identities=dict(IDENTITIES), base_url="http://127.0.0.1:8080/api/v1/lingdoc",
+            opener=synthetic.open,
+        )
+
+        self.assertEqual(matrix["result"], "BLOCKED")
+        self.assertTrue(matrix["shared_fixture"])
+        self.assertEqual([item["runtime_mode"] for item in matrix["modes"]], ["mock", "real"])
+        self.assertEqual([item["result"] for item in matrix["modes"]], ["BLOCKED", "BLOCKED"])
+        self.assertEqual(len(matrix["reports"]), 2)
+        self.assertEqual({item["quality_evidence"]["fixture_id"] for item in matrix["modes"]}, {"F22:S7"})
+        self.assertEqual(matrix["dependency_matrix"]["mock"]["status"], "verified")
+        self.assertEqual(matrix["dependency_matrix"]["real"]["missing"], ["api", "docx", "file", "model", "permissions", "queue", "weknora"])
+
+    def test_mode_matrix_accepts_status_only_scenario_evidence_and_redacts_it(self):
+        synthetic = provider()
+        evidence = {
+            "mock": {
+                "main_path": {"result": "PASS", "fixture_id": "F22:S7", "completed_steps": 1,
+                               "verification_scope": "contract_fixture_only"},
+                "key_failure": {"result": "PASS", "fixture_id": "F22:S7", "actual_http": 422,
+                                 "no_formal_side_effect": True, "readback_status": "unchanged"},
+            }
+        }
+        matrix = module.run_mode_matrix(
+            ["F22"], SCENARIOS_PATH, OPENAPI_PATH, runtime_modes=["mock"], knowledge=dict(KNOWLEDGE), member={},
+            identities=dict(IDENTITIES), base_url="http://127.0.0.1:8080/api/v1/lingdoc",
+            opener=synthetic.open, scenario_evidence=evidence,
+        )
+        mode_evidence = matrix["modes"][0]["scenario_evidence"]
+        self.assertEqual(mode_evidence["main_path"]["result"], "PASS")
+        self.assertEqual(mode_evidence["key_failure"]["http_status"], 422)
+        self.assertNotIn("actual_http", mode_evidence["key_failure"])
+
+    def test_mode_matrix_cannot_pass_dependencies_without_scenario_evidence(self):
+        synthetic = provider()
+        dependencies = {mode: {name: True for name in module.RUNTIME_DEPENDENCIES[mode]}
+                        for mode in module.RUNTIME_MODES}
+        matrix = module.run_mode_matrix(
+            ["F22"], SCENARIOS_PATH, OPENAPI_PATH, runtime_modes=list(module.RUNTIME_MODES),
+            runtime_dependencies=dependencies,
+            provider_semantics={mode: "verified" for mode in module.RUNTIME_MODES},
+            knowledge=dict(KNOWLEDGE), member={}, identities=dict(IDENTITIES),
+            base_url="http://127.0.0.1:8080/api/v1/lingdoc", opener=synthetic.open,
+        )
+        self.assertEqual(matrix["result"], "BLOCKED")
+        self.assertTrue(all(mode["result"] == "BLOCKED" for mode in matrix["modes"]))
 
     def test_the_declared_asset_name_is_what_the_report_publishes(self):
         report, synthetic = drive()
@@ -370,6 +518,32 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual([item["scenario"] for item in combined["executed"]], ["F08", "F05", "F12"])
         self.assertEqual([item["verdict"] for item in combined["executed"]], ["passed", "failed", "passed"])
         self.assertEqual(combined["summary"], {"passed": 2, "failed": 1, "not_run": 0})
+        fallback = combined["quality_evidence"][1]
+        self.assertEqual(fallback["result"], "BLOCKED")
+        self.assertRegex(fallback["fixture_id"], r"^scenario\.[0-9a-f]{16}$")
+        self.assertIn("input_hash", fallback)
+        self.assertNotIn("synthetic failure", json.dumps(fallback))
+
+    def test_startup_failure_redacts_untrusted_quality_owner_and_reviewer(self):
+        original_entry = module.scenario_entry
+
+        def scenario_with_sensitive_labels(document, scenario_id, source_name):
+            scenario = dict(original_entry(document, scenario_id, source_name))
+            scenario["quality_owner"] = "Bearer_SECRET_TOKEN"
+            scenario["quality_reviewer"] = "reviewer/private path"
+            return scenario
+
+        with patch.object(module, "scenario_entry", side_effect=scenario_with_sensitive_labels), \
+                patch.object(module, "run_scenario", side_effect=WorkflowError("synthetic failure")):
+            report = module.run_scenarios(
+                ["F22"], SCENARIOS_PATH, OPENAPI_PATH,
+                knowledge={}, member={}, identities={})
+
+        evidence = report["quality_evidence"]
+        self.assertEqual(evidence["owner"], "unassigned")
+        self.assertEqual(evidence["reviewer"], "unassigned")
+        self.assertNotIn("Bearer_SECRET_TOKEN", json.dumps(evidence))
+        self.assertNotIn("private path", json.dumps(evidence))
 
     def test_duplicate_scenario_ids_are_rejected_before_any_scenario_runs(self):
         with patch.object(module, "run_scenario") as run_one:

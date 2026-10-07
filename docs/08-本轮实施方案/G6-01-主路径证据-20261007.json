@@ -1,0 +1,172 @@
+{
+  "export_artifact": {
+    "bytes": 2468,
+    "content_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "provider_semantics_status": "observed_http_and_real_model_output",
+    "runtime_mode": "real",
+    "sha256": "651bb9a3139db12b413a467433f492a9298fc646db841af07e602bf9d54445f5",
+    "status": 200
+  },
+  "failure_path": {
+    "actual_http": 400,
+    "evidence_refs": [
+      "failure_path",
+      "side_effect_readback"
+    ],
+    "expected_http": 400,
+    "failure_case": "invalid_project_name",
+    "no_formal_side_effect": true,
+    "readback": {
+      "status": "unchanged",
+      "unchanged": true
+    },
+    "result": "PASS",
+    "status": "observed"
+  },
+  "fixture_coverage": {
+    "constructed_complete": true,
+    "constructed_parts": [
+      "asset",
+      "chapter",
+      "check",
+      "download",
+      "export",
+      "project",
+      "release"
+    ],
+    "missing_parts": [],
+    "missing_step_ids": [],
+    "required_parts": [
+      "project",
+      "asset",
+      "chapter",
+      "check",
+      "release",
+      "export",
+      "download"
+    ],
+    "step_counts_complete": true,
+    "step_sequence_complete": true,
+    "unexpected_step_ids": []
+  },
+  "fixture_digest": "4531f5af09b20d6f1ef218fd3ba3f0042833273ade59f8168bc57e0374d11f7d",
+  "fixture_id": "G6-F01-v1",
+  "fixture_state": {},
+  "main_path": {
+    "completed_steps": 23,
+    "result": "PASS",
+    "total_steps": 23,
+    "verification_scope": "observed"
+  },
+  "manual_assertions": {
+    "accept_replay_http": 201,
+    "accept_replay_same_version": true,
+    "accepted_question_preserved_review_items": true,
+    "candidate_body_contains_concrete_question": true,
+    "candidate_has_structured_review_items": true,
+    "candidate_http": 200,
+    "candidate_review_item_count": 5,
+    "claim_count_observed": 5,
+    "docx_bytes": 2468,
+    "export_content_type_docx": true,
+    "export_readback_http": 200,
+    "export_sha256_matches_download": true,
+    "generation_succeeded": true,
+    "method_chapter_readback": true,
+    "metrics": {
+      "changesets": 2,
+      "dismissed_issues": 0,
+      "export_checks": 1,
+      "export_loss_items": 0,
+      "issues_reviewed": 5,
+      "manual_minutes": 0.0628,
+      "missed_edits": 0,
+      "projects": 1,
+      "snapshots": 1,
+      "supported_claims": 2,
+      "total_claims": 5,
+      "unconfirmed_items": 0
+    },
+    "real_model_output_has_hypothesis_or_variables": true,
+    "release_readback_http": 200,
+    "release_replay_http": 201,
+    "release_replay_same_snapshot": true,
+    "review_items_reviewed": 5,
+    "runtime_mode": "real",
+    "save_replay_http": 201,
+    "save_replay_same_version": true,
+    "snapshot_digest_matches_frozen_input": true,
+    "source_marker_present": true,
+    "status": "observed_with_manual_assertions",
+    "supported_claim_count_observed": 2
+  },
+  "quality_evidence": {
+    "attribution": [
+      "domain_logic"
+    ],
+    "context": {
+      "context_revision": null,
+      "status": "not_available",
+      "target_version": null
+    },
+    "dependency_versions": {
+      "api": "lingdoc.api.v1",
+      "docx": "docx.renderer.v1",
+      "file": "local-storage.v1",
+      "model": "deepseek-chat.v1",
+      "permissions": "rbac.v1",
+      "queue": "asynq.v1",
+      "weknora": "weknora.g6"
+    },
+    "environment_versions": {
+      "platform": "docker.linux.amd64",
+      "python": "python3.12",
+      "runtime": "go1.26"
+    },
+    "evidence_refs": [
+      "fixture_coverage",
+      "main_path",
+      "failure_path"
+    ],
+    "evidence_version": 1,
+    "execution_window": {
+      "end": null,
+      "start": null,
+      "status": "not_recorded"
+    },
+    "fixture_digest": "4531f5af09b20d6f1ef218fd3ba3f0042833273ade59f8168bc57e0374d11f7d",
+    "fixture_id": "G6-F01-v1",
+    "input_hash": "3a357629ffe26b76b5d151bc1eff12ac5566a9c8fb7ddd5f12e1a7e31e32df36",
+    "input_summary": {
+      "required_parts": 7
+    },
+    "object_versions": {
+      "asset": "asset.v1",
+      "chapter": "chapter.v1",
+      "export": "docx.v1",
+      "project": "project.v1"
+    },
+    "output_hash": "8e7982b8ed6eaf85b418f23266e7d91ba7dc1a56944fc632efdff3c72d2641c2",
+    "output_summary": {
+      "completed_steps": 23,
+      "failure_side_effect_status": "observed",
+      "fixture_parts_observed": []
+    },
+    "owner": "quality-operations",
+    "permission_snapshot": {
+      "actor": "user.id",
+      "project": "project.id",
+      "status": "observed"
+    },
+    "project_id": "project.id",
+    "result": "PASS",
+    "reviewer": "unassigned",
+    "ruleset_hash": "rules.key",
+    "runtime_mode": "real",
+    "template_version": "template.v1"
+  },
+  "report_version": 1,
+  "result": "PASS",
+  "runtime_mode": "real",
+  "scope": "canonical F01 project-to-download path plus one failure side-effect fixture"
+}

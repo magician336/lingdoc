@@ -533,7 +533,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
 	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore) (workspace.ReleaseApplication, error) {
-		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots)
+		service := workspace.NewDeliveryReleaseService(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, sourceIntegration.CandidateAdoptionSourcePolicy())
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
@@ -901,12 +901,11 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		// Run base migrations (all versioned migrations including embeddings)
 		// The embeddings migration will be conditionally executed based on skip_embedding parameter in DSN
 		if err := database.RunMigrationsWithOptions(migrateDSN, migrationOpts); err != nil {
-			// Log warning but don't fail startup - migrations might be handled externally
-			logger.Warnf(context.Background(), "Database migration failed: %v", err)
-			logger.Warnf(
-				context.Background(),
-				"Continuing with application startup. Please run migrations manually if needed.",
-			)
+			// Do not serve an older binary against a newer schema. That state can
+			// expose a partial API surface (including missing LingDoc routes) and
+			// may write data using stale contracts. Operators can explicitly disable
+			// automatic migrations when they manage them out of band.
+			return nil, fmt.Errorf("database migration failed; refusing to start: %w", err)
 		}
 
 		// Post-migration: resolve __pending_env__ storage provider markers for historical KBs.
