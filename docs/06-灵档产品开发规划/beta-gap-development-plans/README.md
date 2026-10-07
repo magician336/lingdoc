@@ -13,7 +13,7 @@
 | 建项与草稿 | [G1](G1-draft-baseline.md) |
 | 证据与调研 | [G2](G2-evidence-research.md) |
 | 变更协调与路线图 | [G3](G3-pcc-change-coordination.md) |
-| 模板与规则 | [G4](G4-template-rules.md)、[项目模板副本](G4-project-template-copy.md) |
+| 模板与规则 | [G4 Spec](G4-spec.md)、[G4 实施计划](G4-development-plan.md)、[G4](G4-template-rules.md)、[项目模板副本](G4-project-template-copy.md) |
 | 权限与审计 | [G5](G5-permissions-governance.md) |
 | 质量与运行 | [G6](G6-beta-quality-operations.md) |
 | 章节编辑与 AI | [G7](G7-formal-chapter-editor-ai.md) |
