@@ -12827,8 +12827,11 @@
           "expected_context_revision": {"type": "integer", "minimum": 1},
           "fields": {
             "type": "object", "maxProperties": 2,
-            "propertyNames": {"enum": ["research_subject", "research_goal"]},
-            "additionalProperties": {"type": "object", "required": ["old_value", "new_value"], "properties": {"old_value": {"type": "string"}, "new_value": {"type": "string"}}}
+            "properties": {
+              "research_subject": {"type": "object", "required": ["old_value", "new_value"], "properties": {"old_value": {"type": "string"}, "new_value": {"type": "string"}}},
+              "research_goal": {"type": "object", "required": ["old_value", "new_value"], "properties": {"old_value": {"type": "string"}, "new_value": {"type": "string"}}}
+            },
+            "additionalProperties": false
           },
           "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
           "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
