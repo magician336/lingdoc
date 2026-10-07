@@ -1,0 +1,160 @@
+{
+  "report_version": 1,
+  "scope": "canonical F01 project-to-download path plus one failure side-effect fixture",
+  "fixture_id": "G6-F01-v1",
+  "fixture_digest": "700d6696a781240903105bfd327a6c0bf03d7edfa42d29f25faa94f831955b23",
+  "runtime_mode": "mock",
+  "result": "PASS",
+  "fixture_coverage": {
+    "required_parts": [
+      "project",
+      "asset",
+      "chapter",
+      "check",
+      "release",
+      "export",
+      "download"
+    ],
+    "constructed_parts": [
+      "asset",
+      "chapter",
+      "check",
+      "download",
+      "export",
+      "project",
+      "release"
+    ],
+    "constructed_complete": true,
+    "missing_parts": [],
+    "step_sequence_complete": true,
+    "step_counts_complete": true,
+    "missing_step_ids": [],
+    "unexpected_step_ids": []
+  },
+  "main_path": {
+    "result": "PASS",
+    "completed_steps": 23,
+    "total_steps": 23,
+    "verification_scope": "contract_fixture_only"
+  },
+  "fixture_state": {
+    "project": {
+      "id": "project.id",
+      "status": "active",
+      "version": "project.v1"
+    },
+    "asset": {
+      "id": "asset.id",
+      "permission": "allow",
+      "status": "ready"
+    },
+    "chapter": {
+      "id": "chapter.id",
+      "status": "ready",
+      "version": "chapter.v1"
+    },
+    "check": {
+      "id": "check.id",
+      "status": "passed"
+    },
+    "release": {
+      "id": "release.id",
+      "snapshot": "snapshot.id",
+      "status": "ready"
+    },
+    "export": {
+      "id": "export.id",
+      "status": "ready"
+    },
+    "download": {
+      "id": "export.id",
+      "reauthorized": true
+    }
+  },
+  "failure_path": {
+    "result": "PASS",
+    "status": "observed",
+    "failure_case": "invalid_project_name",
+    "no_formal_side_effect": true,
+    "expected_http": 400,
+    "actual_http": 400,
+    "readback": {
+      "status": "unchanged",
+      "unchanged": true
+    },
+    "evidence_refs": [
+      "failure_path",
+      "side_effect_readback"
+    ]
+  },
+  "quality_evidence": {
+    "evidence_version": 1,
+    "fixture_id": "G6-F01-v1",
+    "fixture_digest": "700d6696a781240903105bfd327a6c0bf03d7edfa42d29f25faa94f831955b23",
+    "project_id": "project.id",
+    "template_version": "template.v1",
+    "ruleset_hash": "rules.key",
+    "object_versions": {
+      "asset": "asset.v1",
+      "chapter": "chapter.v1",
+      "project": "project.v1",
+      "spec": "spec.revision"
+    },
+    "permission_snapshot": {
+      "actor": "user.id",
+      "project": "project.id",
+      "status": "mock"
+    },
+    "runtime_mode": "mock",
+    "dependency_versions": {
+      "api": "not_run",
+      "contract": "contract.v1",
+      "docx": "not_run",
+      "model": "not_run",
+      "weknora": "not_run"
+    },
+    "environment_versions": {
+      "platform": "platform.contract",
+      "runtime": "python.contract"
+    },
+    "context": {
+      "context_revision": null,
+      "target_version": null,
+      "status": "not_available"
+    },
+    "input_summary": {
+      "required_parts": 7
+    },
+    "output_summary": {
+      "completed_steps": 23,
+      "failure_side_effect_status": "observed",
+      "fixture_parts_observed": [
+        "asset",
+        "chapter",
+        "check",
+        "download",
+        "export",
+        "project",
+        "release"
+      ]
+    },
+    "input_hash": "3a357629ffe26b76b5d151bc1eff12ac5566a9c8fb7ddd5f12e1a7e31e32df36",
+    "output_hash": "e8622b15e057bba4ca01d4356f2aa0e1d89286cb470f734f167fc60f032b5d6d",
+    "execution_window": {
+      "start": null,
+      "end": null,
+      "status": "not_recorded"
+    },
+    "result": "PASS",
+    "attribution": [
+      "domain_logic"
+    ],
+    "evidence_refs": [
+      "fixture_coverage",
+      "main_path",
+      "failure_path"
+    ],
+    "owner": "quality-operations",
+    "reviewer": "unassigned"
+  }
+}

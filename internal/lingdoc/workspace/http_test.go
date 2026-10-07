@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -190,6 +191,68 @@ func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("template copy save without idempotency key = %d, want 400: %s", response.Code, response.Body.String())
+	}
+}
+
+func TestHandlerServesVersionedDemoTemplate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader()})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api/lingdoc"), Write: engine.Group("/api/lingdoc")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodGet, "/api/lingdoc/templates/template-demo", nil).WithContext(ctx)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	var body struct {
+		Data delivery.Template `json:"data"`
+		Meta struct {
+			Replayed        bool `json:"replayed"`
+			RefreshRequired bool `json:"refresh_required"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode template response: %v", err)
+	}
+	if body.Data.ID != delivery.DemoTemplateID || body.Data.Version != delivery.DemoTemplateVersion || !body.Data.IsDemo {
+		t.Fatalf("template = %#v, want fixed demo template", body.Data)
+	}
+	if len(body.Data.Sections) != 2 || len(body.Data.Rules) != 5 || len(body.Data.RequiredFields) != 2 {
+		t.Fatalf("template shape = %#v, want complete contract", body.Data)
+	}
+	if body.Meta.Replayed || body.Meta.RefreshRequired {
+		t.Fatalf("template meta = %#v, want non-replayed read", body.Meta)
+	}
+}
+
+func TestHandlerMapsUnknownTemplateToNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	handler := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader()})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api/lingdoc"), Write: engine.Group("/api/lingdoc")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodGet, "/api/lingdoc/templates/unknown", nil).WithContext(ctx)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusNotFound, response.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode template error: %v", err)
+	}
+	if body.Error.Code != "not_found" {
+		t.Fatalf("error code = %q, want not_found", body.Error.Code)
 	}
 }
 

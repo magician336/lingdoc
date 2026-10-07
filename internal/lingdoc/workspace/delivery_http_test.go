@@ -171,7 +171,7 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 		t.Fatalf("workspace application = %T, want *Service", handler.Service())
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
-	release := NewDeliveryReleaseService(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), core)
+	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)
 	router := deliveryRoutes(NewDeliveryHandler(release))
 	request := deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, "")
 	request = request.WithContext(context.WithValue(request.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))

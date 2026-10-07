@@ -21,17 +21,24 @@ type Handler struct {
 	sources     SourceApplicationService
 	integration WorkspaceIntegration
 	rewrites    SelectedRewriteApplication
+	templates   delivery.TemplateReader
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
+	templates := deps.Templates
+	if templates == nil {
+		templates = delivery.NewFixedTemplateReader()
+	}
 	return &Handler{
-		service: deps.Service, sources: deps.Sources, integration: deps.Integration, rewrites: deps.SelectedRewrites,
+		service: deps.Service, sources: deps.Sources, integration: deps.Integration,
+		rewrites: deps.SelectedRewrites, templates: templates,
 	}
 }
 
 func (h *Handler) Service() ApplicationService { return h.service }
 
 func (h *Handler) Register(routes RouteGroups) {
+	routes.Read.GET("/templates/:templateId", h.getTemplate)
 	routes.Read.GET("/projects", h.listProjects)
 	routes.Write.POST("/projects", h.createProject)
 	routes.Read.GET("/projects/:projectId", h.getProject)
@@ -109,6 +116,8 @@ func sendError(c *gin.Context, err error) {
 	case errors.Is(err, evidence.ErrAssetNotFound):
 		status, code, message = 404, "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrNotFound):
+		status, code, message = 404, "not_found", "资源不存在或不可访问。"
+	case errors.Is(err, delivery.ErrTemplateNotFound):
 		status, code, message = 404, "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrVersionConflict):
 		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
@@ -249,6 +258,19 @@ func (h *Handler) listProjects(c *gin.Context) {
 		return
 	}
 	sendOK(c, 200, gin.H{"items": items, "truncated": truncated}, false)
+}
+
+func (h *Handler) getTemplate(c *gin.Context) {
+	_, ok := identity(c)
+	if !ok {
+		return
+	}
+	template, err := h.templates.Get(c.Param("templateId"), delivery.DemoTemplateVersion)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, template, false)
 }
 
 func (h *Handler) createProject(c *gin.Context) {

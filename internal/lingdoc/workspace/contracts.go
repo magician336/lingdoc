@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -135,6 +136,7 @@ type HandlerDependencies struct {
 	Sources          SourceApplicationService
 	Integration      WorkspaceIntegration
 	SelectedRewrites SelectedRewriteApplication
+	Templates        delivery.TemplateReader
 }
 
 // WorkspaceIntegration supplies the same source recheck and frozen-input adapter to all consumers.

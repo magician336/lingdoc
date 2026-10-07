@@ -42,6 +42,45 @@ python -X utf8 docs/08-本轮实施方案/contracts/validate_g7_contract.py
 
 检查包含确认章节/模板/资料版本对应、待核及处置 ID 唯一、确认返回与快照对应、整章替换留存、幂等参考顺序和历史标签行为，以及起点状态声明（只许造得出来的部分、章节引用与正文标记一致、草稿不得有章节）。共 44 个静态反例应被拒绝。
 
+## G6-01 质量证据报告
+
+场景驱动器可在报告中生成 `quality_evidence`，把现有的起点读回、步骤断言和脱敏结果整理成稳定的 G6 证据记录。记录包含 `fixture_id`、模板/规则版本、对象版本、权限快照、`runtime_mode`、契约依赖摘要、输入/输出摘要、失败归因、责任人和证据引用；`result` 只使用 `PASS`、`FAIL`、`NOT RUN` 或 `BLOCKED`。报告不会写入正文、来源原文、访问令牌或动态业务 ID。
+
+运行模式通过 `--runtime-mode` 指定，默认是 `mock`，可选 `real_api_fake_model` 和 `real`。例如：
+
+```text
+python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
+  --runtime-mode mock \
+  --base-url http://127.0.0.1:8080/api/v1/lingdoc \
+  --knowledge k-demo=<真实知识 id> --knowledge k-notready=<真实知识 id> \
+  --identity u-owner=<该账号令牌> \
+  --report artifacts/g6-01-f22.json
+```
+
+`mock` 只证明契约和失败语义；当前 `real_api_fake_model` 和 `real` 在尚未接入依赖证据时会保留 `BLOCKED`，不能把 mock 结果当成真实能力通过。多场景运行时，`quality_evidence` 是按执行顺序排列的每条场景证据列表。
+
+## G6-02 运行模式矩阵
+
+同一组场景可以重复传入 `--runtime-mode`，执行器会为每种模式保留独立报告，并在顶层输出 `modes`、`reports`、`fixture_ids` 和 `shared_fixture`。只有所有模式共用同一个 `fixture_id` 时，矩阵才可用于横向比较；矩阵结果按 `FAIL`、`BLOCKED`、`NOT RUN`、`PASS` 的优先级汇总，真实依赖尚未提供证据时仍为 `BLOCKED`：
+
+```text
+python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
+  --runtime-mode mock --runtime-mode real_api_fake_model --runtime-mode real \
+  --knowledge k-demo=<真实知识 id> --knowledge k-notready=<真实知识 id> \
+  --identity u-owner=<该账号令牌> \
+  --report artifacts/g6-02-f22-matrix.json
+```
+
+矩阵不把 mock 的 `PASS` 合并成真实模式的通过结论；每个模式的 `quality_evidence`、执行摘要和验证范围都在自己的条目中保存。
+
+矩阵还输出 `dependency_matrix`：`mock` 要求契约证据，`real_api_fake_model` 要求 API、权限、队列和文件依赖，`real` 另外要求模型、WeKnora 和 DOCX 依赖；缺任一项即为 `BLOCKED`。每个模式还必须提交脱敏的 `scenario_evidence.main_path` 与 `scenario_evidence.key_failure`：主路径需有正步数和外部观察范围，关键失败需有 4xx/5xx、`no_formal_side_effect=true` 及 `readback_status=unchanged`；任一模式缺少这两段证据，矩阵不能为 `PASS`。
+
+真实模式还必须显式提供每个依赖和 `provider_semantics=verified` 证据；只有命令行/报告同时满足这些条件时，模式才可能得到 `PASS`。仅填写依赖存在布尔值或仅有 mock 结果不能冒充真实接入。
+
+G6-01 至 G6-06 的主路径、运行矩阵、安全矩阵、结构化观测、迁移/回退和 Beta 指标门禁见 [G6 质量运行门禁](G6-质量运行门禁.md)。统一入口 `g6_run.py` 会保留六个门禁的独立结果；这些入口默认在缺少真实观测时输出 `BLOCKED`，Beta 指标用 `readiness=NOT READY` 表示样本或分母不足，并保留可审计的原始计数与失败动作。
+
+若要让统一入口评估 G6-01 的完整主路径，需同时传入脱敏的 `--main-path-report` 和 `--failure-observation`；后者必须包含关键失败的 HTTP 状态、无正式副作用断言和读回状态。
+
 ## 提供方联调执行器（按场景驱动）
 
 `scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 与规格文档读取请求定义，对隔离的提供方测试环境逐步发请求。规格有两种给法：默认的 workflow.json 是 F01 的 23 步连续规格；`--scenario` 则按 id 从 scenarios.json 取一条，F01 在契约里指向 workflow.json，所以两种给法等价。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
@@ -61,7 +100,7 @@ F10/F16 可由通用驱动分别从各自声明的起点执行。F19 还需要�
 python scripts/lingdoc_mock/run_t15_09_live.py --local-facts-path <本地fixture-helper路径>
 ```
 
-驱动会清理临时组织、分享和消费者租户，并把 F10/F16/F19/F13 的结果写入 [T15-09 验证报告](T15-09-验证报告.json)，保留 T15-08 的报告不变。报告区分场景通过、实跑失败和因缺少公开注入点而未运行；当前 F19 会记录撤权后下载仍返回 200 的 T14 授权缺口，F13 记录缺少损坏字节注入入口。
+驱动会清理临时组织、分享和消费者租户，并把 F10/F16/F19/F13 的结果写入 [T15-09 验证报告](T15-09-验证报告.json)，保留 T15-08 的报告不变。报告区分场景通过、实跑失败和因缺少公开注入点而未运行；当前 F19 已验证撤权后的文件下载和旧快照重放均返回 403，原 `T15-09-R1` 已标记为 resolved，F13 仍记录缺少损坏字节注入入口。
 
 ### T15-10 证据族与剩余场景
 

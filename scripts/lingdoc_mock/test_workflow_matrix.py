@@ -24,14 +24,14 @@ class T15MatrixTest(unittest.TestCase):
         self.assertEqual(len(rows), 22)
         self.assertEqual([row["id"] for row in rows], [f"F{i:02d}" for i in range(1, 23)])
         self.assertEqual(len({row["id"] for row in rows}), 22)
-        self.assertEqual(report["summary"], {"passed": 14, "failed": 3, "not_run": 5, "total": 22})
+        self.assertEqual(report["summary"], {"passed": 15, "failed": 2, "not_run": 5, "total": 22})
 
         by_id = {row["id"]: row for row in rows}
         self.assertEqual(by_id["F01"]["verdict"], "not_run")
         self.assertEqual(by_id["F07"]["verdict"], "failed")
         self.assertEqual(by_id["F15"]["verdict"], "failed")
         self.assertIn("has not been re-run after", by_id["F15"]["qualification"])
-        self.assertEqual(by_id["F19"]["verdict"], "failed")
+        self.assertEqual(by_id["F19"]["verdict"], "passed")
         self.assertEqual(by_id["F03"]["verdict"], "passed")
         self.assertIn("T15-10-R1", by_id["F03"]["red_item_ids"])
         self.assertEqual(by_id["F10"]["observed_steps"], 6)

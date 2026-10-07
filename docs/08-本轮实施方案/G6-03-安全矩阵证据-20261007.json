@@ -1,0 +1,302 @@
+{
+  "cases": [
+    {
+      "action": "stop_source_and_export",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-01"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-01",
+      "name": "revoked_source_read",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "block_export",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-02"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-02",
+      "name": "revoked_export",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "block_download",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-03"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-03",
+      "name": "revoked_download",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "stop_affected_traffic",
+      "actual_http": 404,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-04"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 404,
+      "id": "SEC-04",
+      "name": "cross_tenant_id_substitution",
+      "observed_decision": "deny",
+      "response_digest": "87757ea4a81bfae0724836a1f5a1d4e0120a9012064c74aa4397585aec50357b",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "stop_affected_traffic",
+      "actual_http": 404,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-05"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 404,
+      "id": "SEC-05",
+      "name": "cross_project_id_substitution",
+      "observed_decision": "deny",
+      "response_digest": "87757ea4a81bfae0724836a1f5a1d4e0120a9012064c74aa4397585aec50357b",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "notify_owner",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-06"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-06",
+      "name": "missing_scope",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P1"
+    },
+    {
+      "action": "notify_owner",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-07"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-07",
+      "name": "shared_agent_scope",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P1"
+    },
+    {
+      "action": "notify_security",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-08"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-08",
+      "name": "audit_query_overreach",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P1"
+    },
+    {
+      "action": "block_delivery",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-09"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-09",
+      "name": "stale_snapshot_replay",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "purge_restricted_cache",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-10"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-10",
+      "name": "cache_bypass_after_revocation",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "revoke_download_url",
+      "actual_http": 403,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-11"
+      ],
+      "expected_decision": "deny",
+      "expected_http": 403,
+      "id": "SEC-11",
+      "name": "presigned_url_replay",
+      "observed_decision": "deny",
+      "response_digest": "658055138237f08dc0c4cfa5211ee7a795470312e1fa756dd57950164c2060d5",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P0"
+    },
+    {
+      "action": "retain_audit_access",
+      "actual_http": 200,
+      "attribution": "domain_logic",
+      "evidence_refs": [
+        "security_matrix",
+        "SEC-12"
+      ],
+      "expected_decision": "allow_metadata_only",
+      "expected_http": 200,
+      "id": "SEC-12",
+      "name": "audit_metadata_after_revoke",
+      "observed_decision": "allow_metadata_only",
+      "response_digest": "a53fcfb1f90f85f9e6e01e71264b3c61db521d54d614415df2344d85e7372c4e",
+      "result": "PASS",
+      "runtime_mode": "real",
+      "severity": "P2"
+    }
+  ],
+  "evidence_sources": [
+    "T15-08-live-F04-F07-F17",
+    "T15-09-live-F19",
+    "g6-security-status-only-probe"
+  ],
+  "fixture_digest": "26ec17bade61bd9eabbe1edc154792d7cf144be51db9c5942eecaaa9e623a509",
+  "fixture_id": "G6-SEC-20261007",
+  "open_gaps": [],
+  "quality_evidence": {
+    "attribution": [
+      "permission"
+    ],
+    "context": {
+      "context_revision": null,
+      "status": "not_available",
+      "target_version": null
+    },
+    "dependency_versions": {
+      "model": "unknown",
+      "weknora": "unknown"
+    },
+    "environment_versions": {
+      "status": "not_observed"
+    },
+    "evidence_refs": [
+      "cases",
+      "severity_counts"
+    ],
+    "evidence_version": 1,
+    "execution_window": {
+      "end": null,
+      "start": null,
+      "status": "not_recorded"
+    },
+    "fixture_digest": "26ec17bade61bd9eabbe1edc154792d7cf144be51db9c5942eecaaa9e623a509",
+    "fixture_id": "G6-SEC-20261007",
+    "input_hash": "a02068af45889c1c87dd45ce755c8ee4a91e8ffe8921fbf670c29ec3dc7d9c52",
+    "input_summary": {
+      "case_count": 12
+    },
+    "object_versions": {
+      "status": "not_observed"
+    },
+    "output_hash": "3bb5962c07f27e6348dca75521db6a534a593107f339ed61e1be9b49e8772edf",
+    "output_summary": {
+      "severity_counts": {
+        "P0": 8,
+        "P1": 3,
+        "P2": 1
+      }
+    },
+    "owner": "security",
+    "permission_snapshot": {
+      "status": "observed_status_only"
+    },
+    "project_id": "project.id",
+    "result": "PASS",
+    "reviewer": "unassigned",
+    "ruleset_hash": null,
+    "runtime_mode": "real",
+    "template_version": null
+  },
+  "redaction": {
+    "body": "forbidden",
+    "source_text": "forbidden",
+    "stored_fields": [
+      "status",
+      "severity",
+      "decision",
+      "response_digest"
+    ],
+    "token": "forbidden"
+  },
+  "report_version": 1,
+  "result": "PASS",
+  "runtime_mode": "real",
+  "scope": "current-permission security checks for body, source, export, download and audit metadata",
+  "severity_counts": {
+    "P0": 8,
+    "P1": 3,
+    "P2": 1
+  }
+}
