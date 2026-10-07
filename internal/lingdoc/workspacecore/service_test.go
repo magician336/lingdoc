@@ -871,6 +871,22 @@ func TestProjectTemplateCopyIsPrivateVersionedAndDurable(t *testing.T) {
 	if !preservedField {
 		t.Fatal("migration preview omitted the user's existing research_subject value")
 	}
+	// A field-only upgrade still needs an explicit empty section_changes array
+	// so clients can safely render the preview after reloading an assessed
+	// ChangeSet (the browser reads section_changes.length).
+	fieldOnly := definition
+	fieldOnly.Sections = append([]lingdoctemplate.Section(nil), original.Definition.Sections...)
+	fieldOnly.Fields = append([]lingdoctemplate.Field(nil), original.Definition.Fields...)
+	fieldOnly.Fields[0].Label = "仅字段标签变更"
+	fieldOnlyEdit := TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: original.Version,
+		Fields: fieldOnly.Fields, Sections: fieldOnly.Sections, Terms: fieldOnly.Terms,
+		RequiredFields: fieldOnly.RequiredFields, Rules: fieldOnly.Rules,
+	}
+	fieldOnlyPreview, err := svc.PreviewTemplateCopyEdit(ctx, owner, project.ID, fieldOnlyEdit)
+	if err != nil || fieldOnlyPreview.SectionChanges == nil {
+		t.Fatalf("field-only preview must retain an empty section_changes list: %+v %v", fieldOnlyPreview, err)
+	}
 	updatedRaw, _, replayed, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-1", edit)
 	if err != nil || replayed {
 		t.Fatalf("save copy edit: replay=%v err=%v", replayed, err)

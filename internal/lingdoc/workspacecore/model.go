@@ -276,10 +276,14 @@ type TemplateMigrationPreview struct {
 	RulesetChanged         bool                     `json:"ruleset_changed,omitempty"`
 	ExpectedProjectVersion int64                    `json:"expected_project_version"`
 	Fields                 []TemplateMigrationField `json:"fields"`
-	SectionChanges         []TemplateSectionChange  `json:"section_changes,omitempty"`
-	MissingRequired        []string                 `json:"missing_required"`
-	Orphaned               []string                 `json:"orphaned"`
-	Incompatible           []string                 `json:"incompatible"`
+	// Keep an empty list on the wire. The Workspace UI renders the preview
+	// unconditionally and relies on section_changes.length; omitting the field
+	// for a field-only upgrade turns a valid assessed ChangeSet into a blank
+	// workspace when it is reloaded.
+	SectionChanges  []TemplateSectionChange `json:"section_changes"`
+	MissingRequired []string                `json:"missing_required"`
+	Orphaned        []string                `json:"orphaned"`
+	Incompatible    []string                `json:"incompatible"`
 }
 
 type ReviewItem struct {
