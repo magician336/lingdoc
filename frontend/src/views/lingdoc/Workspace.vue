@@ -61,24 +61,39 @@
                     <span>{{ section.section_id }} <small>· {{ section.required ? '必需章节' : '可选章节' }}</small></span>
                     <input v-model="section.title" :aria-label="`${section.section_id} 章节名称`" maxlength="120" />
                     <input v-model.number="section.order" type="number" min="1" :aria-label="`${section.section_id} 章节顺序`" />
+                    <button type="button" @click="removeTemplateSection(section.section_id)">移除章节 {{ section.title }}</button>
                   </label>
+                  <button type="button" @click="addTemplateSection">添加章节</button>
                 </fieldset>
-                <fieldset v-if="templateCopyDraft.terms.length" class="template-editor" :disabled="busy || templateCopyBusy">
+                <fieldset class="template-editor" :disabled="busy || templateCopyBusy">
                   <legend>术语表</legend>
                   <label v-for="term in templateCopyDraft.terms" :key="term.term_id" class="template-editor__item">
                     <span>{{ term.term_id }}</span>
                     <input v-model="term.preferred" :aria-label="`${term.term_id} 首选术语`" maxlength="120" />
                     <input :value="term.variants.join('、')" :aria-label="`${term.term_id} 术语变体`" placeholder="变体用逗号分隔" @input="updateTermVariants(term, $event)" />
+                    <button type="button" @click="templateCopyDraft.terms = templateCopyDraft.terms.filter(item => item.term_id !== term.term_id)">移除术语 {{ term.preferred }}</button>
                   </label>
+                  <button type="button" @click="addTemplateTerm">添加术语</button>
                 </fieldset>
                 <fieldset v-if="templateCopyDraft.rules.length" class="template-editor" :disabled="busy || templateCopyBusy">
                   <legend>声明式规则</legend>
                   <label v-for="rule in templateCopyDraft.rules" :key="rule.rule_id" class="template-editor__item">
                     <span>{{ rule.rule_id }} <small>· {{ rule.kind }}</small></span>
-                    <input v-model="rule.severity" :aria-label="`${rule.rule_id} 严重级别`" maxlength="40" />
-                    <input v-model="rule.evaluator" :aria-label="`${rule.rule_id} 评估器`" maxlength="120" />
+                    <p class="muted">{{ rule.severity }} · {{ rule.evaluator }}（由服务端校验）</p>
                     <input v-model="rule.message" :aria-label="`${rule.rule_id} 规则说明`" maxlength="500" />
+                    <template v-if="rule.kind !== 'computed'">
+                      <select v-model="rule.parameters.target_kind" :aria-label="`${rule.rule_id} 检查对象`"><option value="field">研究条件字段</option><option value="chapter">章节</option></select>
+                      <input v-model="rule.parameters.target_id" :aria-label="`${rule.rule_id} 目标标识`" placeholder="字段或章节标识" />
+                      <input v-if="rule.kind === 'pattern'" v-model="rule.parameters.pattern" :aria-label="`${rule.rule_id} 匹配表达式`" placeholder="匹配表达式" />
+                      <template v-if="rule.kind === 'consistency'">
+                        <input v-model="rule.parameters.preferred" :aria-label="`${rule.rule_id} 标准用词`" />
+                        <input :value="(rule.parameters.variants as string[] ?? []).join('、')" :aria-label="`${rule.rule_id} 非标准用词`" @input="updateRuleVariants(rule, $event)" />
+                      </template>
+                    </template>
                   </label>
+                  <button type="button" @click="addTemplateRule('presence')">添加必填检查</button>
+                  <button type="button" @click="addTemplateRule('pattern')">添加格式检查</button>
+                  <button type="button" @click="addTemplateRule('consistency')">添加术语检查</button>
                 </fieldset>
               <label v-if="project.status === 'active'" for="template-upgrade-reason">升级理由</label>
               <input v-if="project.status === 'active'" id="template-upgrade-reason" v-model="templateUpgradeReason" :disabled="busy || templateCopyBusy" maxlength="2000" placeholder="说明模板调整原因" />
@@ -618,6 +633,26 @@ function editableTemplateCopy(definition: NonNullable<Project['template_copy']>[
 function updateTermVariants(term: TemplateCopyDefinition['terms'][number], event: Event) {
   const value = (event.target as HTMLInputElement | null)?.value ?? ''
   term.variants = value.split(/[、,，]/).map(item => item.trim()).filter(Boolean)
+}
+function addTemplateSection() {
+  const draft = templateCopyDraft.value
+  if (!draft) return
+  draft.sections.push({ section_id: `section-${crypto.randomUUID()}`, title: '新章节', order: draft.sections.length + 1, required: false })
+}
+function removeTemplateSection(id: string) {
+  if (templateCopyDraft.value) templateCopyDraft.value.sections = templateCopyDraft.value.sections.filter(item => item.section_id !== id)
+}
+function addTemplateTerm() {
+  templateCopyDraft.value?.terms.push({ term_id: `term-${crypto.randomUUID()}`, preferred: '新术语', variants: [] })
+}
+function updateRuleVariants(rule: TemplateCopyDefinition['rules'][number], event: Event) {
+  rule.parameters.variants = ((event.target as HTMLInputElement)?.value ?? '').split(/[、,，]/).map(item => item.trim()).filter(Boolean)
+}
+function addTemplateRule(kind: 'presence' | 'pattern' | 'consistency') {
+  const parameters: Record<string, unknown> = { target_kind: 'chapter', target_id: 'question' }
+  if (kind === 'pattern') parameters.pattern = '.+'
+  if (kind === 'consistency') { parameters.preferred = '标准术语'; parameters.variants = ['非标准术语'] }
+  templateCopyDraft.value?.rules.push({ rule_id: `rule-${crypto.randomUUID()}`, kind, severity: 'warning', evaluator: '', message: '', parameters })
 }
 function normalizeChangeSet(change: ChangeSet): ChangeSet {
   if (!change.template_upgrade) return { ...change, fields: change.fields ?? [], impacts: change.impacts ?? [] }
