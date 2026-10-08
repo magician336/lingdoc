@@ -1788,15 +1788,35 @@
               "name": "演示模板：研究问题与研究方案",
               "version": "1",
               "is_demo": true,
+              "source": "lingdoc_builtin",
+              "scope": "internal-demo",
               "sections": [
                 {
                   "section_id": "question",
+                  "order": 1,
                   "title": "研究问题",
                   "required": true
                 },
                 {
                   "section_id": "method",
+                  "order": 2,
                   "title": "研究方案",
+                  "required": true
+                }
+              ],
+                            "fields": [
+                {
+                  "field_id": "research_subject",
+                  "label": "研究对象",
+                  "type": "string",
+                  "order": 1,
+                  "required": true
+                },
+                {
+                  "field_id": "research_goal",
+                  "label": "研究目标",
+                  "type": "string",
+                  "order": 2,
                   "required": true
                 }
               ],
@@ -1925,7 +1945,7 @@
             ],
             "delivery_kind": "internal_demo"
           },
-          "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+          "snapshot_digest": "324983c4b0c3e9ff3ae4d475006e93060cf66659f8b7af22ea726d2fb280e82c",
           "check": {
             "project_version": 8,
             "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -1970,15 +1990,35 @@
               "name": "演示模板：研究问题与研究方案",
               "version": "1",
               "is_demo": true,
+              "source": "lingdoc_builtin",
+              "scope": "internal-demo",
               "sections": [
                 {
                   "section_id": "question",
+                  "order": 1,
                   "title": "研究问题",
                   "required": true
                 },
                 {
                   "section_id": "method",
+                  "order": 2,
                   "title": "研究方案",
+                  "required": true
+                }
+              ],
+                            "fields": [
+                {
+                  "field_id": "research_subject",
+                  "label": "研究对象",
+                  "type": "string",
+                  "order": 1,
+                  "required": true
+                },
+                {
+                  "field_id": "research_goal",
+                  "label": "研究目标",
+                  "type": "string",
+                  "order": 2,
                   "required": true
                 }
               ],
@@ -2107,7 +2147,7 @@
             ],
             "delivery_kind": "internal_demo"
           },
-          "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+          "snapshot_digest": "324983c4b0c3e9ff3ae4d475006e93060cf66659f8b7af22ea726d2fb280e82c",
           "check": {
             "project_version": 8,
             "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -2561,15 +2601,35 @@
       "name": "演示模板：研究问题与研究方案",
       "version": "1",
       "is_demo": true,
+      "source": "lingdoc_builtin",
+      "scope": "internal-demo",
       "sections": [
         {
           "section_id": "question",
+          "order": 1,
           "title": "研究问题",
           "required": true
         },
         {
           "section_id": "method",
+          "order": 2,
           "title": "研究方案",
+          "required": true
+        }
+      ],
+            "fields": [
+        {
+          "field_id": "research_subject",
+          "label": "研究对象",
+          "type": "string",
+          "order": 1,
+          "required": true
+        },
+        {
+          "field_id": "research_goal",
+          "label": "研究目标",
+          "type": "string",
+          "order": 2,
           "required": true
         }
       ],
@@ -2628,6 +2688,9 @@
       },
       "template_id": "template-demo",
       "template_version": "1",
+      "template_copy_version": 1,
+      "current_context_revision": 1,
+      "delivery_status": "NOT_READY",
       "members": [
         {
           "user_id": "u-owner",
@@ -2754,15 +2817,35 @@
           "name": "演示模板：研究问题与研究方案",
           "version": "1",
           "is_demo": true,
+          "source": "lingdoc_builtin",
+          "scope": "internal-demo",
           "sections": [
             {
               "section_id": "question",
+              "order": 1,
               "title": "研究问题",
               "required": true
             },
             {
               "section_id": "method",
+              "order": 2,
               "title": "研究方案",
+              "required": true
+            }
+          ],
+                    "fields": [
+            {
+              "field_id": "research_subject",
+              "label": "研究对象",
+              "type": "string",
+              "order": 1,
+              "required": true
+            },
+            {
+              "field_id": "research_goal",
+              "label": "研究目标",
+              "type": "string",
+              "order": 2,
               "required": true
             }
           ],
@@ -2891,7 +2974,7 @@
         ],
         "delivery_kind": "internal_demo"
       },
-      "snapshot_digest": "3f9fcf53d34f8ed1f0c9576e0bc9750be3171f413adcdc3b298fad36ca5a641e",
+      "snapshot_digest": "324983c4b0c3e9ff3ae4d475006e93060cf66659f8b7af22ea726d2fb280e82c",
       "check": {
         "project_version": 8,
         "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",

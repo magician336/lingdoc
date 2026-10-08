@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"maps"
@@ -232,7 +234,9 @@ func (transactionProjectAuthorizer) AuthorizeTenant(tx Transaction, actor Actor,
 	if before, _, ok := strings.Cut(capability, ":"); ok {
 		baseCapability = before
 	}
-	required := map[string]types.TenantRole{"read": types.TenantRoleViewer, "create": types.TenantRoleContributor, "write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin}[baseCapability]
+	required := map[string]types.TenantRole{"read": types.TenantRoleViewer, "create": types.TenantRoleContributor, "write": types.TenantRoleContributor, "manage": types.TenantRoleAdmin,
+		"issue-resolve": types.TenantRoleContributor, "issue-dismiss": types.TenantRoleContributor,
+		"issue-waive": types.TenantRoleContributor, "issue-dismiss-blocking": types.TenantRoleContributor}[baseCapability]
 	if required == "" {
 		return ErrInvalidRequest
 	}
@@ -251,7 +255,9 @@ func (transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor
 	if before, after, ok := strings.Cut(capability, ":"); ok {
 		baseCapability, resource = before, after
 	}
-	if baseCapability != "read" && baseCapability != "write" && baseCapability != "manage" {
+	if baseCapability != "read" && baseCapability != "write" && baseCapability != "manage" &&
+		baseCapability != "issue-resolve" && baseCapability != "issue-dismiss" &&
+		baseCapability != "issue-waive" && baseCapability != "issue-dismiss-blocking" {
 		return Project{}, ErrInvalidRequest
 	}
 	p, err := tx.Project(actor.TenantID, projectID)
@@ -286,6 +292,18 @@ func (transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor
 			}
 			return Project{}, ErrNotFound
 		}
+		if strings.HasPrefix(baseCapability, "issue-") {
+			if governance == "owner" || governance == "admin" || m.Role == "owner" {
+				return p, nil
+			}
+			if baseCapability == "issue-dismiss-blocking" && resource != "" && slices.Contains(m.FunctionRoles, "reviewer") {
+				scopes := m.FunctionScopes["reviewer"]
+				if slices.Contains(scopes, resource) || slices.Contains(scopes, "asset:"+resource) || slices.Contains(scopes, "delivery:"+resource) {
+					return p, nil
+				}
+			}
+			return Project{}, ErrNotFound
+		}
 		if baseCapability == "read" || m.Role == "owner" || governance == "owner" {
 			return p, nil
 		}
@@ -306,6 +324,29 @@ func (transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor
 
 func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
 	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
+}
+
+// recordAuditInTransaction keeps the audit write on the caller's transaction.
+// SQLite uses a single pooled connection; opening the audit store separately
+// while a write transaction is active deadlocks the request until its context
+// expires. PostgreSQL still benefits from the same atomic audit boundary.
+func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) {
+	if s.audit == nil {
+		return
+	}
+	if _, isGORM := tx.(gormTransaction); isGORM {
+		audit, ok := tx.(auditTransaction)
+		if !ok {
+			return
+		}
+		_ = audit.RecordAudit(AuditEvent{
+			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
+			ProjectID: projectID, Capability: capability,
+			Decision: auditDecision(authErr), Reason: auditReason(authErr),
+		})
+		return
+	}
+	_ = s.recordAudit(ctx, actor, projectID, capability, authErr)
 }
 func auditDecision(err error) string {
 	if err != nil {
@@ -328,7 +369,7 @@ func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error 
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
-		_ = s.recordAudit(ctx, actor, projectID, capability, err)
+		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 		return err
 	})
 }
@@ -336,7 +377,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
-		_ = s.recordAudit(ctx, actor, id, "read", err)
+		s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
 			result.Spec = map[string]string{}
 			result.SpecFields = map[string]SpecField{}
@@ -352,10 +393,10 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 			return ErrNotFound
 		}
 		if err := s.authorizeTenant(ctx, tx, actor, "read"); err != nil {
-			_ = s.recordAudit(ctx, actor, "", "read", err)
+			s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
 			return err
 		}
-		_ = s.recordAudit(ctx, actor, "", "read", nil)
+		s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
 		projects, err := tx.Projects(actor, 51)
 		result = projects
 		return err
@@ -394,6 +435,11 @@ func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, ke
 		now := time.Now().UTC()
 		next := p
 		next.DiscardedAt = &now
+		if next.TemplateCopy != nil {
+			copy := *next.TemplateCopy
+			copy.Status = TemplateCopyDiscarded
+			next.TemplateCopy = &copy
+		}
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err
@@ -424,6 +470,12 @@ func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, ke
 		}
 		next := p
 		next.DiscardedAt = nil
+		if p.TemplateCopy != nil && p.TemplateCopy.Status == TemplateCopyDiscarded {
+			copy := *p.TemplateCopy
+			copy.ID, copy.Version, copy.Status = uuid.NewString(), p.TemplateCopyVersion+1, TemplateCopyDraft
+			copy.CreatedBy, copy.CreatedAt = actor.UserID, time.Now().UTC()
+			next.TemplateCopy, next.TemplateCopyVersion = &copy, copy.Version
+		}
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err
@@ -452,22 +504,22 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
 	var result OperationResult
 	var replayed bool
-	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec"}, func(tx Transaction) error {
+	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
 			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
-				_ = s.recordAudit(ctx, actor, projectID, capability, err)
+				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 				return err
 			}
 		} else {
 			var err error
 			p, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
 			if err != nil {
-				_ = s.recordAudit(ctx, actor, projectID, capability, err)
+				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 				return err
 			}
 		}
-		_ = s.recordAudit(ctx, actor, projectID, capability, nil)
+		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil)
 		previous, found, err := tx.Operation(id)
 		if err != nil {
 			return err
@@ -548,8 +600,9 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 }
 
 type CreateProjectInput struct {
-	Name       string `json:"name"`
-	TemplateID string `json:"template_id"`
+	Name            string `json:"name"`
+	TemplateID      string `json:"template_id"`
+	TemplateVersion string `json:"template_version,omitempty"`
 }
 type SaveSpecInput struct {
 	ExpectedSpecRevision int64                     `json:"expected_spec_revision"`
@@ -581,6 +634,90 @@ type TemplateMigrationInput struct {
 	ExpectedProjectVersion int64  `json:"expected_project_version"`
 	TemplateID             string `json:"template_id"`
 	TemplateVersion        string `json:"template_version"`
+}
+
+// TemplateCopyDefinitionInput intentionally excludes source identity, version,
+// status and hashes. Those values are owned by the server and copied from the
+// current project snapshot.
+type TemplateCopyDefinitionInput struct {
+	ExpectedProjectVersion      int64                     `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64                     `json:"expected_template_copy_version"`
+	Fields                      []lingdoctemplate.Field   `json:"fields"`
+	Sections                    []lingdoctemplate.Section `json:"sections"`
+	Terms                       []lingdoctemplate.Term    `json:"terms"`
+	RequiredFields              []string                  `json:"required_fields"`
+	Rules                       []lingdoctemplate.Rule    `json:"rules"`
+}
+
+func projectTemplateCopy(actor Actor, projectID string, version int64, source lingdoctemplate.Template, status string) (*ProjectTemplateCopy, error) {
+	definition, err := lingdoctemplate.WithHashes(source)
+	if err != nil {
+		return nil, ErrInvalidRequest
+	}
+	return &ProjectTemplateCopy{
+		ID: uuid.NewString(), ProjectID: projectID, SourceTemplateID: source.ID,
+		SourceTemplateVersion: source.Version, Version: version, Status: status,
+		ContentHash: definition.ContentHash, RulesetHash: definition.RulesetHash,
+		Definition: definition, CreatedBy: actor.UserID, CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+func validateProjectTemplateCopy(copy *ProjectTemplateCopy) error {
+	if copy == nil || copy.ID == "" || copy.ProjectID == "" || copy.Version < 1 || copy.SourceTemplateID == "" || copy.SourceTemplateVersion == "" {
+		return ErrInvalidState
+	}
+	contentHash, rulesetHash, err := lingdoctemplate.Hashes(copy.Definition)
+	if err != nil || contentHash != copy.ContentHash || rulesetHash != copy.RulesetHash ||
+		copy.Definition.ContentHash != copy.ContentHash || copy.Definition.RulesetHash != copy.RulesetHash ||
+		copy.Definition.ID != copy.SourceTemplateID || copy.Definition.Version != copy.SourceTemplateVersion {
+		return ErrInvalidState
+	}
+	return nil
+}
+
+func editableTemplateDefinition(current lingdoctemplate.Template, input TemplateCopyDefinitionInput) (lingdoctemplate.Template, error) {
+	serverRules := make(map[string]lingdoctemplate.Rule, len(current.Rules))
+	for _, rule := range current.Rules {
+		serverRules[rule.ID] = rule
+	}
+	seenRules := make(map[string]bool, len(input.Rules))
+	for _, rule := range input.Rules {
+		serverRule, ok := serverRules[rule.ID]
+		if ok {
+			if rule.Kind != serverRule.Kind || rule.Evaluator != serverRule.Evaluator || rule.Severity != serverRule.Severity {
+				return lingdoctemplate.Template{}, fmt.Errorf("%w: rule identity, executor, and severity are server-owned", ErrInvalidRequest)
+			}
+			seenRules[rule.ID] = true
+			continue
+		}
+		if rule.Severity != lingdoctemplate.SeverityWarning && rule.Severity != lingdoctemplate.SeverityInfo {
+			return lingdoctemplate.Template{}, fmt.Errorf("%w: project-defined rules cannot block", ErrInvalidRequest)
+		}
+	}
+	for id := range serverRules {
+		if !seenRules[id] {
+			return lingdoctemplate.Template{}, fmt.Errorf("%w: project copies cannot remove built-in rules", ErrInvalidRequest)
+		}
+	}
+	definition := current
+	definition.Fields = append([]lingdoctemplate.Field{}, input.Fields...)
+	definition.Sections = append([]lingdoctemplate.Section{}, input.Sections...)
+	definition.Terms = append([]lingdoctemplate.Term{}, input.Terms...)
+	definition.RequiredFields = append([]string{}, input.RequiredFields...)
+	definition.Rules = append([]lingdoctemplate.Rule{}, input.Rules...)
+	definition.ContentHash, definition.RulesetHash = "", ""
+	if len(definition.RequiredFields) == 0 {
+		for _, field := range definition.Fields {
+			if field.Required {
+				definition.RequiredFields = append(definition.RequiredFields, field.ID)
+			}
+		}
+	}
+	definition, err := lingdoctemplate.WithHashes(definition)
+	if err != nil {
+		return lingdoctemplate.Template{}, fmt.Errorf("%w: invalid template copy definition", ErrInvalidRequest)
+	}
+	return definition, nil
 }
 
 func templateFieldDefinitions(template Template) map[string]TemplateField {
@@ -623,14 +760,32 @@ func buildTemplateMigrationPreview(p Project, target Template, expectedVersion i
 	slices.Sort(keys)
 	preview := TemplateMigrationPreview{
 		ProjectID: p.ID, SourceTemplateID: p.TemplateID, SourceTemplateVersion: p.TemplateVersion,
-		TargetTemplateID: target.ID, TargetTemplateVersion: target.Version, ExpectedProjectVersion: expectedVersion,
+		SourceCopyVersion: p.TemplateCopyVersion,
+		TargetTemplateID:  target.ID, TargetTemplateVersion: target.Version, TargetCopyVersion: p.TemplateCopyVersion + 1, ExpectedProjectVersion: expectedVersion,
 		Fields: make([]TemplateMigrationField, 0, len(keys)+len(target.RequiredFields)), MissingRequired: []string{}, Orphaned: []string{}, Incompatible: []string{},
+	}
+	contentHash, rulesetHash, _ := lingdoctemplate.Hashes(target)
+	preview.TargetContentHash, preview.TargetRulesetHash = contentHash, rulesetHash
+	if p.TemplateCopy != nil {
+		preview.RulesetChanged = p.TemplateCopy.RulesetHash != rulesetHash
+		preview.SectionChanges = sectionChanges(p.TemplateCopy.Definition.Sections, target.Sections)
+	}
+	oldFields := map[string]lingdoctemplate.Field{}
+	if p.TemplateCopy != nil {
+		for _, field := range p.TemplateCopy.Definition.Fields {
+			oldFields[field.ID] = field
+		}
 	}
 	seen := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
 		status := "orphaned"
+		migrationField := TemplateMigrationField{FieldID: key, Value: p.Spec[key], Status: status}
+		if old, ok := oldFields[key]; ok {
+			migrationField.Before, migrationField.OldType = old.Label, old.Type
+		}
 		if field, ok := allowed[key]; ok {
 			status = "preserved"
+			migrationField.After, migrationField.NewType = field.Label, field.Type
 			if !compatibleTemplateValue(p.Spec[key], field) {
 				status = "incompatible"
 				preview.Incompatible = append(preview.Incompatible, key)
@@ -641,23 +796,26 @@ func buildTemplateMigrationPreview(p Project, target Template, expectedVersion i
 		} else {
 			preview.Orphaned = append(preview.Orphaned, key)
 		}
-		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Value: p.Spec[key], Status: status})
+		migrationField.Status = status
+		preview.Fields = append(preview.Fields, migrationField)
 		seen[key] = struct{}{}
 	}
-	requiredKeys := make([]string, 0, len(allowed))
-	for key, field := range allowed {
-		if !field.Required {
-			continue
-		}
-		requiredKeys = append(requiredKeys, key)
+	fieldKeys := make([]string, 0, len(allowed))
+	for key := range allowed {
+		fieldKeys = append(fieldKeys, key)
 	}
-	slices.Sort(requiredKeys)
-	for _, key := range requiredKeys {
+	slices.Sort(fieldKeys)
+	for _, key := range fieldKeys {
 		if _, ok := seen[key]; ok {
 			continue
 		}
-		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, Status: "missing"})
-		preview.MissingRequired = append(preview.MissingRequired, key)
+		field := allowed[key]
+		status := "added"
+		if field.Required {
+			status = "missing"
+			preview.MissingRequired = append(preview.MissingRequired, key)
+		}
+		preview.Fields = append(preview.Fields, TemplateMigrationField{FieldID: key, After: field.Label, NewType: field.Type, Status: status})
 	}
 	slices.Sort(preview.MissingRequired)
 	slices.Sort(preview.Orphaned)
@@ -691,6 +849,137 @@ func (s *Service) PreviewTemplateMigration(ctx context.Context, actor Actor, pro
 	return result, err
 }
 
+func (s *Service) PreviewTemplateCopyEdit(ctx context.Context, actor Actor, projectID string, input TemplateCopyDefinitionInput) (TemplateMigrationPreview, error) {
+	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.Fields == nil || input.Sections == nil || input.Terms == nil || input.Rules == nil {
+		return TemplateMigrationPreview{}, ErrInvalidRequest
+	}
+	var result TemplateMigrationPreview
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := s.authorizeProject(ctx, tx, actor, projectID, "manage")
+		if err != nil {
+			return err
+		}
+		if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil {
+			return ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
+			return ErrVersionConflict
+		}
+		definition, err := editableTemplateDefinition(p.TemplateCopy.Definition, input)
+		if err != nil {
+			return err
+		}
+		result = buildTemplateMigrationPreview(p, definition, p.ProjectVersion)
+		result.TargetCopyVersion = p.TemplateCopyVersion + 1
+		result.TargetContentHash, result.TargetRulesetHash = definition.ContentHash, definition.RulesetHash
+		result.SectionChanges = sectionChanges(p.TemplateCopy.Definition.Sections, definition.Sections)
+		result.RulesetChanged = p.TemplateCopy.RulesetHash != definition.RulesetHash
+		return nil
+	})
+	return result, err
+}
+
+func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (json.RawMessage, int, bool, error) {
+	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.Fields == nil || input.Sections == nil || input.Terms == nil || input.Rules == nil {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	return s.operation(ctx, actor, "saveTemplateCopy", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		definition, err := editableTemplateDefinition(p.TemplateCopy.Definition, input)
+		if err != nil {
+			return nil, 0, err
+		}
+		copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, definition, TemplateCopyDraft)
+		if err != nil {
+			return nil, 0, err
+		}
+		next := p
+		next.TemplateCopyVersion, next.TemplateCopy = copy.Version, copy
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.edit", Target: copy.ID, Details: map[string]any{"copy_version": copy.Version, "content_hash": copy.ContentHash, "ruleset_hash": copy.RulesetHash}, CreatedAt: copy.CreatedAt}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
+}
+
+func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
+	if version < 1 {
+		return ProjectTemplateCopy{}, ErrInvalidRequest
+	}
+	var result ProjectTemplateCopy
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		reader, ok := tx.(templateCopyReader)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = reader.ProjectTemplateCopy(actor.TenantID, projectID, version)
+		return err
+	})
+	return result, err
+}
+
+type templateCopyReader interface {
+	ProjectTemplateCopy(uint64, string, int64) (ProjectTemplateCopy, error)
+}
+
+type TemplateSectionChange struct {
+	SectionID string `json:"section_id"`
+	Before    string `json:"before,omitempty"`
+	After     string `json:"after,omitempty"`
+	Status    string `json:"status"`
+}
+
+func sectionChanges(before, after []lingdoctemplate.Section) []TemplateSectionChange {
+	old, next := make(map[string]lingdoctemplate.Section, len(before)), make(map[string]lingdoctemplate.Section, len(after))
+	for _, section := range before {
+		old[section.ID] = section
+	}
+	for _, section := range after {
+		next[section.ID] = section
+	}
+	ids := make([]string, 0, len(old)+len(next))
+	seen := map[string]bool{}
+	for id := range old {
+		ids = append(ids, id)
+		seen[id] = true
+	}
+	for id := range next {
+		if !seen[id] {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	changes := make([]TemplateSectionChange, 0)
+	for _, id := range ids {
+		previous, hadPrevious := old[id]
+		current, hasCurrent := next[id]
+		switch {
+		case !hadPrevious:
+			changes = append(changes, TemplateSectionChange{SectionID: id, After: current.Title, Status: "added"})
+		case !hasCurrent:
+			changes = append(changes, TemplateSectionChange{SectionID: id, Before: previous.Title, Status: "removed"})
+		case previous.Title != current.Title || previous.Order != current.Order || previous.Required != current.Required || previous.Description != current.Description:
+			changes = append(changes, TemplateSectionChange{SectionID: id, Before: previous.Title, After: current.Title, Status: "changed"})
+		}
+	}
+	return changes
+}
+
 func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (json.RawMessage, int, bool, error) {
 	input.TemplateID = strings.TrimSpace(input.TemplateID)
 	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
@@ -698,6 +987,10 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 		return nil, 0, false, ErrInvalidRequest
 	}
 	target, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	targetCopy, err := projectTemplateCopy(actor, projectID, 0, target, TemplateCopyDraft)
 	if err != nil {
 		return nil, 0, false, err
 	}
@@ -711,6 +1004,8 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 		preview := buildTemplateMigrationPreview(p, target, input.ExpectedProjectVersion)
 		next := p
 		next.TemplateID, next.TemplateVersion = target.ID, target.Version
+		targetCopy.Version = p.TemplateCopyVersion + 1
+		next.TemplateCopyVersion, next.TemplateCopy = targetCopy.Version, targetCopy
 		next.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err
@@ -782,12 +1077,23 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 	if input.Name == "" || len([]rune(input.Name)) > 120 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	template, err := s.templates.Get(input.TemplateID, "")
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
+	if input.TemplateVersion == "" {
+		input.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	}
+	template, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	copy, err := projectTemplateCopy(actor, "pending", 1, template, TemplateCopyDraft)
 	if err != nil {
 		return nil, 0, false, err
 	}
 	return s.operation(ctx, actor, "createProject", "projects", key, input, "", "create", func(tx Transaction, _ Project) (any, int, error) {
-		p := Project{ID: uuid.NewString(), Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
+		id := uuid.NewString()
+		copy.ID, copy.ProjectID = uuid.NewString(), id
+		p := Project{ID: id, Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, TemplateCopyVersion: 1, TemplateCopy: copy, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
 }
@@ -875,7 +1181,8 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 }
 
 func validateChangeSetInput(input CreateChangeSetInput) error {
-	if input.ExpectedContextRevision < 1 || len(input.Fields) == 0 || len(input.Fields) > 2 || len(input.AffectedChapterIDs) == 0 || strings.TrimSpace(input.Reason) == "" || len([]rune(input.Reason)) > 2000 {
+	hasTemplateUpgrade := input.TemplateUpgrade != nil
+	if input.ExpectedContextRevision < 1 || len(input.Fields) > 2 || (!hasTemplateUpgrade && len(input.Fields) == 0) || (hasTemplateUpgrade && len(input.Fields) != 0) || (!hasTemplateUpgrade && len(input.AffectedChapterIDs) == 0) || strings.TrimSpace(input.Reason) == "" || len([]rune(input.Reason)) > 2000 {
 		return ErrInvalidRequest
 	}
 	seen := make(map[string]struct{}, len(input.AffectedChapterIDs))
@@ -896,7 +1203,54 @@ func validateChangeSetInput(input CreateChangeSetInput) error {
 			return ErrInvalidRequest
 		}
 	}
+	if upgrade := input.TemplateUpgrade; upgrade != nil {
+		if upgrade.ExpectedProjectVersion < 1 || upgrade.ExpectedTemplateCopyVersion < 1 || upgrade.Fields == nil || upgrade.Sections == nil || upgrade.Terms == nil || upgrade.Rules == nil {
+			return ErrInvalidRequest
+		}
+		for key, value := range upgrade.FieldValues {
+			if strings.TrimSpace(key) == "" || len(value) > 10000 {
+				return ErrInvalidRequest
+			}
+		}
+	}
 	return nil
+}
+
+func editableTemplateDefinitionFromUpgrade(current lingdoctemplate.Template, input TemplateUpgradeInput) (lingdoctemplate.Template, error) {
+	return editableTemplateDefinition(current, TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: input.ExpectedProjectVersion, ExpectedTemplateCopyVersion: input.ExpectedTemplateCopyVersion,
+		Fields: input.Fields, Sections: input.Sections, Terms: input.Terms,
+		RequiredFields: input.RequiredFields, Rules: input.Rules,
+	})
+}
+
+// templateSpecAfterUpgrade keeps orphaned historic values available for review,
+// applies explicit user mappings, and rejects an upgrade that leaves a current
+// required field absent or type-incompatible.
+func templateSpecAfterUpgrade(spec map[string]string, definition lingdoctemplate.Template, values map[string]string) (map[string]string, error) {
+	fields := templateFieldDefinitions(definition)
+	next := maps.Clone(spec)
+	if next == nil {
+		next = map[string]string{}
+	}
+	for key, value := range values {
+		field, ok := fields[key]
+		if !ok || !compatibleTemplateValue(value, field) {
+			return nil, fmt.Errorf("%w: invalid template field migration %q", ErrInvalidRequest, key)
+		}
+		next[key] = value
+	}
+	for key, value := range next {
+		if field, ok := fields[key]; ok && !compatibleTemplateValue(value, field) {
+			return nil, fmt.Errorf("%w: template field %q requires an explicit compatible migration", ErrInvalidRequest, key)
+		}
+	}
+	for _, required := range definition.RequiredFields {
+		if strings.TrimSpace(next[required]) == "" {
+			return nil, fmt.Errorf("%w: required template field %q has no value", ErrInvalidRequest, required)
+		}
+	}
+	return next, nil
 }
 
 func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
@@ -914,6 +1268,37 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 		if !ok {
 			return nil, 0, ErrInvalidState
 		}
+		var templateUpgrade *TemplateUpgrade
+		impactChapterIDs := append([]string{}, input.AffectedChapterIDs...)
+		var upgradeChapters []Chapter
+		if requested := input.TemplateUpgrade; requested != nil {
+			if p.ProjectVersion != requested.ExpectedProjectVersion || p.TemplateCopy == nil || p.TemplateCopyVersion != requested.ExpectedTemplateCopyVersion || p.TemplateCopy.Status != TemplateCopyBound {
+				return nil, 0, ErrVersionConflict
+			}
+			definition, err := editableTemplateDefinitionFromUpgrade(p.TemplateCopy.Definition, *requested)
+			if err != nil {
+				return nil, 0, err
+			}
+			if _, err := templateSpecAfterUpgrade(p.Spec, definition, requested.FieldValues); err != nil {
+				return nil, 0, err
+			}
+			chapters, err := tx.Chapters(projectID)
+			if err != nil {
+				return nil, 0, err
+			}
+			upgradeChapters = chapters
+			impactChapterIDs = make([]string, 0, len(chapters))
+			for _, chapter := range chapters {
+				impactChapterIDs = append(impactChapterIDs, chapter.ID)
+			}
+			slices.Sort(impactChapterIDs)
+			if len(impactChapterIDs) == 0 {
+				return nil, 0, ErrInvalidState
+			}
+			preview := buildTemplateMigrationPreview(p, definition, p.ProjectVersion)
+			impact := buildTemplateUpgradeImpact(p.TemplateCopy, definition, preview, impactChapterIDs, upgradeChapters)
+			templateUpgrade = &TemplateUpgrade{BaseTemplateCopyVersion: p.TemplateCopyVersion, Definition: definition, FieldValues: maps.Clone(requested.FieldValues), Preview: preview, Impact: impact}
+		}
 		keys := make([]string, 0, len(input.Fields))
 		for key := range input.Fields {
 			keys = append(keys, key)
@@ -927,25 +1312,85 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 			}
 			fields = append(fields, ChangeFieldDelta{Key: key, OldValue: delta.OldValue, NewValue: delta.NewValue})
 		}
-		impacts := make([]ChangeImpact, 0, len(input.AffectedChapterIDs))
-		for _, chapterID := range input.AffectedChapterIDs {
+		impacts := make([]ChangeImpact, 0, len(impactChapterIDs))
+		for _, chapterID := range impactChapterIDs {
 			chapter, err := tx.Chapter(projectID, chapterID)
 			if err != nil {
 				return nil, 0, err
 			}
-			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: "研究条件变化，需要重新复核", Status: "open"})
+			reason := "研究条件变化，需要重新复核"
+			if templateUpgrade != nil {
+				reason = "模板或规则版本变化，需要重新复核"
+			}
+			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: reason, Status: "open"})
 		}
-		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, Reason: strings.TrimSpace(input.Reason), Status: "assessed", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, CreatedAt: time.Now().UTC()}
+		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, Reason: strings.TrimSpace(input.Reason), Status: "assessed", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC()}
 		if err := store.InsertChangeSet(change); err != nil {
 			return nil, 0, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.create", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts}, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
+			details := map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts}
+			if change.TemplateUpgrade != nil {
+				details["template_upgrade"] = map[string]any{"base_template_copy_version": change.TemplateUpgrade.BaseTemplateCopyVersion, "target_content_hash": change.TemplateUpgrade.Preview.TargetContentHash, "target_ruleset_hash": change.TemplateUpgrade.Preview.TargetRulesetHash}
+			}
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.create", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
 				return nil, 0, err
 			}
 		}
 		return change, 201, nil
 	})
+}
+
+func buildTemplateUpgradeImpact(current *ProjectTemplateCopy, target lingdoctemplate.Template, preview TemplateMigrationPreview, chapterIDs []string, chapters []Chapter) TemplateUpgradeImpact {
+	impact := TemplateUpgradeImpact{
+		AffectedFieldIDs: []string{}, AffectedSectionIDs: []string{}, AffectedChapterIDs: append([]string{}, chapterIDs...),
+		InvalidatedConfirmationChapterIDs: []string{}, ChangedRuleIDs: []string{},
+		ValidationIssueEffect:  "旧问题处置仅匹配原规则/目标/项目版本；新版本重新检查，不改变确认或交付门禁。",
+		DeliverySnapshotEffect: "既有冻结快照保留为历史；新快照按升级后的模板和规则重新检查。",
+	}
+	for _, field := range preview.Fields {
+		if field.Status != "preserved" || field.Before != field.After || field.OldType != field.NewType {
+			impact.AffectedFieldIDs = append(impact.AffectedFieldIDs, field.FieldID)
+		}
+	}
+	for _, section := range preview.SectionChanges {
+		impact.AffectedSectionIDs = append(impact.AffectedSectionIDs, section.SectionID)
+	}
+	for _, chapter := range chapters {
+		if chapter.ConfirmationValid {
+			impact.InvalidatedConfirmationChapterIDs = append(impact.InvalidatedConfirmationChapterIDs, chapter.ID)
+		}
+	}
+	oldRules := map[string]lingdoctemplate.Rule{}
+	if current != nil {
+		for _, rule := range current.Definition.Rules {
+			oldRules[rule.ID] = rule
+		}
+	}
+	newRules := make(map[string]lingdoctemplate.Rule, len(target.Rules))
+	for _, rule := range target.Rules {
+		newRules[rule.ID] = rule
+	}
+	changed := map[string]bool{}
+	for id, old := range oldRules {
+		if next, ok := newRules[id]; !ok || !reflect.DeepEqual(old, next) {
+			changed[id] = true
+		}
+	}
+	for id, next := range newRules {
+		if old, ok := oldRules[id]; !ok || !reflect.DeepEqual(old, next) {
+			changed[id] = true
+		}
+	}
+	for id := range changed {
+		impact.ChangedRuleIDs = append(impact.ChangedRuleIDs, id)
+	}
+	slices.Sort(impact.AffectedFieldIDs)
+	slices.Sort(impact.AffectedSectionIDs)
+	slices.Sort(impact.AffectedChapterIDs)
+	slices.Sort(impact.InvalidatedConfirmationChapterIDs)
+	slices.Sort(impact.ChangedRuleIDs)
+	return impact
 }
 
 func (s *Service) ListChangeSets(ctx context.Context, actor Actor, projectID string) ([]ChangeSet, error) {
@@ -1007,14 +1452,15 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if change.Status != "assessed" {
 			return nil, 0, ErrInvalidState
 		}
-		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
+		upgradeStale := change.TemplateUpgrade != nil && (p.TemplateCopy == nil || p.TemplateCopyVersion != change.TemplateUpgrade.BaseTemplateCopyVersion)
+		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
 			stale.Status = "stale"
 			if err := store.UpdateChangeSet(change, stale); err != nil {
 				return nil, 0, err
 			}
 			if audit, ok := tx.(auditTransaction); ok {
-				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision}, CreatedAt: time.Now().UTC()}); err != nil {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision, "template_copy_version": p.TemplateCopyVersion}, CreatedAt: time.Now().UTC()}); err != nil {
 					return nil, 0, err
 				}
 			}
@@ -1048,8 +1494,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if next.SpecFields == nil {
 			next.SpecFields = map[string]SpecField{}
 		}
+		changedSpecKeys := make(map[string]struct{}, len(change.Fields))
 		for _, field := range change.Fields {
 			next.Spec[field.Key] = field.NewValue
+			changedSpecKeys[field.Key] = struct{}{}
 			metadata := next.SpecFields[field.Key]
 			metadata.Value = field.NewValue
 			metadata.Origin = "human"
@@ -1058,13 +1506,42 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			metadata.ModifiedAt = time.Now().UTC()
 			next.SpecFields[field.Key] = metadata
 		}
+		if upgrade := change.TemplateUpgrade; upgrade != nil {
+			if p.TemplateCopy == nil || p.TemplateCopyVersion != upgrade.BaseTemplateCopyVersion {
+				return nil, 0, ErrVersionConflict
+			}
+			migratedSpec, err := templateSpecAfterUpgrade(next.Spec, upgrade.Definition, upgrade.FieldValues)
+			if err != nil {
+				return nil, 0, fmt.Errorf("%w: template migration is no longer valid", ErrInvalidState)
+			}
+			for fieldID, value := range migratedSpec {
+				if next.Spec[fieldID] == value {
+					continue
+				}
+				next.Spec[fieldID] = value
+				changedSpecKeys[fieldID] = struct{}{}
+				metadata := next.SpecFields[fieldID]
+				metadata.Value = value
+				metadata.Origin = "human"
+				metadata.Status = "pending_confirmation"
+				metadata.ModifiedBy = actor.UserID
+				metadata.ModifiedAt = time.Now().UTC()
+				next.SpecFields[fieldID] = metadata
+			}
+			copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, upgrade.Definition, TemplateCopyBound)
+			if err != nil {
+				return nil, 0, fmt.Errorf("%w: invalid template upgrade snapshot", ErrInvalidState)
+			}
+			next.TemplateID, next.TemplateVersion = upgrade.Definition.ID, upgrade.Definition.Version
+			next.TemplateCopyVersion, next.TemplateCopy = copy.Version, copy
+		}
 		next.SpecRevision++
 		next.CurrentContextRevision++
 		next.ProjectVersion++
-		for _, field := range change.Fields {
-			metadata := next.SpecFields[field.Key]
+		for fieldID := range changedSpecKeys {
+			metadata := next.SpecFields[fieldID]
 			metadata.ModifiedProjectVersion = next.ProjectVersion
-			next.SpecFields[field.Key] = metadata
+			next.SpecFields[fieldID] = metadata
 		}
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
 			return nil, 0, err
@@ -1090,7 +1567,11 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			return nil, 0, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec}, CreatedAt: now}); err != nil {
+			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec}
+			if change.TemplateUpgrade != nil {
+				details["template_upgrade"] = map[string]any{"base_copy_version": change.TemplateUpgrade.BaseTemplateCopyVersion, "target_copy_version": next.TemplateCopyVersion, "content_hash": next.TemplateCopy.ContentHash, "ruleset_hash": next.TemplateCopy.RulesetHash}
+			}
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, CreatedAt: now}); err != nil {
 				return nil, 0, err
 			}
 		}
@@ -1208,6 +1689,215 @@ func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID st
 		return err
 	})
 	return result, err
+}
+
+func validateValidationIssueBinding(binding ValidationIssueBinding) error {
+	if strings.TrimSpace(binding.IssueID) == "" || strings.TrimSpace(binding.RuleID) == "" ||
+		strings.TrimSpace(binding.RulesetHash) == "" || strings.TrimSpace(binding.TargetID) == "" || binding.ProjectVersion < 1 ||
+		(binding.Severity != "blocking" && binding.Severity != "warning" && binding.Severity != "info") {
+		return ErrInvalidRequest
+	}
+	if binding.TargetVersion != nil && (strings.TrimSpace(*binding.TargetVersion) == "" || len(*binding.TargetVersion) > 256) {
+		return ErrInvalidRequest
+	}
+	return nil
+}
+
+func sameValidationIssueBinding(left, right ValidationIssueBinding) bool {
+	if left.IssueID != right.IssueID || left.RuleID != right.RuleID || left.RulesetHash != right.RulesetHash ||
+		left.Severity != right.Severity || left.TargetID != right.TargetID || left.ProjectVersion != right.ProjectVersion {
+		return false
+	}
+	if left.TargetVersion == nil || right.TargetVersion == nil {
+		return left.TargetVersion == nil && right.TargetVersion == nil
+	}
+	return *left.TargetVersion == *right.TargetVersion
+}
+
+// ReplayValidationIssueDisposition returns a completed action before current
+// version checks, while still rechecking the caller's present project scope and
+// the exact capability used by that recorded decision.
+func (s *Service) ReplayValidationIssueDisposition(ctx context.Context, actor Actor, projectID, issueID, key, action, reason string, expectedProjectVersion int64) (json.RawMessage, int, bool, bool, error) {
+	action, reason = strings.ToLower(strings.TrimSpace(action)), strings.TrimSpace(reason)
+	if !validActor(actor) || strings.TrimSpace(projectID) == "" || strings.TrimSpace(issueID) == "" ||
+		len(key) < 8 || len(key) > 128 || (action != "resolve" && action != "dismiss" && action != "waive") ||
+		reason == "" || len([]rune(reason)) > 2000 || expectedProjectVersion < 1 {
+		return nil, 0, false, false, ErrInvalidRequest
+	}
+	identity := OperationIdentity{Actor: actor, Operation: "validationIssueDisposition", Target: projectID + "/" + issueID, Key: key}
+	var previous OperationResult
+	var found bool
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		var err error
+		previous, found, err = tx.Operation(identity)
+		if err != nil || !found {
+			return err
+		}
+		var disposition ValidationIssueDisposition
+		if err := json.Unmarshal(previous.Body, &disposition); err != nil {
+			return err
+		}
+		if disposition.IssueID != issueID || disposition.ProjectVersion != expectedProjectVersion || disposition.Action != action || disposition.Reason != reason {
+			return ErrIdempotencyConflict
+		}
+		capability := "issue-" + disposition.Action
+		if disposition.Action == "dismiss" && disposition.Severity == "blocking" {
+			capability = "issue-dismiss-blocking"
+		}
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, capability+":"+disposition.TargetID); err != nil {
+			return err
+		}
+		project, err := tx.Project(actor.TenantID, projectID)
+		if err != nil {
+			return err
+		}
+		if project.Status != "active" || project.DiscardedAt != nil {
+			return ErrInvalidState
+		}
+		return nil
+	})
+	if err != nil || !found {
+		return nil, 0, false, found, err
+	}
+	return previous.Body, previous.Status, true, true, nil
+}
+
+// RecordValidationIssueDisposition appends an immutable, version-bound audit
+// event. It deliberately does not mutate the rule result or close a G3 impact
+// task; those gates continue to be evaluated independently.
+func (s *Service) RecordValidationIssueDisposition(ctx context.Context, actor Actor, projectID, key string, input ValidationIssueDispositionInput) (json.RawMessage, int, bool, error) {
+	input.Action = strings.ToLower(strings.TrimSpace(input.Action))
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.ExpectedProjectVersion < 1 || validateValidationIssueBinding(input.ValidationIssueBinding) != nil ||
+		(input.Action != "resolve" && input.Action != "dismiss" && input.Action != "waive") ||
+		input.Reason == "" || len([]rune(input.Reason)) > 2000 ||
+		(input.Action == "waive" && input.Severity == "blocking") {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	capability := "issue-" + input.Action
+	if input.Action == "dismiss" && input.Severity == "blocking" {
+		capability = "issue-dismiss-blocking"
+	}
+	capability += ":" + input.TargetID
+	return s.operation(ctx, actor, "validationIssueDisposition", projectID+"/"+input.IssueID, key, input, projectID, capability, func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "active" || p.DiscardedAt != nil {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		audit, ok := tx.(auditTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		// A human disposition is single-use for one exact finding revision. Check
+		// inside the same transaction as the append so concurrent duplicate actions
+		// cannot both succeed with different idempotency keys.
+		events, err := audit.AuditEvents(projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, event := range events {
+			if event.Action != "validation_issue.disposition" || event.Target != input.IssueID {
+				continue
+			}
+			raw, err := json.Marshal(event.Details)
+			if err != nil {
+				return nil, 0, err
+			}
+			var details struct {
+				Disposition ValidationIssueDisposition `json:"validation_issue_disposition"`
+			}
+			if err := json.Unmarshal(raw, &details); err != nil {
+				return nil, 0, err
+			}
+			if sameValidationIssueBinding(input.ValidationIssueBinding, details.Disposition.ValidationIssueBinding) {
+				return nil, 0, ErrInvalidState
+			}
+		}
+		now := time.Now().UTC()
+		binding := input.ValidationIssueBinding
+		binding.TargetVersion = cloneString(binding.TargetVersion)
+		disposition := ValidationIssueDisposition{ValidationIssueBinding: binding, Action: input.Action, Reason: input.Reason,
+			ActorID: actor.UserID, CreatedAt: now}
+		if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+			Action: "validation_issue.disposition", Target: input.IssueID,
+			Details:   map[string]any{"validation_issue_disposition": disposition, "expected_project_version": input.ExpectedProjectVersion},
+			CreatedAt: now}); err != nil {
+			return nil, 0, err
+		}
+		return disposition, 201, nil
+	})
+}
+
+// ValidationIssueDispositions returns only decisions whose complete binding
+// still matches the evaluator's current issue. Older versions remain in the
+// audit log but cannot be replayed onto a changed rule or target.
+func (s *Service) ValidationIssueDispositions(ctx context.Context, actor Actor, projectID string, current []ValidationIssueBinding) (map[string]ValidationIssueDisposition, error) {
+	if len(current) > 500 {
+		return nil, ErrInvalidRequest
+	}
+	byID := make(map[string]ValidationIssueBinding, len(current))
+	for _, binding := range current {
+		if err := validateValidationIssueBinding(binding); err != nil {
+			return nil, err
+		}
+		if _, exists := byID[binding.IssueID]; exists {
+			return nil, ErrInvalidRequest
+		}
+		byID[binding.IssueID] = binding
+	}
+	result := make(map[string]ValidationIssueDisposition)
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+			return err
+		}
+		audit, ok := tx.(auditTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		events, err := audit.AuditEvents(projectID)
+		if err != nil {
+			return err
+		}
+		latest := make(map[string]ValidationIssueDisposition)
+		for _, event := range events {
+			if event.Action != "validation_issue.disposition" {
+				continue
+			}
+			raw, err := json.Marshal(event.Details)
+			if err != nil {
+				return err
+			}
+			var details struct {
+				Disposition ValidationIssueDisposition `json:"validation_issue_disposition"`
+			}
+			if err := json.Unmarshal(raw, &details); err != nil {
+				return err
+			}
+			if details.Disposition.IssueID == "" {
+				return ErrInvalidState
+			}
+			previous, exists := latest[details.Disposition.IssueID]
+			if !exists || details.Disposition.ProjectVersion > previous.ProjectVersion ||
+				(details.Disposition.ProjectVersion == previous.ProjectVersion && details.Disposition.CreatedAt.After(previous.CreatedAt)) {
+				latest[details.Disposition.IssueID] = details.Disposition
+			}
+		}
+		for id, binding := range byID {
+			if disposition, exists := latest[id]; exists && sameValidationIssueBinding(binding, disposition.ValidationIssueBinding) {
+				result[id] = disposition
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (json.RawMessage, int, bool, error) {
@@ -1462,10 +2152,26 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		if p.Status != "draft" {
 			return nil, 0, ErrInvalidState
 		}
-		template, err := s.templates.Get(p.TemplateID, p.TemplateVersion)
-		if err != nil || template.Version != p.TemplateVersion {
-			return nil, 0, ErrInvalidState
+		var templateCopy *ProjectTemplateCopy
+		if p.TemplateCopy == nil {
+			// Upgrade legacy draft rows created before project copies existed. The
+			// exact source version is copied once and bound in this transaction.
+			template, err := s.templates.Get(p.TemplateID, p.TemplateVersion)
+			if err != nil || template.Version != p.TemplateVersion {
+				return nil, 0, ErrInvalidState
+			}
+			templateCopy, err = projectTemplateCopy(actor, p.ID, p.TemplateCopyVersion+1, template, TemplateCopyDraft)
+			if err != nil {
+				return nil, 0, err
+			}
+		} else {
+			copy := *p.TemplateCopy
+			if copy.Status != TemplateCopyDraft || validateProjectTemplateCopy(&copy) != nil {
+				return nil, 0, ErrInvalidState
+			}
+			templateCopy = &copy
 		}
+		template := templateCopy.Definition
 		for _, field := range template.RequiredFields {
 			if strings.TrimSpace(p.Spec[field]) == "" {
 				return nil, 0, ErrInvalidState
@@ -1478,6 +2184,9 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		}
 		next := p
 		next.Status = "active"
+		copy := *templateCopy
+		copy.Status = TemplateCopyBound
+		next.TemplateCopy, next.TemplateCopyVersion = &copy, copy.Version
 		next.CurrentContextRevision = 1
 		next.DeliveryStatus = "NOT_READY"
 		next.BaselineConfirmationID = uuid.NewString()
@@ -1491,7 +2200,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 			}
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.activate", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion, "context_revision": next.CurrentContextRevision, "chapter_count": len(template.Sections), "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}, CreatedAt: time.Now().UTC()}); err != nil {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.activate", Target: projectID, Details: map[string]any{"project_version": next.ProjectVersion, "context_revision": next.CurrentContextRevision, "template_copy_version": copy.Version, "template_content_hash": copy.ContentHash, "ruleset_hash": copy.RulesetHash, "chapter_count": len(template.Sections), "delivery_status": next.DeliveryStatus, "baseline_confirmation_id": next.BaselineConfirmationID}, CreatedAt: time.Now().UTC()}); err != nil {
 				return nil, 0, err
 			}
 		}

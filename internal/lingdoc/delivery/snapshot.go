@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
 
 var (
@@ -28,17 +30,20 @@ var (
 
 // DeliveryInput is the immutable value captured for checking and export.
 type DeliveryInput struct {
-	ProjectID      string            `json:"project_id"`
-	ProjectName    string            `json:"project_name"`
-	ProjectVersion int               `json:"project_version"`
-	SpecRevision   int               `json:"spec_revision"`
-	Spec           map[string]string `json:"spec"`
-	Template       Template          `json:"template"`
-	Chapters       []SnapshotChapter `json:"chapters"`
-	Sources        []FrozenSource    `json:"sources"`
-	AssetVersions  []AssetVersion    `json:"asset_versions"`
-	PolicyAssetIDs []string          `json:"policy_asset_ids"`
-	DeliveryKind   string            `json:"delivery_kind"`
+	ProjectID               string            `json:"project_id"`
+	ProjectName             string            `json:"project_name"`
+	ProjectVersion          int               `json:"project_version"`
+	SpecRevision            int               `json:"spec_revision"`
+	Spec                    map[string]string `json:"spec"`
+	Template                Template          `json:"template"`
+	TemplateCopyID          string            `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64             `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string            `json:"template_copy_content_hash,omitempty"`
+	Chapters                []SnapshotChapter `json:"chapters"`
+	Sources                 []FrozenSource    `json:"sources"`
+	AssetVersions           []AssetVersion    `json:"asset_versions"`
+	PolicyAssetIDs          []string          `json:"policy_asset_ids"`
+	DeliveryKind            string            `json:"delivery_kind"`
 }
 type SnapshotChapter struct {
 	ChapterID        string          `json:"chapter_id"`
@@ -120,15 +125,27 @@ type CheckResult struct {
 
 // CheckIssue is the shared ValidationIssue shape. Code and ChapterID stay internal for tests.
 type CheckIssue struct {
-	ID            string  `json:"id"`
-	RuleID        string  `json:"rule_id"`
-	RulesetHash   string  `json:"ruleset_hash"`
-	Severity      string  `json:"severity"`
-	TargetID      string  `json:"target_id"`
-	TargetVersion *string `json:"target_version"`
-	Message       string  `json:"message"`
-	Code          string  `json:"-"`
-	ChapterID     string  `json:"-"`
+	ID               string            `json:"id"`
+	RuleID           string            `json:"rule_id"`
+	RulesetHash      string            `json:"ruleset_hash"`
+	Severity         string            `json:"severity"`
+	TargetID         string            `json:"target_id"`
+	TargetVersion    *string           `json:"target_version"`
+	Evidence         []string          `json:"evidence"`
+	EvaluatorVersion string            `json:"evaluator_version"`
+	Message          string            `json:"message"`
+	Disposition      *IssueDisposition `json:"disposition,omitempty"`
+	Code             string            `json:"-"`
+	ChapterID        string            `json:"-"`
+}
+
+// IssueDisposition is human workflow metadata attached to a finding. It does
+// not change the evaluator's status or satisfy any confirmation/export gate.
+type IssueDisposition struct {
+	Action    string    `json:"action"`
+	Reason    string    `json:"reason"`
+	ActorID   string    `json:"actor_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 type ReleaseSnapshot struct {
 	ID             string        `json:"id"`
@@ -372,12 +389,41 @@ func Evaluate(input DeliveryInput) CheckResult {
 		return result
 	}
 	versions := chapterVersionIDs(input.Chapters)
-	add := func(severity, ruleID, code, chapterID, message string) {
-		target, targetVersion := issueTarget(input, versions, chapterID)
-		result.Issues = append(result.Issues, CheckIssue{ID: fmt.Sprintf("%s-%s-%d", code, target, len(result.Issues)+1), RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: targetVersion, Message: message, Code: code, ChapterID: chapterID})
+	seenIssues := make(map[string]int)
+	addTarget := func(severity, ruleID, code, target, chapterID string, targetVersion *string, message string, evidence []string, stableID string) {
+		version := "<none>"
+		if targetVersion != nil {
+			version = *targetVersion
+		}
+		identity := ruleID + "\x00" + target + "\x00" + version + "\x00" + input.Template.RulesetHash + "\x00" + code
+		if index, exists := seenIssues[identity]; exists {
+			if message != "" && !strings.Contains(result.Issues[index].Message, message) {
+				result.Issues[index].Message += "; " + message
+			}
+			for _, item := range evidence {
+				if item != "" && !slices.Contains(result.Issues[index].Evidence, item) {
+					result.Issues[index].Evidence = append(result.Issues[index].Evidence, item)
+				}
+			}
+			sort.Strings(result.Issues[index].Evidence)
+			return
+		}
+		seenIssues[identity] = len(result.Issues)
+		sum := sha256.Sum256([]byte(identity))
+		id := "vi-" + hex.EncodeToString(sum[:12])
+		if stableID != "" {
+			id = stableID
+		}
+		canonicalEvidence := append([]string{}, evidence...)
+		sort.Strings(canonicalEvidence)
+		result.Issues = append(result.Issues, CheckIssue{ID: id, RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Evidence: canonicalEvidence, EvaluatorVersion: lingdoctemplate.EvaluatorVersion, Message: message, Code: code, ChapterID: chapterID})
 		if severity == SeverityBlocking {
 			result.Status = CheckBlocked
 		}
+	}
+	add := func(severity, ruleID, code, chapterID, message string) {
+		target, targetVersion := issueTarget(input, versions, chapterID)
+		addTarget(severity, ruleID, code, target, chapterID, targetVersion, message, nil, "")
 	}
 	issue := func(ruleID, code, chapterID, message string) {
 		add(ruleSeverity(severities, ruleID), ruleID, code, chapterID, message)
@@ -386,6 +432,43 @@ func Evaluate(input DeliveryInput) CheckResult {
 	// result must still carry the item forward to the exported file.
 	advisory := func(ruleID, code, chapterID, message string) {
 		add(SeverityWarning, ruleID, code, chapterID, message)
+	}
+	evaluated, evaluationErr := EvaluateTemplate(input)
+	if evaluationErr != nil {
+		issue(RuleRequiredFields, "template_rules_invalid", "", "模板规则结构无效，无法安全执行检查")
+	} else {
+		for _, evaluation := range evaluated.Evaluations {
+			if evaluation.Status != lingdoctemplate.EvaluationIssue || isLegacyTemplateRule(evaluation.RuleID) {
+				continue
+			}
+			kind, id, _ := strings.Cut(evaluation.TargetRef, "/")
+			target, chapterID := id, ""
+			switch kind {
+			case "project":
+				target = input.ProjectID
+			case "chapter":
+				for _, chapter := range input.Chapters {
+					if chapter.SectionID == id {
+						target, chapterID = chapter.ChapterID, chapter.ChapterID
+						break
+					}
+				}
+			case "review_item":
+				for _, chapter := range input.Chapters {
+					for _, item := range chapter.ReviewItems {
+						if item.ID == id {
+							chapterID = chapter.ChapterID
+							break
+						}
+					}
+					if chapterID != "" {
+						break
+					}
+				}
+			}
+			version := evaluation.TargetVersion
+			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
+		}
 	}
 
 	if input.ProjectID == "" || input.DeliveryKind != DeliveryKindInternalDemo {
@@ -411,6 +494,15 @@ func Evaluate(input DeliveryInput) CheckResult {
 		}
 	}
 	return result
+}
+
+func isLegacyTemplateRule(id string) bool {
+	switch id {
+	case RuleRequiredFields, RuleChapterNonempty, RuleChapterConfirmed, RuleReviewItemsDecided, RuleSourceAvailable:
+		return true
+	default:
+		return false
+	}
 }
 
 func ruleSeverities(rules []Rule) map[string]string {
@@ -617,7 +709,7 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 	for key, value := range input.Spec {
 		copy.Spec[key] = value
 	}
-	copy.Template = cloneTemplate(input.Template)
+	copy.Template = lingdoctemplate.Clone(input.Template)
 	copy.Chapters = make([]SnapshotChapter, len(input.Chapters))
 	for i, chapter := range input.Chapters {
 		copy.Chapters[i] = cloneChapter(chapter)
@@ -664,6 +756,14 @@ func cloneIssues(issues []CheckIssue) []CheckIssue {
 	for i, issue := range issues {
 		out[i] = issue
 		out[i].TargetVersion = cloneVersion(issue.TargetVersion)
+		if issue.Disposition != nil {
+			copy := *issue.Disposition
+			out[i].Disposition = &copy
+		}
+		out[i].Evidence = append([]string{}, issue.Evidence...)
+		if out[i].EvaluatorVersion == "" {
+			out[i].EvaluatorVersion = "unknown"
+		}
 	}
 	return out
 }

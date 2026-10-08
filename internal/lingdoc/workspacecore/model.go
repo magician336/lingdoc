@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -33,9 +34,35 @@ type Project struct {
 	SpecFields             map[string]SpecField `json:"spec_fields,omitempty"`
 	TemplateID             string               `json:"template_id"`
 	TemplateVersion        string               `json:"template_version"`
+	TemplateCopyVersion    int64                `json:"template_copy_version"`
+	TemplateCopy           *ProjectTemplateCopy `json:"template_copy,omitempty"`
 	DiscardedAt            *time.Time           `json:"discarded_at,omitempty"`
 	Members                []Member             `json:"members"`
 }
+
+// ProjectTemplateCopy is an append-only project-owned snapshot of one exact
+// published template version. Lifecycle status may advance; Definition and
+// its server-computed hashes never change after the row is inserted.
+type ProjectTemplateCopy struct {
+	ID                    string                   `json:"id"`
+	ProjectID             string                   `json:"project_id"`
+	SourceTemplateID      string                   `json:"source_template_id"`
+	SourceTemplateVersion string                   `json:"source_template_version"`
+	Version               int64                    `json:"version"`
+	Status                string                   `json:"status"`
+	ContentHash           string                   `json:"content_hash"`
+	RulesetHash           string                   `json:"ruleset_hash"`
+	Definition            lingdoctemplate.Template `json:"definition"`
+	CreatedBy             string                   `json:"created_by"`
+	CreatedAt             time.Time                `json:"created_at"`
+}
+
+const (
+	TemplateCopyDraft      = "draft"
+	TemplateCopyBound      = "bound"
+	TemplateCopySuperseded = "superseded"
+	TemplateCopyDiscarded  = "discarded"
+)
 
 type ProvenanceRecord struct {
 	SourceType         string    `json:"source_type"`
@@ -87,6 +114,34 @@ type AuditEvent struct {
 	Capability string           `json:"capability,omitempty"`
 	Decision   string           `json:"decision,omitempty"`
 	Reason     string           `json:"reason,omitempty"`
+}
+
+// ValidationIssueBinding pins a disposition to the exact rule, target, and
+// version that was evaluated. A changed ruleset or target version therefore
+// cannot inherit an old human decision.
+type ValidationIssueBinding struct {
+	IssueID        string  `json:"issue_id"`
+	RuleID         string  `json:"rule_id"`
+	RulesetHash    string  `json:"ruleset_hash"`
+	Severity       string  `json:"severity"`
+	TargetID       string  `json:"target_id"`
+	TargetVersion  *string `json:"target_version"`
+	ProjectVersion int64   `json:"project_version"`
+}
+
+type ValidationIssueDispositionInput struct {
+	ExpectedProjectVersion int64 `json:"expected_project_version"`
+	ValidationIssueBinding
+	Action string `json:"action"`
+	Reason string `json:"reason"`
+}
+
+type ValidationIssueDisposition struct {
+	ValidationIssueBinding
+	Action    string    `json:"action"`
+	Reason    string    `json:"reason"`
+	ActorID   string    `json:"actor_id"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type OwnerTransfer struct {
@@ -150,8 +205,44 @@ type ChangeSet struct {
 	TargetSpecRevision    *int64             `json:"target_spec_revision,omitempty"`
 	Fields                []ChangeFieldDelta `json:"fields"`
 	Impacts               []ChangeImpact     `json:"impacts"`
+	TemplateUpgrade       *TemplateUpgrade   `json:"template_upgrade,omitempty"`
 	CreatedAt             time.Time          `json:"created_at"`
 	AppliedAt             *time.Time         `json:"applied_at,omitempty"`
+}
+
+// TemplateUpgrade pins the exact project-copy definition proposed by an
+// active-project ChangeSet. It is persisted with the ChangeSet, so apply never
+// trusts a definition resent by the browser after review.
+type TemplateUpgrade struct {
+	BaseTemplateCopyVersion int64                    `json:"base_template_copy_version"`
+	Definition              lingdoctemplate.Template `json:"definition"`
+	FieldValues             map[string]string        `json:"field_values"`
+	Preview                 TemplateMigrationPreview `json:"preview"`
+	Impact                  TemplateUpgradeImpact    `json:"impact"`
+}
+
+// TemplateUpgradeImpact makes the non-field consequences reviewable before
+// an owner applies the new copy. Frozen deliveries remain immutable history;
+// checks and dispositions are reevaluated against the new revision.
+type TemplateUpgradeImpact struct {
+	AffectedFieldIDs                  []string `json:"affected_field_ids"`
+	AffectedSectionIDs                []string `json:"affected_section_ids"`
+	AffectedChapterIDs                []string `json:"affected_chapter_ids"`
+	InvalidatedConfirmationChapterIDs []string `json:"invalidated_confirmation_chapter_ids"`
+	ChangedRuleIDs                    []string `json:"changed_rule_ids"`
+	ValidationIssueEffect             string   `json:"validation_issue_effect"`
+	DeliverySnapshotEffect            string   `json:"delivery_snapshot_effect"`
+}
+
+type TemplateUpgradeInput struct {
+	ExpectedProjectVersion      int64                     `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64                     `json:"expected_template_copy_version"`
+	Fields                      []lingdoctemplate.Field   `json:"fields"`
+	Sections                    []lingdoctemplate.Section `json:"sections"`
+	Terms                       []lingdoctemplate.Term    `json:"terms"`
+	RequiredFields              []string                  `json:"required_fields"`
+	Rules                       []lingdoctemplate.Rule    `json:"rules"`
+	FieldValues                 map[string]string         `json:"field_values,omitempty"`
 }
 
 type CreateChangeSetInput struct {
@@ -159,11 +250,16 @@ type CreateChangeSetInput struct {
 	Fields                  map[string]ChangeFieldInput `json:"fields"`
 	AffectedChapterIDs      []string                    `json:"affected_chapter_ids"`
 	Reason                  string                      `json:"reason"`
+	TemplateUpgrade         *TemplateUpgradeInput       `json:"template_upgrade,omitempty"`
 }
 
 type TemplateMigrationField struct {
 	FieldID string `json:"field_id"`
 	Value   string `json:"value,omitempty"`
+	Before  string `json:"before,omitempty"`
+	After   string `json:"after,omitempty"`
+	OldType string `json:"old_type,omitempty"`
+	NewType string `json:"new_type,omitempty"`
 	Status  string `json:"status"`
 }
 
@@ -171,13 +267,23 @@ type TemplateMigrationPreview struct {
 	ProjectID              string                   `json:"project_id"`
 	SourceTemplateID       string                   `json:"source_template_id"`
 	SourceTemplateVersion  string                   `json:"source_template_version"`
+	SourceCopyVersion      int64                    `json:"source_copy_version,omitempty"`
 	TargetTemplateID       string                   `json:"target_template_id"`
 	TargetTemplateVersion  string                   `json:"target_template_version"`
+	TargetCopyVersion      int64                    `json:"target_copy_version,omitempty"`
+	TargetContentHash      string                   `json:"target_content_hash,omitempty"`
+	TargetRulesetHash      string                   `json:"target_ruleset_hash,omitempty"`
+	RulesetChanged         bool                     `json:"ruleset_changed,omitempty"`
 	ExpectedProjectVersion int64                    `json:"expected_project_version"`
 	Fields                 []TemplateMigrationField `json:"fields"`
-	MissingRequired        []string                 `json:"missing_required"`
-	Orphaned               []string                 `json:"orphaned"`
-	Incompatible           []string                 `json:"incompatible"`
+	// Keep an empty list on the wire. The Workspace UI renders the preview
+	// unconditionally and relies on section_changes.length; omitting the field
+	// for a field-only upgrade turns a valid assessed ChangeSet into a blank
+	// workspace when it is reloaded.
+	SectionChanges  []TemplateSectionChange `json:"section_changes"`
+	MissingRequired []string                `json:"missing_required"`
+	Orphaned        []string                `json:"orphaned"`
+	Incompatible    []string                `json:"incompatible"`
 }
 
 type ReviewItem struct {
@@ -276,49 +382,24 @@ type AuditSink interface {
 	Record(context.Context, AuditEvent) error
 }
 
-type Section struct {
-	ID       string
-	Title    string
-	Required bool
-}
-
-type Template struct {
-	ID             string
-	Version        string
-	RulesetHash    string
-	Sections       []Section
-	RequiredFields []string
-	Fields         []TemplateField
-}
-
-type TemplateField struct {
-	ID       string
-	Type     string
-	Required bool
-}
-
-type TemplateReader interface {
-	Get(id, version string) (Template, error)
-}
+type Section = lingdoctemplate.Section
+type Template = lingdoctemplate.Template
+type TemplateField = lingdoctemplate.Field
+type TemplateReader = lingdoctemplate.Reader
 
 // ContractDemoTemplate is a replaceable T02 stand-in. It is not an official
 // grant application template and must not be used to claim formal readiness.
 type ContractDemoTemplate struct{}
 
 func (ContractDemoTemplate) Get(id, version string) (Template, error) {
-	if id != "template-demo" || (version != "" && version != "1") {
+	if version == "" {
+		version = lingdoctemplate.DemoTemplateVersion
+	}
+	template, err := (lingdoctemplate.FixedDemoReader{}).Get(id, version)
+	if err != nil {
 		return Template{}, ErrInvalidState
 	}
-	return Template{
-		ID: "template-demo", Version: "1",
-		RulesetHash: "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
-		Sections: []Section{
-			{ID: "question", Title: "研究问题", Required: true},
-			{ID: "method", Title: "研究方案", Required: true},
-		},
-		RequiredFields: []string{"research_subject", "research_goal"},
-		Fields:         []TemplateField{{ID: "research_subject", Type: "string", Required: true}, {ID: "research_goal", Type: "string", Required: true}},
-	}, nil
+	return template, nil
 }
 
 var (
@@ -345,11 +426,28 @@ type projectRow struct {
 	SpecMetadataJSON       string     `gorm:"column:spec_metadata_json;not null;type:text;default:'{}'"`
 	TemplateID             string     `gorm:"not null;size:80"`
 	TemplateVersion        string     `gorm:"not null;size:40"`
+	TemplateCopyVersion    int64      `gorm:"column:template_copy_version;not null;default:0"`
 	DiscardedAt            *time.Time `gorm:"column:discarded_at"`
 	CreatedAt              time.Time
 }
 
 func (projectRow) TableName() string { return "lingdoc_projects" }
+
+type projectTemplateCopyRow struct {
+	ID                    string `gorm:"primaryKey;size:36"`
+	ProjectID             string `gorm:"not null;size:36;uniqueIndex:idx_lingdoc_template_copy_version,priority:1"`
+	Version               int64  `gorm:"not null;uniqueIndex:idx_lingdoc_template_copy_version,priority:2"`
+	SourceTemplateID      string `gorm:"not null;size:80"`
+	SourceTemplateVersion string `gorm:"not null;size:40"`
+	Status                string `gorm:"not null;size:16"`
+	ContentHash           string `gorm:"not null;size:64"`
+	RulesetHash           string `gorm:"not null;size:64"`
+	DefinitionJSON        string `gorm:"column:definition_json;not null;type:text"`
+	CreatedBy             string `gorm:"not null;size:64"`
+	CreatedAt             time.Time
+}
+
+func (projectTemplateCopyRow) TableName() string { return "lingdoc_project_template_copies" }
 
 type memberRow struct {
 	ProjectID string `gorm:"primaryKey;size:36"`

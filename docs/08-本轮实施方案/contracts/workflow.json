@@ -130,6 +130,9 @@
           "spec": {},
           "template_id": "template-demo",
           "template_version": "1",
+          "template_copy_version": 1,
+          "current_context_revision": 0,
+          "delivery_status": "NOT_READY",
           "members": [
             {
               "user_id": "u-owner",
@@ -182,6 +185,9 @@
           },
           "template_id": "template-demo",
           "template_version": "1",
+          "template_copy_version": 1,
+          "current_context_revision": 0,
+          "delivery_status": "NOT_READY",
           "members": [
             {
               "user_id": "u-owner",
@@ -229,6 +235,9 @@
           },
           "template_id": "template-demo",
           "template_version": "1",
+          "template_copy_version": 1,
+          "current_context_revision": 1,
+          "delivery_status": "NOT_READY",
           "members": [
             {
               "user_id": "u-owner",
@@ -878,6 +887,9 @@
           },
           "template_id": "template-demo",
           "template_version": "1",
+          "template_copy_version": 1,
+          "current_context_revision": 1,
+          "delivery_status": "NOT_READY",
           "members": [
             {
               "user_id": "u-owner",

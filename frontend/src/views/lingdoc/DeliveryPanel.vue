@@ -2,9 +2,9 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { Chapter, Project } from '@/api/lingdoc/workspace'
 import {
-  checkDelivery, downloadExport, getExport, getRelease, listExports, listReleases, newDeliveryKey,
+  checkDelivery, checkTemplate, downloadExport, getExport, getRelease, listExports, listReleases, newDeliveryKey, setIssueDisposition,
   prepareRelease, startExport,
-  type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot,
+  type CheckResult, type CheckStatus, type ExportArtifact, type ReleaseSnapshot, type TemplateCheckResult, type ValidationIssueDisposition,
 } from '@/api/lingdoc/delivery'
 import { canExportSnapshot, currencyOf, issueTargetLabel, viewOf, type Currency } from './deliveryState'
 
@@ -47,6 +47,7 @@ interface ArtifactRow {
 }
 
 const checks = ref<CheckResult | null>(null)
+const templateChecks = ref<TemplateCheckResult | null>(null)
 const snapshots = ref<ReleaseSnapshot[]>([])
 const artifacts = ref<ExportArtifact[]>([])
 const historyTruncated = ref(false)
@@ -68,6 +69,9 @@ const errorMessage = ref('')
 
 /** 冻结：同一个待冻结状态重试时复用同一个键，成功之后下一次冻结是一个新动作。 */
 const freezeAttempt = ref<{ signature: string; key: string } | null>(null)
+const dispositionActions = ref<Record<string, ValidationIssueDisposition['action']>>({})
+const dispositionReasons = ref<Record<string, string>>({})
+const dispositionAttempts = new Map<string, { signature: string; key: string }>()
 
 /** 导出：每个快照各自一条。键在成功后清掉，所以「再导一份」是新动作而不是重放。 */
 const exportAttempts = new Map<string, { signature: string; key: string }>()
@@ -228,6 +232,60 @@ async function runCheck() {
   } finally { pending.value = '' }
 }
 
+async function runTemplateCheck() {
+  if (busy.value) return
+  const projectId = props.project.id
+  const expected = props.project.project_version
+  pending.value = 'template-check'
+  errorMessage.value = ''
+  try {
+    const result = await checkTemplate(projectId, expected)
+    if (projectId !== props.project.id) return
+    templateChecks.value = result.data
+  } catch (error) {
+    if (projectId !== props.project.id) return
+    if (!recoverVersionConflict(error)) fail(error, '模板规则检查失败，请重试。')
+  } finally { pending.value = '' }
+}
+
+function dispositionKey(issueId: string, expected: number, action: string, reason: string): string {
+  const signature = JSON.stringify({ project: props.project.id, issueId, expected, action, reason })
+  const previous = dispositionAttempts.get(issueId)
+  if (previous?.signature === signature) return previous.key
+  const key = newDeliveryKey()
+  dispositionAttempts.set(issueId, { signature, key })
+  return key
+}
+
+async function submitDisposition(issue: CheckResult['issues'][number]) {
+  if (busy.value || issue.disposition) return
+  const projectId = props.project.id
+  const expected = props.project.project_version
+  const action = dispositionActions.value[issue.id] || 'dismiss'
+  const reason = (dispositionReasons.value[issue.id] || '').trim()
+  if (!reason) {
+    errorMessage.value = '请填写处置原因。'
+    return
+  }
+  if (action === 'waive' && issue.severity === 'blocking') {
+    errorMessage.value = '阻断问题不能豁免。'
+    return
+  }
+  pending.value = `issue:${issue.id}`
+  errorMessage.value = ''
+  try {
+    await setIssueDisposition(projectId, issue.id, expected, action, reason,
+      dispositionKey(issue.id, expected, action, reason))
+    dispositionAttempts.delete(issue.id)
+    const refreshed = await checkDelivery(projectId, expected)
+    if (projectId !== props.project.id) return
+    checks.value = refreshed.data
+  } catch (error) {
+    if (projectId !== props.project.id) return
+    if (!recoverVersionConflict(error)) fail(error, '提交问题处置失败；请检查权限和当前版本后重试。')
+  } finally { pending.value = '' }
+}
+
 async function freeze() {
   if (busy.value) return
   const projectId = props.project.id
@@ -338,6 +396,7 @@ watch(
     // 那份结论就不再是「当前内容的检查结果」——把它留在屏幕上，用户会以为自己刚做的
     // 改动已经通过了检查。这与快照的当前性是同一件事：结论只在它被算出的那一刻成立。
     checks.value = null
+    templateChecks.value = null
     void load()
   },
   { immediate: true },
@@ -354,6 +413,9 @@ watch(
     <div class="delivery__actions">
       <button type="button" :disabled="busy" @click="runCheck">
         {{ pending === 'check' ? '检查中…' : '交付检查' }}
+      </button>
+      <button type="button" :disabled="busy" @click="runTemplateCheck">
+        {{ pending === 'template-check' ? '规则检查中…' : '查看模板规则证据' }}
       </button>
       <button type="button" :disabled="busy" @click="freeze">
         {{ pending === 'freeze' ? '冻结中…' : '冻结当前内容' }}
@@ -373,9 +435,42 @@ watch(
             {{ issue.severity === 'blocking' ? '阻断' : '提示' }}
           </em>
           <p>{{ issue.message }}</p>
+          <p v-if="issue.disposition" class="delivery__disposition">
+            已记录「{{ issue.disposition.action }}」：{{ issue.disposition.reason }} · {{ issue.disposition.actor_id }}
+          </p>
+          <div v-else class="delivery__disposition-form">
+            <label>处理方式
+              <select v-model="dispositionActions[issue.id]" :disabled="busy">
+                <option value="resolve">已修复</option>
+                <option value="dismiss">误报 / 不适用</option>
+                <option value="waive" :disabled="issue.severity === 'blocking'">接受风险（非阻断）</option>
+              </select>
+            </label>
+            <label>原因
+              <input v-model="dispositionReasons[issue.id]" :disabled="busy" maxlength="2000" placeholder="说明处置依据" />
+            </label>
+            <button type="button" :disabled="busy || !dispositionReasons[issue.id]?.trim()" @click="submitDisposition(issue)">
+              {{ pending === `issue:${issue.id}` ? '提交中…' : '记录处置' }}
+            </button>
+          </div>
         </li>
       </ul>
       <p v-else class="muted">没有发现问题。</p>
+    </section>
+
+    <section v-if="templateChecks" class="delivery__result" aria-label="模板规则证据">
+      <p>模板副本版本 {{ templateChecks.template_copy_version ?? '未提供' }} · 规则集 {{ templateChecks.ruleset_hash.slice(0, 12) }} · 结果仅供修订参考，不授予导出权限。</p>
+      <ul v-if="templateChecks.evaluations.length" class="delivery__issues">
+        <li v-for="item in templateChecks.evaluations" :key="item.id || `${item.rule_id}:${item.target_ref}:${item.target_version}`">
+          <span class="delivery__target">{{ item.rule_id }} · {{ item.target_ref }}（{{ item.target_version }}）</span>
+          <em :class="['delivery__severity', { 'delivery__severity--blocking': item.severity === 'blocking' && item.status === 'ISSUE' }]">
+            {{ item.status }} · {{ item.severity }}
+          </em>
+          <p>{{ item.message }}</p>
+          <small>证据：{{ item.evidence.length ? item.evidence.join('；') : '无额外证据' }} · {{ item.evaluator_version }}</small>
+        </li>
+      </ul>
+      <p v-else class="muted">此模板没有配置可执行规则。</p>
     </section>
 
     <p v-if="!groups.length" class="muted">还没有冻结过交付快照。</p>
@@ -473,6 +568,10 @@ watch(
 .delivery__severity { margin-left: 8px; padding: 1px 7px; border-radius: 999px; background: #eef2f0; color: #4a564f; font-size: 12px; font-style: normal; }
 .delivery__severity--blocking { background: #fdecea; color: #b3261e; }
 .delivery__issues p { margin: 4px 0; }
+.delivery__disposition-form { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; margin-top: 8px; }
+.delivery__disposition-form label { display: grid; gap: 4px; }
+.delivery__disposition-form input { min-width: 220px; }
+.delivery__disposition { color: #52616b; font-size: 0.92em; }
 .delivery__history { margin: 12px 0 0; padding: 0; list-style: none; }
 .delivery__snapshot { margin-bottom: 14px; padding: 16px; border: 1px solid #dbe5dd; border-radius: 10px; background: #fff; }
 .delivery__snapshot-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }

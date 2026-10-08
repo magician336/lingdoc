@@ -179,7 +179,7 @@ func TestCheckResultJSONMatchesThePublishedSchema(t *testing.T) {
 	}
 	// ValidationIssue is published with additionalProperties: false too, and
 	// target_version stays required even when it is null.
-	expected := []string{"id", "rule_id", "ruleset_hash", "severity", "target_id", "target_version", "message"}
+	expected := []string{"id", "rule_id", "ruleset_hash", "severity", "target_id", "target_version", "evidence", "evaluator_version", "message"}
 	for _, issue := range envelope.Issues {
 		if len(issue) != len(expected) {
 			t.Fatalf("ValidationIssue JSON carries unpublished keys: %s", raw)

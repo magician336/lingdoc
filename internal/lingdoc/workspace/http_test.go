@@ -16,15 +16,22 @@ import (
 
 type applicationServiceStub struct {
 	ApplicationService
-	actor          Actor
-	called         bool
-	project        Project
-	changeSetInput CreateChangeSetInput
-	changeSetID    string
-	changeSetKey   string
-	applyCalled    bool
-	applyStatus    int
-	rejectCalled   bool
+	actor             Actor
+	called            bool
+	project           Project
+	changeSetInput    CreateChangeSetInput
+	changeSetID       string
+	changeSetKey      string
+	applyCalled       bool
+	applyStatus       int
+	rejectCalled      bool
+	templateCopy      ProjectTemplateCopy
+	templateProjectID string
+	templateVersion   int64
+	copyEditInput     TemplateCopyDefinitionInput
+	copyEditKey       string
+	copyEditCalled    bool
+	copyPreviewCalled bool
 }
 
 type sourceApplicationServiceStub struct {
@@ -45,6 +52,24 @@ func (s *applicationServiceStub) ListProjects(_ context.Context, actor Actor) ([
 	s.called = true
 	s.actor = actor
 	return []Project{s.project}, false, nil
+}
+
+func (s *applicationServiceStub) GetTemplateCopy(_ context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
+	s.actor, s.templateProjectID, s.templateVersion = actor, projectID, version
+	s.called = true
+	return s.templateCopy, nil
+}
+
+func (s *applicationServiceStub) PreviewTemplateCopyEdit(_ context.Context, actor Actor, projectID string, input TemplateCopyDefinitionInput) (TemplateMigrationPreview, error) {
+	s.actor, s.templateProjectID, s.copyEditInput = actor, projectID, input
+	s.copyPreviewCalled = true
+	return TemplateMigrationPreview{ProjectID: projectID, TargetCopyVersion: input.ExpectedTemplateCopyVersion + 1}, nil
+}
+
+func (s *applicationServiceStub) SaveTemplateCopy(_ context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (json.RawMessage, int, bool, error) {
+	s.actor, s.templateProjectID, s.copyEditKey, s.copyEditInput = actor, projectID, key, input
+	s.copyEditCalled = true
+	return json.RawMessage(`{"project_id":"` + projectID + `","template_copy_version":2}`), http.StatusOK, false, nil
 }
 
 func (s *applicationServiceStub) CreateChangeSet(_ context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
@@ -126,6 +151,46 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	}
 	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) {
 		t.Fatalf("injected service did not receive caller identity: called=%v actor=%#v", service.called, service.actor)
+	}
+}
+
+func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &applicationServiceStub{templateCopy: ProjectTemplateCopy{ProjectID: "project-1", Version: 1, Status: "draft"}}
+	handler := NewHandler(HandlerDependencies{Service: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+
+	request := httptest.NewRequest(http.MethodGet, "/api/projects/project-1/template-copies/1", nil).WithContext(ctx)
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.called || service.templateProjectID != "project-1" || service.templateVersion != 1 || service.actor != (Actor{TenantID: 42, UserID: "owner-7", Role: types.TenantRoleViewer}) {
+		t.Fatalf("template copy read: status=%d called=%v project=%q version=%d actor=%#v body=%s", response.Code, service.called, service.templateProjectID, service.templateVersion, service.actor, response.Body.String())
+	}
+
+	body := `{"expected_project_version":3,"expected_template_copy_version":1,"fields":[],"sections":[],"terms":[],"required_fields":[],"rules":[]}`
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/template-copy/preview", strings.NewReader(body)).WithContext(ctx)
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.copyPreviewCalled || service.copyEditInput.ExpectedProjectVersion != 3 || service.copyEditInput.ExpectedTemplateCopyVersion != 1 || service.actor.UserID != "owner-7" {
+		t.Fatalf("template copy preview: status=%d called=%v input=%#v actor=%#v body=%s", response.Code, service.copyPreviewCalled, service.copyEditInput, service.actor, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPut, "/api/projects/project-1/template-copy", strings.NewReader(body)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "template-copy-edit-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.copyEditCalled || service.copyEditKey != "template-copy-edit-1" || service.templateProjectID != "project-1" {
+		t.Fatalf("template copy save: status=%d called=%v project=%q key=%q body=%s", response.Code, service.copyEditCalled, service.templateProjectID, service.copyEditKey, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPut, "/api/projects/project-1/template-copy", strings.NewReader(body)).WithContext(ctx)
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("template copy save without idempotency key = %d, want 400: %s", response.Code, response.Body.String())
 	}
 }
 

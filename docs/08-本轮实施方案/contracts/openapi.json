@@ -52,15 +52,35 @@
                         "name": "演示模板：研究问题与研究方案",
                         "version": "1",
                         "is_demo": true,
+                        "source": "lingdoc_builtin",
+                        "scope": "internal-demo",
                         "sections": [
                           {
                             "section_id": "question",
+                            "order": 1,
                             "title": "研究问题",
                             "required": true
                           },
                           {
                             "section_id": "method",
+                            "order": 2,
                             "title": "研究方案",
+                            "required": true
+                          }
+                        ],
+                                                "fields": [
+                          {
+                            "field_id": "research_subject",
+                            "label": "研究对象",
+                            "type": "string",
+                            "order": 1,
+                            "required": true
+                          },
+                          {
+                            "field_id": "research_goal",
+                            "label": "研究目标",
+                            "type": "string",
+                            "order": 2,
                             "required": true
                           }
                         ],
@@ -405,6 +425,8 @@
                             "name": "合成资料演示项目",
                             "status": "active",
                             "project_version": 5,
+                            "current_context_revision": 1,
+                            "delivery_status": "NOT_READY",
                             "spec_revision": 2,
                             "spec": {
                               "research_subject": "公开的合成调查样本",
@@ -412,6 +434,7 @@
                             },
                             "template_id": "template-demo",
                             "template_version": "1",
+                            "template_copy_version": 1,
                             "members": [
                               {
                                 "user_id": "u-owner",
@@ -732,10 +755,13 @@
                         "name": "合成资料演示项目",
                         "status": "draft",
                         "project_version": 1,
+                        "current_context_revision": 0,
+                        "delivery_status": "NOT_READY",
                         "spec_revision": 0,
                         "spec": {},
                         "template_id": "template-demo",
                         "template_version": "1",
+                        "template_copy_version": 1,
                         "members": [
                           {
                             "user_id": "u-owner",
@@ -1063,6 +1089,8 @@
                         "name": "合成资料演示项目",
                         "status": "active",
                         "project_version": 8,
+                        "current_context_revision": 1,
+                        "delivery_status": "NOT_READY",
                         "spec_revision": 1,
                         "spec": {
                           "research_subject": "公开的合成调查样本",
@@ -1070,6 +1098,7 @@
                         },
                         "template_id": "template-demo",
                         "template_version": "1",
+                        "template_copy_version": 1,
                         "members": [
                           {
                             "user_id": "u-owner",
@@ -1394,6 +1423,8 @@
                         "name": "合成资料演示项目",
                         "status": "draft",
                         "project_version": 2,
+                        "current_context_revision": 0,
+                        "delivery_status": "NOT_READY",
                         "spec_revision": 1,
                         "spec": {
                           "research_subject": "公开的合成调查样本",
@@ -1401,6 +1432,7 @@
                         },
                         "template_id": "template-demo",
                         "template_version": "1",
+                        "template_copy_version": 1,
                         "members": [
                           {
                             "user_id": "u-owner",
@@ -1742,6 +1774,8 @@
                         "name": "合成资料演示项目",
                         "status": "active",
                         "project_version": 6,
+                        "current_context_revision": 1,
+                        "delivery_status": "NOT_READY",
                         "spec_revision": 2,
                         "spec": {
                           "research_subject": "公开的合成调查样本",
@@ -1749,6 +1783,7 @@
                         },
                         "template_id": "template-demo",
                         "template_version": "1",
+                        "template_copy_version": 1,
                         "members": [
                           {
                             "user_id": "u-owner",
@@ -2093,6 +2128,8 @@
                         "name": "合成资料演示项目",
                         "status": "active",
                         "project_version": 3,
+                        "current_context_revision": 1,
+                        "delivery_status": "NOT_READY",
                         "spec_revision": 1,
                         "spec": {
                           "research_subject": "公开的合成调查样本",
@@ -2100,6 +2137,7 @@
                         },
                         "template_id": "template-demo",
                         "template_version": "1",
+                        "template_copy_version": 1,
                         "members": [
                           {
                             "user_id": "u-owner",
@@ -7045,6 +7083,8 @@
                             "severity": "warning",
                             "target_id": "ch-question",
                             "target_version": "cv-question-2",
+                            "evidence": [],
+                            "evaluator_version": "lingdoc-rules/1",
                             "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                           }
                         ]
@@ -7070,6 +7110,8 @@
                             "severity": "blocking",
                             "target_id": "ch-question",
                             "target_version": "cv-question-2",
+                            "evidence": [],
+                            "evaluator_version": "lingdoc-rules/1",
                             "message": "章节未确认。"
                           }
                         ]
@@ -7373,6 +7415,53 @@
         "x-domain": "delivery"
       }
     },
+    "/projects/{projectId}/template-checks": {
+      "post": {
+        "operationId": "checkProjectTemplateRules",
+        "tags": ["delivery"],
+        "summary": "检查项目模板规则并返回证据",
+        "description": "使用与交付预检相同的确定性求值器，返回绑定项目版本、模板副本和目标版本的逐条结果；此接口不授权导出，创建交付快照时仍会对冻结输入重新预检。",
+        "parameters": [{"name": "projectId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ReadVersion"}, "example": {"expected_project_version": 8}}}},
+        "responses": {
+          "200": {"description": "逐条规则结果及可追溯证据", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/TemplateCheckResultResponse"}, "examples": {"success": {"value": {"data": {"project_version": 8, "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1", "status": "passed", "evaluations": [{"rule_id": "required-fields", "target_ref": "project/project-demo", "target_version": "project/project-demo/version/8/spec/2/copy/2", "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1", "status": "PASS", "severity": "blocking", "message": "required fields are present", "evidence": ["required_count=2"], "evaluator_version": "lingdoc-rules/1"}]}, "request_id": "req-demo", "meta": {"replayed": false, "refresh_required": false}}}}}}},
+          "400": {"description": "请求字段不符合约定。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "401": {"description": "需要登录。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "无权读取项目或来源。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "项目不存在或不可访问。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "项目版本已变化。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/issues/{issueId}/disposition": {
+      "post": {
+        "operationId": "setValidationIssueDisposition",
+        "tags": ["delivery"],
+        "summary": "记录当前校验问题的人工处置",
+        "description": "服务端会按 expected_project_version 重新运行检查并派生规则、严重级别、目标和目标版本绑定；成功决定写入追加式审计。重复处置、过期版本和撤销权限均拒绝。处置不改变检查结论，也不会关闭 G3 影响任务、章节确认或解除冻结/导出门禁。阻断问题不能 waive；reviewer 仅能在获授权范围内 dismiss 阻断问题。",
+        "parameters": [
+          {"name": "projectId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}},
+          {"name": "issueId", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}},
+          {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8, "maxLength": 128}}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ValidationIssueDispositionInput"}, "example": {"expected_project_version": 8, "action": "dismiss", "reason": "经核对，该规则对此章节不适用。"}}}
+        },
+        "responses": {
+          "201": {"description": "处置已记录", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ValidationIssueDispositionResponse"}}}},
+          "400": {"description": "请求无效、原因为空或试图豁免阻断问题。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "401": {"description": "需要登录。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "项目不存在或调用者无处置权限。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "项目版本或问题绑定已过期。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "422": {"description": "该问题版本已经记录过处置。", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/releases": {
       "get": {
           "operationId": "listReleases",
@@ -7422,15 +7511,35 @@
                                   "name": "演示模板：研究问题与研究方案",
                                   "version": "1",
                                   "is_demo": true,
+                                  "source": "lingdoc_builtin",
+                                  "scope": "internal-demo",
                                   "sections": [
                                     {
                                       "section_id": "question",
+                                      "order": 1,
                                       "title": "研究问题",
                                       "required": true
                                     },
                                     {
                                       "section_id": "method",
+                                      "order": 2,
                                       "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                                                    "fields": [
+                                    {
+                                      "field_id": "research_subject",
+                                      "label": "研究对象",
+                                      "type": "string",
+                                      "order": 1,
+                                      "required": true
+                                    },
+                                    {
+                                      "field_id": "research_goal",
+                                      "label": "研究目标",
+                                      "type": "string",
+                                      "order": 2,
                                       "required": true
                                     }
                                   ],
@@ -7560,7 +7669,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                              "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7573,6 +7682,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -7611,15 +7722,35 @@
                                   "name": "演示模板：研究问题与研究方案",
                                   "version": "1",
                                   "is_demo": true,
+                                  "source": "lingdoc_builtin",
+                                  "scope": "internal-demo",
                                   "sections": [
                                     {
                                       "section_id": "question",
+                                      "order": 1,
                                       "title": "研究问题",
                                       "required": true
                                     },
                                     {
                                       "section_id": "method",
+                                      "order": 2,
                                       "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                                                    "fields": [
+                                    {
+                                      "field_id": "research_subject",
+                                      "label": "研究对象",
+                                      "type": "string",
+                                      "order": 1,
+                                      "required": true
+                                    },
+                                    {
+                                      "field_id": "research_goal",
+                                      "label": "研究目标",
+                                      "type": "string",
+                                      "order": 2,
                                       "required": true
                                     }
                                   ],
@@ -7749,7 +7880,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                              "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7762,6 +7893,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -7800,15 +7933,35 @@
                                   "name": "演示模板：研究问题与研究方案",
                                   "version": "1",
                                   "is_demo": true,
+                                  "source": "lingdoc_builtin",
+                                  "scope": "internal-demo",
                                   "sections": [
                                     {
                                       "section_id": "question",
+                                      "order": 1,
                                       "title": "研究问题",
                                       "required": true
                                     },
                                     {
                                       "section_id": "method",
+                                      "order": 2,
                                       "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                                                    "fields": [
+                                    {
+                                      "field_id": "research_subject",
+                                      "label": "研究对象",
+                                      "type": "string",
+                                      "order": 1,
+                                      "required": true
+                                    },
+                                    {
+                                      "field_id": "research_goal",
+                                      "label": "研究目标",
+                                      "type": "string",
+                                      "order": 2,
                                       "required": true
                                     }
                                   ],
@@ -7905,7 +8058,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
+                              "snapshot_digest": "1c78078e585537c298b970010b5a42e7d60392927798c93fcbe70963dfbcbdcf",
                               "check": {
                                 "project_version": 5,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -7918,6 +8071,8 @@
                                     "severity": "blocking",
                                     "target_id": "ch-method",
                                     "target_version": null,
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "章节尚无正文版本。"
                                   },
                                   {
@@ -7927,6 +8082,8 @@
                                     "severity": "blocking",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "已填写章节仍未确认。"
                                   }
                                 ]
@@ -7965,15 +8122,35 @@
                                   "name": "演示模板：研究问题与研究方案",
                                   "version": "1",
                                   "is_demo": true,
+                                  "source": "lingdoc_builtin",
+                                  "scope": "internal-demo",
                                   "sections": [
                                     {
                                       "section_id": "question",
+                                      "order": 1,
                                       "title": "研究问题",
                                       "required": true
                                     },
                                     {
                                       "section_id": "method",
+                                      "order": 2,
                                       "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                                                    "fields": [
+                                    {
+                                      "field_id": "research_subject",
+                                      "label": "研究对象",
+                                      "type": "string",
+                                      "order": 1,
+                                      "required": true
+                                    },
+                                    {
+                                      "field_id": "research_goal",
+                                      "label": "研究目标",
+                                      "type": "string",
+                                      "order": 2,
                                       "required": true
                                     }
                                   ],
@@ -8103,7 +8280,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                              "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8116,6 +8293,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -8140,15 +8319,35 @@
                                   "name": "演示模板：研究问题与研究方案",
                                   "version": "1",
                                   "is_demo": true,
+                                  "source": "lingdoc_builtin",
+                                  "scope": "internal-demo",
                                   "sections": [
                                     {
                                       "section_id": "question",
+                                      "order": 1,
                                       "title": "研究问题",
                                       "required": true
                                     },
                                     {
                                       "section_id": "method",
+                                      "order": 2,
                                       "title": "研究方案",
+                                      "required": true
+                                    }
+                                  ],
+                                                                    "fields": [
+                                    {
+                                      "field_id": "research_subject",
+                                      "label": "研究对象",
+                                      "type": "string",
+                                      "order": 1,
+                                      "required": true
+                                    },
+                                    {
+                                      "field_id": "research_goal",
+                                      "label": "研究目标",
+                                      "type": "string",
+                                      "order": 2,
                                       "required": true
                                     }
                                   ],
@@ -8278,7 +8477,7 @@
                                 ],
                                 "delivery_kind": "internal_demo"
                               },
-                              "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                              "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                               "check": {
                                 "project_version": 8,
                                 "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8291,6 +8490,8 @@
                                     "severity": "warning",
                                     "target_id": "ch-question",
                                     "target_version": "cv-question-2",
+                                    "evidence": [],
+                                    "evaluator_version": "lingdoc-rules/1",
                                     "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                                   }
                                 ]
@@ -8628,15 +8829,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -8766,7 +8987,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                        "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8779,6 +9000,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -8812,15 +9035,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -8917,7 +9160,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
+                        "snapshot_digest": "1c78078e585537c298b970010b5a42e7d60392927798c93fcbe70963dfbcbdcf",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -8930,6 +9173,8 @@
                               "severity": "blocking",
                               "target_id": "ch-method",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             },
                             {
@@ -8939,6 +9184,8 @@
                               "severity": "blocking",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "已填写章节仍未确认。"
                             }
                           ]
@@ -8972,15 +9219,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -9050,7 +9317,7 @@
                           "policy_asset_ids": [],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "2b4e51782610a4ed269c3648f2c1646463b29c27a8e1d944d2c8d8a235b8e124",
+                        "snapshot_digest": "5c13843c68874eebfbfc8aa419a6ea207b0e48ef064a8d5fe5944ee002b770dc",
                         "check": {
                           "project_version": 3,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9063,6 +9330,8 @@
                               "severity": "blocking",
                               "target_id": "ch-question",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             },
                             {
@@ -9072,6 +9341,8 @@
                               "severity": "blocking",
                               "target_id": "ch-method",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             }
                           ]
@@ -9105,15 +9376,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -9210,7 +9501,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "214b126b40119c396813ce17eece29ff97a06e64bf58414cad901f35024eda3e",
+                        "snapshot_digest": "1c78078e585537c298b970010b5a42e7d60392927798c93fcbe70963dfbcbdcf",
                         "check": {
                           "project_version": 5,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9223,6 +9514,8 @@
                               "severity": "blocking",
                               "target_id": "ch-method",
                               "target_version": null,
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "章节尚无正文版本。"
                             },
                             {
@@ -9232,6 +9525,8 @@
                               "severity": "blocking",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "已填写章节仍未确认。"
                             }
                           ]
@@ -9265,15 +9560,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -9403,7 +9718,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                        "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9416,6 +9731,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -9763,15 +10080,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -9901,7 +10238,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                        "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -9914,6 +10251,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -9947,15 +10286,35 @@
                             "name": "演示模板：研究问题与研究方案",
                             "version": "1",
                             "is_demo": true,
+                            "source": "lingdoc_builtin",
+                            "scope": "internal-demo",
                             "sections": [
                               {
                                 "section_id": "question",
+                                "order": 1,
                                 "title": "研究问题",
                                 "required": true
                               },
                               {
                                 "section_id": "method",
+                                "order": 2,
                                 "title": "研究方案",
+                                "required": true
+                              }
+                            ],
+                                                        "fields": [
+                              {
+                                "field_id": "research_subject",
+                                "label": "研究对象",
+                                "type": "string",
+                                "order": 1,
+                                "required": true
+                              },
+                              {
+                                "field_id": "research_goal",
+                                "label": "研究目标",
+                                "type": "string",
+                                "order": 2,
                                 "required": true
                               }
                             ],
@@ -10085,7 +10444,7 @@
                           ],
                           "delivery_kind": "internal_demo"
                         },
-                        "snapshot_digest": "4c0383c94c519f90f08f1555c89a9e4199a4c2e68d363d2c4018030aa0786240",
+                        "snapshot_digest": "7aa8e6409cc8e87cf1bce79f4bf40199955bc11ef3f84bd519c6b33828f83e1b",
                         "check": {
                           "project_version": 8,
                           "ruleset_hash": "ad814c1ffba1956c0654abd1fc7fc48fad526109f43406633f05861116ec15a1",
@@ -10098,6 +10457,8 @@
                               "severity": "warning",
                               "target_id": "ch-question",
                               "target_version": "cv-question-2",
+                              "evidence": [],
+                              "evaluator_version": "lingdoc-rules/1",
                               "message": "存在经负责人选择保留的待核项，须随内部演示文件呈现。"
                             }
                           ]
@@ -12170,7 +12531,37 @@
     "/projects/{projectId}/owner-transfer/{transferId}/accept": {"post":{"operationId":"acceptOwnerTransfer","tags":["workspace"],"summary":"接受 Owner 转移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"transferId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
     "/projects/{projectId}/discard": {"post":{"operationId":"discardProject","tags":["workspace"],"summary":"软丢弃草稿项目","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
     "/projects/{projectId}/restore": {"post":{"operationId":"restoreProject","tags":["workspace"],"summary":"恢复已丢弃草稿项目","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
-    "/projects/{projectId}/change-sets": {"get":{"operationId":"listChangeSets","tags":["workspace"],"summary":"读取项目变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更集列表"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"createChangeSet","tags":["workspace"],"summary":"创建研究条件变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["expected_context_revision","fields","affected_chapter_ids","reason"],"properties":{"expected_context_revision":{"type":"integer","minimum":1},"fields":{"type":"object","minProperties":1,"maxProperties":2,"propertyNames":{"enum":["research_subject","research_goal"]},"additionalProperties":{"type":"object","required":["old_value","new_value"],"properties":{"old_value":{"type":"string"},"new_value":{"type":"string"}}}},"affected_chapter_ids":{"type":"array","minItems":1,"items":{"type":"string"}},"reason":{"type":"string","minLength":1}}},"example":{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"旧主题","new_value":"新主题"}},"affected_chapter_ids":["chapter-1"],"reason":"研究对象发生变化"}}}},"responses":{"201":{"description":"已生成变更预览"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"版本或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/template-copies/{version}": {"get":{"operationId":"getProjectTemplateCopy","tags":["workspace"],"summary":"读取项目模板副本的不可变历史版本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"version","in":"path","required":true,"schema":{"type":"integer","minimum":1}}],"responses":{"200":{"description":"项目模板副本版本","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectTemplateCopyResponse"}}}},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
+    "/projects/{projectId}/template-copy/preview": {"post":{"operationId":"previewProjectTemplateCopyEdit","tags":["workspace"],"summary":"预览项目模板副本编辑与字段迁移影响","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateCopyDefinitionInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"fields":[{"field_id":"research_subject","label":"研究对象","type":"string","order":1,"required":true},{"field_id":"research_goal","label":"研究目标","type":"string","order":2,"required":true}],"sections":[{"section_id":"question","title":"研究问题","order":1,"required":true},{"section_id":"method","title":"研究方案","order":2,"required":true}],"terms":[],"required_fields":["research_subject","research_goal"],"rules":[{"rule_id":"required-fields","kind":"computed","severity":"blocking","evaluator":"required_fields","parameters":{}},{"rule_id":"chapter-nonempty","kind":"computed","severity":"blocking","evaluator":"nonempty_chapter","parameters":{}},{"rule_id":"chapter-confirmed","kind":"computed","severity":"blocking","evaluator":"confirmed_chapter","parameters":{}},{"rule_id":"review-items-decided","kind":"computed","severity":"blocking","evaluator":"review_items_decided","parameters":{}},{"rule_id":"source-available","kind":"computed","severity":"blocking","evaluator":"source_available","parameters":{}}]}}}},"responses":{"200":{"description":"编辑迁移预览","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateMigrationPreviewResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
+    "/projects/{projectId}/template-copy": {"put":{"operationId":"saveProjectTemplateCopyEdit","tags":["workspace"],"summary":"追加项目模板副本的新草稿版本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateCopyDefinitionInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"fields":[{"field_id":"research_subject","label":"研究对象","type":"string","order":1,"required":true},{"field_id":"research_goal","label":"研究目标","type":"string","order":2,"required":true}],"sections":[{"section_id":"question","title":"研究问题","order":1,"required":true},{"section_id":"method","title":"研究方案","order":2,"required":true}],"terms":[],"required_fields":["research_subject","research_goal"],"rules":[{"rule_id":"required-fields","kind":"computed","severity":"blocking","evaluator":"required_fields","parameters":{}},{"rule_id":"chapter-nonempty","kind":"computed","severity":"blocking","evaluator":"nonempty_chapter","parameters":{}},{"rule_id":"chapter-confirmed","kind":"computed","severity":"blocking","evaluator":"confirmed_chapter","parameters":{}},{"rule_id":"review-items-decided","kind":"computed","severity":"blocking","evaluator":"review_items_decided","parameters":{}},{"rule_id":"source-available","kind":"computed","severity":"blocking","evaluator":"source_available","parameters":{}}]}}}},"responses":{"200":{"description":"副本已版本化保存","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets": {
+      "get": {
+        "operationId": "listChangeSets",
+        "tags": ["workspace"],
+        "summary": "读取项目变更预览",
+        "parameters": [{"name": "projectId", "in": "path", "required": true, "schema": {"type": "string"}}],
+        "responses": {"200": {"description": "变更集列表"}, "404": {"description": "资源不存在或不可访问"}},
+        "x-domain": "workspace", "x-delivery-phase": "core"
+      },
+      "post": {
+        "operationId": "createChangeSet",
+        "tags": ["workspace"],
+        "summary": "创建研究条件或模板升级评估",
+        "parameters": [
+          {"name": "projectId", "in": "path", "required": true, "schema": {"type": "string"}},
+          {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8}}
+        ],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateChangeSetInput"}, "example": {"expected_context_revision": 1, "fields": {}, "affected_chapter_ids": [], "reason": "按团队评审升级模板副本", "template_upgrade": {"expected_project_version": 8, "expected_template_copy_version": 2, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "order": 1, "required": true}], "sections": [{"section_id": "question", "title": "研究问题", "order": 1, "required": true}], "terms": [], "required_fields": ["research_subject"], "rules": [], "field_values": {}}}}}},
+        "responses": {
+          "201": {"description": "已生成变更预览与迁移/影响摘要"},
+          "400": {"description": "请求错误或迁移失败"},
+          "404": {"description": "资源不存在或不可访问"},
+          "409": {"description": "版本或幂等冲突"},
+          "422": {"description": "当前状态不允许"}
+        },
+        "x-domain": "workspace", "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/change-sets/{changeSetId}": {"get":{"operationId":"getChangeSet","tags":["workspace"],"summary":"读取变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更预览"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/apply": {"post":{"operationId":"applyChangeSet","tags":["workspace"],"summary":"Owner 应用变更并开始复核","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已原子应用"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"基线过期或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/reject": {"post":{"operationId":"rejectChangeSet","tags":["workspace"],"summary":"Owner 驳回变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已驳回"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}}
@@ -12217,6 +12608,8 @@
           "title": {
             "type": "string"
           },
+          "description": {"type": "string"},
+          "order": {"type": "integer"},
           "required": {
             "type": "boolean"
           }
@@ -12238,7 +12631,11 @@
           "kind": {
             "type": "string",
             "enum": [
-              "computed"
+              "computed",
+              "presence",
+              "pattern",
+              "consistency",
+              "model_assisted"
             ]
           },
           "severity": {
@@ -12252,14 +12649,17 @@
           "evaluator": {
             "type": "string",
             "enum": [
+              "",
               "required_fields",
               "nonempty_chapter",
-              "max_characters",
-              "source_available",
               "confirmed_chapter",
-              "review_items_decided"
+              "review_items_decided",
+              "source_available",
+              "word_count",
+              "character_count"
             ]
           },
+          "message": {"type": "string"},
           "parameters": {
             "type": "object",
             "additionalProperties": true
@@ -12290,12 +12690,16 @@
           "is_demo": {
             "type": "boolean"
           },
+          "source": {"type": "string"},
+          "scope": {"type": "string"},
           "sections": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Section"
             }
           },
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateField"}},
+          "terms": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateTerm"}},
           "required_fields": {
             "type": "array",
             "items": {
@@ -12305,6 +12709,7 @@
           "ruleset_hash": {
             "type": "string"
           },
+          "content_hash": {"type": "string"},
           "rules": {
             "type": "array",
             "items": {
@@ -12322,6 +12727,162 @@
           "ruleset_hash",
           "rules"
         ],
+        "additionalProperties": false
+      },
+      "TemplateField": {
+        "type": "object",
+        "properties": {
+          "field_id": {"type": "string", "minLength": 1},
+          "label": {"type": "string"},
+          "description": {"type": "string"},
+          "type": {"type": "string", "enum": ["string", "text", "number", "integer", "boolean", "enum"]},
+          "order": {"type": "integer"},
+          "required": {"type": "boolean"},
+          "options": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["field_id", "label", "type", "required"],
+        "additionalProperties": false
+      },
+      "TemplateTerm": {
+        "type": "object",
+        "properties": {
+          "term_id": {"type": "string", "minLength": 1},
+          "preferred": {"type": "string"},
+          "variants": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["term_id", "preferred", "variants"],
+        "additionalProperties": false
+      },
+      "TemplateCopyDefinitionInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {"type": "integer", "minimum": 1},
+          "expected_template_copy_version": {"type": "integer", "minimum": 1},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateField"}},
+          "sections": {"type": "array", "items": {"$ref": "#/components/schemas/Section"}},
+          "terms": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateTerm"}},
+          "required_fields": {"type": "array", "items": {"type": "string"}},
+          "rules": {"type": "array", "items": {"$ref": "#/components/schemas/Rule"}}
+        },
+        "required": ["expected_project_version", "expected_template_copy_version", "fields", "sections", "terms", "required_fields", "rules"],
+        "additionalProperties": false
+      },
+      "TemplateMigrationField": {
+        "type": "object",
+        "properties": {
+          "field_id": {"type": "string"},
+          "value": {"type": "string"},
+          "before": {"type": "string"},
+          "after": {"type": "string"},
+          "old_type": {"type": "string"},
+          "new_type": {"type": "string"},
+          "status": {"type": "string"}
+        },
+        "required": ["field_id", "status"],
+        "additionalProperties": false
+      },
+      "TemplateSectionChange": {
+        "type": "object",
+        "properties": {
+          "section_id": {"type": "string"},
+          "before": {"type": "string"},
+          "after": {"type": "string"},
+          "status": {"type": "string", "enum": ["added", "removed", "changed"]}
+        },
+        "required": ["section_id", "status"],
+        "additionalProperties": false
+      },
+      "TemplateUpgradeImpact": {
+        "type": "object",
+        "properties": {
+          "affected_field_ids": {"type": "array", "items": {"type": "string"}},
+          "affected_section_ids": {"type": "array", "items": {"type": "string"}},
+          "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
+          "invalidated_confirmation_chapter_ids": {"type": "array", "items": {"type": "string"}},
+          "changed_rule_ids": {"type": "array", "items": {"type": "string"}},
+          "validation_issue_effect": {"type": "string"},
+          "delivery_snapshot_effect": {"type": "string"}
+        },
+        "required": ["affected_field_ids", "affected_section_ids", "affected_chapter_ids", "invalidated_confirmation_chapter_ids", "changed_rule_ids", "validation_issue_effect", "delivery_snapshot_effect"],
+        "additionalProperties": false
+      },
+      "TemplateUpgradeInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {"type": "integer", "minimum": 1},
+          "expected_template_copy_version": {"type": "integer", "minimum": 1},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateField"}},
+          "sections": {"type": "array", "items": {"$ref": "#/components/schemas/Section"}},
+          "terms": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateTerm"}},
+          "required_fields": {"type": "array", "items": {"type": "string"}},
+          "rules": {"type": "array", "items": {"$ref": "#/components/schemas/Rule"}},
+          "field_values": {"type": "object", "additionalProperties": {"type": "string"}}
+        },
+        "required": ["expected_project_version", "expected_template_copy_version", "fields", "sections", "terms", "required_fields", "rules"],
+        "additionalProperties": false
+      },
+      "CreateChangeSetInput": {
+        "type": "object",
+        "properties": {
+          "expected_context_revision": {"type": "integer", "minimum": 1},
+          "fields": {
+            "type": "object", "maxProperties": 2,
+            "properties": {
+              "research_subject": {"type": "object", "required": ["old_value", "new_value"], "properties": {"old_value": {"type": "string"}, "new_value": {"type": "string"}}},
+              "research_goal": {"type": "object", "required": ["old_value", "new_value"], "properties": {"old_value": {"type": "string"}, "new_value": {"type": "string"}}}
+            },
+            "additionalProperties": false
+          },
+          "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "template_upgrade": {"$ref": "#/components/schemas/TemplateUpgradeInput"}
+        },
+        "required": ["expected_context_revision", "reason"],
+        "oneOf": [
+          {"required": ["fields", "affected_chapter_ids"], "not": {"required": ["template_upgrade"]}},
+          {"required": ["template_upgrade"], "properties": {"fields": {"maxProperties": 0}, "affected_chapter_ids": {"maxItems": 0}}}
+        ],
+        "additionalProperties": false
+      },
+      "TemplateMigrationPreview": {
+        "type": "object",
+        "properties": {
+          "project_id": {"type": "string"},
+          "source_template_id": {"type": "string"},
+          "source_template_version": {"type": "string"},
+          "source_copy_version": {"type": "integer"},
+          "target_template_id": {"type": "string"},
+          "target_template_version": {"type": "string"},
+          "target_copy_version": {"type": "integer"},
+          "target_content_hash": {"type": "string"},
+          "target_ruleset_hash": {"type": "string"},
+          "ruleset_changed": {"type": "boolean"},
+          "expected_project_version": {"type": "integer"},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateMigrationField"}},
+          "section_changes": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateSectionChange"}},
+          "missing_required": {"type": "array", "items": {"type": "string"}},
+          "orphaned": {"type": "array", "items": {"type": "string"}},
+          "incompatible": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["project_id", "source_template_id", "source_template_version", "target_template_id", "target_template_version", "expected_project_version", "fields", "missing_required", "orphaned", "incompatible"],
+        "additionalProperties": false
+      },
+      "ProjectTemplateCopy": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "project_id": {"type": "string", "minLength": 1},
+          "source_template_id": {"type": "string", "minLength": 1},
+          "source_template_version": {"type": "string", "minLength": 1},
+          "version": {"type": "integer", "minimum": 1},
+          "status": {"type": "string", "enum": ["draft", "bound", "superseded", "discarded"]},
+          "content_hash": {"type": "string", "minLength": 1},
+          "ruleset_hash": {"type": "string", "minLength": 1},
+          "definition": {"$ref": "#/components/schemas/Template"},
+          "created_by": {"type": "string"},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["id", "project_id", "source_template_id", "source_template_version", "version", "status", "content_hash", "ruleset_hash", "definition", "created_by", "created_at"],
         "additionalProperties": false
       },
       "Member": {
@@ -12366,6 +12927,10 @@
             "type": "integer",
             "minimum": 0
           },
+          "current_context_revision": {"type": "integer", "minimum": 0},
+          "delivery_status": {"type": "string"},
+          "baseline_confirmation_id": {"type": "string"},
+          "discarded_at": {"type": "string", "format": "date-time"},
           "spec_revision": {
             "type": "integer",
             "minimum": 0
@@ -12376,6 +12941,7 @@
               "type": "string"
             }
           },
+          "spec_fields": {"type": "object", "additionalProperties": true},
           "template_id": {
             "type": "string",
             "minLength": 1
@@ -12383,6 +12949,8 @@
           "template_version": {
             "type": "string"
           },
+          "template_copy_version": {"type": "integer", "minimum": 0},
+          "template_copy": {"$ref": "#/components/schemas/ProjectTemplateCopy"},
           "members": {
             "type": "array",
             "items": {
@@ -12399,6 +12967,9 @@
           "spec",
           "template_id",
           "template_version",
+          "template_copy_version",
+          "current_context_revision",
+          "delivery_status",
           "members"
         ],
         "additionalProperties": false
@@ -12870,8 +13441,19 @@
             "type": "string",
             "nullable": true
           },
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "evaluator_version": {
+            "type": "string",
+            "minLength": 1
+          },
           "message": {
             "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/IssueDispositionSummary"
           }
         },
         "required": [
@@ -12883,6 +13465,45 @@
           "target_version",
           "message"
         ],
+        "additionalProperties": false
+      },
+      "ValidationIssueDisposition": {
+        "type": "object",
+        "properties": {
+          "issue_id": {"type": "string", "minLength": 1},
+          "rule_id": {"type": "string", "minLength": 1},
+          "ruleset_hash": {"type": "string", "minLength": 1},
+          "severity": {"type": "string", "enum": ["blocking", "warning", "info"]},
+          "target_id": {"type": "string", "minLength": 1},
+          "target_version": {"type": "string", "nullable": true},
+          "project_version": {"type": "integer", "minimum": 1},
+          "action": {"type": "string", "enum": ["resolve", "dismiss", "waive"]},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "actor_id": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["issue_id", "rule_id", "ruleset_hash", "severity", "target_id", "target_version", "project_version", "action", "reason", "actor_id", "created_at"],
+        "additionalProperties": false
+      },
+      "IssueDispositionSummary": {
+        "type": "object",
+        "properties": {
+          "action": {"type": "string", "enum": ["resolve", "dismiss", "waive"]},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "actor_id": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["action", "reason", "actor_id", "created_at"],
+        "additionalProperties": false
+      },
+      "ValidationIssueDispositionInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {"type": "integer", "minimum": 1},
+          "action": {"type": "string", "enum": ["resolve", "dismiss", "waive"]},
+          "reason": {"type": "string", "minLength": 1, "maxLength": 2000}
+        },
+        "required": ["expected_project_version", "action", "reason"],
         "additionalProperties": false
       },
       "CheckResult": {
@@ -12916,6 +13537,37 @@
           "status",
           "issues"
         ],
+        "additionalProperties": false
+      },
+      "TemplateRuleEvaluation": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "pattern": "^vi-[a-f0-9]{24}$"},
+          "rule_id": {"type": "string", "minLength": 1},
+          "target_ref": {"type": "string", "minLength": 1},
+          "target_version": {"type": "string", "minLength": 1},
+          "ruleset_hash": {"type": "string", "minLength": 1},
+          "status": {"type": "string", "enum": ["PASS", "ISSUE", "UNKNOWN", "NOT_APPLICABLE"]},
+          "severity": {"type": "string", "enum": ["blocking", "warning", "info"]},
+          "message": {"type": "string"},
+          "evidence": {"type": "array", "items": {"type": "string"}},
+          "evaluator_version": {"type": "string", "minLength": 1}
+        },
+        "required": ["rule_id", "target_ref", "target_version", "ruleset_hash", "status", "severity", "message", "evidence", "evaluator_version"],
+        "additionalProperties": false
+      },
+      "TemplateCheckResult": {
+        "type": "object",
+        "properties": {
+          "project_version": {"type": "integer", "minimum": 0},
+          "template_copy_id": {"type": "string"},
+          "template_copy_version": {"type": "integer", "minimum": 0},
+          "content_hash": {"type": "string"},
+          "ruleset_hash": {"type": "string"},
+          "status": {"type": "string", "enum": ["passed", "blocked", "not_evaluated"]},
+          "evaluations": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateRuleEvaluation"}}
+        },
+        "required": ["project_version", "ruleset_hash", "status", "evaluations"],
         "additionalProperties": false
       },
       "SnapshotChapter": {
@@ -13401,6 +14053,26 @@
         ],
         "additionalProperties": false
       },
+      "ProjectTemplateCopyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/ProjectTemplateCopy"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
+      "TemplateMigrationPreviewResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/TemplateMigrationPreview"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
       "ProjectListResponse": {
         "type": "object",
         "properties": {
@@ -13559,6 +14231,26 @@
           "request_id",
           "meta"
         ],
+        "additionalProperties": false
+      },
+      "ValidationIssueDispositionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/ValidationIssueDisposition"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
+      "TemplateCheckResultResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/TemplateCheckResult"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
         "additionalProperties": false
       },
       "ReleaseSnapshotResponse": {

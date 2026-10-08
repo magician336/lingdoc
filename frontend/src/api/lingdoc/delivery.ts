@@ -8,7 +8,14 @@ import type { Result } from './workspace'
 // listExports / getExport / downloadExport）。
 
 export type CheckStatus = 'passed' | 'blocked' | 'not_evaluated'
-export type IssueSeverity = 'blocking' | 'warning'
+export type IssueSeverity = 'blocking' | 'warning' | 'info'
+
+export interface ValidationIssueDisposition {
+  action: 'resolve' | 'dismiss' | 'waive'
+  reason: string
+  actor_id: string
+  created_at: string
+}
 
 /** 契约 §3 的 ValidationIssue。target_id 是「阻断原因可定位」的抓手。 */
 export interface ValidationIssue {
@@ -22,7 +29,10 @@ export interface ValidationIssue {
    */
   target_id: string
   target_version: string | null
+  evidence: string[]
+  evaluator_version: string
   message: string
+  disposition?: ValidationIssueDisposition | null
 }
 
 export interface CheckResult {
@@ -30,6 +40,29 @@ export interface CheckResult {
   ruleset_hash: string
   status: CheckStatus
   issues: ValidationIssue[]
+}
+
+export type TemplateEvaluationStatus = 'PASS' | 'ISSUE' | 'UNKNOWN' | 'NOT_APPLICABLE'
+export interface TemplateRuleEvaluation {
+  id?: string
+  rule_id: string
+  target_ref: string
+  target_version: string
+  ruleset_hash: string
+  status: TemplateEvaluationStatus
+  severity: IssueSeverity | 'info'
+  message: string
+  evidence: string[]
+  evaluator_version: string
+}
+export interface TemplateCheckResult {
+  project_version: number
+  template_copy_id?: string
+  template_copy_version?: number
+  content_hash?: string
+  ruleset_hash: string
+  status: CheckStatus
+  evaluations: TemplateRuleEvaluation[]
 }
 
 /**
@@ -106,6 +139,24 @@ const keyHeader = (key: string) => ({ headers: { 'Idempotency-Key': key } })
 export const checkDelivery = (projectId: string, expectedProjectVersion: number) =>
   post<Result<CheckResult>>(`${base}/${segment(projectId)}/checks`,
     { expected_project_version: expectedProjectVersion })
+
+/** Evaluates the project template's rules and evidence; this advisory result never authorizes export. */
+export const checkTemplate = (projectId: string, expectedProjectVersion: number) =>
+  post<Result<TemplateCheckResult>>(`${base}/${segment(projectId)}/template-checks`,
+    { expected_project_version: expectedProjectVersion })
+
+export const setIssueDisposition = (
+  projectId: string,
+  issueId: string,
+  expectedProjectVersion: number,
+  action: ValidationIssueDisposition['action'],
+  reason: string,
+  key: string,
+) => post<Result<ValidationIssueDisposition>>(
+  `${base}/${segment(projectId)}/issues/${segment(issueId)}/disposition`,
+  { expected_project_version: expectedProjectVersion, action, reason },
+  keyHeader(key),
+)
 
 export const prepareRelease = (projectId: string, expectedProjectVersion: number, key: string) =>
   post<Result<ReleaseSnapshot>>(`${base}/${segment(projectId)}/releases`,

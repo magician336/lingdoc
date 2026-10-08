@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
@@ -55,6 +56,9 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/template-migration/preview", h.previewTemplateMigration)
 	routes.Write.POST("/projects/:projectId/template-migration/preview", h.previewTemplateMigrationPost)
 	routes.Write.POST("/projects/:projectId/template-migration", h.changeTemplate)
+	routes.Read.GET("/projects/:projectId/template-copies/:version", h.getTemplateCopy)
+	routes.Write.POST("/projects/:projectId/template-copy/preview", h.previewTemplateCopyEdit)
+	routes.Write.PUT("/projects/:projectId/template-copy", h.saveTemplateCopy)
 	routes.Write.POST("/projects/:projectId/discard", h.discardProject)
 	routes.Write.POST("/projects/:projectId/restore", h.restoreProject)
 	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
@@ -463,6 +467,62 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 		return
 	}
 	data, status, replay, err := h.service.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) getTemplateCopy(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	version, err := strconv.ParseInt(c.Param("version"), 10, 64)
+	if err != nil {
+		sendError(c, ErrInvalidRequest)
+		return
+	}
+	copy, err := h.service.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, copy, false)
+}
+
+func (h *Handler) previewTemplateCopyEdit(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	var input TemplateCopyDefinitionInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	preview, err := h.service.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, preview, false)
+}
+
+func (h *Handler) saveTemplateCopy(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input TemplateCopyDefinitionInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	data, status, replay, err := h.service.SaveTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return

@@ -36,16 +36,25 @@ type OwnerTransferInput = core.OwnerTransferInput
 type TemplateMigrationInput = core.TemplateMigrationInput
 type TemplateMigrationField = core.TemplateMigrationField
 type TemplateMigrationPreview = core.TemplateMigrationPreview
+type ProjectTemplateCopy = core.ProjectTemplateCopy
+type TemplateCopyDefinitionInput = core.TemplateCopyDefinitionInput
+type TemplateSectionChange = core.TemplateSectionChange
 type CoreProjectAuthorizer = core.ProjectAuthorizer
 type AuthorizationMode = core.AuthorizationMode
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 type TemplateField = core.TemplateField
 type ChangeSet = core.ChangeSet
+type TemplateUpgrade = core.TemplateUpgrade
+type TemplateUpgradeInput = core.TemplateUpgradeInput
+type TemplateUpgradeImpact = core.TemplateUpgradeImpact
 type ChangeImpact = core.ChangeImpact
 type ChangeFieldInput = core.ChangeFieldInput
 type ChangeFieldDelta = core.ChangeFieldDelta
 type CreateChangeSetInput = core.CreateChangeSetInput
+type ValidationIssueBinding = core.ValidationIssueBinding
+type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
+type ValidationIssueDisposition = core.ValidationIssueDisposition
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog
