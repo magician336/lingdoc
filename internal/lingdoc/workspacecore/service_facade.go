@@ -325,6 +325,29 @@ func (transactionProjectAuthorizer) AuthorizeProject(tx Transaction, actor Actor
 func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capability string, authErr error) error {
 	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
 }
+
+// recordAuditInTransaction keeps the audit write on the caller's transaction.
+// SQLite uses a single pooled connection; opening the audit store separately
+// while a write transaction is active deadlocks the request until its context
+// expires. PostgreSQL still benefits from the same atomic audit boundary.
+func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) {
+	if s.audit == nil {
+		return
+	}
+	if _, isGORM := tx.(gormTransaction); isGORM {
+		audit, ok := tx.(auditTransaction)
+		if !ok {
+			return
+		}
+		_ = audit.RecordAudit(AuditEvent{
+			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
+			ProjectID: projectID, Capability: capability,
+			Decision: auditDecision(authErr), Reason: auditReason(authErr),
+		})
+		return
+	}
+	_ = s.recordAudit(ctx, actor, projectID, capability, authErr)
+}
 func auditDecision(err error) string {
 	if err != nil {
 		return "deny"
@@ -346,7 +369,7 @@ func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error 
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
-		_ = s.recordAudit(ctx, actor, projectID, capability, err)
+		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 		return err
 	})
 }
@@ -354,7 +377,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
-		_ = s.recordAudit(ctx, actor, id, "read", err)
+		s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
 			result.Spec = map[string]string{}
 			result.SpecFields = map[string]SpecField{}
@@ -370,10 +393,10 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 			return ErrNotFound
 		}
 		if err := s.authorizeTenant(ctx, tx, actor, "read"); err != nil {
-			_ = s.recordAudit(ctx, actor, "", "read", err)
+			s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
 			return err
 		}
-		_ = s.recordAudit(ctx, actor, "", "read", nil)
+		s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
 		projects, err := tx.Projects(actor, 51)
 		result = projects
 		return err
@@ -485,18 +508,18 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		var p Project
 		if projectID == "" {
 			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
-				_ = s.recordAudit(ctx, actor, projectID, capability, err)
+				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 				return err
 			}
 		} else {
 			var err error
 			p, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
 			if err != nil {
-				_ = s.recordAudit(ctx, actor, projectID, capability, err)
+				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 				return err
 			}
 		}
-		_ = s.recordAudit(ctx, actor, projectID, capability, nil)
+		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil)
 		previous, found, err := tx.Operation(id)
 		if err != nil {
 			return err
