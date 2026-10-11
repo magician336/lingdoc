@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $worktree = if ($env:CODEX_WORKTREE_PATH) { $env:CODEX_WORKTREE_PATH } else { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path }
 Set-Location $worktree
