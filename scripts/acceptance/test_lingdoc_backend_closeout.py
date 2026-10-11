@@ -5,12 +5,15 @@ class TestBackendCloseout(unittest.TestCase):
     def test_safe_synthetic_postgres_target(self):
         target = safe_postgres_target("host=localhost port=5432 user=lingdoc_test password=synthetic_ci_only dbname=lingdoc_test")
         self.assertEqual(target["database"], "lingdoc_test")
+        self.assertEqual(target["port"], "5432")
 
     def test_refuses_remote_or_production_target(self):
         with self.assertRaises(ValueError):
             safe_postgres_target("host=db.example user=lingdoc_test dbname=lingdoc_test")
         with self.assertRaises(ValueError):
             safe_postgres_target("host=localhost user=postgres dbname=production")
+        with self.assertRaises(ValueError):
+            safe_postgres_target("host=localhost port=99999 user=lingdoc_test dbname=lingdoc_test")
 
     def test_test_events_distinguish_pass_skip_and_missing(self):
         events = parse_go_events([

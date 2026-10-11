@@ -54,6 +54,10 @@ def safe_postgres_target(dsn: str) -> dict[str, str]:
         parsed = urlparse(dsn)
         host, user = (parsed.hostname or "").lower(), unquote(parsed.username or "")
         database = unquote(parsed.path.lstrip("/"))
+        try:
+            port = str(parsed.port or 5432)
+        except ValueError as error:
+            raise ValueError("PostgreSQL port must be numeric and valid") from error
     else:
         fields = {}
         for part in shlex.split(dsn):
@@ -62,11 +66,14 @@ def safe_postgres_target(dsn: str) -> dict[str, str]:
                 fields[key.lower()] = value
         host, user = fields.get("host", "").lower(), fields.get("user", "")
         database = fields.get("dbname", fields.get("database", ""))
+        port = fields.get("port", "5432")
     if host not in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError("PostgreSQL host must be loopback")
     if user != "lingdoc_test" or database != "lingdoc_test":
         raise ValueError("PostgreSQL target must use the synthetic lingdoc_test identity/database")
-    return {"host": host, "user": user, "database": database}
+    if not port.isdigit() or not 1 <= int(port) <= 65535:
+        raise ValueError("PostgreSQL port must be between 1 and 65535")
+    return {"host": host, "user": user, "database": database, "port": port}
 
 def parse_go_events(lines: list[str]) -> dict[str, list[str]]:
     found: dict[str, list[str]] = {}
@@ -149,7 +156,8 @@ def start_postgres() -> tuple[str | None, dict, str | None]:
             return None, {"status": "BLOCKED", "mode": "docker", "reason": "PostgreSQL did not become ready"}, name
         dsn = f"host=127.0.0.1 port={port} user=lingdoc_test password=synthetic_ci_only dbname=lingdoc_test sslmode=disable"
         return dsn, {"status": "PASS", "mode": "disposable_docker", "image": "postgres:17",
-                     "database": "lingdoc_test", "identity": "lingdoc_test", "persistent_volume": False}, name
+                     "database": "lingdoc_test", "identity": "lingdoc_test", "host": "127.0.0.1",
+                     "port": port, "persistent_volume": False}, name
     except (OSError, subprocess.TimeoutExpired):
         return None, {"status": "BLOCKED", "mode": "docker", "reason": "PostgreSQL setup failed"}, name
 
@@ -177,6 +185,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         env["LINGDOC_TEST_POSTGRES_DSN"] = dsn
     checks = []
+    failure_fixture = {"status": "NOT RUN", "database": None, "user": None}
+    failure_fixture_attempted = False
+    failure_fixture_ready = False
+    failure_fixture_env = None
     go_version = "unavailable"
     try:
         go_version = subprocess.run(["go", "version"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=10, check=False).stdout.strip() or "unavailable"
@@ -191,6 +203,28 @@ def main(argv: list[str] | None = None) -> int:
             log.write_text("BLOCKED: Go/CGO compiler is unavailable.", encoding="utf-8")
             checks.append({"name": name, "status": "BLOCKED", "exit_code": None, "log": str(log)})
     else:
+        if dsn is not None and pg["status"] == "PASS":
+            target = safe_postgres_target(dsn)
+            failure_fixture["database"] = "lingdoc_fault_" + uuid.uuid4().hex[:12]
+            failure_fixture["user"] = "lingdoc_fault_user_" + uuid.uuid4().hex[:12]
+            failure_password = "synthetic_ci_only"
+            failure_fixture_env = env.copy()
+            failure_fixture_env["LINGDOC_FAILURE_TEST_DB"] = failure_fixture["database"]
+            failure_fixture_env["LINGDOC_FAILURE_TEST_USER"] = failure_fixture["user"]
+            failure_fixture_env["LINGDOC_FAILURE_TEST_DSN"] = (
+                f"host=127.0.0.1 port={target['port']} user={failure_fixture['user']} "
+                f"password={failure_password} dbname={failure_fixture['database']} sslmode=disable"
+            )
+            failure_fixture_env["LINGDOC_FAILURE_FIXTURE_MARKER"] = str(out / "postgres-failure-fixture-owned.txt")
+            failure_fixture_env["DB_PASSWORD"] = failure_password
+            failure_fixture_attempted = True
+            setup = run_command(["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "create"],
+                                failure_fixture_env, out / "postgres-fixture-create.log", 300)
+            checks.append(setup)
+            failure_fixture_ready = setup["status"] == "PASS"
+            failure_fixture["status"] = "PASS" if failure_fixture_ready else "BLOCKED"
+            if failure_fixture_ready:
+                env = failure_fixture_env
         checks.append(run_command(["go", "test", "-race", "-json", "-count=1", "-timeout=40m", "-mod=readonly", *PACKAGES],
                                   env, out / "go-test.jsonl", 2500))
         checks.append(run_command(["go", "vet", "-mod=readonly", *PACKAGES], env, out / "go-vet.log"))
@@ -200,6 +234,12 @@ def main(argv: list[str] | None = None) -> int:
             binary.unlink()
     checks.append(run_command([sys.executable, "-m", "unittest", "discover", "-s", "scripts/lingdoc_mock",
                                "-p", "test_g6_quality.py", "-v"], env, out / "g6-quality-tests.log", 180))
+    failure_fixture_cleanup = "NOT_CREATED"
+    if failure_fixture_attempted and failure_fixture_env is not None:
+        cleanup_result = run_command(["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "drop"],
+                                     failure_fixture_env, out / "postgres-fixture-cleanup.log", 300)
+        checks.append(cleanup_result)
+        failure_fixture_cleanup = cleanup_result["status"]
     events = {}
     go_log = out / "go-test.jsonl"
     if go_log.exists():
@@ -208,6 +248,8 @@ def main(argv: list[str] | None = None) -> int:
     for key, tests in GROUPS.items():
         status, observed = group_result(tests, events)
         if key.startswith("postgres_") and pg["status"] != "PASS" and status == "NOT RUN":
+            status = "BLOCKED"
+        if key == "postgres_failure_recovery" and not failure_fixture_ready and status != "FAIL":
             status = "BLOCKED"
         cases.append({"id": key, "status": status, "tests": observed})
     if owned:
@@ -230,9 +272,10 @@ def main(argv: list[str] | None = None) -> int:
         "environment": {"os": platform.platform(), "python": platform.python_version(), "go": go_version,
                         "cgo_enabled": cgo, "c_compiler_available": bool(compiler),
                         "postgres_dsn_injected": bool(os.environ.get("LINGDOC_TEST_POSTGRES_DSN"))},
-        "postgres_setup": pg, "automated_result": automated,
+        "postgres_setup": {**pg, "failure_fixture": failure_fixture}, "automated_result": automated,
         "closeout_result": overall_result(checks, cases, NOT_RUN), "checks": checks,
-        "scenarios": cases, "not_run": NOT_RUN, "cleanup": {"status": cleanup, "owned_container": bool(owned)},
+        "scenarios": cases, "not_run": NOT_RUN,
+        "cleanup": {"status": cleanup, "owned_container": bool(owned), "failure_database": failure_fixture_cleanup},
         "limitations": ["No real model credentials or user project data are used.",
                         "Repository reopen tests do not prove a full application-process restart.",
                         "PostgreSQL down migrations are not run automatically."],
@@ -245,6 +288,8 @@ def main(argv: list[str] | None = None) -> int:
     lines.extend(f"| {row['id']} | {row['status']} |" for row in cases + NOT_RUN)
     (out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Automated checks: {automated}; full closeout: {report['closeout_result']}")
+    for row in cases + NOT_RUN:
+        print(f"Scenario {row['id']}: {row['status']}")
     print(f"Reports: {out}")
     if automated == "FAIL":
         return 1
