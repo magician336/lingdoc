@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -449,7 +450,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 
 		oldVersionID := chapter.CurrentVersionID
 		newVersionID := uuid.NewString()
-		sourceIDs := normalizeIDs(candidate.SourceIDs)
+		sourceIDs := slices.Compact(normalizeIDs(candidate.SourceIDs))
 		// A new candidate has no researcher-authored purpose/limitation metadata.
 		// Initialize every declared source as unknown now, rather than copying the
 		// old version's interpretations or waiting for a later save to fill them.
