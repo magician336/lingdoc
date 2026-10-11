@@ -47,8 +47,8 @@ func run() error {
 	if len(os.Args) == 2 {
 		action = os.Args[1]
 	}
-	if action != "create" && action != "drop" {
-		return fmt.Errorf("expected create or drop action")
+	if action != "create" && action != "drop" && action != "rollback-roundtrip" {
+		return fmt.Errorf("expected create, drop, or rollback-roundtrip action")
 	}
 	adminDSN := os.Getenv("LINGDOC_TEST_POSTGRES_DSN")
 	if err := validateAdminTarget(adminDSN); err != nil {
@@ -69,6 +69,12 @@ func run() error {
 	defer adminSQL.Close()
 	if action == "drop" {
 		return dropFixture(adminSQL, name, user, marker)
+	}
+	if action == "rollback-roundtrip" {
+		if err := verifyFixtureOwnership(adminSQL, name, user, marker); err != nil {
+			return err
+		}
+		return rollbackAndReapplyLingDocMigrations(failureTestDSN(adminDSN, name, user))
 	}
 	if _, err := os.Stat(marker); err == nil {
 		return fmt.Errorf("fixture ownership marker already exists")
@@ -94,9 +100,12 @@ func run() error {
 		fmt.Sprintf("CREATE DATABASE %s OWNER %s", name, user)); err != nil {
 		return err
 	}
-	failureDSN := fmt.Sprintf("host=127.0.0.1 port=%s user=%s password=%s dbname=%s sslmode=disable",
-		postgresPort(adminDSN), user, syntheticPassword, name)
-	return applyLingDocMigrations(failureDSN)
+	return applyLingDocMigrations(failureTestDSN(adminDSN, name, user))
+}
+
+func failureTestDSN(adminDSN, database, user string) string {
+	return fmt.Sprintf("host=127.0.0.1 port=%s user=%s password=%s dbname=%s sslmode=disable",
+		postgresPort(adminDSN), user, syntheticPassword, database)
 }
 
 func validateAdminTarget(dsn string) error {
@@ -173,6 +182,83 @@ func applyLingDocMigrations(dsn string) error {
 		if _, err := db.ExecContext(context.Background(), string(raw)); err != nil {
 			return fmt.Errorf("%s: %w", migration, err)
 		}
+	}
+	return nil
+}
+
+func rollbackAndReapplyLingDocMigrations(dsn string) error {
+	_, sqlDB, err := openPostgres(dsn)
+	if err != nil {
+		return err
+	}
+	for i := len(lingdocMigrations) - 1; i >= 0; i-- {
+		upName := lingdocMigrations[i]
+		downName := strings.Replace(upName, ".up.sql", ".down.sql", 1)
+		raw, err := os.ReadFile(filepath.Join("migrations", "versioned", downName))
+		if err != nil {
+			_ = sqlDB.Close()
+			return err
+		}
+		if _, err := sqlDB.ExecContext(context.Background(), string(raw)); err != nil {
+			_ = sqlDB.Close()
+			return fmt.Errorf("%s: %w", downName, err)
+		}
+	}
+	var remaining int
+	if err := sqlDB.QueryRowContext(context.Background(),
+		"SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema() AND left(table_name, 8) = 'lingdoc_'").Scan(&remaining); err != nil {
+		_ = sqlDB.Close()
+		return err
+	}
+	if err := sqlDB.Close(); err != nil {
+		return err
+	}
+	if remaining != 0 {
+		return fmt.Errorf("rollback left %d LingDoc tables in the disposable schema", remaining)
+	}
+	if err := applyLingDocMigrations(dsn); err != nil {
+		return fmt.Errorf("reapply after rollback: %w", err)
+	}
+	checkDB, checkSQLDB, err := openPostgres(dsn)
+	if err != nil {
+		return err
+	}
+	defer checkSQLDB.Close()
+	for _, table := range []string{"lingdoc_projects", "lingdoc_generation_runs", "lingdoc_project_template_copies"} {
+		var exists bool
+		if err := checkDB.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = ?)", table).Scan(&exists).Error; err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("reapplying migrations did not restore %s", table)
+		}
+	}
+	var templateVersionColumn bool
+	if err := checkDB.Raw("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'lingdoc_projects' AND column_name = 'template_copy_version')").Scan(&templateVersionColumn).Error; err != nil {
+		return err
+	}
+	if !templateVersionColumn {
+		return fmt.Errorf("reapplying migrations did not restore lingdoc_projects.template_copy_version")
+	}
+	return nil
+}
+
+func verifyFixtureOwnership(admin *sql.DB, name, user, marker string) error {
+	data, err := os.ReadFile(marker)
+	if err != nil {
+		return fmt.Errorf("read fixture ownership marker: %w", err)
+	}
+	if string(data) != name+"\n"+user+"\n" {
+		return fmt.Errorf("fixture ownership marker does not match generated target")
+	}
+	var owned bool
+	if err := admin.QueryRowContext(context.Background(),
+		"SELECT EXISTS (SELECT 1 FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba WHERE d.datname = $1 AND r.rolname = $2)",
+		name, user).Scan(&owned); err != nil {
+		return err
+	}
+	if !owned {
+		return fmt.Errorf("generated failure database is not owned by its generated test role")
 	}
 	return nil
 }
