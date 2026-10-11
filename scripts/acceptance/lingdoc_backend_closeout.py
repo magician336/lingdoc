@@ -35,7 +35,7 @@ GROUPS = {
 NOT_RUN = [
     {"id": "real_provider_timeout", "status": "NOT RUN", "reason": "The deterministic fake-provider deadline is tested; no real upstream model timeout is exercised."},
     {"id": "full_server_restart", "status": "NOT RUN", "reason": "Store reopen tests do not restart the application process."},
-    {"id": "postgres_down_migration", "status": "NOT RUN", "reason": "Down migrations are deliberately not run automatically."},
+    {"id": "production_migration_rollback", "status": "NOT RUN", "reason": "Down/up roundtrip runs only against an owned disposable test database; no development or production schema is rolled back."},
     {"id": "real_model_browser_e2e", "status": "NOT RUN", "reason": "This runner uses synthetic fixtures and does not call a model or browser."},
 ]
 SENSITIVE = [
@@ -189,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     failure_fixture_attempted = False
     failure_fixture_ready = False
     failure_fixture_env = None
+    postgres_rollback_status = "NOT RUN"
     go_version = "unavailable"
     try:
         go_version = subprocess.run(["go", "version"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=10, check=False).stdout.strip() or "unavailable"
@@ -236,6 +237,14 @@ def main(argv: list[str] | None = None) -> int:
                                "-p", "test_g6_quality.py", "-v"], env, out / "g6-quality-tests.log", 180))
     failure_fixture_cleanup = "NOT_CREATED"
     if failure_fixture_attempted and failure_fixture_env is not None:
+        if failure_fixture_ready:
+            rollback_result = run_command(
+                ["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "rollback-roundtrip"],
+                failure_fixture_env, out / "postgres-migration-rollback.log", 300)
+            checks.append(rollback_result)
+            postgres_rollback_status = rollback_result["status"]
+        else:
+            postgres_rollback_status = "BLOCKED"
         cleanup_result = run_command(["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "drop"],
                                      failure_fixture_env, out / "postgres-fixture-cleanup.log", 300)
         checks.append(cleanup_result)
@@ -252,6 +261,8 @@ def main(argv: list[str] | None = None) -> int:
         if key == "postgres_failure_recovery" and not failure_fixture_ready and status != "FAIL":
             status = "BLOCKED"
         cases.append({"id": key, "status": status, "tests": observed})
+    cases.append({"id": "postgres_migration_rollback_roundtrip", "status": postgres_rollback_status,
+                  "details": "Reverse LingDoc migrations in the owned disposable database, verify removal, then reapply and verify the latest schema."})
     if owned:
         cleanup = "PASS" if stop_docker_container(owned) else "BLOCKED"
         if cleanup == "PASS":
@@ -278,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
         "cleanup": {"status": cleanup, "owned_container": bool(owned), "failure_database": failure_fixture_cleanup},
         "limitations": ["No real model credentials or user project data are used.",
                         "Repository reopen tests do not prove a full application-process restart.",
-                        "PostgreSQL down migrations are not run automatically."],
+                        "PostgreSQL down/up migration roundtrip runs only on an owned disposable test database; production rollback is not exercised."],
     }
     (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     lines = ["# LingDoc backend closeout", "", f"- Automated checks: **{automated}**",
