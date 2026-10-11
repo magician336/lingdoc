@@ -25,5 +25,8 @@ class TestBackendCloseout(unittest.TestCase):
         self.assertEqual(overall_result([{"status":"PASS"}], [{"status":"PASS"}], [{"status":"NOT RUN"}]), "BLOCKED")
         self.assertEqual(overall_result([{"status":"FAIL"}], [], []), "FAIL")
 
+    def test_cleanup_failure_blocks_closeout(self):
+        self.assertEqual(overall_result([{"status":"PASS"}, {"status":"BLOCKED"}], [{"status":"PASS"}], []), "BLOCKED")
+
 if __name__ == "__main__":
     unittest.main()

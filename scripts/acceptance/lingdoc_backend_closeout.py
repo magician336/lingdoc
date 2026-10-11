@@ -213,6 +213,10 @@ def main(argv: list[str] | None = None) -> int:
         cleanup = "PASS" if stop_docker_container(owned) else "BLOCKED"
         if cleanup == "PASS":
             atexit.unregister(stop_docker_container, owned)
+        else:
+            cleanup_log = out / "docker-cleanup.log"
+            cleanup_log.write_text("BLOCKED: could not stop disposable PostgreSQL container.\n", encoding="utf-8")
+            checks.append({"name": "docker-cleanup", "status": "BLOCKED", "exit_code": None, "log": str(cleanup_log)})
     else:
         cleanup = "MANAGED_BY_CI_OR_NOT_CREATED"
     statuses = [row["status"] for row in checks]
@@ -243,7 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Reports: {out}")
     if automated == "FAIL":
         return 1
-    if args.require_postgres and (pg["status"] != "PASS" or any(row["status"] != "PASS" for row in cases)):
+    if args.require_postgres and (pg["status"] != "PASS" or any(row["status"] != "PASS" for row in cases)
+                                  or any(row["status"] != "PASS" for row in checks)):
         return 2
     return 0
 
