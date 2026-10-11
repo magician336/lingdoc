@@ -1,0 +1,172 @@
+{
+  "verifiedAt": "2026-10-09T11:25:30.382Z",
+  "mode": "synthetic UI prototype, not product E2E",
+  "pass": true,
+  "steps": [
+    {
+      "name": "A 三栏同时可见",
+      "pass": true
+    },
+    {
+      "name": "未选中时隐藏浮动改写工具",
+      "pass": true
+    },
+    {
+      "name": "来源片段可打开回看",
+      "pass": true
+    },
+    {
+      "name": "Escape 关闭来源详情",
+      "pass": true
+    },
+    {
+      "name": "compare 切换保留未保存正文",
+      "pass": true
+    },
+    {
+      "name": "focus 切换保留未保存正文",
+      "pass": true
+    },
+    {
+      "name": "research 切换保留未保存正文",
+      "pass": true
+    },
+    {
+      "name": "资料视图独立切换并回看片段",
+      "pass": true
+    },
+    {
+      "name": "离开写作再回来保留输入",
+      "pass": true
+    },
+    {
+      "name": "保存仅写原型浏览器存储",
+      "pass": true
+    },
+    {
+      "name": "真实正文选段",
+      "pass": true
+    },
+    {
+      "name": "生成示例差异但不覆盖原文",
+      "pass": true
+    },
+    {
+      "name": "B 原文与候选真正左右对照",
+      "pass": true
+    },
+    {
+      "name": "采纳只改变选段保留其余输入",
+      "pass": true
+    },
+    {
+      "name": "C 默认隐藏目录和辅助面板",
+      "pass": true
+    },
+    {
+      "name": "C 按需打开辅助面板",
+      "pass": true
+    },
+    {
+      "name": "核查未完成时不允许确认",
+      "pass": true
+    },
+    {
+      "name": "逐项核查后确认",
+      "pass": true
+    },
+    {
+      "name": "冻结后出现可用示例下载入口",
+      "pass": true
+    },
+    {
+      "name": "浏览器实际下载 HTML 合成示例",
+      "pass": true
+    },
+    {
+      "name": "章节目录切换正文",
+      "pass": true
+    },
+    {
+      "name": "刷新后读回已保存原型正文",
+      "pass": true
+    },
+    {
+      "name": "过期候选拒绝覆盖后续人工输入",
+      "pass": true
+    },
+    {
+      "name": "长文原生滚轮只滚正文，顶部与目录不离开视口",
+      "pass": true
+    },
+    {
+      "name": "切换结构保留正文滚动上下文",
+      "pass": true
+    },
+    {
+      "name": "1440px research 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "1440px compare 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "1440px focus 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "1000px research 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "1000px compare 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "1000px focus 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "390px research 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "390px compare 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "390px focus 无横向溢出",
+      "pass": true
+    },
+    {
+      "name": "工作台固定在视口内而非全页面长滚动",
+      "pass": true
+    }
+  ],
+  "modelCalls": 0,
+  "browserErrors": 0,
+  "boundSourceHashes": [
+    {
+      "path": "index.html",
+      "sha256": "A5A54177DBF862EEB7826CF40F872DBC91AD1A1912D962214C2A77A57A30BBBB"
+    },
+    {
+      "path": "app.css",
+      "sha256": "51DACEFCAC7CAFA9A51C57A8EAFD913BA0E7A10368431E491C13C88F233923B3"
+    },
+    {
+      "path": "app.mjs",
+      "sha256": "0BBE47DD403E169256E2E8FFB331F8A36E1CF822144CCA8C773272041028200E"
+    },
+    {
+      "path": "serve.mjs",
+      "sha256": "442C94BCB4E5678258B6FF86B72E428C50980EC0B0288074C55271CF522FE740"
+    }
+  ],
+  "limitations": [
+    "No product backend, real model, account or data connection",
+    "Confirmation and frozen preview are current-page example states",
+    "Download is synthetic HTML, not product DOCX"
+  ]
+}
