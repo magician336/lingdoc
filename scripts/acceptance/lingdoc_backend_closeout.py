@@ -25,14 +25,15 @@ GROUPS = {
     "source_revocation_download_auth": ["TestCheckPassedSnapshotCannotDownloadAfterRealKBShareRevocation", "TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked", "TestListChaptersDeniesRevokedSourceAndRedactsStaleContent"],
     "version_conflict": ["TestConfirmationServiceRejectsStaleVersionBeforeWrite", "TestDeliveryRoutesRefuseAVersionTheCallerDidNotSee", "TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope"],
     "duplicate_idempotency": ["TestAcceptCandidateCreatesVersionPreservesReviewItemsAndReplays", "TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore", "TestExportRoutesReplayTheSameAction", "TestRecordFreezeReplaysTheSnapshotForTheSameAction", "TestSpecRetryPreservesIdempotencyOrder"],
+    "response_lost_after_commit": ["TestLingDocRealAPIThroughMainRegistration/response_lost_after_commit"],
+    "provider_timeout": ["TestExecuteStoresProviderTimeoutAsInterrupted"],
     "task_cancellation": ["TestExecuteStoresProviderCancellationAsInterrupted", "TestSQLiteRepositoryCancelsQueuedAndRunningRuns", "TestSpecRetryBoundAndCancellation"],
     "restart_readback": ["TestReleaseSnapshotIDsSurviveServiceRestart", "TestFreezeActionSurvivesAReopen"],
     "corrupted_file_recovery": ["TestDownloadRejectsPersistedCorruption", "TestExportDownloadRejectsCorruptedPersistedBytes", "TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes"],
     "postgres_failure_recovery": ["TestPostgresDownloadRejectsPersistedCorruption", "TestPostgresGenerationFailureBoundaries", "TestPostgresWorkerCrashLeasePersistence", "TestPostgresRendererFailureUsesRealDOCXValidator"],
 }
 NOT_RUN = [
-    {"id": "response_lost_after_commit", "status": "NOT RUN", "reason": "Same-key replay is tested; no HTTP drop-after-commit injector."},
-    {"id": "provider_timeout", "status": "NOT RUN", "reason": "Cancellation is tested; deterministic model timeout injection is not wired."},
+    {"id": "real_provider_timeout", "status": "NOT RUN", "reason": "The deterministic fake-provider deadline is tested; no real upstream model timeout is exercised."},
     {"id": "full_server_restart", "status": "NOT RUN", "reason": "Store reopen tests do not restart the application process."},
     {"id": "postgres_down_migration", "status": "NOT RUN", "reason": "Down migrations are deliberately not run automatically."},
     {"id": "real_model_browser_e2e", "status": "NOT RUN", "reason": "This runner uses synthetic fixtures and does not call a model or browser."},
