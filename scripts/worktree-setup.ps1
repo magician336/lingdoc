@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $worktree = if ($env:CODEX_WORKTREE_PATH) { $env:CODEX_WORKTREE_PATH } else { (Resolve-Path (Join-Path $PSScriptRoot "..")).Path }
 Set-Location $worktree
@@ -24,14 +24,37 @@ if ($env:LINGDOC_SKIP_FRONTEND -ne "1") {
 
 if ($env:LINGDOC_SKIP_PYTHON -ne "1" -and (Test-Path "mcp-server/requirements.txt")) {
     $python = Get-Command py -ErrorAction SilentlyContinue
+    $pythonCommand = $null
+    $pythonArgs = @()
+
     if ($python) {
-        $pythonCommand = "py"
-        $pythonArgs = @("-3")
-    } else {
+        try {
+            & $python.Source -3 -c "import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                $pythonCommand = $python.Source
+                $pythonArgs = @("-3")
+            }
+        } catch {
+            # The launcher can exist without a registered Python 3 runtime.
+        }
+    }
+
+    if (!$pythonCommand) {
         $python = Get-Command python -ErrorAction SilentlyContinue
-        if (!$python) { throw "未找到 py 或 python；设置 LINGDOC_SKIP_PYTHON=1 可跳过 Python 依赖" }
-        $pythonCommand = "python"
-        $pythonArgs = @()
+        if ($python) {
+            try {
+                & $python.Source -c "import sys; raise SystemExit(0 if sys.version_info[0] == 3 else 1)" 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    $pythonCommand = $python.Source
+                }
+            } catch {
+                # Leave the command unset so the actionable error below is used.
+            }
+        }
+    }
+
+    if (!$pythonCommand) {
+        throw "未找到可用的 Python 3 运行时；安装 Python 3，或设置 LINGDOC_SKIP_PYTHON=1 跳过 Python 依赖"
     }
 
     if (!(Test-Path ".venv/Scripts/python.exe")) {
