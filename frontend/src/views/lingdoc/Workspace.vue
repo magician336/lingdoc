@@ -435,9 +435,10 @@
             <p v-else-if="chapter.confirmation_valid" class="confirmed">当前章节版本已确认。保存新版本后需要重新确认。</p>
             <p v-else-if="workingCopyDiffersFromFormal" class="muted">工作副本与正式版本不同；保存工作副本不会创建正式版本。</p>
             <button v-if="chapter.current_version_id" type="button" @click="confirmCurrentChapter"
-              :disabled="busy || workingCopySaving || chapterChanged || workingCopyDiffersFromFormal || !reviewDecisionsReady">
+              :disabled="confirmationReasons.length > 0" :aria-describedby="confirmationReasons.length ? 'chapter-confirm-help' : undefined">
               {{ chapter.confirmation_valid ? '重新确认当前版本' : '确认当前章节版本' }}
             </button>
+            <p v-if="chapter.current_version_id && confirmationReasons.length" id="chapter-confirm-help" class="muted" role="status">当前无法确认：{{ confirmationReasons.join('；') }}。</p>
             <p v-if="draftCitations.malformed" class="warning">{{ MALFORMED_CITATION_MESSAGE }}</p>
             <p v-else-if="draftCitations.sourceIds.length" class="muted">
               本章引用 {{ draftCitations.sourceIds.length }} 条来源。保存时会逐条复核；删掉正文里的标记就等于放弃那一条。
@@ -472,6 +473,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
+import { canLeaveWorkspace, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty, type ReviewDraft } from './uiSafety'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
@@ -543,7 +546,8 @@ const bodyDraft = ref('')
 const busy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
-const reviewDrafts = ref<Record<string, { disposition: ReviewDecision['disposition']; reason: string }>>({})
+const reviewDrafts = ref<Record<string, ReviewDraft>>({})
+const savedReviewDrafts = ref<Record<string, ReviewDraft>>({})
 const citationUsageDrafts = ref<Record<string, CitationUsage>>({})
 const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
 const generationRun = ref<GenerationRun | null>(null)
@@ -616,6 +620,11 @@ const citationUsagesChanged = computed(() => {
   return JSON.stringify(next) !== JSON.stringify(workingCopy.value?.citation_usages ?? [])
 })
 const chapterChanged = computed(() => bodyChanged.value || citationUsagesChanged.value)
+const unsavedInputs = computed(() => hasUnsavedInputs({
+  chapterChanged: chapterChanged.value, specChanged: specChanged.value,
+  templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
+  reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
+}))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
   return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
 }
@@ -815,9 +824,10 @@ const draftCitations = computed(() => {
     ? { sourceIds: parsed.sourceIds, malformed: false }
     : { sourceIds: [] as string[], malformed: true }
 })
-const reviewDecisionsReady = computed(() => !!chapter.value && chapter.value.review_items.every(item => {
-  const decision = reviewDrafts.value[`${chapter.value!.id}:${item.id}`]
-  return !!decision?.reason.trim()
+const confirmationReasons = computed(() => confirmationBlockReasons({
+  busy: busy.value, saving: workingCopySaving.value, unsaved: chapterChanged.value,
+  needsCommit: workingCopyDiffersFromFormal.value,
+  missingReasons: chapter.value?.review_items.filter(item => !reviewDrafts.value[`${chapter.value!.id}:${item.id}`]?.reason.trim()).length ?? 0,
 }))
 
 function reviewDraft(itemId: string) {
@@ -967,12 +977,17 @@ async function selectProject(id: string, force = false, skipConfirm = false) {
 //
 // 只读项目、不动别的：走 selectProject 会重选章节、清掉未保存的正文草稿，而用户要的只是
 // 把版本号更新到当前。协作编辑是这条路的现实来源——别人改了项目，版本就旧了。
-async function refreshProjectVersion() {
-  if (!project.value) return
+async function refreshProjectVersion(done?: (ok: boolean) => void) {
+  const projectId = project.value?.id
+  if (!projectId) { done?.(false); return }
+  let refreshed = false
   try {
-    const result = await getProject(project.value.id)
+    const result = await getProject(projectId)
+    if (project.value?.id !== projectId) return
     project.value = result.data
-  } catch (error) { failure(error) }
+    refreshed = true
+  } catch (error) { if (!done) failure(error) }
+  finally { done?.(refreshed) }
 }
 
 // 打开项目时问一次访问状态，决定要不要给出撤权恢复入口（§8）。
@@ -1302,7 +1317,10 @@ async function onAdopted(adopted: Chapter) {
   // 待核项已经换成候选自带那一份，为本章编的逐项处置不再适用。只清本章的：
   // 别的章节的草稿是用户刚写的理由，采纳这一章不该把它抹掉。
   for (const key of Object.keys(reviewDrafts.value)) {
-    if (key.startsWith(`${chapterId}:`)) delete reviewDrafts.value[key]
+    if (key.startsWith(`${chapterId}:`)) {
+      delete reviewDrafts.value[key]
+      delete savedReviewDrafts.value[key]
+    }
   }
   generationCandidate.value = null
   try {
@@ -1313,7 +1331,7 @@ async function onAdopted(adopted: Chapter) {
     // 旧候选的 validity 是按旧版本算出来的，不重读会继续显示一条已经不成立的 fresh。
     generationCandidates.value = candidates.data
     await loadChapterDraft(projectId, chapterId)
-  } catch (error) { failure(error) }
+  } catch { errorMessage.value = '候选已采纳，但项目状态刷新失败。请重新读取项目；无需重复采纳。' }
 }
 
 function generationStorageKey(projectId: string, chapterId: string) {
@@ -1365,7 +1383,7 @@ async function cancelGenerationRun() {
 }
 
 async function confirmCurrentChapter() {
-  if (!project.value || !chapter.value?.current_version_id || busy.value || workingCopySaving.value || chapterChanged.value || workingCopyDiffersFromFormal.value || !reviewDecisionsReady.value) return
+  if (!project.value || !chapter.value?.current_version_id || confirmationReasons.value.length > 0) return
   const current = chapter.value
   const expectedVersion = current.current_version_id
   if (!expectedVersion) return
@@ -1386,6 +1404,12 @@ async function confirmCurrentChapter() {
   const key = operationKey(`confirm:${current.id}`, input)
   try {
     await confirmChapter(projectId, current.id, input, key)
+    // These reasons were acknowledged by the server; retaining the form is not
+    // an unsaved edit. Unconfirmed reasons in other chapters remain protected.
+    for (const decision of decisions) {
+      const draftKey = `${current.id}:${decision.review_item_id}`
+      savedReviewDrafts.value[draftKey] = { ...reviewDrafts.value[draftKey]! }
+    }
     attempts.delete(`confirm:${current.id}`)
     const result = await listChapters(projectId)
     chapters.value = result.data
@@ -1645,8 +1669,14 @@ async function restoreVersion(version: ChapterVersion) {
   finally { busy.value = false }
 }
 
-onMounted(loadProjects)
+let removeUnloadGuard: (() => void) | undefined
+onMounted(() => {
+  removeUnloadGuard = installUnloadGuard(window, () => unsavedInputs.value)
+  void loadProjects()
+})
+onBeforeRouteLeave(() => canLeaveWorkspace(unsavedInputs.value, message => window.confirm(message)))
 onUnmounted(() => {
+  removeUnloadGuard?.()
   if (generationTimer) clearTimeout(generationTimer)
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
 })
