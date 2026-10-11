@@ -126,7 +126,18 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 		return nil, ErrUnavailable
 	}
 	ledger, err := readLedger(b.ledgerPath, b.profile)
-	if err != nil || !validLedger(ledger, b.profile) {
+	if err != nil {
+		_ = ReleaseLock(lock, lockPath)
+		return nil, ErrUnavailable
+	}
+	if migrated, ok := migrateLedgerProfile(ledger, b.profile); ok {
+		ledger = migrated
+		if err := writeLedger(b.ledgerPath, ledger); err != nil {
+			_ = ReleaseLock(lock, lockPath)
+			return nil, ErrUnavailable
+		}
+	}
+	if !validLedger(ledger, b.profile) {
 		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrUnavailable
 	}
@@ -334,6 +345,23 @@ func readLedger(path string, profiles ...string) (Ledger, error) {
 		return Ledger{}, ErrUnavailable
 	}
 	return ledger, nil
+}
+
+// migrateLedgerProfile upgrades only a fully validated, settled legacy ledger.
+// Unknown, blocked, or otherwise inconsistent history is deliberately left
+// untouched so profile changes cannot erase an unresolved provider call.
+func migrateLedgerProfile(ledger Ledger, target string) (Ledger, bool) {
+	if ledger.Profile == target || target != CostOnlyProfile || ledger.Profile != Profile ||
+		ledger.Blocked || hasUnresolved(ledger) || !validLedger(ledger, Profile) {
+		return ledger, false
+	}
+	migrated := ledger
+	migrated.Profile = target
+	migrated.MaxCalls, migrated.MaxReserveNanoCNY, _ = ProfileLimits(target)
+	if !validLedger(migrated, target) {
+		return ledger, false
+	}
+	return migrated, true
 }
 
 func validLedger(ledger Ledger, profile string) bool {

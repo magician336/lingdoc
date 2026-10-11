@@ -146,6 +146,12 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 	if err != nil {
 		return nil, errAcceptanceLedgerIO
 	}
+	if migrated, ok := migrateGenerationAcceptanceLedger(ledger, b.profileName()); ok {
+		ledger = migrated
+		if err := writeAcceptanceLedger(b.ledgerPath, ledger); err != nil {
+			return nil, errAcceptanceLedgerIO
+		}
+	}
 	if !validAcceptanceLedger(ledger) {
 		return nil, errAcceptanceLedgerIO
 	}
@@ -394,6 +400,24 @@ func readAcceptanceLedger(path string, profiles ...string) (generationAcceptance
 		return generationAcceptanceLedger{}, errAcceptanceLedgerIO
 	}
 	return ledger, nil
+}
+
+// migrateGenerationAcceptanceLedger upgrades only a validated, settled
+// six-call ledger. In-flight or unknown outcomes keep their original policy
+// and remain blocked for reconciliation.
+func migrateGenerationAcceptanceLedger(ledger generationAcceptanceLedger, target string) (generationAcceptanceLedger, bool) {
+	if ledger.Profile == target || target != acceptancebudget.CostOnlyProfile ||
+		ledger.Profile != generationAcceptanceProfile || ledger.Blocked ||
+		acceptanceLedgerHasUnknownCall(ledger) || !validAcceptanceLedger(ledger) {
+		return ledger, false
+	}
+	migrated := ledger
+	migrated.Profile = target
+	migrated.CallsMax, migrated.ReserveMax, migrated.CNYBackstop = generationBudgetLimits(target)
+	if !validAcceptanceLedger(migrated) {
+		return ledger, false
+	}
+	return migrated, true
 }
 
 func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {

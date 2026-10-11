@@ -24,16 +24,6 @@ func TestCostOnlyBudgetMigrationPreservesHistoryAndAllowsSeventh(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	migrated := before
-	migrated.Profile = CostOnlyProfile
-	migrated.MaxCalls = 0
-	migrated.MaxReserveNanoCNY = CostOnlyMaxBudgetNanoCNY
-	if !validLedger(migrated, CostOnlyProfile) {
-		t.Fatal("invalid migration")
-	}
-	if e = writeLedger(path, migrated); e != nil {
-		t.Fatal(e)
-	}
 	budget := New(CostOnlyProfile, path)
 	for i := 4; i < 8; i++ {
 		r, e := budget.Reserve(context.Background(), DeepSeekModel, 100, 100)
@@ -48,11 +38,36 @@ func TestCostOnlyBudgetMigrationPreservesHistoryAndAllowsSeventh(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	if after.Profile != CostOnlyProfile || after.MaxCalls != 0 || after.MaxReserveNanoCNY != CostOnlyMaxBudgetNanoCNY {
+		t.Fatalf("profile was not migrated: %+v", after)
+	}
 	if len(after.Requests) != 8 || !reflect.DeepEqual(before.Requests, after.Requests[:4]) {
 		t.Fatal("history lost or seventh call rejected")
 	}
 	if _, e = old.Reserve(context.Background(), QwenEmbedding, 1, 0); !errors.Is(e, ErrUnavailable) {
 		t.Fatalf("profile mismatch: %v", e)
+	}
+}
+
+func TestCostOnlyBudgetMigrationRejectsBlockedLegacyHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "calls.json")
+	old := New(Profile, path)
+	reservation, err := old.Reserve(context.Background(), DeepSeekModel, 100, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = reservation.Unknown("outcome_unknown"); !errors.Is(err, ErrCallsSpent) {
+		t.Fatalf("unknown reservation was not blocked: %v", err)
+	}
+	if _, err = New(CostOnlyProfile, path).Reserve(context.Background(), DeepSeekModel, 100, 100); !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("blocked legacy ledger was migrated: %v", err)
+	}
+	after, err := readLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Profile != Profile || !after.Blocked || len(after.Requests) != 1 {
+		t.Fatalf("blocked history changed: %+v", after)
 	}
 }
 

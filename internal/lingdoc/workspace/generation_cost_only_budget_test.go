@@ -2,11 +2,111 @@ package workspace
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
-	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
+	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/models/acceptancebudget"
 )
+
+func TestGenerationCostOnlyMigrationPreservesHistoryAndAllowsSeventh(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "round.json")
+	old := &generationAcceptanceBudget{
+		profile:    generationAcceptanceProfile,
+		ledgerPath: path,
+		total:      acceptancebudget.New(generationAcceptanceProfile, path+".calls.json"),
+	}
+	for i := 0; i < 4; i++ {
+		reservation, err := old.reserve(context.Background(), generationAcceptanceModel, 100)
+		if err != nil {
+			t.Fatalf("legacy call %d: %v", i+1, err)
+		}
+		if err := reservation.complete("response_received", 50, 50, "stop", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	beforeChat, err := readAcceptanceLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	totalData, err := os.ReadFile(path + ".calls.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var beforeTotal acceptancebudget.Ledger
+	if err := json.Unmarshal(totalData, &beforeTotal); err != nil {
+		t.Fatal(err)
+	}
+	costOnly := &generationAcceptanceBudget{
+		profile:    acceptancebudget.CostOnlyProfile,
+		ledgerPath: path,
+		total:      acceptancebudget.New(acceptancebudget.CostOnlyProfile, path+".calls.json"),
+	}
+	for i := 4; i < 8; i++ {
+		reservation, err := costOnly.reserve(context.Background(), generationAcceptanceModel, 100)
+		if err != nil {
+			t.Fatalf("cost-only call %d: %v", i+1, err)
+		}
+		if err := reservation.complete("response_received", 50, 50, "stop", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	afterChat, err := readAcceptanceLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	totalData, err = os.ReadFile(path + ".calls.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var afterTotal acceptancebudget.Ledger
+	if err := json.Unmarshal(totalData, &afterTotal); err != nil {
+		t.Fatal(err)
+	}
+	if afterChat.Profile != acceptancebudget.CostOnlyProfile || afterChat.CallsMax != 0 ||
+		afterTotal.Profile != acceptancebudget.CostOnlyProfile || afterTotal.MaxCalls != 0 {
+		t.Fatal("both generation ledgers must be upgraded to the cost-only profile")
+	}
+	if len(afterChat.Requests) != 8 || len(afterTotal.Requests) != 8 ||
+		!reflect.DeepEqual(beforeChat.Requests, afterChat.Requests[:4]) ||
+		!reflect.DeepEqual(beforeTotal.Requests, afterTotal.Requests[:4]) {
+		t.Fatal("legacy request history was lost or the seventh call was rejected")
+	}
+}
+
+func TestGenerationCostOnlyMigrationRejectsBlockedLegacyHistory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "round.json")
+	old := &generationAcceptanceBudget{
+		profile:    generationAcceptanceProfile,
+		ledgerPath: path,
+		total:      acceptancebudget.New(generationAcceptanceProfile, path+".calls.json"),
+	}
+	reservation, err := old.reserve(context.Background(), generationAcceptanceModel, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reservation.unknown("outcome_unknown"); !errors.Is(err, errAcceptanceLedgerBlocked) {
+		t.Fatalf("unknown generation call was not blocked: %v", err)
+	}
+	costOnly := &generationAcceptanceBudget{
+		profile:    acceptancebudget.CostOnlyProfile,
+		ledgerPath: path,
+		total:      acceptancebudget.New(acceptancebudget.CostOnlyProfile, path+".calls.json"),
+	}
+	if _, err := costOnly.reserve(context.Background(), generationAcceptanceModel, 100); err == nil {
+		t.Fatal("blocked legacy ledger was migrated")
+	}
+	after, err := readAcceptanceLedger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Profile != generationAcceptanceProfile || !after.Blocked || len(after.Requests) != 1 {
+		t.Fatalf("blocked history changed: %+v", after)
+	}
+}
 
 func TestGenerationCostOnlyBudgetAllowsSeventhAndBlocksUnknown(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "round.json")
