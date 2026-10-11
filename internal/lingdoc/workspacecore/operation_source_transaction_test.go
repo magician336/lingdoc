@@ -122,3 +122,52 @@ func TestOperationSourcePreflightRejectsChangedBasisBeforeCommit(t *testing.T) {
 		})
 	}
 }
+
+func TestRevokedSourceReplayPreservesResultAndResumesAfterReauthorization(t *testing.T) {
+	s, actor, projectID, chapterID, policy := operationSourceFixture(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	key := "revocation-replay"
+	input := SaveWorkingCopyInput{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1, BodyMarkdown: "saved [[source:one]]", SourceIDs: []string{"one"}}
+	first, status, replayed, err := s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	require.NoError(t, err)
+	require.False(t, replayed)
+	identity := OperationIdentity{Actor: actor, Operation: "saveWorkingCopy", Target: projectID + "/" + chapterID, Key: key}
+	var originalOperation OperationResult
+	var originalCopy WorkingCopy
+	require.NoError(t, s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		var found bool
+		originalOperation, found, err = tx.Operation(identity)
+		require.True(t, found)
+		if err != nil {
+			return err
+		}
+		originalCopy, err = tx.WorkingCopy(projectID, chapterID)
+		return err
+	}))
+	policy.denied = true
+	denied, deniedStatus, deniedReplay, err := s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	require.ErrorIs(t, err, ErrSourceUnavailable)
+	require.Nil(t, denied)
+	require.Zero(t, deniedStatus)
+	require.False(t, deniedReplay)
+	require.NoError(t, s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		operation, found, e := tx.Operation(identity)
+		require.NoError(t, e)
+		require.True(t, found)
+		require.Equal(t, originalOperation, operation)
+		copy, e := tx.WorkingCopy(projectID, chapterID)
+		require.NoError(t, e)
+		require.Equal(t, originalCopy, copy)
+		return nil
+	}))
+	policy.denied = false
+	again, againStatus, replayed, err := s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	require.NoError(t, err)
+	require.True(t, replayed)
+	require.Equal(t, status, againStatus)
+	require.Equal(t, first, again)
+	current, err := s.GetWorkingCopy(ctx, actor, projectID, chapterID)
+	require.NoError(t, err)
+	require.Equal(t, originalCopy, current)
+}

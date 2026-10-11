@@ -24,7 +24,7 @@ func TestAdoptionAdvancesCleanWorkingCopyAndReplaysWithoutRevisionBump(t *testin
 	require.Equal(t, candidate.BodyMarkdown, copy.BodyMarkdown)
 	require.True(t, equalAdoptionJSON(copy.SourceIDsJSON, candidate.SourceIDs))
 	require.True(t, equalAdoptionJSON(copy.ReviewItemsJSON, candidate.ReviewItems))
-	require.JSONEq(t, "[]", copy.CitationUsagesJSON)
+	require.JSONEq(t, `[{"source_id":"source"}]`, copy.CitationUsagesJSON)
 	replay, err := store.AcceptCandidate(context.Background(), input, candidate)
 	require.NoError(t, err)
 	require.True(t, replay.Replayed)
@@ -78,5 +78,49 @@ func TestProductionAdoptionFailsWhenWorkingCopySchemaOrRowMissing(t *testing.T) 
 		var count int64
 		require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&count).Error)
 		require.Zero(t, count)
+	}
+}
+
+func TestAdoptionInitializesUnknownUsagesAndPreservesPriorVersion(t *testing.T) {
+	for _, withSources := range []bool{true, false} {
+		t.Run(map[bool]string{true: "cited", false: "uncited"}[withSources], func(t *testing.T) {
+			store := newCandidateAdoptionStore(t)
+			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
+			oldID := "old"
+			oldBody := "old [[source:retained]] [[source:removed]]"
+			oldSources := `["removed","retained"]`
+			oldUsages := `[{"source_id":"removed","purpose":"old purpose"},{"source_id":"retained","purpose":"old interpretation","limitation":"old limitation"}]`
+			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+			expected := []CitationUsage{}
+			if withSources {
+				candidate.BodyMarkdown = "new [[source:retained]] [[source:new]] [[source:retained]]"
+				candidate.SourceIDs = []string{"retained", "new", "retained"}
+				expected = []CitationUsage{{SourceID: "new"}, {SourceID: "retained"}}
+			}
+			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project", CurrentVersionID: &oldID}, candidate, 2)
+			require.NoError(t, store.DB().Create(&chapterVersionRow{ID: oldID, ProjectID: "project", ChapterID: "chapter", BodyMarkdown: oldBody, SourceIDsJSON: oldSources, CitationUsagesJSON: oldUsages, ReviewItemsJSON: "[]"}).Error)
+			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", BaseChapterVersionID: &oldID, SpecRevision: 2, WorkingCopyRevision: 4, BodyMarkdown: oldBody, SourceIDsJSON: oldSources, CitationUsagesJSON: oldUsages, ReviewItemsJSON: "[]"}).Error)
+			input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "citation-usages", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &oldID, ReplaceExisting: true}
+			result, err := store.AcceptCandidate(context.Background(), input, candidate)
+			require.NoError(t, err)
+			require.Equal(t, expected, result.Chapter.CitationUsages)
+			require.Equal(t, candidate.BodyMarkdown, result.Chapter.BodyMarkdown)
+			persisted, err := store.GenerationContext(context.Background(), "project", "chapter")
+			require.NoError(t, err)
+			require.Equal(t, expected, persisted.Chapter.CitationUsages)
+			var copy adoptionWorkingCopyRow
+			require.NoError(t, store.DB().First(&copy).Error)
+			require.True(t, equalAdoptionJSON(copy.CitationUsagesJSON, expected))
+			require.Equal(t, int64(5), copy.WorkingCopyRevision)
+			var prior chapterVersionRow
+			require.NoError(t, store.DB().Where("id = ?", oldID).First(&prior).Error)
+			require.JSONEq(t, oldUsages, prior.CitationUsagesJSON)
+			replay, err := store.AcceptCandidate(context.Background(), input, candidate)
+			require.NoError(t, err)
+			require.True(t, replay.Replayed)
+			require.Equal(t, result.Chapter, replay.Chapter)
+			require.NoError(t, store.DB().First(&copy).Error)
+			require.Equal(t, int64(5), copy.WorkingCopyRevision)
+		})
 	}
 }

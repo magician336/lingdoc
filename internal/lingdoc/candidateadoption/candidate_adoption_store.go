@@ -449,7 +449,21 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 
 		oldVersionID := chapter.CurrentVersionID
 		newVersionID := uuid.NewString()
-		sourceJSON, err := json.Marshal(normalizeIDs(candidate.SourceIDs))
+		sourceIDs := normalizeIDs(candidate.SourceIDs)
+		// A new candidate has no researcher-authored purpose/limitation metadata.
+		// Initialize every declared source as unknown now, rather than copying the
+		// old version's interpretations or waiting for a later save to fill them.
+		// SaveWorkingCopy/SaveChapter accept explicit usages from the researcher;
+		// absent descriptions stay unknown, and prior immutable versions survive.
+		citationUsages := make([]CitationUsage, 0, len(sourceIDs))
+		for _, sourceID := range sourceIDs {
+			citationUsages = append(citationUsages, CitationUsage{SourceID: sourceID})
+		}
+		usageJSON, err := json.Marshal(citationUsages)
+		if err != nil {
+			return err
+		}
+		sourceJSON, err := json.Marshal(sourceIDs)
 		if err != nil {
 			return err
 		}
@@ -461,7 +475,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			ID: newVersionID, ProjectID: in.ProjectID, ChapterID: in.ChapterID,
 			ParentVersionID: oldVersionID, CandidateID: candidate.ID,
 			BodyMarkdown: candidate.BodyMarkdown, SourceIDsJSON: string(sourceJSON),
-			CitationUsagesJSON: "[]",
+			CitationUsagesJSON: string(usageJSON),
 			ReviewItemsJSON:    string(reviewJSON), SpecRevision: int64(in.ExpectedSpecRevision),
 			ConfirmationValid: false, CreatedBy: in.ActorID,
 		}
@@ -496,8 +510,8 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 
 		current.CurrentVersionID = &newVersionID
 		current.BodyMarkdown = candidate.BodyMarkdown
-		current.SourceIDs = normalizeIDs(candidate.SourceIDs)
-		current.CitationUsages = []CitationUsage{}
+		current.SourceIDs = sourceIDs
+		current.CitationUsages = citationUsages
 		current.ReviewItems = candidate.ReviewItems
 		current.ConfirmationValid = false
 		result.Chapter = current

@@ -111,6 +111,9 @@ func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, ch
 			if project.SpecRevision != recovery.SpecRevision || !sameVersion(chapter.CurrentVersionID, recovery.BaseChapterVersionID) {
 				return ErrVersionConflict
 			}
+			// The repository CAS also matches the observed working-copy revision,
+			// spec and base version. An intervening recovery or draft save returns
+			// ErrVersionConflict instead of overwriting the newer row.
 			return tx.SaveWorkingCopy(result, *recovery)
 		})
 		if err != nil {

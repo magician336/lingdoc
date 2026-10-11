@@ -88,3 +88,59 @@ func (p recoveryDBSourcePolicy) Validate(ctx context.Context, projectID, actorID
 	var n int
 	return p.db.QueryRowContext(ctx, "SELECT 1").Scan(&n)
 }
+
+func TestLegacyRecoveryCASPreservesInterleavedRecoveryAndEdit(t *testing.T) {
+	for _, edit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "other_recovery", true: "other_recovery_then_edit"}[edit], func(t *testing.T) {
+			s, actor, projectID, chapterID, policy := operationSourceFixture(t)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			versionID := "legacy-adopted"
+			formalBody := "formal [[source:one]]"
+			err := s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+				old, err := tx.Chapter(projectID, chapterID)
+				if err != nil {
+					return err
+				}
+				next := old
+				next.CurrentVersionID = &versionID
+				next.BodyMarkdown = formalBody
+				next.SourceIDs = []string{"one"}
+				return tx.AppendChapter(old, next, 1)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			injected := false
+			policy.afterRead = func() error {
+				injected = true
+				// A second real service request lands after the first request's read
+				// snapshot and before its repair transaction. Source IO holds no DB lock.
+				current, err := s.GetWorkingCopy(ctx, actor, projectID, chapterID)
+				if err != nil {
+					return err
+				}
+				if !edit {
+					return nil
+				}
+				_, _, _, err = s.SaveWorkingCopy(ctx, actor, projectID, chapterID, "interleaved-edit", SaveWorkingCopyInput{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: current.WorkingCopyRevision, BaseChapterVersionID: current.BaseChapterVersionID, BodyMarkdown: "independent human edit [[source:one]]", SourceIDs: []string{"one"}})
+				return err
+			}
+			_, err = s.GetWorkingCopy(ctx, actor, projectID, chapterID)
+			if !injected || !errors.Is(err, ErrVersionConflict) {
+				t.Fatalf("CAS injected=%v err=%v", injected, err)
+			}
+			stored, err := s.GetWorkingCopy(ctx, actor, projectID, chapterID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			expectedBody, expectedRevision := formalBody, int64(2)
+			if edit {
+				expectedBody, expectedRevision = "independent human edit [[source:one]]", 3
+			}
+			if stored.BodyMarkdown != expectedBody || stored.WorkingCopyRevision != expectedRevision || stored.BaseChapterVersionID == nil || *stored.BaseChapterVersionID != versionID {
+				t.Fatalf("interleaved draft overwritten: %+v", stored)
+			}
+		})
+	}
+}

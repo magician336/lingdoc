@@ -536,6 +536,9 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		if err != nil {
 			return nil, 0, false, err
 		}
+		// Replays reuse the saved result, not the old authorization decision:
+		// revocation must reject a replay before any cached body is returned.
+		// Denial preserves the record, so reauthorization can replay it unchanged.
 		if err := s.checkSources(ctx, actor, projectID, checkedSources); err != nil {
 			return nil, 0, false, err
 		}
