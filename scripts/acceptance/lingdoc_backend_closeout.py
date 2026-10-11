@@ -34,7 +34,6 @@ GROUPS = {
 }
 NOT_RUN = [
     {"id": "real_provider_timeout", "status": "NOT RUN", "reason": "The deterministic fake-provider deadline is tested; no real upstream model timeout is exercised."},
-    {"id": "full_server_restart", "status": "NOT RUN", "reason": "Store reopen tests do not restart the application process."},
     {"id": "production_migration_rollback", "status": "NOT RUN", "reason": "Down/up roundtrip runs only against an owned disposable test database; no development or production schema is rolled back."},
     {"id": "real_model_browser_e2e", "status": "NOT RUN", "reason": "This runner uses synthetic fixtures and does not call a model or browser."},
 ]
@@ -48,6 +47,13 @@ def redact(value: str) -> str:
     for pattern, replacement in SENSITIVE:
         value = pattern.sub(replacement, value)
     return value
+
+def isolated_process_environment() -> dict[str, str]:
+    """Preserve only OS runtime variables; never forward inherited credentials."""
+    names = ["PATH", "LANG", "LC_ALL", "TZ", "HOME", "TMPDIR", "TMP", "TEMP"]
+    if os.name == "nt":
+        names.extend(["SYSTEMROOT", "WINDIR", "SystemDrive", "USERPROFILE"])
+    return {name: os.environ[name] for name in names if os.environ.get(name)}
 
 def safe_postgres_target(dsn: str) -> dict[str, str]:
     if dsn.startswith(("postgres://", "postgresql://")):
@@ -190,6 +196,7 @@ def main(argv: list[str] | None = None) -> int:
     failure_fixture_ready = False
     failure_fixture_env = None
     postgres_rollback_status = "NOT RUN"
+    server_restart_status = "BLOCKED"
     go_version = "unavailable"
     try:
         go_version = subprocess.run(["go", "version"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=10, check=False).stdout.strip() or "unavailable"
@@ -230,8 +237,17 @@ def main(argv: list[str] | None = None) -> int:
                                   env, out / "go-test.jsonl", 2500))
         checks.append(run_command(["go", "vet", "-mod=readonly", *PACKAGES], env, out / "go-vet.log"))
         binary = out / ("lingdoc-server-build.exe" if os.name == "nt" else "lingdoc-server-build")
-        checks.append(run_command(["go", "build", "-mod=readonly", "-o", str(binary), "./cmd/server"], env, out / "go-build.log"))
+        build = run_command(["go", "build", "-mod=readonly", "-o", str(binary), "./cmd/server"], env, out / "go-build.log")
+        checks.append(build)
         if binary.exists():
+            if build["status"] == "PASS":
+                restart = run_command(
+                    [sys.executable, "scripts/acceptance/lingdoc_full_server_restart.py",
+                     "--binary", str(binary), "--repo-root", str(ROOT),
+                     "--output-dir", str(out / "full-server-restart")],
+                    isolated_process_environment(), out / "full-server-restart.log", 600)
+                checks.append(restart)
+                server_restart_status = restart["status"]
             binary.unlink()
     checks.append(run_command([sys.executable, "-m", "unittest", "discover", "-s", "scripts/lingdoc_mock",
                                "-p", "test_g6_quality.py", "-v"], env, out / "g6-quality-tests.log", 180))
@@ -263,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
         cases.append({"id": key, "status": status, "tests": observed})
     cases.append({"id": "postgres_migration_rollback_roundtrip", "status": postgres_rollback_status,
                   "details": "Reverse LingDoc migrations in the owned disposable database, verify removal, then reapply and verify the latest schema."})
+    cases.append({"id": "full_server_restart", "status": server_restart_status,
+                  "details": "Start the real server binary with isolated synthetic auth and SQLite storage, create a LingDoc project, restart the process, then validate the same token and read the same project back."})
     if owned:
         cleanup = "PASS" if stop_docker_container(owned) else "BLOCKED"
         if cleanup == "PASS":
@@ -288,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
         "scenarios": cases, "not_run": NOT_RUN,
         "cleanup": {"status": cleanup, "owned_container": bool(owned), "failure_database": failure_fixture_cleanup},
         "limitations": ["No real model credentials or user project data are used.",
-                        "Repository reopen tests do not prove a full application-process restart.",
+                        "Full process restart covers a synthetic SQLite deployment; PostgreSQL process restart is not separately exercised.",
                         "PostgreSQL down/up migration roundtrip runs only on an owned disposable test database; production rollback is not exercised."],
     }
     (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -311,3 +329,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
