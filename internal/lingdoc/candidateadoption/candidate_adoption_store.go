@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,7 +15,8 @@ import (
 // SQLiteCandidateAdoptionStore owns the T11 candidate and adoption records
 // while reusing the T08 workspace tables for projects, chapters, and versions.
 type SQLiteCandidateAdoptionStore struct {
-	db *gorm.DB
+	db            *gorm.DB
+	focusedSchema bool // Enabled only by the focused-test AutoMigrate helper.
 }
 
 func NewSQLiteCandidateAdoptionStore(db *gorm.DB) *SQLiteCandidateAdoptionStore {
@@ -154,10 +156,14 @@ func (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_c
 // numbered migrations, where 000018 owns workspace tables and 000020 adds the
 // T11 columns and records.
 func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
-	return s.db.WithContext(ctx).AutoMigrate(
+	err := s.db.WithContext(ctx).AutoMigrate(
 		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{},
 		&confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{},
 	)
+	if err == nil {
+		s.focusedSchema = true
+	}
+	return err
 }
 
 // ConfirmChapter persists the confirmation and idempotent response atomically.
@@ -436,6 +442,11 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			return ErrInvalidState
 		}
 
+		workingCopy, err := s.cleanWorkingCopy(tx, current)
+		if err != nil {
+			return err
+		}
+
 		oldVersionID := chapter.CurrentVersionID
 		newVersionID := uuid.NewString()
 		sourceJSON, err := json.Marshal(normalizeIDs(candidate.SourceIDs))
@@ -477,9 +488,16 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			return ErrVersionConflict
 		}
 
+		if workingCopy != nil {
+			if err := advanceAdoptedWorkingCopy(tx, *workingCopy, version); err != nil {
+				return err
+			}
+		}
+
 		current.CurrentVersionID = &newVersionID
 		current.BodyMarkdown = candidate.BodyMarkdown
 		current.SourceIDs = normalizeIDs(candidate.SourceIDs)
+		current.CitationUsages = []CitationUsage{}
 		current.ReviewItems = candidate.ReviewItems
 		current.ConfirmationValid = false
 		result.Chapter = current
@@ -591,4 +609,83 @@ func candidateFromRow(row candidateRow) (Candidate, error) {
 		return Candidate{}, err
 	}
 	return candidate, nil
+}
+
+// adoptionWorkingCopyRow mirrors the G7 row without introducing a package cycle.
+type adoptionWorkingCopyRow struct {
+	ProjectID            string `gorm:"primaryKey"`
+	ChapterID            string `gorm:"primaryKey"`
+	BaseChapterVersionID *string
+	SpecRevision         int64
+	WorkingCopyRevision  int64
+	BodyMarkdown         string
+	SourceIDsJSON        string `gorm:"column:source_ids_json"`
+	CitationUsagesJSON   string `gorm:"column:citation_usages_json"`
+	ReviewItemsJSON      string `gorm:"column:review_items_json"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+}
+
+func (adoptionWorkingCopyRow) TableName() string { return "lingdoc_working_copies" }
+
+func equalAdoptionJSON(raw string, value any) bool {
+	var stored, expected any
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return false
+	}
+	if raw == "" || raw == "null" {
+		raw = "[]"
+	}
+	if string(encoded) == "null" {
+		encoded = []byte("[]")
+	}
+	if json.Unmarshal([]byte(raw), &stored) != nil || json.Unmarshal(encoded, &expected) != nil {
+		return false
+	}
+	return reflect.DeepEqual(stored, expected)
+}
+
+func (s *SQLiteCandidateAdoptionStore) cleanWorkingCopy(tx *gorm.DB, current Chapter) (*adoptionWorkingCopyRow, error) {
+	// Only the explicit focused schema helper permits an absent G7 table.
+	// Production must fail on missing migrations instead of accepting a stale editor.
+	if s.focusedSchema && !tx.Migrator().HasTable(&adoptionWorkingCopyRow{}) {
+		return nil, nil
+	}
+	var row adoptionWorkingCopyRow
+	if err := tx.Where("project_id = ? AND chapter_id = ?", current.ProjectID, current.ID).First(&row).Error; err != nil {
+		return nil, err
+	}
+	if !sameOptionalString(row.BaseChapterVersionID, current.CurrentVersionID) ||
+		row.BodyMarkdown != current.BodyMarkdown ||
+		!equalAdoptionJSON(row.SourceIDsJSON, current.SourceIDs) ||
+		!equalAdoptionJSON(row.CitationUsagesJSON, current.CitationUsages) ||
+		!equalAdoptionJSON(row.ReviewItemsJSON, current.ReviewItems) {
+		return nil, ErrVersionConflict
+	}
+	return &row, nil
+}
+
+func advanceAdoptedWorkingCopy(tx *gorm.DB, previous adoptionWorkingCopyRow, version chapterVersionRow) error {
+	query := tx.Model(&adoptionWorkingCopyRow{}).Where("project_id = ? AND chapter_id = ? AND working_copy_revision = ? AND spec_revision = ?",
+		previous.ProjectID, previous.ChapterID, previous.WorkingCopyRevision, previous.SpecRevision)
+	if previous.BaseChapterVersionID == nil {
+		query = query.Where("base_chapter_version_id IS NULL")
+	} else {
+		query = query.Where("base_chapter_version_id = ?", *previous.BaseChapterVersionID)
+	}
+	result := query.Updates(map[string]any{
+		"base_chapter_version_id": version.ID, "spec_revision": version.SpecRevision,
+		"working_copy_revision": previous.WorkingCopyRevision + 1,
+		"body_markdown":         version.BodyMarkdown, "source_ids_json": version.SourceIDsJSON,
+		"citation_usages_json": version.CitationUsagesJSON, "review_items_json": version.ReviewItemsJSON,
+		"updated_at": time.Now().UTC(),
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return ErrVersionConflict
+	}
+	return nil
 }

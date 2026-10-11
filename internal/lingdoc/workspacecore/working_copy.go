@@ -49,8 +49,10 @@ func (s *Service) checkSources(ctx context.Context, actor Actor, projectID strin
 
 func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error) {
 	var result WorkingCopy
+	var recovery *WorkingCopy
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		project, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		if err != nil {
 			return err
 		}
 		chapter, err := tx.Chapter(projectID, chapterID)
@@ -62,12 +64,59 @@ func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, ch
 			return err
 		}
 		if !sameVersion(chapter.CurrentVersionID, result.BaseChapterVersionID) {
-			return ErrVersionConflict
+			// Repair legacy adoption rows only when the draft is identical to
+			// its old formal base. Never discard independent draft edits.
+			var base ChapterVersion
+			if result.BaseChapterVersionID != nil {
+				base, err = tx.ChapterVersion(projectID, chapterID, *result.BaseChapterVersionID)
+				if err != nil {
+					return err
+				}
+			}
+			if result.BodyMarkdown != base.BodyMarkdown || !slices.Equal(result.SourceIDs, base.SourceIDs) ||
+				!slices.Equal(result.ReviewItems, base.ReviewItems) || !slices.Equal(result.CitationUsages, base.CitationUsages) {
+				return ErrVersionConflict
+			}
+			next := result
+			next.BaseChapterVersionID = chapter.CurrentVersionID
+			next.SpecRevision = project.SpecRevision
+			next.WorkingCopyRevision++
+			next.BodyMarkdown = chapter.BodyMarkdown
+			next.SourceIDs = slices.Clone(chapter.SourceIDs)
+			next.CitationUsages = slices.Clone(chapter.CitationUsages)
+			next.ReviewItems = slices.Clone(chapter.ReviewItems)
+			next.UpdatedAt = time.Now().UTC()
+			recovery = &next
 		}
 		return nil
 	})
 	if err != nil {
 		return WorkingCopy{}, err
+	}
+	if recovery != nil {
+		// Source policy uses its own connection. Never invoke it while a database
+		// transaction is holding the only SQLite connection.
+		if err := s.checkSources(ctx, actor, projectID, recovery.SourceIDs); err != nil {
+			return WorkingCopy{}, err
+		}
+		err = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+			project, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+			if err != nil {
+				return err
+			}
+			chapter, err := tx.Chapter(projectID, chapterID)
+			if err != nil {
+				return err
+			}
+			if project.SpecRevision != recovery.SpecRevision || !sameVersion(chapter.CurrentVersionID, recovery.BaseChapterVersionID) {
+				return ErrVersionConflict
+			}
+			return tx.SaveWorkingCopy(result, *recovery)
+		})
+		if err != nil {
+			return WorkingCopy{}, err
+		}
+		result = *recovery
 	}
 	if err := s.checkSources(ctx, actor, projectID, result.SourceIDs); err != nil {
 		return WorkingCopy{}, err

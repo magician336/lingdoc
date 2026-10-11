@@ -43,6 +43,7 @@ var (
 )
 
 type generationAcceptanceBudget struct {
+	profile    string
 	ledgerPath string
 	total      *acceptancebudget.Budget
 }
@@ -92,7 +93,7 @@ func loadGenerationAcceptanceBudget() (*generationAcceptanceBudget, error) {
 	if profile == "" {
 		return nil, nil
 	}
-	if profile != generationAcceptanceProfile {
+	if !acceptancebudget.SupportedProfile(profile) {
 		return nil, generation.ErrAcceptanceBudgetUnavailable
 	}
 	ledgerPath := strings.TrimSpace(os.Getenv(generationAcceptanceLedgerEnv))
@@ -103,7 +104,7 @@ func loadGenerationAcceptanceBudget() (*generationAcceptanceBudget, error) {
 	if err != nil {
 		return nil, generation.ErrAcceptanceBudgetUnavailable
 	}
-	return &generationAcceptanceBudget{ledgerPath: filepath.Clean(ledgerPath), total: total}, nil
+	return &generationAcceptanceBudget{profile: profile, ledgerPath: filepath.Clean(ledgerPath), total: total}, nil
 }
 
 func (b *generationAcceptanceBudget) reserve(ctx context.Context, modelName string, inputUpperBound int) (*generationAcceptanceReservation, error) {
@@ -113,7 +114,7 @@ func (b *generationAcceptanceBudget) reserve(ctx context.Context, modelName stri
 	}
 	totalBudget := b.total
 	if totalBudget == nil {
-		totalBudget = acceptancebudget.New(generationAcceptanceProfile, b.ledgerPath+".calls.json")
+		totalBudget = acceptancebudget.New(b.profileName(), b.ledgerPath+".calls.json")
 	}
 	total, err := totalBudget.Reserve(ctx, modelName, inputUpperBound, generationAcceptanceOutputMax)
 	if err != nil {
@@ -141,7 +142,7 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 			_ = acceptancebudget.ReleaseLock(lock, lockPath)
 		}
 	}()
-	ledger, err := readAcceptanceLedger(b.ledgerPath)
+	ledger, err := readAcceptanceLedger(b.ledgerPath, b.profileName())
 	if err != nil {
 		return nil, errAcceptanceLedgerIO
 	}
@@ -151,14 +152,10 @@ func (b *generationAcceptanceBudget) reserveChat(ctx context.Context, modelName 
 	if ledger.Blocked || acceptanceLedgerHasUnknownCall(ledger) {
 		return nil, errAcceptanceLedgerBlocked
 	}
-	if ledger.Profile != generationAcceptanceProfile || ledger.Model != generationAcceptanceModel ||
-		ledger.InputMax != generationAcceptanceInputMax || ledger.OutputMax != generationAcceptanceOutputMax ||
-		ledger.CallsMax != generationAcceptanceCallsMax || ledger.ReserveMax != generationAcceptanceTotal ||
-		ledger.CNYBackstop != acceptancebudget.HumanBackstopCNY ||
-		modelName != generationAcceptanceModel {
+	if ledger.Profile != b.profileName() || modelName != generationAcceptanceModel {
 		return nil, errAcceptanceWrongModel
 	}
-	if len(ledger.Requests) >= generationAcceptanceCallsMax || ledger.Reserved+generationAcceptancePerCall > generationAcceptanceTotal {
+	if (ledger.CallsMax > 0 && len(ledger.Requests) >= ledger.CallsMax) || generationAcceptancePerCall > ledger.ReserveMax-ledger.Reserved {
 		return nil, errAcceptanceBudgetSpent
 	}
 	request := generationAcceptanceRequest{
@@ -353,19 +350,39 @@ func acceptanceLedgerHasUnknownCall(ledger generationAcceptanceLedger) bool {
 	return false
 }
 
-func readAcceptanceLedger(path string) (generationAcceptanceLedger, error) {
+func (b *generationAcceptanceBudget) profileName() string {
+	if b.profile == "" {
+		return generationAcceptanceProfile
+	}
+	return b.profile
+}
+
+func generationBudgetLimits(profile string) (calls int, reserveUSD int64, backstopCNY int) {
+	calls, budget, backstopCNY := acceptancebudget.ProfileLimits(profile)
+	if profile == acceptancebudget.CostOnlyProfile {
+		return calls, budget / acceptancebudget.DeepSeekBudgetFXNanoCNYPerUSD, backstopCNY
+	}
+	return calls, generationAcceptanceTotal, backstopCNY
+}
+
+func readAcceptanceLedger(path string, profiles ...string) (generationAcceptanceLedger, error) {
+	profile := generationAcceptanceProfile
+	if len(profiles) > 0 {
+		profile = profiles[0]
+	}
+	calls, reserveUSD, backstop := generationBudgetLimits(profile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return generationAcceptanceLedger{
 			SchemaVersion: 1,
-			Profile:       generationAcceptanceProfile,
+			Profile:       profile,
 			Model:         generationAcceptanceModel,
 			PricingBasis:  "DeepSeek official peak rates captured for 2026-09-29: input $0.30/M, output $1.20/M; cache treated as miss.",
 			InputMax:      generationAcceptanceInputMax,
 			OutputMax:     generationAcceptanceOutputMax,
-			CallsMax:      generationAcceptanceCallsMax,
-			CNYBackstop:   acceptancebudget.HumanBackstopCNY,
-			ReserveMax:    generationAcceptanceTotal,
+			CallsMax:      calls,
+			CNYBackstop:   backstop,
+			ReserveMax:    reserveUSD,
 			Requests:      []generationAcceptanceRequest{},
 		}, nil
 	}
@@ -380,10 +397,11 @@ func readAcceptanceLedger(path string) (generationAcceptanceLedger, error) {
 }
 
 func validAcceptanceLedger(ledger generationAcceptanceLedger) bool {
-	if ledger.SchemaVersion != 1 || ledger.Profile != generationAcceptanceProfile || ledger.Model != generationAcceptanceModel ||
+	calls, reserveUSD, backstop := generationBudgetLimits(ledger.Profile)
+	if ledger.SchemaVersion != 1 || !acceptancebudget.SupportedProfile(ledger.Profile) || ledger.Model != generationAcceptanceModel ||
 		ledger.InputMax != generationAcceptanceInputMax || ledger.OutputMax != generationAcceptanceOutputMax ||
-		ledger.CallsMax != generationAcceptanceCallsMax || ledger.CNYBackstop != acceptancebudget.HumanBackstopCNY || ledger.ReserveMax != generationAcceptanceTotal ||
-		len(ledger.Requests) > generationAcceptanceCallsMax || ledger.Reserved != int64(len(ledger.Requests))*generationAcceptancePerCall ||
+		ledger.CallsMax != calls || ledger.CNYBackstop != backstop || ledger.ReserveMax != reserveUSD ||
+		(calls > 0 && len(ledger.Requests) > calls) || ledger.Reserved > reserveUSD || ledger.Reserved != int64(len(ledger.Requests))*generationAcceptancePerCall ||
 		ledger.Actual < 0 || ledger.Actual > ledger.Reserved {
 		return false
 	}
