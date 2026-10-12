@@ -63,28 +63,36 @@ func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, ch
 		if err != nil {
 			return err
 		}
-		if !sameVersion(chapter.CurrentVersionID, result.BaseChapterVersionID) {
-			// Repair legacy adoption rows only when the draft is identical to
-			// its old formal base. Never discard independent draft edits.
-			var base ChapterVersion
-			if result.BaseChapterVersionID != nil {
-				base, err = tx.ChapterVersion(projectID, chapterID, *result.BaseChapterVersionID)
-				if err != nil {
-					return err
-				}
-			}
-			if result.BodyMarkdown != base.BodyMarkdown || !slices.Equal(result.SourceIDs, base.SourceIDs) ||
-				!slices.Equal(result.ReviewItems, base.ReviewItems) || !slices.Equal(result.CitationUsages, base.CitationUsages) {
-				return ErrVersionConflict
-			}
+		baseChanged := !sameVersion(chapter.CurrentVersionID, result.BaseChapterVersionID)
+		if result.SpecRevision > project.SpecRevision {
+			return ErrVersionConflict
+		}
+		if baseChanged || result.SpecRevision != project.SpecRevision {
 			next := result
-			next.BaseChapterVersionID = chapter.CurrentVersionID
+			if baseChanged {
+				// Only an untouched old formal base may be replaced after adoption.
+				// Independent human draft edits still require explicit resolution.
+				var base ChapterVersion
+				if result.BaseChapterVersionID != nil {
+					base, err = tx.ChapterVersion(projectID, chapterID, *result.BaseChapterVersionID)
+					if err != nil {
+						return err
+					}
+				}
+				if result.BodyMarkdown != base.BodyMarkdown || !slices.Equal(result.SourceIDs, base.SourceIDs) ||
+					!slices.Equal(result.ReviewItems, base.ReviewItems) || !slices.Equal(result.CitationUsages, base.CitationUsages) {
+					return ErrVersionConflict
+				}
+				next.BaseChapterVersionID = chapter.CurrentVersionID
+				next.BodyMarkdown = chapter.BodyMarkdown
+				next.SourceIDs = slices.Clone(chapter.SourceIDs)
+				next.CitationUsages = slices.Clone(chapter.CitationUsages)
+				next.ReviewItems = slices.Clone(chapter.ReviewItems)
+			}
+			// A spec-only change advances the editable draft basis without replacing
+			// any text or provenance. Formal versions and confirmations stay untouched.
 			next.SpecRevision = project.SpecRevision
 			next.WorkingCopyRevision++
-			next.BodyMarkdown = chapter.BodyMarkdown
-			next.SourceIDs = slices.Clone(chapter.SourceIDs)
-			next.CitationUsages = slices.Clone(chapter.CitationUsages)
-			next.ReviewItems = slices.Clone(chapter.ReviewItems)
 			next.UpdatedAt = time.Now().UTC()
 			recovery = &next
 		}
