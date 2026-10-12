@@ -227,6 +227,15 @@ try {
   await evaluate("document.querySelector('.wb-rail-toggle').click()");
   await check('L19 目录按钮打开项目浮层',"getComputedStyle(document.querySelector('.workspace-grid>aside.panel')).visibility==='visible'");
   await shot('L19-390-rail');
+  await delay(250); // wait for the opening transform transition before calculating pointer coordinates
+  await hit('390 目录内关闭按钮', '[aria-label="关闭目录"]');
+  const closePoint=await evaluate("(()=>{const r=document.querySelector('[aria-label=\"关闭目录\"]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()");
+  await send('Input.dispatchMouseEvent',{type:'mouseMoved',...closePoint});
+  await delay(50);
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',...closePoint,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',...closePoint,button:'left',clickCount:1});
+  await delay(250);
+  await check('L19b 真实鼠标关闭目录后恢复编辑区域',"getComputedStyle(document.querySelector('.workspace-grid>aside.panel')).visibility==='hidden'");
   results.push({name:'L20 全程无运行时异常',pass:runtimeErrors.length===0});
   console.log((runtimeErrors.length===0?'PASS ':'FAIL ')+'L20 全程无运行时异常');
 } catch(error) {
