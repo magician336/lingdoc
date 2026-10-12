@@ -25,7 +25,7 @@
     <p v-if="errorMessage" role="alert" class="alert">{{ errorMessage }}</p>
     <div class="workspace-grid">
       <aside class="panel">
-        <h2>我的项目</h2>
+        <h2 class="wb-rail-heading">我的项目 <button type="button" class="wb-rail-close" aria-label="关闭目录" @click="railOpen = false">×</button></h2>
         <form class="create-form" @submit.prevent="create">
           <label for="project-name">新项目名称</label>
           <input id="project-name" v-model="newName" maxlength="120" required placeholder="例如：演示申报项目" />
@@ -1953,6 +1953,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 }
 /* 限制项目列表高度，桌面视口下章节目录保持可见（真服务视觉复核 r3 顺带项） */
 .wb .project-list { max-height: 38vh; overflow-y: auto; }
+.wb-rail-heading { display: flex; align-items: center; justify-content: space-between; }
+.wb-rail-close { display: none; }
 .wb-rail-entries { display: grid; gap: 4px; }
 .wb-rail-entries button { text-align: left; }
 .wb-chapters { display: grid; gap: 4px; }
@@ -2044,6 +2046,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   }
   .wb--rail .workspace-grid > aside.panel { transform: none; visibility: visible; }
   .wb-rail-toggle { display: inline-flex; }
+  .wb-rail-close { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; }
   .wb .section-head { padding: 10px 14px 4px; }
   .wb .chapters { padding: 4px 14px 24px; }
   .wb .wb-compare { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto; }
