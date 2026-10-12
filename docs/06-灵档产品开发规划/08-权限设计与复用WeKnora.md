@@ -154,7 +154,7 @@ ProjectMember
 | `task.read`                 | ✓     | ✓     | ✓             | ✓                 | ✓               | ✓               |
 | `task.assign`               | ✓     | ✓     | —             | —                 | —               | —               |
 | `task.manage`               | ✓     | ✓     | —             | —                 | —               | —               |
-| `audit.read`                | ✓     | ✓     | ✓             | ✓                 | ✓               | ✓               |
+| `audit.read`                | ✓     | ✓     | —             | —                 | —               | —               |
 
 五点需要特别注意：
 
@@ -162,7 +162,7 @@ ProjectMember
 - **“删除误报”与“豁免”是两件事，阻断级只允许前者，且它是一次学理裁定**：豁免是承认问题真实存在但本次接受，只对警告/提示级开放，权限随 `delivery.preflight`；删除（`delivery.issue.dismiss`）是判定规则或模型判断有误、这条问题本就不该存在，对任一严重度开放——AI 会产生幻觉，用户必须能推翻它。但删除一条阻断项的效果等于“这条阻断不存在”，它判断的是“证据够不够、论证成不成立”，与 `evidence.confirm` / `content.confirm` 同性质，因此同样归 `Owner` 与 `Member + Reviewer`，不给 `Admin`（见上文治理与学术分离）。它也不能随手做：必须填写理由，记录规则 ID、判定方与目标版本，进入导出审计，且只对当前目标版本有效——目标对象换版本后问题会在下次求值时重新出现（这个作用域跨检查级别、也跨判定方，见 [`03-数据模型与接口契约`](03-数据模型与接口契约.md) 第 5 节）。`Member + Reviewer` 持有删除阻断级的权力却不在 `delivery.preflight` 列，并不矛盾：复核中心本就把“阻断交付”列在队列里（见 [`09-用户界面与交互规划`](09-用户界面与交互规划.md) 第 11 节），复核人裁决的是别人跑出来的问题，不必自己发起预检。
 - **`evidence.confirm` 与 `content.confirm` 作用于不同对象，不可互换**：前者确认的是 `EvidenceCard`——“这段原文确实支持该主张，支持范围与限制的描述准确”（A 域来源真相），确认后该证据卡才能作为章节的已确认依据，其 scope 按**证据卡所服务的主张与章节**判定；后者确认的是 `ChapterVersion` / `ResearchClaimVersion`——“这段文字表述准确、结论未超出其所引证据能支持的范围”（B 域项目真相），确认后该版本才能进入 `ReleaseSnapshot`，其 scope 按**章节或主张本身**判定。矩阵中两行恰好同列（都只归 `Owner` 与 `Member + Reviewer`），但流程上内容确认以其所引证据已有确认记录或明确标为待核为前提，且确认内容的人不必重做证据确认；自写自审对两者同样适用。
 - **`content.comment` 不授予 Observer**：评论是写入动作，观察者只读。
-- **`task.read` 与 `audit.read` 全角色可见**：任务中心和审计摘要是协作可见性的一部分，不构成写入能力。
+- **`task.read` 与 `audit.read` 分层可见**：任务中心可按项目协作需要开放；审计完整记录和项目级摘要只对 Owner/Admin 可见，其他职能成员只能查看与自己相关的操作和拒绝记录，不得查看项目级摘要。
 
 章节、材料集合、交付版本可以进一步增加 `scope`（例如“仅负责章节”），但 **scope 只限定写操作**：读取边界由知识库共享级别和资料授权范围决定，不由职能 scope 决定。Beta 不应为每一段文本单独建立 ACL。
 
@@ -179,7 +179,7 @@ ProjectMember
 | 创建记录（草稿项目） | Contributor | 无（创建者成为 `Owner`） | 当前租户 active；项目以 `draft` + `Context Revision 0` 存在 |
 | 草拟研究条件（草稿期） | Viewer | 职能角色 `Author`（`changeset.create`） | 草稿期不产生 `ChangeSet`；确认权仍在 `Owner` |
 | 立项确认 | Contributor | `changeset.apply`（仅 `Owner`） | 草稿期确认页须显示两类差异（他人改动、仍是 AI 填写且未经人工改动）；通过后生成章节骨架与 `Context Revision 1` |
-| 邀请/移除项目成员 | Contributor | `project.members.manage`（治理角色为 `Owner` 或 `Admin`） | 被邀请人须已是同一租户的 active 成员；跨租户的合并邀请另需租户管理权（见 8.2） |
+| 邀请/移除项目成员 | Contributor | `project.members.manage`（治理角色为 `Owner` 或 `Admin`） | Beta 被邀请人须已是同一租户的 active 成员；跨租户邀请留到后续阶段 |
 | 绑定知识库 | Contributor | `project.settings.edit`（`Owner` 或 `Admin`） | 通过 `ResolveKB`，至少 KB viewer；跨租户需显式分享 |
 | 分派/转派任务 | Viewer | `task.assign` / `task.manage`（`Owner` 或 `Admin`） | 任务须指向项目内对象和有效 Revision |
 | 上传/导入项目资料 | Contributor | `asset.import` | KB editor/write scope；学术来源需通过 ImportCandidate 和来源目录确认 |
@@ -209,15 +209,15 @@ ProjectMember
 | 转让必须是原子的         | 新 Owner 上任与旧 Owner 降级在同一次事务内完成，不允许出现“零 Owner”或“双 Owner”的中间态                                                                                 |
 | 转让清空职能轴          | 升为 `Owner` 时受让人原职能轴清空——其能力改由 Owner 全集提供，不再受转让前的章节/材料/交付版本 scope 约束；降级方保持原状：回到 `Admin` / `Member`，职能轴为转让前内容，原 Owner 职能轴本就为空，降级后按"未指定职能"处理即 `Observer`。Owner 行职能轴恒为空（见 3.2 规则 1） |
 | 转让须经受让人确认        | 未确认前所有权保持原状，避免把最终责任强加给尚未同意的人                                                                                                                |
-| 仅 Owner 可发起转让    | 租户 `Admin` 可协助成员管理，但不能自行取得项目所有权；平台管理员同样不能                                                                                                   |
+| 仅 Owner 可发起普通转让    | 租户 `Admin` 可协助成员管理，但不能自行取得项目所有权；平台管理员同样不能。`owner_unavailable` 的旁路发起另按专门规则处理                                                                                                   |
 | `Owner` 不由邀请产生   | 邀请弹窗的治理角色只能授予 `Admin` / `Member`；新任 `Owner` 必须走转让流程，否则会破坏“有且只有一个 Owner”                                                                     |
-| Owner 不可用时另设发起路径 | `owner_unavailable` 下 Owner 已被停用、无法自行发起，由租户 `Owner` 或平台管理员**指定受让人并发起**，仍须受让人确认后生效——发起权旁路不等于可以自行取得所有权                                        |
+| Owner 不可用时另设发起路径 | Beta 阶段由租户 `Owner` **指定受让人并发起**，仍须受让人确认后生效；暂不开放平台管理员旁路。发起权旁路不等于可以自行取得所有权                                        |
 | Owner 离场前必须先转让   | Owner 不能自行退出项目；租户层要 suspended 其成员身份时，应先触发项目所有权转让                                                                                            |
 | 归档不解除约束          | `project.archive` 仅 Owner 可执行；归档后 Owner 关系保留用于审计                                                                                            |
 
 WeKnora 租户层采用“至少保留一个 Owner”的 last-owner 保护（降级或移除最后一个 Owner 返回 409）；项目层更严格——**有且只有一个 Owner**。
 
-转让是 `owner_unavailable` 的逃生路径，不是常规操作：租户侧停用 Owner 之前应先确认其可恢复；确已无法恢复时，项目停留在 `owner_unavailable`（见 8.3），再按上表“Owner 不可用时另设发起路径”由租户 `Owner` 或平台管理员指定受让人发起转让来解除。
+转让是 `owner_unavailable` 的逃生路径，不是常规操作：租户侧停用 Owner 之前应先确认其可恢复；确已无法恢复时，项目停留在 `owner_unavailable`（见 8.3），再按上表“Owner 不可用时另设发起路径”由租户 `Owner` 指定受让人发起转让来解除。Beta 暂不开放平台管理员旁路。
 
 ## 5. 请求链路与后端落点
 
@@ -292,10 +292,10 @@ LingDoc 不在前端重造租户管理，而是把 WeKnora 的成员与权限能
 | 对方状态 | 行为 |
 |---|---|
 | 已是本租户 active 成员 | 直接创建 `ProjectMember`（`invited`），授权到项目 |
-| 已注册、但不在本租户 | 同一次操作内先调用 WeKnora 租户成员 API 加入租户，再创建 `ProjectMember` |
-| 尚未注册 | 先引导完成注册（复用 WeKnora 注册/OIDC 入口），回到上一行 |
+| 已注册、但不在本租户 | Beta 暂不支持跨租户邀请，提示由租户管理员先完成成员加入 |
+| 尚未注册 | Beta 暂不支持跨租户或未注册用户邀请，提示先完成租户注册和加入 |
 
-第二行需要租户级权限（WeKnora 的 `/tenants/:id/members` 要求 Owner+）。因此**只有同时具备租户管理权和 `project.members.manage` 的人**能走合并路径；否则 LingDoc 应生成一条“需要租户管理员协助”的待办并说明原因，而不是静默失败或让用户在两个系统间来回切换。
+Beta 的项目邀请有效期为 3 天；重新发送生成新邀请版本；接受时以当前有效邀请版本为准，并重新检查租户身份、项目状态和 scope。跨租户邀请和租户成员创建留到后续阶段。
 
 ### 8.3 状态联动：租户先动，项目跟随
 
@@ -323,6 +323,10 @@ LingDoc: 该用户在本项目的 ProjectMember 标记失效（suspended_by_tena
 
 若 WeKnora 当前没有该事件，新增时应只增不减、不改变现有行为，避免影响既有调用方。
 
+Beta 边界：`owner_unavailable` 下的 Owner 转让旁路只由 WeKnora 租户 Owner 发起并指定受让人，仍须受让人确认；暂不开放平台管理员旁路。平台管理员入口待身份来源、授权边界和审计契约明确后再启用。
+
+租户成员恢复后的项目侧规则固定如下：普通 `ProjectMember` 不因租户身份恢复而自动回到 `active`。LingDoc 保留其原治理角色、职能角色和 scope 作为“待恢复授权”，由项目 Owner 或 Admin 显式恢复；恢复操作重新检查租户身份、项目状态、角色、scope 和当前资料授权。项目侧已经 `suspended` 或 `removed` 的成员不被租户恢复覆盖，已撤回的 scope 不自动恢复。若失效成员是项目 Owner，则租户身份恢复后自动解除 `owner_unavailable` 并保留 Owner 关系；若所有权已完成转让，则不恢复为 Owner。
+
 ### 8.4 单向原则
 
 - 移除项目成员**不等于**移出租户；LingDoc 只在项目范围内生效。
@@ -336,7 +340,7 @@ LingDoc: 该用户在本项目的 ProjectMember 标记失效（suspended_by_tena
 复用 WeKnora 的登录、租户切换、成员邀请和知识库权限提示，在 LingDoc 增加：
 
 - 项目成员页：一张表同时显示租户角色、治理角色、职能角色、章节责任、资料范围和有效能力。**租户角色列只读**，点击跳转 WeKnora Settings；治理/职能角色列在本页可编辑。失效状态（待接受邀请、被租户 suspended、Owner 不可用）显式展示，不静默隐藏。
-- 邀请弹窗：先选治理角色（Admin / Member——`Owner` 不在邀请中出现，只能由转让产生），再勾选职能角色（Author / Researcher / Reviewer / Observer，可多选），并可限定章节、材料或交付版本 scope；五种预设组合列在最前作快捷参考，其中前四种可一键选中，「课题负责人」（即 `Owner`）仅作说明展示、在本步不可选——它由建项产生，之后只能经转让变更。若对方尚不在本租户，弹窗按第 8.2 节的分支提示后续步骤，缺少租户管理权时明确说明需要谁协助。
+- 邀请弹窗：只显示当前租户内的 active 用户；先选治理角色（Admin / Member——`Owner` 不在邀请中出现，只能由转让产生），再勾选职能角色（Author / Researcher / Reviewer / Observer，可多选），并可限定章节或材料 scope。Beta 不在界面开放知识库、模板和交付 scope；五种预设组合列在最前作快捷参考，其中前四种可一键选中，「课题负责人」（即 `Owner`）仅作说明展示、在本步不可选——它由建项产生，之后只能经转让变更。邀请有效期为 3 天，重新发送生成新版本，接受时按当前有效版本重新检查权限。
 - 页面上下文栏：`当前租户 / 当前项目 / 治理角色 / 职能角色 / 可用资料范围`；
 - 按钮按 capability 显示，但所有操作仍以后端检查为准；
 - 拒绝提示区分“项目角色不足”“知识库共享级别不足”“API Key scope 不足”“租户成员身份已失效”“当前版本需要人工确认”；
@@ -347,16 +351,17 @@ Beta 仍不在前端复制一套租户角色编辑器：LingDoc 可以**发起**
 ## 10. 数据隔离、拒绝策略与验收
 
 - 默认拒绝（fail closed）；权限查询出错时不能降级为允许。
-- 对不可见项目，建议返回统一的 `404 project not found`，减少项目 ID 枚举；已确认身份但能力不足的操作返回结构化 `403`，包含机器可读原因码。
+- 对不可见项目，建议返回统一的 `404 project not found`，减少项目 ID 枚举；已确认身份但能力不足的操作返回结构化 `403`，包含机器可读原因码。成员撤权后默认只返回最小 `access-status`，不显示项目、章节、资料的历史 ID、名称或 hash。
 - 所有写操作携带 `tenant_id`、`project_id`、`actor_id`、`effective_role/capabilities`、资源 ID 和版本号，防止跨租户写入。
 - 项目归档、成员移除、证据确认、ChangeSet 应用和交付发布必须写不可变审计事件。
-- 测试至少覆盖：租户切换、suspended 成员、共享 KB viewer/editor、API Key scope、shared-agent 只读、项目成员移除后的旧 token、跨租户 ID 替换、自写自审不被误拦、陈旧 ChangeSet 拒绝应用、Owner 唯一性、邀请不可授予 `Owner`、转让的原子性与受让人确认（含 `owner_unavailable` 下的旁路发起）、转让后受让人职能轴被清空且能力等于全集、降级方职能轴为空即 `Observer`、未指派 scope 的职能角色对章节写权为空、草稿期授予的授权在立项确认后不被重置、Research Agent 导入确认和并发版本冲突。
+- 审计写入失败按动作类型处理：普通读取的访问审计允许 fail-open，但必须记录故障告警；成员赋权、scope 变更、Owner 转让、正式确认、ChangeSet 应用和正式导出必须 fail-closed，业务写入与审计记录一起成功或一起失败。fail-open 不改变权限拒绝结果。
+- 测试至少覆盖：租户切换、suspended 成员、共享 KB viewer/editor、API Key scope、shared-agent 只读、项目成员移除后的旧 token、跨租户 ID 替换、自写自审不被误拦、陈旧 ChangeSet 拒绝应用、Owner 唯一性、邀请不可授予 `Owner`、转让的原子性与受让人确认（含 `owner_unavailable` 下由租户 Owner 发起的旁路）、转让后受让人职能轴被清空且能力等于全集、降级方职能轴为空即 `Observer`、未指派 scope 的职能角色对章节写权为空、草稿期授予的授权在立项确认后不被重置、Research Agent 导入确认和并发版本冲突。
 
 ## 11. 分阶段落地
 
 阶段编号与 [`06-路线图与里程碑`](06-路线图与里程碑.md) 对齐：P0–P3 是构建阶段，P4 交付首个对外版本 Beta；[`01-产品蓝图与范围`](01-产品蓝图与范围.md) 第 3 节定义的 Beta 范围包含本文的全部权限设计。
 
-**P0–P3（构建）**：复用 WeKnora 租户/角色/KB share；新增 Project、ProjectMember、ProjectAsset/EvidenceCard 访问边界、双轴角色模型、完整 capability 与映射矩阵、项目—KB 绑定、统一鉴权中间件、确认与审计。第 3、4 节的设计在此间完整落地——任意“治理角色 + 职能角色”组合在数据层与界面同时可用（见 3.2），章节/材料/交付版本 scope 与鉴权链路第 5 步一并交付，所有权转让（原子性、受让人确认、`owner_unavailable` 旁路发起）可用。这三项缺一即产生结构性缺陷：没有 scope 输入源，第 5 步恒为全集、等于空转；没有转让，Owner 的租户身份一旦不可恢复，项目就永久卡死。
+**P0–P3（构建）**：复用 WeKnora 租户/角色/KB share；新增 Project、ProjectMember、ProjectAsset/EvidenceCard 访问边界、双轴角色模型、完整 capability 与映射矩阵、项目—KB 绑定、统一鉴权中间件、确认与审计。第 3、4 节的设计在此间完整落地——任意“治理角色 + 职能角色”组合在数据层与界面同时可用（见 3.2），章节/材料/交付版本 scope 与鉴权链路第 5 步一并交付，所有权转让（原子性、受让人确认、`owner_unavailable` 下由租户 Owner 发起的旁路）可用。这三项缺一即产生结构性缺陷：没有 scope 输入源，第 5 步恒为全集、等于空转；没有转让，Owner 的租户身份一旦不可恢复，项目就永久卡死。
 
 **P4（Beta）**：权限模型不变，只按真实使用调整——按调研量收紧各职能的 scope 默认值。05 号文档 P4 的交付重心是审计、指标、回退与反馈闭环，权限侧不应在这一阶段补功能。
 
