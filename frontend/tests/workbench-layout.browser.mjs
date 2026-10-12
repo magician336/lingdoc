@@ -107,6 +107,16 @@ const evaluate=async expression=>{
 const waitFor=async expression=>{for(let i=0;i<70;i++){if(await evaluate(expression))return;await delay(100)}throw new Error('Fixture wait timed out: '+expression)}
 const check=async(name,expression)=>{const pass=!!await evaluate(expression);results.push({name,pass});if(!pass)throw new Error('FAIL '+name);console.log('PASS '+name)}
 const shot=async name=>{const r=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(path.join(output,name+'.png'),Buffer.from(r.data,'base64'))}
+// 指针命中断言：元素中心必须命中自身（不被同位面板/浮层遮挡）
+const hit=async(name,selector)=>{
+  const findExpr=selector.startsWith('expr:')?`(${selector.slice(5)})`:`document.querySelector(${JSON.stringify(selector)})`;
+  const expr=`(()=>{const e=${findExpr};if(!e)return null;e.scrollIntoView({block:'nearest'});const r=e.getBoundingClientRect();const hitEl=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);const chain=[];let p=e;while(p&&chain.length<6){chain.push((p.className&&String(p.className).split(' ')[0])||p.tagName);p=p.parentElement}const vis=chain.map(c=>{const el=[...document.querySelectorAll('*')].find(x=>(x.id===c)||(x.tagName===c)||(x.className&&String(x.className).split(' ')[0]===c));return el?getComputedStyle(el).display:'?'});return {ok:!!(hitEl&&(hitEl===e||e.contains(hitEl))),hit:hitEl?String(hitEl.className||hitEl.id||hitEl.tagName).slice(0,40):'',rect:[Math.round(r.x),Math.round(r.y),Math.round(r.width),Math.round(r.height)],chain:chain.join('<'),vis:vis.join(',')}})()`;
+  const p=await evaluate(expr);
+  if(!p)throw new Error('hit: no element '+selector);
+  results.push({name:'hit '+name,pass:p.ok,info:selector+' -> '+p.hit+' rect='+JSON.stringify(p.rect)+' chain='+p.chain+' vis='+p.vis});
+  console.log((p.ok?'PASS ':'FAIL ')+'hit '+name+' -> '+p.hit);
+  if(!p.ok)throw new Error('HIT FAILED: '+selector+' occluded by '+p.hit);
+}
 try {
   server=http.createServer((req,res)=>{if(req.url==='/fixture.js'){res.setHeader('content-type','text/javascript; charset=utf-8');res.end(js)}else{res.setHeader('content-type','text/html; charset=utf-8');res.end('<!doctype html><meta charset="utf-8"><title>工作台布局合成验证</title><div id="app"></div><script src="/fixture.js"></script>')}});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -124,11 +134,25 @@ try {
   await evaluate("[...document.querySelectorAll('.project-list button')].find(b=>b.textContent.includes('合成工作台项目')).click()");
   await waitFor("!!document.querySelector('#chapter-body')");
   await check('L1 三栏外壳：章节目录两章、页签三枚、待核徽标为 2',"document.querySelectorAll('.wb-chapters > button').length===2&&document.querySelectorAll('.wb-tabs [role=tab]').length===3&&document.querySelector('.wb-tab-count').textContent==='2'");
-  await check('L2 默认来源页签显示资料绑定与检索',"getComputedStyle(document.querySelector('.assets')).display==='block'&&getComputedStyle(document.querySelector('.sources')).display==='block'");
+  await check('L2 默认来源页签：单滚动容器内同时含绑定与检索',"getComputedStyle(document.querySelector('.wb-pane-sources')).display==='block'&&!!document.querySelector('.wb-pane-sources .assets')&&!!document.querySelector('.wb-pane-sources .sources')");
   await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(2)').click()");
   await check('L3 AI 页签显示生成候选稿面板',"getComputedStyle(document.querySelector('.generation')).display==='block'");
   await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(3)').click()");
-  await check('L4 待核页签显示逐项处置（两条）',"getComputedStyle(document.querySelector('.review-items')).display==='block'&&document.querySelectorAll('.review-item').length===2");
+  await check('L4 待核页签：单滚动容器内含逐项处置（两条）',"getComputedStyle(document.querySelector('.wb-pane-checks')).display==='block'&&document.querySelectorAll('.wb-pane-checks .review-item').length===2");
+  // R1 命中回归：同页签控件中心不被遮挡（真实指针可达，1440）
+  await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(1)').click()");
+  await delay(200);
+  await hit('绑定输入框 #knowledge-id', '#knowledge-id');
+  await hit('绑定提交按钮', '.asset-bind-form button[type="submit"]');
+  await hit('检索输入框', '#source-query');
+  await hit('检索提交按钮', '.source-search-form button[type="submit"]');
+  await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(3)').click()");
+  await delay(200);
+  await hit('待核处理结果选择框', '.wb-pane-checks .review-item select');
+  await hit('待核理由输入框', '.wb-pane-checks .review-item textarea');
+  await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(1)').click()");
+  await delay(150);
+  await hit('文档列确认按钮', 'expr:[...document.querySelectorAll(".chapters button")].find(b=>b.textContent.includes("确认当前章节版本"))');
   await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(1)').click()");
   await evaluate("(()=>{const ed=document.querySelector('#chapter-body');ed.value='未保存布局输入';ed.dispatchEvent(new Event('input',{bubbles:true}));})()");
   for(const n of [2,3,1]){await evaluate(`document.querySelector('.wb-tabs [role=tab]:nth-child(${n})').click()`);await delay(80)}
@@ -190,6 +214,16 @@ try {
   await delay(250);
   results.push({ name: 'L18-debug ' + (await evaluate("JSON.stringify({sw:document.documentElement.scrollWidth,iw:innerWidth,bw:document.body.scrollWidth,railVis:getComputedStyle(document.querySelector('.workspace-grid>aside.panel')).visibility,toggle:!!document.querySelector('.wb-rail-toggle')})")), pass: true });
   await check('L18 390 无横向溢出且目录默认收起',"document.documentElement.scrollWidth<=innerWidth+1&&document.querySelector('.wb-rail-toggle')&&getComputedStyle(document.querySelector('.workspace-grid>aside.panel')).visibility==='hidden'");
+  // R1 命中回归（390px：来源绑定/检索/待核控件真实指针可达）
+  await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(1)').click()");
+  await delay(250);
+  await hit('390 绑定输入框', '#knowledge-id');
+  await hit('390 检索提交按钮', '.source-search-form button[type="submit"]');
+  await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(3)').click()");
+  await delay(200);
+  await hit('390 待核理由输入框', '.wb-pane-checks .review-item textarea');
+  await evaluate("document.querySelector('.wb-tabs [role=tab]:nth-child(1)').click()");
+  await delay(150);
   await evaluate("document.querySelector('.wb-rail-toggle').click()");
   await check('L19 目录按钮打开项目浮层',"getComputedStyle(document.querySelector('.workspace-grid>aside.panel')).visibility==='visible'");
   await shot('L19-390-rail');

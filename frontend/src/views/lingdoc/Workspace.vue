@@ -179,6 +179,7 @@
           <button type="button" class="wb-tabs-close" aria-label="收起辅助面板" @click="inspOpen = false">×</button>
         </nav>
 
+        <div class="wb-pane wb-pane-checks">
         <p v-if="project?.status === 'active' && displayedReviewItems.length" class="warning review-lead">本章有 {{ displayedReviewItems.length }} 条待核事项。保存修改会保留这些事项，仍需逐项核查。</p>
         <section v-if="project?.status === 'active' && displayedReviewItems.length" class="review-items" aria-label="待核项处置">
           <h4>逐项处置待核事项</h4>
@@ -193,7 +194,9 @@
             <textarea :id="`reason-${item.id}`" v-model="reviewDraft(item.id).reason" :disabled="busy" rows="2" maxlength="2000" placeholder="记录核查依据或保留原因" />
           </fieldset>
         </section>
+        </div>
 
+        <div class="wb-pane wb-pane-sources">
         <section class="assets">
           <h3>项目资料</h3>
           <form class="asset-bind-form" @submit.prevent="bindProjectAsset">
@@ -269,6 +272,7 @@
             </li>
           </ul>
         </section>
+        </div>
 
         <section v-if="project.status === 'active' && chapter" class="generation">
           <h3>生成候选稿</h3>
@@ -1973,17 +1977,17 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .wb .wb-tabs [role="tab"][aria-selected="true"] { background: #e9f2ee; color: #1d5043; font-weight: 600; }
 .wb-tab-count { display: inline-grid; place-items: center; min-width: 17px; height: 17px; border-radius: 99px; background: #fdf3e0; color: #8a5a10; font-size: 10.5px; padding: 0 4px; margin-left: 2px; }
 .wb-tabs-close { display: none; border: 0; background: transparent; font-size: 16px; padding: 2px 8px; }
-.wb .assets, .wb .sources, .wb .generation, .wb .review-items, .wb .review-lead {
+/* 检查器主体：单一滚动容器（R1 修复——同页签多面板必须共用一个滚动容器，禁止同位叠加） */
+.wb .wb-pane, .wb .generation {
   position: fixed; top: 96px; right: 0; bottom: 0; width: 344px; z-index: 99;
   overflow-y: auto; padding: 12px 14px 28px;
   background: #fafbf9; border-left: 1px solid #dbe5dd;
   display: none; margin: 0;
 }
-.wb--insp.wb--tab-sources .assets, .wb--insp.wb--tab-sources .sources,
+.wb--insp.wb--tab-sources .wb-pane-sources,
 .wb--insp.wb--tab-ai .generation,
-.wb--insp.wb--tab-checks .review-items, .wb--insp.wb--tab-checks .review-lead { display: block; }
-.wb--focus .wb-tabs, .wb--focus .assets, .wb--focus .sources, .wb--focus .generation,
-.wb--focus .review-items, .wb--focus .review-lead { display: none !important; }
+.wb--insp.wb--tab-checks .wb-pane-checks { display: block; }
+.wb--focus .wb-tabs, .wb--focus .wb-pane, .wb--focus .generation { display: none !important; }
 
 /* 抽屉：研究条件（含变更复核）/ 模板 / 交付 */
 .wb .spec-form, .wb .change-set-panel, .wb .template-copy-panel, .wb .wb-delivery {
@@ -2025,7 +2029,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 1279px) {
   .wb { grid-template-columns: 220px minmax(0, 1fr); padding-right: 0; }
   .wb .wb-tabs { width: min(360px, 94vw); box-shadow: -10px 0 30px rgba(15,23,42,.16); }
-  .wb .assets, .wb .sources, .wb .generation, .wb .review-items, .wb .review-lead { width: min(360px, 94vw); box-shadow: -10px 0 30px rgba(15,23,42,.16); }
+  .wb .wb-pane, .wb .generation { width: min(360px, 94vw); box-shadow: -10px 0 30px rgba(15,23,42,.16); }
   .wb .wb-tabs-close { display: block; }
 }
 @media (max-width: 899px) {
