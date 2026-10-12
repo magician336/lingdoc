@@ -1951,6 +1951,8 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   flex-direction: column;
   gap: 14px;
 }
+/* 限制项目列表高度，桌面视口下章节目录保持可见（真服务视觉复核 r3 顺带项） */
+.wb .project-list { max-height: 38vh; overflow-y: auto; }
 .wb-rail-entries { display: grid; gap: 4px; }
 .wb-rail-entries button { text-align: left; }
 .wb-chapters { display: grid; gap: 4px; }
