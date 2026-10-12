@@ -15,6 +15,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -292,6 +293,19 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", ErrRewriteStale.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteStale
 	}
+	// The selection has just been matched against the versioned working copy.
+	// Existing citations in that trusted slice remain inputs to the rewrite even
+	// when a freshly opened editor has no manually selected retrieval results.
+	// Merge before authorization and hashing so explicit and inherited references
+	// share one effective request identity; never infer permission from model output.
+	for _, marker := range rewriteCitationMarker.FindAllStringSubmatch(input.Selection.SelectedText, -1) {
+		if !slices.Contains(copy.SourceIDs, marker[1]) {
+			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
+			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		}
+		input.SourceIDs = append(input.SourceIDs, marker[1])
+	}
+	input.SourceIDs = stringSet(input.SourceIDs)
 	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
@@ -687,7 +701,9 @@ func validateRewriteOutput(output SelectedRewriteOutput, requested []string) err
 			return ErrRewriteInvalidRequest
 		}
 	}
-	return nil
+	// Do not offer an AI result for adoption if the current DOCX renderer
+	// cannot preserve its structure. Keep the same preflight/export boundary.
+	return docx.ValidateMarkdown(output.ReplacementMarkdown)
 }
 
 func (s *SelectedRewriteService) fetchSources(ctx context.Context, actor Actor, projectID string, ids []string) ([]evidence.Source, []RewriteSourceSnapshot, error) {
@@ -835,6 +851,8 @@ func selectedRewriteRequestHash(input SelectedRewriteRequest) (string, error) {
 
 func selectedRewriteFailureCode(err error) string {
 	switch {
+	case errors.Is(err, docx.ErrUnsupportedMarkdown):
+		return "unsupported_format"
 	case errors.Is(err, ErrRewriteSourceDenied):
 		return "source_access_denied"
 	case errors.Is(err, ErrRewriteStale):

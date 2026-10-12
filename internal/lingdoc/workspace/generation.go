@@ -406,7 +406,7 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 			}
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}
-		if response == nil || response.Usage.PromptTokens <= 0 || response.Usage.CompletionTokens < 0 {
+		if response == nil || response.Usage.PromptTokens <= 0 || response.Usage.CompletionTokens < 0 || (strings.TrimSpace(response.Content) != "" && response.Usage.CompletionTokens == 0) {
 			_ = reservation.unknown("usage_unknown")
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}

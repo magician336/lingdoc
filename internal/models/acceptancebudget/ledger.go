@@ -16,6 +16,8 @@ const (
 	ProfileEnv                    = "LINGDOC_T10_ACCEPTANCE_PROFILE"
 	LedgerEnv                     = "LINGDOC_T10_ACCEPTANCE_LEDGER"
 	Profile                       = "lingdoc-t10-deepseek-flash-20260929-v1"
+	CostOnlyProfile               = "lingdoc-demo-cny20-20261008-v2"
+	CostOnlyMaxBudgetNanoCNY      = int64(19_999_999_999) // Strictly below CNY 20.
 	MaxCalls                      = 6
 	InputMax                      = 16000
 	OutputMax                     = 6000
@@ -93,7 +95,7 @@ type Reservation struct {
 }
 
 func NewFromEnv(profile string) (*Budget, error) {
-	if profile == "" || strings.TrimSpace(os.Getenv(ProfileEnv)) != profile || profile != Profile {
+	if profile == "" || strings.TrimSpace(os.Getenv(ProfileEnv)) != profile || !SupportedProfile(profile) {
 		return nil, ErrUnavailable
 	}
 	ledgerPath := strings.TrimSpace(os.Getenv(LedgerEnv))
@@ -108,7 +110,7 @@ func New(profile, ledgerPath string) *Budget {
 }
 
 func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, outputLimit int) (*Reservation, error) {
-	if b == nil || b.profile != Profile || !filepath.IsAbs(b.ledgerPath) {
+	if b == nil || !SupportedProfile(b.profile) || !filepath.IsAbs(b.ledgerPath) {
 		return nil, ErrUnavailable
 	}
 	if inputUpperBound < 0 || inputUpperBound > InputMax || outputLimit < 0 || outputLimit > OutputMax {
@@ -123,8 +125,19 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	if err != nil {
 		return nil, ErrUnavailable
 	}
-	ledger, err := readLedger(b.ledgerPath)
-	if err != nil || !validLedger(ledger, b.profile) {
+	ledger, err := readLedger(b.ledgerPath, b.profile)
+	if err != nil {
+		_ = ReleaseLock(lock, lockPath)
+		return nil, ErrUnavailable
+	}
+	if migrated, ok := migrateLedgerProfile(ledger, b.profile); ok {
+		ledger = migrated
+		if err := writeLedger(b.ledgerPath, ledger); err != nil {
+			_ = ReleaseLock(lock, lockPath)
+			return nil, ErrUnavailable
+		}
+	}
+	if !validLedger(ledger, b.profile) {
 		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrUnavailable
 	}
@@ -132,7 +145,7 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrBlocked
 	}
-	if len(ledger.Requests) >= MaxCalls || ledger.ReservedNanoCNY+reserveNanoCNY > MaxBudgetNanoCNY {
+	if (ledger.MaxCalls > 0 && len(ledger.Requests) >= ledger.MaxCalls) || reserveNanoCNY > ledger.MaxReserveNanoCNY-ledger.ReservedNanoCNY {
 		_ = ReleaseLock(lock, lockPath)
 		return nil, ErrCallsSpent
 	}
@@ -289,24 +302,40 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	}
 }
 
+func SupportedProfile(profile string) bool { return profile == Profile || profile == CostOnlyProfile }
+
+// ProfileLimits retains the original six-call profile and makes zero an explicit
+// no-count-limit value for the separately authorized cost-only profile.
+func ProfileLimits(profile string) (calls int, nanoCNY int64, backstopCNY int) {
+	if profile == CostOnlyProfile {
+		return 0, CostOnlyMaxBudgetNanoCNY, 20
+	}
+	return MaxCalls, MaxBudgetNanoCNY, HumanBackstopCNY
+}
+
 func freshLedger(profile string) Ledger {
+	calls, budget, _ := ProfileLimits(profile)
 	return Ledger{
 		SchemaVersion:      ledgerVersion,
 		Profile:            profile,
-		MaxCalls:           MaxCalls,
+		MaxCalls:           calls,
 		InputMaxTokens:     InputMax,
 		OutputMaxTokens:    OutputMax,
 		MaxConcurrency:     MaxConcurrency,
 		FXReserveCNYPerUSD: int(DeepSeekBudgetFXNanoCNYPerUSD),
-		MaxReserveNanoCNY:  MaxBudgetNanoCNY,
+		MaxReserveNanoCNY:  budget,
 		Requests:           []Request{},
 	}
 }
 
-func readLedger(path string) (Ledger, error) {
+func readLedger(path string, profiles ...string) (Ledger, error) {
+	profile := Profile
+	if len(profiles) > 0 {
+		profile = profiles[0]
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return freshLedger(Profile), nil
+		return freshLedger(profile), nil
 	}
 	if err != nil {
 		return Ledger{}, err
@@ -318,11 +347,29 @@ func readLedger(path string) (Ledger, error) {
 	return ledger, nil
 }
 
+// migrateLedgerProfile upgrades only a fully validated, settled legacy ledger.
+// Unknown, blocked, or otherwise inconsistent history is deliberately left
+// untouched so profile changes cannot erase an unresolved provider call.
+func migrateLedgerProfile(ledger Ledger, target string) (Ledger, bool) {
+	if ledger.Profile == target || target != CostOnlyProfile || ledger.Profile != Profile ||
+		ledger.Blocked || hasUnresolved(ledger) || !validLedger(ledger, Profile) {
+		return ledger, false
+	}
+	migrated := ledger
+	migrated.Profile = target
+	migrated.MaxCalls, migrated.MaxReserveNanoCNY, _ = ProfileLimits(target)
+	if !validLedger(migrated, target) {
+		return ledger, false
+	}
+	return migrated, true
+}
+
 func validLedger(ledger Ledger, profile string) bool {
-	if ledger.SchemaVersion != ledgerVersion || ledger.Profile != profile || ledger.MaxCalls != MaxCalls ||
+	calls, budget, _ := ProfileLimits(profile)
+	if !SupportedProfile(profile) || ledger.SchemaVersion != ledgerVersion || ledger.Profile != profile || ledger.MaxCalls != calls ||
 		ledger.InputMaxTokens != InputMax || ledger.OutputMaxTokens != OutputMax || ledger.MaxConcurrency != MaxConcurrency ||
-		ledger.FXReserveCNYPerUSD != int(DeepSeekBudgetFXNanoCNYPerUSD) || ledger.MaxReserveNanoCNY != MaxBudgetNanoCNY ||
-		len(ledger.Requests) > MaxCalls || ledger.ReservedNanoCNY < 0 || ledger.ReservedNanoCNY > MaxBudgetNanoCNY ||
+		ledger.FXReserveCNYPerUSD != int(DeepSeekBudgetFXNanoCNYPerUSD) || ledger.MaxReserveNanoCNY != budget ||
+		(calls > 0 && len(ledger.Requests) > calls) || ledger.ReservedNanoCNY < 0 || ledger.ReservedNanoCNY > budget ||
 		ledger.ActualNanoCNY < 0 || ledger.ActualNanoCNY > ledger.ReservedNanoCNY || ledger.ReservedNanoUSD < 0 ||
 		ledger.ActualNanoUSD < 0 || ledger.ActualNanoUSD > ledger.ReservedNanoUSD {
 		return false

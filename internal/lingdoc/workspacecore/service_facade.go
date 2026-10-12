@@ -340,6 +340,10 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 			return
 		}
 		_ = audit.RecordAudit(AuditEvent{
+			ID: uuid.NewString(), ActorID: actor.UserID, Action: "authorization." + capability,
+			Target: projectID, CreatedAt: time.Now().UTC(),
+			Details: map[string]any{"tenant_id": actor.TenantID, "role": string(actor.Role),
+				"capability": capability, "decision": auditDecision(authErr), "reason": auditReason(authErr)},
 			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
 			ProjectID: projectID, Capability: capability,
 			Decision: auditDecision(authErr), Reason: auditReason(authErr),
@@ -504,6 +508,41 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
 	var result OperationResult
 	var replayed bool
+	sourceSensitive := op == "saveChapter" || op == "saveWorkingCopy" || op == "applySelectedRewrite" || op == "commitWorkingCopy" || op == "restoreWorkingCopy"
+	var checkedProject Project
+	var checkedSources []string
+	var checkedFound bool
+	if sourceSensitive {
+		// Source policies may query the same single-connection SQLite pool.
+		// Release this snapshot before calling them, then revalidate its basis
+		// in the final write transaction. Never hold a transaction across policy IO.
+		err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+			var err error
+			checkedProject, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
+			if err != nil {
+				return err
+			}
+			previous, found, err := tx.Operation(id)
+			if err != nil {
+				return err
+			}
+			if found && previous.BodyHash != hashString {
+				return ErrIdempotencyConflict
+			}
+			checkedFound = found
+			checkedSources, err = operationSourceIDs(tx, op, target, projectID, body, previous, found)
+			return err
+		})
+		if err != nil {
+			return nil, 0, false, err
+		}
+		// Replays reuse the saved result, not the old authorization decision:
+		// revocation must reject a replay before any cached body is returned.
+		// Denial preserves the record, so reauthorization can replay it unchanged.
+		if err := s.checkSources(ctx, actor, projectID, checkedSources); err != nil {
+			return nil, 0, false, err
+		}
+	}
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
@@ -527,57 +566,17 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		if found && previous.BodyHash != hashString {
 			return ErrIdempotencyConflict
 		}
-		var sourceIDs []string
-		switch op {
-		case "saveChapter":
-			sourceIDs = body.(SaveChapterInput).SourceIDs
-		case "saveWorkingCopy":
-			sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
-		case "applySelectedRewrite":
-			if found {
-				var response WorkingCopy
-				if err := json.Unmarshal(previous.Body, &response); err != nil {
-					return err
-				}
-				sourceIDs = response.SourceIDs
-			} else {
-				sourceIDs = body.(ApplyRewriteInput).WorkingCopy.SourceIDs
+		if sourceSensitive {
+			sourceIDs, err := operationSourceIDs(tx, op, target, projectID, body, previous, found)
+			if err != nil {
+				return err
 			}
-		case "commitWorkingCopy":
-			if found {
-				var response CommittedChapterVersion
-				if err := json.Unmarshal(previous.Body, &response); err != nil {
-					return err
-				}
-				sourceIDs = response.SourceIDs
-			} else {
-				chapterID := strings.TrimPrefix(target, projectID+"/")
-				workingCopy, err := tx.WorkingCopy(projectID, chapterID)
-				if err != nil {
-					return err
-				}
-				sourceIDs = workingCopy.SourceIDs
-			}
-		case "restoreWorkingCopy":
-			if found {
-				var response WorkingCopy
-				if err := json.Unmarshal(previous.Body, &response); err != nil {
-					return err
-				}
-				sourceIDs = response.SourceIDs
-			} else {
-				chapterID := strings.TrimPrefix(target, projectID+"/")
-				versionID := body.(RestoreWorkingCopyInput).ChapterVersionID
-				version, err := tx.ChapterVersion(projectID, chapterID, versionID)
-				if err != nil {
-					return err
-				}
-				sourceIDs = version.SourceIDs
+			if p.ProjectVersion != checkedProject.ProjectVersion || p.SpecRevision != checkedProject.SpecRevision ||
+				found != checkedFound || !slices.Equal(sourceIDs, checkedSources) {
+				return ErrVersionConflict
 			}
 		}
-		if err := s.checkSources(ctx, actor, projectID, sourceIDs); err != nil {
-			return err
-		}
+
 		if found {
 			result, replayed = previous, true
 			return nil
@@ -597,6 +596,60 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		return nil, 0, false, err
 	}
 	return result.Body, result.Status, replayed, nil
+}
+
+// operationSourceIDs resolves exactly the references checked for a new write or
+// stored replay. It only reads through the caller transaction.
+func operationSourceIDs(tx Transaction, op, target, projectID string, body any, previous OperationResult, found bool) ([]string, error) {
+	var sourceIDs []string
+	switch op {
+	case "saveChapter":
+		sourceIDs = body.(SaveChapterInput).SourceIDs
+	case "saveWorkingCopy":
+		sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
+	case "applySelectedRewrite":
+		if found {
+			var response WorkingCopy
+			if err := json.Unmarshal(previous.Body, &response); err != nil {
+				return nil, err
+			}
+			sourceIDs = response.SourceIDs
+		} else {
+			sourceIDs = body.(ApplyRewriteInput).WorkingCopy.SourceIDs
+		}
+	case "commitWorkingCopy":
+		if found {
+			var response CommittedChapterVersion
+			if err := json.Unmarshal(previous.Body, &response); err != nil {
+				return nil, err
+			}
+			sourceIDs = response.SourceIDs
+		} else {
+			chapterID := strings.TrimPrefix(target, projectID+"/")
+			workingCopy, err := tx.WorkingCopy(projectID, chapterID)
+			if err != nil {
+				return nil, err
+			}
+			sourceIDs = workingCopy.SourceIDs
+		}
+	case "restoreWorkingCopy":
+		if found {
+			var response WorkingCopy
+			if err := json.Unmarshal(previous.Body, &response); err != nil {
+				return nil, err
+			}
+			sourceIDs = response.SourceIDs
+		} else {
+			chapterID := strings.TrimPrefix(target, projectID+"/")
+			versionID := body.(RestoreWorkingCopyInput).ChapterVersionID
+			version, err := tx.ChapterVersion(projectID, chapterID, versionID)
+			if err != nil {
+				return nil, err
+			}
+			sourceIDs = version.SourceIDs
+		}
+	}
+	return slices.Clone(sourceIDs), nil
 }
 
 type CreateProjectInput struct {
