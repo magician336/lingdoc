@@ -1,13 +1,24 @@
 <template>
-  <main class="lingdoc-workspace">
-    <header class="workspace-head">
-      <div>
+  <main class="lingdoc-workspace wb" :class="mainClasses">
+    <header class="workspace-head wb-top">
+      <div class="wb-brand">
         <h1>灵档项目</h1>
-        <p>当前使用两章演示模板，内容仅供团队验证流程。</p>
+        <p class="wb-brand-note">两章演示模板 · 团队验证流程</p>
       </div>
-      <div class="workspace-head__actions">
+      <div v-if="project" class="wb-crumb">{{ project.name }}</div>
+      <div class="wb-top-actions">
+        <div v-if="project?.status === 'active'" class="wb-mode" role="group" aria-label="工作状态">
+          <button type="button" :aria-pressed="mode === 'research'" @click="mode = 'research'">研究</button>
+          <button type="button" :aria-pressed="mode === 'focus'" @click="mode = 'focus'">专注</button>
+        </div>
+        <span v-if="project?.status === 'active'" class="wb-save" role="status">
+          <span class="save-dot" :class="workingCopyStatus" aria-hidden="true"></span>{{ workingCopyStatusLabel }}
+        </span>
+        <span v-if="project?.status === 'active' && chapter" class="badge warn">待核 {{ pendingReviewCount }}</span>
+        <button v-if="project?.status === 'active'" type="button" class="primary" @click="deliveryOpen = true">交付</button>
         <RouterLink class="evidence-link" to="/platform/lingdoc/permissions">权限验收</RouterLink>
         <button type="button" @click="loadProjects" :disabled="loading">刷新项目</button>
+        <button type="button" class="wb-rail-toggle" :aria-expanded="railOpen" @click="railOpen = !railOpen">目录</button>
       </div>
     </header>
 
@@ -30,17 +41,28 @@
           </li>
         </ul>
         <p v-if="truncated" class="muted">只显示最近 50 个项目。</p>
+        <div class="wb-rail-entries">
+          <button type="button" class="ghost" :disabled="!project" @click="specOpen = true">研究条件 →</button>
+          <button type="button" class="ghost" :disabled="!project" @click="templateOpen = true">模板与规则 →</button>
+        </div>
+        <nav v-if="project?.status === 'active' && chapters.length" class="wb-chapters" aria-label="章节目录">
+          <p class="wb-chapters-title">章节目录</p>
+          <button v-for="item in chapters" :key="item.id" type="button"
+            :class="{ selected: chapter?.id === item.id }" @click="selectChapter(item)">
+            <strong>{{ item.title }}</strong><small>{{ item.current_version_id ? '已编辑' : '未填写' }}</small>
+          </button>
+        </nav>
       </aside>
 
       <section class="panel work-area" v-if="project">
         <div class="section-head">
-          <div><h2>{{ project.name }}</h2><p class="muted">研究条件版本 {{ project.spec_revision }} · 项目版本 {{ project.project_version }}</p></div>
+          <div><h2>{{ project.name }}</h2><p class="muted">研究条件版本 {{ project.spec_revision }} · 项目版本 {{ project.project_version }}</p>
+          <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p></div>
           <button type="button" @click="selectProject(project.id, true)">重新读取</button>
         </div>
-        <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
 
         <section class="template-copy-panel" aria-label="项目模板副本">
-          <h3>项目模板副本</h3>
+          <h3>项目模板副本 <button type="button" class="ghost wb-drawer-close" aria-label="关闭模板与规则" @click="templateOpen = false">×</button></h3>
           <template v-if="project.template_copy">
             <p class="muted">来源 {{ project.template_copy.source_template_id }} · 原始版本 {{ project.template_copy.source_template_version }} · 项目副本第 {{ project.template_copy.version }} 版（{{ templateCopyStatusLabel(project.template_copy.status) }}）</p>
             <p class="template-hash">内容摘要：{{ project.template_copy.content_hash }}</p>
@@ -148,6 +170,28 @@
             </template>
           </template>
           <p v-else class="muted">此项目没有可读取的模板副本；请重新读取项目状态。</p>
+        </section>
+
+        <nav class="wb-tabs" role="tablist" aria-label="辅助面板" v-if="project?.status === 'active'">
+          <button type="button" role="tab" :aria-selected="inspTab === 'sources'" @click="inspTab = 'sources'; inspOpen = true">来源</button>
+          <button type="button" role="tab" :aria-selected="inspTab === 'ai'" @click="inspTab = 'ai'; inspOpen = true">AI</button>
+          <button type="button" role="tab" :aria-selected="inspTab === 'checks'" @click="inspTab = 'checks'; inspOpen = true">待核 <span class="wb-tab-count">{{ pendingReviewCount }}</span></button>
+          <button type="button" class="wb-tabs-close" aria-label="收起辅助面板" @click="inspOpen = false">×</button>
+        </nav>
+
+        <p v-if="project?.status === 'active' && displayedReviewItems.length" class="warning review-lead">本章有 {{ displayedReviewItems.length }} 条待核事项。保存修改会保留这些事项，仍需逐项核查。</p>
+        <section v-if="project?.status === 'active' && displayedReviewItems.length" class="review-items" aria-label="待核项处置">
+          <h4>逐项处置待核事项</h4>
+          <fieldset v-for="item in displayedReviewItems" :key="item.id" class="review-item">
+            <legend>{{ item.statement }}</legend>
+            <label :for="`disposition-${item.id}`">处理结果</label>
+            <select :id="`disposition-${item.id}`" v-model="reviewDraft(item.id).disposition" :disabled="busy">
+              <option value="resolved">已核实并解决</option>
+              <option value="retained_warning">保留为提示</option>
+            </select>
+            <label :for="`reason-${item.id}`">处理理由</label>
+            <textarea :id="`reason-${item.id}`" v-model="reviewDraft(item.id).reason" :disabled="busy" rows="2" maxlength="2000" placeholder="记录核查依据或保留原因" />
+          </fieldset>
         </section>
 
         <section class="assets">
@@ -282,7 +326,7 @@
           @adopted="onAdopted" @cancel="adoptionOpen = false" />
 
         <form class="spec-form" @submit.prevent="saveConditions">
-          <h3>研究条件</h3>
+          <h3>研究条件 <button type="button" class="ghost wb-drawer-close" aria-label="关闭研究条件" @click="specOpen = false">×</button></h3>
           <label for="subject">研究主题</label>
           <input id="subject" v-model="subject" :disabled="busy" placeholder="写清项目研究什么" />
           <label for="goal">研究目标</label>
@@ -406,6 +450,7 @@
                   <pre>{{ rewriteCandidate.selection.selected_text }}</pre>
                   <h5>改写候选</h5>
                   <pre>{{ rewriteCandidate.replacement_markdown }}</pre>
+                  <button v-if="rewriteCandidate.status === 'ready'" type="button" class="ghost" @click="openRewriteCompare">展开宽对照</button>
                   <p class="muted">候选来源：{{ rewriteCandidate.source_ids.length ? rewriteCandidate.source_ids.join('、') : '无' }}</p>
                   <ul v-if="rewriteCandidate.review_items.length" class="rewrite-review-list">
                     <li v-for="item in rewriteCandidate.review_items" :key="item.id">待核：{{ item.statement }}</li>
@@ -416,20 +461,6 @@
                   <button type="button" @click="rejectRewriteCandidate" :disabled="rewriteBusy || busy || rewriteCandidate.status === 'applying'">拒绝候选</button>
                 </template>
               </section>
-            </section>
-            <p v-if="displayedReviewItems.length" class="warning">本章有 {{ displayedReviewItems.length }} 条待核事项。保存修改会保留这些事项，仍需逐项核查。</p>
-            <section v-if="displayedReviewItems.length" class="review-items" aria-label="待核项处置">
-              <h4>逐项处置待核事项</h4>
-              <fieldset v-for="item in displayedReviewItems" :key="item.id" class="review-item">
-                <legend>{{ item.statement }}</legend>
-                <label :for="`disposition-${item.id}`">处理结果</label>
-                <select :id="`disposition-${item.id}`" v-model="reviewDraft(item.id).disposition" :disabled="busy">
-                  <option value="resolved">已核实并解决</option>
-                  <option value="retained_warning">保留为提示</option>
-                </select>
-                <label :for="`reason-${item.id}`">处理理由</label>
-                <textarea :id="`reason-${item.id}`" v-model="reviewDraft(item.id).reason" :disabled="busy" rows="2" maxlength="2000" placeholder="记录核查依据或保留原因" />
-              </fieldset>
             </section>
             <p v-if="!chapter.current_version_id" class="muted">空章节尚无可确认版本；仍可继续交付检查，检查结果会指出内容缺失。</p>
             <p v-else-if="chapter.confirmation_valid" class="confirmed">当前章节版本已确认。保存新版本后需要重新确认。</p>
@@ -463,8 +494,42 @@
           </form>
         </div>
 
-        <DeliveryPanel v-if="project.status === 'active'" :project="project" :chapters="chapters"
-          @refresh-project="refreshProjectVersion" />
+        <div v-if="project.status === 'active'" class="wb-delivery" role="dialog" aria-label="交付">
+          <header class="wb-drawer-head">
+            <h3>交付</h3>
+            <button type="button" class="ghost wb-drawer-close" aria-label="关闭交付面板" @click="deliveryOpen = false">×</button>
+          </header>
+          <div class="wb-delivery-body">
+            <DeliveryPanel :project="project" :chapters="chapters"
+              @refresh-project="refreshProjectVersion" />
+          </div>
+        </div>
+
+        <div v-if="rewriteCompareOpen && rewriteCandidate" class="wb-compare" role="dialog" aria-label="原文与候选对照">
+          <div class="wb-compare-pane">
+            <p class="wb-eyebrow">CURRENT DOCUMENT</p>
+            <h3>原文选段</h3>
+            <pre>{{ rewriteCandidate.selection.selected_text }}</pre>
+          </div>
+          <div class="wb-compare-pane">
+            <p class="wb-eyebrow">CANDIDATE · {{ rewriteCandidate.run_mode }}</p>
+            <h3>改写候选</h3>
+            <pre>{{ rewriteCandidate.replacement_markdown }}</pre>
+            <p v-if="rewriteCandidate.review_items.length" class="muted">待核 {{ rewriteCandidate.review_items.length }} 条</p>
+          </div>
+          <footer class="wb-compare-bar">
+            <span class="muted">候选基于工作副本修订 {{ rewriteCandidate.working_copy_revision }}；正文尚未改变。</span>
+            <span class="grow" />
+            <button type="button" class="primary" @click="applyFromCompare"
+              :disabled="rewriteBusy || busy || chapterChanged || (rewriteCandidate.status !== 'applying' && workingCopy?.working_copy_revision !== rewriteCandidate.working_copy_revision)">
+              {{ rewriteCandidate.status === 'applying' ? '重试确认采纳结果' : '采纳选段改写' }}
+            </button>
+            <button type="button" @click="rejectFromCompare" :disabled="rewriteBusy || busy || rewriteCandidate.status === 'applying'">放弃候选</button>
+            <button type="button" class="ghost" @click="closeRewriteCompare">返回编辑位置</button>
+          </footer>
+        </div>
+
+        <div v-if="anyOverlay" class="wb-scrim" @click="closeOverlays" />
       </section>
       <section v-else class="panel empty-work"><p>选一个项目开始；也可以先创建项目。</p></section>
     </div>
@@ -557,6 +622,66 @@ const generationBusy = ref(false)
 const accessStatus = ref<AccessStatus | null>(null)
 const accessBusy = ref(false)
 const adoptionOpen = ref(false)
+
+/* ---- 方案一工作台外壳状态（gong 2026-10-12 选型接线；只改排布与入口，不动业务语义） ---- */
+const mode = ref<'research' | 'focus'>('research')
+// 宽屏默认展开目录；≤899px 默认收起，经顶栏"目录"显式打开；跨入窄屏自动收起不遮正文
+const railOpen = ref(typeof window !== 'undefined' && window.innerWidth > 899)
+if (typeof window !== 'undefined') {
+  const narrowMq = window.matchMedia('(max-width: 899px)')
+  narrowMq.addEventListener?.('change', e => { if (e.matches) railOpen.value = false })
+}
+const inspOpen = ref(true)
+const inspTab = ref<'sources' | 'ai' | 'checks'>('sources')
+const specOpen = ref(false)
+const templateOpen = ref(false)
+const deliveryOpen = ref(false)
+const rewriteCompareOpen = ref(false)
+const rewriteOpSeq = ref(0)
+const anyOverlay = computed(() => specOpen.value || templateOpen.value || deliveryOpen.value || rewriteCompareOpen.value)
+const mainClasses = computed(() => ({
+  'wb--focus': mode.value === 'focus',
+  'wb--rail': railOpen.value,
+  'wb--insp': inspOpen.value,
+  'wb--spec': specOpen.value,
+  'wb--template': templateOpen.value,
+  'wb--delivery': deliveryOpen.value,
+  [`wb--tab-${inspTab.value}`]: true,
+}))
+const pendingReviewCount = computed(() => chapter.value
+  ? chapter.value.review_items.filter(item => !reviewDrafts.value[`${chapter.value!.id}:${item.id}`]?.reason.trim()).length
+  : 0)
+function closeOverlays() {
+  specOpen.value = false
+  templateOpen.value = false
+  deliveryOpen.value = false
+  if (rewriteCompareOpen.value) closeRewriteCompare()
+}
+function openRewriteCompare() {
+  if (!rewriteCandidate.value || rewriteCandidate.value.status !== 'ready') return
+  rewriteCompareOpen.value = true
+}
+function closeRewriteCompare() {
+  rewriteCompareOpen.value = false
+  rewriteOpSeq.value++
+}
+async function applyFromCompare() {
+  const seq = rewriteOpSeq.value
+  await applyRewriteCandidate()
+  if (seq === rewriteOpSeq.value && !rewriteCandidate.value) rewriteCompareOpen.value = false
+}
+function rejectFromCompare() {
+  rejectRewriteCandidate()
+  closeRewriteCompare()
+}
+function onWorkbenchKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape' || !anyOverlay.value) return
+  if (rewriteCompareOpen.value) closeRewriteCompare()
+  else closeOverlays()
+  e.stopPropagation()
+}
+onMounted(() => document.addEventListener('keydown', onWorkbenchKeydown))
+onUnmounted(() => document.removeEventListener('keydown', onWorkbenchKeydown))
 const restricted = computed(() => isRestricted(accessStatus.value))
 const recoveryActions = computed(() => recoveryActionsOf(accessStatus.value))
 const readyAssets = computed(() => assets.value.filter(item => item.processing_state === 'ready'))
@@ -1759,4 +1884,155 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .access-warning button { justify-self: start; }
 .empty-work { display: grid; place-items: center; min-height: 300px; color: #6b7670; }
 @media (max-width: 760px) { .workspace-grid { grid-template-columns: 1fr; } .lingdoc-workspace { padding: 16px; } .template-editor__item { grid-template-columns: 1fr; gap: 5px; } }
+
+/* ============================================================
+   方案一三栏工作台外壳（gong 2026-10-12 选型接线）
+   网格：rail 232 | doc 1fr | 右固定检查器 344；抽屉右滑出；宽对照全幅。
+   ============================================================ */
+.wb {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "head head"
+    "alert alert"
+    "rail docwarn"
+    "rail dochead"
+    "rail doc";
+  height: 100dvh;
+  max-width: none;
+  margin: 0;
+  padding: 0 344px 0 0;
+  overflow: hidden;
+  background: #f5f5f2;
+}
+.wb .workspace-grid, .wb .work-area { display: contents; }
+.wb--focus { padding-right: 0; }
+.wb-top { grid-area: head; position: static; display: flex; align-items: center; gap: 14px; padding: 8px 16px; flex-wrap: wrap; }
+.wb-brand h1 { font-size: 17px; }
+.wb-brand-note { margin: 0; font-size: 12px; color: #6b7670; }
+.wb-crumb { color: #6b7670; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.wb-top-actions { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-wrap: wrap; }
+.wb-mode { display: flex; gap: 2px; background: #f0f1ec; border-radius: 8px; padding: 2px; }
+.wb-mode button { border: 0; background: transparent; border-radius: 6px; padding: 4px 12px; font-size: 12px; }
+.wb-mode button[aria-pressed="true"] { background: #fff; box-shadow: 0 1px 2px rgba(32,36,31,.12); font-weight: 600; }
+.wb-save { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #4a5148; white-space: nowrap; }
+.save-dot { width: 8px; height: 8px; border-radius: 50%; background: #9aa79b; display: inline-block; }
+.save-dot.saved { background: #1c6b3f; }
+.save-dot.unsaved { background: #8a5a10; }
+.save-dot.saving { background: #8a5a10; animation: wb-pulse 1s infinite; }
+.save-dot.error { background: #b3261e; }
+@keyframes wb-pulse { 50% { opacity: .35; } }
+.wb-rail-toggle { display: none; }
+
+.wb > .alert { grid-area: alert; margin: 0; border-radius: 0; }
+.wb .access-warning { grid-area: docwarn; margin: 0 16px; align-self: center; }
+.wb .workspace-grid > aside.panel {
+  grid-area: rail;
+  overflow-y: auto;
+  border: 0;
+  border-right: 1px solid #dbe5dd;
+  border-radius: 0;
+  background: #fafbf9;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.wb-rail-entries { display: grid; gap: 4px; }
+.wb-rail-entries button { text-align: left; }
+.wb-chapters { display: grid; gap: 4px; }
+.wb-chapters-title { margin: 0; font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase; color: #79816f; }
+.wb-chapters > button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 1px solid transparent; background: transparent; padding: 8px 10px; border-radius: 10px; }
+.wb-chapters > button:hover { background: #f0f1ec; }
+.wb-chapters > button.selected { background: #fff; border-color: #cfd3c8; }
+.wb-chapters > button small { color: #79816f; }
+
+.wb .section-head { grid-area: dochead; padding: 12px 24px 6px; }
+.wb .chapters { grid-area: doc; overflow-y: auto; min-height: 0; padding: 6px 24px 32px; }
+.wb .chapter-tabs { display: none; }
+.wb .chapters > h3 { display: none; }
+.wb .empty-work { grid-area: doc; }
+
+/* 右栏检查器（固定面板 + 页签） */
+.wb .wb-tabs {
+  position: fixed; top: 53px; right: 0; width: 344px; z-index: 100;
+  display: flex; align-items: center; gap: 2px;
+  background: #fff; border-bottom: 1px solid #dbe5dd; border-left: 1px solid #dbe5dd;
+  padding: 4px 6px;
+}
+.wb .wb-tabs [role="tab"] { flex: 1; border: 0; background: transparent; border-radius: 7px; padding: 7px 4px; font-size: 13px; position: relative; }
+.wb .wb-tabs [role="tab"][aria-selected="true"] { background: #e9f2ee; color: #1d5043; font-weight: 600; }
+.wb-tab-count { display: inline-grid; place-items: center; min-width: 17px; height: 17px; border-radius: 99px; background: #fdf3e0; color: #8a5a10; font-size: 10.5px; padding: 0 4px; margin-left: 2px; }
+.wb-tabs-close { display: none; border: 0; background: transparent; font-size: 16px; padding: 2px 8px; }
+.wb .assets, .wb .sources, .wb .generation, .wb .review-items, .wb .review-lead {
+  position: fixed; top: 96px; right: 0; bottom: 0; width: 344px; z-index: 99;
+  overflow-y: auto; padding: 12px 14px 28px;
+  background: #fafbf9; border-left: 1px solid #dbe5dd;
+  display: none; margin: 0;
+}
+.wb--insp.wb--tab-sources .assets, .wb--insp.wb--tab-sources .sources,
+.wb--insp.wb--tab-ai .generation,
+.wb--insp.wb--tab-checks .review-items, .wb--insp.wb--tab-checks .review-lead { display: block; }
+.wb--focus .wb-tabs, .wb--focus .assets, .wb--focus .sources, .wb--focus .generation,
+.wb--focus .review-items, .wb--focus .review-lead { display: none !important; }
+
+/* 抽屉：研究条件（含变更复核）/ 模板 / 交付 */
+.wb .spec-form, .wb .change-set-panel, .wb .template-copy-panel, .wb .wb-delivery {
+  position: fixed; right: 0; z-index: 120;
+  background: #fff; border: 1px solid #dbe5dd;
+  box-shadow: -12px 0 40px rgba(15,23,42,.18);
+  visibility: hidden; opacity: 0; pointer-events: none;
+  transition: opacity .15s ease-out;
+}
+.wb .spec-form { top: 53px; bottom: 45%; width: min(520px, 96vw); border-radius: 14px 0 0 0; overflow-y: auto; padding: 16px 18px; margin: 0; }
+.wb .change-set-panel { top: calc(53px + 47%); bottom: 10px; width: min(520px, 96vw); border-radius: 0 0 0 14px; overflow-y: auto; padding: 14px 18px; margin: 0; }
+.wb--spec .spec-form { visibility: visible; opacity: 1; pointer-events: auto; }
+.wb--spec .change-set-panel { visibility: visible; opacity: 1; pointer-events: auto; }
+.wb .template-copy-panel { top: 53px; bottom: 10px; width: min(560px, 96vw); border-radius: 14px 0 0 14px; overflow-y: auto; padding: 16px 18px; margin: 0; }
+.wb--template .template-copy-panel { visibility: visible; opacity: 1; pointer-events: auto; }
+.wb .wb-delivery { top: 53px; bottom: 10px; width: min(780px, 96vw); border-radius: 14px 0 0 14px; display: flex; flex-direction: column; overflow: hidden; margin: 0; border-top: 1px solid #dbe5dd; }
+.wb--delivery .wb-delivery { visibility: visible; opacity: 1; pointer-events: auto; }
+.wb-drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #e2e4dc; background: #fff; }
+.wb-drawer-head h3 { margin: 0; }
+.wb-delivery-body { overflow-y: auto; padding: 8px 16px 20px; }
+.wb-drawer-close { float: right; font-size: 16px; padding: 0 8px; }
+.wb-scrim { position: fixed; inset: 0; background: rgba(15,23,42,.32); z-index: 110; }
+
+/* 宽对照（临时审阅态） */
+.wb .wb-compare {
+  position: fixed; top: 53px; left: 0; right: 0; bottom: 0; z-index: 140;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+  background: #f5f5f2;
+}
+.wb-compare-pane { overflow-y: auto; padding: 20px 26px; min-width: 0; }
+.wb-compare-pane + .wb-compare-pane { border-left: 1px solid #dbe5dd; }
+.wb-compare-pane h3 { margin: 4px 0 12px; }
+.wb-compare-pane pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #fff; border: 1px solid #e2e4dc; border-radius: 10px; padding: 14px 16px; font-family: Georgia, "Songti SC", "SimSun", serif; font-size: 15px; line-height: 1.85; }
+.wb-compare-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 20px; background: #fff; border-top: 1px solid #dbe5dd; }
+.wb-compare-bar .grow { flex: 1; }
+.wb-eyebrow { margin: 0; font-size: 11px; letter-spacing: 1.6px; text-transform: uppercase; color: #79816f; }
+
+/* 响应式：≤1279 检查器转浮层；≤899 目录转浮层、对照上下堆叠 */
+@media (max-width: 1279px) {
+  .wb { grid-template-columns: 220px minmax(0, 1fr); padding-right: 0; }
+  .wb .wb-tabs { width: min(360px, 94vw); box-shadow: -10px 0 30px rgba(15,23,42,.16); }
+  .wb .assets, .wb .sources, .wb .generation, .wb .review-items, .wb .review-lead { width: min(360px, 94vw); box-shadow: -10px 0 30px rgba(15,23,42,.16); }
+  .wb .wb-tabs-close { display: block; }
+}
+@media (max-width: 899px) {
+  .wb { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto minmax(0, 1fr);
+    grid-template-areas: "head" "alert" "docwarn" "dochead" "doc"; padding-right: 0; }
+  .wb .workspace-grid > aside.panel {
+    position: fixed; top: 0; left: 0; bottom: 0; width: min(280px, 84vw); z-index: 130;
+    transform: translateX(-105%); visibility: hidden; transition: transform .18s ease-out;
+    box-shadow: 12px 0 40px rgba(15,23,42,.18);
+  }
+  .wb--rail .workspace-grid > aside.panel { transform: none; visibility: visible; }
+  .wb-rail-toggle { display: inline-flex; }
+  .wb .section-head { padding: 10px 14px 4px; }
+  .wb .chapters { padding: 4px 14px 24px; }
+  .wb .wb-compare { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .wb-compare-pane + .wb-compare-pane { border-left: 0; border-top: 1px solid #dbe5dd; }
+}
 </style>
