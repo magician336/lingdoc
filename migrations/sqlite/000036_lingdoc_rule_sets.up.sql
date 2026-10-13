@@ -17,4 +17,3 @@ CREATE TABLE lingdoc_rule_sets (
 
 CREATE INDEX idx_lingdoc_rule_sets_history
     ON lingdoc_rule_sets (tenant_id, ruleset_id, created_at DESC, version DESC);
-
