@@ -317,19 +317,28 @@ func stringSlice(value any) ([]string, bool) {
 // Evaluate applies the same allowlisted deterministic evaluator to either a
 // live editing projection or a frozen delivery projection.
 func Evaluate(t Template, input EvaluationInput) ([]Evaluation, error) {
+	return evaluateTemplate(t, input, "")
+}
+
+// evaluateTemplate applies validated rules with the supplied version hash.
+// An empty rulesetHash retains the legacy template-derived hash behavior.
+func evaluateTemplate(t Template, input EvaluationInput, rulesetHash string) ([]Evaluation, error) {
 	if err := Validate(t); err != nil {
 		return nil, err
 	}
 	if input.ProjectID == "" || input.TargetVersion == "" {
 		return nil, fmt.Errorf("%w: project and target version are required", ErrInvalidDefinition)
 	}
-	_, rulesetHash, err := Hashes(t)
+	_, templateRulesetHash, err := Hashes(t)
 	if err != nil {
 		return nil, err
 	}
+	if rulesetHash == "" {
+		rulesetHash = templateRulesetHash
+	}
 	// T02's public fixed demo hash is part of the already-published T13 wire
 	// contract. All project-owned copies use the freshly computed hash above.
-	if t.ID == DemoTemplateID && t.Version == DemoTemplateVersion && t.RulesetHash == DemoRulesetHash {
+	if rulesetHash == templateRulesetHash && t.ID == DemoTemplateID && t.Version == DemoTemplateVersion && t.RulesetHash == DemoRulesetHash {
 		rulesetHash = DemoRulesetHash
 	}
 	results := make([]Evaluation, 0)
