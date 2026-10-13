@@ -127,6 +127,35 @@ func TestEvaluateRuleSetRejectsUnsupportedScene(t *testing.T) {
 	}
 }
 
+func TestEvaluatePinsLegacyDemoHashOnlyForUnchangedDemoRules(t *testing.T) {
+	input := EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"}
+	baseline, err := Evaluate(DemoTemplate(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range baseline {
+		if result.RulesetHash != DemoRulesetHash {
+			t.Fatalf("fixed demo result lost its published ruleset hash: %#v", result)
+		}
+	}
+
+	changed := DemoTemplate()
+	changed.Rules[0].Message = "changed rule message"
+	_, wantHash, err := Hashes(changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluated, err := Evaluate(changed, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range evaluated {
+		if result.RuleID == RuleRequiredFields && (result.RulesetHash == DemoRulesetHash || result.RulesetHash != wantHash) {
+			t.Fatalf("modified demo rule incorrectly reused fixed demo hash: %#v", result)
+		}
+	}
+}
+
 func TestRuleSetHashIsStableAndIgnoresSuppliedHash(t *testing.T) {
 	first := testRuleSet()
 	firstHash, err := HashRuleSet(first)
