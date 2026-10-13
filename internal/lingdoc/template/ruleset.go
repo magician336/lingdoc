@@ -21,11 +21,11 @@ const (
 	RuleSetRecalled  RuleSetState = "recalled"
 )
 
+// RuleSet lifecycle errors distinguish invalid content from invalid state transitions.
 var (
 	ErrInvalidRuleSet      = errors.New("invalid rule set")
 	ErrRuleSetNotDraft     = errors.New("rule set is not a draft")
 	ErrRuleSetNotPublished = errors.New("rule set is not published")
-	ErrRuleSetNotMutable   = errors.New("published rule set is immutable")
 )
 
 // RuleDefinition is a server-owned evaluator contract. Definitions are
@@ -60,7 +60,8 @@ type RuleBinding struct {
 }
 
 // RuleSet is a versioned collection of bindings. RulesetHash is always
-// computed by this package and covers the immutable binding snapshot.
+// computed by this package and covers the published binding snapshot. The
+// application repository must keep published versions append-only.
 type RuleSet struct {
 	ID          string        `json:"ruleset_id"`
 	Version     string        `json:"version"`
