@@ -48,6 +48,9 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
 	for _, file := range []string{
 		"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
 		"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
@@ -61,6 +64,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		"000112_lingdoc_working_copies.up.sql",
 		"000113_lingdoc_selected_rewrites.up.sql",
 		"000114_lingdoc_project_template_copies.up.sql",
+		"000115_lingdoc_rule_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
