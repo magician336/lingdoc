@@ -115,7 +115,7 @@ func TestRuleSetRejectsUnsafeOrUnknownBindings(t *testing.T) {
 	}
 }
 
-func TestPublishedRuleSetIsTamperEvidentAndCanBeWithdrawnOrRecalled(t *testing.T) {
+func TestPublishedRuleSetDetectsStaleHashAndCanBeWithdrawnOrRecalled(t *testing.T) {
 	published, err := PublishRuleSet(testRuleSet())
 	if err != nil {
 		t.Fatal(err)
