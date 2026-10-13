@@ -363,4 +363,3 @@ func cloneRuleBindings(bindings []RuleBinding) []RuleBinding {
 	}
 	return copy
 }
-
