@@ -246,6 +246,48 @@ func CompileRuleSet(set RuleSet) ([]Rule, error) {
 	return rules, nil
 }
 
+// EvaluateRuleSet adapts a RuleSet to the existing template evaluator while
+// honoring the binding's trigger scene and preserving the RuleSet version
+// hash in every evaluation and stable issue identity. Drafts can be previewed
+// with their computed content hash; published historical versions can be
+// replayed after their stored hash is verified.
+func EvaluateRuleSet(t Template, set RuleSet, scene string, input EvaluationInput) ([]Evaluation, error) {
+	if err := ValidateRuleSet(set); err != nil {
+		return nil, err
+	}
+	if !allowedRuleScenes[scene] {
+		return nil, fmt.Errorf("%w: unsupported rule scene %q", ErrInvalidRuleSet, scene)
+	}
+	rules, err := CompileRuleSet(set)
+	if err != nil {
+		return nil, err
+	}
+
+	activeRuleIDs := make(map[string]bool, len(set.Bindings))
+	for _, binding := range set.Bindings {
+		if binding.Enabled && slices.Contains(binding.TriggerScenes, scene) {
+			activeRuleIDs[binding.RuleID] = true
+		}
+	}
+	filteredRules := make([]Rule, 0, len(activeRuleIDs))
+	for _, rule := range rules {
+		if activeRuleIDs[rule.ID] {
+			filteredRules = append(filteredRules, rule)
+		}
+	}
+
+	rulesetHash := set.RulesetHash
+	if rulesetHash == "" {
+		rulesetHash, err = HashRuleSet(set)
+		if err != nil {
+			return nil, err
+		}
+	}
+	definition := Clone(t)
+	definition.Rules = filteredRules
+	return evaluateTemplate(definition, input, rulesetHash)
+}
+
 func validateRuleSetContent(set RuleSet) error {
 	if !stableID.MatchString(set.ID) || !stableID.MatchString(set.Version) {
 		return fmt.Errorf("%w: ruleset identity is incomplete", ErrInvalidRuleSet)
