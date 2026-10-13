@@ -73,6 +73,60 @@ func TestPublishRuleSetComputesHashAndCompilesAllowlistedRules(t *testing.T) {
 	}
 }
 
+func TestEvaluateRuleSetHonorsTriggerScenesAndPinsRuleSetHash(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := EvaluationInput{
+		ProjectID: "project-1", TargetVersion: "copy/1",
+		Fields:   map[string]string{"research_goal": "Study"},
+		Chapters: []ChapterInput{{ID: "method", Version: "chapter-v2", Body: "too short"}},
+	}
+
+	writeChecks, err := EvaluateRuleSet(DemoTemplate(), published, "write_check", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(writeChecks) != 2 {
+		t.Fatalf("write_check evaluated %d rules; want only the two active bindings for that scene: %#v", len(writeChecks), writeChecks)
+	}
+	for _, result := range writeChecks {
+		if result.RulesetHash != published.RulesetHash {
+			t.Fatalf("write_check result used template rule hash %q instead of RuleSet hash %q", result.RulesetHash, published.RulesetHash)
+		}
+		if result.RuleID == "human-review" {
+			t.Fatal("preflight-only model-assisted binding ran during write_check")
+		}
+	}
+
+	preflight, err := EvaluateRuleSet(DemoTemplate(), published, "preflight", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preflight) != 2 {
+		t.Fatalf("preflight evaluated %d rules; want only its two active bindings: %#v", len(preflight), preflight)
+	}
+	var modelResult *Evaluation
+	for i := range preflight {
+		if preflight[i].RuleID == "human-review" {
+			modelResult = &preflight[i]
+		}
+		if preflight[i].RulesetHash != published.RulesetHash {
+			t.Fatalf("preflight result used rule hash %q instead of RuleSet hash %q", preflight[i].RulesetHash, published.RulesetHash)
+		}
+	}
+	if modelResult == nil || modelResult.Status != EvaluationUnknown || modelResult.Severity == SeverityBlocking {
+		t.Fatalf("model-assisted rule did not remain a non-blocking unknown result: %#v", modelResult)
+	}
+}
+
+func TestEvaluateRuleSetRejectsUnsupportedScene(t *testing.T) {
+	if _, err := EvaluateRuleSet(DemoTemplate(), testRuleSet(), "export", EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"}); !errors.Is(err, ErrInvalidRuleSet) {
+		t.Fatalf("EvaluateRuleSet() error = %v, want ErrInvalidRuleSet", err)
+	}
+}
+
 func TestRuleSetHashIsStableAndIgnoresSuppliedHash(t *testing.T) {
 	first := testRuleSet()
 	firstHash, err := HashRuleSet(first)
