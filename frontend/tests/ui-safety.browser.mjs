@@ -16,7 +16,7 @@ if (!output) throw new Error('Set UI_SAFETY_EVIDENCE to an isolated local eviden
 fs.mkdirSync(output, { recursive: true })
 const profile = fs.mkdtempSync(path.join(output, 'edge-profile-'))
 const edge = process.env.UI_SAFETY_BROWSER || 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'
-const sourceHashes = {}
+const sourceHashes = {'src/views/lingdoc/uiSafety.ts':createHash('sha256').update(fs.readFileSync(path.join(frontend,'src/views/lingdoc/uiSafety.ts'))).digest('hex')}
 const bundle = await build({
   absWorkingDir: frontend, stdin: { contents: `
     import {createApp, h, ref} from 'vue';
@@ -29,30 +29,64 @@ const bundle = await build({
     const chapter = {id:'c1',project_id:'p1',section_id:'s1',title:'合成章节',current_version_id:'v1',
       body_markdown:'合成正式正文',source_ids:[],citation_usages:[],confirmation_valid:false,
       review_items:[{id:'r1',statement:'合成待核一'},{id:'r2',statement:'合成待核二'}]};
+    const secondProject={...project,id:'p2',name:'另一个合成项目',spec:{research_subject:'第二主题',research_goal:'第二目标'}};
+    const secondChapter={...chapter,id:'c2',project_id:'p2',title:'第二项目章节',review_items:[]};
+    const conditions=[];
     const controls = window.controls = {saveMode:'pending',adoptMode:'success',readMode:'success',projectMode:'success',
+      previewMode:'success',applyMode:'success',lastConditionsInput:null,confirmCalls:0,
       calls:{},emitted:null,resolveSave:null,resolveProject:null};
     const envelope = data => ({data:structuredClone(data),meta:{replayed:false,refresh_required:false}});
     let saved = {...chapter,chapter_id:'c1',base_chapter_version_id:'v1',spec_revision:1,working_copy_revision:1};
+    window.resetConditionsBody=()=>{saved={...saved,body_markdown:chapter.body_markdown,citation_usages:[],spec_revision:project.spec_revision}};
     window.__uiApi = async (name,args) => {
       controls.calls[name] = (controls.calls[name]||0)+1;
       if(name.startsWith('new')) return crypto.randomUUID();
       switch(name){
-        case 'listProjects': return envelope({items:[project],truncated:false});
-        case 'getProject':
+        case 'listProjects': return envelope({items:[project,secondProject],truncated:false});
+        case 'getProject': {
+          const current=args[0]==='p2'?secondProject:project;
+          if(controls.projectMode==='fail') throw new Error('合成项目读取失败');
           if(controls.projectMode==='pending') return new Promise((resolve,reject)=>controls.resolveProject=ok=>{
-            if(ok) { project.project_version++; resolve(envelope(project)); } else reject(new Error('合成刷新失败')); });
-          return envelope(project);
+            controls.resolveProject=null;
+            if(ok) { current.project_version++; resolve(envelope(current)); } else reject(new Error('合成刷新失败')); });
+          return envelope(current);
+        }
         case 'listChapters':
           if(controls.readMode==='fail') throw new Error('合成读回失败');
-          return envelope([chapter]);
-        case 'getWorkingCopy': return envelope(saved);
+          return envelope([args[0]==='p2'?secondChapter:chapter]);
+        case 'getWorkingCopy': return envelope(args[0]==='p2'?{...secondChapter,chapter_id:'c2',base_chapter_version_id:'v1',spec_revision:1,working_copy_revision:1}:saved);
         case 'listChapterVersions': return envelope({items:[]});
-        case 'listAssets': case 'listChangeSets': return envelope([]);
+        case 'listAssets': return envelope([]);
+        case 'listChangeSets': return envelope(conditions.filter(item=>item.project_id===args[0]));
+        case 'createChangeSet': {
+          const input=args[1],current=args[0]==='p2'?secondProject:project;
+          controls.lastConditionsInput=structuredClone(input);
+          if(controls.previewMode==='fail') throw new Error('合成条件预览失败');
+          const item={id:'conditions-'+(conditions.length+1),project_id:args[0],created_by:'fixture',status:'assessed',
+            reason:input.reason,base_spec_revision:current.spec_revision,base_context_revision:current.current_context_revision,
+            fields:Object.entries(input.fields).map(([key,value])=>({key,...value})),
+            impacts:input.affected_chapter_ids.map(id=>({chapter_id:id,title:id==='c2'?'第二项目章节':'合成章节',reason:input.reason})),
+            created_at:new Date().toISOString()};
+          conditions.push(item);return envelope(item);
+        }
+        case 'applyChangeSet': {
+          if(controls.applyMode==='fail') throw new Error('合成条件应用失败');
+          const item=conditions.find(item=>item.id===args[1]),current=args[0]==='p2'?secondProject:project;
+          for(const field of item.fields)current.spec[field.key]=field.new_value;
+          current.spec_revision++;current.current_context_revision++;current.project_version++;
+          (args[0]==='p2'?secondChapter:chapter).confirmation_valid=false;
+          item.status='applied';return envelope(item);
+        }
+        case 'rejectChangeSet': {
+          const item=conditions.find(item=>item.id===args[1]);item.status='rejected';return envelope(item);
+        }
+        case 'getChangeSet': return envelope(conditions.find(item=>item.id===args[1]));
         case 'listGenerationCandidates': return envelope([]);
         case 'getAccessStatus': return envelope({project_id:'p1',status:'available',recovery_actions:[]});
         case 'listReleases': case 'listExports': return envelope({items:[],truncated:false});
         case 'checkDelivery': throw {status:409,error:{code:'version_conflict'}};
         case 'saveWorkingCopy': return new Promise((resolve,reject)=>controls.resolveSave=ok=>{
+          controls.resolveSave=null;
           if(!ok) return reject(new Error('合成保存失败'));
           saved={...saved,...args[2],working_copy_revision:saved.working_copy_revision+1};resolve(envelope(saved));});
         case 'confirmChapter': chapter.confirmation_valid=true; return envelope({});
@@ -129,6 +163,91 @@ try {
   await clickText('合成 UI 项目');await waitFor("!!document.querySelector('#chapter-body')&&!document.querySelector('#chapter-body').disabled");
   await check('clean workspace does not prevent refresh',`!${dirtyEvent}`);
   await check('confirmation explains both missing review reasons',"document.querySelector('#chapter-confirm-help')?.textContent.includes('2 条')&&[...document.querySelectorAll('button')].find(x=>x.textContent.trim()==='确认当前章节版本').disabled");
+  await check('conditions auxiliary form is absent while saved spec is unchanged',"!document.querySelector('#change-reason')");
+  const conditionsBox=await evaluate("(()=>{const el=document.querySelector('#subject');el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:r.x+20,y:r.y+10}})()");
+  await send('Input.dispatchMouseEvent',{type:'mousePressed',...conditionsBox,button:'left',clickCount:1});
+  await send('Input.dispatchMouseEvent',{type:'mouseReleased',...conditionsBox,button:'left',clickCount:1});
+  await input('#subject','合成修改主题');await waitFor("!!document.querySelector('#change-reason')");
+  await input('#change-reason','仅理由保留');await input('#subject','合成主题');
+  await waitFor("!document.querySelector('#change-reason')");
+  await check('reason entered through visible form remains protected after restoring spec',dirtyEvent);
+  const conditionDialogCount=dialogs.filter(type=>type==='beforeunload').length;
+  const conditionsReload=send('Page.reload');
+  for(let i=0;i<50&&dialogs.filter(type=>type==='beforeunload').length===conditionDialogCount;i++)await delay(50);
+  if(dialogs.filter(type=>type==='beforeunload').length===conditionDialogCount)throw Error('Conditions draft reload did not show beforeunload dialog');
+  await send('Page.handleJavaScriptDialog',{accept:false});await conditionsReload;
+  await evaluate("window.confirm=()=>{controls.confirmCalls++;return false};fixtureRouter.push('/else')");
+  const readsBeforeCancel=await evaluate('controls.calls.getProject');
+  const confirmsBeforeCancel=await evaluate('controls.confirmCalls');
+  await clickText('合成 UI 项目');await clickText('重新读取');await clickText('另一个合成项目');
+  await check('same-project click, explicit reload and project switch all confirm hidden conditions inputs',
+    `controls.confirmCalls===${confirmsBeforeCancel+3}&&controls.calls.getProject===${readsBeforeCancel}&&fixtureRouter.currentRoute.value.path==='/'`);
+  await input('#subject','合成修改主题');await waitFor("!!document.querySelector('#change-reason')");
+  await check('cancelled actual refresh and navigation retain the exact reason',"document.querySelector('#change-reason').value==='仅理由保留'");
+  await evaluate("window.confirm=()=>true;controls.projectMode='fail'");await clickText('另一个合成项目');
+  await waitFor("document.body.textContent.includes('合成项目读取失败')");
+  await check('failed target project read retains current project and auxiliary draft',
+    "document.querySelector('.work-area h2').textContent==='合成 UI 项目'&&document.querySelector('#change-reason').value==='仅理由保留'");
+  await evaluate("controls.projectMode='success';controls.readMode='fail'");await clickText('另一个合成项目');
+  await waitFor("document.body.textContent.includes('合成读回失败')");
+  await check('failed target chapter read also keeps the original project and auxiliary draft',
+    "document.querySelector('.work-area h2').textContent==='合成 UI 项目'&&document.querySelector('#subject').value==='合成修改主题'&&document.querySelector('#change-reason').value==='仅理由保留'");
+  await evaluate("controls.readMode='success'");await clickText('重新读取');
+  await waitFor("document.querySelector('#subject').value==='合成主题'&&!document.querySelector('#change-reason')");
+  await check('confirmed successful same-project reload resets auxiliary input baseline',`!${dirtyEvent}`);
+  await input('#subject','仅范围变动');await waitFor("!!document.querySelector('#change-reason')");
+  await evaluate("document.querySelector('.chapter-impact-choice input[value=\"c1\"]').click()");
+  await input('#subject','合成主题');await waitFor("!document.querySelector('#change-reason')");
+  await check('chapter selection alone remains protected after restoring spec',dirtyEvent);
+  await clickText('另一个合成项目');await waitFor("document.querySelector('.work-area h2').textContent==='另一个合成项目'&&!!document.querySelector('#chapter-body')&&!document.querySelector('#chapter-body').disabled");
+  await input('#subject','第二修改主题');await waitFor("!!document.querySelector('#change-reason')");
+  await check('successful project switch cannot carry the previous reason or chapter selection',
+    "document.querySelector('#change-reason').value===''&&!document.querySelector('.chapter-impact-choice input[value=\"c2\"]').checked");
+  await input('#change-reason','项目二理由');await evaluate("document.querySelector('.chapter-impact-choice input[value=\"c2\"]').click()");
+  await clickText('生成变更预览');await waitFor("!!document.querySelector('.change-set-preview')");
+  await check('new project preview submits only its own chapter IDs',"controls.lastConditionsInput.reason==='项目二理由'&&JSON.stringify(controls.lastConditionsInput.affected_chapter_ids)==='[\"c2\"]'");
+  await check('successful preview still protects unapplied spec edits',dirtyEvent);
+  await input('#subject','第二主题');await waitFor("!document.querySelector('#change-reason')");
+  await check('acknowledged auxiliary inputs alone no longer cause stale warnings',`!${dirtyEvent}`);
+  await clickText('合成 UI 项目');await waitFor("document.querySelector('.work-area h2').textContent==='合成 UI 项目'&&!!document.querySelector('#chapter-body')&&!document.querySelector('#chapter-body').disabled");
+  await input('#subject','待应用主题');await waitFor("!!document.querySelector('#change-reason')");
+  await input('#change-reason','应用理由');await evaluate("document.querySelector('.chapter-impact-choice input[value=\"c1\"]').click()");
+  await evaluate("controls.previewMode='fail'");await clickText('生成变更预览');await waitFor("document.body.textContent.includes('合成条件预览失败')");
+  await input('#subject','合成主题');await waitFor("!document.querySelector('#change-reason')");
+  await check('failed preview leaves auxiliary input dirty even when spec is restored',dirtyEvent);
+  await input('#subject','待应用主题');await waitFor("!!document.querySelector('#change-reason')");
+  await check('failed preview preserves exact reason and affected chapter selection',
+    "document.querySelector('#change-reason').value==='应用理由'&&document.querySelector('.chapter-impact-choice input[value=\"c1\"]').checked");
+  await evaluate("controls.previewMode='success'");await clickText('生成变更预览');await waitFor("!!document.querySelector('.change-set-preview')");
+  await evaluate("controls.applyMode='fail'");await clickText('应用预览并开始复核');await waitFor("document.body.textContent.includes('合成条件应用失败')");
+  await check('failed apply retains the reason, affected chapters and retryable preview',
+    "document.querySelector('#change-reason').value==='应用理由'&&document.querySelector('.chapter-impact-choice input[value=\"c1\"]').checked&&!!document.querySelector('.change-set-preview')");
+  const confirmsBeforeApply=await evaluate('controls.confirmCalls');
+  await evaluate("controls.applyMode='success';window.confirm=()=>{controls.confirmCalls++;return false}");
+  await clickText('应用预览并开始复核');await waitFor("document.body.textContent.includes('已应用')&&!document.querySelector('#change-reason')");
+  await check('clean successful apply refresh adds no discard confirmation and clears auxiliary dirty',`controls.confirmCalls===${confirmsBeforeApply}&&!${dirtyEvent}`);
+  await input('#subject','第二次已应用主题');await waitFor("!!document.querySelector('#change-reason')");
+  await check('applied conditions form starts empty for a subsequent edit',
+    "document.querySelector('#change-reason').value===''&&!document.querySelector('.chapter-impact-choice input[value=\"c1\"]').checked");
+  await input('#change-reason','与正文并行变更');await evaluate("document.querySelector('.chapter-impact-choice input[value=\"c1\"]').click()");
+  await clickText('生成变更预览');await waitFor("!!document.querySelector('.change-set-preview')");
+  await input('#chapter-body','保留的未保存正文');
+  const readsBeforeAppliedCancel=await evaluate('controls.calls.getProject');
+  const confirmsBeforeAppliedCancel=await evaluate('controls.confirmCalls');
+  await clickText('应用预览并开始复核');await waitFor("document.body.textContent.includes('已应用')&&!document.querySelector('.change-set-preview')");
+  await check('apply refresh still confirms unrelated unsaved body and cancellation preserves it',
+    `controls.confirmCalls===${confirmsBeforeAppliedCancel+1}&&controls.calls.getProject===${readsBeforeAppliedCancel}&&document.querySelector('#chapter-body').value==='保留的未保存正文'`);
+  await waitFor('!!controls.resolveSave');await evaluate('controls.resolveSave(true)');await waitFor("document.body.textContent.includes('· 已保存')");
+  await evaluate('resetConditionsBody();window.confirm=()=>true');await clickText('重新读取');
+  await waitFor("document.querySelector('#subject').value==='第二次已应用主题'&&document.querySelector('#chapter-body').value==='合成正式正文'");
+  await input('#subject','将驳回主题');await waitFor("!!document.querySelector('#change-reason')");
+  await input('#change-reason','驳回理由');await evaluate("document.querySelector('.chapter-impact-choice input[value=\"c1\"]').click()");
+  await clickText('生成变更预览');await waitFor("!!document.querySelector('.change-set-preview')");
+  const confirmsBeforeReject=await evaluate('controls.confirmCalls');
+  await evaluate("window.confirm=()=>{controls.confirmCalls++;return false}");await clickText('驳回预览');
+  await waitFor("document.body.textContent.includes('已驳回')&&!document.querySelector('#change-reason')");
+  await check('successful reject handles only its conditions inputs without an extra confirmation',`controls.confirmCalls===${confirmsBeforeReject}&&!${dirtyEvent}`);
+
   await input('#reason-r1','合成核查依据一');await check('unconfirmed review reason protects refresh',dirtyEvent);
   await input('#reason-r2','合成核查依据二');
   await evaluate('window.confirm=()=>true');await clickText('确认当前章节版本');await waitFor("document.body.textContent.includes('当前章节版本已确认')");
@@ -137,9 +256,10 @@ try {
   await send('Input.dispatchMouseEvent',{type:'mousePressed',...box,button:'left',clickCount:1});
   await send('Input.dispatchMouseEvent',{type:'mouseReleased',...box,button:'left',clickCount:1});
   await input('#chapter-body','未保存合成草稿');await check('900ms debounce interval protects refresh',dirtyEvent);
+  const bodyDialogCount=dialogs.filter(type=>type==='beforeunload').length;
   const reload=send('Page.reload');
-  for(let i=0;i<50&&!dialogs.includes('beforeunload');i++)await delay(50);
-  if(!dialogs.includes('beforeunload'))throw Error('Real reload did not show browser beforeunload dialog');
+  for(let i=0;i<50&&dialogs.filter(type=>type==='beforeunload').length===bodyDialogCount;i++)await delay(50);
+  if(dialogs.filter(type=>type==='beforeunload').length===bodyDialogCount)throw Error('Real reload did not show browser beforeunload dialog');
   await send('Page.handleJavaScriptDialog',{accept:false});await reload;
   await check('real browser reload cancellation retains draft',"document.querySelector('#chapter-body').value==='未保存合成草稿'");
   await evaluate("window.confirm=()=>false;fixtureRouter.push('/else')");
@@ -156,7 +276,7 @@ try {
   await check('409 shows refresh pending rather than premature success',"document.body.textContent.includes('正在重新读取当前版本')&&!document.body.textContent.includes('已重新读取当前版本')");
   await evaluate('controls.resolveProject(false)');await waitFor("document.body.textContent.includes('项目版本重新读取失败')");
   await check('failed refresh never claims success and never retries the write',"controls.calls.checkDelivery===1&&!document.body.textContent.includes('已重新读取当前版本')");
-  await clickText('交付检查');await waitFor('controls.calls.getProject>=4');await evaluate('controls.resolveProject(true)');await waitFor("document.body.textContent.includes('已重新读取当前版本')");
+  await clickText('交付检查');await waitFor('!!controls.resolveProject');await evaluate('controls.resolveProject(true)');await waitFor("document.body.textContent.includes('已重新读取当前版本')");
   await check('success appears only after acknowledged parent refresh',"controls.calls.checkDelivery===2");
   await evaluate("controls.projectMode='success';showDialog();controls.adoptMode='fail'");await waitFor("!!document.querySelector('.candidate-adoption__primary')");
   await clickText('确认整章替换');await waitFor("document.body.textContent.includes('合成写入失败')");await check('failed write is not described as accepted',"!document.body.textContent.includes('候选已采纳。')");

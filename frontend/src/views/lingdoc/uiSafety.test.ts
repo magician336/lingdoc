@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canLeaveWorkspace, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty } from './uiSafety'
+import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty } from './uiSafety'
 
-const clean = { chapterChanged: false, specChanged: false, templateChanged: false, saving: false, reviewChanged: false }
+const clean = { chapterChanged: false, specChanged: false, templateChanged: false, saving: false, reviewChanged: false, conditionsChanged: false }
 function unloadEvent() {
   const event = new Event('beforeunload', { cancelable: true })
   // Node's Event is not a browser BeforeUnloadEvent; provide its writable field.
@@ -49,6 +49,57 @@ test('empty default review forms are clean; changed reasons and decisions remain
   const acknowledged = { c1: { ...draft, reason: '合成核查依据' } }
   assert.equal(reviewDraftsAreDirty(acknowledged, structuredClone(acknowledged)), false)
   assert.equal(reviewDraftsAreDirty({ ...acknowledged, c2: { ...draft, reason: '另一章未确认' } }, acknowledged), true)
+})
+
+test('conditions auxiliary form starts clean and protects either reason or chapter selection after spec is restored', () => {
+  const baseline = conditionsChangeSnapshot('p1', '', [])
+  assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '', []), baseline), false)
+  for (const draft of [conditionsChangeSnapshot('p1', '变更理由', []), conditionsChangeSnapshot('p1', '', ['c1'])]) {
+    const conditionsChanged = conditionsChangeInputsAreDirty(draft, baseline)
+    assert.equal(conditionsChanged, true)
+    assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged }), true)
+    assert.equal(canLeaveWorkspace(conditionsChanged, () => false), false)
+  }
+})
+
+test('conditions acknowledgement compares submitted meaning and snapshots do not share checkbox arrays', () => {
+  const chosen = ['c2', 'c1']
+  const acknowledged = conditionsChangeSnapshot('p1', ' 理由 ', chosen)
+  assert.deepEqual(chosen, ['c2', 'c1'])
+  assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '理由', ['c1', 'c2']), acknowledged), false)
+  chosen.push('c3')
+  assert.deepEqual(acknowledged.chapterIds, ['c1', 'c2'])
+  assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '新理由', ['c1', 'c2']), acknowledged), true)
+  assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '理由', chosen), acknowledged), true)
+  assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p2', '理由', ['c1', 'c2']), acknowledged), true)
+})
+
+test('acknowledged preview clears auxiliary dirty while changed spec and other drafts remain protected', () => {
+  const submitted = conditionsChangeSnapshot('p1', '已提交理由', ['c1'])
+  const conditionsChanged = conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '已提交理由', ['c1']), submitted)
+  assert.equal(conditionsChanged, false)
+  assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged, specChanged: true }), true)
+  assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged, chapterChanged: true }), true)
+  assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged, reviewChanged: true }), true)
+  const reset = conditionsChangeSnapshot('p1', '', [])
+  assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '', []), reset), false)
+  assert.equal(hasUnsavedInputs(clean), false)
+})
+
+test('refresh guard protects hidden unsaved conditions inputs and releases their acknowledged baseline', () => {
+  const target = new EventTarget()
+  const draft = conditionsChangeSnapshot('p1', '暂存理由', ['c1'])
+  let baseline = conditionsChangeSnapshot('p1', '', [])
+  const remove = installUnloadGuard(target as unknown as Pick<Window, 'addEventListener' | 'removeEventListener'>,
+    () => hasUnsavedInputs({ ...clean, conditionsChanged: conditionsChangeInputsAreDirty(draft, baseline) }))
+  const hidden = unloadEvent()
+  target.dispatchEvent(hidden)
+  assert.equal(hidden.defaultPrevented, true)
+  baseline = conditionsChangeSnapshot('p1', '暂存理由', ['c1'])
+  const acknowledged = unloadEvent()
+  target.dispatchEvent(acknowledged)
+  assert.equal(acknowledged.defaultPrevented, false)
+  remove()
 })
 
 const confirmable = { busy: false, saving: false, unsaved: false, needsCommit: false, missingReasons: 0 }

@@ -10,11 +10,27 @@ export function reviewDraftsAreDirty(drafts: Record<string, ReviewDraft>, saved:
   })
 }
 
+export interface ConditionsChangeInputs {
+  projectId: string
+  reason: string
+  chapterIds: string[]
+}
+
+// Match the submitted meaning; checkbox order and surrounding reason whitespace do not add changes.
+export function conditionsChangeSnapshot(projectId: string, reason: string, chapterIds: string[]): ConditionsChangeInputs {
+  return { projectId, reason: reason.trim(), chapterIds: [...chapterIds].sort() }
+}
+
+export function conditionsChangeInputsAreDirty(draft: ConditionsChangeInputs, acknowledged: ConditionsChangeInputs): boolean {
+  return draft.projectId !== acknowledged.projectId || draft.reason !== acknowledged.reason ||
+    JSON.stringify(draft.chapterIds) !== JSON.stringify(acknowledged.chapterIds)
+}
+
 export function hasUnsavedInputs(state: {
   chapterChanged: boolean; specChanged: boolean; templateChanged: boolean
-  saving: boolean; reviewChanged: boolean
+  saving: boolean; reviewChanged: boolean; conditionsChanged?: boolean
 }): boolean {
-  return state.chapterChanged || state.specChanged || state.templateChanged || state.saving || state.reviewChanged
+  return state.chapterChanged || state.specChanged || state.templateChanged || state.saving || state.reviewChanged || state.conditionsChanged === true
 }
 
 export function canLeaveWorkspace(dirty: boolean, confirm: (message: string) => boolean): boolean {

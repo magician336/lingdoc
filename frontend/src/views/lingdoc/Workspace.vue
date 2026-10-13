@@ -474,7 +474,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { canLeaveWorkspace, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty, type ReviewDraft } from './uiSafety'
+import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty, type ReviewDraft } from './uiSafety'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
@@ -539,6 +539,7 @@ const subject = ref('')
 const goal = ref('')
 const changeReason = ref('')
 const selectedImpactChapterIds = ref<string[]>([])
+const acknowledgedConditionsInputs = ref(conditionsChangeSnapshot('', '', []))
 const pendingChangeSet = ref<ChangeSet | null>(null)
 const pendingDraft = ref<{ subject: string; goal: string; reason: string; chapterIds: string[] } | null>(null)
 const lastChangeSet = ref<ChangeSet | null>(null)
@@ -612,6 +613,15 @@ const pendingDraftMatches = computed(() => {
     pendingDraft.value.reason === changeReason.value.trim() &&
     JSON.stringify(pendingDraft.value.chapterIds) === JSON.stringify([...selectedImpactChapterIds.value].sort())
 })
+const conditionsInputsChanged = computed(() => !!project.value && conditionsChangeInputsAreDirty(
+  conditionsChangeSnapshot(project.value.id, changeReason.value, selectedImpactChapterIds.value),
+  acknowledgedConditionsInputs.value,
+))
+function resetConditionsInputs(projectId: string) {
+  changeReason.value = ''
+  selectedImpactChapterIds.value = []
+  acknowledgedConditionsInputs.value = conditionsChangeSnapshot(projectId, '', [])
+}
 const uncheckedChapterTitles = computed(() => chapters.value.filter(item => !selectedImpactChapterIds.value.includes(item.id)).map(item => item.title))
 const citationUsagesChanged = computed(() => {
   const parsed = chapterCitations(bodyDraft.value)
@@ -624,6 +634,7 @@ const unsavedInputs = computed(() => hasUnsavedInputs({
   chapterChanged: chapterChanged.value, specChanged: specChanged.value,
   templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
   reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
+  conditionsChanged: conditionsInputsChanged.value,
 }))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
   return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
@@ -912,33 +923,43 @@ async function create() {
   finally { busy.value = false }
 }
 
-async function selectProject(id: string, force = false, skipConfirm = false) {
-  if (!skipConfirm && !force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value || (project.value?.id !== id && templateCopyChanged.value)) &&
-      !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
-  if (!skipConfirm && force && (specChanged.value || chapterChanged.value || templateCopyChanged.value) &&
-      !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
-  if (generationTimer) clearTimeout(generationTimer)
-  if (workingCopyTimer) clearTimeout(workingCopyTimer)
-  workingCopyTimer = undefined
-  generationRun.value = null
-  generationCandidate.value = null
-  generationCandidates.value = []
-  adoptionOpen.value = false
-  errorMessage.value = ''
-  pendingChangeSet.value = null
-  pendingDraft.value = null
-  pendingTemplateUpgrade.value = null
-  templateUpgradeReason.value = ''
+// Only a successful conditions apply/reject may skip its own handled inputs.
+// Other drafts still require confirmation, including when the requested ID is unchanged.
+async function selectProject(id: string, force = false, skipConfirm = false, conditionsHandled = false) {
+  const dirty = hasUnsavedInputs({
+    chapterChanged: chapterChanged.value, specChanged: !conditionsHandled && specChanged.value,
+    templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
+    reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
+    conditionsChanged: !conditionsHandled && conditionsInputsChanged.value,
+  })
+  const message = force || project.value?.id === id
+    ? '重新读取会丢弃当前未保存的输入，确定继续吗？'
+    : '当前编辑尚未保存，确定切换项目吗？'
+  if (!skipConfirm && dirty && !window.confirm(message)) return
   try {
+    // Keep the current inputs until the target project's initial reads succeed.
     const result = await getProject(id)
+    const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
+    const assetResult = await listAssets(id)
+    const changeSetsResult = await listChangeSets(id)
+    if (generationTimer) clearTimeout(generationTimer)
+    if (workingCopyTimer) clearTimeout(workingCopyTimer)
+    workingCopyTimer = undefined
+    generationRun.value = null
+    generationCandidate.value = null
+    generationCandidates.value = []
+    adoptionOpen.value = false
+    errorMessage.value = ''
+    pendingChangeSet.value = null
+    pendingDraft.value = null
+    pendingTemplateUpgrade.value = null
+    templateUpgradeReason.value = ''
     project.value = result.data
     hydrateTemplateCopyDraft(result.data)
     subject.value = result.data.spec.research_subject ?? ''
     goal.value = result.data.spec.research_goal ?? ''
-    const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
+    resetConditionsInputs(id)
     chapters.value = chapterResult?.data ?? []
-    const assetResult = await listAssets(id)
-    const changeSetsResult = await listChangeSets(id)
     const changeSets = (changeSetsResult.data ?? []).map(normalizeChangeSet)
     const assessedTemplateUpgrade = [...changeSets].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
     if (assessedTemplateUpgrade?.template_upgrade) {
@@ -1162,11 +1183,15 @@ async function createConditionsChangePreview() {
     affected_chapter_ids: [...selectedImpactChapterIds.value],
     reason: changeReason.value.trim(),
   }
-    const createKey = operationKey(`change-set-create:${id}`, input)
+  const submittedInputs = conditionsChangeSnapshot(id, input.reason, input.affected_chapter_ids)
+  const submittedDraft = { subject: subject.value, goal: goal.value, reason: submittedInputs.reason, chapterIds: submittedInputs.chapterIds }
+  const createKey = operationKey(`change-set-create:${id}`, input)
   try {
     const created = await createChangeSet(id, input, createKey)
+    if (project.value?.id !== id) return
     pendingChangeSet.value = created.data
-    pendingDraft.value = { subject: subject.value, goal: goal.value, reason: changeReason.value.trim(), chapterIds: [...selectedImpactChapterIds.value].sort() }
+    pendingDraft.value = submittedDraft
+    acknowledgedConditionsInputs.value = submittedInputs
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
@@ -1182,9 +1207,11 @@ async function applyConditionsChange() {
     const applied = await applyChangeSet(id, changeSetId, applyKey)
     attempts.delete(`change-set-create:${id}`)
     attempts.delete(`change-set-apply:${id}:${changeSetId}`)
+    if (project.value?.id !== id) return
+    resetConditionsInputs(id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    await selectProject(id)
+    await selectProject(id, false, false, true)
     lastChangeSet.value = applied.data
   } catch (error) {
     const item = error as { status?: number }
@@ -1217,9 +1244,11 @@ async function rejectConditionsChange() {
     const rejected = await rejectChangeSet(id, changeSetId, rejectKey)
     attempts.delete(`change-set-create:${id}`)
     attempts.delete(`change-set-reject:${id}:${changeSetId}`)
+    if (project.value?.id !== id) return
+    resetConditionsInputs(id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    await selectProject(id)
+    await selectProject(id, false, false, true)
     lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
