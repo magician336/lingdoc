@@ -173,4 +173,3 @@ func TestPublishRuleSetRequiresEnabledRule(t *testing.T) {
 		t.Fatalf("PublishRuleSet() error = %v, want ErrInvalidRuleSet", err)
 	}
 }
-
