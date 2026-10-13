@@ -197,6 +197,8 @@ type ChangeSet struct {
 	ID                    string             `json:"id"`
 	ProjectID             string             `json:"project_id"`
 	CreatedBy             string             `json:"created_by"`
+	ReassessedFromID      string             `json:"reassessed_from_id,omitempty"`
+	StaleReason           string             `json:"stale_reason,omitempty"`
 	Reason                string             `json:"reason"`
 	Status                string             `json:"status"`
 	BaseContextRevision   int64              `json:"base_context_revision"`

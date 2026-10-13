@@ -143,6 +143,8 @@ delta 必须表达字段级或对象级变化，不能只有一段不可解析�
 
 两个 ChangeSet 可以同时基于同一 revision 创建和评估，但只能有一个先应用成功。后应用者收到 `STALE`，不能自动合并或覆盖前一个变化。用户可以查看 delta 并以当前 revision 复制为新的 ChangeSet。
 
+当前 Workspace API 通过 `POST /projects/{projectId}/change-sets/{changeSetId}/reassess` 提供这一恢复切片：仅允许对 `STALE` 记录执行；原记录保留为历史，新建的评估记录绑定当前 Context/Spec Revision 和最新受影响章节版本，并通过 `reassessed_from_id` 追溯来源。若原字段已变成拟议目标值，该 delta 可视为已满足；若目标字段变成其他值，返回版本冲突，要求人工解决，不能静默覆盖。模板升级仅在源副本与迁移输入仍匹配时重评估；否则应基于当前副本重新创建升级评估。每次操作需使用幂等键，并与审计在同一事务中提交。
+
 重复提交同一个幂等键返回第一次应用结果；不同幂等键即使 delta 相同，也必须经过当前基线检查，不能靠内容相等跳过审计。
 
 ## 6. DependencyRegistry 与 DependencyEdge

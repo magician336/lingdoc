@@ -1509,11 +1509,18 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
 			stale.Status = "stale"
+			stale.StaleReason = "context_revision_changed"
+			if change.BaseSpecRevision != p.SpecRevision {
+				stale.StaleReason = "spec_revision_changed"
+			}
+			if upgradeStale {
+				stale.StaleReason = "template_copy_changed"
+			}
 			if err := store.UpdateChangeSet(change, stale); err != nil {
 				return nil, 0, err
 			}
 			if audit, ok := tx.(auditTransaction); ok {
-				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision, "template_copy_version": p.TemplateCopyVersion}, CreatedAt: time.Now().UTC()}); err != nil {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"stale_reason": stale.StaleReason, "base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision, "template_copy_version": p.TemplateCopyVersion}, CreatedAt: time.Now().UTC()}); err != nil {
 					return nil, 0, err
 				}
 			}
@@ -1527,11 +1534,12 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			if !sameVersion(impact.ChapterVersionID, chapter.CurrentVersionID) {
 				stale := change
 				stale.Status = "stale"
+				stale.StaleReason = "chapter_version_changed"
 				if err := store.UpdateChangeSet(change, stale); err != nil {
 					return nil, 0, err
 				}
 				if audit, ok := tx.(auditTransaction); ok {
-					if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"chapter_id": impact.ChapterID, "chapter_version_id": impact.ChapterVersionID}, CreatedAt: time.Now().UTC()}); err != nil {
+					if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"stale_reason": stale.StaleReason, "chapter_id": impact.ChapterID, "chapter_version_id": impact.ChapterVersionID}, CreatedAt: time.Now().UTC()}); err != nil {
 						return nil, 0, err
 					}
 				}
@@ -1629,6 +1637,119 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			}
 		}
 		return change, 200, nil
+	})
+}
+
+// ReassessChangeSet copies a stale proposal onto the current project baseline.
+// The stale proposal remains immutable history; changed target fields or an
+// upgraded template require a human to resolve the conflict before retrying.
+func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	if strings.TrimSpace(changeSetID) == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input := struct {
+		SourceChangeSetID string `json:"source_change_set_id"`
+	}{SourceChangeSetID: changeSetID}
+	return s.operation(ctx, actor, "reassessChangeSet", projectID+"/"+changeSetID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "active" || p.DiscardedAt != nil || p.CurrentContextRevision < 1 {
+			return nil, 0, ErrInvalidState
+		}
+		store, ok := tx.(changeSetTransaction)
+		if !ok {
+			return nil, 0, ErrInvalidState
+		}
+		stale, err := store.ChangeSet(projectID, changeSetID)
+		if err != nil {
+			return nil, 0, err
+		}
+		if stale.Status != "stale" {
+			return nil, 0, ErrInvalidState
+		}
+
+		fields := make([]ChangeFieldDelta, 0, len(stale.Fields))
+		for _, field := range stale.Fields {
+			currentValue := p.Spec[field.Key]
+			if currentValue == field.NewValue {
+				continue
+			}
+			if currentValue != field.OldValue {
+				return nil, 0, ErrVersionConflict
+			}
+			fields = append(fields, field)
+		}
+
+		impactChapterIDs := make([]string, 0, len(stale.Impacts))
+		var templateUpgrade *TemplateUpgrade
+		if stale.TemplateUpgrade != nil {
+			upgrade := *stale.TemplateUpgrade
+			if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound || p.TemplateCopyVersion != upgrade.BaseTemplateCopyVersion {
+				return nil, 0, ErrVersionConflict
+			}
+			// Do not carry a reviewed migration over edits to its source values.
+			// The caller must inspect the latest project and create a fresh upgrade.
+			for _, field := range upgrade.Preview.Fields {
+				if p.Spec[field.FieldID] != field.Value {
+					return nil, 0, ErrVersionConflict
+				}
+			}
+			if _, err := templateSpecAfterUpgrade(p.Spec, upgrade.Definition, upgrade.FieldValues); err != nil {
+				return nil, 0, ErrInvalidState
+			}
+			chapters, err := tx.Chapters(projectID)
+			if err != nil {
+				return nil, 0, err
+			}
+			if len(chapters) == 0 {
+				return nil, 0, ErrInvalidState
+			}
+			for _, chapter := range chapters {
+				impactChapterIDs = append(impactChapterIDs, chapter.ID)
+			}
+			slices.Sort(impactChapterIDs)
+			upgrade.Preview = buildTemplateMigrationPreview(p, upgrade.Definition, p.ProjectVersion)
+			upgrade.Impact = buildTemplateUpgradeImpact(p.TemplateCopy, upgrade.Definition, upgrade.Preview, impactChapterIDs, chapters)
+			templateUpgrade = &upgrade
+		} else {
+			if len(fields) == 0 {
+				return nil, 0, ErrInvalidState
+			}
+			for _, impact := range stale.Impacts {
+				impactChapterIDs = append(impactChapterIDs, impact.ChapterID)
+			}
+			slices.Sort(impactChapterIDs)
+			impactChapterIDs = slices.Compact(impactChapterIDs)
+		}
+
+		reason := "研究条件变化，需要重新复核"
+		if templateUpgrade != nil {
+			reason = "模板或规则版本变化，需要重新复核"
+		}
+		impacts := make([]ChangeImpact, 0, len(impactChapterIDs))
+		for _, chapterID := range impactChapterIDs {
+			chapter, err := tx.Chapter(projectID, chapterID)
+			if err != nil {
+				return nil, 0, err
+			}
+			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: reason, Status: "open"})
+		}
+		change := ChangeSet{
+			ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReassessedFromID: stale.ID,
+			Reason: stale.Reason, Status: "assessed", BaseContextRevision: p.CurrentContextRevision,
+			BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts,
+			TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC(),
+		}
+		if err := store.InsertChangeSet(change); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reassess", Target: change.ID, Details: map[string]any{
+				"reassessed_from_id": stale.ID, "base_context_revision": change.BaseContextRevision,
+				"base_spec_revision": change.BaseSpecRevision, "fields": change.Fields, "impacts": change.Impacts,
+			}, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return change, 201, nil
 	})
 }
 

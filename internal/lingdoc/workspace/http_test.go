@@ -24,6 +24,7 @@ type applicationServiceStub struct {
 	changeSetKey      string
 	applyCalled       bool
 	applyStatus       int
+	reassessCalled    bool
 	rejectCalled      bool
 	templateCopy      ProjectTemplateCopy
 	templateProjectID string
@@ -85,6 +86,12 @@ func (s *applicationServiceStub) ApplyChangeSet(_ context.Context, actor Actor, 
 		return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"stale"}`), s.applyStatus, false, nil
 	}
 	return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"applied"}`), http.StatusOK, false, nil
+}
+
+func (s *applicationServiceStub) ReassessChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	s.reassessCalled = true
+	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
+	return json.RawMessage(`{"id":"reassessed-1","project_id":"` + projectID + `","reassessed_from_id":"` + changeSetID + `","status":"assessed"}`), http.StatusCreated, false, nil
 }
 
 func (s *applicationServiceStub) RejectChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
@@ -270,6 +277,14 @@ func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated || !service.called || service.changeSetInput.ExpectedContextRevision != 1 || service.changeSetInput.Reason != "研究对象发生变化" || service.changeSetKey != "change-preview-1" {
 		t.Fatalf("preview delegation: status=%d called=%v input=%#v key=%q body=%s", response.Code, service.called, service.changeSetInput, service.changeSetKey, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reassess", strings.NewReader(`{}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "change-reassess-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusCreated || !service.reassessCalled || service.changeSetID != "change-1" || service.changeSetKey != "change-reassess-1" {
+		t.Fatalf("reassess delegation: status=%d called=%v id=%q key=%q body=%s", response.Code, service.reassessCalled, service.changeSetID, service.changeSetKey, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/apply", strings.NewReader(`{}`)).WithContext(ctx)

@@ -386,8 +386,10 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 
 func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 	var fieldData struct {
-		Fields          []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		Fields           []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade  *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID string             `json:"reassessed_from_id,omitempty"`
+		StaleReason      string             `json:"stale_reason,omitempty"`
 	}
 	// Earlier ChangeSets stored a bare array. Continue reading that shape while
 	// new records use an envelope to keep the schema migration-free.
@@ -424,14 +426,17 @@ func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
 		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision,
 		Fields: fieldData.Fields, TemplateUpgrade: fieldData.TemplateUpgrade, Impacts: impacts,
+		ReassessedFromID: fieldData.ReassessedFromID, StaleReason: fieldData.StaleReason,
 		CreatedAt: row.CreatedAt, AppliedAt: row.AppliedAt}, nil
 }
 
 func encodeChangeSetFields(change ChangeSet) (string, error) {
 	raw, err := json.Marshal(struct {
-		Fields          []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade})
+		Fields           []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade  *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID string             `json:"reassessed_from_id,omitempty"`
+		StaleReason      string             `json:"stale_reason,omitempty"`
+	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade, ReassessedFromID: change.ReassessedFromID, StaleReason: change.StaleReason})
 	return string(raw), err
 }
 

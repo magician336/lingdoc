@@ -48,6 +48,7 @@ type ApplicationService interface {
 	CreateChangeSet(context.Context, Actor, string, string, CreateChangeSetInput) (json.RawMessage, int, bool, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
 	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ReassessChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 	ApplyChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 }

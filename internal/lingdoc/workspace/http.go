@@ -49,6 +49,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/change-sets", h.listChangeSets)
 	routes.Read.GET("/projects/:projectId/change-sets/:changeSetId", h.getChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets", h.createChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reassess", h.reassessChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/apply", h.applyChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reject", h.rejectChangeSet)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
@@ -949,6 +950,23 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 		return
 	}
 	data, status, replay, err := h.service.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
+}
+
+func (h *Handler) reassessChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.service.ReassessChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
