@@ -37,7 +37,8 @@
           <div><h2>{{ project.name }}</h2><p class="muted">研究条件版本 {{ project.spec_revision }} · 项目版本 {{ project.project_version }}</p></div>
           <button type="button" @click="selectProject(project.id, true)">重新读取</button>
         </div>
-        <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
+        <ProjectMembers v-if="project" :project="project" :chapters="chapters" :assets="assets"
+          :editable="canManageProjectMembers" :saving="memberSaving" @save="saveMembers" />
 
         <section class="template-copy-panel" aria-label="项目模板副本">
           <h3>项目模板副本</h3>
@@ -484,6 +485,7 @@ import {
   type GenerationCandidateSummary, type GenerationRun,
 } from '@/api/lingdoc/generation'
 import DeliveryPanel from './DeliveryPanel.vue'
+import ProjectMembers from './ProjectMembers.vue'
 import LingDocCandidateAdoptionDialog from '@/components/LingDocCandidateAdoptionDialog.vue'
 import { RESTRICTED_NOTICE, isRestricted, recoveryActionsOf } from './accessStatus'
 import { chapterCitations, MALFORMED_CITATION_MESSAGE } from './chapterCitations'
@@ -492,19 +494,22 @@ import {
   CONTEXT_UNAVAILABLE_NOTICE, contextLines, contextNotice, quotedTextOf, sourceStatusLabel, windowLabel,
 } from './sourceContext'
 import { DENIED_NOTICE, bindingNotice, denyReasonOf, deniedSourcesOf } from './sourceNotices'
+import { useAuthStore } from '@/stores/auth'
 import {
   activateProject, applyChangeSet, bindAsset, commitWorkingCopy, confirmChapter, createChangeSet, createProject, getAccessStatus, getProject,
   getSource, getSourceContext, getWorkingCopy, getChangeSet, listAssets, listChangeSets, listChapterVersions, listChapters, listProjects,
   applySelectedRewrite, createSelectedRewrite, getSelectedRewrite,
-  previewTemplateCopyEdit, rejectChangeSet, restoreWorkingCopy, retrieveSources, saveSpec, saveTemplateCopyEdit, saveWorkingCopy,
-  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type ChangeSet, type CitationUsage, type Project, type ReviewDecision,
+  previewTemplateCopyEdit, rejectChangeSet, restoreWorkingCopy, retrieveSources, saveProjectMembers, saveSpec, saveTemplateCopyEdit, saveWorkingCopy,
+  type AccessStatus, type Asset, type Chapter, type ChapterVersion, type ChangeSet, type CitationUsage, type Project, type ProjectMemberInput, type ReviewDecision,
   type TemplateCopyDefinition, type TemplateCopyEditInput, type TemplateMigrationPreview,
   type SelectedRewriteCandidate, type Source, type SourceContext, type WorkingCopy,
 } from '@/api/lingdoc/workspace'
 
 const projects = ref<Project[]>([])
+const auth = useAuthStore()
 const truncated = ref(false)
 const project = ref<Project | null>(null)
+const memberSaving = ref(false)
 const templateCopyDraft = ref<TemplateCopyDefinition | null>(null)
 const templateCopyPreview = ref<TemplateMigrationPreview | null>(null)
 const templateCopyPreviewFingerprint = ref('')
@@ -562,6 +567,11 @@ const adoptionOpen = ref(false)
 const restricted = computed(() => isRestricted(accessStatus.value))
 const recoveryActions = computed(() => recoveryActionsOf(accessStatus.value))
 const readyAssets = computed(() => assets.value.filter(item => item.processing_state === 'ready'))
+const canManageProjectMembers = computed(() => {
+  const current = project.value?.members.find(member => member.user_id === auth.currentUserId)
+  const governanceRole = current?.governance_role ?? (current?.role === 'owner' ? 'owner' : 'member')
+  return current?.status !== 'suspended' && (governanceRole === 'owner' || governanceRole === 'admin')
+})
 const generationPending = computed(() => generationRun.value?.status === 'queued' || generationRun.value?.status === 'running')
 
 // 「上一次检索确实什么都没找到」——而且提问没被改过。改了提问而没重新检索，
@@ -856,6 +866,23 @@ async function loadProjects() {
     truncated.value = result.data.truncated
   } catch (error) { failure(error) }
   finally { loading.value = false }
+}
+
+async function saveMembers(members: ProjectMemberInput[]) {
+  if (!project.value || memberSaving.value || !canManageProjectMembers.value) return
+  const current = project.value
+  const input = { expected_project_version: current.project_version, members }
+  const name = `members:${current.id}`
+  memberSaving.value = true
+  errorMessage.value = ''
+  try {
+    const result = await saveProjectMembers(current.id, current.project_version, members, operationKey(name, input))
+    attempts.delete(name)
+    if (project.value?.id !== current.id) return
+    project.value = result.data
+    projects.value = projects.value.map(item => item.id === result.data.id ? result.data : item)
+  } catch (error) { failure(error) }
+  finally { memberSaving.value = false }
 }
 
 async function loadChapterDraft(projectId: string, chapterId: string) {
