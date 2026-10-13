@@ -68,6 +68,32 @@ export function hasUnsupportedFunctionRoles(member: ProjectMember): boolean {
   return (member.function_roles ?? []).some(role => !projectFunctionRoles.includes(role))
 }
 
+export function effectiveCapabilitySummary(member: ProjectMember): string {
+  if (member.status === 'suspended') return '项目侧已暂停：当前无项目访问权限'
+  if (member.status === 'suspended_by_tenant') return '租户成员状态异常：待租户恢复并由项目负责人确认后才可恢复访问'
+  if (member.status && member.status !== 'active') return `成员状态“${member.status}”尚未识别，当前能力无法确认`
+  const governanceRole = member.governance_role ?? (member.role === 'owner' ? 'owner' : 'member')
+  if (governanceRole === 'owner' || member.role === 'owner') return 'Owner：项目范围内完整管理与内容权限'
+
+  const capabilities = ['可读取服务端允许访问的项目内容']
+  if (governanceRole === 'admin') capabilities.push('可管理成员与项目配置（不含确认、应用变更或导出）')
+  const roles = new Set(member.function_roles ?? [])
+  const scopes = member.function_scopes ?? {}
+  if (roles.has('author')) {
+    capabilities.push(scopes.author?.length ? `可撰写 ${scopes.author.length} 个指定章节` : 'Author 未配置章节范围，不能撰写章节')
+  }
+  if (roles.has('researcher')) {
+    const assets = (scopes.researcher ?? []).filter(scope => scope.startsWith('asset:'))
+    capabilities.push(assets.length ? `可使用 ${assets.length} 项指定资料` : 'Researcher 未配置资料范围，不能使用项目资料')
+  }
+  if (roles.has('reviewer')) {
+    const chapters = (scopes.reviewer ?? []).filter(scope => !scope.startsWith('asset:') && !scope.startsWith('delivery:'))
+    capabilities.push(chapters.length ? `可评审 ${chapters.length} 个指定章节` : 'Reviewer 未配置章节范围，不能执行章节评审')
+  }
+  if (roles.has('observer')) capabilities.push('Observer 职能自身仅提供只读能力')
+  return capabilities.join('；')
+}
+
 export function serializeProjectMemberDrafts(drafts: ProjectMemberDraft[]): ProjectMemberInput[] {
   return drafts.map(member => ({
     ...member,

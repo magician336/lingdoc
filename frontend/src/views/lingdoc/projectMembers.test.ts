@@ -3,7 +3,7 @@ import test from 'node:test'
 import type { ProjectMember } from '@/api/lingdoc/workspace'
 import {
   assetIdsForSelection, chapterScopesForSelection, createProjectMemberDrafts,
-  hasOrphanedFunctionScopes, hasUnsupportedMemberState, serializeProjectMemberDrafts,
+  effectiveCapabilitySummary, hasOrphanedFunctionScopes, hasUnsupportedMemberState, serializeProjectMemberDrafts,
   setAssetScopes, setChapterScopes, setProjectFunctionRole,
 } from './projectMembers'
 
@@ -52,4 +52,18 @@ test('serialized request does not share arrays with editable drafts', () => {
   const payload = serializeProjectMemberDrafts(draft)
   payload[0].function_scopes?.researcher.push('asset:asset-2')
   assert.deepEqual(draft[0].function_scopes.researcher, ['asset:asset-1'])
+})
+
+test('capability summaries combine governance and function roles without overstating empty scopes', () => {
+  assert.match(effectiveCapabilitySummary({ user_id: 'owner', role: 'owner' }), /Owner.*完整/)
+  const member = {
+    user_id: 'admin-author', role: 'collaborator' as const, governance_role: 'admin' as const,
+    function_roles: ['author', 'researcher', 'observer'] as ('author' | 'researcher' | 'observer')[],
+    function_scopes: { author: ['chapter-1'], researcher: [] },
+  }
+  const summary = effectiveCapabilitySummary(member)
+  assert.match(summary, /管理成员与项目配置/)
+  assert.match(summary, /撰写 1 个指定章节/)
+  assert.match(summary, /不能使用项目资料/)
+  assert.match(summary, /Observer 职能自身仅提供只读能力/)
 })

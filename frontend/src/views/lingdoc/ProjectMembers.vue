@@ -3,7 +3,7 @@
     <div class="member-panel__heading">
       <div>
         <h3 id="project-members-heading">项目成员与权限</h3>
-        <p class="muted">查看治理角色、职能角色及已配置的章节/资料范围。权限最终由服务端逐请求校验。</p>
+        <p class="muted">查看项目内配置推导出的能力和章节/资料范围；租户状态及资料实时授权仍由服务端逐请求复核。</p>
       </div>
       <button v-if="editable" type="button" :disabled="!canSave" @click="save">
         {{ saving ? '保存中…' : '保存权限' }}
@@ -20,6 +20,7 @@
           <strong>{{ member.user_id }}</strong>
           <span class="member-badge">{{ governanceLabel(member) }}</span>
           <span class="member-badge" :class="{ 'member-badge--muted': member.status === 'suspended' }">{{ statusLabel(member.status) }}</span>
+          <p class="member-capabilities">可执行：{{ capabilitySummary(member) }}</p>
           <p class="muted">职能：{{ functionRoleSummary(member) }}</p>
           <p v-for="role in member.function_roles ?? []" :key="role" class="muted member-scope-summary">
             {{ functionRoleLabel(role) }}范围：{{ scopeSummary(member, role) }}
@@ -84,7 +85,7 @@ import type { Asset, Chapter, Project, ProjectFunctionRole, ProjectMember, Proje
 import {
   assetIdsForSelection, chapterScopesForSelection, createProjectMemberDrafts,
   hasOrphanedFunctionScopes, hasUnsupportedFunctionRoles, hasUnsupportedMemberState,
-  projectFunctionRoles, serializeProjectMemberDrafts, setAssetScopes, setChapterScopes,
+  effectiveCapabilitySummary, projectFunctionRoles, serializeProjectMemberDrafts, setAssetScopes, setChapterScopes,
   setProjectFunctionRole, type ProjectMemberDraft,
 } from './projectMembers'
 
@@ -127,6 +128,10 @@ function functionRoleLabel(role: string): string {
 function functionRoleSummary(member: ProjectMember): string {
   const roles = member.function_roles ?? []
   return roles.length ? roles.map(functionRoleLabel).join('、') : '未分配职能角色'
+}
+
+function capabilitySummary(member: ProjectMember): string {
+  return effectiveCapabilitySummary(member)
 }
 
 function governanceLabel(member: ProjectMember): string {
@@ -198,6 +203,7 @@ function save(): void {
 .member-list { display: grid; gap: 12px; margin: 14px 0 0; padding: 0; list-style: none; }
 .member-card { padding: 12px; border: 1px solid #dbe5dd; border-radius: 7px; background: #fff; }
 .member-card__summary > strong { margin-right: 8px; }
+.member-capabilities { margin: 8px 0; padding: 8px 10px; border-left: 3px solid #0b8c91; background: #f1f8f5; font-size: 13px; }
 .member-badge { display: inline-block; margin: 0 5px 4px 0; padding: 2px 7px; border-radius: 12px; color: #176356; background: #e5f6f2; font-size: 12px; }
 .member-badge--muted { color: #735215; background: #fff3d8; }
 .member-scope-summary { margin-left: 8px; }
