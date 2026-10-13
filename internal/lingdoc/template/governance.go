@@ -333,13 +333,20 @@ func evaluateTemplate(t Template, input EvaluationInput, rulesetHash string) ([]
 	if err != nil {
 		return nil, err
 	}
-	if rulesetHash == "" {
+	pinnedRuleSetHash := rulesetHash != ""
+	if !pinnedRuleSetHash {
 		rulesetHash = templateRulesetHash
 	}
 	// T02's public fixed demo hash is part of the already-published T13 wire
 	// contract. All project-owned copies use the freshly computed hash above.
-	if rulesetHash == templateRulesetHash && t.ID == DemoTemplateID && t.Version == DemoTemplateVersion && t.RulesetHash == DemoRulesetHash {
-		rulesetHash = DemoRulesetHash
+	if !pinnedRuleSetHash && t.ID == DemoTemplateID && t.Version == DemoTemplateVersion && t.RulesetHash == DemoRulesetHash {
+		_, fixedDemoRulesetHash, err := Hashes(DemoTemplate())
+		if err != nil {
+			return nil, err
+		}
+		if templateRulesetHash == fixedDemoRulesetHash {
+			rulesetHash = DemoRulesetHash
+		}
 	}
 	results := make([]Evaluation, 0)
 	for _, rule := range t.Rules {
