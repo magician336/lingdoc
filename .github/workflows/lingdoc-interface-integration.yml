@@ -5,6 +5,7 @@ on:
     paths:
       - 'internal/lingdoc/**'
       - 'internal/evidence/**'
+      - 'scripts/acceptance/**'
       - 'internal/container/lingdoc*'
       - 'internal/router/lingdoc*'
       - '.github/workflows/lingdoc-interface-integration.yml'
@@ -40,10 +41,26 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Real API and database contracts
-        run: go test -race -count=1 -v ./internal/lingdoc/... ./internal/router ./internal/container ./internal/evidence
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Test closeout matrix helpers
+        run: python -m unittest discover -s scripts/acceptance -p 'test_*.py' -v
+      - name: Run backend closeout against isolated PostgreSQL
+        run: >-
+          python scripts/acceptance/lingdoc_backend_closeout.py
+          --output-dir "${RUNNER_TEMP}/lingdoc-backend-closeout"
+          --require-postgres
       - name: Repeat sequential API contract without race instrumentation
         run: go test -count=20 -run '^TestLingDocRealAPIThroughMainRegistration$' ./internal/router
+      - name: Upload backend closeout logs and status matrix
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingdoc-backend-closeout-${{ github.run_id }}
+          path: ${{ runner.temp }}/lingdoc-backend-closeout/
+          if-no-files-found: warn
+          retention-days: 14
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
