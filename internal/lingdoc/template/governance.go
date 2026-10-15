@@ -184,6 +184,9 @@ func validSeverity(severity string) bool {
 }
 
 func validateRule(rule Rule) error {
+	if !validSeverity(rule.Severity) {
+		return fmt.Errorf("%w: rule %q has unsupported severity %q", ErrInvalidDefinition, rule.ID, rule.Severity)
+	}
 	allowed := map[string]bool{}
 	switch rule.Kind {
 	case "model_assisted":

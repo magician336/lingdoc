@@ -6,7 +6,9 @@ package rulesetstore
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -266,9 +268,17 @@ func recordAudit(tx *gorm.DB, actor Actor, set template.RuleSet, action Action, 
 	}
 	return tx.Exec(query,
 		actor.TenantID, actor.UserID, actor.Role, "lingdoc.ruleset."+string(action),
-		"ruleset_version", set.ID+"/"+set.Version, "success", string(details),
+		"ruleset_version", auditTargetID(set.ID, set.Version), "success", string(details),
 		"lingdoc_ruleset", set.ID, now,
 	).Error
+}
+
+// auditTargetID fits the shared audit_logs.target_id VARCHAR(64) while keeping
+// a deterministic reference to the full (ruleset ID, version) pair. The
+// unabridged values remain in the JSON details for human-readable lookup.
+func auditTargetID(id, version string) string {
+	sum := sha256.Sum256([]byte(id + "\x00" + version))
+	return hex.EncodeToString(sum[:])
 }
 
 type ruleSetVersionRow struct {

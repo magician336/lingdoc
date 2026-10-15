@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/dig"
 	"gorm.io/gorm"
 )
@@ -20,6 +22,7 @@ import (
 type LingDocWorkspace struct {
 	dig.Out
 	Handler     *workspace.Handler
+	RuleSets    *rulesetstore.HTTPHandler
 	Projects    workspace.ApplicationService
 	Integration workspace.WorkspaceIntegration
 	Runtime     *workspace.SourceRuntime
@@ -44,7 +47,26 @@ func NewLingDocWorkspaceHandler(
 		Templates:        delivery.NewFixedTemplateReader(),
 		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
 	})
-	return LingDocWorkspace{Handler: handler, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}
+	ruleSets := rulesetstore.NewHTTPHandler(
+		rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{}),
+		lingDocRuleSetRequestInfo,
+	)
+	return LingDocWorkspace{Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}
+}
+
+func lingDocRuleSetRequestInfo(c *gin.Context) (rulesetstore.Actor, string, bool) {
+	ctx := c.Request.Context()
+	userID, userOK := types.UserIDFromContext(ctx)
+	tenantID, tenantOK := types.TenantIDFromContext(ctx)
+	requestID, _ := types.RequestIDFromContext(ctx)
+	if !userOK || !tenantOK || tenantID == 0 {
+		return rulesetstore.Actor{}, requestID, false
+	}
+	return rulesetstore.Actor{
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     string(types.TenantRoleFromContext(ctx)),
+	}, requestID, true
 }
 
 type workspaceAuditSink struct{ service interfaces.AuditLogService }

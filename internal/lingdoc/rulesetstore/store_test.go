@@ -2,9 +2,11 @@ package rulesetstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
@@ -115,6 +117,47 @@ func TestStoreRollsBackRuleSetWhenAuditWriteFails(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("ruleset rows = %d after audit failure, want rollback to 0", count)
+	}
+}
+
+func TestStoreBoundsAuditTargetForMaximumRuleSetIdentity(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft(strings.Repeat("v", 64))
+	draft.ID = strings.Repeat("r", 64)
+
+	if err := store.CreateDraft(context.Background(), actor, draft); err != nil {
+		t.Fatalf("CreateDraft(max identity) error = %v", err)
+	}
+	if _, err := store.Publish(context.Background(), actor, draft.ID, draft.Version); err != nil {
+		t.Fatalf("Publish(max identity) error = %v", err)
+	}
+
+	var audit struct {
+		TargetID string
+		Details  string
+	}
+	if err := db.Table("audit_logs").Select("target_id, details").
+		Where("tenant_id = ? AND scope_id = ? AND action = ?", actor.TenantID, draft.ID, "lingdoc.ruleset.publish").
+		Take(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.TargetID) != 64 || audit.TargetID != auditTargetID(draft.ID, draft.Version) {
+		t.Fatalf("audit target_id = %q (len %d), want deterministic 64-character reference", audit.TargetID, len(audit.TargetID))
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(audit.Details), &details); err != nil {
+		t.Fatal(err)
+	}
+	if details["ruleset_id"] != draft.ID || details["version"] != draft.Version {
+		t.Fatalf("audit details do not retain the original identity: %+v", details)
+	}
+
+	overlong := testDraft("v1")
+	overlong.ID = strings.Repeat("r", 65)
+	if err := store.CreateDraft(context.Background(), actor, overlong); !errors.Is(err, template.ErrInvalidRuleSet) {
+		t.Fatalf("CreateDraft(overlong identity) error = %v, want ErrInvalidRuleSet", err)
 	}
 }
 

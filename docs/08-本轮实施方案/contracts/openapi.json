@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "LingDoc internal demo contract — proposal only",
+    "title": "LingDoc internal demo contract — proposal and implemented slices",
     "version": "0.4.0",
-    "description": "拟议新接口，非现有服务。core/optional区分实施范围；含待核事项和完整冻结输入。孤立UI例子不代替F01连续规格。"
+    "description": "本契约多数路径仍为拟议范围；RuleSet 管理路径是已实现的 G4 首个服务切片，但尚未接入 TemplateVersion、ProjectTemplateCopy、检查与 Preflight。core/optional 区分拟议实施范围；含待核事项和完整冻结输入。孤立 UI 例子不代替 F01 连续规格。"
   },
   "servers": [
     {
@@ -12564,13 +12564,139 @@
     },
     "/projects/{projectId}/change-sets/{changeSetId}": {"get":{"operationId":"getChangeSet","tags":["workspace"],"summary":"读取变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更预览"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/apply": {"post":{"operationId":"applyChangeSet","tags":["workspace"],"summary":"Owner 应用变更并开始复核","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已原子应用"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"基线过期或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
-    "/projects/{projectId}/change-sets/{changeSetId}/reject": {"post":{"operationId":"rejectChangeSet","tags":["workspace"],"summary":"Owner 驳回变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已驳回"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}}
+    "/projects/{projectId}/change-sets/{changeSetId}/reject": {"post":{"operationId":"rejectChangeSet","tags":["workspace"],"summary":"Owner 驳回变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已驳回"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/rule-sets/definitions": {
+      "get": {
+        "operationId": "listRuleDefinitions",
+        "tags": ["rule-governance"],
+        "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
+        "summary": "读取服务端白名单规则定义",
+        "description": "需要已认证的租户成员；返回的执行器集合由服务端管理。",
+        "responses": {
+          "200": {"description": "规则定义目录", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleDefinitionListResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets": {
+      "post": {
+        "operationId": "createRuleSetDraft",
+        "tags": ["rule-governance"],
+        "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
+        "summary": "创建不可变版本规则集的草稿",
+        "description": "仅租户 Owner/Admin 可写。服务端拒绝未知字段与非草稿状态，并在同一事务中校验成员身份、保存版本和审计记录。",
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetDraftInput"}}}},
+        "responses": {
+          "201": {"description": "草稿已保存", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetResponse"}}}},
+          "400": {"description": "规则集或请求字段无效", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "当前成员无权写入", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "该规则集版本已存在", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions": {
+      "get": {
+        "operationId": "listRuleSetVersions",
+        "tags": ["rule-governance"],
+        "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
+        "summary": "列出租户内规则集版本历史",
+        "parameters": [{"name": "ruleSetID", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}}],
+        "responses": {
+          "200": {"description": "按创建时间倒序排列的版本", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetListResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "当前成员不在租户内", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}": {
+      "get": {
+        "operationId": "getRuleSetVersion",
+        "tags": ["rule-governance"],
+        "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
+        "summary": "读取规则集的指定历史版本",
+        "parameters": [
+          {"name": "ruleSetID", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}},
+          {"name": "version", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}}
+        ],
+        "responses": {
+          "200": {"description": "指定版本快照", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "当前成员不在租户内", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "版本不存在或不可访问", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}/publish": {
+      "post": {
+        "operationId": "publishRuleSetVersion", "tags": ["rule-governance"], "security": [{"bearerAuth": []}, {"apiKeyAuth": []}], "summary": "发布规则集草稿版本",
+        "description": "仅租户 Owner/Admin 可写；发布时由服务端校验白名单规则并计算哈希。",
+        "parameters": [
+          {"name": "ruleSetID", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}},
+          {"name": "version", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}}
+        ],
+        "responses": {
+          "200": {"description": "规则集已发布", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "当前成员无权写入", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "版本不存在或不可访问", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "版本状态不允许发布", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}/withdraw": {
+      "post": {
+        "operationId": "withdrawRuleSetVersion", "tags": ["rule-governance"], "security": [{"bearerAuth": []}, {"apiKeyAuth": []}], "summary": "撤回规则集版本",
+        "description": "仅阻止新绑定；保留历史版本供回放。仅租户 Owner/Admin 可写。",
+        "parameters": [
+          {"name": "ruleSetID", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}},
+          {"name": "version", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}}
+        ],
+        "responses": {
+          "200": {"description": "规则集已撤回", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "当前成员无权写入", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "版本不存在或不可访问", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "版本状态不允许撤回", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}/recall": {
+      "post": {
+        "operationId": "recallRuleSetVersion", "tags": ["rule-governance"], "security": [{"bearerAuth": []}, {"apiKeyAuth": []}], "summary": "召回存在严重问题的规则集版本",
+        "description": "保留历史版本、拒绝后续绑定。仅租户 Owner/Admin 可写。",
+        "parameters": [
+          {"name": "ruleSetID", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}},
+          {"name": "version", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"}}
+        ],
+        "responses": {
+          "200": {"description": "规则集已召回", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetResponse"}}}},
+          "401": {"description": "需要有效的租户身份", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "403": {"description": "当前成员无权写入", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "404": {"description": "版本不存在或不可访问", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
+          "409": {"description": "版本状态不允许召回", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}}
+        },
+        "x-domain": "template-governance", "x-delivery-phase": "core"
+      }
+    }
   },
   "components": {
     "securitySchemes": {
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "仅启用 full-access 的租户 API Key 可访问 LingDoc RuleSet 管理路由。"
       }
     },
     "schemas": {
@@ -14402,6 +14528,92 @@
         ],
         "additionalProperties": false
       },
+      "RuleDefinition": {
+        "type": "object",
+        "properties": {
+          "definition_id": {"type": "string", "minLength": 1},
+          "definition_version": {"type": "string", "minLength": 1},
+          "kind": {"type": "string", "enum": ["presence", "pattern", "consistency", "computed", "model_assisted"]},
+          "evaluator": {"type": "string"},
+          "allowed_target_kinds": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["definition_id", "definition_version", "kind"],
+        "additionalProperties": false
+      },
+      "RuleBinding": {
+        "type": "object",
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "definition_id": {"type": "string", "minLength": 1},
+          "definition_version": {"type": "string", "minLength": 1},
+          "origin": {"type": "string", "enum": ["builtin", "organization", "project"]},
+          "target_kind": {"type": "string"},
+          "target_id": {"type": "string"},
+          "parameters": {"type": "object", "additionalProperties": true},
+          "severity": {"type": "string", "enum": ["info", "warning", "blocking"]},
+          "message": {"type": "string"},
+          "trigger_scenes": {"type": "array", "items": {"type": "string", "enum": ["write_check", "preflight"]}},
+          "positive_example_refs": {"type": "array", "items": {"type": "string"}},
+          "negative_example_refs": {"type": "array", "items": {"type": "string"}},
+          "enabled": {"type": "boolean"},
+          "owner": {"type": "string", "minLength": 1}
+        },
+        "required": ["rule_id", "definition_id", "definition_version", "origin", "severity", "trigger_scenes", "enabled", "owner"],
+        "additionalProperties": false
+      },
+      "RuleSet": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+          "version": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+          "state": {"type": "string", "enum": ["draft", "published", "withdrawn", "recalled"]},
+          "bindings": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBinding"}},
+          "ruleset_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "required": ["ruleset_id", "version", "state", "bindings"],
+        "additionalProperties": false
+      },
+      "RuleSetDraftInput": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+          "version": {"type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+          "state": {"type": "string", "enum": ["draft"]},
+          "bindings": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBinding"}}
+        },
+        "required": ["ruleset_id", "version", "bindings"],
+        "additionalProperties": false
+      },
+      "RuleSetResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/RuleSet"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
+      "RuleSetListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"type": "object", "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/RuleSet"}}}, "required": ["items"], "additionalProperties": false},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
+      "RuleDefinitionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"type": "object", "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/RuleDefinition"}}}, "required": ["items"], "additionalProperties": false},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
       "ErrorResponse": {
         "type": "object",
         "properties": {
@@ -14831,6 +15043,10 @@
     {
       "name": "delivery",
       "description": "模板与交付服务，不指定开发人员"
+    },
+    {
+      "name": "rule-governance",
+      "description": "RuleSet catalog, versions, and lifecycle governance"
     }
   ]
 }

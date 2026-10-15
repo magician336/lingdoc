@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -86,7 +87,7 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	store := NewStore(db, testAuthorizer{allow: true})
 	actor := Actor{TenantID: 1, UserID: "pg-admin", Role: "tenant_admin"}
 	draft := template.RuleSet{
-		ID: "pg-rules", Version: "v1", State: template.RuleSetDraft,
+		ID: strings.Repeat("r", 64), Version: strings.Repeat("v", 64), State: template.RuleSetDraft,
 		Bindings: []template.RuleBinding{{
 			RuleID: "goal-required", DefinitionID: "presence", DefinitionVersion: "1",
 			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
@@ -113,5 +114,20 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	}
 	if auditCount != 2 {
 		t.Fatalf("audit rows = %d, want 2", auditCount)
+	}
+	var audit struct {
+		TargetID string
+		Details  string
+	}
+	if err := db.Table("audit_logs").Select("target_id, details").
+		Where("tenant_id = ? AND scope_id = ? AND action = ?", actor.TenantID, draft.ID, "lingdoc.ruleset.publish").
+		Take(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.TargetID) != 64 || audit.TargetID != auditTargetID(draft.ID, draft.Version) {
+		t.Fatalf("PostgreSQL audit target_id = %q (len %d), want deterministic 64-character reference", audit.TargetID, len(audit.TargetID))
+	}
+	if !strings.Contains(audit.Details, draft.ID) || !strings.Contains(audit.Details, draft.Version) {
+		t.Fatalf("PostgreSQL audit details lost the full identity: %s", audit.Details)
 	}
 }

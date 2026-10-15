@@ -3,6 +3,7 @@ package template
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +71,47 @@ func TestPublishRuleSetComputesHashAndCompilesAllowlistedRules(t *testing.T) {
 	}
 	if _, ok := rules[0].Parameters["evaluator"]; ok {
 		t.Fatal("compiled rule exposed a client-authored evaluator")
+	}
+}
+
+func TestRuleSetRejectsInvalidSeverityBeforePublishOrBinding(t *testing.T) {
+	for _, severity := range []string{"", "fatal"} {
+		t.Run("severity_"+severity, func(t *testing.T) {
+			draft := testRuleSet()
+			draft.Bindings[0].Severity = severity
+			if _, err := PublishRuleSet(draft); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("PublishRuleSet() error = %v, want ErrInvalidRuleSet", err)
+			}
+
+			published := draft
+			published.State = RuleSetPublished
+			published.RulesetHash = strings.Repeat("a", 64)
+			if err := CanBindRuleSet(published); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("CanBindRuleSet() error = %v, want ErrInvalidRuleSet", err)
+			}
+		})
+	}
+}
+
+func TestRuleSetIdentityMatchesDatabaseLengthContract(t *testing.T) {
+	valid := testRuleSet()
+	valid.ID, valid.Version = strings.Repeat("r", 64), strings.Repeat("v", 64)
+	if _, err := PublishRuleSet(valid); err != nil {
+		t.Fatalf("64-character ruleset identity rejected: %v", err)
+	}
+
+	for _, field := range []string{"id", "version"} {
+		t.Run(field, func(t *testing.T) {
+			invalid := testRuleSet()
+			if field == "id" {
+				invalid.ID = strings.Repeat("r", 65)
+			} else {
+				invalid.Version = strings.Repeat("v", 65)
+			}
+			if err := ValidateRuleSet(invalid); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("ValidateRuleSet() error = %v, want ErrInvalidRuleSet", err)
+			}
+		})
 	}
 }
 

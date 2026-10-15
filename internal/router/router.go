@@ -18,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/handler/session"
 	candidateadoption "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/middleware"
@@ -92,6 +93,7 @@ type RouterParams struct {
 	WikiPageHandler                 *handler.WikiPageHandler
 	MemoryHandler                   *handler.MemoryHandler
 	LingDocWorkspace                *workspace.Handler
+	LingDocRuleSetHandler           *rulesetstore.HTTPHandler
 	LingDocDeliveryHandler          *workspace.DeliveryHandler
 	LingDocDeliveryExportHandler    *workspace.DeliveryExportHandler
 	LingDocCandidateAdoptionHandler *candidateadoption.CandidateAdoptionHandler
@@ -319,6 +321,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMemoryRoutes(v1, params.MemoryHandler, rbacGuards)
 		if params.LingDocWorkspace != nil {
 			registerLingDocWorkspaceRoutes(v1, rbacGuards, params.LingDocWorkspace)
+		}
+		if params.LingDocRuleSetHandler != nil {
+			registerLingDocRuleSetRoutes(v1, rbacGuards, params.LingDocRuleSetHandler)
 		}
 		if params.LingDocDeliveryHandler != nil {
 			lingdoc := newLingDocRegistrar(v1, rbacGuards)

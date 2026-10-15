@@ -289,8 +289,8 @@ func EvaluateRuleSet(t Template, set RuleSet, scene string, input EvaluationInpu
 }
 
 func validateRuleSetContent(set RuleSet) error {
-	if !stableID.MatchString(set.ID) || !stableID.MatchString(set.Version) {
-		return fmt.Errorf("%w: ruleset identity is incomplete", ErrInvalidRuleSet)
+	if !stableID.MatchString(set.ID) || !stableID.MatchString(set.Version) || len(set.ID) > 64 || len(set.Version) > 64 {
+		return fmt.Errorf("%w: ruleset id and version must be stable identifiers of at most 64 characters", ErrInvalidRuleSet)
 	}
 	switch set.State {
 	case RuleSetDraft, RuleSetPublished, RuleSetWithdrawn, RuleSetRecalled:
