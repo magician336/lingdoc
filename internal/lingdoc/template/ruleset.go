@@ -288,6 +288,44 @@ func EvaluateRuleSet(t Template, set RuleSet, scene string, input EvaluationInpu
 	return evaluateTemplate(definition, input, rulesetHash)
 }
 
+// EvaluateBoundRuleSet evaluates the legacy template rules together with the
+// scene-matched bindings from the exact RuleSet snapshot embedded in t. The
+// combined hash changes when either the legacy rules or the bound RuleSet
+// identity/version/hash changes.
+func EvaluateBoundRuleSet(t Template, set RuleSet, scene string, input EvaluationInput) ([]Evaluation, error) {
+	if t.RuleSetSnapshot == nil || t.RuleSetSnapshot.ID != set.ID || t.RuleSetSnapshot.Version != set.Version || t.RuleSetSnapshot.RulesetHash != set.RulesetHash {
+		return nil, fmt.Errorf("%w: evaluation RuleSet does not match the template snapshot", ErrInvalidRuleSet)
+	}
+	if err := CanBindRuleSet(set); err != nil {
+		return nil, err
+	}
+	if !allowedRuleScenes[scene] {
+		return nil, fmt.Errorf("%w: unsupported rule scene %q", ErrInvalidRuleSet, scene)
+	}
+	_, effectiveHash, err := Hashes(t)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := CompileRuleSet(set)
+	if err != nil {
+		return nil, err
+	}
+	activeRuleIDs := make(map[string]bool, len(set.Bindings))
+	for _, binding := range set.Bindings {
+		if binding.Enabled && slices.Contains(binding.TriggerScenes, scene) {
+			activeRuleIDs[binding.RuleID] = true
+		}
+	}
+	definition := Clone(t)
+	definition.RuleSetSnapshot = nil // The compiled bindings below replace the snapshot for this evaluation only.
+	for _, rule := range rules {
+		if activeRuleIDs[rule.ID] {
+			definition.Rules = append(definition.Rules, rule)
+		}
+	}
+	return evaluateTemplate(definition, input, effectiveHash)
+}
+
 func validateRuleSetContent(set RuleSet) error {
 	if !stableID.MatchString(set.ID) || !stableID.MatchString(set.Version) || len(set.ID) > 64 || len(set.Version) > 64 {
 		return fmt.Errorf("%w: ruleset id and version must be stable identifiers of at most 64 characters", ErrInvalidRuleSet)

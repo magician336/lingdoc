@@ -3,9 +3,11 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -38,7 +40,9 @@ func NewLingDocWorkspaceHandler(
 ) LingDocWorkspace {
 	auditSink := workspaceAuditSink{service: audit}
 	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge, auditSink)
-	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy(), nil, auditSink)
+	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
+	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy(), nil, auditSink).
+		WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
 	runtime.ConnectProjects(projectService)
 	handler := workspace.NewHandler(workspace.HandlerDependencies{
 		Service:          projectService,
@@ -47,11 +51,28 @@ func NewLingDocWorkspaceHandler(
 		Templates:        delivery.NewFixedTemplateReader(),
 		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
 	})
-	ruleSets := rulesetstore.NewHTTPHandler(
-		rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{}),
-		lingDocRuleSetRequestInfo,
-	)
+	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
 	return LingDocWorkspace{Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}
+}
+
+type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }
+
+func (r workspaceRuleSetSnapshotReader) GetVersion(ctx context.Context, actor workspacecore.Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	if r.store == nil {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrInvalidState
+	}
+	role := string(actor.Role)
+	if role == "" {
+		role = actor.TenantRole
+	}
+	set, err := r.store.GetVersion(ctx, rulesetstore.Actor{TenantID: actor.TenantID, UserID: actor.UserID, Role: role}, id, version)
+	if errors.Is(err, rulesetstore.ErrRuleSetNotFound) {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrNotFound
+	}
+	if errors.Is(err, rulesetstore.ErrRuleSetAccessDenied) {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrNotFound
+	}
+	return set, err
 }
 
 func lingDocRuleSetRequestInfo(c *gin.Context) (rulesetstore.Actor, string, bool) {

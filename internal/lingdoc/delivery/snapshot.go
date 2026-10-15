@@ -384,7 +384,7 @@ type issueFunc func(ruleID, code, chapterID, message string)
 func Evaluate(input DeliveryInput) CheckResult {
 	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: input.Template.RulesetHash, Status: CheckPassed, Issues: []CheckIssue{}}
 	severities := ruleSeverities(input.Template.Rules)
-	if len(severities) == 0 {
+	if !hasRulesForScene(input.Template, "preflight") {
 		result.Status = CheckNotEvaluated
 		return result
 	}

@@ -169,6 +169,89 @@ func TestEvaluateRuleSetRejectsUnsupportedScene(t *testing.T) {
 	}
 }
 
+func TestBoundRuleSetSnapshotCombinesTemplateRulesAndPinsCombinedHash(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition, err = WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.RulesetHash == published.RulesetHash {
+		t.Fatal("combined template hash must include both legacy rules and exact RuleSet reference")
+	}
+
+	input := EvaluationInput{
+		ProjectID: "project-1", TargetVersion: "copy/1",
+		Fields:   map[string]string{"research_subject": "subject", "research_goal": "Study"},
+		Chapters: []ChapterInput{{ID: "question", Version: "q-v1", Body: "question"}, {ID: "method", Version: "m-v1", Body: "short"}},
+	}
+	writeChecks, err := EvaluateScene(definition, "write_check", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := EvaluateScene(definition, "preflight", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contains := func(results []Evaluation, id string) bool {
+		for _, result := range results {
+			if result.RuleID == id {
+				if result.RulesetHash != definition.RulesetHash {
+					t.Fatalf("evaluation %q used hash %q, want combined hash %q", id, result.RulesetHash, definition.RulesetHash)
+				}
+				return true
+			}
+		}
+		return false
+	}
+	if !contains(writeChecks, RuleRequiredFields) || !contains(writeChecks, "goal-required") || !contains(writeChecks, "method-length") {
+		t.Fatalf("write check must run legacy and write-scoped rules: %#v", writeChecks)
+	}
+	if !contains(preflight, RuleRequiredFields) || !contains(preflight, "goal-required") || !contains(preflight, "human-review") {
+		t.Fatalf("preflight must run legacy and preflight-scoped rules: %#v", preflight)
+	}
+	if contains(preflight, "method-length") || contains(writeChecks, "human-review") {
+		t.Fatalf("scene-scoped rule ran in the wrong scene: write=%#v preflight=%#v", writeChecks, preflight)
+	}
+}
+
+func TestTemplateRejectsNonPublishedOrConflictingRuleSetSnapshot(t *testing.T) {
+	draft := testRuleSet()
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &draft
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("draft RuleSet binding error = %v, want ErrInvalidDefinition", err)
+	}
+
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	published.Bindings[0].RuleID = RuleRequiredFields
+	if err := ValidateRuleSet(published); !errors.Is(err, ErrInvalidRuleSet) {
+		t.Fatal("mutating a published RuleSet without a new hash must fail")
+	}
+
+	published, err = PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	published.Bindings[0].RuleID = RuleRequiredFields
+	published.RulesetHash, err = HashRuleSet(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition = DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("colliding rule IDs error = %v, want ErrInvalidDefinition", err)
+	}
+}
+
 func TestEvaluatePinsLegacyDemoHashOnlyForUnchangedDemoRules(t *testing.T) {
 	input := EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"}
 	baseline, err := Evaluate(DemoTemplate(), input)

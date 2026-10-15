@@ -31,6 +31,9 @@ type Template struct {
 	RulesetHash    string    `json:"ruleset_hash"`
 	ContentHash    string    `json:"content_hash,omitempty"`
 	Rules          []Rule    `json:"rules"`
+	// RuleSetSnapshot pins the independently governed rule set used with this
+	// template copy. It is a server-verified immutable published snapshot.
+	RuleSetSnapshot *RuleSet `json:"ruleset_snapshot,omitempty"`
 }
 
 // Section identifies one required chapter in a template.
@@ -140,6 +143,10 @@ func cloneTemplate(template Template) Template {
 	for i, rule := range template.Rules {
 		copy.Rules[i] = rule
 		copy.Rules[i].Parameters = cloneParameters(rule.Parameters)
+	}
+	if template.RuleSetSnapshot != nil {
+		ruleSet := cloneRuleSet(*template.RuleSetSnapshot)
+		copy.RuleSetSnapshot = &ruleSet
 	}
 	return copy
 }

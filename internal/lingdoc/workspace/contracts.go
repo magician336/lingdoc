@@ -34,6 +34,7 @@ type ApplicationService interface {
 	GetTemplateCopy(context.Context, Actor, string, int64) (ProjectTemplateCopy, error)
 	PreviewTemplateCopyEdit(context.Context, Actor, string, TemplateCopyDefinitionInput) (TemplateMigrationPreview, error)
 	SaveTemplateCopy(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (json.RawMessage, int, bool, error)
+	BindTemplateCopyRuleSet(context.Context, Actor, string, string, BindTemplateCopyRuleSetInput) (json.RawMessage, int, bool, error)
 	DiscardProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
 	RestoreProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)

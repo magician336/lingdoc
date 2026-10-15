@@ -3,7 +3,7 @@
   "info": {
     "title": "LingDoc internal demo contract — proposal and implemented slices",
     "version": "0.4.0",
-    "description": "本契约多数路径仍为拟议范围；RuleSet 管理路径是已实现的 G4 首个服务切片，但尚未接入 TemplateVersion、ProjectTemplateCopy、检查与 Preflight。core/optional 区分拟议实施范围；含待核事项和完整冻结输入。孤立 UI 例子不代替 F01 连续规格。"
+    "description": "本契约多数路径仍为拟议范围；RuleSet 管理与项目模板副本精确绑定、Template Check/Preflight 求值是已实现的 G4 服务切片，但尚未接入 TemplateVersion 规则集目录引用、受限覆盖及完整导出验收。core/optional 区分拟议实施范围；含待核事项和完整冻结输入。孤立 UI 例子不代替 F01 连续规格。"
   },
   "servers": [
     {
@@ -12534,7 +12534,8 @@
     "/projects/{projectId}/template-copies/{version}": {"get":{"operationId":"getProjectTemplateCopy","tags":["workspace"],"summary":"读取项目模板副本的不可变历史版本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"version","in":"path","required":true,"schema":{"type":"integer","minimum":1}}],"responses":{"200":{"description":"项目模板副本版本","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectTemplateCopyResponse"}}}},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
     "/projects/{projectId}/template-copy/preview": {"post":{"operationId":"previewProjectTemplateCopyEdit","tags":["workspace"],"summary":"预览项目模板副本编辑与字段迁移影响","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateCopyDefinitionInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"fields":[{"field_id":"research_subject","label":"研究对象","type":"string","order":1,"required":true},{"field_id":"research_goal","label":"研究目标","type":"string","order":2,"required":true}],"sections":[{"section_id":"question","title":"研究问题","order":1,"required":true},{"section_id":"method","title":"研究方案","order":2,"required":true}],"terms":[],"required_fields":["research_subject","research_goal"],"rules":[{"rule_id":"required-fields","kind":"computed","severity":"blocking","evaluator":"required_fields","parameters":{}},{"rule_id":"chapter-nonempty","kind":"computed","severity":"blocking","evaluator":"nonempty_chapter","parameters":{}},{"rule_id":"chapter-confirmed","kind":"computed","severity":"blocking","evaluator":"confirmed_chapter","parameters":{}},{"rule_id":"review-items-decided","kind":"computed","severity":"blocking","evaluator":"review_items_decided","parameters":{}},{"rule_id":"source-available","kind":"computed","severity":"blocking","evaluator":"source_available","parameters":{}}]}}}},"responses":{"200":{"description":"编辑迁移预览","content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateMigrationPreviewResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
     "/projects/{projectId}/template-copy": {"put":{"operationId":"saveProjectTemplateCopyEdit","tags":["workspace"],"summary":"追加项目模板副本的新草稿版本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TemplateCopyDefinitionInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"fields":[{"field_id":"research_subject","label":"研究对象","type":"string","order":1,"required":true},{"field_id":"research_goal","label":"研究目标","type":"string","order":2,"required":true}],"sections":[{"section_id":"question","title":"研究问题","order":1,"required":true},{"section_id":"method","title":"研究方案","order":2,"required":true}],"terms":[],"required_fields":["research_subject","research_goal"],"rules":[{"rule_id":"required-fields","kind":"computed","severity":"blocking","evaluator":"required_fields","parameters":{}},{"rule_id":"chapter-nonempty","kind":"computed","severity":"blocking","evaluator":"nonempty_chapter","parameters":{}},{"rule_id":"chapter-confirmed","kind":"computed","severity":"blocking","evaluator":"confirmed_chapter","parameters":{}},{"rule_id":"review-items-decided","kind":"computed","severity":"blocking","evaluator":"review_items_decided","parameters":{}},{"rule_id":"source-available","kind":"computed","severity":"blocking","evaluator":"source_available","parameters":{}}]}}}},"responses":{"200":{"description":"副本已版本化保存","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
-    "/projects/{projectId}/change-sets": {
+     "/projects/{projectId}/template-copy/rule-set": {"put":{"operationId":"bindProjectTemplateCopyRuleSet","tags":["workspace"],"summary":"将已发布的精确 RuleSet 版本绑定到项目模板副本","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/BindTemplateCopyRuleSetInput"},"example":{"expected_project_version":1,"expected_template_copy_version":1,"ruleset_id":"grant-rules","ruleset_version":"v1"}}}},"responses":{"200":{"description":"项目模板副本已追加绑定规则集的新版本","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ProjectResponse"}}}},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"项目或副本版本冲突"},"422":{"description":"当前状态不允许绑定"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
+     "/projects/{projectId}/change-sets": {
       "get": {
         "operationId": "listChangeSets",
         "tags": ["workspace"],
@@ -12854,6 +12855,7 @@
           "ruleset_hash": {
             "type": "string"
           },
+          "ruleset_snapshot": {"$ref": "#/components/schemas/RuleSet"},
           "content_hash": {"type": "string"},
           "rules": {
             "type": "array",
@@ -12910,6 +12912,17 @@
           "rules": {"type": "array", "items": {"$ref": "#/components/schemas/Rule"}}
         },
         "required": ["expected_project_version", "expected_template_copy_version", "fields", "sections", "terms", "required_fields", "rules"],
+        "additionalProperties": false
+      },
+      "BindTemplateCopyRuleSetInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {"type": "integer", "minimum": 1},
+          "expected_template_copy_version": {"type": "integer", "minimum": 1},
+          "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "ruleset_version": {"type": "string", "minLength": 1, "maxLength": 64}
+        },
+        "required": ["expected_project_version", "expected_template_copy_version", "ruleset_id", "ruleset_version"],
         "additionalProperties": false
       },
       "TemplateMigrationField": {

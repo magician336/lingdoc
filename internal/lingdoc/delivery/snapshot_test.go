@@ -229,3 +229,76 @@ func TestTemplateCheckAndPreflightShareDeterministicRuleEvaluation(t *testing.T)
 		}
 	}
 }
+
+func TestBoundRuleSetSnapshotFlowsThroughTemplateCheckAndPreflight(t *testing.T) {
+	input := validDeliveryInput()
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "delivery-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "goal-prefix", DefinitionID: "pattern", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
+			Parameters: map[string]any{"pattern": "^approved:"}, Severity: SeverityBlocking,
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template.RuleSetSnapshot = &set
+	definition, err := lingdoctemplate.WithHashes(input.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template = definition
+
+	check, err := EvaluateTemplate(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Status != TemplateCheckBlocked || check.RulesetHash != definition.RulesetHash {
+		t.Fatalf("bound blocking rule was not included in template check: %+v", check)
+	}
+	found := false
+	for _, evaluation := range check.Evaluations {
+		if evaluation.RuleID == "goal-prefix" {
+			found = evaluation.Status == lingdoctemplate.EvaluationIssue && evaluation.RulesetHash == definition.RulesetHash
+		}
+	}
+	if !found {
+		t.Fatalf("template check did not emit the pinned RuleSet evaluation: %+v", check.Evaluations)
+	}
+
+	preflight := Evaluate(input)
+	if preflight.Status != CheckBlocked || preflight.RulesetHash != definition.RulesetHash {
+		t.Fatalf("Preflight did not consume the same bound RuleSet snapshot: %+v", preflight)
+	}
+	found = false
+	for _, issue := range preflight.Issues {
+		if issue.RuleID == "goal-prefix" {
+			found = issue.Severity == SeverityBlocking && issue.RulesetHash == definition.RulesetHash
+		}
+	}
+	if !found {
+		t.Fatalf("Preflight did not retain the bound RuleSet finding: %+v", preflight.Issues)
+	}
+
+	snapshotStore := NewMemorySnapshotStore()
+	release, err := NewReleaseService(snapshotStore).Prepare(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Check.RulesetHash != definition.RulesetHash || release.FrozenInput.Template.RuleSetSnapshot == nil || release.FrozenInput.Template.RuleSetSnapshot.RulesetHash != set.RulesetHash {
+		t.Fatalf("ReleaseSnapshot did not freeze the evaluated RuleSet identity and hash: %+v", release)
+	}
+	set.Bindings[0].Parameters["pattern"] = "^tampered$"
+	if release.FrozenInput.Template.RuleSetSnapshot.Bindings[0].Parameters["pattern"] != "^approved:" {
+		t.Fatal("frozen ReleaseSnapshot shared mutable RuleSet data with its input")
+	}
+	exports := NewMemoryExportStore()
+	exportService := NewExportService(snapshotStore, exports,
+		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("must-not-render"), nil }),
+		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
+	if _, _, err := exportService.Start("owner", release.ProjectID, release.ID, "ruleset-blocked-export"); !errors.Is(err, ErrExportPreflightBlocked) {
+		t.Fatalf("export must honor the frozen RuleSet Preflight result: %v", err)
+	}
+}

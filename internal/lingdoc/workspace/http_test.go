@@ -32,6 +32,9 @@ type applicationServiceStub struct {
 	copyEditKey       string
 	copyEditCalled    bool
 	copyPreviewCalled bool
+	bindRuleSetInput  BindTemplateCopyRuleSetInput
+	bindRuleSetKey    string
+	bindRuleSetCalled bool
 }
 
 type sourceApplicationServiceStub struct {
@@ -70,6 +73,12 @@ func (s *applicationServiceStub) SaveTemplateCopy(_ context.Context, actor Actor
 	s.actor, s.templateProjectID, s.copyEditKey, s.copyEditInput = actor, projectID, key, input
 	s.copyEditCalled = true
 	return json.RawMessage(`{"project_id":"` + projectID + `","template_copy_version":2}`), http.StatusOK, false, nil
+}
+
+func (s *applicationServiceStub) BindTemplateCopyRuleSet(_ context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (json.RawMessage, int, bool, error) {
+	s.actor, s.templateProjectID, s.bindRuleSetKey, s.bindRuleSetInput = actor, projectID, key, input
+	s.bindRuleSetCalled = true
+	return json.RawMessage(`{"project_id":"` + projectID + `","template_copy_version":3}`), http.StatusOK, false, nil
 }
 
 func (s *applicationServiceStub) CreateChangeSet(_ context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
@@ -191,6 +200,15 @@ func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("template copy save without idempotency key = %d, want 400: %s", response.Code, response.Body.String())
+	}
+
+	bindBody := `{"expected_project_version":4,"expected_template_copy_version":2,"ruleset_id":"grant-rules","ruleset_version":"v1"}`
+	request = httptest.NewRequest(http.MethodPut, "/api/projects/project-1/template-copy/rule-set", strings.NewReader(bindBody)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "template-ruleset-bind-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.bindRuleSetCalled || service.bindRuleSetKey != "template-ruleset-bind-1" || service.templateProjectID != "project-1" || service.bindRuleSetInput.RuleSetID != "grant-rules" || service.bindRuleSetInput.ExpectedTemplateCopyVersion != 2 {
+		t.Fatalf("template RuleSet binding: status=%d called=%v project=%q key=%q input=%#v body=%s", response.Code, service.bindRuleSetCalled, service.templateProjectID, service.bindRuleSetKey, service.bindRuleSetInput, response.Body.String())
 	}
 }
 

@@ -15,7 +15,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| [openapi.json](contracts/openapi.json) | 拟议 HTTP 契约及已实现 G4 RuleSet 服务切片：53 paths / 59 operations（56 core / 3 optional），93 schemas；其余拟议路径不代表已有服务 |
+| [openapi.json](contracts/openapi.json) | 拟议 HTTP 契约及已实现 G4 RuleSet 管理、项目副本绑定和 Template Check/Preflight 切片：54 paths / 60 operations（57 core / 3 optional），94 schemas；其余拟议路径不代表已有服务 |
 | [scenarios.json](contracts/scenarios.json) | 24 个行为场景（F01–F23、G7-01 基线读写）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |

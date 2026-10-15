@@ -87,6 +87,9 @@ func Hashes(t Template) (contentHash, rulesetHash string, err error) {
 		return "", "", fmt.Errorf("marshal rules: %w", err)
 	}
 	rulesetHash = digest(ruleBytes)
+	if t.RuleSetSnapshot != nil {
+		rulesetHash = boundRuleSetHash(rulesetHash, *t.RuleSetSnapshot)
+	}
 	t.Rules = rules
 	t.RequiredFields = append([]string(nil), t.RequiredFields...)
 	slices.Sort(t.RequiredFields)
@@ -112,6 +115,17 @@ func WithHashes(t Template) (Template, error) {
 func digest(raw []byte) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
+}
+
+func boundRuleSetHash(templateRuleHash string, set RuleSet) string {
+	canonical := struct {
+		TemplateRuleHash string `json:"template_rule_hash"`
+		RuleSetID        string `json:"ruleset_id"`
+		RuleSetVersion   string `json:"ruleset_version"`
+		RuleSetHash      string `json:"ruleset_hash"`
+	}{templateRuleHash, set.ID, set.Version, set.RulesetHash}
+	raw, _ := json.Marshal(canonical)
+	return digest(raw)
 }
 
 // Validate rejects unknown executors, parameters, malformed structures, and
@@ -165,6 +179,20 @@ func Validate(t Template) error {
 		ruleIDs[rule.ID] = true
 		if err := validateRule(rule); err != nil {
 			return err
+		}
+	}
+	if t.RuleSetSnapshot != nil {
+		if err := CanBindRuleSet(*t.RuleSetSnapshot); err != nil {
+			return fmt.Errorf("%w: template rule set snapshot is not bindable: %v", ErrInvalidDefinition, err)
+		}
+		compiled, err := CompileRuleSet(*t.RuleSetSnapshot)
+		if err != nil {
+			return fmt.Errorf("%w: template rule set snapshot cannot be compiled: %v", ErrInvalidDefinition, err)
+		}
+		for _, rule := range compiled {
+			if ruleIDs[rule.ID] {
+				return fmt.Errorf("%w: rule set binding duplicates template rule %q", ErrInvalidDefinition, rule.ID)
+			}
 		}
 	}
 	return nil
@@ -320,6 +348,16 @@ func stringSlice(value any) ([]string, bool) {
 // Evaluate applies the same allowlisted deterministic evaluator to either a
 // live editing projection or a frozen delivery projection.
 func Evaluate(t Template, input EvaluationInput) ([]Evaluation, error) {
+	return EvaluateScene(t, "write_check", input)
+}
+
+// EvaluateScene applies an optional pinned RuleSet snapshot for one of the
+// supported checks. Legacy template rules are retained and evaluated with the
+// same immutable combined hash as the bound RuleSet.
+func EvaluateScene(t Template, scene string, input EvaluationInput) ([]Evaluation, error) {
+	if t.RuleSetSnapshot != nil {
+		return EvaluateBoundRuleSet(t, *t.RuleSetSnapshot, scene, input)
+	}
 	return evaluateTemplate(t, input, "")
 }
 

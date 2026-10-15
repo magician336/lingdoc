@@ -93,10 +93,26 @@ type OperationResult struct {
 type Service struct {
 	repository Repository
 	templates  TemplateReader
+	ruleSets   RuleSetSnapshotReader
 	sources    SourcePolicy
 	authorizer ProjectAuthorizer
 	audit      AuditSink
 	mode       AuthorizationMode
+}
+
+// RuleSetSnapshotReader reads an exact tenant-scoped RuleSet version. The
+// returned value must be an immutable snapshot with server-verified hashes.
+type RuleSetSnapshotReader interface {
+	GetVersion(context.Context, Actor, string, string) (lingdoctemplate.RuleSet, error)
+}
+
+// WithRuleSetSnapshotReader connects project-copy binding to the independent
+// RuleSet store. It is configured once at the composition root.
+func (s *Service) WithRuleSetSnapshotReader(reader RuleSetSnapshotReader) *Service {
+	if s != nil {
+		s.ruleSets = reader
+	}
+	return s
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -543,7 +559,7 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 			return nil, 0, false, err
 		}
 	}
-	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy"}, func(tx Transaction) error {
+	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy" || op == "bindTemplateCopyRuleSet"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
 			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
@@ -702,6 +718,13 @@ type TemplateCopyDefinitionInput struct {
 	Rules                       []lingdoctemplate.Rule    `json:"rules"`
 }
 
+type BindTemplateCopyRuleSetInput struct {
+	ExpectedProjectVersion      int64  `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64  `json:"expected_template_copy_version"`
+	RuleSetID                   string `json:"ruleset_id"`
+	RuleSetVersion              string `json:"ruleset_version"`
+}
+
 func projectTemplateCopy(actor Actor, projectID string, version int64, source lingdoctemplate.Template, status string) (*ProjectTemplateCopy, error) {
 	definition, err := lingdoctemplate.WithHashes(source)
 	if err != nil {
@@ -729,6 +752,9 @@ func validateProjectTemplateCopy(copy *ProjectTemplateCopy) error {
 }
 
 func editableTemplateDefinition(current lingdoctemplate.Template, input TemplateCopyDefinitionInput) (lingdoctemplate.Template, error) {
+	if current.RuleSetSnapshot != nil && !reflect.DeepEqual(input.Rules, current.Rules) {
+		return lingdoctemplate.Template{}, fmt.Errorf("%w: ruleset-bound copies cannot edit legacy rules independently", ErrInvalidRequest)
+	}
 	serverRules := make(map[string]lingdoctemplate.Rule, len(current.Rules))
 	for _, rule := range current.Rules {
 		serverRules[rule.ID] = rule
@@ -959,6 +985,93 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 		}
 		if audit, ok := tx.(auditTransaction); ok {
 			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.edit", Target: copy.ID, Details: map[string]any{"copy_version": copy.Version, "content_hash": copy.ContentHash, "ruleset_hash": copy.RulesetHash}, CreatedAt: copy.CreatedAt}); err != nil {
+				return nil, 0, err
+			}
+		}
+		return next, 200, nil
+	})
+}
+
+// BindTemplateCopyRuleSet appends a new project-copy version containing the
+// exact published RuleSet snapshot. Reads are authorized before consulting the
+// separate RuleSet store; the final project write rechecks authorization and
+// version conditions in its own transaction.
+func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (json.RawMessage, int, bool, error) {
+	input.RuleSetID = strings.TrimSpace(input.RuleSetID)
+	input.RuleSetVersion = strings.TrimSpace(input.RuleSetVersion)
+	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.RuleSetID == "" || input.RuleSetVersion == "" || len(input.RuleSetID) > 64 || len(input.RuleSetVersion) > 64 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if s.ruleSets == nil {
+		return nil, 0, false, ErrInvalidState
+	}
+
+	operationID := OperationIdentity{Actor: actor, Operation: "bindTemplateCopyRuleSet", Target: projectID, Key: key}
+	var current Project
+	var replayExists bool
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		var err error
+		current, err = s.authorizeProject(ctx, tx, actor, projectID, "manage")
+		if err != nil {
+			return err
+		}
+		_, replayExists, err = tx.Operation(operationID)
+		return err
+	})
+	if err != nil {
+		return nil, 0, false, err
+	}
+	if replayExists {
+		return s.operation(ctx, actor, "bindTemplateCopyRuleSet", projectID, key, input, projectID, "manage", func(Transaction, Project) (any, int, error) {
+			return nil, 0, ErrRequestInProgress
+		})
+	}
+	if current.Status != "draft" || current.DiscardedAt != nil || current.TemplateCopy == nil || current.TemplateCopy.Status != TemplateCopyDraft {
+		return nil, 0, false, ErrInvalidState
+	}
+	if current.ProjectVersion != input.ExpectedProjectVersion || current.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
+		return nil, 0, false, ErrVersionConflict
+	}
+
+	set, err := s.ruleSets.GetVersion(ctx, actor, input.RuleSetID, input.RuleSetVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	if set.ID != input.RuleSetID || set.Version != input.RuleSetVersion {
+		return nil, 0, false, ErrNotFound
+	}
+	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+			return nil, 0, false, ErrInvalidState
+		}
+		return nil, 0, false, ErrInvalidRequest
+	}
+
+	return s.operation(ctx, actor, "bindTemplateCopyRuleSet", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+		if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyDraft {
+			return nil, 0, ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
+			return nil, 0, ErrVersionConflict
+		}
+		definition := lingdoctemplate.Clone(p.TemplateCopy.Definition)
+		definition.RuleSetSnapshot = lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &set}).RuleSetSnapshot
+		definition.ContentHash, definition.RulesetHash = "", ""
+		copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, definition, TemplateCopyDraft)
+		if err != nil {
+			return nil, 0, err
+		}
+		next := p
+		next.TemplateCopyVersion, next.TemplateCopy = copy.Version, copy
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.bind_ruleset", Target: copy.ID, Details: map[string]any{"copy_version": copy.Version, "ruleset_id": set.ID, "ruleset_version": set.Version, "ruleset_hash": set.RulesetHash, "content_hash": copy.ContentHash}, CreatedAt: copy.CreatedAt}); err != nil {
 				return nil, 0, err
 			}
 		}

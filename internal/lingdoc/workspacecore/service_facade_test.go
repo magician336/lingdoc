@@ -6,11 +6,169 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+type ruleSetSnapshotReaderStub struct {
+	set   lingdoctemplate.RuleSet
+	err   error
+	calls int
+	actor Actor
+	id    string
+	ver   string
+}
+
+func (r *ruleSetSnapshotReaderStub) GetVersion(_ context.Context, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	r.calls++
+	r.actor, r.id, r.ver = actor, id, version
+	return r.set, r.err
+}
+
+func publishedWorkspaceRuleSet(t *testing.T) lingdoctemplate.RuleSet {
+	t.Helper()
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "grant-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "goal-required", DefinitionID: "presence", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
+			Severity: "blocking", TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
+func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.TemplateID = lingdoctemplate.DemoTemplateID
+	repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	repository.project.TemplateCopyVersion = 1
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	copy, err := projectTemplateCopy(actor, repository.project.ID, 1, lingdoctemplate.DemoTemplate(), TemplateCopyDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.project.TemplateCopy = copy
+	reader := &ruleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
+	service := NewService(repository).WithRuleSetSnapshotReader(reader)
+	input := BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+		RuleSetID: "grant-rules", RuleSetVersion: "v1",
+	}
+	response, status, replayed, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-bind-1", input)
+	if err != nil || status != 200 || replayed {
+		t.Fatalf("bind: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	var bound Project
+	if err := json.Unmarshal(response, &bound); err != nil {
+		t.Fatal(err)
+	}
+	if bound.ProjectVersion != 2 || bound.TemplateCopyVersion != 2 || bound.TemplateCopy == nil || bound.TemplateCopy.Status != TemplateCopyDraft {
+		t.Fatalf("binding did not append a new draft copy version: %#v", bound)
+	}
+	snapshot := bound.TemplateCopy.Definition.RuleSetSnapshot
+	if snapshot == nil || snapshot.ID != "grant-rules" || snapshot.Version != "v1" || snapshot.RulesetHash != reader.set.RulesetHash {
+		t.Fatalf("project copy lost exact RuleSet snapshot: %#v", snapshot)
+	}
+	if bound.TemplateCopy.RulesetHash == reader.set.RulesetHash || bound.TemplateCopy.RulesetHash != bound.TemplateCopy.Definition.RulesetHash {
+		t.Fatalf("copy hash must bind both template rules and RuleSet reference: copy=%q set=%q definition=%q", bound.TemplateCopy.RulesetHash, reader.set.RulesetHash, bound.TemplateCopy.Definition.RulesetHash)
+	}
+	if err := validateProjectTemplateCopy(bound.TemplateCopy); err != nil {
+		t.Fatalf("persisted copy snapshot is invalid: %v", err)
+	}
+	if reader.calls != 1 || reader.actor.UserID != actor.UserID || reader.id != input.RuleSetID || reader.ver != input.RuleSetVersion {
+		t.Fatalf("RuleSet lookup did not use the authorized exact version: %#v", reader)
+	}
+	reader.set.Bindings[0].Parameters = map[string]any{"pattern": "tampered after bind"}
+	if repository.project.TemplateCopy.Definition.RuleSetSnapshot.Bindings[0].Parameters["pattern"] != nil {
+		t.Fatal("project copy retained mutable references owned by the RuleSet reader")
+	}
+
+	reader.set.State = lingdoctemplate.RuleSetRecalled
+	replayedResponse, replayStatus, replayed, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-bind-1", input)
+	if err != nil || replayStatus != status || !replayed || string(replayedResponse) != string(response) || reader.calls != 1 {
+		t.Fatalf("exact retry should replay its saved snapshot without re-reading current RuleSet state: status=%d replayed=%v calls=%d err=%v", replayStatus, replayed, reader.calls, err)
+	}
+}
+
+func TestBindTemplateCopyRuleSetRejectsUnpublishedAndStaleBindings(t *testing.T) {
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	newDraftProject := func(t *testing.T) (*stateRepository, *Service) {
+		t.Helper()
+		repository := fakeWorkspace()
+		repository.project.Status = "draft"
+		repository.project.TemplateID = lingdoctemplate.DemoTemplateID
+		repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+		repository.project.TemplateCopyVersion = 1
+		copy, err := projectTemplateCopy(actor, repository.project.ID, 1, lingdoctemplate.DemoTemplate(), TemplateCopyDraft)
+		if err != nil {
+			t.Fatal(err)
+		}
+		repository.project.TemplateCopy = copy
+		reader := &ruleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
+		return repository, NewService(repository).WithRuleSetSnapshotReader(reader)
+	}
+	input := BindTemplateCopyRuleSetInput{ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1, RuleSetID: "grant-rules", RuleSetVersion: "v1"}
+	tooLong := input
+	tooLong.RuleSetVersion = strings.Repeat("v", 65)
+	_, service := newDraftProject(t)
+	if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-too-long-1", tooLong); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("oversized RuleSet version error = %v, want ErrInvalidRequest", err)
+	}
+
+	t.Run("unpublished", func(t *testing.T) {
+		repository, service := newDraftProject(t)
+		reader := service.ruleSets.(*ruleSetSnapshotReaderStub)
+		reader.set.State = lingdoctemplate.RuleSetWithdrawn
+		if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-withdrawn-1", input); !errors.Is(err, ErrInvalidState) {
+			t.Fatalf("withdrawn RuleSet error = %v, want ErrInvalidState", err)
+		}
+		if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 || len(repository.operations) != 0 {
+			t.Fatal("unpublished RuleSet binding changed project state")
+		}
+	})
+
+	t.Run("stale_copy", func(t *testing.T) {
+		_, service := newDraftProject(t)
+		stale := input
+		stale.ExpectedTemplateCopyVersion = 2
+		if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-stale-1", stale); !errors.Is(err, ErrVersionConflict) {
+			t.Fatalf("stale copy error = %v, want ErrVersionConflict", err)
+		}
+		if service.ruleSets.(*ruleSetSnapshotReaderStub).calls != 0 {
+			t.Fatal("stale copy read an unrelated RuleSet before failing its version check")
+		}
+	})
+
+	t.Run("project_access_before_ruleset_read", func(t *testing.T) {
+		_, service := newDraftProject(t)
+		viewer := actor
+		viewer.Role = types.TenantRoleViewer
+		if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), viewer, "p", "ruleset-viewer-1", input); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("unauthorized project binding error = %v, want ErrNotFound", err)
+		}
+		if service.ruleSets.(*ruleSetSnapshotReaderStub).calls != 0 {
+			t.Fatal("unauthorized project request read RuleSet data before failing")
+		}
+	})
+
+	t.Run("mismatched_reader_identity", func(t *testing.T) {
+		_, service := newDraftProject(t)
+		reader := service.ruleSets.(*ruleSetSnapshotReaderStub)
+		reader.set.Version = "v2"
+		if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-wrong-version-1", input); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("mismatched RuleSet identity error = %v, want ErrNotFound", err)
+		}
+	})
+}
 
 func TestDefaultProjectAuthorizerEnforcesTenantRoleCeiling(t *testing.T) {
 	ctx := context.Background()

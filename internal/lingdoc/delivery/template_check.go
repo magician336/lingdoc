@@ -98,7 +98,7 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		projection.Sources = append(projection.Sources, lingdoctemplate.SourceInput{ID: id, Version: version, Available: available})
 	}
 
-	evaluations, err := lingdoctemplate.Evaluate(input.Template, projection)
+	evaluations, err := lingdoctemplate.EvaluateScene(input.Template, "preflight", projection)
 	if err != nil {
 		return TemplateCheckResult{}, err
 	}
@@ -108,7 +108,7 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		RulesetHash: input.Template.RulesetHash, Status: TemplateCheckPassed,
 		Evaluations: evaluations,
 	}
-	if len(input.Template.Rules) == 0 {
+	if !hasRulesForScene(input.Template, "preflight") {
 		result.Status = TemplateCheckNotEvaluated
 	}
 	for _, evaluation := range evaluations {
@@ -118,6 +118,25 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func hasRulesForScene(definition lingdoctemplate.Template, scene string) bool {
+	if len(definition.Rules) > 0 {
+		return true
+	}
+	if definition.RuleSetSnapshot == nil {
+		return false
+	}
+	for _, binding := range definition.RuleSetSnapshot.Bindings {
+		if binding.Enabled {
+			for _, triggerScene := range binding.TriggerScenes {
+				if triggerScene == scene {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func confirmationMatches(input DeliveryInput, chapter SnapshotChapter) bool {
