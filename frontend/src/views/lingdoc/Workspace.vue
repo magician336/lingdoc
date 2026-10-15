@@ -35,7 +35,7 @@
       <section class="panel work-area" v-if="project">
         <div class="section-head">
           <div><h2>{{ project.name }}</h2><p class="muted">研究条件版本 {{ project.spec_revision }} · 项目版本 {{ project.project_version }}</p></div>
-          <button type="button" @click="selectProject(project.id, true)">重新读取</button>
+          <button type="button" @click="selectProject(project.id, { force: true })">重新读取</button>
         </div>
         <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
 
@@ -480,7 +480,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
-import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty, type ReviewDraft } from './uiSafety'
+import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, installUnloadGuard, reviewDraftsAreDirty, unsavedInputsAreDirty, type ReviewDraft, type UnsavedInputState } from './uiSafety'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
@@ -636,12 +636,13 @@ const citationUsagesChanged = computed(() => {
   return JSON.stringify(next) !== JSON.stringify(workingCopy.value?.citation_usages ?? [])
 })
 const chapterChanged = computed(() => bodyChanged.value || citationUsagesChanged.value)
-const unsavedInputs = computed(() => hasUnsavedInputs({
+const unsavedInputState = computed<UnsavedInputState>(() => ({
   chapterChanged: chapterChanged.value, specChanged: specChanged.value,
   templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
   reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
   conditionsChanged: conditionsInputsChanged.value,
 }))
+const unsavedInputs = computed(() => unsavedInputsAreDirty(unsavedInputState.value))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
   return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
 }
@@ -792,7 +793,7 @@ async function applyTemplateUpgrade() {
     attempts.delete(`change-set-apply:${id}:${changeSetId}`)
     pendingChangeSet.value = null
     pendingTemplateUpgrade.value = null
-    await selectProject(id, true, true)
+    await selectProject(id, { force: true, skipConfirm: true })
     lastChangeSet.value = applied.data
     templateCopyNotice.value = `模板升级已应用为第 ${project.value?.template_copy_version ?? ''} 版；受影响章节需重新确认。`
   } catch (error) { failure(error) }
@@ -811,7 +812,7 @@ async function rejectTemplateUpgrade() {
     pendingChangeSet.value = null
     pendingTemplateUpgrade.value = null
     templateUpgradeReason.value = ''
-    await selectProject(id, true, true)
+    await selectProject(id, { force: true, skipConfirm: true })
     lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
@@ -886,6 +887,98 @@ async function readChapterDraft(projectId: string, chapterId: string) {
   return { copyResult, versionResult }
 }
 
+type SelectProjectOptions = {
+  force?: boolean
+  skipConfirm?: boolean
+  conditionsHandled?: boolean
+}
+
+type ProjectLoadSnapshot = {
+  project: Project
+  chapters: Chapter[]
+  assets: Asset[]
+  changeSets: ChangeSet[]
+  initialChapterDraft: Awaited<ReturnType<typeof readChapterDraft>> | null
+  generationCandidates: GenerationCandidateSummary[]
+}
+
+async function readProjectSnapshot(id: string): Promise<ProjectLoadSnapshot> {
+  const result = await getProject(id)
+  const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
+  const assetResult = await listAssets(id)
+  const changeSetsResult = await listChangeSets(id)
+  const initialChapter = chapterResult?.data[0] ?? null
+  const initialChapterDraft = initialChapter ? await readChapterDraft(id, initialChapter.id) : null
+  const generationCandidates = initialChapter
+    ? (await listGenerationCandidates(id, initialChapter.id)).data
+    : []
+  return {
+    project: result.data,
+    chapters: chapterResult?.data ?? [],
+    assets: assetResult.data ?? [],
+    changeSets: (changeSetsResult.data ?? []).map(normalizeChangeSet),
+    initialChapterDraft,
+    generationCandidates,
+  }
+}
+
+function resetWorkspaceForProjectLoad(discardReviewDrafts: boolean) {
+  if (generationTimer) clearTimeout(generationTimer)
+  if (workingCopyTimer) clearTimeout(workingCopyTimer)
+  workingCopyTimer = undefined
+  generationRun.value = null
+  generationCandidate.value = null
+  generationCandidates.value = []
+  adoptionOpen.value = false
+  errorMessage.value = ''
+  pendingChangeSet.value = null
+  pendingDraft.value = null
+  pendingTemplateUpgrade.value = null
+  templateUpgradeReason.value = ''
+  if (discardReviewDrafts) {
+    reviewDrafts.value = {}
+    savedReviewDrafts.value = {}
+  }
+}
+
+async function applyProjectSnapshot(id: string, snapshot: ProjectLoadSnapshot) {
+  project.value = snapshot.project
+  hydrateTemplateCopyDraft(snapshot.project)
+  subject.value = snapshot.project.spec.research_subject ?? ''
+  goal.value = snapshot.project.spec.research_goal ?? ''
+  resetConditionsInputs(id)
+  chapters.value = snapshot.chapters
+  const assessedTemplateUpgrade = [...snapshot.changeSets].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
+  if (assessedTemplateUpgrade?.template_upgrade) {
+    templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
+    templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
+    templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+    templateUpgradeReason.value = assessedTemplateUpgrade.reason
+    pendingChangeSet.value = assessedTemplateUpgrade
+    pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason }
+  }
+  assets.value = snapshot.assets
+  selectedAssetIds.value = readyAssets.value.map(item => item.id)
+  // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
+  // 留着它们，新项目一打开就会带着别人的结论（包括那句「暂无可定位来源」）。
+  sources.value = []
+  searchedQuery.value = ''
+  deniedRows.value = []
+  bindingNoticeText.value = ''
+  closeSourceContext()
+  chapter.value = chapters.value[0] ?? null
+  workingCopy.value = null
+  chapterVersions.value = []
+  rewriteCandidate.value = null
+  rewriteSourceIds.value = []
+  bodyDraft.value = chapter.value?.body_markdown ?? ''
+  if (chapter.value && snapshot.initialChapterDraft) {
+    applyChapterDraft(snapshot.initialChapterDraft.copyResult, snapshot.initialChapterDraft.versionResult)
+    await loadSavedRewriteCandidate(id, chapter.value.id)
+  }
+  generationCandidates.value = snapshot.generationCandidates
+}
+
 function applyChapterDraft(copyResult: Awaited<ReturnType<typeof getWorkingCopy>>, versionResult: Awaited<ReturnType<typeof listChapterVersions>>) {
   workingCopy.value = copyResult.data
   hydrateCitationUsages(copyResult.data)
@@ -940,82 +1033,20 @@ async function create() {
 
 // Only a successful conditions apply/reject may skip its own handled inputs.
 // Other drafts still require confirmation, including when the requested ID is unchanged.
-async function selectProject(id: string, force = false, skipConfirm = false, conditionsHandled = false) {
-  const dirty = hasUnsavedInputs({
-    chapterChanged: chapterChanged.value, specChanged: !conditionsHandled && specChanged.value,
-    templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
-    reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
-    conditionsChanged: !conditionsHandled && conditionsInputsChanged.value,
-  })
+async function selectProject(id: string, options: SelectProjectOptions = {}) {
+  const { force = false, skipConfirm = false, conditionsHandled = false } = options
+  const dirty = unsavedInputsAreDirty(unsavedInputState.value, { conditionsHandled })
   const message = force || project.value?.id === id
     ? '重新读取会丢弃当前未保存的输入，确定继续吗？'
     : '当前编辑尚未保存，确定切换项目吗？'
   if (!skipConfirm && dirty && !window.confirm(message)) return
   try {
     // Keep the current inputs until the target project's initial reads succeed.
-    const result = await getProject(id)
-    const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
-    const assetResult = await listAssets(id)
-    const changeSetsResult = await listChangeSets(id)
-    const initialChapter = chapterResult?.data[0] ?? null
-    const initialChapterDraft = initialChapter ? await readChapterDraft(id, initialChapter.id) : null
-    const initialGenerationCandidates = initialChapter
-      ? await listGenerationCandidates(id, initialChapter.id)
-      : null
+    const snapshot = await readProjectSnapshot(id)
     const sameProject = project.value?.id === id
     const discardReviewDrafts = !sameProject || (dirty && !skipConfirm)
-    if (generationTimer) clearTimeout(generationTimer)
-    if (workingCopyTimer) clearTimeout(workingCopyTimer)
-    workingCopyTimer = undefined
-    generationRun.value = null
-    generationCandidate.value = null
-    generationCandidates.value = []
-    adoptionOpen.value = false
-    errorMessage.value = ''
-    pendingChangeSet.value = null
-    pendingDraft.value = null
-    pendingTemplateUpgrade.value = null
-    templateUpgradeReason.value = ''
-    if (discardReviewDrafts) {
-      reviewDrafts.value = {}
-      savedReviewDrafts.value = {}
-    }
-    project.value = result.data
-    hydrateTemplateCopyDraft(result.data)
-    subject.value = result.data.spec.research_subject ?? ''
-    goal.value = result.data.spec.research_goal ?? ''
-    resetConditionsInputs(id)
-    chapters.value = chapterResult?.data ?? []
-    const changeSets = (changeSetsResult.data ?? []).map(normalizeChangeSet)
-    const assessedTemplateUpgrade = [...changeSets].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
-    if (assessedTemplateUpgrade?.template_upgrade) {
-      templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
-      templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
-      templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
-      templateUpgradeReason.value = assessedTemplateUpgrade.reason
-      pendingChangeSet.value = assessedTemplateUpgrade
-      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason }
-    }
-    assets.value = assetResult.data ?? []
-    selectedAssetIds.value = readyAssets.value.map(item => item.id)
-    // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
-    // 留着它们，新项目一打开就会带着别人的结论（包括那句「暂无可定位来源」）。
-    sources.value = []
-    searchedQuery.value = ''
-    deniedRows.value = []
-    bindingNoticeText.value = ''
-    closeSourceContext()
-    chapter.value = chapters.value[0] ?? null
-    workingCopy.value = null
-    chapterVersions.value = []
-    rewriteCandidate.value = null
-    rewriteSourceIds.value = []
-    bodyDraft.value = chapter.value?.body_markdown ?? ''
-    if (chapter.value && initialChapterDraft) {
-      applyChapterDraft(initialChapterDraft.copyResult, initialChapterDraft.versionResult)
-      await loadSavedRewriteCandidate(id, chapter.value.id)
-    }
-    generationCandidates.value = initialGenerationCandidates?.data ?? []
+    resetWorkspaceForProjectLoad(discardReviewDrafts)
+    await applyProjectSnapshot(id, snapshot)
     await resumeGeneration()
   } catch (error) { failure(error) }
 }
@@ -1237,7 +1268,7 @@ async function applyConditionsChange() {
     resetConditionsInputs(id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    await selectProject(id, false, false, true)
+    await selectProject(id, { conditionsHandled: true })
     lastChangeSet.value = applied.data
   } catch (error) {
     const item = error as { status?: number }
@@ -1274,7 +1305,7 @@ async function rejectConditionsChange() {
     resetConditionsInputs(id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    await selectProject(id, false, false, true)
+    await selectProject(id, { conditionsHandled: true })
     lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }

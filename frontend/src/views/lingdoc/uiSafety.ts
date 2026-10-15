@@ -26,11 +26,22 @@ export function conditionsChangeInputsAreDirty(draft: ConditionsChangeInputs, ac
     JSON.stringify(draft.chapterIds) !== JSON.stringify(acknowledged.chapterIds)
 }
 
-export function hasUnsavedInputs(state: {
-  chapterChanged: boolean; specChanged: boolean; templateChanged: boolean
-  saving: boolean; reviewChanged: boolean; conditionsChanged?: boolean
-}): boolean {
-  return state.chapterChanged || state.specChanged || state.templateChanged || state.saving || state.reviewChanged || state.conditionsChanged === true
+export interface UnsavedInputState {
+  chapterChanged: boolean
+  specChanged: boolean
+  templateChanged: boolean
+  saving: boolean
+  reviewChanged: boolean
+  conditionsChanged: boolean
+}
+
+export interface UnsavedInputOptions {
+  conditionsHandled?: boolean
+}
+
+export function unsavedInputsAreDirty(state: UnsavedInputState, options: UnsavedInputOptions = {}): boolean {
+  return state.chapterChanged || state.specChanged || state.templateChanged || state.saving || state.reviewChanged ||
+    (!options.conditionsHandled && state.conditionsChanged)
 }
 
 export function canLeaveWorkspace(dirty: boolean, confirm: (message: string) => boolean): boolean {

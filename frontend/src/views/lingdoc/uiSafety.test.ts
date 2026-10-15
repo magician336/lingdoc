@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty } from './uiSafety'
+import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, installUnloadGuard, reviewDraftsAreDirty, unsavedInputsAreDirty } from './uiSafety'
 
 const clean = { chapterChanged: false, specChanged: false, templateChanged: false, saving: false, reviewChanged: false, conditionsChanged: false }
 function unloadEvent() {
@@ -10,8 +10,10 @@ function unloadEvent() {
   return event
 }
 test('saved server drafts do not warn; each unsaved input and an in-flight save does', () => {
-  assert.equal(hasUnsavedInputs(clean), false)
-  for (const field of Object.keys(clean)) assert.equal(hasUnsavedInputs({ ...clean, [field]: true }), true, field)
+  assert.equal(unsavedInputsAreDirty(clean), false)
+  for (const field of Object.keys(clean)) assert.equal(unsavedInputsAreDirty({ ...clean, [field]: true }), true, field)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }, { conditionsHandled: true }), false)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }), true)
 })
 
 test('refresh guard reacts to save completion and unregisters on leaving the workspace', () => {
@@ -57,7 +59,7 @@ test('conditions auxiliary form starts clean and protects either reason or chapt
   for (const draft of [conditionsChangeSnapshot('p1', '变更理由', []), conditionsChangeSnapshot('p1', '', ['c1'])]) {
     const conditionsChanged = conditionsChangeInputsAreDirty(draft, baseline)
     assert.equal(conditionsChanged, true)
-    assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged }), true)
+    assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged }), true)
     assert.equal(canLeaveWorkspace(conditionsChanged, () => false), false)
   }
 })
@@ -78,12 +80,12 @@ test('acknowledged preview clears auxiliary dirty while changed spec and other d
   const submitted = conditionsChangeSnapshot('p1', '已提交理由', ['c1'])
   const conditionsChanged = conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '已提交理由', ['c1']), submitted)
   assert.equal(conditionsChanged, false)
-  assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged, specChanged: true }), true)
-  assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged, chapterChanged: true }), true)
-  assert.equal(hasUnsavedInputs({ ...clean, conditionsChanged, reviewChanged: true }), true)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged, specChanged: true }), true)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged, chapterChanged: true }), true)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged, reviewChanged: true }), true)
   const reset = conditionsChangeSnapshot('p1', '', [])
   assert.equal(conditionsChangeInputsAreDirty(conditionsChangeSnapshot('p1', '', []), reset), false)
-  assert.equal(hasUnsavedInputs(clean), false)
+  assert.equal(unsavedInputsAreDirty(clean), false)
 })
 
 test('refresh guard protects hidden unsaved conditions inputs and releases their acknowledged baseline', () => {
@@ -91,7 +93,7 @@ test('refresh guard protects hidden unsaved conditions inputs and releases their
   const draft = conditionsChangeSnapshot('p1', '暂存理由', ['c1'])
   let baseline = conditionsChangeSnapshot('p1', '', [])
   const remove = installUnloadGuard(target as unknown as Pick<Window, 'addEventListener' | 'removeEventListener'>,
-    () => hasUnsavedInputs({ ...clean, conditionsChanged: conditionsChangeInputsAreDirty(draft, baseline) }))
+    () => unsavedInputsAreDirty({ ...clean, conditionsChanged: conditionsChangeInputsAreDirty(draft, baseline) }))
   const hidden = unloadEvent()
   target.dispatchEvent(hidden)
   assert.equal(hidden.defaultPrevented, true)

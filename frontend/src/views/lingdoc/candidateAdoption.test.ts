@@ -98,3 +98,12 @@ test('project switching reads the first chapter draft before replacing workspace
   assert.ok(initialRead < projectMutation)
   assert.match(workspace, /if \(discardReviewDrafts\) \{\s*reviewDrafts\.value = \{\}\s*savedReviewDrafts\.value = \{\}/)
 })
+
+test('project selection uses named options and the shared unsaved-input policy', () => {
+  assert.doesNotMatch(workspace, /selectProject\([^\n]*,\s*(?:true|false)(?:\s*,|\))/)
+  assert.match(workspace, /selectProject\(project\.id, \{ force: true \}\)/)
+  assert.match(workspace, /selectProject\(id, \{ force: true, skipConfirm: true \}\)/)
+  assert.match(workspace, /selectProject\(id, \{ conditionsHandled: true \}\)/)
+  assert.match(workspace, /const unsavedInputState = computed<UnsavedInputState>/)
+  assert.match(workspace, /unsavedInputsAreDirty\(unsavedInputState\.value, \{ conditionsHandled \}\)/)
+})
