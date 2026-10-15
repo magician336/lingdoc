@@ -1,6 +1,7 @@
 package generation
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,15 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+type generationStartApplicationStub struct {
+	Application
+	err error
+}
+
+func (s generationStartApplicationStub) Start(context.Context, Actor, string, string, Request) (Run, error) {
+	return Run{}, s.err
+}
 
 func TestGenerationRoutesMatchContractAndRejectMissingActor(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -88,6 +98,40 @@ func TestGenerationStartStrictlyValidatesRequestBody(t *testing.T) {
 			}
 			if !strings.Contains(response.Body.String(), `"code":"`+tt.wantCode+`"`) {
 				t.Fatalf("response missing %s error: %s", tt.wantCode, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestGenerationStartMapsContractPreflightErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	actor := Actor{TenantID: 1, UserID: "user-1"}
+	validBody := `{"chapter_id":"chapter-1","asset_ids":["asset-1"],"instruction":"Draft","expected_spec_revision":1}`
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+		wantDetail string
+	}{
+		{name: "insufficient evidence", err: ErrInsufficientEvidence, wantStatus: http.StatusUnprocessableEntity, wantCode: "insufficient_evidence"},
+		{name: "asset not ready", err: ErrAssetNotReady, wantStatus: http.StatusUnprocessableEntity, wantCode: "asset_not_ready"},
+		{name: "preflight blocked", err: ErrPreflightBlocked, wantStatus: http.StatusUnprocessableEntity, wantCode: "preflight_blocked"},
+		{name: "invalid state", err: ErrInvalidState, wantStatus: http.StatusUnprocessableEntity, wantCode: "invalid_state"},
+		{name: "asset not authorized", err: &AssetNotAuthorizedError{Denied: []DeniedAsset{{AssetID: "asset-1", Reason: "not_authorized"}}}, wantStatus: http.StatusUnprocessableEntity, wantCode: "asset_not_authorized", wantDetail: `"asset_id":"asset-1"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := NewHandler(generationStartApplicationStub{err: tt.err}, func(*gin.Context) (Actor, bool) { return actor, true })
+			router := gin.New()
+			RegisterRoutes(router.Group("/lingdoc"), handler)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/lingdoc/projects/p1/generations", strings.NewReader(validBody)))
+			if response.Code != tt.wantStatus || !strings.Contains(response.Body.String(), `"code":"`+tt.wantCode+`"`) {
+				t.Fatalf("status=%d body=%s, want status=%d code=%s", response.Code, response.Body.String(), tt.wantStatus, tt.wantCode)
+			}
+			if tt.wantDetail != "" && !strings.Contains(response.Body.String(), tt.wantDetail) {
+				t.Fatalf("response=%s, want details containing %s", response.Body.String(), tt.wantDetail)
 			}
 		})
 	}

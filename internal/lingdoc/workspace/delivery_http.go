@@ -41,19 +41,28 @@ func NewDeliveryHandler(service ReleaseApplication) *DeliveryHandler {
 // RegisterDeliveryRoutes 把 T13 挂在已认证的 LingDoc 组下面。服务端前缀
 // （契约里的 /api/v1/lingdoc）由调用方那一层的 group 承担。
 func RegisterDeliveryRoutes(r RouteRegistrar, h *DeliveryHandler) {
+	RegisterDeliveryRoutesWithGroups(RouteGroups{Read: r, Write: r}, h)
+}
+
+// RegisterDeliveryRoutesWithGroups makes the permission policy of each
+// operation explicit. Checks and template checks are read-only POSTs; issue
+// dispositions and release preparation mutate state and require the write
+// group. The compatibility wrapper above is kept for standalone transports
+// that intentionally supply one already-authorized group.
+func RegisterDeliveryRoutesWithGroups(routes RouteGroups, h *DeliveryHandler) {
 	if h == nil {
 		return
 	}
-	r.POST("/projects/:projectId/checks", h.Check)
+	routes.Read.POST("/projects/:projectId/checks", h.Check)
 	if _, ok := h.service.(TemplateCheckApplication); ok {
-		r.POST("/projects/:projectId/template-checks", h.TemplateCheck)
+		routes.Read.POST("/projects/:projectId/template-checks", h.TemplateCheck)
 	}
 	if _, ok := h.service.(IssueDispositionApplication); ok {
-		r.POST("/projects/:projectId/issues/:issueId/disposition", h.SetIssueDisposition)
+		routes.Write.POST("/projects/:projectId/issues/:issueId/disposition", h.SetIssueDisposition)
 	}
-	r.POST("/projects/:projectId/releases", h.Prepare)
-	r.GET("/projects/:projectId/releases", h.List)
-	r.GET("/projects/:projectId/releases/:snapshotId", h.Get)
+	routes.Write.POST("/projects/:projectId/releases", h.Prepare)
+	routes.Read.GET("/projects/:projectId/releases", h.List)
+	routes.Read.GET("/projects/:projectId/releases/:snapshotId", h.Get)
 }
 
 type issueDispositionRequest struct {

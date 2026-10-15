@@ -488,6 +488,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewOrganizationHandler))
 	must(container.Provide(handler.NewMemoryHandler))
+	must(container.Provide(NewLingDocTemplateCatalog))
 	must(container.Provide(NewLingDocWorkspaceHandler))
 	must(container.Provide(func(db *gorm.DB, projects workspace.ApplicationService, sourceIntegration workspace.WorkspaceIntegration) *candidateadoption.CandidateAdoptionHandler {
 		store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)

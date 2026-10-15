@@ -48,3 +48,24 @@ func TestRepeatedAuthorizationPersistsDistinctAuditDecisions(t *testing.T) {
 		}
 	}
 }
+
+func TestCreateProjectDoesNotWriteTenantAuditWithEmptyProjectID(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "create-audit.db"))
+	svc.audit = &auditSinkStub{}
+	actor := Actor{TenantID: 91, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+
+	if _, _, _, err := svc.CreateProject(context.Background(), actor, "create-audit-project", CreateProjectInput{
+		Name: "create audit", TemplateID: "template-demo",
+	}); err != nil {
+		t.Fatalf("create project with audit enabled: %v", err)
+	}
+
+	var emptyProjectID int64
+	if err := svc.testDB().Model(&auditEventRow{}).Where("project_id = ?", "").Count(&emptyProjectID).Error; err != nil {
+		t.Fatalf("count empty-project audit rows: %v", err)
+	}
+	if emptyProjectID != 0 {
+		t.Fatalf("created %d audit rows without a project foreign key", emptyProjectID)
+	}
+}
