@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -2640,3 +2641,4 @@ func (s *Service) GenerationContext(ctx context.Context, actor Actor, projectID,
 	})
 	return result, err
 }
+
