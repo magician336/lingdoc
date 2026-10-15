@@ -112,7 +112,8 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		result.Status = TemplateCheckNotEvaluated
 	}
 	for _, evaluation := range evaluations {
-		if evaluation.Status == lingdoctemplate.EvaluationIssue && evaluation.Severity == SeverityBlocking {
+		if evaluation.Severity == SeverityBlocking &&
+			(evaluation.Status == lingdoctemplate.EvaluationIssue || evaluation.Status == lingdoctemplate.EvaluationUnknown) {
 			result.Status = TemplateCheckBlocked
 			break
 		}
