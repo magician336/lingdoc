@@ -438,7 +438,9 @@ func Evaluate(input DeliveryInput) CheckResult {
 		issue(RuleRequiredFields, "template_rules_invalid", "", "模板规则结构无效，无法安全执行检查")
 	} else {
 		for _, evaluation := range evaluated.Evaluations {
-			if evaluation.Status != lingdoctemplate.EvaluationIssue || isLegacyTemplateRule(evaluation.RuleID) {
+			if isLegacyTemplateRule(evaluation.RuleID) ||
+				(evaluation.Status != lingdoctemplate.EvaluationIssue &&
+					!(evaluation.Status == lingdoctemplate.EvaluationUnknown && evaluation.Severity == SeverityBlocking)) {
 				continue
 			}
 			kind, id, _ := strings.Cut(evaluation.TargetRef, "/")
@@ -467,7 +469,11 @@ func Evaluate(input DeliveryInput) CheckResult {
 				}
 			}
 			version := evaluation.TargetVersion
-			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
+			code := "template_rule_issue"
+			if evaluation.Status == lingdoctemplate.EvaluationUnknown {
+				code = "template_rule_unavailable"
+			}
+			addTarget(evaluation.Severity, evaluation.RuleID, code, target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
 		}
 	}
 
