@@ -1668,6 +1668,13 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 
 		fields := make([]ChangeFieldDelta, 0, len(stale.Fields))
 		for _, field := range stale.Fields {
+			if p.TemplateCopy == nil {
+				return nil, 0, ErrInvalidState
+			}
+			definition, exists := templateFieldDefinitions(p.TemplateCopy.Definition)[field.Key]
+			if !exists || !compatibleTemplateValue(field.NewValue, definition) {
+				return nil, 0, ErrInvalidState
+			}
 			currentValue := p.Spec[field.Key]
 			if currentValue == field.NewValue {
 				continue
