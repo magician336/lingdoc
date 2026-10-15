@@ -322,19 +322,19 @@ func NewRouter(params RouterParams) *gin.Engine {
 		}
 		if params.LingDocDeliveryHandler != nil {
 			lingdoc := newLingDocRegistrar(v1, rbacGuards)
-			workspace.RegisterDeliveryRoutes(lingdoc, params.LingDocDeliveryHandler)
+			workspace.RegisterDeliveryRoutesWithGroups(lingdoc.groups(), params.LingDocDeliveryHandler)
 		}
 		if params.LingDocDeliveryExportHandler != nil {
 			lingdoc := newLingDocRegistrar(v1, rbacGuards)
-			workspace.RegisterDeliveryExportRoutes(lingdoc, params.LingDocDeliveryExportHandler)
+			workspace.RegisterDeliveryExportRoutes(lingdoc.write, params.LingDocDeliveryExportHandler)
 		}
 		if params.LingDocCandidateAdoptionHandler != nil {
 			lingdoc := newLingDocRegistrar(v1, rbacGuards)
-			candidateadoption.RegisterRoutes(lingdoc, params.LingDocCandidateAdoptionHandler)
+			candidateadoption.RegisterRoutes(lingdoc.write, params.LingDocCandidateAdoptionHandler)
 		}
 		if params.LingDocGenerationHandler != nil {
 			lingdoc := newLingDocRegistrar(v1, rbacGuards)
-			generation.RegisterRoutes(lingdoc, params.LingDocGenerationHandler)
+			generation.RegisterRoutes(lingdoc.write, params.LingDocGenerationHandler)
 		}
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
