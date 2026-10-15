@@ -52,6 +52,52 @@ type ApplicationService interface {
 	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 }
 
+// WorkspaceReadApplication is the route-facing read port. Keeping this
+// separate from writes lets transports register and test only the use cases
+// they expose.
+type WorkspaceReadApplication interface {
+	ListProjects(context.Context, Actor) ([]Project, bool, error)
+	GetProject(context.Context, Actor, string) (Project, error)
+	ListDraftCandidates(context.Context, Actor, string) ([]DraftCandidate, error)
+	ListAuditEvents(context.Context, Actor, string) ([]AuditEvent, error)
+	ActivationDiff(context.Context, Actor, string, int64) (ActivationDiff, error)
+	PreviewTemplateMigration(context.Context, Actor, string, TemplateMigrationInput) (TemplateMigrationPreview, error)
+	GetTemplateCopy(context.Context, Actor, string, int64) (ProjectTemplateCopy, error)
+	PreviewTemplateCopyEdit(context.Context, Actor, string, TemplateCopyDefinitionInput) (TemplateMigrationPreview, error)
+	ListChapters(context.Context, Actor, string) ([]Chapter, error)
+	GetWorkingCopy(context.Context, Actor, string, string) (WorkingCopy, error)
+	ListChapterVersions(context.Context, Actor, string, string) ([]ChapterVersion, error)
+	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
+	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+}
+
+// WorkspaceWriteApplication is the route-facing mutation port.
+type WorkspaceWriteApplication interface {
+	CreateProject(context.Context, Actor, string, CreateProjectInput) (json.RawMessage, int, bool, error)
+	SaveSpec(context.Context, Actor, string, string, SaveSpecInput) (json.RawMessage, int, bool, error)
+	ActivateProject(context.Context, Actor, string, string, ActivateProjectInput) (json.RawMessage, int, bool, error)
+	CreateDraftCandidate(context.Context, Actor, string, string, DraftCandidateInput) (json.RawMessage, int, bool, error)
+	ChangeTemplate(context.Context, Actor, string, string, TemplateMigrationInput) (json.RawMessage, int, bool, error)
+	SaveTemplateCopy(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (json.RawMessage, int, bool, error)
+	DiscardProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
+	RestoreProject(context.Context, Actor, string, string, int64) (json.RawMessage, int, bool, error)
+	SaveMembers(context.Context, Actor, string, string, SaveMembersInput) (json.RawMessage, int, bool, error)
+	TransferOwner(context.Context, Actor, string, string, TransferOwnerInput) (json.RawMessage, int, bool, error)
+	RequestOwnerTransfer(context.Context, Actor, string, string, OwnerTransferInput) (json.RawMessage, int, bool, error)
+	AcceptOwnerTransfer(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+	SaveChapter(context.Context, Actor, string, string, string, SaveChapterInput) (json.RawMessage, int, bool, error)
+	SaveWorkingCopy(context.Context, Actor, string, string, string, SaveWorkingCopyInput) (json.RawMessage, int, bool, error)
+	ApplyRewrite(context.Context, Actor, string, string, string, core.SaveWorkingCopyInput, []core.ReviewItem) (json.RawMessage, int, bool, error)
+	CommitWorkingCopy(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (json.RawMessage, int, bool, error)
+	RestoreWorkingCopy(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (json.RawMessage, int, bool, error)
+	CreateChangeSet(context.Context, Actor, string, string, CreateChangeSetInput) (json.RawMessage, int, bool, error)
+	ApplyChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
+}
+
+var _ WorkspaceReadApplication = (*Service)(nil)
+var _ WorkspaceWriteApplication = (*Service)(nil)
+
 // SourceApplicationService owns the source and asset use cases consumed by
 // workspace HTTP routes. Keeping these operations behind one port prevents
 // the transport from composing authorization, catalog reads, and search.
@@ -132,7 +178,11 @@ type KnowledgeSearchService interface {
 }
 
 type HandlerDependencies struct {
+	// Service is retained for compatibility with older adapters. New route
+	// composition should provide Read and Write explicitly.
 	Service          ApplicationService
+	Read             WorkspaceReadApplication
+	Write            WorkspaceWriteApplication
 	Sources          SourceApplicationService
 	Integration      WorkspaceIntegration
 	SelectedRewrites SelectedRewriteApplication

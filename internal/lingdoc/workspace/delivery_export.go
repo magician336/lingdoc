@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -23,6 +24,7 @@ type DeliveryExportService struct {
 	inputs      *candidateadoption.DeliveryInputService
 	sources     candidateadoption.SourcePolicy
 	currentness DeliveryCurrentness
+	policy      AccessPolicy
 	audit       AuditSink
 }
 
@@ -89,6 +91,31 @@ func NewDeliveryExportServiceWithCurrentness(
 	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, currentness: currentness, audit: audit}
 }
 
+// NewDeliveryExportServiceWithPolicy uses the shared application policy for
+// both present access and frozen-input currentness.
+func NewDeliveryExportServiceWithPolicy(
+	snapshots delivery.SnapshotStore,
+	exports delivery.ExportStore,
+	renderer delivery.FrozenRenderer,
+	validator delivery.FrozenValidator,
+	inputs *candidateadoption.DeliveryInputService,
+	sources candidateadoption.SourcePolicy,
+	policy AccessPolicy,
+	audits ...AuditSink,
+) *DeliveryExportService {
+	if snapshots == nil || exports == nil || policy == nil || renderer == nil || validator == nil {
+		return nil
+	}
+	if _, ok := exports.(delivery.ExportRecorder); !ok {
+		return nil
+	}
+	var audit AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, policy: policy, audit: audit}
+}
+
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
 //
 // key 是这次用户动作的幂等键。重试是**新的动作**（契约 §6），所以重试要换新键；
@@ -97,9 +124,11 @@ func (s *DeliveryExportService) Start(ctx context.Context, actorID, projectID, s
 	if s == nil {
 		return delivery.ExportArtifact{}, false, candidateadoption.ErrInvalidState
 	}
-	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshotID); err != nil {
-		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.export", err)
-		return delivery.ExportArtifact{}, false, err
+	if s.policy == nil {
+		if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshotID); err != nil {
+			s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.export", err)
+			return delivery.ExportArtifact{}, false, err
+		}
 	}
 	return s.service(ctx, actorID, projectID).StartAs(ctx, s.deliveryActor(ctx, actorID), projectID, snapshotID, key)
 }
@@ -121,15 +150,20 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 	if s == nil {
 		return delivery.ExportArtifact{}, nil, candidateadoption.ErrInvalidState
 	}
-	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
-		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
-		return delivery.ExportArtifact{}, nil, err
-	}
 	artifact, err := s.exports.GetExport(projectID, exportID)
 	if err != nil {
 		return delivery.ExportArtifact{}, nil, err
 	}
-	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
+	if s.policy == nil {
+		if err := s.authorize(ctx, actorID, projectID); err != nil {
+			s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
+			return delivery.ExportArtifact{}, nil, err
+		}
+		if err := s.authorizeSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
+			s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
+			return delivery.ExportArtifact{}, nil, err
+		}
+	} else if err := s.currentSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
 		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
 		return delivery.ExportArtifact{}, nil, err
 	}
@@ -163,16 +197,33 @@ func (s *DeliveryExportService) authorizeSnapshotSources(ctx context.Context, ac
 	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" || strings.TrimSpace(snapshotID) == "" {
 		return candidateadoption.ErrInvalidRequest
 	}
-	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
 		return err
 	}
+	return s.currentSnapshotSources(ctx, actorID, projectID, snapshotID)
+}
+
+func (s *DeliveryExportService) currentSnapshotSources(ctx context.Context, actorID, projectID, snapshotID string) error {
 	snapshot, err := s.snapshots.Get(projectID, snapshotID)
 	if err != nil {
 		return err
 	}
+	if !snapshot.IsCurrent {
+		return candidateadoption.ErrStaleInput
+	}
 	if snapshot.Check.Status != delivery.CheckPassed {
 		// Keep the established preflight_blocked response for snapshots that were
 		// never eligible for export; no file can be rendered from these inputs.
+		return nil
+	}
+	if s.policy != nil {
+		current, err := s.policy.Current(ctx, LingDocAccessContext{TenantID: s.deliveryActor(ctx, actorID).TenantID, UserID: actorID, ProjectID: projectID}, accessInputFromDelivery(snapshot.FrozenInput))
+		if err != nil {
+			return err
+		}
+		if !current {
+			return candidateadoption.ErrStaleInput
+		}
 		return nil
 	}
 	ids := make([]string, 0)
@@ -209,6 +260,17 @@ func (s *DeliveryExportService) authorizeSnapshotSources(ctx context.Context, ac
 	return nil
 }
 
+func (s *DeliveryExportService) authorize(ctx context.Context, actorID, projectID string) error {
+	if s.policy != nil {
+		actor := s.deliveryActor(ctx, actorID)
+		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "contributor")
+	}
+	if s.inputs == nil || s.inputs.Authorizer == nil {
+		return candidateadoption.ErrInvalidState
+	}
+	return s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID)
+}
+
 // List 列出项目导出过的产物，新的在前。
 //
 // 与 DeliveryReleaseService.List 分开而不是合成一个「交付历史」：两者读的是两个库，
@@ -227,7 +289,7 @@ func (s *DeliveryExportService) List(ctx context.Context, actorID, projectID str
 	}
 	// 先判成员再列，与同一包里三处读操作同一条：非成员不该从「空列表」与
 	// 「没权限」的差别里问出某个项目导出过什么。
-	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
 		return nil, false, err
 	}
 	lister, ok := s.exports.(delivery.ExportLister)
@@ -254,6 +316,9 @@ func (s *DeliveryExportService) List(ctx context.Context, actorID, projectID str
 // 两个判定都接回 T12 那一份：授权是 T07 交给它的成员判定，当前性是**与 T13 同一个**
 // deliveryCurrentness。导出侧不另立一套口径。
 func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID string) *delivery.ExportService {
+	if s.policy != nil {
+		return delivery.NewExportServiceWithAccessPolicy(s.snapshots, s.exports, s.renderer, s.validator, s.policy, s.audit)
+	}
 	return delivery.NewExportService(
 		s.snapshots,
 		s.exports,
@@ -294,4 +359,16 @@ func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID 
 		}),
 		s.audit,
 	)
+}
+
+func accessInputFromDelivery(input delivery.DeliveryInput) lingdocaccess.CurrentnessInput {
+	chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
+	for _, chapter := range input.Chapters {
+		chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
+	}
+	sources := make([]lingdocaccess.Source, 0, len(input.Sources))
+	for _, source := range input.Sources {
+		sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
+	}
+	return lingdocaccess.CurrentnessInput{Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources}
 }

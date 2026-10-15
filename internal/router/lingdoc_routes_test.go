@@ -123,7 +123,7 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	service := &lingDocRouteServiceStub{}
-	workspaceHandler := workspace.NewHandler(workspace.HandlerDependencies{Service: service})
+	workspaceHandler := workspace.NewHandler(workspace.HandlerDependencies{Read: service, Write: service})
 	registerLingDocWorkspaceRoutes(v1, guards, workspaceHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 

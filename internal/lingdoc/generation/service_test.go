@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
@@ -41,6 +42,22 @@ func (v testSources) ValidateGenerationSources(context.Context, Actor, string, [
 type testCurrentness struct {
 	current bool
 	err     error
+}
+
+type sharedGenerationPolicyStub struct {
+	allowed bool
+	current bool
+}
+
+func (p *sharedGenerationPolicyStub) Authorize(context.Context, lingdocaccess.LingDocAccessContext, string) error {
+	if !p.allowed {
+		return ErrForbidden
+	}
+	return nil
+}
+
+func (p *sharedGenerationPolicyStub) Current(context.Context, lingdocaccess.LingDocAccessContext, lingdocaccess.CurrentnessInput) (bool, error) {
+	return p.current, nil
 }
 
 func (c testCurrentness) GenerationInputIsCurrent(context.Context, Actor, string, string, candidateadoption.Basis) (bool, error) {
@@ -270,6 +287,28 @@ func TestExecuteInterruptsWhenInputIsStale(t *testing.T) {
 	run, err := svc.Execute(context.Background(), "run-1")
 	if err != nil || run.Status != StatusInterrupted || repo.failure == nil || repo.failure.Code != "stale_input" {
 		t.Fatalf("stale Execute() = (%+v, %v), failure=%+v", run, err, repo.failure)
+	}
+}
+
+func TestSharedPolicyGatesGenerationPermissionAndStaleInput(t *testing.T) {
+	legacy, repo := generationFixture()
+	policy := &sharedGenerationPolicyStub{allowed: false, current: true}
+	service := NewServiceWithAccessPolicy(policy, legacy.Inputs, legacy.Sources, legacy.Model, legacy.Repository, legacy.Enqueuer)
+	request := Request{ChapterID: "chapter-1", AssetIDs: []string{"asset-1"}, Instruction: "Draft", ExpectedSpecRevision: 3, ExpectedChapterVersionID: stringPtr("chapter-v1")}
+	if _, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "policy-gate-1", request); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("shared policy denied Start() = %v, want %v", err, ErrForbidden)
+	}
+
+	policy.allowed = true
+	if _, err := service.Start(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "policy-gate-2", request); err != nil {
+		t.Fatalf("shared policy allowed Start() = %v", err)
+	}
+	policy.current = false
+	repo.claimed = false
+	repo.run.Status = StatusQueued
+	run, err := service.Execute(context.Background(), repo.run.ID)
+	if err != nil || run.Status != StatusInterrupted || repo.failure == nil || repo.failure.Code != "stale_input" {
+		t.Fatalf("shared policy stale Execute() = (%+v, %v), failure=%+v", run, err, repo.failure)
 	}
 }
 

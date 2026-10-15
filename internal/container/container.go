@@ -82,6 +82,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/im/yunzhijia"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
@@ -530,15 +531,24 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			Authorizer: candidateAdoptionWorkspaceAuthorizer{service: projects},
 		}
 	}))
+	// One application policy carries both project authorization and live
+	// currentness into generation and delivery.
+	must(container.Provide(func(projects workspace.ApplicationService, runtime *workspace.SourceRuntime, inputs *candidateadoption.DeliveryInputService) (lingdocaccess.Policy, error) {
+		policy := workspace.NewAccessPolicy(projects, runtime, inputs.Reader)
+		if policy == nil {
+			return nil, errors.New("lingdoc access policy: incomplete dependencies")
+		}
+		return policy, nil
+	}))
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService) (workspace.ReleaseApplication, error) {
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy) (workspace.ReleaseApplication, error) {
 		var dispositions workspace.ValidationIssueDispositionCore
 		if core, ok := projects.(workspace.ValidationIssueDispositionCore); ok {
 			dispositions = core
 		}
-		service := workspace.NewDeliveryReleaseServiceWithDispositions(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, sourceIntegration.CandidateAdoptionSourcePolicy(), dispositions)
+		service := workspace.NewDeliveryReleaseServiceWithPolicy(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, sourceIntegration.CandidateAdoptionSourcePolicy(), policy, dispositions)
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
@@ -562,12 +572,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
 	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
 	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink) (workspace.ExportApplication, error) {
-		currentness, ok := sourceIntegration.DeliveryInputBuilder().(workspace.DeliveryCurrentness)
-		if !ok || currentness == nil {
-			return nil, errors.New("lingdoc delivery export service: incomplete currentness dependency")
-		}
-		service := workspace.NewDeliveryExportServiceWithCurrentness(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), currentness, audit)
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink, policy lingdocaccess.Policy) (workspace.ExportApplication, error) {
+		service := workspace.NewDeliveryExportServiceWithPolicy(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), policy, audit)
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
@@ -580,8 +586,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		}
 		return handler, nil
 	}))
-	must(container.Provide(func(runtime *workspace.SourceRuntime, models interfaces.ModelService, tasks interfaces.TaskEnqueuer) generation.Application {
-		return workspace.NewGenerationApplication(runtime, models, tasks)
+	must(container.Provide(func(runtime *workspace.SourceRuntime, policy lingdocaccess.Policy, models interfaces.ModelService, tasks interfaces.TaskEnqueuer) generation.Application {
+		return workspace.NewGenerationApplication(runtime, policy, models, tasks)
 	}))
 	must(container.Provide(func(service generation.Application) *generation.Handler {
 		return generation.NewHandler(service, func(c *gin.Context) (generation.Actor, bool) {

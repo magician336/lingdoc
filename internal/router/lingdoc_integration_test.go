@@ -150,7 +150,7 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{Service: projects, Sources: sources}))
+	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{Read: projects, Write: projects, Sources: sources}))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 	request := func(method, path, body, key, identity string, apiKey bool, want int) *httptest.ResponseRecorder {
 		t.Helper()
