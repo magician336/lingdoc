@@ -1,0 +1,7 @@
+interface:
+  display_name: "LingDoc Architecture Improvement Loop"
+  short_description: "Iterate architecture candidates into a reviewed PR"
+  default_prompt: "Use $lingdoc-architecture-improvement-loop to run a gated LingDoc architecture improvement cycle."
+
+policy:
+  allow_implicit_invocation: true
