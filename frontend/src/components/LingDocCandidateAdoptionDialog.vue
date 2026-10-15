@@ -69,7 +69,7 @@ async function retryRead() {
 }
 
 function cancel() {
-  if (!submitting.value) emit('cancel')
+  if (!submitting.value && !accepted.value) emit('cancel')
 }
 </script>
 
@@ -81,7 +81,7 @@ function cancel() {
           <p class="candidate-adoption__eyebrow">候选预览</p>
           <h2 id="candidate-adoption-title">采纳「{{ chapter.title }}」</h2>
         </div>
-        <button type="button" class="candidate-adoption__close" :disabled="submitting" aria-label="取消" @click="cancel">×</button>
+        <button type="button" class="candidate-adoption__close" :disabled="submitting || accepted" aria-label="取消" @click="cancel">×</button>
       </header>
 
       <p v-if="hasExistingVersion" class="candidate-adoption__warning">
@@ -113,7 +113,7 @@ function cancel() {
       </section>
 
       <footer>
-        <button type="button" class="candidate-adoption__secondary" :disabled="submitting" @click="cancel">取消</button>
+        <button type="button" class="candidate-adoption__secondary" :disabled="submitting || accepted" @click="cancel">取消</button>
         <button type="button" class="candidate-adoption__primary" :disabled="submitting || accepted" @click="adopt">
           {{ accepted ? '已采纳' : submitting ? '采纳中…' : hasExistingVersion ? '确认整章替换' : '采纳候选' }}
         </button>

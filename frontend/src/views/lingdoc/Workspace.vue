@@ -873,18 +873,27 @@ async function loadProjects() {
   finally { loading.value = false }
 }
 
+async function readChapterDraft(projectId: string, chapterId: string) {
+  const [copyResult, versionResult] = await Promise.all([
+    getWorkingCopy(projectId, chapterId), listChapterVersions(projectId, chapterId),
+  ])
+  return { copyResult, versionResult }
+}
+
+function applyChapterDraft(copyResult: Awaited<ReturnType<typeof getWorkingCopy>>, versionResult: Awaited<ReturnType<typeof listChapterVersions>>) {
+  workingCopy.value = copyResult.data
+  hydrateCitationUsages(copyResult.data)
+  chapterVersions.value = versionResult.data.items
+  bodyDraft.value = copyResult.data.body_markdown
+  workingCopyStatus.value = 'saved'
+}
+
 async function loadChapterDraft(projectId: string, chapterId: string) {
   workingCopyLoading.value = true
   try {
-    const [copyResult, versionResult] = await Promise.all([
-      getWorkingCopy(projectId, chapterId), listChapterVersions(projectId, chapterId),
-    ])
+    const { copyResult, versionResult } = await readChapterDraft(projectId, chapterId)
     if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
-    workingCopy.value = copyResult.data
-    hydrateCitationUsages(copyResult.data)
-    chapterVersions.value = versionResult.data.items
-    bodyDraft.value = copyResult.data.body_markdown
-    workingCopyStatus.value = 'saved'
+    applyChapterDraft(copyResult, versionResult)
   } catch (error) {
     workingCopyStatus.value = 'error'
     failure(error)
@@ -942,6 +951,13 @@ async function selectProject(id: string, force = false, skipConfirm = false, con
     const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
     const assetResult = await listAssets(id)
     const changeSetsResult = await listChangeSets(id)
+    const initialChapter = chapterResult?.data[0] ?? null
+    const initialChapterDraft = initialChapter ? await readChapterDraft(id, initialChapter.id) : null
+    const initialGenerationCandidates = initialChapter
+      ? await listGenerationCandidates(id, initialChapter.id)
+      : null
+    const sameProject = project.value?.id === id
+    const discardReviewDrafts = !sameProject || (dirty && !skipConfirm)
     if (generationTimer) clearTimeout(generationTimer)
     if (workingCopyTimer) clearTimeout(workingCopyTimer)
     workingCopyTimer = undefined
@@ -954,6 +970,10 @@ async function selectProject(id: string, force = false, skipConfirm = false, con
     pendingDraft.value = null
     pendingTemplateUpgrade.value = null
     templateUpgradeReason.value = ''
+    if (discardReviewDrafts) {
+      reviewDrafts.value = {}
+      savedReviewDrafts.value = {}
+    }
     project.value = result.data
     hydrateTemplateCopyDraft(result.data)
     subject.value = result.data.spec.research_subject ?? ''
@@ -985,11 +1005,11 @@ async function selectProject(id: string, force = false, skipConfirm = false, con
     rewriteCandidate.value = null
     rewriteSourceIds.value = []
     bodyDraft.value = chapter.value?.body_markdown ?? ''
-    if (chapter.value) {
-      await loadChapterDraft(id, chapter.value.id)
+    if (chapter.value && initialChapterDraft) {
+      applyChapterDraft(initialChapterDraft.copyResult, initialChapterDraft.versionResult)
       await loadSavedRewriteCandidate(id, chapter.value.id)
     }
-    await loadGenerationCandidates(chapter.value?.id)
+    generationCandidates.value = initialGenerationCandidates?.data ?? []
     await resumeGeneration()
   } catch (error) { failure(error) }
 }
