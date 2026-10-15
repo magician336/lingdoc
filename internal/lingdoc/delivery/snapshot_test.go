@@ -230,6 +230,68 @@ func TestTemplateCheckAndPreflightShareDeterministicRuleEvaluation(t *testing.T)
 	}
 }
 
+func TestBlockingUnknownRuleTargetBlocksTemplateCheckAndPreflight(t *testing.T) {
+	input := validDeliveryInput()
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "unavailable-target-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "missing-field-pattern", DefinitionID: "pattern", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "removed_field",
+			Parameters: map[string]any{"pattern": "^approved:"}, Severity: SeverityBlocking,
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template.RuleSetSnapshot = &set
+	definition, err := lingdoctemplate.WithHashes(input.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template = definition
+
+	check, err := EvaluateTemplate(input)
+	if err != nil || check.Status != TemplateCheckBlocked {
+		t.Fatalf("blocking unknown target must not pass Template Check: status=%s evaluations=%+v err=%v", check.Status, check.Evaluations, err)
+	}
+	foundUnknown := false
+	for _, evaluation := range check.Evaluations {
+		if evaluation.RuleID == "missing-field-pattern" {
+			foundUnknown = evaluation.Status == lingdoctemplate.EvaluationUnknown && evaluation.Severity == SeverityBlocking
+		}
+	}
+	if !foundUnknown {
+		t.Fatalf("Template Check did not preserve the blocking UNKNOWN evaluation: %+v", check.Evaluations)
+	}
+
+	preflight := Evaluate(input)
+	if preflight.Status != CheckBlocked {
+		t.Fatalf("blocking unknown target must block Preflight: %+v", preflight)
+	}
+	foundIssue := false
+	for _, issue := range preflight.Issues {
+		if issue.RuleID == "missing-field-pattern" {
+			foundIssue = issue.Severity == SeverityBlocking && issue.Code == "template_rule_unavailable"
+		}
+	}
+	if !foundIssue {
+		t.Fatalf("Preflight did not record the unavailable blocking rule as a ValidationIssue: %+v", preflight.Issues)
+	}
+
+	snapshotStore := NewMemorySnapshotStore()
+	release, err := NewReleaseService(snapshotStore).Prepare(input)
+	if err != nil || release.Check.Status != CheckBlocked || release.Check.RulesetHash != definition.RulesetHash {
+		t.Fatalf("ReleaseSnapshot did not freeze the blocked rule evaluation: release=%+v err=%v", release, err)
+	}
+	exportService := NewExportService(snapshotStore, NewMemoryExportStore(),
+		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("must-not-render"), nil }),
+		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
+	if _, _, err := exportService.Start("owner", release.ProjectID, release.ID, "blocking-unknown-export"); !errors.Is(err, ErrExportPreflightBlocked) {
+		t.Fatalf("export must reject a frozen blocking UNKNOWN evaluation: %v", err)
+	}
+}
+
 func TestBoundRuleSetSnapshotFlowsThroughTemplateCheckAndPreflight(t *testing.T) {
 	input := validDeliveryInput()
 	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
