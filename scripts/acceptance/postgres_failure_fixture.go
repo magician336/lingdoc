@@ -20,8 +20,9 @@ import (
 const syntheticPassword = "synthetic_ci_only"
 
 var (
-	failureDatabasePattern = regexp.MustCompile(`^lingdoc_fault_[a-f0-9]{12}$`)
-	failureUserPattern     = regexp.MustCompile(`^lingdoc_fault_user_[a-f0-9]{12}$`)
+	failureDatabasePattern       = regexp.MustCompile(`^lingdoc_fault_[a-f0-9]{12}$`)
+	failureUserPattern           = regexp.MustCompile(`^lingdoc_fault_user_[a-f0-9]{12}$`)
+	targetOverrideKeywordPattern = regexp.MustCompile(`(?i)(?:^|\s)(?:hostaddr|service|passfile)\s*=`)
 )
 
 var lingdocMigrations = []string{
@@ -93,7 +94,18 @@ func run() error {
 		fmt.Sprintf("CREATE ROLE %s LOGIN PASSWORD '%s'", user, syntheticPassword)); err != nil {
 		return err
 	}
+	roleCreated := true
+	cleanupComplete := false
+	defer func() {
+		if cleanupComplete {
+			return
+		}
+		if cleanupErr := cleanupFailedFixture(adminSQL, name, user, marker, roleCreated); cleanupErr != nil {
+			fmt.Fprintln(os.Stderr, "failed to clean up partial PostgreSQL fixture:", cleanupErr)
+		}
+	}()
 	if err := os.WriteFile(marker, []byte(name+"\n"+user+"\n"), 0o600); err != nil {
+		_ = os.Remove(marker)
 		_, _ = adminSQL.ExecContext(context.Background(), "DROP ROLE "+user)
 		return err
 	}
@@ -101,7 +113,11 @@ func run() error {
 		fmt.Sprintf("CREATE DATABASE %s OWNER %s", name, user)); err != nil {
 		return err
 	}
-	return applyLingDocMigrations(failureTestDSN(adminDSN, name, user))
+	if err := applyLingDocMigrations(failureTestDSN(adminDSN, name, user)); err != nil {
+		return err
+	}
+	cleanupComplete = true
+	return nil
 }
 
 func failureTestDSN(adminDSN, database, user string) string {
@@ -110,7 +126,7 @@ func failureTestDSN(adminDSN, database, user string) string {
 }
 
 func validateAdminTarget(dsn string) error {
-	if err := rejectPostgresTargetQueryOverrides(dsn); err != nil {
+	if err := rejectPostgresTargetOverrides(dsn); err != nil {
 		return err
 	}
 	config, err := pgx.ParseConfig(dsn)
@@ -130,8 +146,11 @@ func validateAdminTarget(dsn string) error {
 	return nil
 }
 
-func rejectPostgresTargetQueryOverrides(dsn string) error {
-	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+func rejectPostgresTargetOverrides(dsn string) error {
+	if targetOverrideKeywordPattern.MatchString(dsn) {
+		return fmt.Errorf("PostgreSQL target keyword cannot override hostaddr, service, or passfile")
+	}
+	if !strings.HasPrefix(strings.ToLower(dsn), "postgres://") && !strings.HasPrefix(strings.ToLower(dsn), "postgresql://") {
 		return nil
 	}
 	parsed, err := url.Parse(dsn)
@@ -144,7 +163,7 @@ func rejectPostgresTargetQueryOverrides(dsn string) error {
 	}
 	for key := range values {
 		switch strings.ToLower(key) {
-		case "host", "hostaddr", "port", "user", "dbname", "database":
+		case "host", "hostaddr", "port", "user", "dbname", "database", "service", "passfile":
 			return fmt.Errorf("PostgreSQL target query cannot override %s", key)
 		}
 	}
@@ -264,6 +283,19 @@ func verifyFixtureOwnership(admin *sql.DB, name, user, marker string) error {
 		return fmt.Errorf("generated failure database is not owned by its generated test role")
 	}
 	return nil
+}
+
+func cleanupFailedFixture(admin *sql.DB, name, user, marker string, roleCreated bool) error {
+	if _, err := os.Stat(marker); err == nil {
+		return dropFixture(admin, name, user, marker)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if !roleCreated {
+		return nil
+	}
+	_, err := admin.ExecContext(context.Background(), "DROP ROLE IF EXISTS "+user)
+	return err
 }
 
 func dropFixture(admin *sql.DB, name, user, marker string) error {

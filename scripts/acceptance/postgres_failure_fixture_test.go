@@ -39,6 +39,16 @@ func TestValidateAdminTargetUsesDriverEffectiveValues(t *testing.T) {
 			ok:   false,
 		},
 		{
+			name: "keyword hostaddr overrides host",
+			dsn:  "host=localhost hostaddr=203.0.113.10 port=5432 user=lingdoc_test dbname=lingdoc_test",
+			ok:   false,
+		},
+		{
+			name: "service profile can override target",
+			dsn:  "service=remote_profile host=localhost port=5432 user=lingdoc_test dbname=lingdoc_test",
+			ok:   false,
+		},
+		{
 			name: "remote host",
 			dsn:  "host=db.example port=5432 user=lingdoc_test dbname=lingdoc_test",
 			ok:   false,

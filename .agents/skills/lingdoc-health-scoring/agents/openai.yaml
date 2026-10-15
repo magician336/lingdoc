@@ -1,0 +1,4 @@
+interface:
+  display_name: "LingDoc Health Scoring"
+  short_description: "Score LingDoc health and repository fit with H_L and F_R"
+  default_prompt: "Use the project scoring protocol to assess H_L, F_R, evidence, and confidence for a Spec or PR."

@@ -5,6 +5,10 @@
 !.gitignore
 !.gitattributes
 !.github/
+!.agents/
+!.agents/skills/
+!.agents/skills/lingdoc-health-scoring/
+!.agents/skills/lingdoc-health-scoring/**
 
 # 敏感文件
 *.pem

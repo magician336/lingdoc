@@ -21,17 +21,17 @@ from urllib.parse import parse_qs, unquote, urlparse
 ROOT = Path(os.environ.get("LINGDOC_ACCEPTANCE_REPO_ROOT", Path(__file__).resolve().parents[2])).resolve()
 PACKAGES = ["./internal/database", "./internal/lingdoc/...", "./internal/router", "./internal/container", "./internal/evidence"]
 GROUPS = {
-    "sqlite_migrations": ["TestSQLiteMigrationsCreateVersionedSchema", "TestSQLiteMigrationsUpgradeV4PreservesData", "TestSQLiteProductionMigrationBatch"],
-    "postgres_migration": ["TestPostgresMigrationAndRepositoryContract"],
-    "source_revocation_download_auth": ["TestCheckPassedSnapshotCannotDownloadAfterRealKBShareRevocation", "TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked", "TestListChaptersDeniesRevokedSourceAndRedactsStaleContent"],
-    "version_conflict": ["TestConfirmationServiceRejectsStaleVersionBeforeWrite", "TestDeliveryRoutesRefuseAVersionTheCallerDidNotSee", "TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope"],
-    "duplicate_idempotency": ["TestAcceptCandidateCreatesVersionPreservesReviewItemsAndReplays", "TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore", "TestExportRoutesReplayTheSameAction", "TestRecordFreezeReplaysTheSnapshotForTheSameAction", "TestSpecRetryPreservesIdempotencyOrder"],
-    "response_lost_after_commit": ["TestLingDocRealAPIThroughMainRegistration/response_lost_after_commit"],
-    "provider_timeout": ["TestExecuteStoresProviderTimeoutAsInterrupted"],
-    "task_cancellation": ["TestExecuteStoresProviderCancellationAsInterrupted", "TestSQLiteRepositoryCancelsQueuedAndRunningRuns", "TestSpecRetryBoundAndCancellation"],
-    "restart_readback": ["TestReleaseSnapshotIDsSurviveServiceRestart", "TestFreezeActionSurvivesAReopen"],
-    "corrupted_file_recovery": ["TestDownloadRejectsPersistedCorruption", "TestExportDownloadRejectsCorruptedPersistedBytes", "TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes"],
-    "postgres_failure_recovery": ["TestPostgresDownloadRejectsPersistedCorruption", "TestPostgresGenerationFailureBoundaries", "TestPostgresWorkerCrashLeasePersistence", "TestPostgresRendererFailureUsesRealDOCXValidator"],
+    "sqlite_migrations": [("internal/database", "TestSQLiteMigrationsCreateVersionedSchema"), ("internal/database", "TestSQLiteMigrationsUpgradeV4PreservesData"), ("internal/lingdoc/workspacecore", "TestSQLiteProductionMigrationBatch")],
+    "postgres_migration": [("internal/lingdoc/workspacecore", "TestPostgresMigrationAndRepositoryContract")],
+    "source_revocation_download_auth": [("internal/lingdoc/workspace", "TestCheckPassedSnapshotCannotDownloadAfterRealKBShareRevocation"), ("internal/lingdoc/workspace", "TestExportRoutesDenyADownloadAfterBoundSourceAccessIsRevoked"), ("internal/lingdoc/workspacecore", "TestListChaptersDeniesRevokedSourceAndRedactsStaleContent")],
+    "version_conflict": [("internal/lingdoc/candidateadoption", "TestConfirmationServiceRejectsStaleVersionBeforeWrite"), ("internal/lingdoc/workspace", "TestDeliveryRoutesRefuseAVersionTheCallerDidNotSee"), ("internal/lingdoc/workspace", "TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope")],
+    "duplicate_idempotency": [("internal/lingdoc/candidateadoption", "TestAcceptCandidateCreatesVersionPreservesReviewItemsAndReplays"), ("internal/lingdoc/candidateadoption", "TestConfirmationIdempotencyKeyIsUniqueInAutoMigratedStore"), ("internal/lingdoc/workspace", "TestExportRoutesReplayTheSameAction"), ("internal/lingdoc/delivery", "TestRecordFreezeReplaysTheSnapshotForTheSameAction"), ("internal/lingdoc/workspacecore", "TestSpecRetryPreservesIdempotencyOrder")],
+    "response_lost_after_commit": [("internal/router", "TestLingDocRealAPIThroughMainRegistration/response_lost_after_commit")],
+    "provider_timeout": [("internal/lingdoc/generation", "TestExecuteStoresProviderTimeoutAsInterrupted")],
+    "task_cancellation": [("internal/lingdoc/generation", "TestExecuteStoresProviderCancellationAsInterrupted"), ("internal/lingdoc/generation", "TestSQLiteRepositoryCancelsQueuedAndRunningRuns"), ("internal/lingdoc/workspacecore", "TestSpecRetryBoundAndCancellation")],
+    "restart_readback": [("internal/lingdoc/delivery", "TestReleaseSnapshotIDsSurviveServiceRestart"), ("internal/lingdoc/delivery", "TestFreezeActionSurvivesAReopen")],
+    "corrupted_file_recovery": [("internal/lingdoc/delivery", "TestDownloadRejectsPersistedCorruption"), ("internal/lingdoc/workspace", "TestExportDownloadRejectsCorruptedPersistedBytes"), ("internal/lingdoc/delivery", "TestRecoveryFlowFailedRenderCanRetryWithoutExposingOldBytes")],
+    "postgres_failure_recovery": [("internal/lingdoc/delivery", "TestPostgresDownloadRejectsPersistedCorruption"), ("internal/lingdoc/generation", "TestPostgresGenerationFailureBoundaries"), ("internal/lingdoc/generation", "TestPostgresWorkerCrashLeasePersistence"), ("internal/lingdoc/workspace", "TestPostgresRendererFailureUsesRealDOCXValidator")],
 }
 NOT_RUN = [
     {"id": "real_provider_timeout", "status": "NOT RUN", "reason": "The deterministic fake-provider deadline is tested; no real upstream model timeout is exercised."},
@@ -53,8 +53,10 @@ FAILURE_FIXTURE_ENV_VARS = frozenset({
     "DB_PASSWORD",
 })
 POSTGRES_TARGET_QUERY_KEYS = frozenset({
-    "host", "hostaddr", "port", "user", "dbname", "database",
+    "host", "hostaddr", "port", "user", "dbname", "database", "service", "passfile",
 })
+POSTGRES_TARGET_KEYWORD_KEYS = frozenset({"hostaddr", "service", "passfile"})
+POSTGRES_TARGET_KEYWORD_PATTERN = re.compile(r"(?i)(?:^|\s)(?:hostaddr|service|passfile)\s*=")
 
 def redact(value: str) -> str:
     for pattern, replacement in SENSITIVE:
@@ -89,11 +91,16 @@ def safe_postgres_target(dsn: str) -> dict[str, str]:
         except ValueError as error:
             raise ValueError("PostgreSQL port must be numeric and valid") from error
     else:
+        if POSTGRES_TARGET_KEYWORD_PATTERN.search(dsn):
+            raise ValueError("PostgreSQL target keyword cannot override hostaddr, passfile, or service")
         fields = {}
         for part in shlex.split(dsn):
             if "=" in part:
                 key, value = part.split("=", 1)
                 fields[key.lower()] = value
+        overridden = sorted(fields.keys() & POSTGRES_TARGET_KEYWORD_KEYS)
+        if overridden:
+            raise ValueError("PostgreSQL target keyword cannot override " + ", ".join(overridden))
         host, user = fields.get("host", "").lower(), fields.get("user", "")
         database = fields.get("dbname", fields.get("database", ""))
         port = fields.get("port", "5432")
@@ -105,25 +112,27 @@ def safe_postgres_target(dsn: str) -> dict[str, str]:
         raise ValueError("PostgreSQL port must be between 1 and 65535")
     return {"host": host, "user": user, "database": database, "port": port}
 
-def parse_go_events(lines: list[str]) -> dict[str, list[str]]:
-    found: dict[str, list[str]] = {}
+def parse_go_events(lines: list[str]) -> dict[tuple[str, str], list[str]]:
+    found: dict[tuple[str, str], list[str]] = {}
     for line in lines:
         try:
             item = json.loads(line)
         except (TypeError, json.JSONDecodeError):
             continue
-        name, action = item.get("Test"), item.get("Action")
-        if isinstance(name, str) and action in {"pass", "fail", "skip"}:
-            found.setdefault(name, []).append({"pass": "PASS", "fail": "FAIL", "skip": "NOT RUN"}[action])
+        name, package, action = item.get("Test"), item.get("Package"), item.get("Action")
+        if isinstance(name, str) and isinstance(package, str) and action in {"pass", "fail", "skip"}:
+            found.setdefault((package, name), []).append({"pass": "PASS", "fail": "FAIL", "skip": "NOT RUN"}[action])
     return found
 
-def group_result(required: list[str], events: dict[str, list[str]]) -> tuple[str, list[dict[str, str]]]:
+def group_result(required: list[tuple[str, str]], events: dict[tuple[str, str], list[str]]) -> tuple[str, list[dict[str, str]]]:
     observed = []
-    for expected in required:
-        matches = [status for name, values in events.items()
-                   if name == expected or name.startswith(expected + "/") for status in values]
+    for expected_package, expected_name in required:
+        matches = [status for (package, name), values in events.items()
+                   if (package == expected_package or package.endswith("/" + expected_package))
+                   and (name == expected_name or name.startswith(expected_name + "/"))
+                   for status in values]
         status = "FAIL" if "FAIL" in matches else "PASS" if "PASS" in matches else "NOT RUN" if "NOT RUN" in matches else "BLOCKED"
-        observed.append({"test": expected, "status": status})
+        observed.append({"package": expected_package, "test": expected_name, "status": status})
     statuses = [row["status"] for row in observed]
     overall = "FAIL" if "FAIL" in statuses else "BLOCKED" if "BLOCKED" in statuses else "NOT RUN" if "NOT RUN" in statuses else "PASS"
     return overall, observed
@@ -206,6 +215,22 @@ def cleanup_docker_container(name: str, log: Path) -> bool:
         log.write_text("BLOCKED: could not stop disposable PostgreSQL container.\n", encoding="utf-8")
     return stopped
 
+def cleanup_failure_fixture(environment: dict[str, str], log: Path) -> dict:
+    """Drop the owned failure fixture and retain the command result for reporting."""
+    return run_command(
+        ["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "drop"],
+        environment,
+        log,
+        300,
+    )
+
+def atomic_write(path: Path, content: str) -> None:
+    """Replace an artifact only after its complete contents are on disk."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".tmp")
+    temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, path)
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run isolated LingDoc backend acceptance checks.")
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -235,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     failure_fixture_attempted = False
     failure_fixture_ready = False
     failure_fixture_env = None
+    failure_fixture_cleanup_callback = None
     postgres_rollback_status = "NOT RUN"
     server_restart_status = "BLOCKED"
     go_version = "unavailable"
@@ -266,6 +292,12 @@ def main(argv: list[str] | None = None) -> int:
             failure_fixture_env["LINGDOC_FAILURE_FIXTURE_MARKER"] = str(out / "postgres-failure-fixture-owned.txt")
             failure_fixture_env["DB_PASSWORD"] = failure_password
             failure_fixture_attempted = True
+            failure_fixture_cleanup_callback = partial(
+                cleanup_failure_fixture,
+                failure_fixture_env,
+                out / "postgres-fixture-cleanup.log",
+            )
+            atexit.register(failure_fixture_cleanup_callback)
             setup = run_command(["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "create"],
                                 failure_fixture_env, out / "postgres-fixture-create.log", 300)
             checks.append(setup)
@@ -303,10 +335,12 @@ def main(argv: list[str] | None = None) -> int:
             postgres_rollback_status = rollback_result["status"]
         else:
             postgres_rollback_status = "BLOCKED"
-        cleanup_result = run_command(["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "drop"],
-                                     failure_fixture_env, out / "postgres-fixture-cleanup.log", 300)
-        checks.append(cleanup_result)
-        failure_fixture_cleanup = cleanup_result["status"]
+        if failure_fixture_cleanup_callback is not None:
+            cleanup_result = failure_fixture_cleanup_callback()
+            checks.append(cleanup_result)
+            failure_fixture_cleanup = cleanup_result["status"]
+            if failure_fixture_cleanup == "PASS":
+                atexit.unregister(failure_fixture_cleanup_callback)
     events = {}
     go_log = out / "go-test.jsonl"
     if go_log.exists():
@@ -354,7 +388,7 @@ def main(argv: list[str] | None = None) -> int:
                         "Full process restart covers a synthetic SQLite deployment; PostgreSQL process restart is not separately exercised.",
                         "PostgreSQL down/up migration roundtrip runs only on an owned disposable test database; production rollback is not exercised."],
     }
-    (out / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    atomic_write(out / "report.json", json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     lines = ["# LingDoc backend closeout", "", f"- Automated checks: **{automated}**",
              f"- Full closeout: **{report['closeout_result']}**",
              f"- Commit: **{report['commit']}**", f"- PostgreSQL setup: **{pg['status']}**", "",
@@ -365,7 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         f"| postgres_failure_fixture | {failure_fixture['status']} |",
         f"| postgres_failure_fixture_cleanup | {failure_fixture_cleanup} |",
     ])
-    (out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write(out / "summary.md", "\n".join(lines) + "\n")
     print(f"Automated checks: {automated}; full closeout: {report['closeout_result']}")
     for row in cases + NOT_RUN:
         print(f"Scenario {row['id']}: {row['status']}")
