@@ -12586,7 +12586,26 @@
         "security": [{"bearerAuth": []}, {"apiKeyAuth": []}],
         "summary": "创建不可变版本规则集的草稿",
         "description": "仅租户 Owner/Admin 可写。服务端拒绝未知字段与非草稿状态，并在同一事务中校验成员身份、保存版本和审计记录。",
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetDraftInput"}}}},
+        "requestBody": {"required": true, "content": {"application/json": {
+          "schema": {"$ref": "#/components/schemas/RuleSetDraftInput"},
+          "example": {
+            "ruleset_id": "grant-rules",
+            "version": "v1",
+            "state": "draft",
+            "bindings": [{
+              "rule_id": "goal-required",
+              "definition_id": "presence",
+              "definition_version": "1",
+              "origin": "organization",
+              "target_kind": "field",
+              "target_id": "research_goal",
+              "severity": "blocking",
+              "trigger_scenes": ["write_check", "preflight"],
+              "enabled": true,
+              "owner": "tenant-admin"
+            }]
+          }
+        }}},
         "responses": {
           "201": {"description": "草稿已保存", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/RuleSetResponse"}}}},
           "400": {"description": "规则集或请求字段无效", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}}},
