@@ -49,12 +49,16 @@ class TestBackendCloseout(unittest.TestCase):
 
     def test_cleanup_callback_is_bound_and_unregisterable(self):
         with TemporaryDirectory() as directory:
-            callback = partial(cleanup_docker_container, "synthetic-container", Path(directory) / "cleanup.log")
+            cleanup_log = Path(directory) / "cleanup.log"
+            callback = partial(cleanup_docker_container, "synthetic-container", cleanup_log)
             with patch("lingdoc_backend_closeout.stop_docker_container", return_value=True):
                 self.assertTrue(callback())
             # atexit.unregister accepts the same bound callback object with one argument.
             import atexit
             atexit.unregister(callback)
+            with patch("lingdoc_backend_closeout.stop_docker_container", return_value=False):
+                self.assertFalse(callback())
+            self.assertIn("BLOCKED", cleanup_log.read_text(encoding="utf-8"))
 
     def test_test_events_distinguish_pass_skip_and_missing(self):
         events = parse_go_events([
