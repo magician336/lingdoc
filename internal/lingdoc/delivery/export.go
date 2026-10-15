@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -259,6 +260,7 @@ type ExportService struct {
 	validator   FrozenValidator
 	currentness CurrentnessChecker
 	access      ExportAccessChecker
+	policy      lingdocaccess.Policy
 	audit       workspacecore.AuditSink
 	now         func() time.Time
 }
@@ -295,6 +297,28 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 	}
 }
 
+// NewExportServiceWithAccessPolicy wires export through the shared LingDoc
+// application policy. The old constructor remains for package-level adapters
+// that have not moved to the application composition root yet.
+func NewExportServiceWithAccessPolicy(snapshots SnapshotStore, exports ExportStore, renderer FrozenRenderer, validator FrozenValidator, policy lingdocaccess.Policy, audits ...workspacecore.AuditSink) *ExportService {
+	if snapshots == nil || exports == nil || renderer == nil || validator == nil || policy == nil {
+		return nil
+	}
+	actions, ok := exports.(ExportRecorder)
+	if !ok {
+		return nil
+	}
+	var audit workspacecore.AuditSink
+	if len(audits) > 0 {
+		audit = audits[0]
+	}
+	return &ExportService{
+		snapshots: snapshots, exports: exports, actions: actions,
+		renderer: renderer, validator: validator, policy: policy, audit: audit,
+		now: time.Now,
+	}
+}
+
 // Start renders a frozen, passing, current snapshot. Renderer errors, empty files
 // and validation failures all become a persisted failed artifact so the UI can
 // show a recovery state; none of them ever creates a downloadable file.
@@ -319,7 +343,7 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 		return ExportArtifact{}, false, fmt.Errorf("%w: idempotency key must be 8..128 characters", ErrInvalidRequest)
 	}
 	// 1. 身份与项目能力。
-	if err := s.authorize(actor.UserID, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		s.recordAudit(ctx, actor, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
 	}
@@ -334,7 +358,7 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 		return replay, true, nil
 	}
 	// 3. 只有新动作才读快照、才比版本、才渲染。
-	artifact, err := s.produce(actor.UserID, projectID, snapshotID)
+	artifact, err := s.produce(ctx, actor, projectID, snapshotID)
 	if err != nil {
 		s.recordAudit(ctx, actor, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
@@ -349,7 +373,7 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 // produce 是一次新动作的全部工作。失败不返回 error 而是返回一份 failed 产物：
 // 未通过前置检查才是错误，做过了但没做成是**一种结果**，界面要能显示它并给出
 // 恢复动作。currentness 出错仍是 error——那是服务端读不到状态，不是文件的事。
-func (s *ExportService) produce(actorUserID, projectID, snapshotID string) (ExportArtifact, error) {
+func (s *ExportService) produce(ctx context.Context, actor Actor, projectID, snapshotID string) (ExportArtifact, error) {
 	snapshot, err := s.snapshots.Get(projectID, snapshotID)
 	if err != nil {
 		return ExportArtifact{}, err
@@ -357,7 +381,7 @@ func (s *ExportService) produce(actorUserID, projectID, snapshotID string) (Expo
 	if snapshot.Check.Status != CheckPassed {
 		return ExportArtifact{}, ErrExportPreflightBlocked
 	}
-	current, err := s.isCurrent(snapshot.FrozenInput)
+	current, err := s.isCurrent(ctx, actor, snapshot.FrozenInput)
 	if err != nil {
 		return ExportArtifact{}, err
 	}
@@ -381,7 +405,7 @@ func (s *ExportService) produce(actorUserID, projectID, snapshotID string) (Expo
 		artifact.Status, artifact.FailureCode = ExportFailed, FailureValidationFailed
 		return artifact, nil
 	}
-	current, err = s.isCurrent(snapshot.FrozenInput)
+	current, err = s.isCurrent(ctx, actor, snapshot.FrozenInput)
 	if err != nil {
 		return ExportArtifact{}, err
 	}
@@ -424,7 +448,7 @@ func (s *ExportService) Download(actorUserID, projectID, exportID string) (Expor
 }
 
 func (s *ExportService) DownloadAs(ctx context.Context, actor Actor, projectID, exportID string) (ExportArtifact, []byte, error) {
-	if err := s.authorize(actor.UserID, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		s.recordAudit(ctx, actor, projectID, "delivery.download", err)
 		return ExportArtifact{}, nil, err
 	}
@@ -477,21 +501,37 @@ func (s *ExportService) Get(actorUserID, projectID, exportID string) (ExportArti
 }
 
 func (s *ExportService) GetAs(ctx context.Context, actor Actor, projectID, exportID string) (ExportArtifact, error) {
-	if err := s.authorize(actor.UserID, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		s.recordAudit(ctx, actor, projectID, "delivery.export.read", err)
 		return ExportArtifact{}, err
 	}
 	return s.exports.GetExport(projectID, exportID)
 }
 
-func (s *ExportService) authorize(actorUserID, projectID string) error {
+func (s *ExportService) authorize(ctx context.Context, actor Actor, projectID string) error {
+	if s.policy != nil {
+		return s.policy.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "contributor")
+	}
 	if s.access == nil {
 		return errors.New("export access checker is required")
 	}
-	return s.access.Authorize(actorUserID, projectID)
+	return s.access.Authorize(actor.UserID, projectID)
 }
 
-func (s *ExportService) isCurrent(input DeliveryInput) (bool, error) {
+func (s *ExportService) isCurrent(ctx context.Context, actor Actor, input DeliveryInput) (bool, error) {
+	if s.policy != nil {
+		chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
+		for _, chapter := range input.Chapters {
+			chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
+		}
+		sources := make([]lingdocaccess.Source, 0, len(input.Sources))
+		for _, source := range input.Sources {
+			sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
+		}
+		return s.policy.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: input.ProjectID}, lingdocaccess.CurrentnessInput{
+			Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources,
+		})
+	}
 	if s.currentness == nil {
 		return false, ErrExportUnavailable
 	}

@@ -25,7 +25,7 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		}
 	}
 	if err := c.Invoke(func(h *workspace.Handler, projects workspace.ApplicationService, integration workspace.WorkspaceIntegration, runtime *workspace.SourceRuntime) {
-		if h == nil || projects == nil || runtime == nil || integration != runtime || h.Service() != projects {
+		if h == nil || projects == nil || runtime == nil || integration != runtime {
 			t.Fatal("workspace consumers did not receive the shared application/runtime ports")
 		}
 		if integration.CandidateAdoptionSourcePolicy() == nil || integration.WorkspaceSourcePolicy() == nil || integration.DeliveryInputBuilder() == nil {

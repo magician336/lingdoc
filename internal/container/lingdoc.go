@@ -43,7 +43,8 @@ func NewLingDocWorkspaceHandler(
 	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), nil, auditSink)
 	runtime.ConnectProjects(projectService)
 	handler := workspace.NewHandler(workspace.HandlerDependencies{
-		Service:          projectService,
+		Read:             projectService,
+		Write:            projectService,
 		Sources:          runtime,
 		Integration:      runtime,
 		Templates:        templates,

@@ -31,6 +31,7 @@ type DeliveryReleaseService struct {
 	store        delivery.SnapshotStore
 	freezes      delivery.FreezeRecorder
 	sources      candidateadoption.SourcePolicy
+	policy       AccessPolicy
 	dispositions ValidationIssueDispositionCore
 }
 
@@ -45,24 +46,30 @@ func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, b
 	if len(sourcePolicies) > 0 {
 		sources = sourcePolicies[0]
 	}
-	return buildDeliveryReleaseService(inputs, builder, store, sources, nil)
+	return buildDeliveryReleaseService(inputs, builder, store, sources, nil, nil)
 }
 
 // NewDeliveryReleaseServiceWithDispositions wires both current-source
 // authorization and persisted issue dispositions into the release service.
 func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
-	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions)
+	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, nil)
 }
 
-func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
-	if inputs == nil || builder == nil || store == nil {
+// NewDeliveryReleaseServiceWithPolicy uses the shared application policy for
+// all release reads and currentness checks.
+func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
+	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, policy)
+}
+
+func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore, policy AccessPolicy) *DeliveryReleaseService {
+	if inputs == nil || inputs.Reader == nil || builder == nil || store == nil {
 		return nil
 	}
 	freezes, ok := store.(delivery.FreezeRecorder)
 	if !ok {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, dispositions: dispositions}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, policy: policy, dispositions: dispositions}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -71,6 +78,9 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 // /releases 的请求体都只有这一个字段。对不上就是别人先改了，这时要报冲突，
 // 而不是把新的内容当成他以为的那一份检查下去：检查结论会贴在一个他没有看过的工作区上。
 func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.CheckResult, error) {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return delivery.CheckResult{}, err
+	}
 	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
 	if err != nil {
 		return delivery.CheckResult{}, err
@@ -85,6 +95,9 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 // TemplateCheck returns the shared declarative evaluator's evidence for the
 // current editing input. It is advisory and never freezes or releases output.
 func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, projectID string, expectedProjectVersion int64) (delivery.TemplateCheckResult, error) {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
 	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
 	if err != nil {
 		return delivery.TemplateCheckResult{}, err
@@ -111,7 +124,7 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
 	}
 	// 1. 身份与项目能力。撤权之后不能从「这个键做过」里把旧快照交出去。
-	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
 	attempt := delivery.FreezeAttempt{ActorID: actorID, ProjectID: projectID, Key: key}
@@ -257,7 +270,7 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 	}
 	// 先判成员再读快照：顺序反过来的话，非成员能从「找不到」与「没权限」的差别里
 	// 问出某个项目有没有冻结过东西。
-	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
 		return delivery.ReleaseSnapshot{}, err
 	}
 	snapshot, err := s.store.Get(projectID, snapshotID)
@@ -277,6 +290,20 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 // by legacy unit tests compatible while production wires the same policy used
 // by chapter confirmation and export.
 func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
+	if s.policy != nil {
+		caller := types.CallerFromContext(ctx)
+		if caller.UserID == "" {
+			caller.UserID = actorID
+		}
+		current, err := s.policy.Current(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, accessInputFromDelivery(snapshot.FrozenInput))
+		if err != nil {
+			return err
+		}
+		if !current {
+			return candidateadoption.ErrStaleInput
+		}
+		return nil
+	}
 	if s == nil || s.sources == nil {
 		return nil
 	}
@@ -319,7 +346,7 @@ func (s *DeliveryReleaseService) List(ctx context.Context, actorID, projectID st
 	}
 	// 与 Get 同一条顺序：先判成员再列。反过来的话，非成员能从「空列表」与
 	// 「没权限」的差别里问出某个项目有没有冻结过东西。
-	if err := s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID); err != nil {
+	if err := s.authorize(ctx, actorID, projectID); err != nil {
 		return nil, false, err
 	}
 	lister, ok := s.store.(delivery.SnapshotLister)
@@ -355,7 +382,13 @@ func (s *DeliveryReleaseService) assemble(ctx context.Context, actorID, projectI
 	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(projectID) == "" {
 		return delivery.DeliveryInput{}, candidateadoption.ErrInvalidRequest
 	}
-	input, err := s.inputs.Read(ctx, actorID, projectID)
+	var input candidateadoption.WorkspaceDeliveryInput
+	var err error
+	if s.policy != nil {
+		input, err = s.inputs.Reader.ReadDeliveryInput(ctx, projectID)
+	} else {
+		input, err = s.inputs.Read(ctx, actorID, projectID)
+	}
 	if err != nil {
 		return delivery.DeliveryInput{}, err
 	}
@@ -380,6 +413,13 @@ func (s *DeliveryReleaseService) releases(ctx context.Context, actorID string) *
 // stillCurrent 直接读 Reader 而不再判一次成员：本次调用的入口（Check/Prepare/Get）
 // 已经在读之前判过同一个项目，且用的是同一个调用者上下文里的身份。
 func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
+	if s.policy != nil {
+		actor := types.CallerFromContext(ctx)
+		if actor.UserID == "" {
+			actor.UserID = actorID
+		}
+		return s.policy.Current(ctx, LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: frozen.ProjectID}, accessInputFromDelivery(frozen))
+	}
 	current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
 	if err != nil || !current {
 		return current, err
@@ -388,6 +428,20 @@ func (s *DeliveryReleaseService) stillCurrent(ctx context.Context, actorID strin
 		return checker.Current(ctx, actorID, frozen)
 	}
 	return current, nil
+}
+
+func (s *DeliveryReleaseService) authorize(ctx context.Context, actorID, projectID string) error {
+	if s.policy != nil {
+		caller := types.CallerFromContext(ctx)
+		if caller.UserID == "" {
+			caller.UserID = actorID
+		}
+		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, "contributor")
+	}
+	if s.inputs == nil || s.inputs.Authorizer == nil {
+		return candidateadoption.ErrInvalidState
+	}
+	return s.inputs.Authorizer.AuthorizeProject(ctx, actorID, projectID)
 }
 
 // deliveryCurrentness 拿冻结输入记下的项目版本、研究条件与逐章版本去对此刻的工作区。

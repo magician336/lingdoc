@@ -11,7 +11,7 @@ func newTestHandler(db *gorm.DB, shares interfaces.KBShareService, knowledge int
 	runtime := NewGORMSourceRuntime(db, nil, shares, knowledge, delivery.NewFixedTemplateReader())
 	service := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(service)
-	return NewHandler(HandlerDependencies{Service: service, Sources: runtime, Integration: runtime})
+	return NewHandler(HandlerDependencies{Read: service, Write: service, Sources: runtime, Integration: runtime})
 }
 
 func testRuntime(handler *Handler) *SourceRuntime {

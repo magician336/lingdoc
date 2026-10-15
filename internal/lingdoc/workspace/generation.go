@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -28,12 +29,13 @@ const maxGenerationSources = 12
 // transport dependency. The container supplies the shared source runtime.
 func NewGenerationApplication(
 	workspace *SourceRuntime,
+	accessPolicy lingdocaccess.Policy,
 	models interfaces.ModelService,
 	tasks interfaces.TaskEnqueuer,
 ) *generation.Service {
 	db := workspace.db
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: db})
-	policy := evidence.NewSourcePolicy(workspace.gateway, origins, workspace.bindings)
+	sourcePolicy := evidence.NewSourcePolicy(workspace.gateway, origins, workspace.bindings)
 	inputs := &generationInputResolver{
 		workspace: workspace.service,
 		gateway:   workspace.gateway,
@@ -44,23 +46,12 @@ func NewGenerationApplication(
 	}
 	repository := generation.NewSQLiteRepository(db)
 	acceptanceBudget, acceptanceConfigErr := loadGenerationAcceptanceBudget()
-	service := generation.NewService(
-		generationWorkspaceAuthorizer{workspace: workspace.service}, inputs,
-		generationSourceValidator{policy: policy},
-		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: workspace.templates},
+	service := generation.NewServiceWithAccessPolicy(
+		accessPolicy, inputs,
+		generationSourceValidator{policy: sourcePolicy},
 		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	return service
-}
-
-type generationWorkspaceAuthorizer struct{ workspace ApplicationService }
-
-func (a generationWorkspaceAuthorizer) AuthorizeGeneration(ctx context.Context, actor generation.Actor, projectID string) error {
-	err := a.workspace.Authorize(ctx, Actor{TenantID: actor.TenantID, UserID: actor.UserID}, projectID, "read")
-	if errors.Is(err, ErrNotFound) {
-		return generation.ErrNotFound
-	}
-	return err
 }
 
 type generationInputResolver struct {
@@ -259,55 +250,6 @@ func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context
 		return generation.ErrSourceAccessDenied
 	}
 	return nil
-}
-
-type generationCurrentnessChecker struct {
-	workspace ApplicationService
-	gateway   evidence.AssetGateway
-	templates core.TemplateReader
-}
-
-func (c generationCurrentnessChecker) GenerationInputIsCurrent(ctx context.Context, actor generation.Actor, projectID, chapterID string, basis candidateadoption.Basis) (bool, error) {
-	current, err := c.workspace.GenerationContext(ctx, Actor{TenantID: actor.TenantID, UserID: actor.UserID}, projectID, chapterID)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	if int(current.SpecRevision) != basis.SpecRevision || !sameString(current.ChapterVersionID, basis.ChapterVersionID) ||
-		current.TemplateID != basis.TemplateID || current.TemplateVersion != basis.TemplateVersion {
-		return false, nil
-	}
-	template, err := c.templates.Get(current.TemplateID, current.TemplateVersion)
-	if err != nil {
-		return false, err
-	}
-	if basis.RulesetHash != template.RulesetHash {
-		return false, nil
-	}
-	requested := make([]string, 0, len(basis.AssetVersions))
-	for _, asset := range basis.AssetVersions {
-		requested = append(requested, asset.AssetID)
-	}
-	assets, err := c.gateway.ResolveAllowed(evidenceContext(ctx, actor), projectID,
-		evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, requested)
-	if err != nil {
-		return false, err
-	}
-	if len(assets.Denied) != 0 || len(assets.Allowed) != len(basis.AssetVersions) {
-		return false, nil
-	}
-	currentVersions := make(map[string]int, len(assets.Allowed))
-	for _, asset := range assets.Allowed {
-		currentVersions[asset.ID] = asset.AssetRevision
-	}
-	for _, asset := range basis.AssetVersions {
-		if currentVersions[asset.AssetID] != asset.AssetRevision {
-			return false, nil
-		}
-	}
-	return true, nil
 }
 
 type generationHostModel struct {

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -124,6 +125,63 @@ func testExportRejectsBlockedAndHistoricalSnapshots(t *testing.T, snapshots snap
 
 func TestExportRechecksCurrentnessAndAccess(t *testing.T) {
 	forEachStorePair(t, testExportRechecksCurrentnessAndAccess)
+}
+
+type sharedExportPolicyStub struct {
+	allowed bool
+	current bool
+}
+
+func (p *sharedExportPolicyStub) Authorize(context.Context, lingdocaccess.LingDocAccessContext, string) error {
+	if !p.allowed {
+		return errors.New("project access denied")
+	}
+	return nil
+}
+
+func (p *sharedExportPolicyStub) Current(context.Context, lingdocaccess.LingDocAccessContext, lingdocaccess.CurrentnessInput) (bool, error) {
+	return p.current, nil
+}
+
+func TestExportSharedPolicyEnforcesPermissionAndCurrentness(t *testing.T) {
+	snapshots, snapshot := preparedSnapshot(t)
+	exports := NewMemoryExportStore()
+	policy := &sharedExportPolicyStub{allowed: true, current: true}
+	service := NewExportServiceWithAccessPolicy(
+		snapshots, exports,
+		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("docx"), nil }),
+		FrozenValidatorFunc(fileValidationNotUnderTest), policy,
+	)
+	if service == nil {
+		t.Fatal("shared-policy export service was not constructed")
+	}
+	actor := Actor{TenantID: 7, UserID: "owner", Role: types.TenantRoleContributor}
+	artifact, _, err := service.StartAs(context.Background(), actor, snapshot.ProjectID, snapshot.ID, exportActionKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	policy.allowed = false
+	if _, _, err := service.DownloadAs(context.Background(), actor, snapshot.ProjectID, artifact.ID); err == nil {
+		t.Fatal("download should be denied after access revocation")
+	}
+
+	policy.allowed = true
+	policy.current = false
+	if _, _, err := service.StartAs(context.Background(), actor, snapshot.ProjectID, snapshot.ID, "export-action-2"); !errors.Is(err, ErrExportStaleInput) {
+		t.Fatalf("stale shared-policy export = %v, want %v", err, ErrExportStaleInput)
+	}
+
+	historical := snapshot
+	historical.ID = "historical-shared-policy"
+	historical.IsCurrent = false
+	if err := snapshots.Save(historical); err != nil {
+		t.Fatal(err)
+	}
+	policy.current = true
+	if _, _, err := service.StartAs(context.Background(), actor, historical.ProjectID, historical.ID, "export-action-3"); !errors.Is(err, ErrExportStaleInput) {
+		t.Fatalf("historical shared-policy export = %v, want %v", err, ErrExportStaleInput)
+	}
 }
 
 func testExportRechecksCurrentnessAndAccess(t *testing.T, snapshots snapshotStoreUnderTest, exports exportStoreUnderTest) {
