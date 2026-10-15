@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import atexit
 from datetime import datetime, timezone
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,7 @@ import subprocess
 import sys
 import time
 import uuid
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(os.environ.get("LINGDOC_ACCEPTANCE_REPO_ROOT", Path(__file__).resolve().parents[2])).resolve()
 PACKAGES = ["./internal/database", "./internal/lingdoc/...", "./internal/router", "./internal/container", "./internal/evidence"]
@@ -42,6 +43,16 @@ SENSITIVE = [
     (re.compile(r"(?i)(postgres(?:ql)?://[^:/\s]+:)[^@\s]+@"), r"\1[REDACTED]@"),
     (re.compile(r"(?i)(authorization:\s*bearer\s+)[A-Za-z0-9._~+/-]+"), r"\1[REDACTED]"),
 ]
+FAILURE_FIXTURE_ENV_VARS = frozenset({
+    "LINGDOC_FAILURE_TEST_DB",
+    "LINGDOC_FAILURE_TEST_USER",
+    "LINGDOC_FAILURE_TEST_DSN",
+    "LINGDOC_FAILURE_FIXTURE_MARKER",
+    "DB_PASSWORD",
+})
+POSTGRES_TARGET_QUERY_KEYS = frozenset({
+    "host", "hostaddr", "port", "user", "dbname", "database",
+})
 
 def redact(value: str) -> str:
     for pattern, replacement in SENSITIVE:
@@ -55,9 +66,20 @@ def isolated_process_environment() -> dict[str, str]:
         names.extend(["SYSTEMROOT", "WINDIR", "SystemDrive", "USERPROFILE"])
     return {name: os.environ[name] for name in names if os.environ.get(name)}
 
+def clean_failure_fixture_environment(environment: dict[str, str]) -> dict[str, str]:
+    """Remove caller-provided fixture state before any child process starts."""
+    cleaned = environment.copy()
+    for name in FAILURE_FIXTURE_ENV_VARS:
+        cleaned.pop(name, None)
+    return cleaned
+
 def safe_postgres_target(dsn: str) -> dict[str, str]:
     if dsn.startswith(("postgres://", "postgresql://")):
         parsed = urlparse(dsn)
+        query_keys = {key.lower() for key in parse_qs(parsed.query, keep_blank_values=True)}
+        overridden = sorted(query_keys & POSTGRES_TARGET_QUERY_KEYS)
+        if overridden:
+            raise ValueError("PostgreSQL target query cannot override " + ", ".join(overridden))
         host, user = (parsed.hostname or "").lower(), unquote(parsed.username or "")
         database = unquote(parsed.path.lstrip("/"))
         try:
@@ -174,6 +196,14 @@ def stop_docker_container(name: str) -> bool:
         return False
     return stopped.returncode == 0
 
+def cleanup_docker_container(name: str, log: Path) -> bool:
+    """Stop the owned container and leave a diagnostic when cleanup fails."""
+    stopped = stop_docker_container(name)
+    if not stopped:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("BLOCKED: could not stop disposable PostgreSQL container.\n", encoding="utf-8")
+    return stopped
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run isolated LingDoc backend acceptance checks.")
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -182,16 +212,24 @@ def main(argv: list[str] | None = None) -> int:
     out = args.output_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     dsn, pg, owned = start_postgres()
+    cleanup_callback = None
     if owned:
-        atexit.register(stop_docker_container, owned)
-    env = os.environ.copy()
+        cleanup_callback = partial(cleanup_docker_container, owned, out / "docker-cleanup.log")
+        atexit.register(cleanup_callback)
+    env = clean_failure_fixture_environment(os.environ)
     env["CGO_ENABLED"] = "1"
     if dsn is None:
         env.pop("LINGDOC_TEST_POSTGRES_DSN", None)
     else:
         env["LINGDOC_TEST_POSTGRES_DSN"] = dsn
     checks = []
-    failure_fixture = {"status": "NOT RUN", "database": None, "user": None}
+    failure_fixture = {
+        "status": "NOT RUN",
+        "setup_status": "NOT RUN",
+        "setup_log": None,
+        "database": None,
+        "user": None,
+    }
     failure_fixture_attempted = False
     failure_fixture_ready = False
     failure_fixture_env = None
@@ -229,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
             setup = run_command(["go", "run", "./scripts/acceptance/postgres_failure_fixture.go", "create"],
                                 failure_fixture_env, out / "postgres-fixture-create.log", 300)
             checks.append(setup)
+            failure_fixture["setup_status"] = setup["status"]
+            failure_fixture["setup_log"] = setup["log"]
             failure_fixture_ready = setup["status"] == "PASS"
             failure_fixture["status"] = "PASS" if failure_fixture_ready else "BLOCKED"
             if failure_fixture_ready:
@@ -282,12 +322,12 @@ def main(argv: list[str] | None = None) -> int:
     cases.append({"id": "full_server_restart", "status": server_restart_status,
                   "details": "Start the real server binary with isolated synthetic auth and SQLite storage, create a LingDoc project, restart the process, then validate the same token and read the same project back."})
     if owned:
-        cleanup = "PASS" if stop_docker_container(owned) else "BLOCKED"
+        cleanup = "PASS" if cleanup_callback() else "BLOCKED"
         if cleanup == "PASS":
-            atexit.unregister(stop_docker_container, owned)
+            if cleanup_callback is not None:
+                atexit.unregister(cleanup_callback)
         else:
             cleanup_log = out / "docker-cleanup.log"
-            cleanup_log.write_text("BLOCKED: could not stop disposable PostgreSQL container.\n", encoding="utf-8")
             checks.append({"name": "docker-cleanup", "status": "BLOCKED", "exit_code": None, "log": str(cleanup_log)})
     else:
         cleanup = "MANAGED_BY_CI_OR_NOT_CREATED"
@@ -315,6 +355,11 @@ def main(argv: list[str] | None = None) -> int:
              f"- Commit: **{report['commit']}**", f"- PostgreSQL setup: **{pg['status']}**", "",
              "| Scenario | Status |", "|---|---|"]
     lines.extend(f"| {row['id']} | {row['status']} |" for row in cases + NOT_RUN)
+    lines.extend([
+        f"| postgres_failure_fixture_setup | {failure_fixture['setup_status']} |",
+        f"| postgres_failure_fixture | {failure_fixture['status']} |",
+        f"| postgres_failure_fixture_cleanup | {failure_fixture_cleanup} |",
+    ])
     (out / "summary.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"Automated checks: {automated}; full closeout: {report['closeout_result']}")
     for row in cases + NOT_RUN:

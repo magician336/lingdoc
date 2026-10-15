@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -109,51 +110,53 @@ func failureTestDSN(adminDSN, database, user string) string {
 }
 
 func validateAdminTarget(dsn string) error {
-	host, user, database := "", "", ""
-	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		parsed, err := url.Parse(dsn)
-		if err != nil {
-			return fmt.Errorf("invalid PostgreSQL DSN")
-		}
-		host, user, database = strings.ToLower(parsed.Hostname()), parsed.User.Username(), strings.TrimPrefix(parsed.Path, "/")
-	} else {
-		fields := make(map[string]string)
-		for _, part := range strings.Fields(dsn) {
-			key, value, ok := strings.Cut(part, "=")
-			if ok {
-				fields[strings.ToLower(key)] = value
-			}
-		}
-		host, user, database = strings.ToLower(fields["host"]), fields["user"], fields["dbname"]
+	if err := rejectPostgresTargetQueryOverrides(dsn); err != nil {
+		return err
 	}
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return fmt.Errorf("invalid PostgreSQL DSN: %w", err)
+	}
+	host := strings.ToLower(config.Host)
 	if host != "localhost" && host != "127.0.0.1" && host != "::1" {
 		return fmt.Errorf("admin PostgreSQL host is not loopback")
 	}
-	if user != "lingdoc_test" || database != "lingdoc_test" {
+	if config.User != "lingdoc_test" || config.Database != "lingdoc_test" {
 		return fmt.Errorf("admin PostgreSQL identity/database is not the synthetic test target")
 	}
-	port, err := strconv.Atoi(postgresPort(dsn))
-	if err != nil || port < 1 || port > 65535 {
+	if config.Port < 1 || config.Port > 65535 {
 		return fmt.Errorf("admin PostgreSQL port is invalid")
 	}
 	return nil
 }
 
+func rejectPostgresTargetQueryOverrides(dsn string) error {
+	if !strings.HasPrefix(dsn, "postgres://") && !strings.HasPrefix(dsn, "postgresql://") {
+		return nil
+	}
+	parsed, err := url.Parse(dsn)
+	if err != nil {
+		return fmt.Errorf("invalid PostgreSQL DSN: %w", err)
+	}
+	values, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return fmt.Errorf("invalid PostgreSQL DSN query: %w", err)
+	}
+	for key := range values {
+		switch strings.ToLower(key) {
+		case "host", "hostaddr", "port", "user", "dbname", "database":
+			return fmt.Errorf("PostgreSQL target query cannot override %s", key)
+		}
+	}
+	return nil
+}
+
 func postgresPort(dsn string) string {
-	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {
-		parsed, err := url.Parse(dsn)
-		if err == nil && parsed.Port() != "" {
-			return parsed.Port()
-		}
-		return "5432"
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return "0"
 	}
-	for _, part := range strings.Fields(dsn) {
-		key, value, ok := strings.Cut(part, "=")
-		if ok && strings.EqualFold(key, "port") {
-			return value
-		}
-	}
-	return "5432"
+	return strconv.Itoa(int(config.Port))
 }
 
 func openPostgres(dsn string) (*gorm.DB, *sql.DB, error) {
