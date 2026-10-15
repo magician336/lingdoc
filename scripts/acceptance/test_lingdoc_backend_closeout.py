@@ -41,6 +41,8 @@ class TestBackendCloseout(unittest.TestCase):
             "LINGDOC_FAILURE_TEST_USER": "old-user",
             "LINGDOC_FAILURE_TEST_DSN": "old-dsn",
             "LINGDOC_FAILURE_FIXTURE_MARKER": "old-marker",
+            "LINGDOC_FAILURE_CRASH_RUN": "old-run",
+            "LINGDOC_FAILURE_CRASH_READY": "old-ready",
             "DB_PASSWORD": "old-password",
         })
         self.assertEqual(environment, {"PATH": "path"})

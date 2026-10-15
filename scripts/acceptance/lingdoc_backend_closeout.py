@@ -48,6 +48,8 @@ FAILURE_FIXTURE_ENV_VARS = frozenset({
     "LINGDOC_FAILURE_TEST_USER",
     "LINGDOC_FAILURE_TEST_DSN",
     "LINGDOC_FAILURE_FIXTURE_MARKER",
+    "LINGDOC_FAILURE_CRASH_RUN",
+    "LINGDOC_FAILURE_CRASH_READY",
     "DB_PASSWORD",
 })
 POSTGRES_TARGET_QUERY_KEYS = frozenset({
@@ -314,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
         status, observed = group_result(tests, events)
         if key.startswith("postgres_") and pg["status"] != "PASS" and status == "NOT RUN":
             status = "BLOCKED"
-        if key == "postgres_failure_recovery" and not failure_fixture_ready and status != "FAIL":
+        if key == "postgres_failure_recovery" and not failure_fixture_ready:
             status = "BLOCKED"
         cases.append({"id": key, "status": status, "tests": observed})
     cases.append({"id": "postgres_migration_rollback_roundtrip", "status": postgres_rollback_status,
