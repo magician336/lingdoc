@@ -332,6 +332,16 @@ func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capab
 // while a write transaction is active deadlocks the request until its context
 // expires. PostgreSQL still benefits from the same atomic audit boundary.
 func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) error {
+	// The GORM-backed lingdoc_project_audits.project_id is a required foreign
+	// key. Tenant-level authorization (for example, createProject and
+	// ListProjects) has no project row to reference yet, so skip that database
+	// event. In-memory repositories still receive the event so shadow/log-mode
+	// authorization behavior remains observable in tests and non-SQLite callers.
+	if projectID == "" {
+		if _, isGORM := tx.(gormTransaction); isGORM {
+			return nil
+		}
+	}
 	if s.audit == nil {
 		return nil
 	}
