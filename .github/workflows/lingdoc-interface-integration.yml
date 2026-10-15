@@ -33,6 +33,7 @@ jobs:
     env:
       CGO_ENABLED: '1'
       LOG_FORMAT: ''
+      LINGDOC_ACCEPTANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       LINGDOC_TEST_POSTGRES_DSN: 'host=localhost port=5432 user=lingdoc_test password=synthetic_ci_only dbname=lingdoc_test sslmode=disable'
     steps:
       - uses: actions/checkout@v6

@@ -335,10 +335,13 @@ def main(argv: list[str] | None = None) -> int:
         cleanup = "MANAGED_BY_CI_OR_NOT_CREATED"
     statuses = [row["status"] for row in checks]
     automated = "FAIL" if "FAIL" in statuses else "PASS" if all(value == "PASS" for value in statuses) else "BLOCKED"
+    checkout_commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False).stdout.strip() or "unknown"
+    report_commit = os.environ.get("LINGDOC_ACCEPTANCE_HEAD_SHA", checkout_commit)
     report = {
         "report_version": 1,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "commit": subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=False).stdout.strip() or "unknown",
+        "commit": report_commit,
+        "checkout_commit": checkout_commit,
         "scope": "backend and engineering quality; synthetic data only",
         "environment": {"os": platform.platform(), "python": platform.python_version(), "go": go_version,
                         "cgo_enabled": cgo, "c_compiler_available": bool(compiler),
