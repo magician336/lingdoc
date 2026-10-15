@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
 )
@@ -15,17 +16,18 @@ type SourceRuntime struct {
 	gateway   evidence.AssetGateway
 	kbShares  interfaces.KBShareService
 	knowledge interfaces.KnowledgeBaseService
+	templates delivery.TemplateReader
 	db        *gorm.DB
 	audit     AuditSink
 }
 
-func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService, audits ...AuditSink) *SourceRuntime {
+func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService, templates delivery.TemplateReader, audits ...AuditSink) *SourceRuntime {
 	ports := NewGORMSourcePorts(db, shares)
 	var audit AuditSink
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SourceRuntime{db: db, service: service, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, audit: audit}
+	return &SourceRuntime{db: db, service: service, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit}
 }
 
 // ConnectProjects is called only at composition time to connect the mutually

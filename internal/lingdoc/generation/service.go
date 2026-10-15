@@ -23,6 +23,11 @@ var (
 	ErrInvalidRequest              = errors.New("invalid_request")
 	ErrNotFound                    = errors.New("not_found")
 	ErrForbidden                   = errors.New("forbidden")
+	ErrInsufficientEvidence        = errors.New("insufficient_evidence")
+	ErrAssetNotReady               = errors.New("asset_not_ready")
+	ErrPreflightBlocked            = errors.New("preflight_blocked")
+	ErrInvalidState                = errors.New("invalid_state")
+	ErrAssetNotAuthorized          = errors.New("asset_not_authorized")
 	ErrVersionConflict             = errors.New("version_conflict")
 	ErrSourceAccessDenied          = errors.New("source_access_denied")
 	ErrSourceStale                 = errors.New("source_stale")
@@ -37,6 +42,25 @@ var (
 	ErrAcceptanceOutcomeUnknown    = errors.New("acceptance_outcome_unknown")
 	ErrAcceptanceModelMismatch     = errors.New("acceptance_model_mismatch")
 )
+
+// DeniedAsset records the per-asset reason that prevented a generation
+// request from entering the queue. It deliberately mirrors the public error
+// contract without exposing evidence-layer implementation types.
+type DeniedAsset struct {
+	AssetID string `json:"asset_id"`
+	Reason  string `json:"reason"`
+}
+
+// AssetNotAuthorizedError preserves the denied asset list required by the
+// startGeneration 422 response. The sentinel lets transport code classify the
+// error while the concrete value keeps the details for the response body.
+type AssetNotAuthorizedError struct {
+	Denied []DeniedAsset
+}
+
+func (e *AssetNotAuthorizedError) Error() string { return ErrAssetNotAuthorized.Error() }
+
+func (e *AssetNotAuthorizedError) Unwrap() error { return ErrAssetNotAuthorized }
 
 type Status string
 

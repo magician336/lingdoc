@@ -39,7 +39,7 @@ func NewGenerationApplication(
 		gateway:   workspace.gateway,
 		bindings:  workspace.bindings,
 		knowledge: workspace.knowledge,
-		templates: core.ContractDemoTemplate{},
+		templates: workspace.templates,
 		origins:   evidence.NewSourceResolver(origins),
 	}
 	repository := generation.NewSQLiteRepository(db)
@@ -47,8 +47,8 @@ func NewGenerationApplication(
 	service := generation.NewService(
 		generationWorkspaceAuthorizer{workspace: workspace.service}, inputs,
 		generationSourceValidator{policy: policy},
-		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: core.ContractDemoTemplate{}},
-		generationHostModel{models: models, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
+		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: workspace.templates},
+		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	return service
 }
@@ -79,6 +79,9 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 		if errors.Is(err, ErrNotFound) {
 			return generation.Input{}, generation.ErrNotFound
 		}
+		if errors.Is(err, core.ErrInvalidState) {
+			return generation.Input{}, generation.ErrInvalidState
+		}
 		return generation.Input{}, err
 	}
 	if r.knowledge == nil || r.gateway == nil || r.bindings == nil || r.templates == nil || r.origins == nil {
@@ -98,8 +101,11 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 	if err != nil {
 		return generation.Input{}, err
 	}
+	if resolved == nil {
+		return generation.Input{}, generation.ErrDependencyUnavailable
+	}
 	if len(resolved.Denied) != 0 || len(resolved.Allowed) != len(request.AssetIDs) {
-		return generation.Input{}, generation.ErrSourceAccessDenied
+		return generation.Input{}, generationDeniedAssetsError(resolved.Denied)
 	}
 
 	byKnowledge := make(map[string]evidence.Asset, len(resolved.Allowed))
@@ -164,7 +170,7 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 		}
 	}
 	if len(sources) == 0 {
-		return generation.Input{}, generation.ErrSourceAccessDenied
+		return generation.Input{}, generation.ErrInsufficientEvidence
 	}
 
 	basis := candidateadoption.Basis{
@@ -180,6 +186,24 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 		Basis: basis, ProjectSpec: cloneStringMap(current.Spec), Sources: sources,
 		Actor: actor, Request: request,
 	}, nil
+}
+
+func generationDeniedAssetsError(denied []evidence.DeniedAsset) error {
+	if len(denied) == 0 {
+		return &generation.AssetNotAuthorizedError{}
+	}
+	allNotReady := true
+	items := make([]generation.DeniedAsset, 0, len(denied))
+	for _, item := range denied {
+		if item.Reason != evidence.DenyNotReady {
+			allNotReady = false
+		}
+		items = append(items, generation.DeniedAsset{AssetID: item.AssetID, Reason: string(item.Reason)})
+	}
+	if allNotReady {
+		return generation.ErrAssetNotReady
+	}
+	return &generation.AssetNotAuthorizedError{Denied: items}
 }
 
 func workspaceChapter(chapterID string, chapter core.Chapter, template core.Template) (candidateadoption.Chapter, bool) {
@@ -288,6 +312,7 @@ func (c generationCurrentnessChecker) GenerationInputIsCurrent(ctx context.Conte
 
 type generationHostModel struct {
 	models              interfaces.ModelService
+	templates           core.TemplateReader
 	acceptanceBudget    *generationAcceptanceBudget
 	acceptanceConfigErr error
 }
@@ -326,7 +351,10 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 		return generation.Draft{}, err
 	}
 	chapters := input.Workspace.Chapter
-	template, err := (core.ContractDemoTemplate{}).Get(input.Basis.TemplateID, input.Basis.TemplateVersion)
+	if m.templates == nil {
+		return generation.Draft{}, generation.ErrDependencyUnavailable
+	}
+	template, err := m.templates.Get(input.Basis.TemplateID, input.Basis.TemplateVersion)
 	if err != nil {
 		return generation.Draft{}, generation.ErrDependencyUnavailable
 	}
@@ -406,7 +434,7 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 			}
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}
-		if response == nil || response.Usage.PromptTokens <= 0 || response.Usage.CompletionTokens < 0 {
+		if response == nil || response.Usage.PromptTokens <= 0 || response.Usage.CompletionTokens < 0 || (strings.TrimSpace(response.Content) != "" && response.Usage.CompletionTokens == 0) {
 			_ = reservation.unknown("usage_unknown")
 			return generation.Draft{}, generation.ErrAcceptanceOutcomeUnknown
 		}

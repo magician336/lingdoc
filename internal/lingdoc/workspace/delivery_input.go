@@ -77,7 +77,10 @@ func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 	// 交付侧另有一份带 rules 的模板（lingdoctemplate.Template）。工作区自己那份
 	// ContractDemoTemplate 是 workspacecore.Template，**没有 Rules**——拿它来冻结，
 	// T13 会因为没有规则声明把每一次检查都判成 not_evaluated。
-	return &DeliveryInputBuilder{sourceRevalidator: h.sourceRevalidator(), templates: delivery.NewFixedTemplateReader()}
+	if h.templates == nil {
+		return nil
+	}
+	return &DeliveryInputBuilder{sourceRevalidator: h.sourceRevalidator(), templates: h.templates}
 }
 
 // Build 把 T12 的交付输入补成 T13 的冻结输入。

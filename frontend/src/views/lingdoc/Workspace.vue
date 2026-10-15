@@ -386,26 +386,32 @@
               <label for="rewrite-instruction">改写要求</label>
               <textarea id="rewrite-instruction" v-model="rewriteInstruction" :disabled="busy || rewriteBusy" rows="2" maxlength="2000" />
               <fieldset class="rewrite-sources">
-                <legend>允许候选使用的来源</legend>
+                <legend>额外允许使用的来源</legend>
+                <p class="muted">选中原文已有的引用会自动带入并重新核验权限，无需重复勾选；下方可补充其他参考来源。</p>
                 <label v-for="source in sources" :key="source.id" class="rewrite-source">
                   <input type="checkbox" :checked="rewriteSourceIds.includes(source.id)" :disabled="source.status !== 'available' || rewriteBusy"
                     @change="toggleRewriteSource(source.id, $event)" />
                   <span>{{ source.locator }}<small>{{ source.quoted_text.slice(0, 120) }}</small></span>
                 </label>
-                <p v-if="!sources.length" class="muted">先检索项目资料，或在已有正文中保留来源标记。</p>
+                <p v-if="!sources.length" class="muted">如需补充其他参考资料，请先检索。原文已有引用不受此列表是否为空影响。</p>
               </fieldset>
               <button type="button" @click="requestSelectedRewrite" :disabled="busy || rewriteBusy || workingCopySaving || workingCopyLoading || !workingCopy">
                 {{ rewriteBusy ? '正在生成候选…' : '改写选中段落' }}
               </button>
               <section v-if="rewriteCandidate" class="rewrite-preview" aria-live="polite">
                 <p class="muted">候选状态：{{ rewriteCandidate.status }} · 运行模式：{{ rewriteCandidate.run_mode }}</p>
-                <p v-if="rewriteCandidate.status === 'failed'" class="warning">候选生成失败（{{ rewriteCandidate.error_code || 'unknown' }}）；可以修改要求后重新生成。</p>
+                <p v-if="rewriteCandidate.status === 'failed'" class="warning">
+                  <template v-if="rewriteCandidate.error_code === 'source_access_denied'">本次改写未通过引用来源核验。请重新读取项目并检查引用资料是否仍可访问；修改改写要求不能解决来源权限问题。原文未被替换。</template>
+                  <template v-else-if="rewriteCandidate.error_code === 'unsupported_format'">模型输出了当前 DOCX 不支持的格式，候选不能采纳。请使用纯文本段落和原文引用；原文未被替换，系统不会自动重试。</template>
+                  <template v-else>候选生成未完成（{{ rewriteCandidate.error_code || 'unknown' }}）。原文未被替换，请检查错误原因后重试。</template>
+                </p>
                 <p v-else-if="rewriteCandidate.status === 'stale'" class="warning">候选基于旧工作副本或来源，不能采纳；请重新选择并生成。</p>
                 <template v-else-if="rewriteCandidate.status === 'ready' || rewriteCandidate.status === 'applying'">
                   <h5>原文选段</h5>
                   <pre>{{ rewriteCandidate.selection.selected_text }}</pre>
                   <h5>改写候选</h5>
                   <pre>{{ rewriteCandidate.replacement_markdown }}</pre>
+                  <p v-if="rewriteCandidate.replacement_markdown.trim() === rewriteCandidate.selection.selected_text.trim()" class="muted" role="status">本次候选与原文一致，未产生文字改动。可以保留原文，或明确需要改善的地方后再生成。</p>
                   <p class="muted">候选来源：{{ rewriteCandidate.source_ids.length ? rewriteCandidate.source_ids.join('、') : '无' }}</p>
                   <ul v-if="rewriteCandidate.review_items.length" class="rewrite-review-list">
                     <li v-for="item in rewriteCandidate.review_items" :key="item.id">待核：{{ item.statement }}</li>
@@ -531,7 +537,7 @@ const workingCopySaving = ref(false)
 const workingCopyStatus = ref<'saved' | 'unsaved' | 'saving' | 'error'>('saved')
 const workingCopyLoading = ref(false)
 const rewriteCandidate = ref<SelectedRewriteCandidate | null>(null)
-const rewriteInstruction = ref('在不增加无依据结论的前提下，提升表达清晰度与逻辑衔接。')
+const rewriteInstruction = ref('保留原意、事实、数字、引用和不确定性说明。梳理句子的主次关系，精简重复或冗长表达，让并列内容和前后衔接更清楚；不要仅替换序号或同义词，也不要为变化而变化。原文无需修改时可保持原文。使用纯文本段落，保留引用标记，不使用加粗等 Markdown 格式。')
 const rewriteSourceIds = ref<string[]>([])
 const rewriteBusy = ref(false)
 const newName = ref('')
@@ -1735,7 +1741,7 @@ onUnmounted(() => {
 .workspace-head__actions { display: flex; gap: 10px; align-items: center; }
 .evidence-link { display: inline-flex; align-items: center; padding: 8px 12px; border: 1px solid #0b8c91; border-radius: 7px; color: #0b6e71; background: #e5f6f2; text-decoration: none; }
 .evidence-link:hover { background: #d5f0ea; }
-.lingdoc-workspace { max-width: 1200px; margin: 0 auto; padding: 32px; color: #24342e; }
+.lingdoc-workspace { flex: 1; min-height: 0; width: 100%; max-width: 1200px; box-sizing: border-box; overflow-y: auto; scrollbar-gutter: stable; margin: 0 auto; padding: 32px; color: #24342e; }
 .workspace-head, .section-head, .actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
 h1 { margin: 0 0 8px; font-size: 28px; } h2 { margin: 0 0 12px; font-size: 20px; } h3 { margin: 22px 0 14px; font-size: 17px; }
 p { margin: 6px 0; } .muted { color: #6b7670; font-size: 13px; } .warning { color: #8b5b10; font-size: 13px; }
@@ -1778,7 +1784,9 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .citation-status { margin: 0; font-size: 12px; }
 .citation-status--available { color: #238a52; }
 .citation-status--needs_review, .citation-status--unavailable { color: #8b5b10; }
-.candidate-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.candidate-preview pre, .rewrite-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; max-width: 100%; }
+.rewrite-preview pre { margin: 8px 0 14px; line-height: 1.7; }
+.rewrite-preview { min-width: 0; margin-top: 14px; padding: 14px; border: 1px solid #dbe5dd; border-radius: 8px; background: #f7faf8; overflow-wrap: anywhere; }
 .binding-notice { padding: 10px 12px; background: #fff8ec; border: 1px solid #e6c98a; border-radius: 7px; color: #6b5a2e; font-size: 13px; }
 .denied-sources { margin: 12px 0; padding: 12px 16px; background: #fff1ee; border: 1px solid #eea99e; border-radius: 8px; font-size: 13px; }
 .denied-sources ul { display: grid; gap: 8px; margin: 8px 0; padding-left: 20px; }

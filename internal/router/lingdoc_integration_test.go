@@ -55,6 +55,23 @@ func (s *integrationShares) CheckTenantKBPermission(context.Context, string, uin
 	return types.OrgRoleViewer, s.allowed, nil
 }
 
+type discardHTTPResponseWriter struct {
+	header http.Header
+}
+
+func (w *discardHTTPResponseWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (*discardHTTPResponseWriter) WriteHeader(int) {}
+
+func (*discardHTTPResponseWriter) Write(body []byte) (int, error) {
+	return len(body), nil
+}
+
 func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: filepath.Join(t.TempDir(), "api.db") + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Error)})
@@ -152,6 +169,17 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 		}
 		return res
 	}
+	dropResponse := func(method, path, body, key, identity string, apiKey bool) {
+		req := httptest.NewRequest(method, "/api/v1/lingdoc"+path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Idempotency-Key", key)
+		if apiKey {
+			req.Header.Set("X-API-Key", identity)
+		} else {
+			req.Header.Set("Authorization", "Bearer "+identity)
+		}
+		engine.ServeHTTP(&discardHTTPResponseWriter{}, req)
+	}
 	created := request(http.MethodPost, "/projects", `{"name":"real API synthetic project","template_id":"template-demo"}`, "create-integration", jwtTokens["a-owner"], false, 201)
 	var envelope struct{ Data workspacecore.Project }
 	if err := json.Unmarshal(created.Body.Bytes(), &envelope); err != nil {
@@ -169,11 +197,15 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	request(http.MethodGet, path, "", "", scoped.Token, true, 403)
 	request(http.MethodGet, path, "", "", full.Token, true, 200)
 	input := `{"expected_spec_revision":0,"fields":{"research_subject":"synthetic","research_goal":"integration"}}`
-	request(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false, 200)
-	replayed := request(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false, 200)
-	if !strings.Contains(replayed.Body.String(), `"replayed":true`) {
-		t.Fatal("lost-response replay not reported")
-	}
+	t.Run("response_lost_after_commit", func(t *testing.T) {
+		// The handler commits and writes its response to a transport that drops it;
+		// the caller then retries the same action key without seeing that response.
+		dropResponse(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false)
+		replayed := request(http.MethodPut, path+"/spec", input, "save-spec-integration", jwtTokens["a-owner"], false, 200)
+		if !strings.Contains(replayed.Body.String(), `"replayed":true`) {
+			t.Fatal("lost-response replay not reported")
+		}
+	})
 	request(http.MethodPut, path+"/spec", input, "save-stale-integration", jwtTokens["a-owner"], false, 409)
 	request(http.MethodPost, path+"/activate", `{"expected_spec_revision":1}`, "activate-integration", jwtTokens["a-owner"], false, 200)
 	chapterEnvelope := struct {

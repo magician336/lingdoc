@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"maps"
@@ -330,23 +331,49 @@ func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capab
 // SQLite uses a single pooled connection; opening the audit store separately
 // while a write transaction is active deadlocks the request until its context
 // expires. PostgreSQL still benefits from the same atomic audit boundary.
-func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) {
-	if s.audit == nil {
-		return
+func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) error {
+	// The GORM-backed lingdoc_project_audits.project_id is a required foreign
+	// key. Tenant-level authorization (for example, createProject and
+	// ListProjects) has no project row to reference yet, so skip that database
+	// event. In-memory repositories still receive the event so shadow/log-mode
+	// authorization behavior remains observable in tests and non-SQLite callers.
+	if projectID == "" {
+		if _, isGORM := tx.(gormTransaction); isGORM {
+			return nil
+		}
 	}
+	if s.audit == nil {
+		return nil
+	}
+	event := AuditEvent{
+		ID: uuid.NewString(), ActorID: actor.UserID, Action: "authorization." + capability,
+		Target: projectID, CreatedAt: time.Now().UTC(),
+		Details: map[string]any{"tenant_id": actor.TenantID, "role": string(actor.Role),
+			"capability": capability, "decision": auditDecision(authErr), "reason": auditReason(authErr)},
+		TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
+		ProjectID: projectID, Capability: capability,
+		Decision: auditDecision(authErr), Reason: auditReason(authErr),
+	}
+	var err error
 	if _, isGORM := tx.(gormTransaction); isGORM {
 		audit, ok := tx.(auditTransaction)
 		if !ok {
-			return
+			return nil
 		}
-		_ = audit.RecordAudit(AuditEvent{
-			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
-			ProjectID: projectID, Capability: capability,
-			Decision: auditDecision(authErr), Reason: auditReason(authErr),
-		})
-		return
+		err = audit.RecordAudit(event)
+	} else {
+		err = s.recordAudit(ctx, actor, projectID, capability, authErr)
 	}
-	_ = s.recordAudit(ctx, actor, projectID, capability, authErr)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"audit_event": "lingdoc_authorization",
+			"tenant_id":   actor.TenantID,
+			"project_id":  projectID,
+			"capability":  capability,
+			"decision":    auditDecision(authErr),
+		})
+	}
+	return err
 }
 func auditDecision(err error) string {
 	if err != nil {
@@ -364,12 +391,22 @@ func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error 
 	if s.audit == nil {
 		return nil
 	}
-	return s.audit.Record(ctx, event)
+	if err := s.audit.Record(ctx, event); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"audit_event": "lingdoc",
+			"tenant_id":   event.TenantID,
+			"project_id":  event.ProjectID,
+			"capability":  event.Capability,
+			"decision":    event.Decision,
+		})
+		return err
+	}
+	return nil
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
-		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
+		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 		return err
 	})
 }
@@ -377,7 +414,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
-		s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
+		_ = s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
 			result.Spec = map[string]string{}
 			result.SpecFields = map[string]SpecField{}
@@ -393,10 +430,10 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 			return ErrNotFound
 		}
 		if err := s.authorizeTenant(ctx, tx, actor, "read"); err != nil {
-			s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
+			_ = s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
 			return err
 		}
-		s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
+		_ = s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
 		projects, err := tx.Projects(actor, 51)
 		result = projects
 		return err
@@ -504,22 +541,59 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
 	var result OperationResult
 	var replayed bool
+	sourceSensitive := op == "saveChapter" || op == "saveWorkingCopy" || op == "applySelectedRewrite" || op == "commitWorkingCopy" || op == "restoreWorkingCopy"
+	var checkedProject Project
+	var checkedSources []string
+	var checkedFound bool
+	if sourceSensitive {
+		// Source policies may query the same single-connection SQLite pool.
+		// Release this snapshot before calling them, then revalidate its basis
+		// in the final write transaction. Never hold a transaction across policy IO.
+		err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+			var err error
+			checkedProject, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
+			if err != nil {
+				return err
+			}
+			previous, found, err := tx.Operation(id)
+			if err != nil {
+				return err
+			}
+			if found && previous.BodyHash != hashString {
+				return ErrIdempotencyConflict
+			}
+			checkedFound = found
+			checkedSources, err = operationSourceIDs(tx, op, target, projectID, body, previous, found)
+			return err
+		})
+		if err != nil {
+			return nil, 0, false, err
+		}
+		// Replays reuse the saved result, not the old authorization decision:
+		// revocation must reject a replay before any cached body is returned.
+		// Denial preserves the record, so reauthorization can replay it unchanged.
+		if err := s.checkSources(ctx, actor, projectID, checkedSources); err != nil {
+			return nil, 0, false, err
+		}
+	}
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
-			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
-				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
-				return err
+			if authErr := s.authorizeTenant(ctx, tx, actor, capability); authErr != nil {
+				_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+				return authErr
 			}
 		} else {
-			var err error
-			p, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
-			if err != nil {
-				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
-				return err
+			var authErr error
+			p, authErr = s.authorizeProject(ctx, tx, actor, projectID, capability)
+			if authErr != nil {
+				_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+				return authErr
 			}
 		}
-		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil)
+		if err := s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil); err != nil {
+			return err
+		}
 		previous, found, err := tx.Operation(id)
 		if err != nil {
 			return err
@@ -527,57 +601,17 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		if found && previous.BodyHash != hashString {
 			return ErrIdempotencyConflict
 		}
-		var sourceIDs []string
-		switch op {
-		case "saveChapter":
-			sourceIDs = body.(SaveChapterInput).SourceIDs
-		case "saveWorkingCopy":
-			sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
-		case "applySelectedRewrite":
-			if found {
-				var response WorkingCopy
-				if err := json.Unmarshal(previous.Body, &response); err != nil {
-					return err
-				}
-				sourceIDs = response.SourceIDs
-			} else {
-				sourceIDs = body.(ApplyRewriteInput).WorkingCopy.SourceIDs
+		if sourceSensitive {
+			sourceIDs, err := operationSourceIDs(tx, op, target, projectID, body, previous, found)
+			if err != nil {
+				return err
 			}
-		case "commitWorkingCopy":
-			if found {
-				var response CommittedChapterVersion
-				if err := json.Unmarshal(previous.Body, &response); err != nil {
-					return err
-				}
-				sourceIDs = response.SourceIDs
-			} else {
-				chapterID := strings.TrimPrefix(target, projectID+"/")
-				workingCopy, err := tx.WorkingCopy(projectID, chapterID)
-				if err != nil {
-					return err
-				}
-				sourceIDs = workingCopy.SourceIDs
-			}
-		case "restoreWorkingCopy":
-			if found {
-				var response WorkingCopy
-				if err := json.Unmarshal(previous.Body, &response); err != nil {
-					return err
-				}
-				sourceIDs = response.SourceIDs
-			} else {
-				chapterID := strings.TrimPrefix(target, projectID+"/")
-				versionID := body.(RestoreWorkingCopyInput).ChapterVersionID
-				version, err := tx.ChapterVersion(projectID, chapterID, versionID)
-				if err != nil {
-					return err
-				}
-				sourceIDs = version.SourceIDs
+			if p.ProjectVersion != checkedProject.ProjectVersion || p.SpecRevision != checkedProject.SpecRevision ||
+				found != checkedFound || !slices.Equal(sourceIDs, checkedSources) {
+				return ErrVersionConflict
 			}
 		}
-		if err := s.checkSources(ctx, actor, projectID, sourceIDs); err != nil {
-			return err
-		}
+
 		if found {
 			result, replayed = previous, true
 			return nil
@@ -597,6 +631,60 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		return nil, 0, false, err
 	}
 	return result.Body, result.Status, replayed, nil
+}
+
+// operationSourceIDs resolves exactly the references checked for a new write or
+// stored replay. It only reads through the caller transaction.
+func operationSourceIDs(tx Transaction, op, target, projectID string, body any, previous OperationResult, found bool) ([]string, error) {
+	var sourceIDs []string
+	switch op {
+	case "saveChapter":
+		sourceIDs = body.(SaveChapterInput).SourceIDs
+	case "saveWorkingCopy":
+		sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
+	case "applySelectedRewrite":
+		if found {
+			var response WorkingCopy
+			if err := json.Unmarshal(previous.Body, &response); err != nil {
+				return nil, err
+			}
+			sourceIDs = response.SourceIDs
+		} else {
+			sourceIDs = body.(ApplyRewriteInput).WorkingCopy.SourceIDs
+		}
+	case "commitWorkingCopy":
+		if found {
+			var response CommittedChapterVersion
+			if err := json.Unmarshal(previous.Body, &response); err != nil {
+				return nil, err
+			}
+			sourceIDs = response.SourceIDs
+		} else {
+			chapterID := strings.TrimPrefix(target, projectID+"/")
+			workingCopy, err := tx.WorkingCopy(projectID, chapterID)
+			if err != nil {
+				return nil, err
+			}
+			sourceIDs = workingCopy.SourceIDs
+		}
+	case "restoreWorkingCopy":
+		if found {
+			var response WorkingCopy
+			if err := json.Unmarshal(previous.Body, &response); err != nil {
+				return nil, err
+			}
+			sourceIDs = response.SourceIDs
+		} else {
+			chapterID := strings.TrimPrefix(target, projectID+"/")
+			versionID := body.(RestoreWorkingCopyInput).ChapterVersionID
+			version, err := tx.ChapterVersion(projectID, chapterID, versionID)
+			if err != nil {
+				return nil, err
+			}
+			sourceIDs = version.SourceIDs
+		}
+	}
+	return slices.Clone(sourceIDs), nil
 }
 
 type CreateProjectInput struct {
@@ -2102,6 +2190,13 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 			}
 			if err := tx.ReplaceCollaborators(projectID, ids); err != nil {
 				return nil, 0, err
+			}
+			if audit, ok := tx.(auditTransaction); ok {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+					Action: "project.member_permissions.replace", Target: projectID,
+					Details: map[string]any{"collaborator_user_ids": ids}, CreatedAt: time.Now().UTC()}); err != nil {
+					return nil, 0, err
+				}
 			}
 			for _, id := range ids {
 				members = append(members, Member{UserID: id, Role: "collaborator"})

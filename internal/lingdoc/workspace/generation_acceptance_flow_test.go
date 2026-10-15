@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -57,7 +58,7 @@ func TestGenerationHostModelUsesAcceptanceBudgetAndExplicitDeepSeekOptions(t *te
 	}}
 	service := &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}
 	budget := &generationAcceptanceBudget{ledgerPath: t.TempDir() + "/round.json"}
-	host := generationHostModel{models: service, acceptanceBudget: budget}
+	host := generationHostModel{models: service, templates: core.ContractDemoTemplate{}, acceptanceBudget: budget}
 
 	draft, err := host.Generate(context.Background(), acceptanceGenerationInput())
 	if err != nil {
@@ -86,7 +87,7 @@ func TestGenerationHostModelMarksLengthFinishReasonIncomplete(t *testing.T) {
 	}}
 	service := &acceptanceModelServiceStub{models: []*types.Model{acceptanceDeepSeekModel()}, chatModel: model}
 	budget := &generationAcceptanceBudget{ledgerPath: t.TempDir() + "/round.json"}
-	host := generationHostModel{models: service, acceptanceBudget: budget}
+	host := generationHostModel{models: service, templates: core.ContractDemoTemplate{}, acceptanceBudget: budget}
 
 	if _, err := host.Generate(context.Background(), acceptanceGenerationInput()); !errors.Is(err, generation.ErrGenerationIncomplete) {
 		t.Fatalf("Generate() error = %v, want incomplete output", err)
