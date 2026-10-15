@@ -17,7 +17,10 @@ func TestPostgresDownloadRejectsPersistedCorruption(t *testing.T) {
 		t.Skip("requires explicitly isolated PostgreSQL failure-test database")
 	}
 	require.Contains(t, name, "lingdoc_fault_")
-	dsn := fmt.Sprintf("host=127.0.0.1 port=5432 user=lingdoc password=%s dbname=%s sslmode=disable", os.Getenv("DB_PASSWORD"), name)
+	dsn := os.Getenv("LINGDOC_FAILURE_TEST_DSN")
+	if dsn == "" {
+		dsn = fmt.Sprintf("host=127.0.0.1 port=5432 user=lingdoc password=%s dbname=%s sslmode=disable", os.Getenv("DB_PASSWORD"), name)
+	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	require.NoError(t, err)
 	sqlDB, err := db.DB()
