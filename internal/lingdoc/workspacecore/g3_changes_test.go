@@ -350,6 +350,109 @@ func TestStaleChangeSetCanBeReassessedAgainstCurrentBaseline(t *testing.T) {
 	}
 }
 
+func TestReassessRejectsDeltaIncompatibleWithCurrentTemplate(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-template-type.db"))
+	actor := Actor{TenantID: 316, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+
+	// Establish a numeric string under the original string field definition.
+	baselineRaw, baselineStatus, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-type-baseline", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: "123"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "设置兼容的数值文本",
+	})
+	if err != nil || baselineStatus != 201 {
+		t.Fatalf("create baseline ChangeSet: status=%d err=%v", baselineStatus, err)
+	}
+	var baseline ChangeSet
+	if err := json.Unmarshal(baselineRaw, &baseline); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, baseline.ID, "g3-reassess-type-baseline-apply"); err != nil || status != 200 {
+		t.Fatalf("apply baseline ChangeSet: status=%d err=%v", status, err)
+	}
+	project, err = svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This proposal is valid while research_goal is a string. The template is
+	// then upgraded to number, making the same proposal incompatible.
+	staleRaw, staleStatus, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-type-stale", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "123", NewValue: "not-a-number"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "验证当前模板类型约束",
+	})
+	if err != nil || staleStatus != 201 {
+		t.Fatalf("create stale proposal: status=%d err=%v", staleStatus, err)
+	}
+	var stale ChangeSet
+	if err := json.Unmarshal(staleRaw, &stale); err != nil {
+		t.Fatal(err)
+	}
+
+	fields := append([]lingdoctemplate.Field{}, project.TemplateCopy.Definition.Fields...)
+	foundGoal := false
+	for i := range fields {
+		if fields[i].ID == "research_goal" {
+			fields[i].Type = "number"
+			foundGoal = true
+		}
+	}
+	if !foundGoal {
+		t.Fatal("research_goal field is missing from current TemplateCopy")
+	}
+	upgradeRaw, upgradeStatus, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-type-upgrade", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "将研究目标字段类型升级为 number",
+		TemplateUpgrade: &TemplateUpgradeInput{
+			ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+			Fields: fields, Sections: append([]lingdoctemplate.Section{}, project.TemplateCopy.Definition.Sections...),
+			Terms:          append([]lingdoctemplate.Term{}, project.TemplateCopy.Definition.Terms...),
+			RequiredFields: append([]string{}, project.TemplateCopy.Definition.RequiredFields...),
+			Rules:          append([]lingdoctemplate.Rule{}, project.TemplateCopy.Definition.Rules...),
+		},
+	})
+	if err != nil || upgradeStatus != 201 {
+		t.Fatalf("create number-type template upgrade: status=%d err=%v", upgradeStatus, err)
+	}
+	var upgrade ChangeSet
+	if err := json.Unmarshal(upgradeRaw, &upgrade); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, upgrade.ID, "g3-reassess-type-upgrade-apply"); err != nil || status != 200 {
+		t.Fatalf("apply number-type template upgrade: status=%d err=%v", status, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-type-mark-stale"); err != nil || status != 409 {
+		t.Fatalf("mark proposal stale after template upgrade: status=%d err=%v", status, err)
+	}
+	stale, err = svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || stale.Status != "stale" || stale.Fields[0].NewValue != "not-a-number" {
+		t.Fatalf("stale proposal history: %+v err=%v", stale, err)
+	}
+	before, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-type-reject"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("reassess incompatible string→number delta error = %v, want ErrInvalidState", err)
+	}
+	after, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || after.ProjectVersion != before.ProjectVersion || after.CurrentContextRevision != before.CurrentContextRevision ||
+		after.SpecRevision != before.SpecRevision || after.TemplateCopyVersion != before.TemplateCopyVersion ||
+		after.Spec["research_goal"] != "123" || templateFieldDefinitions(after.TemplateCopy.Definition)["research_goal"].Type != "number" {
+		t.Fatalf("rejected reassessment mutated the formal project: before=%+v after=%+v err=%v", before, after, err)
+	}
+	staleAfter, err := svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || staleAfter.Status != "stale" || staleAfter.StaleReason != stale.StaleReason || staleAfter.Fields[0].NewValue != "not-a-number" {
+		t.Fatalf("rejected reassessment rewrote stale history: %+v err=%v", staleAfter, err)
+	}
+}
+
 func TestReassessChangeSetRejectsChangedTargetField(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-conflict.db"))
 	actor := Actor{TenantID: 315, UserID: "owner"}
