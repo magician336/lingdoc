@@ -35,7 +35,7 @@
       <section class="panel work-area" v-if="project">
         <div class="section-head">
           <div><h2>{{ project.name }}</h2><p class="muted">研究条件版本 {{ project.spec_revision }} · 项目版本 {{ project.project_version }}</p></div>
-          <button type="button" @click="selectProject(project.id, true)">重新读取</button>
+          <button type="button" @click="selectProject(project.id, { force: true })">重新读取</button>
         </div>
         <p class="muted">项目成员 {{ project.members.length }} 人。现阶段由项目成员协作编辑。</p>
 
@@ -441,9 +441,10 @@
             <p v-else-if="chapter.confirmation_valid" class="confirmed">当前章节版本已确认。保存新版本后需要重新确认。</p>
             <p v-else-if="workingCopyDiffersFromFormal" class="muted">工作副本与正式版本不同；保存工作副本不会创建正式版本。</p>
             <button v-if="chapter.current_version_id" type="button" @click="confirmCurrentChapter"
-              :disabled="busy || workingCopySaving || chapterChanged || workingCopyDiffersFromFormal || !reviewDecisionsReady">
+              :disabled="confirmationReasons.length > 0" :aria-describedby="confirmationReasons.length ? 'chapter-confirm-help' : undefined">
               {{ chapter.confirmation_valid ? '重新确认当前版本' : '确认当前章节版本' }}
             </button>
+            <p v-if="chapter.current_version_id && confirmationReasons.length" id="chapter-confirm-help" class="muted" role="status">当前无法确认：{{ confirmationReasons.join('；') }}。</p>
             <p v-if="draftCitations.malformed" class="warning">{{ MALFORMED_CITATION_MESSAGE }}</p>
             <p v-else-if="draftCitations.sourceIds.length" class="muted">
               本章引用 {{ draftCitations.sourceIds.length }} 条来源。保存时会逐条复核；删掉正文里的标记就等于放弃那一条。
@@ -478,6 +479,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
+import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, installUnloadGuard, reviewDraftsAreDirty, unsavedInputsAreDirty, type ReviewDraft, type UnsavedInputState } from './uiSafety'
 import type { Candidate } from '@/api/lingdoc/candidateAdoption'
 import {
   cancelGeneration, getGeneratedCandidate, getGeneration, listGenerationCandidates, startGeneration,
@@ -542,6 +545,7 @@ const subject = ref('')
 const goal = ref('')
 const changeReason = ref('')
 const selectedImpactChapterIds = ref<string[]>([])
+const acknowledgedConditionsInputs = ref(conditionsChangeSnapshot('', '', []))
 const pendingChangeSet = ref<ChangeSet | null>(null)
 const pendingDraft = ref<{ subject: string; goal: string; reason: string; chapterIds: string[] } | null>(null)
 const lastChangeSet = ref<ChangeSet | null>(null)
@@ -549,7 +553,8 @@ const bodyDraft = ref('')
 const busy = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
-const reviewDrafts = ref<Record<string, { disposition: ReviewDecision['disposition']; reason: string }>>({})
+const reviewDrafts = ref<Record<string, ReviewDraft>>({})
+const savedReviewDrafts = ref<Record<string, ReviewDraft>>({})
 const citationUsageDrafts = ref<Record<string, CitationUsage>>({})
 const generationInstruction = ref('根据已允许的项目资料起草本章，引用来源并列出所有待核事项。')
 const generationRun = ref<GenerationRun | null>(null)
@@ -614,6 +619,15 @@ const pendingDraftMatches = computed(() => {
     pendingDraft.value.reason === changeReason.value.trim() &&
     JSON.stringify(pendingDraft.value.chapterIds) === JSON.stringify([...selectedImpactChapterIds.value].sort())
 })
+const conditionsInputsChanged = computed(() => !!project.value && conditionsChangeInputsAreDirty(
+  conditionsChangeSnapshot(project.value.id, changeReason.value, selectedImpactChapterIds.value),
+  acknowledgedConditionsInputs.value,
+))
+function resetConditionsInputs(projectId: string) {
+  changeReason.value = ''
+  selectedImpactChapterIds.value = []
+  acknowledgedConditionsInputs.value = conditionsChangeSnapshot(projectId, '', [])
+}
 const uncheckedChapterTitles = computed(() => chapters.value.filter(item => !selectedImpactChapterIds.value.includes(item.id)).map(item => item.title))
 const citationUsagesChanged = computed(() => {
   const parsed = chapterCitations(bodyDraft.value)
@@ -622,6 +636,13 @@ const citationUsagesChanged = computed(() => {
   return JSON.stringify(next) !== JSON.stringify(workingCopy.value?.citation_usages ?? [])
 })
 const chapterChanged = computed(() => bodyChanged.value || citationUsagesChanged.value)
+const unsavedInputState = computed<UnsavedInputState>(() => ({
+  chapterChanged: chapterChanged.value, specChanged: specChanged.value,
+  templateChanged: templateCopyChanged.value, saving: workingCopySaving.value,
+  reviewChanged: reviewDraftsAreDirty(reviewDrafts.value, savedReviewDrafts.value),
+  conditionsChanged: conditionsInputsChanged.value,
+}))
+const unsavedInputs = computed(() => unsavedInputsAreDirty(unsavedInputState.value))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
   return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
 }
@@ -772,7 +793,7 @@ async function applyTemplateUpgrade() {
     attempts.delete(`change-set-apply:${id}:${changeSetId}`)
     pendingChangeSet.value = null
     pendingTemplateUpgrade.value = null
-    await selectProject(id, true, true)
+    await selectProject(id, { force: true, skipConfirm: true })
     lastChangeSet.value = applied.data
     templateCopyNotice.value = `模板升级已应用为第 ${project.value?.template_copy_version ?? ''} 版；受影响章节需重新确认。`
   } catch (error) { failure(error) }
@@ -791,7 +812,7 @@ async function rejectTemplateUpgrade() {
     pendingChangeSet.value = null
     pendingTemplateUpgrade.value = null
     templateUpgradeReason.value = ''
-    await selectProject(id, true, true)
+    await selectProject(id, { force: true, skipConfirm: true })
     lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
@@ -821,9 +842,10 @@ const draftCitations = computed(() => {
     ? { sourceIds: parsed.sourceIds, malformed: false }
     : { sourceIds: [] as string[], malformed: true }
 })
-const reviewDecisionsReady = computed(() => !!chapter.value && chapter.value.review_items.every(item => {
-  const decision = reviewDrafts.value[`${chapter.value!.id}:${item.id}`]
-  return !!decision?.reason.trim()
+const confirmationReasons = computed(() => confirmationBlockReasons({
+  busy: busy.value, saving: workingCopySaving.value, unsaved: chapterChanged.value,
+  needsCommit: workingCopyDiffersFromFormal.value,
+  missingReasons: chapter.value?.review_items.filter(item => !reviewDrafts.value[`${chapter.value!.id}:${item.id}`]?.reason.trim()).length ?? 0,
 }))
 
 function reviewDraft(itemId: string) {
@@ -858,18 +880,119 @@ async function loadProjects() {
   finally { loading.value = false }
 }
 
+async function readChapterDraft(projectId: string, chapterId: string) {
+  const [copyResult, versionResult] = await Promise.all([
+    getWorkingCopy(projectId, chapterId), listChapterVersions(projectId, chapterId),
+  ])
+  return { copyResult, versionResult }
+}
+
+type SelectProjectOptions = {
+  force?: boolean
+  skipConfirm?: boolean
+  conditionsHandled?: boolean
+}
+
+type ProjectLoadSnapshot = {
+  project: Project
+  chapters: Chapter[]
+  assets: Asset[]
+  changeSets: ChangeSet[]
+  initialChapterDraft: Awaited<ReturnType<typeof readChapterDraft>> | null
+  generationCandidates: GenerationCandidateSummary[]
+}
+
+async function readProjectSnapshot(id: string): Promise<ProjectLoadSnapshot> {
+  const result = await getProject(id)
+  const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
+  const assetResult = await listAssets(id)
+  const changeSetsResult = await listChangeSets(id)
+  const initialChapter = chapterResult?.data[0] ?? null
+  const initialChapterDraft = initialChapter ? await readChapterDraft(id, initialChapter.id) : null
+  const generationCandidates = initialChapter
+    ? (await listGenerationCandidates(id, initialChapter.id)).data
+    : []
+  return {
+    project: result.data,
+    chapters: chapterResult?.data ?? [],
+    assets: assetResult.data ?? [],
+    changeSets: (changeSetsResult.data ?? []).map(normalizeChangeSet),
+    initialChapterDraft,
+    generationCandidates,
+  }
+}
+
+function resetWorkspaceForProjectLoad(discardReviewDrafts: boolean) {
+  if (generationTimer) clearTimeout(generationTimer)
+  if (workingCopyTimer) clearTimeout(workingCopyTimer)
+  workingCopyTimer = undefined
+  generationRun.value = null
+  generationCandidate.value = null
+  generationCandidates.value = []
+  adoptionOpen.value = false
+  errorMessage.value = ''
+  pendingChangeSet.value = null
+  pendingDraft.value = null
+  pendingTemplateUpgrade.value = null
+  templateUpgradeReason.value = ''
+  if (discardReviewDrafts) {
+    reviewDrafts.value = {}
+    savedReviewDrafts.value = {}
+  }
+}
+
+async function applyProjectSnapshot(id: string, snapshot: ProjectLoadSnapshot) {
+  project.value = snapshot.project
+  hydrateTemplateCopyDraft(snapshot.project)
+  subject.value = snapshot.project.spec.research_subject ?? ''
+  goal.value = snapshot.project.spec.research_goal ?? ''
+  resetConditionsInputs(id)
+  chapters.value = snapshot.chapters
+  const assessedTemplateUpgrade = [...snapshot.changeSets].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
+  if (assessedTemplateUpgrade?.template_upgrade) {
+    templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
+    templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
+    templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
+    templateUpgradeReason.value = assessedTemplateUpgrade.reason
+    pendingChangeSet.value = assessedTemplateUpgrade
+    pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason }
+  }
+  assets.value = snapshot.assets
+  selectedAssetIds.value = readyAssets.value.map(item => item.id)
+  // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
+  // 留着它们，新项目一打开就会带着别人的结论（包括那句「暂无可定位来源」）。
+  sources.value = []
+  searchedQuery.value = ''
+  deniedRows.value = []
+  bindingNoticeText.value = ''
+  closeSourceContext()
+  chapter.value = chapters.value[0] ?? null
+  workingCopy.value = null
+  chapterVersions.value = []
+  rewriteCandidate.value = null
+  rewriteSourceIds.value = []
+  bodyDraft.value = chapter.value?.body_markdown ?? ''
+  if (chapter.value && snapshot.initialChapterDraft) {
+    applyChapterDraft(snapshot.initialChapterDraft.copyResult, snapshot.initialChapterDraft.versionResult)
+    await loadSavedRewriteCandidate(id, chapter.value.id)
+  }
+  generationCandidates.value = snapshot.generationCandidates
+}
+
+function applyChapterDraft(copyResult: Awaited<ReturnType<typeof getWorkingCopy>>, versionResult: Awaited<ReturnType<typeof listChapterVersions>>) {
+  workingCopy.value = copyResult.data
+  hydrateCitationUsages(copyResult.data)
+  chapterVersions.value = versionResult.data.items
+  bodyDraft.value = copyResult.data.body_markdown
+  workingCopyStatus.value = 'saved'
+}
+
 async function loadChapterDraft(projectId: string, chapterId: string) {
   workingCopyLoading.value = true
   try {
-    const [copyResult, versionResult] = await Promise.all([
-      getWorkingCopy(projectId, chapterId), listChapterVersions(projectId, chapterId),
-    ])
+    const { copyResult, versionResult } = await readChapterDraft(projectId, chapterId)
     if (project.value?.id !== projectId || chapter.value?.id !== chapterId) return
-    workingCopy.value = copyResult.data
-    hydrateCitationUsages(copyResult.data)
-    chapterVersions.value = versionResult.data.items
-    bodyDraft.value = copyResult.data.body_markdown
-    workingCopyStatus.value = 'saved'
+    applyChapterDraft(copyResult, versionResult)
   } catch (error) {
     workingCopyStatus.value = 'error'
     failure(error)
@@ -908,63 +1031,22 @@ async function create() {
   finally { busy.value = false }
 }
 
-async function selectProject(id: string, force = false, skipConfirm = false) {
-  if (!skipConfirm && !force && ((specChanged.value && project.value?.id !== id) || chapterChanged.value || (project.value?.id !== id && templateCopyChanged.value)) &&
-      !window.confirm('当前编辑尚未保存，确定切换项目吗？')) return
-  if (!skipConfirm && force && (specChanged.value || chapterChanged.value || templateCopyChanged.value) &&
-      !window.confirm('重新读取会丢弃当前未保存的输入，确定继续吗？')) return
-  if (generationTimer) clearTimeout(generationTimer)
-  if (workingCopyTimer) clearTimeout(workingCopyTimer)
-  workingCopyTimer = undefined
-  generationRun.value = null
-  generationCandidate.value = null
-  generationCandidates.value = []
-  adoptionOpen.value = false
-  errorMessage.value = ''
-  pendingChangeSet.value = null
-  pendingDraft.value = null
-  pendingTemplateUpgrade.value = null
-  templateUpgradeReason.value = ''
+// Only a successful conditions apply/reject may skip its own handled inputs.
+// Other drafts still require confirmation, including when the requested ID is unchanged.
+async function selectProject(id: string, options: SelectProjectOptions = {}) {
+  const { force = false, skipConfirm = false, conditionsHandled = false } = options
+  const dirty = unsavedInputsAreDirty(unsavedInputState.value, { conditionsHandled })
+  const message = force || project.value?.id === id
+    ? '重新读取会丢弃当前未保存的输入，确定继续吗？'
+    : '当前编辑尚未保存，确定切换项目吗？'
+  if (!skipConfirm && dirty && !window.confirm(message)) return
   try {
-    const result = await getProject(id)
-    project.value = result.data
-    hydrateTemplateCopyDraft(result.data)
-    subject.value = result.data.spec.research_subject ?? ''
-    goal.value = result.data.spec.research_goal ?? ''
-    const chapterResult = result.data.status === 'active' ? await listChapters(id) : null
-    chapters.value = chapterResult?.data ?? []
-    const assetResult = await listAssets(id)
-    const changeSetsResult = await listChangeSets(id)
-    const changeSets = (changeSetsResult.data ?? []).map(normalizeChangeSet)
-    const assessedTemplateUpgrade = [...changeSets].reverse().find(item => item.status === 'assessed' && item.template_upgrade)
-    if (assessedTemplateUpgrade?.template_upgrade) {
-      templateCopyDraft.value = editableTemplateCopy(assessedTemplateUpgrade.template_upgrade.definition)
-      templateCopyPreview.value = assessedTemplateUpgrade.template_upgrade.preview
-      templateCopyPreviewFingerprint.value = templateCopyFingerprint.value
-      templateUpgradeReason.value = assessedTemplateUpgrade.reason
-      pendingChangeSet.value = assessedTemplateUpgrade
-      pendingTemplateUpgrade.value = { fingerprint: templateCopyFingerprint.value, reason: assessedTemplateUpgrade.reason }
-    }
-    assets.value = assetResult.data ?? []
-    selectedAssetIds.value = readyAssets.value.map(item => item.id)
-    // 检索结果、上一次的提问、被拒明细与绑定的提示都只属于**上一个项目**：
-    // 留着它们，新项目一打开就会带着别人的结论（包括那句「暂无可定位来源」）。
-    sources.value = []
-    searchedQuery.value = ''
-    deniedRows.value = []
-    bindingNoticeText.value = ''
-    closeSourceContext()
-    chapter.value = chapters.value[0] ?? null
-    workingCopy.value = null
-    chapterVersions.value = []
-    rewriteCandidate.value = null
-    rewriteSourceIds.value = []
-    bodyDraft.value = chapter.value?.body_markdown ?? ''
-    if (chapter.value) {
-      await loadChapterDraft(id, chapter.value.id)
-      await loadSavedRewriteCandidate(id, chapter.value.id)
-    }
-    await loadGenerationCandidates(chapter.value?.id)
+    // Keep the current inputs until the target project's initial reads succeed.
+    const snapshot = await readProjectSnapshot(id)
+    const sameProject = project.value?.id === id
+    const discardReviewDrafts = !sameProject || (dirty && !skipConfirm)
+    resetWorkspaceForProjectLoad(discardReviewDrafts)
+    await applyProjectSnapshot(id, snapshot)
     await resumeGeneration()
   } catch (error) { failure(error) }
 }
@@ -973,12 +1055,17 @@ async function selectProject(id: string, force = false, skipConfirm = false) {
 //
 // 只读项目、不动别的：走 selectProject 会重选章节、清掉未保存的正文草稿，而用户要的只是
 // 把版本号更新到当前。协作编辑是这条路的现实来源——别人改了项目，版本就旧了。
-async function refreshProjectVersion() {
-  if (!project.value) return
+async function refreshProjectVersion(done?: (ok: boolean) => void) {
+  const projectId = project.value?.id
+  if (!projectId) { done?.(false); return }
+  let refreshed = false
   try {
-    const result = await getProject(project.value.id)
+    const result = await getProject(projectId)
+    if (project.value?.id !== projectId) return
     project.value = result.data
-  } catch (error) { failure(error) }
+    refreshed = true
+  } catch (error) { if (!done) failure(error) }
+  finally { done?.(refreshed) }
 }
 
 // 打开项目时问一次访问状态，决定要不要给出撤权恢复入口（§8）。
@@ -1153,11 +1240,15 @@ async function createConditionsChangePreview() {
     affected_chapter_ids: [...selectedImpactChapterIds.value],
     reason: changeReason.value.trim(),
   }
-    const createKey = operationKey(`change-set-create:${id}`, input)
+  const submittedInputs = conditionsChangeSnapshot(id, input.reason, input.affected_chapter_ids)
+  const submittedDraft = { subject: subject.value, goal: goal.value, reason: submittedInputs.reason, chapterIds: submittedInputs.chapterIds }
+  const createKey = operationKey(`change-set-create:${id}`, input)
   try {
     const created = await createChangeSet(id, input, createKey)
+    if (project.value?.id !== id) return
     pendingChangeSet.value = created.data
-    pendingDraft.value = { subject: subject.value, goal: goal.value, reason: changeReason.value.trim(), chapterIds: [...selectedImpactChapterIds.value].sort() }
+    pendingDraft.value = submittedDraft
+    acknowledgedConditionsInputs.value = submittedInputs
   } catch (error) { failure(error) }
   finally { busy.value = false }
 }
@@ -1173,9 +1264,11 @@ async function applyConditionsChange() {
     const applied = await applyChangeSet(id, changeSetId, applyKey)
     attempts.delete(`change-set-create:${id}`)
     attempts.delete(`change-set-apply:${id}:${changeSetId}`)
+    if (project.value?.id !== id) return
+    resetConditionsInputs(id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    await selectProject(id)
+    await selectProject(id, { conditionsHandled: true })
     lastChangeSet.value = applied.data
   } catch (error) {
     const item = error as { status?: number }
@@ -1208,9 +1301,11 @@ async function rejectConditionsChange() {
     const rejected = await rejectChangeSet(id, changeSetId, rejectKey)
     attempts.delete(`change-set-create:${id}`)
     attempts.delete(`change-set-reject:${id}:${changeSetId}`)
+    if (project.value?.id !== id) return
+    resetConditionsInputs(id)
     pendingChangeSet.value = null
     pendingDraft.value = null
-    await selectProject(id)
+    await selectProject(id, { conditionsHandled: true })
     lastChangeSet.value = rejected.data
   } catch (error) { failure(error) }
   finally { busy.value = false }
@@ -1308,7 +1403,10 @@ async function onAdopted(adopted: Chapter) {
   // 待核项已经换成候选自带那一份，为本章编的逐项处置不再适用。只清本章的：
   // 别的章节的草稿是用户刚写的理由，采纳这一章不该把它抹掉。
   for (const key of Object.keys(reviewDrafts.value)) {
-    if (key.startsWith(`${chapterId}:`)) delete reviewDrafts.value[key]
+    if (key.startsWith(`${chapterId}:`)) {
+      delete reviewDrafts.value[key]
+      delete savedReviewDrafts.value[key]
+    }
   }
   generationCandidate.value = null
   try {
@@ -1319,7 +1417,7 @@ async function onAdopted(adopted: Chapter) {
     // 旧候选的 validity 是按旧版本算出来的，不重读会继续显示一条已经不成立的 fresh。
     generationCandidates.value = candidates.data
     await loadChapterDraft(projectId, chapterId)
-  } catch (error) { failure(error) }
+  } catch { errorMessage.value = '候选已采纳，但项目状态刷新失败。请重新读取项目；无需重复采纳。' }
 }
 
 function generationStorageKey(projectId: string, chapterId: string) {
@@ -1371,7 +1469,7 @@ async function cancelGenerationRun() {
 }
 
 async function confirmCurrentChapter() {
-  if (!project.value || !chapter.value?.current_version_id || busy.value || workingCopySaving.value || chapterChanged.value || workingCopyDiffersFromFormal.value || !reviewDecisionsReady.value) return
+  if (!project.value || !chapter.value?.current_version_id || confirmationReasons.value.length > 0) return
   const current = chapter.value
   const expectedVersion = current.current_version_id
   if (!expectedVersion) return
@@ -1392,6 +1490,12 @@ async function confirmCurrentChapter() {
   const key = operationKey(`confirm:${current.id}`, input)
   try {
     await confirmChapter(projectId, current.id, input, key)
+    // These reasons were acknowledged by the server; retaining the form is not
+    // an unsaved edit. Unconfirmed reasons in other chapters remain protected.
+    for (const decision of decisions) {
+      const draftKey = `${current.id}:${decision.review_item_id}`
+      savedReviewDrafts.value[draftKey] = { ...reviewDrafts.value[draftKey]! }
+    }
     attempts.delete(`confirm:${current.id}`)
     const result = await listChapters(projectId)
     chapters.value = result.data
@@ -1651,8 +1755,14 @@ async function restoreVersion(version: ChapterVersion) {
   finally { busy.value = false }
 }
 
-onMounted(loadProjects)
+let removeUnloadGuard: (() => void) | undefined
+onMounted(() => {
+  removeUnloadGuard = installUnloadGuard(window, () => unsavedInputs.value)
+  void loadProjects()
+})
+onBeforeRouteLeave(() => canLeaveWorkspace(unsavedInputs.value, message => window.confirm(message)))
 onUnmounted(() => {
+  removeUnloadGuard?.()
   if (generationTimer) clearTimeout(generationTimer)
   if (workingCopyTimer) clearTimeout(workingCopyTimer)
 })
