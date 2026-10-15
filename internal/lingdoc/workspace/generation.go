@@ -39,7 +39,7 @@ func NewGenerationApplication(
 		gateway:   workspace.gateway,
 		bindings:  workspace.bindings,
 		knowledge: workspace.knowledge,
-		templates: core.ContractDemoTemplate{},
+		templates: workspace.templates,
 		origins:   evidence.NewSourceResolver(origins),
 	}
 	repository := generation.NewSQLiteRepository(db)
@@ -47,8 +47,8 @@ func NewGenerationApplication(
 	service := generation.NewService(
 		generationWorkspaceAuthorizer{workspace: workspace.service}, inputs,
 		generationSourceValidator{policy: policy},
-		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: core.ContractDemoTemplate{}},
-		generationHostModel{models: models, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
+		generationCurrentnessChecker{workspace: workspace.service, gateway: workspace.gateway, templates: workspace.templates},
+		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	return service
 }
@@ -312,6 +312,7 @@ func (c generationCurrentnessChecker) GenerationInputIsCurrent(ctx context.Conte
 
 type generationHostModel struct {
 	models              interfaces.ModelService
+	templates           core.TemplateReader
 	acceptanceBudget    *generationAcceptanceBudget
 	acceptanceConfigErr error
 }
@@ -350,7 +351,10 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 		return generation.Draft{}, err
 	}
 	chapters := input.Workspace.Chapter
-	template, err := (core.ContractDemoTemplate{}).Get(input.Basis.TemplateID, input.Basis.TemplateVersion)
+	if m.templates == nil {
+		return generation.Draft{}, generation.ErrDependencyUnavailable
+	}
+	template, err := m.templates.Get(input.Basis.TemplateID, input.Basis.TemplateVersion)
 	if err != nil {
 		return generation.Draft{}, generation.ErrDependencyUnavailable
 	}
