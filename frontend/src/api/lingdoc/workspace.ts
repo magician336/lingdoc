@@ -1,5 +1,22 @@
 import { get, post, put } from '@/utils/request'
 
+export type ProjectFunctionRole = 'author' | 'researcher' | 'reviewer' | 'observer'
+export type ProjectGovernanceRole = 'owner' | 'admin' | 'member'
+
+export interface ProjectMember {
+  user_id: string
+  role: 'owner' | 'collaborator'
+  governance_role?: ProjectGovernanceRole
+  function_roles?: ProjectFunctionRole[]
+  function_scopes?: Record<string, string[]>
+  status?: string
+}
+
+export interface ProjectMemberInput extends Omit<ProjectMember, 'role' | 'governance_role'> {
+  role: 'collaborator'
+  governance_role: 'admin' | 'member'
+}
+
 export interface Project {
   id: string
   name: string
@@ -12,7 +29,7 @@ export interface Project {
   template_version: string
   template_copy_version?: number
   template_copy?: ProjectTemplateCopy
-  members: Array<{ user_id: string; role: 'owner' | 'collaborator' }>
+  members: ProjectMember[]
 }
 
 export interface TemplateField {
@@ -348,6 +365,11 @@ export const listProjects = () => get<Result<{ items: Project[]; truncated: bool
 export const createProject = (name: string, key: string) =>
   post<Result<Project>>(base, { name, template_id: 'template-demo' }, keyHeader(key))
 export const getProject = (id: string) => get<Result<Project>>(`${base}/${segment(id)}`)
+export const saveProjectMembers = (id: string, expectedVersion: number, members: ProjectMemberInput[], key: string) =>
+  put<Result<Project>>(`${base}/${segment(id)}/members`, {
+    expected_project_version: expectedVersion,
+    members,
+  }, keyHeader(key))
 export const getTemplateCopy = (projectId: string, version: number) =>
   get<Result<ProjectTemplateCopy>>(`${base}/${segment(projectId)}/template-copies/${version}`)
 export const previewTemplateCopyEdit = (projectId: string, input: TemplateCopyEditInput) =>

@@ -53,9 +53,9 @@ Issue #144 是依赖图，不是功能实现任务。下表列出功能 Issue �
 | G4 | 模型辅助规则建议 | [`40-Spec-G4模型辅助规则建议.md`](06-灵档产品开发规划/40-Spec-G4模型辅助规则建议.md) | [#141](https://github.com/magician336/lingdoc/issues/141) |
 | G4 | 模板升级与 G3 稳定化交接 | [`41-Spec-G4模板升级与G3稳定化交接.md`](06-灵档产品开发规划/41-Spec-G4模板升级与G3稳定化交接.md) | [#142](https://github.com/magician336/lingdoc/issues/142) |
 | G5 | 统一权限判定器 | [`25-Spec-G5统一权限判定器.md`](06-灵档产品开发规划/25-Spec-G5统一权限判定器.md) | [#126](https://github.com/magician336/lingdoc/issues/126) |
-| G5 | 角色、Scope 与成员生命周期 | [`26-Spec-G5角色Scope与成员生命周期.md`](06-灵档产品开发规划/26-Spec-G5角色Scope与成员生命周期.md) | [#127](https://github.com/magician336/lingdoc/issues/127) |
-| G5 | Owner 生命周期与转让 | [`27-Spec-G5Owner生命周期与转让.md`](06-灵档产品开发规划/27-Spec-G5Owner生命周期与转让.md) | [#128](https://github.com/magician336/lingdoc/issues/128) |
-| G5 | 资料授权、撤权与再鉴权 | [`28-Spec-G5资料授权撤权与再鉴权.md`](06-灵档产品开发规划/28-Spec-G5资料授权撤权与再鉴权.md) | [#129](https://github.com/magician336/lingdoc/issues/129) |
+| G5 | Owner 生命周期与转让 | [`27-Spec-G5Owner生命周期与转让.md`](06-灵档产品开发规划/27-Spec-G5Owner生命周期与转让.md) | [#127](https://github.com/magician336/lingdoc/issues/127) |
+| G5 | 资料授权、撤权与再鉴权 | [`28-Spec-G5资料授权撤权与再鉴权.md`](06-灵档产品开发规划/28-Spec-G5资料授权撤权与再鉴权.md) | [#128](https://github.com/magician336/lingdoc/issues/128) |
+| G5 | 角色、Scope 与成员生命周期 | [`26-Spec-G5角色Scope与成员生命周期.md`](06-灵档产品开发规划/26-Spec-G5角色Scope与成员生命周期.md) | [#129](https://github.com/magician336/lingdoc/issues/129) |
 | G5 | 审计与权限可见性 | [`29-Spec-G5审计与权限可见性.md`](06-灵档产品开发规划/29-Spec-G5审计与权限可见性.md) | [#130](https://github.com/magician336/lingdoc/issues/130) |
 | G6 | 运行观测、告警与暂停回退 | [`45-Spec-G6运行观测告警与暂停回退.md`](06-灵档产品开发规划/45-Spec-G6运行观测告警与暂停回退.md) | [#145](https://github.com/magician336/lingdoc/issues/145) |
 | G6 | 真实试用窗口、指标与质量决策 | [`46-Spec-G6真实试用窗口与质量决策.md`](06-灵档产品开发规划/46-Spec-G6真实试用窗口与质量决策.md) | [#146](https://github.com/magician336/lingdoc/issues/146) |
