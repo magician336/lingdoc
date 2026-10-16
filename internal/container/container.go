@@ -544,8 +544,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
 	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy) (workspace.ReleaseApplication, error) {
-		var dispositions workspace.ValidationIssueDispositionCore
-		if core, ok := projects.(workspace.ValidationIssueDispositionCore); ok {
+		var dispositions workspace.ValidationIssueDispositionApplication
+		if core, ok := projects.(workspace.ValidationIssueDispositionApplication); ok {
 			dispositions = core
 		}
 		service := workspace.NewDeliveryReleaseServiceWithPolicy(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, sourceIntegration.CandidateAdoptionSourcePolicy(), policy, dispositions)

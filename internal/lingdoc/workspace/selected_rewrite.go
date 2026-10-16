@@ -552,7 +552,7 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 		return core.WorkingCopy{}, false, err
 	}
 	operationKey := operationKeyForApply(key, row.ID)
-	raw, _, replayed, err := s.workspace.ApplyRewrite(ctx, actor, projectID, chapterID, operationKey, pending.WorkingCopy, pending.ReviewItems)
+	result, err := s.workspace.ApplyRewriteResult(ctx, actor, projectID, chapterID, operationKey, pending.WorkingCopy, pending.ReviewItems)
 	if err != nil {
 		if errors.Is(err, core.ErrVersionConflict) {
 			row.Status, row.ReplacementMarkdown, row.ErrorCode = "stale", "", "stale_input"
@@ -563,15 +563,16 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 		}
 		return core.WorkingCopy{}, false, selectedRewriteContextError(err)
 	}
-	var saved core.WorkingCopy
-	if err := json.Unmarshal(raw, &saved); err != nil {
+	saved := result.WorkingCopy
+	raw, err := json.Marshal(saved)
+	if err != nil {
 		return core.WorkingCopy{}, false, err
 	}
 	row.AppliedKey, row.AppliedResponseJSON, row.ApplyPendingKey, row.ApplyPendingInputJSON, row.UpdatedAt = key, string(raw), "", "", s.now()
 	if err := s.store.update(context.WithoutCancel(ctx), row); err != nil {
 		return core.WorkingCopy{}, false, err
 	}
-	return saved, replayed, nil
+	return saved, result.Replayed, nil
 }
 
 func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, error) {

@@ -188,31 +188,31 @@ func (s *applicationServiceStub) PreviewTemplateCopyEdit(_ context.Context, acto
 	return TemplateMigrationPreview{ProjectID: projectID, TargetCopyVersion: input.ExpectedTemplateCopyVersion + 1}, nil
 }
 
-func (s *applicationServiceStub) SaveTemplateCopy(_ context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (json.RawMessage, int, bool, error) {
+func (s *applicationServiceStub) SaveTemplateCopyResult(_ context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
 	s.actor, s.templateProjectID, s.copyEditKey, s.copyEditInput = actor, projectID, key, input
 	s.copyEditCalled = true
-	return json.RawMessage(`{"project_id":"` + projectID + `","template_copy_version":2}`), http.StatusOK, false, nil
+	return ProjectMutationResult{Project: Project{ID: projectID, TemplateCopyVersion: 2}}, nil
 }
 
-func (s *applicationServiceStub) CreateChangeSet(_ context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
+func (s *applicationServiceStub) CreateChangeSetResult(_ context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
 	s.called = true
 	s.actor, s.changeSetInput, s.changeSetKey = actor, input, key
-	return json.RawMessage(`{"id":"change-1","project_id":"` + projectID + `","status":"assessed"}`), http.StatusCreated, false, nil
+	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: "change-1", ProjectID: projectID, Status: "assessed"}}, nil
 }
 
-func (s *applicationServiceStub) ApplyChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+func (s *applicationServiceStub) ApplyChangeSetResult(_ context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
 	s.applyCalled = true
 	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
-	if s.applyStatus != 0 {
-		return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"stale"}`), s.applyStatus, false, nil
+	if s.applyStatus == http.StatusConflict {
+		return ChangeSetMutationResult{}, ErrVersionConflict
 	}
-	return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"applied"}`), http.StatusOK, false, nil
+	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: changeSetID, ProjectID: projectID, Status: "applied"}}, nil
 }
 
-func (s *applicationServiceStub) RejectChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+func (s *applicationServiceStub) RejectChangeSetResult(_ context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
 	s.rejectCalled = true
 	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
-	return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"rejected"}`), http.StatusOK, false, nil
+	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: changeSetID, ProjectID: projectID, Status: "rejected"}}, nil
 }
 
 func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {

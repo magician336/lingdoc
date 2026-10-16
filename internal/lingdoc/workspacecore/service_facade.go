@@ -141,6 +141,11 @@ type ChangeSetMutationResult struct {
 	Replayed  bool
 }
 
+type DraftCandidateMutationResult struct {
+	Candidate DraftCandidate
+	Replayed  bool
+}
+
 type ValidationIssueDispositionResult struct {
 	Disposition ValidationIssueDisposition
 	Replayed    bool
@@ -198,6 +203,14 @@ func decodeChangeSetMutationResult(raw json.RawMessage, replayed bool) (ChangeSe
 		return ChangeSetMutationResult{}, fmt.Errorf("decode change set mutation result: %w", err)
 	}
 	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
+}
+
+func decodeDraftCandidateMutationResult(raw json.RawMessage, replayed bool) (DraftCandidateMutationResult, error) {
+	var candidate DraftCandidate
+	if err := json.Unmarshal(raw, &candidate); err != nil {
+		return DraftCandidateMutationResult{}, fmt.Errorf("decode draft candidate result: %w", err)
+	}
+	return DraftCandidateMutationResult{Candidate: candidate, Replayed: replayed}, nil
 }
 
 // Service owns validation, permissions, version expectations and replay order.
@@ -601,6 +614,15 @@ func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, ke
 	})
 }
 
+// DiscardProjectResult exposes the discarded project without transport fields.
+func (s *Service) DiscardProjectResult(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.DiscardProject(ctx, actor, projectID, key, expectedProjectVersion)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
+
 func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
 	if expectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
@@ -635,6 +657,15 @@ func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, ke
 		}
 		return next, 200, nil
 	})
+}
+
+// RestoreProjectResult exposes the restored project without transport fields.
+func (s *Service) RestoreProjectResult(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.RestoreProject(ctx, actor, projectID, key, expectedProjectVersion)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
 }
 
 // Current authorization precedes replay; only new operations check expected
@@ -1951,6 +1982,15 @@ func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, project
 	})
 }
 
+// CreateDraftCandidateResult exposes the candidate without transport fields.
+func (s *Service) CreateDraftCandidateResult(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
+	raw, _, replayed, err := s.CreateDraftCandidate(ctx, actor, projectID, key, input)
+	if err != nil {
+		return DraftCandidateMutationResult{}, err
+	}
+	return decodeDraftCandidateMutationResult(raw, replayed)
+}
+
 func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
 	var result []AuditEvent
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
@@ -2547,6 +2587,15 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		}
 		return next, 200, nil
 	})
+}
+
+// ActivateProjectResult exposes the activated project without transport fields.
+func (s *Service) ActivateProjectResult(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.ActivateProject(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
 }
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
