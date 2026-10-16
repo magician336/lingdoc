@@ -121,6 +121,21 @@ type chapterMutationApplicationStub struct {
 	changeSet          ChangeSet
 }
 
+type draftCandidateApplicationStub struct {
+	applicationServiceStub
+	called    bool
+	actor     Actor
+	projectID string
+	key       string
+	input     DraftCandidateInput
+	result    DraftCandidateMutationResult
+}
+
+func (s *draftCandidateApplicationStub) CreateDraftCandidateResult(_ context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
+	s.called, s.actor, s.projectID, s.key, s.input = true, actor, projectID, key, input
+	return s.result, nil
+}
+
 func (s *chapterMutationApplicationStub) SaveChapterResult(context.Context, Actor, string, string, string, SaveChapterInput) (ChapterMutationResult, error) {
 	s.chapterCalled = true
 	return ChapterMutationResult{Chapter: s.chapter}, nil
@@ -344,6 +359,42 @@ func TestHandlerMapsTransportNeutralCreateProjectResult(t *testing.T) {
 	}
 	if body.Data.ID != "project-1" || body.Data.Name != "typed project" || body.Data.Status != "draft" || body.Meta.Replayed {
 		t.Fatalf("typed create response = %#v, want created project without replay", body)
+	}
+}
+
+func TestHandlerMapsTransportNeutralDraftCandidateResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &draftCandidateApplicationStub{result: DraftCandidateMutationResult{
+		Candidate: DraftCandidate{ID: "candidate-1", ProjectID: "project-1", Title: "typed candidate", Content: "candidate body"},
+		Replayed:  true,
+	}}
+	handler := NewHandler(HandlerDependencies{Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/draft-candidates", strings.NewReader(`{"kind":"retrieval","title":"typed candidate","content":"candidate body","level":"background"}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "typed-candidate-key")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "owner-7", Role: types.TenantRoleViewer}) || service.projectID != "project-1" || service.key != "typed-candidate-key" || service.input.Title != "typed candidate" {
+		t.Fatalf("typed candidate input = called:%v actor:%#v project=%q key=%q input=%#v", service.called, service.actor, service.projectID, service.key, service.input)
+	}
+	var body struct {
+		Data DraftCandidate `json:"data"`
+		Meta struct {
+			Replayed bool `json:"replayed"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode typed candidate response: %v", err)
+	}
+	if body.Data.ID != "candidate-1" || body.Data.Title != "typed candidate" || body.Data.Content != "candidate body" || !body.Meta.Replayed {
+		t.Fatalf("typed candidate response = %#v, want candidate and replay metadata", body)
 	}
 }
 
