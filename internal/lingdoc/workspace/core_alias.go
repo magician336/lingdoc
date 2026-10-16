@@ -56,6 +56,17 @@ type CreateChangeSetInput = core.CreateChangeSetInput
 type ValidationIssueBinding = core.ValidationIssueBinding
 type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
 type ValidationIssueDisposition = core.ValidationIssueDisposition
+type SaveSpecResult = core.SaveSpecResult
+type CreateProjectResult = core.CreateProjectResult
+type ProjectMutationResult = core.ProjectMutationResult
+type OwnerTransferResult = core.OwnerTransferResult
+type ChapterMutationResult = core.ChapterMutationResult
+type WorkingCopyMutationResult = core.WorkingCopyMutationResult
+type CommittedChapterMutationResult = core.CommittedChapterMutationResult
+type ChangeSetMutationResult = core.ChangeSetMutationResult
+type DraftCandidateMutationResult = core.DraftCandidateMutationResult
+type ValidationIssueDispositionResult = core.ValidationIssueDispositionResult
+type ValidationIssueDispositionReplayResult = core.ValidationIssueDispositionReplayResult
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

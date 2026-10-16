@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -102,7 +103,7 @@ func openDeliveryTestDB(t *testing.T) *gorm.DB {
 func openDeliveryTestDBAt(t *testing.T, path string) *gorm.DB {
 	t.Helper()
 	db := openDeliveryDBAt(t, path)
-	for _, name := range []string{"000018_lingdoc_workspace.up.sql", "000024_lingdoc_delivery_stores.up.sql"} {
+	for _, name := range []string{"000018_lingdoc_workspace.up.sql", "000024_lingdoc_delivery_stores.up.sql", "000037_lingdoc_ruleset_export_reference.up.sql", "000038_lingdoc_ruleset_use_audits.up.sql"} {
 		applyDeliveryMigration(t, db, name)
 	}
 	return db
@@ -147,6 +148,119 @@ func applyDeliveryMigration(t *testing.T, db *gorm.DB, name string) {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("production SQLite migration %s: %v", name, err)
 		}
+	}
+}
+
+func TestSQLiteGovernedFreezeAndUseAuditCommitAtomically(t *testing.T) {
+	db := openDeliveryTestDB(t)
+	store := NewSQLiteSnapshotStore(db)
+	input := deliveryInputWithPublishedRuleSet(t, validDeliveryInput())
+	snapshot, err := NewReleaseService(store).Freeze(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	event := deliveryRuleSetUseEvent(snapshot, "release_snapshot", snapshot.ID, "passed")
+	attempt := FreezeAttempt{ActorID: "owner", ProjectID: snapshot.ProjectID, Key: "freeze-audit-key"}
+	audited, ok := store.(RuleSetUseFreezeRecorder)
+	if !ok {
+		t.Fatal("SQLite snapshot store must support atomic RuleSet-use audit")
+	}
+	if _, replayed, err := audited.RecordFreezeWithRuleSetUse(snapshot, attempt, "request-hash", event); err != nil || replayed {
+		t.Fatalf("record governed snapshot: replayed=%v err=%v", replayed, err)
+	}
+	var count int64
+	if err := db.Table("lingdoc_ruleset_use_audits").Where("action = ?", "release_snapshot").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("release audit rows = %d err=%v, want one", count, err)
+	}
+	if _, replayed, err := audited.RecordFreezeWithRuleSetUse(snapshot, attempt, "request-hash", event); err != nil || !replayed {
+		t.Fatalf("replay governed snapshot: replayed=%v err=%v", replayed, err)
+	}
+	if err := db.Table("lingdoc_ruleset_use_audits").Where("action = ?", "release_snapshot").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("idempotent replay duplicated audit: rows=%d err=%v", count, err)
+	}
+
+	failedSnapshot, err := NewReleaseService(store).Freeze(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	badEvent := deliveryRuleSetUseEvent(failedSnapshot, "unrecognized", failedSnapshot.ID, "passed")
+	if _, _, err := audited.RecordFreezeWithRuleSetUse(failedSnapshot, FreezeAttempt{ActorID: "owner", ProjectID: failedSnapshot.ProjectID, Key: "freeze-audit-fail"}, "request-hash-2", badEvent); err == nil {
+		t.Fatal("invalid audit must fail the governed freeze")
+	}
+	if _, err := store.Get(failedSnapshot.ProjectID, failedSnapshot.ID); !errors.Is(err, ErrSnapshotNotFound) {
+		t.Fatalf("failed audit left a partially committed snapshot: %v", err)
+	}
+}
+
+func TestSQLiteGovernedExportAndUseAuditCommitAtomically(t *testing.T) {
+	db := openDeliveryTestDB(t)
+	snapshots := NewSQLiteSnapshotStore(db)
+	input := deliveryInputWithPublishedRuleSet(t, validDeliveryInput())
+	snapshot, err := NewReleaseService(snapshots).Freeze(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := snapshots.Save(snapshot); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSQLiteExportStore(db)
+	audited, ok := store.(RuleSetUseExportRecorder)
+	if !ok {
+		t.Fatal("SQLite export store must support atomic RuleSet-use audit")
+	}
+	artifact := ExportArtifact{ID: "export-audit-1", ProjectID: snapshot.ProjectID, SnapshotID: snapshot.ID, RuleSetRef: snapshot.RuleSetRef, Status: ExportVerified, FileSHA256: strings.Repeat("a", 64), CreatedAt: time.Now().UTC(), file: []byte("verified bytes")}
+	attempt := ExportAttempt{ActorID: "owner", ProjectID: snapshot.ProjectID, Key: "export-audit-key"}
+	event := deliveryRuleSetUseEvent(snapshot, "export", artifact.ID, "verified")
+	if _, replayed, err := audited.RecordExportWithRuleSetUse(artifact, attempt, "request-hash", event); err != nil || replayed {
+		t.Fatalf("record governed export: replayed=%v err=%v", replayed, err)
+	}
+	var count int64
+	if err := db.Table("lingdoc_ruleset_use_audits").Where("action = ?", "export").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("export audit rows = %d err=%v, want one", count, err)
+	}
+	bad := artifact
+	bad.ID = "export-audit-fail"
+	badEvent := deliveryRuleSetUseEvent(snapshot, "unsupported", bad.ID, "verified")
+	if _, _, err := audited.RecordExportWithRuleSetUse(bad, ExportAttempt{ActorID: "owner", ProjectID: snapshot.ProjectID, Key: "export-audit-fail-key"}, "request-hash-2", badEvent); err == nil {
+		t.Fatal("invalid audit must fail the governed export")
+	}
+	if _, err := store.GetExport(snapshot.ProjectID, bad.ID); !errors.Is(err, ErrExportNotFound) {
+		t.Fatalf("failed audit left a partially committed export: %v", err)
+	}
+}
+
+func deliveryInputWithPublishedRuleSet(t *testing.T, input DeliveryInput) DeliveryInput {
+	t.Helper()
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "delivery-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "delivery-goal-pattern", DefinitionID: "pattern", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
+			Severity: lingdoctemplate.SeverityWarning, Message: "goal should be labeled",
+			Parameters: map[string]any{"pattern": "^Research"}, TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "test-owner",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template.RuleSetSnapshot = &set
+	input.Template.RuleSetRef = &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	input.Template, err = lingdoctemplate.WithHashes(input.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return input
+}
+
+func deliveryRuleSetUseEvent(snapshot ReleaseSnapshot, action, resourceID, outcome string) lingdoctemplate.RuleSetUseAuditEvent {
+	ref := snapshot.RuleSetRef
+	return lingdoctemplate.RuleSetUseAuditEvent{
+		ID: "ruleset-use-audit-" + action, TenantID: 1, ActorID: "owner", ActorRole: "owner",
+		ProjectID: snapshot.ProjectID, Action: action, RuleSetID: ref.ID, RuleSetVersion: ref.Version, RuleSetHash: ref.Hash,
+		EffectiveRulesetHash: snapshot.FrozenInput.Template.RulesetHash, TemplateID: snapshot.FrozenInput.Template.ID,
+		TemplateVersion: snapshot.FrozenInput.Template.Version, TemplateCopyID: snapshot.FrozenInput.TemplateCopyID,
+		TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion, ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion),
+		ResourceID: resourceID, Outcome: outcome, CreatedAt: time.Now().UTC(),
 	}
 }
 
@@ -211,6 +325,9 @@ func listExports(t *testing.T, exports exportStoreUnderTest, projectID string) [
 // 往返之后逐字段相同，加上那三个字段确实活着。
 func TestFrozenInputAndCheckRoundTripThroughStorage(t *testing.T) {
 	input := validDeliveryInput()
+	input.TemplateCopyID = "template-copy-v3"
+	input.TemplateCopyVersion = 3
+	input.TemplateCopyContentHash = strings.Repeat("a", 64)
 	raw, err := encodeFrozenInput(input)
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +412,14 @@ func TestStorageEncodingIsStableAcrossARoundTrip(t *testing.T) {
 func TestStoredSnapshotEvaluatesAndDigestsTheSame(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "delivery.db")
 	first := openDeliveryTestDBAt(t, path)
-	frozen := preparedSnapshotOn(t, NewSQLiteSnapshotStore(first))
+	input := validDeliveryInput()
+	input.TemplateCopyID = "template-copy-v3"
+	input.TemplateCopyVersion = 3
+	input.TemplateCopyContentHash = strings.Repeat("a", 64)
+	frozen, err := NewReleaseService(NewSQLiteSnapshotStore(first)).Prepare(input)
+	if err != nil {
+		t.Fatal(err)
+	}
 	closeDeliveryTestDB(t, first)
 
 	reopened := reopenDeliveryTestDBAt(t, path)
@@ -312,6 +436,12 @@ func TestStoredSnapshotEvaluatesAndDigestsTheSame(t *testing.T) {
 	}
 	if !stored.IsCurrent {
 		t.Fatal("is_current 没有落列：重启之后每一份历史快照都会被当成不再代表工作区")
+	}
+	if stored.FrozenInput.TemplateCopyID != input.TemplateCopyID || stored.FrozenInput.TemplateCopyVersion != input.TemplateCopyVersion ||
+		stored.FrozenInput.TemplateCopyContentHash != input.TemplateCopyContentHash {
+		t.Fatalf("重启后快照丢失 TemplateCopy 身份: got %s@%d hash=%q want %s@%d hash=%q",
+			stored.FrozenInput.TemplateCopyID, stored.FrozenInput.TemplateCopyVersion, stored.FrozenInput.TemplateCopyContentHash,
+			input.TemplateCopyID, input.TemplateCopyVersion, input.TemplateCopyContentHash)
 	}
 	// 时刻用 .Equal 而不是 DeepEqual：这里问的是同一个瞬间，不是同一个 location 指针。
 	if !stored.CreatedAt.Equal(frozen.CreatedAt) {

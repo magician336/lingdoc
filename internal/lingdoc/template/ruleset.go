@@ -70,6 +70,116 @@ type RuleSet struct {
 	RulesetHash string        `json:"ruleset_hash,omitempty"`
 }
 
+// RuleSetReference is the exact immutable version a TemplateVersion uses.
+// Hash is the RuleSet's source hash, not the combined project-copy hash.
+type RuleSetReference struct {
+	ID      string `json:"ruleset_id"`
+	Version string `json:"version"`
+	Hash    string `json:"ruleset_hash"`
+}
+
+// RuleSetReferenceFor returns the explicit immutable reference carried by a
+// template, or derives it from a verified snapshot for legacy callers.
+func RuleSetReferenceFor(t Template) *RuleSetReference {
+	if t.RuleSetRef != nil {
+		ref := *t.RuleSetRef
+		return &ref
+	}
+	if t.RuleSetSnapshot != nil {
+		return &RuleSetReference{ID: t.RuleSetSnapshot.ID, Version: t.RuleSetSnapshot.Version, Hash: t.RuleSetSnapshot.RulesetHash}
+	}
+	return nil
+}
+
+// RuleBindingOverride contains only project-scoped controls. Executor,
+// definition identity, target identity, severity and trigger scenes remain
+// server-owned by the published binding.
+type RuleBindingOverride struct {
+	RuleID     string         `json:"rule_id"`
+	Enabled    *bool          `json:"enabled,omitempty"`
+	Parameters map[string]any `json:"parameters,omitempty"`
+}
+
+func CloneRuleBindingOverrides(overrides []RuleBindingOverride) []RuleBindingOverride {
+	if overrides == nil {
+		return nil
+	}
+	cloned := make([]RuleBindingOverride, len(overrides))
+	for i, override := range overrides {
+		cloned[i] = override
+		if override.Enabled != nil {
+			enabled := *override.Enabled
+			cloned[i].Enabled = &enabled
+		}
+		cloned[i].Parameters = cloneParameters(override.Parameters)
+	}
+	return cloned
+}
+
+// ValidateRuleBindingOverrides ensures every change names an existing binding
+// and changes only parameter keys explicitly supported by its safe definition.
+func ValidateRuleBindingOverrides(set RuleSet, overrides []RuleBindingOverride) error {
+	bindings := make(map[string]RuleBinding, len(set.Bindings))
+	for _, binding := range set.Bindings {
+		bindings[binding.RuleID] = binding
+	}
+	seen := make(map[string]bool, len(overrides))
+	for _, override := range overrides {
+		if !stableID.MatchString(override.RuleID) || seen[override.RuleID] {
+			return fmt.Errorf("%w: invalid or duplicate RuleSet override %q", ErrInvalidRuleSet, override.RuleID)
+		}
+		seen[override.RuleID] = true
+		binding, ok := bindings[override.RuleID]
+		if !ok {
+			return fmt.Errorf("%w: override names unknown rule %q", ErrInvalidRuleSet, override.RuleID)
+		}
+		if override.Enabled == nil && len(override.Parameters) == 0 {
+			return fmt.Errorf("%w: empty override for rule %q", ErrInvalidRuleSet, override.RuleID)
+		}
+		allowed := allowedOverrideParameters(binding.DefinitionID)
+		for key, value := range override.Parameters {
+			if !allowed[key] {
+				return fmt.Errorf("%w: parameter %q cannot be overridden for rule %q", ErrInvalidRuleSet, key, override.RuleID)
+			}
+			parameters := cloneParameters(binding.Parameters)
+			if parameters == nil {
+				parameters = map[string]any{}
+			}
+			parameters[key] = cloneParameterValue(value)
+			if err := validateOverrideParameters(binding, parameters); err != nil {
+				return fmt.Errorf("%w: invalid override for rule %q: %v", ErrInvalidRuleSet, override.RuleID, err)
+			}
+		}
+	}
+	return nil
+}
+
+func allowedOverrideParameters(definitionID string) map[string]bool {
+	switch definitionID {
+	case "pattern":
+		return keySet("pattern")
+	case "consistency":
+		return keySet("preferred", "variants")
+	case "computed/word_count", "computed/character_count":
+		return keySet("minimum", "maximum")
+	default:
+		return map[string]bool{}
+	}
+}
+
+func validateOverrideParameters(binding RuleBinding, parameters map[string]any) error {
+	definition, ok := ruleDefinition(binding.DefinitionID)
+	if !ok {
+		return ErrInvalidRuleSet
+	}
+	if len(definition.AllowedTargetKinds) > 0 {
+		parameters["target_kind"] = binding.TargetKind
+		parameters["target_id"] = binding.TargetID
+	}
+	rule := Rule{ID: binding.RuleID, Kind: definition.Kind, Evaluator: definition.Evaluator, Severity: binding.Severity, Message: binding.Message, Parameters: parameters}
+	return validateRule(rule)
+}
+
 var builtInRuleDefinitions = []RuleDefinition{
 	{ID: "presence", Version: "1", Kind: "presence", AllowedTargetKinds: []string{"field", "chapter", "source", "review_item"}},
 	{ID: "pattern", Version: "1", Kind: "pattern", AllowedTargetKinds: []string{"field", "chapter"}},
@@ -306,24 +416,62 @@ func EvaluateBoundRuleSet(t Template, set RuleSet, scene string, input Evaluatio
 	if err != nil {
 		return nil, err
 	}
-	rules, err := CompileRuleSet(set)
+	if err := ValidateRuleBindingOverrides(set, t.RuleBindingOverrides); err != nil {
+		return nil, err
+	}
+	overrides := make(map[string]RuleBindingOverride, len(t.RuleBindingOverrides))
+	for _, override := range t.RuleBindingOverrides {
+		overrides[override.RuleID] = override
+	}
+	effectiveSet := cloneRuleSet(set)
+	for i := range effectiveSet.Bindings {
+		if override, ok := overrides[effectiveSet.Bindings[i].RuleID]; ok && override.Enabled != nil {
+			effectiveSet.Bindings[i].Enabled = *override.Enabled
+		}
+	}
+	// This is an ephemeral evaluator input, not a persisted RuleSet version.
+	// Applying project-level enable overrides changes the copied bindings, so
+	// it must not retain the immutable published hash during compilation.
+	effectiveSet.State = RuleSetDraft
+	effectiveSet.RulesetHash = ""
+	rules, err := CompileRuleSet(effectiveSet)
 	if err != nil {
 		return nil, err
 	}
 	activeRuleIDs := make(map[string]bool, len(set.Bindings))
 	for _, binding := range set.Bindings {
-		if binding.Enabled && slices.Contains(binding.TriggerScenes, scene) {
+		enabled := binding.Enabled
+		if override, ok := overrides[binding.RuleID]; ok && override.Enabled != nil {
+			enabled = *override.Enabled
+		}
+		if enabled && slices.Contains(binding.TriggerScenes, scene) {
 			activeRuleIDs[binding.RuleID] = true
 		}
 	}
 	definition := Clone(t)
-	definition.RuleSetSnapshot = nil // The compiled bindings below replace the snapshot for this evaluation only.
+	definition.RuleSetSnapshot = nil      // The compiled bindings below replace the snapshot for this evaluation only.
+	definition.RuleBindingOverrides = nil // Overrides were applied to the compiled bindings above.
 	for _, rule := range rules {
 		if activeRuleIDs[rule.ID] {
+			if override, ok := overrides[rule.ID]; ok {
+				for key, value := range override.Parameters {
+					rule.Parameters[key] = cloneParameterValue(value)
+				}
+				if err := validateRule(rule); err != nil {
+					return nil, fmt.Errorf("%w: invalid RuleSet override for %q: %v", ErrInvalidRuleSet, rule.ID, err)
+				}
+			}
 			definition.Rules = append(definition.Rules, rule)
 		}
 	}
-	return evaluateTemplate(definition, input, effectiveHash)
+	evaluations, err := evaluateTemplate(definition, input, effectiveHash)
+	if err == nil {
+		for i := range evaluations {
+			evaluations[i].RuleSetID = set.ID
+			evaluations[i].RuleSetVersion = set.Version
+		}
+	}
+	return evaluations, err
 }
 
 func validateRuleSetContent(set RuleSet) error {

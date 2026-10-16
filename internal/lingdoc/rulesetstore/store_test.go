@@ -81,6 +81,52 @@ func TestStorePersistsImmutableVersionsTransitionsAndAudit(t *testing.T) {
 	}
 }
 
+func TestRuleSetUseAuditPersistsAndReadsExactIdentity(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft("v-use-audit")
+	if err := store.CreateDraft(ctx, actor, draft); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.Publish(ctx, actor, draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "project-audit").Error; err != nil {
+		t.Fatal(err)
+	}
+	event := template.RuleSetUseAuditEvent{
+		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
+		ProjectID: "project-audit", Action: "preflight", RuleSetID: published.ID,
+		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
+		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		TemplateCopyID: "copy-1", TemplateCopyVersion: 2, ProjectVersion: 7, ResourceID: "snapshot-1", Outcome: "blocked",
+		CreatedAt: time.Now().UTC()}
+	if err := store.RecordRuleSetUse(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.ListRuleSetUseAudits(ctx, actor, event.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].RuleSetID != published.ID || events[0].RuleSetVersion != published.Version ||
+		events[0].RuleSetHash != published.RulesetHash || events[0].EffectiveRulesetHash != event.EffectiveRulesetHash ||
+		events[0].TemplateCopyVersion != 2 || events[0].ResourceID != "snapshot-1" || events[0].Outcome != "blocked" {
+		t.Fatalf("use audit readback lost its exact identity: %+v", events)
+	}
+	bad := event
+	bad.RuleSetHash = "client-fabricated"
+	if err := store.RecordRuleSetUse(ctx, bad); !errors.Is(err, ErrInvalidRuleSetUseAudit) {
+		t.Fatalf("hash mismatch error = %v, want ErrInvalidRuleSetUseAudit", err)
+	}
+	events, err = store.ListRuleSetUseAudits(ctx, actor, event.ProjectID)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("failed audit must not leave a partial record: len=%d err=%v", len(events), err)
+	}
+}
+
 func TestGetVersionForBindingReadsPublishedVersionOnCallerTransaction(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
@@ -319,11 +365,21 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 	if err := db.Exec("INSERT INTO tenants (id) VALUES (1), (2)").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
 	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000036_lingdoc_rule_sets.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(string(migration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	usageMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000038_lingdoc_ruleset_use_audits.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(usageMigration)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if withAudit {

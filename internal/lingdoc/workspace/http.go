@@ -293,12 +293,12 @@ func (h *Handler) createProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.CreateProject(c.Request.Context(), actor, key, input)
+	result, err := h.write.CreateProjectResult(c.Request.Context(), actor, key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusCreated, result.Project, result.Replayed)
 }
 
 func (h *Handler) getProject(c *gin.Context) {
@@ -327,12 +327,14 @@ func (h *Handler) saveSpec(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.SaveSpec(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.SaveSpecResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	// SaveSpec's established wire contract is 200; status selection stays
+	// in this transport adapter rather than crossing the application seam.
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) activateProject(c *gin.Context) {
@@ -348,12 +350,12 @@ func (h *Handler) activateProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.ActivateProject(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.ActivateProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) listDraftCandidates(c *gin.Context) {
@@ -382,12 +384,12 @@ func (h *Handler) createDraftCandidate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.CreateDraftCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.CreateDraftCandidateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusCreated, result.Candidate, result.Replayed)
 }
 
 func (h *Handler) listAuditEvents(c *gin.Context) {
@@ -473,12 +475,12 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.ChangeTemplateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) getTemplateCopy(c *gin.Context) {
@@ -529,12 +531,12 @@ func (h *Handler) saveTemplateCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.SaveTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) bindTemplateCopyRuleSet(c *gin.Context) {
@@ -550,12 +552,12 @@ func (h *Handler) bindTemplateCopyRuleSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.BindTemplateCopyRuleSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.BindTemplateCopyRuleSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) discardProject(c *gin.Context) {
@@ -573,12 +575,12 @@ func (h *Handler) discardProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.DiscardProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	result, err := h.write.DiscardProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) restoreProject(c *gin.Context) {
@@ -596,12 +598,12 @@ func (h *Handler) restoreProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.RestoreProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	result, err := h.write.RestoreProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) requestOwnerTransfer(c *gin.Context) {
@@ -621,20 +623,23 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	var data json.RawMessage
-	var status int
-	var replay bool
-	var err error
 	if input.NewOwnerUserID != "" {
-		data, status, replay, err = h.write.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+		result, err := h.write.TransferOwnerResult(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.Project, result.Replayed)
+		return
 	} else {
-		data, status, replay, err = h.write.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
-	}
-	if err != nil {
-		sendError(c, err)
+		result, err := h.write.RequestOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusCreated, result.Transfer, result.Replayed)
 		return
 	}
-	sendOK(c, status, data, replay)
 }
 
 func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
@@ -646,12 +651,12 @@ func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, status, replay, err := h.write.AcceptOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+	result, err := h.write.AcceptOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Transfer, result.Replayed)
 }
 
 func (h *Handler) saveMembers(c *gin.Context) {
@@ -667,12 +672,12 @@ func (h *Handler) saveMembers(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.SaveMembersResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
 }
 
 func (h *Handler) listChapters(c *gin.Context) {
@@ -771,13 +776,13 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.SaveChapter(c.Request.Context(), actor,
+	result, err := h.write.SaveChapterResult(c.Request.Context(), actor,
 		c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusCreated, result.Chapter, result.Replayed)
 }
 
 func (h *Handler) getWorkingCopy(c *gin.Context) {
@@ -861,12 +866,12 @@ func (h *Handler) saveWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.SaveWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.write.SaveWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.WorkingCopy, result.Replayed)
 }
 
 func (h *Handler) commitWorkingCopy(c *gin.Context) {
@@ -882,12 +887,12 @@ func (h *Handler) commitWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.CommitWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.write.CommitWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusCreated, result.Version, result.Replayed)
 }
 
 func (h *Handler) listChapterVersions(c *gin.Context) {
@@ -916,12 +921,12 @@ func (h *Handler) restoreWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.RestoreWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.write.RestoreWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.WorkingCopy, result.Replayed)
 }
 
 func (h *Handler) accessStatus(c *gin.Context) {
@@ -976,12 +981,12 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.write.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusCreated, result.ChangeSet, result.Replayed)
 }
 
 func (h *Handler) applyChangeSet(c *gin.Context) {
@@ -993,19 +998,12 @@ func (h *Handler) applyChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, status, replay, err := h.write.ApplyChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	result, err := h.write.ApplyChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	if status == http.StatusConflict {
-		// The service commits the stale marker before returning its conflict
-		// status, so the caller can GET the ChangeSet and inspect the durable
-		// stale state. Keep the write endpoint on the workspace error envelope.
-		sendError(c, ErrVersionConflict)
-		return
-	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.ChangeSet, result.Replayed)
 }
 
 func (h *Handler) rejectChangeSet(c *gin.Context) {
@@ -1017,12 +1015,12 @@ func (h *Handler) rejectChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, status, replay, err := h.write.RejectChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	result, err := h.write.RejectChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
-	sendOK(c, status, data, replay)
+	sendOK(c, http.StatusOK, result.ChangeSet, result.Replayed)
 }
 
 func (h *Handler) getSourceContext(c *gin.Context) {

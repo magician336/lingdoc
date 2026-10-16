@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -32,7 +32,8 @@ type DeliveryReleaseService struct {
 	freezes      delivery.FreezeRecorder
 	sources      candidateadoption.SourcePolicy
 	policy       AccessPolicy
-	dispositions ValidationIssueDispositionCore
+	dispositions ValidationIssueDispositionApplication
+	useAuditor   lingdoctemplate.RuleSetUseAuditRecorder
 }
 
 // NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
@@ -51,17 +52,26 @@ func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, b
 
 // NewDeliveryReleaseServiceWithDispositions wires both current-source
 // authorization and persisted issue dispositions into the release service.
-func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
+func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
 	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, nil)
 }
 
 // NewDeliveryReleaseServiceWithPolicy uses the shared application policy for
 // all release reads and currentness checks.
-func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
+func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
 	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, policy)
 }
 
-func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore, policy AccessPolicy) *DeliveryReleaseService {
+// WithRuleSetUseAuditor makes governed Check/Preflight usage records a
+// fail-closed part of the application contract.
+func (s *DeliveryReleaseService) WithRuleSetUseAuditor(auditor lingdoctemplate.RuleSetUseAuditRecorder) *DeliveryReleaseService {
+	if s != nil {
+		s.useAuditor = auditor
+	}
+	return s
+}
+
+func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication, policy AccessPolicy) *DeliveryReleaseService {
 	if inputs == nil || inputs.Reader == nil || builder == nil || store == nil {
 		return nil
 	}
@@ -89,6 +99,9 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 	if err := s.attachIssueDispositions(ctx, actorID, projectID, &result); err != nil {
 		return delivery.CheckResult{}, err
 	}
+	if err := s.recordRuleSetUse(ctx, actorID, input, "preflight", "", string(result.Status)); err != nil {
+		return delivery.CheckResult{}, err
+	}
 	return result, nil
 }
 
@@ -102,7 +115,14 @@ func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, pro
 	if err != nil {
 		return delivery.TemplateCheckResult{}, err
 	}
-	return delivery.EvaluateTemplate(input)
+	result, err := delivery.EvaluateTemplate(input)
+	if err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	if err := s.recordRuleSetUse(ctx, actorID, input, "check", "", string(result.Status)); err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	return result, nil
 }
 
 // Prepare 冻结一份快照并落存，返回它是不是这次动作的重放。key 是这次用户动作的
@@ -151,11 +171,36 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	if err := s.attachIssueDispositions(ctx, actorID, projectID, &snapshot.Check); err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
-	recorded, replayed, err := s.freezes.RecordFreeze(snapshot, attempt, requestHash)
+	useEvent, governed, err := ruleSetUseEvent(ctx, actorID, input, "release_snapshot", snapshot.ID, string(snapshot.Check.Status))
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	var recorded delivery.ReleaseSnapshot
+	var replayed bool
+	if governed {
+		audited, ok := s.freezes.(delivery.RuleSetUseFreezeRecorder)
+		if !ok {
+			return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidState
+		}
+		recorded, replayed, err = audited.RecordFreezeWithRuleSetUse(snapshot, attempt, requestHash, useEvent)
+	} else {
+		recorded, replayed, err = s.freezes.RecordFreeze(snapshot, attempt, requestHash)
+	}
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
 	return recorded, replayed, nil
+}
+
+func (s *DeliveryReleaseService) recordRuleSetUse(ctx context.Context, actorID string, input delivery.DeliveryInput, action, resourceID, outcome string) error {
+	event, governed, err := ruleSetUseEvent(ctx, actorID, input, action, resourceID, outcome)
+	if err != nil || !governed {
+		return err
+	}
+	if s == nil || s.useAuditor == nil {
+		return candidateadoption.ErrInvalidState
+	}
+	return s.useAuditor.RecordRuleSetUse(ctx, event)
 }
 
 // SetIssueDisposition reevaluates the current issue at the caller's expected
@@ -170,17 +215,13 @@ func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorI
 		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidRequest
 	}
 	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
-	replayedBody, _, replayed, found, err := s.dispositions.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key,
+	replayedResult, err := s.dispositions.ReplayValidationIssueDispositionResult(ctx, actor, projectID, issueID, key,
 		request.Action, request.Reason, request.ExpectedProjectVersion)
 	if err != nil {
-		return ValidationIssueDisposition{}, replayed, err
+		return ValidationIssueDisposition{}, replayedResult.Replayed, err
 	}
-	if found {
-		var replayedDisposition ValidationIssueDisposition
-		if err := json.Unmarshal(replayedBody, &replayedDisposition); err != nil {
-			return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
-		}
-		return replayedDisposition, replayed, nil
+	if replayedResult.Found {
+		return replayedResult.Disposition, replayedResult.Replayed, nil
 	}
 	result, err := s.Check(ctx, actorID, projectID, request.ExpectedProjectVersion)
 	if err != nil {
@@ -200,15 +241,11 @@ func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorI
 	binding := ValidationIssueBinding{IssueID: current.ID, RuleID: current.RuleID, RulesetHash: current.RulesetHash,
 		Severity: current.Severity, TargetID: current.TargetID, TargetVersion: cloneIssueVersion(current.TargetVersion), ProjectVersion: projectVersion}
 	input := ValidationIssueDispositionInput{ExpectedProjectVersion: projectVersion, ValidationIssueBinding: binding, Action: request.Action, Reason: request.Reason}
-	raw, _, replayed, err := s.dispositions.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	dispositionResult, err := s.dispositions.RecordValidationIssueDispositionResult(ctx, actor, projectID, key, input)
 	if err != nil {
-		return ValidationIssueDisposition{}, replayed, err
+		return ValidationIssueDisposition{}, dispositionResult.Replayed, err
 	}
-	var disposition ValidationIssueDisposition
-	if err := json.Unmarshal(raw, &disposition); err != nil {
-		return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
-	}
-	return disposition, replayed, nil
+	return dispositionResult.Disposition, dispositionResult.Replayed, nil
 }
 
 func (s *DeliveryReleaseService) attachIssueDispositions(ctx context.Context, actorID, projectID string, result *delivery.CheckResult) error {
@@ -436,7 +473,7 @@ func (s *DeliveryReleaseService) authorize(ctx context.Context, actorID, project
 		if caller.UserID == "" {
 			caller.UserID = actorID
 		}
-		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, "contributor")
+		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, "read")
 	}
 	if s.inputs == nil || s.inputs.Authorizer == nil {
 		return candidateadoption.ErrInvalidState

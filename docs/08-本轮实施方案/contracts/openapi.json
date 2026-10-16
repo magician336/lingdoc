@@ -12852,6 +12852,8 @@
               "type": "string"
             }
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
+          "ruleset_binding_overrides": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBindingOverride"}},
           "ruleset_hash": {
             "type": "string"
           },
@@ -12920,7 +12922,8 @@
           "expected_project_version": {"type": "integer", "minimum": 1},
           "expected_template_copy_version": {"type": "integer", "minimum": 1},
           "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64},
-          "ruleset_version": {"type": "string", "minLength": 1, "maxLength": 64}
+          "ruleset_version": {"type": "string", "minLength": 1, "maxLength": 64},
+          "overrides": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBindingOverride"}}
         },
         "required": ["expected_project_version", "expected_template_copy_version", "ruleset_id", "ruleset_version"],
         "additionalProperties": false
@@ -13036,6 +13039,7 @@
           "status": {"type": "string", "enum": ["draft", "bound", "superseded", "discarded"]},
           "content_hash": {"type": "string", "minLength": 1},
           "ruleset_hash": {"type": "string", "minLength": 1},
+          "template_version_ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "definition": {"$ref": "#/components/schemas/Template"},
           "created_by": {"type": "string"},
           "created_at": {"type": "string", "format": "date-time"}
@@ -13580,6 +13584,7 @@
             "type": "string",
             "minLength": 1
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "ruleset_hash": {
             "type": "string"
           },
@@ -13674,6 +13679,7 @@
           "ruleset_hash": {
             "type": "string"
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "status": {
             "type": "string",
             "enum": [
@@ -13704,6 +13710,7 @@
           "rule_id": {"type": "string", "minLength": 1},
           "target_ref": {"type": "string", "minLength": 1},
           "target_version": {"type": "string", "minLength": 1},
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "ruleset_hash": {"type": "string", "minLength": 1},
           "status": {"type": "string", "enum": ["PASS", "ISSUE", "UNKNOWN", "NOT_APPLICABLE"]},
           "severity": {"type": "string", "enum": ["blocking", "warning", "info"]},
@@ -13722,6 +13729,7 @@
           "template_copy_version": {"type": "integer", "minimum": 0},
           "content_hash": {"type": "string"},
           "ruleset_hash": {"type": "string"},
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "status": {"type": "string", "enum": ["passed", "blocked", "not_evaluated"]},
           "evaluations": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateRuleEvaluation"}}
         },
@@ -13795,6 +13803,7 @@
           "snapshot_digest": {
             "type": "string"
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "check": {
             "$ref": "#/components/schemas/CheckResult"
           },
@@ -13852,6 +13861,7 @@
             "type": "string",
             "minLength": 1
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "status": {
             "type": "string",
             "enum": [
@@ -14591,6 +14601,26 @@
           "owner": {"type": "string", "minLength": 1}
         },
         "required": ["rule_id", "definition_id", "definition_version", "origin", "severity", "trigger_scenes", "enabled", "owner"],
+        "additionalProperties": false
+      },
+      "RuleSetReference": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "version": {"type": "string", "minLength": 1, "maxLength": 64},
+          "ruleset_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "required": ["ruleset_id", "version", "ruleset_hash"],
+        "additionalProperties": false
+      },
+      "RuleBindingOverride": {
+        "type": "object",
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "enabled": {"type": "boolean"},
+          "parameters": {"type": "object", "additionalProperties": true}
+        },
+        "required": ["rule_id"],
         "additionalProperties": false
       },
       "RuleSet": {

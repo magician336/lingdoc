@@ -76,12 +76,30 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000115_lingdoc_rule_sets.up.sql"))
-	if err != nil {
-		t.Fatal(err)
+	// These three existing tables are extended by the production migrations
+	// under test. Keep only the columns needed by their ALTER statements and FK.
+	for _, statement := range []string{
+		`CREATE TABLE lingdoc_projects (id VARCHAR(64) PRIMARY KEY, tenant_id BIGINT NOT NULL)`,
+		`CREATE TABLE lingdoc_project_template_copies (id VARCHAR(64) PRIMARY KEY)`,
+		`CREATE TABLE lingdoc_export_artifacts (id VARCHAR(64) PRIMARY KEY, project_id VARCHAR(64) NOT NULL, snapshot_id VARCHAR(64) NOT NULL)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := db.Exec(string(migration)).Error; err != nil {
-		t.Fatal(err)
+	for _, name := range []string{
+		"000115_lingdoc_rule_sets.up.sql",
+		"000116_lingdoc_ruleset_export_reference.up.sql",
+		"000117_lingdoc_ruleset_use_audits.up.sql",
+		"000118_lingdoc_template_version_ruleset_ref.up.sql",
+	} {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec(string(migration)).Error; err != nil {
+			t.Fatalf("apply PostgreSQL migration %s: %v", name, err)
+		}
 	}
 
 	store := NewStore(db, testAuthorizer{allow: true})
@@ -129,5 +147,35 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	}
 	if !strings.Contains(audit.Details, draft.ID) || !strings.Contains(audit.Details, draft.Version) {
 		t.Fatalf("PostgreSQL audit details lost the full identity: %s", audit.Details)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_projects (id, tenant_id) VALUES (?, ?)", "project-pg-ruleset", actor.TenantID).Error; err != nil {
+		t.Fatal(err)
+	}
+	event := template.RuleSetUseAuditEvent{
+		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
+		ProjectID: "project-pg-ruleset", Action: "preflight", RuleSetID: published.ID,
+		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
+		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		TemplateCopyID: "copy-pg-ruleset", TemplateCopyVersion: 2, ProjectVersion: 7,
+		ResourceID: "snapshot-pg-ruleset", Outcome: "passed", CreatedAt: time.Now().UTC(),
+	}
+	if err := store.RecordRuleSetUse(context.Background(), event); err != nil {
+		t.Fatalf("record PostgreSQL RuleSet-use audit: %v", err)
+	}
+	readBack, err := store.ListRuleSetUseAudits(context.Background(), actor, event.ProjectID)
+	if err != nil || len(readBack) != 1 || readBack[0].RuleSetID != published.ID ||
+		readBack[0].RuleSetVersion != published.Version || readBack[0].RuleSetHash != published.RulesetHash ||
+		readBack[0].EffectiveRulesetHash != event.EffectiveRulesetHash || readBack[0].ResourceID != event.ResourceID {
+		t.Fatalf("PostgreSQL RuleSet-use audit readback = %+v, err=%v", readBack, err)
+	}
+	for _, tableColumn := range [][2]string{
+		{"lingdoc_export_artifacts", "ruleset_ref_json"},
+		{"lingdoc_project_template_copies", "ruleset_ref_json"},
+		{"lingdoc_ruleset_use_audits", "ruleset_hash"},
+	} {
+		var count int64
+		if err := db.Raw("SELECT count(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = ?", schema, tableColumn[0], tableColumn[1]).Scan(&count).Error; err != nil || count != 1 {
+			t.Fatalf("PostgreSQL migration column %s.%s count=%d err=%v", tableColumn[0], tableColumn[1], count, err)
+		}
 	}
 }
