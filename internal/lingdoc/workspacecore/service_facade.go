@@ -21,12 +21,14 @@ import (
 )
 
 // Repository owns atomic commit/rollback and database isolation. Callbacks see
-// only domain values. ReadOnly gives a repeatable snapshot; RetryLocks allows
-// bounded retries of rolled-back spec transactions, never partial writes.
+// only domain values. ReadOnly and RepeatableRead request a stable snapshot;
+// RepeatableRead allows audited reads to append their authorization event.
+// RetryLocks allows bounded retries of rolled-back spec transactions, never
+// partial writes.
 type Repository interface {
 	Transaction(context.Context, TransactionOptions, func(Transaction) error) error
 }
-type TransactionOptions struct{ ReadOnly, RetryLocks bool }
+type TransactionOptions struct{ ReadOnly, RetryLocks, RepeatableRead bool }
 
 // Transaction is a storage port, not a second application service. Conditional
 // writes return ErrVersionConflict unless the expected state alone changes.
@@ -558,7 +560,7 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 	// this transaction. Keep the decision and audit on one transaction, but do
 	// not mark it read-only: PostgreSQL correctly rejects writes in a read-only
 	// transaction even when SQLite permits them.
-	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
+	return s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
 		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 		return err
@@ -568,7 +570,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	var result Project
 	// GetProject also records the authorization decision in the same
 	// transaction, so PostgreSQL requires a writable transaction here.
-	err := s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) (err error) {
+	err := s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
 		_ = s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
