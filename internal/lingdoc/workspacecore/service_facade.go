@@ -1649,11 +1649,13 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 // CreateChangeSetResult exposes the assessed change set without transport
 // fields.
 func (s *Service) CreateChangeSetResult(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
-	raw, _, replayed, err := s.CreateChangeSet(ctx, actor, projectID, key, input)
+	changeSet, replayed, err := adaptMutationResult[ChangeSet](func() (json.RawMessage, int, bool, error) {
+		return s.CreateChangeSet(ctx, actor, projectID, key, input)
+	}, "change set mutation result")
 	if err != nil {
 		return ChangeSetMutationResult{}, err
 	}
-	return decodeChangeSetMutationResult(raw, replayed)
+	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
 
 func buildTemplateUpgradeImpact(current *ProjectTemplateCopy, target lingdoctemplate.Template, preview TemplateMigrationPreview, chapterIDs []string, chapters []Chapter) TemplateUpgradeImpact {
@@ -1896,17 +1898,23 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 
 // ApplyChangeSetResult exposes the applied change set without transport fields.
 func (s *Service) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	raw, status, replayed, err := s.ApplyChangeSet(ctx, actor, projectID, changeSetID, key)
+	changeSet, replayed, err := adaptMutationResult[ChangeSet](func() (json.RawMessage, int, bool, error) {
+		raw, status, replayed, err := s.ApplyChangeSet(ctx, actor, projectID, changeSetID, key)
+		if err != nil {
+			return raw, status, replayed, err
+		}
+		if status == 409 {
+			// A stale ChangeSet is durably marked before the legacy operation
+			// returns its conflict status. Preserve that domain error at the typed
+			// seam so the HTTP adapter emits the established 409 envelope.
+			return raw, status, replayed, ErrVersionConflict
+		}
+		return raw, status, replayed, nil
+	}, "change set mutation result")
 	if err != nil {
 		return ChangeSetMutationResult{}, err
 	}
-	if status == 409 {
-		// A stale ChangeSet is durably marked before the legacy operation
-		// returns its conflict status. Preserve that domain error at the typed
-		// seam so the HTTP adapter emits the established 409 envelope.
-		return ChangeSetMutationResult{}, ErrVersionConflict
-	}
-	return decodeChangeSetMutationResult(raw, replayed)
+	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
 
 // RejectChangeSet records the current owner's decision not to apply an
@@ -1954,11 +1962,13 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 // RejectChangeSetResult exposes the rejected change set without transport
 // fields.
 func (s *Service) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	raw, _, replayed, err := s.RejectChangeSet(ctx, actor, projectID, changeSetID, key)
+	changeSet, replayed, err := adaptMutationResult[ChangeSet](func() (json.RawMessage, int, bool, error) {
+		return s.RejectChangeSet(ctx, actor, projectID, changeSetID, key)
+	}, "change set mutation result")
 	if err != nil {
 		return ChangeSetMutationResult{}, err
 	}
-	return decodeChangeSetMutationResult(raw, replayed)
+	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
 
 func validSpecFieldMetadata(input SpecFieldInput) bool {
@@ -2016,11 +2026,13 @@ func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, project
 
 // CreateDraftCandidateResult exposes the candidate without transport fields.
 func (s *Service) CreateDraftCandidateResult(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
-	raw, _, replayed, err := s.CreateDraftCandidate(ctx, actor, projectID, key, input)
+	candidate, replayed, err := adaptMutationResult[DraftCandidate](func() (json.RawMessage, int, bool, error) {
+		return s.CreateDraftCandidate(ctx, actor, projectID, key, input)
+	}, "draft candidate result")
 	if err != nil {
 		return DraftCandidateMutationResult{}, err
 	}
-	return decodeDraftCandidateMutationResult(raw, replayed)
+	return DraftCandidateMutationResult{Candidate: candidate, Replayed: replayed}, nil
 }
 
 func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
@@ -2334,11 +2346,13 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 // RequestOwnerTransferResult exposes the transfer request without transport
 // fields. The HTTP adapter retains the established 201 status.
 func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (OwnerTransferResult, error) {
-	raw, _, replayed, err := s.RequestOwnerTransfer(ctx, actor, projectID, key, input)
+	transfer, replayed, err := adaptMutationResult[OwnerTransfer](func() (json.RawMessage, int, bool, error) {
+		return s.RequestOwnerTransfer(ctx, actor, projectID, key, input)
+	}, "owner transfer result")
 	if err != nil {
 		return OwnerTransferResult{}, err
 	}
-	return decodeOwnerTransferResult(raw, replayed)
+	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
 }
 
 func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
@@ -2395,11 +2409,13 @@ func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectI
 // AcceptOwnerTransferResult exposes the accepted transfer without transport
 // fields.
 func (s *Service) AcceptOwnerTransferResult(ctx context.Context, actor Actor, projectID, transferID, key string) (OwnerTransferResult, error) {
-	raw, _, replayed, err := s.AcceptOwnerTransfer(ctx, actor, projectID, transferID, key)
+	transfer, replayed, err := adaptMutationResult[OwnerTransfer](func() (json.RawMessage, int, bool, error) {
+		return s.AcceptOwnerTransfer(ctx, actor, projectID, transferID, key)
+	}, "owner transfer result")
 	if err != nil {
 		return OwnerTransferResult{}, err
 	}
-	return decodeOwnerTransferResult(raw, replayed)
+	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
 }
 
 func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
@@ -2823,11 +2839,13 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 
 // SaveChapterResult exposes the saved chapter without transport fields.
 func (s *Service) SaveChapterResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (ChapterMutationResult, error) {
-	raw, _, replayed, err := s.SaveChapter(ctx, actor, projectID, chapterID, key, input)
+	chapter, replayed, err := adaptMutationResult[Chapter](func() (json.RawMessage, int, bool, error) {
+		return s.SaveChapter(ctx, actor, projectID, chapterID, key, input)
+	}, "chapter mutation result")
 	if err != nil {
 		return ChapterMutationResult{}, err
 	}
-	return decodeChapterMutationResult(raw, replayed)
+	return ChapterMutationResult{Chapter: chapter, Replayed: replayed}, nil
 }
 
 func normalizeCitationUsages(values []CitationUsage, sourceIDs []string) ([]CitationUsage, error) {
