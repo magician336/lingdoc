@@ -55,6 +55,21 @@ type workspaceSourcePolicy struct{ handler *SourceRuntime }
 // 装配处把 SourcePolicy 交给核心域（core_alias.go 的 NewService）；读侧的逐项状态
 // 通过同一个 Reviewer 获取，不依赖某个具体适配器的类型形状。
 var _ SourcePolicy = workspaceSourcePolicy{}
+var _ sourcepolicy.Reviewer = workspaceSourcePolicy{}
+
+// Review exposes the shared per-source verdicts to delivery adapters. The
+// adapter owns only context and representation conversion; source access,
+// revocation and coordinate checks remain in sourceRevalidator.
+func (p workspaceSourcePolicy) Review(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]sourcepolicy.Verdict, error) {
+	if len(sourceIDs) == 0 {
+		return nil, nil
+	}
+	reviewer := p.reviewer()
+	if reviewer == nil {
+		return nil, candidateadoption.ErrDependencyUnavailable
+	}
+	return reviewer.Review(ctx, projectID, actor, sourceIDs)
+}
 
 func (p workspaceSourcePolicy) Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
 	// 复用产出侧那一个 nil 守卫，不在这里再抄一遍判据：依赖齐备与否只该有一处定义。
@@ -137,6 +152,38 @@ func sourceReviewError(verdicts []sourcepolicy.Verdict) error {
 	return nil
 }
 
+// reviewSourceIDs is the delivery-facing adapter for the shared reviewer. It
+// maps the per-source verdicts into the existing all-or-nothing error contract;
+// it does not recreate source authorization or currentness rules.
+func reviewSourceIDs(ctx context.Context, projectID, actorID string, reviewer sourcepolicy.Reviewer, sourceIDs []string) error {
+	if len(sourceIDs) == 0 {
+		return nil
+	}
+	if reviewer == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	checked, actor, ok := recheckContext(ctx, actorID)
+	if !ok || strings.TrimSpace(projectID) == "" {
+		return candidateadoption.ErrSourceAccessDenied
+	}
+	verdicts, err := reviewer.Review(checked, projectID, actor, sourceIDs)
+	if err != nil {
+		return err
+	}
+	return sourceReviewError(verdicts)
+}
+
+// legacySourcePolicyReview is the explicit compatibility adapter for callers
+// that have not yet been handed the shared Reviewer. It keeps the old
+// all-or-nothing representation at the boundary; production paths use
+// reviewSourceIDs above.
+func legacySourcePolicyReview(ctx context.Context, projectID, actorID string, policy candidateadoption.SourcePolicy, sourceIDs []string) error {
+	if policy == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	return policy.Validate(ctx, projectID, actorID, sourceIDs)
+}
+
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
 // 它只被那几个带 nil 守卫的装配入口调用。
 func (h *SourceRuntime) sourceRevalidator() sourcepolicy.Reviewer {
@@ -157,6 +204,16 @@ type candidateAdoptionSourcePolicy struct {
 // 装配处靠类型断言才能把复核接给确认服务（candidate_adoption_http.go:26），而断言失败是
 // 静默的——把「静默少一层校验」变成「编译不过」。
 var _ candidateadoption.ConfirmationSourcePolicy = (*candidateAdoptionSourcePolicy)(nil)
+
+// Review exposes the shared verdict seam to candidate adoption. Validate and
+// ValidateCurrent below remain compatibility adapters for callers that only
+// need an all-or-nothing answer.
+func (p *candidateAdoptionSourcePolicy) Review(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]sourcepolicy.Verdict, error) {
+	if p == nil || p.reviewer == nil {
+		return nil, candidateadoption.ErrDependencyUnavailable
+	}
+	return p.reviewer.Review(ctx, projectID, actor, sourceIDs)
+}
 
 // Validate 是 T11 的采纳前复核：只回答这批引用还能不能用。
 func (p *candidateAdoptionSourcePolicy) Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
