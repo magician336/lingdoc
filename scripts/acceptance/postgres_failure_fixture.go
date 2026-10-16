@@ -327,4 +327,3 @@ func dropFixture(admin *sql.DB, name, user, marker string) error {
 	}
 	return os.Remove(marker)
 }
-
