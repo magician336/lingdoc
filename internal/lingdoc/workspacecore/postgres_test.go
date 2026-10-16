@@ -61,7 +61,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		"000112_lingdoc_working_copies.up.sql",
 		"000113_lingdoc_selected_rewrites.up.sql",
 		"000114_lingdoc_project_template_copies.up.sql",
-		"000115_lingdoc_satisfied_change_sets.up.sql",
+		"000117_lingdoc_satisfied_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
@@ -204,7 +204,10 @@ func TestPostgresSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec(string(oldMigration)).Error; err != nil {
+	fullWorkflowSchema := strings.Replace(string(oldMigration),
+		"CHECK (status IN ('assessed', 'applied', 'rejected', 'stale'))",
+		"CHECK (status IN ('draft', 'assessed', 'applied', 'rejected', 'stale', 'stabilized'))", 1)
+	if err := db.Exec(fullWorkflowSchema).Error; err != nil {
 		t.Fatalf("create pre-upgrade schema: %v", err)
 	}
 	if err := db.Exec(`INSERT INTO lingdoc_change_sets
@@ -212,7 +215,14 @@ func TestPostgresSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
 		VALUES ('stale-1', 'project-1', 'owner', 'legacy proposal', 'stale', 4, 3)`).Error; err != nil {
 		t.Fatal(err)
 	}
-	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000115_lingdoc_satisfied_change_sets.up.sql"))
+	for _, status := range []string{"draft", "stabilized"} {
+		if err := db.Exec(`INSERT INTO lingdoc_change_sets
+			(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
+			VALUES (?, 'project-1', 'owner', 'full workflow history', ?, 4, 3)`, status+"-1", status).Error; err != nil {
+			t.Fatalf("insert %s status: %v", status, err)
+		}
+	}
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000117_lingdoc_satisfied_change_sets.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,6 +232,10 @@ func TestPostgresSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
 	var status, reason string
 	if err := db.Raw("SELECT status, reason FROM lingdoc_change_sets WHERE id = 'stale-1'").Row().Scan(&status, &reason); err != nil || status != "stale" || reason != "legacy proposal" {
 		t.Fatalf("legacy row read-back: status=%q reason=%q err=%v", status, reason, err)
+	}
+	var fullWorkflowCount int64
+	if err := db.Raw("SELECT COUNT(*) FROM lingdoc_change_sets WHERE status IN ('draft', 'stale', 'stabilized')").Row().Scan(&fullWorkflowCount); err != nil || fullWorkflowCount != 3 {
+		t.Fatalf("full workflow statuses were not preserved: count=%d err=%v", fullWorkflowCount, err)
 	}
 	if err := db.Exec(`INSERT INTO lingdoc_change_sets
 		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)

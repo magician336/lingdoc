@@ -14,7 +14,7 @@ CREATE TABLE lingdoc_change_sets_previous (
     project_id TEXT NOT NULL REFERENCES lingdoc_projects(id) ON DELETE CASCADE,
     created_by TEXT NOT NULL,
     reason TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('assessed', 'applied', 'rejected', 'stale')),
+    status TEXT NOT NULL CHECK (status IN ('draft', 'assessed', 'applied', 'rejected', 'stale', 'stabilized')),
     base_context_revision INTEGER NOT NULL,
     target_context_revision INTEGER,
     base_spec_revision INTEGER NOT NULL,

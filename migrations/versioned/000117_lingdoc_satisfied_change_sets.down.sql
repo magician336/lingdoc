@@ -11,4 +11,4 @@ ALTER TABLE lingdoc_change_sets
 
 ALTER TABLE lingdoc_change_sets
     ADD CONSTRAINT lingdoc_change_sets_status_check
-    CHECK (status IN ('assessed', 'applied', 'rejected', 'stale'));
+    CHECK (status IN ('draft', 'assessed', 'applied', 'rejected', 'stale', 'stabilized'));

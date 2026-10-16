@@ -95,6 +95,7 @@ PCC（Project Change Coordination）只协调变更、依赖、任务和稳定�
 | `STABILIZED` | 目标 revision 的当前检查全部通过 | 创建冻结交付快照、导出 |
 | `REJECTED` | Owner 明确拒绝，正式项目不变 | 只读历史 |
 | `STALE` | 基线被其他变更推进，不能再评估或应用 | 复制 delta 到当前基线后重新创建 |
+| `SATISFIED` | stale 变更重评估时所有拟议目标值已存在 | 只读历史，不产生 revision 或影响任务 |
 
 `STALE` 是基线失效标记，不是成功推进状态。`APPROVED` 不是独立状态；批准和应用在同一次条件写入中完成，避免出现“已批准但没有应用”的假象。
 
