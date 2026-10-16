@@ -20,8 +20,8 @@ func NewGORMRepository(db *gorm.DB) *GORMRepository { return &GORMRepository{db:
 func (r *GORMRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
 	run := func(ctx context.Context) error {
 		var sqlOptions *sql.TxOptions
-		if options.ReadOnly {
-			sqlOptions = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+		if options.ReadOnly || options.RepeatableRead {
+			sqlOptions = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: options.ReadOnly}
 		}
 		return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return fn(gormTransaction{tx}) }, sqlOptions)
 	}
