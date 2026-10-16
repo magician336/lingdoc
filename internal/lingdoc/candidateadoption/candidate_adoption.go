@@ -170,7 +170,7 @@ func (s *CandidateAdoptionService) validateSources(ctx context.Context, projectI
 	if len(sourceIDs) == 0 {
 		return nil
 	}
-	if s.Sources == nil {
+	if s.Reviewer == nil && s.Sources == nil {
 		return ErrSourceAccessDenied
 	}
 	if s.Reviewer != nil {
@@ -200,7 +200,17 @@ func (s *CandidateAdoptionService) validateSources(ctx context.Context, projectI
 		}
 		return nil
 	}
-	return s.Sources.Validate(ctx, projectID, actorID, sourceIDs)
+	return legacySourcePolicyValidate(ctx, projectID, actorID, s.Sources, sourceIDs)
+}
+
+// legacySourcePolicyValidate is the explicit compatibility adapter for
+// callers that have not yet supplied the shared Reviewer. Production
+// composition injects Reviewer and never takes this path.
+func legacySourcePolicyValidate(ctx context.Context, projectID, actorID string, policy SourcePolicy, sourceIDs []string) error {
+	if policy == nil {
+		return ErrSourceAccessDenied
+	}
+	return policy.Validate(ctx, projectID, actorID, sourceIDs)
 }
 
 // NewCandidateAdoptionService wires the fixed SQLite implementation. Callers that already
