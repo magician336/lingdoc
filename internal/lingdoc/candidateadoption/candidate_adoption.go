@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 )
 
 var (
@@ -126,9 +128,10 @@ type CandidateReader interface {
 	GetCandidate(context.Context, string, string) (Candidate, error)
 }
 
-type SourcePolicy interface {
-	Validate(context.Context, string, string, []string) error
-}
+// SourcePolicy is the shared source-review compatibility seam. The source
+// verdict itself lives in sourcepolicy.Reviewer; candidate adoption only
+// needs to map a batch verdict to its existing all-or-nothing errors.
+type SourcePolicy = sourcepolicy.SourcePolicy
 
 type Authorizer interface {
 	// capability is "read" for candidate/chapter reads and "write" for adoption.
