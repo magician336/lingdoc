@@ -325,6 +325,41 @@ func TestServiceSourceRecheckBeforeReplayWithNonSQLStorage(t *testing.T) {
 	}
 }
 
+func TestSaveSpecResultIsTransportNeutralAndReplays(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.SpecRevision = 0
+	repository.project.ProjectVersion = 1
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "subject"}}
+
+	first, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", input)
+	if err != nil {
+		t.Fatalf("typed save: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first typed save reported a replay")
+	}
+	if first.Project.ID != "p" || first.Project.SpecRevision != 1 || first.Project.ProjectVersion != 2 || first.Project.Spec["research_subject"] != "subject" {
+		t.Fatalf("typed save result = %+v, want the saved project", first.Project)
+	}
+
+	replayed, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", input)
+	if err != nil {
+		t.Fatalf("typed replay: %v", err)
+	}
+	if !replayed.Replayed || replayed.Project.ID != first.Project.ID || replayed.Project.SpecRevision != first.Project.SpecRevision || replayed.Project.ProjectVersion != first.Project.ProjectVersion || !maps.Equal(replayed.Project.Spec, first.Project.Spec) {
+		t.Fatalf("typed replay = %+v, want the original project with replay=true", replayed)
+	}
+
+	changed := input
+	changed.Fields = map[string]string{"research_subject": "different"}
+	if _, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("typed different-body replay error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
 // discards both domain writes and replay records on any callback error.
 type stateRepository struct {

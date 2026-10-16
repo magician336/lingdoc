@@ -95,8 +95,16 @@ type WorkspaceWriteApplication interface {
 	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 }
 
+// SaveSpecApplication is the transport-neutral pilot port for the spec write.
+// It deliberately carries only the saved domain value and replay state. The
+// HTTP handler adapts this result to the established status/envelope contract.
+type SaveSpecApplication interface {
+	SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error)
+}
+
 var _ WorkspaceReadApplication = (*Service)(nil)
 var _ WorkspaceWriteApplication = (*Service)(nil)
+var _ SaveSpecApplication = (*Service)(nil)
 
 // SourceApplicationService owns the source and asset use cases consumed by
 // workspace HTTP routes. Keeping these operations behind one port prevents
