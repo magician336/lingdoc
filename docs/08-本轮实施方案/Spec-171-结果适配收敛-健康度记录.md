@@ -54,3 +54,12 @@
 按协议权重计算，复评为 `H_L 80/100`、`F_R 78/100`，相对实现前基线 `ΔH_L +14`、`ΔF_R +9`，置信度 A（本地自动化证据；CI/真实服务证据待 PR 阶段补充）。
 
 未覆盖风险：审计详情读取和 source-sensitive operation 的内部 JSON 解码属于持久化结构/来源校验路径，不是 typed mutation result adapter；本票未改变其错误契约。CI 尚未刷新，不能据此声明 PR 已通过远端门禁。
+
+## 代码审查修复后复核
+
+- 阶段：代码审查修复完成、PR 合并前
+- Git SHA：`cfa1d1e`
+- 复核结论：所有 typed result 在调用错误或 payload 解码错误时保留 `Replayed`；ApplyRewrite、CommitWorkingCopy、RestoreWorkingCopy 的 source-sensitive replay 前置解码复用共享 decoder，并仅将损坏的已存 replay payload 标记为 replay error。
+- 验证：Windows 与 WSL2 Ubuntu 24.04 均通过 `go test ./internal/lingdoc/workspacecore ./internal/lingdoc/workspace -count=1 -timeout 180s`；`git diff --check` 与 CodeGraph sync 通过。
+- 复评：`H_L 82/100`、`F_R 79/100`，相对实现完成复评为 `ΔH_L +2`、`ΔF_R +1`，置信度 A（本地 Windows/WSL2 自动化证据；远程 CI 尚待 PR 门禁）。
+- 剩余风险：未运行完整仓库 `go test ./...`、真实服务验收和远程 CI；这些不阻塞本 Spec 的 workspace typed mutation 回归结论。
