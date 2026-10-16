@@ -15,6 +15,7 @@ import (
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -35,7 +36,6 @@ func NewGenerationApplication(
 ) *generation.Service {
 	db := workspace.db
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: db})
-	sourcePolicy := evidence.NewSourcePolicy(workspace.gateway, origins, workspace.bindings)
 	inputs := &generationInputResolver{
 		workspace: workspace.service,
 		gateway:   workspace.gateway,
@@ -48,7 +48,7 @@ func NewGenerationApplication(
 	acceptanceBudget, acceptanceConfigErr := loadGenerationAcceptanceBudget()
 	service := generation.NewServiceWithAccessPolicy(
 		accessPolicy, inputs,
-		generationSourceValidator{policy: sourcePolicy},
+		generationSourceValidator{reviewer: workspace.sourceRevalidator()},
 		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	return service
@@ -228,24 +228,32 @@ func generationSourceFromEvidence(source evidence.Source) generation.Source {
 	}
 }
 
-type generationSourceValidator struct{ policy evidence.SourcePolicy }
+type generationSourceValidator struct{ reviewer sourcepolicy.Reviewer }
 
 func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context, actor generation.Actor, projectID string, sources []generation.Source) error {
-	if v.policy == nil || len(sources) == 0 {
+	if v.reviewer == nil || len(sources) == 0 {
 		return generation.ErrSourceAccessDenied
 	}
-	checked, err := v.policy.Validate(evidenceContext(ctx, actor), projectID, evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, evidenceSources(sources))
+	ids := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if source.ID == "" {
+			return generation.ErrSourceAccessDenied
+		}
+		ids = append(ids, source.ID)
+	}
+	verdicts, err := v.reviewer.Review(evidenceContext(ctx, actor), projectID, evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, ids)
 	if err != nil {
 		return err
 	}
-	if checked == nil {
+	if len(verdicts) != len(ids) {
 		return generation.ErrSourceAccessDenied
 	}
-	if len(checked.Unusable) != 0 || len(checked.Usable) != len(sources) {
-		for _, unusable := range checked.Unusable {
-			if unusable.AssetDeny == "" {
-				return generation.ErrSourceStale
-			}
+	for _, verdict := range verdicts {
+		if verdict.Usable {
+			continue
+		}
+		if verdict.AssetDeny == "" {
+			return generation.ErrSourceStale
 		}
 		return generation.ErrSourceAccessDenied
 	}

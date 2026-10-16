@@ -12,10 +12,13 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var (
@@ -150,6 +153,7 @@ type CandidateAdoptionService struct {
 	Workspace   WorkspaceReader
 	Candidates  CandidateReader
 	Sources     SourcePolicy
+	Reviewer    sourcepolicy.Reviewer
 	Authorizer  Authorizer
 	Writer      WorkspaceWriter
 	Idempotency IdempotencyReader
@@ -169,14 +173,45 @@ func (s *CandidateAdoptionService) validateSources(ctx context.Context, projectI
 	if s.Sources == nil {
 		return ErrSourceAccessDenied
 	}
+	if s.Reviewer != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok || tenantID == 0 || strings.TrimSpace(actorID) == "" {
+			return ErrSourceAccessDenied
+		}
+		checked := types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleViewer})
+		checked = types.WithExecutionTenant(checked, tenantID)
+		verdicts, err := s.Reviewer.Review(checked, projectID, evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}, sourceIDs)
+		if err != nil {
+			return err
+		}
+		stale := false
+		for _, verdict := range verdicts {
+			if verdict.Usable {
+				continue
+			}
+			if verdict.AssetDeny == "" {
+				stale = true
+			} else {
+				return ErrSourceAccessDenied
+			}
+		}
+		if stale || len(verdicts) != len(sourceIDs) {
+			return ErrStaleInput
+		}
+		return nil
+	}
 	return s.Sources.Validate(ctx, projectID, actorID, sourceIDs)
 }
 
 // NewCandidateAdoptionService wires the fixed SQLite implementation. Callers that already
 // have real T08/T09/T10 adapters can construct CandidateAdoptionService directly instead.
 func NewCandidateAdoptionService(store *SQLiteCandidateAdoptionStore, sources SourcePolicy, authorizer Authorizer) *CandidateAdoptionService {
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := any(sources).(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
 	return &CandidateAdoptionService{
-		Workspace: store, Candidates: store, Sources: sources, Authorizer: authorizer,
+		Workspace: store, Candidates: store, Sources: sources, Reviewer: reviewer, Authorizer: authorizer,
 		Writer: store, Idempotency: store,
 	}
 }
