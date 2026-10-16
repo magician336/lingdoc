@@ -823,6 +823,15 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
+	if typed, ok := h.write.(SaveChapterApplication); ok {
+		result, err := typed.SaveChapterResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusCreated, result.Chapter, result.Replayed)
+		return
+	}
 	data, status, replay, err := h.write.SaveChapter(c.Request.Context(), actor,
 		c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
@@ -913,6 +922,15 @@ func (h *Handler) saveWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
+	if typed, ok := h.write.(SaveWorkingCopyApplication); ok {
+		result, err := typed.SaveWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.WorkingCopy, result.Replayed)
+		return
+	}
 	data, status, replay, err := h.write.SaveWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
@@ -932,6 +950,15 @@ func (h *Handler) commitWorkingCopy(c *gin.Context) {
 	}
 	var input CommitWorkingCopyInput
 	if !decodeBody(c, &input) {
+		return
+	}
+	if typed, ok := h.write.(CommitWorkingCopyApplication); ok {
+		result, err := typed.CommitWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusCreated, result.Version, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.CommitWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
@@ -966,6 +993,15 @@ func (h *Handler) restoreWorkingCopy(c *gin.Context) {
 	}
 	var input RestoreWorkingCopyInput
 	if !decodeBody(c, &input) {
+		return
+	}
+	if typed, ok := h.write.(RestoreWorkingCopyApplication); ok {
+		result, err := typed.RestoreWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.WorkingCopy, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.RestoreWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
@@ -1028,6 +1064,15 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
+	if typed, ok := h.write.(CreateChangeSetApplication); ok {
+		result, err := typed.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusCreated, result.ChangeSet, result.Replayed)
+		return
+	}
 	data, status, replay, err := h.write.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
@@ -1043,6 +1088,15 @@ func (h *Handler) applyChangeSet(c *gin.Context) {
 	}
 	key, ok := idempotencyKey(c)
 	if !ok {
+		return
+	}
+	if typed, ok := h.write.(ApplyChangeSetApplication); ok {
+		result, err := typed.ApplyChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.ChangeSet, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.ApplyChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
@@ -1067,6 +1121,15 @@ func (h *Handler) rejectChangeSet(c *gin.Context) {
 	}
 	key, ok := idempotencyKey(c)
 	if !ok {
+		return
+	}
+	if typed, ok := h.write.(RejectChangeSetApplication); ok {
+		result, err := typed.RejectChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.ChangeSet, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.RejectChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)

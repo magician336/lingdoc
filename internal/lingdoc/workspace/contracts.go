@@ -132,6 +132,38 @@ type AcceptOwnerTransferApplication interface {
 	AcceptOwnerTransferResult(context.Context, Actor, string, string, string) (OwnerTransferResult, error)
 }
 
+type SaveChapterApplication interface {
+	SaveChapterResult(context.Context, Actor, string, string, string, SaveChapterInput) (ChapterMutationResult, error)
+}
+
+type SaveWorkingCopyApplication interface {
+	SaveWorkingCopyResult(context.Context, Actor, string, string, string, SaveWorkingCopyInput) (WorkingCopyMutationResult, error)
+}
+
+type ApplyRewriteApplication interface {
+	ApplyRewriteResult(context.Context, Actor, string, string, string, core.SaveWorkingCopyInput, []core.ReviewItem) (WorkingCopyMutationResult, error)
+}
+
+type CommitWorkingCopyApplication interface {
+	CommitWorkingCopyResult(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (CommittedChapterMutationResult, error)
+}
+
+type RestoreWorkingCopyApplication interface {
+	RestoreWorkingCopyResult(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (WorkingCopyMutationResult, error)
+}
+
+type CreateChangeSetApplication interface {
+	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
+}
+
+type ApplyChangeSetApplication interface {
+	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
+}
+
+type RejectChangeSetApplication interface {
+	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
+}
+
 var _ WorkspaceReadApplication = (*Service)(nil)
 var _ WorkspaceWriteApplication = (*Service)(nil)
 var _ SaveSpecApplication = (*Service)(nil)
@@ -142,6 +174,14 @@ var _ SaveMembersApplication = (*Service)(nil)
 var _ TransferOwnerApplication = (*Service)(nil)
 var _ RequestOwnerTransferApplication = (*Service)(nil)
 var _ AcceptOwnerTransferApplication = (*Service)(nil)
+var _ SaveChapterApplication = (*Service)(nil)
+var _ SaveWorkingCopyApplication = (*Service)(nil)
+var _ ApplyRewriteApplication = (*Service)(nil)
+var _ CommitWorkingCopyApplication = (*Service)(nil)
+var _ RestoreWorkingCopyApplication = (*Service)(nil)
+var _ CreateChangeSetApplication = (*Service)(nil)
+var _ ApplyChangeSetApplication = (*Service)(nil)
+var _ RejectChangeSetApplication = (*Service)(nil)
 
 // SourceApplicationService owns the source and asset use cases consumed by
 // workspace HTTP routes. Keeping these operations behind one port prevents

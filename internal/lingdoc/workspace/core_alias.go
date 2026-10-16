@@ -59,6 +59,12 @@ type SaveSpecResult = core.SaveSpecResult
 type CreateProjectResult = core.CreateProjectResult
 type ProjectMutationResult = core.ProjectMutationResult
 type OwnerTransferResult = core.OwnerTransferResult
+type ChapterMutationResult = core.ChapterMutationResult
+type WorkingCopyMutationResult = core.WorkingCopyMutationResult
+type CommittedChapterMutationResult = core.CommittedChapterMutationResult
+type ChangeSetMutationResult = core.ChangeSetMutationResult
+type ValidationIssueDispositionResult = core.ValidationIssueDispositionResult
+type ValidationIssueDispositionReplayResult = core.ValidationIssueDispositionReplayResult
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

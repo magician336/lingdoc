@@ -170,17 +170,28 @@ func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorI
 		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidRequest
 	}
 	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
-	replayedBody, _, replayed, found, err := s.dispositions.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key,
-		request.Action, request.Reason, request.ExpectedProjectVersion)
-	if err != nil {
-		return ValidationIssueDisposition{}, replayed, err
-	}
-	if found {
-		var replayedDisposition ValidationIssueDisposition
-		if err := json.Unmarshal(replayedBody, &replayedDisposition); err != nil {
-			return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
+	if typed, ok := s.dispositions.(ValidationIssueDispositionApplication); ok {
+		replayedResult, err := typed.ReplayValidationIssueDispositionResult(ctx, actor, projectID, issueID, key,
+			request.Action, request.Reason, request.ExpectedProjectVersion)
+		if err != nil {
+			return ValidationIssueDisposition{}, replayedResult.Replayed, err
 		}
-		return replayedDisposition, replayed, nil
+		if replayedResult.Found {
+			return replayedResult.Disposition, replayedResult.Replayed, nil
+		}
+	} else {
+		replayedBody, _, replayed, found, err := s.dispositions.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key,
+			request.Action, request.Reason, request.ExpectedProjectVersion)
+		if err != nil {
+			return ValidationIssueDisposition{}, replayed, err
+		}
+		if found {
+			var replayedDisposition ValidationIssueDisposition
+			if err := json.Unmarshal(replayedBody, &replayedDisposition); err != nil {
+				return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
+			}
+			return replayedDisposition, replayed, nil
+		}
 	}
 	result, err := s.Check(ctx, actorID, projectID, request.ExpectedProjectVersion)
 	if err != nil {
@@ -200,6 +211,10 @@ func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorI
 	binding := ValidationIssueBinding{IssueID: current.ID, RuleID: current.RuleID, RulesetHash: current.RulesetHash,
 		Severity: current.Severity, TargetID: current.TargetID, TargetVersion: cloneIssueVersion(current.TargetVersion), ProjectVersion: projectVersion}
 	input := ValidationIssueDispositionInput{ExpectedProjectVersion: projectVersion, ValidationIssueBinding: binding, Action: request.Action, Reason: request.Reason}
+	if typed, ok := s.dispositions.(ValidationIssueDispositionApplication); ok {
+		result, err := typed.RecordValidationIssueDispositionResult(ctx, actor, projectID, key, input)
+		return result.Disposition, result.Replayed, err
+	}
 	raw, _, replayed, err := s.dispositions.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
 	if err != nil {
 		return ValidationIssueDisposition{}, replayed, err

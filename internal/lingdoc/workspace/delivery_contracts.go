@@ -33,6 +33,13 @@ type ValidationIssueDispositionCore interface {
 	ValidationIssueDispositions(context.Context, Actor, string, []ValidationIssueBinding) (map[string]ValidationIssueDisposition, error)
 }
 
+// ValidationIssueDispositionApplication is the transport-neutral companion
+// port. The legacy core interface remains available while adapters migrate.
+type ValidationIssueDispositionApplication interface {
+	ReplayValidationIssueDispositionResult(context.Context, Actor, string, string, string, string, string, int64) (ValidationIssueDispositionReplayResult, error)
+	RecordValidationIssueDispositionResult(context.Context, Actor, string, string, ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error)
+}
+
 type IssueDispositionRequest struct {
 	ExpectedProjectVersion int64  `json:"expected_project_version"`
 	Action                 string `json:"action"`
@@ -58,3 +65,4 @@ type ExportApplication interface {
 var _ ReleaseApplication = (*DeliveryReleaseService)(nil)
 var _ TemplateCheckApplication = (*DeliveryReleaseService)(nil)
 var _ ExportApplication = (*DeliveryExportService)(nil)
+var _ ValidationIssueDispositionApplication = (*Service)(nil)

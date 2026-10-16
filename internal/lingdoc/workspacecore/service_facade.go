@@ -121,6 +121,37 @@ type OwnerTransferResult struct {
 	Replayed bool
 }
 
+type ChapterMutationResult struct {
+	Chapter  Chapter
+	Replayed bool
+}
+
+type WorkingCopyMutationResult struct {
+	WorkingCopy WorkingCopy
+	Replayed    bool
+}
+
+type CommittedChapterMutationResult struct {
+	Version  CommittedChapterVersion
+	Replayed bool
+}
+
+type ChangeSetMutationResult struct {
+	ChangeSet ChangeSet
+	Replayed  bool
+}
+
+type ValidationIssueDispositionResult struct {
+	Disposition ValidationIssueDisposition
+	Replayed    bool
+}
+
+type ValidationIssueDispositionReplayResult struct {
+	Disposition ValidationIssueDisposition
+	Replayed    bool
+	Found       bool
+}
+
 func decodeProjectMutationResult(raw json.RawMessage, replayed bool) (ProjectMutationResult, error) {
 	var project Project
 	if err := json.Unmarshal(raw, &project); err != nil {
@@ -135,6 +166,38 @@ func decodeOwnerTransferResult(raw json.RawMessage, replayed bool) (OwnerTransfe
 		return OwnerTransferResult{}, fmt.Errorf("decode owner transfer result: %w", err)
 	}
 	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
+}
+
+func decodeChapterMutationResult(raw json.RawMessage, replayed bool) (ChapterMutationResult, error) {
+	var chapter Chapter
+	if err := json.Unmarshal(raw, &chapter); err != nil {
+		return ChapterMutationResult{}, fmt.Errorf("decode chapter mutation result: %w", err)
+	}
+	return ChapterMutationResult{Chapter: chapter, Replayed: replayed}, nil
+}
+
+func decodeWorkingCopyMutationResult(raw json.RawMessage, replayed bool) (WorkingCopyMutationResult, error) {
+	var workingCopy WorkingCopy
+	if err := json.Unmarshal(raw, &workingCopy); err != nil {
+		return WorkingCopyMutationResult{}, fmt.Errorf("decode working copy mutation result: %w", err)
+	}
+	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
+}
+
+func decodeCommittedChapterMutationResult(raw json.RawMessage, replayed bool) (CommittedChapterMutationResult, error) {
+	var version CommittedChapterVersion
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return CommittedChapterMutationResult{}, fmt.Errorf("decode committed chapter result: %w", err)
+	}
+	return CommittedChapterMutationResult{Version: version, Replayed: replayed}, nil
+}
+
+func decodeChangeSetMutationResult(raw json.RawMessage, replayed bool) (ChangeSetMutationResult, error) {
+	var changeSet ChangeSet
+	if err := json.Unmarshal(raw, &changeSet); err != nil {
+		return ChangeSetMutationResult{}, fmt.Errorf("decode change set mutation result: %w", err)
+	}
+	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
 
 // Service owns validation, permissions, version expectations and replay order.
@@ -1526,6 +1589,16 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 	})
 }
 
+// CreateChangeSetResult exposes the assessed change set without transport
+// fields.
+func (s *Service) CreateChangeSetResult(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
+	raw, _, replayed, err := s.CreateChangeSet(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ChangeSetMutationResult{}, err
+	}
+	return decodeChangeSetMutationResult(raw, replayed)
+}
+
 func buildTemplateUpgradeImpact(current *ProjectTemplateCopy, target lingdoctemplate.Template, preview TemplateMigrationPreview, chapterIDs []string, chapters []Chapter) TemplateUpgradeImpact {
 	impact := TemplateUpgradeImpact{
 		AffectedFieldIDs: []string{}, AffectedSectionIDs: []string{}, AffectedChapterIDs: append([]string{}, chapterIDs...),
@@ -1764,6 +1837,15 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 	})
 }
 
+// ApplyChangeSetResult exposes the applied change set without transport fields.
+func (s *Service) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	raw, _, replayed, err := s.ApplyChangeSet(ctx, actor, projectID, changeSetID, key)
+	if err != nil {
+		return ChangeSetMutationResult{}, err
+	}
+	return decodeChangeSetMutationResult(raw, replayed)
+}
+
 // RejectChangeSet records the current owner's decision not to apply an
 // assessed proposal. It intentionally shares the same operation/idempotency
 // boundary as apply so a lost response cannot create a second decision audit.
@@ -1804,6 +1886,16 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		}
 		return change, 200, nil
 	})
+}
+
+// RejectChangeSetResult exposes the rejected change set without transport
+// fields.
+func (s *Service) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	raw, _, replayed, err := s.RejectChangeSet(ctx, actor, projectID, changeSetID, key)
+	if err != nil {
+		return ChangeSetMutationResult{}, err
+	}
+	return decodeChangeSetMutationResult(raw, replayed)
 }
 
 func validSpecFieldMetadata(input SpecFieldInput) bool {
@@ -1950,6 +2042,20 @@ func (s *Service) ReplayValidationIssueDisposition(ctx context.Context, actor Ac
 	return previous.Body, previous.Status, true, true, nil
 }
 
+// ReplayValidationIssueDispositionResult returns the typed replay payload
+// while preserving the distinction between a missing and completed operation.
+func (s *Service) ReplayValidationIssueDispositionResult(ctx context.Context, actor Actor, projectID, issueID, key, action, reason string, expectedProjectVersion int64) (ValidationIssueDispositionReplayResult, error) {
+	raw, _, replayed, found, err := s.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key, action, reason, expectedProjectVersion)
+	if err != nil || !found {
+		return ValidationIssueDispositionReplayResult{Replayed: replayed, Found: found}, err
+	}
+	var disposition ValidationIssueDisposition
+	if err := json.Unmarshal(raw, &disposition); err != nil {
+		return ValidationIssueDispositionReplayResult{}, fmt.Errorf("decode replayed issue disposition: %w", err)
+	}
+	return ValidationIssueDispositionReplayResult{Disposition: disposition, Replayed: replayed, Found: true}, nil
+}
+
 // RecordValidationIssueDisposition appends an immutable, version-bound audit
 // event. It deliberately does not mutate the rule result or close a G3 impact
 // task; those gates continue to be evaluated independently.
@@ -2016,6 +2122,20 @@ func (s *Service) RecordValidationIssueDisposition(ctx context.Context, actor Ac
 		}
 		return disposition, 201, nil
 	})
+}
+
+// RecordValidationIssueDispositionResult exposes the recorded disposition
+// without transport fields.
+func (s *Service) RecordValidationIssueDispositionResult(ctx context.Context, actor Actor, projectID, key string, input ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error) {
+	raw, _, replayed, err := s.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ValidationIssueDispositionResult{}, err
+	}
+	var disposition ValidationIssueDisposition
+	if err := json.Unmarshal(raw, &disposition); err != nil {
+		return ValidationIssueDispositionResult{}, fmt.Errorf("decode issue disposition result: %w", err)
+	}
+	return ValidationIssueDispositionResult{Disposition: disposition, Replayed: replayed}, nil
 }
 
 // ValidationIssueDispositions returns only decisions whose complete binding
@@ -2618,6 +2738,15 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		}
 		return next, 201, nil
 	})
+}
+
+// SaveChapterResult exposes the saved chapter without transport fields.
+func (s *Service) SaveChapterResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (ChapterMutationResult, error) {
+	raw, _, replayed, err := s.SaveChapter(ctx, actor, projectID, chapterID, key, input)
+	if err != nil {
+		return ChapterMutationResult{}, err
+	}
+	return decodeChapterMutationResult(raw, replayed)
 }
 
 func normalizeCitationUsages(values []CitationUsage, sourceIDs []string) ([]CitationUsage, error) {

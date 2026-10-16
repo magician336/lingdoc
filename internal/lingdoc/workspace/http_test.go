@@ -106,6 +106,56 @@ func (s *projectManagementApplicationStub) AcceptOwnerTransferResult(context.Con
 	return s.transferResult, nil
 }
 
+type chapterMutationApplicationStub struct {
+	applicationServiceStub
+	chapterCalled      bool
+	workingCopyCalled  bool
+	commitCalled       bool
+	restoreCalled      bool
+	createChangeCalled bool
+	applyChangeCalled  bool
+	rejectChangeCalled bool
+	chapter            Chapter
+	workingCopy        WorkingCopy
+	committed          CommittedChapterVersion
+	changeSet          ChangeSet
+}
+
+func (s *chapterMutationApplicationStub) SaveChapterResult(context.Context, Actor, string, string, string, SaveChapterInput) (ChapterMutationResult, error) {
+	s.chapterCalled = true
+	return ChapterMutationResult{Chapter: s.chapter}, nil
+}
+
+func (s *chapterMutationApplicationStub) SaveWorkingCopyResult(context.Context, Actor, string, string, string, SaveWorkingCopyInput) (WorkingCopyMutationResult, error) {
+	s.workingCopyCalled = true
+	return WorkingCopyMutationResult{WorkingCopy: s.workingCopy}, nil
+}
+
+func (s *chapterMutationApplicationStub) CommitWorkingCopyResult(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (CommittedChapterMutationResult, error) {
+	s.commitCalled = true
+	return CommittedChapterMutationResult{Version: s.committed}, nil
+}
+
+func (s *chapterMutationApplicationStub) RestoreWorkingCopyResult(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (WorkingCopyMutationResult, error) {
+	s.restoreCalled = true
+	return WorkingCopyMutationResult{WorkingCopy: s.workingCopy}, nil
+}
+
+func (s *chapterMutationApplicationStub) CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error) {
+	s.createChangeCalled = true
+	return ChangeSetMutationResult{ChangeSet: s.changeSet}, nil
+}
+
+func (s *chapterMutationApplicationStub) ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error) {
+	s.applyChangeCalled = true
+	return ChangeSetMutationResult{ChangeSet: s.changeSet}, nil
+}
+
+func (s *chapterMutationApplicationStub) RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error) {
+	s.rejectChangeCalled = true
+	return ChangeSetMutationResult{ChangeSet: s.changeSet}, nil
+}
+
 type sourceApplicationServiceStub struct {
 	SourceApplicationService
 	actor     Actor
@@ -323,6 +373,50 @@ func TestHandlerMapsTransportNeutralProjectManagementResults(t *testing.T) {
 		{http.MethodPost, "/api/projects/project-1/owner-transfer", `{"expected_project_version":1,"new_owner_user_id":"member"}`, "typed-owner-transfer", http.StatusOK, func() bool { return service.transferCalled }},
 		{http.MethodPost, "/api/projects/project-1/owner-transfer", `{"expected_project_version":1,"to_user_id":"member"}`, "typed-owner-request", http.StatusCreated, func() bool { return service.requestCalled }},
 		{http.MethodPost, "/api/projects/project-1/owner-transfer/transfer-1/accept", ``, "typed-owner-accept", http.StatusOK, func() bool { return service.acceptCalled }},
+	}
+	for _, test := range requests {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)).WithContext(ctx)
+		request.Header.Set("Idempotency-Key", test.key)
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("%s %s status = %d, want %d; body=%s", test.method, test.path, response.Code, test.want, response.Body.String())
+		}
+		if !test.check() {
+			t.Fatalf("%s %s did not use its transport-neutral application port", test.method, test.path)
+		}
+	}
+}
+
+func TestHandlerMapsTransportNeutralChapterAndChangeSetResults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &chapterMutationApplicationStub{
+		chapter:     Chapter{ID: "chapter-1", ProjectID: "project-1"},
+		workingCopy: WorkingCopy{ProjectID: "project-1", ChapterID: "chapter-1", WorkingCopyRevision: 2},
+		committed:   CommittedChapterVersion{ChapterVersionID: "version-1"},
+		changeSet:   ChangeSet{ID: "change-1", ProjectID: "project-1", Status: "assessed"},
+	}
+	handler := NewHandler(HandlerDependencies{Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+
+	requests := []struct {
+		method string
+		path   string
+		body   string
+		key    string
+		want   int
+		check  func() bool
+	}{
+		{http.MethodPost, "/api/projects/project-1/chapters/chapter-1/versions", `{"expected_spec_revision":1,"body_markdown":"draft","source_ids":[]}`, "typed-chapter", http.StatusCreated, func() bool { return service.chapterCalled }},
+		{http.MethodPut, "/api/projects/project-1/chapters/chapter-1/working-copy", `{}`, "typed-working-copy", http.StatusOK, func() bool { return service.workingCopyCalled }},
+		{http.MethodPost, "/api/projects/project-1/chapters/chapter-1/working-copy/commit", `{}`, "typed-commit", http.StatusCreated, func() bool { return service.commitCalled }},
+		{http.MethodPost, "/api/projects/project-1/chapters/chapter-1/working-copy/restore", `{}`, "typed-restore", http.StatusOK, func() bool { return service.restoreCalled }},
+		{http.MethodPost, "/api/projects/project-1/change-sets", `{}`, "typed-change-create", http.StatusCreated, func() bool { return service.createChangeCalled }},
+		{http.MethodPost, "/api/projects/project-1/change-sets/change-1/apply", ``, "typed-change-apply", http.StatusOK, func() bool { return service.applyChangeCalled }},
+		{http.MethodPost, "/api/projects/project-1/change-sets/change-1/reject", ``, "typed-change-reject", http.StatusOK, func() bool { return service.rejectChangeCalled }},
 	}
 	for _, test := range requests {
 		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)).WithContext(ctx)
