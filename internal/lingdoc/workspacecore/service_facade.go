@@ -157,58 +157,88 @@ type ValidationIssueDispositionReplayResult struct {
 	Found       bool
 }
 
+// decodeMutationPayload centralizes the JSON boundary for typed mutation
+// results while keeping the domain label visible to callers. Persisted
+// operation bodies are transport-shaped bytes, so this is the only place
+// where these typed mutation results should decode them.
+func decodeMutationPayload[T any](raw json.RawMessage, label string) (T, error) {
+	var value T
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return value, fmt.Errorf("decode %s: %w", label, err)
+	}
+	return value, nil
+}
+
+// adaptMutationResult owns the repeated raw-operation to typed-result
+// conversion. The operation remains responsible for authorization,
+// idempotency, transactions, and replay ordering; this adapter only carries
+// the serialized value and replay bit across the ApplicationService seam.
+func adaptMutationResult[T any](invoke func() (json.RawMessage, int, bool, error), label string) (T, bool, error) {
+	raw, _, replayed, err := invoke()
+	if err != nil {
+		var zero T
+		return zero, false, err
+	}
+	value, err := decodeMutationPayload[T](raw, label)
+	if err != nil {
+		var zero T
+		return zero, replayed, err
+	}
+	return value, replayed, nil
+}
+
 func decodeProjectMutationResult(raw json.RawMessage, replayed bool) (ProjectMutationResult, error) {
-	var project Project
-	if err := json.Unmarshal(raw, &project); err != nil {
-		return ProjectMutationResult{}, fmt.Errorf("decode project mutation result: %w", err)
+	project, err := decodeMutationPayload[Project](raw, "project mutation result")
+	if err != nil {
+		return ProjectMutationResult{}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 
 func decodeOwnerTransferResult(raw json.RawMessage, replayed bool) (OwnerTransferResult, error) {
-	var transfer OwnerTransfer
-	if err := json.Unmarshal(raw, &transfer); err != nil {
-		return OwnerTransferResult{}, fmt.Errorf("decode owner transfer result: %w", err)
+	transfer, err := decodeMutationPayload[OwnerTransfer](raw, "owner transfer result")
+	if err != nil {
+		return OwnerTransferResult{}, err
 	}
 	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
 }
 
 func decodeChapterMutationResult(raw json.RawMessage, replayed bool) (ChapterMutationResult, error) {
-	var chapter Chapter
-	if err := json.Unmarshal(raw, &chapter); err != nil {
-		return ChapterMutationResult{}, fmt.Errorf("decode chapter mutation result: %w", err)
+	chapter, err := decodeMutationPayload[Chapter](raw, "chapter mutation result")
+	if err != nil {
+		return ChapterMutationResult{}, err
 	}
 	return ChapterMutationResult{Chapter: chapter, Replayed: replayed}, nil
 }
 
 func decodeWorkingCopyMutationResult(raw json.RawMessage, replayed bool) (WorkingCopyMutationResult, error) {
-	var workingCopy WorkingCopy
-	if err := json.Unmarshal(raw, &workingCopy); err != nil {
-		return WorkingCopyMutationResult{}, fmt.Errorf("decode working copy mutation result: %w", err)
+	workingCopy, err := decodeMutationPayload[WorkingCopy](raw, "working copy mutation result")
+	if err != nil {
+		return WorkingCopyMutationResult{}, err
 	}
 	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }
 
 func decodeCommittedChapterMutationResult(raw json.RawMessage, replayed bool) (CommittedChapterMutationResult, error) {
-	var version CommittedChapterVersion
-	if err := json.Unmarshal(raw, &version); err != nil {
-		return CommittedChapterMutationResult{}, fmt.Errorf("decode committed chapter result: %w", err)
+	version, err := decodeMutationPayload[CommittedChapterVersion](raw, "committed chapter result")
+	if err != nil {
+		return CommittedChapterMutationResult{}, err
 	}
 	return CommittedChapterMutationResult{Version: version, Replayed: replayed}, nil
 }
 
 func decodeChangeSetMutationResult(raw json.RawMessage, replayed bool) (ChangeSetMutationResult, error) {
-	var changeSet ChangeSet
-	if err := json.Unmarshal(raw, &changeSet); err != nil {
-		return ChangeSetMutationResult{}, fmt.Errorf("decode change set mutation result: %w", err)
+	changeSet, err := decodeMutationPayload[ChangeSet](raw, "change set mutation result")
+	if err != nil {
+		return ChangeSetMutationResult{}, err
 	}
 	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
 
 func decodeDraftCandidateMutationResult(raw json.RawMessage, replayed bool) (DraftCandidateMutationResult, error) {
-	var candidate DraftCandidate
-	if err := json.Unmarshal(raw, &candidate); err != nil {
-		return DraftCandidateMutationResult{}, fmt.Errorf("decode draft candidate result: %w", err)
+	candidate, err := decodeMutationPayload[DraftCandidate](raw, "draft candidate result")
+	if err != nil {
+		return DraftCandidateMutationResult{}, err
 	}
 	return DraftCandidateMutationResult{Candidate: candidate, Replayed: replayed}, nil
 }
@@ -1349,13 +1379,11 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 // CreateProjectResult exposes the project value and replay state without
 // leaking serialized response bytes or an HTTP status code to the caller.
 func (s *Service) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
-	raw, _, replayed, err := s.CreateProject(ctx, actor, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.CreateProject(ctx, actor, key, input)
+	}, "created project result")
 	if err != nil {
 		return CreateProjectResult{}, err
-	}
-	var project Project
-	if err := json.Unmarshal(raw, &project); err != nil {
-		return CreateProjectResult{}, fmt.Errorf("decode created project result: %w", err)
 	}
 	return CreateProjectResult{Project: project, Replayed: replayed}, nil
 }
@@ -1448,13 +1476,11 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 // a CLI or background task. Idempotency authorization and replay checks remain
 // owned by operation; this method is only the typed compatibility adapter.
 func (s *Service) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
-	raw, _, replayed, err := s.SaveSpec(ctx, actor, projectID, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.SaveSpec(ctx, actor, projectID, key, input)
+	}, "saved spec result")
 	if err != nil {
 		return SaveSpecResult{}, err
-	}
-	var project Project
-	if err := json.Unmarshal(raw, &project); err != nil {
-		return SaveSpecResult{}, fmt.Errorf("decode saved spec result: %w", err)
 	}
 	return SaveSpecResult{Project: project, Replayed: replayed}, nil
 }

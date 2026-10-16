@@ -2,10 +2,13 @@ package workspacecore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -389,6 +392,43 @@ func TestCreateProjectResultIsTransportNeutralAndReplays(t *testing.T) {
 	if _, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", changed); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("typed create different-body replay error = %v, want ErrIdempotencyConflict", err)
 	}
+}
+
+func TestTypedProjectMutationResultsReportDomainDecodeErrors(t *testing.T) {
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	t.Run("create project", func(t *testing.T) {
+		repository := fakeWorkspace()
+		input := CreateProjectInput{Name: "malformed replay", TemplateID: "template-demo", TemplateVersion: "1"}
+		key := "typed-create-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "createProject", Target: "projects", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).CreateProjectResult(ctx, actor, key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode created project result") {
+			t.Fatalf("typed create malformed replay error = %v, want domain decode label", err)
+		}
+	})
+
+	t.Run("save spec", func(t *testing.T) {
+		repository := fakeWorkspace()
+		repository.project.Status = "draft"
+		repository.project.SpecRevision = 0
+		input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "malformed replay"}}
+		key := "typed-spec-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "saveSpec", Target: "p", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).SaveSpecResult(ctx, actor, "p", key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode saved spec result") {
+			t.Fatalf("typed save malformed replay error = %v, want domain decode label", err)
+		}
+	})
+}
+
+func malformedOperationResult(input any) OperationResult {
+	encoded, _ := json.Marshal(input)
+	hash := sha256.Sum256(encoded)
+	return OperationResult{BodyHash: hex.EncodeToString(hash[:]), Body: json.RawMessage("{"), Status: 200}
 }
 
 func TestProjectMutationResultsPreserveMemberAndOwnerSemantics(t *testing.T) {
