@@ -88,7 +88,7 @@ func (s *Service) TransferOwnerResult(ctx context.Context, actor Actor, projectI
 		return s.TransferOwner(ctx, actor, projectID, key, input)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }

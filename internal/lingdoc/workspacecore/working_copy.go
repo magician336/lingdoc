@@ -189,7 +189,7 @@ func (s *Service) SaveWorkingCopyResult(ctx context.Context, actor Actor, projec
 		return s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
 	}, "working copy mutation result")
 	if err != nil {
-		return WorkingCopyMutationResult{}, err
+		return WorkingCopyMutationResult{Replayed: replayed}, err
 	}
 	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }
@@ -275,7 +275,7 @@ func (s *Service) ApplyRewriteResult(ctx context.Context, actor Actor, projectID
 		return s.ApplyRewrite(ctx, actor, projectID, chapterID, key, input, reviewItems)
 	}, "working copy mutation result")
 	if err != nil {
-		return WorkingCopyMutationResult{}, err
+		return WorkingCopyMutationResult{Replayed: replayed}, err
 	}
 	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }
@@ -344,7 +344,7 @@ func (s *Service) CommitWorkingCopyResult(ctx context.Context, actor Actor, proj
 		return s.CommitWorkingCopy(ctx, actor, projectID, chapterID, key, input)
 	}, "committed chapter result")
 	if err != nil {
-		return CommittedChapterMutationResult{}, err
+		return CommittedChapterMutationResult{Replayed: replayed}, err
 	}
 	return CommittedChapterMutationResult{Version: version, Replayed: replayed}, nil
 }
@@ -424,7 +424,7 @@ func (s *Service) RestoreWorkingCopyResult(ctx context.Context, actor Actor, pro
 		return s.RestoreWorkingCopy(ctx, actor, projectID, chapterID, key, input)
 	}, "working copy mutation result")
 	if err != nil {
-		return WorkingCopyMutationResult{}, err
+		return WorkingCopyMutationResult{Replayed: replayed}, err
 	}
 	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }
