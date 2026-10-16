@@ -56,6 +56,7 @@ type ValidationIssueBinding = core.ValidationIssueBinding
 type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
 type ValidationIssueDisposition = core.ValidationIssueDisposition
 type SaveSpecResult = core.SaveSpecResult
+type CreateProjectResult = core.CreateProjectResult
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

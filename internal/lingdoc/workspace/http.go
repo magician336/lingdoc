@@ -292,6 +292,15 @@ func (h *Handler) createProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
+	if typed, ok := h.write.(CreateProjectApplication); ok {
+		result, err := typed.CreateProjectResult(c.Request.Context(), actor, key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusCreated, result.Project, result.Replayed)
+		return
+	}
 	data, status, replay, err := h.write.CreateProject(c.Request.Context(), actor, key, input)
 	if err != nil {
 		sendError(c, err)

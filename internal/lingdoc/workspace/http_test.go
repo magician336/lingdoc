@@ -50,6 +50,20 @@ func (s *saveSpecApplicationStub) SaveSpecResult(_ context.Context, actor Actor,
 	return s.result, nil
 }
 
+type createProjectApplicationStub struct {
+	applicationServiceStub
+	called bool
+	actor  Actor
+	key    string
+	input  CreateProjectInput
+	result CreateProjectResult
+}
+
+func (s *createProjectApplicationStub) CreateProjectResult(_ context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
+	s.called, s.actor, s.key, s.input = true, actor, key, input
+	return s.result, nil
+}
+
 type sourceApplicationServiceStub struct {
 	SourceApplicationService
 	actor     Actor
@@ -203,6 +217,41 @@ func TestHandlerMapsTransportNeutralSaveSpecResult(t *testing.T) {
 	}
 	if body.Data.ID != "project-1" || body.Data.SpecRevision != 1 || !body.Meta.Replayed {
 		t.Fatalf("typed save response = %#v, want project and replay metadata", body)
+	}
+}
+
+func TestHandlerMapsTransportNeutralCreateProjectResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &createProjectApplicationStub{result: CreateProjectResult{
+		Project: Project{ID: "project-1", Name: "typed project", Status: "draft"},
+	}}
+	handler := NewHandler(HandlerDependencies{Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodPost, "/api/projects", strings.NewReader(`{"name":"typed project","template_id":"template-demo"}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "typed-project-key")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "owner-7", Role: types.TenantRoleViewer}) || service.key != "typed-project-key" || service.input.Name != "typed project" || service.input.TemplateID != "template-demo" {
+		t.Fatalf("typed create input = called:%v actor:%#v key=%q input=%#v", service.called, service.actor, service.key, service.input)
+	}
+	var body struct {
+		Data Project `json:"data"`
+		Meta struct {
+			Replayed bool `json:"replayed"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode typed create response: %v", err)
+	}
+	if body.Data.ID != "project-1" || body.Data.Name != "typed project" || body.Data.Status != "draft" || body.Meta.Replayed {
+		t.Fatalf("typed create response = %#v, want created project without replay", body)
 	}
 }
 
