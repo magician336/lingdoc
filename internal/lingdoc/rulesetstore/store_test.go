@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/driver/sqlite"
@@ -117,6 +118,73 @@ func TestGetVersionForBindingReadsPublishedVersionOnCallerTransaction(t *testing
 		return nil
 	}); err != nil {
 		t.Fatalf("GetVersionForBinding after withdrawal: %v", err)
+	}
+}
+
+func TestConcurrentRuleSetWithdrawWaitsForBindingTransaction(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft("v1")
+	if err := store.CreateDraft(ctx, actor, draft); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, actor, draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	bindTx := db.Begin()
+	if bindTx.Error != nil {
+		t.Fatal(bindTx.Error)
+	}
+	defer func() {
+		if bindTx.Statement != nil && bindTx.Statement.ConnPool != nil {
+			_ = bindTx.Rollback().Error
+		}
+	}()
+	set, err := store.GetVersionForBinding(ctx, bindTx, actor, draft.ID, draft.Version)
+	if err != nil || set.State != template.RuleSetPublished {
+		t.Fatalf("locked binding snapshot = %+v, error = %v", set, err)
+	}
+
+	started := make(chan struct{})
+	withdrawn := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := store.Withdraw(ctx, actor, draft.ID, draft.Version)
+		withdrawn <- err
+	}()
+	<-started
+	var earlyErr error
+	select {
+	case err := <-withdrawn:
+		if err == nil {
+			t.Fatal("withdraw committed before the binding transaction ended")
+		}
+		earlyErr = err // SQLite may fail fast with SQLITE_BUSY instead of waiting.
+	case <-time.After(150 * time.Millisecond):
+	}
+	if err := bindTx.Commit().Error; err != nil {
+		t.Fatal(err)
+	}
+	if earlyErr != nil {
+		if _, err := store.Withdraw(ctx, actor, draft.ID, draft.Version); err != nil {
+			t.Fatalf("retry withdraw after binding transaction: %v (initial lock result: %v)", err, earlyErr)
+		}
+	} else {
+		select {
+		case err := <-withdrawn:
+			if err != nil {
+				t.Fatalf("withdraw after binding transaction: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("withdraw did not resume after the binding transaction committed")
+		}
+	}
+	current, err := store.GetVersion(ctx, actor, draft.ID, draft.Version)
+	if err != nil || current.State != template.RuleSetWithdrawn {
+		t.Fatalf("RuleSet final state = %+v, error = %v; want withdrawn after the serialized bind", current, err)
 	}
 }
 

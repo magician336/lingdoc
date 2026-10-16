@@ -143,6 +143,19 @@ func (s *Store) GetVersionForBinding(ctx context.Context, tx *gorm.DB, actor Act
 	}
 	var result template.RuleSet
 	err := tx.WithContext(ctx).Transaction(func(bindingTx *gorm.DB) error {
+		// PostgreSQL honors SELECT FOR UPDATE below, but SQLite ignores row
+		// locking clauses. A no-op update obtains SQLite's write reservation so
+		// a concurrent withdraw/recall cannot commit between the state read and
+		// the project's bound snapshot write.
+		lock := bindingTx.Model(&ruleSetVersionRow{}).
+			Where("tenant_id = ? AND ruleset_id = ? AND version = ?", actor.TenantID, id, version).
+			UpdateColumn("state", gorm.Expr("state"))
+		if lock.Error != nil {
+			return lock.Error
+		}
+		if lock.RowsAffected == 0 {
+			return ErrRuleSetNotFound
+		}
 		var row ruleSetVersionRow
 		query := bindingTx.Clauses(clause.Locking{Strength: "UPDATE"})
 		if err := query.Where("tenant_id = ? AND ruleset_id = ? AND version = ?", actor.TenantID, id, version).First(&row).Error; err != nil {
