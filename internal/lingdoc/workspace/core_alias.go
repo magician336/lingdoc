@@ -63,6 +63,7 @@ type ChapterMutationResult = core.ChapterMutationResult
 type WorkingCopyMutationResult = core.WorkingCopyMutationResult
 type CommittedChapterMutationResult = core.CommittedChapterMutationResult
 type ChangeSetMutationResult = core.ChangeSetMutationResult
+type DraftCandidateMutationResult = core.DraftCandidateMutationResult
 type ValidationIssueDispositionResult = core.ValidationIssueDispositionResult
 type ValidationIssueDispositionReplayResult = core.ValidationIssueDispositionReplayResult
 
