@@ -554,7 +554,11 @@ func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error 
 	return nil
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
-	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+	// Authorization checks append their decision to the project audit log in
+	// this transaction. Keep the decision and audit on one transaction, but do
+	// not mark it read-only: PostgreSQL correctly rejects writes in a read-only
+	// transaction even when SQLite permits them.
+	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
 		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 		return err
@@ -562,7 +566,9 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
+	// GetProject also records the authorization decision in the same
+	// transaction, so PostgreSQL requires a writable transaction here.
+	err := s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
 		_ = s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
