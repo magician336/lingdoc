@@ -57,6 +57,8 @@ type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
 type ValidationIssueDisposition = core.ValidationIssueDisposition
 type SaveSpecResult = core.SaveSpecResult
 type CreateProjectResult = core.CreateProjectResult
+type ProjectMutationResult = core.ProjectMutationResult
+type OwnerTransferResult = core.OwnerTransferResult
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog
