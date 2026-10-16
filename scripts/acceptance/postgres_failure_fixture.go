@@ -198,6 +198,9 @@ func applyLingDocMigrations(dsn string) error {
 		return err
 	}
 	defer db.Close()
+	if _, err := db.ExecContext(context.Background(), "CREATE TABLE IF NOT EXISTS tenants (id BIGINT PRIMARY KEY)"); err != nil {
+		return fmt.Errorf("create base tenants table: %w", err)
+	}
 	for _, migration := range lingdocMigrations {
 		raw, err := os.ReadFile(filepath.Join("migrations", "versioned", migration))
 		if err != nil {
