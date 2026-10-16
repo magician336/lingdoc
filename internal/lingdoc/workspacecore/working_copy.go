@@ -185,11 +185,13 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 // SaveWorkingCopyResult exposes the updated working copy without transport
 // fields.
 func (s *Service) SaveWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput) (WorkingCopyMutationResult, error) {
-	raw, _, replayed, err := s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	workingCopy, replayed, err := adaptMutationResult[WorkingCopy](func() (json.RawMessage, int, bool, error) {
+		return s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	}, "working copy mutation result")
 	if err != nil {
 		return WorkingCopyMutationResult{}, err
 	}
-	return decodeWorkingCopyMutationResult(raw, replayed)
+	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }
 
 // ApplyRewrite replaces a selected range prepared by the rewrite application.
@@ -269,11 +271,13 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 // ApplyRewriteResult exposes the updated working copy without transport
 // fields.
 func (s *Service) ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput, reviewItems []ReviewItem) (WorkingCopyMutationResult, error) {
-	raw, _, replayed, err := s.ApplyRewrite(ctx, actor, projectID, chapterID, key, input, reviewItems)
+	workingCopy, replayed, err := adaptMutationResult[WorkingCopy](func() (json.RawMessage, int, bool, error) {
+		return s.ApplyRewrite(ctx, actor, projectID, chapterID, key, input, reviewItems)
+	}, "working copy mutation result")
 	if err != nil {
 		return WorkingCopyMutationResult{}, err
 	}
-	return decodeWorkingCopyMutationResult(raw, replayed)
+	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }
 
 func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (json.RawMessage, int, bool, error) {
@@ -336,11 +340,13 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 // CommitWorkingCopyResult exposes the committed chapter version without
 // transport fields.
 func (s *Service) CommitWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (CommittedChapterMutationResult, error) {
-	raw, _, replayed, err := s.CommitWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	version, replayed, err := adaptMutationResult[CommittedChapterVersion](func() (json.RawMessage, int, bool, error) {
+		return s.CommitWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	}, "committed chapter result")
 	if err != nil {
 		return CommittedChapterMutationResult{}, err
 	}
-	return decodeCommittedChapterMutationResult(raw, replayed)
+	return CommittedChapterMutationResult{Version: version, Replayed: replayed}, nil
 }
 
 func (s *Service) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
@@ -414,9 +420,11 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 // RestoreWorkingCopyResult exposes the restored working copy without
 // transport fields.
 func (s *Service) RestoreWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input RestoreWorkingCopyInput) (WorkingCopyMutationResult, error) {
-	raw, _, replayed, err := s.RestoreWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	workingCopy, replayed, err := adaptMutationResult[WorkingCopy](func() (json.RawMessage, int, bool, error) {
+		return s.RestoreWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	}, "working copy mutation result")
 	if err != nil {
 		return WorkingCopyMutationResult{}, err
 	}
-	return decodeWorkingCopyMutationResult(raw, replayed)
+	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
 }

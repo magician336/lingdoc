@@ -8,6 +8,81 @@ import (
 	"testing"
 )
 
+type workingCopyMutationApplication interface {
+	SaveWorkingCopyResult(context.Context, Actor, string, string, string, SaveWorkingCopyInput) (WorkingCopyMutationResult, error)
+	ApplyRewriteResult(context.Context, Actor, string, string, string, SaveWorkingCopyInput, []ReviewItem) (WorkingCopyMutationResult, error)
+	CommitWorkingCopyResult(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (CommittedChapterMutationResult, error)
+	RestoreWorkingCopyResult(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (WorkingCopyMutationResult, error)
+}
+
+func TestTypedWorkingCopyMutationsPreserveFieldsReplayAndErrors(t *testing.T) {
+	ctx := context.Background()
+	repository := fakeWorkspace()
+	var application workingCopyMutationApplication = NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	saveInput := SaveWorkingCopyInput{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1, BodyMarkdown: "first draft", SourceIDs: []string{}}
+	saved, err := application.SaveWorkingCopyResult(ctx, actor, "p", "c", "typed-save", saveInput)
+	if err != nil {
+		t.Fatalf("typed save: %v", err)
+	}
+	if saved.Replayed || saved.WorkingCopy.WorkingCopyRevision != 2 || saved.WorkingCopy.BodyMarkdown != saveInput.BodyMarkdown || len(saved.WorkingCopy.ReviewItems) != 1 {
+		t.Fatalf("typed save = %+v, want updated working copy with server review items", saved)
+	}
+	savedReplay, err := application.SaveWorkingCopyResult(ctx, actor, "p", "c", "typed-save", saveInput)
+	if err != nil || !savedReplay.Replayed || savedReplay.WorkingCopy.WorkingCopyRevision != saved.WorkingCopy.WorkingCopyRevision {
+		t.Fatalf("typed save replay = %+v, err=%v", savedReplay, err)
+	}
+
+	rewriteInput := SaveWorkingCopyInput{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 2, BodyMarkdown: "rewritten draft", SourceIDs: []string{}}
+	review := []ReviewItem{{ID: "rewrite-review", Statement: "verify rewrite", OriginCandidateID: "candidate-1"}}
+	applied, err := application.ApplyRewriteResult(ctx, actor, "p", "c", "typed-apply", rewriteInput, review)
+	if err != nil {
+		t.Fatalf("typed apply rewrite: %v", err)
+	}
+	if applied.Replayed || applied.WorkingCopy.WorkingCopyRevision != 3 || applied.WorkingCopy.BodyMarkdown != rewriteInput.BodyMarkdown || len(applied.WorkingCopy.ReviewItems) != 2 || applied.WorkingCopy.ReviewItems[1].ID != review[0].ID {
+		t.Fatalf("typed apply rewrite = %+v, want merged server review items", applied)
+	}
+	appliedReplay, err := application.ApplyRewriteResult(ctx, actor, "p", "c", "typed-apply", rewriteInput, review)
+	if err != nil || !appliedReplay.Replayed || appliedReplay.WorkingCopy.WorkingCopyRevision != applied.WorkingCopy.WorkingCopyRevision {
+		t.Fatalf("typed apply replay = %+v, err=%v", appliedReplay, err)
+	}
+
+	commitInput := CommitWorkingCopyInput{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 3}
+	committed, err := application.CommitWorkingCopyResult(ctx, actor, "p", "c", "typed-commit", commitInput)
+	if err != nil {
+		t.Fatalf("typed commit: %v", err)
+	}
+	if committed.Replayed || committed.Version.ChapterVersionID == "" || committed.Version.ParentChapterVersionID != nil || committed.Version.CommittedWorkingCopyRevision != 3 || committed.Version.NextWorkingCopyRevision != 4 || committed.Version.BodyMarkdown != rewriteInput.BodyMarkdown || len(committed.Version.ReviewItems) != 2 {
+		t.Fatalf("typed commit = %+v, want committed chapter lineage and review items", committed)
+	}
+	committedReplay, err := application.CommitWorkingCopyResult(ctx, actor, "p", "c", "typed-commit", commitInput)
+	if err != nil || !committedReplay.Replayed || committedReplay.Version.ChapterVersionID != committed.Version.ChapterVersionID {
+		t.Fatalf("typed commit replay = %+v, err=%v", committedReplay, err)
+	}
+
+	versionID := committed.Version.ChapterVersionID
+	restoreInput := RestoreWorkingCopyInput{ChapterVersionID: versionID, ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 4, ExpectedChapterVersionID: &versionID}
+	restored, err := application.RestoreWorkingCopyResult(ctx, actor, "p", "c", "typed-restore", restoreInput)
+	if err != nil {
+		t.Fatalf("typed restore: %v", err)
+	}
+	if restored.Replayed || restored.WorkingCopy.WorkingCopyRevision != 5 || restored.WorkingCopy.BodyMarkdown != rewriteInput.BodyMarkdown || restored.WorkingCopy.BaseChapterVersionID == nil || *restored.WorkingCopy.BaseChapterVersionID != versionID || len(restored.WorkingCopy.ReviewItems) != 2 {
+		t.Fatalf("typed restore = %+v, want restored working copy and lineage", restored)
+	}
+	restoredReplay, err := application.RestoreWorkingCopyResult(ctx, actor, "p", "c", "typed-restore", restoreInput)
+	if err != nil || !restoredReplay.Replayed || restoredReplay.WorkingCopy.WorkingCopyRevision != restored.WorkingCopy.WorkingCopyRevision {
+		t.Fatalf("typed restore replay = %+v, err=%v", restoredReplay, err)
+	}
+
+	if _, err := application.SaveWorkingCopyResult(ctx, actor, "p", "c", "typed-save-stale", saveInput); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("typed stale save = %v, want ErrVersionConflict", err)
+	}
+	if _, err := application.ApplyRewriteResult(ctx, actor, "p", "c", "typed-apply-stale", rewriteInput, review); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("typed stale apply = %v, want ErrVersionConflict", err)
+	}
+}
+
 func TestWorkingCopySaveCommitHistoryRestoreAndReplay(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "working-copy.db")
