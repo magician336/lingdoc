@@ -187,62 +187,6 @@ func adaptMutationResult[T any](invoke func() (json.RawMessage, int, bool, error
 	return value, replayed, nil
 }
 
-func decodeProjectMutationResult(raw json.RawMessage, replayed bool) (ProjectMutationResult, error) {
-	project, err := decodeMutationPayload[Project](raw, "project mutation result")
-	if err != nil {
-		return ProjectMutationResult{}, err
-	}
-	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
-}
-
-func decodeOwnerTransferResult(raw json.RawMessage, replayed bool) (OwnerTransferResult, error) {
-	transfer, err := decodeMutationPayload[OwnerTransfer](raw, "owner transfer result")
-	if err != nil {
-		return OwnerTransferResult{}, err
-	}
-	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
-}
-
-func decodeChapterMutationResult(raw json.RawMessage, replayed bool) (ChapterMutationResult, error) {
-	chapter, err := decodeMutationPayload[Chapter](raw, "chapter mutation result")
-	if err != nil {
-		return ChapterMutationResult{}, err
-	}
-	return ChapterMutationResult{Chapter: chapter, Replayed: replayed}, nil
-}
-
-func decodeWorkingCopyMutationResult(raw json.RawMessage, replayed bool) (WorkingCopyMutationResult, error) {
-	workingCopy, err := decodeMutationPayload[WorkingCopy](raw, "working copy mutation result")
-	if err != nil {
-		return WorkingCopyMutationResult{}, err
-	}
-	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
-}
-
-func decodeCommittedChapterMutationResult(raw json.RawMessage, replayed bool) (CommittedChapterMutationResult, error) {
-	version, err := decodeMutationPayload[CommittedChapterVersion](raw, "committed chapter result")
-	if err != nil {
-		return CommittedChapterMutationResult{}, err
-	}
-	return CommittedChapterMutationResult{Version: version, Replayed: replayed}, nil
-}
-
-func decodeChangeSetMutationResult(raw json.RawMessage, replayed bool) (ChangeSetMutationResult, error) {
-	changeSet, err := decodeMutationPayload[ChangeSet](raw, "change set mutation result")
-	if err != nil {
-		return ChangeSetMutationResult{}, err
-	}
-	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
-}
-
-func decodeDraftCandidateMutationResult(raw json.RawMessage, replayed bool) (DraftCandidateMutationResult, error) {
-	candidate, err := decodeMutationPayload[DraftCandidate](raw, "draft candidate result")
-	if err != nil {
-		return DraftCandidateMutationResult{}, err
-	}
-	return DraftCandidateMutationResult{Candidate: candidate, Replayed: replayed}, nil
-}
-
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
@@ -646,11 +590,13 @@ func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, ke
 
 // DiscardProjectResult exposes the discarded project without transport fields.
 func (s *Service) DiscardProjectResult(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.DiscardProject(ctx, actor, projectID, key, expectedProjectVersion)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.DiscardProject(ctx, actor, projectID, key, expectedProjectVersion)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 
 func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
@@ -691,11 +637,13 @@ func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, ke
 
 // RestoreProjectResult exposes the restored project without transport fields.
 func (s *Service) RestoreProjectResult(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.RestoreProject(ctx, actor, projectID, key, expectedProjectVersion)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.RestoreProject(ctx, actor, projectID, key, expectedProjectVersion)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 
 // Current authorization precedes replay; only new operations check expected
@@ -1175,11 +1123,13 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 
 // SaveTemplateCopyResult exposes the saved project without transport fields.
 func (s *Service) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.SaveTemplateCopy(ctx, actor, projectID, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.SaveTemplateCopy(ctx, actor, projectID, key, input)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 
 func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
@@ -1290,11 +1240,13 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 
 // ChangeTemplateResult exposes the changed project without transport fields.
 func (s *Service) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.ChangeTemplate(ctx, actor, projectID, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.ChangeTemplate(ctx, actor, projectID, key, input)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 
 type SaveMembersInput struct {
@@ -2097,8 +2049,8 @@ func (s *Service) ReplayValidationIssueDisposition(ctx context.Context, actor Ac
 		if err != nil || !found {
 			return err
 		}
-		var disposition ValidationIssueDisposition
-		if err := json.Unmarshal(previous.Body, &disposition); err != nil {
+		disposition, err := decodeMutationPayload[ValidationIssueDisposition](previous.Body, "replayed issue disposition")
+		if err != nil {
 			return err
 		}
 		if disposition.IssueID != issueID || disposition.ProjectVersion != expectedProjectVersion || disposition.Action != action || disposition.Reason != reason {
@@ -2133,9 +2085,9 @@ func (s *Service) ReplayValidationIssueDispositionResult(ctx context.Context, ac
 	if err != nil || !found {
 		return ValidationIssueDispositionReplayResult{Replayed: replayed, Found: found}, err
 	}
-	var disposition ValidationIssueDisposition
-	if err := json.Unmarshal(raw, &disposition); err != nil {
-		return ValidationIssueDispositionReplayResult{}, fmt.Errorf("decode replayed issue disposition: %w", err)
+	disposition, err := decodeMutationPayload[ValidationIssueDisposition](raw, "replayed issue disposition")
+	if err != nil {
+		return ValidationIssueDispositionReplayResult{Replayed: replayed, Found: found}, err
 	}
 	return ValidationIssueDispositionReplayResult{Disposition: disposition, Replayed: replayed, Found: true}, nil
 }
@@ -2211,13 +2163,11 @@ func (s *Service) RecordValidationIssueDisposition(ctx context.Context, actor Ac
 // RecordValidationIssueDispositionResult exposes the recorded disposition
 // without transport fields.
 func (s *Service) RecordValidationIssueDispositionResult(ctx context.Context, actor Actor, projectID, key string, input ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error) {
-	raw, _, replayed, err := s.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	disposition, replayed, err := adaptMutationResult[ValidationIssueDisposition](func() (json.RawMessage, int, bool, error) {
+		return s.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	}, "issue disposition result")
 	if err != nil {
-		return ValidationIssueDispositionResult{}, err
-	}
-	var disposition ValidationIssueDisposition
-	if err := json.Unmarshal(raw, &disposition); err != nil {
-		return ValidationIssueDispositionResult{}, fmt.Errorf("decode issue disposition result: %w", err)
+		return ValidationIssueDispositionResult{Replayed: replayed}, err
 	}
 	return ValidationIssueDispositionResult{Disposition: disposition, Replayed: replayed}, nil
 }
@@ -2536,11 +2486,13 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 
 // SaveMembersResult exposes the updated project without transport fields.
 func (s *Service) SaveMembersResult(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.SaveMembers(ctx, actor, projectID, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.SaveMembers(ctx, actor, projectID, key, input)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 {
@@ -2639,11 +2591,13 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 
 // ActivateProjectResult exposes the activated project without transport fields.
 func (s *Service) ActivateProjectResult(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.ActivateProject(ctx, actor, projectID, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.ActivateProject(ctx, actor, projectID, key, input)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
