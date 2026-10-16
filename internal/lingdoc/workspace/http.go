@@ -24,15 +24,10 @@ type Handler struct {
 	chapters     ChapterApplication
 	templatesApp TemplateApplication
 	changeSets   ChangeSetApplication
-	// read/write stay available to compatibility consumers that use the
-	// workspace handler as a source of the concrete service. Route methods use
-	// the focused fields above.
-	read        WorkspaceReadApplication
-	write       WorkspaceWriteApplication
-	sources     SourceApplicationService
-	integration WorkspaceIntegration
-	rewrites    SelectedRewriteApplication
-	templates   delivery.TemplateReader
+	sources      SourceApplicationService
+	integration  WorkspaceIntegration
+	rewrites     SelectedRewriteApplication
+	templates    delivery.TemplateReader
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
@@ -51,13 +46,6 @@ func NewHandler(deps HandlerDependencies) *Handler {
 		} else if candidate, ok := any(deps.Write).(ApplicationService); ok {
 			legacy = candidate
 		}
-	}
-	read, write := deps.Read, deps.Write
-	if read == nil {
-		read = legacy
-	}
-	if write == nil {
-		write = legacy
 	}
 	if legacy != nil {
 		adapter := legacyApplicationAdapter{ApplicationService: legacy}
@@ -136,7 +124,6 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	}
 	return &Handler{
 		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
-		read: read, write: write,
 		sources: deps.Sources, integration: deps.Integration,
 		rewrites: deps.SelectedRewrites, templates: templates,
 	}

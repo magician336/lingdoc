@@ -3008,7 +3008,7 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 			}
 			return result, nil
 		}
-		if err := s.sources.Validate(ctx, projectID, actor.UserID, ids); err != nil {
+		if err := legacySourceRevalidate(ctx, s.sources, projectID, actor.UserID, ids); err != nil {
 			return nil, err
 		}
 	}

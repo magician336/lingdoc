@@ -22,6 +22,23 @@ import (
 // 实现方可以返回 nil 之外的任何 error；核心域不解释它，只把它交给调用者。
 type SourcePolicy = sourcepolicy.SourcePolicy
 
+// legacySourcePolicyAdapter is the explicit compatibility boundary for the
+// pre-review all-or-nothing source port. New composition roots expose the
+// shared sourcepolicy.Reviewer; this adapter exists only for older callers and
+// keeps the legacy Validate representation out of workspace operations.
+type legacySourcePolicyAdapter struct{ policy SourcePolicy }
+
+func (a legacySourcePolicyAdapter) Revalidate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
+	if a.policy == nil {
+		return ErrSourceUnavailable
+	}
+	return a.policy.Validate(ctx, projectID, actorID, sourceIDs)
+}
+
+func legacySourceRevalidate(ctx context.Context, policy SourcePolicy, projectID, actorID string, sourceIDs []string) error {
+	return legacySourcePolicyAdapter{policy: policy}.Revalidate(ctx, projectID, actorID, sourceIDs)
+}
+
 // CitationStatusPolicy is an optional read-side extension for workspaces that
 // can report one current verdict per cited source. Implementations must still
 // use the same SourcePolicy判据; this interface only changes presentation from
