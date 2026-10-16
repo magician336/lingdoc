@@ -182,6 +182,16 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 		})
 }
 
+// SaveWorkingCopyResult exposes the updated working copy without transport
+// fields.
+func (s *Service) SaveWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput) (WorkingCopyMutationResult, error) {
+	raw, _, replayed, err := s.SaveWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	if err != nil {
+		return WorkingCopyMutationResult{}, err
+	}
+	return decodeWorkingCopyMutationResult(raw, replayed)
+}
+
 // ApplyRewrite replaces a selected range prepared by the rewrite application.
 // Review items are merged server-side so a browser cannot erase or fabricate
 // provenance while applying generated text.
@@ -256,6 +266,16 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 		})
 }
 
+// ApplyRewriteResult exposes the updated working copy without transport
+// fields.
+func (s *Service) ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput, reviewItems []ReviewItem) (WorkingCopyMutationResult, error) {
+	raw, _, replayed, err := s.ApplyRewrite(ctx, actor, projectID, chapterID, key, input, reviewItems)
+	if err != nil {
+		return WorkingCopyMutationResult{}, err
+	}
+	return decodeWorkingCopyMutationResult(raw, replayed)
+}
+
 func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
@@ -311,6 +331,16 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 				ReviewItems: slices.Clone(workingCopy.ReviewItems),
 			}, 201, nil
 		})
+}
+
+// CommitWorkingCopyResult exposes the committed chapter version without
+// transport fields.
+func (s *Service) CommitWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (CommittedChapterMutationResult, error) {
+	raw, _, replayed, err := s.CommitWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	if err != nil {
+		return CommittedChapterMutationResult{}, err
+	}
+	return decodeCommittedChapterMutationResult(raw, replayed)
 }
 
 func (s *Service) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
@@ -379,4 +409,14 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 			}
 			return next, 200, nil
 		})
+}
+
+// RestoreWorkingCopyResult exposes the restored working copy without
+// transport fields.
+func (s *Service) RestoreWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input RestoreWorkingCopyInput) (WorkingCopyMutationResult, error) {
+	raw, _, replayed, err := s.RestoreWorkingCopy(ctx, actor, projectID, chapterID, key, input)
+	if err != nil {
+		return WorkingCopyMutationResult{}, err
+	}
+	return decodeWorkingCopyMutationResult(raw, replayed)
 }

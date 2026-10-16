@@ -82,6 +82,15 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 	return body, status, replayed, err
 }
 
+// TransferOwnerResult exposes the updated project without transport fields.
+func (s *Service) TransferOwnerResult(ctx context.Context, actor Actor, projectID, key string, input TransferOwnerInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.TransferOwner(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
+
 // saveMemberPermissions replaces non-owner assignments in the same transaction
 // as the project version and replay record. Owner changes use a separate,
 // recipient-confirmed transfer workflow.

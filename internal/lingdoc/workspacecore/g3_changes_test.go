@@ -195,6 +195,9 @@ func TestTemplateUpgradeApplyRejectsStaleOrRevokedAndRollsBackMidWrite(t *testin
 		if decodeErr := json.Unmarshal(raw, &stale); decodeErr != nil || err != nil || status != 409 || stale.Status != "stale" {
 			t.Fatalf("stale apply: status=%d change=%+v err=%v decode=%v", status, stale, err, decodeErr)
 		}
+		if _, err := svc.ApplyChangeSetResult(context.Background(), owner, project.ID, change.ID, "template-upgrade-stale-apply"); !errors.Is(err, ErrVersionConflict) {
+			t.Fatalf("typed stale replay = %v, want ErrVersionConflict", err)
+		}
 		current, err := svc.GetProject(context.Background(), owner, project.ID)
 		if err != nil || current.TemplateCopyVersion != project.TemplateCopyVersion || current.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash {
 			t.Fatalf("stale apply mutated active copy: %+v err=%v", current.TemplateCopy, err)

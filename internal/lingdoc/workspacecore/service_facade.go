@@ -89,6 +89,130 @@ type OperationResult struct {
 	Status   int
 }
 
+// SaveSpecResult is the transport-neutral outcome of saving a project spec.
+// The application boundary exposes the domain value and whether the value was
+// replayed; HTTP status codes, response envelopes, and serialized bytes remain
+// transport concerns. The legacy SaveSpec method below is retained as the
+// compatibility adapter for existing transports during the incremental
+// migration.
+type SaveSpecResult struct {
+	Project  Project
+	Replayed bool
+}
+
+// CreateProjectResult is the transport-neutral outcome of creating a project.
+// The HTTP adapter owns the established 201 status and response envelope.
+type CreateProjectResult struct {
+	Project  Project
+	Replayed bool
+}
+
+// ProjectMutationResult is the transport-neutral outcome shared by project
+// and membership mutations. The HTTP adapter supplies the operation's status.
+type ProjectMutationResult struct {
+	Project  Project
+	Replayed bool
+}
+
+// OwnerTransferResult is the transport-neutral outcome of an owner transfer
+// request or acceptance.
+type OwnerTransferResult struct {
+	Transfer OwnerTransfer
+	Replayed bool
+}
+
+type ChapterMutationResult struct {
+	Chapter  Chapter
+	Replayed bool
+}
+
+type WorkingCopyMutationResult struct {
+	WorkingCopy WorkingCopy
+	Replayed    bool
+}
+
+type CommittedChapterMutationResult struct {
+	Version  CommittedChapterVersion
+	Replayed bool
+}
+
+type ChangeSetMutationResult struct {
+	ChangeSet ChangeSet
+	Replayed  bool
+}
+
+type DraftCandidateMutationResult struct {
+	Candidate DraftCandidate
+	Replayed  bool
+}
+
+type ValidationIssueDispositionResult struct {
+	Disposition ValidationIssueDisposition
+	Replayed    bool
+}
+
+type ValidationIssueDispositionReplayResult struct {
+	Disposition ValidationIssueDisposition
+	Replayed    bool
+	Found       bool
+}
+
+func decodeProjectMutationResult(raw json.RawMessage, replayed bool) (ProjectMutationResult, error) {
+	var project Project
+	if err := json.Unmarshal(raw, &project); err != nil {
+		return ProjectMutationResult{}, fmt.Errorf("decode project mutation result: %w", err)
+	}
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
+}
+
+func decodeOwnerTransferResult(raw json.RawMessage, replayed bool) (OwnerTransferResult, error) {
+	var transfer OwnerTransfer
+	if err := json.Unmarshal(raw, &transfer); err != nil {
+		return OwnerTransferResult{}, fmt.Errorf("decode owner transfer result: %w", err)
+	}
+	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
+}
+
+func decodeChapterMutationResult(raw json.RawMessage, replayed bool) (ChapterMutationResult, error) {
+	var chapter Chapter
+	if err := json.Unmarshal(raw, &chapter); err != nil {
+		return ChapterMutationResult{}, fmt.Errorf("decode chapter mutation result: %w", err)
+	}
+	return ChapterMutationResult{Chapter: chapter, Replayed: replayed}, nil
+}
+
+func decodeWorkingCopyMutationResult(raw json.RawMessage, replayed bool) (WorkingCopyMutationResult, error) {
+	var workingCopy WorkingCopy
+	if err := json.Unmarshal(raw, &workingCopy); err != nil {
+		return WorkingCopyMutationResult{}, fmt.Errorf("decode working copy mutation result: %w", err)
+	}
+	return WorkingCopyMutationResult{WorkingCopy: workingCopy, Replayed: replayed}, nil
+}
+
+func decodeCommittedChapterMutationResult(raw json.RawMessage, replayed bool) (CommittedChapterMutationResult, error) {
+	var version CommittedChapterVersion
+	if err := json.Unmarshal(raw, &version); err != nil {
+		return CommittedChapterMutationResult{}, fmt.Errorf("decode committed chapter result: %w", err)
+	}
+	return CommittedChapterMutationResult{Version: version, Replayed: replayed}, nil
+}
+
+func decodeChangeSetMutationResult(raw json.RawMessage, replayed bool) (ChangeSetMutationResult, error) {
+	var changeSet ChangeSet
+	if err := json.Unmarshal(raw, &changeSet); err != nil {
+		return ChangeSetMutationResult{}, fmt.Errorf("decode change set mutation result: %w", err)
+	}
+	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
+}
+
+func decodeDraftCandidateMutationResult(raw json.RawMessage, replayed bool) (DraftCandidateMutationResult, error) {
+	var candidate DraftCandidate
+	if err := json.Unmarshal(raw, &candidate); err != nil {
+		return DraftCandidateMutationResult{}, fmt.Errorf("decode draft candidate result: %w", err)
+	}
+	return DraftCandidateMutationResult{Candidate: candidate, Replayed: replayed}, nil
+}
+
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
@@ -490,6 +614,15 @@ func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, ke
 	})
 }
 
+// DiscardProjectResult exposes the discarded project without transport fields.
+func (s *Service) DiscardProjectResult(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.DiscardProject(ctx, actor, projectID, key, expectedProjectVersion)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
+
 func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (json.RawMessage, int, bool, error) {
 	if expectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
@@ -524,6 +657,15 @@ func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, ke
 		}
 		return next, 200, nil
 	})
+}
+
+// RestoreProjectResult exposes the restored project without transport fields.
+func (s *Service) RestoreProjectResult(ctx context.Context, actor Actor, projectID, key string, expectedProjectVersion int64) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.RestoreProject(ctx, actor, projectID, key, expectedProjectVersion)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
 }
 
 // Current authorization precedes replay; only new operations check expected
@@ -1001,6 +1143,15 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 	})
 }
 
+// SaveTemplateCopyResult exposes the saved project without transport fields.
+func (s *Service) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.SaveTemplateCopy(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
+
 func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
 	if version < 1 {
 		return ProjectTemplateCopy{}, ErrInvalidRequest
@@ -1107,6 +1258,15 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 	})
 }
 
+// ChangeTemplateResult exposes the changed project without transport fields.
+func (s *Service) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.ChangeTemplate(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
+
 type SaveMembersInput struct {
 	ExpectedProjectVersion int64    `json:"expected_project_version"`
 	CollaboratorUserIDs    []string `json:"collaborator_user_ids"`
@@ -1185,6 +1345,21 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
 }
+
+// CreateProjectResult exposes the project value and replay state without
+// leaking serialized response bytes or an HTTP status code to the caller.
+func (s *Service) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
+	raw, _, replayed, err := s.CreateProject(ctx, actor, key, input)
+	if err != nil {
+		return CreateProjectResult{}, err
+	}
+	var project Project
+	if err := json.Unmarshal(raw, &project); err != nil {
+		return CreateProjectResult{}, fmt.Errorf("decode created project result: %w", err)
+	}
+	return CreateProjectResult{Project: project, Replayed: replayed}, nil
+}
+
 func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.Fields == nil {
 		return nil, 0, false, ErrInvalidRequest
@@ -1266,6 +1441,22 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		}
 		return p, 200, nil
 	})
+}
+
+// SaveSpecResult runs the same application operation as SaveSpec and exposes
+// its business result without leaking JSON or HTTP concerns to callers such as
+// a CLI or background task. Idempotency authorization and replay checks remain
+// owned by operation; this method is only the typed compatibility adapter.
+func (s *Service) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
+	raw, _, replayed, err := s.SaveSpec(ctx, actor, projectID, key, input)
+	if err != nil {
+		return SaveSpecResult{}, err
+	}
+	var project Project
+	if err := json.Unmarshal(raw, &project); err != nil {
+		return SaveSpecResult{}, fmt.Errorf("decode saved spec result: %w", err)
+	}
+	return SaveSpecResult{Project: project, Replayed: replayed}, nil
 }
 
 func validateChangeSetInput(input CreateChangeSetInput) error {
@@ -1427,6 +1618,16 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 		}
 		return change, 201, nil
 	})
+}
+
+// CreateChangeSetResult exposes the assessed change set without transport
+// fields.
+func (s *Service) CreateChangeSetResult(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
+	raw, _, replayed, err := s.CreateChangeSet(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ChangeSetMutationResult{}, err
+	}
+	return decodeChangeSetMutationResult(raw, replayed)
 }
 
 func buildTemplateUpgradeImpact(current *ProjectTemplateCopy, target lingdoctemplate.Template, preview TemplateMigrationPreview, chapterIDs []string, chapters []Chapter) TemplateUpgradeImpact {
@@ -1667,6 +1868,21 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 	})
 }
 
+// ApplyChangeSetResult exposes the applied change set without transport fields.
+func (s *Service) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	raw, status, replayed, err := s.ApplyChangeSet(ctx, actor, projectID, changeSetID, key)
+	if err != nil {
+		return ChangeSetMutationResult{}, err
+	}
+	if status == 409 {
+		// A stale ChangeSet is durably marked before the legacy operation
+		// returns its conflict status. Preserve that domain error at the typed
+		// seam so the HTTP adapter emits the established 409 envelope.
+		return ChangeSetMutationResult{}, ErrVersionConflict
+	}
+	return decodeChangeSetMutationResult(raw, replayed)
+}
+
 // RejectChangeSet records the current owner's decision not to apply an
 // assessed proposal. It intentionally shares the same operation/idempotency
 // boundary as apply so a lost response cannot create a second decision audit.
@@ -1707,6 +1923,16 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		}
 		return change, 200, nil
 	})
+}
+
+// RejectChangeSetResult exposes the rejected change set without transport
+// fields.
+func (s *Service) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	raw, _, replayed, err := s.RejectChangeSet(ctx, actor, projectID, changeSetID, key)
+	if err != nil {
+		return ChangeSetMutationResult{}, err
+	}
+	return decodeChangeSetMutationResult(raw, replayed)
 }
 
 func validSpecFieldMetadata(input SpecFieldInput) bool {
@@ -1760,6 +1986,15 @@ func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, project
 		}
 		return candidate, 201, nil
 	})
+}
+
+// CreateDraftCandidateResult exposes the candidate without transport fields.
+func (s *Service) CreateDraftCandidateResult(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
+	raw, _, replayed, err := s.CreateDraftCandidate(ctx, actor, projectID, key, input)
+	if err != nil {
+		return DraftCandidateMutationResult{}, err
+	}
+	return decodeDraftCandidateMutationResult(raw, replayed)
 }
 
 func (s *Service) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
@@ -1853,6 +2088,20 @@ func (s *Service) ReplayValidationIssueDisposition(ctx context.Context, actor Ac
 	return previous.Body, previous.Status, true, true, nil
 }
 
+// ReplayValidationIssueDispositionResult returns the typed replay payload
+// while preserving the distinction between a missing and completed operation.
+func (s *Service) ReplayValidationIssueDispositionResult(ctx context.Context, actor Actor, projectID, issueID, key, action, reason string, expectedProjectVersion int64) (ValidationIssueDispositionReplayResult, error) {
+	raw, _, replayed, found, err := s.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key, action, reason, expectedProjectVersion)
+	if err != nil || !found {
+		return ValidationIssueDispositionReplayResult{Replayed: replayed, Found: found}, err
+	}
+	var disposition ValidationIssueDisposition
+	if err := json.Unmarshal(raw, &disposition); err != nil {
+		return ValidationIssueDispositionReplayResult{}, fmt.Errorf("decode replayed issue disposition: %w", err)
+	}
+	return ValidationIssueDispositionReplayResult{Disposition: disposition, Replayed: replayed, Found: true}, nil
+}
+
 // RecordValidationIssueDisposition appends an immutable, version-bound audit
 // event. It deliberately does not mutate the rule result or close a G3 impact
 // task; those gates continue to be evaluated independently.
@@ -1919,6 +2168,20 @@ func (s *Service) RecordValidationIssueDisposition(ctx context.Context, actor Ac
 		}
 		return disposition, 201, nil
 	})
+}
+
+// RecordValidationIssueDispositionResult exposes the recorded disposition
+// without transport fields.
+func (s *Service) RecordValidationIssueDispositionResult(ctx context.Context, actor Actor, projectID, key string, input ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error) {
+	raw, _, replayed, err := s.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ValidationIssueDispositionResult{}, err
+	}
+	var disposition ValidationIssueDisposition
+	if err := json.Unmarshal(raw, &disposition); err != nil {
+		return ValidationIssueDispositionResult{}, fmt.Errorf("decode issue disposition result: %w", err)
+	}
+	return ValidationIssueDispositionResult{Disposition: disposition, Replayed: replayed}, nil
 }
 
 // ValidationIssueDispositions returns only decisions whose complete binding
@@ -2042,6 +2305,16 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 	})
 }
 
+// RequestOwnerTransferResult exposes the transfer request without transport
+// fields. The HTTP adapter retains the established 201 status.
+func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (OwnerTransferResult, error) {
+	raw, _, replayed, err := s.RequestOwnerTransfer(ctx, actor, projectID, key, input)
+	if err != nil {
+		return OwnerTransferResult{}, err
+	}
+	return decodeOwnerTransferResult(raw, replayed)
+}
+
 func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
 	return s.operation(ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, "", "read", func(tx Transaction, _ Project) (any, int, error) {
 		if !validActor(actor) {
@@ -2091,6 +2364,16 @@ func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectI
 		transfer.AcceptedAt = &acceptedAt
 		return transfer, 200, nil
 	})
+}
+
+// AcceptOwnerTransferResult exposes the accepted transfer without transport
+// fields.
+func (s *Service) AcceptOwnerTransferResult(ctx context.Context, actor Actor, projectID, transferID, key string) (OwnerTransferResult, error) {
+	raw, _, replayed, err := s.AcceptOwnerTransfer(ctx, actor, projectID, transferID, key)
+	if err != nil {
+		return OwnerTransferResult{}, err
+	}
+	return decodeOwnerTransferResult(raw, replayed)
 }
 
 func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
@@ -2208,6 +2491,15 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 		return p, 200, nil
 	})
 }
+
+// SaveMembersResult exposes the updated project without transport fields.
+func (s *Service) SaveMembersResult(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.SaveMembers(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
 func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 {
 		return nil, 0, false, ErrInvalidRequest
@@ -2301,6 +2593,15 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		}
 		return next, 200, nil
 	})
+}
+
+// ActivateProjectResult exposes the activated project without transport fields.
+func (s *Service) ActivateProjectResult(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.ActivateProject(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
 }
 func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
 	var result []Chapter
@@ -2492,6 +2793,15 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		}
 		return next, 201, nil
 	})
+}
+
+// SaveChapterResult exposes the saved chapter without transport fields.
+func (s *Service) SaveChapterResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (ChapterMutationResult, error) {
+	raw, _, replayed, err := s.SaveChapter(ctx, actor, projectID, chapterID, key, input)
+	if err != nil {
+		return ChapterMutationResult{}, err
+	}
+	return decodeChapterMutationResult(raw, replayed)
 }
 
 func normalizeCitationUsages(values []CitationUsage, sourceIDs []string) ([]CitationUsage, error) {

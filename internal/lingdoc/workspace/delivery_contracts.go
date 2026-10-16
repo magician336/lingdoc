@@ -2,7 +2,7 @@ package workspace
 
 import (
 	"context"
-	"encoding/json"
+
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 )
@@ -24,12 +24,11 @@ type ReleaseApplication interface {
 	List(context.Context, string, string) ([]delivery.ReleaseSnapshot, bool, error)
 }
 
-// ValidationIssueDispositionCore persists immutable decisions through the
-// workspace audit transaction. Kept optional so older test adapters and
-// deployments without issue controls retain the stable T13 contract.
-type ValidationIssueDispositionCore interface {
-	ReplayValidationIssueDisposition(context.Context, Actor, string, string, string, string, string, int64) (json.RawMessage, int, bool, bool, error)
-	RecordValidationIssueDisposition(context.Context, Actor, string, string, ValidationIssueDispositionInput) (json.RawMessage, int, bool, error)
+// ValidationIssueDispositionApplication is the transport-neutral port for
+// persisted issue decisions and their read-side projection.
+type ValidationIssueDispositionApplication interface {
+	ReplayValidationIssueDispositionResult(context.Context, Actor, string, string, string, string, string, int64) (ValidationIssueDispositionReplayResult, error)
+	RecordValidationIssueDispositionResult(context.Context, Actor, string, string, ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error)
 	ValidationIssueDispositions(context.Context, Actor, string, []ValidationIssueBinding) (map[string]ValidationIssueDisposition, error)
 }
 
@@ -58,3 +57,4 @@ type ExportApplication interface {
 var _ ReleaseApplication = (*DeliveryReleaseService)(nil)
 var _ TemplateCheckApplication = (*DeliveryReleaseService)(nil)
 var _ ExportApplication = (*DeliveryExportService)(nil)
+var _ ValidationIssueDispositionApplication = (*Service)(nil)
