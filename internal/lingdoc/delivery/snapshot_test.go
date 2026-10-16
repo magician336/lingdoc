@@ -303,7 +303,7 @@ func TestBlockingUnknownRuleTargetBlocksTemplateCheckAndPreflight(t *testing.T) 
 	if _, _, err := exportService.StartAs(context.Background(), actor, release.ProjectID, release.ID, "blocking-unknown-export"); !errors.Is(err, ErrExportPreflightBlocked) {
 		t.Fatalf("export must reject a frozen blocking UNKNOWN evaluation: %v", err)
 	}
-	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetHash != definition.RuleSetRef.Hash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
+	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetID != set.ID || auditor.events[0].RuleSetVersion != set.Version || auditor.events[0].RuleSetHash != set.RulesetHash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
 		t.Fatalf("blocked export use must be audited against the exact RuleSet snapshot: %+v", auditor.events)
 	}
 }
@@ -381,7 +381,7 @@ func TestBoundRuleSetSnapshotFlowsThroughTemplateCheckAndPreflight(t *testing.T)
 	if _, _, err := exportService.StartAs(context.Background(), actor, release.ProjectID, release.ID, "ruleset-blocked-export"); !errors.Is(err, ErrExportPreflightBlocked) {
 		t.Fatalf("export must honor the frozen RuleSet Preflight result: %v", err)
 	}
-	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetHash != definition.RuleSetRef.Hash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
+	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetID != set.ID || auditor.events[0].RuleSetVersion != set.Version || auditor.events[0].RuleSetHash != set.RulesetHash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
 		t.Fatalf("blocked export use must be audited against the exact RuleSet snapshot: %+v", auditor.events)
 	}
 }
