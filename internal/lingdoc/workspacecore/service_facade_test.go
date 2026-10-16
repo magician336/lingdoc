@@ -37,7 +37,15 @@ func (r *ruleSetSnapshotReaderStub) GetVersionInTransaction(ctx context.Context,
 // nonTransactionalRuleSetSnapshotReaderStub models an adapter that supports
 // exact historical reads but cannot lock the value in the caller's write
 // transaction. Binding must reject it instead of falling back to GetVersion.
-type nonTransactionalRuleSetSnapshotReaderStub struct{ *ruleSetSnapshotReaderStub }
+type nonTransactionalRuleSetSnapshotReaderStub struct {
+	set   lingdoctemplate.RuleSet
+	calls int
+}
+
+func (r *nonTransactionalRuleSetSnapshotReaderStub) GetVersion(context.Context, Actor, string, string) (lingdoctemplate.RuleSet, error) {
+	r.calls++
+	return r.set, nil
+}
 
 type transactionalRuleSetSnapshotReaderStub struct {
 	set   lingdoctemplate.RuleSet
@@ -259,17 +267,17 @@ func TestBindTemplateCopyRuleSetFailsClosedWithoutTransactionalReader(t *testing
 		t.Fatal(err)
 	}
 	repository.project.TemplateCopy = copy
-	baseReader := &ruleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
-	service := NewService(repository).WithRuleSetSnapshotReader(&nonTransactionalRuleSetSnapshotReaderStub{ruleSetSnapshotReaderStub: baseReader})
+	reader := &nonTransactionalRuleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
+	service := NewService(repository).WithRuleSetSnapshotReader(reader)
 	input := BindTemplateCopyRuleSetInput{
 		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
-		RuleSetID: baseReader.set.ID, RuleSetVersion: baseReader.set.Version,
+		RuleSetID: reader.set.ID, RuleSetVersion: reader.set.Version,
 	}
 	if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, repository.project.ID, "bind-without-tx-reader", input); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("non-transactional reader error = %v, want ErrInvalidState", err)
 	}
-	if baseReader.calls != 0 {
-		t.Fatalf("detached GetVersion must not be used for binding, calls=%d", baseReader.calls)
+	if reader.calls != 0 {
+		t.Fatalf("detached GetVersion must not be used for binding, calls=%d", reader.calls)
 	}
 	if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 || len(repository.operations) != 0 {
 		t.Fatal("binding without a transactional RuleSet reader changed project state or persisted an idempotency result")
