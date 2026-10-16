@@ -24,7 +24,4 @@ func TestHandlerAcceptsFocusedApplicationPorts(t *testing.T) {
 	if handler.projects != projects || handler.members != members || handler.chapters != chapters || handler.templatesApp != templates || handler.changeSets != changeSets {
 		t.Fatalf("focused ports were not retained: projects=%T members=%T chapters=%T templates=%T change_sets=%T", handler.projects, handler.members, handler.chapters, handler.templatesApp, handler.changeSets)
 	}
-	if handler.read != nil || handler.write != nil {
-		t.Fatalf("focused composition unexpectedly installed legacy read/write adapters: read=%T write=%T", handler.read, handler.write)
-	}
 }

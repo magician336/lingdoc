@@ -44,7 +44,7 @@ func (s *Service) checkSources(ctx context.Context, actor Actor, projectID strin
 	}
 	ids := slices.Clone(sourceIDs)
 	slices.Sort(ids)
-	return s.sources.Validate(ctx, projectID, actor.UserID, ids)
+	return legacySourceRevalidate(ctx, s.sources, projectID, actor.UserID, ids)
 }
 
 func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error) {
