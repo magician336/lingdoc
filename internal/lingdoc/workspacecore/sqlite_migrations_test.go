@@ -28,6 +28,7 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		"000033_lingdoc_working_copies.up.sql",
 		"000034_lingdoc_selected_rewrites.up.sql",
 		"000035_lingdoc_project_template_copies.up.sql",
+		"000036_lingdoc_satisfied_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -42,5 +43,63 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("migration did not create %s: count=%d error=%v", table, count, err)
 		}
+	}
+}
+
+func TestSQLiteSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "satisfied-upgrade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES ('project-1')"); err != nil {
+		t.Fatal(err)
+	}
+	oldMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000032_lingdoc_change_sets.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), string(oldMigration)); err != nil {
+		t.Fatalf("create pre-upgrade schema: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO lingdoc_change_sets
+		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision, fields_json, impacts_json)
+		VALUES ('stale-1', 'project-1', 'owner', 'legacy proposal', 'stale', 4, 3, '[{"fields":[]}]', '[]')`); err != nil {
+		t.Fatal(err)
+	}
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000036_lingdoc_satisfied_change_sets.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), string(upgrade)); err != nil {
+		t.Fatalf("apply satisfied status migration: %v", err)
+	}
+	var status, reason string
+	if err := db.QueryRow("SELECT status, reason FROM lingdoc_change_sets WHERE id = 'stale-1'").Scan(&status, &reason); err != nil || status != "stale" || reason != "legacy proposal" {
+		t.Fatalf("legacy row read-back: status=%q reason=%q err=%v", status, reason, err)
+	}
+	if _, err := db.Exec(`INSERT INTO lingdoc_change_sets
+		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
+		VALUES ('satisfied-1', 'project-1', 'owner', 'already satisfied', 'satisfied', 4, 3)`); err != nil {
+		t.Fatalf("insert satisfied status after upgrade: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO lingdoc_change_sets
+		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
+		VALUES ('invalid-1', 'project-1', 'owner', 'invalid', 'unknown', 4, 3)`); err == nil {
+		t.Fatal("upgrade migration stopped enforcing the status constraint")
+	}
+	downgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000036_lingdoc_satisfied_change_sets.down.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), string(downgrade)); err == nil {
+		t.Fatal("downgrade silently discarded the satisfied terminal status")
+	}
+	var satisfiedCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM lingdoc_change_sets WHERE status = 'satisfied'").Scan(&satisfiedCount); err != nil || satisfiedCount != 1 {
+		t.Fatalf("failed downgrade changed current schema/data: satisfied=%d err=%v", satisfiedCount, err)
 	}
 }

@@ -400,6 +400,12 @@ func TestReassessChangeSetReturnsSatisfiedWhenAllTargetsAreCurrent(t *testing.T)
 		satisfied.TargetSpecRevision == nil || *satisfied.TargetSpecRevision != before.SpecRevision {
 		t.Fatalf("unexpected satisfied result: %+v", satisfied)
 	}
+	satisfiedAfter, err := svc.GetChangeSet(context.Background(), actor, project.ID, satisfied.ID)
+	if err != nil || satisfiedAfter.Status != "satisfied" || satisfiedAfter.ReassessedFromID != stale.ID ||
+		satisfiedAfter.TargetContextRevision == nil || *satisfiedAfter.TargetContextRevision != before.CurrentContextRevision ||
+		satisfiedAfter.TargetSpecRevision == nil || *satisfiedAfter.TargetSpecRevision != before.SpecRevision {
+		t.Fatalf("satisfied ChangeSet read-back: %+v err=%v", satisfiedAfter, err)
+	}
 	after, err := svc.GetProject(context.Background(), actor, project.ID)
 	if err != nil || after.ProjectVersion != before.ProjectVersion || after.CurrentContextRevision != before.CurrentContextRevision ||
 		after.SpecRevision != before.SpecRevision || after.Spec["research_goal"] != "新目标" {

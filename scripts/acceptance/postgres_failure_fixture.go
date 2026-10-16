@@ -35,6 +35,7 @@ var lingdocMigrations = []string{
 	"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
 	"000111_lingdoc_change_sets.up.sql", "000112_lingdoc_working_copies.up.sql",
 	"000113_lingdoc_selected_rewrites.up.sql", "000114_lingdoc_project_template_copies.up.sql",
+	"000115_lingdoc_satisfied_change_sets.up.sql",
 }
 
 func main() {

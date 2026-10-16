@@ -989,7 +989,7 @@ func (h *Handler) reassessChangeSet(c *gin.Context) {
 	if !requireEmptyBody(c) {
 		return
 	}
-	data, status, replay, err := h.service.ReassessChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	data, status, replay, err := h.write.ReassessChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
