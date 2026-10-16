@@ -1870,9 +1870,15 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 
 // ApplyChangeSetResult exposes the applied change set without transport fields.
 func (s *Service) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	raw, _, replayed, err := s.ApplyChangeSet(ctx, actor, projectID, changeSetID, key)
+	raw, status, replayed, err := s.ApplyChangeSet(ctx, actor, projectID, changeSetID, key)
 	if err != nil {
 		return ChangeSetMutationResult{}, err
+	}
+	if status == 409 {
+		// A stale ChangeSet is durably marked before the legacy operation
+		// returns its conflict status. Preserve that domain error at the typed
+		// seam so the HTTP adapter emits the established 409 envelope.
+		return ChangeSetMutationResult{}, ErrVersionConflict
 	}
 	return decodeChangeSetMutationResult(raw, replayed)
 }
