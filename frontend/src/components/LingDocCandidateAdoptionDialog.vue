@@ -19,6 +19,8 @@ const emit = defineEmits<{
 
 const submitting = ref(false)
 const errorMessage = ref('')
+const accepted = ref(false)
+const refreshError = ref('')
 const hasExistingVersion = computed(() => props.chapter.current_version_id !== null)
 const attempt = ref<AdoptionAttempt | null>(null)
 
@@ -31,23 +33,26 @@ const input = computed<AcceptCandidateInput>(() => ({
   replace_existing: props.chapter.current_version_id !== null,
 }))
 
+async function readAcceptedChapter() {
+  try {
+    const chapters = await listChapters(props.projectId)
+    const refreshed = chapters.data.find(item => item.id === props.chapter.id)
+    if (!refreshed) throw new Error('章节未出现在读取结果中')
+    emit('adopted', refreshed)
+  } catch {
+    refreshError.value = '候选已采纳，但章节状态读取失败。请重新读取；无需重复采纳。'
+  }
+}
+
 async function adopt() {
-  if (submitting.value) return
+  if (submitting.value || accepted.value) return
   errorMessage.value = ''
   submitting.value = true
   try {
     attempt.value = keyForAttempt(attempt.value, input.value, newIdempotencyKey)
-    const response = await acceptCandidate(
-      props.projectId,
-      props.chapter.id,
-      input.value,
-      attempt.value.key,
-    )
-    // The write response is an acknowledgement. Read the chapter again so
-    // the UI observes the server's current version and review state.
-    const chapters = await listChapters(props.projectId)
-    const refreshed = chapters.data.find((item) => item.id === props.chapter.id)
-    emit('adopted', refreshed || response.data)
+    await acceptCandidate(props.projectId, props.chapter.id, input.value, attempt.value.key)
+    accepted.value = true
+    await readAcceptedChapter()
   } catch (error: any) {
     errorMessage.value = error?.message || '候选采纳失败，请重新读取后重试。'
   } finally {
@@ -55,8 +60,16 @@ async function adopt() {
   }
 }
 
+async function retryRead() {
+  if (!accepted.value || submitting.value) return
+  submitting.value = true
+  refreshError.value = ''
+  try { await readAcceptedChapter() }
+  finally { submitting.value = false }
+}
+
 function cancel() {
-  if (!submitting.value) emit('cancel')
+  if (!submitting.value && !accepted.value) emit('cancel')
 }
 </script>
 
@@ -68,7 +81,7 @@ function cancel() {
           <p class="candidate-adoption__eyebrow">候选预览</p>
           <h2 id="candidate-adoption-title">采纳「{{ chapter.title }}」</h2>
         </div>
-        <button type="button" class="candidate-adoption__close" :disabled="submitting" aria-label="取消" @click="cancel">×</button>
+        <button type="button" class="candidate-adoption__close" :disabled="submitting || accepted" aria-label="取消" @click="cancel">×</button>
       </header>
 
       <p v-if="hasExistingVersion" class="candidate-adoption__warning">
@@ -93,11 +106,16 @@ function cancel() {
       </section>
 
       <p v-if="errorMessage" class="candidate-adoption__error" role="alert">{{ errorMessage }}</p>
+      <section v-if="accepted" class="candidate-adoption__hint" role="status">
+        <p>候选已采纳。</p>
+        <p v-if="refreshError">{{ refreshError }}</p>
+        <button v-if="refreshError" type="button" :disabled="submitting" @click="retryRead">{{ submitting ? '重新读取中…' : '重新读取章节状态' }}</button>
+      </section>
 
       <footer>
-        <button type="button" class="candidate-adoption__secondary" :disabled="submitting" @click="cancel">取消</button>
-        <button type="button" class="candidate-adoption__primary" :disabled="submitting" @click="adopt">
-          {{ submitting ? '采纳中…' : hasExistingVersion ? '确认整章替换' : '采纳候选' }}
+        <button type="button" class="candidate-adoption__secondary" :disabled="submitting || accepted" @click="cancel">取消</button>
+        <button type="button" class="candidate-adoption__primary" :disabled="submitting || accepted" @click="adopt">
+          {{ accepted ? '已采纳' : submitting ? '采纳中…' : hasExistingVersion ? '确认整章替换' : '采纳候选' }}
         </button>
       </footer>
     </div>

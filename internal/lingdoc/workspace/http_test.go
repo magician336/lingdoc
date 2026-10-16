@@ -145,7 +145,7 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}
-	handler := NewHandler(HandlerDependencies{Service: service})
+	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 
@@ -166,7 +166,7 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{templateCopy: ProjectTemplateCopy{ProjectID: "project-1", Version: 1, Status: "draft"}}
-	handler := NewHandler(HandlerDependencies{Service: service})
+	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -277,7 +277,7 @@ func TestHandlerMapsUnknownTemplateToNotFound(t *testing.T) {
 func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{}
-	handler := NewHandler(HandlerDependencies{Service: service})
+	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -310,7 +310,7 @@ func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{applyStatus: http.StatusConflict}
-	handler := NewHandler(HandlerDependencies{Service: service})
+	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")

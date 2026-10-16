@@ -18,6 +18,7 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		func() interfaces.KnowledgeBaseService { return nil },
 		func() interfaces.AuditLogService { return nil },
 		func() interfaces.ModelService { return nil },
+		NewLingDocTemplateCatalog,
 		NewLingDocWorkspaceHandler,
 	} {
 		if err := c.Provide(constructor); err != nil {
@@ -25,7 +26,7 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		}
 	}
 	if err := c.Invoke(func(h *workspace.Handler, ruleSets *rulesetstore.HTTPHandler, projects workspace.ApplicationService, integration workspace.WorkspaceIntegration, runtime *workspace.SourceRuntime) {
-		if h == nil || ruleSets == nil || projects == nil || runtime == nil || integration != runtime || h.Service() != projects {
+		if h == nil || ruleSets == nil || projects == nil || runtime == nil || integration != runtime {
 			t.Fatal("workspace consumers did not receive the shared application/runtime ports")
 		}
 		if integration.CandidateAdoptionSourcePolicy() == nil || integration.WorkspaceSourcePolicy() == nil || integration.DeliveryInputBuilder() == nil {
@@ -33,6 +34,12 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		}
 	}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLingDocWorkspaceCompositionRequiresTemplateCatalog(t *testing.T) {
+	if _, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil); err == nil {
+		t.Fatal("missing template catalog accepted")
 	}
 }
 

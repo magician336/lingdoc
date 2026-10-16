@@ -28,10 +28,10 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	routes := newLingDocRegistrar(v1, guards)
 	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
 	registerLingDocRuleSetRoutes(v1, guards, rulesetstore.NewHTTPHandler(rulesetstore.NewStore(nil, nil), testRuleSetRequestInfo))
-	workspace.RegisterDeliveryRoutes(routes, &workspace.DeliveryHandler{})
-	workspace.RegisterDeliveryExportRoutes(routes, &workspace.DeliveryExportHandler{})
-	candidateadoption.RegisterRoutes(routes, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
-	generation.RegisterRoutes(routes, generation.NewHandler(nil, nil))
+	workspace.RegisterDeliveryRoutesWithGroups(routes.groups(), &workspace.DeliveryHandler{})
+	workspace.RegisterDeliveryExportRoutes(routes.write, &workspace.DeliveryExportHandler{})
+	candidateadoption.RegisterRoutes(routes.write, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
+	generation.RegisterRoutes(routes.write, generation.NewHandler(nil, nil))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 	if got := len(engine.Routes()); got != 63 {
 		t.Fatalf("registered %d LingDoc routes, want 63", got)
@@ -150,6 +150,38 @@ func testRuleSetRequestInfo(c *gin.Context) (rulesetstore.Actor, string, bool) {
 	return rulesetstore.Actor{TenantID: tenantID, UserID: userID, Role: string(types.TenantRoleFromContext(ctx))}, requestID, true
 }
 
+func TestLingDocRegistrarUsesExplicitPostPolicyGroups(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	v1 := engine.Group("/api/v1")
+	enabled := true
+	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
+	v1.Use(guards.apiKeyAuthorizer.Middleware())
+	routes := newLingDocRegistrar(v1, guards)
+	routeGroups := routes.groups()
+	routeGroups.Read.POST("/projects/:projectId/read-probe", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	routeGroups.Write.POST("/projects/:projectId/write-probe", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+	request := func(path string, role types.TenantRole) int {
+		ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
+		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(1))
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
+		req := httptest.NewRequest(http.MethodPost, path, nil).WithContext(ctx)
+		res := httptest.NewRecorder()
+		engine.ServeHTTP(res, req)
+		return res.Code
+	}
+	if got := request("/api/v1/lingdoc/projects/p1/read-probe", types.TenantRoleViewer); got != http.StatusNoContent {
+		t.Fatalf("viewer read probe = %d, want %d", got, http.StatusNoContent)
+	}
+	if got := request("/api/v1/lingdoc/projects/p1/write-probe", types.TenantRoleViewer); got != http.StatusForbidden {
+		t.Fatalf("viewer write probe = %d, want %d", got, http.StatusForbidden)
+	}
+	if got := request("/api/v1/lingdoc/projects/p1/write-probe", types.TenantRoleContributor); got != http.StatusNoContent {
+		t.Fatalf("contributor write probe = %d, want %d", got, http.StatusNoContent)
+	}
+}
+
 func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
@@ -158,7 +190,7 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	service := &lingDocRouteServiceStub{}
-	workspaceHandler := workspace.NewHandler(workspace.HandlerDependencies{Service: service})
+	workspaceHandler := workspace.NewHandler(workspace.HandlerDependencies{Read: service, Write: service})
 	registerLingDocWorkspaceRoutes(v1, guards, workspaceHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 

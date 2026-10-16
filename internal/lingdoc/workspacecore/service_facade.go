@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/google/uuid"
 	"maps"
@@ -105,6 +106,14 @@ type Service struct {
 // returned value must be an immutable snapshot with server-verified hashes.
 type RuleSetSnapshotReader interface {
 	GetVersion(context.Context, Actor, string, string) (lingdoctemplate.RuleSet, error)
+}
+
+// TransactionalRuleSetSnapshotReader revalidates and locks the exact RuleSet
+// version using the same storage transaction that persists its project copy.
+// Production adapters implement this to serialize binding against withdraw or
+// recall transitions. Lightweight readers may implement only the read port.
+type TransactionalRuleSetSnapshotReader interface {
+	GetVersionInTransaction(context.Context, Transaction, Actor, string, string) (lingdoctemplate.RuleSet, error)
 }
 
 // WithRuleSetSnapshotReader connects project-copy binding to the independent
@@ -347,27 +356,49 @@ func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capab
 // SQLite uses a single pooled connection; opening the audit store separately
 // while a write transaction is active deadlocks the request until its context
 // expires. PostgreSQL still benefits from the same atomic audit boundary.
-func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) {
-	if s.audit == nil {
-		return
+func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) error {
+	// The GORM-backed lingdoc_project_audits.project_id is a required foreign
+	// key. Tenant-level authorization (for example, createProject and
+	// ListProjects) has no project row to reference yet, so skip that database
+	// event. In-memory repositories still receive the event so shadow/log-mode
+	// authorization behavior remains observable in tests and non-SQLite callers.
+	if projectID == "" {
+		if _, isGORM := tx.(gormTransaction); isGORM {
+			return nil
+		}
 	}
+	if s.audit == nil {
+		return nil
+	}
+	event := AuditEvent{
+		ID: uuid.NewString(), ActorID: actor.UserID, Action: "authorization." + capability,
+		Target: projectID, CreatedAt: time.Now().UTC(),
+		Details: map[string]any{"tenant_id": actor.TenantID, "role": string(actor.Role),
+			"capability": capability, "decision": auditDecision(authErr), "reason": auditReason(authErr)},
+		TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
+		ProjectID: projectID, Capability: capability,
+		Decision: auditDecision(authErr), Reason: auditReason(authErr),
+	}
+	var err error
 	if _, isGORM := tx.(gormTransaction); isGORM {
 		audit, ok := tx.(auditTransaction)
 		if !ok {
-			return
+			return nil
 		}
-		_ = audit.RecordAudit(AuditEvent{
-			ID: uuid.NewString(), ActorID: actor.UserID, Action: "authorization." + capability,
-			Target: projectID, CreatedAt: time.Now().UTC(),
-			Details: map[string]any{"tenant_id": actor.TenantID, "role": string(actor.Role),
-				"capability": capability, "decision": auditDecision(authErr), "reason": auditReason(authErr)},
-			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role,
-			ProjectID: projectID, Capability: capability,
-			Decision: auditDecision(authErr), Reason: auditReason(authErr),
-		})
-		return
+		err = audit.RecordAudit(event)
+	} else {
+		err = s.recordAudit(ctx, actor, projectID, capability, authErr)
 	}
-	_ = s.recordAudit(ctx, actor, projectID, capability, authErr)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"audit_event": "lingdoc_authorization",
+			"tenant_id":   actor.TenantID,
+			"project_id":  projectID,
+			"capability":  capability,
+			"decision":    auditDecision(authErr),
+		})
+	}
+	return err
 }
 func auditDecision(err error) string {
 	if err != nil {
@@ -385,12 +416,22 @@ func (s *Service) recordAuditEvent(ctx context.Context, event AuditEvent) error 
 	if s.audit == nil {
 		return nil
 	}
-	return s.audit.Record(ctx, event)
+	if err := s.audit.Record(ctx, event); err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{
+			"audit_event": "lingdoc",
+			"tenant_id":   event.TenantID,
+			"project_id":  event.ProjectID,
+			"capability":  event.Capability,
+			"decision":    event.Decision,
+		})
+		return err
+	}
+	return nil
 }
 func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capability string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
-		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
+		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
 		return err
 	})
 }
@@ -398,7 +439,7 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 	var result Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
 		result, err = s.authorizeProject(ctx, tx, actor, id, "read")
-		s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
+		_ = s.recordAuditInTransaction(ctx, tx, actor, id, "read", err)
 		if err == nil && result.DiscardedAt != nil {
 			result.Spec = map[string]string{}
 			result.SpecFields = map[string]SpecField{}
@@ -414,10 +455,10 @@ func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, boo
 			return ErrNotFound
 		}
 		if err := s.authorizeTenant(ctx, tx, actor, "read"); err != nil {
-			s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
+			_ = s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
 			return err
 		}
-		s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
+		_ = s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
 		projects, err := tx.Projects(actor, 51)
 		result = projects
 		return err
@@ -563,19 +604,21 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy" || op == "bindTemplateCopyRuleSet"}, func(tx Transaction) error {
 		var p Project
 		if projectID == "" {
-			if err := s.authorizeTenant(ctx, tx, actor, capability); err != nil {
-				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
-				return err
+			if authErr := s.authorizeTenant(ctx, tx, actor, capability); authErr != nil {
+				_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+				return authErr
 			}
 		} else {
-			var err error
-			p, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
-			if err != nil {
-				s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, err)
-				return err
+			var authErr error
+			p, authErr = s.authorizeProject(ctx, tx, actor, projectID, capability)
+			if authErr != nil {
+				_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+				return authErr
 			}
 		}
-		s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil)
+		if err := s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil); err != nil {
+			return err
+		}
 		previous, found, err := tx.Operation(id)
 		if err != nil {
 			return err
@@ -1037,26 +1080,25 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 		return nil, 0, false, ErrVersionConflict
 	}
 
-	set, err := s.ruleSets.GetVersion(ctx, actor, input.RuleSetID, input.RuleSetVersion)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	if set.ID != input.RuleSetID || set.Version != input.RuleSetVersion {
-		return nil, 0, false, ErrNotFound
-	}
-	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
-		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-			return nil, 0, false, ErrInvalidState
-		}
-		return nil, 0, false, ErrInvalidRequest
-	}
-
 	return s.operation(ctx, actor, "bindTemplateCopyRuleSet", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyDraft {
 			return nil, 0, ErrInvalidState
 		}
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
 			return nil, 0, ErrVersionConflict
+		}
+		set, err := s.ruleSetVersionForBinding(ctx, tx, actor, input.RuleSetID, input.RuleSetVersion)
+		if err != nil {
+			return nil, 0, err
+		}
+		if set.ID != input.RuleSetID || set.Version != input.RuleSetVersion {
+			return nil, 0, ErrNotFound
+		}
+		if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+			if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+				return nil, 0, ErrInvalidState
+			}
+			return nil, 0, ErrInvalidRequest
 		}
 		definition := lingdoctemplate.Clone(p.TemplateCopy.Definition)
 		definition.RuleSetSnapshot = lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &set}).RuleSetSnapshot
@@ -1078,6 +1120,13 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 		}
 		return next, 200, nil
 	})
+}
+
+func (s *Service) ruleSetVersionForBinding(ctx context.Context, tx Transaction, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	if reader, ok := s.ruleSets.(TransactionalRuleSetSnapshotReader); ok {
+		return reader.GetVersionInTransaction(ctx, tx, actor, id, version)
+	}
+	return s.ruleSets.GetVersion(ctx, actor, id, version)
 }
 
 func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
@@ -2269,6 +2318,13 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 			}
 			if err := tx.ReplaceCollaborators(projectID, ids); err != nil {
 				return nil, 0, err
+			}
+			if audit, ok := tx.(auditTransaction); ok {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+					Action: "project.member_permissions.replace", Target: projectID,
+					Details: map[string]any{"collaborator_user_ids": ids}, CreatedAt: time.Now().UTC()}); err != nil {
+					return nil, 0, err
+				}
 			}
 			for _, id := range ids {
 				members = append(members, Member{UserID: id, Role: "collaborator"})

@@ -1,0 +1,4 @@
+interface:
+  display_name: "LingDoc Health Scoring"
+  short_description: "Diagnose LingDoc design debt and propose refactors with H_L and F_R"
+  default_prompt: "Use the project scoring protocol to find structural weaknesses, score H_L/F_R, and propose module-level refactors for a Spec or PR."

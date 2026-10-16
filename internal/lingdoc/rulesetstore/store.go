@@ -124,6 +124,46 @@ func (s *Store) GetVersion(ctx context.Context, actor Actor, id, version string)
 	return result, err
 }
 
+// GetVersionForBinding reads and locks an exact RuleSet version on the caller's
+// transaction. This lets a project bind serialize with concurrent withdraw or
+// recall transitions instead of persisting a snapshot checked on another
+// connection.
+func (s *Store) GetVersionForBinding(ctx context.Context, tx *gorm.DB, actor Actor, id, version string) (template.RuleSet, error) {
+	if s == nil || tx == nil {
+		return template.RuleSet{}, errors.New("ruleset binding transaction is unavailable")
+	}
+	if actor.TenantID == 0 {
+		return template.RuleSet{}, ErrRuleSetTenantRequired
+	}
+	if strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(actor.Role) == "" {
+		return template.RuleSet{}, ErrActorRequired
+	}
+	if s.authorizer == nil {
+		return template.RuleSet{}, ErrAuthorizerUnavailable
+	}
+	var result template.RuleSet
+	err := tx.WithContext(ctx).Transaction(func(bindingTx *gorm.DB) error {
+		var row ruleSetVersionRow
+		query := bindingTx.Clauses(clause.Locking{Strength: "UPDATE"})
+		if err := query.Where("tenant_id = ? AND ruleset_id = ? AND version = ?", actor.TenantID, id, version).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRuleSetNotFound
+			}
+			return err
+		}
+		set, err := decodeRuleSet(row)
+		if err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, bindingTx, actor, ActionRead, &set); err != nil {
+			return err
+		}
+		result = set
+		return nil
+	})
+	return result, err
+}
+
 // ListVersions returns a stable newest-first history for one ruleset identity.
 func (s *Store) ListVersions(ctx context.Context, actor Actor, id string) ([]template.RuleSet, error) {
 	if err := s.validateActor(actor); err != nil {

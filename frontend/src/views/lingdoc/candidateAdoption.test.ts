@@ -75,6 +75,12 @@ test('the dialog signs the very body it sends', () => {
   assert.doesNotMatch(dialog, /idempotencyKeyForAttempt/)
 })
 
+test('a successful adoption cannot be cancelled before chapter readback succeeds', () => {
+  assert.match(dialog, /function cancel\(\) \{\s*if \(!submitting\.value && !accepted\.value\) emit\('cancel'\)/)
+  assert.match(dialog, /class="candidate-adoption__close" :disabled="submitting \|\| accepted"/)
+  assert.match(dialog, /class="candidate-adoption__secondary" :disabled="submitting \|\| accepted"/)
+})
+
 test('the workspace actually mounts the adoption dialog', () => {
   // 缺口 ① 原来的样子就是「组件全仓零引用」：能力造好了，界面上点不到。
   // 所以这条守卫钉的是引用本身，而不是它的行为。
@@ -82,4 +88,22 @@ test('the workspace actually mounts the adoption dialog', () => {
   assert.match(workspace, /<LingDocCandidateAdoptionDialog/)
   assert.match(workspace, /@adopted="onAdopted"/)
   assert.match(workspace, /@click="openAdoption"/)
+})
+
+test('project switching reads the first chapter draft before replacing workspace state', () => {
+  const initialRead = workspace.indexOf('const initialChapterDraft =')
+  const projectMutation = workspace.indexOf('project.value = result.data', initialRead)
+  assert.ok(initialRead >= 0)
+  assert.ok(projectMutation >= 0)
+  assert.ok(initialRead < projectMutation)
+  assert.match(workspace, /if \(discardReviewDrafts\) \{\s*reviewDrafts\.value = \{\}\s*savedReviewDrafts\.value = \{\}/)
+})
+
+test('project selection uses named options and the shared unsaved-input policy', () => {
+  assert.doesNotMatch(workspace, /selectProject\([^\n]*,\s*(?:true|false)(?:\s*,|\))/)
+  assert.match(workspace, /selectProject\(project\.id, \{ force: true \}\)/)
+  assert.match(workspace, /selectProject\(id, \{ force: true, skipConfirm: true \}\)/)
+  assert.match(workspace, /selectProject\(id, \{ conditionsHandled: true \}\)/)
+  assert.match(workspace, /const unsavedInputState = computed<UnsavedInputState>/)
+  assert.match(workspace, /unsavedInputsAreDirty\(unsavedInputState\.value, \{ conditionsHandled \}\)/)
 })

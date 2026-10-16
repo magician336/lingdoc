@@ -68,6 +68,15 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			role TEXT NOT NULL,
 			PRIMARY KEY (project_id, user_id)
 		)`,
+		`CREATE TABLE lingdoc_member_permissions (
+			project_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			governance_role TEXT NOT NULL,
+			function_roles_json TEXT NOT NULL DEFAULT '[]',
+			function_scopes_json TEXT NOT NULL DEFAULT '{}',
+			status TEXT NOT NULL,
+			PRIMARY KEY (project_id, user_id)
+		)`,
 		`CREATE TABLE knowledges (
 			id TEXT PRIMARY KEY,
 			tenant_id INTEGER NOT NULL,

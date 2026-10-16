@@ -4,7 +4,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/gin-gonic/gin"
-	"strings"
 )
 
 // Every LingDoc route receives an explicit API-key policy and tenant role.
@@ -25,17 +24,20 @@ func (r *lingDocRegistrar) PUT(path string, h ...gin.HandlerFunc) gin.IRoutes {
 	return r.write.PUT(path, h...)
 }
 func (r *lingDocRegistrar) POST(path string, h ...gin.HandlerFunc) gin.IRoutes {
-	if strings.HasSuffix(path, "/retrieval") || strings.HasSuffix(path, "/checks") {
-		return r.read.POST(path, h...)
-	}
+	// The parent registrar is the write policy. Read-only POST operations are
+	// registered through groups().Read; route names never select policy.
 	return r.write.POST(path, h...)
+}
+
+func (r *lingDocRegistrar) groups() workspace.RouteGroups {
+	return workspace.RouteGroups{Read: r.read, Write: r.write}
 }
 func registerLingDocWorkspaceRoutes(v1 *gin.RouterGroup, guards *rbacGuards, h *workspace.Handler) {
 	if h == nil {
 		return
 	}
 	routes := newLingDocRegistrar(v1, guards)
-	h.Register(workspace.RouteGroups{Read: routes, Write: routes})
+	h.Register(routes.groups())
 }
 
 func registerLingDocRuleSetRoutes(v1 *gin.RouterGroup, guards *rbacGuards, h *rulesetstore.HTTPHandler) {

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"slices"
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 type TransferOwnerInput struct {
@@ -63,6 +66,13 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 		}
 		if err := tx.ReplaceMembers(projectID, members); err != nil {
 			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+				Action: "project.owner_transfer", Target: projectID,
+				Details: map[string]any{"new_owner_user_id": input.NewOwnerUserID}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
 		}
 		return next, 200, nil
 	})
@@ -166,6 +176,21 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 		}
 		if err := tx.ReplaceMembers(projectID, members); err != nil {
 			return nil, 0, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			changes := make([]map[string]any, 0, len(input.Members))
+			for _, member := range input.Members {
+				changes = append(changes, map[string]any{
+					"user_id": member.UserID, "governance_role": member.GovernanceRole,
+					"function_roles": member.FunctionRoles, "function_scopes": member.FunctionScopes,
+					"status": member.Status,
+				})
+			}
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+				Action: "project.member_permissions.replace", Target: projectID,
+				Details: map[string]any{"members": changes}, CreatedAt: time.Now().UTC()}); err != nil {
+				return nil, 0, err
+			}
 		}
 		return next, 200, nil
 	})

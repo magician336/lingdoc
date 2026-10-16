@@ -29,6 +29,22 @@ func (r *ruleSetSnapshotReaderStub) GetVersion(_ context.Context, actor Actor, i
 	return r.set, r.err
 }
 
+type transactionalRuleSetSnapshotReaderStub struct {
+	set   lingdoctemplate.RuleSet
+	calls int
+	tx    Transaction
+}
+
+func (r *transactionalRuleSetSnapshotReaderStub) GetVersion(context.Context, Actor, string, string) (lingdoctemplate.RuleSet, error) {
+	return lingdoctemplate.RuleSet{}, errors.New("binding must use the active project transaction")
+}
+
+func (r *transactionalRuleSetSnapshotReaderStub) GetVersionInTransaction(_ context.Context, tx Transaction, _ Actor, _, _ string) (lingdoctemplate.RuleSet, error) {
+	r.calls++
+	r.tx = tx
+	return r.set, nil
+}
+
 func publishedWorkspaceRuleSet(t *testing.T) lingdoctemplate.RuleSet {
 	t.Helper()
 	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
@@ -168,6 +184,39 @@ func TestBindTemplateCopyRuleSetRejectsUnpublishedAndStaleBindings(t *testing.T)
 			t.Fatalf("mismatched RuleSet identity error = %v, want ErrNotFound", err)
 		}
 	})
+}
+
+func TestBindTemplateCopyRuleSetRechecksRuleSetInsideProjectTransaction(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.TemplateID = lingdoctemplate.DemoTemplateID
+	repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	repository.project.TemplateCopyVersion = 1
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	copy, err := projectTemplateCopy(actor, repository.project.ID, 1, lingdoctemplate.DemoTemplate(), TemplateCopyDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.project.TemplateCopy = copy
+	set := publishedWorkspaceRuleSet(t)
+	// Model a withdrawal winning the RuleSet row lock and committing before
+	// the binding transaction obtains its own locked snapshot.
+	set.State = lingdoctemplate.RuleSetWithdrawn
+	reader := &transactionalRuleSetSnapshotReaderStub{set: set}
+	service := NewService(repository).WithRuleSetSnapshotReader(reader)
+	input := BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+		RuleSetID: set.ID, RuleSetVersion: set.Version,
+	}
+	if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, repository.project.ID, "bind-withdrawn-1", input); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("concurrently withdrawn RuleSet error = %v, want ErrInvalidState", err)
+	}
+	if reader.calls != 1 || reader.tx == nil {
+		t.Fatalf("transactional RuleSet reads = %d, tx=%T; want exactly one read on the active project transaction", reader.calls, reader.tx)
+	}
+	if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 || len(repository.operations) != 0 {
+		t.Fatal("withdrawn RuleSet binding changed project state or persisted an idempotency result")
+	}
 }
 
 func TestDefaultProjectAuthorizerEnforcesTenantRoleCeiling(t *testing.T) {

@@ -80,6 +80,46 @@ func TestStorePersistsImmutableVersionsTransitionsAndAudit(t *testing.T) {
 	}
 }
 
+func TestGetVersionForBindingReadsPublishedVersionOnCallerTransaction(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft("v1")
+	if err := store.CreateDraft(ctx, actor, draft); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, actor, draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	var bound template.RuleSet
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		bound, err = store.GetVersionForBinding(ctx, tx, actor, draft.ID, draft.Version)
+		return err
+	}); err != nil {
+		t.Fatalf("GetVersionForBinding in caller transaction: %v", err)
+	}
+	if bound.State != template.RuleSetPublished || bound.RulesetHash == "" {
+		t.Fatalf("transactional binding snapshot = %+v, want published immutable version", bound)
+	}
+	if _, err := store.Withdraw(ctx, actor, draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		current, err := store.GetVersionForBinding(ctx, tx, actor, draft.ID, draft.Version)
+		if err != nil {
+			return err
+		}
+		if current.State != template.RuleSetWithdrawn {
+			t.Fatalf("transactional read after withdrawal = %s, want withdrawn", current.State)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("GetVersionForBinding after withdrawal: %v", err)
+	}
+}
+
 func TestStoreIsTenantScopedAndAuthorizationFailsClosed(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
