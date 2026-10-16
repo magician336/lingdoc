@@ -186,4 +186,3 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		t.Fatalf("duplicate versions: %d %v", count, err)
 	}
 }
-
