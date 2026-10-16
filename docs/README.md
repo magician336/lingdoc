@@ -16,7 +16,7 @@ Spec 索引与开发计划：[`06-灵档产品开发规划/beta-gap-development-
 
 ### 最新横切契约状态（2026-10-16）
 
-Spec [#164：LingDoc 应用层传输解耦与幂等结果边界](https://github.com/magician336/lingdoc/issues/164) 的实现已完成，子票 #165–#169 已关闭，交付 PR 为 [#170](https://github.com/magician336/lingdoc/pull/170)。PR 仍开放，8 项检查全部通过但尚未合并；在合并前不要把这项实现写成 `main` 已包含。实现说明见 [`08-本轮实施方案/Spec-164-传输中立应用边界.md`](08-本轮实施方案/Spec-164-传输中立应用边界.md)。
+Spec [#164：LingDoc 应用层传输解耦与幂等结果边界](https://github.com/magician336/lingdoc/issues/164) 的实现已完成，子票 #165–#169 已关闭，交付 PR 为 [#170](https://github.com/magician336/lingdoc/pull/170)。PR 仍开放；上一轮 8 项检查全部通过但尚未合并，本次文档提交会触发新一轮检查。在合并前不要把这项实现写成 `main` 已包含。实现说明见 [`08-本轮实施方案/Spec-164-传输中立应用边界.md`](08-本轮实施方案/Spec-164-传输中立应用边界.md)。
 
 ## 按用途阅读
 
