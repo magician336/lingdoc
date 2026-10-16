@@ -84,11 +84,13 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 
 // TransferOwnerResult exposes the updated project without transport fields.
 func (s *Service) TransferOwnerResult(ctx context.Context, actor Actor, projectID, key string, input TransferOwnerInput) (ProjectMutationResult, error) {
-	raw, _, replayed, err := s.TransferOwner(ctx, actor, projectID, key, input)
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.TransferOwner(ctx, actor, projectID, key, input)
+	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{}, err
 	}
-	return decodeProjectMutationResult(raw, replayed)
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
 
 // saveMemberPermissions replaces non-owner assignments in the same transaction
