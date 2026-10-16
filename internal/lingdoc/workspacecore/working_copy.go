@@ -140,7 +140,7 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 		return nil, 0, false, err
 	}
 	input.SourceIDs = declared
-	return runOperation(s, ctx, actor, "saveWorkingCopy", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), focusedMutationPort[chapterMutationTransaction],
+	return runOperation(s, ctx, actor, sourceOperationInput(operationSaveWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), saveWorkingCopySourceIDs), focusedMutationPort[chapterMutationTransaction],
 		func(tx chapterMutationTransaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
@@ -216,7 +216,7 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 		}
 	}
 	body := ApplyRewriteInput{WorkingCopy: input, ReviewItems: slices.Clone(reviewItems)}
-	return runOperation(s, ctx, actor, "applySelectedRewrite", projectID+"/"+chapterID, key, body, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), focusedMutationPort[chapterMutationTransaction],
+	return runOperation(s, ctx, actor, sourceOperationInput(operationApplySelectedRewrite, projectID+"/"+chapterID, key, body, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), applyRewriteSourceIDs), focusedMutationPort[chapterMutationTransaction],
 		func(tx chapterMutationTransaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
@@ -284,7 +284,7 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 	if input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "commitWorkingCopy", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), focusedMutationPort[chapterCommitTransaction],
+	return runOperation(s, ctx, actor, sourceOperationInput(operationCommitWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), commitWorkingCopySourceIDs), focusedMutationPort[chapterCommitTransaction],
 		func(tx chapterCommitTransaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
@@ -379,7 +379,7 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 	if strings.TrimSpace(input.ChapterVersionID) == "" || input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "restoreWorkingCopy", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), focusedMutationPort[chapterMutationTransaction],
+	return runOperation(s, ctx, actor, sourceOperationInput(operationRestoreWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), restoreWorkingCopySourceIDs), focusedMutationPort[chapterMutationTransaction],
 		func(tx chapterMutationTransaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict

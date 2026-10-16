@@ -310,6 +310,94 @@ type ownerTransferTransaction interface {
 	SetMemberRole(string, string, string) error
 	EnsureMember(string, string, string) error
 }
+
+// operationName and operationDescriptor keep the operation runner's
+// vocabulary inside WorkspaceCore. Callers provide a typed input and a typed
+// source decoder instead of unconstrained operation strings and body values.
+// Persistence still stores the stable string form in OperationIdentity for
+// compatibility with existing rows.
+type operationName string
+
+const (
+	operationDiscardProject       operationName = "discardProject"
+	operationRestoreProject       operationName = "restoreProject"
+	operationSaveTemplateCopy     operationName = "saveTemplateCopy"
+	operationChangeTemplate       operationName = "changeTemplate"
+	operationCreateProject        operationName = "createProject"
+	operationSaveSpec             operationName = "saveSpec"
+	operationCreateChangeSet      operationName = "createChangeSet"
+	operationApplyChangeSet       operationName = "applyChangeSet"
+	operationRejectChangeSet      operationName = "rejectChangeSet"
+	operationCreateDraftCandidate operationName = "createDraftCandidate"
+	operationValidationIssue      operationName = "validationIssueDisposition"
+	operationRequestOwnerTransfer operationName = "requestOwnerTransfer"
+	operationAcceptOwnerTransfer  operationName = "acceptOwnerTransfer"
+	operationTransferOwner        operationName = "transferOwner"
+	operationSaveMembers          operationName = "saveMembers"
+	operationActivateProject      operationName = "activateProject"
+	operationSaveChapter          operationName = "saveChapter"
+	operationSaveWorkingCopy      operationName = "saveWorkingCopy"
+	operationApplySelectedRewrite operationName = "applySelectedRewrite"
+	operationCommitWorkingCopy    operationName = "commitWorkingCopy"
+	operationRestoreWorkingCopy   operationName = "restoreWorkingCopy"
+)
+
+type operationSourceDecoder[I any] func(ChapterWorkspaceTransaction, operationDescriptor[I], OperationResult, bool) ([]string, error)
+
+type operationOutputKind string
+
+const (
+	operationOutputProject   operationOutputKind = "project"
+	operationOutputChapter   operationOutputKind = "chapter"
+	operationOutputWorking   operationOutputKind = "working_copy"
+	operationOutputCommitted operationOutputKind = "committed_chapter"
+	operationOutputChangeSet operationOutputKind = "change_set"
+	operationOutputCandidate operationOutputKind = "draft_candidate"
+	operationOutputIssue     operationOutputKind = "issue_disposition"
+	operationOutputTransfer  operationOutputKind = "owner_transfer"
+)
+
+type operationDescriptor[I any] struct {
+	Name      operationName
+	Target    string
+	Key       string
+	Input     I
+	Request   AuthorizationRequest
+	SourceIDs operationSourceDecoder[I]
+	Output    operationOutputKind
+}
+
+func operationInput[I any](name operationName, target, key string, input I, request AuthorizationRequest) operationDescriptor[I] {
+	return operationDescriptor[I]{Name: name, Target: target, Key: key, Input: input, Request: request, Output: operationOutputFor(name)}
+}
+
+func sourceOperationInput[I any](name operationName, target, key string, input I, request AuthorizationRequest, sourceIDs operationSourceDecoder[I]) operationDescriptor[I] {
+	descriptor := operationInput(name, target, key, input, request)
+	descriptor.SourceIDs = sourceIDs
+	return descriptor
+}
+
+func operationOutputFor(name operationName) operationOutputKind {
+	switch name {
+	case operationCreateChangeSet, operationApplyChangeSet, operationRejectChangeSet:
+		return operationOutputChangeSet
+	case operationCreateDraftCandidate:
+		return operationOutputCandidate
+	case operationValidationIssue:
+		return operationOutputIssue
+	case operationRequestOwnerTransfer, operationAcceptOwnerTransfer:
+		return operationOutputTransfer
+	case operationSaveChapter:
+		return operationOutputChapter
+	case operationSaveWorkingCopy, operationApplySelectedRewrite, operationRestoreWorkingCopy:
+		return operationOutputWorking
+	case operationCommitWorkingCopy:
+		return operationOutputCommitted
+	default:
+		return operationOutputProject
+	}
+}
+
 type OperationIdentity struct {
 	Actor                  Actor
 	Operation, Target, Key string
@@ -821,8 +909,8 @@ func (s *Service) DiscardProject(ctx context.Context, actor Actor, projectID, ke
 	if expectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	input := map[string]any{"expected_project_version": expectedProjectVersion}
-	return runOperation(s, ctx, actor, "discardProject", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
+	input := projectVersionInput{ExpectedProjectVersion: expectedProjectVersion}
+	return runOperation(s, ctx, actor, operationInput(operationDiscardProject, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
 		if p.ProjectVersion != expectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -865,8 +953,8 @@ func (s *Service) RestoreProject(ctx context.Context, actor Actor, projectID, ke
 	if expectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	input := map[string]any{"expected_project_version": expectedProjectVersion}
-	return runOperation(s, ctx, actor, "restoreProject", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationRead, ""), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
+	input := projectVersionInput{ExpectedProjectVersion: expectedProjectVersion}
+	return runOperation(s, ctx, actor, operationInput(operationRestoreProject, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationRead, "")), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
 		if !projectOwner(p, actor.UserID) {
 			return nil, 0, ErrNotFound
 		}
@@ -910,20 +998,20 @@ func (s *Service) RestoreProjectResult(ctx context.Context, actor Actor, project
 
 // Current authorization precedes replay; only new operations check expected
 // versions. Exact response and domain mutation commit together.
-func runOperation[T any](s *Service, ctx context.Context, actor Actor, op, target, key string, body any, request AuthorizationRequest, port func(Transaction) (T, error), write func(T, Project) (any, int, error)) (json.RawMessage, int, bool, error) {
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+func runOperation[T any, I any](s *Service, ctx context.Context, actor Actor, operation operationDescriptor[I], port func(Transaction) (T, error), write func(T, Project) (any, int, error)) (json.RawMessage, int, bool, error) {
+	if !validActor(actor) || len(operation.Key) < 8 || len(operation.Key) > 128 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	encoded, err := json.Marshal(body)
+	encoded, err := json.Marshal(operation.Input)
 	if err != nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	hash := sha256.Sum256(encoded)
 	hashString := hex.EncodeToString(hash[:])
-	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
+	id := OperationIdentity{Actor: actor, Operation: string(operation.Name), Target: operation.Target, Key: operation.Key}
 	var result OperationResult
 	var replayed bool
-	sourceSensitive := op == "saveChapter" || op == "saveWorkingCopy" || op == "applySelectedRewrite" || op == "commitWorkingCopy" || op == "restoreWorkingCopy"
+	sourceSensitive := operation.SourceIDs != nil
 	var checkedProject Project
 	var checkedSources []string
 	var checkedFound bool
@@ -937,7 +1025,7 @@ func runOperation[T any](s *Service, ctx context.Context, actor Actor, op, targe
 				return ErrInvalidState
 			}
 			var err error
-			checkedProject, err = s.authorizeProject(ctx, tx, request)
+			checkedProject, err = s.authorizeProject(ctx, tx, operation.Request)
 			if err != nil {
 				return err
 			}
@@ -953,7 +1041,7 @@ func runOperation[T any](s *Service, ctx context.Context, actor Actor, op, targe
 			if portErr != nil {
 				return portErr
 			}
-			checkedSources, err = operationSourceIDs(workspace, op, target, request.ProjectID, body, previous, found)
+			checkedSources, err = operationSourceIDs(workspace, operation, previous, found)
 			if isReplayPayloadDecodeError(err) {
 				replayed = true
 			}
@@ -965,30 +1053,30 @@ func runOperation[T any](s *Service, ctx context.Context, actor Actor, op, targe
 		// Replays reuse the saved result, not the old authorization decision:
 		// revocation must reject a replay before any cached body is returned.
 		// Denial preserves the record, so reauthorization can replay it unchanged.
-		if err := s.checkSources(ctx, actor, request.ProjectID, checkedSources); err != nil {
+		if err := s.checkSources(ctx, actor, operation.Request.ProjectID, checkedSources); err != nil {
 			return nil, 0, false, err
 		}
 	}
-	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: op == "saveSpec" || op == "createProject" || op == "saveTemplateCopy"}, func(tx Transaction) error {
+	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: operation.Name == operationSaveSpec || operation.Name == operationCreateProject || operation.Name == operationSaveTemplateCopy}, func(tx Transaction) error {
 		operations, ok := any(tx).(OperationTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
 		var p Project
-		if request.ProjectID == "" {
-			if authErr := s.authorizeTenant(ctx, tx, request); authErr != nil {
-				_ = s.recordAuditInTransaction(ctx, tx, actor, request.ProjectID, request.capability(), authErr)
+		if operation.Request.ProjectID == "" {
+			if authErr := s.authorizeTenant(ctx, tx, operation.Request); authErr != nil {
+				_ = s.recordAuditInTransaction(ctx, tx, actor, operation.Request.ProjectID, operation.Request.capability(), authErr)
 				return authErr
 			}
 		} else {
 			var authErr error
-			p, authErr = s.authorizeProject(ctx, tx, request)
+			p, authErr = s.authorizeProject(ctx, tx, operation.Request)
 			if authErr != nil {
-				_ = s.recordAuditInTransaction(ctx, tx, actor, request.ProjectID, request.capability(), authErr)
+				_ = s.recordAuditInTransaction(ctx, tx, actor, operation.Request.ProjectID, operation.Request.capability(), authErr)
 				return authErr
 			}
 		}
-		if err := s.recordAuditInTransaction(ctx, tx, actor, request.ProjectID, request.capability(), nil); err != nil {
+		if err := s.recordAuditInTransaction(ctx, tx, actor, operation.Request.ProjectID, operation.Request.capability(), nil); err != nil {
 			return err
 		}
 		previous, found, err := operations.Operation(id)
@@ -1003,7 +1091,7 @@ func runOperation[T any](s *Service, ctx context.Context, actor Actor, op, targe
 			if portErr != nil {
 				return portErr
 			}
-			sourceIDs, err := operationSourceIDs(workspace, op, target, request.ProjectID, body, previous, found)
+			sourceIDs, err := operationSourceIDs(workspace, operation, previous, found)
 			if isReplayPayloadDecodeError(err) {
 				replayed = true
 			}
@@ -1041,64 +1129,74 @@ func runOperation[T any](s *Service, ctx context.Context, actor Actor, op, targe
 	return result.Body, result.Status, replayed, nil
 }
 
+func saveChapterSourceIDs(_ ChapterWorkspaceTransaction, operation operationDescriptor[SaveChapterInput], _ OperationResult, _ bool) ([]string, error) {
+	return slices.Clone(operation.Input.SourceIDs), nil
+}
+
+func saveWorkingCopySourceIDs(_ ChapterWorkspaceTransaction, operation operationDescriptor[SaveWorkingCopyInput], _ OperationResult, _ bool) ([]string, error) {
+	return slices.Clone(operation.Input.SourceIDs), nil
+}
+
+func applyRewriteSourceIDs(_ ChapterWorkspaceTransaction, operation operationDescriptor[ApplyRewriteInput], previous OperationResult, found bool) ([]string, error) {
+	if found {
+		response, err := decodeMutationPayload[WorkingCopy](previous.Body, "working copy mutation result")
+		if err != nil {
+			return nil, markReplayPayloadDecodeError(err)
+		}
+		return slices.Clone(response.SourceIDs), nil
+	}
+	return slices.Clone(operation.Input.WorkingCopy.SourceIDs), nil
+}
+
+func commitWorkingCopySourceIDs(tx ChapterWorkspaceTransaction, operation operationDescriptor[CommitWorkingCopyInput], previous OperationResult, found bool) ([]string, error) {
+	if found {
+		response, err := decodeMutationPayload[CommittedChapterVersion](previous.Body, "committed chapter result")
+		if err != nil {
+			return nil, markReplayPayloadDecodeError(err)
+		}
+		return slices.Clone(response.SourceIDs), nil
+	}
+	chapterID := strings.TrimPrefix(operation.Target, operation.Request.ProjectID+"/")
+	workingCopy, err := tx.WorkingCopy(operation.Request.ProjectID, chapterID)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(workingCopy.SourceIDs), nil
+}
+
+func restoreWorkingCopySourceIDs(tx ChapterWorkspaceTransaction, operation operationDescriptor[RestoreWorkingCopyInput], previous OperationResult, found bool) ([]string, error) {
+	if found {
+		response, err := decodeMutationPayload[WorkingCopy](previous.Body, "working copy mutation result")
+		if err != nil {
+			return nil, markReplayPayloadDecodeError(err)
+		}
+		return slices.Clone(response.SourceIDs), nil
+	}
+	chapterID := strings.TrimPrefix(operation.Target, operation.Request.ProjectID+"/")
+	version, err := tx.ChapterVersion(operation.Request.ProjectID, chapterID, operation.Input.ChapterVersionID)
+	if err != nil {
+		return nil, err
+	}
+	return slices.Clone(version.SourceIDs), nil
+}
+
 // operationSourceIDs resolves exactly the references checked for a new write or
 // stored replay. It only reads through the caller transaction.
-func operationSourceIDs(tx ChapterWorkspaceTransaction, op, target, projectID string, body any, previous OperationResult, found bool) ([]string, error) {
-	var sourceIDs []string
-	switch op {
-	case "saveChapter":
-		sourceIDs = body.(SaveChapterInput).SourceIDs
-	case "saveWorkingCopy":
-		sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
-	case "applySelectedRewrite":
-		if found {
-			response, err := decodeMutationPayload[WorkingCopy](previous.Body, "working copy mutation result")
-			if err != nil {
-				return nil, markReplayPayloadDecodeError(err)
-			}
-			sourceIDs = response.SourceIDs
-		} else {
-			sourceIDs = body.(ApplyRewriteInput).WorkingCopy.SourceIDs
-		}
-	case "commitWorkingCopy":
-		if found {
-			response, err := decodeMutationPayload[CommittedChapterVersion](previous.Body, "committed chapter result")
-			if err != nil {
-				return nil, markReplayPayloadDecodeError(err)
-			}
-			sourceIDs = response.SourceIDs
-		} else {
-			chapterID := strings.TrimPrefix(target, projectID+"/")
-			workingCopy, err := tx.WorkingCopy(projectID, chapterID)
-			if err != nil {
-				return nil, err
-			}
-			sourceIDs = workingCopy.SourceIDs
-		}
-	case "restoreWorkingCopy":
-		if found {
-			response, err := decodeMutationPayload[WorkingCopy](previous.Body, "working copy mutation result")
-			if err != nil {
-				return nil, markReplayPayloadDecodeError(err)
-			}
-			sourceIDs = response.SourceIDs
-		} else {
-			chapterID := strings.TrimPrefix(target, projectID+"/")
-			versionID := body.(RestoreWorkingCopyInput).ChapterVersionID
-			version, err := tx.ChapterVersion(projectID, chapterID, versionID)
-			if err != nil {
-				return nil, err
-			}
-			sourceIDs = version.SourceIDs
-		}
+func operationSourceIDs[I any](tx ChapterWorkspaceTransaction, operation operationDescriptor[I], previous OperationResult, found bool) ([]string, error) {
+	if operation.SourceIDs == nil {
+		return nil, nil
 	}
-	return slices.Clone(sourceIDs), nil
+	return operation.SourceIDs(tx, operation, previous, found)
 }
 
 type CreateProjectInput struct {
 	Name            string `json:"name"`
 	TemplateID      string `json:"template_id"`
 	TemplateVersion string `json:"template_version,omitempty"`
+}
+
+type projectVersionInput struct {
+	ExpectedProjectVersion int64 `json:"expected_project_version"`
 }
 type SaveSpecInput struct {
 	ExpectedSpecRevision int64                     `json:"expected_spec_revision"`
@@ -1379,7 +1477,7 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.Fields == nil || input.Sections == nil || input.Terms == nil || input.Rules == nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "saveTemplateCopy", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationSaveTemplateCopy, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
 		if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil {
 			return nil, 0, ErrInvalidState
 		}
@@ -1501,7 +1599,7 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return runOperation(s, ctx, actor, "changeTemplate", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationChangeTemplate, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
 		if p.Status != "draft" {
 			return nil, 0, ErrInvalidState
 		}
@@ -1608,7 +1706,7 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return runOperation(s, ctx, actor, "createProject", "projects", key, input, authorizationRequest(actor, "", AuthorizationCreate, ""), focusedMutationPort[projectCreateTransaction], func(tx projectCreateTransaction, _ Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationCreateProject, "projects", key, input, authorizationRequest(actor, "", AuthorizationCreate, "")), focusedMutationPort[projectCreateTransaction], func(tx projectCreateTransaction, _ Project) (any, int, error) {
 		id := uuid.NewString()
 		copy.ID, copy.ProjectID = uuid.NewString(), id
 		p := Project{ID: id, Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, TemplateCopyVersion: 1, TemplateCopy: copy, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
@@ -1642,7 +1740,7 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}
-	return runOperation(s, ctx, actor, "saveSpec", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationSaveSpec, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), focusedMutationPort[projectUpdateTransaction], func(tx projectUpdateTransaction, p Project) (any, int, error) {
 		if p.Status != "draft" {
 			return nil, 0, ErrInvalidState
 		}
@@ -1802,7 +1900,7 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 	if err := validateChangeSetInput(input); err != nil {
 		return nil, 0, false, err
 	}
-	return runOperation(s, ctx, actor, "createChangeSet", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), focusedMutationPort[changeSetCreateTransaction], func(tx changeSetCreateTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationCreateChangeSet, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), focusedMutationPort[changeSetCreateTransaction], func(tx changeSetCreateTransaction, p Project) (any, int, error) {
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return nil, 0, ErrInvalidState
 		}
@@ -1984,7 +2082,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "applyChangeSet", projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[changeSetApplyTransaction], func(tx changeSetApplyTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationApplyChangeSet, projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, authorizationRequest(actor, projectID, AuthorizationManage, "")), focusedMutationPort[changeSetApplyTransaction], func(tx changeSetApplyTransaction, p Project) (any, int, error) {
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return nil, 0, ErrInvalidState
 		}
@@ -2156,7 +2254,7 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "rejectChangeSet", projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[changeSetRejectTransaction], func(tx changeSetRejectTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationRejectChangeSet, projectID+"/"+changeSetID, key, map[string]string{"change_set_id": changeSetID}, authorizationRequest(actor, projectID, AuthorizationManage, "")), focusedMutationPort[changeSetRejectTransaction], func(tx changeSetRejectTransaction, p Project) (any, int, error) {
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return nil, 0, ErrInvalidState
 		}
@@ -2231,7 +2329,7 @@ func (s *Service) CreateDraftCandidate(ctx context.Context, actor Actor, project
 	if input.Level != "candidate_evidence" && input.Level != "background" && input.Level != "discovery" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "createDraftCandidate", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), focusedMutationPort[draftCandidateMutationTransaction], func(tx draftCandidateMutationTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationCreateDraftCandidate, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), focusedMutationPort[draftCandidateMutationTransaction], func(tx draftCandidateMutationTransaction, p Project) (any, int, error) {
 		if p.Status != "draft" {
 			return nil, 0, ErrInvalidState
 		}
@@ -2380,7 +2478,7 @@ func (s *Service) RecordValidationIssueDisposition(ctx context.Context, actor Ac
 	if input.Action == "dismiss" && input.Severity == "blocking" {
 		issueAction = AuthorizationIssueDismissBlocking
 	}
-	return runOperation(s, ctx, actor, "validationIssueDisposition", projectID+"/"+input.IssueID, key, input, authorizationRequest(actor, projectID, issueAction, input.TargetID), focusedMutationPort[issueDispositionTransaction], func(tx issueDispositionTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationValidationIssue, projectID+"/"+input.IssueID, key, input, authorizationRequest(actor, projectID, issueAction, input.TargetID)), focusedMutationPort[issueDispositionTransaction], func(tx issueDispositionTransaction, p Project) (any, int, error) {
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return nil, 0, ErrInvalidState
 		}
@@ -2515,7 +2613,7 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "requestOwnerTransfer", projectID, key, input, authorizationRequest(actor, "", AuthorizationRead, ""), focusedMutationPort[ownerTransferRequestTransaction], func(tx ownerTransferRequestTransaction, _ Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationRequestOwnerTransfer, projectID, key, input, authorizationRequest(actor, "", AuthorizationRead, "")), focusedMutationPort[ownerTransferRequestTransaction], func(tx ownerTransferRequestTransaction, _ Project) (any, int, error) {
 		p, err := tx.Project(actor.TenantID, projectID)
 		if err != nil {
 			return nil, 0, err
@@ -2573,7 +2671,7 @@ func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor Actor, p
 }
 
 func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
-	return runOperation(s, ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, authorizationRequest(actor, "", AuthorizationRead, ""), focusedMutationPort[ownerTransferAcceptTransaction], func(tx ownerTransferAcceptTransaction, _ Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationAcceptOwnerTransfer, projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, authorizationRequest(actor, "", AuthorizationRead, "")), focusedMutationPort[ownerTransferAcceptTransaction], func(tx ownerTransferAcceptTransaction, _ Project) (any, int, error) {
 		if !validActor(actor) {
 			return nil, 0, ErrNotFound
 		}
@@ -2697,7 +2795,7 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}
-	return runOperation(s, ctx, actor, "saveMembers", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[collaboratorTransaction], func(tx collaboratorTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationSaveMembers, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), focusedMutationPort[collaboratorTransaction], func(tx collaboratorTransaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -2761,7 +2859,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 	if input.ExpectedSpecRevision < 0 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, "activateProject", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), focusedMutationPort[chapterActivationTransaction], func(tx chapterActivationTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationActivateProject, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), focusedMutationPort[chapterActivationTransaction], func(tx chapterActivationTransaction, p Project) (any, int, error) {
 		owner := false
 		for _, member := range p.Members {
 			if member.UserID == actor.UserID && member.Role == "owner" {
@@ -2992,7 +3090,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return runOperation(s, ctx, actor, "saveChapter", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), focusedMutationPort[chapterSaveTransaction], func(tx chapterSaveTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationSaveChapter, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), saveChapterSourceIDs), focusedMutationPort[chapterSaveTransaction], func(tx chapterSaveTransaction, p Project) (any, int, error) {
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
 		}
