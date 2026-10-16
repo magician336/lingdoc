@@ -50,15 +50,58 @@ type Transaction interface {
 	SaveOperation(OperationIdentity, OperationResult) error
 }
 
+// ProjectMembershipTransaction is the cohesive persistence port for project
+// lifecycle and membership state. It is an expand-phase view of Transaction:
+// the legacy surface remains available while mutation callbacks migrate in a
+// later slice.
+type ProjectMembershipTransaction interface {
+	ActiveMember(Actor) (bool, error)
+	Project(uint64, string) (Project, error)
+	Projects(Actor, int) ([]Project, error)
+	InsertProject(uint64, Project) error
+	UpdateProject(uint64, Project, Project) error
+	ReplaceCollaborators(string, []string) error
+	ReplaceMembers(string, []Member) error
+}
+
+// ChapterWorkspaceTransaction is the cohesive persistence port for chapter
+// versions and the mutable working copy that precedes them.
+type ChapterWorkspaceTransaction interface {
+	Chapters(string) ([]Chapter, error)
+	Chapter(string, string) (Chapter, error)
+	WorkingCopy(string, string) (WorkingCopy, error)
+	SaveWorkingCopy(WorkingCopy, WorkingCopy) error
+	ChapterVersions(string, string) ([]ChapterVersion, error)
+	ChapterVersion(string, string, string) (ChapterVersion, error)
+	InsertChapter(Chapter) error
+	AppendChapter(Chapter, Chapter, int64) error
+}
+
+// OperationTransaction is the cohesive persistence port for idempotency and
+// replay records. Operation records are still committed by the same
+// Repository transaction runner as every other port.
+type OperationTransaction interface {
+	Operation(OperationIdentity) (OperationResult, bool, error)
+	SaveOperation(OperationIdentity, OperationResult) error
+}
+
+// ReplayTransaction is a domain-language alias for OperationTransaction. It
+// gives replay-focused callers a seam without introducing another interface.
+type ReplayTransaction = OperationTransaction
+
+// AuditTransaction is the cohesive persistence port for in-transaction audit
+// records. The legacy unexported name below is retained for existing callers.
+type AuditTransaction interface {
+	RecordAudit(AuditEvent) error
+	AuditEvents(string) ([]AuditEvent, error)
+}
+
 type draftCandidateTransaction interface {
 	InsertDraftCandidate(DraftCandidate) error
 	DraftCandidates(string) ([]DraftCandidate, error)
 }
 
-type auditTransaction interface {
-	RecordAudit(AuditEvent) error
-	AuditEvents(string) ([]AuditEvent, error)
-}
+type auditTransaction = AuditTransaction
 
 type changeSetTransaction interface {
 	InsertChangeSet(ChangeSet) error
