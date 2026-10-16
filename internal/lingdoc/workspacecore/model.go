@@ -405,13 +405,14 @@ func (ContractDemoTemplate) Get(id, version string) (Template, error) {
 }
 
 var (
-	ErrNotFound            = errors.New("not_found")
-	ErrInvalidRequest      = errors.New("invalid_request")
-	ErrInvalidState        = errors.New("invalid_state")
-	ErrVersionConflict     = errors.New("version_conflict")
-	ErrIdempotencyConflict = errors.New("idempotency_conflict")
-	ErrRequestInProgress   = errors.New("request_in_progress")
-	ErrSourceUnavailable   = errors.New("source_access_denied")
+	ErrNotFound                    = errors.New("not_found")
+	ErrInvalidRequest              = errors.New("invalid_request")
+	ErrInvalidState                = errors.New("invalid_state")
+	ErrVersionConflict             = errors.New("version_conflict")
+	ErrIdempotencyConflict         = errors.New("idempotency_conflict")
+	ErrRequestInProgress           = errors.New("request_in_progress")
+	ErrSourceUnavailable           = errors.New("source_access_denied")
+	ErrPermissionSchemaUnavailable = errors.New("permission_schema_unavailable")
 )
 
 type projectRow struct {

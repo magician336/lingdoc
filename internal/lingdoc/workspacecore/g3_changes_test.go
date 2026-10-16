@@ -350,6 +350,87 @@ func TestStaleChangeSetCanBeReassessedAgainstCurrentBaseline(t *testing.T) {
 	}
 }
 
+func TestReassessChangeSetReturnsSatisfiedWhenAllTargetsAreCurrent(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-satisfied.db"))
+	actor := Actor{TenantID: 318, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	create := func(key string) ChangeSet {
+		t.Helper()
+		raw, status, replay, err := svc.CreateChangeSet(context.Background(), actor, project.ID, key, CreateChangeSetInput{
+			ExpectedContextRevision: project.CurrentContextRevision,
+			Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: "新目标"}},
+			AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "目标已更新",
+		})
+		if err != nil || status != 201 || replay {
+			t.Fatalf("create %s: status=%d replay=%v err=%v", key, status, replay, err)
+		}
+		var change ChangeSet
+		if err := json.Unmarshal(raw, &change); err != nil {
+			t.Fatalf("decode %s: %v", key, err)
+		}
+		return change
+	}
+	first := create("g3-satisfied-first")
+	stale := create("g3-satisfied-stale")
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, first.ID, "g3-satisfied-first-apply"); err != nil || status != 200 {
+		t.Fatalf("apply first: status=%d err=%v", status, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-satisfied-stale-apply"); err != nil || status != 409 {
+		t.Fatalf("mark stale proposal: status=%d err=%v", status, err)
+	}
+	before, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, status, replay, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-satisfied-reassess")
+	if err != nil || status != 201 || replay {
+		t.Fatalf("reassess satisfied proposal: status=%d replay=%v err=%v", status, replay, err)
+	}
+	var satisfied ChangeSet
+	if err := json.Unmarshal(raw, &satisfied); err != nil {
+		t.Fatal(err)
+	}
+	if satisfied.Status != "satisfied" || satisfied.ReassessedFromID != stale.ID || len(satisfied.Fields) != 0 || len(satisfied.Impacts) != 0 ||
+		satisfied.TargetContextRevision == nil || *satisfied.TargetContextRevision != before.CurrentContextRevision ||
+		satisfied.TargetSpecRevision == nil || *satisfied.TargetSpecRevision != before.SpecRevision {
+		t.Fatalf("unexpected satisfied result: %+v", satisfied)
+	}
+	after, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || after.ProjectVersion != before.ProjectVersion || after.CurrentContextRevision != before.CurrentContextRevision ||
+		after.SpecRevision != before.SpecRevision || after.Spec["research_goal"] != "新目标" {
+		t.Fatalf("no-op reassessment mutated project: before=%+v after=%+v err=%v", before, after, err)
+	}
+	staleAfter, err := svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || staleAfter.Status != "stale" || staleAfter.StaleReason == "" {
+		t.Fatalf("satisfied reassessment rewrote stale history: %+v err=%v", staleAfter, err)
+	}
+	if _, _, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, satisfied.ID, "g3-satisfied-apply"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("applying satisfied result error = %v, want ErrInvalidState", err)
+	}
+	events, err := svc.ListAuditEvents(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundAudit := false
+	for _, event := range events {
+		if event.Target == satisfied.ID && event.Action == "project.change_set.reassess" && event.Details["outcome"] == "already_satisfied" {
+			foundAudit = true
+		}
+	}
+	if !foundAudit {
+		t.Fatalf("missing satisfied reassessment audit for %s", satisfied.ID)
+	}
+	replayBody, replayStatus, replayed, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-satisfied-reassess")
+	if err != nil || replayStatus != 201 || !replayed || string(replayBody) != string(raw) {
+		t.Fatalf("satisfied replay: status=%d replay=%v identical=%v err=%v", replayStatus, replayed, string(replayBody) == string(raw), err)
+	}
+}
+
 func TestReassessRejectsDeltaIncompatibleWithCurrentTemplate(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-template-type.db"))
 	actor := Actor{TenantID: 316, UserID: "owner"}

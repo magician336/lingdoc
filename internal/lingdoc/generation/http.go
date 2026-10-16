@@ -197,6 +197,10 @@ func generationHTTPStatus(err error) int {
 	switch {
 	case errors.Is(err, ErrInvalidRequest):
 		return http.StatusBadRequest
+	case errors.Is(err, ErrInsufficientEvidence), errors.Is(err, ErrAssetNotReady),
+		errors.Is(err, ErrPreflightBlocked), errors.Is(err, ErrInvalidState),
+		errors.Is(err, ErrAssetNotAuthorized):
+		return http.StatusUnprocessableEntity
 	case errors.Is(err, ErrNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrSourceAccessDenied):
@@ -212,9 +216,28 @@ func generationHTTPStatus(err error) int {
 
 func writeGenerationError(c *gin.Context, requestID string, status int, err error) {
 	code, message := "internal_error", "服务器暂时无法完成请求。"
+	var details any
 	switch {
 	case errors.Is(err, ErrInvalidRequest):
 		code, message = "invalid_request", "请求字段不符合约定。"
+	case errors.Is(err, ErrInsufficientEvidence):
+		code, message = "insufficient_evidence", "允许资料不足以生成该章节。"
+	case errors.Is(err, ErrAssetNotReady):
+		code, message = "asset_not_ready", "资料尚未处理完成。"
+	case errors.Is(err, ErrPreflightBlocked):
+		code, message = "preflight_blocked", "请先处理交付阻断项。"
+	case errors.Is(err, ErrInvalidState):
+		code, message = "invalid_state", "当前阶段不能执行该动作。"
+	case errors.Is(err, ErrAssetNotAuthorized):
+		code, message = "asset_not_authorized", "请求中存在未获授权的资料，未开始处理。"
+		var denied *AssetNotAuthorizedError
+		if errors.As(err, &denied) {
+			items := make([]map[string]string, 0, len(denied.Denied))
+			for _, item := range denied.Denied {
+				items = append(items, map[string]string{"asset_id": item.AssetID, "reason": item.Reason})
+			}
+			details = map[string]any{"denied": items}
+		}
 	case errors.Is(err, ErrNotFound):
 		code, message = "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrForbidden):
@@ -230,5 +253,9 @@ func writeGenerationError(c *gin.Context, requestID string, status int, err erro
 	case status == http.StatusUnauthorized:
 		code, message = "unauthenticated", "请登录后重试。"
 	}
-	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": status >= 500}, "request_id": requestID})
+	errorBody := gin.H{"code": code, "message": message, "retryable": status >= 500}
+	if details != nil {
+		errorBody["details"] = details
+	}
+	c.JSON(status, gin.H{"error": errorBody, "request_id": requestID})
 }

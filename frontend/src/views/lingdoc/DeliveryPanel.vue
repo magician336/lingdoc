@@ -21,7 +21,7 @@ const props = defineProps<{
 
 // 项目是上层传进来的 prop，面板改不了它。而检查与冻结都要交一个 expected_project_version
 // 上去，过期了就只能请上层重读——这件事面板自己做不了。
-const emit = defineEmits<{ refreshProject: [] }>()
+const emit = defineEmits<{ refreshProject: [done?: (ok: boolean) => void] }>()
 
 const statusLabels: Record<CheckStatus, string> = {
   passed: '通过',
@@ -64,7 +64,9 @@ const currencyReads = ref<Record<string, ReleaseSnapshot | undefined>>({})
 
 /** 正在进行的动作。按钮的 loading 就是「导出进度」——导出是同步的，没有轮询可做。 */
 const pending = ref('')
-const busy = computed(() => pending.value !== '')
+const refreshingProject = ref(false)
+let refreshSequence = 0
+const busy = computed(() => pending.value !== '' || refreshingProject.value)
 const errorMessage = ref('')
 
 /** 冻结：同一个待冻结状态重试时复用同一个键，成功之后下一次冻结是一个新动作。 */
@@ -130,11 +132,25 @@ function fail(error: unknown, fallback: string) {
  * 本地编辑，所以正确的动作是重新读一遍当前项目。少了这一步，用户会卡在一个自己解不开的
  * 409 上——面板手上的版本永远不会变，每次重试都是同一个错。协作编辑是这条路径的现实来源。
  */
+watch(() => props.project.id, () => {
+  refreshSequence++
+  refreshingProject.value = false
+})
+
 function recoverVersionConflict(error: unknown): boolean {
   const item = error as { status?: number; error?: { code?: string } }
   if (item?.status !== 409 || item?.error?.code !== 'version_conflict') return false
-  errorMessage.value = '项目内容已被修改。已重新读取当前版本，请再试一次。'
-  emit('refreshProject')
+  const projectId = props.project.id
+  const sequence = ++refreshSequence
+  refreshingProject.value = true
+  errorMessage.value = '项目内容已被修改，正在重新读取当前版本…'
+  emit('refreshProject', (ok) => {
+    if (props.project.id !== projectId || refreshSequence !== sequence) return
+    refreshingProject.value = false
+    errorMessage.value = ok
+      ? '项目内容已被修改。已重新读取当前版本，请再试一次。'
+      : '项目版本重新读取失败。请重新读取项目后再试；本次操作未自动重试。'
+  })
   return true
 }
 

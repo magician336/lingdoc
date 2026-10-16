@@ -1,0 +1,35 @@
+name: LingDoc Minimal Acceptance Summary
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  summary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Generate SHA-bound summary
+        env:
+          LINGDOC_ACCEPTANCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/lingdoc-minimal-acceptance"
+          python scripts/acceptance/lingdoc_minimal_summary.py \
+            --output "$RUNNER_TEMP/lingdoc-minimal-acceptance/summary.json"
+      - name: Upload SHA-bound summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingdoc-minimal-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-minimal-acceptance/summary.json
+          if-no-files-found: error
+          retention-days: 14

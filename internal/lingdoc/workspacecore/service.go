@@ -44,9 +44,14 @@ func storageError(err error) error {
 	}
 	return err
 }
-func optionalPermissionTable(err error) error {
-	if err != nil && strings.Contains(err.Error(), "no such table: lingdoc_member_permissions") {
+func permissionSchemaError(err error) error {
+	if err == nil {
 		return nil
+	}
+	message := strings.ToLower(err.Error())
+	if strings.Contains(message, "lingdoc_member_permissions") &&
+		(strings.Contains(message, "no such table") || strings.Contains(message, "does not exist") || strings.Contains(message, "undefined table")) {
+		return fmt.Errorf("%w: %v", ErrPermissionSchemaUnavailable, err)
 	}
 	return err
 }
@@ -78,8 +83,8 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 		for _, permission := range permissionRows {
 			permissions[permission.UserID] = permission
 		}
-	} else if !strings.Contains(err.Error(), "no such table: lingdoc_member_permissions") {
-		return Project{}, err
+	} else {
+		return Project{}, permissionSchemaError(err)
 	}
 	deliveryStatus := row.DeliveryStatus
 	if deliveryStatus == "" {
@@ -204,7 +209,7 @@ func (t gormTransaction) InsertProject(tenantID uint64, p Project) error {
 		if status == "" {
 			status = "active"
 		}
-		if err := optionalPermissionTable(t.db.Create(&memberPermissionRow{ProjectID: p.ID, UserID: m.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error); err != nil {
+		if err := permissionSchemaError(t.db.Create(&memberPermissionRow{ProjectID: p.ID, UserID: m.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error); err != nil {
 			return err
 		}
 	}
@@ -288,7 +293,7 @@ func (t gormTransaction) ReplaceCollaborators(projectID string, ids []string) er
 		if err := t.db.Create(&memberRow{ProjectID: projectID, UserID: id, Role: "collaborator"}).Error; err != nil {
 			return err
 		}
-		if err := optionalPermissionTable(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: id, GovernanceRole: "member", FunctionRolesJSON: "[\"author\"]", FunctionScopesJSON: "{}", Status: "active"}).Error); err != nil {
+		if err := permissionSchemaError(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: id, GovernanceRole: "member", FunctionRolesJSON: "[\"author\"]", FunctionScopesJSON: "{}", Status: "active"}).Error); err != nil {
 			return err
 		}
 	}
@@ -299,7 +304,7 @@ func (t gormTransaction) ReplaceMembers(projectID string, members []Member) erro
 	if err := t.db.Where("project_id = ?", projectID).Delete(&memberRow{}).Error; err != nil {
 		return err
 	}
-	if err := optionalPermissionTable(t.db.Where("project_id = ?", projectID).Delete(&memberPermissionRow{}).Error); err != nil {
+	if err := permissionSchemaError(t.db.Where("project_id = ?", projectID).Delete(&memberPermissionRow{}).Error); err != nil {
 		return err
 	}
 	for _, member := range members {
@@ -320,7 +325,7 @@ func (t gormTransaction) ReplaceMembers(projectID string, members []Member) erro
 		if status == "" {
 			status = "active"
 		}
-		if err := optionalPermissionTable(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error); err != nil {
+		if err := permissionSchemaError(t.db.Create(&memberPermissionRow{ProjectID: projectID, UserID: member.UserID, GovernanceRole: governance, FunctionRolesJSON: string(roles), FunctionScopesJSON: string(scopes), Status: status}).Error); err != nil {
 			return err
 		}
 	}

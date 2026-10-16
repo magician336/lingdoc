@@ -149,7 +149,9 @@ export interface ChangeSet {
   project_id: string
   created_by: string
   reason: string
-  status: 'assessed' | 'applied' | 'rejected' | 'stale'
+  status: 'assessed' | 'applied' | 'rejected' | 'stale' | 'satisfied'
+  reassessed_from_id?: string
+  stale_reason?: string
   base_context_revision: number
   target_context_revision?: number
   base_spec_revision: number

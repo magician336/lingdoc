@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/google/uuid"
 )
@@ -23,6 +24,11 @@ var (
 	ErrInvalidRequest              = errors.New("invalid_request")
 	ErrNotFound                    = errors.New("not_found")
 	ErrForbidden                   = errors.New("forbidden")
+	ErrInsufficientEvidence        = errors.New("insufficient_evidence")
+	ErrAssetNotReady               = errors.New("asset_not_ready")
+	ErrPreflightBlocked            = errors.New("preflight_blocked")
+	ErrInvalidState                = errors.New("invalid_state")
+	ErrAssetNotAuthorized          = errors.New("asset_not_authorized")
 	ErrVersionConflict             = errors.New("version_conflict")
 	ErrSourceAccessDenied          = errors.New("source_access_denied")
 	ErrSourceStale                 = errors.New("source_stale")
@@ -37,6 +43,25 @@ var (
 	ErrAcceptanceOutcomeUnknown    = errors.New("acceptance_outcome_unknown")
 	ErrAcceptanceModelMismatch     = errors.New("acceptance_model_mismatch")
 )
+
+// DeniedAsset records the per-asset reason that prevented a generation
+// request from entering the queue. It deliberately mirrors the public error
+// contract without exposing evidence-layer implementation types.
+type DeniedAsset struct {
+	AssetID string `json:"asset_id"`
+	Reason  string `json:"reason"`
+}
+
+// AssetNotAuthorizedError preserves the denied asset list required by the
+// startGeneration 422 response. The sentinel lets transport code classify the
+// error while the concrete value keeps the details for the response body.
+type AssetNotAuthorizedError struct {
+	Denied []DeniedAsset
+}
+
+func (e *AssetNotAuthorizedError) Error() string { return ErrAssetNotAuthorized.Error() }
+
+func (e *AssetNotAuthorizedError) Unwrap() error { return ErrAssetNotAuthorized }
 
 type Status string
 
@@ -165,6 +190,9 @@ type DelayedEnqueuer interface {
 }
 
 type Service struct {
+	// Access is the production application policy. The legacy ports remain
+	// available for adapters that are migrated independently.
+	Access      lingdocaccess.Policy
 	Authorizer  Authorizer
 	Inputs      InputResolver
 	Sources     SourceValidator
@@ -178,6 +206,13 @@ type Service struct {
 func NewService(authorizer Authorizer, inputs InputResolver, sources SourceValidator, currentness CurrentnessChecker, model ModelAdapter, repo Repository, enqueuer Enqueuer) *Service {
 	return &Service{Authorizer: authorizer, Inputs: inputs, Sources: sources, Currentness: currentness, Model: model, Repository: repo,
 		Enqueuer: enqueuer, NewID: func() string { return uuid.NewString() }}
+}
+
+// NewServiceWithAccessPolicy wires generation through the shared LingDoc
+// authorization/currentness policy.
+func NewServiceWithAccessPolicy(policy lingdocaccess.Policy, inputs InputResolver, sources SourceValidator, model ModelAdapter, repo Repository, enqueuer Enqueuer) *Service {
+	return &Service{Access: policy, Inputs: inputs, Sources: sources, Model: model, Repository: repo, Enqueuer: enqueuer,
+		NewID: func() string { return uuid.NewString() }}
 }
 
 func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string, request Request) (Run, error) {
@@ -195,10 +230,10 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 			return Run{}, ErrInvalidRequest
 		}
 	}
-	if s.Authorizer == nil || s.Inputs == nil || s.Repository == nil || s.Enqueuer == nil {
+	if !s.hasAuthorization() || s.Inputs == nil || s.Repository == nil || s.Enqueuer == nil {
 		return Run{}, ErrDependencyUnavailable
 	}
-	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		return Run{}, err
 	}
 	encoded, err := json.Marshal(request)
@@ -252,7 +287,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 // Execute processes one queued run. A conditional claim prevents duplicate
 // workers from invoking the model for the same run.
 func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
-	if s.Repository == nil || s.Model == nil || s.Currentness == nil || s.Sources == nil || s.Authorizer == nil {
+	if s.Repository == nil || s.Model == nil || !s.hasCurrentness() || s.Sources == nil || !s.hasAuthorization() {
 		return Run{}, ErrDependencyUnavailable
 	}
 	run, input, claimed, err := s.Repository.Claim(ctx, runID)
@@ -288,13 +323,13 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		cancel()
 		<-heartbeatDone
 	}()
-	if err := s.Authorizer.AuthorizeGeneration(ctx, input.Actor, run.ProjectID); err != nil {
+	if err := s.authorize(ctx, input.Actor, run.ProjectID); err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
 	if err := s.Sources.ValidateGenerationSources(ctx, input.Actor, run.ProjectID, input.Sources); err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
-	current, err := s.Currentness.GenerationInputIsCurrent(ctx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
+	current, err := s.current(ctx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
 	if err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
@@ -381,7 +416,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		}
 		return failed, nil
 	}
-	current, err = s.Currentness.GenerationInputIsCurrent(workCtx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
+	current, err = s.current(workCtx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
 	if err != nil {
 		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusInterrupted, RunError{Code: "currentness_unavailable", Message: "无法确认生成输入仍为当前版本，任务已中断。", Retryable: true})
 		if storeErr != nil {
@@ -454,30 +489,30 @@ func (s *Service) failBeforeModel(ctx context.Context, run Run, cause error) (Ru
 }
 
 func (s *Service) Get(ctx context.Context, actor Actor, projectID, runID string) (Run, error) {
-	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || actor.UserID == "" {
+	if s.Repository == nil || !s.hasAuthorization() || actor.TenantID == 0 || actor.UserID == "" {
 		return Run{}, ErrNotFound
 	}
-	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		return Run{}, ErrNotFound
 	}
 	return s.Repository.Get(ctx, actor, projectID, runID)
 }
 
 func (s *Service) Cancel(ctx context.Context, actor Actor, projectID, runID string) (Run, error) {
-	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
+	if s.Repository == nil || !s.hasAuthorization() || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
 		return Run{}, ErrNotFound
 	}
-	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		return Run{}, err
 	}
 	return s.Repository.Cancel(ctx, actor, projectID, runID)
 }
 
 func (s *Service) ListCandidates(ctx context.Context, actor Actor, projectID, chapterID string) ([]candidateadoption.CandidateSummary, error) {
-	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
+	if s.Repository == nil || !s.hasAuthorization() || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
 		return nil, ErrNotFound
 	}
-	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		return nil, err
 	}
 	candidates, err := s.Repository.ListCandidates(ctx, projectID, chapterID)
@@ -491,10 +526,10 @@ func (s *Service) ListCandidates(ctx context.Context, actor Actor, projectID, ch
 }
 
 func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runID string) (candidateadoption.Candidate, error) {
-	if s.Repository == nil || s.Authorizer == nil || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
+	if s.Repository == nil || !s.hasAuthorization() || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
 		return candidateadoption.Candidate{}, ErrNotFound
 	}
-	if err := s.Authorizer.AuthorizeGeneration(ctx, actor, projectID); err != nil {
+	if err := s.authorize(ctx, actor, projectID); err != nil {
 		return candidateadoption.Candidate{}, err
 	}
 	candidate, input, err := s.Repository.GetCandidate(ctx, projectID, runID)
@@ -531,14 +566,48 @@ func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runI
 }
 
 func (s *Service) candidateValidity(ctx context.Context, actor Actor, projectID, chapterID string, basis candidateadoption.Basis) string {
-	if s.Currentness == nil {
+	if !s.hasCurrentness() {
 		return "stale"
 	}
-	current, err := s.Currentness.GenerationInputIsCurrent(ctx, actor, projectID, chapterID, basis)
+	current, err := s.current(ctx, actor, projectID, chapterID, basis)
 	if err != nil || !current {
 		return "stale"
 	}
 	return "fresh"
+}
+
+func (s *Service) hasAuthorization() bool {
+	return s != nil && (s.Access != nil || s.Authorizer != nil)
+}
+
+func (s *Service) hasCurrentness() bool { return s != nil && (s.Access != nil || s.Currentness != nil) }
+
+func (s *Service) authorize(ctx context.Context, actor Actor, projectID string) error {
+	if s.Access != nil {
+		return s.Access.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, ProjectID: projectID}, "read")
+	}
+	if s.Authorizer == nil {
+		return ErrDependencyUnavailable
+	}
+	return s.Authorizer.AuthorizeGeneration(ctx, actor, projectID)
+}
+
+func (s *Service) current(ctx context.Context, actor Actor, projectID, chapterID string, basis candidateadoption.Basis) (bool, error) {
+	if s.Access != nil {
+		assetVersions := make([]lingdocaccess.AssetVersion, 0, len(basis.AssetVersions))
+		for _, asset := range basis.AssetVersions {
+			assetVersions = append(assetVersions, lingdocaccess.AssetVersion{AssetID: asset.AssetID, Revision: asset.AssetRevision})
+		}
+		return s.Access.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, ProjectID: projectID}, lingdocaccess.CurrentnessInput{
+			Kind:      lingdocaccess.GenerationInput,
+			ProjectID: projectID, ChapterID: chapterID, SpecRevision: int64(basis.SpecRevision), ChapterVersionID: basis.ChapterVersionID,
+			TemplateID: basis.TemplateID, TemplateVersion: basis.TemplateVersion, RulesetHash: basis.RulesetHash, AssetVersions: assetVersions,
+		})
+	}
+	if s.Currentness == nil {
+		return false, ErrDependencyUnavailable
+	}
+	return s.Currentness.GenerationInputIsCurrent(ctx, actor, projectID, chapterID, basis)
 }
 
 func (s *Service) id() string {

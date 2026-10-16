@@ -17,7 +17,8 @@ import (
 )
 
 type Handler struct {
-	service     ApplicationService
+	read        WorkspaceReadApplication
+	write       WorkspaceWriteApplication
 	sources     SourceApplicationService
 	integration WorkspaceIntegration
 	rewrites    SelectedRewriteApplication
@@ -29,13 +30,18 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	if templates == nil {
 		templates = delivery.NewFixedTemplateReader()
 	}
+	read, write := deps.Read, deps.Write
+	if read == nil {
+		read = deps.Service
+	}
+	if write == nil {
+		write = deps.Service
+	}
 	return &Handler{
-		service: deps.Service, sources: deps.Sources, integration: deps.Integration,
+		read: read, write: write, sources: deps.Sources, integration: deps.Integration,
 		rewrites: deps.SelectedRewrites, templates: templates,
 	}
 }
-
-func (h *Handler) Service() ApplicationService { return h.service }
 
 func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/templates/:templateId", h.getTemplate)
@@ -239,6 +245,20 @@ func decodeBody(c *gin.Context, dst any) bool {
 	return true
 }
 
+// requireEmptyBody enforces the bodyless contract of operations whose full
+// idempotency payload is determined by their path and headers.
+func requireEmptyBody(c *gin.Context) bool {
+	if c.Request.Body == nil || c.Request.Body == http.NoBody {
+		return true
+	}
+	n, err := io.CopyN(io.Discard, c.Request.Body, 1)
+	if n > 0 || (err != nil && err != io.EOF) {
+		sendError(c, ErrInvalidRequest)
+		return false
+	}
+	return true
+}
+
 func idempotencyKey(c *gin.Context) (string, bool) {
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
 	if len(key) < 8 || len(key) > 128 {
@@ -253,7 +273,7 @@ func (h *Handler) listProjects(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, truncated, err := h.service.ListProjects(c.Request.Context(), actor)
+	items, truncated, err := h.read.ListProjects(c.Request.Context(), actor)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -287,7 +307,7 @@ func (h *Handler) createProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.CreateProject(c.Request.Context(), actor, key, input)
+	data, status, replay, err := h.write.CreateProject(c.Request.Context(), actor, key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -300,7 +320,7 @@ func (h *Handler) getProject(c *gin.Context) {
 	if !ok {
 		return
 	}
-	project, err := h.service.GetProject(c.Request.Context(), actor, c.Param("projectId"))
+	project, err := h.read.GetProject(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -321,7 +341,7 @@ func (h *Handler) saveSpec(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.SaveSpec(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.SaveSpec(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -342,7 +362,7 @@ func (h *Handler) activateProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.ActivateProject(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.ActivateProject(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -355,7 +375,7 @@ func (h *Handler) listDraftCandidates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.service.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -376,7 +396,7 @@ func (h *Handler) createDraftCandidate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.CreateDraftCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.CreateDraftCandidate(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -389,7 +409,7 @@ func (h *Handler) listAuditEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.service.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -409,7 +429,7 @@ func (h *Handler) activationDiff(c *gin.Context) {
 			return
 		}
 	}
-	diff, err := h.service.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
+	diff, err := h.read.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -429,7 +449,7 @@ func (h *Handler) previewTemplateMigration(c *gin.Context) {
 			return
 		}
 	}
-	data, err := h.service.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	data, err := h.read.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -446,7 +466,7 @@ func (h *Handler) previewTemplateMigrationPost(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, err := h.service.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	data, err := h.read.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -467,7 +487,7 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -485,7 +505,7 @@ func (h *Handler) getTemplateCopy(c *gin.Context) {
 		sendError(c, ErrInvalidRequest)
 		return
 	}
-	copy, err := h.service.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
+	copy, err := h.read.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -502,7 +522,7 @@ func (h *Handler) previewTemplateCopyEdit(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	preview, err := h.service.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
+	preview, err := h.read.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -523,7 +543,7 @@ func (h *Handler) saveTemplateCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.SaveTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.SaveTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -546,7 +566,7 @@ func (h *Handler) discardProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.DiscardProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	data, status, replay, err := h.write.DiscardProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -569,7 +589,7 @@ func (h *Handler) restoreProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.RestoreProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	data, status, replay, err := h.write.RestoreProject(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -599,9 +619,9 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 	var replay bool
 	var err error
 	if input.NewOwnerUserID != "" {
-		data, status, replay, err = h.service.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+		data, status, replay, err = h.write.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
 	} else {
-		data, status, replay, err = h.service.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+		data, status, replay, err = h.write.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
 	}
 	if err != nil {
 		sendError(c, err)
@@ -619,7 +639,7 @@ func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, status, replay, err := h.service.AcceptOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+	data, status, replay, err := h.write.AcceptOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -640,7 +660,7 @@ func (h *Handler) saveMembers(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -653,7 +673,7 @@ func (h *Handler) listChapters(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.service.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -744,7 +764,7 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.SaveChapter(c.Request.Context(), actor,
+	data, status, replay, err := h.write.SaveChapter(c.Request.Context(), actor,
 		c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
@@ -758,7 +778,7 @@ func (h *Handler) getWorkingCopy(c *gin.Context) {
 	if !ok {
 		return
 	}
-	workingCopy, err := h.service.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	workingCopy, err := h.read.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -834,7 +854,7 @@ func (h *Handler) saveWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.SaveWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	data, status, replay, err := h.write.SaveWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -855,7 +875,7 @@ func (h *Handler) commitWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.CommitWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	data, status, replay, err := h.write.CommitWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -868,7 +888,7 @@ func (h *Handler) listChapterVersions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	versions, err := h.service.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	versions, err := h.read.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -889,7 +909,7 @@ func (h *Handler) restoreWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.RestoreWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	data, status, replay, err := h.write.RestoreWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -915,7 +935,7 @@ func (h *Handler) listChangeSets(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.service.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -928,7 +948,7 @@ func (h *Handler) getChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.service.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
+	data, err := h.read.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -949,7 +969,7 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.CreateChangeSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -964,6 +984,9 @@ func (h *Handler) reassessChangeSet(c *gin.Context) {
 	}
 	key, ok := idempotencyKey(c)
 	if !ok {
+		return
+	}
+	if !requireEmptyBody(c) {
 		return
 	}
 	data, status, replay, err := h.service.ReassessChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
@@ -983,7 +1006,7 @@ func (h *Handler) applyChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, status, replay, err := h.service.ApplyChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	data, status, replay, err := h.write.ApplyChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1007,7 +1030,7 @@ func (h *Handler) rejectChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, status, replay, err := h.service.RejectChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	data, status, replay, err := h.write.RejectChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
