@@ -161,7 +161,7 @@ func TestSQLiteGovernedFreezeAndUseAuditCommitAtomically(t *testing.T) {
 	}
 	event := deliveryRuleSetUseEvent(snapshot, "release_snapshot", snapshot.ID, "passed")
 	attempt := FreezeAttempt{ActorID: "owner", ProjectID: snapshot.ProjectID, Key: "freeze-audit-key"}
-	audited, ok := store.(RuleSetUseFreezeRecorder)
+	audited, ok := any(store).(RuleSetUseFreezeRecorder)
 	if !ok {
 		t.Fatal("SQLite snapshot store must support atomic RuleSet-use audit")
 	}
@@ -204,7 +204,7 @@ func TestSQLiteGovernedExportAndUseAuditCommitAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	store := NewSQLiteExportStore(db)
-	audited, ok := store.(RuleSetUseExportRecorder)
+	audited, ok := any(store).(RuleSetUseExportRecorder)
 	if !ok {
 		t.Fatal("SQLite export store must support atomic RuleSet-use audit")
 	}

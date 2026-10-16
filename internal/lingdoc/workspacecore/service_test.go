@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
