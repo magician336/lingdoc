@@ -239,10 +239,6 @@ type sourceRevalidator struct {
 
 var _ sourcepolicy.Reviewer = (*sourceRevalidator)(nil)
 
-// revalidated is kept as a local alias while consumers migrate to the shared
-// sourcepolicy.Verdict model. It is intentionally not a second verdict type.
-type revalidated = sourcepolicy.Verdict
-
 // Review 逐条给出结论，顺序与请求一致（去重、去空白后）。
 func (p *sourceRevalidator) Review(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]sourcepolicy.Verdict, error) {
 	rebuilt, err := p.rebuild(ctx, projectID, actor, sourceIDs)
