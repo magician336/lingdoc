@@ -391,6 +391,51 @@ func TestCreateProjectResultIsTransportNeutralAndReplays(t *testing.T) {
 	}
 }
 
+func TestProjectMutationResultsPreserveMemberAndOwnerSemantics(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Members = []Member{
+		{UserID: "owner", Role: "owner", GovernanceRole: "owner", Status: "active"},
+		{UserID: "member", Role: "collaborator", GovernanceRole: "member", Status: "active"},
+	}
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	members, err := service.SaveMembersResult(context.Background(), actor, "p", "typed-members", SaveMembersInput{
+		ExpectedProjectVersion: 1,
+		Members:                []Member{{UserID: "member", GovernanceRole: "member", Status: "active"}},
+	})
+	if err != nil {
+		t.Fatalf("typed members: %v", err)
+	}
+	if members.Replayed || members.Project.ProjectVersion != 2 || len(members.Project.Members) != 2 {
+		t.Fatalf("typed members result = %+v, want updated project", members)
+	}
+
+	transfer, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
+		ExpectedProjectVersion: 2,
+		NewOwnerUserID:         "member",
+	})
+	if err != nil {
+		t.Fatalf("typed owner transfer: %v", err)
+	}
+	hasNewOwner := false
+	for _, member := range transfer.Project.Members {
+		if member.UserID == "member" && member.Role == "owner" {
+			hasNewOwner = true
+		}
+	}
+	if transfer.Replayed || transfer.Project.ProjectVersion != 3 || !hasNewOwner {
+		t.Fatalf("typed owner transfer result = %+v, want owner change", transfer)
+	}
+
+	if _, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
+		ExpectedProjectVersion: 2,
+		NewOwnerUserID:         "member",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner transfer replay after ownership change = %v, want authorization denial", err)
+	}
+}
+
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
 // discards both domain writes and replay records on any callback error.
 type stateRepository struct {

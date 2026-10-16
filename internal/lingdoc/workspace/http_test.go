@@ -64,6 +64,48 @@ func (s *createProjectApplicationStub) CreateProjectResult(_ context.Context, ac
 	return s.result, nil
 }
 
+type projectManagementApplicationStub struct {
+	applicationServiceStub
+	projectResult  ProjectMutationResult
+	transferResult OwnerTransferResult
+	changeCalled   bool
+	copyCalled     bool
+	membersCalled  bool
+	transferCalled bool
+	requestCalled  bool
+	acceptCalled   bool
+}
+
+func (s *projectManagementApplicationStub) ChangeTemplateResult(context.Context, Actor, string, string, TemplateMigrationInput) (ProjectMutationResult, error) {
+	s.changeCalled = true
+	return s.projectResult, nil
+}
+
+func (s *projectManagementApplicationStub) SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
+	s.copyCalled = true
+	return s.projectResult, nil
+}
+
+func (s *projectManagementApplicationStub) SaveMembersResult(context.Context, Actor, string, string, SaveMembersInput) (ProjectMutationResult, error) {
+	s.membersCalled = true
+	return s.projectResult, nil
+}
+
+func (s *projectManagementApplicationStub) TransferOwnerResult(context.Context, Actor, string, string, TransferOwnerInput) (ProjectMutationResult, error) {
+	s.transferCalled = true
+	return s.projectResult, nil
+}
+
+func (s *projectManagementApplicationStub) RequestOwnerTransferResult(context.Context, Actor, string, string, OwnerTransferInput) (OwnerTransferResult, error) {
+	s.requestCalled = true
+	return s.transferResult, nil
+}
+
+func (s *projectManagementApplicationStub) AcceptOwnerTransferResult(context.Context, Actor, string, string, string) (OwnerTransferResult, error) {
+	s.acceptCalled = true
+	return s.transferResult, nil
+}
+
 type sourceApplicationServiceStub struct {
 	SourceApplicationService
 	actor     Actor
@@ -252,6 +294,47 @@ func TestHandlerMapsTransportNeutralCreateProjectResult(t *testing.T) {
 	}
 	if body.Data.ID != "project-1" || body.Data.Name != "typed project" || body.Data.Status != "draft" || body.Meta.Replayed {
 		t.Fatalf("typed create response = %#v, want created project without replay", body)
+	}
+}
+
+func TestHandlerMapsTransportNeutralProjectManagementResults(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &projectManagementApplicationStub{
+		projectResult:  ProjectMutationResult{Project: Project{ID: "project-1", ProjectVersion: 2}},
+		transferResult: OwnerTransferResult{Transfer: OwnerTransfer{ID: "transfer-1", Status: "pending"}},
+	}
+	handler := NewHandler(HandlerDependencies{Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+
+	requests := []struct {
+		method string
+		path   string
+		body   string
+		key    string
+		want   int
+		check  func() bool
+	}{
+		{http.MethodPost, "/api/projects/project-1/template-migration", `{}`, "typed-template-change", http.StatusOK, func() bool { return service.changeCalled }},
+		{http.MethodPut, "/api/projects/project-1/template-copy", `{}`, "typed-template-copy", http.StatusOK, func() bool { return service.copyCalled }},
+		{http.MethodPut, "/api/projects/project-1/members", `{}`, "typed-members", http.StatusOK, func() bool { return service.membersCalled }},
+		{http.MethodPost, "/api/projects/project-1/owner-transfer", `{"expected_project_version":1,"new_owner_user_id":"member"}`, "typed-owner-transfer", http.StatusOK, func() bool { return service.transferCalled }},
+		{http.MethodPost, "/api/projects/project-1/owner-transfer", `{"expected_project_version":1,"to_user_id":"member"}`, "typed-owner-request", http.StatusCreated, func() bool { return service.requestCalled }},
+		{http.MethodPost, "/api/projects/project-1/owner-transfer/transfer-1/accept", ``, "typed-owner-accept", http.StatusOK, func() bool { return service.acceptCalled }},
+	}
+	for _, test := range requests {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)).WithContext(ctx)
+		request.Header.Set("Idempotency-Key", test.key)
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("%s %s status = %d, want %d; body=%s", test.method, test.path, response.Code, test.want, response.Body.String())
+		}
+		if !test.check() {
+			t.Fatalf("%s %s did not use its transport-neutral application port", test.method, test.path)
+		}
 	}
 }
 

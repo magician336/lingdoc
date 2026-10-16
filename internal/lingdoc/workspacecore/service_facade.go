@@ -107,6 +107,36 @@ type CreateProjectResult struct {
 	Replayed bool
 }
 
+// ProjectMutationResult is the transport-neutral outcome shared by project
+// and membership mutations. The HTTP adapter supplies the operation's status.
+type ProjectMutationResult struct {
+	Project  Project
+	Replayed bool
+}
+
+// OwnerTransferResult is the transport-neutral outcome of an owner transfer
+// request or acceptance.
+type OwnerTransferResult struct {
+	Transfer OwnerTransfer
+	Replayed bool
+}
+
+func decodeProjectMutationResult(raw json.RawMessage, replayed bool) (ProjectMutationResult, error) {
+	var project Project
+	if err := json.Unmarshal(raw, &project); err != nil {
+		return ProjectMutationResult{}, fmt.Errorf("decode project mutation result: %w", err)
+	}
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
+}
+
+func decodeOwnerTransferResult(raw json.RawMessage, replayed bool) (OwnerTransferResult, error) {
+	var transfer OwnerTransfer
+	if err := json.Unmarshal(raw, &transfer); err != nil {
+		return OwnerTransferResult{}, fmt.Errorf("decode owner transfer result: %w", err)
+	}
+	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
+}
+
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
@@ -1019,6 +1049,15 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 	})
 }
 
+// SaveTemplateCopyResult exposes the saved project without transport fields.
+func (s *Service) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.SaveTemplateCopy(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
+}
+
 func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
 	if version < 1 {
 		return ProjectTemplateCopy{}, ErrInvalidRequest
@@ -1123,6 +1162,15 @@ func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, ke
 		}
 		return next, 200, nil
 	})
+}
+
+// ChangeTemplateResult exposes the changed project without transport fields.
+func (s *Service) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.ChangeTemplate(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
 }
 
 type SaveMembersInput struct {
@@ -2091,6 +2139,16 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, project
 	})
 }
 
+// RequestOwnerTransferResult exposes the transfer request without transport
+// fields. The HTTP adapter retains the established 201 status.
+func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (OwnerTransferResult, error) {
+	raw, _, replayed, err := s.RequestOwnerTransfer(ctx, actor, projectID, key, input)
+	if err != nil {
+		return OwnerTransferResult{}, err
+	}
+	return decodeOwnerTransferResult(raw, replayed)
+}
+
 func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
 	return s.operation(ctx, actor, "acceptOwnerTransfer", projectID+"/"+transferID, key, map[string]string{"transfer_id": transferID}, "", "read", func(tx Transaction, _ Project) (any, int, error) {
 		if !validActor(actor) {
@@ -2140,6 +2198,16 @@ func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor Actor, projectI
 		transfer.AcceptedAt = &acceptedAt
 		return transfer, 200, nil
 	})
+}
+
+// AcceptOwnerTransferResult exposes the accepted transfer without transport
+// fields.
+func (s *Service) AcceptOwnerTransferResult(ctx context.Context, actor Actor, projectID, transferID, key string) (OwnerTransferResult, error) {
+	raw, _, replayed, err := s.AcceptOwnerTransfer(ctx, actor, projectID, transferID, key)
+	if err != nil {
+		return OwnerTransferResult{}, err
+	}
+	return decodeOwnerTransferResult(raw, replayed)
 }
 
 func (s *Service) ActivationDiff(ctx context.Context, actor Actor, projectID string, sinceProjectVersion int64) (ActivationDiff, error) {
@@ -2256,6 +2324,15 @@ func (s *Service) SaveMembers(ctx context.Context, actor Actor, projectID, key s
 		}
 		return p, 200, nil
 	})
+}
+
+// SaveMembersResult exposes the updated project without transport fields.
+func (s *Service) SaveMembersResult(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (ProjectMutationResult, error) {
+	raw, _, replayed, err := s.SaveMembers(ctx, actor, projectID, key, input)
+	if err != nil {
+		return ProjectMutationResult{}, err
+	}
+	return decodeProjectMutationResult(raw, replayed)
 }
 func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 {

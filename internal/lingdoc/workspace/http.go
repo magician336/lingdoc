@@ -492,6 +492,15 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
+	if typed, ok := h.write.(ChangeTemplateApplication); ok {
+		result, err := typed.ChangeTemplateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.Project, result.Replayed)
+		return
+	}
 	data, status, replay, err := h.write.ChangeTemplate(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
@@ -546,6 +555,15 @@ func (h *Handler) saveTemplateCopy(c *gin.Context) {
 	}
 	var input TemplateCopyDefinitionInput
 	if !decodeBody(c, &input) {
+		return
+	}
+	if typed, ok := h.write.(SaveTemplateCopyApplication); ok {
+		result, err := typed.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.Project, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.SaveTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), key, input)
@@ -624,8 +642,26 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 	var replay bool
 	var err error
 	if input.NewOwnerUserID != "" {
+		if typed, ok := h.write.(TransferOwnerApplication); ok {
+			result, typedErr := typed.TransferOwnerResult(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+			if typedErr != nil {
+				sendError(c, typedErr)
+				return
+			}
+			sendOK(c, http.StatusOK, result.Project, result.Replayed)
+			return
+		}
 		data, status, replay, err = h.write.TransferOwner(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
 	} else {
+		if typed, ok := h.write.(RequestOwnerTransferApplication); ok {
+			result, typedErr := typed.RequestOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+			if typedErr != nil {
+				sendError(c, typedErr)
+				return
+			}
+			sendOK(c, http.StatusCreated, result.Transfer, result.Replayed)
+			return
+		}
 		data, status, replay, err = h.write.RequestOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
 	}
 	if err != nil {
@@ -642,6 +678,15 @@ func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
 	}
 	key, ok := idempotencyKey(c)
 	if !ok {
+		return
+	}
+	if typed, ok := h.write.(AcceptOwnerTransferApplication); ok {
+		result, err := typed.AcceptOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.Transfer, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.AcceptOwnerTransfer(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
@@ -663,6 +708,15 @@ func (h *Handler) saveMembers(c *gin.Context) {
 	}
 	var input SaveMembersInput
 	if !decodeBody(c, &input) {
+		return
+	}
+	if typed, ok := h.write.(SaveMembersApplication); ok {
+		result, err := typed.SaveMembersResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		sendOK(c, http.StatusOK, result.Project, result.Replayed)
 		return
 	}
 	data, status, replay, err := h.write.SaveMembers(c.Request.Context(), actor, c.Param("projectId"), key, input)

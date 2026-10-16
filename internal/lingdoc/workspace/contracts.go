@@ -108,10 +108,40 @@ type CreateProjectApplication interface {
 	CreateProjectResult(context.Context, Actor, string, CreateProjectInput) (CreateProjectResult, error)
 }
 
+type ChangeTemplateApplication interface {
+	ChangeTemplateResult(context.Context, Actor, string, string, TemplateMigrationInput) (ProjectMutationResult, error)
+}
+
+type SaveTemplateCopyApplication interface {
+	SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error)
+}
+
+type SaveMembersApplication interface {
+	SaveMembersResult(context.Context, Actor, string, string, SaveMembersInput) (ProjectMutationResult, error)
+}
+
+type TransferOwnerApplication interface {
+	TransferOwnerResult(context.Context, Actor, string, string, TransferOwnerInput) (ProjectMutationResult, error)
+}
+
+type RequestOwnerTransferApplication interface {
+	RequestOwnerTransferResult(context.Context, Actor, string, string, OwnerTransferInput) (OwnerTransferResult, error)
+}
+
+type AcceptOwnerTransferApplication interface {
+	AcceptOwnerTransferResult(context.Context, Actor, string, string, string) (OwnerTransferResult, error)
+}
+
 var _ WorkspaceReadApplication = (*Service)(nil)
 var _ WorkspaceWriteApplication = (*Service)(nil)
 var _ SaveSpecApplication = (*Service)(nil)
 var _ CreateProjectApplication = (*Service)(nil)
+var _ ChangeTemplateApplication = (*Service)(nil)
+var _ SaveTemplateCopyApplication = (*Service)(nil)
+var _ SaveMembersApplication = (*Service)(nil)
+var _ TransferOwnerApplication = (*Service)(nil)
+var _ RequestOwnerTransferApplication = (*Service)(nil)
+var _ AcceptOwnerTransferApplication = (*Service)(nil)
 
 // SourceApplicationService owns the source and asset use cases consumed by
 // workspace HTTP routes. Keeping these operations behind one port prevents
