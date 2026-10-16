@@ -51,7 +51,7 @@ func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, ch
 	var result WorkingCopy
 	var recovery *WorkingCopy
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		project, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		project, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -100,7 +100,7 @@ func (s *Service) GetWorkingCopy(ctx context.Context, actor Actor, projectID, ch
 			return WorkingCopy{}, err
 		}
 		err = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-			project, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+			project, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 			if err != nil {
 				return err
 			}
@@ -140,7 +140,7 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 		return nil, 0, false, err
 	}
 	input.SourceIDs = declared
-	return s.operation(ctx, actor, "saveWorkingCopy", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID,
+	return s.operation(ctx, actor, "saveWorkingCopy", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID),
 		func(tx Transaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
@@ -216,7 +216,7 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 		}
 	}
 	body := ApplyRewriteInput{WorkingCopy: input, ReviewItems: slices.Clone(reviewItems)}
-	return s.operation(ctx, actor, "applySelectedRewrite", projectID+"/"+chapterID, key, body, projectID, "write:"+chapterID,
+	return s.operation(ctx, actor, "applySelectedRewrite", projectID+"/"+chapterID, key, body, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID),
 		func(tx Transaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
@@ -284,7 +284,7 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 	if input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "commitWorkingCopy", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID,
+	return s.operation(ctx, actor, "commitWorkingCopy", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID),
 		func(tx Transaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
@@ -352,7 +352,7 @@ func (s *Service) CommitWorkingCopyResult(ctx context.Context, actor Actor, proj
 func (s *Service) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
 	var result []ChapterVersion
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		if _, err := tx.Chapter(projectID, chapterID); err != nil {
@@ -379,7 +379,7 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 	if strings.TrimSpace(input.ChapterVersionID) == "" || input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "restoreWorkingCopy", projectID+"/"+chapterID, key, input, projectID, "write:"+chapterID,
+	return s.operation(ctx, actor, "restoreWorkingCopy", projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID),
 		func(tx Transaction, p Project) (any, int, error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
 				return nil, 0, ErrVersionConflict
