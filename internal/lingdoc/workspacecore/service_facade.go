@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -177,7 +178,7 @@ func adaptMutationResult[T any](invoke func() (json.RawMessage, int, bool, error
 	raw, _, replayed, err := invoke()
 	if err != nil {
 		var zero T
-		return zero, false, err
+		return zero, replayed, err
 	}
 	value, err := decodeMutationPayload[T](raw, label)
 	if err != nil {
@@ -185,6 +186,27 @@ func adaptMutationResult[T any](invoke func() (json.RawMessage, int, bool, error
 		return zero, replayed, err
 	}
 	return value, replayed, nil
+}
+
+// replayPayloadDecodeError marks a persisted replay body that could not be
+// decoded during source-sensitive preflight. The operation result must expose
+// this as a replay attempt while ordinary authorization, version and storage
+// errors remain non-replayed.
+type replayPayloadDecodeError struct{ err error }
+
+func (e replayPayloadDecodeError) Error() string { return e.err.Error() }
+func (e replayPayloadDecodeError) Unwrap() error { return e.err }
+
+func markReplayPayloadDecodeError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return replayPayloadDecodeError{err: err}
+}
+
+func isReplayPayloadDecodeError(err error) bool {
+	var target replayPayloadDecodeError
+	return errors.As(err, &target)
 }
 
 // Service owns validation, permissions, version expectations and replay order.
@@ -594,7 +616,7 @@ func (s *Service) DiscardProjectResult(ctx context.Context, actor Actor, project
 		return s.DiscardProject(ctx, actor, projectID, key, expectedProjectVersion)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
@@ -641,7 +663,7 @@ func (s *Service) RestoreProjectResult(ctx context.Context, actor Actor, project
 		return s.RestoreProject(ctx, actor, projectID, key, expectedProjectVersion)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
@@ -684,10 +706,13 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 			}
 			checkedFound = found
 			checkedSources, err = operationSourceIDs(tx, op, target, projectID, body, previous, found)
+			if isReplayPayloadDecodeError(err) {
+				replayed = true
+			}
 			return err
 		})
 		if err != nil {
-			return nil, 0, false, err
+			return nil, 0, replayed, err
 		}
 		// Replays reuse the saved result, not the old authorization decision:
 		// revocation must reject a replay before any cached body is returned.
@@ -723,6 +748,9 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		}
 		if sourceSensitive {
 			sourceIDs, err := operationSourceIDs(tx, op, target, projectID, body, previous, found)
+			if isReplayPayloadDecodeError(err) {
+				replayed = true
+			}
 			if err != nil {
 				return err
 			}
@@ -748,7 +776,7 @@ func (s *Service) operation(ctx context.Context, actor Actor, op, target, key st
 		return tx.SaveOperation(id, result)
 	})
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, replayed, err
 	}
 	return result.Body, result.Status, replayed, nil
 }
@@ -764,9 +792,9 @@ func operationSourceIDs(tx Transaction, op, target, projectID string, body any, 
 		sourceIDs = body.(SaveWorkingCopyInput).SourceIDs
 	case "applySelectedRewrite":
 		if found {
-			var response WorkingCopy
-			if err := json.Unmarshal(previous.Body, &response); err != nil {
-				return nil, err
+			response, err := decodeMutationPayload[WorkingCopy](previous.Body, "working copy mutation result")
+			if err != nil {
+				return nil, markReplayPayloadDecodeError(err)
 			}
 			sourceIDs = response.SourceIDs
 		} else {
@@ -774,9 +802,9 @@ func operationSourceIDs(tx Transaction, op, target, projectID string, body any, 
 		}
 	case "commitWorkingCopy":
 		if found {
-			var response CommittedChapterVersion
-			if err := json.Unmarshal(previous.Body, &response); err != nil {
-				return nil, err
+			response, err := decodeMutationPayload[CommittedChapterVersion](previous.Body, "committed chapter result")
+			if err != nil {
+				return nil, markReplayPayloadDecodeError(err)
 			}
 			sourceIDs = response.SourceIDs
 		} else {
@@ -789,9 +817,9 @@ func operationSourceIDs(tx Transaction, op, target, projectID string, body any, 
 		}
 	case "restoreWorkingCopy":
 		if found {
-			var response WorkingCopy
-			if err := json.Unmarshal(previous.Body, &response); err != nil {
-				return nil, err
+			response, err := decodeMutationPayload[WorkingCopy](previous.Body, "working copy mutation result")
+			if err != nil {
+				return nil, markReplayPayloadDecodeError(err)
 			}
 			sourceIDs = response.SourceIDs
 		} else {
@@ -1127,7 +1155,7 @@ func (s *Service) SaveTemplateCopyResult(ctx context.Context, actor Actor, proje
 		return s.SaveTemplateCopy(ctx, actor, projectID, key, input)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
@@ -1244,7 +1272,7 @@ func (s *Service) ChangeTemplateResult(ctx context.Context, actor Actor, project
 		return s.ChangeTemplate(ctx, actor, projectID, key, input)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
@@ -1335,7 +1363,7 @@ func (s *Service) CreateProjectResult(ctx context.Context, actor Actor, key stri
 		return s.CreateProject(ctx, actor, key, input)
 	}, "created project result")
 	if err != nil {
-		return CreateProjectResult{}, err
+		return CreateProjectResult{Replayed: replayed}, err
 	}
 	return CreateProjectResult{Project: project, Replayed: replayed}, nil
 }
@@ -1432,7 +1460,7 @@ func (s *Service) SaveSpecResult(ctx context.Context, actor Actor, projectID, ke
 		return s.SaveSpec(ctx, actor, projectID, key, input)
 	}, "saved spec result")
 	if err != nil {
-		return SaveSpecResult{}, err
+		return SaveSpecResult{Replayed: replayed}, err
 	}
 	return SaveSpecResult{Project: project, Replayed: replayed}, nil
 }
@@ -1605,7 +1633,7 @@ func (s *Service) CreateChangeSetResult(ctx context.Context, actor Actor, projec
 		return s.CreateChangeSet(ctx, actor, projectID, key, input)
 	}, "change set mutation result")
 	if err != nil {
-		return ChangeSetMutationResult{}, err
+		return ChangeSetMutationResult{Replayed: replayed}, err
 	}
 	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
@@ -1864,7 +1892,7 @@ func (s *Service) ApplyChangeSetResult(ctx context.Context, actor Actor, project
 		return raw, status, replayed, nil
 	}, "change set mutation result")
 	if err != nil {
-		return ChangeSetMutationResult{}, err
+		return ChangeSetMutationResult{Replayed: replayed}, err
 	}
 	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
@@ -1918,7 +1946,7 @@ func (s *Service) RejectChangeSetResult(ctx context.Context, actor Actor, projec
 		return s.RejectChangeSet(ctx, actor, projectID, changeSetID, key)
 	}, "change set mutation result")
 	if err != nil {
-		return ChangeSetMutationResult{}, err
+		return ChangeSetMutationResult{Replayed: replayed}, err
 	}
 	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
@@ -1982,7 +2010,7 @@ func (s *Service) CreateDraftCandidateResult(ctx context.Context, actor Actor, p
 		return s.CreateDraftCandidate(ctx, actor, projectID, key, input)
 	}, "draft candidate result")
 	if err != nil {
-		return DraftCandidateMutationResult{}, err
+		return DraftCandidateMutationResult{Replayed: replayed}, err
 	}
 	return DraftCandidateMutationResult{Candidate: candidate, Replayed: replayed}, nil
 }
@@ -2300,7 +2328,7 @@ func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor Actor, p
 		return s.RequestOwnerTransfer(ctx, actor, projectID, key, input)
 	}, "owner transfer result")
 	if err != nil {
-		return OwnerTransferResult{}, err
+		return OwnerTransferResult{Replayed: replayed}, err
 	}
 	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
 }
@@ -2363,7 +2391,7 @@ func (s *Service) AcceptOwnerTransferResult(ctx context.Context, actor Actor, pr
 		return s.AcceptOwnerTransfer(ctx, actor, projectID, transferID, key)
 	}, "owner transfer result")
 	if err != nil {
-		return OwnerTransferResult{}, err
+		return OwnerTransferResult{Replayed: replayed}, err
 	}
 	return OwnerTransferResult{Transfer: transfer, Replayed: replayed}, nil
 }
@@ -2490,7 +2518,7 @@ func (s *Service) SaveMembersResult(ctx context.Context, actor Actor, projectID,
 		return s.SaveMembers(ctx, actor, projectID, key, input)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
@@ -2595,7 +2623,7 @@ func (s *Service) ActivateProjectResult(ctx context.Context, actor Actor, projec
 		return s.ActivateProject(ctx, actor, projectID, key, input)
 	}, "project mutation result")
 	if err != nil {
-		return ProjectMutationResult{}, err
+		return ProjectMutationResult{Replayed: replayed}, err
 	}
 	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
 }
@@ -2797,7 +2825,7 @@ func (s *Service) SaveChapterResult(ctx context.Context, actor Actor, projectID,
 		return s.SaveChapter(ctx, actor, projectID, chapterID, key, input)
 	}, "chapter mutation result")
 	if err != nil {
-		return ChapterMutationResult{}, err
+		return ChapterMutationResult{Replayed: replayed}, err
 	}
 	return ChapterMutationResult{Chapter: chapter, Replayed: replayed}, nil
 }
