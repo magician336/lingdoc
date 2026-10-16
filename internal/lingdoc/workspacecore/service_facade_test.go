@@ -29,6 +29,10 @@ func (r *ruleSetSnapshotReaderStub) GetVersion(_ context.Context, actor Actor, i
 	return r.set, r.err
 }
 
+func (r *ruleSetSnapshotReaderStub) GetVersionInTransaction(ctx context.Context, _ Transaction, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	return r.GetVersion(ctx, actor, id, version)
+}
+
 type transactionalRuleSetSnapshotReaderStub struct {
 	set   lingdoctemplate.RuleSet
 	calls int

@@ -110,8 +110,8 @@ type RuleSetSnapshotReader interface {
 
 // TransactionalRuleSetSnapshotReader revalidates and locks the exact RuleSet
 // version using the same storage transaction that persists its project copy.
-// Production adapters implement this to serialize binding against withdraw or
-// recall transitions. Lightweight readers may implement only the read port.
+// Production adapters must implement this to serialize binding against withdraw
+// or recall transitions. Binding fails closed when the adapter lacks this port.
 type TransactionalRuleSetSnapshotReader interface {
 	GetVersionInTransaction(context.Context, Transaction, Actor, string, string) (lingdoctemplate.RuleSet, error)
 }
@@ -1123,10 +1123,11 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 }
 
 func (s *Service) ruleSetVersionForBinding(ctx context.Context, tx Transaction, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
-	if reader, ok := s.ruleSets.(TransactionalRuleSetSnapshotReader); ok {
-		return reader.GetVersionInTransaction(ctx, tx, actor, id, version)
+	reader, ok := s.ruleSets.(TransactionalRuleSetSnapshotReader)
+	if !ok {
+		return lingdoctemplate.RuleSet{}, ErrInvalidState
 	}
-	return s.ruleSets.GetVersion(ctx, actor, id, version)
+	return reader.GetVersionInTransaction(ctx, tx, actor, id, version)
 }
 
 func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
