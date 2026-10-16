@@ -550,7 +550,7 @@ func (h *Handler) bindTemplateCopyRuleSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, status, replay, err := h.service.BindTemplateCopyRuleSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	data, status, replay, err := h.write.BindTemplateCopyRuleSet(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return

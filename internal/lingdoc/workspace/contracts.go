@@ -92,6 +92,7 @@ type WorkspaceWriteApplication interface {
 	CommitWorkingCopy(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (json.RawMessage, int, bool, error)
 	RestoreWorkingCopy(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (json.RawMessage, int, bool, error)
 	CreateChangeSet(context.Context, Actor, string, string, CreateChangeSetInput) (json.RawMessage, int, bool, error)
+	BindTemplateCopyRuleSet(context.Context, Actor, string, string, BindTemplateCopyRuleSetInput) (json.RawMessage, int, bool, error)
 	ApplyChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 	RejectChangeSet(context.Context, Actor, string, string, string) (json.RawMessage, int, bool, error)
 }

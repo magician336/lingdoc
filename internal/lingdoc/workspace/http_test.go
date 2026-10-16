@@ -212,6 +212,25 @@ func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	}
 }
 
+func TestBindTemplateCopyRuleSetUsesWriteApplicationPort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	read := &applicationServiceStub{}
+	write := &applicationServiceStub{}
+	handler := NewHandler(HandlerDependencies{Read: read, Write: write})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	body := `{"expected_project_version":4,"expected_template_copy_version":2,"ruleset_id":"grant-rules","ruleset_version":"v1"}`
+	request := httptest.NewRequest(http.MethodPut, "/api/projects/project-1/template-copy/rule-set", strings.NewReader(body)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "template-ruleset-bind-port")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !write.bindRuleSetCalled || read.bindRuleSetCalled {
+		t.Fatalf("binding must use write port: status=%d read=%v write=%v body=%s", response.Code, read.bindRuleSetCalled, write.bindRuleSetCalled, response.Body.String())
+	}
+}
+
 func TestHandlerServesVersionedDemoTemplate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader()})
