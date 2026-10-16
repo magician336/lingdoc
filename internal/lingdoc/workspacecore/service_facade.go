@@ -84,10 +84,6 @@ type OperationTransaction interface {
 	SaveOperation(OperationIdentity, OperationResult) error
 }
 
-// ReplayTransaction is a domain-language alias for OperationTransaction. It
-// gives replay-focused callers a seam without introducing another interface.
-type ReplayTransaction = OperationTransaction
-
 // AuditTransaction is the cohesive persistence port for in-transaction audit
 // records. The legacy unexported name below is retained for existing callers.
 type AuditTransaction interface {
@@ -301,14 +297,6 @@ func (a legacyProjectAuthorizerAdapter) AuthorizeTenant(tx Transaction, request 
 
 func (a legacyProjectAuthorizerAdapter) AuthorizeProject(tx Transaction, request AuthorizationRequest) (Project, error) {
 	return a.legacy.AuthorizeProject(tx, request.Actor, request.ProjectID, request.capability())
-}
-
-type ownerTransferTransaction interface {
-	InsertOwnerTransfer(OwnerTransfer) error
-	OwnerTransfer(string, string) (OwnerTransfer, error)
-	AcceptOwnerTransfer(string, string, int64, time.Time) error
-	SetMemberRole(string, string, string) error
-	EnsureMember(string, string, string) error
 }
 
 // operationName and operationDescriptor keep the operation runner's
