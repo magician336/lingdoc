@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -30,6 +31,7 @@ type DeliveryReleaseService struct {
 	store        delivery.SnapshotStore
 	freezes      delivery.FreezeRecorder
 	sources      candidateadoption.SourcePolicy
+	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
 	dispositions ValidationIssueDispositionApplication
 }
@@ -68,7 +70,11 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 	if !ok {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, policy: policy, dispositions: dispositions}
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, reviewer: reviewer, policy: policy, dispositions: dispositions}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -295,7 +301,7 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 		}
 		return nil
 	}
-	if s == nil || s.sources == nil {
+	if s == nil || (s.sources == nil && s.reviewer == nil) {
 		return nil
 	}
 	ids := make([]string, 0)
@@ -316,7 +322,12 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 	if len(ids) == 0 {
 		return nil
 	}
-	return s.sources.Validate(ctx, projectID, actorID, ids)
+	if s.reviewer != nil {
+		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, ids)
+	}
+	// Compatibility boundary for legacy release adapters. Production wiring
+	// supplies the shared Reviewer above.
+	return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。

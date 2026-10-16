@@ -140,24 +140,24 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 		return nil, 0, false, err
 	}
 	input.SourceIDs = declared
-	return runOperation(s, ctx, actor, sourceOperationInput(operationSaveWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), saveWorkingCopySourceIDs), focusedMutationPort[chapterMutationTransaction],
-		func(tx chapterMutationTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationSaveWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), saveWorkingCopySourceIDs), mutationPort[ChapterMutationTransaction],
+		func(tx ChapterMutationTransaction, p Project) (operationResult[WorkingCopy], error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[WorkingCopy]{}, ErrVersionConflict
 			}
 			chapter, err := tx.Chapter(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			previous, err := tx.WorkingCopy(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			if !sameVersion(chapter.CurrentVersionID, input.BaseChapterVersionID) ||
 				!sameVersion(previous.BaseChapterVersionID, input.BaseChapterVersionID) ||
 				previous.SpecRevision != input.ExpectedSpecRevision ||
 				previous.WorkingCopyRevision != input.ExpectedWorkingCopyRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[WorkingCopy]{}, ErrVersionConflict
 			}
 			next := previous
 			next.WorkingCopyRevision++
@@ -176,9 +176,9 @@ func (s *Service) SaveWorkingCopy(ctx context.Context, actor Actor, projectID, c
 			// Review items are server-managed and survive autosave unchanged.
 			next.UpdatedAt = time.Now().UTC()
 			if err := tx.SaveWorkingCopy(previous, next); err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
-			return next, 200, nil
+			return operationResult[WorkingCopy]{Value: next, Status: operationStatusOK}, nil
 		})
 }
 
@@ -216,23 +216,23 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 		}
 	}
 	body := ApplyRewriteInput{WorkingCopy: input, ReviewItems: slices.Clone(reviewItems)}
-	return runOperation(s, ctx, actor, sourceOperationInput(operationApplySelectedRewrite, projectID+"/"+chapterID, key, body, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), applyRewriteSourceIDs), focusedMutationPort[chapterMutationTransaction],
-		func(tx chapterMutationTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationApplySelectedRewrite, projectID+"/"+chapterID, key, body, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), applyRewriteSourceIDs), mutationPort[ChapterMutationTransaction],
+		func(tx ChapterMutationTransaction, p Project) (operationResult[WorkingCopy], error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[WorkingCopy]{}, ErrVersionConflict
 			}
 			chapter, err := tx.Chapter(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			previous, err := tx.WorkingCopy(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			if !sameVersion(chapter.CurrentVersionID, input.BaseChapterVersionID) ||
 				!sameVersion(previous.BaseChapterVersionID, input.BaseChapterVersionID) ||
 				previous.SpecRevision != input.ExpectedSpecRevision || previous.WorkingCopyRevision != input.ExpectedWorkingCopyRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[WorkingCopy]{}, ErrVersionConflict
 			}
 			next := previous
 			next.WorkingCopyRevision++
@@ -255,16 +255,16 @@ func (s *Service) ApplyRewrite(ctx context.Context, actor Actor, projectID, chap
 			}
 			for _, item := range reviewItems {
 				if _, exists := seen[item.ID]; exists {
-					return nil, 0, ErrInvalidRequest
+					return operationResult[WorkingCopy]{}, ErrInvalidRequest
 				}
 				seen[item.ID] = struct{}{}
 				next.ReviewItems = append(next.ReviewItems, item)
 			}
 			next.UpdatedAt = time.Now().UTC()
 			if err := tx.SaveWorkingCopy(previous, next); err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
-			return next, 200, nil
+			return operationResult[WorkingCopy]{Value: next, Status: operationStatusOK}, nil
 		})
 }
 
@@ -284,24 +284,24 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 	if input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, sourceOperationInput(operationCommitWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), commitWorkingCopySourceIDs), focusedMutationPort[chapterCommitTransaction],
-		func(tx chapterCommitTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationCommitWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), commitWorkingCopySourceIDs), mutationPort[ChapterMutationTransaction],
+		func(tx ChapterMutationTransaction, p Project) (operationResult[CommittedChapterVersion], error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[CommittedChapterVersion]{}, ErrVersionConflict
 			}
 			chapter, err := tx.Chapter(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[CommittedChapterVersion]{}, err
 			}
 			workingCopy, err := tx.WorkingCopy(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[CommittedChapterVersion]{}, err
 			}
 			if !sameVersion(chapter.CurrentVersionID, input.ExpectedChapterVersionID) ||
 				!sameVersion(workingCopy.BaseChapterVersionID, input.ExpectedChapterVersionID) ||
 				workingCopy.SpecRevision != input.ExpectedSpecRevision ||
 				workingCopy.WorkingCopyRevision != input.ExpectedWorkingCopyRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[CommittedChapterVersion]{}, ErrVersionConflict
 			}
 			id := uuid.NewString()
 			nextChapter := chapter
@@ -314,10 +314,10 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 			nextProject := p
 			nextProject.ProjectVersion++
 			if err := tx.UpdateProject(actor.TenantID, p, nextProject); err != nil {
-				return nil, 0, err
+				return operationResult[CommittedChapterVersion]{}, err
 			}
 			if err := tx.AppendChapter(chapter, nextChapter, p.SpecRevision); err != nil {
-				return nil, 0, err
+				return operationResult[CommittedChapterVersion]{}, err
 			}
 			nextCopy := workingCopy
 			nextCopy.BaseChapterVersionID = &id
@@ -325,15 +325,15 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 			nextCopy.SpecRevision = p.SpecRevision
 			nextCopy.UpdatedAt = time.Now().UTC()
 			if err := tx.SaveWorkingCopy(workingCopy, nextCopy); err != nil {
-				return nil, 0, err
+				return operationResult[CommittedChapterVersion]{}, err
 			}
-			return CommittedChapterVersion{
+			return operationResult[CommittedChapterVersion]{Value: CommittedChapterVersion{
 				ChapterVersionID: id, ParentChapterVersionID: chapter.CurrentVersionID,
 				CommittedWorkingCopyRevision: workingCopy.WorkingCopyRevision,
 				NextWorkingCopyRevision:      nextCopy.WorkingCopyRevision, SpecRevision: p.SpecRevision,
 				BodyMarkdown: workingCopy.BodyMarkdown, SourceIDs: slices.Clone(workingCopy.SourceIDs),
 				ReviewItems: slices.Clone(workingCopy.ReviewItems),
-			}, 201, nil
+			}, Status: operationStatusCreated}, nil
 		})
 }
 
@@ -379,28 +379,28 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 	if strings.TrimSpace(input.ChapterVersionID) == "" || input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return runOperation(s, ctx, actor, sourceOperationInput(operationRestoreWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), restoreWorkingCopySourceIDs), focusedMutationPort[chapterMutationTransaction],
-		func(tx chapterMutationTransaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationRestoreWorkingCopy, projectID+"/"+chapterID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), restoreWorkingCopySourceIDs), mutationPort[ChapterMutationTransaction],
+		func(tx ChapterMutationTransaction, p Project) (operationResult[WorkingCopy], error) {
 			if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[WorkingCopy]{}, ErrVersionConflict
 			}
 			chapter, err := tx.Chapter(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			workingCopy, err := tx.WorkingCopy(projectID, chapterID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			version, err := tx.ChapterVersion(projectID, chapterID, input.ChapterVersionID)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
 			if !sameVersion(chapter.CurrentVersionID, input.ExpectedChapterVersionID) ||
 				!sameVersion(workingCopy.BaseChapterVersionID, input.ExpectedChapterVersionID) ||
 				workingCopy.WorkingCopyRevision != input.ExpectedWorkingCopyRevision ||
 				workingCopy.SpecRevision != input.ExpectedSpecRevision {
-				return nil, 0, ErrVersionConflict
+				return operationResult[WorkingCopy]{}, ErrVersionConflict
 			}
 			next := workingCopy
 			next.WorkingCopyRevision++
@@ -411,9 +411,9 @@ func (s *Service) RestoreWorkingCopy(ctx context.Context, actor Actor, projectID
 			next.ReviewItems = slices.Clone(version.ReviewItems)
 			next.UpdatedAt = time.Now().UTC()
 			if err := tx.SaveWorkingCopy(workingCopy, next); err != nil {
-				return nil, 0, err
+				return operationResult[WorkingCopy]{}, err
 			}
-			return next, 200, nil
+			return operationResult[WorkingCopy]{Value: next, Status: operationStatusOK}, nil
 		})
 }
 

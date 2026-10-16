@@ -17,6 +17,20 @@ type g5C1SaveSpecErrorStub struct {
 	err error
 }
 
+type g5C5ReadPortStub struct{ WorkspaceReadApplication }
+type g5C5WritePortStub struct{ WorkspaceWriteApplication }
+
+func TestG5C5HandlerComposesSplitApplicationPorts(t *testing.T) {
+	handler := NewHandler(HandlerDependencies{
+		Read:  g5C5ReadPortStub{},
+		Write: g5C5WritePortStub{},
+	})
+	if handler.projects == nil || handler.members == nil || handler.chapters == nil ||
+		handler.templatesApp == nil || handler.changeSets == nil {
+		t.Fatalf("split read/write composition left focused route port nil: projects=%T members=%T chapters=%T templates=%T changeSets=%T", handler.projects, handler.members, handler.chapters, handler.templatesApp, handler.changeSets)
+	}
+}
+
 func (s *g5C1SaveSpecErrorStub) SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error) {
 	return SaveSpecResult{}, s.err
 }

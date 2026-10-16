@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -110,6 +112,28 @@ func NewHandler(deps HandlerDependencies) *Handler {
 			changeSets = candidate
 		}
 	}
+	// A composition root may provide the intentionally split read and write
+	// ports without also carrying the legacy ApplicationService. Compose the
+	// five focused route ports explicitly at that seam so every registered
+	// route has a non-nil dependency and the handler never widens the contract
+	// again just to make a route work.
+	if deps.Read != nil && deps.Write != nil {
+		if projects == nil {
+			projects = splitProjectApplication{read: deps.Read, write: deps.Write}
+		}
+		if members == nil {
+			members = splitMembershipApplication{write: deps.Write}
+		}
+		if chapters == nil {
+			chapters = splitChapterApplication{read: deps.Read, write: deps.Write}
+		}
+		if templatesApp == nil {
+			templatesApp = splitTemplateApplication{read: deps.Read, write: deps.Write}
+		}
+		if changeSets == nil {
+			changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
+		}
+	}
 	return &Handler{
 		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
 		read: read, write: write,
@@ -122,6 +146,132 @@ func NewHandler(deps HandlerDependencies) *Handler {
 // composition root while keeping old test doubles and transports working.
 // The handler itself stores only focused ports.
 type legacyApplicationAdapter struct{ ApplicationService }
+
+type splitProjectApplication struct {
+	read  WorkspaceReadApplication
+	write WorkspaceWriteApplication
+}
+
+func (a splitProjectApplication) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
+	return a.read.ListProjects(ctx, actor)
+}
+func (a splitProjectApplication) GetProject(ctx context.Context, actor Actor, projectID string) (Project, error) {
+	return a.read.GetProject(ctx, actor, projectID)
+}
+func (a splitProjectApplication) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
+	return a.write.CreateProjectResult(ctx, actor, key, input)
+}
+func (a splitProjectApplication) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
+	return a.write.SaveSpecResult(ctx, actor, projectID, key, input)
+}
+func (a splitProjectApplication) ActivateProjectResult(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (ProjectMutationResult, error) {
+	return a.write.ActivateProjectResult(ctx, actor, projectID, key, input)
+}
+func (a splitProjectApplication) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
+	return a.read.ListDraftCandidates(ctx, actor, projectID)
+}
+func (a splitProjectApplication) CreateDraftCandidateResult(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
+	return a.write.CreateDraftCandidateResult(ctx, actor, projectID, key, input)
+}
+func (a splitProjectApplication) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
+	return a.read.ListAuditEvents(ctx, actor, projectID)
+}
+func (a splitProjectApplication) ActivationDiff(ctx context.Context, actor Actor, projectID string, version int64) (ActivationDiff, error) {
+	return a.read.ActivationDiff(ctx, actor, projectID, version)
+}
+func (a splitProjectApplication) DiscardProjectResult(ctx context.Context, actor Actor, projectID, key string, expected int64) (ProjectMutationResult, error) {
+	return a.write.DiscardProjectResult(ctx, actor, projectID, key, expected)
+}
+func (a splitProjectApplication) RestoreProjectResult(ctx context.Context, actor Actor, projectID, key string, expected int64) (ProjectMutationResult, error) {
+	return a.write.RestoreProjectResult(ctx, actor, projectID, key, expected)
+}
+
+type splitMembershipApplication struct{ write WorkspaceWriteApplication }
+
+func (a splitMembershipApplication) SaveMembersResult(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (ProjectMutationResult, error) {
+	return a.write.SaveMembersResult(ctx, actor, projectID, key, input)
+}
+func (a splitMembershipApplication) TransferOwnerResult(ctx context.Context, actor Actor, projectID, key string, input TransferOwnerInput) (ProjectMutationResult, error) {
+	return a.write.TransferOwnerResult(ctx, actor, projectID, key, input)
+}
+func (a splitMembershipApplication) RequestOwnerTransferResult(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (OwnerTransferResult, error) {
+	return a.write.RequestOwnerTransferResult(ctx, actor, projectID, key, input)
+}
+func (a splitMembershipApplication) AcceptOwnerTransferResult(ctx context.Context, actor Actor, projectID, transferID, key string) (OwnerTransferResult, error) {
+	return a.write.AcceptOwnerTransferResult(ctx, actor, projectID, transferID, key)
+}
+
+type splitChapterApplication struct {
+	read  WorkspaceReadApplication
+	write WorkspaceWriteApplication
+}
+
+func (a splitChapterApplication) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
+	return a.read.ListChapters(ctx, actor, projectID)
+}
+func (a splitChapterApplication) GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error) {
+	return a.read.GetWorkingCopy(ctx, actor, projectID, chapterID)
+}
+func (a splitChapterApplication) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
+	return a.read.ListChapterVersions(ctx, actor, projectID, chapterID)
+}
+func (a splitChapterApplication) SaveChapterResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (ChapterMutationResult, error) {
+	return a.write.SaveChapterResult(ctx, actor, projectID, chapterID, key, input)
+}
+func (a splitChapterApplication) SaveWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput) (WorkingCopyMutationResult, error) {
+	return a.write.SaveWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
+}
+func (a splitChapterApplication) ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input core.SaveWorkingCopyInput, reviews []core.ReviewItem) (WorkingCopyMutationResult, error) {
+	return a.write.ApplyRewriteResult(ctx, actor, projectID, chapterID, key, input, reviews)
+}
+func (a splitChapterApplication) CommitWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (CommittedChapterMutationResult, error) {
+	return a.write.CommitWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
+}
+func (a splitChapterApplication) RestoreWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input RestoreWorkingCopyInput) (WorkingCopyMutationResult, error) {
+	return a.write.RestoreWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
+}
+
+type splitTemplateApplication struct {
+	read  WorkspaceReadApplication
+	write WorkspaceWriteApplication
+}
+
+func (a splitTemplateApplication) PreviewTemplateMigration(ctx context.Context, actor Actor, projectID string, input TemplateMigrationInput) (TemplateMigrationPreview, error) {
+	return a.read.PreviewTemplateMigration(ctx, actor, projectID, input)
+}
+func (a splitTemplateApplication) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
+	return a.read.GetTemplateCopy(ctx, actor, projectID, version)
+}
+func (a splitTemplateApplication) PreviewTemplateCopyEdit(ctx context.Context, actor Actor, projectID string, input TemplateCopyDefinitionInput) (TemplateMigrationPreview, error) {
+	return a.read.PreviewTemplateCopyEdit(ctx, actor, projectID, input)
+}
+func (a splitTemplateApplication) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
+	return a.write.ChangeTemplateResult(ctx, actor, projectID, key, input)
+}
+func (a splitTemplateApplication) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
+	return a.write.SaveTemplateCopyResult(ctx, actor, projectID, key, input)
+}
+
+type splitChangeSetApplication struct {
+	read  WorkspaceReadApplication
+	write WorkspaceWriteApplication
+}
+
+func (a splitChangeSetApplication) CreateChangeSetResult(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
+	return a.write.CreateChangeSetResult(ctx, actor, projectID, key, input)
+}
+func (a splitChangeSetApplication) ListChangeSets(ctx context.Context, actor Actor, projectID string) ([]ChangeSet, error) {
+	return a.read.ListChangeSets(ctx, actor, projectID)
+}
+func (a splitChangeSetApplication) GetChangeSet(ctx context.Context, actor Actor, projectID, changeSetID string) (ChangeSet, error) {
+	return a.read.GetChangeSet(ctx, actor, projectID, changeSetID)
+}
+func (a splitChangeSetApplication) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	return a.write.ApplyChangeSetResult(ctx, actor, projectID, changeSetID, key)
+}
+func (a splitChangeSetApplication) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	return a.write.RejectChangeSetResult(ctx, actor, projectID, changeSetID, key)
+}
 
 func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/templates/:templateId", h.getTemplate)

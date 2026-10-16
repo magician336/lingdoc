@@ -6,27 +6,17 @@ import "testing"
 // transaction can be passed through each cohesive port without changing the
 // legacy Transaction seam.
 var (
-	_ Transaction                       = gormTransaction{}
-	_ ProjectMembershipTransaction      = gormTransaction{}
-	_ ChapterWorkspaceTransaction       = gormTransaction{}
-	_ OperationTransaction              = gormTransaction{}
-	_ AuditTransaction                  = gormTransaction{}
-	_ projectUpdateTransaction          = gormTransaction{}
-	_ projectCreateTransaction          = gormTransaction{}
-	_ transferOwnerTransaction          = gormTransaction{}
-	_ memberPermissionsTransaction      = gormTransaction{}
-	_ collaboratorTransaction           = gormTransaction{}
-	_ chapterMutationTransaction        = gormTransaction{}
-	_ chapterCommitTransaction          = gormTransaction{}
-	_ chapterSaveTransaction            = gormTransaction{}
-	_ chapterActivationTransaction      = gormTransaction{}
-	_ changeSetCreateTransaction        = gormTransaction{}
-	_ changeSetApplyTransaction         = gormTransaction{}
-	_ changeSetRejectTransaction        = gormTransaction{}
-	_ draftCandidateMutationTransaction = gormTransaction{}
-	_ issueDispositionTransaction       = gormTransaction{}
-	_ ownerTransferRequestTransaction   = gormTransaction{}
-	_ ownerTransferAcceptTransaction    = gormTransaction{}
+	_ Transaction                      = gormTransaction{}
+	_ ProjectMembershipTransaction     = gormTransaction{}
+	_ ChapterWorkspaceTransaction      = gormTransaction{}
+	_ OperationTransaction             = gormTransaction{}
+	_ AuditTransaction                 = gormTransaction{}
+	_ ProjectMutationTransaction       = gormTransaction{}
+	_ ChapterMutationTransaction       = gormTransaction{}
+	_ ChangeSetMutationTransaction     = gormTransaction{}
+	_ CandidateMutationTransaction     = gormTransaction{}
+	_ AuditMutationTransaction         = gormTransaction{}
+	_ OwnerTransferMutationTransaction = gormTransaction{}
 )
 
 func TestGORMTransactionExposesFocusedPortsAlongsideLegacyTransaction(t *testing.T) {
@@ -53,22 +43,12 @@ func TestGORMTransactionExposesMutationCallbackPorts(t *testing.T) {
 		name string
 		port any
 	}{
-		{name: "project-update", port: focusedPort[projectUpdateTransaction](legacy)},
-		{name: "project-create", port: focusedPort[projectCreateTransaction](legacy)},
-		{name: "transfer-owner", port: focusedPort[transferOwnerTransaction](legacy)},
-		{name: "member-permissions", port: focusedPort[memberPermissionsTransaction](legacy)},
-		{name: "collaborator", port: focusedPort[collaboratorTransaction](legacy)},
-		{name: "chapter-mutation", port: focusedPort[chapterMutationTransaction](legacy)},
-		{name: "chapter-commit", port: focusedPort[chapterCommitTransaction](legacy)},
-		{name: "chapter-save", port: focusedPort[chapterSaveTransaction](legacy)},
-		{name: "chapter-activation", port: focusedPort[chapterActivationTransaction](legacy)},
-		{name: "change-set-create", port: focusedPort[changeSetCreateTransaction](legacy)},
-		{name: "change-set-apply", port: focusedPort[changeSetApplyTransaction](legacy)},
-		{name: "change-set-reject", port: focusedPort[changeSetRejectTransaction](legacy)},
-		{name: "draft-candidate", port: focusedPort[draftCandidateMutationTransaction](legacy)},
-		{name: "issue-disposition", port: focusedPort[issueDispositionTransaction](legacy)},
-		{name: "owner-transfer-request", port: focusedPort[ownerTransferRequestTransaction](legacy)},
-		{name: "owner-transfer-accept", port: focusedPort[ownerTransferAcceptTransaction](legacy)},
+		{name: "project-mutation", port: focusedPort[ProjectMutationTransaction](legacy)},
+		{name: "chapter-mutation", port: focusedPort[ChapterMutationTransaction](legacy)},
+		{name: "change-set-mutation", port: focusedPort[ChangeSetMutationTransaction](legacy)},
+		{name: "candidate-mutation", port: focusedPort[CandidateMutationTransaction](legacy)},
+		{name: "audit-mutation", port: focusedPort[AuditMutationTransaction](legacy)},
+		{name: "owner-transfer-mutation", port: focusedPort[OwnerTransferMutationTransaction](legacy)},
 	}
 	for _, tt := range ports {
 		if tt.port == nil {
