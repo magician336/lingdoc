@@ -1,8 +1,12 @@
-# T08：传输中立应用边界收口
+# Spec #164：LingDoc 应用层传输解耦与幂等结果边界
+
+> 文档状态：2026-10-16。实现切片已完成，子票 #165–#169 已关闭；PR [#170](https://github.com/magician336/lingdoc/pull/170) 仍开放，尚未合并到 `main`。PR 检查目前 8 项全部通过。
+
+本文件描述 Spec #164 的实现结果。它不是历史 T01–T16 任务中的 T08；历史 T08 仍专指“章节读写与生成上下文”。
 
 ## 范围
 
-对应 GitHub Spec #164 与 Contract #169。Workspace 写操作及交付 issue disposition 的公开应用契约只返回领域结果和重放状态；HTTP Handler 负责请求解码、状态码、成功/错误 envelope 与 JSON 序列化。
+对应 GitHub Spec #164 与契约收口票 #169。Workspace 写操作及交付 issue disposition 的公开应用契约只返回领域结果和重放状态；HTTP Handler 负责请求解码、状态码、成功/错误 envelope 与 JSON 序列化。
 
 ## 已落地的边界
 
@@ -17,6 +21,9 @@
 - PASS：`go test ./internal/lingdoc/...`
 - PASS：`go test ./internal/router`
 - BLOCKED（环境）：`go test ./internal/container` 在 Windows 缺少 `sqlite3.h` 时被 `sqlite-vec-go-bindings/cgo` 阻断；未出现业务断言失败。
+- PASS：`codegraph sync`
+- PASS：`git diff --check`
+- 限制：Windows 下完整 `go test ./...` 仍受缺少 `sqlite3.h` 及仓库既有环境依赖测试影响；这不等同于本次 LingDoc 断言失败。
 
 ## 保持不变的契约
 

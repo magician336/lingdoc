@@ -14,6 +14,10 @@ Beta 首版验收判断当前已合入版本是否可试用，使用真实服务
 
 Spec 索引与开发计划：[`06-灵档产品开发规划/beta-gap-development-plans/README.md`](06-灵档产品开发规划/beta-gap-development-plans/README.md)。目标是在 2026 年 10 月结束前完成当前开放范围。
 
+### 最新横切契约状态（2026-10-16）
+
+Spec [#164：LingDoc 应用层传输解耦与幂等结果边界](https://github.com/magician336/lingdoc/issues/164) 的实现已完成，子票 #165–#169 已关闭，交付 PR 为 [#170](https://github.com/magician336/lingdoc/pull/170)。PR 仍开放，8 项检查全部通过但尚未合并；在合并前不要把这项实现写成 `main` 已包含。实现说明见 [`08-本轮实施方案/Spec-164-传输中立应用边界.md`](08-本轮实施方案/Spec-164-传输中立应用边界.md)。
+
 ## 按用途阅读
 
 | 用途 | 入口 |
