@@ -34,6 +34,22 @@ type applicationServiceStub struct {
 	copyPreviewCalled bool
 }
 
+type saveSpecApplicationStub struct {
+	applicationServiceStub
+	called    bool
+	actor     Actor
+	projectID string
+	key       string
+	input     SaveSpecInput
+	result    SaveSpecResult
+}
+
+func (s *saveSpecApplicationStub) SaveSpecResult(_ context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
+	s.called = true
+	s.actor, s.projectID, s.key, s.input = actor, projectID, key, input
+	return s.result, nil
+}
+
 type sourceApplicationServiceStub struct {
 	SourceApplicationService
 	actor     Actor
@@ -151,6 +167,42 @@ func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	}
 	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "user-7", Role: types.TenantRoleViewer}) {
 		t.Fatalf("injected service did not receive caller identity: called=%v actor=%#v", service.called, service.actor)
+	}
+}
+
+func TestHandlerMapsTransportNeutralSaveSpecResult(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &saveSpecApplicationStub{result: SaveSpecResult{
+		Project:  Project{ID: "project-1", SpecRevision: 1, ProjectVersion: 2},
+		Replayed: true,
+	}}
+	handler := NewHandler(HandlerDependencies{Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	request := httptest.NewRequest(http.MethodPut, "/api/projects/project-1/spec", strings.NewReader(`{"expected_spec_revision":0,"fields":{"research_subject":"subject"}}`)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "typed-spec-key")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body=%s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if !service.called || service.actor != (Actor{TenantID: 42, UserID: "owner-7", Role: types.TenantRoleViewer}) || service.projectID != "project-1" || service.key != "typed-spec-key" || service.input.ExpectedSpecRevision != 0 {
+		t.Fatalf("typed save input = called:%v actor:%#v project=%q key=%q input=%#v", service.called, service.actor, service.projectID, service.key, service.input)
+	}
+	var body struct {
+		Data Project `json:"data"`
+		Meta struct {
+			Replayed bool `json:"replayed"`
+		} `json:"meta"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode typed save response: %v", err)
+	}
+	if body.Data.ID != "project-1" || body.Data.SpecRevision != 1 || !body.Meta.Replayed {
+		t.Fatalf("typed save response = %#v, want project and replay metadata", body)
 	}
 }
 

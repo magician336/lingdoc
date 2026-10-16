@@ -326,6 +326,17 @@ func (h *Handler) saveSpec(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
+	if typed, ok := h.write.(SaveSpecApplication); ok {
+		result, err := typed.SaveSpecResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+		if err != nil {
+			sendError(c, err)
+			return
+		}
+		// SaveSpec's established wire contract is 200; status selection stays
+		// in this transport adapter rather than crossing the application seam.
+		sendOK(c, http.StatusOK, result.Project, result.Replayed)
+		return
+	}
 	data, status, replay, err := h.write.SaveSpec(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)

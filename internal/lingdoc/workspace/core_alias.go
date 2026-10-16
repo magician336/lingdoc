@@ -55,6 +55,7 @@ type CreateChangeSetInput = core.CreateChangeSetInput
 type ValidationIssueBinding = core.ValidationIssueBinding
 type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
 type ValidationIssueDisposition = core.ValidationIssueDisposition
+type SaveSpecResult = core.SaveSpecResult
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog

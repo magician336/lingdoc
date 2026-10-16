@@ -89,6 +89,17 @@ type OperationResult struct {
 	Status   int
 }
 
+// SaveSpecResult is the transport-neutral outcome of saving a project spec.
+// The application boundary exposes the domain value and whether the value was
+// replayed; HTTP status codes, response envelopes, and serialized bytes remain
+// transport concerns. The legacy SaveSpec method below is retained as the
+// compatibility adapter for existing transports during the incremental
+// migration.
+type SaveSpecResult struct {
+	Project  Project
+	Replayed bool
+}
+
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
@@ -1266,6 +1277,22 @@ func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key stri
 		}
 		return p, 200, nil
 	})
+}
+
+// SaveSpecResult runs the same application operation as SaveSpec and exposes
+// its business result without leaking JSON or HTTP concerns to callers such as
+// a CLI or background task. Idempotency authorization and replay checks remain
+// owned by operation; this method is only the typed compatibility adapter.
+func (s *Service) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
+	raw, _, replayed, err := s.SaveSpec(ctx, actor, projectID, key, input)
+	if err != nil {
+		return SaveSpecResult{}, err
+	}
+	var project Project
+	if err := json.Unmarshal(raw, &project); err != nil {
+		return SaveSpecResult{}, fmt.Errorf("decode saved spec result: %w", err)
+	}
+	return SaveSpecResult{Project: project, Replayed: replayed}, nil
 }
 
 func validateChangeSetInput(input CreateChangeSetInput) error {
