@@ -25,7 +25,7 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.NewOwnerUserID) != input.NewOwnerUserID || input.NewOwnerUserID == "" || len(input.NewOwnerUserID) > 64 || input.NewOwnerUserID == actor.UserID {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	body, status, replayed, err := s.operation(ctx, actor, "transferOwner", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), func(tx Transaction, p Project) (any, int, error) {
+	body, status, replayed, err := runOperation(s, ctx, actor, "transferOwner", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[transferOwnerTransaction], func(tx transferOwnerTransaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
@@ -103,7 +103,7 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs != nil || len(input.Members) > 20 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	body, status, replayed, err := s.operation(ctx, actor, "saveMembers", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), func(tx Transaction, p Project) (any, int, error) {
+	body, status, replayed, err := runOperation(s, ctx, actor, "saveMembers", projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, ""), focusedMutationPort[memberPermissionsTransaction], func(tx memberPermissionsTransaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return nil, 0, ErrVersionConflict
 		}
