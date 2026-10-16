@@ -102,9 +102,16 @@ type SaveSpecApplication interface {
 	SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error)
 }
 
+// CreateProjectApplication is the transport-neutral pilot port for project
+// creation. The HTTP handler maps its result to the established 201 response.
+type CreateProjectApplication interface {
+	CreateProjectResult(context.Context, Actor, string, CreateProjectInput) (CreateProjectResult, error)
+}
+
 var _ WorkspaceReadApplication = (*Service)(nil)
 var _ WorkspaceWriteApplication = (*Service)(nil)
 var _ SaveSpecApplication = (*Service)(nil)
+var _ CreateProjectApplication = (*Service)(nil)
 
 // SourceApplicationService owns the source and asset use cases consumed by
 // workspace HTTP routes. Keeping these operations behind one port prevents

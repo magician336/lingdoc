@@ -360,6 +360,37 @@ func TestSaveSpecResultIsTransportNeutralAndReplays(t *testing.T) {
 	}
 }
 
+func TestCreateProjectResultIsTransportNeutralAndReplays(t *testing.T) {
+	service := NewService(fakeWorkspace())
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	input := CreateProjectInput{Name: "typed project", TemplateID: "template-demo"}
+
+	first, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", input)
+	if err != nil {
+		t.Fatalf("typed create: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first typed create reported a replay")
+	}
+	if first.Project.ID == "" || first.Project.Name != input.Name || first.Project.Status != "draft" || len(first.Project.Members) != 1 {
+		t.Fatalf("typed create result = %+v, want the created project", first.Project)
+	}
+
+	replayed, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", input)
+	if err != nil {
+		t.Fatalf("typed create replay: %v", err)
+	}
+	if !replayed.Replayed || replayed.Project.ID != first.Project.ID || replayed.Project.Name != first.Project.Name {
+		t.Fatalf("typed create replay = %+v, want the original project with replay=true", replayed)
+	}
+
+	changed := input
+	changed.Name = "different project"
+	if _, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("typed create different-body replay error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
 // discards both domain writes and replay records on any callback error.
 type stateRepository struct {

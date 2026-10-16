@@ -100,6 +100,13 @@ type SaveSpecResult struct {
 	Replayed bool
 }
 
+// CreateProjectResult is the transport-neutral outcome of creating a project.
+// The HTTP adapter owns the established 201 status and response envelope.
+type CreateProjectResult struct {
+	Project  Project
+	Replayed bool
+}
+
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
@@ -1196,6 +1203,21 @@ func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, in
 		return p, 201, tx.InsertProject(actor.TenantID, p)
 	})
 }
+
+// CreateProjectResult exposes the project value and replay state without
+// leaking serialized response bytes or an HTTP status code to the caller.
+func (s *Service) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
+	raw, _, replayed, err := s.CreateProject(ctx, actor, key, input)
+	if err != nil {
+		return CreateProjectResult{}, err
+	}
+	var project Project
+	if err := json.Unmarshal(raw, &project); err != nil {
+		return CreateProjectResult{}, fmt.Errorf("decode created project result: %w", err)
+	}
+	return CreateProjectResult{Project: project, Replayed: replayed}, nil
+}
+
 func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.Fields == nil {
 		return nil, 0, false, ErrInvalidRequest
