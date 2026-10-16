@@ -17,6 +17,14 @@ import (
 )
 
 type Handler struct {
+	projects     ProjectApplication
+	members      MembershipApplication
+	chapters     ChapterApplication
+	templatesApp TemplateApplication
+	changeSets   ChangeSetApplication
+	// read/write stay available to compatibility consumers that use the
+	// workspace handler as a source of the concrete service. Route methods use
+	// the focused fields above.
 	read        WorkspaceReadApplication
 	write       WorkspaceWriteApplication
 	sources     SourceApplicationService
@@ -30,18 +38,90 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	if templates == nil {
 		templates = delivery.NewFixedTemplateReader()
 	}
+	projects, members, chapters, templatesApp, changeSets := deps.Projects, deps.Members, deps.Chapters, deps.TemplateApp, deps.ChangeSets
+	// ApplicationService is a compatibility edge for older composition roots.
+	// New callers should inject the focused ports above; this adapter is the only
+	// place where the legacy cross-use-case surface is widened again.
+	var legacy ApplicationService = deps.Service
+	if legacy == nil {
+		if candidate, ok := any(deps.Read).(ApplicationService); ok {
+			legacy = candidate
+		} else if candidate, ok := any(deps.Write).(ApplicationService); ok {
+			legacy = candidate
+		}
+	}
 	read, write := deps.Read, deps.Write
 	if read == nil {
-		read = deps.Service
+		read = legacy
 	}
 	if write == nil {
-		write = deps.Service
+		write = legacy
+	}
+	if legacy != nil {
+		adapter := legacyApplicationAdapter{ApplicationService: legacy}
+		if projects == nil {
+			projects = adapter
+		}
+		if members == nil {
+			members = adapter
+		}
+		if chapters == nil {
+			chapters = adapter
+		}
+		if templatesApp == nil {
+			templatesApp = adapter
+		}
+		if changeSets == nil {
+			changeSets = adapter
+		}
+	}
+	// A focused test double may implement one port without carrying the legacy
+	// interface. Keep that seam directly injectable as well.
+	if projects == nil {
+		if candidate, ok := any(deps.Read).(ProjectApplication); ok {
+			projects = candidate
+		} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
+			projects = candidate
+		}
+	}
+	if members == nil {
+		if candidate, ok := any(deps.Write).(MembershipApplication); ok {
+			members = candidate
+		}
+	}
+	if chapters == nil {
+		if candidate, ok := any(deps.Read).(ChapterApplication); ok {
+			chapters = candidate
+		} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
+			chapters = candidate
+		}
+	}
+	if templatesApp == nil {
+		if candidate, ok := any(deps.Read).(TemplateApplication); ok {
+			templatesApp = candidate
+		} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
+			templatesApp = candidate
+		}
+	}
+	if changeSets == nil {
+		if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
+			changeSets = candidate
+		} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
+			changeSets = candidate
+		}
 	}
 	return &Handler{
-		read: read, write: write, sources: deps.Sources, integration: deps.Integration,
+		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
+		read: read, write: write,
+		sources: deps.Sources, integration: deps.Integration,
 		rewrites: deps.SelectedRewrites, templates: templates,
 	}
 }
+
+// legacyApplicationAdapter makes the migration boundary explicit in the
+// composition root while keeping old test doubles and transports working.
+// The handler itself stores only focused ports.
+type legacyApplicationAdapter struct{ ApplicationService }
 
 func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/templates/:templateId", h.getTemplate)
@@ -258,7 +338,7 @@ func (h *Handler) listProjects(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, truncated, err := h.read.ListProjects(c.Request.Context(), actor)
+	items, truncated, err := h.projects.ListProjects(c.Request.Context(), actor)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -292,7 +372,7 @@ func (h *Handler) createProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.CreateProjectResult(c.Request.Context(), actor, key, input)
+	result, err := h.projects.CreateProjectResult(c.Request.Context(), actor, key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -305,7 +385,7 @@ func (h *Handler) getProject(c *gin.Context) {
 	if !ok {
 		return
 	}
-	project, err := h.read.GetProject(c.Request.Context(), actor, c.Param("projectId"))
+	project, err := h.projects.GetProject(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -326,7 +406,7 @@ func (h *Handler) saveSpec(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.SaveSpecResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.projects.SaveSpecResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -349,7 +429,7 @@ func (h *Handler) activateProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.ActivateProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.projects.ActivateProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -362,7 +442,7 @@ func (h *Handler) listDraftCandidates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.read.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.projects.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -383,7 +463,7 @@ func (h *Handler) createDraftCandidate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.CreateDraftCandidateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.projects.CreateDraftCandidateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -396,7 +476,7 @@ func (h *Handler) listAuditEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.read.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.projects.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -416,7 +496,7 @@ func (h *Handler) activationDiff(c *gin.Context) {
 			return
 		}
 	}
-	diff, err := h.read.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
+	diff, err := h.projects.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -436,7 +516,7 @@ func (h *Handler) previewTemplateMigration(c *gin.Context) {
 			return
 		}
 	}
-	data, err := h.read.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	data, err := h.templatesApp.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -453,7 +533,7 @@ func (h *Handler) previewTemplateMigrationPost(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, err := h.read.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	data, err := h.templatesApp.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -474,7 +554,7 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.ChangeTemplateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.templatesApp.ChangeTemplateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -492,7 +572,7 @@ func (h *Handler) getTemplateCopy(c *gin.Context) {
 		sendError(c, ErrInvalidRequest)
 		return
 	}
-	copy, err := h.read.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
+	copy, err := h.templatesApp.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -509,7 +589,7 @@ func (h *Handler) previewTemplateCopyEdit(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	preview, err := h.read.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
+	preview, err := h.templatesApp.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -530,7 +610,7 @@ func (h *Handler) saveTemplateCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.templatesApp.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -553,7 +633,7 @@ func (h *Handler) discardProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.DiscardProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	result, err := h.projects.DiscardProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -576,7 +656,7 @@ func (h *Handler) restoreProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.RestoreProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	result, err := h.projects.RestoreProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -602,7 +682,7 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 		return
 	}
 	if input.NewOwnerUserID != "" {
-		result, err := h.write.TransferOwnerResult(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+		result, err := h.members.TransferOwnerResult(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
 		if err != nil {
 			sendError(c, err)
 			return
@@ -610,7 +690,7 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 		sendOK(c, http.StatusOK, result.Project, result.Replayed)
 		return
 	} else {
-		result, err := h.write.RequestOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+		result, err := h.members.RequestOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
 		if err != nil {
 			sendError(c, err)
 			return
@@ -629,7 +709,7 @@ func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.write.AcceptOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+	result, err := h.members.AcceptOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -650,7 +730,7 @@ func (h *Handler) saveMembers(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.SaveMembersResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.members.SaveMembersResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -663,7 +743,7 @@ func (h *Handler) listChapters(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.read.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.chapters.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -754,7 +834,7 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.SaveChapterResult(c.Request.Context(), actor,
+	result, err := h.chapters.SaveChapterResult(c.Request.Context(), actor,
 		c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
@@ -768,7 +848,7 @@ func (h *Handler) getWorkingCopy(c *gin.Context) {
 	if !ok {
 		return
 	}
-	workingCopy, err := h.read.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	workingCopy, err := h.chapters.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -844,7 +924,7 @@ func (h *Handler) saveWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.SaveWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.chapters.SaveWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -865,7 +945,7 @@ func (h *Handler) commitWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.CommitWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.chapters.CommitWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -878,7 +958,7 @@ func (h *Handler) listChapterVersions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	versions, err := h.read.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	versions, err := h.chapters.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -899,7 +979,7 @@ func (h *Handler) restoreWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.RestoreWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.chapters.RestoreWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -925,7 +1005,7 @@ func (h *Handler) listChangeSets(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.read.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.changeSets.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -938,7 +1018,7 @@ func (h *Handler) getChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.read.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
+	data, err := h.changeSets.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -959,7 +1039,7 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.write.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.changeSets.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -976,7 +1056,7 @@ func (h *Handler) applyChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.write.ApplyChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	result, err := h.changeSets.ApplyChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -993,7 +1073,7 @@ func (h *Handler) rejectChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.write.RejectChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	result, err := h.changeSets.RejectChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
