@@ -1267,6 +1267,11 @@ type BindTemplateCopyRuleSetInput struct {
 }
 
 func projectTemplateCopy(actor Actor, projectID string, version int64, source lingdoctemplate.Template, status string) (*ProjectTemplateCopy, error) {
+	if source.RuleSetSnapshot != nil || source.RuleSetRef != nil {
+		if _, err := lingdoctemplate.VerifyRuleSetBinding(source); err != nil {
+			return nil, ErrInvalidRequest
+		}
+	}
 	definition, err := lingdoctemplate.WithHashes(source)
 	if err != nil {
 		return nil, ErrInvalidRequest
@@ -1289,6 +1294,11 @@ func validateProjectTemplateCopy(copy *ProjectTemplateCopy) error {
 		copy.Definition.ContentHash != copy.ContentHash || copy.Definition.RulesetHash != copy.RulesetHash ||
 		copy.Definition.ID != copy.SourceTemplateID || copy.Definition.Version != copy.SourceTemplateVersion {
 		return ErrInvalidState
+	}
+	if copy.Definition.RuleSetSnapshot != nil || copy.Definition.RuleSetRef != nil {
+		if _, err := lingdoctemplate.VerifyRuleSetBinding(copy.Definition); err != nil {
+			return ErrInvalidState
+		}
 	}
 	if !reflect.DeepEqual(copy.TemplateVersionRuleSetRef, lingdoctemplate.RuleSetReferenceFor(copy.Definition)) {
 		return ErrInvalidState

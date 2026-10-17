@@ -219,6 +219,50 @@ func TestBoundRuleSetSnapshotCombinesTemplateRulesAndPinsCombinedHash(t *testing
 	}
 }
 
+func TestRuleSetReferenceWithoutSnapshotFailsClosedBeforeEvaluation(t *testing.T) {
+	set, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetRef = &RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	definition, err = WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = EvaluateScene(definition, "preflight", EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"})
+	if !errors.Is(err, ErrUnverifiedRuleSetBinding) {
+		t.Fatalf("ref-only evaluation error = %v, want ErrUnverifiedRuleSetBinding", err)
+	}
+}
+
+func TestVerifyRuleSetBindingReturnsImmutableEvidence(t *testing.T) {
+	set, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &set
+	definition.RuleSetRef = &RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	definition, err = WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := VerifyRuleSetBinding(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if evidence.Reference.ID != set.ID || evidence.Reference.Version != set.Version || evidence.Reference.Hash != set.RulesetHash ||
+		evidence.EffectiveHash != definition.RulesetHash || evidence.ContentHash != definition.ContentHash {
+		t.Fatalf("binding evidence = %+v, want exact source/effective/content hashes", evidence)
+	}
+	set.Bindings[0].Parameters = map[string]any{"tampered": true}
+	if _, ok := evidence.Snapshot.Bindings[0].Parameters["tampered"]; ok {
+		t.Fatal("binding evidence retained mutable RuleSet reader data")
+	}
+}
+
 func TestProjectRuleSetOverridesAreAllowlistedHashedAndEvaluated(t *testing.T) {
 	published, err := PublishRuleSet(testRuleSet())
 	if err != nil {

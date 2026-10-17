@@ -378,8 +378,12 @@ func Evaluate(t Template, input EvaluationInput) ([]Evaluation, error) {
 // supported checks. Legacy template rules are retained and evaluated with the
 // same immutable combined hash as the bound RuleSet.
 func EvaluateScene(t Template, scene string, input EvaluationInput) ([]Evaluation, error) {
-	if t.RuleSetSnapshot != nil {
-		return EvaluateBoundRuleSet(t, *t.RuleSetSnapshot, scene, input)
+	if t.RuleSetSnapshot != nil || t.RuleSetRef != nil {
+		binding, err := VerifyRuleSetBinding(t)
+		if err != nil {
+			return nil, err
+		}
+		return EvaluateBoundRuleSet(t, binding.Snapshot, scene, input)
 	}
 	return evaluateTemplate(t, input, "")
 }

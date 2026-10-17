@@ -105,6 +105,11 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 	var template lingdoctemplate.Template
 	if input.TemplateDefinition != nil {
 		template = *input.TemplateDefinition
+		if template.RuleSetSnapshot != nil || template.RuleSetRef != nil {
+			if _, err := lingdoctemplate.VerifyRuleSetBinding(template); err != nil {
+				return delivery.DeliveryInput{}, fmt.Errorf("%w: project template RuleSet binding is not verified", candidateadoption.ErrInvalidState)
+			}
+		}
 		contentHash, rulesetHash, hashErr := lingdoctemplate.Hashes(template)
 		if hashErr != nil || input.TemplateCopyID == "" || input.TemplateCopyVersion < 1 ||
 			contentHash != input.TemplateCopyContentHash || rulesetHash != input.TemplateCopyRulesetHash ||
@@ -118,6 +123,11 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 			// 模板取不到不是「检查不通过」，是装配或数据错了：冻结输入离开模板没有意义
 			// （ruleset_hash 与规则声明都由它来）。如实报错，别冻一份没有判据的快照。
 			return delivery.DeliveryInput{}, fmt.Errorf("%w: read frozen template %q version %q: %v", candidateadoption.ErrInvalidState, input.TemplateID, input.TemplateVersion, err)
+		}
+		if template.RuleSetSnapshot != nil || template.RuleSetRef != nil {
+			if _, err := lingdoctemplate.VerifyRuleSetBinding(template); err != nil {
+				return delivery.DeliveryInput{}, fmt.Errorf("%w: frozen template RuleSet binding is not verified", candidateadoption.ErrInvalidState)
+			}
 		}
 	}
 
