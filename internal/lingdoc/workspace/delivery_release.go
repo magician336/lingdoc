@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -34,6 +35,7 @@ type DeliveryReleaseService struct {
 	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
 	dispositions ValidationIssueDispositionApplication
+	useAuditor   lingdoctemplate.RuleSetUseAuditRecorder
 }
 
 // NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
@@ -60,6 +62,15 @@ func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.Deliver
 // all release reads and currentness checks.
 func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
 	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, policy)
+}
+
+// WithRuleSetUseAuditor makes governed Check/Preflight usage records a
+// fail-closed part of the application contract.
+func (s *DeliveryReleaseService) WithRuleSetUseAuditor(auditor lingdoctemplate.RuleSetUseAuditRecorder) *DeliveryReleaseService {
+	if s != nil {
+		s.useAuditor = auditor
+	}
+	return s
 }
 
 func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication, policy AccessPolicy) *DeliveryReleaseService {
@@ -94,6 +105,9 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 	if err := s.attachIssueDispositions(ctx, actorID, projectID, &result); err != nil {
 		return delivery.CheckResult{}, err
 	}
+	if err := s.recordRuleSetUse(ctx, actorID, input, "preflight", "", string(result.Status)); err != nil {
+		return delivery.CheckResult{}, err
+	}
 	return result, nil
 }
 
@@ -107,7 +121,14 @@ func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, pro
 	if err != nil {
 		return delivery.TemplateCheckResult{}, err
 	}
-	return delivery.EvaluateTemplate(input)
+	result, err := delivery.EvaluateTemplate(input)
+	if err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	if err := s.recordRuleSetUse(ctx, actorID, input, "check", "", string(result.Status)); err != nil {
+		return delivery.TemplateCheckResult{}, err
+	}
+	return result, nil
 }
 
 // Prepare 冻结一份快照并落存，返回它是不是这次动作的重放。key 是这次用户动作的
@@ -156,11 +177,36 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	if err := s.attachIssueDispositions(ctx, actorID, projectID, &snapshot.Check); err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
-	recorded, replayed, err := s.freezes.RecordFreeze(snapshot, attempt, requestHash)
+	useEvent, governed, err := ruleSetUseEvent(ctx, actorID, input, "release_snapshot", snapshot.ID, string(snapshot.Check.Status))
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	var recorded delivery.ReleaseSnapshot
+	var replayed bool
+	if governed {
+		audited, ok := s.freezes.(delivery.RuleSetUseFreezeRecorder)
+		if !ok {
+			return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidState
+		}
+		recorded, replayed, err = audited.RecordFreezeWithRuleSetUse(snapshot, attempt, requestHash, useEvent)
+	} else {
+		recorded, replayed, err = s.freezes.RecordFreeze(snapshot, attempt, requestHash)
+	}
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
 	return recorded, replayed, nil
+}
+
+func (s *DeliveryReleaseService) recordRuleSetUse(ctx context.Context, actorID string, input delivery.DeliveryInput, action, resourceID, outcome string) error {
+	event, governed, err := ruleSetUseEvent(ctx, actorID, input, action, resourceID, outcome)
+	if err != nil || !governed {
+		return err
+	}
+	if s == nil || s.useAuditor == nil {
+		return candidateadoption.ErrInvalidState
+	}
+	return s.useAuditor.RecordRuleSetUse(ctx, event)
 }
 
 // SetIssueDisposition reevaluates the current issue at the caller's expected
@@ -280,28 +326,17 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 	return s.releases(ctx, actorID).Get(projectID, snapshotID)
 }
 
-// authorizeSnapshotSources rechecks the source permission at release-read
-// time. A frozen snapshot is immutable, but access to the sources it quotes is
-// revocable; returning the old frozen body after revocation would be a stale
-// snapshot replay. The optional policy keeps the small in-memory adapters used
-// by legacy unit tests compatible while production wires the same policy used
-// by chapter confirmation and export.
+// authorizeSnapshotSources rechecks only the permissions for sources quoted
+// by this snapshot. Project/input currentness is deliberately not an access
+// gate here: Get recomputes IsCurrent below so historical snapshots remain
+// readable after an ordinary project edit or a pinned-template migration.
+// Source access remains revocable, so a snapshot quoting a source the caller
+// can no longer access must still be denied.
 func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
-	if s.policy != nil {
-		caller := types.CallerFromContext(ctx)
-		if caller.UserID == "" {
-			caller.UserID = actorID
-		}
-		current, err := s.policy.Current(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, accessInputFromDelivery(snapshot.FrozenInput))
-		if err != nil {
-			return err
-		}
-		if !current {
-			return candidateadoption.ErrStaleInput
-		}
-		return nil
-	}
-	if s == nil || (s.sources == nil && s.reviewer == nil) {
+	if s == nil || (s.sources == nil && s.reviewer == nil && s.policy == nil) {
+		// The small legacy adapters do not have a source-level reader. Production
+		// composition always wires the shared Reviewer; retain this compatibility
+		// path only when there is no shared policy claiming production guarantees.
 		return nil
 	}
 	ids := make([]string, 0)
@@ -325,9 +360,12 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 	if s.reviewer != nil {
 		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, ids)
 	}
-	// Compatibility boundary for legacy release adapters. Production wiring
-	// supplies the shared Reviewer above.
-	return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
+	if s.sources != nil {
+		// Compatibility boundary for legacy release adapters. Production wiring
+		// supplies the shared Reviewer above.
+		return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
+	}
+	return candidateadoption.ErrDependencyUnavailable
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。
@@ -438,7 +476,7 @@ func (s *DeliveryReleaseService) authorize(ctx context.Context, actorID, project
 		if caller.UserID == "" {
 			caller.UserID = actorID
 		}
-		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, "contributor")
+		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, "read")
 	}
 	if s.inputs == nil || s.inputs.Authorizer == nil {
 		return candidateadoption.ErrInvalidState

@@ -11,6 +11,41 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+// g4AuditlessRepository masks the optional audit capability while keeping the
+// normal workspace and ChangeSet persistence ports available to the service.
+type g4AuditlessRepository struct{ inner Repository }
+
+func (r g4AuditlessRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
+	return r.inner.Transaction(ctx, options, func(tx Transaction) error {
+		changes, ok := tx.(changeSetTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		return fn(g4AuditlessTransaction{Transaction: tx, changes: changes})
+	})
+}
+
+type g4AuditlessTransaction struct {
+	Transaction
+	changes changeSetTransaction
+}
+
+func (tx g4AuditlessTransaction) InsertChangeSet(change ChangeSet) error {
+	return tx.changes.InsertChangeSet(change)
+}
+func (tx g4AuditlessTransaction) ChangeSet(projectID, changeSetID string) (ChangeSet, error) {
+	return tx.changes.ChangeSet(projectID, changeSetID)
+}
+func (tx g4AuditlessTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
+	return tx.changes.ChangeSets(projectID)
+}
+func (tx g4AuditlessTransaction) UpdateChangeSet(previous, next ChangeSet) error {
+	return tx.changes.UpdateChangeSet(previous, next)
+}
+func (tx g4AuditlessTransaction) InvalidateChapterConfirmations(projectID string, chapterIDs []string) error {
+	return tx.changes.InvalidateChapterConfirmations(projectID, chapterIDs)
+}
+
 func seedActiveG3Project(t *testing.T, svc *Service, actor Actor) Project {
 	t.Helper()
 	seedTenantMember(t, svc, actor)
@@ -136,6 +171,459 @@ func TestActiveTemplateCopyUpgradeUsesOwnerChangeSetAndKeepsHistory(t *testing.T
 	oldCopy, err := svc.GetTemplateCopy(context.Background(), owner, project.ID, project.TemplateCopyVersion)
 	if err != nil || oldCopy.Status != TemplateCopySuperseded || oldCopy.Definition.Fields[0].Label == fields[0].Label {
 		t.Fatalf("old template copy history was not retained: %+v err=%v", oldCopy, err)
+	}
+}
+
+func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-ruleset-migration.db"))
+	owner := Actor{TenantID: 318, UserID: "owner", Role: types.TenantRoleOwner}
+	seedTenantMember(t, svc, owner)
+	v1, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "grant-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{RuleID: "goal-required", DefinitionID: "presence", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal", Severity: "blocking",
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Draft := lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &v1}).RuleSetSnapshot
+	v2Draft.Version = "v2"
+	v2Draft.State, v2Draft.RulesetHash = lingdoctemplate.RuleSetDraft, ""
+	v2Draft.Bindings[0].Message = "A new required-field check"
+	v2, err := lingdoctemplate.PublishRuleSet(*v2Draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v1.RulesetHash == v2.RulesetHash {
+		t.Fatal("test RuleSet versions must have distinct source hashes")
+	}
+	reader := &ruleSetSnapshotReaderStub{set: v1}
+	svc.WithRuleSetSnapshotReader(reader)
+	raw, _, _, err := svc.CreateProject(context.Background(), owner, "ruleset-migration-create", CreateProjectInput{Name: "migration", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, raw)
+	raw, _, _, err = svc.BindTemplateCopyRuleSet(context.Background(), owner, project.ID, "ruleset-migration-bind-v1", BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: v1.ID, Version: v1.Version, Hash: v1.RulesetHash},
+	})
+	if err != nil {
+		t.Fatalf("bind original RuleSet version: %v", err)
+	}
+	project = asProject(t, raw)
+	raw, _, _, err = svc.SaveSpec(context.Background(), owner, project.ID, "ruleset-migration-spec", SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision,
+		Fields:               map[string]string{"research_subject": "迁移主题", "research_goal": "迁移目标"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	raw, _, _, err = svc.ActivateProject(context.Background(), owner, project.ID, "ruleset-migration-activate", ActivateProjectInput{
+		ExpectedSpecRevision: project.SpecRevision, ExpectedProjectVersion: project.ProjectVersion, ReviewedProjectVersion: project.ProjectVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	oldCopy := project.TemplateCopy
+	if oldCopy == nil || oldCopy.TemplateVersionRuleSetRef == nil || oldCopy.TemplateVersionRuleSetRef.Version != "v1" {
+		t.Fatalf("active project was not bound to the original exact RuleSet version: %+v", oldCopy)
+	}
+	oldIssue := ValidationIssueBinding{IssueID: "historic-goal-required", RuleID: "goal-required", RulesetHash: oldCopy.RulesetHash,
+		Severity: "blocking", TargetID: "research_goal", ProjectVersion: project.ProjectVersion}
+	if _, _, _, err := svc.RecordValidationIssueDisposition(context.Background(), owner, project.ID, "ruleset-migration-dismiss-v1", ValidationIssueDispositionInput{
+		ExpectedProjectVersion: project.ProjectVersion, ValidationIssueBinding: oldIssue, Action: "dismiss", Reason: "已记录旧规则版本的人工处置",
+	}); err != nil {
+		t.Fatalf("record v1 issue disposition: %v", err)
+	}
+	reader.set = v2
+	definition := project.TemplateCopy.Definition
+	overrideEnabled := true
+	upgrade := &TemplateUpgradeInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetRef:           &lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash},
+		RuleBindingOverrides: []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-required", Enabled: &overrideEnabled}},
+		Fields:               append([]lingdoctemplate.Field{}, definition.Fields...), Sections: append([]lingdoctemplate.Section{}, definition.Sections...),
+		Terms: append([]lingdoctemplate.Term{}, definition.Terms...), RequiredFields: append([]string{}, definition.RequiredFields...),
+		Rules: append([]lingdoctemplate.Rule{}, definition.Rules...),
+	}
+	createdRaw, status, replayed, err := svc.CreateChangeSet(context.Background(), owner, project.ID, "ruleset-migration-assess-v2", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "迁移到新的不可变 RuleSet 版本", TemplateUpgrade: upgrade,
+	})
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("assess RuleSet migration: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(createdRaw, &change); err != nil || change.TemplateUpgrade == nil {
+		t.Fatalf("assessed RuleSet migration = %+v err=%v", change, err)
+	}
+	assessedRef := lingdoctemplate.RuleSetReferenceFor(change.TemplateUpgrade.Definition)
+	if assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash}) {
+		t.Fatalf("ChangeSet did not pin the exact target RuleSet before assessment: %+v", assessedRef)
+	}
+	noAuditKey := "ruleset-migration-apply-without-audit"
+	var copiesBeforeNoAudit, operationsBeforeNoAudit, auditsBeforeNoAudit int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesBeforeNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", noAuditKey).Count(&operationsBeforeNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", change.ID).Count(&auditsBeforeNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalRepository := svc.repository
+	svc.repository = g4AuditlessRepository{inner: originalRepository}
+	_, _, noAuditReplay, noAuditErr := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, noAuditKey)
+	svc.repository = originalRepository
+	if !errors.Is(noAuditErr, ErrInvalidState) || noAuditReplay {
+		t.Fatalf("apply without transactional audit: replay=%v err=%v, want a non-replayed fail-closed rejection", noAuditReplay, noAuditErr)
+	}
+	projectAfterNoAudit, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeAfterNoAudit, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiesAfterNoAudit, operationsAfterNoAudit, auditsAfterNoAudit int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesAfterNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", noAuditKey).Count(&operationsAfterNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", change.ID).Count(&auditsAfterNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if projectAfterNoAudit.ProjectVersion != project.ProjectVersion || projectAfterNoAudit.TemplateCopyVersion != project.TemplateCopyVersion ||
+		changeAfterNoAudit.Status != "assessed" || copiesAfterNoAudit != copiesBeforeNoAudit ||
+		operationsAfterNoAudit != operationsBeforeNoAudit || auditsAfterNoAudit != auditsBeforeNoAudit {
+		t.Fatalf("missing-audit rejection left partial writes: project=%+v change=%+v copies %d->%d operations %d->%d audits %d->%d",
+			projectAfterNoAudit, changeAfterNoAudit, copiesBeforeNoAudit, copiesAfterNoAudit,
+			operationsBeforeNoAudit, operationsAfterNoAudit, auditsBeforeNoAudit, auditsAfterNoAudit)
+	}
+	applyKey := "ruleset-migration-apply-v2"
+	var copiesBefore, operationsBefore, auditsBefore int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", applyKey).Count(&operationsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Exec("CREATE TRIGGER g3_change_set_apply_audit_failure BEFORE INSERT ON lingdoc_project_audits WHEN NEW.action = 'project.change_set.apply' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey); err == nil || replayed {
+		t.Fatalf("audit failure apply: replayed=%v err=%v, want transactional failure", replayed, err)
+	}
+	if err := svc.testDB().Exec("DROP TRIGGER g3_change_set_apply_audit_failure").Error; err != nil {
+		t.Fatal(err)
+	}
+	failedProject, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedChange, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiesAfterFailure, operationsAfterFailure, auditsAfterFailure int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesAfterFailure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", applyKey).Count(&operationsAfterFailure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsAfterFailure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failedProject.ProjectVersion != project.ProjectVersion || failedProject.TemplateCopyVersion != project.TemplateCopyVersion ||
+		failedProject.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash || failedChange.Status != "assessed" ||
+		copiesAfterFailure != copiesBefore || operationsAfterFailure != operationsBefore || auditsAfterFailure != auditsBefore {
+		t.Fatalf("audit failure left partial migration: project=%+v change=%+v copies %d->%d operations %d->%d audits %d->%d", failedProject, failedChange, copiesBefore, copiesAfterFailure, operationsBefore, operationsAfterFailure, auditsBefore, auditsAfterFailure)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey); err != nil || status != 200 || replayed {
+		t.Fatalf("apply RuleSet migration: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	updated, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil || updated.TemplateCopyVersion != project.TemplateCopyVersion+1 || updated.TemplateCopy == nil {
+		t.Fatalf("project did not advance to new copy version: project=%+v err=%v", updated.TemplateCopy, err)
+	}
+	newRef := lingdoctemplate.RuleSetReferenceFor(updated.TemplateCopy.Definition)
+	if newRef == nil || *newRef != *assessedRef || updated.TemplateCopy.TemplateVersionRuleSetRef == nil || *updated.TemplateCopy.TemplateVersionRuleSetRef != *assessedRef {
+		t.Fatalf("applied copy did not retain exact v2 identity: ref=%+v copy=%+v", newRef, updated.TemplateCopy)
+	}
+	oldHistory, err := svc.GetTemplateCopy(context.Background(), owner, project.ID, oldCopy.Version)
+	if err != nil || oldHistory.Status != TemplateCopySuperseded || oldHistory.TemplateVersionRuleSetRef == nil || *oldHistory.TemplateVersionRuleSetRef != (lingdoctemplate.RuleSetReference{ID: v1.ID, Version: v1.Version, Hash: v1.RulesetHash}) {
+		t.Fatalf("previous copy and its RuleSet identity were not preserved: %+v err=%v", oldHistory, err)
+	}
+	oldChecks, err := lingdoctemplate.EvaluateScene(oldHistory.Definition, "preflight", lingdoctemplate.EvaluationInput{ProjectID: project.ID, TargetVersion: "copy-v1", Fields: project.Spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newChecks, err := lingdoctemplate.EvaluateScene(updated.TemplateCopy.Definition, "preflight", lingdoctemplate.EvaluationInput{ProjectID: project.ID, TargetVersion: "copy-v2", Fields: updated.Spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	findBoundIssue := func(results []lingdoctemplate.Evaluation) (lingdoctemplate.Evaluation, bool) {
+		for _, result := range results {
+			if result.RuleID == "goal-required" {
+				return result, true
+			}
+		}
+		return lingdoctemplate.Evaluation{}, false
+	}
+	oldBound, oldFound := findBoundIssue(oldChecks)
+	newBound, newFound := findBoundIssue(newChecks)
+	if !oldFound || !newFound || oldBound.RuleSetVersion != "v1" || newBound.RuleSetVersion != "v2" || oldBound.RulesetHash == newBound.RulesetHash {
+		t.Fatalf("new evaluation must use v2 while historic copy still replays v1: old=%+v new=%+v", oldChecks, newChecks)
+	}
+	currentIssue := oldIssue
+	currentIssue.RulesetHash, currentIssue.ProjectVersion = updated.TemplateCopy.RulesetHash, updated.ProjectVersion
+	newDispositions, err := svc.ValidationIssueDispositions(context.Background(), owner, project.ID, []ValidationIssueBinding{currentIssue})
+	if err != nil || len(newDispositions) != 0 {
+		t.Fatalf("v1 disposition must not carry over to a v2 issue: dispositions=%+v err=%v", newDispositions, err)
+	}
+	historicDispositions, err := svc.ValidationIssueDispositions(context.Background(), owner, project.ID, []ValidationIssueBinding{oldIssue})
+	if err != nil || historicDispositions[oldIssue.IssueID].Action != "dismiss" {
+		t.Fatalf("v1 disposition history was not preserved for exact historical replay: dispositions=%+v err=%v", historicDispositions, err)
+	}
+	events, err := svc.ListAuditEvents(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatalf("read project audit history: %v", err)
+	}
+	var applyAudit *AuditEvent
+	for i := range events {
+		if events[i].Action == "project.change_set.apply" && events[i].Target == change.ID {
+			applyAudit = &events[i]
+		}
+	}
+	if applyAudit == nil {
+		t.Fatalf("successful migration did not persist project.change_set.apply audit: %+v", events)
+	}
+	if applyAudit.ActorID != owner.UserID || applyAudit.CreatedAt.IsZero() {
+		t.Fatalf("migration audit lost actor or timestamp: %+v", applyAudit)
+	}
+	if applyAudit.Reason != change.Reason {
+		t.Fatalf("migration audit lost reason: got %q want %q", applyAudit.Reason, change.Reason)
+	}
+	upgradeAudit, ok := applyAudit.Details["template_upgrade"].(map[string]any)
+	if !ok {
+		t.Fatalf("migration audit missing template_upgrade details: %+v", applyAudit.Details)
+	}
+	assertAuditString := func(key, want string) {
+		t.Helper()
+		if got, _ := upgradeAudit[key].(string); got != want {
+			t.Fatalf("migration audit %s=%q, want %q; details=%+v", key, got, want, upgradeAudit)
+		}
+	}
+	assertAuditNumber := func(key string, want float64) {
+		t.Helper()
+		if got, _ := upgradeAudit[key].(float64); got != want {
+			t.Fatalf("migration audit %s=%v, want %v; details=%+v", key, got, want, upgradeAudit)
+		}
+	}
+	assertAuditString("change_set_id", change.ID)
+	assertAuditString("reason", "迁移到新的不可变 RuleSet 版本")
+	assertAuditString("ruleset_id", v2.ID)
+	assertAuditString("ruleset_version", v2.Version)
+	assertAuditString("ruleset_source_hash", v2.RulesetHash)
+	assertAuditString("source_ruleset_hash", v2.RulesetHash)
+	assertAuditString("content_hash", updated.TemplateCopy.ContentHash)
+	assertAuditString("effective_ruleset_hash", updated.TemplateCopy.RulesetHash)
+	assertAuditNumber("base_copy_version", float64(oldCopy.Version))
+	assertAuditNumber("target_copy_version", float64(updated.TemplateCopyVersion))
+	assertAuditNumber("override_count", 1)
+	overrides, ok := upgradeAudit["rule_binding_overrides"].([]any)
+	if !ok || len(overrides) != 1 {
+		t.Fatalf("migration audit overrides=%+v, want one override", upgradeAudit["rule_binding_overrides"])
+	}
+	override, ok := overrides[0].(map[string]any)
+	if !ok || override["rule_id"] != "goal-required" || override["enabled"] != true {
+		t.Fatalf("migration audit did not retain exact override: %+v", overrides[0])
+	}
+	var auditsAfterReplay int64
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsAfterReplay).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey); err != nil || status != 200 || !replayed {
+		t.Fatalf("same-key apply retry: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	var auditsAfterIdempotentRetry int64
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsAfterIdempotentRetry).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditsAfterIdempotentRetry != auditsAfterReplay {
+		t.Fatalf("same-key apply retry duplicated audit: before=%d after=%d", auditsAfterReplay, auditsAfterIdempotentRetry)
+	}
+}
+
+func TestTemplateUpgradeApplyRechecksRuleSetLifecycleBeforeWrites(t *testing.T) {
+	for _, state := range []lingdoctemplate.RuleSetState{lingdoctemplate.RuleSetWithdrawn, lingdoctemplate.RuleSetRecalled} {
+		t.Run(string(state), func(t *testing.T) {
+			svc := testStore(t, filepath.Join(t.TempDir(), "g3-ruleset-"+string(state)+".db"))
+			owner := Actor{TenantID: 319, UserID: "owner", Role: types.TenantRoleOwner}
+			project := seedActiveG3Project(t, svc, owner)
+			set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+				ID: "grant-rules", Version: "v2", State: lingdoctemplate.RuleSetDraft,
+				Bindings: []lingdoctemplate.RuleBinding{{
+					RuleID: "goal-required", DefinitionID: "presence", DefinitionVersion: "1",
+					Origin: "organization", TargetKind: "field", TargetID: "research_goal", Severity: "blocking",
+					TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+				}},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			reader := &ruleSetSnapshotReaderStub{set: set}
+			svc.WithRuleSetSnapshotReader(reader)
+			fields := append([]lingdoctemplate.Field{}, project.TemplateCopy.Definition.Fields...)
+			fields[0].Label += "（规则迁移）"
+			upgrade := &TemplateUpgradeInput{
+				ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+				RuleSetRef: &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash},
+				Fields:     fields, Sections: append([]lingdoctemplate.Section{}, project.TemplateCopy.Definition.Sections...),
+				Terms:          append([]lingdoctemplate.Term{}, project.TemplateCopy.Definition.Terms...),
+				RequiredFields: append([]string{}, project.TemplateCopy.Definition.RequiredFields...),
+				Rules:          append([]lingdoctemplate.Rule{}, project.TemplateCopy.Definition.Rules...),
+			}
+			raw, status, replayed, err := svc.CreateChangeSet(context.Background(), owner, project.ID, "ruleset-lifecycle-assess-"+string(state), CreateChangeSetInput{
+				ExpectedContextRevision: project.CurrentContextRevision, Reason: "迁移到指定的 RuleSet 版本", TemplateUpgrade: upgrade,
+			})
+			if err != nil || status != 201 || replayed {
+				t.Fatalf("assess RuleSet change: status=%d replayed=%v err=%v", status, replayed, err)
+			}
+			var change ChangeSet
+			if err := json.Unmarshal(raw, &change); err != nil || change.TemplateUpgrade == nil || change.Status != "assessed" {
+				t.Fatalf("assessed RuleSet change = %+v decode=%v", change, err)
+			}
+			if reader.calls != 1 {
+				t.Fatalf("assessment transactional RuleSet reads = %d, want 1", reader.calls)
+			}
+
+			// Model another administrator withdrawing or recalling the exact
+			// target after assessment but before the Apply transaction begins.
+			if state == lingdoctemplate.RuleSetWithdrawn {
+				reader.set, err = lingdoctemplate.WithdrawRuleSet(reader.set)
+			} else {
+				reader.set, err = lingdoctemplate.RecallRuleSet(reader.set)
+			}
+			if err != nil {
+				t.Fatalf("transition target to %s: %v", state, err)
+			}
+			applyKey := "ruleset-lifecycle-apply-" + string(state)
+			var applyAuditBefore int64
+			if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action IN ?", project.ID, []string{"project.change_set.apply", "project.change_set.stale"}).Count(&applyAuditBefore).Error; err != nil {
+				t.Fatal(err)
+			}
+			var copyRowsBefore, operationsBefore int64
+			if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copyRowsBefore).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.testDB().Model(&operationRow{}).Where("key = ?", applyKey).Count(&operationsBefore).Error; err != nil {
+				t.Fatal(err)
+			}
+			_, _, _, err = svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey)
+			if !errors.Is(err, ErrInvalidState) {
+				t.Fatalf("apply after target became %s: error=%v, want ErrInvalidState", state, err)
+			}
+			current, err := svc.GetProject(context.Background(), owner, project.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if current.ProjectVersion != project.ProjectVersion || current.CurrentContextRevision != project.CurrentContextRevision ||
+				current.TemplateCopyVersion != project.TemplateCopyVersion || current.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash ||
+				current.TemplateCopy.RulesetHash != project.TemplateCopy.RulesetHash {
+				t.Fatalf("failed RuleSet migration changed the active project/copy: before=%+v after=%+v", project, current)
+			}
+			stored, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+			if err != nil || stored.Status != "assessed" {
+				t.Fatalf("failed apply changed ChangeSet state: change=%+v err=%v", stored, err)
+			}
+			var copyRowsAfter, operationsAfter, applyAuditAfter int64
+			if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copyRowsAfter).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.testDB().Model(&operationRow{}).Where("key = ?", applyKey).Count(&operationsAfter).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action IN ?", project.ID, []string{"project.change_set.apply", "project.change_set.stale"}).Count(&applyAuditAfter).Error; err != nil {
+				t.Fatal(err)
+			}
+			if copyRowsAfter != copyRowsBefore || operationsAfter != operationsBefore || applyAuditAfter != applyAuditBefore {
+				t.Fatalf("failed apply partially wrote state: copies %d->%d operations %d->%d relevant audits %d->%d", copyRowsBefore, copyRowsAfter, operationsBefore, operationsAfter, applyAuditBefore, applyAuditAfter)
+			}
+		})
+	}
+}
+
+func TestBindRuleSetRejectsEnabledLegacyRuleCollisionWithoutPartialWrites(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "ruleset-enabled-collision.db"))
+	owner := Actor{TenantID: 320, UserID: "owner", Role: types.TenantRoleOwner}
+	seedTenantMember(t, svc, owner)
+	raw, _, _, err := svc.CreateProject(context.Background(), owner, "ruleset-collision-create", CreateProjectInput{Name: "规则冲突", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, raw)
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "collision-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{
+			{RuleID: "additional-check", DefinitionID: "presence", DefinitionVersion: "1", Origin: "organization", TargetKind: "field", TargetID: "research_subject", Severity: "warning", TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office"},
+			{RuleID: lingdoctemplate.RuleRequiredFields, DefinitionID: "presence", DefinitionVersion: "1", Origin: "organization", TargetKind: "field", TargetID: "research_goal", Severity: "warning", TriggerScenes: []string{"preflight"}, Enabled: false, Owner: "research-office"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.WithRuleSetSnapshotReader(&ruleSetSnapshotReaderStub{set: set})
+	enabled := true
+	input := BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash},
+		Overrides:  []lingdoctemplate.RuleBindingOverride{{RuleID: lingdoctemplate.RuleRequiredFields, Enabled: &enabled}},
+	}
+	var copyRowsBefore, operationsBefore, auditBefore int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copyRowsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", "ruleset-collision-bind").Count(&operationsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project_template.override_ruleset").Count(&auditBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.BindTemplateCopyRuleSet(context.Background(), owner, project.ID, "ruleset-collision-bind", input); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("enabling legacy-colliding rule error = %v, want ErrInvalidRequest", err)
+	}
+	current, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current.ProjectVersion != project.ProjectVersion || current.TemplateCopyVersion != project.TemplateCopyVersion ||
+		current.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash || current.TemplateCopy.RulesetHash != project.TemplateCopy.RulesetHash {
+		t.Fatalf("invalid enabled override changed project/copy: before=%+v after=%+v", project, current)
+	}
+	var copyRowsAfter, operationsAfter, auditAfter int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copyRowsAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", "ruleset-collision-bind").Count(&operationsAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project_template.override_ruleset").Count(&auditAfter).Error; err != nil {
+		t.Fatal(err)
+	}
+	if copyRowsAfter != copyRowsBefore || operationsAfter != operationsBefore || auditAfter != auditBefore {
+		t.Fatalf("invalid enabled override partially wrote state: copies %d->%d operations %d->%d audits %d->%d", copyRowsBefore, copyRowsAfter, operationsBefore, operationsAfter, auditBefore, auditAfter)
 	}
 }
 

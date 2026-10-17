@@ -44,17 +44,18 @@ type Project struct {
 // published template version. Lifecycle status may advance; Definition and
 // its server-computed hashes never change after the row is inserted.
 type ProjectTemplateCopy struct {
-	ID                    string                   `json:"id"`
-	ProjectID             string                   `json:"project_id"`
-	SourceTemplateID      string                   `json:"source_template_id"`
-	SourceTemplateVersion string                   `json:"source_template_version"`
-	Version               int64                    `json:"version"`
-	Status                string                   `json:"status"`
-	ContentHash           string                   `json:"content_hash"`
-	RulesetHash           string                   `json:"ruleset_hash"`
-	Definition            lingdoctemplate.Template `json:"definition"`
-	CreatedBy             string                   `json:"created_by"`
-	CreatedAt             time.Time                `json:"created_at"`
+	ID                        string                            `json:"id"`
+	ProjectID                 string                            `json:"project_id"`
+	SourceTemplateID          string                            `json:"source_template_id"`
+	SourceTemplateVersion     string                            `json:"source_template_version"`
+	Version                   int64                             `json:"version"`
+	Status                    string                            `json:"status"`
+	ContentHash               string                            `json:"content_hash"`
+	RulesetHash               string                            `json:"ruleset_hash"`
+	TemplateVersionRuleSetRef *lingdoctemplate.RuleSetReference `json:"template_version_ruleset_ref,omitempty"`
+	Definition                lingdoctemplate.Template          `json:"definition"`
+	CreatedBy                 string                            `json:"created_by"`
+	CreatedAt                 time.Time                         `json:"created_at"`
 }
 
 const (
@@ -235,14 +236,16 @@ type TemplateUpgradeImpact struct {
 }
 
 type TemplateUpgradeInput struct {
-	ExpectedProjectVersion      int64                     `json:"expected_project_version"`
-	ExpectedTemplateCopyVersion int64                     `json:"expected_template_copy_version"`
-	Fields                      []lingdoctemplate.Field   `json:"fields"`
-	Sections                    []lingdoctemplate.Section `json:"sections"`
-	Terms                       []lingdoctemplate.Term    `json:"terms"`
-	RequiredFields              []string                  `json:"required_fields"`
-	Rules                       []lingdoctemplate.Rule    `json:"rules"`
-	FieldValues                 map[string]string         `json:"field_values,omitempty"`
+	ExpectedProjectVersion      int64                                 `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64                                 `json:"expected_template_copy_version"`
+	RuleSetRef                  *lingdoctemplate.RuleSetReference     `json:"ruleset_ref,omitempty"`
+	RuleBindingOverrides        []lingdoctemplate.RuleBindingOverride `json:"ruleset_overrides,omitempty"`
+	Fields                      []lingdoctemplate.Field               `json:"fields"`
+	Sections                    []lingdoctemplate.Section             `json:"sections"`
+	Terms                       []lingdoctemplate.Term                `json:"terms"`
+	RequiredFields              []string                              `json:"required_fields"`
+	Rules                       []lingdoctemplate.Rule                `json:"rules"`
+	FieldValues                 map[string]string                     `json:"field_values,omitempty"`
 }
 
 type CreateChangeSetInput struct {
@@ -443,6 +446,7 @@ type projectTemplateCopyRow struct {
 	Status                string `gorm:"not null;size:16"`
 	ContentHash           string `gorm:"not null;size:64"`
 	RulesetHash           string `gorm:"not null;size:64"`
+	RuleSetRefJSON        string `gorm:"column:ruleset_ref_json;not null;type:text"`
 	DefinitionJSON        string `gorm:"column:definition_json;not null;type:text"`
 	CreatedBy             string `gorm:"not null;size:64"`
 	CreatedAt             time.Time

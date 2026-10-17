@@ -32,6 +32,9 @@ type applicationServiceStub struct {
 	copyEditKey       string
 	copyEditCalled    bool
 	copyPreviewCalled bool
+	bindRuleSetInput  BindTemplateCopyRuleSetInput
+	bindRuleSetKey    string
+	bindRuleSetCalled bool
 }
 
 type saveSpecApplicationStub struct {
@@ -207,6 +210,12 @@ func (s *applicationServiceStub) SaveTemplateCopyResult(_ context.Context, actor
 	s.actor, s.templateProjectID, s.copyEditKey, s.copyEditInput = actor, projectID, key, input
 	s.copyEditCalled = true
 	return ProjectMutationResult{Project: Project{ID: projectID, TemplateCopyVersion: 2}}, nil
+}
+
+func (s *applicationServiceStub) BindTemplateCopyRuleSetResult(_ context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (ProjectMutationResult, error) {
+	s.actor, s.templateProjectID, s.bindRuleSetKey, s.bindRuleSetInput = actor, projectID, key, input
+	s.bindRuleSetCalled = true
+	return ProjectMutationResult{Project: Project{ID: projectID, TemplateCopyVersion: 3}}, nil
 }
 
 func (s *applicationServiceStub) CreateChangeSetResult(_ context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
@@ -520,6 +529,34 @@ func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("template copy save without idempotency key = %d, want 400: %s", response.Code, response.Body.String())
+	}
+
+	bindBody := `{"expected_project_version":4,"expected_template_copy_version":2,"ruleset_id":"grant-rules","ruleset_version":"v1"}`
+	request = httptest.NewRequest(http.MethodPut, "/api/projects/project-1/template-copy/rule-set", strings.NewReader(bindBody)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "template-ruleset-bind-1")
+	response = httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !service.bindRuleSetCalled || service.bindRuleSetKey != "template-ruleset-bind-1" || service.templateProjectID != "project-1" || service.bindRuleSetInput.RuleSetID != "grant-rules" || service.bindRuleSetInput.ExpectedTemplateCopyVersion != 2 {
+		t.Fatalf("template RuleSet binding: status=%d called=%v project=%q key=%q input=%#v body=%s", response.Code, service.bindRuleSetCalled, service.templateProjectID, service.bindRuleSetKey, service.bindRuleSetInput, response.Body.String())
+	}
+}
+
+func TestBindTemplateCopyRuleSetUsesWriteApplicationPort(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	read := &applicationServiceStub{}
+	write := &applicationServiceStub{}
+	handler := NewHandler(HandlerDependencies{Read: read, Write: write})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	body := `{"expected_project_version":4,"expected_template_copy_version":2,"ruleset_id":"grant-rules","ruleset_version":"v1"}`
+	request := httptest.NewRequest(http.MethodPut, "/api/projects/project-1/template-copy/rule-set", strings.NewReader(body)).WithContext(ctx)
+	request.Header.Set("Idempotency-Key", "template-ruleset-bind-port")
+	response := httptest.NewRecorder()
+	engine.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !write.bindRuleSetCalled || read.bindRuleSetCalled {
+		t.Fatalf("binding must use write port: status=%d read=%v write=%v body=%s", response.Code, read.bindRuleSetCalled, write.bindRuleSetCalled, response.Body.String())
 	}
 }
 

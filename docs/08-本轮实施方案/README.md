@@ -9,6 +9,7 @@
 - [待领取任务池](../TEAM_DEVELOPMENT_TASKS.md)
 - [协作与代码边界](../06-灵档产品开发规划/05-团队分工与代码边界.md)
 - [接口与 Mock 约定](02-接口与Mock约定.md)
+- [G4 RuleSet 服务切片与未完边界](G4-RuleSet服务切片-20261015.md)
 
 ## 最新横切契约状态（2026-10-16）
 
@@ -20,7 +21,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| [openapi.json](contracts/openapi.json) | 拟议 HTTP：31 操作，28 core / 3 optional；x-domain 表示服务职责，不指定人 |
+| [openapi.json](contracts/openapi.json) | 拟议 HTTP 契约及已实现 G4 RuleSet 管理、项目副本绑定和 Template Check/Preflight 切片：54 paths / 60 operations（57 core / 3 optional），94 schemas；其余拟议路径不代表已有服务 |
 | [scenarios.json](contracts/scenarios.json) | 24 个行为场景（F01–F23、G7-01 基线读写）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |

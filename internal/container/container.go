@@ -86,6 +86,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -543,12 +544,13 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy) (workspace.ReleaseApplication, error) {
+	must(container.Provide(func(db *gorm.DB, sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy) (workspace.ReleaseApplication, error) {
 		var dispositions workspace.ValidationIssueDispositionApplication
-		if core, ok := projects.(workspace.ValidationIssueDispositionApplication); ok {
-			dispositions = core
+		if application, ok := projects.(workspace.ValidationIssueDispositionApplication); ok {
+			dispositions = application
 		}
 		service := workspace.NewDeliveryReleaseServiceWithPolicy(inputs, sourceIntegration.DeliveryInputBuilder(), snapshots, sourceIntegration.CandidateAdoptionSourcePolicy(), policy, dispositions)
+		service.WithRuleSetUseAuditor(rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{}))
 		if service == nil {
 			// 装配不全就报错，不交出一个会在调用时空转的服务：上一处 nil
 			// （SourcePolicy）就是这样静默了整整一轮交付。dig 按需构建，这条守卫
@@ -572,8 +574,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
 	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
 	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink, policy lingdocaccess.Policy) (workspace.ExportApplication, error) {
-		service := workspace.NewDeliveryExportServiceWithPolicy(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), policy, audit)
+	must(container.Provide(func(db *gorm.DB, sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink, policy lingdocaccess.Policy) (workspace.ExportApplication, error) {
+		service := workspace.NewDeliveryExportServiceWithPolicy(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), policy, audit).
+			WithRuleSetUseAuditor(rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{}))
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
