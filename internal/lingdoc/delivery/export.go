@@ -414,6 +414,15 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 		if actor.TenantID == 0 || !actor.Role.IsValid() {
 			return ExportArtifact{}, false, ErrExportUnavailable
 		}
+		binding, bindingErr := VerifiedRuleSetBindingForInput(snapshot.FrozenInput)
+		if bindingErr != nil || binding == nil {
+			if bindingErr != nil {
+				return ExportArtifact{}, false, bindingErr
+			}
+			return ExportArtifact{}, false, ErrExportUnavailable
+		}
+		templateCopy := lingdoctemplate.Clone(snapshot.FrozenInput.Template)
+		bindingCopy := binding.Clone()
 		event := lingdoctemplate.RuleSetUseAuditEvent{
 			ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: string(actor.Role),
 			ProjectID: projectID, Action: "export", RuleSetID: artifact.RuleSetRef.ID,
@@ -422,7 +431,7 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 			TemplateID:           snapshot.FrozenInput.Template.ID, TemplateVersion: snapshot.FrozenInput.Template.Version,
 			TemplateCopyID: snapshot.FrozenInput.TemplateCopyID, TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion,
 			ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: artifact.ID,
-			Outcome: string(artifact.Status), CreatedAt: s.now().UTC(),
+			Outcome: string(artifact.Status), CreatedAt: s.now().UTC(), VerifiedTemplate: &templateCopy, VerifiedBinding: &bindingCopy,
 		}
 		audited, ok := s.actions.(RuleSetUseExportRecorder)
 		if !ok {
@@ -450,6 +459,15 @@ func (s *ExportService) recordFailedRuleSetUse(ctx context.Context, actor Actor,
 	if s.useAuditor == nil || actor.TenantID == 0 || !actor.Role.IsValid() {
 		return ErrExportUnavailable
 	}
+	binding, bindingErr := VerifiedRuleSetBindingForInput(snapshot.FrozenInput)
+	if bindingErr != nil || binding == nil {
+		if bindingErr != nil {
+			return bindingErr
+		}
+		return ErrExportUnavailable
+	}
+	templateCopy := lingdoctemplate.Clone(snapshot.FrozenInput.Template)
+	bindingCopy := binding.Clone()
 	outcome := "failed"
 	if errors.Is(cause, ErrExportPreflightBlocked) {
 		outcome = "blocked"
@@ -462,7 +480,7 @@ func (s *ExportService) recordFailedRuleSetUse(ctx context.Context, actor Actor,
 		EffectiveRulesetHash: snapshot.FrozenInput.Template.RulesetHash,
 		TemplateID:           snapshot.FrozenInput.Template.ID, TemplateVersion: snapshot.FrozenInput.Template.Version,
 		TemplateCopyID: snapshot.FrozenInput.TemplateCopyID, TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion,
-		ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: snapshotID, Outcome: outcome, CreatedAt: s.now().UTC(),
+		ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: snapshotID, Outcome: outcome, CreatedAt: s.now().UTC(), VerifiedTemplate: &templateCopy, VerifiedBinding: &bindingCopy,
 	}
 	return s.useAuditor.RecordRuleSetUse(ctx, event)
 }

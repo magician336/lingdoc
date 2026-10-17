@@ -3,7 +3,6 @@ package rulesetstore
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 	"time"
 
@@ -27,14 +26,18 @@ func TestRuleSetUseAuditPageUsesStableCursorAndFilters(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "audit-page-project").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "audit-page-project", actor.UserID, "owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	for i, action := range []string{"check", "preflight", "release_snapshot", "export"} {
 		event := template.RuleSetUseAuditEvent{
 			ID: "audit-page-" + action, TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 			ProjectID: "audit-page-project", Action: action, RuleSetID: published.ID, RuleSetVersion: published.Version,
-			RuleSetHash: published.RulesetHash, EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo",
+			RuleSetHash: published.RulesetHash, EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID,
 			TemplateVersion: "1", TemplateCopyID: "copy-1", TemplateCopyVersion: 1, ProjectVersion: 1,
-			Outcome: "passed", CreatedAt: base.Add(time.Duration(i) * time.Minute),
+			Outcome: "passed", CreatedAt: base.Add(time.Duration(i) * time.Minute), VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding,
 		}
 		if err := store.RecordRuleSetUse(ctx, event); err != nil {
 			t.Fatal(err)
@@ -74,11 +77,15 @@ func TestRuleSetUseAuditPageReadsWithdrawnHistoryAndRejectsInvalidRange(t *testi
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "audit-history-project").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "audit-history-project", actor.UserID, "owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	event := template.RuleSetUseAuditEvent{
 		ID: "audit-history-event", TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 		ProjectID: "audit-history-project", Action: "preflight", RuleSetID: published.ID, RuleSetVersion: published.Version,
-		RuleSetHash: published.RulesetHash, EffectiveRulesetHash: strings.Repeat("b", 64), TemplateID: "template-demo",
-		TemplateVersion: "1", Outcome: "passed", CreatedAt: time.Now().UTC(),
+		RuleSetHash: published.RulesetHash, EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID,
+		TemplateVersion: "1", Outcome: "passed", CreatedAt: time.Now().UTC(), VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding,
 	}
 	if err := store.RecordRuleSetUse(ctx, event); err != nil {
 		t.Fatal(err)

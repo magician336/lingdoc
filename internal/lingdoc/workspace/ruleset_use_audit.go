@@ -27,6 +27,8 @@ func ruleSetUseEvent(ctx context.Context, actorID string, input delivery.Deliver
 	if caller.TenantID == 0 || caller.UserID != actorID || !caller.Role.IsValid() || strings.TrimSpace(binding.EffectiveHash) == "" {
 		return lingdoctemplate.RuleSetUseAuditEvent{}, true, delivery.ErrInvalidRequest
 	}
+	templateCopy := lingdoctemplate.Clone(input.Template)
+	bindingCopy := binding.Clone()
 	return lingdoctemplate.RuleSetUseAuditEvent{
 		ID: uuid.NewString(), TenantID: caller.TenantID, ActorID: caller.UserID, ActorRole: string(caller.Role),
 		ProjectID: input.ProjectID, Action: action, RuleSetID: ref.ID, RuleSetVersion: ref.Version,
@@ -34,5 +36,6 @@ func ruleSetUseEvent(ctx context.Context, actorID string, input delivery.Deliver
 		TemplateID: input.Template.ID, TemplateVersion: input.Template.Version,
 		TemplateCopyID: input.TemplateCopyID, TemplateCopyVersion: input.TemplateCopyVersion,
 		ProjectVersion: int64(input.ProjectVersion), ResourceID: resourceID, Outcome: outcome, CreatedAt: time.Now().UTC(),
+		VerifiedTemplate: &templateCopy, VerifiedBinding: &bindingCopy,
 	}, true, nil
 }

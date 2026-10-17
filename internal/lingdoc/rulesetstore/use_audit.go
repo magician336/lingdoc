@@ -91,6 +91,11 @@ func (s *Store) RecordRuleSetUse(ctx context.Context, event template.RuleSetUseA
 		if ruleSet.RulesetHash == "" || ruleSet.RulesetHash != event.RuleSetHash {
 			return fmt.Errorf("%w: source RuleSet hash mismatch", ErrInvalidRuleSetUseAudit)
 		}
+		if event.Action == "check" || event.Action == "preflight" {
+			if err := validateAuditEvidence(event); err != nil {
+				return err
+			}
+		}
 		if err := s.authorize(ctx, tx, Actor{TenantID: event.TenantID, UserID: event.ActorID, Role: event.ActorRole}, ActionRead, &ruleSet); err != nil {
 			return err
 		}
@@ -108,6 +113,31 @@ func RecordRuleSetUseInTransaction(tx *gorm.DB, event template.RuleSetUseAuditEv
 	if err != nil {
 		return err
 	}
+	if event.Action == "check" || event.Action == "preflight" {
+		if err := validateAuditEvidence(event); err != nil {
+			return err
+		}
+	}
+	// The transaction boundary must not trust a caller-stamped source hash.
+	// Re-read the immutable source row while the artifact transaction is open;
+	// ValidateRuleSet recomputes its canonical hash and rejects tampering.
+	var source template.RuleSet
+	if tx.Migrator().HasTable("lingdoc_rule_sets") {
+		sourceRow, err := loadVersion(tx, event.TenantID, event.RuleSetID, event.RuleSetVersion)
+		if err != nil {
+			return fmt.Errorf("validate ruleset use source: %w", err)
+		}
+		source, err = decodeRuleSet(sourceRow)
+		if err != nil {
+			return fmt.Errorf("validate ruleset use source: %w", err)
+		}
+		if source.RulesetHash != event.RuleSetHash {
+			return fmt.Errorf("%w: source RuleSet hash mismatch", ErrInvalidRuleSetUseAudit)
+		}
+	}
+	if err := validateDurableAuditBinding(tx, event, source); err != nil {
+		return err
+	}
 	row := ruleSetUseAuditRow{
 		ID: event.ID, TenantID: event.TenantID, ActorID: event.ActorID, ActorRole: event.ActorRole,
 		ProjectID: event.ProjectID, Action: event.Action, RuleSetID: event.RuleSetID,
@@ -119,6 +149,86 @@ func RecordRuleSetUseInTransaction(tx *gorm.DB, event template.RuleSetUseAuditEv
 	}
 	if err := tx.Create(&row).Error; err != nil {
 		return fmt.Errorf("persist ruleset use audit: %w", err)
+	}
+	return nil
+}
+
+func validateAuditEvidence(event template.RuleSetUseAuditEvent) error {
+	if event.VerifiedTemplate == nil || event.VerifiedBinding == nil {
+		return fmt.Errorf("%w: check/preflight audit requires verified binding evidence", ErrInvalidRuleSetUseAudit)
+	}
+	if err := template.ValidateVerifiedRuleSetBinding(*event.VerifiedTemplate, *event.VerifiedBinding); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRuleSetUseAudit, err)
+	}
+	binding := event.VerifiedBinding
+	ref := binding.Reference
+	if ref.ID != event.RuleSetID || ref.Version != event.RuleSetVersion || ref.Hash != event.RuleSetHash || binding.EffectiveHash != event.EffectiveRulesetHash || event.VerifiedTemplate.ID != event.TemplateID || event.VerifiedTemplate.Version != event.TemplateVersion {
+		return fmt.Errorf("%w: verified binding does not match audit identity", ErrInvalidRuleSetUseAudit)
+	}
+	return nil
+}
+
+type auditSnapshotPayload struct {
+	ProjectID string            `json:"project_id"`
+	Template  template.Template `json:"template"`
+}
+
+type auditSnapshotRow struct {
+	FrozenInputJSON string `gorm:"column:frozen_input_json"`
+}
+
+type auditExportSnapshotRow struct {
+	SnapshotID string `gorm:"column:snapshot_id"`
+}
+
+// validateDurableAuditBinding links the audit event to the frozen template
+// payload written by the same transaction. This closes the effective-hash
+// forgery gap: the event cannot claim a different template or override set.
+func validateDurableAuditBinding(tx *gorm.DB, event template.RuleSetUseAuditEvent, source template.RuleSet) error {
+	if event.Action != "release_snapshot" && event.Action != "export" {
+		return nil
+	}
+	// Older standalone RuleSet-store deployments do not own delivery tables;
+	// their non-transactional audit path still validates the source row above.
+	// The production delivery schema has this table and therefore takes the
+	// durable payload checks below.
+	if !tx.Migrator().HasTable("lingdoc_release_snapshots") {
+		return nil
+	}
+	snapshotID := event.ResourceID
+	if event.Action == "export" {
+		var artifact auditExportSnapshotRow
+		err := tx.Table("lingdoc_export_artifacts").Select("snapshot_id").Where("id = ? AND project_id = ?", event.ResourceID, event.ProjectID).Take(&artifact).Error
+		if err == nil {
+			snapshotID = artifact.SnapshotID
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: read governed export artifact: %v", ErrInvalidRuleSetUseAudit, err)
+		}
+		// Failed exports are audited before an artifact exists; in that path
+		// ResourceID is the durable snapshot ID itself.
+	}
+	var row auditSnapshotRow
+	if err := tx.Table("lingdoc_release_snapshots").Select("frozen_input_json").Where("id = ? AND project_id = ?", snapshotID, event.ProjectID).Take(&row).Error; err != nil {
+		return fmt.Errorf("%w: governed action has no durable snapshot", ErrInvalidRuleSetUseAudit)
+	}
+	var payload auditSnapshotPayload
+	if err := json.Unmarshal([]byte(row.FrozenInputJSON), &payload); err != nil {
+		return fmt.Errorf("%w: decode durable snapshot: %v", ErrInvalidRuleSetUseAudit, err)
+	}
+	if payload.ProjectID != event.ProjectID {
+		return fmt.Errorf("%w: durable snapshot project mismatch", ErrInvalidRuleSetUseAudit)
+	}
+	t := payload.Template
+	ref := template.RuleSetReferenceFor(t)
+	if ref == nil || (source.ID != "" && (ref.ID != source.ID || ref.Version != source.Version || ref.Hash != source.RulesetHash)) || ref.ID != event.RuleSetID || ref.Version != event.RuleSetVersion || ref.Hash != event.RuleSetHash {
+		return fmt.Errorf("%w: durable snapshot RuleSet identity mismatch", ErrInvalidRuleSetUseAudit)
+	}
+	contentHash, effectiveHash, err := template.Hashes(t)
+	if err != nil || t.ContentHash != contentHash || t.RulesetHash != effectiveHash || event.EffectiveRulesetHash != effectiveHash {
+		return fmt.Errorf("%w: durable snapshot effective hash mismatch", ErrInvalidRuleSetUseAudit)
+	}
+	if t.ID != event.TemplateID || t.Version != event.TemplateVersion {
+		return fmt.Errorf("%w: durable snapshot template identity mismatch", ErrInvalidRuleSetUseAudit)
 	}
 	return nil
 }
@@ -146,9 +256,11 @@ func (s *Store) ListRuleSetUseAuditsPage(ctx context.Context, actor Actor, proje
 	var events []template.RuleSetUseAuditEvent
 	var nextCursor string
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Authorize the tenant even when the project has no usage rows. Without
-		// this explicit check an inactive/non-member caller could distinguish an
-		// empty audit history from a forbidden project by receiving an empty list.
+		// Authorize the project before querying history. This check is required
+		// even for an empty page so a non-member cannot probe project existence.
+		if err := authorizeAuditProject(tx, actor, projectID); err != nil {
+			return err
+		}
 		if err := s.authorize(ctx, tx, actor, ActionRead, nil); err != nil {
 			return err
 		}
@@ -213,6 +325,33 @@ func (s *Store) ListRuleSetUseAuditsPage(ctx context.Context, actor Actor, proje
 		return RuleSetUseAuditPage{}, err
 	}
 	return RuleSetUseAuditPage{Items: events, NextCursor: nextCursor}, nil
+}
+
+// authorizeAuditProject validates both the project tenant and current project
+// membership before any audit rows are read. Project-scoped membership is
+// deliberately independent from the RuleSet authorizer, whose contract only
+// knows about tenant RuleSet access.
+func authorizeAuditProject(tx *gorm.DB, actor Actor, projectID string) error {
+	var project struct {
+		TenantID uint64 `gorm:"column:tenant_id"`
+	}
+	if err := tx.Table("lingdoc_projects").Select("tenant_id").Where("id = ?", projectID).Take(&project).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrRuleSetNotFound
+		}
+		return err
+	}
+	if project.TenantID != actor.TenantID {
+		return ErrRuleSetNotFound
+	}
+	var members int64
+	if err := tx.Table("lingdoc_members").Where("project_id = ? AND user_id = ?", projectID, actor.UserID).Count(&members).Error; err != nil {
+		return err
+	}
+	if members == 0 {
+		return ErrRuleSetAccessDenied
+	}
+	return nil
 }
 
 func (c ruleSetUseAuditCursor) createdAt() time.Time {

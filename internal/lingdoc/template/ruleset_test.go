@@ -286,6 +286,39 @@ func TestEvaluateSceneWithBindingFailsClosedWhenTemplateHashChanges(t *testing.T
 	}
 }
 
+func TestEvaluateSceneWithBindingRejectsForgedHashesAndOverrides(t *testing.T) {
+	set, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &set
+	definition.RuleSetRef = &RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	enabled := true
+	definition.RuleBindingOverrides = []RuleBindingOverride{{RuleID: "disabled-pattern", Enabled: &enabled, Parameters: map[string]any{"pattern": "^Grant"}}}
+	definition, err = WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := VerifyRuleSetBinding(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []func(*Template, *VerifiedRuleSetBinding){
+		func(t *Template, b *VerifiedRuleSetBinding) { b.EffectiveHash = strings.Repeat("a", 64) },
+		func(t *Template, b *VerifiedRuleSetBinding) { b.ContentHash = strings.Repeat("b", 64) },
+		func(t *Template, b *VerifiedRuleSetBinding) { b.Overrides = nil },
+	} {
+		candidate := definition
+		candidate.RuleBindingOverrides = CloneRuleBindingOverrides(definition.RuleBindingOverrides)
+		forged := binding.Clone()
+		mutate(&candidate, &forged)
+		if _, err := EvaluateSceneWithBinding(candidate, forged, "preflight", EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"}); !errors.Is(err, ErrUnverifiedRuleSetBinding) {
+			t.Fatalf("forged binding error = %v, want ErrUnverifiedRuleSetBinding", err)
+		}
+	}
+}
+
 func TestProjectRuleSetOverridesAreAllowlistedHashedAndEvaluated(t *testing.T) {
 	published, err := PublishRuleSet(testRuleSet())
 	if err != nil {
