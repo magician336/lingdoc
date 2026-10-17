@@ -103,12 +103,15 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		return delivery.DeliveryInput{}, candidateadoption.ErrSourceAccessDenied
 	}
 	var template lingdoctemplate.Template
+	var binding *lingdoctemplate.VerifiedRuleSetBinding
 	if input.TemplateDefinition != nil {
 		template = *input.TemplateDefinition
 		if template.RuleSetSnapshot != nil || template.RuleSetRef != nil {
-			if _, err := lingdoctemplate.VerifyRuleSetBinding(template); err != nil {
+			verified, err := lingdoctemplate.VerifyRuleSetBinding(template)
+			if err != nil {
 				return delivery.DeliveryInput{}, fmt.Errorf("%w: project template RuleSet binding is not verified", candidateadoption.ErrInvalidState)
 			}
+			binding = &verified
 		}
 		contentHash, rulesetHash, hashErr := lingdoctemplate.Hashes(template)
 		if hashErr != nil || input.TemplateCopyID == "" || input.TemplateCopyVersion < 1 ||
@@ -125,9 +128,11 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 			return delivery.DeliveryInput{}, fmt.Errorf("%w: read frozen template %q version %q: %v", candidateadoption.ErrInvalidState, input.TemplateID, input.TemplateVersion, err)
 		}
 		if template.RuleSetSnapshot != nil || template.RuleSetRef != nil {
-			if _, err := lingdoctemplate.VerifyRuleSetBinding(template); err != nil {
+			verified, err := lingdoctemplate.VerifyRuleSetBinding(template)
+			if err != nil {
 				return delivery.DeliveryInput{}, fmt.Errorf("%w: frozen template RuleSet binding is not verified", candidateadoption.ErrInvalidState)
 			}
+			binding = &verified
 		}
 	}
 
@@ -147,6 +152,7 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		SpecRevision:            input.SpecRevision,
 		Spec:                    cloneStringMap(input.Spec),
 		Template:                template,
+		RuleSetBinding:          binding,
 		TemplateCopyID:          input.TemplateCopyID,
 		TemplateCopyVersion:     input.TemplateCopyVersion,
 		TemplateCopyContentHash: input.TemplateCopyContentHash,

@@ -388,6 +388,16 @@ func EvaluateScene(t Template, scene string, input EvaluationInput) ([]Evaluatio
 	return evaluateTemplate(t, input, "")
 }
 
+// EvaluateSceneWithBinding consumes evidence produced by the application
+// binding boundary. It never resolves a RuleSet or recomputes the source or
+// effective identity; a mismatch fails closed before any rule executes.
+func EvaluateSceneWithBinding(t Template, binding VerifiedRuleSetBinding, scene string, input EvaluationInput) ([]Evaluation, error) {
+	if err := ValidateVerifiedRuleSetBinding(t, binding); err != nil {
+		return nil, err
+	}
+	return evaluateVerifiedRuleSet(t, binding, scene, input)
+}
+
 // evaluateTemplate applies validated rules with the supplied version hash.
 // An empty rulesetHash retains the legacy template-derived hash behavior.
 func evaluateTemplate(t Template, input EvaluationInput, rulesetHash string) ([]Evaluation, error) {

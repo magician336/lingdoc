@@ -263,6 +263,29 @@ func TestVerifyRuleSetBindingReturnsImmutableEvidence(t *testing.T) {
 	}
 }
 
+func TestEvaluateSceneWithBindingFailsClosedWhenTemplateHashChanges(t *testing.T) {
+	set, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &set
+	definition.RuleSetRef = &RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	definition, err = WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := VerifyRuleSetBinding(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition.RulesetHash = strings.Repeat("b", 64)
+	_, err = EvaluateSceneWithBinding(definition, binding, "preflight", EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"})
+	if !errors.Is(err, ErrUnverifiedRuleSetBinding) {
+		t.Fatalf("tampered evidence evaluation error = %v, want ErrUnverifiedRuleSetBinding", err)
+	}
+}
+
 func TestProjectRuleSetOverridesAreAllowlistedHashedAndEvaluated(t *testing.T) {
 	published, err := PublishRuleSet(testRuleSet())
 	if err != nil {
