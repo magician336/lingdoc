@@ -9,8 +9,10 @@ import (
 	"net/http"
 )
 
-type reviewAnchorApplication interface {
+type reviewAnchorWriteApplication interface {
 	SetReviewAnchor(context.Context, Actor, string, string, string, string, core.SetReviewAnchorInput) (json.RawMessage, int, bool, error)
+}
+type reviewAnchorReadApplication interface {
 	GetCurrentConfirmation(context.Context, Actor, string, string) (json.RawMessage, error)
 }
 
@@ -41,8 +43,8 @@ func (h *Handler) setReviewAnchor(c *gin.Context) {
 		sendError(c, ErrInvalidRequest)
 		return
 	}
-	app, ok := h.service.(reviewAnchorApplication)
-	if !ok {
+	app := h.reviewAnchorsWrite
+	if app == nil {
 		sendError(c, ErrInvalidState)
 		return
 	}
@@ -59,8 +61,8 @@ func (h *Handler) getCurrentConfirmation(c *gin.Context) {
 	if !ok {
 		return
 	}
-	app, ok := h.service.(reviewAnchorApplication)
-	if !ok {
+	app := h.reviewAnchorsRead
+	if app == nil {
 		sendError(c, ErrInvalidState)
 		return
 	}

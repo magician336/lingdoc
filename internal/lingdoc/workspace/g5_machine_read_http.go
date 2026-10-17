@@ -103,8 +103,8 @@ type MachineReadGetRegistrar interface {
 
 // Registration has no effects for legacy/stub handlers without the actual seam.
 func (h *Handler) RegisterMachineReadRoutes(group MachineReadGetRegistrar) {
-	service, ok := h.service.(machineReadApplication)
-	if !ok || group == nil {
+	service := h.machineReads
+	if service == nil || group == nil {
 		return
 	}
 	reply := func(c *gin.Context, result any, err error) {

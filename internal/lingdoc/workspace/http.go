@@ -20,18 +20,20 @@ import (
 
 type Handler struct {
 	full *FullWorkflowDependencies
-	// service bridges the pre-existing G5 machine-read and G7 anchor extensions.
-	// Project, membership, chapter, template and ChangeSet routes use focused ports.
-	service      ApplicationService
-	projects     ProjectApplication
-	members      MembershipApplication
-	chapters     ChapterApplication
-	templatesApp TemplateApplication
-	changeSets   ChangeSetApplication
-	sources      SourceApplicationService
-	integration  WorkspaceIntegration
-	rewrites     SelectedRewriteApplication
-	templates    delivery.TemplateReader
+	// Optional G5/G7 extensions follow the transport direction as well; a
+	// read dependency must never become the implicit review-anchor writer.
+	machineReads       machineReadApplication
+	reviewAnchorsRead  reviewAnchorReadApplication
+	reviewAnchorsWrite reviewAnchorWriteApplication
+	projects           ProjectApplication
+	members            MembershipApplication
+	chapters           ChapterApplication
+	templatesApp       TemplateApplication
+	changeSets         ChangeSetApplication
+	sources            SourceApplicationService
+	integration        WorkspaceIntegration
+	rewrites           SelectedRewriteApplication
+	templates          delivery.TemplateReader
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
@@ -51,7 +53,9 @@ func NewHandler(deps HandlerDependencies) *Handler {
 			legacy = candidate
 		}
 	}
-	if legacy != nil {
+	// Keep the legacy extension bridge, but never infer the five route ports
+	// from one side when explicit read/write dependencies were supplied.
+	if legacy != nil && (deps.Service != nil || deps.Read == nil || deps.Write == nil) {
 		adapter := legacyApplicationAdapter{ApplicationService: legacy}
 		if projects == nil {
 			projects = adapter
@@ -70,38 +74,41 @@ func NewHandler(deps HandlerDependencies) *Handler {
 		}
 	}
 	// A focused test double may implement one port without carrying the legacy
-	// interface. Keep that seam directly injectable as well.
-	if projects == nil {
-		if candidate, ok := any(deps.Read).(ProjectApplication); ok {
-			projects = candidate
-		} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
-			projects = candidate
+	// interface. With both read/write ports present, use the split adapters below
+	// rather than a broad interface inferred from just one dependency.
+	if deps.Read == nil || deps.Write == nil {
+		if projects == nil {
+			if candidate, ok := any(deps.Read).(ProjectApplication); ok {
+				projects = candidate
+			} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
+				projects = candidate
+			}
 		}
-	}
-	if members == nil {
-		if candidate, ok := any(deps.Write).(MembershipApplication); ok {
-			members = candidate
+		if members == nil {
+			if candidate, ok := any(deps.Write).(MembershipApplication); ok {
+				members = candidate
+			}
 		}
-	}
-	if chapters == nil {
-		if candidate, ok := any(deps.Read).(ChapterApplication); ok {
-			chapters = candidate
-		} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
-			chapters = candidate
+		if chapters == nil {
+			if candidate, ok := any(deps.Read).(ChapterApplication); ok {
+				chapters = candidate
+			} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
+				chapters = candidate
+			}
 		}
-	}
-	if templatesApp == nil {
-		if candidate, ok := any(deps.Read).(TemplateApplication); ok {
-			templatesApp = candidate
-		} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
-			templatesApp = candidate
+		if templatesApp == nil {
+			if candidate, ok := any(deps.Read).(TemplateApplication); ok {
+				templatesApp = candidate
+			} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
+				templatesApp = candidate
+			}
 		}
-	}
-	if changeSets == nil {
-		if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
-			changeSets = candidate
-		} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
-			changeSets = candidate
+		if changeSets == nil {
+			if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
+				changeSets = candidate
+			} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
+				changeSets = candidate
+			}
 		}
 	}
 	// A composition root may provide the intentionally split read and write
@@ -126,8 +133,24 @@ func NewHandler(deps HandlerDependencies) *Handler {
 			changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
 		}
 	}
+	// Explicit compatibility injection remains supported. Otherwise resolve
+	// optional extensions independently so distinct read/write services stay split.
+	var readExtension, writeExtension any = deps.Service, deps.Service
+	if deps.Service == nil {
+		readExtension, writeExtension = deps.Read, deps.Write
+		if readExtension == nil {
+			readExtension = deps.Write
+		}
+		if writeExtension == nil {
+			writeExtension = deps.Read
+		}
+	}
+	machineReads, _ := readExtension.(machineReadApplication)
+	anchorReads, _ := readExtension.(reviewAnchorReadApplication)
+	anchorWrites, _ := writeExtension.(reviewAnchorWriteApplication)
 	return &Handler{
-		full: deps.FullWorkflow, service: legacy,
+		full: deps.FullWorkflow, machineReads: machineReads,
+		reviewAnchorsRead: anchorReads, reviewAnchorsWrite: anchorWrites,
 		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
 		sources: deps.Sources, integration: deps.Integration,
 		rewrites: deps.SelectedRewrites, templates: templates,
