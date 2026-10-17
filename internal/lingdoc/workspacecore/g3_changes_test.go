@@ -394,10 +394,11 @@ func TestBindRuleSetRejectsEnabledLegacyRuleCollisionWithoutPartialWrites(t *tes
 		t.Fatal(err)
 	}
 	svc.WithRuleSetSnapshotReader(&ruleSetSnapshotReaderStub{set: set})
+	enabled := true
 	input := BindTemplateCopyRuleSetInput{
 		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
 		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash},
-		Overrides:  []lingdoctemplate.RuleBindingOverride{{RuleID: lingdoctemplate.RuleRequiredFields, Enabled: boolPointer(true)}},
+		Overrides:  []lingdoctemplate.RuleBindingOverride{{RuleID: lingdoctemplate.RuleRequiredFields, Enabled: &enabled}},
 	}
 	var copyRowsBefore, operationsBefore, auditBefore int64
 	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copyRowsBefore).Error; err != nil {
