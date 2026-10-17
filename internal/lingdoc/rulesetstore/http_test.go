@@ -88,6 +88,9 @@ func TestHTTPRuleSetGovernanceLifecycleAndAuthorization(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "project-audit-http").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-audit-http", "viewer", "member").Error; err != nil {
+		t.Fatal(err)
+	}
 	useAudit := template.RuleSetUseAuditEvent{
 		TenantID: 1, ActorID: "viewer", ActorRole: "viewer", ProjectID: "project-audit-http",
 		Action: "preflight", RuleSetID: draft.ID, RuleSetVersion: draft.Version, RuleSetHash: published.RulesetHash,
@@ -124,7 +127,7 @@ func TestHTTPRuleSetGovernanceLifecycleAndAuthorization(t *testing.T) {
 		request(http.MethodGet, path, "", "viewer", "viewer", http.StatusBadRequest)
 	}
 	request(http.MethodGet, "/projects/project-audit-http/rule-set-use-audits", "", "removed", "viewer", http.StatusForbidden)
-	request(http.MethodGet, "/projects/empty-project/rule-set-use-audits", "", "removed", "viewer", http.StatusForbidden)
+	request(http.MethodGet, "/projects/empty-project/rule-set-use-audits", "", "removed", "viewer", http.StatusNotFound)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/publish", "", "viewer", "viewer", http.StatusForbidden)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/recall", "", "owner", "owner", http.StatusOK)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/withdraw", "", "owner", "owner", http.StatusConflict)

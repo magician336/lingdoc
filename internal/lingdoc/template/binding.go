@@ -3,6 +3,7 @@ package template
 import (
 	"errors"
 	"fmt"
+	"reflect"
 )
 
 // ErrUnverifiedRuleSetBinding is returned when a governed path receives a
@@ -36,10 +37,8 @@ func (b VerifiedRuleSetBinding) Clone() VerifiedRuleSetBinding {
 }
 
 // ValidateVerifiedRuleSetBinding checks that evidence belongs to the exact
-// template definition being executed without re-resolving or recomputing its
-// identity. The producer is responsible for constructing the evidence with
-// VerifyRuleSetBinding; consumers only compare the stamped fields and compile
-// the copied snapshot.
+// template definition being executed. Hashes and overrides are recomputed from
+// the template so callers cannot forge a matching pair of stamped fields.
 func ValidateVerifiedRuleSetBinding(t Template, b VerifiedRuleSetBinding) error {
 	if t.RuleSetSnapshot == nil {
 		return fmt.Errorf("%w: template has no immutable snapshot", ErrUnverifiedRuleSetBinding)
@@ -54,8 +53,19 @@ func ValidateVerifiedRuleSetBinding(t Template, b VerifiedRuleSetBinding) error 
 	if b.Reference != wantRef || b.Snapshot.ID != wantRef.ID || b.Snapshot.Version != wantRef.Version || b.Snapshot.RulesetHash != wantRef.Hash {
 		return fmt.Errorf("%w: binding evidence does not match template identity", ErrUnverifiedRuleSetBinding)
 	}
-	if b.ContentHash == "" || b.EffectiveHash == "" || t.ContentHash != b.ContentHash || t.RulesetHash != b.EffectiveHash {
+	sourceHash, err := HashRuleSet(b.Snapshot)
+	if err != nil || sourceHash != wantRef.Hash {
+		return fmt.Errorf("%w: binding snapshot hash is not canonical", ErrUnverifiedRuleSetBinding)
+	}
+	contentHash, effectiveHash, err := Hashes(t)
+	if err != nil {
+		return fmt.Errorf("%w: recompute template hashes: %v", ErrUnverifiedRuleSetBinding, err)
+	}
+	if b.ContentHash == "" || b.EffectiveHash == "" || t.ContentHash != contentHash || t.RulesetHash != effectiveHash || b.ContentHash != contentHash || b.EffectiveHash != effectiveHash {
 		return fmt.Errorf("%w: binding evidence hash does not match template", ErrUnverifiedRuleSetBinding)
+	}
+	if !reflect.DeepEqual(b.Overrides, t.RuleBindingOverrides) {
+		return fmt.Errorf("%w: binding evidence overrides do not match template", ErrUnverifiedRuleSetBinding)
 	}
 	if err := CanBindRuleSet(b.Snapshot); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnverifiedRuleSetBinding, err)

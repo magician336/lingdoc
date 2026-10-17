@@ -80,6 +80,7 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	// under test. Keep only the columns needed by their ALTER statements and FK.
 	for _, statement := range []string{
 		`CREATE TABLE lingdoc_projects (id VARCHAR(64) PRIMARY KEY, tenant_id BIGINT NOT NULL)`,
+		`CREATE TABLE lingdoc_members (project_id VARCHAR(64) NOT NULL, user_id VARCHAR(64) NOT NULL, role VARCHAR(20) NOT NULL, PRIMARY KEY (project_id, user_id))`,
 		`CREATE TABLE lingdoc_project_template_copies (id VARCHAR(64) PRIMARY KEY)`,
 		`CREATE TABLE lingdoc_export_artifacts (id VARCHAR(64) PRIMARY KEY, project_id VARCHAR(64) NOT NULL, snapshot_id VARCHAR(64) NOT NULL)`,
 	} {
@@ -149,6 +150,9 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 		t.Fatalf("PostgreSQL audit details lost the full identity: %s", audit.Details)
 	}
 	if err := db.Exec("INSERT INTO lingdoc_projects (id, tenant_id) VALUES (?, ?)", "project-pg-ruleset", actor.TenantID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-pg-ruleset", actor.UserID, "owner").Error; err != nil {
 		t.Fatal(err)
 	}
 	event := template.RuleSetUseAuditEvent{

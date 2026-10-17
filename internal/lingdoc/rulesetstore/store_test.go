@@ -97,6 +97,9 @@ func TestRuleSetUseAuditPersistsAndReadsExactIdentity(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "project-audit").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-audit", actor.UserID, "owner").Error; err != nil {
+		t.Fatal(err)
+	}
 	event := template.RuleSetUseAuditEvent{
 		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 		ProjectID: "project-audit", Action: "preflight", RuleSetID: published.ID,
@@ -365,7 +368,10 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 	if err := db.Exec("INSERT INTO tenants (id) VALUES (1), (2)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE TABLE lingdoc_members (project_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (project_id, user_id))").Error; err != nil {
 		t.Fatal(err)
 	}
 	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000036_lingdoc_rule_sets.up.sql"))

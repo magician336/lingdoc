@@ -27,6 +27,9 @@ func TestRuleSetUseAuditPageUsesStableCursorAndFilters(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "audit-page-project").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "audit-page-project", actor.UserID, "owner").Error; err != nil {
+		t.Fatal(err)
+	}
 	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	for i, action := range []string{"check", "preflight", "release_snapshot", "export"} {
 		event := template.RuleSetUseAuditEvent{
@@ -72,6 +75,9 @@ func TestRuleSetUseAuditPageReadsWithdrawnHistoryAndRejectsInvalidRange(t *testi
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "audit-history-project").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "audit-history-project", actor.UserID, "owner").Error; err != nil {
 		t.Fatal(err)
 	}
 	event := template.RuleSetUseAuditEvent{
