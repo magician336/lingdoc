@@ -97,6 +97,75 @@ type WorkspaceWriteApplication interface {
 var _ WorkspaceReadApplication = (*Service)(nil)
 var _ WorkspaceWriteApplication = (*Service)(nil)
 
+// ProjectApplication is the focused application port for project lifecycle
+// and project preparation use cases. It is intentionally smaller than the
+// legacy ApplicationService so a project route does not depend on chapter,
+// membership, or change-set operations.
+type ProjectApplication interface {
+	ListProjects(context.Context, Actor) ([]Project, bool, error)
+	GetProject(context.Context, Actor, string) (Project, error)
+	CreateProjectResult(context.Context, Actor, string, CreateProjectInput) (CreateProjectResult, error)
+	SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error)
+	ActivateProjectResult(context.Context, Actor, string, string, ActivateProjectInput) (ProjectMutationResult, error)
+	ListDraftCandidates(context.Context, Actor, string) ([]DraftCandidate, error)
+	CreateDraftCandidateResult(context.Context, Actor, string, string, DraftCandidateInput) (DraftCandidateMutationResult, error)
+	ListAuditEvents(context.Context, Actor, string) ([]AuditEvent, error)
+	ActivationDiff(context.Context, Actor, string, int64) (ActivationDiff, error)
+	DiscardProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
+	RestoreProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
+}
+
+// MembershipApplication is the focused application port for member and
+// Owner lifecycle operations.
+type MembershipApplication interface {
+	SaveMembersResult(context.Context, Actor, string, string, SaveMembersInput) (ProjectMutationResult, error)
+	TransferOwnerResult(context.Context, Actor, string, string, TransferOwnerInput) (ProjectMutationResult, error)
+	RequestOwnerTransferResult(context.Context, Actor, string, string, OwnerTransferInput) (OwnerTransferResult, error)
+	AcceptOwnerTransferResult(context.Context, Actor, string, string, string) (OwnerTransferResult, error)
+}
+
+// ChapterApplication is the focused application port for chapter editing and
+// working-copy versioning. Rewrite application stays here because it mutates
+// the same working-copy aggregate and shares its replay/source contract.
+type ChapterApplication interface {
+	ListChapters(context.Context, Actor, string) ([]Chapter, error)
+	GetWorkingCopy(context.Context, Actor, string, string) (WorkingCopy, error)
+	ListChapterVersions(context.Context, Actor, string, string) ([]ChapterVersion, error)
+	SaveChapterResult(context.Context, Actor, string, string, string, SaveChapterInput) (ChapterMutationResult, error)
+	SaveWorkingCopyResult(context.Context, Actor, string, string, string, SaveWorkingCopyInput) (WorkingCopyMutationResult, error)
+	ApplyRewriteResult(context.Context, Actor, string, string, string, core.SaveWorkingCopyInput, []core.ReviewItem) (WorkingCopyMutationResult, error)
+	CommitWorkingCopyResult(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (CommittedChapterMutationResult, error)
+	RestoreWorkingCopyResult(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (WorkingCopyMutationResult, error)
+}
+
+// TemplateApplication is the focused application port for template previews,
+// migration, and project-owned template copies.
+type TemplateApplication interface {
+	PreviewTemplateMigration(context.Context, Actor, string, TemplateMigrationInput) (TemplateMigrationPreview, error)
+	GetTemplateCopy(context.Context, Actor, string, int64) (ProjectTemplateCopy, error)
+	PreviewTemplateCopyEdit(context.Context, Actor, string, TemplateCopyDefinitionInput) (TemplateMigrationPreview, error)
+	ChangeTemplateResult(context.Context, Actor, string, string, TemplateMigrationInput) (ProjectMutationResult, error)
+	SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error)
+}
+
+// ChangeSetApplication is the focused application port for context-change
+// assessment and its explicit apply/reject lifecycle.
+type ChangeSetApplication interface {
+	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
+	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
+	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
+	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
+}
+
+var (
+	_ ProjectApplication    = (*Service)(nil)
+	_ MembershipApplication = (*Service)(nil)
+	_ ChapterApplication    = (*Service)(nil)
+	_ TemplateApplication   = (*Service)(nil)
+	_ ChangeSetApplication  = (*Service)(nil)
+)
+
 // SourceApplicationService owns the source and asset use cases consumed by
 // workspace HTTP routes. Keeping these operations behind one port prevents
 // the transport from composing authorization, catalog reads, and search.
@@ -178,10 +247,15 @@ type KnowledgeSearchService interface {
 
 type HandlerDependencies struct {
 	// Service is retained for compatibility with older adapters. New route
-	// composition should provide Read and Write explicitly.
+	// composition should provide the focused application ports below.
 	Service          ApplicationService
 	Read             WorkspaceReadApplication
 	Write            WorkspaceWriteApplication
+	Projects         ProjectApplication
+	Members          MembershipApplication
+	Chapters         ChapterApplication
+	TemplateApp      TemplateApplication
+	ChangeSets       ChangeSetApplication
 	Sources          SourceApplicationService
 	Integration      WorkspaceIntegration
 	SelectedRewrites SelectedRewriteApplication
