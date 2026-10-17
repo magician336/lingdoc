@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -34,7 +35,7 @@ func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interf
 // dependent project authorization and current source-recheck ports.
 func (r *SourceRuntime) ConnectProjects(service ApplicationService) { r.service = service }
 func (r *SourceRuntime) application() *SourceService {
-	return NewSourceService(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.audit)
+	return NewSourceServiceWithReviewer(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
 }
 func (r *SourceRuntime) ListAssets(ctx context.Context, a Actor, p string) ([]evidence.Asset, error) {
 	return r.application().ListAssets(ctx, a, p)

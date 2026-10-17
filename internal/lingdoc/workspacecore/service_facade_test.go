@@ -2,10 +2,13 @@ package workspacecore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,26 +196,26 @@ func TestAuthorizationAuditFailureDoesNotBlockDecision(t *testing.T) {
 	}
 }
 
-func TestAuthorizationLogModeFallsBackToLegacyDecision(t *testing.T) {
+func TestAuthorizationLogModeReportsTheEnforcedDecision(t *testing.T) {
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleViewer}
-	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); err != nil {
-		t.Fatalf("log mode should preserve the legacy decision while observing the new policy: %v", err)
+	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("log mode should return the enforced policy decision: %v", err)
 	}
 	if len(audit.events) < 2 || audit.events[0].Capability != "shadow:create" || audit.events[0].Decision != "deny" {
 		t.Fatalf("shadow audit = %+v", audit.events)
 	}
 }
 
-func TestAuthorizationLogModeDoesNotAdoptNewAllow(t *testing.T) {
+func TestAuthorizationLogModeAllowsWhatThePolicyAudits(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Members = append(repository.project.Members, Member{UserID: "admin", Role: "collaborator", GovernanceRole: "admin", Status: "active"})
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(repository, ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "admin", Role: types.TenantRoleAdmin}
-	if err := service.Authorize(context.Background(), actor, "p", "manage"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("log mode adopted new allow instead of legacy deny: %v", err)
+	if err := service.Authorize(context.Background(), actor, "p", "manage"); err != nil {
+		t.Fatalf("log mode should return the enforced allow: %v", err)
 	}
 	if len(audit.events) == 0 || audit.events[0].Capability != "shadow:manage" || audit.events[0].Decision != "allow" {
 		t.Fatalf("shadow allow audit = %+v", audit.events)
@@ -322,6 +325,154 @@ func TestServiceSourceRecheckBeforeReplayWithNonSQLStorage(t *testing.T) {
 	previousCalls := policy.calls
 	if _, _, _, err := s.SaveChapter(context.Background(), actor, "p", "c", "source-save", in); !errors.Is(err, ErrNotFound) || policy.calls != previousCalls {
 		t.Fatalf("project authorization did not precede source access: %v", err)
+	}
+}
+
+func TestSaveSpecResultIsTransportNeutralAndReplays(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.SpecRevision = 0
+	repository.project.ProjectVersion = 1
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "subject"}}
+
+	first, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", input)
+	if err != nil {
+		t.Fatalf("typed save: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first typed save reported a replay")
+	}
+	if first.Project.ID != "p" || first.Project.SpecRevision != 1 || first.Project.ProjectVersion != 2 || first.Project.Spec["research_subject"] != "subject" {
+		t.Fatalf("typed save result = %+v, want the saved project", first.Project)
+	}
+
+	replayed, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", input)
+	if err != nil {
+		t.Fatalf("typed replay: %v", err)
+	}
+	if !replayed.Replayed || replayed.Project.ID != first.Project.ID || replayed.Project.SpecRevision != first.Project.SpecRevision || replayed.Project.ProjectVersion != first.Project.ProjectVersion || !maps.Equal(replayed.Project.Spec, first.Project.Spec) {
+		t.Fatalf("typed replay = %+v, want the original project with replay=true", replayed)
+	}
+
+	changed := input
+	changed.Fields = map[string]string{"research_subject": "different"}
+	if _, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("typed different-body replay error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
+func TestCreateProjectResultIsTransportNeutralAndReplays(t *testing.T) {
+	service := NewService(fakeWorkspace())
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	input := CreateProjectInput{Name: "typed project", TemplateID: "template-demo"}
+
+	first, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", input)
+	if err != nil {
+		t.Fatalf("typed create: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first typed create reported a replay")
+	}
+	if first.Project.ID == "" || first.Project.Name != input.Name || first.Project.Status != "draft" || len(first.Project.Members) != 1 {
+		t.Fatalf("typed create result = %+v, want the created project", first.Project)
+	}
+
+	replayed, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", input)
+	if err != nil {
+		t.Fatalf("typed create replay: %v", err)
+	}
+	if !replayed.Replayed || replayed.Project.ID != first.Project.ID || replayed.Project.Name != first.Project.Name {
+		t.Fatalf("typed create replay = %+v, want the original project with replay=true", replayed)
+	}
+
+	changed := input
+	changed.Name = "different project"
+	if _, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("typed create different-body replay error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
+func TestTypedProjectMutationResultsReportDomainDecodeErrors(t *testing.T) {
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	t.Run("create project", func(t *testing.T) {
+		repository := fakeWorkspace()
+		input := CreateProjectInput{Name: "malformed replay", TemplateID: "template-demo", TemplateVersion: "1"}
+		key := "typed-create-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "createProject", Target: "projects", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).CreateProjectResult(ctx, actor, key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode created project result") {
+			t.Fatalf("typed create malformed replay error = %v, want domain decode label", err)
+		}
+	})
+
+	t.Run("save spec", func(t *testing.T) {
+		repository := fakeWorkspace()
+		repository.project.Status = "draft"
+		repository.project.SpecRevision = 0
+		input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "malformed replay"}}
+		key := "typed-spec-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "saveSpec", Target: "p", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).SaveSpecResult(ctx, actor, "p", key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode saved spec result") {
+			t.Fatalf("typed save malformed replay error = %v, want domain decode label", err)
+		}
+	})
+}
+
+func malformedOperationResult(input any) OperationResult {
+	encoded, _ := json.Marshal(input)
+	hash := sha256.Sum256(encoded)
+	return OperationResult{BodyHash: hex.EncodeToString(hash[:]), Body: json.RawMessage("{"), Status: 200}
+}
+
+func TestProjectMutationResultsPreserveMemberAndOwnerSemantics(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Members = []Member{
+		{UserID: "owner", Role: "owner", GovernanceRole: "owner", Status: "active"},
+		{UserID: "member", Role: "collaborator", GovernanceRole: "member", Status: "active"},
+	}
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	members, err := service.SaveMembersResult(context.Background(), actor, "p", "typed-members", SaveMembersInput{
+		ExpectedProjectVersion: 1,
+		Members:                []Member{{UserID: "member", GovernanceRole: "member", Status: "active"}},
+	})
+	if err != nil {
+		t.Fatalf("typed members: %v", err)
+	}
+	if members.Replayed || members.Project.ProjectVersion != 2 || len(members.Project.Members) != 2 {
+		t.Fatalf("typed members result = %+v, want updated project", members)
+	}
+
+	transfer, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
+		ExpectedProjectVersion: 2,
+		NewOwnerUserID:         "member",
+	})
+	if err != nil {
+		t.Fatalf("typed owner transfer: %v", err)
+	}
+	hasNewOwner := false
+	for _, member := range transfer.Project.Members {
+		if member.UserID == "member" && member.Role == "owner" {
+			hasNewOwner = true
+		}
+	}
+	if transfer.Replayed || transfer.Project.ProjectVersion != 3 || !hasNewOwner {
+		t.Fatalf("typed owner transfer result = %+v, want owner change", transfer)
+	}
+
+	if _, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
+		ExpectedProjectVersion: 2,
+		NewOwnerUserID:         "member",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner transfer replay after ownership change = %v, want authorization denial", err)
 	}
 }
 

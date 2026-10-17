@@ -4,12 +4,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -31,8 +31,9 @@ type DeliveryReleaseService struct {
 	store        delivery.SnapshotStore
 	freezes      delivery.FreezeRecorder
 	sources      candidateadoption.SourcePolicy
+	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
-	dispositions ValidationIssueDispositionCore
+	dispositions ValidationIssueDispositionApplication
 }
 
 // NewDeliveryReleaseService 依赖不齐时返回 nil。三个依赖各自都是必需的：
@@ -51,17 +52,17 @@ func NewDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, b
 
 // NewDeliveryReleaseServiceWithDispositions wires both current-source
 // authorization and persisted issue dispositions into the release service.
-func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
+func NewDeliveryReleaseServiceWithDispositions(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
 	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, nil)
 }
 
 // NewDeliveryReleaseServiceWithPolicy uses the shared application policy for
 // all release reads and currentness checks.
-func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionCore) *DeliveryReleaseService {
+func NewDeliveryReleaseServiceWithPolicy(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, policy AccessPolicy, dispositions ValidationIssueDispositionApplication) *DeliveryReleaseService {
 	return buildDeliveryReleaseService(inputs, builder, store, sources, dispositions, policy)
 }
 
-func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionCore, policy AccessPolicy) *DeliveryReleaseService {
+func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService, builder DeliveryInputAssembler, store delivery.SnapshotStore, sources candidateadoption.SourcePolicy, dispositions ValidationIssueDispositionApplication, policy AccessPolicy) *DeliveryReleaseService {
 	if inputs == nil || inputs.Reader == nil || builder == nil || store == nil {
 		return nil
 	}
@@ -69,7 +70,11 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 	if !ok {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, policy: policy, dispositions: dispositions}
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, reviewer: reviewer, policy: policy, dispositions: dispositions}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -170,17 +175,13 @@ func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorI
 		return ValidationIssueDisposition{}, false, candidateadoption.ErrInvalidRequest
 	}
 	actor := Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role, TenantRole: string(caller.Role)}
-	replayedBody, _, replayed, found, err := s.dispositions.ReplayValidationIssueDisposition(ctx, actor, projectID, issueID, key,
+	replayedResult, err := s.dispositions.ReplayValidationIssueDispositionResult(ctx, actor, projectID, issueID, key,
 		request.Action, request.Reason, request.ExpectedProjectVersion)
 	if err != nil {
-		return ValidationIssueDisposition{}, replayed, err
+		return ValidationIssueDisposition{}, replayedResult.Replayed, err
 	}
-	if found {
-		var replayedDisposition ValidationIssueDisposition
-		if err := json.Unmarshal(replayedBody, &replayedDisposition); err != nil {
-			return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
-		}
-		return replayedDisposition, replayed, nil
+	if replayedResult.Found {
+		return replayedResult.Disposition, replayedResult.Replayed, nil
 	}
 	result, err := s.Check(ctx, actorID, projectID, request.ExpectedProjectVersion)
 	if err != nil {
@@ -200,15 +201,11 @@ func (s *DeliveryReleaseService) SetIssueDisposition(ctx context.Context, actorI
 	binding := ValidationIssueBinding{IssueID: current.ID, RuleID: current.RuleID, RulesetHash: current.RulesetHash,
 		Severity: current.Severity, TargetID: current.TargetID, TargetVersion: cloneIssueVersion(current.TargetVersion), ProjectVersion: projectVersion}
 	input := ValidationIssueDispositionInput{ExpectedProjectVersion: projectVersion, ValidationIssueBinding: binding, Action: request.Action, Reason: request.Reason}
-	raw, _, replayed, err := s.dispositions.RecordValidationIssueDisposition(ctx, actor, projectID, key, input)
+	dispositionResult, err := s.dispositions.RecordValidationIssueDispositionResult(ctx, actor, projectID, key, input)
 	if err != nil {
-		return ValidationIssueDisposition{}, replayed, err
+		return ValidationIssueDisposition{}, dispositionResult.Replayed, err
 	}
-	var disposition ValidationIssueDisposition
-	if err := json.Unmarshal(raw, &disposition); err != nil {
-		return ValidationIssueDisposition{}, replayed, candidateadoption.ErrInvalidState
-	}
-	return disposition, replayed, nil
+	return dispositionResult.Disposition, dispositionResult.Replayed, nil
 }
 
 func (s *DeliveryReleaseService) attachIssueDispositions(ctx context.Context, actorID, projectID string, result *delivery.CheckResult) error {
@@ -304,7 +301,7 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 		}
 		return nil
 	}
-	if s == nil || s.sources == nil {
+	if s == nil || (s.sources == nil && s.reviewer == nil) {
 		return nil
 	}
 	ids := make([]string, 0)
@@ -325,7 +322,12 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 	if len(ids) == 0 {
 		return nil
 	}
-	return s.sources.Validate(ctx, projectID, actorID, ids)
+	if s.reviewer != nil {
+		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, ids)
+	}
+	// Compatibility boundary for legacy release adapters. Production wiring
+	// supplies the shared Reviewer above.
+	return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。

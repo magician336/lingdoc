@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,9 +51,9 @@ func (s *lingDocRouteServiceStub) ListProjects(context.Context, workspace.Actor)
 	return []workspace.Project{{ID: "p1", Name: "demo"}}, false, nil
 }
 
-func (s *lingDocRouteServiceStub) CreateProject(_ context.Context, _ workspace.Actor, _ string, _ workspace.CreateProjectInput) (json.RawMessage, int, bool, error) {
+func (s *lingDocRouteServiceStub) CreateProjectResult(_ context.Context, _ workspace.Actor, _ string, input workspace.CreateProjectInput) (workspace.CreateProjectResult, error) {
 	s.createCalls++
-	return json.RawMessage(`{"id":"p2"}`), http.StatusCreated, false, nil
+	return workspace.CreateProjectResult{Project: workspace.Project{ID: "p2", Name: input.Name}}, nil
 }
 
 func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
