@@ -2126,12 +2126,15 @@ func templateUpgradeAuditDetails(change ChangeSet, targetCopy *ProjectTemplateCo
 		"reason":                     change.Reason,
 		"base_copy_version":          upgrade.BaseTemplateCopyVersion,
 		"base_template_copy_version": upgrade.BaseTemplateCopyVersion,
+		"old_copy_version":           upgrade.BaseTemplateCopyVersion,
 		"target_copy_version":        upgrade.Preview.TargetCopyVersion,
+		"new_copy_version":           upgrade.Preview.TargetCopyVersion,
 		"target_content_hash":        upgrade.Preview.TargetContentHash,
 		"target_ruleset_hash":        upgrade.Preview.TargetRulesetHash,
 	}
 	if targetCopy != nil {
 		details["target_copy_version"] = targetCopy.Version
+		details["new_copy_version"] = targetCopy.Version
 		details["content_hash"] = targetCopy.ContentHash
 		details["ruleset_hash"] = targetCopy.RulesetHash
 		details["effective_ruleset_hash"] = targetCopy.RulesetHash
@@ -2152,6 +2155,7 @@ func templateUpgradeAuditDetails(change ChangeSet, targetCopy *ProjectTemplateCo
 		overrides = []lingdoctemplate.RuleBindingOverride{}
 	}
 	details["rule_binding_overrides"] = overrides
+	details["overrides"] = overrides
 	details["override_count"] = len(overrides)
 	if len(overrides) > 0 {
 		details["binding_action"] = "override_ruleset"
@@ -2516,7 +2520,11 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if err := tx.InvalidateChapterConfirmations(projectID, chapterIDs); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if audit, ok := tx.(auditTransaction); ok {
+		audit, auditAvailable := tx.(auditTransaction)
+		if change.TemplateUpgrade != nil && !auditAvailable {
+			return operationResult[ChangeSet]{}, fmt.Errorf("%w: template upgrade apply requires transactional audit", ErrInvalidState)
+		}
+		if auditAvailable {
 			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec, "reason": change.Reason, "change_set_id": change.ID}
 			if change.TemplateUpgrade != nil {
 				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)

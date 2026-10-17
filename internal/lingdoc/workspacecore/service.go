@@ -416,7 +416,8 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 				return nil, err
 			}
 		}
-		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Details: details, CreatedAt: row.CreatedAt})
+		reason, _ := details["reason"].(string)
+		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Details: details, Reason: reason, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
 }
