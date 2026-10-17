@@ -78,6 +78,7 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000019_lingdoc_evidence_assets.up.sql",
 			"000020_lingdoc_candidate_adoption.up.sql",
 			"000023_lingdoc_chapter_confirmation_requests.up.sql",
+			"000024_lingdoc_delivery_stores.up.sql",
 			"000025_lingdoc_member_permissions.up.sql",
 			"000026_lingdoc_project_context_revision.up.sql",
 			"000027_lingdoc_draft_provenance.up.sql",
