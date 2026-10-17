@@ -4,6 +4,8 @@
 
 本文件是当前 G1–G7 功能开发的任务入口。任务以 GitHub Issue 和仓库中的 Spec 为准；历史 T01–T16 任务池不再作为新增功能的领取入口，相关实现和验收证据仍保留在 Git 历史及 [`docs/08-本轮实施方案/`](08-本轮实施方案/) 中。
 
+开发前验收矩阵、事务/审计契约、Draft→Ready 门禁和当前 head 证据要求，统一按 [`docs/agents/development-rules.md`](agents/development-rules.md) 执行；本文件保留任务地图、依赖和领取/完成卡片。
+
 ## 1. 共同规则
 
 ### Spec 是什么
