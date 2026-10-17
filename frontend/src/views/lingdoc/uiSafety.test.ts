@@ -13,6 +13,8 @@ test('saved server drafts do not warn; each unsaved input and an in-flight save 
   assert.equal(unsavedInputsAreDirty(clean), false)
   for (const field of Object.keys(clean)) assert.equal(unsavedInputsAreDirty({ ...clean, [field]: true }), true, field)
   assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }, { conditionsHandled: true }), false)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true, specChanged: true }, { conditionsHandled: true }), false)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true, chapterChanged: true }, { conditionsHandled: true }), true)
   assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }), true)
 })
 
