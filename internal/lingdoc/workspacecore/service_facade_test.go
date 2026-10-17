@@ -2,6 +2,8 @@ package workspacecore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"maps"
@@ -79,6 +81,26 @@ func publishedWorkspaceRuleSet(t *testing.T) lingdoctemplate.RuleSet {
 	return set
 }
 
+func TestTemplateUpgradeRequiresExactRuleSetHash(t *testing.T) {
+	input := CreateChangeSetInput{
+		ExpectedContextRevision: 1,
+		Reason:                  "固定目标规则集",
+		TemplateUpgrade: &TemplateUpgradeInput{
+			ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+			Fields: []lingdoctemplate.Field{}, Sections: []lingdoctemplate.Section{},
+			Terms: []lingdoctemplate.Term{}, Rules: []lingdoctemplate.Rule{},
+			RuleSetRef: &lingdoctemplate.RuleSetReference{ID: "grant-rules", Version: "v2"},
+		},
+	}
+	if err := validateChangeSetInput(input); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("migration without an exact source hash error = %v, want ErrInvalidRequest", err)
+	}
+	input.TemplateUpgrade.RuleSetRef.Hash = strings.Repeat("a", 64)
+	if err := validateChangeSetInput(input); err != nil {
+		t.Fatalf("migration with complete exact RuleSet identity rejected: %v", err)
+	}
+}
+
 func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Status = "draft"
@@ -96,7 +118,8 @@ func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	disabled := false
 	input := BindTemplateCopyRuleSetInput{
 		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
-		RuleSetID: "grant-rules", RuleSetVersion: "v1",
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: reader.set.ID, Version: reader.set.Version, Hash: reader.set.RulesetHash},
+		RuleSetID:  "grant-rules", RuleSetVersion: "v1",
 		Overrides: []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-required", Enabled: &disabled}},
 	}
 	response, status, replayed, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-bind-1", input)
@@ -148,6 +171,47 @@ func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	}
 	if len(repository.audits) != 1 {
 		t.Fatalf("idempotent override retry duplicated durable audit: %+v", repository.audits)
+	}
+}
+
+func TestBindTemplateCopyRuleSetRejectsInvalidCombinedOverridesBeforeWrites(t *testing.T) {
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "word-count-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "goal-length", DefinitionID: "computed/word_count", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
+			Parameters: map[string]any{"minimum": 0, "maximum": 100}, Severity: "warning",
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.TemplateID = lingdoctemplate.DemoTemplateID
+	repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	repository.project.TemplateCopyVersion = 1
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	copy, err := projectTemplateCopy(actor, repository.project.ID, 1, lingdoctemplate.DemoTemplate(), TemplateCopyDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.project.TemplateCopy = copy
+	reader := &ruleSetSnapshotReaderStub{set: set}
+	service := NewService(repository).WithRuleSetSnapshotReader(reader)
+	input := BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash},
+		Overrides:  []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-length", Parameters: map[string]any{"minimum": 80, "maximum": 20}}},
+	}
+	if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, repository.project.ID, "ruleset-invalid-combined-1", input); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("contradictory combined overrides error = %v, want ErrInvalidRequest", err)
+	}
+	if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 ||
+		repository.project.TemplateCopy.ContentHash != copy.ContentHash || repository.project.TemplateCopy.RulesetHash != copy.RulesetHash ||
+		len(repository.operations) != 0 || len(repository.audits) != 0 {
+		t.Fatalf("invalid combined override must be rejected before copy/hash/audit/operation writes: project=%+v operations=%+v audits=%+v", repository.project, repository.operations, repository.audits)
 	}
 }
 
@@ -465,26 +529,26 @@ func TestAuthorizationAuditFailureDoesNotBlockDecision(t *testing.T) {
 	}
 }
 
-func TestAuthorizationLogModeFallsBackToLegacyDecision(t *testing.T) {
+func TestAuthorizationLogModeReportsTheEnforcedDecision(t *testing.T) {
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleViewer}
-	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); err != nil {
-		t.Fatalf("log mode should preserve the legacy decision while observing the new policy: %v", err)
+	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("log mode should return the enforced policy decision: %v", err)
 	}
 	if len(audit.events) < 2 || audit.events[0].Capability != "shadow:create" || audit.events[0].Decision != "deny" {
 		t.Fatalf("shadow audit = %+v", audit.events)
 	}
 }
 
-func TestAuthorizationLogModeDoesNotAdoptNewAllow(t *testing.T) {
+func TestAuthorizationLogModeAllowsWhatThePolicyAudits(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Members = append(repository.project.Members, Member{UserID: "admin", Role: "collaborator", GovernanceRole: "admin", Status: "active"})
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(repository, ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "admin", Role: types.TenantRoleAdmin}
-	if err := service.Authorize(context.Background(), actor, "p", "manage"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("log mode adopted new allow instead of legacy deny: %v", err)
+	if err := service.Authorize(context.Background(), actor, "p", "manage"); err != nil {
+		t.Fatalf("log mode should return the enforced allow: %v", err)
 	}
 	if len(audit.events) == 0 || audit.events[0].Capability != "shadow:manage" || audit.events[0].Decision != "allow" {
 		t.Fatalf("shadow allow audit = %+v", audit.events)
@@ -661,6 +725,43 @@ func TestCreateProjectResultIsTransportNeutralAndReplays(t *testing.T) {
 	if _, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", changed); !errors.Is(err, ErrIdempotencyConflict) {
 		t.Fatalf("typed create different-body replay error = %v, want ErrIdempotencyConflict", err)
 	}
+}
+
+func TestTypedProjectMutationResultsReportDomainDecodeErrors(t *testing.T) {
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	t.Run("create project", func(t *testing.T) {
+		repository := fakeWorkspace()
+		input := CreateProjectInput{Name: "malformed replay", TemplateID: "template-demo", TemplateVersion: "1"}
+		key := "typed-create-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "createProject", Target: "projects", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).CreateProjectResult(ctx, actor, key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode created project result") {
+			t.Fatalf("typed create malformed replay error = %v, want domain decode label", err)
+		}
+	})
+
+	t.Run("save spec", func(t *testing.T) {
+		repository := fakeWorkspace()
+		repository.project.Status = "draft"
+		repository.project.SpecRevision = 0
+		input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "malformed replay"}}
+		key := "typed-spec-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "saveSpec", Target: "p", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).SaveSpecResult(ctx, actor, "p", key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode saved spec result") {
+			t.Fatalf("typed save malformed replay error = %v, want domain decode label", err)
+		}
+	})
+}
+
+func malformedOperationResult(input any) OperationResult {
+	encoded, _ := json.Marshal(input)
+	hash := sha256.Sum256(encoded)
+	return OperationResult{BodyHash: hex.EncodeToString(hash[:]), Body: json.RawMessage("{"), Status: 200}
 }
 
 func TestProjectMutationResultsPreserveMemberAndOwnerSemantics(t *testing.T) {

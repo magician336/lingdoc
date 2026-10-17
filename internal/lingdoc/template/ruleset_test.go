@@ -283,6 +283,17 @@ func TestRuleSetOverrideRejectsUnknownIdentityAndUnsafeParameters(t *testing.T) 
 			}
 		})
 	}
+
+	draft := testRuleSet()
+	draft.Bindings[1].Parameters = map[string]any{"minimum": 0, "maximum": 100}
+	published, err = PublishRuleSet(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := RuleBindingOverride{RuleID: "method-length", Parameters: map[string]any{"minimum": 80, "maximum": 20}}
+	if err := ValidateRuleBindingOverrides(published, []RuleBindingOverride{combined}); !errors.Is(err, ErrInvalidRuleSet) {
+		t.Fatalf("combined invalid word-count range error = %v, want ErrInvalidRuleSet", err)
+	}
 }
 
 func boolPointer(value bool) *bool { return &value }

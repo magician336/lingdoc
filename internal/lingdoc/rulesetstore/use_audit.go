@@ -97,6 +97,12 @@ func (s *Store) ListRuleSetUseAudits(ctx context.Context, actor Actor, projectID
 	}
 	var rows []ruleSetUseAuditRow
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Authorize the tenant even when the project has no usage rows. Without
+		// this explicit check an inactive/non-member caller could distinguish an
+		// empty audit history from a forbidden project by receiving an empty list.
+		if err := s.authorize(ctx, tx, actor, ActionRead, nil); err != nil {
+			return err
+		}
 		var versions []ruleSetUseAuditRow
 		if err := tx.Where("tenant_id = ? AND project_id = ?", actor.TenantID, projectID).
 			Order("created_at DESC, id DESC").Find(&versions).Error; err != nil {

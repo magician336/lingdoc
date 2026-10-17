@@ -9,6 +9,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -31,6 +32,7 @@ type DeliveryReleaseService struct {
 	store        delivery.SnapshotStore
 	freezes      delivery.FreezeRecorder
 	sources      candidateadoption.SourcePolicy
+	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
 	dispositions ValidationIssueDispositionApplication
 	useAuditor   lingdoctemplate.RuleSetUseAuditRecorder
@@ -79,7 +81,11 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 	if !ok {
 		return nil
 	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, policy: policy, dispositions: dispositions}
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, reviewer: reviewer, policy: policy, dispositions: dispositions}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -320,28 +326,17 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 	return s.releases(ctx, actorID).Get(projectID, snapshotID)
 }
 
-// authorizeSnapshotSources rechecks the source permission at release-read
-// time. A frozen snapshot is immutable, but access to the sources it quotes is
-// revocable; returning the old frozen body after revocation would be a stale
-// snapshot replay. The optional policy keeps the small in-memory adapters used
-// by legacy unit tests compatible while production wires the same policy used
-// by chapter confirmation and export.
+// authorizeSnapshotSources rechecks only the permissions for sources quoted
+// by this snapshot. Project/input currentness is deliberately not an access
+// gate here: Get recomputes IsCurrent below so historical snapshots remain
+// readable after an ordinary project edit or a pinned-template migration.
+// Source access remains revocable, so a snapshot quoting a source the caller
+// can no longer access must still be denied.
 func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
-	if s.policy != nil {
-		caller := types.CallerFromContext(ctx)
-		if caller.UserID == "" {
-			caller.UserID = actorID
-		}
-		current, err := s.policy.Current(ctx, LingDocAccessContext{TenantID: caller.TenantID, UserID: caller.UserID, Role: string(caller.Role), ProjectID: projectID}, accessInputFromDelivery(snapshot.FrozenInput))
-		if err != nil {
-			return err
-		}
-		if !current {
-			return candidateadoption.ErrStaleInput
-		}
-		return nil
-	}
-	if s == nil || s.sources == nil {
+	if s == nil || (s.sources == nil && s.reviewer == nil && s.policy == nil) {
+		// The small legacy adapters do not have a source-level reader. Production
+		// composition always wires the shared Reviewer; retain this compatibility
+		// path only when there is no shared policy claiming production guarantees.
 		return nil
 	}
 	ids := make([]string, 0)
@@ -362,7 +357,15 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 	if len(ids) == 0 {
 		return nil
 	}
-	return s.sources.Validate(ctx, projectID, actorID, ids)
+	if s.reviewer != nil {
+		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, ids)
+	}
+	if s.sources != nil {
+		// Compatibility boundary for legacy release adapters. Production wiring
+		// supplies the shared Reviewer above.
+		return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
+	}
+	return candidateadoption.ErrDependencyUnavailable
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。

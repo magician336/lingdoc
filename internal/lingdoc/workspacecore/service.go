@@ -907,3 +907,7 @@ func isSQLiteLockError(err error) bool {
 
 var _ Repository = (*GORMRepository)(nil)
 var _ Transaction = gormTransaction{}
+var _ ProjectMembershipTransaction = gormTransaction{}
+var _ ChapterWorkspaceTransaction = gormTransaction{}
+var _ OperationTransaction = gormTransaction{}
+var _ AuditTransaction = gormTransaction{}

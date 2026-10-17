@@ -80,8 +80,36 @@ func TestHTTPRuleSetGovernanceLifecycleAndAuthorization(t *testing.T) {
 
 	request(http.MethodGet, "/rule-sets/definitions", "", "viewer", "viewer", http.StatusOK)
 	request(http.MethodGet, "/rule-sets/proposal-rules/versions", "", "viewer", "viewer", http.StatusOK)
-	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/publish", "", "viewer", "viewer", http.StatusForbidden)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/publish", "", "admin", "admin", http.StatusOK)
+	published, err := service.GetVersion(context.Background(), Actor{TenantID: 1, UserID: "admin", Role: "admin"}, draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "project-audit-http").Error; err != nil {
+		t.Fatal(err)
+	}
+	useAudit := template.RuleSetUseAuditEvent{
+		TenantID: 1, ActorID: "viewer", ActorRole: "viewer", ProjectID: "project-audit-http",
+		Action: "preflight", RuleSetID: draft.ID, RuleSetVersion: draft.Version, RuleSetHash: published.RulesetHash,
+		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		TemplateCopyID: "copy-http", TemplateCopyVersion: 2, ProjectVersion: 7, ResourceID: "snapshot-http", Outcome: "blocked",
+	}
+	if err := service.RecordRuleSetUse(context.Background(), useAudit); err != nil {
+		t.Fatal(err)
+	}
+	var auditEnvelope struct {
+		Data struct {
+			Items []template.RuleSetUseAuditEvent `json:"items"`
+		} `json:"data"`
+	}
+	auditResponse := request(http.MethodGet, "/projects/project-audit-http/rule-set-use-audits", "", "viewer", "viewer", http.StatusOK)
+	if err := json.Unmarshal(auditResponse.Body.Bytes(), &auditEnvelope); err != nil || len(auditEnvelope.Data.Items) != 1 ||
+		auditEnvelope.Data.Items[0].ProjectID != "project-audit-http" || auditEnvelope.Data.Items[0].RuleSetHash != useAudit.RuleSetHash {
+		t.Fatalf("tenant member could not read exact use audit: items=%+v err=%v body=%s", auditEnvelope.Data.Items, err, auditResponse.Body.String())
+	}
+	request(http.MethodGet, "/projects/project-audit-http/rule-set-use-audits", "", "removed", "viewer", http.StatusForbidden)
+	request(http.MethodGet, "/projects/empty-project/rule-set-use-audits", "", "removed", "viewer", http.StatusForbidden)
+	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/publish", "", "viewer", "viewer", http.StatusForbidden)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/recall", "", "owner", "owner", http.StatusOK)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/withdraw", "", "owner", "owner", http.StatusConflict)
 
@@ -148,6 +176,9 @@ func (*httpApplicationStub) GetVersion(context.Context, Actor, string, string) (
 }
 func (*httpApplicationStub) ListVersions(context.Context, Actor, string) ([]template.RuleSet, error) {
 	return []template.RuleSet{}, nil
+}
+func (*httpApplicationStub) ListRuleSetUseAudits(context.Context, Actor, string) ([]template.RuleSetUseAuditEvent, error) {
+	return []template.RuleSetUseAuditEvent{}, nil
 }
 func (*httpApplicationStub) Publish(context.Context, Actor, string, string) (template.RuleSet, error) {
 	return template.RuleSet{}, nil

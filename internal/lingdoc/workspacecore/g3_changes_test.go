@@ -139,6 +139,142 @@ func TestActiveTemplateCopyUpgradeUsesOwnerChangeSetAndKeepsHistory(t *testing.T
 	}
 }
 
+func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-ruleset-migration.db"))
+	owner := Actor{TenantID: 318, UserID: "owner", Role: types.TenantRoleOwner}
+	seedTenantMember(t, svc, owner)
+	v1, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "grant-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{RuleID: "goal-required", DefinitionID: "presence", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal", Severity: "blocking",
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v2Draft := lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &v1}).RuleSetSnapshot
+	v2Draft.Version = "v2"
+	v2Draft.State, v2Draft.RulesetHash = lingdoctemplate.RuleSetDraft, ""
+	v2Draft.Bindings[0].Message = "A new required-field check"
+	v2, err := lingdoctemplate.PublishRuleSet(*v2Draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v1.RulesetHash == v2.RulesetHash {
+		t.Fatal("test RuleSet versions must have distinct source hashes")
+	}
+	reader := &ruleSetSnapshotReaderStub{set: v1}
+	svc.WithRuleSetSnapshotReader(reader)
+	raw, _, _, err := svc.CreateProject(context.Background(), owner, "ruleset-migration-create", CreateProjectInput{Name: "migration", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, raw)
+	raw, _, _, err = svc.BindTemplateCopyRuleSet(context.Background(), owner, project.ID, "ruleset-migration-bind-v1", BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: v1.ID, Version: v1.Version, Hash: v1.RulesetHash},
+	})
+	if err != nil {
+		t.Fatalf("bind original RuleSet version: %v", err)
+	}
+	project = asProject(t, raw)
+	raw, _, _, err = svc.SaveSpec(context.Background(), owner, project.ID, "ruleset-migration-spec", SaveSpecInput{
+		ExpectedSpecRevision: project.SpecRevision,
+		Fields:               map[string]string{"research_subject": "迁移主题", "research_goal": "迁移目标"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	raw, _, _, err = svc.ActivateProject(context.Background(), owner, project.ID, "ruleset-migration-activate", ActivateProjectInput{
+		ExpectedSpecRevision: project.SpecRevision, ExpectedProjectVersion: project.ProjectVersion, ReviewedProjectVersion: project.ProjectVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project = asProject(t, raw)
+	oldCopy := project.TemplateCopy
+	if oldCopy == nil || oldCopy.TemplateVersionRuleSetRef == nil || oldCopy.TemplateVersionRuleSetRef.Version != "v1" {
+		t.Fatalf("active project was not bound to the original exact RuleSet version: %+v", oldCopy)
+	}
+	oldIssue := ValidationIssueBinding{IssueID: "historic-goal-required", RuleID: "goal-required", RulesetHash: oldCopy.RulesetHash,
+		Severity: "blocking", TargetID: "research_goal", ProjectVersion: project.ProjectVersion}
+	if _, _, _, err := svc.RecordValidationIssueDisposition(context.Background(), owner, project.ID, "ruleset-migration-dismiss-v1", ValidationIssueDispositionInput{
+		ExpectedProjectVersion: project.ProjectVersion, ValidationIssueBinding: oldIssue, Action: "dismiss", Reason: "已记录旧规则版本的人工处置",
+	}); err != nil {
+		t.Fatalf("record v1 issue disposition: %v", err)
+	}
+	reader.set = v2
+	definition := project.TemplateCopy.Definition
+	upgrade := &TemplateUpgradeInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash},
+		Fields:     append([]lingdoctemplate.Field{}, definition.Fields...), Sections: append([]lingdoctemplate.Section{}, definition.Sections...),
+		Terms: append([]lingdoctemplate.Term{}, definition.Terms...), RequiredFields: append([]string{}, definition.RequiredFields...),
+		Rules: append([]lingdoctemplate.Rule{}, definition.Rules...),
+	}
+	createdRaw, status, replayed, err := svc.CreateChangeSet(context.Background(), owner, project.ID, "ruleset-migration-assess-v2", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "迁移到新的不可变 RuleSet 版本", TemplateUpgrade: upgrade,
+	})
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("assess RuleSet migration: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(createdRaw, &change); err != nil || change.TemplateUpgrade == nil {
+		t.Fatalf("assessed RuleSet migration = %+v err=%v", change, err)
+	}
+	assessedRef := lingdoctemplate.RuleSetReferenceFor(change.TemplateUpgrade.Definition)
+	if assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash}) {
+		t.Fatalf("ChangeSet did not pin the exact target RuleSet before assessment: %+v", assessedRef)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "ruleset-migration-apply-v2"); err != nil || status != 200 || replayed {
+		t.Fatalf("apply RuleSet migration: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	updated, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil || updated.TemplateCopyVersion != project.TemplateCopyVersion+1 || updated.TemplateCopy == nil {
+		t.Fatalf("project did not advance to new copy version: project=%+v err=%v", updated.TemplateCopy, err)
+	}
+	newRef := lingdoctemplate.RuleSetReferenceFor(updated.TemplateCopy.Definition)
+	if newRef == nil || *newRef != *assessedRef || updated.TemplateCopy.TemplateVersionRuleSetRef == nil || *updated.TemplateCopy.TemplateVersionRuleSetRef != *assessedRef {
+		t.Fatalf("applied copy did not retain exact v2 identity: ref=%+v copy=%+v", newRef, updated.TemplateCopy)
+	}
+	oldHistory, err := svc.GetTemplateCopy(context.Background(), owner, project.ID, oldCopy.Version)
+	if err != nil || oldHistory.Status != TemplateCopySuperseded || oldHistory.TemplateVersionRuleSetRef == nil || *oldHistory.TemplateVersionRuleSetRef != (lingdoctemplate.RuleSetReference{ID: v1.ID, Version: v1.Version, Hash: v1.RulesetHash}) {
+		t.Fatalf("previous copy and its RuleSet identity were not preserved: %+v err=%v", oldHistory, err)
+	}
+	oldChecks, err := lingdoctemplate.EvaluateScene(oldHistory.Definition, "preflight", lingdoctemplate.EvaluationInput{ProjectID: project.ID, TargetVersion: "copy-v1", Fields: project.Spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newChecks, err := lingdoctemplate.EvaluateScene(updated.TemplateCopy.Definition, "preflight", lingdoctemplate.EvaluationInput{ProjectID: project.ID, TargetVersion: "copy-v2", Fields: updated.Spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	findBoundIssue := func(results []lingdoctemplate.Evaluation) (lingdoctemplate.Evaluation, bool) {
+		for _, result := range results {
+			if result.RuleID == "goal-required" {
+				return result, true
+			}
+		}
+		return lingdoctemplate.Evaluation{}, false
+	}
+	oldBound, oldFound := findBoundIssue(oldChecks)
+	newBound, newFound := findBoundIssue(newChecks)
+	if !oldFound || !newFound || oldBound.RuleSetVersion != "v1" || newBound.RuleSetVersion != "v2" || oldBound.RulesetHash == newBound.RulesetHash {
+		t.Fatalf("new evaluation must use v2 while historic copy still replays v1: old=%+v new=%+v", oldChecks, newChecks)
+	}
+	currentIssue := oldIssue
+	currentIssue.RulesetHash, currentIssue.ProjectVersion = updated.TemplateCopy.RulesetHash, updated.ProjectVersion
+	newDispositions, err := svc.ValidationIssueDispositions(context.Background(), owner, project.ID, []ValidationIssueBinding{currentIssue})
+	if err != nil || len(newDispositions) != 0 {
+		t.Fatalf("v1 disposition must not carry over to a v2 issue: dispositions=%+v err=%v", newDispositions, err)
+	}
+	historicDispositions, err := svc.ValidationIssueDispositions(context.Background(), owner, project.ID, []ValidationIssueBinding{oldIssue})
+	if err != nil || historicDispositions[oldIssue.IssueID].Action != "dismiss" {
+		t.Fatalf("v1 disposition history was not preserved for exact historical replay: dispositions=%+v err=%v", historicDispositions, err)
+	}
+}
+
 func TestTemplateUpgradeRejectsUnmappedRequiredField(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g3-template-upgrade-required.db"))
 	owner := Actor{TenantID: 310, UserID: "owner"}

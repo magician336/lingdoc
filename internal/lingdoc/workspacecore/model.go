@@ -236,14 +236,16 @@ type TemplateUpgradeImpact struct {
 }
 
 type TemplateUpgradeInput struct {
-	ExpectedProjectVersion      int64                     `json:"expected_project_version"`
-	ExpectedTemplateCopyVersion int64                     `json:"expected_template_copy_version"`
-	Fields                      []lingdoctemplate.Field   `json:"fields"`
-	Sections                    []lingdoctemplate.Section `json:"sections"`
-	Terms                       []lingdoctemplate.Term    `json:"terms"`
-	RequiredFields              []string                  `json:"required_fields"`
-	Rules                       []lingdoctemplate.Rule    `json:"rules"`
-	FieldValues                 map[string]string         `json:"field_values,omitempty"`
+	ExpectedProjectVersion      int64                                 `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64                                 `json:"expected_template_copy_version"`
+	RuleSetRef                  *lingdoctemplate.RuleSetReference     `json:"ruleset_ref,omitempty"`
+	RuleBindingOverrides        []lingdoctemplate.RuleBindingOverride `json:"ruleset_overrides,omitempty"`
+	Fields                      []lingdoctemplate.Field               `json:"fields"`
+	Sections                    []lingdoctemplate.Section             `json:"sections"`
+	Terms                       []lingdoctemplate.Term                `json:"terms"`
+	RequiredFields              []string                              `json:"required_fields"`
+	Rules                       []lingdoctemplate.Rule                `json:"rules"`
+	FieldValues                 map[string]string                     `json:"field_values,omitempty"`
 }
 
 type CreateChangeSetInput struct {

@@ -510,11 +510,11 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if len(download.Body.Bytes()) == 0 || !strings.Contains(download.Header().Get("Content-Type"), "wordprocessingml.document") {
 		t.Fatalf("persisted %s DOCX download empty or wrong content type: bytes=%d type=%q", dialect, download.Body.Len(), download.Header().Get("Content-Type"))
 	}
-	var audits []lingdoctemplate.RuleSetUseAuditEvent
-	audits, auditErr := second.ruleSetStore.ListRuleSetUseAudits(context.Background(), rulesetstore.Actor{TenantID: g4E2ETenantID, UserID: g4E2EActorID, Role: "admin"}, project.ID)
-	if auditErr != nil {
-		t.Fatalf("read %s RuleSet-use audit after restart: %v", dialect, auditErr)
+	var auditEnvelope struct {
+		Items []lingdoctemplate.RuleSetUseAuditEvent `json:"items"`
 	}
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/rule-set-use-audits", "", "", http.StatusOK), &auditEnvelope)
+	audits := auditEnvelope.Items
 	seen := map[string]lingdoctemplate.RuleSetUseAuditEvent{}
 	for _, event := range audits {
 		if event.RuleSetID != wantRef.ID || event.RuleSetVersion != wantRef.Version || event.RuleSetHash != wantRef.Hash || event.EffectiveRulesetHash == "" || event.TemplateCopyID == "" {
@@ -582,6 +582,84 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		if !projectAuditActions[action] {
 			t.Errorf("%s project audit missing action %s", dialect, action)
 		}
+	}
+
+	// Active projects migrate by assessing and applying a G3 ChangeSet that pins
+	// the exact next immutable RuleSet version. Existing release/export history
+	// must continue to point at v1; a fresh evaluation must point at v2.
+	v2Body := strings.Replace(draftBody, `"version":"`+g4E2EVersion+`"`, `"version":"v2"`, 1)
+	v2Body = strings.Replace(v2Body, `"maximum":500`, `"maximum":400`, 1)
+	request(second.router, http.MethodPost, "/rule-sets", v2Body, "", http.StatusCreated)
+	var publishedV2 lingdoctemplate.RuleSet
+	decode(request(second.router, http.MethodPost, "/rule-sets/"+g4E2ERuleSet+"/versions/v2/publish", `{}`, "", http.StatusOK), &publishedV2)
+	var currentProject workspacecore.Project
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &currentProject)
+	currentDefinition := currentProject.TemplateCopy.Definition
+	migrationInput := workspacecore.CreateChangeSetInput{
+		ExpectedContextRevision: currentProject.CurrentContextRevision,
+		Reason:                  "迁移到新的不可变 RuleSet 版本",
+		TemplateUpgrade: &workspacecore.TemplateUpgradeInput{
+			ExpectedProjectVersion: currentProject.ProjectVersion, ExpectedTemplateCopyVersion: currentProject.TemplateCopyVersion,
+			RuleSetRef: &lingdoctemplate.RuleSetReference{ID: publishedV2.ID, Version: publishedV2.Version, Hash: publishedV2.RulesetHash},
+			Fields:     append([]lingdoctemplate.Field{}, currentDefinition.Fields...), Sections: append([]lingdoctemplate.Section{}, currentDefinition.Sections...),
+			Terms: append([]lingdoctemplate.Term{}, currentDefinition.Terms...), RequiredFields: append([]string{}, currentDefinition.RequiredFields...),
+			Rules: append([]lingdoctemplate.Rule{}, currentDefinition.Rules...),
+		},
+	}
+	migrationJSON, err := json.Marshal(migrationInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assessed workspacecore.ChangeSet
+	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets", string(migrationJSON), "g4-migrate-assess-v2", http.StatusCreated), &assessed)
+	assessedRef := lingdoctemplate.RuleSetReferenceFor(assessed.TemplateUpgrade.Definition)
+	if assessed.Status != "assessed" || assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: publishedV2.ID, Version: publishedV2.Version, Hash: publishedV2.RulesetHash}) {
+		t.Fatalf("active migration did not assess an exact v2 RuleSet snapshot: %+v ref=%+v", assessed, assessedRef)
+	}
+	var applied workspacecore.ChangeSet
+	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets/"+assessed.ID+"/apply", `{}`, "g4-migrate-apply-v2", http.StatusOK), &applied)
+	if applied.Status != "applied" {
+		t.Fatalf("active RuleSet migration was not applied: %+v", applied)
+	}
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &currentProject)
+	newRef := lingdoctemplate.RuleSetReferenceFor(currentProject.TemplateCopy.Definition)
+	if newRef == nil || *newRef != *assessedRef || currentProject.TemplateCopyVersion != 4 {
+		t.Fatalf("applied project did not advance to RuleSet v2 copy: project=%+v ref=%+v", currentProject.TemplateCopy, newRef)
+	}
+	var newPreflight delivery.CheckResult
+	newVersionBody := fmt.Sprintf(`{"expected_project_version":%d}`, currentProject.ProjectVersion)
+	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/checks", newVersionBody, "", http.StatusOK), &newPreflight)
+	if newPreflight.RuleSetRef == nil || *newPreflight.RuleSetRef != *assessedRef {
+		t.Fatalf("new evaluation did not use migrated RuleSet v2: %+v", newPreflight)
+	}
+	var oldSnapshotAfterMigration delivery.ReleaseSnapshot
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/releases/"+snapshot.ID, "", "", http.StatusOK), &oldSnapshotAfterMigration)
+	if oldSnapshotAfterMigration.SnapshotDigest != snapshot.SnapshotDigest || oldSnapshotAfterMigration.RuleSetRef == nil || *oldSnapshotAfterMigration.RuleSetRef != *wantRef {
+		t.Fatalf("migrating active project mutated its v1 release history: %+v", oldSnapshotAfterMigration)
+	}
+	if oldSnapshotAfterMigration.IsCurrent {
+		t.Fatalf("v1 release was marked current after active project migrated to v2: %+v", oldSnapshotAfterMigration)
+	}
+	var oldArtifactAfterMigration struct {
+		RuleSetRef *lingdoctemplate.RuleSetReference `json:"ruleset_ref"`
+	}
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/exports/"+artifact.ID, "", "", http.StatusOK), &oldArtifactAfterMigration)
+	if oldArtifactAfterMigration.RuleSetRef == nil || *oldArtifactAfterMigration.RuleSetRef != *wantRef {
+		t.Fatalf("migrating active project changed its v1 export record: %+v", oldArtifactAfterMigration)
+	}
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/template-copies/3", "", "", http.StatusOK), &readBackCopy)
+	if readBackCopy.Status != workspacecore.TemplateCopySuperseded || readBackCopy.TemplateVersionRuleSetRef == nil || *readBackCopy.TemplateVersionRuleSetRef != *wantRef {
+		t.Fatalf("historical project copy no longer retains exact v1 identity: %+v", readBackCopy)
+	}
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/rule-set-use-audits", "", "", http.StatusOK), &auditEnvelope)
+	foundV2Preflight := false
+	for _, event := range auditEnvelope.Items {
+		if event.RuleSetVersion == "v2" && event.RuleSetID == publishedV2.ID && event.RuleSetHash == publishedV2.RulesetHash && event.Action == "preflight" {
+			foundV2Preflight = true
+		}
+	}
+	if !foundV2Preflight {
+		t.Fatalf("tenant-authorized HTTP audit history did not expose the v2 preflight: %+v", auditEnvelope.Items)
 	}
 }
 

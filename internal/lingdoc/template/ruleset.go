@@ -137,15 +137,17 @@ func ValidateRuleBindingOverrides(set RuleSet, overrides []RuleBindingOverride) 
 			return fmt.Errorf("%w: empty override for rule %q", ErrInvalidRuleSet, override.RuleID)
 		}
 		allowed := allowedOverrideParameters(binding.DefinitionID)
+		parameters := cloneParameters(binding.Parameters)
+		if parameters == nil {
+			parameters = map[string]any{}
+		}
 		for key, value := range override.Parameters {
 			if !allowed[key] {
 				return fmt.Errorf("%w: parameter %q cannot be overridden for rule %q", ErrInvalidRuleSet, key, override.RuleID)
 			}
-			parameters := cloneParameters(binding.Parameters)
-			if parameters == nil {
-				parameters = map[string]any{}
-			}
 			parameters[key] = cloneParameterValue(value)
+		}
+		if len(override.Parameters) > 0 {
 			if err := validateOverrideParameters(binding, parameters); err != nil {
 				return fmt.Errorf("%w: invalid override for rule %q: %v", ErrInvalidRuleSet, override.RuleID, err)
 			}
