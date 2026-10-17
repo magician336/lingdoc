@@ -155,13 +155,14 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-pg-ruleset", actor.UserID, "owner").Error; err != nil {
 		t.Fatal(err)
 	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	event := template.RuleSetUseAuditEvent{
 		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 		ProjectID: "project-pg-ruleset", Action: "preflight", RuleSetID: published.ID,
 		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
-		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID, TemplateVersion: verifiedTemplate.Version,
 		TemplateCopyID: "copy-pg-ruleset", TemplateCopyVersion: 2, ProjectVersion: 7,
-		ResourceID: "snapshot-pg-ruleset", Outcome: "passed", CreatedAt: time.Now().UTC(),
+		ResourceID: "snapshot-pg-ruleset", Outcome: "passed", CreatedAt: time.Now().UTC(), VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding,
 	}
 	if err := store.RecordRuleSetUse(context.Background(), event); err != nil {
 		t.Fatalf("record PostgreSQL RuleSet-use audit: %v", err)

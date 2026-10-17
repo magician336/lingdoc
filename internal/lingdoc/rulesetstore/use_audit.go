@@ -91,6 +91,11 @@ func (s *Store) RecordRuleSetUse(ctx context.Context, event template.RuleSetUseA
 		if ruleSet.RulesetHash == "" || ruleSet.RulesetHash != event.RuleSetHash {
 			return fmt.Errorf("%w: source RuleSet hash mismatch", ErrInvalidRuleSetUseAudit)
 		}
+		if event.Action == "check" || event.Action == "preflight" {
+			if err := validateAuditEvidence(event); err != nil {
+				return err
+			}
+		}
 		if err := s.authorize(ctx, tx, Actor{TenantID: event.TenantID, UserID: event.ActorID, Role: event.ActorRole}, ActionRead, &ruleSet); err != nil {
 			return err
 		}
@@ -107,6 +112,11 @@ func RecordRuleSetUseInTransaction(tx *gorm.DB, event template.RuleSetUseAuditEv
 	event, err := normalizeRuleSetUseAudit(event)
 	if err != nil {
 		return err
+	}
+	if event.Action == "check" || event.Action == "preflight" {
+		if err := validateAuditEvidence(event); err != nil {
+			return err
+		}
 	}
 	// The transaction boundary must not trust a caller-stamped source hash.
 	// Re-read the immutable source row while the artifact transaction is open;
@@ -139,6 +149,21 @@ func RecordRuleSetUseInTransaction(tx *gorm.DB, event template.RuleSetUseAuditEv
 	}
 	if err := tx.Create(&row).Error; err != nil {
 		return fmt.Errorf("persist ruleset use audit: %w", err)
+	}
+	return nil
+}
+
+func validateAuditEvidence(event template.RuleSetUseAuditEvent) error {
+	if event.VerifiedTemplate == nil || event.VerifiedBinding == nil {
+		return fmt.Errorf("%w: check/preflight audit requires verified binding evidence", ErrInvalidRuleSetUseAudit)
+	}
+	if err := template.ValidateVerifiedRuleSetBinding(*event.VerifiedTemplate, *event.VerifiedBinding); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidRuleSetUseAudit, err)
+	}
+	binding := event.VerifiedBinding
+	ref := binding.Reference
+	if ref.ID != event.RuleSetID || ref.Version != event.RuleSetVersion || ref.Hash != event.RuleSetHash || binding.EffectiveHash != event.EffectiveRulesetHash || event.VerifiedTemplate.ID != event.TemplateID || event.VerifiedTemplate.Version != event.TemplateVersion {
+		return fmt.Errorf("%w: verified binding does not match audit identity", ErrInvalidRuleSetUseAudit)
 	}
 	return nil
 }

@@ -28,6 +28,11 @@ type RuleSetUseAuditEvent struct {
 	ResourceID           string    `json:"resource_id,omitempty"`
 	Outcome              string    `json:"outcome"`
 	CreatedAt            time.Time `json:"created_at"`
+	// VerifiedTemplate and VerifiedBinding are application-internal evidence.
+	// They never cross the HTTP/JSON boundary and are required when an audit
+	// event is recorded without a durable delivery snapshot.
+	VerifiedTemplate *Template               `json:"-"`
+	VerifiedBinding  *VerifiedRuleSetBinding `json:"-"`
 }
 
 // RuleSetUseAuditRecorder is fail-closed. Callers must not return a governed

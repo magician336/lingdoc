@@ -91,11 +91,13 @@ func TestHTTPRuleSetGovernanceLifecycleAndAuthorization(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-audit-http", "viewer", "member").Error; err != nil {
 		t.Fatal(err)
 	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	useAudit := template.RuleSetUseAuditEvent{
 		TenantID: 1, ActorID: "viewer", ActorRole: "viewer", ProjectID: "project-audit-http",
 		Action: "preflight", RuleSetID: draft.ID, RuleSetVersion: draft.Version, RuleSetHash: published.RulesetHash,
-		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID, TemplateVersion: verifiedTemplate.Version,
 		TemplateCopyID: "copy-http", TemplateCopyVersion: 2, ProjectVersion: 7, ResourceID: "snapshot-http", Outcome: "blocked",
+		VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding,
 	}
 	if err := service.RecordRuleSetUse(context.Background(), useAudit); err != nil {
 		t.Fatal(err)

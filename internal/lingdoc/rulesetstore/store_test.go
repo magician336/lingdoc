@@ -100,15 +100,29 @@ func TestRuleSetUseAuditPersistsAndReadsExactIdentity(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-audit", actor.UserID, "owner").Error; err != nil {
 		t.Fatal(err)
 	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	event := template.RuleSetUseAuditEvent{
 		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 		ProjectID: "project-audit", Action: "preflight", RuleSetID: published.ID,
 		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
-		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID, TemplateVersion: verifiedTemplate.Version,
 		TemplateCopyID: "copy-1", TemplateCopyVersion: 2, ProjectVersion: 7, ResourceID: "snapshot-1", Outcome: "blocked",
-		CreatedAt: time.Now().UTC()}
+		CreatedAt: time.Now().UTC(), VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding}
 	if err := store.RecordRuleSetUse(ctx, event); err != nil {
 		t.Fatal(err)
+	}
+	missingEvidence := event
+	missingEvidence.VerifiedTemplate = nil
+	missingEvidence.VerifiedBinding = nil
+	if err := store.RecordRuleSetUse(ctx, missingEvidence); !errors.Is(err, ErrInvalidRuleSetUseAudit) {
+		t.Fatalf("missing verified evidence error = %v, want ErrInvalidRuleSetUseAudit", err)
+	}
+	forgedEvidence := event
+	forged := verifiedBinding.Clone()
+	forged.EffectiveHash = strings.Repeat("f", 64)
+	forgedEvidence.VerifiedBinding = &forged
+	if err := store.RecordRuleSetUse(ctx, forgedEvidence); !errors.Is(err, ErrInvalidRuleSetUseAudit) {
+		t.Fatalf("forged verified evidence error = %v, want ErrInvalidRuleSetUseAudit", err)
 	}
 	events, err := store.ListRuleSetUseAudits(ctx, actor, event.ProjectID)
 	if err != nil {
@@ -422,4 +436,21 @@ func testDraft(version string) template.RuleSet {
 			Enabled: true, Owner: "tenant-1",
 		}},
 	}
+}
+
+func verifiedAuditEvidence(t *testing.T, set template.RuleSet) (template.Template, template.VerifiedRuleSetBinding) {
+	t.Helper()
+	definition := template.DemoTemplate()
+	definition.RuleSetSnapshot = &set
+	definition.RuleSetRef = &template.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	var err error
+	definition, err = template.WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := template.VerifyRuleSetBinding(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definition, binding
 }
