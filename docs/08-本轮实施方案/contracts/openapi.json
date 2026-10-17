@@ -13000,6 +13000,7 @@
           },
           "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
           "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "reverses_change_set_id": {"type": "string", "maxLength": 64, "description": "原已应用的普通字段 ChangeSet；仅用于创建其反向提案"},
           "template_upgrade": {"$ref": "#/components/schemas/TemplateUpgradeInput"}
         },
         "required": ["expected_context_revision", "reason"],
@@ -13038,6 +13039,7 @@
           "project_id": {"type": "string"},
           "created_by": {"type": "string"},
           "reassessed_from_id": {"type": "string"},
+          "reverses_change_set_id": {"type": "string", "description": "此提案反向撤回的原 ChangeSet ID"},
           "stale_reason": {"type": "string"},
           "decision_by": {"type": "string", "description": "应用或驳回该变更的当前 Owner；尚未作出决定时省略"},
           "decided_at": {"type": "string", "format": "date-time", "description": "Owner 应用或驳回该变更的 UTC 时间；尚未作出决定时省略"},

@@ -424,12 +424,13 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 
 func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 	var fieldData struct {
-		Fields           []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade  *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-		ReassessedFromID string             `json:"reassessed_from_id,omitempty"`
-		StaleReason      string             `json:"stale_reason,omitempty"`
-		DecisionBy       string             `json:"decision_by,omitempty"`
-		DecidedAt        *time.Time         `json:"decided_at,omitempty"`
+		Fields              []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade     *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID    string             `json:"reassessed_from_id,omitempty"`
+		ReversesChangeSetID string             `json:"reverses_change_set_id,omitempty"`
+		StaleReason         string             `json:"stale_reason,omitempty"`
+		DecisionBy          string             `json:"decision_by,omitempty"`
+		DecidedAt           *time.Time         `json:"decided_at,omitempty"`
 	}
 	// Earlier ChangeSets stored a bare array. Continue reading that shape while
 	// new records use an envelope to keep the schema migration-free.
@@ -466,20 +467,21 @@ func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
 		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision,
 		Fields: fieldData.Fields, TemplateUpgrade: fieldData.TemplateUpgrade, Impacts: impacts,
-		ReassessedFromID: fieldData.ReassessedFromID, StaleReason: fieldData.StaleReason,
+		ReassessedFromID: fieldData.ReassessedFromID, ReversesChangeSetID: fieldData.ReversesChangeSetID, StaleReason: fieldData.StaleReason,
 		DecisionBy: fieldData.DecisionBy, DecidedAt: fieldData.DecidedAt,
 		CreatedAt: row.CreatedAt, AppliedAt: row.AppliedAt}, nil
 }
 
 func encodeChangeSetFields(change ChangeSet) (string, error) {
 	raw, err := json.Marshal(struct {
-		Fields           []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade  *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-		ReassessedFromID string             `json:"reassessed_from_id,omitempty"`
-		StaleReason      string             `json:"stale_reason,omitempty"`
-		DecisionBy       string             `json:"decision_by,omitempty"`
-		DecidedAt        *time.Time         `json:"decided_at,omitempty"`
-	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade, ReassessedFromID: change.ReassessedFromID, StaleReason: change.StaleReason,
+		Fields              []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade     *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID    string             `json:"reassessed_from_id,omitempty"`
+		ReversesChangeSetID string             `json:"reverses_change_set_id,omitempty"`
+		StaleReason         string             `json:"stale_reason,omitempty"`
+		DecisionBy          string             `json:"decision_by,omitempty"`
+		DecidedAt           *time.Time         `json:"decided_at,omitempty"`
+	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade, ReassessedFromID: change.ReassessedFromID, ReversesChangeSetID: change.ReversesChangeSetID, StaleReason: change.StaleReason,
 		DecisionBy: change.DecisionBy, DecidedAt: change.DecidedAt})
 	return string(raw), err
 }

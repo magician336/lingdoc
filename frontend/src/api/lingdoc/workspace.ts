@@ -153,6 +153,7 @@ export interface ChangeSet {
   reason: string
   status: 'draft' | 'assessed' | 'applied' | 'rejected' | 'stale' | 'stabilized' | 'satisfied'
   reassessed_from_id?: string
+  reverses_change_set_id?: string
   stale_reason?: string
   base_context_revision: number
   target_context_revision?: number
@@ -422,6 +423,7 @@ export const createChangeSet = (projectId: string, input: {
   fields: Record<string, { old_value: string; new_value: string }>
   affected_chapter_ids: string[]
   reason: string
+  reverses_change_set_id?: string
   template_upgrade?: TemplateCopyEditInput & { field_values?: Record<string, string> }
 }, key: string) => post<Result<ChangeSet>>(
   `${base}/${segment(projectId)}/change-sets`, input, keyHeader(key),
