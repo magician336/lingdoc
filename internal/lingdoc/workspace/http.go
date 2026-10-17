@@ -1276,4 +1276,3 @@ func (h *Handler) DeliveryInputBuilder() DeliveryInputAssembler {
 	}
 	return h.integration.DeliveryInputBuilder()
 }
-
