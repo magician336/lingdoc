@@ -26,7 +26,21 @@ func validateInitializationRules(p Project) error {
 	required := map[string]bool{}
 	var results []template.Evaluation
 	var err error
-	if set := p.TemplateCopy.RuleSetSnapshot; set != nil {
+	if def.RuleSetSnapshot != nil {
+		// The canonical definition owns effective overrides. The sidecar is
+		// the immutable source identity and must not be evaluated instead.
+		for _, rule := range def.Rules {
+			if rule.Evaluator == "required_fields" || rule.Parameters["target_kind"] == "field" {
+				required[rule.ID] = true
+			}
+		}
+		for _, binding := range def.RuleSetSnapshot.Bindings {
+			if binding.TargetKind == "field" || binding.DefinitionID == "computed/required_fields" {
+				required[binding.RuleID] = true
+			}
+		}
+		results, err = template.Evaluate(def, input)
+	} else if set := p.TemplateCopy.RuleSetSnapshot; set != nil {
 		for _, binding := range set.Bindings {
 			if binding.TargetKind == "field" || binding.DefinitionID == "computed/required_fields" {
 				required[binding.RuleID] = true

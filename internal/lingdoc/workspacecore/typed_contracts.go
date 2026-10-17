@@ -229,6 +229,7 @@ const (
 	operationDiscardProject             operationName = "discardProject"
 	operationRestoreProject             operationName = "restoreProject"
 	operationSaveTemplateCopy           operationName = "saveTemplateCopy"
+	operationBindTemplateCopyRuleSet    operationName = "bindTemplateCopyRuleSet"
 	operationChangeTemplate             operationName = "changeTemplate"
 	operationCreateProject              operationName = "createProject"
 	operationSaveSpec                   operationName = "saveSpec"

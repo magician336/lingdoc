@@ -42,9 +42,13 @@ func readDeliveryBinding(tx *gorm.DB, projectID, copyID string) (deliveryBinding
 	if err := template.ValidateRuleSet(*value.RuleSetSnapshot); err != nil {
 		return value, err
 	}
-	hash, err := governance.HashBindingPolicies(value.BindingPolicies)
-	if err != nil || hash != value.SourcePolicyHash {
-		return value, ErrInvalidState
+	// Canonical G4 copies may have no legacy policy. Any declared policy
+	// remains hash-bound; a missing hash never permits nonempty policies.
+	if value.SourcePolicyHash != "" || len(value.BindingPolicies) != 0 {
+		hash, err := governance.HashBindingPolicies(value.BindingPolicies)
+		if err != nil || hash != value.SourcePolicyHash {
+			return value, ErrInvalidState
+		}
 	}
 	if value.SourceRuleSetID == "" || value.SourceRuleSetVersion == "" || value.SourceRuleSetHash == "" {
 		return value, ErrInvalidState

@@ -222,7 +222,9 @@ func (r *TemplateGovernanceRuntime) CurrentProjectBasis(ctx context.Context, tx 
 func g4ProjectBasis(p core.Project) governance.VersionBasis {
 	basis := governance.VersionBasis{ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision, ContextRevision: p.CurrentContextRevision, TemplateCopyVersion: p.TemplateCopyVersion, TemplateID: p.TemplateID, TemplateVersion: p.TemplateVersion, CurrentSnapshotID: p.CurrentSnapshotID}
 	if p.TemplateCopy != nil {
-		if snapshot := p.TemplateCopy.RuleSetSnapshot; snapshot != nil {
+		if ref := template.RuleSetReferenceFor(p.TemplateCopy.Definition); ref != nil {
+			basis.RuleSet = governance.RuleSetRef{ID: ref.ID, Version: ref.Version, Hash: ref.Hash}
+		} else if snapshot := p.TemplateCopy.RuleSetSnapshot; snapshot != nil {
 			basis.RuleSet = governance.RuleSetRef{ID: snapshot.ID, Version: snapshot.Version, Hash: snapshot.RulesetHash}
 		} else {
 			basis.RuleSet.Hash = p.TemplateCopy.RulesetHash
@@ -857,7 +859,14 @@ func (r *TemplateGovernanceRuntime) Check(tx core.Transaction, expected core.Pro
 		input.Sources = append(input.Sources, template.SourceInput{ID: id, Version: strconv.Itoa(sources[id].AssetRevision), Available: availability[id]})
 	}
 	var evaluated []template.Evaluation
-	if set := p.TemplateCopy.RuleSetSnapshot; set != nil {
+	if def.RuleSetSnapshot != nil {
+		if compiled != p.TemplateCopy.RulesetHash {
+			return []core.ImpactBlocker{{Code: "rulesetAgreement", TargetID: p.ID, Reason: "当前有效模板规则摘要不一致"}}, nil
+		}
+		// Use the same canonical evaluator as the public check and freeze
+		// builder. The sidecar pins the source; it is not the effective rules.
+		evaluated, err = template.EvaluateScene(def, "preflight", input)
+	} else if set := p.TemplateCopy.RuleSetSnapshot; set != nil {
 		if set.RulesetHash != p.TemplateCopy.RulesetHash {
 			return []core.ImpactBlocker{{Code: "rulesetAgreement", TargetID: p.ID, Reason: "当前绑定快照与规则摘要不一致"}}, nil
 		}

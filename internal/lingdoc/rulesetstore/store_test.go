@@ -2,10 +2,13 @@ package rulesetstore
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/driver/sqlite"
@@ -78,6 +81,159 @@ func TestStorePersistsImmutableVersionsTransitionsAndAudit(t *testing.T) {
 	}
 }
 
+func TestRuleSetUseAuditPersistsAndReadsExactIdentity(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft("v-use-audit")
+	if err := store.CreateDraft(ctx, actor, draft); err != nil {
+		t.Fatal(err)
+	}
+	published, err := store.Publish(ctx, actor, draft.ID, draft.Version)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "project-audit").Error; err != nil {
+		t.Fatal(err)
+	}
+	event := template.RuleSetUseAuditEvent{
+		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
+		ProjectID: "project-audit", Action: "preflight", RuleSetID: published.ID,
+		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
+		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		TemplateCopyID: "copy-1", TemplateCopyVersion: 2, ProjectVersion: 7, ResourceID: "snapshot-1", Outcome: "blocked",
+		CreatedAt: time.Now().UTC()}
+	if err := store.RecordRuleSetUse(ctx, event); err != nil {
+		t.Fatal(err)
+	}
+	events, err := store.ListRuleSetUseAudits(ctx, actor, event.ProjectID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0].RuleSetID != published.ID || events[0].RuleSetVersion != published.Version ||
+		events[0].RuleSetHash != published.RulesetHash || events[0].EffectiveRulesetHash != event.EffectiveRulesetHash ||
+		events[0].TemplateCopyVersion != 2 || events[0].ResourceID != "snapshot-1" || events[0].Outcome != "blocked" {
+		t.Fatalf("use audit readback lost its exact identity: %+v", events)
+	}
+	bad := event
+	bad.RuleSetHash = "client-fabricated"
+	if err := store.RecordRuleSetUse(ctx, bad); !errors.Is(err, ErrInvalidRuleSetUseAudit) {
+		t.Fatalf("hash mismatch error = %v, want ErrInvalidRuleSetUseAudit", err)
+	}
+	events, err = store.ListRuleSetUseAudits(ctx, actor, event.ProjectID)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("failed audit must not leave a partial record: len=%d err=%v", len(events), err)
+	}
+}
+
+func TestGetVersionForBindingReadsPublishedVersionOnCallerTransaction(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft("v1")
+	if err := store.CreateDraft(ctx, actor, draft); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, actor, draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	var bound template.RuleSet
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		bound, err = store.GetVersionForBinding(ctx, tx, actor, draft.ID, draft.Version)
+		return err
+	}); err != nil {
+		t.Fatalf("GetVersionForBinding in caller transaction: %v", err)
+	}
+	if bound.State != template.RuleSetPublished || bound.RulesetHash == "" {
+		t.Fatalf("transactional binding snapshot = %+v, want published immutable version", bound)
+	}
+	if _, err := store.Withdraw(ctx, actor, draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		current, err := store.GetVersionForBinding(ctx, tx, actor, draft.ID, draft.Version)
+		if err != nil {
+			return err
+		}
+		if current.State != template.RuleSetWithdrawn {
+			t.Fatalf("transactional read after withdrawal = %s, want withdrawn", current.State)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("GetVersionForBinding after withdrawal: %v", err)
+	}
+}
+
+func TestConcurrentRuleSetWithdrawWaitsForBindingTransaction(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft("v1")
+	if err := store.CreateDraft(ctx, actor, draft); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, actor, draft.ID, draft.Version); err != nil {
+		t.Fatal(err)
+	}
+
+	bindTx := db.Begin()
+	if bindTx.Error != nil {
+		t.Fatal(bindTx.Error)
+	}
+	defer func() {
+		if bindTx.Statement != nil && bindTx.Statement.ConnPool != nil {
+			_ = bindTx.Rollback().Error
+		}
+	}()
+	set, err := store.GetVersionForBinding(ctx, bindTx, actor, draft.ID, draft.Version)
+	if err != nil || set.State != template.RuleSetPublished {
+		t.Fatalf("locked binding snapshot = %+v, error = %v", set, err)
+	}
+
+	started := make(chan struct{})
+	withdrawn := make(chan error, 1)
+	go func() {
+		close(started)
+		_, err := store.Withdraw(ctx, actor, draft.ID, draft.Version)
+		withdrawn <- err
+	}()
+	<-started
+	var earlyErr error
+	select {
+	case err := <-withdrawn:
+		if err == nil {
+			t.Fatal("withdraw committed before the binding transaction ended")
+		}
+		earlyErr = err // SQLite may fail fast with SQLITE_BUSY instead of waiting.
+	case <-time.After(150 * time.Millisecond):
+	}
+	if err := bindTx.Commit().Error; err != nil {
+		t.Fatal(err)
+	}
+	if earlyErr != nil {
+		if _, err := store.Withdraw(ctx, actor, draft.ID, draft.Version); err != nil {
+			t.Fatalf("retry withdraw after binding transaction: %v (initial lock result: %v)", err, earlyErr)
+		}
+	} else {
+		select {
+		case err := <-withdrawn:
+			if err != nil {
+				t.Fatalf("withdraw after binding transaction: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("withdraw did not resume after the binding transaction committed")
+		}
+	}
+	current, err := store.GetVersion(ctx, actor, draft.ID, draft.Version)
+	if err != nil || current.State != template.RuleSetWithdrawn {
+		t.Fatalf("RuleSet final state = %+v, error = %v; want withdrawn after the serialized bind", current, err)
+	}
+}
+
 func TestStoreIsTenantScopedAndAuthorizationFailsClosed(t *testing.T) {
 	db := openStoreTestDB(t, true)
 	store := NewStore(db, testAuthorizer{allow: true})
@@ -115,6 +271,47 @@ func TestStoreRollsBackRuleSetWhenAuditWriteFails(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("ruleset rows = %d after audit failure, want rollback to 0", count)
+	}
+}
+
+func TestStoreBoundsAuditTargetForMaximumRuleSetIdentity(t *testing.T) {
+	db := openStoreTestDB(t, true)
+	store := NewStore(db, testAuthorizer{allow: true})
+	actor := Actor{TenantID: 1, UserID: "admin-1", Role: "tenant_admin"}
+	draft := testDraft(strings.Repeat("v", 64))
+	draft.ID = strings.Repeat("r", 64)
+
+	if err := store.CreateDraft(context.Background(), actor, draft); err != nil {
+		t.Fatalf("CreateDraft(max identity) error = %v", err)
+	}
+	if _, err := store.Publish(context.Background(), actor, draft.ID, draft.Version); err != nil {
+		t.Fatalf("Publish(max identity) error = %v", err)
+	}
+
+	var audit struct {
+		TargetID string
+		Details  string
+	}
+	if err := db.Table("audit_logs").Select("target_id, details").
+		Where("tenant_id = ? AND scope_id = ? AND action = ?", actor.TenantID, draft.ID, "lingdoc.ruleset.publish").
+		Take(&audit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(audit.TargetID) != 64 || audit.TargetID != auditTargetID(draft.ID, draft.Version) {
+		t.Fatalf("audit target_id = %q (len %d), want deterministic 64-character reference", audit.TargetID, len(audit.TargetID))
+	}
+	var details map[string]any
+	if err := json.Unmarshal([]byte(audit.Details), &details); err != nil {
+		t.Fatal(err)
+	}
+	if details["ruleset_id"] != draft.ID || details["version"] != draft.Version {
+		t.Fatalf("audit details do not retain the original identity: %+v", details)
+	}
+
+	overlong := testDraft("v1")
+	overlong.ID = strings.Repeat("r", 65)
+	if err := store.CreateDraft(context.Background(), actor, overlong); !errors.Is(err, template.ErrInvalidRuleSet) {
+		t.Fatalf("CreateDraft(overlong identity) error = %v, want ErrInvalidRuleSet", err)
 	}
 }
 
@@ -168,11 +365,21 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 	if err := db.Exec("INSERT INTO tenants (id) VALUES (1), (2)").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
 	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000036_lingdoc_rule_sets.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(string(migration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	usageMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000040_lingdoc_ruleset_use_audits.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(usageMigration)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if withAudit {

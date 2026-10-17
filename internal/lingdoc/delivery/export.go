@@ -12,8 +12,10 @@ import (
 	"time"
 
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
 )
 
 var (
@@ -63,13 +65,14 @@ const (
 // output. Authorization on download belongs to the caller's current access
 // check; this small service enforces the independent verified-file boundary.
 type ExportArtifact struct {
-	ID          string       `json:"id"`
-	ProjectID   string       `json:"project_id"`
-	SnapshotID  string       `json:"snapshot_id"`
-	Status      ExportStatus `json:"status"`
-	FileSHA256  string       `json:"file_sha256,omitempty"`
-	FailureCode string       `json:"failure_code,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
+	ID          string                            `json:"id"`
+	ProjectID   string                            `json:"project_id"`
+	SnapshotID  string                            `json:"snapshot_id"`
+	RuleSetRef  *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Status      ExportStatus                      `json:"status"`
+	FileSHA256  string                            `json:"file_sha256,omitempty"`
+	FailureCode string                            `json:"failure_code,omitempty"`
+	CreatedAt   time.Time                         `json:"created_at"`
 	file        []byte
 }
 
@@ -124,6 +127,12 @@ type ExportRecorder interface {
 	RecordExport(artifact ExportArtifact, attempt ExportAttempt, requestHash string) (ExportArtifact, bool, error)
 }
 
+// RuleSetUseExportRecorder commits the RuleSet-use audit with the export
+// artifact and idempotency record.
+type RuleSetUseExportRecorder interface {
+	RecordExportWithRuleSetUse(ExportArtifact, ExportAttempt, string, lingdoctemplate.RuleSetUseAuditEvent) (ExportArtifact, bool, error)
+}
+
 // ExportLister 是 ExportStore 的可选能力：列出项目下导出过的产物。理由与
 // SnapshotLister 逐字相同——交付页问的是「这个项目导出过什么」，不是
 // 「哪一次动作产出了它」。
@@ -154,9 +163,10 @@ type exportRecord struct {
 }
 
 type MemoryExportStore struct {
-	mu      sync.RWMutex
-	exports map[string]ExportArtifact
-	actions map[string]exportRecord
+	mu        sync.RWMutex
+	exports   map[string]ExportArtifact
+	actions   map[string]exportRecord
+	useAudits []lingdoctemplate.RuleSetUseAuditEvent
 }
 
 func NewMemoryExportStore() *MemoryExportStore {
@@ -229,6 +239,26 @@ func (s *MemoryExportStore) RecordExport(artifact ExportArtifact, attempt Export
 	return cloneExport(stored), false, nil
 }
 
+func (s *MemoryExportStore) RecordExportWithRuleSetUse(artifact ExportArtifact, attempt ExportAttempt, requestHash string, event lingdoctemplate.RuleSetUseAuditEvent) (ExportArtifact, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := exportActionIndex(attempt)
+	if record, ok := s.actions[index]; ok {
+		return s.replayed(attempt.ProjectID, record, requestHash)
+	}
+	stored := cloneExport(artifact)
+	s.exports[exportIndex(artifact.ProjectID, artifact.ID)] = stored
+	s.actions[index] = exportRecord{ExportID: artifact.ID, RequestHash: requestHash}
+	s.useAudits = append(s.useAudits, event)
+	return cloneExport(stored), false, nil
+}
+
+func (s *MemoryExportStore) RuleSetUseAudits() []lingdoctemplate.RuleSetUseAuditEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]lingdoctemplate.RuleSetUseAuditEvent(nil), s.useAudits...)
+}
+
 // replayed 由调用方持锁调用。索引与产物永远在同一次写入里成对落下，所以
 // 「索引在、产物不在」只可能来自别的实现——那种情况下宁可说找不到，
 // 也不要交出一份谁也读不回来的产物。
@@ -262,6 +292,7 @@ type ExportService struct {
 	access      ExportAccessChecker
 	policy      lingdocaccess.Policy
 	audit       workspacecore.AuditSink
+	useAuditor  lingdoctemplate.RuleSetUseAuditRecorder
 	now         func() time.Time
 }
 
@@ -319,6 +350,13 @@ func NewExportServiceWithAccessPolicy(snapshots SnapshotStore, exports ExportSto
 	}
 }
 
+func (s *ExportService) WithRuleSetUseAuditor(auditor lingdoctemplate.RuleSetUseAuditRecorder) *ExportService {
+	if s != nil {
+		s.useAuditor = auditor
+	}
+	return s
+}
+
 // Start renders a frozen, passing, current snapshot. Renderer errors, empty files
 // and validation failures all become a persisted failed artifact so the UI can
 // show a recovery state; none of them ever creates a downloadable file.
@@ -360,14 +398,73 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 	// 3. 只有新动作才读快照、才比版本、才渲染。
 	artifact, err := s.produce(ctx, actor, projectID, snapshotID)
 	if err != nil {
+		if auditErr := s.recordFailedRuleSetUse(ctx, actor, projectID, snapshotID, err); auditErr != nil {
+			return ExportArtifact{}, false, auditErr
+		}
 		s.recordAudit(ctx, actor, projectID, "delivery.export", err)
 		return ExportArtifact{}, false, err
 	}
-	recorded, replayed, err := s.actions.RecordExport(artifact, attempt, requestHash)
+	var recorded ExportArtifact
+	var replayed bool
+	if artifact.RuleSetRef != nil {
+		snapshot, snapshotErr := s.snapshots.Get(projectID, snapshotID)
+		if snapshotErr != nil {
+			return ExportArtifact{}, false, snapshotErr
+		}
+		if actor.TenantID == 0 || !actor.Role.IsValid() {
+			return ExportArtifact{}, false, ErrExportUnavailable
+		}
+		event := lingdoctemplate.RuleSetUseAuditEvent{
+			ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: string(actor.Role),
+			ProjectID: projectID, Action: "export", RuleSetID: artifact.RuleSetRef.ID,
+			RuleSetVersion: artifact.RuleSetRef.Version, RuleSetHash: artifact.RuleSetRef.Hash,
+			EffectiveRulesetHash: snapshot.FrozenInput.Template.RulesetHash,
+			TemplateID:           snapshot.FrozenInput.Template.ID, TemplateVersion: snapshot.FrozenInput.Template.Version,
+			TemplateCopyID: snapshot.FrozenInput.TemplateCopyID, TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion,
+			ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: artifact.ID,
+			Outcome: string(artifact.Status), CreatedAt: s.now().UTC(),
+		}
+		audited, ok := s.actions.(RuleSetUseExportRecorder)
+		if !ok {
+			return ExportArtifact{}, false, ErrExportUnavailable
+		}
+		recorded, replayed, err = audited.RecordExportWithRuleSetUse(artifact, attempt, requestHash, event)
+	} else {
+		recorded, replayed, err = s.actions.RecordExport(artifact, attempt, requestHash)
+	}
 	if err != nil {
 		return ExportArtifact{}, false, err
 	}
 	return recorded, replayed, nil
+}
+
+func (s *ExportService) recordFailedRuleSetUse(ctx context.Context, actor Actor, projectID, snapshotID string, cause error) error {
+	snapshot, err := s.snapshots.Get(projectID, snapshotID)
+	if err != nil {
+		return err
+	}
+	ref := lingdoctemplate.RuleSetReferenceFor(snapshot.FrozenInput.Template)
+	if ref == nil {
+		return nil
+	}
+	if s.useAuditor == nil || actor.TenantID == 0 || !actor.Role.IsValid() {
+		return ErrExportUnavailable
+	}
+	outcome := "failed"
+	if errors.Is(cause, ErrExportPreflightBlocked) {
+		outcome = "blocked"
+	} else if errors.Is(cause, ErrExportStaleInput) || errors.Is(cause, ErrSnapshotStaleInput) {
+		outcome = "stale"
+	}
+	event := lingdoctemplate.RuleSetUseAuditEvent{
+		ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: string(actor.Role),
+		ProjectID: projectID, Action: "export", RuleSetID: ref.ID, RuleSetVersion: ref.Version, RuleSetHash: ref.Hash,
+		EffectiveRulesetHash: snapshot.FrozenInput.Template.RulesetHash,
+		TemplateID:           snapshot.FrozenInput.Template.ID, TemplateVersion: snapshot.FrozenInput.Template.Version,
+		TemplateCopyID: snapshot.FrozenInput.TemplateCopyID, TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion,
+		ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: snapshotID, Outcome: outcome, CreatedAt: s.now().UTC(),
+	}
+	return s.useAuditor.RecordRuleSetUse(ctx, event)
 }
 
 // produce 是一次新动作的全部工作。失败不返回 error 而是返回一份 failed 产物：
@@ -395,7 +492,7 @@ func (s *ExportService) produce(ctx context.Context, actor Actor, projectID, sna
 	if err != nil {
 		return ExportArtifact{}, err
 	}
-	artifact := ExportArtifact{ID: id, ProjectID: projectID, SnapshotID: snapshotID, CreatedAt: s.now().UTC()}
+	artifact := ExportArtifact{ID: id, ProjectID: projectID, SnapshotID: snapshotID, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(snapshot.FrozenInput.Template), CreatedAt: s.now().UTC()}
 
 	data, failure := s.render(snapshot.FrozenInput)
 	if failure != "" {
@@ -513,7 +610,7 @@ func (s *ExportService) GetAs(ctx context.Context, actor Actor, projectID, expor
 
 func (s *ExportService) authorize(ctx context.Context, actor Actor, projectID string) error {
 	if s.policy != nil {
-		return s.policy.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "contributor")
+		return s.policy.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "read")
 	}
 	if s.access == nil {
 		return errors.New("export access checker is required")
@@ -545,6 +642,10 @@ func exportRequestHash(actorUserID, projectID, snapshotID string) string {
 }
 
 func cloneExport(artifact ExportArtifact) ExportArtifact {
+	if artifact.RuleSetRef != nil {
+		ref := *artifact.RuleSetRef
+		artifact.RuleSetRef = &ref
+	}
 	artifact.file = append([]byte(nil), artifact.file...)
 	return artifact
 }

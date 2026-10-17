@@ -13,8 +13,12 @@ import (
 var ruleSnapshotHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // FrozenRuleSetHash is the effective binding identity when one is frozen. The
-// legacy Template.RulesetHash always remains the compiled projection digest.
+// embedded G4 Template.RulesetHash includes its exact source reference and overrides.
+// Historical independent copies keep their original compiled-projection identity.
 func FrozenRuleSetHash(input DeliveryInput) string {
+	if input.Template.RuleSetSnapshot != nil || input.Template.RuleSetRef != nil {
+		return input.Template.RulesetHash
+	}
 	if input.RuleSetSnapshot != nil {
 		if input.TemplateCopyRulesetHash != "" {
 			return input.TemplateCopyRulesetHash
@@ -24,6 +28,9 @@ func FrozenRuleSetHash(input DeliveryInput) string {
 	return input.Template.RulesetHash
 }
 func ValidateFrozenRuleSnapshot(input DeliveryInput) error {
+	if input.Template.RuleSetSnapshot != nil || input.Template.RuleSetRef != nil {
+		return validateBoundFrozenRuleSnapshot(input)
+	}
 	if input.RuleSetSnapshot == nil {
 		if input.SourceRuleSetID != "" || input.SourceRuleSetVersion != "" || input.SourceRuleSetHash != "" || input.SourcePolicyHash != "" || len(input.BindingPolicies) > 0 {
 			return fmt.Errorf("independent rule metadata has no snapshot")
@@ -74,6 +81,63 @@ func ValidateFrozenRuleSnapshot(input DeliveryInput) error {
 	}
 	return nil
 }
+
+// legacyIndependentRuleSnapshot identifies the frozen #122 projection contract.
+// Canonical G4 input always evaluates the immutable snapshot embedded in Template.
+func legacyIndependentRuleSnapshot(input DeliveryInput) bool {
+	return input.Template.RuleSetSnapshot == nil && input.Template.RuleSetRef == nil && input.RuleSetSnapshot != nil
+}
+
+func validateBoundFrozenRuleSnapshot(input DeliveryInput) error {
+	set := input.Template.RuleSetSnapshot
+	if set == nil {
+		return fmt.Errorf("bound RuleSet reference has no immutable snapshot")
+	}
+	content, effective, err := lingdoctemplate.Hashes(input.Template)
+	if err != nil {
+		return err
+	}
+	if content != input.Template.ContentHash || effective != input.Template.RulesetHash {
+		return fmt.Errorf("bound template content or effective ruleset hash mismatch")
+	}
+	// Standalone evaluator callers have no project-copy metadata. If any copy
+	// identity is provided, require the immutable copy and content hash. The
+	// #122 effective-hash alias was absent on earlier G4 frozen values; when
+	// present it must agree with the canonical effective hash above.
+	if input.TemplateCopyID != "" || input.TemplateCopyVersion != 0 || input.TemplateCopyContentHash != "" || input.TemplateCopyRulesetHash != "" {
+		if input.TemplateCopyID == "" || input.TemplateCopyVersion < 1 || input.TemplateCopyContentHash != content || (input.TemplateCopyRulesetHash != "" && input.TemplateCopyRulesetHash != effective) {
+			return fmt.Errorf("bound frozen project-copy identity mismatch")
+		}
+	}
+	ref := lingdoctemplate.RuleSetReferenceFor(input.Template)
+	if ref == nil || ref.ID != set.ID || ref.Version != set.Version || ref.Hash != set.RulesetHash {
+		return fmt.Errorf("bound frozen RuleSet reference mismatch")
+	}
+	// Old top-level fields may be absent on G4 input. When dual-written, they
+	// are consistency pins and never replace the embedded evaluator identity.
+	if input.RuleSetSnapshot != nil {
+		mirror := *input.RuleSetSnapshot
+		if err := lingdoctemplate.ValidateRuleSet(mirror); err != nil {
+			return err
+		}
+		if mirror.ID != ref.ID || mirror.Version != ref.Version || mirror.RulesetHash != ref.Hash {
+			return fmt.Errorf("top-level RuleSet snapshot differs from bound reference")
+		}
+	}
+	if input.SourceRuleSetID != "" || input.SourceRuleSetVersion != "" || input.SourceRuleSetHash != "" {
+		if input.SourceRuleSetID != ref.ID || input.SourceRuleSetVersion != ref.Version || input.SourceRuleSetHash != ref.Hash {
+			return fmt.Errorf("frozen source RuleSet identity differs from bound reference")
+		}
+	}
+	if input.SourcePolicyHash != "" || len(input.BindingPolicies) > 0 {
+		hash, err := governance.HashBindingPolicies(input.BindingPolicies)
+		if err != nil || hash != input.SourcePolicyHash {
+			return fmt.Errorf("frozen reviewed policy hash mismatch")
+		}
+	}
+	return nil
+}
+
 func cloneRuleSnapshot(set *lingdoctemplate.RuleSet) *lingdoctemplate.RuleSet {
 	if set == nil {
 		return nil
@@ -109,8 +173,11 @@ func ValidateRuleSnapshotReceipt(snapshot ReleaseSnapshot) error {
 	if err := ValidateFrozenRuleSnapshot(snapshot.FrozenInput); err != nil {
 		return err
 	}
-	if snapshot.FrozenInput.RuleSetSnapshot == nil {
+	if snapshot.FrozenInput.RuleSetSnapshot == nil && snapshot.FrozenInput.Template.RuleSetSnapshot == nil {
 		return nil
+	}
+	if snapshot.FrozenInput.Template.RuleSetSnapshot != nil && !reflect.DeepEqual(snapshot.RuleSetRef, lingdoctemplate.RuleSetReferenceFor(snapshot.FrozenInput.Template)) {
+		return fmt.Errorf("snapshot RuleSet reference differs from frozen input")
 	}
 	digest, err := digestFrozenInput(snapshot.FrozenInput)
 	if err != nil {

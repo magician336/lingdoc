@@ -38,6 +38,7 @@ type TemplateMigrationField = core.TemplateMigrationField
 type TemplateMigrationPreview = core.TemplateMigrationPreview
 type ProjectTemplateCopy = core.ProjectTemplateCopy
 type TemplateCopyDefinitionInput = core.TemplateCopyDefinitionInput
+type BindTemplateCopyRuleSetInput = core.BindTemplateCopyRuleSetInput
 type TemplateSectionChange = core.TemplateSectionChange
 type CoreProjectAuthorizer = core.ProjectAuthorizer
 type AuthorizationMode = core.AuthorizationMode

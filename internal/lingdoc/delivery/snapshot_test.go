@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -8,7 +9,17 @@ import (
 	"time"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 )
+
+type snapshotRuleSetUseAuditRecorder struct {
+	events []lingdoctemplate.RuleSetUseAuditEvent
+}
+
+func (r *snapshotRuleSetUseAuditRecorder) RecordRuleSetUse(_ context.Context, event lingdoctemplate.RuleSetUseAuditEvent) error {
+	r.events = append(r.events, event)
+	return nil
+}
 
 func validDeliveryInput() DeliveryInput {
 	template := DemoTemplate()
@@ -227,5 +238,150 @@ func TestTemplateCheckAndPreflightShareDeterministicRuleEvaluation(t *testing.T)
 		if issue.RuleID == "project-goal-pattern" && issue.ID != finding.ID {
 			t.Fatalf("custom finding identity changed: %s != %s", issue.ID, finding.ID)
 		}
+	}
+}
+
+func TestBlockingUnknownRuleTargetBlocksTemplateCheckAndPreflight(t *testing.T) {
+	input := validDeliveryInput()
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "unavailable-target-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "missing-field-pattern", DefinitionID: "pattern", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "removed_field",
+			Parameters: map[string]any{"pattern": "^approved:"}, Severity: SeverityBlocking,
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template.RuleSetSnapshot = &set
+	definition, err := lingdoctemplate.WithHashes(input.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template = definition
+
+	check, err := EvaluateTemplate(input)
+	if err != nil || check.Status != TemplateCheckBlocked {
+		t.Fatalf("blocking unknown target must not pass Template Check: status=%s evaluations=%+v err=%v", check.Status, check.Evaluations, err)
+	}
+	foundUnknown := false
+	for _, evaluation := range check.Evaluations {
+		if evaluation.RuleID == "missing-field-pattern" {
+			foundUnknown = evaluation.Status == lingdoctemplate.EvaluationUnknown && evaluation.Severity == SeverityBlocking
+		}
+	}
+	if !foundUnknown {
+		t.Fatalf("Template Check did not preserve the blocking UNKNOWN evaluation: %+v", check.Evaluations)
+	}
+
+	preflight := Evaluate(input)
+	if preflight.Status != CheckBlocked {
+		t.Fatalf("blocking unknown target must block Preflight: %+v", preflight)
+	}
+	foundIssue := false
+	for _, issue := range preflight.Issues {
+		if issue.RuleID == "missing-field-pattern" {
+			foundIssue = issue.Severity == SeverityBlocking && issue.Code == "template_rule_unavailable"
+		}
+	}
+	if !foundIssue {
+		t.Fatalf("Preflight did not record the unavailable blocking rule as a ValidationIssue: %+v", preflight.Issues)
+	}
+
+	snapshotStore := NewMemorySnapshotStore()
+	release, err := NewReleaseService(snapshotStore).Prepare(input)
+	if err != nil || release.Check.Status != CheckBlocked || release.Check.RulesetHash != definition.RulesetHash {
+		t.Fatalf("ReleaseSnapshot did not freeze the blocked rule evaluation: release=%+v err=%v", release, err)
+	}
+	auditor := &snapshotRuleSetUseAuditRecorder{}
+	exportService := NewExportService(snapshotStore, NewMemoryExportStore(),
+		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("must-not-render"), nil }),
+		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport)).WithRuleSetUseAuditor(auditor)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, err := exportService.StartAs(context.Background(), actor, release.ProjectID, release.ID, "blocking-unknown-export"); !errors.Is(err, ErrExportPreflightBlocked) {
+		t.Fatalf("export must reject a frozen blocking UNKNOWN evaluation: %v", err)
+	}
+	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetID != set.ID || auditor.events[0].RuleSetVersion != set.Version || auditor.events[0].RuleSetHash != set.RulesetHash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
+		t.Fatalf("blocked export use must be audited against the exact RuleSet snapshot: %+v", auditor.events)
+	}
+}
+
+func TestBoundRuleSetSnapshotFlowsThroughTemplateCheckAndPreflight(t *testing.T) {
+	input := validDeliveryInput()
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "delivery-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "goal-prefix", DefinitionID: "pattern", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
+			Parameters: map[string]any{"pattern": "^approved:"}, Severity: SeverityBlocking,
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template.RuleSetSnapshot = &set
+	definition, err := lingdoctemplate.WithHashes(input.Template)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Template = definition
+
+	check, err := EvaluateTemplate(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if check.Status != TemplateCheckBlocked || check.RulesetHash != definition.RulesetHash {
+		t.Fatalf("bound blocking rule was not included in template check: %+v", check)
+	}
+	found := false
+	for _, evaluation := range check.Evaluations {
+		if evaluation.RuleID == "goal-prefix" {
+			found = evaluation.Status == lingdoctemplate.EvaluationIssue && evaluation.RulesetHash == definition.RulesetHash
+		}
+	}
+	if !found {
+		t.Fatalf("template check did not emit the pinned RuleSet evaluation: %+v", check.Evaluations)
+	}
+
+	preflight := Evaluate(input)
+	if preflight.Status != CheckBlocked || preflight.RulesetHash != definition.RulesetHash {
+		t.Fatalf("Preflight did not consume the same bound RuleSet snapshot: %+v", preflight)
+	}
+	found = false
+	for _, issue := range preflight.Issues {
+		if issue.RuleID == "goal-prefix" {
+			found = issue.Severity == SeverityBlocking && issue.RulesetHash == definition.RulesetHash
+		}
+	}
+	if !found {
+		t.Fatalf("Preflight did not retain the bound RuleSet finding: %+v", preflight.Issues)
+	}
+
+	snapshotStore := NewMemorySnapshotStore()
+	release, err := NewReleaseService(snapshotStore).Prepare(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.Check.RulesetHash != definition.RulesetHash || release.FrozenInput.Template.RuleSetSnapshot == nil || release.FrozenInput.Template.RuleSetSnapshot.RulesetHash != set.RulesetHash {
+		t.Fatalf("ReleaseSnapshot did not freeze the evaluated RuleSet identity and hash: %+v", release)
+	}
+	set.Bindings[0].Parameters["pattern"] = "^tampered$"
+	if release.FrozenInput.Template.RuleSetSnapshot.Bindings[0].Parameters["pattern"] != "^approved:" {
+		t.Fatal("frozen ReleaseSnapshot shared mutable RuleSet data with its input")
+	}
+	exports := NewMemoryExportStore()
+	auditor := &snapshotRuleSetUseAuditRecorder{}
+	exportService := NewExportService(snapshotStore, exports,
+		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("must-not-render"), nil }),
+		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport)).WithRuleSetUseAuditor(auditor)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, err := exportService.StartAs(context.Background(), actor, release.ProjectID, release.ID, "ruleset-blocked-export"); !errors.Is(err, ErrExportPreflightBlocked) {
+		t.Fatalf("export must honor the frozen RuleSet Preflight result: %v", err)
+	}
+	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetID != set.ID || auditor.events[0].RuleSetVersion != set.Version || auditor.events[0].RuleSetHash != set.RulesetHash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
+		t.Fatalf("blocked export use must be audited against the exact RuleSet snapshot: %+v", auditor.events)
 	}
 }

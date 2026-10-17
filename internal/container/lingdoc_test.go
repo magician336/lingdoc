@@ -2,6 +2,7 @@ package container
 
 import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"go.uber.org/dig"
@@ -26,8 +27,8 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 			t.Fatal(err)
 		}
 	}
-	if err := c.Invoke(func(h *workspace.Handler, projects workspace.ApplicationService, integration workspace.WorkspaceIntegration, runtime *workspace.SourceRuntime) {
-		if h == nil || projects == nil || runtime == nil || integration != runtime {
+	if err := c.Invoke(func(h *workspace.Handler, ruleSets *rulesetstore.HTTPHandler, projects workspace.ApplicationService, integration workspace.WorkspaceIntegration, runtime *workspace.SourceRuntime) {
+		if h == nil || ruleSets == nil || projects == nil || runtime == nil || integration != runtime {
 			t.Fatal("workspace consumers did not receive the shared application/runtime ports")
 		}
 		if integration.CandidateAdoptionSourcePolicy() == nil || integration.WorkspaceSourcePolicy() == nil || integration.DeliveryInputBuilder() == nil {

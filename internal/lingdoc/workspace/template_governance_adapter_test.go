@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -63,23 +62,19 @@ func g4AdapterFixture(t *testing.T) (*TemplateGovernanceRuntime, *gorm.DB, core.
 			t.Fatal(err)
 		}
 	}
-	for _, name := range []string{"000018_lingdoc_workspace.up.sql", "000019_lingdoc_evidence_assets.up.sql", "000020_lingdoc_candidate_adoption.up.sql", "000023_lingdoc_chapter_confirmation_requests.up.sql", "000025_lingdoc_member_permissions.up.sql", "000026_lingdoc_project_context_revision.up.sql", "000027_lingdoc_draft_provenance.up.sql", "000028_lingdoc_owner_transfers.up.sql", "000029_lingdoc_project_discard.up.sql", "000030_lingdoc_project_baseline.up.sql", "000031_lingdoc_citation_usages.up.sql", "000032_lingdoc_change_sets.up.sql", "000033_lingdoc_working_copies.up.sql", "000034_lingdoc_selected_rewrites.up.sql", "000035_lingdoc_project_template_copies.up.sql", "000036_lingdoc_rule_sets.up.sql", "000037_lingdoc_full_workflow.up.sql"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+	// Apply the same production LingDoc chain as the current service. A cutoff
+	// fixture omitted canonical RuleSet reference/audit columns after main sync.
+	migrations, err := filepath.Glob(filepath.Join("..", "..", "..", "migrations", "sqlite", "*_lingdoc_*.up.sql"))
+	if err != nil || len(migrations) == 0 {
+		t.Fatalf("find production LingDoc migrations: count=%d error=%v", len(migrations), err)
+	}
+	for _, migration := range migrations {
+		raw, err := os.ReadFile(migration)
 		if err != nil {
 			t.Fatal(err)
 		}
-		lines := []string{}
-		for _, line := range strings.Split(string(raw), "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), "--") {
-				lines = append(lines, line)
-			}
-		}
-		for _, stmt := range strings.Split(strings.Join(lines, "\n"), ";") {
-			if strings.TrimSpace(stmt) != "" {
-				if err := db.Exec(stmt).Error; err != nil {
-					t.Fatalf("%s: %v", name, err)
-				}
-			}
+		if err := db.Exec(string(raw)).Error; err != nil {
+			t.Fatalf("%s: %v", filepath.Base(migration), err)
 		}
 	}
 	for _, ddl := range []string{`CREATE TABLE knowledge_bases(id TEXT PRIMARY KEY,tenant_id INTEGER,chunking_config TEXT,deleted_at DATETIME)`, `CREATE TABLE knowledges(id TEXT PRIMARY KEY,tenant_id INTEGER,knowledge_base_id TEXT,type TEXT,title TEXT,file_type TEXT,file_size INTEGER,file_hash TEXT,file_path TEXT,parse_status TEXT,processed_at DATETIME,deleted_at DATETIME)`, `CREATE TABLE chunks(id TEXT PRIMARY KEY,tenant_id INTEGER,knowledge_id TEXT,knowledge_base_id TEXT,content TEXT,content_revision INTEGER DEFAULT 0,chunk_index INTEGER,chunk_type TEXT DEFAULT 'text',is_enabled INTEGER DEFAULT 1,start_at INTEGER,end_at INTEGER,deleted_at DATETIME)`} {

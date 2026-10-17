@@ -133,7 +133,20 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 			result.SourceRuleSetHash = binding.SourceRuleSetHash
 			result.BindingPolicies = binding.BindingPolicies
 			result.SourcePolicyHash = binding.SourcePolicyHash
-			if binding.RuleSetSnapshot != nil && binding.RuleSetSnapshot.RulesetHash != copy.RulesetHash {
+			if definition.RuleSetSnapshot != nil || definition.RuleSetRef != nil {
+				// WorkspaceCore owns canonical source/effective hash validation.
+				// Reuse its exact version reader on this same snapshot transaction;
+				// the source sidecar hash is not the effective template hash.
+				reader, ok := core.NewTransactionAdapter(tx).(interface {
+					ProjectTemplateCopy(uint64, string, int64) (core.ProjectTemplateCopy, error)
+				})
+				if !ok {
+					return ErrInvalidState
+				}
+				if _, err := reader.ProjectTemplateCopy(project.TenantID, projectID, copy.Version); err != nil {
+					return err
+				}
+			} else if binding.RuleSetSnapshot != nil && binding.RuleSetSnapshot.RulesetHash != copy.RulesetHash {
 				return ErrInvalidState
 			}
 			if copy.Status != "bound" {

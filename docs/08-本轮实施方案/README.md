@@ -9,8 +9,11 @@
 - [待领取任务池](../TEAM_DEVELOPMENT_TASKS.md)
 - [协作与代码边界](../06-灵档产品开发规划/05-团队分工与代码边界.md)
 - [接口与 Mock 约定](02-接口与Mock约定.md)
+- [G4 RuleSet 服务切片与未完边界](G4-RuleSet服务切片-20261015.md)
 
 ## 当前PR复审入口
+
+2026-10-17接续：维护者已合入#151，固定main `2d6167fddfe9dc9fe4481b45faea88c6565bed78`，tree与已验#151@0fd相同。#122正从536365a接入该基准，旧536的CI保留原身份，新组合结果见[接口复审与版本锁定](PR122主线接口复审-20261017.md)。此变动不代表#140关闭、正式Beta或统一G1–G7验收通过。
 
 [PR #122 main同步复审交接](pr122-main-sync-review-20261016.md)：维护者五域有条件已审，第六域及当前头兼容检查仍需复审；不代表合并、发布或完整G1–G7验收。
 
@@ -24,8 +27,8 @@
 
 | 文件 | 用途 |
 |---|---|
-| [openapi.json](contracts/openapi.json) | 2026-10-16静态快照：56操作，53 core / 3 optional；x-domain 表示服务职责，不指定人，接口存在不等于全量验收 |
-| [scenarios.json](contracts/scenarios.json) | 26 个行为场景及合成样例（准确ID以JSON为准）；providers 表示参与服务；F22 已带请求定义与可求值检查 |
+| [openapi.json](contracts/openapi.json) | HTTP契约与G4 RuleSet/精确绑定/模板检查；paths、operations和schemas以当前JSON为准，声明存在不代表全量已验收 |
+| [scenarios.json](contracts/scenarios.json) | 行为场景与合成样例，准确ID以JSON为准；providers表示参与服务；F22带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |

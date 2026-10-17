@@ -18,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -118,17 +119,34 @@ func newDeliveryExportHandlerWithSourceAuthorizer(
 // 两个可空字段用指针：用例要断言的正是「字段在不在」与「字段是不是 null」的差别，
 // 而内部结构体上的 omitempty 恰恰会把后者变成前者——那正是这层 DTO 存在的理由。
 type publishedArtifact struct {
-	ID           string  `json:"id"`
-	ProjectID    string  `json:"project_id"`
-	SnapshotID   string  `json:"snapshot_id"`
-	Status       string  `json:"status"`
-	FileSHA256   *string `json:"file_sha256"`
-	DownloadPath *string `json:"download_path"`
+	ID           string                            `json:"id"`
+	ProjectID    string                            `json:"project_id"`
+	SnapshotID   string                            `json:"snapshot_id"`
+	RuleSetRef   *lingdoctemplate.RuleSetReference `json:"ruleset_ref"`
+	Status       string                            `json:"status"`
+	FileSHA256   *string                           `json:"file_sha256"`
+	DownloadPath *string                           `json:"download_path"`
 	Error        *struct {
 		Code      string `json:"code"`
 		Message   string `json:"message"`
 		Retryable bool   `json:"retryable"`
 	} `json:"error"`
+}
+
+func TestArtifactViewPreservesExactRuleSetReference(t *testing.T) {
+	want := &lingdoctemplate.RuleSetReference{ID: "proposal-checks", Version: "v3", Hash: strings.Repeat("a", 64)}
+	view := artifactView(delivery.ExportArtifact{ID: "export-1", ProjectID: "project-1", SnapshotID: "snapshot-1", RuleSetRef: want, Status: delivery.ExportVerified})
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got publishedArtifact
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.RuleSetRef == nil || *got.RuleSetRef != *want {
+		t.Fatalf("export response RuleSet reference = %+v, want %+v", got.RuleSetRef, want)
+	}
 }
 
 // freezeRelease 走 F01 的第 20 步：冻结一份快照并取回它。
@@ -813,12 +831,14 @@ func exportRouterWithUnrenderableBody(t *testing.T) *gin.Engine {
 func TestExportDownloadRejectsCorruptedPersistedBytes(t *testing.T) {
 	handler, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db, deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}), deliveryMethodChapter())
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000024_lingdoc_delivery_stores.up.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(string(migration)).Error; err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"000024_lingdoc_delivery_stores.up.sql", "000039_lingdoc_ruleset_export_reference.up.sql"} {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec(string(migration)).Error; err != nil {
+			t.Fatal(err)
+		}
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	snapshots := delivery.NewSQLiteSnapshotStore(db)

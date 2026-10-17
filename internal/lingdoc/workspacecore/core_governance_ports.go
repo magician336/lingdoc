@@ -70,7 +70,9 @@ func makeCatalogTemplateCopy(actor Actor, pid string, version int64, value Catal
 		copy.SourceRuleSetID = value.SourceRuleSetID
 		copy.SourceRuleSetVersion = value.SourceRuleSetVersion
 		copy.SourceRuleSetHash = value.SourceRuleSetHash
-		copy.RulesetHash = value.RuleSetSnapshot.RulesetHash
+		if copy.Definition.RuleSetSnapshot == nil && copy.Definition.RuleSetRef == nil {
+			copy.RulesetHash = value.RuleSetSnapshot.RulesetHash
+		}
 	}
 	copy.BindingPolicies = value.BindingPolicies
 	copy.SourcePolicyHash = value.SourcePolicyHash
@@ -79,6 +81,9 @@ func makeCatalogTemplateCopy(actor Actor, pid string, version int64, value Catal
 		if err != nil || hash != copy.SourcePolicyHash {
 			return nil, ErrInvalidState
 		}
+	}
+	if validateProjectTemplateCopy(copy) != nil {
+		return nil, ErrInvalidState
 	}
 	return copy, nil
 }

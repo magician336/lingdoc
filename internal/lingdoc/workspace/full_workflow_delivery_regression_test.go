@@ -3,9 +3,6 @@ package workspace
 import (
 	"context"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -48,21 +45,7 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 	_, db, actor, p, _ := g4AdapterFixture(t)
 	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT,is_active INTEGER NOT NULL,deleted_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`INSERT OR IGNORE INTO users(id,username,is_active) VALUES(?,?,1)`, actor.UserID, actor.UserID).Error)
-	for _, name := range []string{"000024_lingdoc_delivery_stores.up.sql"} {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
-		require.NoError(t, err)
-		lines := []string{}
-		for _, line := range strings.Split(string(raw), "\n") {
-			if !strings.HasPrefix(strings.TrimSpace(line), "--") {
-				lines = append(lines, line)
-			}
-		}
-		for _, statement := range strings.Split(strings.Join(lines, "\n"), ";") {
-			if strings.TrimSpace(statement) != "" {
-				require.NoError(t, db.Exec(statement).Error)
-			}
-		}
-	}
+	// g4AdapterFixture already applied every production LingDoc migration.
 	ctx := g4CallerContext(context.Background(), actor)
 	ctx = context.WithValue(ctx, types.TenantRoleContextKey, actor.Role)
 	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: actor.UserID})

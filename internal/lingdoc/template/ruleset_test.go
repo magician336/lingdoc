@@ -3,6 +3,7 @@ package template
 import (
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -73,6 +74,47 @@ func TestPublishRuleSetComputesHashAndCompilesAllowlistedRules(t *testing.T) {
 	}
 }
 
+func TestRuleSetRejectsInvalidSeverityBeforePublishOrBinding(t *testing.T) {
+	for _, severity := range []string{"", "fatal"} {
+		t.Run("severity_"+severity, func(t *testing.T) {
+			draft := testRuleSet()
+			draft.Bindings[0].Severity = severity
+			if _, err := PublishRuleSet(draft); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("PublishRuleSet() error = %v, want ErrInvalidRuleSet", err)
+			}
+
+			published := draft
+			published.State = RuleSetPublished
+			published.RulesetHash = strings.Repeat("a", 64)
+			if err := CanBindRuleSet(published); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("CanBindRuleSet() error = %v, want ErrInvalidRuleSet", err)
+			}
+		})
+	}
+}
+
+func TestRuleSetIdentityMatchesDatabaseLengthContract(t *testing.T) {
+	valid := testRuleSet()
+	valid.ID, valid.Version = strings.Repeat("r", 64), strings.Repeat("v", 64)
+	if _, err := PublishRuleSet(valid); err != nil {
+		t.Fatalf("64-character ruleset identity rejected: %v", err)
+	}
+
+	for _, field := range []string{"id", "version"} {
+		t.Run(field, func(t *testing.T) {
+			invalid := testRuleSet()
+			if field == "id" {
+				invalid.ID = strings.Repeat("r", 65)
+			} else {
+				invalid.Version = strings.Repeat("v", 65)
+			}
+			if err := ValidateRuleSet(invalid); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("ValidateRuleSet() error = %v, want ErrInvalidRuleSet", err)
+			}
+		})
+	}
+}
+
 func TestEvaluateRuleSetHonorsTriggerScenesAndPinsRuleSetHash(t *testing.T) {
 	published, err := PublishRuleSet(testRuleSet())
 	if err != nil {
@@ -124,6 +166,185 @@ func TestEvaluateRuleSetHonorsTriggerScenesAndPinsRuleSetHash(t *testing.T) {
 func TestEvaluateRuleSetRejectsUnsupportedScene(t *testing.T) {
 	if _, err := EvaluateRuleSet(DemoTemplate(), testRuleSet(), "export", EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"}); !errors.Is(err, ErrInvalidRuleSet) {
 		t.Fatalf("EvaluateRuleSet() error = %v, want ErrInvalidRuleSet", err)
+	}
+}
+
+func TestBoundRuleSetSnapshotCombinesTemplateRulesAndPinsCombinedHash(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition, err = WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if definition.RulesetHash == published.RulesetHash {
+		t.Fatal("combined template hash must include both legacy rules and exact RuleSet reference")
+	}
+
+	input := EvaluationInput{
+		ProjectID: "project-1", TargetVersion: "copy/1",
+		Fields:   map[string]string{"research_subject": "subject", "research_goal": "Study"},
+		Chapters: []ChapterInput{{ID: "question", Version: "q-v1", Body: "question"}, {ID: "method", Version: "m-v1", Body: "short"}},
+	}
+	writeChecks, err := EvaluateScene(definition, "write_check", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preflight, err := EvaluateScene(definition, "preflight", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contains := func(results []Evaluation, id string) bool {
+		for _, result := range results {
+			if result.RuleID == id {
+				if result.RulesetHash != definition.RulesetHash {
+					t.Fatalf("evaluation %q used hash %q, want combined hash %q", id, result.RulesetHash, definition.RulesetHash)
+				}
+				return true
+			}
+		}
+		return false
+	}
+	if !contains(writeChecks, RuleRequiredFields) || !contains(writeChecks, "goal-required") || !contains(writeChecks, "method-length") {
+		t.Fatalf("write check must run legacy and write-scoped rules: %#v", writeChecks)
+	}
+	if !contains(preflight, RuleRequiredFields) || !contains(preflight, "goal-required") || !contains(preflight, "human-review") {
+		t.Fatalf("preflight must run legacy and preflight-scoped rules: %#v", preflight)
+	}
+	if contains(preflight, "method-length") || contains(writeChecks, "human-review") {
+		t.Fatalf("scene-scoped rule ran in the wrong scene: write=%#v preflight=%#v", writeChecks, preflight)
+	}
+}
+
+func TestProjectRuleSetOverridesAreAllowlistedHashedAndEvaluated(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition.RuleSetRef = &RuleSetReference{ID: published.ID, Version: published.Version, Hash: published.RulesetHash}
+	base, err := WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	definition.RuleBindingOverrides = []RuleBindingOverride{{
+		RuleID: "disabled-pattern", Enabled: &enabled,
+		Parameters: map[string]any{"pattern": "^Grant"},
+	}}
+	configured, err := WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.RulesetHash == base.RulesetHash || configured.ContentHash == base.ContentHash {
+		t.Fatal("project overrides must affect the effective rule and content hashes")
+	}
+	if published.Bindings[3].Parameters["pattern"] != "^Study" || ValidateRuleSet(published) != nil {
+		t.Fatal("project override mutated the published RuleSet snapshot")
+	}
+	results, err := EvaluateScene(configured, "write_check", EvaluationInput{
+		ProjectID: "project-1", TargetVersion: "copy/2", Fields: map[string]string{"research_goal": "Study"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if result.RuleID == "disabled-pattern" {
+			if result.Status != EvaluationIssue || result.RuleSetID != published.ID || result.RuleSetVersion != published.Version || result.RulesetHash != configured.RulesetHash {
+				t.Fatalf("overridden rule did not report its exact effective identity: %#v", result)
+			}
+			return
+		}
+	}
+	t.Fatal("allowlisted enable and pattern override were not applied by the evaluator")
+}
+
+func TestRuleSetOverrideRejectsUnknownIdentityAndUnsafeParameters(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name     string
+		override RuleBindingOverride
+	}{
+		{name: "unknown rule", override: RuleBindingOverride{RuleID: "not-in-set", Enabled: boolPointer(true)}},
+		{name: "unknown parameter", override: RuleBindingOverride{RuleID: "disabled-pattern", Parameters: map[string]any{"expression": "true"}}},
+		{name: "severity forgery", override: RuleBindingOverride{RuleID: "disabled-pattern", Parameters: map[string]any{"severity": "info"}}},
+		{name: "invalid pattern", override: RuleBindingOverride{RuleID: "disabled-pattern", Parameters: map[string]any{"pattern": "("}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := ValidateRuleBindingOverrides(published, []RuleBindingOverride{test.override}); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("unsafe override error = %v, want ErrInvalidRuleSet", err)
+			}
+		})
+	}
+
+	draft := testRuleSet()
+	draft.Bindings[1].Parameters = map[string]any{"minimum": 0, "maximum": 100}
+	published, err = PublishRuleSet(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := RuleBindingOverride{RuleID: "method-length", Parameters: map[string]any{"minimum": 80, "maximum": 20}}
+	if err := ValidateRuleBindingOverrides(published, []RuleBindingOverride{combined}); !errors.Is(err, ErrInvalidRuleSet) {
+		t.Fatalf("combined invalid word-count range error = %v, want ErrInvalidRuleSet", err)
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
+
+func TestTemplateRejectsNonPublishedOrConflictingRuleSetSnapshot(t *testing.T) {
+	draft := testRuleSet()
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &draft
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("draft RuleSet binding error = %v, want ErrInvalidDefinition", err)
+	}
+
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	published.Bindings[0].RuleID = RuleRequiredFields
+	if err := ValidateRuleSet(published); !errors.Is(err, ErrInvalidRuleSet) {
+		t.Fatal("mutating a published RuleSet without a new hash must fail")
+	}
+
+	published, err = PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	published.Bindings[0].RuleID = RuleRequiredFields
+	published.RulesetHash, err = HashRuleSet(published)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition = DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("colliding rule IDs error = %v, want ErrInvalidDefinition", err)
+	}
+}
+
+func TestTemplateRejectsEnabledOverrideCollisionBeforeHashing(t *testing.T) {
+	draft := testRuleSet()
+	// The fourth binding is disabled in the immutable version. Its ID only
+	// conflicts with a legacy template rule after the project enables it.
+	draft.Bindings[3].RuleID = RuleRequiredFields
+	published, err := PublishRuleSet(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition.RuleBindingOverrides = []RuleBindingOverride{{RuleID: RuleRequiredFields, Enabled: boolPointer(true)}}
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("enabled RuleSet rule colliding with a legacy template rule error = %v, want ErrInvalidDefinition", err)
 	}
 }
 

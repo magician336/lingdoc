@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 	"reflect"
 	"strings"
@@ -32,6 +33,10 @@ func (r *GORMRepository) Transaction(ctx context.Context, options TransactionOpt
 }
 
 type gormTransaction struct{ db *gorm.DB }
+
+// GORMDB exposes the active transaction only to infrastructure adapters that
+// must make a cross-store read atomic with a workspace write.
+func (t gormTransaction) GORMDB() *gorm.DB { return t.db }
 
 func (t gormTransaction) ActiveMember(actor Actor) (bool, error) {
 	var count int64
@@ -92,15 +97,25 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 		if err := json.Unmarshal([]byte(copyRow.DefinitionJSON), &definition); err != nil {
 			return Project{}, err
 		}
+		ruleSetRef, err := decodeTemplateRuleSetRef(copyRow.RuleSetRefJSON)
+		if err != nil {
+			return Project{}, err
+		}
 		p.TemplateCopy = &ProjectTemplateCopy{
 			ID: copyRow.ID, ProjectID: copyRow.ProjectID, SourceTemplateID: copyRow.SourceTemplateID,
 			SourceTemplateVersion: copyRow.SourceTemplateVersion, Version: copyRow.Version, Status: copyRow.Status,
-			ContentHash: copyRow.ContentHash, RulesetHash: copyRow.RulesetHash, Definition: definition,
+			ContentHash: copyRow.ContentHash, RulesetHash: copyRow.RulesetHash, TemplateVersionRuleSetRef: ruleSetRef, Definition: definition,
 			CreatedBy: copyRow.CreatedBy, CreatedAt: copyRow.CreatedAt,
 		}
 	}
 	if err := hydrateTemplateBinding(tx, p.TemplateCopy); err != nil {
 		return Project{}, err
+	}
+	// The source policy and legacy source RuleSet live in the sidecar. Load
+	// them before checking source/effective hashes or a valid legacy copy is
+	// rejected, and a tampered canonical sidecar would escape validation.
+	if p.TemplateCopy != nil && validateProjectTemplateCopy(p.TemplateCopy) != nil {
+		return Project{}, ErrInvalidState
 	}
 	for _, m := range members {
 		member := Member{UserID: m.UserID, Role: m.Role}
@@ -145,14 +160,21 @@ func (t gormTransaction) ProjectTemplateCopy(tenantID uint64, projectID string, 
 	if err := json.Unmarshal([]byte(row.DefinitionJSON), &definition); err != nil {
 		return ProjectTemplateCopy{}, err
 	}
+	ruleSetRef, err := decodeTemplateRuleSetRef(row.RuleSetRefJSON)
+	if err != nil {
+		return ProjectTemplateCopy{}, err
+	}
 	copy := ProjectTemplateCopy{
 		ID: row.ID, ProjectID: row.ProjectID, SourceTemplateID: row.SourceTemplateID,
 		SourceTemplateVersion: row.SourceTemplateVersion, Version: row.Version, Status: row.Status,
-		ContentHash: row.ContentHash, RulesetHash: row.RulesetHash, Definition: definition,
+		ContentHash: row.ContentHash, RulesetHash: row.RulesetHash, TemplateVersionRuleSetRef: ruleSetRef, Definition: definition,
 		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt,
 	}
 	if err := hydrateTemplateBinding(t.db, &copy); err != nil {
 		return ProjectTemplateCopy{}, err
+	}
+	if validateProjectTemplateCopy(&copy) != nil {
+		return ProjectTemplateCopy{}, ErrInvalidState
 	}
 	return copy, nil
 }
@@ -253,12 +275,27 @@ func (t gormTransaction) insertProjectTemplateCopy(copy ProjectTemplateCopy) err
 	if err := saveTemplateBinding(t, copy); err != nil {
 		return err
 	}
+	ruleSetRefRaw, err := json.Marshal(copy.TemplateVersionRuleSetRef)
+	if err != nil {
+		return err
+	}
 	return t.db.Create(&projectTemplateCopyRow{
 		ID: copy.ID, ProjectID: copy.ProjectID, Version: copy.Version,
 		SourceTemplateID: copy.SourceTemplateID, SourceTemplateVersion: copy.SourceTemplateVersion,
 		Status: copy.Status, ContentHash: copy.ContentHash, RulesetHash: copy.RulesetHash,
-		DefinitionJSON: string(raw), CreatedBy: copy.CreatedBy, CreatedAt: copy.CreatedAt,
+		RuleSetRefJSON: string(ruleSetRefRaw), DefinitionJSON: string(raw), CreatedBy: copy.CreatedBy, CreatedAt: copy.CreatedAt,
 	}).Error
+}
+
+func decodeTemplateRuleSetRef(raw string) (*lingdoctemplate.RuleSetReference, error) {
+	if strings.TrimSpace(raw) == "" || strings.TrimSpace(raw) == "null" {
+		return nil, nil
+	}
+	var ref lingdoctemplate.RuleSetReference
+	if err := json.Unmarshal([]byte(raw), &ref); err != nil {
+		return nil, err
+	}
+	return &ref, nil
 }
 
 func (t gormTransaction) persistTemplateCopyTransition(previous, next Project) error {
@@ -268,6 +305,7 @@ func (t gormTransaction) persistTemplateCopyTransition(previous, next Project) e
 		}
 		if previous.TemplateCopy == nil || next.TemplateCopy == nil || previous.TemplateCopy.ID != next.TemplateCopy.ID ||
 			previous.TemplateCopy.ContentHash != next.TemplateCopy.ContentHash || previous.TemplateCopy.RulesetHash != next.TemplateCopy.RulesetHash ||
+			!reflect.DeepEqual(previous.TemplateCopy.TemplateVersionRuleSetRef, next.TemplateCopy.TemplateVersionRuleSetRef) ||
 			previous.TemplateCopy.SourceTemplateID != next.TemplateCopy.SourceTemplateID || previous.TemplateCopy.SourceTemplateVersion != next.TemplateCopy.SourceTemplateVersion ||
 			previous.TemplateCopy.Version != next.TemplateCopy.Version || previous.TemplateCopy.CreatedBy != next.TemplateCopy.CreatedBy ||
 			!previous.TemplateCopy.CreatedAt.Equal(next.TemplateCopy.CreatedAt) || previous.TemplateCopy.SourcePolicyHash != next.TemplateCopy.SourcePolicyHash || !reflect.DeepEqual(previous.TemplateCopy.BindingPolicies, next.TemplateCopy.BindingPolicies) || !reflect.DeepEqual(previous.TemplateCopy.RuleSetSnapshot, next.TemplateCopy.RuleSetSnapshot) || previous.TemplateCopy.SourceRuleSetHash != next.TemplateCopy.SourceRuleSetHash || previous.TemplateCopy.SourceRuleSetID != next.TemplateCopy.SourceRuleSetID || previous.TemplateCopy.SourceRuleSetVersion != next.TemplateCopy.SourceRuleSetVersion || !reflect.DeepEqual(previous.TemplateCopy.Definition, next.TemplateCopy.Definition) {
@@ -388,7 +426,8 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 				return nil, err
 			}
 		}
-		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Details: details, CreatedAt: row.CreatedAt})
+		reason, _ := details["reason"].(string)
+		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Reason: reason, Details: details, CreatedAt: row.CreatedAt})
 	}
 	return result, nil
 }

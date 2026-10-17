@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "LingDoc internal demo contract — proposal only",
+    "title": "LingDoc internal demo contract — proposal and implemented slices",
     "version": "0.4.0",
-    "description": "拟议新接口，非现有服务。core/optional区分实施范围；含待核事项和完整冻结输入。孤立UI例子不代替F01连续规格。"
+    "description": "本契约多数路径仍为拟议范围；RuleSet 管理与项目模板副本精确绑定、Template Check/Preflight 求值是已实现的 G4 服务切片，但尚未接入 TemplateVersion 规则集目录引用、受限覆盖及完整导出验收。core/optional 区分拟议实施范围；含待核事项和完整冻结输入。孤立 UI 例子不代替 F01 连续规格。"
   },
   "servers": [
     {
@@ -3592,577 +3592,6 @@
                 "expected_chapter_version_id": null,
                 "expected_spec_revision": 1,
                 "replace_existing": false
-              }
-            }
-          }
-        },
-        "x-delivery-phase": "core",
-        "x-domain": "workspace"
-      }
-    },
-    "/projects/{projectId}/chapters/{chapterId}/confirmations/current": {
-      "get": {
-        "operationId": "getCurrentConfirmation",
-        "tags": [
-          "workspace"
-        ],
-        "summary": "读取当前有效章节确认与完整人工处置",
-        "description": "实际只读端点。复核当前项目 read 与正文所有引用来源权限；仅返回精确当前正式版本、研究条件版本、模板版本且处置完整的有效确认。无正式版本、已失效或处置不完整时仍返回 200，data 为 null；不返回历史失效确认。读取失败不等于未确认。",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "chapterId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "当前有效确认，或显式空值；不修改正文、版本或确认。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CurrentConfirmationResponse"
-                },
-                "examples": {
-                  "current": {
-                    "value": {
-                      "data": {
-                        "id": "confirm-question",
-                        "chapter_id": "ch-question",
-                        "chapter_version_id": "cv-question-2",
-                        "spec_revision": 1,
-                        "asset_versions": [
-                          {
-                            "asset_id": "a-demo",
-                            "asset_revision": 1
-                          }
-                        ],
-                        "template_version": "1",
-                        "actor_user_id": "u-owner",
-                        "created_at": "2026-09-21T08:00:00Z",
-                        "valid": true,
-                        "review_decisions": [
-                          {
-                            "review_item_id": "review-1",
-                            "disposition": "retained_warning",
-                            "reason": "仅作内部演示，保留该项并随文件明确列出。"
-                          }
-                        ]
-                      },
-                      "request_id": "req-demo",
-                      "meta": {
-                        "replayed": false,
-                        "refresh_required": false
-                      }
-                    }
-                  },
-                  "none": {
-                    "value": {
-                      "data": null,
-                      "request_id": "req-editor-example",
-                      "meta": {
-                        "replayed": false,
-                        "refresh_required": false
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "invalid_request": {
-                    "value": {
-                      "error": {
-                        "code": "invalid_request",
-                        "message": "请求字段不符合约定。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "unauthenticated": {
-                    "value": {
-                      "error": {
-                        "code": "unauthenticated",
-                        "message": "请登录后重试。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "forbidden": {
-                    "value": {
-                      "error": {
-                        "code": "forbidden",
-                        "message": "无权执行该动作。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  },
-                  "source_access_denied": {
-                    "value": {
-                      "error": {
-                        "code": "source_access_denied",
-                        "message": "资料授权已不可用。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "not_found": {
-                    "value": {
-                      "error": {
-                        "code": "not_found",
-                        "message": "资源不存在或不可访问。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "invalid_state": {
-                    "value": {
-                      "error": {
-                        "code": "invalid_state",
-                        "message": "当前阶段不能执行该动作。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "dependency_unavailable": {
-                    "value": {
-                      "error": {
-                        "code": "dependency_unavailable",
-                        "message": "依赖暂时不可用。",
-                        "retryable": true
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "x-delivery-phase": "core",
-        "x-domain": "workspace"
-      }
-    },
-    "/projects/{projectId}/chapters/{chapterId}/working-copy/review-items/{itemId}/anchor": {
-      "put": {
-        "operationId": "setReviewItemAnchor",
-        "tags": [
-          "workspace"
-        ],
-        "summary": "关联或清除工作副本待核项的正文定位",
-        "description": "实际写端点。要求当前项目 write:chapterId、active 状态与现有待核项；当前正式版本、工作副本基版本、研究条件版本、工作副本修订必须与请求基线完全相同，否则 409 version_conflict。anchor 必须显式提供：null 清除定位；对象按当前工作副本 Markdown 的 UTF-16 零起点、右开区间验证，end 必须大于 start，quote_markdown 必须逐字匹配且不能截断代理对，否则 400 invalid_request。成功仅将工作副本修订加一并返回完整 WorkingCopy，不创建正式章节版本，不完成待核处置。提交与幂等重放均重新复核当前权限和引用来源；同动作丢失响应重试复用原操作键。",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "chapterId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "itemId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 8,
-              "maxLength": 128
-            },
-            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetReviewItemAnchorRequest"
-              },
-              "example": {
-                "expected_chapter_version_id": "cv-question-2",
-                "expected_spec_revision": 1,
-                "expected_working_copy_revision": 4,
-                "anchor": {
-                  "start_utf16": 0,
-                  "end_utf16": 4,
-                  "quote_markdown": "示例正文"
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "已持久化的完整工作副本；清除时该项省略 anchor。幂等重放以 meta.replayed 与 meta.refresh_required 标识。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/WorkingCopyResponse"
-                },
-                "examples": {
-                  "located": {
-                    "value": {
-                      "data": {
-                        "project_id": "p-demo",
-                        "chapter_id": "ch-question",
-                        "base_chapter_version_id": "cv-question-2",
-                        "spec_revision": 1,
-                        "working_copy_revision": 5,
-                        "body_markdown": "示例正文",
-                        "source_ids": [],
-                        "citation_usages": [],
-                        "review_items": [
-                          {
-                            "id": "review-1",
-                            "statement": "复核这段表述的研究依据。",
-                            "origin_candidate_id": "candidate-demo",
-                            "anchor": {
-                              "start_utf16": 0,
-                              "end_utf16": 4,
-                              "quote_markdown": "示例正文",
-                              "working_copy_revision": 5,
-                              "chapter_version_id": "cv-question-2",
-                              "status": "located"
-                            }
-                          }
-                        ],
-                        "updated_at": "2026-10-14T01:00:00Z"
-                      },
-                      "request_id": "req-editor-example",
-                      "meta": {
-                        "replayed": false,
-                        "refresh_required": false
-                      }
-                    }
-                  },
-                  "cleared": {
-                    "value": {
-                      "data": {
-                        "project_id": "p-demo",
-                        "chapter_id": "ch-question",
-                        "base_chapter_version_id": "cv-question-2",
-                        "spec_revision": 1,
-                        "working_copy_revision": 6,
-                        "body_markdown": "示例正文",
-                        "source_ids": [],
-                        "citation_usages": [],
-                        "review_items": [
-                          {
-                            "id": "review-1",
-                            "statement": "复核这段表述的研究依据。",
-                            "origin_candidate_id": "candidate-demo"
-                          }
-                        ],
-                        "updated_at": "2026-10-14T01:00:00Z"
-                      },
-                      "request_id": "req-editor-example",
-                      "meta": {
-                        "replayed": false,
-                        "refresh_required": false
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "invalid_request": {
-                    "value": {
-                      "error": {
-                        "code": "invalid_request",
-                        "message": "请求字段不符合约定。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "unauthenticated": {
-                    "value": {
-                      "error": {
-                        "code": "unauthenticated",
-                        "message": "请登录后重试。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "forbidden": {
-                    "value": {
-                      "error": {
-                        "code": "forbidden",
-                        "message": "无权执行该动作。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  },
-                  "source_access_denied": {
-                    "value": {
-                      "error": {
-                        "code": "source_access_denied",
-                        "message": "资料授权已不可用。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "not_found": {
-                    "value": {
-                      "error": {
-                        "code": "not_found",
-                        "message": "资源不存在或不可访问。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "version_conflict": {
-                    "value": {
-                      "error": {
-                        "code": "version_conflict",
-                        "message": "内容已变化，请先读取当前版本。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  },
-                  "idempotency_conflict": {
-                    "value": {
-                      "error": {
-                        "code": "idempotency_conflict",
-                        "message": "同一幂等键对应不同请求。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  },
-                  "request_in_progress": {
-                    "value": {
-                      "error": {
-                        "code": "request_in_progress",
-                        "message": "同键请求正在提交，稍后用原键重试。",
-                        "retryable": true
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            },
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                "description": "仅request_in_progress建议携带。"
-              }
-            }
-          },
-          "422": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "invalid_state": {
-                    "value": {
-                      "error": {
-                        "code": "invalid_state",
-                        "message": "当前阶段不能执行该动作。",
-                        "retryable": false
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "公共错误；具体语义见接口草案。",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "examples": {
-                  "dependency_unavailable": {
-                    "value": {
-                      "error": {
-                        "code": "dependency_unavailable",
-                        "message": "依赖暂时不可用。",
-                        "retryable": true
-                      },
-                      "request_id": "req-demo"
-                    }
-                  }
-                }
               }
             }
           }
@@ -14641,7 +14070,13 @@
                     "research_subject"
                   ],
                   "rules": [],
-                  "field_values": {}
+                  "field_values": {},
+                  "ruleset_ref": {
+                    "ruleset_id": "grant-rules",
+                    "version": "v2",
+                    "ruleset_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  "ruleset_overrides": []
                 }
               }
             }
@@ -14699,69 +14134,6 @@
           },
           "404": {
             "description": "资源不存在或不可访问"
-          }
-        },
-        "x-domain": "workspace",
-        "x-delivery-phase": "core"
-      }
-    },
-    "/projects/{projectId}/change-sets/{changeSetId}/reassess": {
-      "post": {
-        "operationId": "reassessChangeSet",
-        "tags": [
-          "workspace"
-        ],
-        "summary": "将过期变更复制到当前基线重新评估",
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "changeSetId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "Idempotency-Key",
-            "in": "header",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "minLength": 8
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              },
-              "example": {}
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "已在当前基线上创建新的评估；原过期记录保留"
-          },
-          "404": {
-            "description": "资源不存在或不可访问"
-          },
-          "409": {
-            "description": "目标字段已变化，需人工解决后重新创建"
-          },
-          "422": {
-            "description": "当前状态不允许"
           }
         },
         "x-domain": "workspace",
@@ -14894,6 +14266,640 @@
         "x-delivery-phase": "core"
       }
     },
+    "/projects/{projectId}/chapters/{chapterId}/confirmations/current": {
+      "get": {
+        "operationId": "getCurrentConfirmation",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取当前有效章节确认与完整人工处置",
+        "description": "实际只读端点。复核当前项目 read 与正文所有引用来源权限；仅返回精确当前正式版本、研究条件版本、模板版本且处置完整的有效确认。无正式版本、已失效或处置不完整时仍返回 200，data 为 null；不返回历史失效确认。读取失败不等于未确认。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前有效确认，或显式空值；不修改正文、版本或确认。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentConfirmationResponse"
+                },
+                "examples": {
+                  "current": {
+                    "value": {
+                      "data": {
+                        "id": "confirm-question",
+                        "chapter_id": "ch-question",
+                        "chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "asset_versions": [
+                          {
+                            "asset_id": "a-demo",
+                            "asset_revision": 1
+                          }
+                        ],
+                        "template_version": "1",
+                        "actor_user_id": "u-owner",
+                        "created_at": "2026-09-21T08:00:00Z",
+                        "valid": true,
+                        "review_decisions": [
+                          {
+                            "review_item_id": "review-1",
+                            "disposition": "retained_warning",
+                            "reason": "仅作内部演示，保留该项并随文件明确列出。"
+                          }
+                        ]
+                      },
+                      "request_id": "req-demo",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "none": {
+                    "value": {
+                      "data": null,
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "workspace"
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/working-copy/review-items/{itemId}/anchor": {
+      "put": {
+        "operationId": "setReviewItemAnchor",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "关联或清除工作副本待核项的正文定位",
+        "description": "实际写端点。要求当前项目 write:chapterId、active 状态与现有待核项；当前正式版本、工作副本基版本、研究条件版本、工作副本修订必须与请求基线完全相同，否则 409 version_conflict。anchor 必须显式提供：null 清除定位；对象按当前工作副本 Markdown 的 UTF-16 零起点、右开区间验证，end 必须大于 start，quote_markdown 必须逐字匹配且不能截断代理对，否则 400 invalid_request。成功仅将工作副本修订加一并返回完整 WorkingCopy，不创建正式章节版本，不完成待核处置。提交与幂等重放均重新复核当前权限和引用来源；同动作丢失响应重试复用原操作键。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetReviewItemAnchorRequest"
+              },
+              "example": {
+                "expected_chapter_version_id": "cv-question-2",
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 4,
+                "anchor": {
+                  "start_utf16": 0,
+                  "end_utf16": 4,
+                  "quote_markdown": "示例正文"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已持久化的完整工作副本；清除时该项省略 anchor。幂等重放以 meta.replayed 与 meta.refresh_required 标识。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingCopyResponse"
+                },
+                "examples": {
+                  "located": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 5,
+                        "body_markdown": "示例正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [
+                          {
+                            "id": "review-1",
+                            "statement": "复核这段表述的研究依据。",
+                            "origin_candidate_id": "candidate-demo",
+                            "anchor": {
+                              "start_utf16": 0,
+                              "end_utf16": 4,
+                              "quote_markdown": "示例正文",
+                              "working_copy_revision": 5,
+                              "chapter_version_id": "cv-question-2",
+                              "status": "located"
+                            }
+                          }
+                        ],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "cleared": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 6,
+                        "body_markdown": "示例正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [
+                          {
+                            "id": "review-1",
+                            "statement": "复核这段表述的研究依据。",
+                            "origin_candidate_id": "candidate-demo"
+                          }
+                        ],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "workspace"
+      }
+    },
+    "/projects/{projectId}/change-sets/{changeSetId}/reassess": {
+      "post": {
+        "operationId": "reassessChangeSet",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "将过期变更复制到当前基线重新评估",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已在当前基线上创建新的评估；原过期记录保留"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "目标字段已变化，需人工解决后重新创建"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
     "/template-catalog/replay-fixtures": {
       "get": {
         "operationId": "listReplayFixtures",
@@ -14992,6 +14998,720 @@
         },
         "x-delivery-phase": "core"
       }
+    },
+    "/projects/{projectId}/rule-set-use-audits": {
+      "get": {
+        "operationId": "listRuleSetUseAudits",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取项目规则集使用审计",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前租户有权读取的不可变规则集使用记录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetUseAuditListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "项目标识无效"
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前租户成员无权读取",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "规则集不存在或不可访问"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/template-copy/rule-set": {
+      "put": {
+        "operationId": "bindProjectTemplateCopyRuleSet",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "将已发布的精确 RuleSet 版本绑定到项目模板副本",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BindTemplateCopyRuleSetInput"
+              },
+              "example": {
+                "expected_project_version": 1,
+                "expected_template_copy_version": 1,
+                "ruleset_id": "grant-rules",
+                "ruleset_version": "v1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "项目模板副本已追加绑定规则集的新版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "项目或副本版本冲突"
+          },
+          "422": {
+            "description": "当前状态不允许绑定"
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/definitions": {
+      "get": {
+        "operationId": "listRuleDefinitions",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取服务端白名单规则定义",
+        "description": "需要已认证的租户成员；返回的执行器集合由服务端管理。",
+        "responses": {
+          "200": {
+            "description": "规则定义目录",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleDefinitionListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets": {
+      "post": {
+        "operationId": "createRuleSetDraft",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "创建不可变版本规则集的草稿",
+        "description": "仅租户 Owner/Admin 可写。服务端拒绝未知字段与非草稿状态，并在同一事务中校验成员身份、保存版本和审计记录。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetDraftInput"
+              },
+              "example": {
+                "ruleset_id": "grant-rules",
+                "version": "v1",
+                "state": "draft",
+                "bindings": [
+                  {
+                    "rule_id": "goal-required",
+                    "definition_id": "presence",
+                    "definition_version": "1",
+                    "origin": "organization",
+                    "target_kind": "field",
+                    "target_id": "research_goal",
+                    "severity": "blocking",
+                    "trigger_scenes": [
+                      "write_check",
+                      "preflight"
+                    ],
+                    "enabled": true,
+                    "owner": "tenant-admin"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "草稿已保存",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "规则集或请求字段无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员无权写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "该规则集版本已存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions": {
+      "get": {
+        "operationId": "listRuleSetVersions",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "列出租户内规则集版本历史",
+        "parameters": [
+          {
+            "name": "ruleSetID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按创建时间倒序排列的版本",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员不在租户内",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}": {
+      "get": {
+        "operationId": "getRuleSetVersion",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取规则集的指定历史版本",
+        "parameters": [
+          {
+            "name": "ruleSetID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "指定版本快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员不在租户内",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "版本不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}/publish": {
+      "post": {
+        "operationId": "publishRuleSetVersion",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "发布规则集草稿版本",
+        "description": "仅租户 Owner/Admin 可写；发布时由服务端校验白名单规则并计算哈希。",
+        "parameters": [
+          {
+            "name": "ruleSetID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "规则集已发布",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员无权写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "版本不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本状态不允许发布",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}/withdraw": {
+      "post": {
+        "operationId": "withdrawRuleSetVersion",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "撤回规则集版本",
+        "description": "仅阻止新绑定；保留历史版本供回放。仅租户 Owner/Admin 可写。",
+        "parameters": [
+          {
+            "name": "ruleSetID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "规则集已撤回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员无权写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "版本不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本状态不允许撤回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/rule-sets/{ruleSetID}/versions/{version}/recall": {
+      "post": {
+        "operationId": "recallRuleSetVersion",
+        "tags": [
+          "rule-governance"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "召回存在严重问题的规则集版本",
+        "description": "保留历史版本、拒绝后续绑定。仅租户 Owner/Admin 可写。",
+        "parameters": [
+          {
+            "name": "ruleSetID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "规则集已召回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前成员无权写入",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "版本不存在或不可访问",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "版本状态不允许召回",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
     }
   },
   "components": {
@@ -14999,6 +15719,12 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer"
+      },
+      "apiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "仅启用 full-access 的租户 API Key 可访问 LingDoc RuleSet 管理路由。"
       }
     },
     "schemas": {
@@ -15154,8 +15880,20 @@
               "type": "string"
             }
           },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
+          },
+          "ruleset_binding_overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleBindingOverride"
+            }
+          },
           "ruleset_hash": {
             "type": "string"
+          },
+          "ruleset_snapshot": {
+            "$ref": "#/components/schemas/RuleSet"
           },
           "content_hash": {
             "type": "string"
@@ -15456,6 +16194,15 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
+          },
+          "ruleset_overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleBindingOverride"
+            }
           }
         },
         "required": [
@@ -15680,6 +16427,9 @@
           "ruleset_hash": {
             "type": "string",
             "minLength": 1
+          },
+          "template_version_ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
           },
           "definition": {
             "$ref": "#/components/schemas/Template"
@@ -16350,6 +17100,9 @@
             "type": "string",
             "minLength": 1
           },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
+          },
           "ruleset_hash": {
             "type": "string"
           },
@@ -16540,6 +17293,9 @@
           "ruleset_hash": {
             "type": "string"
           },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -16581,6 +17337,9 @@
           "target_version": {
             "type": "string",
             "minLength": 1
+          },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
           },
           "ruleset_hash": {
             "type": "string",
@@ -16649,6 +17408,9 @@
           },
           "ruleset_hash": {
             "type": "string"
+          },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
           },
           "status": {
             "type": "string",
@@ -16742,6 +17504,9 @@
           "snapshot_digest": {
             "type": "string"
           },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
+          },
           "check": {
             "$ref": "#/components/schemas/CheckResult"
           },
@@ -16798,6 +17563,9 @@
           "snapshot_id": {
             "type": "string",
             "minLength": 1
+          },
+          "ruleset_ref": {
+            "$ref": "#/components/schemas/RuleSetReference"
           },
           "status": {
             "type": "string",
@@ -17363,192 +18131,6 @@
         ],
         "additionalProperties": false
       },
-      "ReviewAnchorSelection": {
-        "type": "object",
-        "nullable": true,
-        "description": "当前工作副本 Markdown 的 UTF-16 选段；显式 null 清除待核项定位。服务端验证区间顺序、界限、代理对与逐字引文，不接收响应中的状态或修订字段。",
-        "properties": {
-          "start_utf16": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "end_utf16": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "quote_markdown": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "required": [
-          "start_utf16",
-          "end_utf16",
-          "quote_markdown"
-        ],
-        "additionalProperties": false
-      },
-      "SetReviewItemAnchorRequest": {
-        "type": "object",
-        "properties": {
-          "expected_chapter_version_id": {
-            "type": "string",
-            "nullable": true,
-            "description": "当前正式版本与工作副本基版本；无正式版本时显式 null。"
-          },
-          "expected_spec_revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "expected_working_copy_revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "anchor": {
-            "$ref": "#/components/schemas/ReviewAnchorSelection"
-          }
-        },
-        "required": [
-          "expected_chapter_version_id",
-          "expected_spec_revision",
-          "expected_working_copy_revision",
-          "anchor"
-        ],
-        "additionalProperties": false
-      },
-      "WorkingCopy": {
-        "type": "object",
-        "description": "实际可变工作副本，独立于不可变正式章节版本。",
-        "properties": {
-          "project_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "chapter_id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "base_chapter_version_id": {
-            "type": "string",
-            "nullable": true
-          },
-          "spec_revision": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "working_copy_revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "body_markdown": {
-            "type": "string"
-          },
-          "source_ids": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            },
-            "uniqueItems": true
-          },
-          "citation_usages": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/CitationUsage"
-            }
-          },
-          "review_items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ReviewItem"
-            }
-          },
-          "updated_at": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "required": [
-          "project_id",
-          "chapter_id",
-          "base_chapter_version_id",
-          "spec_revision",
-          "working_copy_revision",
-          "body_markdown",
-          "source_ids",
-          "citation_usages",
-          "review_items",
-          "updated_at"
-        ],
-        "additionalProperties": false
-      },
-      "WorkingCopyResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/WorkingCopy"
-          },
-          "request_id": {
-            "type": "string"
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ResponseMeta"
-          }
-        },
-        "required": [
-          "data",
-          "request_id",
-          "meta"
-        ],
-        "additionalProperties": false
-      },
-      "CurrentConfirmationResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "oneOf": [
-              {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/Confirmation"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "valid": {
-                        "type": "boolean",
-                        "enum": [
-                          true
-                        ]
-                      }
-                    }
-                  }
-                ]
-              },
-              {
-                "type": "object",
-                "nullable": true,
-                "enum": [
-                  null
-                ]
-              }
-            ],
-            "description": "仅当前有效确认；没有符合当前基线的完整确认时为 null。"
-          },
-          "request_id": {
-            "type": "string"
-          },
-          "meta": {
-            "$ref": "#/components/schemas/ResponseMeta"
-          }
-        },
-        "required": [
-          "data",
-          "request_id",
-          "meta"
-        ],
-        "additionalProperties": false
-      },
       "ConfirmationResponse": {
         "type": "object",
         "properties": {
@@ -17793,47 +18375,6 @@
           "request_id"
         ],
         "additionalProperties": false
-      },
-      "ReviewAnchor": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "start_utf16",
-          "end_utf16",
-          "quote_markdown",
-          "working_copy_revision",
-          "chapter_version_id",
-          "status"
-        ],
-        "properties": {
-          "start_utf16": {
-            "type": "integer",
-            "minimum": 0
-          },
-          "end_utf16": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "quote_markdown": {
-            "type": "string",
-            "minLength": 1
-          },
-          "working_copy_revision": {
-            "type": "integer",
-            "minimum": 1
-          },
-          "chapter_version_id": {
-            "type": "string",
-            "nullable": true
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "located",
-              "stale"
-            ]
-          }
-        }
       },
       "ReviewItem": {
         "type": "object",
@@ -18247,6 +18788,233 @@
         ],
         "additionalProperties": false
       },
+      "ReviewAnchorSelection": {
+        "type": "object",
+        "nullable": true,
+        "description": "当前工作副本 Markdown 的 UTF-16 选段；显式 null 清除待核项定位。服务端验证区间顺序、界限、代理对与逐字引文，不接收响应中的状态或修订字段。",
+        "properties": {
+          "start_utf16": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_utf16": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "quote_markdown": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "start_utf16",
+          "end_utf16",
+          "quote_markdown"
+        ],
+        "additionalProperties": false
+      },
+      "SetReviewItemAnchorRequest": {
+        "type": "object",
+        "properties": {
+          "expected_chapter_version_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "当前正式版本与工作副本基版本；无正式版本时显式 null。"
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "anchor": {
+            "$ref": "#/components/schemas/ReviewAnchorSelection"
+          }
+        },
+        "required": [
+          "expected_chapter_version_id",
+          "expected_spec_revision",
+          "expected_working_copy_revision",
+          "anchor"
+        ],
+        "additionalProperties": false
+      },
+      "WorkingCopy": {
+        "type": "object",
+        "description": "实际可变工作副本，独立于不可变正式章节版本。",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chapter_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body_markdown": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CitationUsage"
+            }
+          },
+          "review_items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ReviewItem"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "project_id",
+          "chapter_id",
+          "base_chapter_version_id",
+          "spec_revision",
+          "working_copy_revision",
+          "body_markdown",
+          "source_ids",
+          "citation_usages",
+          "review_items",
+          "updated_at"
+        ],
+        "additionalProperties": false
+      },
+      "WorkingCopyResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkingCopy"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "CurrentConfirmationResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "oneOf": [
+              {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/Confirmation"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "valid": {
+                        "type": "boolean",
+                        "enum": [
+                          true
+                        ]
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ],
+            "description": "仅当前有效确认；没有符合当前基线的完整确认时为 null。"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "ReviewAnchor": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "start_utf16",
+          "end_utf16",
+          "quote_markdown",
+          "working_copy_revision",
+          "chapter_version_id",
+          "status"
+        ],
+        "properties": {
+          "start_utf16": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_utf16": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "quote_markdown": {
+            "type": "string",
+            "minLength": 1
+          },
+          "working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "located",
+              "stale"
+            ]
+          }
+        }
+      },
       "FrozenSpecProvenanceRef": {
         "type": "object",
         "additionalProperties": false,
@@ -18404,6 +19172,505 @@
             "$ref": "#/components/schemas/ResponseMeta"
           }
         }
+      },
+      "BindTemplateCopyRuleSetInput": {
+        "type": "object",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_template_copy_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ruleset_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "ruleset_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleBindingOverride"
+            }
+          }
+        },
+        "required": [
+          "expected_project_version",
+          "expected_template_copy_version",
+          "ruleset_id",
+          "ruleset_version"
+        ],
+        "additionalProperties": false
+      },
+      "RuleDefinition": {
+        "type": "object",
+        "properties": {
+          "definition_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "presence",
+              "pattern",
+              "consistency",
+              "computed",
+              "model_assisted"
+            ]
+          },
+          "evaluator": {
+            "type": "string"
+          },
+          "allowed_target_kinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "definition_id",
+          "definition_version",
+          "kind"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetUseAuditEvent": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tenant_id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "actor_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "project_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "check",
+              "preflight",
+              "release_snapshot",
+              "export"
+            ]
+          },
+          "ruleset_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "ruleset_version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "ruleset_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "effective_ruleset_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "template_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template_copy_id": {
+            "type": "string"
+          },
+          "template_copy_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "project_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "resource_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string",
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "tenant_id",
+          "actor_id",
+          "actor_role",
+          "project_id",
+          "action",
+          "ruleset_id",
+          "ruleset_version",
+          "ruleset_hash",
+          "effective_ruleset_hash",
+          "template_id",
+          "template_version",
+          "outcome",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetUseAuditListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RuleSetUseAuditEvent"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RuleBinding": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "builtin",
+              "organization",
+              "project"
+            ]
+          },
+          "target_kind": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "blocking"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "trigger_scenes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "write_check",
+                "preflight"
+              ]
+            }
+          },
+          "positive_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "negative_example_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "rule_id",
+          "definition_id",
+          "definition_version",
+          "origin",
+          "severity",
+          "trigger_scenes",
+          "enabled",
+          "owner"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetReference": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "ruleset_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "ruleset_id",
+          "version",
+          "ruleset_hash"
+        ],
+        "additionalProperties": false
+      },
+      "RuleBindingOverride": {
+        "type": "object",
+        "properties": {
+          "rule_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "parameters": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "rule_id"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSet": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "withdrawn",
+              "recalled"
+            ]
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleBinding"
+            }
+          },
+          "ruleset_hash": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "ruleset_id",
+          "version",
+          "state",
+          "bindings"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetDraftInput": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft"
+            ]
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuleBinding"
+            }
+          }
+        },
+        "required": [
+          "ruleset_id",
+          "version",
+          "bindings"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RuleSet"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RuleSet"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RuleDefinitionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/RuleDefinition"
+                }
+              }
+            },
+            "required": [
+              "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
       }
     }
   },
@@ -18419,6 +19686,10 @@
     {
       "name": "delivery",
       "description": "模板与交付服务，不指定开发人员"
+    },
+    {
+      "name": "rule-governance",
+      "description": "RuleSet catalog, versions, and lifecycle governance"
     }
   ]
 }

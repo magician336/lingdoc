@@ -3,14 +3,17 @@ package container
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/dig"
 	"gorm.io/gorm"
 )
@@ -22,6 +25,7 @@ type LingDocWorkspace struct {
 	dig.Out
 	Guard       *workspace.FullWorkflowGuard
 	Handler     *workspace.Handler
+	RuleSets    *rulesetstore.HTTPHandler
 	Projects    workspace.ApplicationService
 	Integration workspace.WorkspaceIntegration
 	Runtime     *workspace.SourceRuntime
@@ -43,7 +47,9 @@ func NewLingDocWorkspaceHandler(
 	}
 	auditSink := workspaceAuditSink{service: audit}
 	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge, templates, auditSink)
-	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), nil, auditSink)
+	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
+	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), nil, auditSink).
+		WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
 	runtime.ConnectProjects(projectService)
 	runtime.EnableFullWorkflowPolicy()
 	projectService.RequireActivationRead(true)
@@ -60,7 +66,11 @@ func NewLingDocWorkspaceHandler(
 	guard := workspace.NewFullWorkflowGuard(projectService, runtime)
 	handler := workspace.NewHandler(workspace.HandlerDependencies{
 		FullWorkflow:     &workspace.FullWorkflowDependencies{Core: projectService, Governance: governance},
-		Service:          projectService,
+		Projects:         projectService,
+		Members:          projectService,
+		Chapters:         projectService,
+		TemplateApp:      projectService,
+		ChangeSets:       projectService,
 		Read:             projectService,
 		Write:            projectService,
 		Sources:          runtime,
@@ -68,7 +78,62 @@ func NewLingDocWorkspaceHandler(
 		Templates:        templates,
 		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
 	})
-	return LingDocWorkspace{Guard: guard, Handler: handler, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}, nil
+	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}, nil
+}
+
+type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }
+
+func (r workspaceRuleSetSnapshotReader) GetVersion(ctx context.Context, actor workspacecore.Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	if r.store == nil {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrInvalidState
+	}
+	role := string(actor.Role)
+	if role == "" {
+		role = actor.TenantRole
+	}
+	set, err := r.store.GetVersion(ctx, rulesetstore.Actor{TenantID: actor.TenantID, UserID: actor.UserID, Role: role}, id, version)
+	if errors.Is(err, rulesetstore.ErrRuleSetNotFound) {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrNotFound
+	}
+	if errors.Is(err, rulesetstore.ErrRuleSetAccessDenied) {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrNotFound
+	}
+	return set, err
+}
+
+func (r workspaceRuleSetSnapshotReader) GetVersionInTransaction(ctx context.Context, tx workspacecore.Transaction, actor workspacecore.Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	if r.store == nil {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrInvalidState
+	}
+	dbTx, ok := tx.(interface{ GORMDB() *gorm.DB })
+	if !ok {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrInvalidState
+	}
+	role := string(actor.Role)
+	if role == "" {
+		role = actor.TenantRole
+	}
+	set, err := r.store.GetVersionForBinding(ctx, dbTx.GORMDB(), rulesetstore.Actor{TenantID: actor.TenantID, UserID: actor.UserID, Role: role}, id, version)
+	if errors.Is(err, rulesetstore.ErrRuleSetNotFound) || errors.Is(err, rulesetstore.ErrRuleSetAccessDenied) {
+		return lingdoctemplate.RuleSet{}, workspacecore.ErrNotFound
+	}
+	return set, err
+}
+
+func lingDocRuleSetRequestInfo(c *gin.Context) (rulesetstore.Actor, string, bool) {
+	ctx := c.Request.Context()
+	userID, userOK := types.UserIDFromContext(ctx)
+	tenantID, tenantOK := types.TenantIDFromContext(ctx)
+	requestID, _ := types.RequestIDFromContext(ctx)
+	if !userOK || !tenantOK || tenantID == 0 {
+		return rulesetstore.Actor{}, requestID, false
+	}
+	return rulesetstore.Actor{
+		TenantID: tenantID,
+		UserID:   userID,
+		Role:     string(types.TenantRoleFromContext(ctx)),
+	}, requestID, true
 }
 
 // NewLingDocTemplateCatalog supplies one explicit reader to every consumer.

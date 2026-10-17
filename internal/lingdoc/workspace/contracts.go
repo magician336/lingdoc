@@ -33,6 +33,7 @@ type ApplicationService interface {
 	GetTemplateCopy(context.Context, Actor, string, int64) (ProjectTemplateCopy, error)
 	PreviewTemplateCopyEdit(context.Context, Actor, string, TemplateCopyDefinitionInput) (TemplateMigrationPreview, error)
 	SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error)
+	BindTemplateCopyRuleSetResult(context.Context, Actor, string, string, BindTemplateCopyRuleSetInput) (ProjectMutationResult, error)
 	DiscardProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
 	RestoreProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
 	ListChapters(context.Context, Actor, string) ([]Chapter, error)
@@ -80,6 +81,7 @@ type WorkspaceWriteApplication interface {
 	CreateDraftCandidateResult(context.Context, Actor, string, string, DraftCandidateInput) (DraftCandidateMutationResult, error)
 	ChangeTemplateResult(context.Context, Actor, string, string, TemplateMigrationInput) (ProjectMutationResult, error)
 	SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error)
+	BindTemplateCopyRuleSetResult(context.Context, Actor, string, string, BindTemplateCopyRuleSetInput) (ProjectMutationResult, error)
 	DiscardProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
 	RestoreProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
 	SaveMembersResult(context.Context, Actor, string, string, SaveMembersInput) (ProjectMutationResult, error)
@@ -148,6 +150,7 @@ type TemplateApplication interface {
 	PreviewTemplateCopyEdit(context.Context, Actor, string, TemplateCopyDefinitionInput) (TemplateMigrationPreview, error)
 	ChangeTemplateResult(context.Context, Actor, string, string, TemplateMigrationInput) (ProjectMutationResult, error)
 	SaveTemplateCopyResult(context.Context, Actor, string, string, TemplateCopyDefinitionInput) (ProjectMutationResult, error)
+	BindTemplateCopyRuleSetResult(context.Context, Actor, string, string, BindTemplateCopyRuleSetInput) (ProjectMutationResult, error)
 }
 
 // ChangeSetApplication is the focused application port for context-change

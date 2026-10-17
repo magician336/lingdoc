@@ -124,6 +124,59 @@ func (s *Store) GetVersion(ctx context.Context, actor Actor, id, version string)
 	return result, err
 }
 
+// GetVersionForBinding reads and locks an exact RuleSet version on the caller's
+// transaction. This lets a project bind serialize with concurrent withdraw or
+// recall transitions instead of persisting a snapshot checked on another
+// connection.
+func (s *Store) GetVersionForBinding(ctx context.Context, tx *gorm.DB, actor Actor, id, version string) (template.RuleSet, error) {
+	if s == nil || tx == nil {
+		return template.RuleSet{}, errors.New("ruleset binding transaction is unavailable")
+	}
+	if actor.TenantID == 0 {
+		return template.RuleSet{}, ErrRuleSetTenantRequired
+	}
+	if strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(actor.Role) == "" {
+		return template.RuleSet{}, ErrActorRequired
+	}
+	if s.authorizer == nil {
+		return template.RuleSet{}, ErrAuthorizerUnavailable
+	}
+	var result template.RuleSet
+	err := tx.WithContext(ctx).Transaction(func(bindingTx *gorm.DB) error {
+		// PostgreSQL honors SELECT FOR UPDATE below, but SQLite ignores row
+		// locking clauses. A no-op update obtains SQLite's write reservation so
+		// a concurrent withdraw/recall cannot commit between the state read and
+		// the project's bound snapshot write.
+		lock := bindingTx.Model(&ruleSetVersionRow{}).
+			Where("tenant_id = ? AND ruleset_id = ? AND version = ?", actor.TenantID, id, version).
+			UpdateColumn("state", gorm.Expr("state"))
+		if lock.Error != nil {
+			return lock.Error
+		}
+		if lock.RowsAffected == 0 {
+			return ErrRuleSetNotFound
+		}
+		var row ruleSetVersionRow
+		query := bindingTx.Clauses(clause.Locking{Strength: "UPDATE"})
+		if err := query.Where("tenant_id = ? AND ruleset_id = ? AND version = ?", actor.TenantID, id, version).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrRuleSetNotFound
+			}
+			return err
+		}
+		set, err := decodeRuleSet(row)
+		if err != nil {
+			return err
+		}
+		if err := s.authorize(ctx, bindingTx, actor, ActionRead, &set); err != nil {
+			return err
+		}
+		result = set
+		return nil
+	})
+	return result, err
+}
+
 // ListVersions returns a stable newest-first history for one ruleset identity.
 func (s *Store) ListVersions(ctx context.Context, actor Actor, id string) ([]template.RuleSet, error) {
 	if err := s.validateActor(actor); err != nil {
@@ -263,7 +316,7 @@ func recordAudit(tx *gorm.DB, actor Actor, set template.RuleSet, action Action, 
 	}
 	now := time.Now().UTC()
 	query := "INSERT INTO audit_logs (tenant_id, actor_user_id, actor_role, action, target_type, target_id, outcome, details, scope_type, scope_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-	if tx.Name() == "postgres" {
+	if tx.Dialector.Name() == "postgres" {
 		query = "INSERT INTO audit_logs (tenant_id, actor_user_id, actor_role, action, target_type, target_id, outcome, details, scope_type, scope_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?)"
 	}
 	return tx.Exec(query,
@@ -271,6 +324,14 @@ func recordAudit(tx *gorm.DB, actor Actor, set template.RuleSet, action Action, 
 		"ruleset_version", auditTargetID(set.ID, set.Version), "success", string(details),
 		"lingdoc_ruleset", set.ID, now,
 	).Error
+}
+
+// auditTargetID fits the shared audit_logs.target_id VARCHAR(64) while keeping
+// a deterministic reference to the full (ruleset ID, version) pair. The
+// unabridged values remain in the JSON details for human-readable lookup.
+func auditTargetID(id, version string) string {
+	sum := sha256.Sum256([]byte(id + "\x00" + version))
+	return hex.EncodeToString(sum[:])
 }
 
 type ruleSetVersionRow struct {
@@ -289,9 +350,3 @@ func (ruleSetVersionRow) TableName() string { return "lingdoc_rule_sets" }
 // A shared read-only option avoids accidentally turning list/read calls into
 // writable transactions in database backends that enforce transaction modes.
 var sqlTxReadOnly = &sql.TxOptions{ReadOnly: true}
-
-// Fixed-size audit identity; full identifiers remain in structured details.
-func auditTargetID(id, version string) string {
-	sum := sha256.Sum256([]byte(id + "/" + version))
-	return hex.EncodeToString(sum[:])
-}

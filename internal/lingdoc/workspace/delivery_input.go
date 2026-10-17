@@ -171,7 +171,7 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		contentHash, rulesetHash, hashErr := lingdoctemplate.Hashes(template)
 		if hashErr != nil || input.TemplateCopyID == "" || input.TemplateCopyVersion < 1 ||
 			contentHash != input.TemplateCopyContentHash || rulesetHash != template.RulesetHash ||
-			(input.RuleSetSnapshot == nil && rulesetHash != input.TemplateCopyRulesetHash) ||
+			((template.RuleSetSnapshot != nil || template.RuleSetRef != nil || input.RuleSetSnapshot == nil) && rulesetHash != input.TemplateCopyRulesetHash) ||
 			template.ID != input.TemplateID || template.Version != input.TemplateVersion {
 			return delivery.DeliveryInput{}, fmt.Errorf("%w: project template copy is invalid or stale", candidateadoption.ErrInvalidState)
 		}

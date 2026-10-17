@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/google/uuid"
@@ -181,6 +182,11 @@ func (s *GuardedDeliveryRelease) Check(ctx context.Context, user, pid string, ex
 			receiptStatus = "blocked"
 		}
 	}
+	// This wrapper evaluates directly rather than calling base.Check; use the
+	// same governed audit path before any durable computation receipt is written.
+	if err = s.recordRuleSetUse(ctx, user, input, "preflight", "", string(out.Status)); err != nil {
+		return delivery.CheckResult{}, err
+	}
 	receipt, err := s.guard.Core.StoreImpactComputationReceipt(ctx, a, basis, hex.EncodeToString(sum[:]), receiptStatus, evaluations, basis.SourceIDs)
 	if err != nil {
 		return out, err
@@ -328,13 +334,41 @@ func (r *fullWorkflowExportRecorder) ReplayExport(attempt delivery.ExportAttempt
 	return r.ExportStore.(delivery.ExportRecorder).ReplayExport(attempt, requestHash)
 }
 
-func (r *fullWorkflowExportRecorder) RecordExport(artifact delivery.ExportArtifact, attempt delivery.ExportAttempt, requestHash string) (out delivery.ExportArtifact, replay bool, err error) {
+var _ delivery.ExportRecorder = (*fullWorkflowExportRecorder)(nil)
+var _ delivery.RuleSetUseExportRecorder = (*fullWorkflowExportRecorder)(nil)
+
+func (r *fullWorkflowExportRecorder) RecordExport(artifact delivery.ExportArtifact, attempt delivery.ExportAttempt, requestHash string) (delivery.ExportArtifact, bool, error) {
+	return r.recordExport(artifact, attempt, requestHash, nil)
+}
+
+func (r *fullWorkflowExportRecorder) RecordExportWithRuleSetUse(artifact delivery.ExportArtifact, attempt delivery.ExportAttempt, requestHash string, event template.RuleSetUseAuditEvent) (delivery.ExportArtifact, bool, error) {
+	return r.recordExport(artifact, attempt, requestHash, &event)
+}
+
+func (r *fullWorkflowExportRecorder) recordExport(artifact delivery.ExportArtifact, attempt delivery.ExportAttempt, requestHash string, useEvent *template.RuleSetUseAuditEvent) (out delivery.ExportArtifact, replay bool, err error) {
 	if attempt.ActorID != r.actor.UserID || attempt.ProjectID != artifact.ProjectID {
 		return out, false, core.ErrNotFound
 	}
 	snapshot, err := r.base.snapshots.Get(artifact.ProjectID, artifact.SnapshotID)
 	if err != nil {
 		return out, false, err
+	}
+	if useEvent == nil {
+		if artifact.RuleSetRef != nil {
+			return out, false, core.ErrInvalidState
+		}
+	} else {
+		ref := template.RuleSetReferenceFor(snapshot.FrozenInput.Template)
+		if ref == nil || artifact.RuleSetRef == nil || *artifact.RuleSetRef != *ref ||
+			useEvent.TenantID != r.actor.TenantID || useEvent.ActorID != r.actor.UserID || useEvent.ActorRole != string(r.actor.Role) ||
+			useEvent.ProjectID != artifact.ProjectID || useEvent.ResourceID != artifact.ID || useEvent.Action != "export" || useEvent.Outcome != string(artifact.Status) ||
+			useEvent.RuleSetID != ref.ID || useEvent.RuleSetVersion != ref.Version || useEvent.RuleSetHash != ref.Hash ||
+			useEvent.EffectiveRulesetHash != snapshot.FrozenInput.Template.RulesetHash ||
+			useEvent.TemplateID != snapshot.FrozenInput.Template.ID || useEvent.TemplateVersion != snapshot.FrozenInput.Template.Version ||
+			useEvent.TemplateCopyID != snapshot.FrozenInput.TemplateCopyID || useEvent.TemplateCopyVersion != snapshot.FrozenInput.TemplateCopyVersion ||
+			useEvent.ProjectVersion != int64(snapshot.FrozenInput.ProjectVersion) {
+			return out, false, core.ErrInvalidRequest
+		}
 	}
 	byID := map[string]core.DeliveryExportSourceRef{}
 	for _, source := range snapshot.FrozenInput.Sources {
@@ -397,6 +431,13 @@ func (r *fullWorkflowExportRecorder) RecordExport(artifact delivery.ExportArtifa
 			return err
 		}
 		if !replay {
+			// The governed use audit joins the existing parent transaction, so
+			// either audit failure rolls back artifact, action and both audits.
+			if useEvent != nil {
+				if err := rulesetstore.RecordRuleSetUseInTransaction(tx, *useEvent); err != nil {
+					return err
+				}
+			}
 			audit, ok := port.(interface{ RecordAudit(core.AuditEvent) error })
 			if !ok {
 				return core.ErrInvalidState

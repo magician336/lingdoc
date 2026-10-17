@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -72,36 +73,13 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
 	if !db.Migrator().HasTable(&projectRow{}) {
-		for _, name := range []string{
-			"000018_lingdoc_workspace.up.sql",
-			"000019_lingdoc_evidence_assets.up.sql",
-			"000020_lingdoc_candidate_adoption.up.sql",
-			"000023_lingdoc_chapter_confirmation_requests.up.sql",
-			"000025_lingdoc_member_permissions.up.sql",
-			"000026_lingdoc_project_context_revision.up.sql",
-			"000027_lingdoc_draft_provenance.up.sql",
-			"000028_lingdoc_owner_transfers.up.sql",
-			"000029_lingdoc_project_discard.up.sql",
-			"000030_lingdoc_project_baseline.up.sql",
-			"000031_lingdoc_citation_usages.up.sql",
-			"000032_lingdoc_change_sets.up.sql",
-			"000033_lingdoc_working_copies.up.sql",
-			"000034_lingdoc_selected_rewrites.up.sql",
-			"000035_lingdoc_project_template_copies.up.sql",
-			"000036_lingdoc_rule_sets.up.sql",
-			"000037_lingdoc_full_workflow.up.sql",
-		} {
+		for _, name := range productionLingDocMigrationNames(t, "sqlite") {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, stmt := range strings.Split(stripSQLLineComments(string(migration)), ";") {
-				if strings.TrimSpace(stmt) == "" {
-					continue
-				}
-				if err := db.Exec(stmt).Error; err != nil {
-					t.Fatalf("production SQLite migration %s: %v", name, err)
-				}
+			if err := db.Exec(string(migration)).Error; err != nil {
+				t.Fatalf("production SQLite migration %s: %v", name, err)
 			}
 		}
 	}
@@ -936,6 +914,43 @@ func TestProjectTemplateCopyIsPrivateVersionedAndDurable(t *testing.T) {
 	}
 	if _, _, _, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-blocking", unsafeEdit); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("project-authored blocking rule was accepted: %v", err)
+	}
+}
+
+func TestTemplateVersionRuleSetReferenceIsPersistedAndReadBack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "template-version-ruleset-ref.db")
+	svc := testStore(t, path)
+	ctx := context.Background()
+	owner := Actor{TenantID: 890, UserID: "owner", Role: types.TenantRoleAdmin}
+	seedTenantMember(t, svc, owner)
+	created, _, _, err := svc.CreateProject(ctx, owner, "ruleset-ref-create", CreateProjectInput{Name: "规则引用读回", TemplateID: lingdoctemplate.DemoTemplateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	set := publishedWorkspaceRuleSet(t)
+	service := svc.WithRuleSetSnapshotReader(&transactionalRuleSetSnapshotReaderStub{set: set})
+	boundRaw, _, _, err := service.BindTemplateCopyRuleSet(ctx, owner, project.ID, "ruleset-ref-bind", BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetID: set.ID, RuleSetVersion: set.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := asProject(t, boundRaw)
+	ref := bound.TemplateCopy.TemplateVersionRuleSetRef
+	if ref == nil || ref.ID != set.ID || ref.Version != set.Version || ref.Hash != set.RulesetHash {
+		t.Fatalf("bound TemplateVersion reference = %+v, want exact RuleSet identity/version/hash", ref)
+	}
+	// Reopen through a separate service/DB handle and read the explicit
+	// template-version column, not merely the serialized evaluator snapshot.
+	restarted := testStore(t, path)
+	persisted, err := restarted.GetTemplateCopy(ctx, owner, bound.ID, bound.TemplateCopyVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.TemplateVersionRuleSetRef == nil || *persisted.TemplateVersionRuleSetRef != *ref || persisted.Definition.RuleSetRef == nil || *persisted.Definition.RuleSetRef != *ref {
+		t.Fatalf("TemplateVersion reference did not survive database reopen: persisted=%+v definition=%+v want=%+v", persisted.TemplateVersionRuleSetRef, persisted.Definition.RuleSetRef, ref)
 	}
 }
 

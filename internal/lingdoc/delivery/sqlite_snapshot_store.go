@@ -4,11 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
-	"time"
-
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -176,6 +177,20 @@ func (s *SQLiteSnapshotStore) RecordFreeze(snapshot ReleaseSnapshot, attempt Fre
 	return stored, false, nil
 }
 
+func (s *SQLiteSnapshotStore) RecordFreezeWithRuleSetUse(snapshot ReleaseSnapshot, attempt FreezeAttempt, requestHash string, event lingdoctemplate.RuleSetUseAuditEvent) (ReleaseSnapshot, bool, error) {
+	var stored ReleaseSnapshot
+	var replayed bool
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		stored, replayed, err = (&SQLiteSnapshotStore{db: tx}).RecordFreeze(snapshot, attempt, requestHash)
+		if err != nil || replayed {
+			return err
+		}
+		return rulesetstore.RecordRuleSetUseInTransaction(tx, event)
+	})
+	return stored, replayed, err
+}
+
 // lookupFreeze 读这次动作记下的那一行。gorm.ErrRecordNotFound 原样透出：两个调用方
 // 对「查不到」的处置不同，由它们各自决定（读侧答「这个动作还没做过」，写侧把它
 // 当成一次说不清原因的跳过）。
@@ -240,7 +255,7 @@ func snapshotFromRow(row releaseSnapshotRow) (ReleaseSnapshot, error) {
 		return ReleaseSnapshot{}, err
 	}
 	return ReleaseSnapshot{
-		ID: row.ID, ProjectID: row.ProjectID, FrozenInput: frozen,
+		ID: row.ID, ProjectID: row.ProjectID, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(frozen.Template), FrozenInput: frozen,
 		SnapshotDigest: row.SnapshotDigest, Check: check, IsCurrent: row.IsCurrent,
 		// 读侧也归一，且不只是为了排序：两个实现的 DeepEqual 会因为
 		// time.Location 指针不同而撒谎，.UTC() 让两边落在同一个 location 上。
@@ -248,16 +263,11 @@ func snapshotFromRow(row releaseSnapshotRow) (ReleaseSnapshot, error) {
 	}, nil
 }
 
-// storageInput 是 DeliveryInput 的存储形状。它存在的唯一理由：领域类型里有三个
-// json:"-" 的字段——SnapshotChapter.SectionID 与 CheckIssue.Code/ChapterID——
-// 整块 marshal 会把它们**静默**丢掉，而 Evaluate 正是按 chapter.SectionID 判
-// 「模板必填章节齐了没有」。丢了的症状是：一份冻结时 passed 的快照读回来会多出
-// required_section 阻断项，而没有任何一条按新输入算检查的用例会红。
-//
-// 严格说只有这三个字段需要另存（别处都跟领域类型同形），但那份「与主结构体逐字段
-// 对应的影子结构体」正是 canonicalJSON 的注释里已经否掉的做法：主结构体新增字段时
-// 影子不会跟着长，会**静默**漏掉那个字段。所以这里不追求逐字段对应，只追求
-// 「新字段照抄一份」这件事发生在一处、且被往返测试盯着（sqlite_store_test.go）。
+// storageInput 是 DeliveryInput 的存储形状。SectionID 是一个 json:"-" 字段，
+// 整块 marshal 会把它**静默**丢掉，而 Evaluate 正是按 chapter.SectionID 判「模板必填
+// 章节齐了没有」。此外，模板副本身份字段也必须显式存取：它们只用于快照审计/回放，
+// 若遗漏，规则结果仍看似正确，但导出审计无法指回确切的 TemplateVersion 副本。
+// 这些非同形字段由本 DTO 与 sqlite_store_test.go 的往返用例共同固定。
 type storageInput struct {
 	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
 	TemplateCopyRulesetHash string                     `json:"template_copy_ruleset_hash,omitempty"`
@@ -271,18 +281,19 @@ type storageInput struct {
 	TemplateCopyVersion     int64  `json:"template_copy_version,omitempty"`
 	TemplateCopyContentHash string `json:"template_copy_content_hash,omitempty"`
 
-	ProjectID      string                          `json:"project_id"`
-	ProjectName    string                          `json:"project_name"`
-	ProjectVersion int                             `json:"project_version"`
-	SpecRevision   int                             `json:"spec_revision"`
-	Spec           map[string]string               `json:"spec"`
-	SpecProvenance *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
-	Template       Template                        `json:"template"`
-	Chapters       []storageChapter                `json:"chapters"`
-	Sources        []FrozenSource                  `json:"sources"`
-	AssetVersions  []AssetVersion                  `json:"asset_versions"`
-	PolicyAssetIDs []string                        `json:"policy_asset_ids"`
-	DeliveryKind   string                          `json:"delivery_kind"`
+	ProjectID       string                          `json:"project_id"`
+	ProjectName     string                          `json:"project_name"`
+	ProjectVersion  int                             `json:"project_version"`
+	SpecRevision    int                             `json:"spec_revision"`
+	ContextRevision int64                           `json:"context_revision,omitempty"`
+	Spec            map[string]string               `json:"spec"`
+	SpecProvenance  *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
+	Template        Template                        `json:"template"`
+	Chapters        []storageChapter                `json:"chapters"`
+	Sources         []FrozenSource                  `json:"sources"`
+	AssetVersions   []AssetVersion                  `json:"asset_versions"`
+	PolicyAssetIDs  []string                        `json:"policy_asset_ids"`
+	DeliveryKind    string                          `json:"delivery_kind"`
 }
 
 // storageChapter 在外层补一个 SectionID。外层字段比嵌入的那一层浅，encoding/json
@@ -295,11 +306,12 @@ type storageChapter struct {
 
 // storageCheck 与 storageIssue 同理：CheckIssue.Code 与 ChapterID 也是 json:"-"。
 type storageCheck struct {
-	ReceiptID      string         `json:"receipt_id,omitempty"`
-	ProjectVersion int            `json:"project_version"`
-	RulesetHash    string         `json:"ruleset_hash"`
-	Status         CheckStatus    `json:"status"`
-	Issues         []storageIssue `json:"issues"`
+	ReceiptID      string                            `json:"receipt_id,omitempty"`
+	ProjectVersion int                               `json:"project_version"`
+	RulesetHash    string                            `json:"ruleset_hash"`
+	RuleSetRef     *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Status         CheckStatus                       `json:"status"`
+	Issues         []storageIssue                    `json:"issues"`
 }
 
 type storageIssue struct {
@@ -311,7 +323,7 @@ type storageIssue struct {
 func encodeFrozenInput(input DeliveryInput) (string, error) {
 	stored := storageInput{
 		ProjectID: input.ProjectID, ProjectName: input.ProjectName,
-		ProjectVersion: input.ProjectVersion, SpecRevision: input.SpecRevision,
+		ProjectVersion: input.ProjectVersion, SpecRevision: input.SpecRevision, ContextRevision: input.ContextRevision,
 		Spec: input.Spec, SpecProvenance: input.SpecProvenance, Template: input.Template,
 		RuleSetSnapshot: input.RuleSetSnapshot, TemplateCopyRulesetHash: input.TemplateCopyRulesetHash, SourceRuleSetID: input.SourceRuleSetID, SourceRuleSetVersion: input.SourceRuleSetVersion, SourceRuleSetHash: input.SourceRuleSetHash, BindingPolicies: input.BindingPolicies, SourcePolicyHash: input.SourcePolicyHash, TemplateCopyID: input.TemplateCopyID, TemplateCopyVersion: input.TemplateCopyVersion, TemplateCopyContentHash: input.TemplateCopyContentHash,
 		Sources: input.Sources, AssetVersions: input.AssetVersions,
@@ -338,7 +350,7 @@ func decodeFrozenInput(raw string) (DeliveryInput, error) {
 	}
 	input := DeliveryInput{
 		ProjectID: stored.ProjectID, ProjectName: stored.ProjectName,
-		ProjectVersion: stored.ProjectVersion, SpecRevision: stored.SpecRevision,
+		ProjectVersion: stored.ProjectVersion, SpecRevision: stored.SpecRevision, ContextRevision: stored.ContextRevision,
 		Spec: stored.Spec, SpecProvenance: stored.SpecProvenance, Template: stored.Template,
 		RuleSetSnapshot: stored.RuleSetSnapshot, TemplateCopyRulesetHash: stored.TemplateCopyRulesetHash, SourceRuleSetID: stored.SourceRuleSetID, SourceRuleSetVersion: stored.SourceRuleSetVersion, SourceRuleSetHash: stored.SourceRuleSetHash, BindingPolicies: stored.BindingPolicies, SourcePolicyHash: stored.SourcePolicyHash, TemplateCopyID: stored.TemplateCopyID, TemplateCopyVersion: stored.TemplateCopyVersion, TemplateCopyContentHash: stored.TemplateCopyContentHash,
 		Sources: stored.Sources, AssetVersions: stored.AssetVersions,
@@ -354,7 +366,7 @@ func decodeFrozenInput(raw string) (DeliveryInput, error) {
 }
 
 func encodeCheck(check CheckResult) (string, error) {
-	stored := storageCheck{ReceiptID: check.ReceiptID, ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, Status: check.Status}
+	stored := storageCheck{ReceiptID: check.ReceiptID, ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, RuleSetRef: check.RuleSetRef, Status: check.Status}
 	stored.Issues = make([]storageIssue, 0, len(check.Issues))
 	for _, issue := range check.Issues {
 		stored.Issues = append(stored.Issues, storageIssue{CheckIssue: issue, Code: issue.Code, ChapterID: issue.ChapterID})
@@ -371,7 +383,7 @@ func decodeCheck(raw string) (CheckResult, error) {
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return CheckResult{}, fmt.Errorf("decode check result: %w", err)
 	}
-	check := CheckResult{ReceiptID: stored.ReceiptID, ProjectVersion: stored.ProjectVersion, RulesetHash: stored.RulesetHash, Status: stored.Status}
+	check := CheckResult{ReceiptID: stored.ReceiptID, ProjectVersion: stored.ProjectVersion, RulesetHash: stored.RulesetHash, RuleSetRef: stored.RuleSetRef, Status: stored.Status}
 	check.Issues = make([]CheckIssue, 0, len(stored.Issues))
 	for _, issue := range stored.Issues {
 		restored := issue.CheckIssue
@@ -379,5 +391,5 @@ func decodeCheck(raw string) (CheckResult, error) {
 		check.Issues = append(check.Issues, restored)
 	}
 	// 与 decodeFrozenInput 同一条：issues 是数组，空集也不该落成 null。
-	return CheckResult{ReceiptID: check.ReceiptID, ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, Status: check.Status, Issues: cloneIssues(check.Issues)}, nil
+	return CheckResult{ReceiptID: check.ReceiptID, ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, RuleSetRef: check.RuleSetRef, Status: check.Status, Issues: cloneIssues(check.Issues)}, nil
 }
