@@ -331,6 +331,9 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	if applyAudit == nil {
 		t.Fatalf("successful migration did not persist project.change_set.apply audit: %+v", events)
 	}
+	if applyAudit.ActorID != owner.UserID || applyAudit.CreatedAt.IsZero() {
+		t.Fatalf("migration audit lost actor or timestamp: %+v", applyAudit)
+	}
 	if applyAudit.Reason != "" {
 		t.Fatalf("legacy top-level reason unexpectedly reconstructed from details: %q", applyAudit.Reason)
 	}
