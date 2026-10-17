@@ -40,7 +40,6 @@ type ProjectTemplateCopy = core.ProjectTemplateCopy
 type TemplateCopyDefinitionInput = core.TemplateCopyDefinitionInput
 type BindTemplateCopyRuleSetInput = core.BindTemplateCopyRuleSetInput
 type TemplateSectionChange = core.TemplateSectionChange
-type CoreProjectAuthorizer = core.ProjectAuthorizer
 type AuthorizationMode = core.AuthorizationMode
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
@@ -56,6 +55,17 @@ type CreateChangeSetInput = core.CreateChangeSetInput
 type ValidationIssueBinding = core.ValidationIssueBinding
 type ValidationIssueDispositionInput = core.ValidationIssueDispositionInput
 type ValidationIssueDisposition = core.ValidationIssueDisposition
+type SaveSpecResult = core.SaveSpecResult
+type CreateProjectResult = core.CreateProjectResult
+type ProjectMutationResult = core.ProjectMutationResult
+type OwnerTransferResult = core.OwnerTransferResult
+type ChapterMutationResult = core.ChapterMutationResult
+type WorkingCopyMutationResult = core.WorkingCopyMutationResult
+type CommittedChapterMutationResult = core.CommittedChapterMutationResult
+type ChangeSetMutationResult = core.ChangeSetMutationResult
+type DraftCandidateMutationResult = core.DraftCandidateMutationResult
+type ValidationIssueDispositionResult = core.ValidationIssueDispositionResult
+type ValidationIssueDispositionReplayResult = core.ValidationIssueDispositionReplayResult
 
 const (
 	AuthorizationModeLog      = core.AuthorizationModeLog
@@ -75,16 +85,4 @@ var (
 
 func NewService(repository Repository) *Service {
 	return core.NewService(repository)
-}
-
-func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer) *Service {
-	return core.NewServiceWithAuthorizer(repository, reader, sources, authorizer)
-}
-
-func NewServiceWithAudit(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink) *Service {
-	return core.NewServiceWithAudit(repository, reader, sources, authorizer, audit)
-}
-
-func NewServiceWithAuditMode(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink, mode AuthorizationMode) *Service {
-	return core.NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, mode)
 }

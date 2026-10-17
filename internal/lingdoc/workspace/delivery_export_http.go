@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/gin-gonic/gin"
 )
 
@@ -75,13 +76,14 @@ type startExportRequest struct {
 //     omitempty 会把空值整个删掉——「字段不在」与「字段是 null」在契约里是两回事，
 //     前者连必填都没满足。
 type exportArtifactView struct {
-	ID           string         `json:"id"`
-	ProjectID    string         `json:"project_id"`
-	SnapshotID   string         `json:"snapshot_id"`
-	Status       string         `json:"status"`
-	FileSHA256   *string        `json:"file_sha256"`
-	DownloadPath *string        `json:"download_path"`
-	Error        *exportFailure `json:"error,omitempty"`
+	ID           string                            `json:"id"`
+	ProjectID    string                            `json:"project_id"`
+	SnapshotID   string                            `json:"snapshot_id"`
+	RuleSetRef   *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Status       string                            `json:"status"`
+	FileSHA256   *string                           `json:"file_sha256"`
+	DownloadPath *string                           `json:"download_path"`
+	Error        *exportFailure                    `json:"error,omitempty"`
 }
 
 // exportFailure 是契约里那个 Error 对象在产物上的那一份。
@@ -200,6 +202,7 @@ func artifactView(artifact delivery.ExportArtifact) exportArtifactView {
 		ID:         artifact.ID,
 		ProjectID:  artifact.ProjectID,
 		SnapshotID: artifact.SnapshotID,
+		RuleSetRef: artifact.RuleSetRef,
 		Status:     string(artifact.Status),
 	}
 	switch artifact.Status {

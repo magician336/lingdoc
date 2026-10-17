@@ -2,9 +2,12 @@ package workspacecore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"maps"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -31,6 +34,19 @@ func (r *ruleSetSnapshotReaderStub) GetVersion(_ context.Context, actor Actor, i
 
 func (r *ruleSetSnapshotReaderStub) GetVersionInTransaction(ctx context.Context, _ Transaction, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
 	return r.GetVersion(ctx, actor, id, version)
+}
+
+// nonTransactionalRuleSetSnapshotReaderStub models an adapter that supports
+// exact historical reads but cannot lock the value in the caller's write
+// transaction. Binding must reject it instead of falling back to GetVersion.
+type nonTransactionalRuleSetSnapshotReaderStub struct {
+	set   lingdoctemplate.RuleSet
+	calls int
+}
+
+func (r *nonTransactionalRuleSetSnapshotReaderStub) GetVersion(context.Context, Actor, string, string) (lingdoctemplate.RuleSet, error) {
+	r.calls++
+	return r.set, nil
 }
 
 type transactionalRuleSetSnapshotReaderStub struct {
@@ -65,6 +81,26 @@ func publishedWorkspaceRuleSet(t *testing.T) lingdoctemplate.RuleSet {
 	return set
 }
 
+func TestTemplateUpgradeRequiresExactRuleSetHash(t *testing.T) {
+	input := CreateChangeSetInput{
+		ExpectedContextRevision: 1,
+		Reason:                  "固定目标规则集",
+		TemplateUpgrade: &TemplateUpgradeInput{
+			ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+			Fields: []lingdoctemplate.Field{}, Sections: []lingdoctemplate.Section{},
+			Terms: []lingdoctemplate.Term{}, Rules: []lingdoctemplate.Rule{},
+			RuleSetRef: &lingdoctemplate.RuleSetReference{ID: "grant-rules", Version: "v2"},
+		},
+	}
+	if err := validateChangeSetInput(input); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("migration without an exact source hash error = %v, want ErrInvalidRequest", err)
+	}
+	input.TemplateUpgrade.RuleSetRef.Hash = strings.Repeat("a", 64)
+	if err := validateChangeSetInput(input); err != nil {
+		t.Fatalf("migration with complete exact RuleSet identity rejected: %v", err)
+	}
+}
+
 func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Status = "draft"
@@ -79,9 +115,12 @@ func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	repository.project.TemplateCopy = copy
 	reader := &ruleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
 	service := NewService(repository).WithRuleSetSnapshotReader(reader)
+	disabled := false
 	input := BindTemplateCopyRuleSetInput{
 		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
-		RuleSetID: "grant-rules", RuleSetVersion: "v1",
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: reader.set.ID, Version: reader.set.Version, Hash: reader.set.RulesetHash},
+		RuleSetID:  "grant-rules", RuleSetVersion: "v1",
+		Overrides: []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-required", Enabled: &disabled}},
 	}
 	response, status, replayed, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-bind-1", input)
 	if err != nil || status != 200 || replayed {
@@ -98,11 +137,24 @@ func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	if snapshot == nil || snapshot.ID != "grant-rules" || snapshot.Version != "v1" || snapshot.RulesetHash != reader.set.RulesetHash {
 		t.Fatalf("project copy lost exact RuleSet snapshot: %#v", snapshot)
 	}
+	ref := bound.TemplateCopy.TemplateVersionRuleSetRef
+	if ref == nil || ref.ID != reader.set.ID || ref.Version != reader.set.Version || ref.Hash != reader.set.RulesetHash ||
+		!reflect.DeepEqual(ref, bound.TemplateCopy.Definition.RuleSetRef) {
+		t.Fatalf("template-version boundary lost the exact RuleSet reference: copy=%+v definition=%+v", ref, bound.TemplateCopy.Definition.RuleSetRef)
+	}
 	if bound.TemplateCopy.RulesetHash == reader.set.RulesetHash || bound.TemplateCopy.RulesetHash != bound.TemplateCopy.Definition.RulesetHash {
 		t.Fatalf("copy hash must bind both template rules and RuleSet reference: copy=%q set=%q definition=%q", bound.TemplateCopy.RulesetHash, reader.set.RulesetHash, bound.TemplateCopy.Definition.RulesetHash)
 	}
 	if err := validateProjectTemplateCopy(bound.TemplateCopy); err != nil {
 		t.Fatalf("persisted copy snapshot is invalid: %v", err)
+	}
+	if len(bound.TemplateCopy.Definition.RuleBindingOverrides) != 1 || bound.TemplateCopy.Definition.RuleBindingOverrides[0].Enabled == nil ||
+		*bound.TemplateCopy.Definition.RuleBindingOverrides[0].Enabled || !reader.set.Bindings[0].Enabled {
+		t.Fatalf("project override must be persisted separately without mutating the published RuleSet: overrides=%+v source=%+v", bound.TemplateCopy.Definition.RuleBindingOverrides, reader.set.Bindings[0])
+	}
+	if len(repository.audits) != 1 || repository.audits[0].Action != "project_template.override_ruleset" ||
+		repository.audits[0].Details["ruleset_hash"] != reader.set.RulesetHash || repository.audits[0].Details["override_count"] != 1 {
+		t.Fatalf("binding override audit lost the exact RuleSet identity or count: %+v", repository.audits)
 	}
 	if reader.calls != 1 || reader.actor.UserID != actor.UserID || reader.id != input.RuleSetID || reader.ver != input.RuleSetVersion {
 		t.Fatalf("RuleSet lookup did not use the authorized exact version: %#v", reader)
@@ -116,6 +168,50 @@ func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	replayedResponse, replayStatus, replayed, err := service.BindTemplateCopyRuleSet(context.Background(), actor, "p", "ruleset-bind-1", input)
 	if err != nil || replayStatus != status || !replayed || string(replayedResponse) != string(response) || reader.calls != 1 {
 		t.Fatalf("exact retry should replay its saved snapshot without re-reading current RuleSet state: status=%d replayed=%v calls=%d err=%v", replayStatus, replayed, reader.calls, err)
+	}
+	if len(repository.audits) != 1 {
+		t.Fatalf("idempotent override retry duplicated durable audit: %+v", repository.audits)
+	}
+}
+
+func TestBindTemplateCopyRuleSetRejectsInvalidCombinedOverridesBeforeWrites(t *testing.T) {
+	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+		ID: "word-count-rules", Version: "v1", State: lingdoctemplate.RuleSetDraft,
+		Bindings: []lingdoctemplate.RuleBinding{{
+			RuleID: "goal-length", DefinitionID: "computed/word_count", DefinitionVersion: "1",
+			Origin: "organization", TargetKind: "field", TargetID: "research_goal",
+			Parameters: map[string]any{"minimum": 0, "maximum": 100}, Severity: "warning",
+			TriggerScenes: []string{"preflight"}, Enabled: true, Owner: "research-office",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.TemplateID = lingdoctemplate.DemoTemplateID
+	repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	repository.project.TemplateCopyVersion = 1
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	copy, err := projectTemplateCopy(actor, repository.project.ID, 1, lingdoctemplate.DemoTemplate(), TemplateCopyDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.project.TemplateCopy = copy
+	reader := &ruleSetSnapshotReaderStub{set: set}
+	service := NewService(repository).WithRuleSetSnapshotReader(reader)
+	input := BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash},
+		Overrides:  []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-length", Parameters: map[string]any{"minimum": 80, "maximum": 20}}},
+	}
+	if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, repository.project.ID, "ruleset-invalid-combined-1", input); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("contradictory combined overrides error = %v, want ErrInvalidRequest", err)
+	}
+	if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 ||
+		repository.project.TemplateCopy.ContentHash != copy.ContentHash || repository.project.TemplateCopy.RulesetHash != copy.RulesetHash ||
+		len(repository.operations) != 0 || len(repository.audits) != 0 {
+		t.Fatalf("invalid combined override must be rejected before copy/hash/audit/operation writes: project=%+v operations=%+v audits=%+v", repository.project, repository.operations, repository.audits)
 	}
 }
 
@@ -220,6 +316,35 @@ func TestBindTemplateCopyRuleSetRechecksRuleSetInsideProjectTransaction(t *testi
 	}
 	if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 || len(repository.operations) != 0 {
 		t.Fatal("withdrawn RuleSet binding changed project state or persisted an idempotency result")
+	}
+}
+
+func TestBindTemplateCopyRuleSetFailsClosedWithoutTransactionalReader(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.TemplateID = lingdoctemplate.DemoTemplateID
+	repository.project.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	repository.project.TemplateCopyVersion = 1
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	copy, err := projectTemplateCopy(actor, repository.project.ID, 1, lingdoctemplate.DemoTemplate(), TemplateCopyDraft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository.project.TemplateCopy = copy
+	reader := &nonTransactionalRuleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
+	service := NewService(repository).WithRuleSetSnapshotReader(reader)
+	input := BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: 1, ExpectedTemplateCopyVersion: 1,
+		RuleSetID: reader.set.ID, RuleSetVersion: reader.set.Version,
+	}
+	if _, _, _, err := service.BindTemplateCopyRuleSet(context.Background(), actor, repository.project.ID, "bind-without-tx-reader", input); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("non-transactional reader error = %v, want ErrInvalidState", err)
+	}
+	if reader.calls != 0 {
+		t.Fatalf("detached GetVersion must not be used for binding, calls=%d", reader.calls)
+	}
+	if repository.project.ProjectVersion != 1 || repository.project.TemplateCopyVersion != 1 || len(repository.operations) != 0 {
+		t.Fatal("binding without a transactional RuleSet reader changed project state or persisted an idempotency result")
 	}
 }
 
@@ -404,26 +529,26 @@ func TestAuthorizationAuditFailureDoesNotBlockDecision(t *testing.T) {
 	}
 }
 
-func TestAuthorizationLogModeFallsBackToLegacyDecision(t *testing.T) {
+func TestAuthorizationLogModeReportsTheEnforcedDecision(t *testing.T) {
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleViewer}
-	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); err != nil {
-		t.Fatalf("log mode should preserve the legacy decision while observing the new policy: %v", err)
+	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("log mode should return the enforced policy decision: %v", err)
 	}
 	if len(audit.events) < 2 || audit.events[0].Capability != "shadow:create" || audit.events[0].Decision != "deny" {
 		t.Fatalf("shadow audit = %+v", audit.events)
 	}
 }
 
-func TestAuthorizationLogModeDoesNotAdoptNewAllow(t *testing.T) {
+func TestAuthorizationLogModeAllowsWhatThePolicyAudits(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Members = append(repository.project.Members, Member{UserID: "admin", Role: "collaborator", GovernanceRole: "admin", Status: "active"})
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(repository, ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "admin", Role: types.TenantRoleAdmin}
-	if err := service.Authorize(context.Background(), actor, "p", "manage"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("log mode adopted new allow instead of legacy deny: %v", err)
+	if err := service.Authorize(context.Background(), actor, "p", "manage"); err != nil {
+		t.Fatalf("log mode should return the enforced allow: %v", err)
 	}
 	if len(audit.events) == 0 || audit.events[0].Capability != "shadow:manage" || audit.events[0].Decision != "allow" {
 		t.Fatalf("shadow allow audit = %+v", audit.events)
@@ -536,6 +661,154 @@ func TestServiceSourceRecheckBeforeReplayWithNonSQLStorage(t *testing.T) {
 	}
 }
 
+func TestSaveSpecResultIsTransportNeutralAndReplays(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Status = "draft"
+	repository.project.SpecRevision = 0
+	repository.project.ProjectVersion = 1
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "subject"}}
+
+	first, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", input)
+	if err != nil {
+		t.Fatalf("typed save: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first typed save reported a replay")
+	}
+	if first.Project.ID != "p" || first.Project.SpecRevision != 1 || first.Project.ProjectVersion != 2 || first.Project.Spec["research_subject"] != "subject" {
+		t.Fatalf("typed save result = %+v, want the saved project", first.Project)
+	}
+
+	replayed, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", input)
+	if err != nil {
+		t.Fatalf("typed replay: %v", err)
+	}
+	if !replayed.Replayed || replayed.Project.ID != first.Project.ID || replayed.Project.SpecRevision != first.Project.SpecRevision || replayed.Project.ProjectVersion != first.Project.ProjectVersion || !maps.Equal(replayed.Project.Spec, first.Project.Spec) {
+		t.Fatalf("typed replay = %+v, want the original project with replay=true", replayed)
+	}
+
+	changed := input
+	changed.Fields = map[string]string{"research_subject": "different"}
+	if _, err := service.SaveSpecResult(context.Background(), actor, "p", "typed-spec-save", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("typed different-body replay error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
+func TestCreateProjectResultIsTransportNeutralAndReplays(t *testing.T) {
+	service := NewService(fakeWorkspace())
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	input := CreateProjectInput{Name: "typed project", TemplateID: "template-demo"}
+
+	first, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", input)
+	if err != nil {
+		t.Fatalf("typed create: %v", err)
+	}
+	if first.Replayed {
+		t.Fatal("first typed create reported a replay")
+	}
+	if first.Project.ID == "" || first.Project.Name != input.Name || first.Project.Status != "draft" || len(first.Project.Members) != 1 {
+		t.Fatalf("typed create result = %+v, want the created project", first.Project)
+	}
+
+	replayed, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", input)
+	if err != nil {
+		t.Fatalf("typed create replay: %v", err)
+	}
+	if !replayed.Replayed || replayed.Project.ID != first.Project.ID || replayed.Project.Name != first.Project.Name {
+		t.Fatalf("typed create replay = %+v, want the original project with replay=true", replayed)
+	}
+
+	changed := input
+	changed.Name = "different project"
+	if _, err := service.CreateProjectResult(context.Background(), actor, "typed-project-create", changed); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("typed create different-body replay error = %v, want ErrIdempotencyConflict", err)
+	}
+}
+
+func TestTypedProjectMutationResultsReportDomainDecodeErrors(t *testing.T) {
+	ctx := context.Background()
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	t.Run("create project", func(t *testing.T) {
+		repository := fakeWorkspace()
+		input := CreateProjectInput{Name: "malformed replay", TemplateID: "template-demo", TemplateVersion: "1"}
+		key := "typed-create-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "createProject", Target: "projects", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).CreateProjectResult(ctx, actor, key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode created project result") {
+			t.Fatalf("typed create malformed replay error = %v, want domain decode label", err)
+		}
+	})
+
+	t.Run("save spec", func(t *testing.T) {
+		repository := fakeWorkspace()
+		repository.project.Status = "draft"
+		repository.project.SpecRevision = 0
+		input := SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "malformed replay"}}
+		key := "typed-spec-malformed"
+		repository.operations[OperationIdentity{Actor: actor, Operation: "saveSpec", Target: "p", Key: key}] = malformedOperationResult(input)
+
+		_, err := NewService(repository).SaveSpecResult(ctx, actor, "p", key, input)
+		if err == nil || !strings.Contains(err.Error(), "decode saved spec result") {
+			t.Fatalf("typed save malformed replay error = %v, want domain decode label", err)
+		}
+	})
+}
+
+func malformedOperationResult(input any) OperationResult {
+	encoded, _ := json.Marshal(input)
+	hash := sha256.Sum256(encoded)
+	return OperationResult{BodyHash: hex.EncodeToString(hash[:]), Body: json.RawMessage("{"), Status: 200}
+}
+
+func TestProjectMutationResultsPreserveMemberAndOwnerSemantics(t *testing.T) {
+	repository := fakeWorkspace()
+	repository.project.Members = []Member{
+		{UserID: "owner", Role: "owner", GovernanceRole: "owner", Status: "active"},
+		{UserID: "member", Role: "collaborator", GovernanceRole: "member", Status: "active"},
+	}
+	service := NewService(repository)
+	actor := Actor{TenantID: 1, UserID: "owner"}
+
+	members, err := service.SaveMembersResult(context.Background(), actor, "p", "typed-members", SaveMembersInput{
+		ExpectedProjectVersion: 1,
+		Members:                []Member{{UserID: "member", GovernanceRole: "member", Status: "active"}},
+	})
+	if err != nil {
+		t.Fatalf("typed members: %v", err)
+	}
+	if members.Replayed || members.Project.ProjectVersion != 2 || len(members.Project.Members) != 2 {
+		t.Fatalf("typed members result = %+v, want updated project", members)
+	}
+
+	transfer, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
+		ExpectedProjectVersion: 2,
+		NewOwnerUserID:         "member",
+	})
+	if err != nil {
+		t.Fatalf("typed owner transfer: %v", err)
+	}
+	hasNewOwner := false
+	for _, member := range transfer.Project.Members {
+		if member.UserID == "member" && member.Role == "owner" {
+			hasNewOwner = true
+		}
+	}
+	if transfer.Replayed || transfer.Project.ProjectVersion != 3 || !hasNewOwner {
+		t.Fatalf("typed owner transfer result = %+v, want owner change", transfer)
+	}
+
+	if _, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
+		ExpectedProjectVersion: 2,
+		NewOwnerUserID:         "member",
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("owner transfer replay after ownership change = %v, want authorization denial", err)
+	}
+}
+
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback
 // discards both domain writes and replay records on any callback error.
 type stateRepository struct {
@@ -543,6 +816,7 @@ type stateRepository struct {
 	chapter     Chapter
 	workingCopy WorkingCopy
 	versions    []ChapterVersion
+	audits      []AuditEvent
 	active      bool
 	operations  map[OperationIdentity]OperationResult
 	writes      int
@@ -557,6 +831,7 @@ func (r *stateRepository) Transaction(ctx context.Context, _ TransactionOptions,
 	tx.project.Spec = maps.Clone(r.project.Spec)
 	tx.operations = maps.Clone(r.operations)
 	tx.versions = slices.Clone(r.versions)
+	tx.audits = slices.Clone(r.audits)
 	if err := fn(&stateTransaction{state: &tx}); err != nil {
 		return err
 	}
@@ -663,6 +938,19 @@ func (t *stateTransaction) Operation(id OperationIdentity) (OperationResult, boo
 func (t *stateTransaction) SaveOperation(id OperationIdentity, result OperationResult) error {
 	t.state.operations[id] = result
 	return nil
+}
+func (t *stateTransaction) RecordAudit(event AuditEvent) error {
+	t.state.audits = append(t.state.audits, event)
+	return nil
+}
+func (t *stateTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
+	events := make([]AuditEvent, 0, len(t.state.audits))
+	for _, event := range t.state.audits {
+		if event.ProjectID == projectID {
+			events = append(events, event)
+		}
+	}
+	return events, nil
 }
 func fakeWorkspace() *stateRepository {
 	chapter := Chapter{ID: "c", ProjectID: "p", SourceIDs: []string{}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check me", OriginCandidateID: "candidate"}}}

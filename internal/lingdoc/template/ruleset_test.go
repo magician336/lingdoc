@@ -219,6 +219,85 @@ func TestBoundRuleSetSnapshotCombinesTemplateRulesAndPinsCombinedHash(t *testing
 	}
 }
 
+func TestProjectRuleSetOverridesAreAllowlistedHashedAndEvaluated(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition.RuleSetRef = &RuleSetReference{ID: published.ID, Version: published.Version, Hash: published.RulesetHash}
+	base, err := WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enabled := true
+	definition.RuleBindingOverrides = []RuleBindingOverride{{
+		RuleID: "disabled-pattern", Enabled: &enabled,
+		Parameters: map[string]any{"pattern": "^Grant"},
+	}}
+	configured, err := WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configured.RulesetHash == base.RulesetHash || configured.ContentHash == base.ContentHash {
+		t.Fatal("project overrides must affect the effective rule and content hashes")
+	}
+	if published.Bindings[3].Parameters["pattern"] != "^Study" || ValidateRuleSet(published) != nil {
+		t.Fatal("project override mutated the published RuleSet snapshot")
+	}
+	results, err := EvaluateScene(configured, "write_check", EvaluationInput{
+		ProjectID: "project-1", TargetVersion: "copy/2", Fields: map[string]string{"research_goal": "Study"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range results {
+		if result.RuleID == "disabled-pattern" {
+			if result.Status != EvaluationIssue || result.RuleSetID != published.ID || result.RuleSetVersion != published.Version || result.RulesetHash != configured.RulesetHash {
+				t.Fatalf("overridden rule did not report its exact effective identity: %#v", result)
+			}
+			return
+		}
+	}
+	t.Fatal("allowlisted enable and pattern override were not applied by the evaluator")
+}
+
+func TestRuleSetOverrideRejectsUnknownIdentityAndUnsafeParameters(t *testing.T) {
+	published, err := PublishRuleSet(testRuleSet())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name     string
+		override RuleBindingOverride
+	}{
+		{name: "unknown rule", override: RuleBindingOverride{RuleID: "not-in-set", Enabled: boolPointer(true)}},
+		{name: "unknown parameter", override: RuleBindingOverride{RuleID: "disabled-pattern", Parameters: map[string]any{"expression": "true"}}},
+		{name: "severity forgery", override: RuleBindingOverride{RuleID: "disabled-pattern", Parameters: map[string]any{"severity": "info"}}},
+		{name: "invalid pattern", override: RuleBindingOverride{RuleID: "disabled-pattern", Parameters: map[string]any{"pattern": "("}}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if err := ValidateRuleBindingOverrides(published, []RuleBindingOverride{test.override}); !errors.Is(err, ErrInvalidRuleSet) {
+				t.Fatalf("unsafe override error = %v, want ErrInvalidRuleSet", err)
+			}
+		})
+	}
+
+	draft := testRuleSet()
+	draft.Bindings[1].Parameters = map[string]any{"minimum": 0, "maximum": 100}
+	published, err = PublishRuleSet(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined := RuleBindingOverride{RuleID: "method-length", Parameters: map[string]any{"minimum": 80, "maximum": 20}}
+	if err := ValidateRuleBindingOverrides(published, []RuleBindingOverride{combined}); !errors.Is(err, ErrInvalidRuleSet) {
+		t.Fatalf("combined invalid word-count range error = %v, want ErrInvalidRuleSet", err)
+	}
+}
+
+func boolPointer(value bool) *bool { return &value }
+
 func TestTemplateRejectsNonPublishedOrConflictingRuleSetSnapshot(t *testing.T) {
 	draft := testRuleSet()
 	definition := DemoTemplate()
@@ -249,6 +328,23 @@ func TestTemplateRejectsNonPublishedOrConflictingRuleSetSnapshot(t *testing.T) {
 	definition.RuleSetSnapshot = &published
 	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
 		t.Fatalf("colliding rule IDs error = %v, want ErrInvalidDefinition", err)
+	}
+}
+
+func TestTemplateRejectsEnabledOverrideCollisionBeforeHashing(t *testing.T) {
+	draft := testRuleSet()
+	// The fourth binding is disabled in the immutable version. Its ID only
+	// conflicts with a legacy template rule after the project enables it.
+	draft.Bindings[3].RuleID = RuleRequiredFields
+	published, err := PublishRuleSet(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition.RuleBindingOverrides = []RuleBindingOverride{{RuleID: RuleRequiredFields, Enabled: boolPointer(true)}}
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("enabled RuleSet rule colliding with a legacy template rule error = %v, want ErrInvalidDefinition", err)
 	}
 }
 

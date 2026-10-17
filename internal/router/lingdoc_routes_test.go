@@ -2,7 +2,6 @@ package router
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,8 +32,8 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	candidateadoption.RegisterRoutes(routes.write, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
 	generation.RegisterRoutes(routes.write, generation.NewHandler(nil, nil))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
-	if got := len(engine.Routes()); got != 63 {
-		t.Fatalf("registered %d LingDoc routes, want 63", got)
+	if got := len(engine.Routes()); got != 64 {
+		t.Fatalf("registered %d LingDoc routes, want 64", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
@@ -55,9 +54,9 @@ func (s *lingDocRouteServiceStub) ListProjects(context.Context, workspace.Actor)
 	return []workspace.Project{{ID: "p1", Name: "demo"}}, false, nil
 }
 
-func (s *lingDocRouteServiceStub) CreateProject(_ context.Context, _ workspace.Actor, _ string, _ workspace.CreateProjectInput) (json.RawMessage, int, bool, error) {
+func (s *lingDocRouteServiceStub) CreateProjectResult(_ context.Context, _ workspace.Actor, _ string, input workspace.CreateProjectInput) (workspace.CreateProjectResult, error) {
 	s.createCalls++
-	return json.RawMessage(`{"id":"p2"}`), http.StatusCreated, false, nil
+	return workspace.CreateProjectResult{Project: workspace.Project{ID: "p2", Name: input.Name}}, nil
 }
 
 func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
@@ -81,6 +80,7 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 		{http.MethodPost, "/api/v1/lingdoc/projects/:projectId/chapters/:chapterId/working-copy/commit"},
 		{http.MethodGet, "/api/v1/lingdoc/rule-sets/definitions"},
 		{http.MethodGet, "/api/v1/lingdoc/rule-sets/:ruleSetID/versions"},
+		{http.MethodGet, "/api/v1/lingdoc/projects/:projectId/rule-set-use-audits"},
 		{http.MethodPost, "/api/v1/lingdoc/rule-sets"},
 		{http.MethodPost, "/api/v1/lingdoc/rule-sets/:ruleSetID/versions/:version/publish"},
 	} {

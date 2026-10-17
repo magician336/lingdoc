@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	workspacecore "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -225,5 +226,33 @@ func TestCandidateSourcePolicyWithoutTenantIsDenied(t *testing.T) {
 	err := policy.Validate(context.Background(), "project-1", "reader", []string{"source-1"})
 	if !errors.Is(err, candidateadoption.ErrSourceAccessDenied) {
 		t.Fatalf("Validate = %v, want ErrSourceAccessDenied", err)
+	}
+}
+
+func TestWorkspaceSourcePolicyUsesSharedVerdictForCitationStatuses(t *testing.T) {
+	handler, db, _ := seedBoundSource(t)
+	policy := handler.WorkspaceSourcePolicy()
+	statusPolicy, ok := policy.(workspacecore.CitationStatusPolicy)
+	if !ok {
+		t.Fatal("workspace source policy does not expose citation status adapter")
+	}
+
+	statuses, err := statusPolicy.CitationStatuses(policyContext(), "project-1", "reader", []string{"source-1"})
+	if err != nil {
+		t.Fatalf("CitationStatuses returned an error for a current source: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != "available" {
+		t.Fatalf("CitationStatuses = %+v, want one available verdict", statuses)
+	}
+
+	if err := db.Exec("UPDATE chunks SET content_revision = 1 WHERE id = ?", "source-1").Error; err != nil {
+		t.Fatalf("mark source stale: %v", err)
+	}
+	statuses, err = statusPolicy.CitationStatuses(policyContext(), "project-1", "reader", []string{"source-1"})
+	if err != nil {
+		t.Fatalf("CitationStatuses returned an error for a stale source: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != "needs_review" {
+		t.Fatalf("CitationStatuses after coordinate drift = %+v, want needs_review", statuses)
 	}
 }

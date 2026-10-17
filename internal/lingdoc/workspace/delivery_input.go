@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
 
@@ -28,7 +29,7 @@ import (
 // 落成一份可读的报告。冻结输入是**诊断的输入**，不是准入的门——把不合格的内容挡在
 // 门外，操作者就只看到「不通过」，看不到是哪一条引用坏了。
 type DeliveryInputBuilder struct {
-	sourceRevalidator
+	reviewer  sourcepolicy.Reviewer
 	templates delivery.TemplateReader
 }
 
@@ -44,11 +45,14 @@ func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, froz
 	for _, source := range frozen.Sources {
 		ids = append(ids, source.ID)
 	}
-	verdicts, err := b.revalidate(checked, frozen.ProjectID, actor, ids)
+	if b.reviewer == nil {
+		return false, candidateadoption.ErrDependencyUnavailable
+	}
+	verdicts, err := b.reviewer.Review(checked, frozen.ProjectID, actor, ids)
 	if err != nil {
 		return false, err
 	}
-	byID := make(map[string]revalidated, len(verdicts))
+	byID := make(map[string]sourcepolicy.Verdict, len(verdicts))
 	for _, verdict := range verdicts {
 		byID[verdict.SourceID] = verdict
 	}
@@ -80,7 +84,7 @@ func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 	if h.templates == nil {
 		return nil
 	}
-	return &DeliveryInputBuilder{sourceRevalidator: h.sourceRevalidator(), templates: h.templates}
+	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), templates: h.templates}
 }
 
 // Build 把 T12 的交付输入补成 T13 的冻结输入。
@@ -117,7 +121,10 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		}
 	}
 
-	verdicts, err := b.revalidate(checked, input.ProjectID, actor, referencedSourceIDs(input.Chapters))
+	if b.reviewer == nil {
+		return delivery.DeliveryInput{}, candidateadoption.ErrDependencyUnavailable
+	}
+	verdicts, err := b.reviewer.Review(checked, input.ProjectID, actor, referencedSourceIDs(input.Chapters))
 	if err != nil {
 		return delivery.DeliveryInput{}, err
 	}
@@ -157,7 +164,7 @@ func referencedSourceIDs(chapters []candidateadoption.WorkspaceDeliveryChapter) 
 
 // frozenSources 只收放行的那批，顺序沿用复核顺序（即引用出现的顺序），
 // 逐次构建得到同一份输入、同一枚摘要。
-func frozenSources(verdicts []revalidated) []delivery.FrozenSource {
+func frozenSources(verdicts []sourcepolicy.Verdict) []delivery.FrozenSource {
 	out := make([]delivery.FrozenSource, 0, len(verdicts))
 	for _, verdict := range verdicts {
 		if !verdict.Usable {

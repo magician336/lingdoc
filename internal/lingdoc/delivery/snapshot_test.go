@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -8,7 +9,17 @@ import (
 	"time"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 )
+
+type snapshotRuleSetUseAuditRecorder struct {
+	events []lingdoctemplate.RuleSetUseAuditEvent
+}
+
+func (r *snapshotRuleSetUseAuditRecorder) RecordRuleSetUse(_ context.Context, event lingdoctemplate.RuleSetUseAuditEvent) error {
+	r.events = append(r.events, event)
+	return nil
+}
 
 func validDeliveryInput() DeliveryInput {
 	template := DemoTemplate()
@@ -284,11 +295,16 @@ func TestBlockingUnknownRuleTargetBlocksTemplateCheckAndPreflight(t *testing.T) 
 	if err != nil || release.Check.Status != CheckBlocked || release.Check.RulesetHash != definition.RulesetHash {
 		t.Fatalf("ReleaseSnapshot did not freeze the blocked rule evaluation: release=%+v err=%v", release, err)
 	}
+	auditor := &snapshotRuleSetUseAuditRecorder{}
 	exportService := NewExportService(snapshotStore, NewMemoryExportStore(),
 		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("must-not-render"), nil }),
-		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
-	if _, _, err := exportService.Start("owner", release.ProjectID, release.ID, "blocking-unknown-export"); !errors.Is(err, ErrExportPreflightBlocked) {
+		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport)).WithRuleSetUseAuditor(auditor)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, err := exportService.StartAs(context.Background(), actor, release.ProjectID, release.ID, "blocking-unknown-export"); !errors.Is(err, ErrExportPreflightBlocked) {
 		t.Fatalf("export must reject a frozen blocking UNKNOWN evaluation: %v", err)
+	}
+	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetID != set.ID || auditor.events[0].RuleSetVersion != set.Version || auditor.events[0].RuleSetHash != set.RulesetHash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
+		t.Fatalf("blocked export use must be audited against the exact RuleSet snapshot: %+v", auditor.events)
 	}
 }
 
@@ -357,10 +373,15 @@ func TestBoundRuleSetSnapshotFlowsThroughTemplateCheckAndPreflight(t *testing.T)
 		t.Fatal("frozen ReleaseSnapshot shared mutable RuleSet data with its input")
 	}
 	exports := NewMemoryExportStore()
+	auditor := &snapshotRuleSetUseAuditRecorder{}
 	exportService := NewExportService(snapshotStore, exports,
 		frozenRenderer(func(DeliveryInput) ([]byte, error) { return []byte("must-not-render"), nil }),
-		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport))
-	if _, _, err := exportService.Start("owner", release.ProjectID, release.ID, "ruleset-blocked-export"); !errors.Is(err, ErrExportPreflightBlocked) {
+		FrozenValidatorFunc(fileValidationNotUnderTest), CurrentnessFunc(currentExportInput), ExportAccessFunc(allowExport)).WithRuleSetUseAuditor(auditor)
+	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
+	if _, _, err := exportService.StartAs(context.Background(), actor, release.ProjectID, release.ID, "ruleset-blocked-export"); !errors.Is(err, ErrExportPreflightBlocked) {
 		t.Fatalf("export must honor the frozen RuleSet Preflight result: %v", err)
+	}
+	if len(auditor.events) != 1 || auditor.events[0].Action != "export" || auditor.events[0].Outcome != "blocked" || auditor.events[0].RuleSetID != set.ID || auditor.events[0].RuleSetVersion != set.Version || auditor.events[0].RuleSetHash != set.RulesetHash || auditor.events[0].EffectiveRulesetHash != definition.RulesetHash {
+		t.Fatalf("blocked export use must be audited against the exact RuleSet snapshot: %+v", auditor.events)
 	}
 }

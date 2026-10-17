@@ -34,6 +34,13 @@ type Template struct {
 	// RuleSetSnapshot pins the independently governed rule set used with this
 	// template copy. It is a server-verified immutable published snapshot.
 	RuleSetSnapshot *RuleSet `json:"ruleset_snapshot,omitempty"`
+	// RuleSetRef is the immutable RuleSet identity pinned by this template
+	// version. It stores identity/version/hash separately from a project copy's
+	// snapshot and is exposed by checks and release records.
+	RuleSetRef *RuleSetReference `json:"ruleset_ref,omitempty"`
+	// RuleBindingOverrides are project-copy-only, allowlisted changes. They
+	// never mutate the published RuleSet snapshot.
+	RuleBindingOverrides []RuleBindingOverride `json:"ruleset_binding_overrides,omitempty"`
 }
 
 // Section identifies one required chapter in a template.
@@ -148,6 +155,11 @@ func cloneTemplate(template Template) Template {
 		ruleSet := cloneRuleSet(*template.RuleSetSnapshot)
 		copy.RuleSetSnapshot = &ruleSet
 	}
+	if template.RuleSetRef != nil {
+		ruleSetRef := *template.RuleSetRef
+		copy.RuleSetRef = &ruleSetRef
+	}
+	copy.RuleBindingOverrides = CloneRuleBindingOverrides(template.RuleBindingOverrides)
 	return copy
 }
 

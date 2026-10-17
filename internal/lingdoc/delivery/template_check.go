@@ -20,13 +20,14 @@ const (
 // Preflight. It does not grant export permission; Prepare always evaluates the
 // frozen input again through Evaluate.
 type TemplateCheckResult struct {
-	ProjectVersion      int                          `json:"project_version"`
-	TemplateCopyID      string                       `json:"template_copy_id,omitempty"`
-	TemplateCopyVersion int64                        `json:"template_copy_version,omitempty"`
-	ContentHash         string                       `json:"content_hash,omitempty"`
-	RulesetHash         string                       `json:"ruleset_hash"`
-	Status              TemplateCheckStatus          `json:"status"`
-	Evaluations         []lingdoctemplate.Evaluation `json:"evaluations"`
+	ProjectVersion      int                               `json:"project_version"`
+	TemplateCopyID      string                            `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion int64                             `json:"template_copy_version,omitempty"`
+	ContentHash         string                            `json:"content_hash,omitempty"`
+	RulesetHash         string                            `json:"ruleset_hash"`
+	RuleSetRef          *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Status              TemplateCheckStatus               `json:"status"`
+	Evaluations         []lingdoctemplate.Evaluation      `json:"evaluations"`
 }
 
 // EvaluateTemplate executes the allowlisted evaluator on a deterministic
@@ -105,7 +106,7 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 	result := TemplateCheckResult{
 		ProjectVersion: input.ProjectVersion, TemplateCopyID: input.TemplateCopyID,
 		TemplateCopyVersion: input.TemplateCopyVersion, ContentHash: input.TemplateCopyContentHash,
-		RulesetHash: input.Template.RulesetHash, Status: TemplateCheckPassed,
+		RulesetHash: input.Template.RulesetHash, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(input.Template), Status: TemplateCheckPassed,
 		Evaluations: evaluations,
 	}
 	if !hasRulesForScene(input.Template, "preflight") {

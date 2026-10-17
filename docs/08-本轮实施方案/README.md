@@ -1,6 +1,6 @@
 # 本轮实施方案与契约
 
-> **状态说明（2026-10-13）**：本目录主要保存 Beta 首版验收、历史 T01–T16 实现证据和接口契约。完整 G1–G7 的新增开发以 [`../06-灵档产品开发规划/beta-gap-development-plans/README.md`](../06-灵档产品开发规划/beta-gap-development-plans/README.md) 及 GitHub [Issue #144](https://github.com/magician336/lingdoc/issues/144) 为准。
+> **状态说明（2026-10-16）**：本目录主要保存 Beta 首版验收、历史 T01–T16 实现证据和接口契约。完整 G1–G7 的新增开发以 [`../06-灵档产品开发规划/beta-gap-development-plans/README.md`](../06-灵档产品开发规划/beta-gap-development-plans/README.md) 及 GitHub [Issue #144](https://github.com/magician336/lingdoc/issues/144) 为准。
 
 实施协作说明版本 0.5：历史任务按 T01–T16 领取，contracts 中 HTTP、场景与连续规格的版本独立维护。新开发不应把本目录的历史任务池当作 G1–G7 的替代路线。
 
@@ -10,6 +10,12 @@
 - [协作与代码边界](../06-灵档产品开发规划/05-团队分工与代码边界.md)
 - [接口与 Mock 约定](02-接口与Mock约定.md)
 - [G4 RuleSet 服务切片与未完边界](G4-RuleSet服务切片-20261015.md)
+
+## 最新横切契约状态（2026-10-16）
+
+- [Spec #164：LingDoc 应用层传输解耦与幂等结果边界](Spec-164-传输中立应用边界.md)：实现切片已完成，#165–#169 已关闭。
+- [PR #170](https://github.com/magician336/lingdoc/pull/170) 目标分支为 `main`，当前仍开放；上一轮 8 项检查全部通过，但尚未合并。本次文档提交会触发新一轮检查，实时状态以 PR 页面为准。
+- 代码尚未合并到 `main`，因此本条记录不代表 Beta 真实验收完成；Windows 完整测试仍受 `sqlite3.h` 和既有环境依赖限制。
 
 ## 契约文件
 

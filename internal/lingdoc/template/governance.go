@@ -62,6 +62,8 @@ type EvaluationInput struct {
 type Evaluation struct {
 	ID               string           `json:"id,omitempty"`
 	RuleID           string           `json:"rule_id"`
+	RuleSetID        string           `json:"ruleset_id,omitempty"`
+	RuleSetVersion   string           `json:"ruleset_version,omitempty"`
 	TargetRef        string           `json:"target_ref"`
 	TargetVersion    string           `json:"target_version"`
 	RulesetHash      string           `json:"ruleset_hash"`
@@ -88,7 +90,9 @@ func Hashes(t Template) (contentHash, rulesetHash string, err error) {
 	}
 	rulesetHash = digest(ruleBytes)
 	if t.RuleSetSnapshot != nil {
-		rulesetHash = boundRuleSetHash(rulesetHash, *t.RuleSetSnapshot)
+		rulesetHash = boundRuleSetHash(rulesetHash, *t.RuleSetSnapshot, t.RuleBindingOverrides)
+	} else if t.RuleSetRef != nil {
+		rulesetHash = boundRuleReferenceHash(rulesetHash, *t.RuleSetRef, t.RuleBindingOverrides)
 	}
 	t.Rules = rules
 	t.RequiredFields = append([]string(nil), t.RequiredFields...)
@@ -117,13 +121,20 @@ func digest(raw []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func boundRuleSetHash(templateRuleHash string, set RuleSet) string {
+func boundRuleSetHash(templateRuleHash string, set RuleSet, overrides []RuleBindingOverride) string {
+	return boundRuleReferenceHash(templateRuleHash, RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}, overrides)
+}
+
+func boundRuleReferenceHash(templateRuleHash string, ref RuleSetReference, overrides []RuleBindingOverride) string {
+	overrides = CloneRuleBindingOverrides(overrides)
+	sort.Slice(overrides, func(i, j int) bool { return overrides[i].RuleID < overrides[j].RuleID })
 	canonical := struct {
-		TemplateRuleHash string `json:"template_rule_hash"`
-		RuleSetID        string `json:"ruleset_id"`
-		RuleSetVersion   string `json:"ruleset_version"`
-		RuleSetHash      string `json:"ruleset_hash"`
-	}{templateRuleHash, set.ID, set.Version, set.RulesetHash}
+		TemplateRuleHash string                `json:"template_rule_hash"`
+		RuleSetID        string                `json:"ruleset_id"`
+		RuleSetVersion   string                `json:"ruleset_version"`
+		RuleSetHash      string                `json:"ruleset_hash"`
+		Overrides        []RuleBindingOverride `json:"overrides,omitempty"`
+	}{templateRuleHash, ref.ID, ref.Version, ref.Hash, overrides}
 	raw, _ := json.Marshal(canonical)
 	return digest(raw)
 }
@@ -182,18 +193,30 @@ func Validate(t Template) error {
 		}
 	}
 	if t.RuleSetSnapshot != nil {
+		if t.RuleSetRef != nil && (t.RuleSetRef.ID != t.RuleSetSnapshot.ID || t.RuleSetRef.Version != t.RuleSetSnapshot.Version || t.RuleSetRef.Hash != t.RuleSetSnapshot.RulesetHash) {
+			return fmt.Errorf("%w: RuleSet reference does not match its immutable snapshot", ErrInvalidDefinition)
+		}
 		if err := CanBindRuleSet(*t.RuleSetSnapshot); err != nil {
 			return fmt.Errorf("%w: template rule set snapshot is not bindable: %v", ErrInvalidDefinition, err)
 		}
-		compiled, err := CompileRuleSet(*t.RuleSetSnapshot)
+		effectiveRuleSet, err := effectiveRuleSetWithOverrides(*t.RuleSetSnapshot, t.RuleBindingOverrides)
 		if err != nil {
-			return fmt.Errorf("%w: template rule set snapshot cannot be compiled: %v", ErrInvalidDefinition, err)
+			return fmt.Errorf("%w: invalid project RuleSet override: %v", ErrInvalidDefinition, err)
+		}
+		compiled, err := CompileRuleSet(effectiveRuleSet)
+		if err != nil {
+			return fmt.Errorf("%w: effective project RuleSet cannot be compiled: %v", ErrInvalidDefinition, err)
 		}
 		for _, rule := range compiled {
 			if ruleIDs[rule.ID] {
 				return fmt.Errorf("%w: rule set binding duplicates template rule %q", ErrInvalidDefinition, rule.ID)
 			}
 		}
+	} else if len(t.RuleBindingOverrides) > 0 {
+		return fmt.Errorf("%w: RuleSet overrides require an immutable snapshot", ErrInvalidDefinition)
+	}
+	if t.RuleSetRef != nil && (!stableID.MatchString(t.RuleSetRef.ID) || strings.TrimSpace(t.RuleSetRef.Version) == "" || len(t.RuleSetRef.Version) > 64 || len(t.RuleSetRef.Hash) != 64) {
+		return fmt.Errorf("%w: incomplete RuleSet reference", ErrInvalidDefinition)
 	}
 	return nil
 }

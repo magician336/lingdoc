@@ -12524,6 +12524,7 @@
     },
     "/projects/{projectId}/draft-candidates": {"get":{"operationId":"listDraftCandidates","tags":["workspace"],"summary":"列出草稿候选","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"createDraftCandidate","tags":["workspace"],"summary":"创建草稿候选","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
     "/projects/{projectId}/audit": {"get":{"operationId":"listAuditEvents","tags":["workspace"],"summary":"读取项目审计事件","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/rule-set-use-audits": {"get":{"operationId":"listRuleSetUseAudits","tags":["workspace"],"summary":"读取项目规则集使用审计","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string","minLength":1}}],"responses":{"200":{"description":"当前租户有权读取的不可变规则集使用记录","content":{"application/json":{"schema":{"$ref":"#/components/schemas/RuleSetUseAuditListResponse"}}}},"400":{"description":"项目标识无效"},"401":{"description":"需要有效的租户身份","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorResponse"}}}},"403":{"description":"当前租户成员无权读取","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ErrorResponse"}}}},"404":{"description":"规则集不存在或不可访问"}},"x-domain":"template-governance","x-delivery-phase":"core"}},
     "/projects/{projectId}/activation-diff": {"get":{"operationId":"getActivationDiff","tags":["workspace"],"summary":"读取立项确认差异","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/template-migration/preview": {"get":{"operationId":"previewTemplateMigration","tags":["workspace"],"summary":"预览草稿模板迁移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"},"post":{"operationId":"previewTemplateMigrationPost","tags":["workspace"],"summary":"提交模板迁移预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
     "/projects/{projectId}/template-migration": {"post":{"operationId":"changeTemplate","tags":["workspace"],"summary":"提交草稿模板迁移","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"200":{"description":"成功"},"400":{"description":"请求错误"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"版本或幂等冲突"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core","requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}}}},
@@ -12552,7 +12553,7 @@
           {"name": "projectId", "in": "path", "required": true, "schema": {"type": "string"}},
           {"name": "Idempotency-Key", "in": "header", "required": true, "schema": {"type": "string", "minLength": 8}}
         ],
-        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateChangeSetInput"}, "example": {"expected_context_revision": 1, "fields": {}, "affected_chapter_ids": [], "reason": "按团队评审升级模板副本", "template_upgrade": {"expected_project_version": 8, "expected_template_copy_version": 2, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "order": 1, "required": true}], "sections": [{"section_id": "question", "title": "研究问题", "order": 1, "required": true}], "terms": [], "required_fields": ["research_subject"], "rules": [], "field_values": {}}}}}},
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateChangeSetInput"}, "example": {"expected_context_revision": 1, "fields": {}, "affected_chapter_ids": [], "reason": "按团队评审升级模板副本", "template_upgrade": {"expected_project_version": 8, "expected_template_copy_version": 2, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "order": 1, "required": true}], "sections": [{"section_id": "question", "title": "研究问题", "order": 1, "required": true}], "terms": [], "required_fields": ["research_subject"], "rules": [], "field_values": {}, "ruleset_ref": {"ruleset_id": "grant-rules", "version": "v2", "ruleset_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "ruleset_overrides": []}}}}},
         "responses": {
           "201": {"description": "已生成变更预览与迁移/影响摘要"},
           "400": {"description": "请求错误或迁移失败"},
@@ -12852,6 +12853,8 @@
               "type": "string"
             }
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
+          "ruleset_binding_overrides": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBindingOverride"}},
           "ruleset_hash": {
             "type": "string"
           },
@@ -12920,7 +12923,8 @@
           "expected_project_version": {"type": "integer", "minimum": 1},
           "expected_template_copy_version": {"type": "integer", "minimum": 1},
           "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64},
-          "ruleset_version": {"type": "string", "minLength": 1, "maxLength": 64}
+          "ruleset_version": {"type": "string", "minLength": 1, "maxLength": 64},
+          "overrides": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBindingOverride"}}
         },
         "required": ["expected_project_version", "expected_template_copy_version", "ruleset_id", "ruleset_version"],
         "additionalProperties": false
@@ -12974,7 +12978,9 @@
           "terms": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateTerm"}},
           "required_fields": {"type": "array", "items": {"type": "string"}},
           "rules": {"type": "array", "items": {"$ref": "#/components/schemas/Rule"}},
-          "field_values": {"type": "object", "additionalProperties": {"type": "string"}}
+          "field_values": {"type": "object", "additionalProperties": {"type": "string"}},
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
+          "ruleset_overrides": {"type": "array", "items": {"$ref": "#/components/schemas/RuleBindingOverride"}}
         },
         "required": ["expected_project_version", "expected_template_copy_version", "fields", "sections", "terms", "required_fields", "rules"],
         "additionalProperties": false
@@ -13036,6 +13042,7 @@
           "status": {"type": "string", "enum": ["draft", "bound", "superseded", "discarded"]},
           "content_hash": {"type": "string", "minLength": 1},
           "ruleset_hash": {"type": "string", "minLength": 1},
+          "template_version_ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "definition": {"$ref": "#/components/schemas/Template"},
           "created_by": {"type": "string"},
           "created_at": {"type": "string", "format": "date-time"}
@@ -13580,6 +13587,7 @@
             "type": "string",
             "minLength": 1
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "ruleset_hash": {
             "type": "string"
           },
@@ -13674,6 +13682,7 @@
           "ruleset_hash": {
             "type": "string"
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "status": {
             "type": "string",
             "enum": [
@@ -13704,6 +13713,7 @@
           "rule_id": {"type": "string", "minLength": 1},
           "target_ref": {"type": "string", "minLength": 1},
           "target_version": {"type": "string", "minLength": 1},
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "ruleset_hash": {"type": "string", "minLength": 1},
           "status": {"type": "string", "enum": ["PASS", "ISSUE", "UNKNOWN", "NOT_APPLICABLE"]},
           "severity": {"type": "string", "enum": ["blocking", "warning", "info"]},
@@ -13722,6 +13732,7 @@
           "template_copy_version": {"type": "integer", "minimum": 0},
           "content_hash": {"type": "string"},
           "ruleset_hash": {"type": "string"},
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "status": {"type": "string", "enum": ["passed", "blocked", "not_evaluated"]},
           "evaluations": {"type": "array", "items": {"$ref": "#/components/schemas/TemplateRuleEvaluation"}}
         },
@@ -13795,6 +13806,7 @@
           "snapshot_digest": {
             "type": "string"
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "check": {
             "$ref": "#/components/schemas/CheckResult"
           },
@@ -13852,6 +13864,7 @@
             "type": "string",
             "minLength": 1
           },
+          "ruleset_ref": {"$ref": "#/components/schemas/RuleSetReference"},
           "status": {
             "type": "string",
             "enum": [
@@ -14572,6 +14585,46 @@
         "required": ["definition_id", "definition_version", "kind"],
         "additionalProperties": false
       },
+      "RuleSetUseAuditEvent": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string", "format": "uuid"},
+          "tenant_id": {"type": "integer", "format": "int64", "minimum": 1},
+          "actor_id": {"type": "string", "minLength": 1},
+          "actor_role": {"type": "string", "minLength": 1},
+          "project_id": {"type": "string", "minLength": 1},
+          "action": {"type": "string", "enum": ["check", "preflight", "release_snapshot", "export"]},
+          "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "ruleset_version": {"type": "string", "minLength": 1, "maxLength": 64},
+          "ruleset_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "effective_ruleset_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "template_id": {"type": "string", "minLength": 1},
+          "template_version": {"type": "string", "minLength": 1},
+          "template_copy_id": {"type": "string"},
+          "template_copy_version": {"type": "integer", "minimum": 1},
+          "project_version": {"type": "integer", "minimum": 1},
+          "resource_id": {"type": "string"},
+          "outcome": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "required": ["id", "tenant_id", "actor_id", "actor_role", "project_id", "action", "ruleset_id", "ruleset_version", "ruleset_hash", "effective_ruleset_hash", "template_id", "template_version", "outcome", "created_at"],
+        "additionalProperties": false
+      },
+      "RuleSetUseAuditListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {"items": {"type": "array", "items": {"$ref": "#/components/schemas/RuleSetUseAuditEvent"}}},
+            "required": ["items"],
+            "additionalProperties": false
+          },
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
       "RuleBinding": {
         "type": "object",
         "properties": {
@@ -14591,6 +14644,26 @@
           "owner": {"type": "string", "minLength": 1}
         },
         "required": ["rule_id", "definition_id", "definition_version", "origin", "severity", "trigger_scenes", "enabled", "owner"],
+        "additionalProperties": false
+      },
+      "RuleSetReference": {
+        "type": "object",
+        "properties": {
+          "ruleset_id": {"type": "string", "minLength": 1, "maxLength": 64},
+          "version": {"type": "string", "minLength": 1, "maxLength": 64},
+          "ruleset_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        },
+        "required": ["ruleset_id", "version", "ruleset_hash"],
+        "additionalProperties": false
+      },
+      "RuleBindingOverride": {
+        "type": "object",
+        "properties": {
+          "rule_id": {"type": "string", "minLength": 1},
+          "enabled": {"type": "boolean"},
+          "parameters": {"type": "object", "additionalProperties": true}
+        },
+        "required": ["rule_id"],
         "additionalProperties": false
       },
       "RuleSet": {

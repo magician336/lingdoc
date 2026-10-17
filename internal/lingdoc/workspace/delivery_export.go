@@ -8,6 +8,8 @@ import (
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -23,9 +25,11 @@ type DeliveryExportService struct {
 	validator   delivery.FrozenValidator
 	inputs      *candidateadoption.DeliveryInputService
 	sources     candidateadoption.SourcePolicy
+	reviewer    sourcepolicy.Reviewer
 	currentness DeliveryCurrentness
 	policy      AccessPolicy
 	audit       AuditSink
+	useAuditor  lingdoctemplate.RuleSetUseAuditRecorder
 }
 
 // NewDeliveryExportService 依赖不齐时返回 nil，与同一包里的
@@ -88,7 +92,11 @@ func NewDeliveryExportServiceWithCurrentness(
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, currentness: currentness, audit: audit}
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, currentness: currentness, audit: audit}
 }
 
 // NewDeliveryExportServiceWithPolicy uses the shared application policy for
@@ -113,7 +121,20 @@ func NewDeliveryExportServiceWithPolicy(
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, policy: policy, audit: audit}
+	var reviewer sourcepolicy.Reviewer
+	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
+		reviewer = candidate
+	}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, policy: policy, audit: audit}
+}
+
+// WithRuleSetUseAuditor wires the durable use-audit store required by
+// governed export attempts that fail before an artifact can be created.
+func (s *DeliveryExportService) WithRuleSetUseAuditor(auditor lingdoctemplate.RuleSetUseAuditRecorder) *DeliveryExportService {
+	if s != nil {
+		s.useAuditor = auditor
+	}
+	return s
 }
 
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
@@ -244,7 +265,7 @@ func (s *DeliveryExportService) currentSnapshotSources(ctx context.Context, acto
 		}
 		return nil
 	}
-	if err := s.sources.Validate(ctx, projectID, actorID, ids); err != nil {
+	if err := s.reviewCurrentSources(ctx, projectID, actorID, ids); err != nil {
 		return err
 	}
 	if s.currentness == nil {
@@ -263,7 +284,7 @@ func (s *DeliveryExportService) currentSnapshotSources(ctx context.Context, acto
 func (s *DeliveryExportService) authorize(ctx context.Context, actorID, projectID string) error {
 	if s.policy != nil {
 		actor := s.deliveryActor(ctx, actorID)
-		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "contributor")
+		return s.policy.Authorize(ctx, LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "read")
 	}
 	if s.inputs == nil || s.inputs.Authorizer == nil {
 		return candidateadoption.ErrInvalidState
@@ -316,49 +337,64 @@ func (s *DeliveryExportService) List(ctx context.Context, actorID, projectID str
 // 两个判定都接回 T12 那一份：授权是 T07 交给它的成员判定，当前性是**与 T13 同一个**
 // deliveryCurrentness。导出侧不另立一套口径。
 func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID string) *delivery.ExportService {
+	var service *delivery.ExportService
 	if s.policy != nil {
-		return delivery.NewExportServiceWithAccessPolicy(s.snapshots, s.exports, s.renderer, s.validator, s.policy, s.audit)
-	}
-	return delivery.NewExportService(
-		s.snapshots,
-		s.exports,
-		s.renderer,
-		s.validator,
-		delivery.CurrentnessFunc(func(frozen delivery.DeliveryInput) (bool, error) {
-			current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
-			if err != nil || !current {
-				return current, err
-			}
-			if s.currentness != nil {
-				current, err := s.currentness.Current(ctx, actorID, frozen)
-				if err != nil {
+		service = delivery.NewExportServiceWithAccessPolicy(s.snapshots, s.exports, s.renderer, s.validator, s.policy, s.audit)
+	} else {
+		service = delivery.NewExportService(
+			s.snapshots,
+			s.exports,
+			s.renderer,
+			s.validator,
+			delivery.CurrentnessFunc(func(frozen delivery.DeliveryInput) (bool, error) {
+				current, err := deliveryCurrentness(ctx, s.inputs.Reader, frozen)
+				if err != nil || !current {
+					return current, err
+				}
+				if s.currentness != nil {
+					current, err := s.currentness.Current(ctx, actorID, frozen)
+					if err != nil {
+						if errors.Is(err, candidateadoption.ErrSourceAccessDenied) || errors.Is(err, candidateadoption.ErrStaleInput) {
+							return false, nil
+						}
+						return false, err
+					}
+					return current, nil
+				}
+				ids := make([]string, 0, len(frozen.Sources))
+				for _, source := range frozen.Sources {
+					ids = append(ids, source.ID)
+				}
+				if len(ids) == 0 {
+					return true, nil
+				}
+				if err := s.reviewCurrentSources(ctx, projectID, actorID, ids); err != nil {
 					if errors.Is(err, candidateadoption.ErrSourceAccessDenied) || errors.Is(err, candidateadoption.ErrStaleInput) {
 						return false, nil
 					}
 					return false, err
 				}
-				return current, nil
-			}
-			ids := make([]string, 0, len(frozen.Sources))
-			for _, source := range frozen.Sources {
-				ids = append(ids, source.ID)
-			}
-			if len(ids) == 0 {
 				return true, nil
-			}
-			if err := s.sources.Validate(ctx, projectID, actorID, ids); err != nil {
-				if errors.Is(err, candidateadoption.ErrSourceAccessDenied) || errors.Is(err, candidateadoption.ErrStaleInput) {
-					return false, nil
-				}
-				return false, err
-			}
-			return true, nil
-		}),
-		delivery.ExportAccessFunc(func(actorUserID, projectID string) error {
-			return s.inputs.Authorizer.AuthorizeProject(ctx, actorUserID, projectID)
-		}),
-		s.audit,
-	)
+			}),
+			delivery.ExportAccessFunc(func(actorUserID, projectID string) error {
+				return s.inputs.Authorizer.AuthorizeProject(ctx, actorUserID, projectID)
+			}),
+			s.audit,
+		)
+	}
+	return service.WithRuleSetUseAuditor(s.useAuditor)
+}
+
+func (s *DeliveryExportService) reviewCurrentSources(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
+	if s.reviewer != nil {
+		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, sourceIDs)
+	}
+	if s.sources == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	// Compatibility boundary for legacy export adapters. Production wiring
+	// supplies the shared Reviewer above.
+	return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, sourceIDs)
 }
 
 func accessInputFromDelivery(input delivery.DeliveryInput) lingdocaccess.CurrentnessInput {
