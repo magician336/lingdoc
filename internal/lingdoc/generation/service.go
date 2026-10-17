@@ -10,6 +10,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -96,8 +99,9 @@ type Run struct {
 
 // Actor is the authenticated owner identity passed from the HTTP boundary.
 type Actor struct {
-	TenantID uint64 `json:"tenant_id"`
-	UserID   string `json:"user_id"`
+	Role     types.TenantRole `json:"role,omitempty"`
+	TenantID uint64           `json:"tenant_id"`
+	UserID   string           `json:"user_id"`
 }
 
 // Source contains only the verified source fields required by generation.
@@ -117,22 +121,27 @@ type Source struct {
 }
 
 type Request struct {
-	ChapterID                string   `json:"chapter_id"`
-	AssetIDs                 []string `json:"asset_ids"`
-	Instruction              string   `json:"instruction"`
-	ExpectedSpecRevision     int      `json:"expected_spec_revision"`
-	ExpectedChapterVersionID *string  `json:"expected_chapter_version_id"`
+	EvidenceCardRefs         []EvidenceCardRef `json:"evidence_card_refs,omitempty"`
+	ChapterID                string            `json:"chapter_id"`
+	AssetIDs                 []string          `json:"asset_ids"`
+	Instruction              string            `json:"instruction"`
+	ExpectedSpecRevision     int               `json:"expected_spec_revision"`
+	ExpectedChapterVersionID *string           `json:"expected_chapter_version_id"`
 }
 
 // Input is the immutable, server-resolved generation basis captured before
 // queueing. The client never supplies project spec, template, or source text.
 type Input struct {
-	Actor       Actor                               `json:"actor"`
-	Workspace   candidateadoption.GenerationContext `json:"workspace"`
-	Basis       candidateadoption.Basis             `json:"basis"`
-	ProjectSpec map[string]string                   `json:"project_spec"`
-	Sources     []Source                            `json:"sources"`
-	Request     Request                             `json:"request"`
+	EvidenceConstraints []EvidenceConstraint                `json:"evidence_constraints,omitempty"`
+	HumanInitiated      bool                                `json:"human_initiated,omitempty"`
+	TemplateDefinition  *lingdoctemplate.Template           `json:"template_definition,omitempty"`
+	EvidenceCardRefs    []EvidenceCardRef                   `json:"evidence_card_refs,omitempty"`
+	Actor               Actor                               `json:"actor"`
+	Workspace           candidateadoption.GenerationContext `json:"workspace"`
+	Basis               candidateadoption.Basis             `json:"basis"`
+	ProjectSpec         map[string]string                   `json:"project_spec"`
+	Sources             []Source                            `json:"sources"`
+	Request             Request                             `json:"request"`
 }
 
 type Draft struct {
@@ -190,6 +199,8 @@ type DelayedEnqueuer interface {
 }
 
 type Service struct {
+	RequireHumanInitiation bool
+	Evidence               EvidenceInputValidator
 	// Access is the production application policy. The legacy ports remain
 	// available for adapters that are migrated independently.
 	Access      lingdocaccess.Policy
@@ -218,11 +229,15 @@ func NewServiceWithAccessPolicy(policy lingdocaccess.Policy, inputs InputResolve
 func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string, request Request) (Run, error) {
 	if actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(projectID) == "" ||
 		len(key) < 8 || len(key) > 128 || strings.TrimSpace(request.ChapterID) == "" ||
-		strings.TrimSpace(request.Instruction) == "" || request.ExpectedSpecRevision < 0 || len(request.AssetIDs) == 0 {
+		strings.TrimSpace(request.Instruction) == "" || request.ExpectedSpecRevision < 0 || len(request.AssetIDs) == 0 && len(request.EvidenceCardRefs) == 0 {
 		return Run{}, ErrInvalidRequest
 	}
+	if !validEvidenceCardRefs(request.EvidenceCardRefs) {
+		return Run{}, ErrInvalidRequest
+	}
+	request.EvidenceCardRefs = append([]EvidenceCardRef(nil), request.EvidenceCardRefs...)
 	request.AssetIDs = normalizeIDs(request.AssetIDs)
-	if len(request.AssetIDs) == 0 {
+	if len(request.AssetIDs) == 0 && len(request.EvidenceCardRefs) == 0 {
 		return Run{}, ErrInvalidRequest
 	}
 	for i, id := range request.AssetIDs {
@@ -233,7 +248,24 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	if !s.hasAuthorization() || s.Inputs == nil || s.Repository == nil || s.Enqueuer == nil {
 		return Run{}, ErrDependencyUnavailable
 	}
-	if err := s.authorize(ctx, actor, projectID); err != nil {
+	if s.RequireHumanInitiation {
+		var authority any = s.Access
+		if authority == nil {
+			authority = s.Authorizer
+		}
+		human, ok := authority.(HumanInitiationAuthorizer)
+		if !ok {
+			return Run{}, ErrDependencyUnavailable
+		}
+		if err := human.AuthorizeHumanGeneration(ctx); err != nil {
+			return Run{}, err
+		}
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.UserID == actor.UserID && caller.TenantID == actor.TenantID && caller.Role.IsValid() {
+		actor.Role = caller.Role
+	}
+	if err := s.authorizeWrite(ctx, actor, projectID, request.ChapterID); err != nil {
 		return Run{}, err
 	}
 	encoded, err := json.Marshal(request)
@@ -242,9 +274,31 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	}
 	hash := sha256.Sum256(encoded)
 	requestHash := hex.EncodeToString(hash[:])
+	var evidenceInput *Input
+	if len(request.EvidenceCardRefs) > 0 {
+		resolved, resolveErr := s.Inputs.ResolveGenerationInput(ctx, actor, projectID, request)
+		if resolveErr != nil {
+			return Run{}, resolveErr
+		}
+		resolved.Request = request
+		resolved.Actor = actor
+		resolved.EvidenceCardRefs = append([]EvidenceCardRef(nil), request.EvidenceCardRefs...)
+		if resolved.Workspace.SpecRevision != request.ExpectedSpecRevision || !sameOptionalString(resolved.Basis.ChapterVersionID, request.ExpectedChapterVersionID) {
+			return Run{}, ErrVersionConflict
+		}
+		if err := s.validateEvidence(ctx, actor, projectID, request.ChapterID, resolved); err != nil {
+			return Run{}, err
+		}
+		evidenceInput = &resolved
+	}
 	if run, found, err := s.Repository.FindReplay(ctx, actor, projectID, key, requestHash); err != nil {
 		return Run{}, err
 	} else if found {
+		if s.RequireHumanInitiation {
+			if err := s.validateReplayInput(ctx, actor, projectID, run); err != nil {
+				return Run{}, err
+			}
+		}
 		run.Replayed = true
 		if run.Status == StatusQueued {
 			if err := s.Enqueuer.EnqueueGeneration(ctx, actor.TenantID, run.ID); err != nil {
@@ -253,9 +307,15 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 		}
 		return run, nil
 	}
-	input, err := s.Inputs.ResolveGenerationInput(ctx, actor, projectID, request)
-	if err != nil {
-		return Run{}, err
+	var input Input
+	if evidenceInput != nil {
+		input = *evidenceInput
+	} else {
+		var resolveErr error
+		input, resolveErr = s.Inputs.ResolveGenerationInput(ctx, actor, projectID, request)
+		if resolveErr != nil {
+			return Run{}, resolveErr
+		}
 	}
 	if input.Workspace.ProjectID != projectID || input.Workspace.ChapterID != request.ChapterID {
 		return Run{}, ErrNotFound
@@ -265,11 +325,17 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 		!sameOptionalString(input.Basis.ChapterVersionID, request.ExpectedChapterVersionID) {
 		return Run{}, ErrVersionConflict
 	}
-	if !sameStringSet(request.AssetIDs, assetIDs(input.Basis.AssetVersions)) {
+	if len(request.AssetIDs) > 0 && !sameStringSet(request.AssetIDs, assetIDs(input.Basis.AssetVersions)) {
 		return Run{}, ErrSourceAccessDenied
 	}
 	input.Request = request
 	input.Actor = actor
+	input.HumanInitiated = s.RequireHumanInitiation
+	input.EvidenceCardRefs = append([]EvidenceCardRef(nil), request.EvidenceCardRefs...)
+	copyEvidenceBasis(&input, request.EvidenceCardRefs)
+	if err := s.validateEvidence(ctx, actor, projectID, request.ChapterID, input); err != nil {
+		return Run{}, err
+	}
 	run, err := s.Repository.CreateOrReplay(ctx, actor, projectID, key, requestHash, input)
 	if err != nil {
 		return Run{}, err
@@ -323,10 +389,16 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		cancel()
 		<-heartbeatDone
 	}()
-	if err := s.authorize(ctx, input.Actor, run.ProjectID); err != nil {
+	if s.RequireHumanInitiation && !input.HumanInitiated {
+		return s.failBeforeModel(ctx, run, ErrForbidden)
+	}
+	if err := s.authorizeWrite(ctx, input.Actor, run.ProjectID, run.ChapterID); err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
 	if err := s.Sources.ValidateGenerationSources(ctx, input.Actor, run.ProjectID, input.Sources); err != nil {
+		return s.failBeforeModel(ctx, run, err)
+	}
+	if err := s.validateEvidence(ctx, input.Actor, run.ProjectID, run.ChapterID, input); err != nil {
 		return s.failBeforeModel(ctx, run, err)
 	}
 	current, err := s.current(ctx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
@@ -416,6 +488,12 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		}
 		return failed, nil
 	}
+	if err := s.authorizeWrite(workCtx, input.Actor, run.ProjectID, run.ChapterID); err != nil {
+		return s.failBeforeModel(ctx, run, err)
+	}
+	if err := s.validateEvidence(workCtx, input.Actor, run.ProjectID, run.ChapterID, input); err != nil {
+		return s.failBeforeModel(ctx, run, err)
+	}
 	current, err = s.current(workCtx, input.Actor, run.ProjectID, run.ChapterID, input.Basis)
 	if err != nil {
 		failed, storeErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusInterrupted, RunError{Code: "currentness_unavailable", Message: "无法确认生成输入仍为当前版本，任务已中断。", Retryable: true})
@@ -502,7 +580,11 @@ func (s *Service) Cancel(ctx context.Context, actor Actor, projectID, runID stri
 	if s.Repository == nil || !s.hasAuthorization() || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
 		return Run{}, ErrNotFound
 	}
-	if err := s.authorize(ctx, actor, projectID); err != nil {
+	run, err := s.Repository.Get(ctx, actor, projectID, runID)
+	if err != nil {
+		return Run{}, err
+	}
+	if err := s.authorizeWrite(ctx, actor, projectID, run.ChapterID); err != nil {
 		return Run{}, err
 	}
 	return s.Repository.Cancel(ctx, actor, projectID, runID)
@@ -521,6 +603,10 @@ func (s *Service) ListCandidates(ctx context.Context, actor Actor, projectID, ch
 	}
 	for i := range candidates {
 		candidates[i].Validity = s.candidateValidity(ctx, actor, projectID, chapterID, candidates[i].Basis)
+		_, input, readErr := s.Repository.GetCandidate(ctx, projectID, candidates[i].RunID)
+		if readErr != nil || s.validateEvidence(ctx, actor, projectID, chapterID, input) != nil {
+			candidates[i].Validity = "stale"
+		}
 	}
 	return candidates, nil
 }
@@ -534,6 +620,9 @@ func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runI
 	}
 	candidate, input, err := s.Repository.GetCandidate(ctx, projectID, runID)
 	if err != nil {
+		return candidateadoption.Candidate{}, err
+	}
+	if err := s.validateEvidence(ctx, actor, projectID, candidate.ChapterID, input); err != nil {
 		return candidateadoption.Candidate{}, err
 	}
 	if s.Sources == nil {
@@ -584,7 +673,7 @@ func (s *Service) hasCurrentness() bool { return s != nil && (s.Access != nil ||
 
 func (s *Service) authorize(ctx context.Context, actor Actor, projectID string) error {
 	if s.Access != nil {
-		return s.Access.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, ProjectID: projectID}, "read")
+		return s.Access.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "read")
 	}
 	if s.Authorizer == nil {
 		return ErrDependencyUnavailable
@@ -598,10 +687,11 @@ func (s *Service) current(ctx context.Context, actor Actor, projectID, chapterID
 		for _, asset := range basis.AssetVersions {
 			assetVersions = append(assetVersions, lingdocaccess.AssetVersion{AssetID: asset.AssetID, Revision: asset.AssetRevision})
 		}
-		return s.Access.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, ProjectID: projectID}, lingdocaccess.CurrentnessInput{
+		return s.Access.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, lingdocaccess.CurrentnessInput{
 			Kind:      lingdocaccess.GenerationInput,
 			ProjectID: projectID, ChapterID: chapterID, SpecRevision: int64(basis.SpecRevision), ChapterVersionID: basis.ChapterVersionID,
 			TemplateID: basis.TemplateID, TemplateVersion: basis.TemplateVersion, RulesetHash: basis.RulesetHash, AssetVersions: assetVersions,
+			TemplateCopyID: basis.TemplateCopyID, TemplateCopyVersion: basis.TemplateCopyVersion, TemplateCopyContentHash: basis.TemplateCopyContentHash, ContextRevision: basis.ContextRevision,
 		})
 	}
 	if s.Currentness == nil {
@@ -679,4 +769,81 @@ func sourceReferences(markdown string) ([]string, error) {
 		offset = start + end + len(suffix)
 	}
 	return normalizeIDs(result), nil
+}
+
+type EvidenceCardRef struct {
+	ID      string `json:"id"`
+	Version int64  `json:"version"`
+}
+type EvidenceInputValidator interface {
+	ValidateGenerationEvidence(context.Context, Actor, string, string, []EvidenceCardRef, []Source) error
+}
+type HumanInitiationAuthorizer interface{ AuthorizeHumanGeneration(context.Context) error }
+type ChapterAuthorizer interface {
+	AuthorizeGenerationChapter(context.Context, Actor, string, string) error
+}
+
+func (s *Service) authorizeWrite(ctx context.Context, actor Actor, projectID, chapterID string) error {
+	if s.Access != nil {
+		if chapterID == "" {
+			return ErrInvalidRequest
+		}
+		if err := s.Access.Authorize(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: projectID}, "write:"+chapterID); err != nil {
+			return err
+		}
+		return nil
+	}
+	if s.Authorizer == nil {
+		return ErrDependencyUnavailable
+	}
+	if scoped, ok := s.Authorizer.(ChapterAuthorizer); ok {
+		return scoped.AuthorizeGenerationChapter(ctx, actor, projectID, chapterID)
+	}
+	return s.Authorizer.AuthorizeGeneration(ctx, actor, projectID)
+}
+func validEvidenceCardRefs(refs []EvidenceCardRef) bool {
+	if len(refs) > 20 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, ref := range refs {
+		if strings.TrimSpace(ref.ID) == "" || ref.Version < 1 || seen[ref.ID] {
+			return false
+		}
+		seen[ref.ID] = true
+	}
+	return true
+}
+func (s *Service) validateEvidence(ctx context.Context, actor Actor, projectID, chapterID string, input Input) error {
+	if len(input.EvidenceCardRefs) == 0 && len(input.Request.EvidenceCardRefs) == 0 {
+		if len(input.EvidenceConstraints) > 0 {
+			return ErrSourceAccessDenied
+		}
+		return nil
+	}
+	if s.Evidence == nil || !validEvidenceCardRefs(input.EvidenceCardRefs) || !reflect.DeepEqual(input.EvidenceCardRefs, input.Request.EvidenceCardRefs) {
+		return ErrSourceAccessDenied
+	}
+	if err := s.Evidence.ValidateGenerationEvidence(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, input.Sources); err != nil {
+		return err
+	}
+	if len(input.EvidenceConstraints) != len(input.EvidenceCardRefs) {
+		return ErrSourceAccessDenied
+	}
+	port, ok := s.Evidence.(EvidenceConstraintValidator)
+	if !ok {
+		return ErrDependencyUnavailable
+	}
+	return port.ValidateGenerationEvidenceConstraints(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, input.EvidenceConstraints)
+}
+
+type EvidenceConstraint struct {
+	CardRef     EvidenceCardRef `json:"card_ref"`
+	SupportType string          `json:"support_type"`
+	Scope       string          `json:"scope"`
+	Limitations string          `json:"limitations"`
+	SourceIDs   []string        `json:"source_ids"`
+}
+type EvidenceConstraintValidator interface {
+	ValidateGenerationEvidenceConstraints(context.Context, Actor, string, string, []EvidenceCardRef, []EvidenceConstraint) error
 }

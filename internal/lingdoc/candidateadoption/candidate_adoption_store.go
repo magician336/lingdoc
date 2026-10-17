@@ -16,8 +16,10 @@ import (
 // SQLiteCandidateAdoptionStore owns the T11 candidate and adoption records
 // while reusing the T08 workspace tables for projects, chapters, and versions.
 type SQLiteCandidateAdoptionStore struct {
-	db            *gorm.DB
-	focusedSchema bool // Enabled only by the focused-test AutoMigrate helper.
+	db             *gorm.DB
+	focusedSchema  bool // Enabled only by the focused-test AutoMigrate helper.
+	evidencePolicy CandidateEvidencePolicy
+	authorizer     Authorizer
 }
 
 func NewSQLiteCandidateAdoptionStore(db *gorm.DB) *SQLiteCandidateAdoptionStore {
@@ -27,17 +29,18 @@ func NewSQLiteCandidateAdoptionStore(db *gorm.DB) *SQLiteCandidateAdoptionStore 
 func (s *SQLiteCandidateAdoptionStore) DB() *gorm.DB { return s.db }
 
 type projectRow struct {
-	ID                  string `gorm:"primaryKey;size:36"`
-	TenantID            uint64 `gorm:"not null;index"`
-	Name                string `gorm:"not null;size:120"`
-	Status              string `gorm:"not null;size:16"`
-	ProjectVersion      int64  `gorm:"not null"`
-	SpecRevision        int64  `gorm:"not null"`
-	SpecJSON            string `gorm:"column:spec_json;not null;type:text"`
-	TemplateID          string `gorm:"not null;size:80"`
-	TemplateVersion     string `gorm:"not null;size:40"`
-	TemplateCopyVersion int64  `gorm:"column:template_copy_version;not null;default:0"`
-	CreatedAt           time.Time
+	ID                     string `gorm:"primaryKey;size:36"`
+	TenantID               uint64 `gorm:"not null;index"`
+	Name                   string `gorm:"not null;size:120"`
+	Status                 string `gorm:"not null;size:16"`
+	ProjectVersion         int64  `gorm:"not null"`
+	SpecRevision           int64  `gorm:"not null"`
+	SpecJSON               string `gorm:"column:spec_json;not null;type:text"`
+	TemplateID             string `gorm:"not null;size:80"`
+	TemplateVersion        string `gorm:"not null;size:40"`
+	TemplateCopyVersion    int64  `gorm:"column:template_copy_version;not null;default:0"`
+	CurrentContextRevision int64  `gorm:"column:current_context_revision;not null;default:0"`
+	CreatedAt              time.Time
 }
 
 type projectTemplateCopyRow struct {
@@ -157,14 +160,20 @@ func (confirmationIdempotencyRow) TableName() string { return "lingdoc_chapter_c
 // numbered migrations, where 000018 owns workspace tables and 000020 adds the
 // T11 columns and records.
 func (s *SQLiteCandidateAdoptionStore) AutoMigrate(ctx context.Context) error {
-	err := s.db.WithContext(ctx).AutoMigrate(
-		&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{},
-		&confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{},
-	)
-	if err == nil {
-		s.focusedSchema = true
+	db := s.db.WithContext(ctx)
+	// This helper creates isolated test tables only. Existing T08/native tables
+	// belong to numbered migrations: a partial projection must never rebuild
+	// them or change their tenant constraints, columns, defaults or indexes.
+	for _, model := range []any{&projectRow{}, &chapterRow{}, &chapterVersionRow{}, &projectAssetRow{}, &candidateRow{}, &confirmationRow{}, &adoptionIdempotencyRow{}, &confirmationIdempotencyRow{}} {
+		if db.Migrator().HasTable(model) {
+			continue
+		}
+		if err := db.Migrator().CreateTable(model); err != nil {
+			return err
+		}
 	}
-	return err
+	s.focusedSchema = true
+	return nil
 }
 
 // ConfirmChapter persists the confirmation and idempotent response atomically.
@@ -339,19 +348,9 @@ func (s *SQLiteCandidateAdoptionStore) GenerationContext(ctx context.Context, pr
 	if err != nil {
 		return GenerationContext{}, err
 	}
-	basis := Basis{
-		SpecRevision:     int(project.SpecRevision),
-		ChapterVersionID: chapter.CurrentVersionID,
-		TemplateID:       project.TemplateID,
-		TemplateVersion:  project.TemplateVersion,
-	}
-	var assets []projectAssetRow
-	if err := tx.Where("project_id = ? AND deleted_at IS NULL", projectID).Order("id ASC").Find(&assets).Error; err != nil {
+	basis, err := currentAdoptionBasis(tx, project, chapter)
+	if err != nil {
 		return GenerationContext{}, err
-	}
-	basis.AssetVersions = make([]AssetVersion, 0, len(assets))
-	for _, asset := range assets {
-		basis.AssetVersions = append(basis.AssetVersions, AssetVersion{AssetID: asset.ID, AssetRevision: asset.AssetRevision})
 	}
 	return GenerationContext{
 		ProjectID: projectID, ChapterID: chapterID, SpecRevision: int(project.SpecRevision),
@@ -377,8 +376,18 @@ func (s *SQLiteCandidateAdoptionStore) ListChapters(ctx context.Context, project
 }
 
 func (s *SQLiteCandidateAdoptionStore) ReplayCandidateAcceptance(ctx context.Context, in AcceptCandidateInput) (*AcceptResult, error) {
+	var result *AcceptResult
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		replay, err := s.replayCandidateAcceptance(ctx, tx, in)
+		result = replay
+		return err
+	})
+	return result, err
+}
+
+func (s *SQLiteCandidateAdoptionStore) replayCandidateAcceptance(ctx context.Context, tx *gorm.DB, in AcceptCandidateInput) (*AcceptResult, error) {
 	var row adoptionIdempotencyRow
-	err := s.db.WithContext(ctx).Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&row).Error
+	err := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -387,6 +396,19 @@ func (s *SQLiteCandidateAdoptionStore) ReplayCandidateAcceptance(ctx context.Con
 	}
 	if row.RequestHash != requestHash(in) {
 		return nil, ErrIdempotencyConflict
+	}
+	candidate, err := NewSQLiteCandidateAdoptionStore(tx).GetCandidate(ctx, in.ProjectID, in.CandidateID)
+	if err != nil {
+		return nil, err
+	}
+	if candidate.ChapterID != in.ChapterID {
+		return nil, ErrNotFound
+	}
+	if err := s.authorizeCandidateInTransaction(ctx, tx, in); err != nil {
+		return nil, err
+	}
+	if err := s.validateEvidenceInTransaction(ctx, tx, in, candidate); err != nil {
+		return nil, err
 	}
 	var chapter Chapter
 	if err := json.Unmarshal([]byte(row.ResponseJSON), &chapter); err != nil {
@@ -399,6 +421,9 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 	var result AcceptResult
 	hash := requestHash(in)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.authorizeCandidateInTransaction(ctx, tx, in); err != nil {
+			return err
+		}
 		var existing adoptionIdempotencyRow
 		lookupErr := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&existing).Error
 		if lookupErr == nil {
@@ -407,6 +432,16 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			}
 			if err := json.Unmarshal([]byte(existing.ResponseJSON), &result.Chapter); err != nil {
 				return fmt.Errorf("decode idempotency response: %w", err)
+			}
+			persisted, err := NewSQLiteCandidateAdoptionStore(tx).GetCandidate(ctx, in.ProjectID, in.CandidateID)
+			if err != nil {
+				return err
+			}
+			if persisted.ChapterID != in.ChapterID {
+				return ErrNotFound
+			}
+			if err := s.validateEvidenceInTransaction(ctx, tx, in, persisted); err != nil {
+				return err
 			}
 			result.Replayed = true
 			return nil
@@ -443,6 +478,29 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			return ErrInvalidState
 		}
 
+		persisted, err := NewSQLiteCandidateAdoptionStore(tx).GetCandidate(ctx, in.ProjectID, in.CandidateID)
+		if err != nil {
+			return err
+		}
+		if !sameCandidateSnapshot(persisted, candidate) {
+			return ErrVersionConflict
+		}
+		basis, err := currentAdoptionBasis(tx, project, current)
+		if err != nil {
+			return err
+		}
+		// The explicit focused schema retains older persistence-only fixtures.
+		// Production and every candidate carrying a validity/new basis use full checks.
+		if !s.focusedSchema || persisted.Validity != "" || candidateHasNewBasis(persisted.Basis) {
+			if err := validateCandidate(in, GenerationContext{ProjectID: in.ProjectID, ChapterID: in.ChapterID, SpecRevision: int(project.SpecRevision), ChapterVersionID: chapter.CurrentVersionID, Basis: basis, Chapter: current}, persisted); err != nil {
+				return err
+			}
+		} else if err := validateSourceReferences(persisted.BodyMarkdown, persisted.SourceIDs); err != nil {
+			return err
+		}
+		if err := s.validateEvidenceInTransaction(ctx, tx, in, persisted); err != nil {
+			return err
+		}
 		workingCopy, err := s.cleanWorkingCopy(tx, current)
 		if err != nil {
 			return err
@@ -503,6 +561,9 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 			return ErrVersionConflict
 		}
 
+		if err := storeAdoptedEvidenceDependencies(tx, in, persisted, newVersionID); err != nil {
+			return err
+		}
 		if workingCopy != nil {
 			if err := advanceAdoptedWorkingCopy(tx, *workingCopy, version); err != nil {
 				return err

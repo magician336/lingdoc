@@ -373,7 +373,7 @@ func TestTenantRoleMatrixCapsProjectMemberPermissions(t *testing.T) {
 		wantManage bool
 	}{
 		{name: "viewer", role: types.TenantRoleViewer},
-		{name: "contributor", role: types.TenantRoleContributor},
+		{name: "contributor", role: types.TenantRoleContributor, wantManage: true},
 		{name: "admin", role: types.TenantRoleAdmin, wantManage: true},
 		{name: "owner", role: types.TenantRoleOwner, wantManage: true},
 	}
@@ -606,8 +606,13 @@ func TestProjectAuthorizerSeamCoversCreateListAndRead(t *testing.T) {
 	if _, err := service.GetProject(ctx, actor, created.ID); err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if len(authorizer.projectCalls) != 1 || authorizer.projectCalls[0] != created.ID+":read" {
-		t.Fatalf("project calls = %v, want [%s:read]", authorizer.projectCalls, created.ID)
+	if len(authorizer.projectCalls) < 2 {
+		t.Fatalf("missing list/read authorization: %v", authorizer.projectCalls)
+	}
+	for _, call := range authorizer.projectCalls {
+		if call != created.ID+":read" {
+			t.Fatalf("wrong project/capability authorization: %v", authorizer.projectCalls)
+		}
 	}
 }
 

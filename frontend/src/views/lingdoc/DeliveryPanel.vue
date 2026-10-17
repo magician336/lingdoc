@@ -21,7 +21,7 @@ const props = defineProps<{
 
 // 项目是上层传进来的 prop，面板改不了它。而检查与冻结都要交一个 expected_project_version
 // 上去，过期了就只能请上层重读——这件事面板自己做不了。
-const emit = defineEmits<{ refreshProject: [done?: (ok: boolean) => void] }>()
+const emit = defineEmits<{ refreshProject: [done?: (ok: boolean) => void];computedReceipt:[id:string];reviewChangeReceipt:[id:string] }>()
 
 const statusLabels: Record<CheckStatus, string> = {
   passed: '通过',
@@ -242,6 +242,7 @@ async function runCheck() {
     // 只有检查这一条一直漏着。
     if (projectId !== props.project.id) return
     checks.value = result.data
+    emit('computedReceipt',result.data.receipt_id??'')
   } catch (error) {
     if (projectId !== props.project.id) return
     if (!recoverVersionConflict(error)) fail(error, '交付检查失败，请重试。')
@@ -444,6 +445,7 @@ watch(
         当前检查结果：{{ statusLabels[checks.status] }}
         <small>（项目版本 {{ checks.project_version }}）</small>
       </p>
+      <p v-if="checks.receipt_id" class="delivery__receipt">当前检查回执：<code>{{checks.receipt_id}}</code><button type="button" @click="emit('reviewChangeReceipt',checks!.receipt_id!)">用此回执处理正式变更</button></p>
       <ul v-if="checks.issues.length" class="delivery__issues">
         <li v-for="issue in checks.issues" :key="issue.id">
           <span class="delivery__target">{{ issueTargetLabel(issue, project.id, chapters) }}</span>

@@ -48,6 +48,7 @@ type ApplicationService interface {
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
 	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }
@@ -73,6 +74,7 @@ type WorkspaceReadApplication interface {
 
 // WorkspaceWriteApplication is the route-facing mutation port.
 type WorkspaceWriteApplication interface {
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	CreateProjectResult(context.Context, Actor, string, CreateProjectInput) (CreateProjectResult, error)
 	SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error)
 	ActivateProjectResult(context.Context, Actor, string, string, ActivateProjectInput) (ProjectMutationResult, error)
@@ -154,6 +156,7 @@ type TemplateApplication interface {
 // ChangeSetApplication is the focused application port for context-change
 // assessment and its explicit apply/reject lifecycle.
 type ChangeSetApplication interface {
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
 	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
@@ -249,6 +252,7 @@ type KnowledgeSearchService interface {
 }
 
 type HandlerDependencies struct {
+	FullWorkflow *FullWorkflowDependencies
 	// Service is retained for compatibility with older adapters. New route
 	// composition should provide the focused application ports below.
 	Service          ApplicationService

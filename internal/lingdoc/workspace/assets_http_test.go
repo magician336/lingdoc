@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,8 +30,9 @@ import (
 // 状态码与响应体**仍是那些判据说的意思。这是 S4 与 S1-S3 的分界，而它此前一条用例都
 // 没有——所以 T09 报告里那句「S4 未运行」是真的，不是谦虚。
 //
-// 结论落成 docs/08-本轮实施方案/T09-S4-证据.json，由 verify_t09_test.go 读回去判分。
-// 不带时间戳：两次绿跑产出逐字节相同的文件，工作区不会因为跑了一次测试就变脏。
+// 固定资料 docs/08-本轮实施方案/T09-S4-证据.json 供 verify_t09_test.go 读回。
+// 每次执行核对当前用例集合，默认不改源码树；本轮结果以 Go test 输出为准。
+// 增减用例须显式更新固定资料，避免历史绿结论被误当本轮运行证据。
 
 const (
 	// t09RouteBase 与 router.go 装配出来的前缀一致（Register 收下的是已认证的 /api/v1 组）。
@@ -205,7 +207,7 @@ func newAssetsHTTPFixture(t *testing.T) assetsHTTPFixture {
 // 语境窗口按族取邻居（text 与 parent_text 各有独立的 chunk_index 空间），而停用是
 // 「不参与检索」、不是「不在原文里」。列缺了，那两条就无从测起，会安静地退化成「没测」。
 var assetsApplicationSchema = []string{
-	`CREATE TABLE tenant_members (
+	`CREATE TABLE tenant_members ( role TEXT NOT NULL DEFAULT 'owner',
 		tenant_id INTEGER NOT NULL,
 		user_id TEXT NOT NULL,
 		status TEXT NOT NULL,
@@ -807,7 +809,7 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 		}
 	})
 
-	t09WriteEvidence(t, cases, passed)
+	t09AssertEvidenceFixture(t, cases, passed)
 }
 
 // s4Evidence 是交给 verify_t09_test.go 判分的那份结论。
@@ -822,7 +824,7 @@ type s4Evidence struct {
 	Cases   []string `json:"cases"`
 }
 
-func t09WriteEvidence(t *testing.T, cases []string, passed int) {
+func t09AssertEvidenceFixture(t *testing.T, cases []string, passed int) {
 	t.Helper()
 	if passed != len(cases) {
 		// 有子用例红了就**不写**证据文件：留着一份旧的绿结论比没有结论更坏——
@@ -844,7 +846,13 @@ func t09WriteEvidence(t *testing.T, cases []string, passed int) {
 	if err != nil {
 		t.Fatalf("marshal S4 evidence: %v", err)
 	}
-	if err := os.WriteFile(t09S4EvidencePath, append(data, '\n'), 0o644); err != nil {
-		t.Fatalf("write S4 evidence: %v", err)
+	existing, err := os.ReadFile(t09S4EvidencePath)
+	if err != nil {
+		t.Fatalf("read S4 fixture: %v", err)
+	}
+	// A test must not rewrite a tracked fixture or normalize its checkout EOL.
+	// Current execution evidence is the Go test stream, not this historical file.
+	if !bytes.Equal(bytes.ReplaceAll(existing, []byte("\r\n"), []byte("\n")), append(data, '\n')) {
+		t.Fatalf("S4 fixture no longer matches the executed cases; update it explicitly:\n%s", data)
 	}
 }

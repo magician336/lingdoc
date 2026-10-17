@@ -11,6 +11,12 @@
 - [接口与 Mock 约定](02-接口与Mock约定.md)
 - [G4 RuleSet 服务切片与未完边界](G4-RuleSet服务切片-20261015.md)
 
+## 当前PR复审入口
+
+2026-10-17接续：维护者已合入#151，固定main `2d6167fddfe9dc9fe4481b45faea88c6565bed78`，tree与已验#151@0fd相同。#122正从536365a接入该基准，旧536的CI保留原身份，新组合结果见[接口复审与版本锁定](PR122主线接口复审-20261017.md)。此变动不代表#140关闭、正式Beta或统一G1–G7验收通过。
+
+[PR #122 main同步复审交接](pr122-main-sync-review-20261016.md)：维护者五域有条件已审，第六域及当前头兼容检查仍需复审；不代表合并、发布或完整G1–G7验收。
+
 ## 最新横切契约状态（2026-10-16）
 
 - [Spec #164：LingDoc 应用层传输解耦与幂等结果边界](Spec-164-传输中立应用边界.md)：实现切片已完成，#165–#169 已关闭。
@@ -21,8 +27,8 @@
 
 | 文件 | 用途 |
 |---|---|
-| [openapi.json](contracts/openapi.json) | 拟议 HTTP 契约及已实现 G4 RuleSet 管理、项目副本绑定和 Template Check/Preflight 切片：54 paths / 60 operations（57 core / 3 optional），94 schemas；其余拟议路径不代表已有服务 |
-| [scenarios.json](contracts/scenarios.json) | 24 个行为场景（F01–F23、G7-01 基线读写）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
+| [openapi.json](contracts/openapi.json) | HTTP契约与G4 RuleSet/精确绑定/模板检查；paths、operations和schemas以当前JSON为准，声明存在不代表全量已验收 |
+| [scenarios.json](contracts/scenarios.json) | 行为场景与合成样例，准确ID以JSON为准；providers表示参与服务；F22带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
@@ -185,3 +191,7 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 这些接口是待实现方案。Schema 不能独自验证全部跨字段规则，静态轨迹也不能证明数据库副作用。Prism、完整 OpenAPI meta-schema、真实服务/数据库/浏览器/模型/DOCX 均未由本脚本验证；文件 hash 占位值不代表已生成真实文件。
 
 正式业务模板未确认时使用清楚标注的演示模板。保留警示的导出仅用于 internal_demo，不宣称正式申报通过。
+
+## 工作台布局提案
+
+[工作台布局规格与 PR 协作评审](工作台布局规格与PR协作评审-20261012.md)：把研究、专注和审阅作为同一工作台的状态，规定接线、错误恢复和集中验收。本文件为待评审提案，不表示已选型、已接真或允许合并。

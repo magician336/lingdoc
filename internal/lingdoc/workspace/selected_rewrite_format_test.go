@@ -16,8 +16,10 @@ func (m *formatRewriteModel) RewriteSelected(context.Context, Actor, SelectedRew
 func TestSelectedRewriteExportBoundaryBeforeReady(t *testing.T) {
 	for _, tc := range []struct{ name, text, status, code string }{
 		{"plain_with_citation", "研究问题：保留事实 [[source:existing]]\n\n限制：尚未实施。", "ready", ""},
-		{"bold_label", "**研究问题**：保留事实 [[source:existing]]", "failed", "unsupported_format"},
-		{"list", "- 保留事实 [[source:existing]]", "failed", "unsupported_format"},
+		{"bold_label", "**研究问题**：保留事实 [[source:existing]]", "ready", ""},
+		{"list", "- 保留事实 [[source:existing]]", "ready", ""},
+		{"blockquote", "> 保留事实 [[source:existing]]", "failed", "unsupported_format"},
+		{"code", "`代码` [[source:existing]]", "failed", "unsupported_format"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s, w, _, _, input := inheritedRewriteFixture(t)

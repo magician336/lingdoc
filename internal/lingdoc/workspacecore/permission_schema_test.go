@@ -39,3 +39,32 @@ func TestMissingPermissionSchemaFailsClosedOnWrite(t *testing.T) {
 		t.Fatalf("create project error = %v, want ErrPermissionSchemaUnavailable", err)
 	}
 }
+
+// Main's fail-closed schema policy also applies to the G5 owner-transfer
+// transaction. A failed sidecar update must roll back the legacy role write.
+func TestOwnerRoleChangeMissingPermissionSchemaRollsBack(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "owner-schema.db"))
+	actor := Actor{TenantID: 1, UserID: "owner"}
+	seedTenantMember(t, svc, actor)
+	raw, _, _, err := svc.CreateProject(context.Background(), actor, "owner-schema-create", CreateProjectInput{Name: "schema", TemplateID: "template-demo"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, raw)
+	if err := svc.testDB().Exec("DROP TABLE lingdoc_member_permissions").Error; err != nil {
+		t.Fatal(err)
+	}
+	err = NewGORMRepository(svc.testDB()).Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
+		return tx.(ownerTransferTransaction).SetMemberRole(project.ID, actor.UserID, "collaborator")
+	})
+	if !errors.Is(err, ErrPermissionSchemaUnavailable) {
+		t.Fatalf("role change error = %v, want ErrPermissionSchemaUnavailable", err)
+	}
+	var member memberRow
+	if err := svc.testDB().Where("project_id=? AND user_id=?", project.ID, actor.UserID).Take(&member).Error; err != nil {
+		t.Fatal(err)
+	}
+	if member.Role != "owner" {
+		t.Fatalf("failed permission update leaked legacy role: %q", member.Role)
+	}
+}

@@ -38,7 +38,8 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 	t.Cleanup(func() { _ = sqlDB.Close() })
 
 	statements := []string{
-		`CREATE TABLE tenant_members (
+		`CREATE TABLE IF NOT EXISTS lingdoc_g5_records(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,
+		`CREATE TABLE tenant_members ( role TEXT NOT NULL DEFAULT 'owner',
 			tenant_id INTEGER NOT NULL,
 			user_id TEXT NOT NULL,
 			status TEXT NOT NULL,
@@ -53,6 +54,7 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 			project_version INTEGER NOT NULL,
 			spec_revision INTEGER NOT NULL,
 			current_context_revision INTEGER NOT NULL DEFAULT 0,
+			template_copy_version INTEGER NOT NULL DEFAULT 0,
 			spec_metadata_json TEXT NOT NULL DEFAULT '{}',
 			spec_json TEXT NOT NULL,
 			template_id TEXT NOT NULL,
