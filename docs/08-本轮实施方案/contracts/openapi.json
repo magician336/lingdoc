@@ -12542,7 +12542,7 @@
         "tags": ["workspace"],
         "summary": "读取项目变更预览",
         "parameters": [{"name": "projectId", "in": "path", "required": true, "schema": {"type": "string"}}],
-        "responses": {"200": {"description": "变更集列表"}, "404": {"description": "资源不存在或不可访问"}},
+        "responses": {"200": {"description": "变更集列表", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChangeSetListResponse"}}}}, "404": {"description": "资源不存在或不可访问"}},
         "x-domain": "workspace", "x-delivery-phase": "core"
       },
       "post": {
@@ -12555,7 +12555,7 @@
         ],
         "requestBody": {"required": true, "content": {"application/json": {"schema": {"$ref": "#/components/schemas/CreateChangeSetInput"}, "example": {"expected_context_revision": 1, "fields": {}, "affected_chapter_ids": [], "reason": "按团队评审升级模板副本", "template_upgrade": {"expected_project_version": 8, "expected_template_copy_version": 2, "fields": [{"field_id": "research_subject", "label": "研究对象", "type": "string", "order": 1, "required": true}], "sections": [{"section_id": "question", "title": "研究问题", "order": 1, "required": true}], "terms": [], "required_fields": ["research_subject"], "rules": [], "field_values": {}, "ruleset_ref": {"ruleset_id": "grant-rules", "version": "v2", "ruleset_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "ruleset_overrides": []}}}}},
         "responses": {
-          "201": {"description": "已生成变更预览与迁移/影响摘要"},
+          "201": {"description": "已生成变更预览与迁移/影响摘要", "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ChangeSetResponse"}}}},
           "400": {"description": "请求错误或迁移失败"},
           "404": {"description": "资源不存在或不可访问"},
           "409": {"description": "版本或幂等冲突"},
@@ -12564,7 +12564,8 @@
         "x-domain": "workspace", "x-delivery-phase": "core"
       }
     },
-    "/projects/{projectId}/change-sets/{changeSetId}": {"get":{"operationId":"getChangeSet","tags":["workspace"],"summary":"读取变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更预览"},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets/{changeSetId}": {"get":{"operationId":"getChangeSet","tags":["workspace"],"summary":"读取变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}}],"responses":{"200":{"description":"变更预览", "content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChangeSetResponse"}}}},"404":{"description":"资源不存在或不可访问"}},"x-domain":"workspace","x-delivery-phase":"core"}},
+    "/projects/{projectId}/change-sets/{changeSetId}/reassess": {"post":{"operationId":"reassessChangeSet","tags":["workspace"],"summary":"将过期变更复制到当前基线重新评估","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"responses":{"201":{"description":"已创建新的重评结果；目标值已全部满足时返回 satisfied，原过期记录保留","content":{"application/json":{"schema":{"$ref":"#/components/schemas/ChangeSetResponse"}}}},"400":{"description":"请求体必须为空，且 Idempotency-Key 格式无效时拒绝"},"404":{"description":"资源不存在或不可访问"},"409":{"description":"目标字段已变化，需人工解决后重新创建"},"422":{"description":"当前状态不允许"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/apply": {"post":{"operationId":"applyChangeSet","tags":["workspace"],"summary":"Owner 应用变更并开始复核","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已原子应用"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"基线过期或幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/projects/{projectId}/change-sets/{changeSetId}/reject": {"post":{"operationId":"rejectChangeSet","tags":["workspace"],"summary":"Owner 驳回变更预览","parameters":[{"name":"projectId","in":"path","required":true,"schema":{"type":"string"}},{"name":"changeSetId","in":"path","required":true,"schema":{"type":"string"}},{"name":"Idempotency-Key","in":"header","required":true,"schema":{"type":"string","minLength":8}}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object"},"example":{}}}},"responses":{"200":{"description":"变更已驳回"},"404":{"description":"资源不存在或不可访问"},"422":{"description":"当前状态不允许"},"409":{"description":"幂等冲突"}},"x-domain":"workspace","x-delivery-phase":"core"}},
     "/rule-sets/definitions": {
@@ -12999,6 +13000,7 @@
           },
           "affected_chapter_ids": {"type": "array", "items": {"type": "string"}},
           "reason": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "reverses_change_set_id": {"type": "string", "maxLength": 64, "description": "原已应用的普通字段 ChangeSet；仅用于创建其反向提案"},
           "template_upgrade": {"$ref": "#/components/schemas/TemplateUpgradeInput"}
         },
         "required": ["expected_context_revision", "reason"],
@@ -13006,6 +13008,74 @@
           {"required": ["fields", "affected_chapter_ids"], "not": {"required": ["template_upgrade"]}},
           {"required": ["template_upgrade"], "properties": {"fields": {"maxProperties": 0}, "affected_chapter_ids": {"maxItems": 0}}}
         ],
+        "additionalProperties": false
+      },
+      "ChangeSetField": {
+        "type": "object",
+        "properties": {
+          "key": {"type": "string"},
+          "old_value": {"type": "string"},
+          "new_value": {"type": "string"}
+        },
+        "required": ["key", "old_value", "new_value"],
+        "additionalProperties": false
+      },
+      "ChangeImpact": {
+        "type": "object",
+        "properties": {
+          "chapter_id": {"type": "string"},
+          "chapter_version_id": {"type": "string", "nullable": true},
+          "title": {"type": "string"},
+          "reason": {"type": "string"},
+          "status": {"type": "string", "enum": ["open", "reviewed", "stale"]}
+        },
+        "required": ["chapter_id", "title", "reason", "status"],
+        "additionalProperties": false
+      },
+      "ChangeSet": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "project_id": {"type": "string"},
+          "created_by": {"type": "string"},
+          "reassessed_from_id": {"type": "string"},
+          "reverses_change_set_id": {"type": "string", "description": "此提案反向撤回的原 ChangeSet ID"},
+          "stale_reason": {"type": "string"},
+          "decision_by": {"type": "string", "description": "应用或驳回该变更的当前 Owner；尚未作出决定时省略"},
+          "decided_at": {"type": "string", "format": "date-time", "description": "Owner 应用或驳回该变更的 UTC 时间；尚未作出决定时省略"},
+          "reason": {"type": "string"},
+          "status": {"type": "string", "enum": ["draft", "assessed", "applied", "rejected", "stale", "stabilized", "satisfied"]},
+          "base_context_revision": {"type": "integer"},
+          "target_context_revision": {"type": "integer", "nullable": true},
+          "base_spec_revision": {"type": "integer"},
+          "target_spec_revision": {"type": "integer", "nullable": true},
+          "fields": {"type": "array", "items": {"$ref": "#/components/schemas/ChangeSetField"}},
+          "impacts": {"type": "array", "items": {"$ref": "#/components/schemas/ChangeImpact"}},
+          "template_upgrade": {"type": "object", "additionalProperties": true},
+          "created_at": {"type": "string", "format": "date-time"},
+          "applied_at": {"type": "string", "format": "date-time", "nullable": true}
+        },
+        "required": ["id", "project_id", "created_by", "reason", "status", "base_context_revision", "base_spec_revision", "fields", "impacts", "created_at"],
+        "additionalProperties": false
+      },
+      "ChangeSetResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"$ref": "#/components/schemas/ChangeSet"},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
+        "additionalProperties": false
+      },
+      "ChangeSetListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {"type": "array", "items": {"$ref": "#/components/schemas/ChangeSet"}},
+          "request_id": {"type": "string"},
+          "meta": {"$ref": "#/components/schemas/ResponseMeta"}
+        },
+        "required": ["data", "request_id", "meta"],
         "additionalProperties": false
       },
       "TemplateMigrationPreview": {

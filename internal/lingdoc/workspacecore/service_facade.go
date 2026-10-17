@@ -125,6 +125,7 @@ type ChangeSetMutationTransaction interface {
 	ProjectMembershipTransaction
 	ChapterWorkspaceTransaction
 	changeSetTransaction
+	AuditTransaction
 }
 
 type CandidateMutationTransaction interface {
@@ -259,6 +260,7 @@ const (
 	operationCreateProject           operationName = "createProject"
 	operationSaveSpec                operationName = "saveSpec"
 	operationCreateChangeSet         operationName = "createChangeSet"
+	operationReassessChangeSet       operationName = "reassessChangeSet"
 	operationApplyChangeSet          operationName = "applyChangeSet"
 	operationRejectChangeSet         operationName = "rejectChangeSet"
 	operationCreateDraftCandidate    operationName = "createDraftCandidate"
@@ -312,7 +314,7 @@ func sourceOperationInput[I any](name operationName, target, key string, input I
 
 func operationOutputFor(name operationName) operationOutputKind {
 	switch name {
-	case operationCreateChangeSet, operationApplyChangeSet, operationRejectChangeSet:
+	case operationCreateChangeSet, operationReassessChangeSet, operationApplyChangeSet, operationRejectChangeSet:
 		return operationOutputChangeSet
 	case operationCreateDraftCandidate:
 		return operationOutputCandidate
@@ -1975,6 +1977,9 @@ func validateChangeSetInput(input CreateChangeSetInput) error {
 	if input.ExpectedContextRevision < 1 || len(input.Fields) > 2 || (!hasTemplateUpgrade && len(input.Fields) == 0) || (hasTemplateUpgrade && len(input.Fields) != 0) || (!hasTemplateUpgrade && len(input.AffectedChapterIDs) == 0) || strings.TrimSpace(input.Reason) == "" || len([]rune(input.Reason)) > 2000 {
 		return ErrInvalidRequest
 	}
+	if input.ReversesChangeSetID != strings.TrimSpace(input.ReversesChangeSetID) || len(input.ReversesChangeSetID) > 64 || (input.ReversesChangeSetID != "" && hasTemplateUpgrade) {
+		return ErrInvalidRequest
+	}
 	seen := make(map[string]struct{}, len(input.AffectedChapterIDs))
 	for _, id := range input.AffectedChapterIDs {
 		if strings.TrimSpace(id) == "" {
@@ -2205,6 +2210,48 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 		if p.CurrentContextRevision != input.ExpectedContextRevision {
 			return operationResult[ChangeSet]{}, ErrVersionConflict
 		}
+		var reversedFrom ChangeSet
+		if input.ReversesChangeSetID != "" {
+			var err error
+			reversedFrom, err = tx.ChangeSet(projectID, input.ReversesChangeSetID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			if reversedFrom.Status != "applied" || reversedFrom.TemplateUpgrade != nil || len(reversedFrom.Fields) == 0 {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			if len(reversedFrom.Fields) != len(input.Fields) {
+				return operationResult[ChangeSet]{}, ErrInvalidRequest
+			}
+			originalFields := make(map[string]ChangeFieldDelta, len(reversedFrom.Fields))
+			for _, field := range reversedFrom.Fields {
+				originalFields[field.Key] = field
+			}
+			for key, delta := range input.Fields {
+				original, ok := originalFields[key]
+				if !ok || delta.OldValue != original.NewValue || delta.NewValue != original.OldValue {
+					return operationResult[ChangeSet]{}, ErrInvalidRequest
+				}
+			}
+			providedImpacts := make(map[string]struct{}, len(input.AffectedChapterIDs))
+			for _, id := range input.AffectedChapterIDs {
+				providedImpacts[id] = struct{}{}
+			}
+			for _, impact := range reversedFrom.Impacts {
+				if _, ok := providedImpacts[impact.ChapterID]; !ok {
+					return operationResult[ChangeSet]{}, fmt.Errorf("%w: inverse ChangeSet must retain prior affected chapters", ErrInvalidRequest)
+				}
+			}
+			existing, err := tx.ChangeSets(projectID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			for _, prior := range existing {
+				if prior.ReversesChangeSetID == reversedFrom.ID && prior.Status != "rejected" {
+					return operationResult[ChangeSet]{}, ErrInvalidState
+				}
+			}
+		}
 		var templateUpgrade *TemplateUpgrade
 		impactChapterIDs := append([]string{}, input.AffectedChapterIDs...)
 		var upgradeChapters []Chapter
@@ -2265,12 +2312,15 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 			}
 			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: reason, Status: "open"})
 		}
-		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, Reason: strings.TrimSpace(input.Reason), Status: "assessed", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC()}
+		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReversesChangeSetID: input.ReversesChangeSetID, Reason: strings.TrimSpace(input.Reason), Status: "assessed", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC()}
 		if err := tx.InsertChangeSet(change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
 			details := map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts, "reason": change.Reason}
+			if change.ReversesChangeSetID != "" {
+				details["reverses_change_set_id"] = change.ReversesChangeSetID
+			}
 			if change.TemplateUpgrade != nil {
 				details["template_upgrade"] = templateUpgradeAuditDetails(change, nil)
 			}
@@ -2418,11 +2468,18 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
 			stale.Status = "stale"
+			stale.StaleReason = "context_revision_changed"
+			if change.BaseSpecRevision != p.SpecRevision {
+				stale.StaleReason = "spec_revision_changed"
+			}
+			if upgradeStale {
+				stale.StaleReason = "template_copy_changed"
+			}
 			if err := tx.UpdateChangeSet(change, stale); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 			if audit, ok := tx.(auditTransaction); ok {
-				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision, "template_copy_version": p.TemplateCopyVersion}, CreatedAt: time.Now().UTC()}); err != nil {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"stale_reason": stale.StaleReason, "base_context_revision": change.BaseContextRevision, "current_context_revision": p.CurrentContextRevision, "template_copy_version": p.TemplateCopyVersion}, CreatedAt: time.Now().UTC()}); err != nil {
 					return operationResult[ChangeSet]{}, err
 				}
 			}
@@ -2436,11 +2493,12 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			if !sameVersion(impact.ChapterVersionID, chapter.CurrentVersionID) {
 				stale := change
 				stale.Status = "stale"
+				stale.StaleReason = "chapter_version_changed"
 				if err := tx.UpdateChangeSet(change, stale); err != nil {
 					return operationResult[ChangeSet]{}, err
 				}
 				if audit, ok := tx.(auditTransaction); ok {
-					if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"chapter_id": impact.ChapterID, "chapter_version_id": impact.ChapterVersionID}, CreatedAt: time.Now().UTC()}); err != nil {
+					if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.stale", Target: change.ID, Details: map[string]any{"stale_reason": stale.StaleReason, "chapter_id": impact.ChapterID, "chapter_version_id": impact.ChapterVersionID}, CreatedAt: time.Now().UTC()}); err != nil {
 						return operationResult[ChangeSet]{}, err
 					}
 				}
@@ -2512,6 +2570,8 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		now := time.Now().UTC()
 		previousChange := change
 		change.Status = "applied"
+		change.DecisionBy = actor.UserID
+		change.DecidedAt = &now
 		change.TargetContextRevision = &targetContext
 		change.TargetSpecRevision = &targetSpec
 		change.AppliedAt = &now
@@ -2530,6 +2590,9 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		}
 		if audit, ok := tx.(auditTransaction); ok {
 			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec, "reason": change.Reason, "change_set_id": change.ID}
+			if change.ReversesChangeSetID != "" {
+				details["reverses_change_set_id"] = change.ReversesChangeSetID
+			}
 			if change.TemplateUpgrade != nil {
 				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)
 			}
@@ -2539,6 +2602,188 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		}
 		return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 	})
+}
+
+// ReassessChangeSet copies a stale proposal onto the current project baseline.
+// The stale proposal remains immutable history; changed target fields or an
+// upgraded template require a human to resolve the conflict before retrying.
+func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	if strings.TrimSpace(changeSetID) == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input := struct {
+		SourceChangeSetID string `json:"source_change_set_id"`
+	}{SourceChangeSetID: changeSetID}
+	return runOperation(s, ctx, actor, operationInput(operationReassessChangeSet, projectID+"/"+changeSetID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), mutationPort[ChangeSetMutationTransaction], func(tx ChangeSetMutationTransaction, p Project) (operationResult[ChangeSet], error) {
+		if p.Status != "active" || p.DiscardedAt != nil || p.CurrentContextRevision < 1 {
+			return operationResult[ChangeSet]{}, ErrInvalidState
+		}
+		stale, err := tx.ChangeSet(projectID, changeSetID)
+		if err != nil {
+			return operationResult[ChangeSet]{}, err
+		}
+		if stale.Status != "stale" {
+			return operationResult[ChangeSet]{}, ErrInvalidState
+		}
+		if stale.TemplateUpgrade == nil && len(stale.Fields) == 0 {
+			return operationResult[ChangeSet]{}, ErrInvalidState
+		}
+		if stale.ReversesChangeSetID != "" {
+			source, err := tx.ChangeSet(projectID, stale.ReversesChangeSetID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			if source.Status != "applied" || source.TemplateUpgrade != nil || len(source.Fields) != len(stale.Fields) {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			originalFields := make(map[string]ChangeFieldDelta, len(source.Fields))
+			for _, field := range source.Fields {
+				originalFields[field.Key] = field
+			}
+			for _, field := range stale.Fields {
+				original, ok := originalFields[field.Key]
+				if !ok || field.OldValue != original.NewValue || field.NewValue != original.OldValue {
+					return operationResult[ChangeSet]{}, ErrInvalidState
+				}
+			}
+		}
+
+		fields := make([]ChangeFieldDelta, 0, len(stale.Fields))
+		for _, field := range stale.Fields {
+			if p.TemplateCopy == nil {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			definition, exists := templateFieldDefinitions(p.TemplateCopy.Definition)[field.Key]
+			if !exists || !compatibleTemplateValue(field.NewValue, definition) {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			currentValue := p.Spec[field.Key]
+			if currentValue == field.NewValue {
+				continue
+			}
+			if currentValue != field.OldValue {
+				return operationResult[ChangeSet]{}, ErrVersionConflict
+			}
+			fields = append(fields, field)
+		}
+
+		impactChapterIDs := make([]string, 0, len(stale.Impacts))
+		var templateUpgrade *TemplateUpgrade
+		if stale.TemplateUpgrade != nil {
+			upgrade := *stale.TemplateUpgrade
+			if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound || p.TemplateCopyVersion != upgrade.BaseTemplateCopyVersion {
+				return operationResult[ChangeSet]{}, ErrVersionConflict
+			}
+			// Do not carry a reviewed migration over edits to its source values.
+			// The caller must inspect the latest project and create a fresh upgrade.
+			for _, field := range upgrade.Preview.Fields {
+				if p.Spec[field.FieldID] != field.Value {
+					return operationResult[ChangeSet]{}, ErrVersionConflict
+				}
+			}
+			if _, err := templateSpecAfterUpgrade(p.Spec, upgrade.Definition, upgrade.FieldValues); err != nil {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			chapters, err := tx.Chapters(projectID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			if len(chapters) == 0 {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			for _, chapter := range chapters {
+				impactChapterIDs = append(impactChapterIDs, chapter.ID)
+			}
+			slices.Sort(impactChapterIDs)
+			upgrade.Preview = buildTemplateMigrationPreview(p, upgrade.Definition, p.ProjectVersion)
+			upgrade.Impact = buildTemplateUpgradeImpact(p.TemplateCopy, upgrade.Definition, upgrade.Preview, impactChapterIDs, chapters)
+			templateUpgrade = &upgrade
+		} else {
+			if len(fields) == 0 {
+				// A stale proposal whose every target value is already current has
+				// nothing left to apply. Persist an explicit terminal result so the
+				// recovery action is visible, auditable, and safely replayable.
+				now := time.Now().UTC()
+				contextRevision, specRevision := p.CurrentContextRevision, p.SpecRevision
+				change := ChangeSet{
+					ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID,
+					ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID, Reason: stale.Reason, Status: "satisfied",
+					BaseContextRevision: contextRevision, TargetContextRevision: &contextRevision,
+					BaseSpecRevision: specRevision, TargetSpecRevision: &specRevision,
+					Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: now,
+				}
+				if err := tx.InsertChangeSet(change); err != nil {
+					return operationResult[ChangeSet]{}, err
+				}
+				if audit, ok := tx.(auditTransaction); ok {
+					details := map[string]any{
+						"reassessed_from_id": stale.ID, "outcome": "already_satisfied",
+						"base_context_revision": change.BaseContextRevision, "target_context_revision": p.CurrentContextRevision,
+						"base_spec_revision": change.BaseSpecRevision, "target_spec_revision": p.SpecRevision,
+					}
+					if change.ReversesChangeSetID != "" {
+						details["reverses_change_set_id"] = change.ReversesChangeSetID
+					}
+					if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reassess", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
+						return operationResult[ChangeSet]{}, err
+					}
+				}
+				return operationResult[ChangeSet]{Value: change, Status: operationStatusCreated}, nil
+			}
+			for _, impact := range stale.Impacts {
+				impactChapterIDs = append(impactChapterIDs, impact.ChapterID)
+			}
+			slices.Sort(impactChapterIDs)
+			impactChapterIDs = slices.Compact(impactChapterIDs)
+		}
+
+		reason := "研究条件变化，需要重新复核"
+		if templateUpgrade != nil {
+			reason = "模板或规则版本变化，需要重新复核"
+		}
+		impacts := make([]ChangeImpact, 0, len(impactChapterIDs))
+		for _, chapterID := range impactChapterIDs {
+			chapter, err := tx.Chapter(projectID, chapterID)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: reason, Status: "open"})
+		}
+		change := ChangeSet{
+			ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReassessedFromID: stale.ID,
+			ReversesChangeSetID: stale.ReversesChangeSetID, Reason: stale.Reason, Status: "assessed", BaseContextRevision: p.CurrentContextRevision,
+			BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts,
+			TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC(),
+		}
+		if err := tx.InsertChangeSet(change); err != nil {
+			return operationResult[ChangeSet]{}, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			details := map[string]any{
+				"reassessed_from_id": stale.ID, "base_context_revision": change.BaseContextRevision,
+				"base_spec_revision": change.BaseSpecRevision, "fields": change.Fields, "impacts": change.Impacts,
+			}
+			if change.ReversesChangeSetID != "" {
+				details["reverses_change_set_id"] = change.ReversesChangeSetID
+			}
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reassess", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+		}
+		return operationResult[ChangeSet]{Value: change, Status: operationStatusCreated}, nil
+	})
+}
+
+// ReassessChangeSetResult exposes the reassessed change set without transport
+// fields.
+func (s *Service) ReassessChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	changeSet, replayed, err := adaptMutationResult[ChangeSet](func() (json.RawMessage, int, bool, error) {
+		return s.ReassessChangeSet(ctx, actor, projectID, changeSetID, key)
+	}, "change set reassessment result")
+	if err != nil {
+		return ChangeSetMutationResult{Replayed: replayed}, err
+	}
+	return ChangeSetMutationResult{ChangeSet: changeSet, Replayed: replayed}, nil
 }
 
 // ApplyChangeSetResult exposes the applied change set without transport fields.
@@ -2588,11 +2833,14 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		}
 		previous := change
 		change.Status = "rejected"
+		now := time.Now().UTC()
+		change.DecisionBy = actor.UserID
+		change.DecidedAt = &now
 		if err := tx.UpdateChangeSet(previous, change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reject", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision}, Reason: change.Reason, CreatedAt: time.Now().UTC()}); err != nil {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reject", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision}, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}

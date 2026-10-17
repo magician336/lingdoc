@@ -263,6 +263,9 @@ func (a splitChangeSetApplication) ListChangeSets(ctx context.Context, actor Act
 func (a splitChangeSetApplication) GetChangeSet(ctx context.Context, actor Actor, projectID, changeSetID string) (ChangeSet, error) {
 	return a.read.GetChangeSet(ctx, actor, projectID, changeSetID)
 }
+func (a splitChangeSetApplication) ReassessChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	return a.write.ReassessChangeSetResult(ctx, actor, projectID, changeSetID, key)
+}
 func (a splitChangeSetApplication) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
 	return a.write.ApplyChangeSetResult(ctx, actor, projectID, changeSetID, key)
 }
@@ -282,6 +285,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/change-sets", h.listChangeSets)
 	routes.Read.GET("/projects/:projectId/change-sets/:changeSetId", h.getChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets", h.createChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reassess", h.reassessChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/apply", h.applyChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reject", h.rejectChangeSet)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
@@ -466,6 +470,20 @@ func decodeBody(c *gin.Context, dst any) bool {
 	}
 	var tail any
 	if err := decoder.Decode(&tail); err != io.EOF {
+		sendError(c, ErrInvalidRequest)
+		return false
+	}
+	return true
+}
+
+// requireEmptyBody enforces the bodyless contract of operations whose full
+// idempotency payload is determined by their path and headers.
+func requireEmptyBody(c *gin.Context) bool {
+	if c.Request.Body == nil || c.Request.Body == http.NoBody {
+		return true
+	}
+	n, err := io.CopyN(io.Discard, c.Request.Body, 1)
+	if n > 0 || (err != nil && err != io.EOF) {
 		sendError(c, ErrInvalidRequest)
 		return false
 	}
@@ -1209,6 +1227,26 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 		return
 	}
 	result, err := h.changeSets.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusCreated, result.ChangeSet, result.Replayed)
+}
+
+func (h *Handler) reassessChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	if !requireEmptyBody(c) {
+		return
+	}
+	result, err := h.changeSets.ReassessChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return

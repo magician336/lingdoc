@@ -334,7 +334,7 @@
             </div>
           </div>
           <p v-if="lastChangeSet" class="muted" role="status">
-            变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}<template v-if="lastChangeSet.status === 'applied'">；请重新确认受影响章节。</template><template v-else-if="lastChangeSet.status === 'stale'">；基线已过期，请重新生成预览。</template><template v-else>。</template>
+            变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}<template v-if="lastChangeSet.status === 'applied'">；请重新确认受影响章节。</template><template v-else-if="lastChangeSet.status === 'stale'">；基线已过期，请重新生成预览。</template><template v-else-if="lastChangeSet.status === 'satisfied'">；当前项目已包含拟议值，无待应用内容。</template><template v-else>。</template>
           </p>
         </section>
 
@@ -644,7 +644,7 @@ const unsavedInputState = computed<UnsavedInputState>(() => ({
 }))
 const unsavedInputs = computed(() => unsavedInputsAreDirty(unsavedInputState.value))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
-  return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
+  return ({ draft: '保存为草稿', assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期', stabilized: '完成稳定化', satisfied: '满足' })[status]
 }
 function hydrateCitationUsages(item: { citation_usages?: CitationUsage[] } | null) {
   const next: Record<string, CitationUsage> = {}
