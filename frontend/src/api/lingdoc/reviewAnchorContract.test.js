@@ -63,9 +63,25 @@ test('published paths agree with registered Go routes and preserve read/write ca
   const http = fs.readFileSync(path.join(root, 'internal/lingdoc/workspace/http.go'), 'utf8')
   assert.ok(http.includes('routes.Read.GET("/projects/:projectId/chapters/:chapterId/confirmations/current", h.getCurrentConfirmation)'))
   assert.ok(http.includes('routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor", h.setReviewAnchor)'))
+  // Keep route groups, focused handler ports and typed core permissions aligned.
+  assert.match(http, /\breviewAnchorsRead\s+reviewAnchorReadApplication\b/)
+  assert.match(http, /\breviewAnchorsWrite\s+reviewAnchorWriteApplication\b/)
+  const anchorHttp = fs.readFileSync(path.join(root, 'internal/lingdoc/workspace/review_anchor_http.go'), 'utf8')
+  assert.match(anchorHttp, /type reviewAnchorReadApplication interface \{\s*GetCurrentConfirmation\([^\r\n]+\)\s*\}/)
+  assert.match(anchorHttp, /type reviewAnchorWriteApplication interface \{\s*SetReviewAnchor\([^\r\n]+\)\s*\}/)
+  const readHandler = anchorHttp.match(/^func \(h \*Handler\) getCurrentConfirmation\([\s\S]*?^}/m)?.[0] ?? ''
+  const writeHandler = anchorHttp.match(/^func \(h \*Handler\) setReviewAnchor\([\s\S]*?^}/m)?.[0] ?? ''
+  assert.match(readHandler, /\bapp := h\.reviewAnchorsRead\b/)
+  assert.match(readHandler, /\bapp\.GetCurrentConfirmation\(/)
+  assert.doesNotMatch(readHandler, /\bh\.reviewAnchorsWrite\b/)
+  assert.match(writeHandler, /\bapp := h\.reviewAnchorsWrite\b/)
+  assert.match(writeHandler, /\bapp\.SetReviewAnchor\(/)
+  assert.doesNotMatch(writeHandler, /\bh\.reviewAnchorsRead\b/)
   const domain = fs.readFileSync(path.join(root, 'internal/lingdoc/workspacecore/review_anchor.go'), 'utf8')
-  assert.ok(domain.includes('"write:"+chapterID'))
-  assert.ok(domain.includes('"read"'))
+  const readApplication = domain.match(/^func \(s \*Service\) GetCurrentConfirmation\([\s\S]*?^}/m)?.[0] ?? ''
+  const writeApplication = domain.match(/^func \(s \*Service\) SetReviewAnchor\([\s\S]*?^}/m)?.[0] ?? ''
+  assert.match(readApplication, /authorizationRequest\(actor, projectID, AuthorizationRead, ""\)/)
+  assert.match(writeApplication, /authorizationRequest\(actor, projectID, AuthorizationWrite, chapterID\)/)
   assert.deepEqual(spec.security, [{ bearerAuth: [] }])
 })
 

@@ -100,7 +100,7 @@ type beginOptionsConn struct{ options *[]driver.TxOptions }
 type beginOptionsTx struct{}
 
 func (d beginOptionsDriver) Open(string) (driver.Conn, error) {
-	return beginOptionsConn{options: d.options}, nil
+	return beginOptionsConn(d), nil
 }
 func (d beginOptionsDriver) Connect(context.Context) (driver.Conn, error) { return d.Open("") }
 func (d beginOptionsDriver) Driver() driver.Driver                        { return d }
