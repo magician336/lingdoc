@@ -206,10 +206,12 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	}
 	reader.set = v2
 	definition := project.TemplateCopy.Definition
+	overrideEnabled := true
 	upgrade := &TemplateUpgradeInput{
 		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
-		RuleSetRef: &lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash},
-		Fields:     append([]lingdoctemplate.Field{}, definition.Fields...), Sections: append([]lingdoctemplate.Section{}, definition.Sections...),
+		RuleSetRef:           &lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash},
+		RuleBindingOverrides: []lingdoctemplate.RuleBindingOverride{{RuleID: "goal-required", Enabled: &overrideEnabled}},
+		Fields:               append([]lingdoctemplate.Field{}, definition.Fields...), Sections: append([]lingdoctemplate.Section{}, definition.Sections...),
 		Terms: append([]lingdoctemplate.Term{}, definition.Terms...), RequiredFields: append([]string{}, definition.RequiredFields...),
 		Rules: append([]lingdoctemplate.Rule{}, definition.Rules...),
 	}
@@ -227,7 +229,50 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	if assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash}) {
 		t.Fatalf("ChangeSet did not pin the exact target RuleSet before assessment: %+v", assessedRef)
 	}
-	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "ruleset-migration-apply-v2"); err != nil || status != 200 || replayed {
+	applyKey := "ruleset-migration-apply-v2"
+	var copiesBefore, operationsBefore, auditsBefore int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", applyKey).Count(&operationsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsBefore).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Exec("CREATE TRIGGER g3_change_set_apply_audit_failure BEFORE INSERT ON lingdoc_project_audits WHEN NEW.action = 'project.change_set.apply' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey); err == nil || replayed {
+		t.Fatalf("audit failure apply: replayed=%v err=%v, want transactional failure", replayed, err)
+	}
+	if err := svc.testDB().Exec("DROP TRIGGER g3_change_set_apply_audit_failure").Error; err != nil {
+		t.Fatal(err)
+	}
+	failedProject, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedChange, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiesAfterFailure, operationsAfterFailure, auditsAfterFailure int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesAfterFailure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", applyKey).Count(&operationsAfterFailure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsAfterFailure).Error; err != nil {
+		t.Fatal(err)
+	}
+	if failedProject.ProjectVersion != project.ProjectVersion || failedProject.TemplateCopyVersion != project.TemplateCopyVersion ||
+		failedProject.TemplateCopy.ContentHash != project.TemplateCopy.ContentHash || failedChange.Status != "assessed" ||
+		copiesAfterFailure != copiesBefore || operationsAfterFailure != operationsBefore || auditsAfterFailure != auditsBefore {
+		t.Fatalf("audit failure left partial migration: project=%+v change=%+v copies %d->%d operations %d->%d audits %d->%d", failedProject, failedChange, copiesBefore, copiesAfterFailure, operationsBefore, operationsAfterFailure, auditsBefore, auditsAfterFailure)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey); err != nil || status != 200 || replayed {
 		t.Fatalf("apply RuleSet migration: status=%d replayed=%v err=%v", status, replayed, err)
 	}
 	updated, err := svc.GetProject(context.Background(), owner, project.ID)
@@ -272,6 +317,71 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	historicDispositions, err := svc.ValidationIssueDispositions(context.Background(), owner, project.ID, []ValidationIssueBinding{oldIssue})
 	if err != nil || historicDispositions[oldIssue.IssueID].Action != "dismiss" {
 		t.Fatalf("v1 disposition history was not preserved for exact historical replay: dispositions=%+v err=%v", historicDispositions, err)
+	}
+	events, err := svc.ListAuditEvents(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatalf("read project audit history: %v", err)
+	}
+	var applyAudit *AuditEvent
+	for i := range events {
+		if events[i].Action == "project.change_set.apply" && events[i].Target == change.ID {
+			applyAudit = &events[i]
+		}
+	}
+	if applyAudit == nil {
+		t.Fatalf("successful migration did not persist project.change_set.apply audit: %+v", events)
+	}
+	if applyAudit.Reason != "" {
+		t.Fatalf("legacy top-level reason unexpectedly reconstructed from details: %q", applyAudit.Reason)
+	}
+	upgradeAudit, ok := applyAudit.Details["template_upgrade"].(map[string]any)
+	if !ok {
+		t.Fatalf("migration audit missing template_upgrade details: %+v", applyAudit.Details)
+	}
+	assertAuditString := func(key, want string) {
+		t.Helper()
+		if got, _ := upgradeAudit[key].(string); got != want {
+			t.Fatalf("migration audit %s=%q, want %q; details=%+v", key, got, want, upgradeAudit)
+		}
+	}
+	assertAuditNumber := func(key string, want float64) {
+		t.Helper()
+		if got, _ := upgradeAudit[key].(float64); got != want {
+			t.Fatalf("migration audit %s=%v, want %v; details=%+v", key, got, want, upgradeAudit)
+		}
+	}
+	assertAuditString("change_set_id", change.ID)
+	assertAuditString("reason", "迁移到新的不可变 RuleSet 版本")
+	assertAuditString("ruleset_id", v2.ID)
+	assertAuditString("ruleset_version", v2.Version)
+	assertAuditString("ruleset_source_hash", v2.RulesetHash)
+	assertAuditString("source_ruleset_hash", v2.RulesetHash)
+	assertAuditString("content_hash", updated.TemplateCopy.ContentHash)
+	assertAuditString("effective_ruleset_hash", updated.TemplateCopy.RulesetHash)
+	assertAuditNumber("base_copy_version", float64(oldCopy.Version))
+	assertAuditNumber("target_copy_version", float64(updated.TemplateCopyVersion))
+	assertAuditNumber("override_count", 1)
+	overrides, ok := upgradeAudit["rule_binding_overrides"].([]any)
+	if !ok || len(overrides) != 1 {
+		t.Fatalf("migration audit overrides=%+v, want one override", upgradeAudit["rule_binding_overrides"])
+	}
+	override, ok := overrides[0].(map[string]any)
+	if !ok || override["rule_id"] != "goal-required" || override["enabled"] != true {
+		t.Fatalf("migration audit did not retain exact override: %+v", overrides[0])
+	}
+	var auditsAfterReplay int64
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsAfterReplay).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, applyKey); err != nil || status != 200 || !replayed {
+		t.Fatalf("same-key apply retry: status=%d replayed=%v err=%v", status, replayed, err)
+	}
+	var auditsAfterIdempotentRetry int64
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ?", project.ID, "project.change_set.apply").Count(&auditsAfterIdempotentRetry).Error; err != nil {
+		t.Fatal(err)
+	}
+	if auditsAfterIdempotentRetry != auditsAfterReplay {
+		t.Fatalf("same-key apply retry duplicated audit: before=%d after=%d", auditsAfterReplay, auditsAfterIdempotentRetry)
 	}
 }
 

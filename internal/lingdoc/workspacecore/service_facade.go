@@ -2112,6 +2112,55 @@ func templateUpgradeChangesRuleSetBinding(current *ProjectTemplateCopy, target l
 		!reflect.DeepEqual(current.Definition.RuleBindingOverrides, target.RuleBindingOverrides)
 }
 
+// templateUpgradeAuditDetails records the immutable migration identity in the
+// JSON details column. AuditEvent.Reason is intentionally duplicated here:
+// gormTransaction reconstructs events from details_json and does not persist
+// the top-level Reason field.
+func templateUpgradeAuditDetails(change ChangeSet, targetCopy *ProjectTemplateCopy) map[string]any {
+	upgrade := change.TemplateUpgrade
+	if upgrade == nil {
+		return nil
+	}
+	details := map[string]any{
+		"change_set_id":              change.ID,
+		"reason":                     change.Reason,
+		"base_copy_version":          upgrade.BaseTemplateCopyVersion,
+		"base_template_copy_version": upgrade.BaseTemplateCopyVersion,
+		"target_copy_version":        upgrade.Preview.TargetCopyVersion,
+		"target_content_hash":        upgrade.Preview.TargetContentHash,
+		"target_ruleset_hash":        upgrade.Preview.TargetRulesetHash,
+	}
+	if targetCopy != nil {
+		details["target_copy_version"] = targetCopy.Version
+		details["content_hash"] = targetCopy.ContentHash
+		details["ruleset_hash"] = targetCopy.RulesetHash
+		details["effective_ruleset_hash"] = targetCopy.RulesetHash
+	} else {
+		details["content_hash"] = upgrade.Preview.TargetContentHash
+		details["ruleset_hash"] = upgrade.Preview.TargetRulesetHash
+		details["effective_ruleset_hash"] = upgrade.Preview.TargetRulesetHash
+	}
+	ref := lingdoctemplate.RuleSetReferenceFor(upgrade.Definition)
+	if ref != nil {
+		details["ruleset_id"] = ref.ID
+		details["ruleset_version"] = ref.Version
+		details["ruleset_source_hash"] = ref.Hash
+		details["source_ruleset_hash"] = ref.Hash
+	}
+	overrides := lingdoctemplate.CloneRuleBindingOverrides(upgrade.Definition.RuleBindingOverrides)
+	if overrides == nil {
+		overrides = []lingdoctemplate.RuleBindingOverride{}
+	}
+	details["rule_binding_overrides"] = overrides
+	details["override_count"] = len(overrides)
+	if len(overrides) > 0 {
+		details["binding_action"] = "override_ruleset"
+	} else if ref != nil {
+		details["binding_action"] = "bind_ruleset"
+	}
+	return details
+}
+
 // templateSpecAfterUpgrade keeps orphaned historic values available for review,
 // applies explicit user mappings, and rejects an upgrade that leaves a current
 // required field absent or type-incompatible.
@@ -2217,9 +2266,9 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			details := map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts}
+			details := map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts, "reason": change.Reason}
 			if change.TemplateUpgrade != nil {
-				details["template_upgrade"] = map[string]any{"base_template_copy_version": change.TemplateUpgrade.BaseTemplateCopyVersion, "target_content_hash": change.TemplateUpgrade.Preview.TargetContentHash, "target_ruleset_hash": change.TemplateUpgrade.Preview.TargetRulesetHash}
+				details["template_upgrade"] = templateUpgradeAuditDetails(change, nil)
 			}
 			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.create", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
 				return operationResult[ChangeSet]{}, err
@@ -2468,11 +2517,11 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec}
+			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec, "reason": change.Reason, "change_set_id": change.ID}
 			if change.TemplateUpgrade != nil {
-				details["template_upgrade"] = map[string]any{"base_copy_version": change.TemplateUpgrade.BaseTemplateCopyVersion, "target_copy_version": next.TemplateCopyVersion, "content_hash": next.TemplateCopy.ContentHash, "ruleset_hash": next.TemplateCopy.RulesetHash}
+				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)
 			}
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, CreatedAt: now}); err != nil {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
