@@ -123,6 +123,7 @@ type ChangeSetMutationTransaction interface {
 	ProjectMembershipTransaction
 	ChapterWorkspaceTransaction
 	changeSetTransaction
+	AuditTransaction
 }
 
 type CandidateMutationTransaction interface {
@@ -2186,6 +2187,8 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		now := time.Now().UTC()
 		previousChange := change
 		change.Status = "applied"
+		change.DecisionBy = actor.UserID
+		change.DecidedAt = &now
 		change.TargetContextRevision = &targetContext
 		change.TargetSpecRevision = &targetSpec
 		change.AppliedAt = &now
@@ -2417,11 +2420,14 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		}
 		previous := change
 		change.Status = "rejected"
+		now := time.Now().UTC()
+		change.DecisionBy = actor.UserID
+		change.DecidedAt = &now
 		if err := tx.UpdateChangeSet(previous, change); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reject", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision}, Reason: change.Reason, CreatedAt: time.Now().UTC()}); err != nil {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.reject", Target: change.ID, Details: map[string]any{"base_context_revision": change.BaseContextRevision}, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}

@@ -79,6 +79,10 @@ func TestChangeSetApplyAdvancesRevisionAndInvalidatesImpacts(t *testing.T) {
 	if err := json.Unmarshal(raw, &applied); err != nil || applied.Status != "applied" || applied.TargetContextRevision == nil || *applied.TargetContextRevision != 2 {
 		t.Fatalf("applied changeset: %+v %v", applied, err)
 	}
+	persistedApplied, err := svc.GetChangeSet(context.Background(), actor, project.ID, applied.ID)
+	if err != nil || persistedApplied.DecisionBy != actor.UserID || persistedApplied.DecidedAt == nil || !persistedApplied.DecidedAt.Equal(*persistedApplied.AppliedAt) {
+		t.Fatalf("applied owner decision was not persisted: %+v err=%v", persistedApplied, err)
+	}
 }
 
 func TestActiveTemplateCopyUpgradeUsesOwnerChangeSetAndKeepsHistory(t *testing.T) {
@@ -674,6 +678,10 @@ func TestChangeSetRejectRecordsOwnerDecisionAndReplays(t *testing.T) {
 	if err := json.Unmarshal(raw, &rejected); err != nil || rejected.Status != "rejected" {
 		t.Fatalf("rejected changeset: %+v %v", rejected, err)
 	}
+	persistedRejected, err := svc.GetChangeSet(context.Background(), actor, project.ID, rejected.ID)
+	if err != nil || persistedRejected.DecisionBy != actor.UserID || persistedRejected.DecidedAt == nil {
+		t.Fatalf("rejected owner decision was not persisted: %+v err=%v", persistedRejected, err)
+	}
 	if _, status, replay, err := svc.RejectChangeSet(context.Background(), actor, project.ID, change.ID, "g3-reject-apply"); err != nil || status != 200 || !replay {
 		t.Fatalf("reject replay: status=%d replay=%v err=%v", status, replay, err)
 	}
@@ -690,6 +698,42 @@ func TestChangeSetRejectRecordsOwnerDecisionAndReplays(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("reject audit missing: %+v", events)
+	}
+}
+
+func TestChangeSetApplyRollsBackWhenAuditWriteFails(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-audit-rollback.db"))
+	actor := Actor{TenantID: 318, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	raw, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-audit-rollback-create", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: "旧主题", NewValue: "新主题"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "验证审计失败回滚",
+	})
+	if err != nil {
+		t.Fatalf("create changeset: %v", err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(raw, &change); err != nil {
+		t.Fatalf("decode changeset: %v", err)
+	}
+	if err := svc.testDB().Exec("DROP TABLE lingdoc_project_audits").Error; err != nil {
+		t.Fatalf("drop audit table: %v", err)
+	}
+	if _, status, replay, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, change.ID, "g3-audit-rollback-apply"); err == nil || status != 0 || replay {
+		t.Fatalf("expected audit failure: status=%d replay=%v err=%v", status, replay, err)
+	}
+	current, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || current.CurrentContextRevision != project.CurrentContextRevision || current.Spec["research_subject"] != "旧主题" {
+		t.Fatalf("project changed despite audit failure: project=%+v err=%v", current, err)
+	}
+	stored, err := svc.GetChangeSet(context.Background(), actor, project.ID, change.ID)
+	if err != nil || stored.Status != "assessed" || stored.DecisionBy != "" || stored.DecidedAt != nil {
+		t.Fatalf("decision changed despite audit failure: changeset=%+v err=%v", stored, err)
 	}
 }
 

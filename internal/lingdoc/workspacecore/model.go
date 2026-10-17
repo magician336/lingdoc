@@ -199,6 +199,8 @@ type ChangeSet struct {
 	CreatedBy             string             `json:"created_by"`
 	ReassessedFromID      string             `json:"reassessed_from_id,omitempty"`
 	StaleReason           string             `json:"stale_reason,omitempty"`
+	DecisionBy            string             `json:"decision_by,omitempty"`
+	DecidedAt             *time.Time         `json:"decided_at,omitempty"`
 	Reason                string             `json:"reason"`
 	Status                string             `json:"status"`
 	BaseContextRevision   int64              `json:"base_context_revision"`

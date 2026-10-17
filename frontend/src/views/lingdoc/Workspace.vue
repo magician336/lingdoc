@@ -644,7 +644,7 @@ const unsavedInputState = computed<UnsavedInputState>(() => ({
 }))
 const unsavedInputs = computed(() => unsavedInputsAreDirty(unsavedInputState.value))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
-  return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期', satisfied: '满足' })[status]
+  return ({ draft: '保存为草稿', assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期', stabilized: '完成稳定化', satisfied: '满足' })[status]
 }
 function hydrateCitationUsages(item: { citation_usages?: CitationUsage[] } | null) {
   const next: Record<string, CitationUsage> = {}

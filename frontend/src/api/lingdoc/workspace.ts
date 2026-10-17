@@ -148,8 +148,10 @@ export interface ChangeSet {
   id: string
   project_id: string
   created_by: string
+  decision_by?: string
+  decided_at?: string
   reason: string
-  status: 'assessed' | 'applied' | 'rejected' | 'stale' | 'satisfied'
+  status: 'draft' | 'assessed' | 'applied' | 'rejected' | 'stale' | 'stabilized' | 'satisfied'
   reassessed_from_id?: string
   stale_reason?: string
   base_context_revision: number
