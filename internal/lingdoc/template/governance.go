@@ -407,12 +407,14 @@ func evaluateTemplate(t Template, input EvaluationInput, rulesetHash string) ([]
 	if input.ProjectID == "" || input.TargetVersion == "" {
 		return nil, fmt.Errorf("%w: project and target version are required", ErrInvalidDefinition)
 	}
-	_, templateRulesetHash, err := Hashes(t)
-	if err != nil {
-		return nil, err
-	}
 	pinnedRuleSetHash := rulesetHash != ""
+	var templateRulesetHash string
 	if !pinnedRuleSetHash {
+		var err error
+		_, templateRulesetHash, err = Hashes(t)
+		if err != nil {
+			return nil, err
+		}
 		rulesetHash = templateRulesetHash
 	}
 	// T02's public fixed demo hash is part of the already-published T13 wire
