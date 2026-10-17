@@ -44,7 +44,11 @@
     "vue-router": "^4.5.0",
     "vue-virtual-scroller": "^2.0.0-beta.8",
     "webpack": "^5.106.2",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.2/xlsx-0.20.2.tgz"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.2/xlsx-0.20.2.tgz",
+    "@tiptap/core": "3.31.4",
+    "@tiptap/vue-3": "3.31.4",
+    "@tiptap/starter-kit": "3.31.4",
+    "@tiptap/markdown": "3.31.4"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.5",

@@ -36,6 +36,7 @@ export interface ValidationIssue {
 }
 
 export interface CheckResult {
+  receipt_id?: string
   project_version: number
   ruleset_hash: string
   status: CheckStatus

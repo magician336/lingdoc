@@ -1,0 +1,633 @@
+{
+  "schema": "lingdoc.first-round-evidence-summary/1",
+  "date": "2026-10-15",
+  "productSource": "950e0e175124148608c86f68c8472ebb6b07d397",
+  "codeDiffEvidenceAt": "300325c0f7942dfa3b249c4eef357bc9c5157722",
+  "scopeDecision": "gong approved first-round scope closeout; pending collaborator rereview; not merge or formal Beta/all-Spec acceptance",
+  "publication": "Explicit whitelist projections only. No response body, manuscript, material, account/member/project identifiers, credentials, tokens, cookies, DPAPI, HAR or profile. Source paths relative to local evidence root. Original hashes allow local reconciliation, not remote access to raw originals.",
+  "notClaimed": [
+    "all open G1-G7 Specs passed",
+    "formal Beta protocol passed",
+    "real human trial or scientific efficacy",
+    "collaborator approval",
+    "each historical UI path rerun at950"
+  ],
+  "cases": [
+    {
+      "id": "ci-300325c",
+      "sourceRelativePath": "final-handoff-20261015/runtime/ci300-final.json",
+      "sourceSha256": "25d89d700b8b98cd535e7cd1f826ceca21d1ac387f063e1eb3a7e2a634ffa8d9",
+      "versionBoundary": "Frozen 300325c Actions result; not a later docs commit",
+      "observed": {
+        "head": "300325c0f7942dfa3b249c4eef357bc9c5157722",
+        "runs": [
+          {
+            "id": 38633428615,
+            "name": "LingDoc F01 Runner",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/magician336/lingdoc/actions/runs/38633428615"
+          },
+          {
+            "id": 38633428592,
+            "name": "Frontend",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/magician336/lingdoc/actions/runs/38633428592"
+          },
+          {
+            "id": 38633428560,
+            "name": "LingDoc Workspace Concurrency",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/magician336/lingdoc/actions/runs/38633428560"
+          },
+          {
+            "id": 38633428548,
+            "name": "DocReader",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/magician336/lingdoc/actions/runs/38633428548"
+          },
+          {
+            "id": 38633428558,
+            "name": "Go Lint",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/magician336/lingdoc/actions/runs/38633428558"
+          },
+          {
+            "id": 38633428603,
+            "name": "App",
+            "status": "completed",
+            "conclusion": "success",
+            "url": "https://github.com/magician336/lingdoc/actions/runs/38633428603"
+          }
+        ]
+      }
+    },
+    {
+      "id": "current-visual-and-reading",
+      "sourceRelativePath": "g4-model-20261015/browser/2026-10-14T20-03-44-388Z/result.json",
+      "sourceSha256": "370237cbace67aad74c9f2ab11b107a10ce899d9fb21caae6d54b41fa80d8e57",
+      "versionBoundary": "950e0e1 immutable frontend; r3 Go inputs later matched final950 build",
+      "observed": {
+        "pass": true,
+        "sourceStepCount": 7,
+        "steps": [
+          {
+            "index": 1,
+            "id": "normal-login",
+            "status": "PASS"
+          },
+          {
+            "index": 2,
+            "id": "open-existing-project-governance",
+            "status": "PASS"
+          },
+          {
+            "index": 3,
+            "id": "demo-existing-two-chapter-writing",
+            "status": "PASS"
+          },
+          {
+            "index": 4,
+            "id": "demo-one-evidence-context-and-limits",
+            "status": "PASS"
+          },
+          {
+            "index": 5,
+            "id": "demo-return-to-source-card-without-generating",
+            "status": "PASS"
+          },
+          {
+            "index": 6,
+            "id": "demo-real-confirmed-warning-records",
+            "status": "PASS"
+          },
+          {
+            "index": 7,
+            "id": "demo-real-delivery-history",
+            "status": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "g4-current-sidebar",
+      "sourceRelativePath": "g4-model-20261015/browser/2026-10-14T20-06-41-413Z/result.json",
+      "sourceSha256": "ad4f2a3c99e796f8629e1ea7561090def095e33a70978d95a110784ae52f38b9",
+      "versionBoundary": "950 frontend; accepted prior real suggestion readback, no new generation",
+      "observed": {
+        "pass": true,
+        "sourceStepCount": 4,
+        "steps": [
+          {
+            "index": 1,
+            "id": "normal-login",
+            "status": "PASS"
+          },
+          {
+            "index": 2,
+            "id": "open-existing-project-governance",
+            "status": "PASS"
+          },
+          {
+            "index": 3,
+            "id": "accepted-real-suggestion-compact-sidebar",
+            "status": "PASS"
+          },
+          {
+            "index": 4,
+            "id": "accepted-history-mobile-layout",
+            "status": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "g4-current-recall-layout",
+      "sourceRelativePath": "g4-recall-20261015/browser/2026-10-14T19-14-02-894Z/result.json",
+      "sourceSha256": "a4cbdb2de8ac581759150b68c3c6f909f0ff59b15578c04e2efd5688b577abe2",
+      "versionBoundary": "950 frontend and r3 same-input backend; synthetic isolation",
+      "observed": {
+        "pass": true,
+        "sourceStepCount": 5,
+        "steps": [
+          {
+            "index": 1,
+            "id": "normal-login",
+            "status": "PASS"
+          },
+          {
+            "index": 2,
+            "id": "open-existing-project-governance",
+            "status": "PASS"
+          },
+          {
+            "index": 3,
+            "id": "recall-summary-current-build",
+            "status": "PASS"
+          },
+          {
+            "index": 4,
+            "id": "recall-mobile-layout",
+            "status": "PASS"
+          },
+          {
+            "index": 5,
+            "id": "current-g6-ui-readonly-probe",
+            "status": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "historical-g3-inverse-ui",
+      "sourceRelativePath": "g4-firstpass-browser-20261014T083716616Z-31b8cb/result.json",
+      "sourceSha256": "92b1f0b62577c9e0a84d4fe4022665b67850b692baf5b4e7bf080717abbcfe3d",
+      "versionBoundary": "Historical earlier candidate; not asserted as a full rerun at950",
+      "observed": {
+        "marker": "not_present_in_source",
+        "sourceStepCount": 13,
+        "steps": [
+          {
+            "index": 1,
+            "id": "normal-login",
+            "status": "PASS"
+          },
+          {
+            "index": 2,
+            "id": "resume-actual-synthetic-project",
+            "status": "PASS"
+          },
+          {
+            "index": 3,
+            "id": "G2-followup",
+            "status": "NOT_RUN"
+          },
+          {
+            "index": 4,
+            "id": "G3-actual-inverse-draft",
+            "status": "PASS"
+          },
+          {
+            "index": 5,
+            "id": "G3-inverse-assess-and-owner-apply",
+            "status": "PASS"
+          },
+          {
+            "index": 6,
+            "id": "G3-read-applied-change-for-closure",
+            "status": "PASS"
+          },
+          {
+            "index": 7,
+            "id": "G3-assign-and-start-real-review-tasks",
+            "status": "PASS"
+          },
+          {
+            "index": 8,
+            "id": "G7-current-chapters-after-real-spec-change",
+            "status": "PASS"
+          },
+          {
+            "index": 9,
+            "id": "G2-recheck-the-actual-impacted-synthetic-claims",
+            "status": "PASS"
+          },
+          {
+            "index": 10,
+            "id": "G3-close-each-task-with-actual-current-version",
+            "status": "PASS"
+          },
+          {
+            "index": 11,
+            "id": "G3-stabilize-from-actual-closed-tasks",
+            "status": "PASS"
+          },
+          {
+            "index": 12,
+            "id": "G3-inverse-restores-current-spec-with-history",
+            "status": "PASS"
+          },
+          {
+            "index": 13,
+            "id": "delivery-after-current-change-closure",
+            "status": "PASS"
+          }
+        ]
+      }
+    },
+    {
+      "id": "g5-owner-original",
+      "sourceRelativePath": "kimi-g5-owner-http-20261015/result.json",
+      "sourceSha256": "b55d7086ddf7bc4eef7c4c964cf082706d4ebff387c02a5a97257e6a2e0cf146",
+      "versionBoundary": "Kimi independent actual HTTP; r3 same Go input hash as950; not UI",
+      "observed": {
+        "sourceStepCount": 32,
+        "steps": [
+          {
+            "index": 1,
+            "step": "login-owner",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 2,
+            "step": "login-peer",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 3,
+            "step": "create-project",
+            "code": "created",
+            "pass": true,
+            "http": 201
+          },
+          {
+            "index": 4,
+            "step": "get-project-initial",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 5,
+            "step": "activation-read-owner",
+            "code": "created",
+            "pass": true,
+            "http": 201
+          },
+          {
+            "index": 6,
+            "step": "activation-read-peer",
+            "code": "ok",
+            "pass": false,
+            "http": 404
+          },
+          {
+            "index": 7,
+            "step": "invite-peer",
+            "code": "created",
+            "pass": true,
+            "http": 201
+          },
+          {
+            "index": 8,
+            "step": "peer-list-invitations",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 9,
+            "step": "peer-accept-invitation",
+            "code": "accepted",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 10,
+            "step": "member-after-accept",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 11,
+            "step": "request-transfer-1",
+            "code": "pending",
+            "pass": true,
+            "http": 201
+          },
+          {
+            "index": 12,
+            "step": "pending-owner-unique",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 13,
+            "step": "wrong-recipient-accept-denied",
+            "code": "invalid_state",
+            "pass": true,
+            "http": 422
+          },
+          {
+            "index": 14,
+            "step": "peer-reject-transfer-1",
+            "code": "cancelled",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 15,
+            "step": "after-reject-owner-unchanged",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 16,
+            "step": "reject-idempotent-replay",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 17,
+            "step": "after-reject-replay-owner-unchanged",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 18,
+            "step": "request-transfer-2",
+            "code": "pending",
+            "pass": true,
+            "http": 201
+          },
+          {
+            "index": 19,
+            "step": "request-idempotent-replay",
+            "code": "ok",
+            "pass": true,
+            "http": 201
+          },
+          {
+            "index": 20,
+            "step": "list-transfers",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 21,
+            "step": "peer-accept-transfer-2",
+            "code": "accepted",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 22,
+            "step": "after-accept-unique-owner",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 23,
+            "step": "after-accept-old-owner-demoted",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 24,
+            "step": "after-accept-function-cleared",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 25,
+            "step": "accept-idempotent-replay",
+            "code": "ok",
+            "pass": false,
+            "http": 200
+          },
+          {
+            "index": 26,
+            "step": "after-accept-replay-version-stable",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 27,
+            "step": "reaccept-accepted-denied",
+            "code": "ok",
+            "pass": true,
+            "http": 422
+          },
+          {
+            "index": 28,
+            "step": "old-owner-still-member-read",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 29,
+            "step": "old-owner-request-transfer-denied",
+            "code": "ok",
+            "pass": true,
+            "http": 404
+          },
+          {
+            "index": 30,
+            "step": "old-owner-save-members-denied",
+            "code": "ok",
+            "pass": true,
+            "http": 422
+          },
+          {
+            "index": 31,
+            "step": "after-old-owner-probes-unchanged",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          },
+          {
+            "index": 32,
+            "step": "audit-visible-to-new-owner",
+            "code": "ok",
+            "pass": true,
+            "http": 200
+          }
+        ]
+      },
+      "runnerCorrections": [
+        "activation-read before invitation acceptance: source404 then follow-up201",
+        "replay flag was read from wrong envelope level; behavior independently checked; raw original FAIL preserved"
+      ]
+    },
+    {
+      "id": "g5-root-independent-readback",
+      "sourceRelativePath": "kimi-g5-owner-http-20261015/root-readback.json",
+      "sourceSha256": "541774b279515fa4e5152033e9ece01936c5814085f4d4f48cd25a6f89fc4b0e",
+      "versionBoundary": "Root authenticated GET readback; no business mutation",
+      "observed": {
+        "status": "pass",
+        "project_version": 4,
+        "oldOwnerRole": "collaborator",
+        "oldOwnerGovernanceRole": "member",
+        "functionRolesCleared": true,
+        "modelCalls": 0
+      }
+    },
+    {
+      "id": "g6-zero-samples",
+      "sourceRelativePath": "g4-recall-20261015/browser/2026-10-14T19-43-40-759Z/zero-sample-guard.json",
+      "sourceSha256": "707ac0dfb4f5fb058a0984dc8138d6afdda5e127ec93b0ddf58cf22bb53546eb",
+      "versionBoundary": "API-created synthetic window; UI creation NOT RUN; no human samples",
+      "observed": {
+        "readiness": "NOT READY",
+        "submitted": 0,
+        "eligible": 0,
+        "metrics": [
+          {
+            "name": "manual_effort_minutes",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          },
+          {
+            "name": "source_support_rate",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          },
+          {
+            "name": "missed_edits",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          },
+          {
+            "name": "rule_false_positive_rate",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          },
+          {
+            "name": "model_false_positive_rate",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          },
+          {
+            "name": "unconfirmed_items",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          },
+          {
+            "name": "export_loss_items",
+            "numerator": 0,
+            "denominator": 0,
+            "value": null
+          }
+        ],
+        "uiExpandDisabled": true,
+        "negativeApiStatus": 422,
+        "decisions": 0
+      }
+    },
+    {
+      "id": "g6-current-recovery",
+      "sourceRelativePath": "g4-recall-20261015/browser/2026-10-14T19-48-16-400Z/runtime-recovery.json",
+      "sourceSha256": "c3f03b22366636d5765f8a03c8f18eb31238c720c8cc402637e2a7f42764eec1",
+      "versionBoundary": "Current same-input backend; native UI existing snapshot/file recovery",
+      "observed": {
+        "status": "ACTIVE",
+        "version": 4,
+        "recovery_verified": true,
+        "modelCalls": 0,
+        "otherScopesTouched": false
+      }
+    },
+    {
+      "id": "word-real-application",
+      "sourceRelativePath": "word-20261014-224457/result.json",
+      "sourceSha256": "c2b1936a2a0383a06a84448f0864a1fb381b280053833c2dbad0c6a84ea17bd4",
+      "versionBoundary": "Actual Word16 automation on product download, not new human acceptance",
+      "observed": {
+        "status": "pass",
+        "sourceHash": "928ADD155AC201C2AD5E38BD164E87CE5371E0E6C374120538FB76ECF2FDF83C",
+        "wordVersion": "16.0",
+        "pages": 2,
+        "copyReopened": true,
+        "originalUnchanged": true,
+        "copyHash": "38DC11913E9A060BF70B71219EBE35A6D764B8AA8E185229C9D658C0ACA9FC68"
+      }
+    },
+    {
+      "id": "oneclick-cold-and-input",
+      "sourceRelativePath": "final-handoff-20261015/runtime/entry-retention-result.json",
+      "sourceSha256": "cdbbd3aeb76088c7d5dc262a2f92932eadee5341dac71aa82bf4246fa45236a7",
+      "versionBoundary": "Actual final950 runtime, normal auth, same owned browser retained",
+      "observed": {
+        "status": "pass",
+        "sameBrowser": true,
+        "samePage": true,
+        "sessionReused": true,
+        "findInputRetained": true,
+        "manuscriptUnchanged": true,
+        "browserAliveAfterLauncherExit": true,
+        "coldServiceRestart": true,
+        "normalAuthentication": true,
+        "modelCalls": 0
+      }
+    },
+    {
+      "id": "player-native-browser",
+      "sourceRelativePath": "final-handoff-20261015/runtime/player-browser-check/result.json",
+      "sourceSha256": "3e1d4c79f0c30bfe0aa077b0712ffcd6cd500e4140965b1a8c1b3e15b0ca7896",
+      "versionBoundary": "Actual Edge file player/seek/390px, not product acceptance",
+      "observed": {
+        "status": "pass",
+        "actualEdge": true,
+        "fileProtocol": true,
+        "chapterNativeSeekAndPlayback": true,
+        "modelCalls": 0
+      }
+    }
+  ]
+}

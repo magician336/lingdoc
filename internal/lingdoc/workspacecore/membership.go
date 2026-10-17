@@ -25,9 +25,9 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.NewOwnerUserID) != input.NewOwnerUserID || input.NewOwnerUserID == "" || len(input.NewOwnerUserID) > 64 || input.NewOwnerUserID == actor.UserID {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	body, status, replayed, err := runOperation(s, ctx, actor, operationInput(operationTransferOwner, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+	body, status, replayed, err := s.operation(ctx, actor, "transferOwner", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return operationResult[Project]{}, ErrVersionConflict
+			return nil, 0, ErrVersionConflict
 		}
 		var currentOwner, recipient *Member
 		members := make([]Member, len(p.Members))
@@ -41,14 +41,14 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 			}
 		}
 		if currentOwner == nil || currentOwner.UserID != actor.UserID || recipient == nil || recipient.Role == "owner" {
-			return operationResult[Project]{}, ErrNotFound
+			return nil, 0, ErrNotFound
 		}
 		active, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: recipient.UserID})
 		if err != nil {
-			return operationResult[Project]{}, err
+			return nil, 0, err
 		}
 		if !active {
-			return operationResult[Project]{}, ErrInvalidState
+			return nil, 0, ErrInvalidState
 		}
 		for i := range members {
 			switch members[i].UserID {
@@ -62,19 +62,19 @@ func (s *Service) TransferOwner(ctx context.Context, actor Actor, projectID, key
 		next.ProjectVersion++
 		next.Members = members
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
-			return operationResult[Project]{}, err
+			return nil, 0, err
 		}
 		if err := tx.ReplaceMembers(projectID, members); err != nil {
-			return operationResult[Project]{}, err
+			return nil, 0, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
 			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
 				Action: "project.owner_transfer", Target: projectID,
 				Details: map[string]any{"new_owner_user_id": input.NewOwnerUserID}, CreatedAt: time.Now().UTC()}); err != nil {
-				return operationResult[Project]{}, err
+				return nil, 0, err
 			}
 		}
-		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
+		return next, 200, nil
 	})
 	if err == nil && !replayed {
 		_ = s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: "manage:members", Decision: "allow", Details: map[string]any{"change": "owner_transfer", "new_owner_user_id": input.NewOwnerUserID}})
@@ -103,27 +103,27 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 	if input.ExpectedProjectVersion < 1 || input.CollaboratorUserIDs != nil || len(input.Members) > 20 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	body, status, replayed, err := runOperation(s, ctx, actor, operationInput(operationSaveMembers, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[ChapterMutationTransaction], func(tx ChapterMutationTransaction, p Project) (operationResult[Project], error) {
+	body, status, replayed, err := s.operation(ctx, actor, "saveMembers", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return operationResult[Project]{}, ErrVersionConflict
+			return nil, 0, ErrVersionConflict
 		}
 		members := make([]Member, 0, len(input.Members)+1)
 		ownerID := ""
 		for _, member := range p.Members {
 			if member.Role == "owner" {
 				if ownerID != "" {
-					return operationResult[Project]{}, ErrInvalidState
+					return nil, 0, ErrInvalidState
 				}
 				ownerID = member.UserID
 				members = append(members, Member{UserID: member.UserID, Role: "owner", GovernanceRole: "owner", Status: "active"})
 			}
 		}
 		if ownerID == "" {
-			return operationResult[Project]{}, ErrInvalidState
+			return nil, 0, ErrInvalidState
 		}
 		chapters, err := tx.Chapters(projectID)
 		if err != nil {
-			return operationResult[Project]{}, err
+			return nil, 0, err
 		}
 		chapterIDs := map[string]bool{}
 		for _, chapter := range chapters {
@@ -132,42 +132,42 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 		seen := map[string]bool{ownerID: true}
 		for _, member := range input.Members {
 			if member.UserID == "" || len(member.UserID) > 64 || strings.TrimSpace(member.UserID) != member.UserID || seen[member.UserID] || (member.GovernanceRole != "admin" && member.GovernanceRole != "member") {
-				return operationResult[Project]{}, ErrInvalidRequest
+				return nil, 0, ErrInvalidRequest
 			}
 			seen[member.UserID] = true
 			if member.Role != "" && member.Role != "collaborator" {
-				return operationResult[Project]{}, ErrInvalidRequest
+				return nil, 0, ErrInvalidRequest
 			}
 			if member.Status != "" && member.Status != "active" && member.Status != "suspended" {
-				return operationResult[Project]{}, ErrInvalidRequest
+				return nil, 0, ErrInvalidRequest
 			}
 			active, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: member.UserID})
 			if err != nil {
-				return operationResult[Project]{}, err
+				return nil, 0, err
 			}
 			if !active {
-				return operationResult[Project]{}, ErrInvalidState
+				return nil, 0, ErrInvalidState
 			}
 			functions := map[string]bool{}
 			for _, role := range member.FunctionRoles {
 				if functions[role] || !slices.Contains([]string{"author", "researcher", "reviewer", "observer"}, role) {
-					return operationResult[Project]{}, ErrInvalidRequest
+					return nil, 0, ErrInvalidRequest
 				}
 				functions[role] = true
 			}
 			for role, scopes := range member.FunctionScopes {
 				if !functions[role] {
-					return operationResult[Project]{}, ErrInvalidRequest
+					return nil, 0, ErrInvalidRequest
 				}
 				seenScopes := map[string]bool{}
 				for _, scope := range scopes {
 					if scope == "" || seenScopes[scope] {
-						return operationResult[Project]{}, ErrInvalidRequest
+						return nil, 0, ErrInvalidRequest
 					}
 					// Chapter author/reviewer scopes must name an existing chapter;
 					// asset/delivery identifiers use explicit resource prefixes.
 					if !chapterIDs[scope] && !strings.HasPrefix(scope, "asset:") && !strings.HasPrefix(scope, "delivery:") {
-						return operationResult[Project]{}, ErrInvalidRequest
+						return nil, 0, ErrInvalidRequest
 					}
 					seenScopes[scope] = true
 				}
@@ -183,10 +183,10 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 		next.ProjectVersion++
 		next.Members = members
 		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
-			return operationResult[Project]{}, err
+			return nil, 0, err
 		}
 		if err := tx.ReplaceMembers(projectID, members); err != nil {
-			return operationResult[Project]{}, err
+			return nil, 0, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
 			changes := make([]map[string]any, 0, len(input.Members))
@@ -200,10 +200,10 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor Actor, projec
 			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
 				Action: "project.member_permissions.replace", Target: projectID,
 				Details: map[string]any{"members": changes}, CreatedAt: time.Now().UTC()}); err != nil {
-				return operationResult[Project]{}, err
+				return nil, 0, err
 			}
 		}
-		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
+		return next, 200, nil
 	})
 	if err == nil && !replayed {
 		changes := make([]map[string]any, 0, len(input.Members))

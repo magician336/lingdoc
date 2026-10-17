@@ -11,6 +11,7 @@ export interface GenerationRun {
 }
 
 export interface GenerationRequest {
+  evidence_card_refs?: Array<{ id: string; version: number }>
   chapter_id: string
   asset_ids: string[]
   instruction: string

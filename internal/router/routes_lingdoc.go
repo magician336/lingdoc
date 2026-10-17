@@ -36,4 +36,8 @@ func registerLingDocWorkspaceRoutes(v1 *gin.RouterGroup, guards *rbacGuards, h *
 	}
 	routes := newLingDocRegistrar(v1, guards)
 	h.Register(routes.groups())
+	// Exact machine-read routes retain current grant and source rechecks.
+	h.RegisterMachineReadRoutes(routes.read.With(apiKeyRetrieve(apiKeyFullAccess())))
+	// Human workflow routes retain API-key default denial.
+	h.RegisterFullRoutes(v1.Group("/lingdoc", guards.Viewer()))
 }

@@ -205,7 +205,7 @@ func newAssetsHTTPFixture(t *testing.T) assetsHTTPFixture {
 // 语境窗口按族取邻居（text 与 parent_text 各有独立的 chunk_index 空间），而停用是
 // 「不参与检索」、不是「不在原文里」。列缺了，那两条就无从测起，会安静地退化成「没测」。
 var assetsApplicationSchema = []string{
-	`CREATE TABLE tenant_members (
+	`CREATE TABLE tenant_members ( role TEXT NOT NULL DEFAULT 'owner',
 		tenant_id INTEGER NOT NULL,
 		user_id TEXT NOT NULL,
 		status TEXT NOT NULL,

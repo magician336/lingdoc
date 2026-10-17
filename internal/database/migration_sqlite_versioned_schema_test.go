@@ -16,7 +16,8 @@ import (
 // 000097 LingDoc workspace, 000098 LingDoc evidence assets,
 // 000099 LingDoc candidate adoption, 000100/000101 LingDoc generation runs,
 // 000102 LingDoc confirmation requests, 000103 LingDoc delivery stores,
-// 000104 LingDoc member permissions, 000105 LingDoc working copies, 000106 LingDoc selected rewrites.
+// 000104 LingDoc member permissions, 000105-000114 LingDoc lifecycle stores,
+// 000115 LingDoc RuleSet governance, and SQLite 000037 full-workflow governance.
 var versionedSQLiteTables = []string{
 	"memory_extraction_sessions",
 	"task_pending_ops",
@@ -42,27 +43,39 @@ var versionedSQLiteTables = []string{
 	"lingdoc_release_snapshots",
 	"lingdoc_export_artifacts",
 	"lingdoc_working_copies",
+	"lingdoc_rule_sets",
+	"lingdoc_template_profiles",
+	"lingdoc_template_versions",
+	"lingdoc_rule_suggestion_runs",
+	"lingdoc_template_governance_operations",
+	"lingdoc_g5_records",
+	"lingdoc_g2_objects",
+	"lingdoc_g2_object_versions",
+	"lingdoc_g3_records",
+	"lingdoc_g6_records",
+	"lingdoc_selected_rewrites",
 }
 
 // versionedSQLiteColumns maps each existing table to the columns that the
 // versioned migrations add and the SQLite baseline was missing.
 var versionedSQLiteColumns = map[string][]string{
-	"memory_subjects":          {"extraction_state"},                                                                                              // 000094
-	"memory_items":             {"replaces_id"},                                                                                                   // 000094
-	"tenants":                  {"api_principal_config"},                                                                                          // 000064
-	"users":                    {"is_system_admin"},                                                                                               // 000053
-	"knowledges":               {"pending_subtasks_count"},                                                                                        // 000056
-	"messages":                 {"attachments", "usage"},                                                                                          // 000034, 000085
-	"tenant_invitations":       {"token", "accepted_count"},                                                                                       // 000054
-	"embed_channels":           {"allow_memory"},                                                                                                  // 000060
-	"mcp_oauth_tokens":         {"principal_type", "principal_id"},                                                                                // 000064
-	"mcp_tool_approvals":       {"enabled"},                                                                                                       // 000091
-	"lingdoc_generation_runs":  {"claim_token", "cancel_requested"},                                                                               // 000101
-	"lingdoc_chapter_versions": {"citation_usages_json"},                                                                                          // 000110
-	"lingdoc_projects":         {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
+	"lingdoc_selected_rewrites": {"evidence_card_refs_json", "template_basis_json", "evidence_constraints_json"},                                   // SQLite 000037
+	"memory_subjects":           {"extraction_state"},                                                                                              // 000094
+	"memory_items":              {"replaces_id"},                                                                                                   // 000094
+	"tenants":                   {"api_principal_config"},                                                                                          // 000064
+	"users":                     {"is_system_admin"},                                                                                               // 000053
+	"knowledges":                {"pending_subtasks_count"},                                                                                        // 000056
+	"messages":                  {"attachments", "usage"},                                                                                          // 000034, 000085
+	"tenant_invitations":        {"token", "accepted_count"},                                                                                       // 000054
+	"embed_channels":            {"allow_memory"},                                                                                                  // 000060
+	"mcp_oauth_tokens":          {"principal_type", "principal_id"},                                                                                // 000064
+	"mcp_tool_approvals":        {"enabled"},                                                                                                       // 000091
+	"lingdoc_generation_runs":   {"claim_token", "cancel_requested"},                                                                               // 000101
+	"lingdoc_chapter_versions":  {"citation_usages_json"},                                                                                          // 000110
+	"lingdoc_projects":          {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
 }
 
-const expectedSQLiteMigrationVersion = 35
+const expectedSQLiteMigrationVersion = 37
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"slices"
 	"sort"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 )
 
 var (
@@ -30,20 +33,30 @@ var (
 
 // DeliveryInput is the immutable value captured for checking and export.
 type DeliveryInput struct {
-	ProjectID               string            `json:"project_id"`
-	ProjectName             string            `json:"project_name"`
-	ProjectVersion          int               `json:"project_version"`
-	SpecRevision            int               `json:"spec_revision"`
-	Spec                    map[string]string `json:"spec"`
-	Template                Template          `json:"template"`
-	TemplateCopyID          string            `json:"template_copy_id,omitempty"`
-	TemplateCopyVersion     int64             `json:"template_copy_version,omitempty"`
-	TemplateCopyContentHash string            `json:"template_copy_content_hash,omitempty"`
-	Chapters                []SnapshotChapter `json:"chapters"`
-	Sources                 []FrozenSource    `json:"sources"`
-	AssetVersions           []AssetVersion    `json:"asset_versions"`
-	PolicyAssetIDs          []string          `json:"policy_asset_ids"`
-	DeliveryKind            string            `json:"delivery_kind"`
+	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
+	TemplateCopyRulesetHash string                     `json:"template_copy_ruleset_hash,omitempty"`
+	SourceRuleSetID         string                     `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion    string                     `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash       string                     `json:"source_ruleset_hash,omitempty"`
+	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
+	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
+
+	ProjectID               string                          `json:"project_id"`
+	ProjectName             string                          `json:"project_name"`
+	ProjectVersion          int                             `json:"project_version"`
+	SpecRevision            int                             `json:"spec_revision"`
+	ContextRevision         int64                           `json:"context_revision,omitempty"`
+	Spec                    map[string]string               `json:"spec"`
+	SpecProvenance          *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
+	Template                Template                        `json:"template"`
+	TemplateCopyID          string                          `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64                           `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string                          `json:"template_copy_content_hash,omitempty"`
+	Chapters                []SnapshotChapter               `json:"chapters"`
+	Sources                 []FrozenSource                  `json:"sources"`
+	AssetVersions           []AssetVersion                  `json:"asset_versions"`
+	PolicyAssetIDs          []string                        `json:"policy_asset_ids"`
+	DeliveryKind            string                          `json:"delivery_kind"`
 }
 type SnapshotChapter struct {
 	ChapterID        string          `json:"chapter_id"`
@@ -57,9 +70,10 @@ type SnapshotChapter struct {
 	Confirmation     *Confirmation   `json:"confirmation,omitempty"`
 }
 type ReviewItem struct {
-	ID                string `json:"id"`
-	Statement         string `json:"statement"`
-	OriginCandidateID string `json:"origin_candidate_id"`
+	ID                string               `json:"id"`
+	Statement         string               `json:"statement"`
+	OriginCandidateID string               `json:"origin_candidate_id"`
+	Anchor            *reviewanchor.Anchor `json:"anchor,omitempty"`
 }
 type CitationUsage struct {
 	SourceID   string `json:"source_id"`
@@ -117,6 +131,7 @@ const DeliveryKindInternalDemo = "internal_demo"
 const unattributedTarget = "unresolved-project"
 
 type CheckResult struct {
+	ReceiptID      string       `json:"receipt_id,omitempty"`
 	ProjectVersion int          `json:"project_version"`
 	RulesetHash    string       `json:"ruleset_hash"`
 	Status         CheckStatus  `json:"status"`
@@ -333,6 +348,9 @@ func NewReleaseService(store SnapshotStore, checkers ...CurrentnessChecker) *Rel
 // 「快照在、动作不在」的窗口，重试正好落在那里就会再冻一份。
 func (s *ReleaseService) Freeze(input DeliveryInput) (ReleaseSnapshot, error) {
 	frozen := cloneInput(input)
+	if err := ValidateFrozenRuleSnapshot(frozen); err != nil {
+		return ReleaseSnapshot{}, err
+	}
 	current, err := s.currentness.IsCurrent(frozen)
 	if err != nil {
 		return ReleaseSnapshot{}, err
@@ -382,9 +400,9 @@ func (s *ReleaseService) Get(projectID, snapshotID string) (ReleaseSnapshot, err
 type issueFunc func(ruleID, code, chapterID, message string)
 
 func Evaluate(input DeliveryInput) CheckResult {
-	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: input.Template.RulesetHash, Status: CheckPassed, Issues: []CheckIssue{}}
+	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: FrozenRuleSetHash(input), Status: CheckPassed, Issues: []CheckIssue{}}
 	severities := ruleSeverities(input.Template.Rules)
-	if len(severities) == 0 {
+	if len(severities) == 0 && input.RuleSetSnapshot == nil {
 		result.Status = CheckNotEvaluated
 		return result
 	}
@@ -395,7 +413,7 @@ func Evaluate(input DeliveryInput) CheckResult {
 		if targetVersion != nil {
 			version = *targetVersion
 		}
-		identity := ruleID + "\x00" + target + "\x00" + version + "\x00" + input.Template.RulesetHash + "\x00" + code
+		identity := ruleID + "\x00" + target + "\x00" + version + "\x00" + FrozenRuleSetHash(input) + "\x00" + code
 		if index, exists := seenIssues[identity]; exists {
 			if message != "" && !strings.Contains(result.Issues[index].Message, message) {
 				result.Issues[index].Message += "; " + message
@@ -416,7 +434,7 @@ func Evaluate(input DeliveryInput) CheckResult {
 		}
 		canonicalEvidence := append([]string{}, evidence...)
 		sort.Strings(canonicalEvidence)
-		result.Issues = append(result.Issues, CheckIssue{ID: id, RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Evidence: canonicalEvidence, EvaluatorVersion: lingdoctemplate.EvaluatorVersion, Message: message, Code: code, ChapterID: chapterID})
+		result.Issues = append(result.Issues, CheckIssue{ID: id, RuleID: ruleID, RulesetHash: FrozenRuleSetHash(input), Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Evidence: canonicalEvidence, EvaluatorVersion: lingdoctemplate.EvaluatorVersion, Message: message, Code: code, ChapterID: chapterID})
 		if severity == SeverityBlocking {
 			result.Status = CheckBlocked
 		}
@@ -438,7 +456,7 @@ func Evaluate(input DeliveryInput) CheckResult {
 		issue(RuleRequiredFields, "template_rules_invalid", "", "模板规则结构无效，无法安全执行检查")
 	} else {
 		for _, evaluation := range evaluated.Evaluations {
-			if evaluation.Status != lingdoctemplate.EvaluationIssue || isLegacyTemplateRule(evaluation.RuleID) {
+			if (evaluation.Status != lingdoctemplate.EvaluationIssue && evaluation.Status != lingdoctemplate.EvaluationUnknown) || (input.RuleSetSnapshot == nil && isLegacyTemplateRule(evaluation.RuleID)) {
 				continue
 			}
 			kind, id, _ := strings.Cut(evaluation.TargetRef, "/")
@@ -467,7 +485,11 @@ func Evaluate(input DeliveryInput) CheckResult {
 				}
 			}
 			version := evaluation.TargetVersion
-			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
+			severity := evaluation.Severity
+			if evaluation.Status == lingdoctemplate.EvaluationUnknown {
+				severity = SeverityBlocking
+			}
+			addTarget(severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
 		}
 	}
 
@@ -709,7 +731,14 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 	for key, value := range input.Spec {
 		copy.Spec[key] = value
 	}
+	if input.SpecProvenance != nil {
+		provenance := *input.SpecProvenance
+		provenance.Fields = slices.Clone(input.SpecProvenance.Fields)
+		copy.SpecProvenance = &provenance
+	}
 	copy.Template = lingdoctemplate.Clone(input.Template)
+	copy.RuleSetSnapshot = cloneRuleSnapshot(input.RuleSetSnapshot)
+	copy.BindingPolicies = cloneFrozenPolicies(input.BindingPolicies)
 	copy.Chapters = make([]SnapshotChapter, len(input.Chapters))
 	for i, chapter := range input.Chapters {
 		copy.Chapters[i] = cloneChapter(chapter)

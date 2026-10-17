@@ -40,7 +40,7 @@ func TestTenantRoleMatrixCapsProjectMemberPermissions(t *testing.T) {
 		wantManage bool
 	}{
 		{name: "viewer", role: types.TenantRoleViewer},
-		{name: "contributor", role: types.TenantRoleContributor},
+		{name: "contributor", role: types.TenantRoleContributor, wantManage: true},
 		{name: "admin", role: types.TenantRoleAdmin, wantManage: true},
 		{name: "owner", role: types.TenantRoleOwner, wantManage: true},
 	}
@@ -196,26 +196,26 @@ func TestAuthorizationAuditFailureDoesNotBlockDecision(t *testing.T) {
 	}
 }
 
-func TestAuthorizationLogModeReportsTheEnforcedDecision(t *testing.T) {
+func TestAuthorizationLogModeFallsBackToLegacyDecision(t *testing.T) {
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleViewer}
-	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("log mode should return the enforced policy decision: %v", err)
+	if _, _, _, err := service.CreateProject(context.Background(), actor, "legacy-log", CreateProjectInput{Name: "兼容", TemplateID: "template-demo"}); err != nil {
+		t.Fatalf("log mode should preserve the legacy decision while observing the new policy: %v", err)
 	}
 	if len(audit.events) < 2 || audit.events[0].Capability != "shadow:create" || audit.events[0].Decision != "deny" {
 		t.Fatalf("shadow audit = %+v", audit.events)
 	}
 }
 
-func TestAuthorizationLogModeAllowsWhatThePolicyAudits(t *testing.T) {
+func TestAuthorizationLogModeDoesNotAdoptNewAllow(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Members = append(repository.project.Members, Member{UserID: "admin", Role: "collaborator", GovernanceRole: "admin", Status: "active"})
 	audit := &auditSinkStub{}
 	service := NewServiceWithAuditMode(repository, ContractDemoTemplate{}, nil, nil, audit, AuthorizationModeLog)
 	actor := Actor{TenantID: 1, UserID: "admin", Role: types.TenantRoleAdmin}
-	if err := service.Authorize(context.Background(), actor, "p", "manage"); err != nil {
-		t.Fatalf("log mode should return the enforced allow: %v", err)
+	if err := service.Authorize(context.Background(), actor, "p", "manage"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("log mode adopted new allow instead of legacy deny: %v", err)
 	}
 	if len(audit.events) == 0 || audit.events[0].Capability != "shadow:manage" || audit.events[0].Decision != "allow" {
 		t.Fatalf("shadow allow audit = %+v", audit.events)
@@ -273,8 +273,13 @@ func TestProjectAuthorizerSeamCoversCreateListAndRead(t *testing.T) {
 	if _, err := service.GetProject(ctx, actor, created.ID); err != nil {
 		t.Fatalf("read: %v", err)
 	}
-	if len(authorizer.projectCalls) != 1 || authorizer.projectCalls[0] != created.ID+":read" {
-		t.Fatalf("project calls = %v, want [%s:read]", authorizer.projectCalls, created.ID)
+	if len(authorizer.projectCalls) < 2 {
+		t.Fatalf("missing list/read authorization: %v", authorizer.projectCalls)
+	}
+	for _, call := range authorizer.projectCalls {
+		if call != created.ID+":read" {
+			t.Fatalf("wrong project/capability authorization: %v", authorizer.projectCalls)
+		}
 	}
 }
 

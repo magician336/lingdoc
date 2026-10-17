@@ -18,6 +18,14 @@ func newMCPToolApprovalTestRepo(t *testing.T) interfaces.MCPToolApprovalReposito
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared&_busy_timeout=5000", t.Name())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	// Match the Lite connection pool (container.go). Shared-cache in-memory
+	// SQLite reports SQLITE_LOCKED immediately for concurrent connections;
+	// busy_timeout does not serialize those writes. Keep both goroutines and
+	// column-preservation assertions; only use the real single-connection pool.
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	require.NoError(t, db.AutoMigrate(&types.MCPToolApproval{}))
 	return NewMCPToolApprovalRepository(db)
 }

@@ -8,7 +8,6 @@ import (
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
-	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -24,7 +23,6 @@ type DeliveryExportService struct {
 	validator   delivery.FrozenValidator
 	inputs      *candidateadoption.DeliveryInputService
 	sources     candidateadoption.SourcePolicy
-	reviewer    sourcepolicy.Reviewer
 	currentness DeliveryCurrentness
 	policy      AccessPolicy
 	audit       AuditSink
@@ -90,11 +88,7 @@ func NewDeliveryExportServiceWithCurrentness(
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	var reviewer sourcepolicy.Reviewer
-	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
-		reviewer = candidate
-	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, currentness: currentness, audit: audit}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, currentness: currentness, audit: audit}
 }
 
 // NewDeliveryExportServiceWithPolicy uses the shared application policy for
@@ -119,11 +113,7 @@ func NewDeliveryExportServiceWithPolicy(
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	var reviewer sourcepolicy.Reviewer
-	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
-		reviewer = candidate
-	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, policy: policy, audit: audit}
+	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, policy: policy, audit: audit}
 }
 
 // Start 渲染并校验一份导出，返回产物，以及它是不是这次动作的重放。
@@ -254,7 +244,7 @@ func (s *DeliveryExportService) currentSnapshotSources(ctx context.Context, acto
 		}
 		return nil
 	}
-	if err := s.reviewCurrentSources(ctx, projectID, actorID, ids); err != nil {
+	if err := s.sources.Validate(ctx, projectID, actorID, ids); err != nil {
 		return err
 	}
 	if s.currentness == nil {
@@ -356,7 +346,7 @@ func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID 
 			if len(ids) == 0 {
 				return true, nil
 			}
-			if err := s.reviewCurrentSources(ctx, projectID, actorID, ids); err != nil {
+			if err := s.sources.Validate(ctx, projectID, actorID, ids); err != nil {
 				if errors.Is(err, candidateadoption.ErrSourceAccessDenied) || errors.Is(err, candidateadoption.ErrStaleInput) {
 					return false, nil
 				}
@@ -371,26 +361,6 @@ func (s *DeliveryExportService) service(ctx context.Context, actorID, projectID 
 	)
 }
 
-func (s *DeliveryExportService) reviewCurrentSources(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
-	if s.reviewer != nil {
-		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, sourceIDs)
-	}
-	if s.sources == nil {
-		return candidateadoption.ErrDependencyUnavailable
-	}
-	// Compatibility boundary for legacy export adapters. Production wiring
-	// supplies the shared Reviewer above.
-	return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, sourceIDs)
-}
-
 func accessInputFromDelivery(input delivery.DeliveryInput) lingdocaccess.CurrentnessInput {
-	chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
-	for _, chapter := range input.Chapters {
-		chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
-	}
-	sources := make([]lingdocaccess.Source, 0, len(input.Sources))
-	for _, source := range input.Sources {
-		sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
-	}
-	return lingdocaccess.CurrentnessInput{Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources}
+	return delivery.AccessCurrentnessInput(input)
 }

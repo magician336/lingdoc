@@ -378,6 +378,9 @@ func (s *ExportService) produce(ctx context.Context, actor Actor, projectID, sna
 	if err != nil {
 		return ExportArtifact{}, err
 	}
+	if err := ValidateRuleSnapshotReceipt(snapshot); err != nil {
+		return ExportArtifact{}, ErrExportPreflightBlocked
+	}
 	if snapshot.Check.Status != CheckPassed {
 		return ExportArtifact{}, ErrExportPreflightBlocked
 	}
@@ -520,17 +523,7 @@ func (s *ExportService) authorize(ctx context.Context, actor Actor, projectID st
 
 func (s *ExportService) isCurrent(ctx context.Context, actor Actor, input DeliveryInput) (bool, error) {
 	if s.policy != nil {
-		chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
-		for _, chapter := range input.Chapters {
-			chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
-		}
-		sources := make([]lingdocaccess.Source, 0, len(input.Sources))
-		for _, source := range input.Sources {
-			sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
-		}
-		return s.policy.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: input.ProjectID}, lingdocaccess.CurrentnessInput{
-			Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources,
-		})
+		return s.policy.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: input.ProjectID}, AccessCurrentnessInput(input))
 	}
 	if s.currentness == nil {
 		return false, ErrExportUnavailable

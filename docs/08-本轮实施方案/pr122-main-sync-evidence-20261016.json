@@ -1,0 +1,415 @@
+{
+  "schema": "pr122-main-sync-currentness-r3/v1",
+  "date": "2026-10-16",
+  "pr": 122,
+  "candidate_product_sha": "c7872fdfea07f4214434e35218b49772ab9c07ea",
+  "previous_candidate_sha": "d2135b25d19e667c2a510afbe57142e7dd6d2b18",
+  "synchronized_main": "890578143e4bd829180dda245223e8fb5ae1fc58",
+  "final_head_binding": "Final PR head is the documentation commit above candidate_product_sha; PR and original coordination comment pin its SHA. The source subtrees below remain identical.",
+  "tested_source_trees": {
+    "internal": "31718530b93549dcaf361a5690f6731adcebb6ea",
+    "frontend": "7eb442550f8b0ff04fc7718ec605bea3300a44cf",
+    "client": "c75fe2bbb4a8333981257e623e4c1ec3630794af",
+    "migrations": "806fd7875f9ab6b449ffdcb1b1a908ce75d761b9",
+    "scripts": "680a3dc144a8e14006052acd8cb9f19844eb399b",
+    ".github": "ccfaab34108df8f5cacb13a2dda8af115167868c",
+    "go.mod": "b9c8acd126e466a9be9a6fe642877cb6a59ee450",
+    "go.sum": "e91d9b3f05fdfee57260d7d21ef3c5b3d5dc2487",
+    "docs/08-本轮实施方案/contracts": "091a0358d29f514efa472aefa7e73c501e16cbbd"
+  },
+  "go": {
+    "packages": {
+      "delivery": {
+        "result": "PASS",
+        "source_log": "regression.jsonl",
+        "test_and_subtest_pass_events": 111,
+        "skips": [
+          "TestPostgresDownloadRejectsPersistedCorruption"
+        ]
+      },
+      "candidateadoption": {
+        "result": "PASS",
+        "source_log": "regression.jsonl",
+        "test_and_subtest_pass_events": 58,
+        "skips": []
+      },
+      "access": {
+        "result": "PASS",
+        "source_log": "regression.jsonl",
+        "test_and_subtest_pass_events": 1,
+        "skips": []
+      },
+      "workspacecore": {
+        "result": "PASS",
+        "source_log": "workspacecorefinal.jsonl",
+        "test_and_subtest_pass_events": 213,
+        "skips": [
+          "TestPostgresMigrationAndRepositoryContract"
+        ]
+      },
+      "workspace": {
+        "result": "PASS",
+        "source_log": "workspacefinal.jsonl",
+        "test_and_subtest_pass_events": 271,
+        "skips": [
+          "TestPostgresRendererFailureUsesRealDOCXValidator"
+        ]
+      }
+    },
+    "scope": "Actual SQLite core/readers/source runtime/shared policy/release/export/DOCX; not new logged-in browser or real PostgreSQL"
+  },
+  "go_vet": "PASS: same five packages, offline CGO=1, two workers",
+  "contracts": {
+    "result": "PASS",
+    "paths": 50,
+    "operations": 56,
+    "schemas": 96,
+    "shape_checks": 631,
+    "scenarios": 26,
+    "continuous_trace_steps": 23
+  },
+  "failures_retained": [
+    "red: mapping assertion fails; six actual shared-policy positives reject invalid contributor capability before mutation",
+    "first regression: old synthetic reader omitted frozen context/copy basis; revoked snapshot read now explicitly denies rather than returning payload marked not-current",
+    "intermediate two-package rerun retained: same synthetic reader still omitted exact copy identity; corrected fully and single-test verified before final workspace rerun"
+  ],
+  "new_tests": [
+    "TestSharedDeliveryCurrentnessMappingsRetainFrozenBasis",
+    "TestSharedPolicyRejectsStaleFrozenDelivery (six independent basis changes)",
+    "TestSharedPolicyFreezeRejectsBasisChangedDuringAssembly",
+    "TestSharedPolicyDeliveryReadsKeepCurrentTenantFloorAndNoWriteGrant"
+  ],
+  "semantics": [
+    "Captured template ID/version/effective rules hash/context and assets survive both policy mappings",
+    "ContextRevision is read in the existing repeatable-read workspace snapshot; legacy frozen provenance may supply its captured context; no substitution from live state",
+    "delivery-read preserves current contributor tenant floor plus active project membership and grants no chapter write; existing human/Owner guards remain",
+    "revoked asset/snapshot reads return source_access_denied and no frozen content; stale basis produces no new downloadable artifact"
+  ],
+  "collaborator_followup": {
+    "149": "Reuse ProjectCollaborationPanel; no duplicate member UI",
+    "150": "6d18019 independently read: eight selected CI cases pass, queried nine PR workflows success. Cross-PR migration IDs/status union unresolved; not adopted in this currentness patch",
+    "151": {
+      "reviewed_head": "083e8b8aea185dac11e3edbbfa8a7ca92a07e8e8",
+      "fixed": [
+        "HTTP write-port delegation and explicit Read/Write regression",
+        "mandatory transactional reader; no independent read fallback"
+      ],
+      "selected_current_head_ci_passes": 8,
+      "ci_snapshot": {
+        "success": 7,
+        "in_progress": 1,
+        "in_progress_workflow": "LingDoc Interface Integration"
+      },
+      "required": [
+        "nontransaction-only reader rejection regression",
+        "independent RuleSet use audit in Check/Preflight/ReleaseSnapshot/Export",
+        "exact TemplateVersion reference and restricted overrides",
+        "production adapter full HTTP-to-export/PG/restart/concurrency/audit"
+      ],
+      "history": "e41 HTTP compile failure is historical; 12c full-green is not 083e CI",
+      "state": "Draft, maintainer CHANGES_REQUESTED, no whole-140 acceptance"
+    }
+  },
+  "ci": {
+    "result": "PENDING_NEW_FINAL_HEAD",
+    "history_r2_is_not_current": true
+  },
+  "not_run": [
+    "fresh logged-in product UI for this new source",
+    "new real model call",
+    "local real PostgreSQL",
+    "production migration rollback",
+    "real member trial writing; template remains blank by gong instruction"
+  ],
+  "new_model_calls": 0,
+  "services_changed": false,
+  "merged_to_main": false,
+  "deployed": false,
+  "history_r2": {
+    "schema": "lingdoc.pr122.main-sync-review.v2",
+    "date": "2026-10-16",
+    "pr": 122,
+    "candidate_product_sha": "dde9ed578777e8969f3022cb1b86366d120f62aa",
+    "previous_candidate_sha": "915634572e9a35d8d2e35058fa549b830b52c834",
+    "synchronized_main": "890578143e4bd829180dda245223e8fb5ae1fc58",
+    "final_head_binding": {
+      "ref": "refs/pull/122/head",
+      "comment": "https://github.com/magician336/lingdoc/pull/122#issuecomment-6200433067",
+      "method": "The report commit is documentation-only on candidate_product_sha; the PR comment and Actions head_sha pin the final Git commit. Verify all source subtree/blob IDs below. A file does not claim to contain its own commit hash."
+    },
+    "tested_source_trees": {
+      "internal": "c8bc208aaa85daa2b772eed4d94156eb6e4e40bd",
+      "frontend": "7eb442550f8b0ff04fc7718ec605bea3300a44cf",
+      "client": "c75fe2bbb4a8333981257e623e4c1ec3630794af",
+      "migrations": "806fd7875f9ab6b449ffdcb1b1a908ce75d761b9",
+      "scripts": "680a3dc144a8e14006052acd8cb9f19844eb399b",
+      ".github": "ccfaab34108df8f5cacb13a2dda8af115167868c",
+      "go.mod": "b9c8acd126e466a9be9a6fe642877cb6a59ee450",
+      "go.sum": "e91d9b3f05fdfee57260d7d21ef3c5b3d5dc2487",
+      "docs/08-本轮实施方案/contracts": "0bcff5b2c5790d7d00d11efdcae2790c9b7a457f"
+    },
+    "go": {
+      "status": "PASS",
+      "packages": {
+        "github.com/Tencent/WeKnora/internal/lingdoc/access": {
+          "status": "pass",
+          "elapsed_seconds": 1.673
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption": {
+          "status": "pass",
+          "elapsed_seconds": 2.521
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/delivery": {
+          "status": "pass",
+          "elapsed_seconds": 6.694
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/docx": {
+          "status": "pass",
+          "elapsed_seconds": 2.334
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor": {
+          "status": "pass",
+          "elapsed_seconds": 0.244
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/generation": {
+          "status": "pass",
+          "elapsed_seconds": 2.573
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/template": {
+          "status": "pass",
+          "elapsed_seconds": 0.462
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore": {
+          "status": "pass",
+          "elapsed_seconds": 0.934
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance": {
+          "status": "pass",
+          "elapsed_seconds": 4.811
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore": {
+          "status": "pass",
+          "elapsed_seconds": 58.82
+        },
+        "github.com/Tencent/WeKnora/internal/evidence": {
+          "status": "pass",
+          "elapsed_seconds": 7.926
+        },
+        "github.com/Tencent/WeKnora/internal/database": {
+          "status": "pass",
+          "elapsed_seconds": 7.304
+        },
+        "github.com/Tencent/WeKnora/internal/lingdoc/workspace": {
+          "status": "pass",
+          "elapsed_seconds": 115.151
+        },
+        "github.com/Tencent/WeKnora/internal/container": {
+          "status": "pass",
+          "elapsed_seconds": 3.939
+        },
+        "github.com/Tencent/WeKnora/internal/router": {
+          "status": "pass",
+          "elapsed_seconds": 6.485
+        }
+      },
+      "test_and_subtest_events": {
+        "pass": 1271,
+        "skip": 7
+      },
+      "skipped": [
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/delivery",
+          "test": "TestPostgresDownloadRejectsPersistedCorruption"
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+          "test": "TestPostgresGenerationFailureBoundaries"
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/generation",
+          "test": "TestPostgresWorkerCrashLeasePersistence"
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore",
+          "test": "TestPostgresRuleSetMigrationAndLifecycle"
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance",
+          "test": "TestPostgresCatalogSchemaLifecycleAndAuditRollback"
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore",
+          "test": "TestPostgresMigrationAndRepositoryContract"
+        },
+        {
+          "package": "github.com/Tencent/WeKnora/internal/lingdoc/workspace",
+          "test": "TestPostgresRendererFailureUsesRealDOCXValidator"
+        }
+      ],
+      "new_merge_regressions": [
+        "TestSharedPolicyCarriesProjectCopyBasisAndChapterScope",
+        "TestSharedPolicyRetainsEmptySourceProvenanceAndRevokeError",
+        "TestSharedPolicyRetainsHumanInitiationGate",
+        "TestSharedPolicyUsesProjectCopyRuleHashForGeneration"
+      ]
+    },
+    "go_command": "go test -mod=readonly -p 2 -count=1 -json -timeout 10m ./internal/lingdoc/... ./internal/evidence ./internal/database ./internal/container ./internal/router",
+    "go_vet": "PASS, same package set, -mod=readonly -p 2",
+    "client": "PASS, cd client; go test -mod=readonly -p 2 -count=1 ./...",
+    "frontend": {
+      "tests": 1254,
+      "pass": 1251,
+      "fail": 0,
+      "skipped": 3,
+      "type_check": "PASS",
+      "build": "PASS",
+      "large_chunk_warning": "retained"
+    },
+    "contracts": {
+      "result": "PASS",
+      "scope": "static_design_artifacts_and_reference_trace_only",
+      "paths": 50,
+      "operations": 56,
+      "core_operations": 53,
+      "schemas": 96,
+      "local_refs": 423,
+      "shape_checks": 631,
+      "scenarios": 26,
+      "scenario_example_references": 131,
+      "continuous_trace_steps": 23,
+      "scenario_steps_with_requests": 105,
+      "scenario_checks_tied_to_a_published_example": 50,
+      "scenario_checks_left_to_the_run": 17,
+      "starting_states": 8,
+      "starting_state_parts_buildable": [
+        "assets",
+        "chapters",
+        "project"
+      ],
+      "negative_static_cases_rejected": [
+        "reject_lost_review_item",
+        "reject_wrong_expected_version",
+        "reject_frozen_content_changed_without_digest",
+        "confirmation_wrong_chapter",
+        "confirmation_wrong_template",
+        "confirmation_missing_asset_versions",
+        "duplicate_review_decision",
+        "same_review_id_different_reason",
+        "same_review_item_id_different_statement",
+        "frozen_confirmation_not_actual_return",
+        "replacement_without_acknowledgement",
+        "replacement_silently_merges_old_body",
+        "replacement_erases_old_review_history",
+        "history_label_without_release_read",
+        "history_label_claims_current",
+        "starting_state_declares_unbuildable_part",
+        "starting_state_unknown_section",
+        "starting_state_source_marker_without_reference",
+        "starting_state_draft_with_chapters",
+        "starting_state_unknown_spec_field",
+        "starting_state_unknown_knowledge",
+        "starting_state_unknown_asset_state",
+        "scenario_check_with_two_operators",
+        "scenario_check_disagrees_with_the_published_example",
+        "scenario_check_reads_a_place_the_example_does_not_have",
+        "scenario_check_without_an_intent",
+        "scenario_check_without_an_operator",
+        "scenario_check_with_an_unknown_key",
+        "scenario_check_on_a_step_with_no_published_example",
+        "scenario_request_omits_a_required_path_parameter",
+        "scenario_request_sends_a_field_the_contract_does_not_declare",
+        "scenario_request_omits_a_required_body_field",
+        "scenario_request_sends_a_body_the_operation_does_not_take",
+        "scenario_request_without_an_actor",
+        "scenario_request_without_an_idempotency_key",
+        "scenario_step_names_an_undeclared_actor",
+        "scenario_step_points_at_an_unknown_operation",
+        "scenario_readback_must_use_a_read_operation",
+        "scenario_readback_needs_a_check",
+        "scenario_readback_must_point_to_an_earlier_step",
+        "scenario_declares_an_unknown_starting_state",
+        "white_box_observation_is_restricted_to_f02",
+        "scenario_uses_a_capture_before_it_is_produced",
+        "scenario_capture_points_outside_the_published_response"
+      ],
+      "not_run": [
+        "complete OpenAPI meta-schema validation",
+        "Prism runtime",
+        "real provider/database/model tests",
+        "actual DOCX export/opening",
+        "running a scenario step and evaluating its checks against a real response (scripts/lingdoc_mock/run_scenario.py does that against a real service; this static check ties the expectations to the published examples and stops there)",
+        "building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)"
+      ],
+      "note": "This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples."
+    },
+    "tool_helpers": {
+      "ci_scope": {
+        "status": "PASS",
+        "tests": 12
+      },
+      "acceptance_helpers": {
+        "status": "PASS",
+        "tests": 14
+      },
+      "mock_and_f01_tools": {
+        "status": "PASS",
+        "tests": 222
+      }
+    },
+    "ci": {
+      "final_report_head": "PENDING AFTER PUSH; use current PR comment and Actions head_sha, not prior-head success",
+      "previous_9156345": {
+        "status": "PASS",
+        "workflow_count": 9,
+        "integration_run": 38795883113,
+        "backend_job": 116632020405,
+        "isolated_postgres_closeout": "PASS",
+        "sequential_api_repeat": "PASS",
+        "frontend_docker_build": "PASS; build only"
+      }
+    },
+    "failures_retained": [
+      {
+        "attempt": "first r2 local compile",
+        "status": "FAIL; stopped after diagnosis",
+        "cause": "provider model declarations were moved with the currentness helper and referenced interfaces in the wrong file",
+        "resolution": "returned model declarations to generation.go; complete fresh suite listed above"
+      }
+    ],
+    "collaborator_followup": {
+      "149": "Reuse ProjectCollaborationPanel; no duplicate member panel",
+      "150": {
+        "head": "3a1b4bd7f504080502e160e67801cd3b51b058a8",
+        "review": 5543407338,
+        "status": "CHANGES_REQUESTED",
+        "required": [
+          "already-satisfied reassessment terminal path",
+          "request body/idempotency/OpenAPI alignment",
+          "response schema/client provenance fields"
+        ],
+        "pr122_impact": "same reassess seam remains; reuse original-author fix when delivered, not counted as complete"
+      },
+      "151": {
+        "head": "aded882e6d24c3ba0d441295ae42dcff73b28919",
+        "review": 5543382720,
+        "status": "CHANGES_REQUESTED",
+        "required": [
+          "transactional RuleSet status recheck / conditional bind",
+          "withdraw/recall-bind concurrency regression",
+          "remaining full #140 adapter scope remains separate"
+        ]
+      }
+    },
+    "not_run": [
+      "local PostgreSQL/Docker",
+      "new full product UI/Word/model run",
+      "real writing trial",
+      "full #140 database adapter vertical",
+      "full multi-account UI, arbitrary custom templates, full TrialWindow and formal Beta"
+    ],
+    "historical_evidence": "a85b4d2 and 9156345 records are preserved in their original commits and the out-of-repository acceptance archive; not reused as final-head CI success",
+    "new_model_calls": 0,
+    "merged_to_main": false,
+    "deployed": false
+  }
+}

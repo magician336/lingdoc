@@ -50,6 +50,7 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 		t.Fatal(err)
 	}
 	projectID := asProject(t, created).ID
+	g1SeedActualTurn(t, svc, actor, projectID, "session-1", "turn-3", "样本")
 	provenance := &ProvenanceRecord{SourceType: "conversation", SourceID: "session-1", SourceVersion: "turn-3", Locator: "turns/3#text", Purpose: "project_spec", CreatedBy: actor.UserID, Accessible: true}
 	if _, _, _, err := svc.SaveSpec(context.Background(), actor, projectID, "g1-spec-02", SaveSpecInput{
 		ExpectedSpecRevision: 0,
@@ -71,6 +72,7 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 	}
 	revoked := *provenance
 	revoked.Accessible = false
+	revoked.SourceVersion = "nonexistent-turn"
 	if _, _, _, err := svc.CreateDraftCandidate(context.Background(), actor, projectID, "g1-candidate-03", DraftCandidateInput{Kind: "retrieval", Title: "受限线索", Content: "受限正文", Level: "background", Provenance: &revoked}); err != nil {
 		t.Fatal(err)
 	}
@@ -81,10 +83,8 @@ func TestG1DraftSpecCarriesProvenanceAndCandidatePool(t *testing.T) {
 	if candidates[0].BasedOnContextRevision != 0 || candidates[0].Level != "background" || candidates[0].Provenance == nil {
 		t.Fatalf("candidate = %+v", candidates[0])
 	}
-	for _, candidate := range candidates {
-		if candidate.Title == "受限线索" && (candidate.Content != "" || candidate.Provenance == nil || !candidate.Provenance.NeedsReview) {
-			t.Fatalf("revoked candidate = %+v", candidate)
-		}
+	if candidates[1].Title != "来源待复核" || candidates[1].Content != "" || candidates[1].Provenance == nil || !candidates[1].Provenance.NeedsReview {
+		t.Fatalf("unidentified candidate = %+v", candidates[1])
 	}
 	audits, err := svc.ListAuditEvents(context.Background(), actor, projectID)
 	if err != nil || len(audits) != 3 {
@@ -165,11 +165,11 @@ func TestG1OwnerTransferAcceptsExactlyOnce(t *testing.T) {
 	}
 }
 
-func TestG1AdminCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
+func TestG1TenantOwnerCanRecoverTransferWhenOwnerIsInactive(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g1-owner-recovery.db"))
 	owner := Actor{TenantID: 88, UserID: "owner"}
 	target := Actor{TenantID: 88, UserID: "target"}
-	admin := Actor{TenantID: 88, UserID: "admin", TenantRole: "admin"}
+	admin := Actor{TenantID: 88, UserID: "admin", TenantRole: "owner"}
 	seedTenantMember(t, svc, owner)
 	seedTenantMember(t, svc, target)
 	seedTenantMember(t, svc, admin)
@@ -247,7 +247,7 @@ func TestG1ActivationRequiresOwnerAndRecordsAtomicAudit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := svc.SaveSpec(context.Background(), collaborator, project.ID, "g1-spec-06", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标"}}); err != nil {
+	if _, _, _, err := svc.SaveSpec(context.Background(), owner, project.ID, "g1-spec-06", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "主题", "research_goal": "目标"}}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, _, err := svc.ActivateProject(context.Background(), collaborator, project.ID, "g1-activate-collaborator-06", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: current.ProjectVersion + 1}); !errors.Is(err, ErrNotFound) {

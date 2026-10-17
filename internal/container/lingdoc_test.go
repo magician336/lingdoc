@@ -17,6 +17,8 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 		func() interfaces.KnowledgeBaseService { return nil },
 		func() interfaces.AuditLogService { return nil },
 		func() interfaces.ModelService { return nil },
+		func() interfaces.KnowledgeService { return nil },
+		func() interfaces.WebSearchService { return nil },
 		NewLingDocTemplateCatalog,
 		NewLingDocWorkspaceHandler,
 	} {
@@ -37,7 +39,7 @@ func TestLingDocWorkspaceCompositionSharesApplicationAndSourceRuntime(t *testing
 }
 
 func TestLingDocWorkspaceCompositionRequiresTemplateCatalog(t *testing.T) {
-	if _, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil); err == nil {
+	if _, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil, nil, nil); err == nil {
 		t.Fatal("missing template catalog accepted")
 	}
 }

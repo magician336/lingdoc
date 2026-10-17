@@ -10,6 +10,10 @@
 - [协作与代码边界](../06-灵档产品开发规划/05-团队分工与代码边界.md)
 - [接口与 Mock 约定](02-接口与Mock约定.md)
 
+## 当前PR复审入口
+
+[PR #122 main同步复审交接](pr122-main-sync-review-20261016.md)：维护者五域有条件已审，第六域及当前头兼容检查仍需复审；不代表合并、发布或完整G1–G7验收。
+
 ## 最新横切契约状态（2026-10-16）
 
 - [Spec #164：LingDoc 应用层传输解耦与幂等结果边界](Spec-164-传输中立应用边界.md)：实现切片已完成，#165–#169 已关闭。
@@ -20,8 +24,8 @@
 
 | 文件 | 用途 |
 |---|---|
-| [openapi.json](contracts/openapi.json) | 拟议 HTTP：31 操作，28 core / 3 optional；x-domain 表示服务职责，不指定人 |
-| [scenarios.json](contracts/scenarios.json) | 24 个行为场景（F01–F23、G7-01 基线读写）及合成样例；providers 表示参与服务；F22 已带请求定义与可求值检查 |
+| [openapi.json](contracts/openapi.json) | 2026-10-16静态快照：56操作，53 core / 3 optional；x-domain 表示服务职责，不指定人，接口存在不等于全量验收 |
+| [scenarios.json](contracts/scenarios.json) | 26 个行为场景及合成样例（准确ID以JSON为准）；providers 表示参与服务；F22 已带请求定义与可求值检查 |
 | [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
@@ -184,3 +188,7 @@ python scripts/lingdoc_mock/run_scenario.py --scenario F22 \
 这些接口是待实现方案。Schema 不能独自验证全部跨字段规则，静态轨迹也不能证明数据库副作用。Prism、完整 OpenAPI meta-schema、真实服务/数据库/浏览器/模型/DOCX 均未由本脚本验证；文件 hash 占位值不代表已生成真实文件。
 
 正式业务模板未确认时使用清楚标注的演示模板。保留警示的导出仅用于 internal_demo，不宣称正式申报通过。
+
+## 工作台布局提案
+
+[工作台布局规格与 PR 协作评审](工作台布局规格与PR协作评审-20261012.md)：把研究、专注和审阅作为同一工作台的状态，规定接线、错误恢复和集中验收。本文件为待评审提案，不表示已选型、已接真或允许合并。

@@ -8,7 +8,6 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/evidence"
-	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -25,7 +24,6 @@ type SourceService struct {
 	kbShares  interfaces.KBShareService
 	knowledge KnowledgeSearchService
 	audit     AuditSink
-	reviewer  sourcepolicy.Reviewer
 }
 
 func NewSourceService(
@@ -38,41 +36,13 @@ func NewSourceService(
 	knowledge KnowledgeSearchService,
 	audits ...AuditSink,
 ) *SourceService {
-	return newSourceService(projects, bindings, gateway, catalog, origins, kbShares, knowledge, nil, audits...)
-}
-
-func NewSourceServiceWithReviewer(
-	projects ProjectAuthorizer,
-	bindings BindingStore,
-	gateway evidence.AssetGateway,
-	catalog SourceCatalog,
-	origins evidence.OriginReader,
-	kbShares interfaces.KBShareService,
-	knowledge KnowledgeSearchService,
-	reviewer sourcepolicy.Reviewer,
-	audits ...AuditSink,
-) *SourceService {
-	return newSourceService(projects, bindings, gateway, catalog, origins, kbShares, knowledge, reviewer, audits...)
-}
-
-func newSourceService(
-	projects ProjectAuthorizer,
-	bindings BindingStore,
-	gateway evidence.AssetGateway,
-	catalog SourceCatalog,
-	origins evidence.OriginReader,
-	kbShares interfaces.KBShareService,
-	knowledge KnowledgeSearchService,
-	reviewer sourcepolicy.Reviewer,
-	audits ...AuditSink,
-) *SourceService {
 	var audit AuditSink
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
 	return &SourceService{
 		projects: projects, bindings: bindings, gateway: gateway, catalog: catalog,
-		origins: origins, kbShares: kbShares, knowledge: knowledge, audit: audit, reviewer: reviewer,
+		origins: origins, kbShares: kbShares, knowledge: knowledge, audit: audit,
 	}
 }
 
@@ -188,28 +158,18 @@ func (s *SourceService) GetSource(ctx context.Context, actor Actor, projectID, s
 		return evidence.Source{}, ErrNotFound
 	}
 	source := sources[0]
-	reviewer := s.reviewer
-	if reviewer == nil {
-		// Existing direct SourceService callers are compatibility edges. Keep
-		// their behavior through the same Reviewer shape while production
-		// composition injects SourceRuntime's shared reviewer.
-		reviewer = legacySourceReviewer(s.gateway, s.origins, s.bindings, source)
-	}
-	verdicts, err := reviewer.Review(ctx, projectID, actorRef, []string{source.ID})
+	checked, err := evidence.NewSourcePolicy(s.gateway, s.origins, s.bindings).Validate(ctx, projectID, actorRef, []evidence.Source{source})
 	if err != nil {
 		s.recordSourceAudit(ctx, actor, projectID, "source.read", err)
 		return evidence.Source{}, err
 	}
-	if len(verdicts) != 1 {
-		return evidence.Source{}, ErrSourceUnavailable
-	}
-	verdict := verdicts[0]
-	if !verdict.Usable {
-		if verdict.AssetDeny != "" {
+	if len(checked.Unusable) > 0 {
+		unusable := checked.Unusable[0]
+		if unusable.AssetDeny != "" {
 			s.recordSourceAudit(ctx, actor, projectID, "source.read", ErrSourceUnavailable)
 			return evidence.Source{}, ErrSourceUnavailable
 		}
-		source.Status = verdict.Status
+		source.Status = unusable.Status
 	}
 	return source, nil
 }

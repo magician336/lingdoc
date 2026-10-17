@@ -91,7 +91,8 @@ test('the workspace actually mounts the adoption dialog', () => {
 })
 
 test('project switching reads the first chapter draft before replacing workspace state', () => {
-  const initialRead = workspace.indexOf('const initialChapterDraft =')
+  // The continuous editor stages every chapter, rather than only the old first-chapter draft.
+  const initialRead = workspace.indexOf('const copy = (await getWorkingCopy(id, item.id)).data')
   const projectMutation = workspace.indexOf('project.value = result.data', initialRead)
   assert.ok(initialRead >= 0)
   assert.ok(projectMutation >= 0)
@@ -103,7 +104,7 @@ test('project selection uses named options and the shared unsaved-input policy',
   assert.doesNotMatch(workspace, /selectProject\([^\n]*,\s*(?:true|false)(?:\s*,|\))/)
   assert.match(workspace, /selectProject\(project\.id, \{ force: true \}\)/)
   assert.match(workspace, /selectProject\(id, \{ force: true, skipConfirm: true \}\)/)
-  assert.match(workspace, /selectProject\(id, \{ conditionsHandled: true \}\)/)
+  assert.match(workspace, /selectProject\(id, \{ handledConditions: handledDraft \}\)/)
   assert.match(workspace, /const unsavedInputState = computed<UnsavedInputState>/)
-  assert.match(workspace, /unsavedInputsAreDirty\(unsavedInputState\.value, \{ conditionsHandled \}\)/)
+  assert.match(workspace, /unsavedInputsAreDirty\(\{\s*\.\.\.unsavedInputState\.value,[\s\S]*?\}, \{ conditionsHandled \}\)/)
 })

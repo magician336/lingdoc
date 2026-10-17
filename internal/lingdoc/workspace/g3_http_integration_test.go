@@ -13,8 +13,21 @@ import (
 	"gorm.io/gorm"
 )
 
+func ensureG3ExtensionTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	for _, ddl := range []string{
+		`CREATE TABLE IF NOT EXISTS lingdoc_g5_records(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,
+		`CREATE TABLE IF NOT EXISTS lingdoc_g3_records (id TEXT PRIMARY KEY,project_id TEXT NOT NULL,kind TEXT NOT NULL,record_key TEXT NOT NULL,version BIGINT NOT NULL,body_json TEXT NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,UNIQUE(project_id,kind,record_key))`,
+		`CREATE TABLE IF NOT EXISTS lingdoc_g6_records (id TEXT PRIMARY KEY,tenant_id BIGINT NOT NULL,project_id TEXT NOT NULL,kind TEXT NOT NULL,record_key TEXT NOT NULL,version BIGINT NOT NULL,body_json TEXT NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,UNIQUE(tenant_id,project_id,kind,record_key))`,
+	} {
+		if err := db.Exec(ddl).Error; err != nil {
+			t.Fatalf("production G3/G6 fixture extension: %v", err)
+		}
+	}
+}
 func ensureG3HTTPTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
+	ensureG3ExtensionTables(t, db)
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS lingdoc_operations (
 			tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, operation TEXT NOT NULL,
@@ -30,7 +43,7 @@ func ensureG3HTTPTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS lingdoc_change_sets (
 			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_by TEXT NOT NULL,
-			reason TEXT NOT NULL, status TEXT NOT NULL, base_context_revision INTEGER NOT NULL,
+			reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','assessed','applied','rejected','stale','stabilized')), base_context_revision INTEGER NOT NULL,
 			target_context_revision INTEGER, base_spec_revision INTEGER NOT NULL,
 			target_spec_revision INTEGER, fields_json TEXT NOT NULL DEFAULT '[]',
 			impacts_json TEXT NOT NULL DEFAULT '[]', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

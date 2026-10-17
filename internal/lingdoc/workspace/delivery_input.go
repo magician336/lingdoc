@@ -8,8 +8,9 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
-	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // DeliveryInputBuilder 是 T12→T13 那一段：把工作区的交付输入补成 T13 的冻结输入。
@@ -29,8 +30,9 @@ import (
 // 落成一份可读的报告。冻结输入是**诊断的输入**，不是准入的门——把不合格的内容挡在
 // 门外，操作者就只看到「不通过」，看不到是哪一条引用坏了。
 type DeliveryInputBuilder struct {
-	reviewer  sourcepolicy.Reviewer
+	sourceRevalidator
 	templates delivery.TemplateReader
+	projects  ApplicationService
 }
 
 func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
@@ -41,18 +43,53 @@ func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, froz
 	if !ok {
 		return false, candidateadoption.ErrSourceAccessDenied
 	}
+	if err := b.AuthorizeFrozenProvenance(checked, actorID, frozen.ProjectID, frozen); err != nil {
+		return false, err
+	}
+	// Revalidate the declared frozen asset basis even when no source record
+	// references it. Source locators alone are not a complete revision check.
+	if len(frozen.AssetVersions) > 0 {
+		if b.gateway == nil {
+			return false, candidateadoption.ErrDependencyUnavailable
+		}
+		requested := make([]string, 0, len(frozen.AssetVersions))
+		seen := make(map[string]bool, len(frozen.AssetVersions))
+		for _, asset := range frozen.AssetVersions {
+			if asset.AssetID == "" || asset.Revision < 1 || seen[asset.AssetID] {
+				return false, nil
+			}
+			seen[asset.AssetID] = true
+			requested = append(requested, asset.AssetID)
+		}
+		resolved, err := b.gateway.ResolveAllowed(checked, frozen.ProjectID, actor, requested)
+		if err != nil {
+			return false, err
+		}
+		if resolved == nil || len(resolved.Denied) > 0 {
+			return false, candidateadoption.ErrSourceAccessDenied
+		}
+		if len(resolved.Allowed) != len(frozen.AssetVersions) {
+			return false, nil
+		}
+		versions := make(map[string]int, len(resolved.Allowed))
+		for _, asset := range resolved.Allowed {
+			versions[asset.ID] = asset.AssetRevision
+		}
+		for _, asset := range frozen.AssetVersions {
+			if versions[asset.AssetID] != asset.Revision {
+				return false, nil
+			}
+		}
+	}
 	ids := make([]string, 0, len(frozen.Sources))
 	for _, source := range frozen.Sources {
 		ids = append(ids, source.ID)
 	}
-	if b.reviewer == nil {
-		return false, candidateadoption.ErrDependencyUnavailable
-	}
-	verdicts, err := b.reviewer.Review(checked, frozen.ProjectID, actor, ids)
+	verdicts, err := b.revalidate(checked, frozen.ProjectID, actor, ids)
 	if err != nil {
 		return false, err
 	}
-	byID := make(map[string]sourcepolicy.Verdict, len(verdicts))
+	byID := make(map[string]revalidated, len(verdicts))
 	for _, verdict := range verdicts {
 		byID[verdict.SourceID] = verdict
 	}
@@ -84,7 +121,7 @@ func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 	if h.templates == nil {
 		return nil
 	}
-	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), templates: h.templates}
+	return &DeliveryInputBuilder{sourceRevalidator: h.sourceRevalidator(), templates: h.templates, projects: h.service}
 }
 
 // Build 把 T12 的交付输入补成 T13 的冻结输入。
@@ -102,12 +139,33 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 	if !ok {
 		return delivery.DeliveryInput{}, candidateadoption.ErrSourceAccessDenied
 	}
+	var specProvenance *core.ProjectProvenanceSnapshot
+	if projects, ok := b.projects.(deliveryProvenanceCore); ok {
+		caller := types.CallerFromContext(checked)
+		a := core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}
+		proof, prepared := core.ProjectProvenanceSnapshotFromContext(checked, input.ProjectID)
+		if !prepared {
+			var err error
+			checked, proof, err = projects.PrepareProjectProvenance(checked, a, input.ProjectID, false)
+			if err != nil {
+				return delivery.DeliveryInput{}, err
+			}
+		}
+		if proof.SpecRevision != int64(input.SpecRevision) || proof.TemplateCopyVersion != input.TemplateCopyVersion {
+			return delivery.DeliveryInput{}, candidateadoption.ErrVersionConflict
+		}
+		if err := projects.ValidateProjectProvenanceSnapshot(checked, a, input.ProjectID, input.Spec, proof, false); err != nil {
+			return delivery.DeliveryInput{}, err
+		}
+		specProvenance = &proof
+	}
 	var template lingdoctemplate.Template
 	if input.TemplateDefinition != nil {
 		template = *input.TemplateDefinition
 		contentHash, rulesetHash, hashErr := lingdoctemplate.Hashes(template)
 		if hashErr != nil || input.TemplateCopyID == "" || input.TemplateCopyVersion < 1 ||
-			contentHash != input.TemplateCopyContentHash || rulesetHash != input.TemplateCopyRulesetHash ||
+			contentHash != input.TemplateCopyContentHash || rulesetHash != template.RulesetHash ||
+			(input.RuleSetSnapshot == nil && rulesetHash != input.TemplateCopyRulesetHash) ||
 			template.ID != input.TemplateID || template.Version != input.TemplateVersion {
 			return delivery.DeliveryInput{}, fmt.Errorf("%w: project template copy is invalid or stale", candidateadoption.ErrInvalidState)
 		}
@@ -121,33 +179,41 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		}
 	}
 
-	if b.reviewer == nil {
-		return delivery.DeliveryInput{}, candidateadoption.ErrDependencyUnavailable
-	}
-	verdicts, err := b.reviewer.Review(checked, input.ProjectID, actor, referencedSourceIDs(input.Chapters))
+	verdicts, err := b.revalidate(checked, input.ProjectID, actor, referencedSourceIDs(input.Chapters))
 	if err != nil {
 		return delivery.DeliveryInput{}, err
 	}
 	sources := frozenSources(verdicts)
 	versions := assetVersionsOfSources(sources)
-	return delivery.DeliveryInput{
+	orderedChapters, err := frozenChaptersInTemplateOrder(input.Chapters, template)
+	if err != nil {
+		return delivery.DeliveryInput{}, err
+	}
+	frozen := delivery.DeliveryInput{
+		RuleSetSnapshot: input.RuleSetSnapshot, TemplateCopyRulesetHash: input.TemplateCopyRulesetHash, SourceRuleSetID: input.SourceRuleSetID, SourceRuleSetVersion: input.SourceRuleSetVersion, SourceRuleSetHash: input.SourceRuleSetHash, BindingPolicies: input.BindingPolicies, SourcePolicyHash: input.SourcePolicyHash,
 		ProjectID:               input.ProjectID,
 		ProjectName:             input.ProjectName,
 		ProjectVersion:          int(input.ProjectVersion),
 		SpecRevision:            input.SpecRevision,
+		ContextRevision:         input.ContextRevision,
 		Spec:                    cloneStringMap(input.Spec),
+		SpecProvenance:          specProvenance,
 		Template:                template,
 		TemplateCopyID:          input.TemplateCopyID,
 		TemplateCopyVersion:     input.TemplateCopyVersion,
 		TemplateCopyContentHash: input.TemplateCopyContentHash,
-		Chapters:                frozenChapters(input.Chapters),
+		Chapters:                orderedChapters,
 		Sources:                 sources,
 		AssetVersions:           versions,
 		PolicyAssetIDs:          policyAssetIDsOf(versions),
 		// 契约里 prepareRelease 的请求体只有 expected_project_version，没有交付种类；
 		// 而这套演示只放行一种交付（delivery.DeliveryKindInternalDemo）。
 		DeliveryKind: delivery.DeliveryKindInternalDemo,
-	}, nil
+	}
+	if err := delivery.ValidateFrozenRuleSnapshot(frozen); err != nil {
+		return delivery.DeliveryInput{}, fmt.Errorf("%w: %v", candidateadoption.ErrInvalidState, err)
+	}
+	return frozen, nil
 }
 
 // referencedSourceIDs 按章节顺序收集全部引用（去空白、去重）。
@@ -164,7 +230,7 @@ func referencedSourceIDs(chapters []candidateadoption.WorkspaceDeliveryChapter) 
 
 // frozenSources 只收放行的那批，顺序沿用复核顺序（即引用出现的顺序），
 // 逐次构建得到同一份输入、同一枚摘要。
-func frozenSources(verdicts []sourcepolicy.Verdict) []delivery.FrozenSource {
+func frozenSources(verdicts []revalidated) []delivery.FrozenSource {
 	out := make([]delivery.FrozenSource, 0, len(verdicts))
 	for _, verdict := range verdicts {
 		if !verdict.Usable {
@@ -241,7 +307,7 @@ func frozenCitationUsages(values []candidateadoption.CitationUsage) []delivery.C
 func frozenReviewItems(items []candidateadoption.ReviewItem) []delivery.ReviewItem {
 	out := make([]delivery.ReviewItem, 0, len(items))
 	for _, item := range items {
-		out = append(out, delivery.ReviewItem{ID: item.ID, Statement: item.Statement, OriginCandidateID: item.OriginCandidateID})
+		out = append(out, delivery.ReviewItem{ID: item.ID, Statement: item.Statement, OriginCandidateID: item.OriginCandidateID, Anchor: item.Anchor})
 	}
 	return out
 }
@@ -291,4 +357,62 @@ func cloneString(value *string) *string {
 	}
 	copy := *value
 	return &copy
+}
+
+// Only newly assembled inputs are ordered. Existing FrozenInput and export
+// records retain their original order and digest.
+func frozenChaptersInTemplateOrder(chapters []candidateadoption.WorkspaceDeliveryChapter, template lingdoctemplate.Template) ([]delivery.SnapshotChapter, error) {
+	sections := append([]lingdoctemplate.Section(nil), template.Sections...)
+	sort.SliceStable(sections, func(i, j int) bool { return sections[i].Order < sections[j].Order })
+	ranks := make(map[string]int, len(sections))
+	for i, section := range sections {
+		ranks[section.ID] = i
+	}
+	for _, chapter := range chapters {
+		if _, ok := ranks[chapter.SectionID]; !ok {
+			return nil, fmt.Errorf("%w: chapter section %q is not declared by the bound template", candidateadoption.ErrInvalidState, chapter.SectionID)
+		}
+	}
+	out := frozenChapters(chapters)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, knownA := ranks[out[i].SectionID]
+		b, knownB := ranks[out[j].SectionID]
+		if knownA != knownB {
+			return knownA
+		}
+		if !knownA {
+			return false
+		} // Keep unknown chapters for existing blocked diagnostics.
+		return a < b
+	})
+	return out, nil
+}
+
+// The production core owns these provenance checks. Public snapshot JSON is
+// only a durable reference to its immutable server pins, never an access proof.
+type deliveryProvenanceCore interface {
+	PrepareProjectProvenance(context.Context, core.Actor, string, bool) (context.Context, core.ProjectProvenanceSnapshot, error)
+	ValidateProjectProvenanceSnapshot(context.Context, core.Actor, string, map[string]string, core.ProjectProvenanceSnapshot, bool) error
+	AssertFrozenProjectProvenance(context.Context, core.Actor, string, map[string]string, core.ProjectProvenanceSnapshot, bool) error
+}
+
+func (b *DeliveryInputBuilder) AuthorizeFrozenProvenance(ctx context.Context, actorID, projectID string, frozen delivery.DeliveryInput) error {
+	projects, ok := b.projects.(deliveryProvenanceCore)
+	if !ok {
+		// Legacy contract fixtures have no full-workflow core. A persisted
+		// provenance snapshot still requires its real validator.
+		if frozen.SpecProvenance != nil {
+			return candidateadoption.ErrDependencyUnavailable
+		}
+		return nil
+	}
+	caller := types.CallerFromContext(ctx)
+	if caller.UserID != actorID || frozen.ProjectID != projectID {
+		return candidateadoption.ErrSourceAccessDenied
+	}
+	proof := core.ProjectProvenanceSnapshot{}
+	if frozen.SpecProvenance != nil {
+		proof = *frozen.SpecProvenance
+	}
+	return projects.AssertFrozenProjectProvenance(ctx, core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, projectID, frozen.Spec, proof, false)
 }

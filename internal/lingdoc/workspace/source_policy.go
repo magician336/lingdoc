@@ -9,7 +9,6 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
-	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	workspacecore "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
@@ -34,7 +33,7 @@ func (h *SourceRuntime) CandidateAdoptionSourcePolicy() candidateadoption.Source
 	if h == nil || h.db == nil || h.bindings == nil || h.gateway == nil {
 		return nil
 	}
-	return &candidateAdoptionSourcePolicy{reviewer: h.sourceRevalidator()}
+	return &candidateAdoptionSourcePolicy{sourceRevalidator: h.sourceRevalidator(), service: h.service}
 }
 
 // WorkspaceSourcePolicy 把同一台判定器接到 T08（章节保存）上。
@@ -52,55 +51,33 @@ func (h *SourceRuntime) WorkspaceSourcePolicy() SourcePolicy {
 
 type workspaceSourcePolicy struct{ handler *SourceRuntime }
 
-// 装配处把 SourcePolicy 交给核心域（core_alias.go 的 NewService）；读侧的逐项状态
-// 通过同一个 Reviewer 获取，不依赖某个具体适配器的类型形状。
+// 装配处把 SourcePolicy 交给核心域（core_alias.go 的 NewService），断言失败是静默的
+// ——把「静默少一层校验」变成「编译不过」。
 var _ SourcePolicy = workspaceSourcePolicy{}
-var _ sourcepolicy.Reviewer = workspaceSourcePolicy{}
-
-// Review exposes the shared per-source verdicts to delivery adapters. The
-// adapter owns only context and representation conversion; source access,
-// revocation and coordinate checks remain in sourceRevalidator.
-func (p workspaceSourcePolicy) Review(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]sourcepolicy.Verdict, error) {
-	if len(sourceIDs) == 0 {
-		return nil, nil
-	}
-	reviewer := p.reviewer()
-	if reviewer == nil {
-		return nil, candidateadoption.ErrDependencyUnavailable
-	}
-	return reviewer.Review(ctx, projectID, actor, sourceIDs)
-}
 
 func (p workspaceSourcePolicy) Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
 	// 复用产出侧那一个 nil 守卫，不在这里再抄一遍判据：依赖齐备与否只该有一处定义。
-	if len(sourceIDs) == 0 {
-		return nil
-	}
-	reviewer := p.reviewer()
-	if reviewer == nil {
+	policy := p.handler.CandidateAdoptionSourcePolicy()
+	if policy == nil {
 		return candidateadoption.ErrDependencyUnavailable
 	}
-	checked, actor, ok := recheckContext(ctx, actorID)
-	if !ok || strings.TrimSpace(projectID) == "" {
-		return candidateadoption.ErrSourceAccessDenied
-	}
-	verdicts, err := reviewer.Review(checked, projectID, actor, sourceIDs)
-	if err != nil {
-		return err
-	}
-	return sourceReviewError(verdicts)
+	return policy.Validate(ctx, projectID, actorID, sourceIDs)
 }
 
 func (p workspaceSourcePolicy) CitationStatuses(ctx context.Context, projectID, actorID string, sourceIDs []string) ([]workspacecore.CitationStatus, error) {
-	reviewer := p.reviewer()
-	if reviewer == nil {
+	policy := p.handler.CandidateAdoptionSourcePolicy()
+	if policy == nil {
+		return nil, candidateadoption.ErrDependencyUnavailable
+	}
+	concrete, ok := policy.(*candidateAdoptionSourcePolicy)
+	if !ok {
 		return nil, candidateadoption.ErrDependencyUnavailable
 	}
 	checked, actor, ok := recheckContext(ctx, actorID)
 	if !ok || strings.TrimSpace(projectID) == "" {
 		return nil, candidateadoption.ErrSourceAccessDenied
 	}
-	verdicts, err := reviewer.Review(checked, projectID, actor, sourceIDs)
+	verdicts, err := concrete.revalidate(checked, projectID, actor, sourceIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -120,75 +97,11 @@ func (p workspaceSourcePolicy) CitationStatuses(ctx context.Context, projectID, 
 	return statuses, nil
 }
 
-// reviewer resolves the current source-review implementation at call time.
-// The handler may replace its gateway after construction (tests and runtime
-// reconfiguration both do this), so the adapter must not retain a stale
-// implementation snapshot.
-func (p workspaceSourcePolicy) reviewer() sourcepolicy.Reviewer {
-	if p.handler == nil || p.handler.db == nil || p.handler.bindings == nil || p.handler.gateway == nil {
-		return nil
-	}
-	return p.handler.sourceRevalidator()
-}
-
-func sourceReviewError(verdicts []sourcepolicy.Verdict) error {
-	stale, denied := false, false
-	for _, verdict := range verdicts {
-		if verdict.Usable {
-			continue
-		}
-		if verdict.AssetDeny == "" {
-			stale = true
-			continue
-		}
-		denied = true
-	}
-	if stale {
-		return candidateadoption.ErrStaleInput
-	}
-	if denied {
-		return candidateadoption.ErrSourceAccessDenied
-	}
-	return nil
-}
-
-// reviewSourceIDs is the delivery-facing adapter for the shared reviewer. It
-// maps the per-source verdicts into the existing all-or-nothing error contract;
-// it does not recreate source authorization or currentness rules.
-func reviewSourceIDs(ctx context.Context, projectID, actorID string, reviewer sourcepolicy.Reviewer, sourceIDs []string) error {
-	if len(sourceIDs) == 0 {
-		return nil
-	}
-	if reviewer == nil {
-		return candidateadoption.ErrDependencyUnavailable
-	}
-	checked, actor, ok := recheckContext(ctx, actorID)
-	if !ok || strings.TrimSpace(projectID) == "" {
-		return candidateadoption.ErrSourceAccessDenied
-	}
-	verdicts, err := reviewer.Review(checked, projectID, actor, sourceIDs)
-	if err != nil {
-		return err
-	}
-	return sourceReviewError(verdicts)
-}
-
-// legacySourcePolicyReview is the explicit compatibility adapter for callers
-// that have not yet been handed the shared Reviewer. It keeps the old
-// all-or-nothing representation at the boundary; production paths use
-// reviewSourceIDs above.
-func legacySourcePolicyReview(ctx context.Context, projectID, actorID string, policy candidateadoption.SourcePolicy, sourceIDs []string) error {
-	if policy == nil {
-		return candidateadoption.ErrDependencyUnavailable
-	}
-	return policy.Validate(ctx, projectID, actorID, sourceIDs)
-}
-
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
 // 它只被那几个带 nil 守卫的装配入口调用。
-func (h *SourceRuntime) sourceRevalidator() sourcepolicy.Reviewer {
+func (h *SourceRuntime) sourceRevalidator() sourceRevalidator {
 	origins := h.origins()
-	return &sourceRevalidator{
+	return sourceRevalidator{
 		db: h.db, bindings: h.bindings, gateway: h.gateway, origins: origins,
 		policy: evidence.NewSourcePolicy(h.gateway, origins, h.bindings),
 	}
@@ -198,22 +111,13 @@ func (h *SourceRuntime) sourceRevalidator() sourcepolicy.Reviewer {
 // ConfirmationSourcePolicy：两者问的是同一件事，只是 T12 还要把被引用资料的当前版本交出来
 // 给确认记录钉住——确认之后资料再前进就该判失效，而不是静默沿用旧坐标。
 type candidateAdoptionSourcePolicy struct {
-	reviewer sourcepolicy.Reviewer
+	sourceRevalidator
+	service ApplicationService
 }
 
 // 装配处靠类型断言才能把复核接给确认服务（candidate_adoption_http.go:26），而断言失败是
 // 静默的——把「静默少一层校验」变成「编译不过」。
 var _ candidateadoption.ConfirmationSourcePolicy = (*candidateAdoptionSourcePolicy)(nil)
-
-// Review exposes the shared verdict seam to candidate adoption. Validate and
-// ValidateCurrent below remain compatibility adapters for callers that only
-// need an all-or-nothing answer.
-func (p *candidateAdoptionSourcePolicy) Review(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]sourcepolicy.Verdict, error) {
-	if p == nil || p.reviewer == nil {
-		return nil, candidateadoption.ErrDependencyUnavailable
-	}
-	return p.reviewer.Review(ctx, projectID, actor, sourceIDs)
-}
 
 // Validate 是 T11 的采纳前复核：只回答这批引用还能不能用。
 func (p *candidateAdoptionSourcePolicy) Validate(ctx context.Context, projectID, actorID string, sourceIDs []string) error {
@@ -237,23 +141,34 @@ func (p *candidateAdoptionSourcePolicy) recheck(ctx context.Context, projectID, 
 		// 身份不全就无从判定「此刻还授不授权」，默认拒绝，不去猜一个更宽松的答案。
 		return nil, candidateadoption.ErrSourceAccessDenied
 	}
-	if p == nil || p.reviewer == nil {
-		return nil, candidateadoption.ErrDependencyUnavailable
-	}
-	verdicts, err := p.reviewer.Review(checked, projectID, actor, sourceIDs)
+	verdicts, err := p.revalidate(checked, projectID, actor, sourceIDs)
 	if err != nil {
 		return nil, err
 	}
+	stale, denied := false, false
 	usable := make([]evidence.Source, 0, len(verdicts))
 	for _, verdict := range verdicts {
 		if verdict.Usable {
 			usable = append(usable, verdict.Source)
+			continue
 		}
+		if verdict.AssetDeny == "" {
+			// 资料层放行、卡在坐标层：资料还在、还授权，只是这枚引用指不回原文了
+			// （坐标漂移，或该块已被编辑/重写）。
+			stale = true
+			continue
+		}
+		// 资料层不放行：不存在 / 未就绪 / 未授权 / 不属于本项目。四种原因不在措辞上区分，
+		// 它们该触发的动作是同一个：拒绝。
+		denied = true
 	}
 	// 坐标失效优先于资料层拒绝，与生成侧 generationSourceValidator 同一条读法：
 	// 整批里只要有一条「资料还在、引用失效」，可修的那一类就是它。
-	if err := sourceReviewError(verdicts); err != nil {
-		return nil, err
+	if stale {
+		return nil, candidateadoption.ErrStaleInput
+	}
+	if denied {
+		return nil, candidateadoption.ErrSourceAccessDenied
 	}
 	return assetVersionsOf(usable), nil
 }
@@ -273,8 +188,15 @@ func recheckContext(ctx context.Context, actorID string) (context.Context, evide
 		return nil, evidence.Actor{}, false
 	}
 	actor := evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}
-	checked := types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleViewer})
-	return types.WithExecutionTenant(checked, tenantID), actor, true
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID != tenantID || caller.UserID != actorID {
+		return nil, evidence.Actor{}, false
+	}
+	if contextUser, exists := types.UserIDFromContext(ctx); exists && contextUser != actorID {
+		return nil, evidence.Actor{}, false
+	}
+	// Preserve Caller, Principal and API key scope. Execution scope is not a grant.
+	return types.WithExecutionTenant(ctx, tenantID), actor, true
 }
 
 // sourceRevalidator 是「这批已经产出的引用此刻还能不能当证据」这一问的唯一实现。
@@ -294,10 +216,31 @@ type sourceRevalidator struct {
 	policy   evidence.SourcePolicy
 }
 
-var _ sourcepolicy.Reviewer = (*sourceRevalidator)(nil)
+// revalidated 是一次复核对一条引用的回答。
+type revalidated struct {
+	SourceID string
+	// Source 是重建出来的来源。判成不可用时**照样带着坐标**（Resolve 已经产出过它，
+	// locator 与 asset_revision 都在上面），只是 Status 换成坐标层那条结论——取来源的
+	// 调用方要说得清失败的是哪一条引用。仅当分块行本身不存在时它才只剩 ID。
+	Source evidence.Source
+	// Chunk 是这条引用在底座上的那一行（ChunkIndex / ChunkType / 坐标都在它上面），
+	// 供调用方接着读它周围的段落。分块行不存在时为零值。
+	Chunk types.Chunk
+	// DisplayTitle 是这条引用所属资料此刻的标题。T13 的冻结来源要 display_title，
+	// 而它是资料的属性、不在 evidence.Source 里。
+	DisplayTitle string
+	Usable       bool
+	// AssetDeny 非空表示卡在资料层（不存在 / 未就绪 / 未授权 / 不属于本项目）；
+	// 为空而 Usable=false 表示资料层放行、只是这枚引用指不回原文了。
+	AssetDeny evidence.DenyReason
+	// Status 是坐标层那条结论（stale / unavailable），取自 UnusableSource.Status。
+	// 资料层拒绝时留空——与 UnusableSource 同一套读法，两处不该各演各的。
+	Status evidence.SourceStatus
+	Detail string
+}
 
-// Review 逐条给出结论，顺序与请求一致（去重、去空白后）。
-func (p *sourceRevalidator) Review(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]sourcepolicy.Verdict, error) {
+// revalidate 逐条给出结论，顺序与请求一致（去重、去空白后）。
+func (p *sourceRevalidator) revalidate(ctx context.Context, projectID string, actor evidence.Actor, sourceIDs []string) ([]revalidated, error) {
 	rebuilt, err := p.rebuild(ctx, projectID, actor, sourceIDs)
 	if err != nil {
 		return nil, err
@@ -325,9 +268,9 @@ func (p *sourceRevalidator) Review(ctx context.Context, projectID string, actor 
 		unusable[entry.SourceID] = entry
 	}
 
-	verdicts := make([]sourcepolicy.Verdict, 0, len(rebuilt))
+	verdicts := make([]revalidated, 0, len(rebuilt))
 	for _, entry := range rebuilt {
-		verdict := sourcepolicy.Verdict{
+		verdict := revalidated{
 			SourceID:     entry.Source.ID,
 			Source:       entry.Source,
 			Chunk:        entry.Chunk,
@@ -377,7 +320,7 @@ func (h *SourceRuntime) readSource(ctx context.Context, actor Actor, projectID, 
 		return sourceRead{}, err
 	}
 	revalidator := h.sourceRevalidator()
-	verdicts, err := revalidator.Review(ctx, projectID,
+	verdicts, err := revalidator.revalidate(ctx, projectID,
 		evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)},
 		[]string{sourceID})
 	if err != nil {
@@ -561,4 +504,74 @@ func assetVersionsOf(sources []evidence.Source) []candidateadoption.AssetVersion
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].AssetID < out[j].AssetID })
 	return out
+}
+
+var _ candidateadoption.CandidateEvidencePolicy = (*candidateAdoptionSourcePolicy)(nil)
+
+type candidateEvidenceTransactionSelector interface {
+	SelectGenerationEvidenceInTransaction(context.Context, workspacecore.Transaction, workspacecore.Actor, string, string, []workspacecore.G2VersionRef, bool, []string) (workspacecore.G2EvidenceSelection, error)
+}
+
+func candidateEvidenceActor(ctx context.Context, actorID string) (context.Context, workspacecore.Actor, error) {
+	checked, _, ok := recheckContext(ctx, actorID)
+	if !ok {
+		return nil, workspacecore.Actor{}, candidateadoption.ErrSourceAccessDenied
+	}
+	caller := types.CallerFromContext(checked)
+	return checked, workspacecore.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, nil
+}
+
+func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (workspacecore.G2EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return workspacecore.G2EvidenceSelection{}, err
+	}
+	port, ok := p.service.(g2EvidenceSelector)
+	if !ok {
+		return workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	selected, err := port.SelectGenerationEvidence(checked, actor, projectID, chapterID, refs, true)
+	if err != nil {
+		return selected, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	if err = p.Validate(checked, projectID, actorID, sourceIDs); err != nil {
+		return selected, err
+	}
+	return selected, nil
+}
+
+func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidenceInTransaction(ctx context.Context, tx *gorm.DB, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (workspacecore.G2EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return workspacecore.G2EvidenceSelection{}, err
+	}
+	port, ok := p.service.(candidateEvidenceTransactionSelector)
+	if !ok || tx == nil {
+		return workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	selected, err := port.SelectGenerationEvidenceInTransaction(checked, workspacecore.NewTransactionAdapter(tx), actor, projectID, chapterID, refs, true, sourceIDs)
+	if err != nil {
+		return selected, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	return selected, nil
+}
+
+type candidateEvidenceProofPreparer interface {
+	PrepareCandidateGenerationEvidence(context.Context, workspacecore.Actor, string, string, []workspacecore.G2VersionRef, []string) (context.Context, workspacecore.G2EvidenceSelection, error)
+}
+
+func (p *candidateAdoptionSourcePolicy) PrepareCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (context.Context, workspacecore.G2EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return ctx, workspacecore.G2EvidenceSelection{}, err
+	}
+	port, ok := p.service.(candidateEvidenceProofPreparer)
+	if !ok {
+		return ctx, workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	prepared, selected, err := port.PrepareCandidateGenerationEvidence(checked, actor, projectID, chapterID, refs, sourceIDs)
+	if err != nil {
+		return ctx, selected, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	return prepared, selected, nil
 }

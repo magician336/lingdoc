@@ -480,7 +480,7 @@ func TestExportRoutesPersistUnsupportedMarkdownFailureAfterPreflightWarning(t *t
 	router := func() *gin.Engine {
 		seedDeliveryWorkspace(t, db,
 			deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID),
-				"- 列表项 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
+				"> 引用块 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
 			deliveryMethodChapter(),
 		)
 		return assembleExportRoutes(t, handler, db, deliveryTestAuthorizer{})

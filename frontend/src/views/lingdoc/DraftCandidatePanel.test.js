@@ -1,0 +1,23 @@
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
+const require = createRequire(import.meta.url)
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = require('node:path').dirname(__filename)
+
+// Executes the actual compiled Vue script/template and typed API with synthetic
+// HTTP responses. This is component evidence, not a running product browser.
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),Module=require('node:module')
+const frontend=path.resolve(__dirname,'../../..'),load=Module.createRequire(path.join(frontend,'package.json')),ts=load('typescript'),compiler=load('@vue/compiler-sfc'),vue=load('vue'),{renderToString}=load('@vue/server-renderer')
+let fixture
+function compile(file,source,requireOverride){const m=new Module(file);m.paths=Module._nodeModulePaths(frontend);m.require=requireOverride||load;m._compile(ts.transpileModule(source??fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText,file);return m.exports}
+const request={get:async url=>{fixture.calls.push({method:'GET',url});if(fixture.get) return fixture.get(url);return {data:fixture.items}},post:async(url,body,config)=>{fixture.calls.push({method:'POST',url,body,config});if(fixture.post)return fixture.post(url,body,config);return {data:{id:'candidate',project_id:'p',...body}}}}
+const api=compile(path.join(frontend,'src/api/lingdoc/g1Initialization.ts'),undefined,id=>id==='@/utils/request'?request:load(id))
+const file=path.join(__dirname,'DraftCandidatePanel.vue'),parsed=compiler.parse(fs.readFileSync(file,'utf8'));assert.deepEqual(parsed.errors,[])
+const script=compiler.compileScript(parsed.descriptor,{id:'draft-pool-test'}),template=compiler.compileTemplate({source:parsed.descriptor.template.content,filename:file,id:'draft-pool-test',isTS:true,compilerOptions:{bindingMetadata:script.bindings}});assert.deepEqual(template.errors,[])
+const panel=compile(file,script.content,id=>id==='@/api/lingdoc/g1Initialization'?api:load(id)).default;panel.render=compile(file+'.template',template.code).render
+async function render(action,readonly=false){fixture={calls:[],items:[],get:null,post:null};const props=vue.reactive({project:{id:'p',status:'draft',template_copy:{definition:{fields:[{field_id:'subject',label:'主题'}]}}},currentUserId:'user',readonly});let state;const component={...panel,setup(p,c){state=panel.setup(p,c);return Promise.resolve().then(()=>action?.(state,props)).then(()=>state)}};const html=await renderToString(vue.createSSRApp(component,props));return {state,props,html,calls:fixture.calls}}
+test('actual draft pool reads the encoded typed endpoint and never describes unread data as an empty pool',async()=>{const {state,html,calls}=await render(async s=>{fixture.get=()=>Promise.reject(new Error('offline'));await s.load()});assert.match(state.error.value,/暂不可读/);assert(!html.includes('尚未保存草稿候选'));assert.equal(calls[0].url,'/api/v1/lingdoc/projects/p/draft-candidates')})
+test('lost save response preserves the editable input and identical idempotency key',async()=>{const {state,calls}=await render(async s=>{s.title.value='备选';s.content.value='人工文本';fixture.post=()=>Promise.reject(new Error('lost'));await s.save();await s.save()});const writes=calls.filter(c=>c.method==='POST');assert.equal(writes.length,2);assert.equal(writes[0].config.headers['Idempotency-Key'],writes[1].config.headers['Idempotency-Key']);assert.equal(state.content.value,'人工文本');assert(!writes[0].body.provenance)})
+test('unknown acknowledgement cannot clear a pending manual candidate',async()=>{const {state}=await render(async s=>{s.title.value='保留';s.content.value='文本';fixture.post=async()=>({data:{status:'queued'}});await s.save()});assert.equal(state.title.value,'保留');assert.match(state.error.value,/未确认保存成功/)})
+test('readonly user cannot save and a source-bearing candidate is not offered as manual field input',async()=>{const {html,calls}=await render(async s=>{fixture.items=[{id:'a',title:'AI候选',kind:'conversation',content:'候选',provenance:{source_type:'conversation',source_id:'turn'}}];await s.load();s.title.value='forbidden';s.content.value='no';await s.save()},true);assert.equal(calls.filter(c=>c.method==='POST').length,0);assert.match(html,/不将它伪装成人工填写/);assert(!html.includes('放入可编辑条件草稿'))})
+test('late list response from another project is discarded',async()=>{const {state}=await render(async(s,p)=>{let finish;fixture.get=()=>new Promise(resolve=>finish=resolve);const old=s.load();p.project.id='new';finish({data:[{id:'old',content:'旧课题'}]});await old});assert.deepEqual(state.candidates.value,[])})

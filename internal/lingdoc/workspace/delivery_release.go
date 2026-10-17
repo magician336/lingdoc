@@ -9,7 +9,6 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
-	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -31,7 +30,6 @@ type DeliveryReleaseService struct {
 	store        delivery.SnapshotStore
 	freezes      delivery.FreezeRecorder
 	sources      candidateadoption.SourcePolicy
-	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
 	dispositions ValidationIssueDispositionApplication
 }
@@ -70,11 +68,7 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 	if !ok {
 		return nil
 	}
-	var reviewer sourcepolicy.Reviewer
-	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
-		reviewer = candidate
-	}
-	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, reviewer: reviewer, policy: policy, dispositions: dispositions}
+	return &DeliveryReleaseService{inputs: inputs, builder: builder, store: store, freezes: freezes, sources: sources, policy: policy, dispositions: dispositions}
 }
 
 // Check 回答「此刻冻结会得到什么结论」，不落快照。
@@ -107,7 +101,7 @@ func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, pro
 	if err != nil {
 		return delivery.TemplateCheckResult{}, err
 	}
-	return delivery.EvaluateTemplate(input)
+	return delivery.EvaluateTemplateScene(input, "write_check")
 }
 
 // Prepare 冻结一份快照并落存，返回它是不是这次动作的重放。key 是这次用户动作的
@@ -140,7 +134,13 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 		return delivery.ReleaseSnapshot{}, false, err
 	}
 	if found {
-		return replay, true, nil
+		// Replay is a read of this historical snapshot, including its sources.
+		// The current revision may no longer cite the historical sources.
+		visible, err := s.Get(ctx, actorID, projectID, replay.ID)
+		if err != nil {
+			return delivery.ReleaseSnapshot{}, false, err
+		}
+		return visible, true, nil
 	}
 	// 3. 只有新动作才比版本，也只有新动作才读工作区。
 	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
@@ -160,7 +160,11 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
-	return recorded, replayed, nil
+	visible, err := s.Get(ctx, actorID, projectID, recorded.ID)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	return visible, replayed, nil
 }
 
 // SetIssueDisposition reevaluates the current issue at the caller's expected
@@ -287,6 +291,16 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 // by legacy unit tests compatible while production wires the same policy used
 // by chapter confirmation and export.
 func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
+	if s == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	if provenance, ok := s.builder.(interface {
+		AuthorizeFrozenProvenance(context.Context, string, string, delivery.DeliveryInput) error
+	}); ok {
+		if err := provenance.AuthorizeFrozenProvenance(ctx, actorID, projectID, snapshot.FrozenInput); err != nil {
+			return err
+		}
+	}
 	if s.policy != nil {
 		caller := types.CallerFromContext(ctx)
 		if caller.UserID == "" {
@@ -301,7 +315,7 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 		}
 		return nil
 	}
-	if s == nil || (s.sources == nil && s.reviewer == nil) {
+	if s.sources == nil {
 		return nil
 	}
 	ids := make([]string, 0)
@@ -319,15 +333,21 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 			ids = append(ids, id)
 		}
 	}
+	// Frozen excerpts remain sensitive even if a historical chapter's source
+	// list is incomplete. Authorize the union before returning either body.
+	for _, source := range snapshot.FrozenInput.Sources {
+		id := strings.TrimSpace(source.ID)
+		if id != "" {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
+		}
+	}
 	if len(ids) == 0 {
 		return nil
 	}
-	if s.reviewer != nil {
-		return reviewSourceIDs(ctx, projectID, actorID, s.reviewer, ids)
-	}
-	// Compatibility boundary for legacy release adapters. Production wiring
-	// supplies the shared Reviewer above.
-	return legacySourcePolicyReview(ctx, projectID, actorID, s.sources, ids)
+	return s.sources.Validate(ctx, projectID, actorID, ids)
 }
 
 // List 列出项目冻结过的快照，新的在前，并逐条按**此刻**的工作区重算 is_current。
@@ -366,6 +386,10 @@ func (s *DeliveryReleaseService) List(ctx context.Context, actorID, projectID st
 		snapshots = snapshots[:deliveryHistoryLimit]
 	}
 	for index := range snapshots {
+		if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshots[index]); err != nil {
+			// No partial list or historical body escapes on denial.
+			return nil, false, err
+		}
 		current, err := s.stillCurrent(ctx, actorID, snapshots[index].FrozenInput)
 		if err != nil {
 			return nil, false, err
@@ -465,7 +489,23 @@ func deliveryCurrentness(ctx context.Context, reader candidateadoption.DeliveryI
 
 // sameDeliveryState 逐项对照冻结输入与此刻的工作区。
 func sameDeliveryState(frozen delivery.DeliveryInput, current candidateadoption.WorkspaceDeliveryInput) bool {
-	if frozen.ProjectVersion != int(current.ProjectVersion) || frozen.SpecRevision != current.SpecRevision {
+	if frozen.ProjectVersion != int(current.ProjectVersion) || frozen.SpecRevision != current.SpecRevision || delivery.FrozenContextRevision(frozen) != current.ContextRevision {
+		return false
+	}
+
+	if frozen.Template.ID != current.TemplateID || frozen.Template.Version != current.TemplateVersion {
+		return false
+	}
+	if frozen.TemplateCopyID != current.TemplateCopyID || frozen.TemplateCopyVersion != current.TemplateCopyVersion || frozen.TemplateCopyContentHash != current.TemplateCopyContentHash {
+		return false
+	}
+	if frozen.TemplateCopyID != "" && delivery.FrozenRuleSetHash(frozen) != current.TemplateCopyRulesetHash {
+		return false
+	}
+	if (frozen.RuleSetSnapshot == nil) != (current.RuleSetSnapshot == nil) {
+		return false
+	}
+	if frozen.SourceRuleSetID != current.SourceRuleSetID || frozen.SourceRuleSetVersion != current.SourceRuleSetVersion || frozen.SourceRuleSetHash != current.SourceRuleSetHash || frozen.SourcePolicyHash != current.SourcePolicyHash {
 		return false
 	}
 	// 章节集合与逐章版本都要对得上：新增、删除、改动任一章节都会让冻结输入不再

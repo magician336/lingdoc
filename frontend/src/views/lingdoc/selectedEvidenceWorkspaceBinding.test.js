@@ -1,0 +1,12 @@
+import {createRequire} from 'node:module'
+import {fileURLToPath} from 'node:url'
+const require=createRequire(import.meta.url),assert=require('node:assert/strict'),test=require('node:test'),fs=require('node:fs'),path=require('node:path'),ts=require('typescript')
+const source=fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)),'Workspace.vue'),'utf8')
+const start=source.indexOf('function removeGenerationEvidence('),end=source.indexOf('function useGenerationEvidence(',start)
+assert.ok(start>=0&&end>start)
+const js=ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText
+function harness(){const calls=[],state={busy:{value:false},generationPending:{value:false},rewriteBusy:{value:false},generationEvidenceRefs:{value:[{id:'a',version:1},{id:'b',version:2}]},rewriteUseEvidence:{value:true},project:{value:{id:'project-a'}},auth:{currentUserId:'owner-a'},fullPanelBusy:{value:false},fullPanel:{value:null},researchPanelRef:{value:{showEvidenceCard:async ref=>calls.push(ref)}}};const mocks={...state,openFullPanel:panel=>{state.fullPanel.value=panel},nextTick:async()=>{}};const api=new Function(...Object.keys(mocks),js+'\nreturn {removeGenerationEvidence,openSelectedEvidence}')(...Object.values(mocks));return {state,calls,...api}}
+test('individual removal preserves other exact refs and disables evidence rewrite only for an empty set',()=>{const h=harness();h.removeGenerationEvidence({id:'a',version:1});assert.deepEqual(h.state.generationEvidenceRefs.value,[{id:'b',version:2}]);assert.equal(h.state.rewriteUseEvidence.value,true);h.removeGenerationEvidence({id:'b',version:2});assert.equal(h.state.rewriteUseEvidence.value,false)})
+test('pending generation does not silently alter the already requested evidence set',()=>{const h=harness();h.state.generationPending.value=true;h.removeGenerationEvidence({id:'a',version:1});assert.equal(h.state.generationEvidenceRefs.value.length,2)})
+test('the explicit evidence return opens the research panel for an exact selected ref',async()=>{const h=harness();await h.openSelectedEvidence({id:'a',version:1});assert.equal(h.state.fullPanel.value,'research');assert.deepEqual(h.calls,[{id:'a',version:1}])})
+test('unselected or differently pinned evidence cannot trigger a stale panel return',async()=>{const h=harness();await h.openSelectedEvidence({id:'a',version:99});await h.openSelectedEvidence({id:'other',version:1});assert.deepEqual(h.calls,[]);assert.equal(h.state.fullPanel.value,null)})

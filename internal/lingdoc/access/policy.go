@@ -50,18 +50,24 @@ type ChapterVersion struct {
 // queued or frozen input with the live workspace. It intentionally contains
 // no provider or database types.
 type CurrentnessInput struct {
-	Kind             CurrentnessKind
-	ProjectID        string
-	ProjectVersion   int64
-	SpecRevision     int64
-	ChapterID        string
-	ChapterVersionID *string
-	TemplateID       string
-	TemplateVersion  string
-	RulesetHash      string
-	AssetVersions    []AssetVersion
-	Chapters         []ChapterVersion
-	Sources          []Source
+	Kind                    CurrentnessKind
+	ProjectID               string
+	ProjectVersion          int64
+	SpecRevision            int64
+	ChapterID               string
+	ChapterVersionID        *string
+	TemplateID              string
+	TemplateVersion         string
+	RulesetHash             string
+	TemplateCopyID          string
+	TemplateCopyVersion     int64
+	TemplateCopyContentHash string
+	ContextRevision         int64
+	Spec                    map[string]string
+	SpecProvenance          *ProvenanceSnapshot
+	AssetVersions           []AssetVersion
+	Chapters                []ChapterVersion
+	Sources                 []Source
 }
 
 // Policy is the sole application-level port for LingDoc authorization and
@@ -71,3 +77,15 @@ type Policy interface {
 	Authorize(context.Context, LingDocAccessContext, string) error
 	Current(context.Context, LingDocAccessContext, CurrentnessInput) (bool, error)
 }
+
+// ProvenanceSnapshot is the immutable, provider-free identity of the frozen
+// field provenance. It carries no permission grant; the policy rechecks it.
+type ProvenanceSnapshot struct {
+	ProjectID           string
+	SpecRevision        int64
+	ContextRevision     int64
+	TemplateCopyVersion int64
+	Digest              string
+	Fields              []ProvenanceField
+}
+type ProvenanceField struct{ FieldKey, ValueHash, PinID string }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
@@ -32,6 +33,12 @@ type TemplateCheckResult struct {
 // EvaluateTemplate executes the allowlisted evaluator on a deterministic
 // projection of either the editing input or the immutable frozen input.
 func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
+	return EvaluateTemplateScene(input, "preflight")
+}
+func EvaluateTemplateScene(input DeliveryInput, scene string) (TemplateCheckResult, error) {
+	if err := ValidateFrozenRuleSnapshot(input); err != nil {
+		return TemplateCheckResult{}, err
+	}
 	targetVersion := fmt.Sprintf("project/%s/version/%d/spec/%d/copy/%d", input.ProjectID, input.ProjectVersion, input.SpecRevision, input.TemplateCopyVersion)
 	projection := lingdoctemplate.EvaluationInput{
 		ProjectID: input.ProjectID, TargetVersion: targetVersion,
@@ -51,9 +58,9 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 			ID: chapter.SectionID, Version: version, Body: chapter.BodyMarkdown, Confirmed: confirmed,
 		})
 		decisions := map[string]bool{}
-		if chapter.Confirmation != nil {
+		if confirmed && chapter.Confirmation != nil {
 			for _, decision := range chapter.Confirmation.Decisions {
-				if decision.Disposition != "" {
+				if (decision.Disposition == "resolved" || decision.Disposition == "retained_warning") && strings.TrimSpace(decision.Reason) != "" {
 					decisions[decision.ReviewItemID] = true
 				}
 			}
@@ -98,21 +105,27 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		projection.Sources = append(projection.Sources, lingdoctemplate.SourceInput{ID: id, Version: version, Available: available})
 	}
 
-	evaluations, err := lingdoctemplate.Evaluate(input.Template, projection)
+	var evaluations []lingdoctemplate.Evaluation
+	var err error
+	if input.RuleSetSnapshot != nil {
+		evaluations, err = lingdoctemplate.EvaluateRuleSet(input.Template, *input.RuleSetSnapshot, scene, projection)
+	} else {
+		evaluations, err = lingdoctemplate.Evaluate(input.Template, projection)
+	}
 	if err != nil {
 		return TemplateCheckResult{}, err
 	}
 	result := TemplateCheckResult{
 		ProjectVersion: input.ProjectVersion, TemplateCopyID: input.TemplateCopyID,
 		TemplateCopyVersion: input.TemplateCopyVersion, ContentHash: input.TemplateCopyContentHash,
-		RulesetHash: input.Template.RulesetHash, Status: TemplateCheckPassed,
+		RulesetHash: FrozenRuleSetHash(input), Status: TemplateCheckPassed,
 		Evaluations: evaluations,
 	}
-	if len(input.Template.Rules) == 0 {
+	if len(evaluations) == 0 {
 		result.Status = TemplateCheckNotEvaluated
 	}
 	for _, evaluation := range evaluations {
-		if evaluation.Status == lingdoctemplate.EvaluationIssue && evaluation.Severity == SeverityBlocking {
+		if evaluation.Status == lingdoctemplate.EvaluationUnknown || evaluation.Status == lingdoctemplate.EvaluationIssue && evaluation.Severity == SeverityBlocking {
 			result.Status = TemplateCheckBlocked
 			break
 		}

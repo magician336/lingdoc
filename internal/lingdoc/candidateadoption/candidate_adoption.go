@@ -11,14 +11,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
-
-	"github.com/Tencent/WeKnora/internal/evidence"
-	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
-	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var (
@@ -36,9 +34,10 @@ var (
 // ReviewItem is copied from the candidate into every adopted version. It is
 // intentionally immutable here; T12 owns disposition and confirmation.
 type ReviewItem struct {
-	ID                string `json:"id"`
-	Statement         string `json:"statement"`
-	OriginCandidateID string `json:"origin_candidate_id"`
+	ID                string               `json:"id"`
+	Statement         string               `json:"statement"`
+	OriginCandidateID string               `json:"origin_candidate_id"`
+	Anchor            *reviewanchor.Anchor `json:"anchor,omitempty"`
 }
 
 type CitationUsage struct {
@@ -53,12 +52,17 @@ type AssetVersion struct {
 }
 
 type Basis struct {
-	SpecRevision     int            `json:"spec_revision"`
-	ChapterVersionID *string        `json:"chapter_version_id"`
-	TemplateID       string         `json:"template_id"`
-	TemplateVersion  string         `json:"template_version"`
-	RulesetHash      string         `json:"ruleset_hash"`
-	AssetVersions    []AssetVersion `json:"asset_versions"`
+	TemplateCopyID          string              `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64               `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string              `json:"template_copy_content_hash,omitempty"`
+	ContextRevision         int64               `json:"context_revision,omitempty"`
+	EvidenceCardRefs        []core.G2VersionRef `json:"evidence_card_refs,omitempty"`
+	SpecRevision            int                 `json:"spec_revision"`
+	ChapterVersionID        *string             `json:"chapter_version_id"`
+	TemplateID              string              `json:"template_id"`
+	TemplateVersion         string              `json:"template_version"`
+	RulesetHash             string              `json:"ruleset_hash"`
+	AssetVersions           []AssetVersion      `json:"asset_versions"`
 }
 
 type Candidate struct {
@@ -131,13 +135,12 @@ type CandidateReader interface {
 	GetCandidate(context.Context, string, string) (Candidate, error)
 }
 
-// SourcePolicy is the shared source-review compatibility seam. The source
-// verdict itself lives in sourcepolicy.Reviewer; candidate adoption only
-// needs to map a batch verdict to its existing all-or-nothing errors.
-type SourcePolicy = sourcepolicy.SourcePolicy
+type SourcePolicy interface {
+	Validate(context.Context, string, string, []string) error
+}
 
 type Authorizer interface {
-	// capability is "read" for candidate/chapter reads and "write" for adoption.
+	// capability is "read" for reads and "write:<chapter>" for adoption.
 	Authorize(context.Context, string, string, string) error
 }
 
@@ -153,7 +156,7 @@ type CandidateAdoptionService struct {
 	Workspace   WorkspaceReader
 	Candidates  CandidateReader
 	Sources     SourcePolicy
-	Reviewer    sourcepolicy.Reviewer
+	Evidence    CandidateEvidencePolicy
 	Authorizer  Authorizer
 	Writer      WorkspaceWriter
 	Idempotency IdempotencyReader
@@ -170,58 +173,22 @@ func (s *CandidateAdoptionService) validateSources(ctx context.Context, projectI
 	if len(sourceIDs) == 0 {
 		return nil
 	}
-	if s.Reviewer == nil && s.Sources == nil {
+	if s.Sources == nil {
 		return ErrSourceAccessDenied
 	}
-	if s.Reviewer != nil {
-		tenantID, ok := types.TenantIDFromContext(ctx)
-		if !ok || tenantID == 0 || strings.TrimSpace(actorID) == "" {
-			return ErrSourceAccessDenied
-		}
-		checked := types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleViewer})
-		checked = types.WithExecutionTenant(checked, tenantID)
-		verdicts, err := s.Reviewer.Review(checked, projectID, evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}, sourceIDs)
-		if err != nil {
-			return err
-		}
-		stale := false
-		for _, verdict := range verdicts {
-			if verdict.Usable {
-				continue
-			}
-			if verdict.AssetDeny == "" {
-				stale = true
-			} else {
-				return ErrSourceAccessDenied
-			}
-		}
-		if stale || len(verdicts) != len(sourceIDs) {
-			return ErrStaleInput
-		}
-		return nil
-	}
-	return legacySourcePolicyValidate(ctx, projectID, actorID, s.Sources, sourceIDs)
-}
-
-// legacySourcePolicyValidate is the explicit compatibility adapter for
-// callers that have not yet supplied the shared Reviewer. Production
-// composition injects Reviewer and never takes this path.
-func legacySourcePolicyValidate(ctx context.Context, projectID, actorID string, policy SourcePolicy, sourceIDs []string) error {
-	if policy == nil {
-		return ErrSourceAccessDenied
-	}
-	return policy.Validate(ctx, projectID, actorID, sourceIDs)
+	return s.Sources.Validate(ctx, projectID, actorID, sourceIDs)
 }
 
 // NewCandidateAdoptionService wires the fixed SQLite implementation. Callers that already
 // have real T08/T09/T10 adapters can construct CandidateAdoptionService directly instead.
 func NewCandidateAdoptionService(store *SQLiteCandidateAdoptionStore, sources SourcePolicy, authorizer Authorizer) *CandidateAdoptionService {
-	var reviewer sourcepolicy.Reviewer
-	if candidate, ok := any(sources).(sourcepolicy.Reviewer); ok {
-		reviewer = candidate
+	evidence, _ := sources.(CandidateEvidencePolicy)
+	if store != nil {
+		store.evidencePolicy = evidence
+		store.authorizer = authorizer
 	}
 	return &CandidateAdoptionService{
-		Workspace: store, Candidates: store, Sources: sources, Reviewer: reviewer, Authorizer: authorizer,
+		Workspace: store, Candidates: store, Sources: sources, Evidence: evidence, Authorizer: authorizer,
 		Writer: store, Idempotency: store,
 	}
 }
@@ -230,40 +197,68 @@ func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in Accep
 	if err := validateInput(in); err != nil {
 		return AcceptResult{}, err
 	}
-	if err := s.authorize(ctx, in.ActorID, in.ProjectID, "write"); err != nil {
+	if err := s.authorize(ctx, in.ActorID, in.ProjectID, "write:"+in.ChapterID); err != nil {
 		return AcceptResult{}, err
 	}
-	// Replay is checked before candidate/context version checks. This is what
-	// lets a client recover a lost response with the original idempotency key.
 	if s.Idempotency == nil || s.Workspace == nil || s.Candidates == nil || s.Writer == nil {
 		return AcceptResult{}, ErrDependencyUnavailable
 	}
-	result, err := s.Idempotency.ReplayCandidateAcceptance(ctx, in)
-	if err != nil {
-		return AcceptResult{}, err
-	}
-	if result != nil {
-		if err := s.validateSources(ctx, in.ProjectID, in.ActorID, result.Chapter.SourceIDs); err != nil {
+	pending := true
+	if probe, ok := s.Idempotency.(acceptanceReplayProbe); ok {
+		var err error
+		pending, err = probe.CandidateAcceptancePending(ctx, in)
+		if err != nil {
 			return AcceptResult{}, err
 		}
-		result.Replayed = true
-		return *result, nil
-	}
-	workspace, err := s.Workspace.GenerationContext(ctx, in.ProjectID, in.ChapterID)
-	if err != nil {
-		return AcceptResult{}, err
 	}
 	candidate, err := s.Candidates.GetCandidate(ctx, in.ProjectID, in.CandidateID)
 	if err != nil {
 		return AcceptResult{}, err
 	}
-	if err := validateCandidate(in, workspace, candidate); err != nil {
+	if candidate.ProjectID != in.ProjectID || candidate.ChapterID != in.ChapterID {
+		return AcceptResult{}, ErrNotFound
+	}
+	if !pending {
+		workspace, e := s.Workspace.GenerationContext(ctx, in.ProjectID, in.ChapterID)
+		if e != nil {
+			return AcceptResult{}, e
+		}
+		if e = validateCandidate(in, workspace, candidate); e != nil {
+			return AcceptResult{}, e
+		}
+	}
+	prepared, err := s.prepareCandidateEvidence(ctx, in, candidate)
+	if err != nil {
 		return AcceptResult{}, err
 	}
-	if err := s.validateSources(ctx, in.ProjectID, in.ActorID, candidate.SourceIDs); err != nil {
+	replay, err := s.Idempotency.ReplayCandidateAcceptance(prepared, in)
+	if err != nil {
 		return AcceptResult{}, err
 	}
-	return s.Writer.AcceptCandidate(ctx, in, candidate)
+	if replay != nil {
+		if err = s.recheckCandidateAcceptance(ctx, in, candidate); err != nil {
+			return AcceptResult{}, err
+		}
+		replay.Replayed = true
+		return *replay, nil
+	}
+	if pending {
+		workspace, e := s.Workspace.GenerationContext(ctx, in.ProjectID, in.ChapterID)
+		if e != nil {
+			return AcceptResult{}, e
+		}
+		if e = validateCandidate(in, workspace, candidate); e != nil {
+			return AcceptResult{}, e
+		}
+	}
+	result, err := s.Writer.AcceptCandidate(prepared, in, candidate)
+	if err != nil {
+		return AcceptResult{}, err
+	}
+	if err = s.recheckCandidateAcceptance(ctx, in, candidate); err != nil {
+		return AcceptResult{}, fmt.Errorf("candidate acceptance committed; current access recheck failed: %w", err)
+	}
+	return result, nil
 }
 
 func validateInput(in AcceptCandidateInput) error {
@@ -281,6 +276,9 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 		candidate.ProjectID != in.ProjectID || candidate.ChapterID != in.ChapterID {
 		return ErrNotFound
 	}
+	if err := validateNewBasis(workspace.Basis, candidate.Basis); err != nil {
+		return err
+	}
 	if candidate.Validity != "fresh" {
 		return ErrStaleInput
 	}
@@ -296,7 +294,11 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 	if workspace.Basis.RulesetHash != "" && candidate.Basis.RulesetHash != workspace.Basis.RulesetHash {
 		return ErrStaleInput
 	}
-	if len(workspace.Basis.AssetVersions) > 0 && !sameAssetVersions(workspace.Basis.AssetVersions, candidate.Basis.AssetVersions) {
+	if len(candidate.Basis.AssetVersions) > 0 {
+		if !currentAssetSubset(workspace.Basis.AssetVersions, candidate.Basis.AssetVersions) {
+			return ErrStaleInput
+		}
+	} else if candidateHasNewBasis(candidate.Basis) && len(candidate.SourceIDs) > 0 {
 		return ErrStaleInput
 	}
 	if !sameOptionalString(candidate.Basis.ChapterVersionID, in.ExpectedChapterVersionID) {
@@ -312,22 +314,6 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 		return err
 	}
 	return nil
-}
-
-func sameAssetVersions(a, b []AssetVersion) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	left := append([]AssetVersion(nil), a...)
-	right := append([]AssetVersion(nil), b...)
-	sort.Slice(left, func(i, j int) bool { return left[i].AssetID < left[j].AssetID })
-	sort.Slice(right, func(i, j int) bool { return right[i].AssetID < right[j].AssetID })
-	for i := range left {
-		if left[i] != right[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func sameOptionalString(a, b *string) bool {
@@ -391,4 +377,19 @@ func normalizeIDs(ids []string) []string {
 	copyIDs := append([]string(nil), ids...)
 	sort.Strings(copyIDs)
 	return copyIDs
+}
+
+func currentAssetSubset(current, used []AssetVersion) bool {
+	available := map[string]int{}
+	for _, asset := range current {
+		available[asset.AssetID] = asset.AssetRevision
+	}
+	seen := map[string]bool{}
+	for _, asset := range used {
+		if asset.AssetID == "" || asset.AssetRevision < 1 || seen[asset.AssetID] || available[asset.AssetID] != asset.AssetRevision {
+			return false
+		}
+		seen[asset.AssetID] = true
+	}
+	return true
 }

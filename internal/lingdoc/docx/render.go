@@ -1,6 +1,6 @@
 // Package docx renders LingDoc's internal demo delivery as an editable DOCX.
-// It deliberately supports only plain paragraphs and source markers; callers
-// must reject richer Markdown before presenting export as successful.
+// A small Markdown whitelist preserves headings, emphasis, lists and citations.
+// Unsupported structure is refused rather than flattened into successful export.
 package docx
 
 import (
@@ -12,7 +12,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -43,30 +42,20 @@ type ReviewItem struct {
 }
 
 var marker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
-var blockMarkup = regexp.MustCompile(`^(#{1,6}\s|[-*+]\s|[0-9]+[.)]\s|>)`)
 var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*$`)
 var tableDelimiter = regexp.MustCompile(`^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$`)
 
-// Underscores are handled only by hasUnderscoreEmphasis below. A broad
-// _..._ alternative here would short-circuit that identifier-aware check.
-var inlineStarOrStrike = regexp.MustCompile(`(?:\*[^*\n]+\*|~~[^~\n]+~~)`)
-var inlineCode = regexp.MustCompile("`+[^\\`\\n]+`+")
 var inlineLink = regexp.MustCompile(`!?\[[^\]\n]*\](?:\([^\)\n]*\)|\[[^\]\n]*\])`)
 var referenceDefinition = regexp.MustCompile(`^\[[^\]\n]+\]:\s*\S+`)
-var inlineHTMLOrAutolink = regexp.MustCompile(`<(?:(?:https?://|mailto:)[^>\n]+|/?[A-Za-z][^>\n]*)>`)
 var inlineMath = regexp.MustCompile(`\$[^$\n]+\$`)
 
-// ValidateMarkdown applies the same plain-paragraph boundary used by Render,
+// ValidateMarkdown applies the same AST whitelist used by Render,
 // without requiring the caller to construct a complete DOCX input. Delivery
 // checks use it before a release is frozen so unsupported structure is visible
 // during preflight instead of only after an export request starts.
 func ValidateMarkdown(markdown string) error {
-	for lineNumber, rawLine := range strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
-		if containsUnsupportedMarkdown(rawLine) {
-			return fmt.Errorf("%w: line %d contains unsupported Markdown", ErrUnsupportedMarkdown, lineNumber+1)
-		}
-	}
-	return nil
+	_, err := markdownParagraphs(markdown, nil)
+	return err
 }
 
 // Render creates a standalone WordprocessingML package. The caller remains
@@ -77,8 +66,9 @@ func Render(in Input) ([]byte, error) {
 		return nil, err
 	}
 	var body strings.Builder
+	numbering := prepareNumbering(paragraphs)
 	for _, spec := range paragraphs {
-		paragraph(&body, spec.Style, spec.Text)
+		richParagraph(&body, spec)
 	}
 	body.WriteString(`<w:sectPr><w:pgSz w:w="11906" w:h="16838"/></w:sectPr>`)
 	var out bytes.Buffer
@@ -90,6 +80,13 @@ func Render(in Input) ([]byte, error) {
 		"word/document.xml":            `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>` + body.String() + `</w:body></w:document>`,
 		"word/styles.xml":              `<?xml version="1.0" encoding="UTF-8"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Normal" w:default="1"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:rPr><w:color w:val="888888"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style></w:styles>`,
 	}
+	parts["word/styles.xml"] = richerStyles(parts["word/styles.xml"])
+	if numbering != "" {
+		parts["word/numbering.xml"] = numbering
+		parts["[Content_Types].xml"] = strings.Replace(parts["[Content_Types].xml"], "</Types>", `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`, 1)
+		parts["word/_rels/document.xml.rels"] = strings.Replace(parts["word/_rels/document.xml.rels"], "</Relationships>", `<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>`, 1)
+	}
+
 	names := make([]string, 0, len(parts))
 	for name := range parts {
 		names = append(names, name)
@@ -112,8 +109,11 @@ func Render(in Input) ([]byte, error) {
 
 // paragraphSpec 是一段正文的文字与样式。
 type paragraphSpec struct {
-	Style string
-	Text  string
+	Style            string
+	Text             string
+	Runs             []runSpec
+	List             *listSpec
+	ListContinuation bool
 }
 
 // 文档里固定的那几句话。渲染器与校验器都引用这里，不各自抄一份字面量——
@@ -215,31 +215,23 @@ func documentParagraphs(in Input) ([]paragraphSpec, error) {
 			declared[id] = true
 		}
 		used := map[string]bool{}
-		for _, rawLine := range strings.Split(strings.ReplaceAll(chapter.BodyMarkdown, "\r\n", "\n"), "\n") {
-			line := strings.TrimSpace(rawLine)
-			if line == "" {
-				continue
+		bodyParagraphs, err := markdownParagraphs(chapter.BodyMarkdown, func(token string) (string, error) {
+			id := marker.FindStringSubmatch(token)[1]
+			if !declared[id] {
+				return "", fmt.Errorf("chapter %d uses undeclared source %q", i+1, id)
 			}
-			matches := marker.FindAllStringSubmatch(line, -1)
-			for _, match := range matches {
-				id := match[1]
-				if !declared[id] {
-					return nil, fmt.Errorf("chapter %d uses undeclared source %q", i+1, id)
-				}
-				used[id] = true
-				if refNumbers[id] == 0 {
-					orderedRefs = append(orderedRefs, id)
-					refNumbers[id] = len(orderedRefs)
-				}
+			used[id] = true
+			if refNumbers[id] == 0 {
+				orderedRefs = append(orderedRefs, id)
+				refNumbers[id] = len(orderedRefs)
 			}
-			line = marker.ReplaceAllStringFunc(line, func(token string) string {
-				return fmt.Sprintf("[%d]", refNumbers[marker.FindStringSubmatch(token)[1]])
-			})
-			if strings.Contains(line, "[[source:") || strings.Contains(line, "![") || strings.Contains(line, "```") {
-				return nil, fmt.Errorf("chapter %d contains unsupported markup", i+1)
-			}
-			paragraphs = append(paragraphs, paragraphSpec{Text: line})
+			return fmt.Sprintf("[%d]", refNumbers[id]), nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("chapter %d: %w", i+1, err)
 		}
+		paragraphs = append(paragraphs, bodyParagraphs...)
+
 		if len(used) != len(declared) {
 			return nil, fmt.Errorf("chapter %d source list does not match body markers", i+1)
 		}
@@ -271,64 +263,6 @@ func documentParagraphs(in Input) ([]paragraphSpec, error) {
 		}
 	}
 	return paragraphs, nil
-}
-
-func containsUnsupportedMarkdown(rawLine string) bool {
-	// Indented code and trailing-two-space hard breaks have Markdown semantics
-	// that this renderer would otherwise silently trim away.
-	if strings.HasPrefix(rawLine, "\t") || strings.HasPrefix(rawLine, "    ") || strings.HasSuffix(rawLine, "  ") {
-		return true
-	}
-
-	line := strings.TrimSpace(rawLine)
-	// Source markers are the only supported markup. Remove valid markers before
-	// probing so '-'/'_' inside source IDs are not mistaken for Markdown.
-	probe := marker.ReplaceAllString(line, "")
-	if blockMarkup.MatchString(probe) ||
-		setextOrRuleMarkup.MatchString(probe) ||
-		strings.HasPrefix(probe, "```") ||
-		strings.HasPrefix(probe, "~~~") ||
-		tableDelimiter.MatchString(probe) {
-		return true
-	}
-	return inlineStarOrStrike.MatchString(probe) ||
-		hasUnderscoreEmphasis(probe) ||
-		inlineCode.MatchString(probe) ||
-		inlineLink.MatchString(probe) ||
-		referenceDefinition.MatchString(probe) ||
-		inlineHTMLOrAutolink.MatchString(probe) ||
-		inlineMath.MatchString(probe)
-}
-
-// hasUnderscoreEmphasis detects the supported Markdown-emphasis shape without
-// treating intraword underscores as markup. Common identifiers such as
-// foo_bar_baz remain plain text, while "_重点_" and "A _重点_ B" are rejected.
-func hasUnderscoreEmphasis(value string) bool {
-	runes := []rune(value)
-	for i, r := range runes {
-		if r != '_' || i+1 >= len(runes) || unicode.IsSpace(runes[i+1]) {
-			continue
-		}
-		// An opening underscore inside an identifier is literal text.
-		if i > 0 && isWordRune(runes[i-1]) {
-			continue
-		}
-		for j := i + 1; j < len(runes); j++ {
-			if runes[j] != '_' || j == i+1 || unicode.IsSpace(runes[j-1]) {
-				continue
-			}
-			// A closing underscore followed by a word rune is also intraword.
-			if j+1 < len(runes) && isWordRune(runes[j+1]) {
-				continue
-			}
-			return true
-		}
-	}
-	return false
-}
-
-func isWordRune(r rune) bool {
-	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_'
 }
 
 func paragraph(b *strings.Builder, style, value string) {

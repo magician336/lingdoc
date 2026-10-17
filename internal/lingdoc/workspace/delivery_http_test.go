@@ -166,9 +166,9 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
-	core, ok := testRuntime(handler).service.(*Service)
+	core, ok := handler.read.(*Service)
 	if !ok {
-		t.Fatalf("workspace runtime service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace application = %T, want *Service", handler.read)
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)
@@ -626,7 +626,13 @@ func jsonFieldPaths(t *testing.T, raw json.RawMessage) []string {
 // 幂等键按「项目 + 操作者 + 键」划范围：同一个键换个操作者是另一个动作，
 // 不该把别人的快照交出去。
 func TestDeliveryReleaseScopesTheIdempotencyKeyToItsActor(t *testing.T) {
-	handler, _ := newDeliveryHTTPHandler(t)
+	handler, db := newDeliveryHTTPHandler(t)
+	if err := db.Exec("INSERT INTO tenant_members(tenant_id,user_id,status) VALUES(7,'someone-else','active')").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO lingdoc_members(project_id,user_id,role) VALUES('project-1','someone-else','collaborator')").Error; err != nil {
+		t.Fatal(err)
+	}
 	router := deliveryRoutes(handler)
 
 	first := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/releases", deliveryReadVersionBody, deliveryFreezeKey))

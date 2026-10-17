@@ -116,7 +116,30 @@ func (a candidateAdoptionWorkspaceAuthorizer) Authorize(ctx context.Context, act
 	if !ok || a.service == nil {
 		return candidateadoption.ErrNotFound
 	}
-	err := a.service.Authorize(ctx, workspace.Actor{TenantID: tenantID, UserID: actorID}, projectID, capability)
+	err := a.service.Authorize(ctx, workspace.Actor{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleFromContext(ctx)}, projectID, capability)
+	if errors.Is(err, workspace.ErrNotFound) {
+		return candidateadoption.ErrNotFound
+	}
+	if errors.Is(err, workspace.ErrInvalidRequest) {
+		return candidateadoption.ErrInvalidRequest
+	}
+	return err
+}
+
+// Reuse the adoption transaction; a separate pool lookup self-locks SQLite.
+func (a candidateAdoptionWorkspaceAuthorizer) AuthorizeCandidateInTransaction(ctx context.Context, tx *gorm.DB, actorID, projectID, capability string) error {
+	caller := types.CallerFromContext(ctx)
+	tenant, tenantOK := types.TenantIDFromContext(ctx)
+	if !tenantOK || caller.UserID != actorID || caller.TenantID != tenant || tenant == 0 {
+		return candidateadoption.ErrNotFound
+	}
+	port, ok := a.service.(interface {
+		AuthorizeInTransaction(context.Context, workspacecore.Transaction, workspacecore.Actor, string, string) (workspacecore.Project, error)
+	})
+	if !ok {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	_, err := port.AuthorizeInTransaction(ctx, workspacecore.NewTransactionAdapter(tx), workspacecore.Actor{TenantID: tenant, UserID: actorID, Role: caller.Role}, projectID, capability)
 	if errors.Is(err, workspace.ErrNotFound) {
 		return candidateadoption.ErrNotFound
 	}
@@ -543,7 +566,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// T13 的检查与冻结（交付链 T12→T13 的组装点）。契约把 /checks、/releases 这些
 	// HTTP 入口列为「容量有余才启用」，领域这一层是必交付项，所以这里装领域服务，
 	// 传输层紧跟着用它装出来。
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy) (workspace.ReleaseApplication, error) {
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, projects workspace.ApplicationService, policy lingdocaccess.Policy, guard *workspace.FullWorkflowGuard) (workspace.ReleaseApplication, error) {
 		var dispositions workspace.ValidationIssueDispositionApplication
 		if core, ok := projects.(workspace.ValidationIssueDispositionApplication); ok {
 			dispositions = core
@@ -555,7 +578,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			// 在第一个消费者出现时才生效——现在消费者是下面的 handler。
 			return nil, errors.New("lingdoc delivery release service: incomplete dependencies")
 		}
-		return service, nil
+		return workspace.GuardFullWorkflowRelease(service, guard), nil
 	}))
 	must(container.Provide(func(service workspace.ReleaseApplication) (*workspace.DeliveryHandler, error) {
 		handler := workspace.NewDeliveryHandler(service)
@@ -572,12 +595,12 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// 产物库从上面对快照库的同一个 Provide 处来：两者都是落库的那一份。
 	must(container.Provide(func() delivery.FrozenRenderer { return workspace.DeliveryDocument{} }))
 	must(container.Provide(func() delivery.FrozenValidator { return workspace.DeliveryDocument{} }))
-	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink, policy lingdocaccess.Policy) (workspace.ExportApplication, error) {
+	must(container.Provide(func(sourceIntegration workspace.WorkspaceIntegration, inputs *candidateadoption.DeliveryInputService, snapshots delivery.SnapshotStore, exports delivery.ExportStore, renderer delivery.FrozenRenderer, validator delivery.FrozenValidator, audit workspacecore.AuditSink, policy lingdocaccess.Policy, guard *workspace.FullWorkflowGuard) (workspace.ExportApplication, error) {
 		service := workspace.NewDeliveryExportServiceWithPolicy(snapshots, exports, renderer, validator, inputs, sourceIntegration.WorkspaceSourcePolicy(), policy, audit)
 		if service == nil {
 			return nil, errors.New("lingdoc delivery export service: incomplete dependencies")
 		}
-		return service, nil
+		return workspace.GuardFullWorkflowExport(service, guard), nil
 	}))
 	must(container.Provide(func(service workspace.ExportApplication) (*workspace.DeliveryExportHandler, error) {
 		handler := workspace.NewDeliveryExportHandler(service)

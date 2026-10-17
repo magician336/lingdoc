@@ -39,6 +39,7 @@ type TemplateMigrationPreview = core.TemplateMigrationPreview
 type ProjectTemplateCopy = core.ProjectTemplateCopy
 type TemplateCopyDefinitionInput = core.TemplateCopyDefinitionInput
 type TemplateSectionChange = core.TemplateSectionChange
+type CoreProjectAuthorizer = core.ProjectAuthorizer
 type AuthorizationMode = core.AuthorizationMode
 type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
@@ -84,4 +85,16 @@ var (
 
 func NewService(repository Repository) *Service {
 	return core.NewService(repository)
+}
+
+func NewServiceWithAuthorizer(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer) *Service {
+	return core.NewServiceWithAuthorizer(repository, reader, sources, authorizer)
+}
+
+func NewServiceWithAudit(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink) *Service {
+	return core.NewServiceWithAudit(repository, reader, sources, authorizer, audit)
+}
+
+func NewServiceWithAuditMode(repository Repository, reader core.TemplateReader, sources SourcePolicy, authorizer core.ProjectAuthorizer, audit core.AuditSink, mode AuthorizationMode) *Service {
+	return core.NewServiceWithAuditMode(repository, reader, sources, authorizer, audit, mode)
 }

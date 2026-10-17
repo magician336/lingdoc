@@ -1,5 +1,22 @@
 import { get, post, put } from '@/utils/request'
 
+export type ProjectFunctionRole = 'author' | 'researcher' | 'reviewer' | 'observer'
+export type ProjectGovernanceRole = 'owner' | 'admin' | 'member'
+
+export interface ProjectMember {
+  user_id: string
+  role: 'owner' | 'collaborator'
+  governance_role?: ProjectGovernanceRole
+  function_roles?: ProjectFunctionRole[]
+  function_scopes?: Record<string, string[]>
+  status?: string
+}
+
+export interface ProjectMemberInput extends Omit<ProjectMember, 'role' | 'governance_role'> {
+  role: 'collaborator'
+  governance_role: 'admin' | 'member'
+}
+
 export interface Project {
   id: string
   name: string
@@ -8,11 +25,12 @@ export interface Project {
   spec_revision: number
   current_context_revision: number
   spec: Record<string, string>
+  spec_fields?: Record<string,{value:string;origin:string;status:string;modified_by:string;modified_at:string;provenance?:{source_type:string;source_id?:string;source_version?:string;locator?:string;created_by:string;accessible:boolean;needs_review:boolean}}>
   template_id: string
   template_version: string
   template_copy_version?: number
   template_copy?: ProjectTemplateCopy
-  members: Array<{ user_id: string; role: 'owner' | 'collaborator' }>
+  members: ProjectMember[]
 }
 
 export interface TemplateField {
@@ -113,6 +131,7 @@ export interface TemplateUpgradeImpact {
 }
 
 export interface ReviewItem {
+  anchor?: ReviewAnchor | null
   id: string
   statement: string
   origin_candidate_id: string
@@ -232,6 +251,7 @@ export interface CommittedChapterVersion {
 }
 
 export interface SelectedRewriteCandidate {
+ evidence_card_refs?:Array<{id:string;version:number}>
   candidate_id: string
   project_id: string
   chapter_id: string
@@ -345,9 +365,14 @@ const segment = (id: string) => encodeURIComponent(id)
 const keyHeader = (key: string) => ({ headers: { 'Idempotency-Key': key } })
 
 export const listProjects = () => get<Result<{ items: Project[]; truncated: boolean }>>(base)
-export const createProject = (name: string, key: string) =>
-  post<Result<Project>>(base, { name, template_id: 'template-demo' }, keyHeader(key))
+export const createProject = (name: string, key: string, templateId='template-demo',templateVersion='1') =>
+  post<Result<Project>>(base, { name, template_id: templateId,template_version:templateVersion }, keyHeader(key))
 export const getProject = (id: string) => get<Result<Project>>(`${base}/${segment(id)}`)
+export const saveProjectMembers = (id: string, expectedVersion: number, members: ProjectMemberInput[], key: string) =>
+  put<Result<Project>>(`${base}/${segment(id)}/members`, {
+    expected_project_version: expectedVersion,
+    members,
+  }, keyHeader(key))
 export const getTemplateCopy = (projectId: string, version: number) =>
   get<Result<ProjectTemplateCopy>>(`${base}/${segment(projectId)}/template-copies/${version}`)
 export const previewTemplateCopyEdit = (projectId: string, input: TemplateCopyEditInput) =>
@@ -357,9 +382,9 @@ export const saveTemplateCopyEdit = (projectId: string, input: TemplateCopyEditI
 export const saveSpec = (id: string, expected: number, fields: Record<string, string>, key: string) =>
   put<Result<Project>>(`${base}/${segment(id)}/spec`,
     { expected_spec_revision: expected, fields }, keyHeader(key))
-export const activateProject = (id: string, expected: number, key: string, projectVersion: number) =>
+export const activateProject = (id: string, expected: number, key: string, projectVersion: number, activationReadId?: string) =>
   post<Result<Project>>(`${base}/${segment(id)}/activate`,
-    { expected_spec_revision: expected, expected_project_version: projectVersion, reviewed_project_version: projectVersion }, keyHeader(key))
+    { expected_spec_revision: expected, expected_project_version: projectVersion, reviewed_project_version: projectVersion, activation_read_id: activationReadId }, keyHeader(key))
 export const listChapters = (id: string) => get<Result<Chapter[]>>(`${base}/${segment(id)}/chapters`)
 export const getWorkingCopy = (projectId: string, chapterId: string) =>
   get<Result<WorkingCopy>>(`${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy`)
@@ -391,6 +416,7 @@ export const restoreWorkingCopy = (projectId: string, chapterId: string, input: 
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy/restore`, input, keyHeader(key),
 )
 export const createSelectedRewrite = (projectId: string, chapterId: string, input: {
+  evidence_card_refs?:Array<{id:string;version:number}>
   base_chapter_version_id: string | null
   expected_spec_revision: number
   expected_working_copy_revision: number
@@ -451,3 +477,27 @@ export const confirmChapter = (projectId: string, chapterId: string, input: {
 }, key: string) => post<Result<Confirmation>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/confirmations`, input, keyHeader(key),
 )
+
+/* ---- 文稿编辑器合同（document-editor-20261013）：ReviewAnchor PUT + 当前确认 GET ---- */
+export interface ReviewAnchor {
+  start_utf16: number
+  end_utf16: number
+  quote_markdown: string
+  working_copy_revision: number
+  chapter_version_id: string | null
+  status: 'located' | 'stale'
+}
+
+export const putReviewItemAnchor = (projectId: string, chapterId: string, itemId: string, input: {
+  expected_chapter_version_id: string | null
+  expected_spec_revision: number
+  expected_working_copy_revision: number
+  anchor: { start_utf16: number; end_utf16: number; quote_markdown: string } | null
+}, key: string) => put<Result<WorkingCopy>>(
+  `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/working-copy/review-items/${segment(itemId)}/anchor`, input, keyHeader(key),
+)
+
+export const getCurrentConfirmation = (projectId: string, chapterId: string) =>
+  get<Result<Confirmation | null>>(
+    `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/confirmations/current`,
+  )

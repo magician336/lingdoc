@@ -98,7 +98,7 @@ func TestConfirmationServiceFailsClosedWithoutCurrentSourcePolicy(t *testing.T) 
 	}
 }
 
-func TestConfirmationServiceAuthorizesWriteCapability(t *testing.T) {
+func TestConfirmationServiceAuthorizesScopedConfirmationCapability(t *testing.T) {
 	version := "version-1"
 	workspace := GenerationContext{ProjectID: "p1", ChapterID: "c1", SpecRevision: 3, ChapterVersionID: &version,
 		Basis:   Basis{SpecRevision: 3, ChapterVersionID: &version},
@@ -115,8 +115,8 @@ func TestConfirmationServiceAuthorizesWriteCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if capability != "write" {
-		t.Fatalf("authorization capability = %q, want write", capability)
+	if capability != "confirm:c1" {
+		t.Fatalf("authorization capability = %q, want confirm:c1", capability)
 	}
 }
 
@@ -203,5 +203,12 @@ func TestConfirmationServiceFailsClosedBeforeIdempotencyReplayWithoutAuthorizer(
 	}
 	if replay.calls != 0 {
 		t.Fatal("confirmation replay queried without project authorization")
+	}
+}
+
+func TestEmptyReviewConfirmationKeepsExplicitEmptyDecisions(t *testing.T) {
+	confirmation := newConfirmation(ConfirmChapterInput{ChapterID: "chapter", ExpectedChapterVersionID: "v1", Decisions: []ReviewDecision{}}, GenerationContext{})
+	if confirmation.ReviewDecisions == nil || len(confirmation.ReviewDecisions) != 0 {
+		t.Fatal("empty decision list serialized as null")
 	}
 }

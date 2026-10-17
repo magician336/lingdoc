@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
@@ -164,9 +165,12 @@ func (r *tenantMemberRepository) UpdateRole(ctx context.Context, userID string, 
 // SoftDelete marks the membership row as deleted. GORM's soft-delete
 // support populates DeletedAt automatically.
 func (r *tenantMemberRepository) SoftDelete(ctx context.Context, userID string, tenantID uint64) error {
-	return r.db.WithContext(ctx).
-		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
-		Delete(&types.TenantMember{}).Error
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := workspacecore.CaptureTenantSuspensionInTransaction(tx, tenantID, userID); err != nil {
+			return err
+		}
+		return tx.Where("user_id = ? AND tenant_id = ?", userID, tenantID).Delete(&types.TenantMember{}).Error
+	})
 }
 
 // CountActiveOwners reports the number of active owner rows in the tenant.
@@ -254,6 +258,9 @@ func (r *tenantMemberRepository) RemoveOwnerAtomically(
 		}
 		if len(locked) == 0 {
 			return ErrLastOwner
+		}
+		if err := workspacecore.CaptureTenantSuspensionInTransaction(tx, tenantID, userID); err != nil {
+			return err
 		}
 		res := tx.
 			Where("user_id = ? AND tenant_id = ?", userID, tenantID).

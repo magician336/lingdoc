@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,15 +18,14 @@ import (
 )
 
 type Handler struct {
-	projects     ProjectApplication
-	members      MembershipApplication
-	chapters     ChapterApplication
-	templatesApp TemplateApplication
-	changeSets   ChangeSetApplication
-	sources      SourceApplicationService
-	integration  WorkspaceIntegration
-	rewrites     SelectedRewriteApplication
-	templates    delivery.TemplateReader
+	full        *FullWorkflowDependencies
+	service     ApplicationService
+	read        WorkspaceReadApplication
+	write       WorkspaceWriteApplication
+	sources     SourceApplicationService
+	integration WorkspaceIntegration
+	rewrites    SelectedRewriteApplication
+	templates   delivery.TemplateReader
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
@@ -35,229 +33,22 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	if templates == nil {
 		templates = delivery.NewFixedTemplateReader()
 	}
-	projects, members, chapters, templatesApp, changeSets := deps.Projects, deps.Members, deps.Chapters, deps.TemplateApp, deps.ChangeSets
-	// ApplicationService is a compatibility edge for older composition roots.
-	// New callers should inject the focused ports above; this adapter is the only
-	// place where the legacy cross-use-case surface is widened again.
-	var legacy ApplicationService = deps.Service
-	if legacy == nil {
-		if candidate, ok := any(deps.Read).(ApplicationService); ok {
-			legacy = candidate
-		} else if candidate, ok := any(deps.Write).(ApplicationService); ok {
-			legacy = candidate
+	read, write := deps.Read, deps.Write
+	if read == nil {
+		if service, ok := deps.Service.(WorkspaceReadApplication); ok {
+			read = service
 		}
 	}
-	if legacy != nil {
-		adapter := legacyApplicationAdapter{ApplicationService: legacy}
-		if projects == nil {
-			projects = adapter
-		}
-		if members == nil {
-			members = adapter
-		}
-		if chapters == nil {
-			chapters = adapter
-		}
-		if templatesApp == nil {
-			templatesApp = adapter
-		}
-		if changeSets == nil {
-			changeSets = adapter
-		}
-	}
-	// A focused test double may implement one port without carrying the legacy
-	// interface. Keep that seam directly injectable as well.
-	if projects == nil {
-		if candidate, ok := any(deps.Read).(ProjectApplication); ok {
-			projects = candidate
-		} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
-			projects = candidate
-		}
-	}
-	if members == nil {
-		if candidate, ok := any(deps.Write).(MembershipApplication); ok {
-			members = candidate
-		}
-	}
-	if chapters == nil {
-		if candidate, ok := any(deps.Read).(ChapterApplication); ok {
-			chapters = candidate
-		} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
-			chapters = candidate
-		}
-	}
-	if templatesApp == nil {
-		if candidate, ok := any(deps.Read).(TemplateApplication); ok {
-			templatesApp = candidate
-		} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
-			templatesApp = candidate
-		}
-	}
-	if changeSets == nil {
-		if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
-			changeSets = candidate
-		} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
-			changeSets = candidate
-		}
-	}
-	// A composition root may provide the intentionally split read and write
-	// ports without also carrying the legacy ApplicationService. Compose the
-	// five focused route ports explicitly at that seam so every registered
-	// route has a non-nil dependency and the handler never widens the contract
-	// again just to make a route work.
-	if deps.Read != nil && deps.Write != nil {
-		if projects == nil {
-			projects = splitProjectApplication{read: deps.Read, write: deps.Write}
-		}
-		if members == nil {
-			members = splitMembershipApplication{write: deps.Write}
-		}
-		if chapters == nil {
-			chapters = splitChapterApplication{read: deps.Read, write: deps.Write}
-		}
-		if templatesApp == nil {
-			templatesApp = splitTemplateApplication{read: deps.Read, write: deps.Write}
-		}
-		if changeSets == nil {
-			changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
+	if write == nil {
+		if service, ok := deps.Service.(WorkspaceWriteApplication); ok {
+			write = service
 		}
 	}
 	return &Handler{
-		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
-		sources: deps.Sources, integration: deps.Integration,
+		service: deps.Service, full: deps.FullWorkflow,
+		read: read, write: write, sources: deps.Sources, integration: deps.Integration,
 		rewrites: deps.SelectedRewrites, templates: templates,
 	}
-}
-
-// legacyApplicationAdapter makes the migration boundary explicit in the
-// composition root while keeping old test doubles and transports working.
-// The handler itself stores only focused ports.
-type legacyApplicationAdapter struct{ ApplicationService }
-
-type splitProjectApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitProjectApplication) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
-	return a.read.ListProjects(ctx, actor)
-}
-func (a splitProjectApplication) GetProject(ctx context.Context, actor Actor, projectID string) (Project, error) {
-	return a.read.GetProject(ctx, actor, projectID)
-}
-func (a splitProjectApplication) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
-	return a.write.CreateProjectResult(ctx, actor, key, input)
-}
-func (a splitProjectApplication) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
-	return a.write.SaveSpecResult(ctx, actor, projectID, key, input)
-}
-func (a splitProjectApplication) ActivateProjectResult(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (ProjectMutationResult, error) {
-	return a.write.ActivateProjectResult(ctx, actor, projectID, key, input)
-}
-func (a splitProjectApplication) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
-	return a.read.ListDraftCandidates(ctx, actor, projectID)
-}
-func (a splitProjectApplication) CreateDraftCandidateResult(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
-	return a.write.CreateDraftCandidateResult(ctx, actor, projectID, key, input)
-}
-func (a splitProjectApplication) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
-	return a.read.ListAuditEvents(ctx, actor, projectID)
-}
-func (a splitProjectApplication) ActivationDiff(ctx context.Context, actor Actor, projectID string, version int64) (ActivationDiff, error) {
-	return a.read.ActivationDiff(ctx, actor, projectID, version)
-}
-func (a splitProjectApplication) DiscardProjectResult(ctx context.Context, actor Actor, projectID, key string, expected int64) (ProjectMutationResult, error) {
-	return a.write.DiscardProjectResult(ctx, actor, projectID, key, expected)
-}
-func (a splitProjectApplication) RestoreProjectResult(ctx context.Context, actor Actor, projectID, key string, expected int64) (ProjectMutationResult, error) {
-	return a.write.RestoreProjectResult(ctx, actor, projectID, key, expected)
-}
-
-type splitMembershipApplication struct{ write WorkspaceWriteApplication }
-
-func (a splitMembershipApplication) SaveMembersResult(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (ProjectMutationResult, error) {
-	return a.write.SaveMembersResult(ctx, actor, projectID, key, input)
-}
-func (a splitMembershipApplication) TransferOwnerResult(ctx context.Context, actor Actor, projectID, key string, input TransferOwnerInput) (ProjectMutationResult, error) {
-	return a.write.TransferOwnerResult(ctx, actor, projectID, key, input)
-}
-func (a splitMembershipApplication) RequestOwnerTransferResult(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (OwnerTransferResult, error) {
-	return a.write.RequestOwnerTransferResult(ctx, actor, projectID, key, input)
-}
-func (a splitMembershipApplication) AcceptOwnerTransferResult(ctx context.Context, actor Actor, projectID, transferID, key string) (OwnerTransferResult, error) {
-	return a.write.AcceptOwnerTransferResult(ctx, actor, projectID, transferID, key)
-}
-
-type splitChapterApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitChapterApplication) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
-	return a.read.ListChapters(ctx, actor, projectID)
-}
-func (a splitChapterApplication) GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error) {
-	return a.read.GetWorkingCopy(ctx, actor, projectID, chapterID)
-}
-func (a splitChapterApplication) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
-	return a.read.ListChapterVersions(ctx, actor, projectID, chapterID)
-}
-func (a splitChapterApplication) SaveChapterResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (ChapterMutationResult, error) {
-	return a.write.SaveChapterResult(ctx, actor, projectID, chapterID, key, input)
-}
-func (a splitChapterApplication) SaveWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput) (WorkingCopyMutationResult, error) {
-	return a.write.SaveWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
-}
-func (a splitChapterApplication) ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input core.SaveWorkingCopyInput, reviews []core.ReviewItem) (WorkingCopyMutationResult, error) {
-	return a.write.ApplyRewriteResult(ctx, actor, projectID, chapterID, key, input, reviews)
-}
-func (a splitChapterApplication) CommitWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (CommittedChapterMutationResult, error) {
-	return a.write.CommitWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
-}
-func (a splitChapterApplication) RestoreWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input RestoreWorkingCopyInput) (WorkingCopyMutationResult, error) {
-	return a.write.RestoreWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
-}
-
-type splitTemplateApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitTemplateApplication) PreviewTemplateMigration(ctx context.Context, actor Actor, projectID string, input TemplateMigrationInput) (TemplateMigrationPreview, error) {
-	return a.read.PreviewTemplateMigration(ctx, actor, projectID, input)
-}
-func (a splitTemplateApplication) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
-	return a.read.GetTemplateCopy(ctx, actor, projectID, version)
-}
-func (a splitTemplateApplication) PreviewTemplateCopyEdit(ctx context.Context, actor Actor, projectID string, input TemplateCopyDefinitionInput) (TemplateMigrationPreview, error) {
-	return a.read.PreviewTemplateCopyEdit(ctx, actor, projectID, input)
-}
-func (a splitTemplateApplication) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
-	return a.write.ChangeTemplateResult(ctx, actor, projectID, key, input)
-}
-func (a splitTemplateApplication) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
-	return a.write.SaveTemplateCopyResult(ctx, actor, projectID, key, input)
-}
-
-type splitChangeSetApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitChangeSetApplication) CreateChangeSetResult(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
-	return a.write.CreateChangeSetResult(ctx, actor, projectID, key, input)
-}
-func (a splitChangeSetApplication) ListChangeSets(ctx context.Context, actor Actor, projectID string) ([]ChangeSet, error) {
-	return a.read.ListChangeSets(ctx, actor, projectID)
-}
-func (a splitChangeSetApplication) GetChangeSet(ctx context.Context, actor Actor, projectID, changeSetID string) (ChangeSet, error) {
-	return a.read.GetChangeSet(ctx, actor, projectID, changeSetID)
-}
-func (a splitChangeSetApplication) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	return a.write.ApplyChangeSetResult(ctx, actor, projectID, changeSetID, key)
-}
-func (a splitChangeSetApplication) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	return a.write.RejectChangeSetResult(ctx, actor, projectID, changeSetID, key)
 }
 
 func (h *Handler) Register(routes RouteGroups) {
@@ -272,6 +63,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/change-sets", h.listChangeSets)
 	routes.Read.GET("/projects/:projectId/change-sets/:changeSetId", h.getChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets", h.createChangeSet)
+	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reassess", h.reassessChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/apply", h.applyChangeSet)
 	routes.Write.POST("/projects/:projectId/change-sets/:changeSetId/reject", h.rejectChangeSet)
 	routes.Read.GET("/projects/:projectId/audit", h.listAuditEvents)
@@ -289,6 +81,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/working-copy", h.getWorkingCopy)
+	routes.Read.GET("/projects/:projectId/chapters/:chapterId/confirmations/current", h.getCurrentConfirmation)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/versions", h.listChapterVersions)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
@@ -297,6 +90,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy", h.saveWorkingCopy)
+	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor", h.setReviewAnchor)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
@@ -330,6 +124,22 @@ func sendError(c *gin.Context, err error) {
 	}
 	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
 	switch {
+	case errors.Is(err, core.ErrHumanDecisionRequired):
+		status, code, message = 403, "human_decision_required", "此操作需要实际成员本人确认。"
+	case errors.Is(err, core.ErrProjectInvitationRequired):
+		status, code, message = 422, "project_invitation_required", "请使用邀请接受与逐成员分配流程；批量直接加入已停用。"
+	case errors.Is(err, core.ErrRuntimePaused):
+		status, code, message = 423, "runtime_paused", "当前范围已暂停，请由负责人核对并恢复。"
+	case errors.Is(err, core.ErrRuntimeRecoveryRequired):
+		status, code, message = 422, "runtime_recovery_required", "恢复前需要核对当前检查、快照和导出文件。"
+	case errors.Is(err, core.ErrG2ConsentRequired):
+		status, code, message = 422, "confirmation_required", "请明确核对范围并确认该操作。"
+	case errors.Is(err, core.ErrG2EvidenceIncomplete):
+		status, code, message = 422, "evidence_incomplete", "证据卡、原文定位或当前版本尚不完整。"
+	case errors.Is(err, core.ErrG2OutcomeUnknown):
+		status, code, message = 409, "outcome_unknown", "原操作结果尚待核对，请勿重复执行。"
+	case errors.Is(err, core.ErrG2Unavailable):
+		status, code, message = 503, "dependency_unavailable", "资料或模型能力暂不可用。"
 	case errors.Is(err, ErrInvalidRequest):
 		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
 	case errors.Is(err, evidence.ErrInvalidBinding):
@@ -366,6 +176,8 @@ func sendError(c *gin.Context, err error) {
 		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
 		// 措辞不再提「尚未接入」——来源复核已经接入，答 403 是有判据的拒绝，不是缺席。
 		status, code, message = 403, "source_access_denied", "资料不可用或未获授权。"
+	case errors.Is(err, core.ErrRevisionNotStable):
+		status, code, message = 422, "context_unstable", "正式变更尚未完成稳定化。请用当前交付检查回执闭环影响任务，再由 Owner 检查稳定化后冻结。"
 	case errors.Is(err, ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
 	// 交付链（T12 候选采纳 / T13 冻结）的判定。这些是各自包里的 sentinel，
@@ -475,7 +287,7 @@ func (h *Handler) listProjects(c *gin.Context) {
 	if !ok {
 		return
 	}
-	items, truncated, err := h.projects.ListProjects(c.Request.Context(), actor)
+	items, truncated, err := h.read.ListProjects(c.Request.Context(), actor)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -509,7 +321,7 @@ func (h *Handler) createProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.projects.CreateProjectResult(c.Request.Context(), actor, key, input)
+	result, err := h.write.CreateProjectResult(c.Request.Context(), actor, key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -522,7 +334,7 @@ func (h *Handler) getProject(c *gin.Context) {
 	if !ok {
 		return
 	}
-	project, err := h.projects.GetProject(c.Request.Context(), actor, c.Param("projectId"))
+	project, err := h.read.GetProject(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -543,7 +355,7 @@ func (h *Handler) saveSpec(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.projects.SaveSpecResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.SaveSpecResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -566,7 +378,7 @@ func (h *Handler) activateProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.projects.ActivateProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.ActivateProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -579,7 +391,7 @@ func (h *Handler) listDraftCandidates(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.projects.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListDraftCandidates(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -600,7 +412,7 @@ func (h *Handler) createDraftCandidate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.projects.CreateDraftCandidateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.CreateDraftCandidateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -613,7 +425,7 @@ func (h *Handler) listAuditEvents(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.projects.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListAuditEvents(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -633,7 +445,7 @@ func (h *Handler) activationDiff(c *gin.Context) {
 			return
 		}
 	}
-	diff, err := h.projects.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
+	diff, err := h.read.ActivationDiff(c.Request.Context(), actor, c.Param("projectId"), since)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -653,7 +465,7 @@ func (h *Handler) previewTemplateMigration(c *gin.Context) {
 			return
 		}
 	}
-	data, err := h.templatesApp.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	data, err := h.read.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -670,7 +482,7 @@ func (h *Handler) previewTemplateMigrationPost(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	data, err := h.templatesApp.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
+	data, err := h.read.PreviewTemplateMigration(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -691,7 +503,7 @@ func (h *Handler) changeTemplate(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.templatesApp.ChangeTemplateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.ChangeTemplateResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -709,7 +521,7 @@ func (h *Handler) getTemplateCopy(c *gin.Context) {
 		sendError(c, ErrInvalidRequest)
 		return
 	}
-	copy, err := h.templatesApp.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
+	copy, err := h.read.GetTemplateCopy(c.Request.Context(), actor, c.Param("projectId"), version)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -726,7 +538,7 @@ func (h *Handler) previewTemplateCopyEdit(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	preview, err := h.templatesApp.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
+	preview, err := h.read.PreviewTemplateCopyEdit(c.Request.Context(), actor, c.Param("projectId"), input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -747,7 +559,7 @@ func (h *Handler) saveTemplateCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.templatesApp.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -770,7 +582,7 @@ func (h *Handler) discardProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.projects.DiscardProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	result, err := h.write.DiscardProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -793,7 +605,7 @@ func (h *Handler) restoreProject(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.projects.RestoreProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
+	result, err := h.write.RestoreProjectResult(c.Request.Context(), actor, c.Param("projectId"), key, input.ExpectedProjectVersion)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -819,7 +631,7 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 		return
 	}
 	if input.NewOwnerUserID != "" {
-		result, err := h.members.TransferOwnerResult(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
+		result, err := h.write.TransferOwnerResult(c.Request.Context(), actor, c.Param("projectId"), key, TransferOwnerInput{ExpectedProjectVersion: input.ExpectedProjectVersion, NewOwnerUserID: input.NewOwnerUserID})
 		if err != nil {
 			sendError(c, err)
 			return
@@ -827,7 +639,7 @@ func (h *Handler) requestOwnerTransfer(c *gin.Context) {
 		sendOK(c, http.StatusOK, result.Project, result.Replayed)
 		return
 	} else {
-		result, err := h.members.RequestOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
+		result, err := h.write.RequestOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), key, OwnerTransferInput{ExpectedProjectVersion: input.ExpectedProjectVersion, ToUserID: input.ToUserID})
 		if err != nil {
 			sendError(c, err)
 			return
@@ -846,7 +658,7 @@ func (h *Handler) acceptOwnerTransfer(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.members.AcceptOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
+	result, err := h.write.AcceptOwnerTransferResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("transferId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -867,7 +679,7 @@ func (h *Handler) saveMembers(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.members.SaveMembersResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.SaveMembersResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -880,7 +692,7 @@ func (h *Handler) listChapters(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.chapters.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListChapters(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -971,7 +783,7 @@ func (h *Handler) saveChapter(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.chapters.SaveChapterResult(c.Request.Context(), actor,
+	result, err := h.write.SaveChapterResult(c.Request.Context(), actor,
 		c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
@@ -985,7 +797,7 @@ func (h *Handler) getWorkingCopy(c *gin.Context) {
 	if !ok {
 		return
 	}
-	workingCopy, err := h.chapters.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	workingCopy, err := h.read.GetWorkingCopy(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1061,7 +873,7 @@ func (h *Handler) saveWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.chapters.SaveWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.write.SaveWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1082,7 +894,7 @@ func (h *Handler) commitWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.chapters.CommitWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.write.CommitWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1095,7 +907,7 @@ func (h *Handler) listChapterVersions(c *gin.Context) {
 	if !ok {
 		return
 	}
-	versions, err := h.chapters.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
+	versions, err := h.read.ListChapterVersions(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1116,7 +928,7 @@ func (h *Handler) restoreWorkingCopy(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.chapters.RestoreWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
+	result, err := h.write.RestoreWorkingCopyResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1142,7 +954,7 @@ func (h *Handler) listChangeSets(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.changeSets.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
+	data, err := h.read.ListChangeSets(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1155,7 +967,7 @@ func (h *Handler) getChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	data, err := h.changeSets.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
+	data, err := h.read.GetChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"))
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1176,12 +988,29 @@ func (h *Handler) createChangeSet(c *gin.Context) {
 	if !decodeBody(c, &input) {
 		return
 	}
-	result, err := h.changeSets.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	result, err := h.write.CreateChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
 	sendOK(c, http.StatusCreated, result.ChangeSet, result.Replayed)
+}
+
+func (h *Handler) reassessChangeSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	data, status, replay, err := h.write.ReassessChangeSet(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, status, data, replay)
 }
 
 func (h *Handler) applyChangeSet(c *gin.Context) {
@@ -1193,7 +1022,7 @@ func (h *Handler) applyChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.changeSets.ApplyChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	result, err := h.write.ApplyChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
@@ -1210,7 +1039,7 @@ func (h *Handler) rejectChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	result, err := h.changeSets.RejectChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
+	result, err := h.write.RejectChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return

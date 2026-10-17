@@ -88,6 +88,8 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000033_lingdoc_working_copies.up.sql",
 			"000034_lingdoc_selected_rewrites.up.sql",
 			"000035_lingdoc_project_template_copies.up.sql",
+			"000036_lingdoc_rule_sets.up.sql",
+			"000037_lingdoc_full_workflow.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
@@ -103,7 +105,7 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			}
 		}
 	}
-	if err := db.Exec("CREATE TABLE IF NOT EXISTS tenant_members (tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, deleted_at DATETIME, PRIMARY KEY (tenant_id, user_id))").Error; err != nil {
+	if err := db.Exec("CREATE TABLE IF NOT EXISTS tenant_members ( role TEXT NOT NULL DEFAULT 'owner',tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, deleted_at DATETIME, PRIMARY KEY (tenant_id, user_id))").Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := NewServiceWithSources(NewGORMRepository(db), ContractDemoTemplate{}, policy)
@@ -126,7 +128,7 @@ func stripSQLLineComments(script string) string {
 
 func seedTenantMember(t *testing.T, svc *Service, actor Actor) {
 	t.Helper()
-	if err := svc.repository.(*GORMRepository).db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status) VALUES (?, ?, 'active')", actor.TenantID, actor.UserID).Error; err != nil {
+	if err := svc.repository.(*GORMRepository).db.Exec("INSERT INTO tenant_members (tenant_id, user_id, status, role) VALUES (?, ?, 'active', ?)", actor.TenantID, actor.UserID, seededTenantRole(actor)).Error; err != nil {
 		t.Fatal(err)
 	}
 }
@@ -355,6 +357,11 @@ func TestFixedMembersAndRevokedReplay(t *testing.T) {
 	}
 	if _, _, _, err := svc.SaveMembers(ctx, member, id, "members-own", SaveMembersInput{ExpectedProjectVersion: 2, CollaboratorUserIDs: []string{}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("collaborator managed members: %v", err)
+	}
+	// Project-wide conditions require a real management assignment; an
+	// unassigned Author cannot acquire it from the legacy write fallback.
+	if _, _, _, err := svc.SetMemberAssignment(ctx, owner, id, member.UserID, "member-admin", MemberAssignmentInput{ExpectedProjectVersion: 2, Assignment: Member{UserID: member.UserID, GovernanceRole: "admin"}, Reason: "合成管理授权用于验证撤权后的幂等重放"}); err != nil {
+		t.Fatal(err)
 	}
 	_, _, _, err = svc.SaveSpec(ctx, member, id, "member-spec-key", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_subject": "共同编辑"}})
 	if err != nil {
@@ -1057,4 +1064,14 @@ func TestTemplateCopyMigrationPreviewExplainsFieldChangesWithoutDroppingValues(t
 	if !slices.Contains(preview.MissingRequired, "research_subject") || !slices.Contains(preview.MissingRequired, "research_year") || !slices.Contains(preview.Orphaned, "research_goal") || !slices.Contains(preview.Incompatible, "research_subject") {
 		t.Fatalf("migration summary omitted required/type/orphan impacts: %+v", preview)
 	}
+}
+
+func seededTenantRole(actor Actor) string {
+	if actor.Role != "" {
+		return string(actor.Role)
+	}
+	if actor.TenantRole != "" {
+		return actor.TenantRole
+	}
+	return "owner"
 }
