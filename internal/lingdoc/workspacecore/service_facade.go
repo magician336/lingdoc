@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 36738)
-Total output lines: 3448
-
 package workspacecore
 
 import (
@@ -1532,7 +1529,582 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 			return operationResult[Project]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: …6738 tokens truncated…Write, "")), mutationPort[ChangeSetMutationTransaction], func(tx ChangeSetMutationTransaction, p Project) (operationResult[ChangeSet], error) {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.edit", Target: copy.ID, Details: map[string]any{"copy_version": copy.Version, "content_hash": copy.ContentHash, "ruleset_hash": copy.RulesetHash}, CreatedAt: copy.CreatedAt}); err != nil {
+				return operationResult[Project]{}, err
+			}
+		}
+		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
+	})
+}
+
+// BindTemplateCopyRuleSet appends a new project-copy version containing the
+// exact published RuleSet snapshot. Reads are authorized before consulting the
+// separate RuleSet store; the final project write rechecks authorization and
+// version conditions in its own transaction.
+func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (json.RawMessage, int, bool, error) {
+	if input.RuleSetRef != nil {
+		ref := *input.RuleSetRef
+		ref.ID, ref.Version = strings.TrimSpace(ref.ID), strings.TrimSpace(ref.Version)
+		if (input.RuleSetID != "" && input.RuleSetID != ref.ID) ||
+			(input.RuleSetVersion != "" && input.RuleSetVersion != ref.Version) ||
+			(ref.Hash != "" && len(ref.Hash) != 64) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+		input.RuleSetRef = &ref
+		input.RuleSetID, input.RuleSetVersion = ref.ID, ref.Version
+	}
+	input.RuleSetID = strings.TrimSpace(input.RuleSetID)
+	input.RuleSetVersion = strings.TrimSpace(input.RuleSetVersion)
+	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.RuleSetID == "" || input.RuleSetVersion == "" || len(input.RuleSetID) > 64 || len(input.RuleSetVersion) > 64 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if s.ruleSets == nil {
+		return nil, 0, false, ErrInvalidState
+	}
+
+	return runOperation(s, ctx, actor,
+		operationInput(operationBindTemplateCopyRuleSet, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")),
+		mutationPort[ProjectMutationTransaction],
+		func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+			audit, auditOK := tx.(auditTransaction)
+			if !auditOK {
+				return operationResult[Project]{}, ErrInvalidState
+			}
+			if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyDraft {
+				return operationResult[Project]{}, ErrInvalidState
+			}
+			if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
+				return operationResult[Project]{}, ErrVersionConflict
+			}
+			set, err := s.ruleSetVersionForBinding(ctx, tx, actor, input.RuleSetID, input.RuleSetVersion)
+			if err != nil {
+				return operationResult[Project]{}, err
+			}
+			if set.ID != input.RuleSetID || set.Version != input.RuleSetVersion {
+				return operationResult[Project]{}, ErrNotFound
+			}
+			if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+				if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+					return operationResult[Project]{}, ErrInvalidState
+				}
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+			if input.RuleSetRef != nil && input.RuleSetRef.Hash != "" && input.RuleSetRef.Hash != set.RulesetHash {
+				return operationResult[Project]{}, ErrVersionConflict
+			}
+			if templateRef := lingdoctemplate.RuleSetReferenceFor(p.TemplateCopy.Definition); templateRef != nil &&
+				(templateRef.ID != set.ID || templateRef.Version != set.Version || templateRef.Hash != set.RulesetHash) {
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+			if err := lingdoctemplate.ValidateRuleBindingOverrides(set, input.Overrides); err != nil {
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+			definition := lingdoctemplate.Clone(p.TemplateCopy.Definition)
+			definition.RuleSetSnapshot = lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &set}).RuleSetSnapshot
+			definition.RuleSetRef = &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+			definition.RuleBindingOverrides = lingdoctemplate.CloneRuleBindingOverrides(input.Overrides)
+			definition.ContentHash, definition.RulesetHash = "", ""
+			copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, definition, TemplateCopyDraft)
+			if err != nil {
+				return operationResult[Project]{}, err
+			}
+			next := p
+			next.TemplateCopyVersion, next.TemplateCopy = copy.Version, copy
+			next.ProjectVersion++
+			if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+				return operationResult[Project]{}, err
+			}
+			action := "project_template.bind_ruleset"
+			if len(input.Overrides) > 0 {
+				action = "project_template.override_ruleset"
+			}
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: action, Target: copy.ID, Details: map[string]any{"copy_version": copy.Version, "ruleset_id": set.ID, "ruleset_version": set.Version, "ruleset_hash": set.RulesetHash, "content_hash": copy.ContentHash, "override_count": len(input.Overrides)}, CreatedAt: copy.CreatedAt}); err != nil {
+				return operationResult[Project]{}, err
+			}
+			return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
+		})
+}
+
+func (s *Service) ruleSetVersionForBinding(ctx context.Context, tx any, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	reader, ok := s.ruleSets.(TransactionalRuleSetSnapshotReader)
+	if !ok || reader == nil {
+		// Binding must share the RuleSet state check and project-copy write in
+		// one transaction. Falling back to GetVersion can bind a version that
+		// was withdrawn after the independent read completed.
+		return lingdoctemplate.RuleSet{}, ErrInvalidState
+	}
+	transaction, ok := tx.(Transaction)
+	if !ok {
+		return lingdoctemplate.RuleSet{}, ErrInvalidState
+	}
+	return reader.GetVersionInTransaction(ctx, transaction, actor, id, version)
+}
+
+// SaveTemplateCopyResult exposes the saved project without transport fields.
+func (s *Service) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.SaveTemplateCopy(ctx, actor, projectID, key, input)
+	}, "project mutation result")
+	if err != nil {
+		return ProjectMutationResult{Replayed: replayed}, err
+	}
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
+}
+
+// BindTemplateCopyRuleSetResult exposes the saved project without transport fields.
+func (s *Service) BindTemplateCopyRuleSetResult(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (ProjectMutationResult, error) {
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.BindTemplateCopyRuleSet(ctx, actor, projectID, key, input)
+	}, "project mutation result")
+	if err != nil {
+		return ProjectMutationResult{Replayed: replayed}, err
+	}
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
+}
+
+func (s *Service) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
+	if version < 1 {
+		return ProjectTemplateCopy{}, ErrInvalidRequest
+	}
+	var result ProjectTemplateCopy
+	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
+			return err
+		}
+		reader, ok := tx.(templateCopyReader)
+		if !ok {
+			return ErrInvalidState
+		}
+		var err error
+		result, err = reader.ProjectTemplateCopy(actor.TenantID, projectID, version)
+		return err
+	})
+	return result, err
+}
+
+type templateCopyReader interface {
+	ProjectTemplateCopy(uint64, string, int64) (ProjectTemplateCopy, error)
+}
+
+type TemplateSectionChange struct {
+	SectionID string `json:"section_id"`
+	Before    string `json:"before,omitempty"`
+	After     string `json:"after,omitempty"`
+	Status    string `json:"status"`
+}
+
+func sectionChanges(before, after []lingdoctemplate.Section) []TemplateSectionChange {
+	old, next := make(map[string]lingdoctemplate.Section, len(before)), make(map[string]lingdoctemplate.Section, len(after))
+	for _, section := range before {
+		old[section.ID] = section
+	}
+	for _, section := range after {
+		next[section.ID] = section
+	}
+	ids := make([]string, 0, len(old)+len(next))
+	seen := map[string]bool{}
+	for id := range old {
+		ids = append(ids, id)
+		seen[id] = true
+	}
+	for id := range next {
+		if !seen[id] {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	changes := make([]TemplateSectionChange, 0)
+	for _, id := range ids {
+		previous, hadPrevious := old[id]
+		current, hasCurrent := next[id]
+		switch {
+		case !hadPrevious:
+			changes = append(changes, TemplateSectionChange{SectionID: id, After: current.Title, Status: "added"})
+		case !hasCurrent:
+			changes = append(changes, TemplateSectionChange{SectionID: id, Before: previous.Title, Status: "removed"})
+		case previous.Title != current.Title || previous.Order != current.Order || previous.Required != current.Required || previous.Description != current.Description:
+			changes = append(changes, TemplateSectionChange{SectionID: id, Before: previous.Title, After: current.Title, Status: "changed"})
+		}
+	}
+	return changes
+}
+
+func (s *Service) ChangeTemplate(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (json.RawMessage, int, bool, error) {
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
+	if input.ExpectedProjectVersion < 1 || input.TemplateID == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	target, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	targetCopy, err := projectTemplateCopy(actor, projectID, 0, target, TemplateCopyDraft)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return runOperation(s, ctx, actor, operationInput(operationChangeTemplate, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+		if p.Status != "draft" {
+			return operationResult[Project]{}, ErrInvalidState
+		}
+		if p.ProjectVersion != input.ExpectedProjectVersion {
+			return operationResult[Project]{}, ErrVersionConflict
+		}
+		preview := buildTemplateMigrationPreview(p, target, input.ExpectedProjectVersion)
+		next := p
+		next.TemplateID, next.TemplateVersion = target.ID, target.Version
+		targetCopy.Version = p.TemplateCopyVersion + 1
+		next.TemplateCopyVersion, next.TemplateCopy = targetCopy.Version, targetCopy
+		next.ProjectVersion++
+		if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+			return operationResult[Project]{}, err
+		}
+		if audit, ok := tx.(auditTransaction); ok {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_template.change", Target: projectID, Details: map[string]any{"from": p.TemplateID + "/" + p.TemplateVersion, "to": target.ID + "/" + target.Version, "missing_required": preview.MissingRequired, "orphaned": preview.Orphaned}, CreatedAt: time.Now().UTC()}); err != nil {
+				return operationResult[Project]{}, err
+			}
+		}
+		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
+	})
+}
+
+// ChangeTemplateResult exposes the changed project without transport fields.
+func (s *Service) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.ChangeTemplate(ctx, actor, projectID, key, input)
+	}, "project mutation result")
+	if err != nil {
+		return ProjectMutationResult{Replayed: replayed}, err
+	}
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
+}
+
+type SaveMembersInput struct {
+	ExpectedProjectVersion int64    `json:"expected_project_version"`
+	CollaboratorUserIDs    []string `json:"collaborator_user_ids"`
+	Members                []Member `json:"members,omitempty"`
+}
+type SaveChapterInput struct {
+	ExpectedChapterVersionID *string         `json:"expected_chapter_version_id"`
+	ExpectedSpecRevision     int64           `json:"expected_spec_revision"`
+	BodyMarkdown             string          `json:"body_markdown"`
+	SourceIDs                []string        `json:"source_ids"`
+	CitationUsages           []CitationUsage `json:"citation_usages,omitempty"`
+}
+
+type SaveWorkingCopyInput struct {
+	CitationUsages              []CitationUsage `json:"citation_usages,omitempty"`
+	BaseChapterVersionID        *string         `json:"base_chapter_version_id"`
+	ExpectedSpecRevision        int64           `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64           `json:"expected_working_copy_revision"`
+	BodyMarkdown                string          `json:"body_markdown"`
+	SourceIDs                   []string        `json:"source_ids"`
+}
+
+type CommitWorkingCopyInput struct {
+	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
+	ExpectedChapterVersionID    *string `json:"expected_chapter_version_id"`
+}
+
+type RestoreWorkingCopyInput struct {
+	ChapterVersionID            string  `json:"chapter_version_id"`
+	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
+	ExpectedChapterVersionID    *string `json:"expected_chapter_version_id"`
+}
+
+// ApplyRewriteInput is internal to the selected-rewrite application port; the
+// HTTP client cannot choose or replace server-managed review items.
+type ApplyRewriteInput struct {
+	WorkingCopy SaveWorkingCopyInput `json:"working_copy"`
+	ReviewItems []ReviewItem         `json:"review_items"`
+}
+
+type CommittedChapterVersion struct {
+	ChapterVersionID             string       `json:"chapter_version_id"`
+	ParentChapterVersionID       *string      `json:"parent_chapter_version_id"`
+	CommittedWorkingCopyRevision int64        `json:"committed_working_copy_revision"`
+	NextWorkingCopyRevision      int64        `json:"next_working_copy_revision"`
+	SpecRevision                 int64        `json:"spec_revision"`
+	BodyMarkdown                 string       `json:"body_markdown"`
+	SourceIDs                    []string     `json:"source_ids"`
+	ReviewItems                  []ReviewItem `json:"review_items"`
+}
+
+func (s *Service) CreateProject(ctx context.Context, actor Actor, key string, input CreateProjectInput) (json.RawMessage, int, bool, error) {
+	input.Name = strings.TrimSpace(input.Name)
+	if input.Name == "" || len([]rune(input.Name)) > 120 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	input.TemplateID = strings.TrimSpace(input.TemplateID)
+	input.TemplateVersion = strings.TrimSpace(input.TemplateVersion)
+	if input.TemplateVersion == "" {
+		input.TemplateVersion = lingdoctemplate.DemoTemplateVersion
+	}
+	template, err := s.templates.Get(input.TemplateID, input.TemplateVersion)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	copy, err := projectTemplateCopy(actor, "pending", 1, template, TemplateCopyDraft)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return runOperation(s, ctx, actor, operationInput(operationCreateProject, "projects", key, input, authorizationRequest(actor, "", AuthorizationCreate, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, _ Project) (operationResult[Project], error) {
+		id := uuid.NewString()
+		copy.ID, copy.ProjectID = uuid.NewString(), id
+		p := Project{ID: id, Name: input.Name, Status: "draft", ProjectVersion: 1, CurrentContextRevision: 0, DeliveryStatus: "NOT_READY", Spec: map[string]string{}, TemplateID: template.ID, TemplateVersion: template.Version, TemplateCopyVersion: 1, TemplateCopy: copy, Members: []Member{{UserID: actor.UserID, Role: "owner"}}}
+		return operationResult[Project]{Value: p, Status: operationStatusCreated}, tx.InsertProject(actor.TenantID, p)
+	})
+}
+
+// CreateProjectResult exposes the project value and replay state without
+// leaking serialized response bytes or an HTTP status code to the caller.
+func (s *Service) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.CreateProject(ctx, actor, key, input)
+	}, "created project result")
+	if err != nil {
+		return CreateProjectResult{Replayed: replayed}, err
+	}
+	return CreateProjectResult{Project: project, Replayed: replayed}, nil
+}
+
+func (s *Service) SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error) {
+	if input.ExpectedSpecRevision < 0 || input.Fields == nil {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	for k, v := range input.Fields {
+		if strings.TrimSpace(k) == "" || len(k) > 100 || len(v) > 10000 {
+			return nil, 0, false, ErrInvalidRequest
+		}
+	}
+	for key, metadata := range input.FieldMetadata {
+		if _, ok := input.Fields[key]; !ok || !validSpecFieldMetadata(metadata) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+	}
+	return runOperation(s, ctx, actor, operationInput(operationSaveSpec, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), mutationPort[ProjectMutationTransaction], func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+		if p.Status != "draft" {
+			return operationResult[Project]{}, ErrInvalidState
+		}
+		if p.SpecRevision != input.ExpectedSpecRevision {
+			return operationResult[Project]{}, ErrVersionConflict
+		}
+		nextFields := maps.Clone(p.SpecFields)
+		if nextFields == nil {
+			nextFields = map[string]SpecField{}
+		}
+		changedFields := make(map[string]struct{})
+		for key, value := range input.Fields {
+			field := nextFields[key]
+			origin, status := field.Origin, field.Status
+			provenance := field.Provenance
+			if metadata, ok := input.FieldMetadata[key]; ok {
+				origin, status, provenance = metadata.Origin, metadata.Status, metadata.Provenance
+				if origin == "" {
+					origin = "human"
+				}
+				if status == "" {
+					status = "draft"
+				}
+			} else {
+				if origin == "" {
+					origin = "human"
+				}
+				if status == "" {
+					status = "draft"
+				}
+				if field.Value != value {
+					provenance = nil
+				}
+			}
+			if field.Value != value || field.Origin != origin || field.Status != status || !reflect.DeepEqual(field.Provenance, provenance) {
+				field.Value = value
+				field.ModifiedBy = actor.UserID
+				field.ModifiedAt = time.Now().UTC()
+				field.Origin, field.Status, field.Provenance = origin, status, provenance
+				changedFields[key] = struct{}{}
+			}
+			nextFields[key] = field
+		}
+		if !maps.Equal(p.Spec, input.Fields) || !maps.Equal(p.SpecFields, nextFields) {
+			next := p
+			next.Spec = maps.Clone(input.Fields)
+			next.SpecFields = nextFields
+			next.SpecRevision++
+			next.ProjectVersion++
+			for key := range changedFields {
+				field := next.SpecFields[key]
+				field.ModifiedProjectVersion = next.ProjectVersion
+				next.SpecFields[key] = field
+			}
+			if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+				return operationResult[Project]{}, err
+			}
+			if audit, ok := tx.(auditTransaction); ok {
+				if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project_spec.save", Target: projectID, Details: map[string]any{"spec_revision": next.SpecRevision, "field_metadata": next.SpecFields}, CreatedAt: time.Now().UTC()}); err != nil {
+					return operationResult[Project]{}, err
+				}
+			}
+			p = next
+		}
+		return operationResult[Project]{Value: p, Status: operationStatusOK}, nil
+	})
+}
+
+// SaveSpecResult runs the same application operation as SaveSpec and exposes
+// its business result without leaking JSON or HTTP concerns to callers such as
+// a CLI or background task. Idempotency authorization and replay checks remain
+// owned by operation; this method is only the typed compatibility adapter.
+func (s *Service) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.SaveSpec(ctx, actor, projectID, key, input)
+	}, "saved spec result")
+	if err != nil {
+		return SaveSpecResult{Replayed: replayed}, err
+	}
+	return SaveSpecResult{Project: project, Replayed: replayed}, nil
+}
+
+func validateChangeSetInput(input CreateChangeSetInput) error {
+	hasTemplateUpgrade := input.TemplateUpgrade != nil
+	if input.ExpectedContextRevision < 1 || len(input.Fields) > 2 || (!hasTemplateUpgrade && len(input.Fields) == 0) || (hasTemplateUpgrade && len(input.Fields) != 0) || (!hasTemplateUpgrade && len(input.AffectedChapterIDs) == 0) || strings.TrimSpace(input.Reason) == "" || len([]rune(input.Reason)) > 2000 {
+		return ErrInvalidRequest
+	}
+	seen := make(map[string]struct{}, len(input.AffectedChapterIDs))
+	for _, id := range input.AffectedChapterIDs {
+		if strings.TrimSpace(id) == "" {
+			return ErrInvalidRequest
+		}
+		if _, ok := seen[id]; ok {
+			return ErrInvalidRequest
+		}
+		seen[id] = struct{}{}
+	}
+	for key, delta := range input.Fields {
+		if key != "research_subject" && key != "research_goal" {
+			return ErrInvalidRequest
+		}
+		if delta.OldValue == delta.NewValue || len(delta.NewValue) > 10000 {
+			return ErrInvalidRequest
+		}
+	}
+	if upgrade := input.TemplateUpgrade; upgrade != nil {
+		if upgrade.ExpectedProjectVersion < 1 || upgrade.ExpectedTemplateCopyVersion < 1 || upgrade.Fields == nil || upgrade.Sections == nil || upgrade.Terms == nil || upgrade.Rules == nil {
+			return ErrInvalidRequest
+		}
+		if upgrade.RuleSetRef != nil {
+			ref := *upgrade.RuleSetRef
+			ref.ID = strings.TrimSpace(ref.ID)
+			ref.Version = strings.TrimSpace(ref.Version)
+			if ref.ID == "" || ref.Version == "" || len(ref.ID) > 64 || len(ref.Version) > 64 || len(ref.Hash) != 64 {
+				return ErrInvalidRequest
+			}
+		} else if upgrade.RuleBindingOverrides != nil {
+			return ErrInvalidRequest
+		}
+		for key, value := range upgrade.FieldValues {
+			if strings.TrimSpace(key) == "" || len(value) > 10000 {
+				return ErrInvalidRequest
+			}
+		}
+	}
+	return nil
+}
+
+func editableTemplateDefinitionFromUpgrade(current lingdoctemplate.Template, input TemplateUpgradeInput) (lingdoctemplate.Template, error) {
+	return editableTemplateDefinition(current, TemplateCopyDefinitionInput{
+		ExpectedProjectVersion: input.ExpectedProjectVersion, ExpectedTemplateCopyVersion: input.ExpectedTemplateCopyVersion,
+		Fields: input.Fields, Sections: input.Sections, Terms: input.Terms,
+		RequiredFields: input.RequiredFields, Rules: input.Rules,
+	})
+}
+
+// bindUpgradeRuleSet resolves the requested immutable reference inside the
+// ChangeSet transaction. The assessed ChangeSet stores the exact snapshot,
+// so Apply never re-reads a mutable alias or changes historical deliveries.
+func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, current, definition lingdoctemplate.Template, input TemplateUpgradeInput) (lingdoctemplate.Template, error) {
+	if input.RuleSetRef == nil {
+		return definition, nil
+	}
+	ref := *input.RuleSetRef
+	ref.ID, ref.Version = strings.TrimSpace(ref.ID), strings.TrimSpace(ref.Version)
+	if len(ref.Hash) != 64 {
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	set, err := s.ruleSetVersionForBinding(ctx, tx, actor, ref.ID, ref.Version)
+	if err != nil {
+		return lingdoctemplate.Template{}, err
+	}
+	if set.ID != ref.ID || set.Version != ref.Version {
+		return lingdoctemplate.Template{}, ErrNotFound
+	}
+	if ref.Hash != "" && ref.Hash != set.RulesetHash {
+		return lingdoctemplate.Template{}, ErrVersionConflict
+	}
+	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+			return lingdoctemplate.Template{}, ErrInvalidState
+		}
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	overrides := input.RuleBindingOverrides
+	currentRef := lingdoctemplate.RuleSetReferenceFor(current)
+	if overrides == nil && currentRef != nil && currentRef.ID == set.ID && currentRef.Version == set.Version && currentRef.Hash == set.RulesetHash {
+		overrides = current.RuleBindingOverrides
+	}
+	if err := lingdoctemplate.ValidateRuleBindingOverrides(set, overrides); err != nil {
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	definition.RuleSetSnapshot = lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &set}).RuleSetSnapshot
+	definition.RuleSetRef = &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	definition.RuleBindingOverrides = lingdoctemplate.CloneRuleBindingOverrides(overrides)
+	definition.ContentHash, definition.RulesetHash = "", ""
+	definition, err = lingdoctemplate.WithHashes(definition)
+	if err != nil {
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	return definition, nil
+}
+
+// templateSpecAfterUpgrade keeps orphaned historic values available for review,
+// applies explicit user mappings, and rejects an upgrade that leaves a current
+// required field absent or type-incompatible.
+func templateSpecAfterUpgrade(spec map[string]string, definition lingdoctemplate.Template, values map[string]string) (map[string]string, error) {
+	fields := templateFieldDefinitions(definition)
+	next := maps.Clone(spec)
+	if next == nil {
+		next = map[string]string{}
+	}
+	for key, value := range values {
+		field, ok := fields[key]
+		if !ok || !compatibleTemplateValue(value, field) {
+			return nil, fmt.Errorf("%w: invalid template field migration %q", ErrInvalidRequest, key)
+		}
+		next[key] = value
+	}
+	for key, value := range next {
+		if field, ok := fields[key]; ok && !compatibleTemplateValue(value, field) {
+			return nil, fmt.Errorf("%w: template field %q requires an explicit compatible migration", ErrInvalidRequest, key)
+		}
+	}
+	for _, required := range definition.RequiredFields {
+		if strings.TrimSpace(next[required]) == "" {
+			return nil, fmt.Errorf("%w: required template field %q has no value", ErrInvalidRequest, required)
+		}
+	}
+	return next, nil
+}
+
+func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (json.RawMessage, int, bool, error) {
+	if err := validateChangeSetInput(input); err != nil {
+		return nil, 0, false, err
+	}
+	return runOperation(s, ctx, actor, operationInput(operationCreateChangeSet, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), mutationPort[ChangeSetMutationTransaction], func(tx ChangeSetMutationTransaction, p Project) (operationResult[ChangeSet], error) {
 		if p.Status != "active" || p.DiscardedAt != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
