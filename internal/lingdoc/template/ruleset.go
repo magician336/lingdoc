@@ -449,6 +449,10 @@ func EvaluateBoundRuleSet(t Template, set RuleSet, scene string, input Evaluatio
 	if binding.Snapshot.ID != set.ID || binding.Snapshot.Version != set.Version || binding.Snapshot.RulesetHash != set.RulesetHash {
 		return nil, fmt.Errorf("%w: evaluation RuleSet does not match the template snapshot", ErrInvalidRuleSet)
 	}
+	return evaluateVerifiedRuleSet(t, binding, scene, input)
+}
+
+func evaluateVerifiedRuleSet(t Template, binding VerifiedRuleSetBinding, scene string, input EvaluationInput) ([]Evaluation, error) {
 	if !allowedRuleScenes[scene] {
 		return nil, fmt.Errorf("%w: unsupported rule scene %q", ErrInvalidRuleSet, scene)
 	}
@@ -478,8 +482,8 @@ func EvaluateBoundRuleSet(t Template, set RuleSet, scene string, input Evaluatio
 	evaluations, err := evaluateTemplate(definition, input, effectiveHash)
 	if err == nil {
 		for i := range evaluations {
-			evaluations[i].RuleSetID = set.ID
-			evaluations[i].RuleSetVersion = set.Version
+			evaluations[i].RuleSetID = binding.Snapshot.ID
+			evaluations[i].RuleSetVersion = binding.Snapshot.Version
 		}
 	}
 	return evaluations, err
