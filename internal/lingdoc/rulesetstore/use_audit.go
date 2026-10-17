@@ -173,10 +173,14 @@ func validateDurableAuditBinding(tx *gorm.DB, event template.RuleSetUseAuditEven
 	snapshotID := event.ResourceID
 	if event.Action == "export" {
 		var artifact auditExportSnapshotRow
-		if err := tx.Table("lingdoc_export_artifacts").Select("snapshot_id").Where("id = ? AND project_id = ?", event.ResourceID, event.ProjectID).Take(&artifact).Error; err != nil {
-			return fmt.Errorf("%w: governed export has no durable snapshot", ErrInvalidRuleSetUseAudit)
+		err := tx.Table("lingdoc_export_artifacts").Select("snapshot_id").Where("id = ? AND project_id = ?", event.ResourceID, event.ProjectID).Take(&artifact).Error
+		if err == nil {
+			snapshotID = artifact.SnapshotID
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: read governed export artifact: %v", ErrInvalidRuleSetUseAudit, err)
 		}
-		snapshotID = artifact.SnapshotID
+		// Failed exports are audited before an artifact exists; in that path
+		// ResourceID is the durable snapshot ID itself.
 	}
 	var row auditSnapshotRow
 	if err := tx.Table("lingdoc_release_snapshots").Select("frozen_input_json").Where("id = ? AND project_id = ?", snapshotID, event.ProjectID).Take(&row).Error; err != nil {
