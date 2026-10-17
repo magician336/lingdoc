@@ -29,7 +29,7 @@ func (p workspaceSourcePolicy) ValidateMachineRead(ctx context.Context, a core.M
 	checker := sourceRevalidator{db: r.db, bindings: r.bindings, gateway: gateway, origins: origins,
 		policy: evidence.NewSourcePolicy(gateway, origins, r.bindings)}
 	ids := a.SourceIDs()
-	verdicts, err := checker.revalidate(ctx, a.ProjectID(),
+	verdicts, err := checker.Review(ctx, a.ProjectID(),
 		evidence.Actor{UserID: a.Principal().StorageID(), TenantID: strconv.FormatUint(a.TenantID(), 10)}, ids)
 	if err != nil {
 		return err

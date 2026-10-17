@@ -125,7 +125,7 @@ func (s *Service) PrepareCandidateGenerationEvidence(ctx context.Context, actor 
 	}
 	proof := candidateEvidenceProof{actor: actor, projectID: projectID, chapterID: chapterID, identityHash: candidateIdentityHash(ctx), refsHash: candidateRefsHash(refs), usedIDsHash: hashImpactValue(sortedImpactSourceIDs(usedSourceIDs)), sourceIDs: sortedImpactSourceIDs(allIDs), selectionJSON: raw}
 	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, e := s.authorizeProject(ctx, tx, actor, projectID, "write:"+chapterID)
+		p, e := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID))
 		if e != nil {
 			return e
 		}
@@ -238,7 +238,7 @@ func (s *Service) SelectGenerationEvidenceInTransaction(ctx context.Context, tx 
 	if s == nil || tx == nil || !formal {
 		return selected, ErrInvalidState
 	}
-	p, err := s.authorizeProject(ctx, tx, actor, projectID, "write:"+chapterID)
+	p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID))
 	if err != nil {
 		return selected, err
 	}

@@ -166,9 +166,9 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
-	core, ok := handler.read.(*Service)
+	core, ok := testRuntime(handler).service.(*Service)
 	if !ok {
-		t.Fatalf("workspace application = %T, want *Service", handler.read)
+		t.Fatalf("workspace application = %T, want *Service", testRuntime(handler).service)
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)

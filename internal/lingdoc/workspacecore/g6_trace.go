@@ -75,7 +75,7 @@ func RecordRuntimeOperationContext(ctx context.Context, tx Transaction, actor Ac
 // committed, preserving the originating trace for durable asynchronous work.
 func (s *Service) ObserveRuntime(ctx context.Context, actor Actor, projectID, operation, status string, durationMS int64) error {
 	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}

@@ -68,8 +68,12 @@ func g2Audit(tx Transaction, actor Actor, projectID, action, target, reason stri
 	return port.RecordAudit(AuditEvent{ID: uuid.NewString(), TenantID: actor.TenantID, ProjectID: projectID, ActorID: actor.UserID, Action: action, Target: target, Details: details, Reason: reason, CreatedAt: time.Now().UTC()})
 }
 func (s *Service) g2Read(ctx context.Context, actor Actor, projectID, capability string, read func(Transaction, Project) error) error {
+	request, err := authorizationRequestFromCapability(actor, projectID, capability)
+	if err != nil {
+		return err
+	}
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
+		p, err := s.authorizeProject(ctx, tx, request)
 		if err != nil {
 			return err
 		}
@@ -122,6 +126,10 @@ func g2EmbeddedSources(raw json.RawMessage) []string {
 // reauthorized before the final transaction and the project/object basis is
 // compared inside that transaction, including idempotent replays.
 func (s *Service) g2Operation(ctx context.Context, actor Actor, projectID, capability, op, target, key string, input any, sourceIDs []string, write func(Transaction, Project) (any, int, error)) (json.RawMessage, int, bool, error) {
+	request, requestErr := authorizationRequestFromCapability(actor, projectID, capability)
+	if requestErr != nil {
+		return nil, 0, false, requestErr
+	}
 	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -158,7 +166,7 @@ func (s *Service) g2Operation(ctx context.Context, actor Actor, projectID, capab
 	var result OperationResult
 	var replay bool
 	err = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, capability)
+		p, err := s.authorizeProject(ctx, tx, request)
 		if err != nil {
 			return err
 		}
@@ -588,7 +596,7 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 }
 func (s *Service) persistResearchProgress(ctx context.Context, actor Actor, projectID string, run *ResearchRun) error {
 	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, researchCapabilityForChapter(run.Basis.ChapterID))
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationResearch, run.Basis.ChapterID))
 		if err != nil {
 			return err
 		}
@@ -935,7 +943,7 @@ func (s *Service) ConfirmImportCandidate(ctx context.Context, actor Actor, proje
 }
 func (s *Service) finishG2Import(ctx context.Context, actor Actor, projectID string, candidate ImportCandidate, asset G2ImportedAsset, cause error) error {
 	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "evidence-write")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationEvidenceWrite, ""))
 		if err != nil {
 			return err
 		}
@@ -1408,7 +1416,7 @@ func (s *Service) ConfirmEvidenceCard(ctx context.Context, actor Actor, projectI
 			return nil, 0, ErrInvalidState
 		}
 		for _, chapterID := range value.ScopeChapterIDs {
-			if _, err = s.authorizeProject(ctx, tx, actor, projectID, "evidence-confirm:"+chapterID); err != nil {
+			if _, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationEvidenceConfirm, chapterID)); err != nil {
 				return nil, 0, err
 			}
 		}
@@ -1451,7 +1459,7 @@ func (s *Service) ReviewEvidenceCard(ctx context.Context, actor Actor, projectID
 			return nil, 0, ErrVersionConflict
 		}
 		for _, chapterID := range value.ScopeChapterIDs {
-			if _, err = s.authorizeProject(ctx, tx, actor, projectID, "evidence-confirm:"+chapterID); err != nil {
+			if _, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationEvidenceConfirm, chapterID)); err != nil {
 				return nil, 0, err
 			}
 		}
@@ -1883,7 +1891,7 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 		currentErr = ErrVersionConflict
 	}
 	err = s.repository.Transaction(context.WithoutCancel(ctx), TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(context.WithoutCancel(ctx), tx, actor, projectID, "agent")
+		p, err := s.authorizeProject(context.WithoutCancel(ctx), tx, authorizationRequest(actor, projectID, AuthorizationAgent, ""))
 		if err != nil {
 			return err
 		}
@@ -2115,9 +2123,13 @@ func (s *Service) ConfirmActionProposal(ctx context.Context, actor Actor, projec
 	if err = s.checkSources(ctx, actor, projectID, started.SourceIDs); err != nil {
 		return nil, 0, false, err
 	}
+	request, requestErr := authorizationRequestFromCapability(actor, projectID, capability)
+	if requestErr != nil {
+		return nil, 0, false, requestErr
+	}
 	result, executeErr := s.g2Runtime.Actions.ExecuteAgentAction(ctx, actor, started, "g2-action-"+proposalID)
 	err = s.repository.Transaction(context.WithoutCancel(ctx), TransactionOptions{}, func(tx Transaction) error {
-		_, err := s.authorizeProject(context.WithoutCancel(ctx), tx, actor, projectID, capability)
+		_, err := s.authorizeProject(context.WithoutCancel(ctx), tx, request)
 		if err != nil {
 			return err
 		}
@@ -2240,7 +2252,7 @@ func (s *Service) InspectResearchResult(ctx context.Context, actor Actor, projec
 		return result, ErrG2EvidenceIncomplete
 	}
 	err = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, researchCapabilityForChapter(run.Basis.ChapterID))
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationResearch, run.Basis.ChapterID))
 		if err != nil {
 			return err
 		}
@@ -2331,7 +2343,7 @@ func (s *Service) actionProposalSources(ctx context.Context, actor Actor, projec
 // ApplyResearchClaimDelta is called only inside the assessed ChangeSet apply
 // transaction. nextProject is the server-computed post-change basis.
 func (s *Service) ApplyResearchClaimDelta(tx Transaction, actor Actor, nextProject Project, claimID string, expectedVersion int64, input SaveResearchClaimInput) (ResearchClaim, error) {
-	p, err := s.authorizeProject(context.Background(), tx, actor, nextProject.ID, "evidence-write")
+	p, err := s.authorizeProject(context.Background(), tx, authorizationRequest(actor, nextProject.ID, AuthorizationEvidenceWrite, ""))
 	if err != nil {
 		return ResearchClaim{}, err
 	}
@@ -2383,7 +2395,7 @@ func storeG2ClaimBasis(tx Transaction, actor Actor, p Project, claim ResearchCla
 	return StoreConfirmedDependency(tx, DependencyEdge{ProjectID: p.ID, Source: ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)}, Target: ObjectVersionRef{Kind: "ResearchClaim", ID: claim.ID, Version: strconv.FormatInt(claim.Version, 10)}, Relation: "uses_research_conditions", Action: "REVIEW_REQUIRED", Origin: "rule", ActorID: actor.UserID, Reason: "当前主张使用已确认的项目研究条件", Confidence: 1})
 }
 func (s *Service) ApplyProjectAssetPolicyDelta(tx Transaction, actor Actor, nextProject Project, assetID string, expectedVersion int64, input ProjectAssetPolicy) (ProjectAssetPolicy, error) {
-	p, err := s.authorizeProject(context.Background(), tx, actor, nextProject.ID, "manage")
+	p, err := s.authorizeProject(context.Background(), tx, authorizationRequest(actor, nextProject.ID, AuthorizationManage, ""))
 	if err != nil {
 		return ProjectAssetPolicy{}, err
 	}

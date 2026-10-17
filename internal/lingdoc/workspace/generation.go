@@ -15,6 +15,7 @@ import (
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -35,7 +36,6 @@ func NewGenerationApplication(
 ) *generation.Service {
 	db := workspace.db
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: db})
-	sourcePolicy := evidence.NewSourcePolicy(workspace.generationGateway(), origins, workspace.bindings)
 	inputs := &generationInputResolver{
 		workspace:     workspace.service,
 		sources:       workspace,
@@ -50,7 +50,7 @@ func NewGenerationApplication(
 	acceptanceBudget, acceptanceConfigErr := loadGenerationAcceptanceBudget()
 	service := generation.NewServiceWithAccessPolicy(
 		accessPolicy, inputs,
-		generationSourceValidator{policy: sourcePolicy},
+		generationSourceValidator{reviewer: workspace.sourceReviewerForGateway(workspace.generationGateway())},
 		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
 	service.Evidence = g2GenerationEvidenceValidator{workspace: workspace.service}
@@ -283,25 +283,58 @@ func generationSourceFromEvidence(source evidence.Source) generation.Source {
 	}
 }
 
-type generationSourceValidator struct{ policy evidence.SourcePolicy }
+type generationSourceValidator struct{ reviewer sourcepolicy.Reviewer }
 
 func (v generationSourceValidator) ValidateGenerationSources(ctx context.Context, actor generation.Actor, projectID string, sources []generation.Source) error {
-	if v.policy == nil || len(sources) == 0 {
+	if v.reviewer == nil || len(sources) == 0 {
 		return generation.ErrSourceAccessDenied
 	}
-	checked, err := v.policy.Validate(evidenceContext(ctx, actor), projectID, evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, evidenceSources(sources))
+	ids := make([]string, 0, len(sources))
+	for _, source := range sources {
+		if source.ID == "" {
+			return generation.ErrSourceAccessDenied
+		}
+		ids = append(ids, source.ID)
+	}
+	verdicts, err := v.reviewer.Review(evidenceContext(ctx, actor), projectID, evidence.Actor{UserID: actor.UserID, TenantID: strconv.FormatUint(actor.TenantID, 10)}, ids)
 	if err != nil {
 		return err
 	}
-	if checked == nil {
+	if len(verdicts) != len(ids) {
 		return generation.ErrSourceAccessDenied
 	}
-	if len(checked.Unusable) != 0 || len(checked.Usable) != len(sources) {
-		for _, unusable := range checked.Unusable {
-			if unusable.AssetDeny == "" {
-				return generation.ErrSourceStale
-			}
+	byID := make(map[string]generation.Source, len(sources))
+	for _, source := range sources {
+		byID[source.ID] = source
+	}
+	stale, denied := false, false
+	for _, verdict := range verdicts {
+		captured, found := byID[verdict.SourceID]
+		if !found {
+			return generation.ErrSourceAccessDenied
 		}
+		delete(byID, verdict.SourceID)
+		if verdict.Usable {
+			current := verdict.Source
+			// The reviewer decides present access. Queued generation must also
+			// retain the exact source snapshot captured before the model call.
+			if captured.ID != current.ID || captured.ProjectID != current.ProjectID ||
+				captured.AssetID != current.AssetID || captured.AssetRevision != current.AssetRevision ||
+				captured.Locator != current.Locator || captured.QuotedText != current.QuotedText || captured.Anchor != current.Anchor {
+				stale = true
+			}
+			continue
+		}
+		if verdict.AssetDeny == "" {
+			stale = true
+		} else {
+			denied = true
+		}
+	}
+	if stale {
+		return generation.ErrSourceStale
+	}
+	if denied || len(byID) != 0 {
 		return generation.ErrSourceAccessDenied
 	}
 	return nil

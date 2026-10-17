@@ -69,28 +69,28 @@ func (s *Service) AcknowledgeImpactPreflight(ctx context.Context, actor Actor, p
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, "acknowledgeImpactPreflight", projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID, "proof_id": snapshotID}, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationAcknowledgeImpactPreflight, projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID, "proof_id": snapshotID}, authorizationRequest(actor, projectID, AuthorizationManage, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ImpactPreflightAcknowledgement], error) {
 		if !validImpactPreflight(p, snapshotID, proof) {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ImpactPreflightAcknowledgement]{}, ErrVersionConflict
 		}
 		store, ok := tx.(impactTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ImpactPreflightAcknowledgement]{}, ErrInvalidState
 		}
 		changes, ok := tx.(changeSetTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ImpactPreflightAcknowledgement]{}, ErrInvalidState
 		}
 		change, err := changes.ChangeSet(projectID, changeID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ImpactPreflightAcknowledgement]{}, err
 		}
 		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ImpactPreflightAcknowledgement]{}, ErrVersionConflict
 		}
 		tasks, err := store.ImpactTasks(projectID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ImpactPreflightAcknowledgement]{}, err
 		}
 		closed := []string{}
 		for _, task := range tasks {
@@ -108,13 +108,13 @@ func (s *Service) AcknowledgeImpactPreflight(ctx context.Context, actor Actor, p
 			task.Disposition = "当前领域Preflight通过"
 			task.UpdatedAt = time.Now().UTC()
 			if err := store.UpdateImpactTask(old, task); err != nil {
-				return nil, 0, err
+				return operationResult[ImpactPreflightAcknowledgement]{}, err
 			}
 			closed = append(closed, task.ID)
 		}
 		if err := g3Audit(tx, actor, projectID, "impact_task.preflight", changeID, map[string]any{"proof_id": snapshotID, "snapshot_digest": proof.SnapshotDigest, "closed_task_ids": closed}); err != nil {
-			return nil, 0, err
+			return operationResult[ImpactPreflightAcknowledgement]{}, err
 		}
-		return map[string]any{"closed_task_ids": closed, "proof_id": snapshotID, "context_revision": p.CurrentContextRevision}, 200, nil
+		return operationResult[ImpactPreflightAcknowledgement]{Value: ImpactPreflightAcknowledgement{ClosedTaskIDs: closed, ProofID: snapshotID, ContextRevision: p.CurrentContextRevision}, Status: operationStatusOK}, nil
 	})
 }

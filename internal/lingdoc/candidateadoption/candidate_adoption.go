@@ -12,11 +12,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
-	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var (
@@ -135,9 +140,7 @@ type CandidateReader interface {
 	GetCandidate(context.Context, string, string) (Candidate, error)
 }
 
-type SourcePolicy interface {
-	Validate(context.Context, string, string, []string) error
-}
+type SourcePolicy = sourcepolicy.SourcePolicy
 
 type Authorizer interface {
 	// capability is "read" for reads and "write:<chapter>" for adoption.
@@ -156,6 +159,7 @@ type CandidateAdoptionService struct {
 	Workspace   WorkspaceReader
 	Candidates  CandidateReader
 	Sources     SourcePolicy
+	Reviewer    sourcepolicy.Reviewer
 	Evidence    CandidateEvidencePolicy
 	Authorizer  Authorizer
 	Writer      WorkspaceWriter
@@ -173,22 +177,69 @@ func (s *CandidateAdoptionService) validateSources(ctx context.Context, projectI
 	if len(sourceIDs) == 0 {
 		return nil
 	}
-	if s.Sources == nil {
+	if s.Reviewer == nil && s.Sources == nil {
 		return ErrSourceAccessDenied
 	}
-	return s.Sources.Validate(ctx, projectID, actorID, sourceIDs)
+	if s.Reviewer != nil {
+		tenantID, ok := types.TenantIDFromContext(ctx)
+		if !ok || tenantID == 0 || strings.TrimSpace(actorID) == "" {
+			return ErrSourceAccessDenied
+		}
+		caller := types.CallerFromContext(ctx)
+		if caller.TenantID != tenantID || caller.UserID != actorID {
+			return ErrSourceAccessDenied
+		}
+		if id, ok := types.UserIDFromContext(ctx); ok && id != actorID {
+			return ErrSourceAccessDenied
+		}
+		checked := types.WithExecutionTenant(ctx, tenantID)
+		verdicts, err := s.Reviewer.Review(checked, projectID, evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}, sourceIDs)
+		if err != nil {
+			return err
+		}
+		stale, denied := false, false
+		for _, verdict := range verdicts {
+			if verdict.Usable {
+				continue
+			}
+			if verdict.AssetDeny == "" {
+				stale = true
+			} else {
+				denied = true
+			}
+		}
+		if stale || len(verdicts) != len(sourceIDs) {
+			return ErrStaleInput
+		}
+		if denied {
+			return ErrSourceAccessDenied
+		}
+		return nil
+	}
+	return legacySourcePolicyValidate(ctx, projectID, actorID, s.Sources, sourceIDs)
+}
+
+// legacySourcePolicyValidate is the explicit compatibility adapter for
+// callers that have not yet supplied the shared Reviewer. Production
+// composition injects Reviewer and never takes this path.
+func legacySourcePolicyValidate(ctx context.Context, projectID, actorID string, policy SourcePolicy, sourceIDs []string) error {
+	if policy == nil {
+		return ErrSourceAccessDenied
+	}
+	return policy.Validate(ctx, projectID, actorID, sourceIDs)
 }
 
 // NewCandidateAdoptionService wires the fixed SQLite implementation. Callers that already
 // have real T08/T09/T10 adapters can construct CandidateAdoptionService directly instead.
 func NewCandidateAdoptionService(store *SQLiteCandidateAdoptionStore, sources SourcePolicy, authorizer Authorizer) *CandidateAdoptionService {
+	reviewer, _ := sources.(sourcepolicy.Reviewer)
 	evidence, _ := sources.(CandidateEvidencePolicy)
 	if store != nil {
 		store.evidencePolicy = evidence
 		store.authorizer = authorizer
 	}
 	return &CandidateAdoptionService{
-		Workspace: store, Candidates: store, Sources: sources, Evidence: evidence, Authorizer: authorizer,
+		Workspace: store, Candidates: store, Sources: sources, Reviewer: reviewer, Evidence: evidence, Authorizer: authorizer,
 		Writer: store, Idempotency: store,
 	}
 }

@@ -9,7 +9,7 @@ func (s *Service) visibleImpactTasks(ctx context.Context, actor Actor, p Project
 	for _, task := range tasks {
 		var ids []string
 		err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-			current, err := s.authorizeProject(ctx, tx, actor, p.ID, "read:"+task.Target.ID)
+			current, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, p.ID, AuthorizationRead, task.Target.ID))
 			if err != nil {
 				return err
 			}

@@ -84,7 +84,7 @@ func g1StoreActionProvenance(tx Transaction, p Project, proposal ActionProposal)
 func (s *Service) g1AssertActionProvenance(ctx context.Context, actor Actor, proposal ActionProposal) error {
 	var history g1ChangeProvenance
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, proposal.ProjectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, proposal.ProjectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(g5Transaction)

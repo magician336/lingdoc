@@ -151,42 +151,42 @@ func (s *Service) CreateTrialWindow(ctx context.Context, actor Actor, projectID,
 	if !validTrialWindow(input) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "trialCreateWindow", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationTrialCreateWindow, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[TrialWindow], error) {
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialWindow]{}, ErrInvalidState
 		}
 		if !slices.Contains(input.IncludedProjectIDs, projectID) {
-			return nil, 0, ErrInvalidRequest
+			return operationResult[TrialWindow]{}, ErrInvalidRequest
 		}
 		seen := map[string]bool{}
 		for _, id := range input.IncludedProjectIDs {
 			if seen[id] {
-				return nil, 0, ErrInvalidRequest
+				return operationResult[TrialWindow]{}, ErrInvalidRequest
 			}
 			seen[id] = true
-			memberProject, err := s.authorizeProject(ctx, tx, actor, id, "manage")
+			memberProject, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, id, AuthorizationManage, ""))
 			if err != nil {
-				return nil, 0, err
+				return operationResult[TrialWindow]{}, err
 			}
 			if memberProject.TemplateVersion != input.TemplateVersion || memberProject.TemplateCopy == nil || memberProject.TemplateCopy.RulesetHash != input.RulesetHash {
-				return nil, 0, ErrVersionConflict
+				return operationResult[TrialWindow]{}, ErrVersionConflict
 			}
 		}
 		for _, id := range input.IncludedUserIDs {
 			active, err := tx.ActiveMember(Actor{TenantID: actor.TenantID, UserID: id})
 			if err != nil {
-				return nil, 0, err
+				return operationResult[TrialWindow]{}, err
 			}
 			if !active {
-				return nil, 0, ErrNotFound
+				return operationResult[TrialWindow]{}, ErrNotFound
 			}
 		}
 		for _, responsibleID := range input.DecisionOwners {
 			responsible := actor
 			responsible.UserID = responsibleID
-			if _, err := s.authorizeProject(ctx, tx, responsible, projectID, "read"); err != nil {
-				return nil, 0, err
+			if _, err := s.authorizeProject(ctx, tx, authorizationRequest(responsible, projectID, AuthorizationRead, "")); err != nil {
+				return operationResult[TrialWindow]{}, err
 			}
 		}
 		input.ID = uuid.NewString()
@@ -196,12 +196,12 @@ func (s *Service) CreateTrialWindow(ctx context.Context, actor Actor, projectID,
 		input.CreatedBy = actor.UserID
 		input.CreatedAt = time.Now().UTC()
 		if err := store.G6Insert(actor.TenantID, projectID, "trial_window", input.ID, 1, input); err != nil {
-			return nil, 0, err
+			return operationResult[TrialWindow]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "trial.window.create", input.ID, map[string]any{"version": 1, "status": "DRAFT"}); err != nil {
-			return nil, 0, err
+			return operationResult[TrialWindow]{}, err
 		}
-		return input, 201, nil
+		return operationResult[TrialWindow]{Value: input, Status: operationStatusCreated}, nil
 	})
 }
 func (s *Service) ActOnTrialWindow(ctx context.Context, actor Actor, projectID, windowID, key string, input TrialWindowActionInput) (json.RawMessage, int, bool, error) {
@@ -211,32 +211,32 @@ func (s *Service) ActOnTrialWindow(ctx context.Context, actor Actor, projectID, 
 	if input.ExpectedVersion < 1 || !slices.Contains([]string{"lock", "pause", "close"}, input.Action) || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "trialWindowAction", projectID+"/"+windowID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationTrialWindowAction, projectID+"/"+windowID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[TrialWindow], error) {
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialWindow]{}, ErrInvalidState
 		}
 		var old TrialWindow
 		version, err := store.G6Read(actor.TenantID, projectID, "trial_window", windowID, &old)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[TrialWindow]{}, err
 		}
 		if version != input.ExpectedVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[TrialWindow]{}, ErrVersionConflict
 		}
 		if old.Status == "CLOSED" {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialWindow]{}, ErrInvalidState
 		}
 		next := old
 		switch input.Action {
 		case "lock":
 			if old.Status != "DRAFT" || !validTrialWindow(old) {
-				return nil, 0, ErrInvalidState
+				return operationResult[TrialWindow]{}, ErrInvalidState
 			}
 			next.Status = "LOCKED"
 		case "pause":
 			if old.Status != "LOCKED" {
-				return nil, 0, ErrInvalidState
+				return operationResult[TrialWindow]{}, ErrInvalidState
 			}
 			next.Status = "PAUSED"
 		case "close":
@@ -244,18 +244,18 @@ func (s *Service) ActOnTrialWindow(ctx context.Context, actor Actor, projectID, 
 		}
 		next.Version++
 		if err := store.G6CAS(actor.TenantID, projectID, "trial_window", windowID, version, next); err != nil {
-			return nil, 0, err
+			return operationResult[TrialWindow]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "trial.window."+input.Action, windowID, map[string]any{"version": next.Version, "reason": input.Reason}); err != nil {
-			return nil, 0, err
+			return operationResult[TrialWindow]{}, err
 		}
-		return next, 200, nil
+		return operationResult[TrialWindow]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) ListTrialWindows(ctx context.Context, actor Actor, projectID string) ([]TrialWindow, error) {
 	var result []TrialWindow
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(runtimeTransaction)
@@ -310,30 +310,30 @@ func (s *Service) RecordTrialSample(ctx context.Context, actor Actor, projectID,
 	if !validTrialSample(input) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "trialRecordSample", projectID+"/"+windowID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationTrialRecordSample, projectID+"/"+windowID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[TrialSample], error) {
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialSample]{}, ErrInvalidState
 		}
 		var window TrialWindow
 		if _, err := store.G6Read(actor.TenantID, projectID, "trial_window", windowID, &window); err != nil {
-			return nil, 0, err
+			return operationResult[TrialSample]{}, err
 		}
 		if window.Status != "LOCKED" {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialSample]{}, ErrInvalidState
 		}
 		if !slices.Contains(window.IncludedProjectIDs, input.ProjectID) || !slices.Contains(window.IncludedUserIDs, actor.UserID) || input.ExecutedAt.Before(window.StartsAt) || input.ExecutedAt.After(window.EndsAt) || input.ExecutedAt.After(time.Now().UTC()) {
-			return nil, 0, ErrInvalidRequest
+			return operationResult[TrialSample]{}, ErrInvalidRequest
 		}
-		sampleProject, err := s.authorizeProject(ctx, tx, actor, input.ProjectID, "read")
+		sampleProject, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, input.ProjectID, AuthorizationRead, ""))
 		if err != nil {
-			return nil, 0, err
+			return operationResult[TrialSample]{}, err
 		}
 		if input.TemplateVersion != window.TemplateVersion || input.RulesetHash != window.RulesetHash || input.ContextRevision != sampleProject.CurrentContextRevision || sampleProject.TemplateVersion != input.TemplateVersion || sampleProject.TemplateCopy == nil || sampleProject.TemplateCopy.RulesetHash != input.RulesetHash {
-			return nil, 0, ErrVersionConflict
+			return operationResult[TrialSample]{}, ErrVersionConflict
 		}
 		if input.QualityResult != "" && input.QualityResult != "NOT RUN" {
-			return nil, 0, ErrInvalidRequest
+			return operationResult[TrialSample]{}, ErrInvalidRequest
 		}
 		input.ID = uuid.NewString()
 		input.WindowID = windowID
@@ -352,17 +352,17 @@ func (s *Service) RecordTrialSample(ctx context.Context, actor Actor, projectID,
 		sampleKey := windowID + "/" + input.FixtureDigest + "/" + input.SampleVersion
 		var previous TrialSample
 		if _, err := store.G6Read(actor.TenantID, projectID, "trial_sample", sampleKey, &previous); err == nil {
-			return nil, 0, ErrVersionConflict
+			return operationResult[TrialSample]{}, ErrVersionConflict
 		} else if err != ErrNotFound {
-			return nil, 0, err
+			return operationResult[TrialSample]{}, err
 		}
 		if err := store.G6Insert(actor.TenantID, projectID, "trial_sample", sampleKey, 1, input); err != nil {
-			return nil, 0, err
+			return operationResult[TrialSample]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "trial.sample.record", input.ID, map[string]any{"sample_version": input.SampleVersion, "quality_result": "NOT RUN"}); err != nil {
-			return nil, 0, err
+			return operationResult[TrialSample]{}, err
 		}
-		return input, 201, nil
+		return operationResult[TrialSample]{Value: input, Status: operationStatusCreated}, nil
 	})
 }
 func trialSamples(tx Transaction, tenant uint64, project, windowID string) ([]TrialSample, error) {
@@ -389,7 +389,7 @@ func trialSamples(tx Transaction, tenant uint64, project, windowID string) ([]Tr
 func (s *Service) ListTrialSamples(ctx context.Context, actor Actor, projectID, windowID string) ([]TrialSample, error) {
 	var result []TrialSample
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		var err error
@@ -405,23 +405,23 @@ func (s *Service) ReviewTrialSample(ctx context.Context, actor Actor, projectID,
 	if input.ExpectedVersion < 1 || !slices.Contains([]string{"PASS", "FAIL", "BLOCKED", "NOT RUN"}, input.QualityResult) || !slices.Contains([]string{"accept", "reject", "needs_work"}, input.HumanDecision) || strings.TrimSpace(input.Reason) == "" || !safeEvidenceRef(input.WordRoundtripEvidence) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "trialReviewSample", projectID+"/"+sampleID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationTrialReviewSample, projectID+"/"+sampleID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[TrialSample], error) {
 		samples, err := trialSamples(tx, actor.TenantID, projectID, windowID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[TrialSample]{}, err
 		}
 		for _, old := range samples {
 			if old.ID != sampleID {
 				continue
 			}
 			if old.Version != input.ExpectedVersion {
-				return nil, 0, ErrVersionConflict
+				return operationResult[TrialSample]{}, ErrVersionConflict
 			}
 			if old.ReviewedAt != nil {
-				return nil, 0, ErrInvalidState
+				return operationResult[TrialSample]{}, ErrInvalidState
 			}
 			if input.QualityResult == "PASS" && input.HumanDecision != "accept" {
-				return nil, 0, ErrInvalidRequest
+				return operationResult[TrialSample]{}, ErrInvalidRequest
 			}
 			next := old
 			next.Version++
@@ -437,14 +437,14 @@ func (s *Service) ReviewTrialSample(ctx context.Context, actor Actor, projectID,
 			next.ReviewedAt = &now
 			store := tx.(runtimeTransaction)
 			if err := store.G6CAS(actor.TenantID, projectID, "trial_sample", windowID+"/"+old.FixtureDigest+"/"+old.SampleVersion, old.Version, next); err != nil {
-				return nil, 0, err
+				return operationResult[TrialSample]{}, err
 			}
 			if err := g3Audit(tx, actor, projectID, "trial.sample.review", sampleID, map[string]any{"quality_result": next.QualityResult, "human_decision": next.HumanDecision, "reviewer": actor.UserID, "word_evidence": next.WordRoundtripEvidence}); err != nil {
-				return nil, 0, err
+				return operationResult[TrialSample]{}, err
 			}
-			return next, 200, nil
+			return operationResult[TrialSample]{Value: next, Status: operationStatusOK}, nil
 		}
-		return nil, 0, ErrNotFound
+		return operationResult[TrialSample]{}, ErrNotFound
 	})
 }
 func buildTrialReport(tx Transaction, actor Actor, projectID, windowID string) (TrialReport, error) {
@@ -572,7 +572,7 @@ func buildTrialReport(tx Transaction, actor Actor, projectID, windowID string) (
 func (s *Service) GetTrialReport(ctx context.Context, actor Actor, projectID, windowID string) (TrialReport, error) {
 	var result TrialReport
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		var err error
@@ -588,28 +588,28 @@ func (s *Service) CreateTrialDecision(ctx context.Context, actor Actor, projectI
 	if !slices.Contains([]string{"expand", "continue", "pause"}, input.Decision) || strings.TrimSpace(input.Reason) == "" || input.ReportHash == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "trialCreateDecision", projectID+"/"+windowID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationTrialCreateDecision, projectID+"/"+windowID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[TrialDecisionRecord], error) {
 		report, err := buildTrialReport(tx, actor, projectID, windowID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if input.ReportHash != report.InputHash {
-			return nil, 0, ErrVersionConflict
+			return operationResult[TrialDecisionRecord]{}, ErrVersionConflict
 		}
 		if input.Decision == "expand" && report.Readiness != "READY" {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		if input.Decision == "continue" && report.Readiness == "BLOCKED" {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		record := TrialDecisionRecord{ID: uuid.NewString(), WindowID: windowID, Report: report, Decision: input.Decision, Reason: input.Reason, Signatures: map[string]string{}, Status: "WAITING_HUMAN", Version: 1, CreatedAt: time.Now().UTC()}
 		if err := tx.(runtimeTransaction).G6Insert(actor.TenantID, projectID, "trial_decision", record.ID, 1, record); err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "trial.decision.propose", record.ID, map[string]any{"decision": input.Decision, "report_hash": report.InputHash}); err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
-		return record, 201, nil
+		return operationResult[TrialDecisionRecord]{Value: record, Status: operationStatusCreated}, nil
 	})
 }
 func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID, decisionID, key string, input TrialDecisionSignInput) (json.RawMessage, int, bool, error) {
@@ -619,35 +619,35 @@ func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID,
 	if input.ExpectedVersion < 1 || !slices.Contains([]string{"product", "qa", "safety"}, input.Responsibility) || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "trialSignDecision", projectID+"/"+decisionID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationTrialSignDecision, projectID+"/"+decisionID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[TrialDecisionRecord], error) {
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		var old TrialDecisionRecord
 		version, err := store.G6Read(actor.TenantID, projectID, "trial_decision", decisionID, &old)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if version != input.ExpectedVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[TrialDecisionRecord]{}, ErrVersionConflict
 		}
 		if old.Status != "WAITING_HUMAN" || old.Signatures[input.Responsibility] != "" {
-			return nil, 0, ErrInvalidState
+			return operationResult[TrialDecisionRecord]{}, ErrInvalidState
 		}
 		var lockedWindow TrialWindow
 		if _, err := store.G6Read(actor.TenantID, projectID, "trial_window", old.WindowID, &lockedWindow); err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if lockedWindow.DecisionOwners[input.Responsibility] != actor.UserID {
-			return nil, 0, ErrNotFound
+			return operationResult[TrialDecisionRecord]{}, ErrNotFound
 		}
 		report, err := buildTrialReport(tx, actor, projectID, old.WindowID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if report.InputHash != old.Report.InputHash {
-			return nil, 0, ErrVersionConflict
+			return operationResult[TrialDecisionRecord]{}, ErrVersionConflict
 		}
 		next := old
 		next.Signatures = map[string]string{}
@@ -664,28 +664,28 @@ func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID,
 				var window TrialWindow
 				windowVersion, err := store.G6Read(actor.TenantID, projectID, "trial_window", next.WindowID, &window)
 				if err != nil {
-					return nil, 0, err
+					return operationResult[TrialDecisionRecord]{}, err
 				}
 				window.Status = "PAUSED"
 				window.Version++
 				if err := store.G6CAS(actor.TenantID, projectID, "trial_window", next.WindowID, windowVersion, window); err != nil {
-					return nil, 0, err
+					return operationResult[TrialDecisionRecord]{}, err
 				}
 			}
 		}
 		if err := store.G6CAS(actor.TenantID, projectID, "trial_decision", decisionID, version, next); err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "trial.decision.sign", decisionID, map[string]any{"responsibility": input.Responsibility, "actor": actor.UserID, "status": next.Status, "reason": input.Reason}); err != nil {
-			return nil, 0, err
+			return operationResult[TrialDecisionRecord]{}, err
 		}
-		return next, 200, nil
+		return operationResult[TrialDecisionRecord]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) ListTrialDecisions(ctx context.Context, actor Actor, projectID, windowID string) ([]TrialDecisionRecord, error) {
 	var result []TrialDecisionRecord
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(runtimeTransaction)

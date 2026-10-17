@@ -20,10 +20,14 @@ func TransactionDatabase(tx Transaction) (*gorm.DB, error) {
 	return t.db, nil
 }
 func (s *Service) AuthorizeInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, capability string) (Project, error) {
-	if projectID == "" {
-		return Project{}, s.authorizeTenant(ctx, tx, actor, capability)
+	request, err := authorizationRequestFromCapability(actor, projectID, capability)
+	if err != nil {
+		return Project{}, err
 	}
-	return s.authorizeProject(ctx, tx, actor, projectID, capability)
+	if projectID == "" {
+		return Project{}, s.authorizeTenant(ctx, tx, request)
+	}
+	return s.authorizeProject(ctx, tx, request)
 }
 
 type CatalogTemplateDefinition struct {

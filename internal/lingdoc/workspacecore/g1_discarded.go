@@ -7,7 +7,7 @@ import "context"
 func (s *Service) ListDiscardedProjects(ctx context.Context, a Actor) ([]Project, error) {
 	result := []Project{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if err := s.authorizeTenant(ctx, tx, a, "read"); err != nil {
+		if err := s.authorizeTenant(ctx, tx, authorizationRequest(a, "", AuthorizationRead, "")); err != nil {
 			return err
 		}
 		db, err := TransactionDatabase(tx)
@@ -19,7 +19,7 @@ func (s *Service) ListDiscardedProjects(ctx context.Context, a Actor) ([]Project
 			return err
 		}
 		for _, id := range ids {
-			p, err := s.authorizeProject(ctx, tx, a, id, "read")
+			p, err := s.authorizeProject(ctx, tx, authorizationRequest(a, id, AuthorizationRead, ""))
 			if err != nil {
 				continue
 			}

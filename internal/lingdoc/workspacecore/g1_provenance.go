@@ -213,7 +213,7 @@ func (s *Service) g1ResolvePin(ctx context.Context, tx Transaction, actor Actor,
 		if turn.ID != turnID || turn.ProjectID != p.ID || turn.Version != object.Version || turn.Status != "completed" || turn.CreatedBy != actor.UserID || session.ProjectID != p.ID || session.ID != turn.SessionID || session.CreatedBy != actor.UserID || session.Version != sessionObject.Version || sourceType == "conversation" && session.ID != id || sourceType == "agent_turn" && !g1VersionMatches(record.SourceVersion, turn.Version) {
 			return pin, nil
 		}
-		if _, err = s.authorizeProject(ctx, tx, actor, p.ID, "agent"); err != nil {
+		if _, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, p.ID, AuthorizationAgent, "")); err != nil {
 			return pin, nil
 		}
 		pin.Kind = "AgentTurn"

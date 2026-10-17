@@ -29,20 +29,20 @@ func (s *Service) SetReviewAnchor(ctx context.Context, actor Actor, projectID, c
 	if itemID == "" || input.ExpectedSpecRevision < 0 || input.ExpectedWorkingCopyRevision < 1 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "setReviewAnchor", projectID+"/"+chapterID+"/"+itemID, key, input, projectID, "write:"+chapterID, func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationSetReviewAnchor, projectID+"/"+chapterID+"/"+itemID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, chapterID), reviewAnchorSourceIDs), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[WorkingCopy], error) {
 		chapter, err := tx.Chapter(projectID, chapterID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[WorkingCopy]{}, err
 		}
 		previous, err := tx.WorkingCopy(projectID, chapterID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[WorkingCopy]{}, err
 		}
 		if p.Status != "active" || p.SpecRevision != input.ExpectedSpecRevision || previous.SpecRevision != input.ExpectedSpecRevision || previous.WorkingCopyRevision != input.ExpectedWorkingCopyRevision || !sameVersion(chapter.CurrentVersionID, input.ExpectedChapterVersionID) || !sameVersion(previous.BaseChapterVersionID, input.ExpectedChapterVersionID) {
-			return nil, 0, ErrVersionConflict
+			return operationResult[WorkingCopy]{}, ErrVersionConflict
 		}
 		if input.Anchor != nil && !reviewanchor.Valid(previous.BodyMarkdown, *input.Anchor) {
-			return nil, 0, ErrInvalidRequest
+			return operationResult[WorkingCopy]{}, ErrInvalidRequest
 		}
 		next := previous
 		next.WorkingCopyRevision++
@@ -60,12 +60,12 @@ func (s *Service) SetReviewAnchor(ctx context.Context, actor Actor, projectID, c
 			}
 		}
 		if !found {
-			return nil, 0, ErrNotFound
+			return operationResult[WorkingCopy]{}, ErrNotFound
 		}
 		if err := tx.SaveWorkingCopy(previous, next); err != nil {
-			return nil, 0, err
+			return operationResult[WorkingCopy]{}, err
 		}
-		return next, 200, nil
+		return operationResult[WorkingCopy]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 
@@ -78,7 +78,7 @@ func (s *Service) GetCurrentConfirmation(ctx context.Context, actor Actor, proje
 	result := json.RawMessage("null")
 	var sources []string
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}

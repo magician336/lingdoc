@@ -96,7 +96,7 @@ func preflightBasisInTransaction(tx Transaction, p Project, expectedSourceIDs []
 func (s *Service) ReadPreflightBasis(ctx context.Context, actor Actor, projectID string, sourceIDs []string) (PreflightBasis, error) {
 	var basis PreflightBasis
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, e := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, e := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if e != nil {
 			return e
 		}
@@ -134,7 +134,7 @@ func (s *Service) StoreImpactComputationReceipt(ctx context.Context, actor Actor
 	}
 	var receipt ImpactComputationReceipt
 	err := s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, e := s.authorizeProject(ctx, tx, actor, basis.Project.ID, "read")
+		p, e := s.authorizeProject(ctx, tx, authorizationRequest(actor, basis.Project.ID, AuthorizationRead, ""))
 		if e != nil {
 			return e
 		}
@@ -178,7 +178,7 @@ func (s *Service) StoreImpactComputationReceipt(ctx context.Context, actor Actor
 func (s *Service) ReadImpactComputationReceipt(ctx context.Context, actor Actor, projectID, id string) (ImpactComputationReceipt, error) {
 	var receipt ImpactComputationReceipt
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, e := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, e := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if e != nil {
 			return e
 		}
@@ -208,7 +208,7 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 	preflightIDs := []string{}
 	sourceIDs := []string{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, e := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, e := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if e != nil {
 			return e
 		}

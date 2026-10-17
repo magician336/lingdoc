@@ -45,7 +45,7 @@ func (r *SourceRuntime) generationGateway() evidence.AssetGateway {
 	return r.gateway
 }
 func (r *SourceRuntime) application() *SourceService {
-	return NewSourceService(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.audit)
+	return NewSourceServiceWithReviewer(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
 }
 func (r *SourceRuntime) ListAssets(ctx context.Context, a Actor, p string) ([]evidence.Asset, error) {
 	return r.application().ListAssets(ctx, a, p)

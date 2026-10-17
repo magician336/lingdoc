@@ -79,7 +79,7 @@ func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, ch
 	seen[change.ID] = true
 	var history g1ChangeProvenance
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, change.ProjectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, change.ProjectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(g5Transaction)

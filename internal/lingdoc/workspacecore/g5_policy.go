@@ -60,11 +60,12 @@ var permissionRoles = map[string]types.TenantRole{
 	"issue-dismiss-blocking": types.TenantRoleContributor,
 }
 
-func authorizeCurrentTenant(tx Transaction, actor Actor, capability string) error {
+func authorizeCurrentTenant(tx Transaction, request AuthorizationRequest) error {
+	actor := request.Actor
 	if err := legacyAuthorizeTenant(tx, actor); err != nil {
 		return err
 	}
-	base, _, _ := strings.Cut(capability, ":")
+	base := string(request.Action)
 	required, known := permissionRoles[base]
 	if !known {
 		return ErrInvalidRequest
@@ -108,11 +109,12 @@ func governanceRole(m Member) string {
 func memberHasScope(m Member, role, target string) bool {
 	return slices.Contains(m.FunctionRoles, role) && target != "" && slices.Contains(m.FunctionScopes[role], target)
 }
-func authorizeCurrentProject(tx Transaction, actor Actor, projectID, capability string) (Project, error) {
-	if err := authorizeCurrentTenant(tx, actor, capability); err != nil {
+func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Project, error) {
+	actor, projectID := request.Actor, request.ProjectID
+	if err := authorizeCurrentTenant(tx, request); err != nil {
 		return Project{}, err
 	}
-	base, target, _ := strings.Cut(capability, ":")
+	base, target := string(request.Action), request.Resource
 	p, err := tx.Project(actor.TenantID, projectID)
 	if err != nil {
 		return Project{}, err
@@ -185,15 +187,19 @@ func authorizeCurrentProject(tx Transaction, actor Actor, projectID, capability 
 // Permission status is visible only after basic project membership has been
 // established. A denied stranger receives no object names or version metadata.
 func (s *Service) EffectivePermission(ctx context.Context, actor Actor, projectID, capability string) (EffectivePermission, error) {
+	request, err := authorizationRequestFromCapability(actor, projectID, capability)
+	if err != nil {
+		return EffectivePermission{}, err
+	}
 	var result EffectivePermission
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
 		result = EffectivePermission{Capability: capability, ProjectVersion: p.ProjectVersion, ContextRevision: p.CurrentContextRevision}
 		_, result.Target, _ = strings.Cut(capability, ":")
-		_, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
+		_, err = s.authorizeProject(ctx, tx, request)
 		if err == nil {
 			result.Allowed = true
 			result.ReasonCode = "allowed"

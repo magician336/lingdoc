@@ -206,7 +206,7 @@ func RuntimeGate(tx Transaction, actor Actor, p Project, operation, mode string)
 }
 func (s *Service) CheckRuntimeOperation(ctx context.Context, actor Actor, projectID, operation, mode string) error {
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -237,31 +237,31 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			return nil, 0, false, err
 		}
 	}
-	return s.operation(ctx, actor, "runtimeControl", projectID+"/"+input.Scope.Kind+"/"+input.Scope.Value, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationRuntimeControl, projectID+"/"+input.Scope.Kind+"/"+input.Scope.Value, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[RuntimeControl], error) {
 		if input.Scope.Kind == "project" {
 			if input.Scope.Value != projectID || !projectOwner(p, actor.UserID) {
-				return nil, 0, ErrNotFound
+				return operationResult[RuntimeControl]{}, ErrNotFound
 			}
 		} else {
-			if err := s.authorizeTenant(ctx, tx, actor, "tenant-manage"); err != nil {
-				return nil, 0, err
+			if err := s.authorizeTenant(ctx, tx, authorizationRequest(actor, "", AuthorizationTenantManage, "")); err != nil {
+				return operationResult[RuntimeControl]{}, err
 			}
 			if input.Scope.Kind == "tenant" && input.Scope.Value != strconv.FormatUint(actor.TenantID, 10) {
-				return nil, 0, ErrNotFound
+				return operationResult[RuntimeControl]{}, ErrNotFound
 			}
 			if input.Scope.Kind == "runtime_mode" && !validRuntimeMode(input.Scope.Value) {
-				return nil, 0, ErrInvalidRequest
+				return operationResult[RuntimeControl]{}, ErrInvalidRequest
 			}
 			if !runtimeScopeMatches(input.Scope, actor, p, input.Scope.Value) && input.Scope.Kind != "runtime_mode" {
-				return nil, 0, ErrNotFound
+				return operationResult[RuntimeControl]{}, ErrNotFound
 			}
 		}
 		if input.Action == "resume" && p.ProjectVersion != checked.ProjectVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[RuntimeControl]{}, ErrVersionConflict
 		}
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[RuntimeControl]{}, ErrInvalidState
 		}
 		recordKey := input.Scope.Kind + "/" + input.Scope.Value
 		recordProject := projectID
@@ -271,16 +271,16 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		var previous RuntimeControl
 		version, err := store.G6Read(actor.TenantID, recordProject, "control", recordKey, &previous)
 		if err != nil && err != ErrNotFound {
-			return nil, 0, err
+			return operationResult[RuntimeControl]{}, err
 		}
 		if err == ErrNotFound {
 			version = 0
 		}
 		if version != input.ExpectedVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[RuntimeControl]{}, ErrVersionConflict
 		}
 		if input.Action == "resume" && (version == 0 || previous.Status != "PAUSED") {
-			return nil, 0, ErrInvalidState
+			return operationResult[RuntimeControl]{}, ErrInvalidState
 		}
 		next := RuntimeControl{ID: previous.ID, ProjectID: recordProject, Scope: input.Scope, Version: version + 1, Status: "PAUSED", ActorID: actor.UserID, Reason: input.Reason, UpdatedAt: time.Now().UTC()}
 		if next.ID == "" {
@@ -298,18 +298,18 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 			err = store.G6CAS(actor.TenantID, recordProject, "control", recordKey, version, next)
 		}
 		if err != nil {
-			return nil, 0, err
+			return operationResult[RuntimeControl]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "runtime."+input.Action, next.ID, map[string]any{"scope": next.Scope, "version": next.Version, "recovery_verified": next.RecoveryVerified, "snapshot_id": next.SnapshotID, "export_id": next.ExportID}); err != nil {
-			return nil, 0, err
+			return operationResult[RuntimeControl]{}, err
 		}
-		return next, 200, nil
+		return operationResult[RuntimeControl]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) ListRuntimeControls(ctx context.Context, actor Actor, projectID string) ([]RuntimeControl, error) {
 	var result []RuntimeControl
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(runtimeTransaction)
@@ -359,10 +359,10 @@ func (s *Service) RecordRuntimeEvent(ctx context.Context, actor Actor, projectID
 	if !validRuntimeEvent(input) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "runtimeEvent", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationRuntimeEvent, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[RuntimeEvent], error) {
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[RuntimeEvent]{}, ErrInvalidState
 		}
 		event := input
 		event.Origin = "reported"
@@ -373,15 +373,15 @@ func (s *Service) RecordRuntimeEvent(ctx context.Context, actor Actor, projectID
 		event.ContextRevision = p.CurrentContextRevision
 		event.RuntimeMode = effectiveRuntimeMode(s.runtimeMode)
 		if err := store.G6Insert(actor.TenantID, projectID, "event", event.ID, 1, event); err != nil {
-			return nil, 0, err
+			return operationResult[RuntimeEvent]{}, err
 		}
-		return event, 201, nil
+		return operationResult[RuntimeEvent]{Value: event, Status: operationStatusCreated}, nil
 	})
 }
 func (s *Service) ListRuntimeEvents(ctx context.Context, actor Actor, projectID, correlationID string) ([]RuntimeEvent, error) {
 	var result []RuntimeEvent
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(runtimeTransaction)
@@ -442,30 +442,30 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 	if !runtimeSafeCode.MatchString(input.Signal) || input.ResponsibleID == "" || !slices.Contains([]string{"P0", "P1", "P2", "P3"}, input.Severity) || !slices.Contains([]string{"notify", "retry", "pause", "block_export", "rollback", "human_confirm"}, input.Action) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, actor, "runtimeAlertRule", projectID, key, input, projectID, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, operationInput(operationRuntimeAlertRule, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[RuntimeAlertRule], error) {
 		store, ok := tx.(runtimeTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[RuntimeAlertRule]{}, ErrInvalidState
 		}
 		input.ID = uuid.NewString()
 		if input.Scope.Kind == "" {
 			input.Scope = RuntimeScope{Kind: "project", Value: p.ID}
 		}
 		if !runtimeScopeMatches(input.Scope, actor, p, s.runtimeMode) {
-			return nil, 0, ErrNotFound
+			return operationResult[RuntimeAlertRule]{}, ErrNotFound
 		}
 		recipient := actor
 		recipient.UserID = input.ResponsibleID
-		if _, err := s.authorizeProject(ctx, tx, recipient, p.ID, "manage"); err != nil {
-			return nil, 0, err
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(recipient, p.ID, AuthorizationManage, "")); err != nil {
+			return operationResult[RuntimeAlertRule]{}, err
 		}
 		if err := store.G6Insert(actor.TenantID, p.ID, "alert_rule", input.ID, 1, input); err != nil {
-			return nil, 0, err
+			return operationResult[RuntimeAlertRule]{}, err
 		}
 		if err := g3Audit(tx, actor, p.ID, "runtime.alert_rule", input.ID, map[string]any{"signal": input.Signal, "action": input.Action}); err != nil {
-			return nil, 0, err
+			return operationResult[RuntimeAlertRule]{}, err
 		}
-		return input, 201, nil
+		return operationResult[RuntimeAlertRule]{Value: input, Status: operationStatusCreated}, nil
 	})
 }
 func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEvent) error {
@@ -511,7 +511,7 @@ func applyRuntimeAlerts(tx Transaction, actor Actor, p Project, event RuntimeEve
 func (s *Service) ListRuntimeAlerts(ctx context.Context, actor Actor, projectID string) ([]RuntimeAlert, error) {
 	var result []RuntimeAlert
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(runtimeTransaction)

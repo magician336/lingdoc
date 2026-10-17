@@ -109,13 +109,13 @@ func hashImpactValue(value any) string {
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
-func (s *Service) checkedImpactWrite(ctx context.Context, actor Actor, projectID, op, target, key string, input any, refs []ObjectVersionRef, capability string, write func(Transaction, Project) (any, int, error)) (json.RawMessage, int, bool, error) {
+func checkedImpactWrite[I any, R any](s *Service, ctx context.Context, actor Actor, projectID string, op operationName, target, key string, input I, refs []ObjectVersionRef, request AuthorizationRequest, write func(Transaction, Project) (operationResult[R], error)) (json.RawMessage, int, bool, error) {
 	var basis Project
 	var states []ImpactObjectState
 	var sourceIDs []string
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var err error
-		basis, err = s.authorizeProject(ctx, tx, actor, projectID, capability)
+		basis, err = s.authorizeProject(ctx, tx, request)
 		if err != nil {
 			return err
 		}
@@ -135,17 +135,17 @@ func (s *Service) checkedImpactWrite(ctx context.Context, actor Actor, projectID
 	if err := s.checkSources(ctx, actor, projectID, sourceIDs); err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, op, target, key, input, projectID, capability, func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(op, target, key, input, request, impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[R], error) {
 		if p.ProjectVersion != basis.ProjectVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[R]{}, ErrVersionConflict
 		}
 		for i, ref := range refs {
 			current, err := currentImpactObject(tx, p, ref)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[R]{}, err
 			}
 			if hashImpactValue(current) != hashImpactValue(states[i]) {
-				return nil, 0, ErrVersionConflict
+				return operationResult[R]{}, ErrVersionConflict
 			}
 		}
 		return write(tx, p)
@@ -168,21 +168,21 @@ func (s *Service) CreateDependencyEdge(ctx context.Context, actor Actor, project
 	if !validObjectRef(input.Source) || !validObjectRef(input.Target) || !validImpactAction(input.Action) || strings.TrimSpace(input.Reason) == "" || input.Relation == "" || math.IsNaN(input.Confidence) || input.Confidence < 0 || input.Confidence > 1 || !slices.Contains([]string{"user", "rule", "ai"}, input.Origin) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.checkedImpactWrite(ctx, actor, projectID, "createDependencyEdge", projectID, key, input, []ObjectVersionRef{input.Source, input.Target}, "write", func(tx Transaction, p Project) (any, int, error) {
+	return checkedImpactWrite(s, ctx, actor, projectID, operationCreateDependencyEdge, projectID, key, input, []ObjectVersionRef{input.Source, input.Target}, authorizationRequest(actor, projectID, AuthorizationWrite, ""), func(tx Transaction, p Project) (operationResult[DependencyEdge], error) {
 		if p.CurrentContextRevision != input.ExpectedContextRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[DependencyEdge]{}, ErrVersionConflict
 		}
 		store, ok := tx.(impactTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[DependencyEdge]{}, ErrInvalidState
 		}
 		edges, err := store.DependencyEdges(projectID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[DependencyEdge]{}, err
 		}
 		for _, edge := range edges {
 			if edge.Source == input.Source && edge.Target == input.Target && edge.Relation == input.Relation && edge.Action == input.Action {
-				return edge, 200, nil
+				return operationResult[DependencyEdge]{Value: edge, Status: operationStatusOK}, nil
 			}
 		}
 		now := time.Now().UTC()
@@ -192,12 +192,12 @@ func (s *Service) CreateDependencyEdge(ctx context.Context, actor Actor, project
 		}
 		edge := DependencyEdge{ID: uuid.NewString(), ProjectID: projectID, Source: input.Source, Target: input.Target, Relation: input.Relation, Action: input.Action, Origin: input.Origin, Reason: input.Reason, Confidence: input.Confidence, Status: status, ActorID: actor.UserID, Version: 1, CreatedAt: now, UpdatedAt: now}
 		if err := store.PutDependencyEdge(edge); err != nil {
-			return nil, 0, err
+			return operationResult[DependencyEdge]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "dependency.create", edge.ID, map[string]any{"status": status, "source": edge.Source, "target": edge.Target}); err != nil {
-			return nil, 0, err
+			return operationResult[DependencyEdge]{}, err
 		}
-		return edge, 201, nil
+		return operationResult[DependencyEdge]{Value: edge, Status: operationStatusCreated}, nil
 	})
 }
 func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, projectID, edgeID, key string, input DependencyDecisionInput) (json.RawMessage, int, bool, error) {
@@ -209,7 +209,7 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 	}
 	var edge DependencyEdge
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "write"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationWrite, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(impactTransaction)
@@ -223,17 +223,17 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.checkedImpactWrite(ctx, actor, projectID, "decideDependencyEdge", projectID+"/"+edgeID, key, input, []ObjectVersionRef{edge.Source, edge.Target}, "write", func(tx Transaction, p Project) (any, int, error) {
+	return checkedImpactWrite(s, ctx, actor, projectID, operationDecideDependencyEdge, projectID+"/"+edgeID, key, input, []ObjectVersionRef{edge.Source, edge.Target}, authorizationRequest(actor, projectID, AuthorizationWrite, ""), func(tx Transaction, p Project) (operationResult[DependencyEdge], error) {
 		store := tx.(impactTransaction)
 		old, err := store.DependencyEdge(projectID, edgeID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[DependencyEdge]{}, err
 		}
 		if old.Version != input.ExpectedVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[DependencyEdge]{}, ErrVersionConflict
 		}
 		if old.Status != "suggested" {
-			return nil, 0, ErrInvalidState
+			return operationResult[DependencyEdge]{}, ErrInvalidState
 		}
 		next := old
 		next.Status = "rejected"
@@ -245,12 +245,12 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 		next.Reason = input.Reason
 		next.UpdatedAt = time.Now().UTC()
 		if err := store.UpdateDependencyEdge(old, next); err != nil {
-			return nil, 0, err
+			return operationResult[DependencyEdge]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "dependency."+input.Decision, edgeID, map[string]any{"version": next.Version}); err != nil {
-			return nil, 0, err
+			return operationResult[DependencyEdge]{}, err
 		}
-		return next, 200, nil
+		return operationResult[DependencyEdge]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) ListDependencyEdges(ctx context.Context, actor Actor, projectID string) ([]DependencyEdge, error) {
@@ -258,7 +258,7 @@ func (s *Service) ListDependencyEdges(ctx context.Context, actor Actor, projectI
 	var result []DependencyEdge
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var err error
-		p, err = s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -571,7 +571,7 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 func (s *Service) GetImpactAssessment(ctx context.Context, actor Actor, projectID, changeID string) (ImpactAssessment, error) {
 	var result ImpactAssessment
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(impactTransaction)
@@ -599,7 +599,7 @@ func (s *Service) ListImpactTasks(ctx context.Context, actor Actor, projectID st
 	var project Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var err error
-		project, err = s.authorizeProject(ctx, tx, actor, projectID, "read")
+		project, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -622,41 +622,41 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 	if input.ExpectedVersion < 1 || input.TargetRevision < 1 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"assign", "start", "wait", "complete", "dismiss", "cancel"}, input.Action) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.checkedImpactWrite(ctx, actor, projectID, "actOnImpactTask", projectID+"/"+taskID, key, input, input.ClosureEvidence, "write", func(tx Transaction, p Project) (any, int, error) {
+	return checkedImpactWrite(s, ctx, actor, projectID, operationActOnImpactTask, projectID+"/"+taskID, key, input, input.ClosureEvidence, authorizationRequest(actor, projectID, AuthorizationWrite, ""), func(tx Transaction, p Project) (operationResult[ImpactTask], error) {
 		store, ok := tx.(impactTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ImpactTask]{}, ErrInvalidState
 		}
 		task, err := store.ImpactTask(projectID, taskID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ImpactTask]{}, err
 		}
 		if task.Version != input.ExpectedVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ImpactTask]{}, ErrVersionConflict
 		}
 		if task.TargetRevision != p.CurrentContextRevision || input.TargetRevision != p.CurrentContextRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ImpactTask]{}, ErrVersionConflict
 		}
 		if slices.Contains([]string{"DONE", "DISMISSED", "CANCELLED", "STALE"}, task.Status) {
-			return nil, 0, ErrInvalidState
+			return operationResult[ImpactTask]{}, ErrInvalidState
 		}
 		old := task
 		if input.Action == "assign" || input.Action == "dismiss" || input.Action == "cancel" {
-			if _, err := s.authorizeProject(ctx, tx, actor, projectID, "manage"); err != nil {
-				return nil, 0, err
+			if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, "")); err != nil {
+				return operationResult[ImpactTask]{}, err
 			}
 		} else if task.AssigneeID != actor.UserID {
-			return nil, 0, ErrNotFound
+			return operationResult[ImpactTask]{}, ErrNotFound
 		}
 		switch input.Action {
 		case "assign":
 			if input.AssigneeID == "" {
-				return nil, 0, ErrInvalidRequest
+				return operationResult[ImpactTask]{}, ErrInvalidRequest
 			}
 			recipient := actor
 			recipient.UserID = input.AssigneeID
-			if _, err := s.authorizeProject(ctx, tx, recipient, projectID, "write"); err != nil {
-				return nil, 0, err
+			if _, err := s.authorizeProject(ctx, tx, authorizationRequest(recipient, projectID, AuthorizationWrite, "")); err != nil {
+				return operationResult[ImpactTask]{}, err
 			}
 			task.AssigneeID = input.AssigneeID
 		case "start":
@@ -665,7 +665,7 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 			task.Status = "WAITING_USER"
 		case "cancel", "dismiss":
 			if task.Severity == "blocking" {
-				return nil, 0, ErrInvalidState
+				return operationResult[ImpactTask]{}, ErrInvalidState
 			}
 			task.Status = "CANCELLED"
 			if input.Action == "dismiss" {
@@ -673,11 +673,11 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 			}
 		case "complete":
 			if task.Action == "BLOCK_RELEASE" || len(input.ClosureEvidence) == 0 {
-				return nil, 0, ErrInvalidState
+				return operationResult[ImpactTask]{}, ErrInvalidState
 			}
 			if task.Action == "RECOMPUTE" || task.Action == "RETRIEVE_CANDIDATES" {
 				if err := verifyImpactActionResult(tx, p, task, input.ClosureEvidence); err != nil {
-					return nil, 0, err
+					return operationResult[ImpactTask]{}, err
 				}
 				task.Status = "DONE"
 				task.ClosureEvidence = append([]ObjectVersionRef{}, input.ClosureEvidence...)
@@ -687,26 +687,26 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 			for _, ref := range input.ClosureEvidence {
 				state, err := currentImpactObject(tx, p, ref)
 				if err != nil {
-					return nil, 0, err
+					return operationResult[ImpactTask]{}, err
 				}
 				if ref.Kind == task.Target.Kind && ref.ID == task.Target.ID {
 					matched = true
 					if task.Action == "REVIEW_REQUIRED" && task.Target.Kind == "ResearchClaim" {
 						if input.HumanDecision != "reviewed" || !researchClaimReviewCurrent(tx, p, ref) {
-							return nil, 0, ErrInvalidState
+							return operationResult[ImpactTask]{}, ErrInvalidState
 						}
 						task.HumanDecision = input.HumanDecision
 					} else if slices.Contains([]string{"REVIEW_REQUIRED", "INVALIDATE_CONFIRMATION", "REVALIDATE_EVIDENCE"}, task.Action) && !state.Confirmed {
-						return nil, 0, ErrInvalidState
+						return operationResult[ImpactTask]{}, ErrInvalidState
 					}
 					if task.Action == "REGENERATE" && ref.Version == task.Target.Version {
-						return nil, 0, ErrInvalidState
+						return operationResult[ImpactTask]{}, ErrInvalidState
 					}
 					task.Target = ref
 				}
 			}
 			if !matched {
-				return nil, 0, ErrInvalidState
+				return operationResult[ImpactTask]{}, ErrInvalidState
 			}
 			task.Status = "DONE"
 			task.ClosureEvidence = append([]ObjectVersionRef{}, input.ClosureEvidence...)
@@ -715,12 +715,12 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 		task.Disposition = input.Reason
 		task.UpdatedAt = time.Now().UTC()
 		if err := store.UpdateImpactTask(old, task); err != nil {
-			return nil, 0, err
+			return operationResult[ImpactTask]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "impact_task."+input.Action, taskID, map[string]any{"status": task.Status, "target_revision": task.TargetRevision, "closure_evidence": task.ClosureEvidence}); err != nil {
-			return nil, 0, err
+			return operationResult[ImpactTask]{}, err
 		}
-		return task, 200, nil
+		return operationResult[ImpactTask]{Value: task, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
@@ -731,7 +731,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 	var preflightIDs []string
 	var preflightProofs []ImpactPreflightEvidence
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "manage")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
 		if err != nil {
 			return err
 		}
@@ -766,31 +766,31 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		}
 		preflightProofs = append(preflightProofs, proof)
 	}
-	return s.checkedImpactWrite(ctx, actor, projectID, "stabilizeRevision", projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, refs, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return checkedImpactWrite(s, ctx, actor, projectID, operationStabilizeRevision, projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, refs, authorizationRequest(actor, projectID, AuthorizationManage, ""), func(tx Transaction, p Project) (operationResult[StabilizationResult], error) {
 		for _, proof := range preflightProofs {
 			if !validImpactPreflight(p, impactPreflightProofID(proof), proof) {
-				return nil, 0, ErrVersionConflict
+				return operationResult[StabilizationResult]{}, ErrVersionConflict
 			}
 		}
 		if !projectOwner(p, actor.UserID) {
-			return nil, 0, ErrNotFound
+			return operationResult[StabilizationResult]{}, ErrNotFound
 		}
 		changes, ok := tx.(changeSetTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[StabilizationResult]{}, ErrInvalidState
 		}
 		change, err := changes.ChangeSet(projectID, changeID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[StabilizationResult]{}, err
 		}
 		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains([]string{"applied", "stabilized"}, change.Status) {
-			return nil, 0, ErrVersionConflict
+			return operationResult[StabilizationResult]{}, ErrVersionConflict
 		}
 		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, CheckedAt: time.Now().UTC()}
 		store := tx.(impactTransaction)
 		tasks, err := store.ImpactTasks(projectID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[StabilizationResult]{}, err
 		}
 		for _, task := range tasks {
 			if task.ChangeSetID != changeID || task.TargetRevision != p.CurrentContextRevision {
@@ -817,7 +817,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		}
 		routeBlockers, err := RouteStabilizationBlockers(tx, p)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[StabilizationResult]{}, err
 		}
 		result.Blockers = append(result.Blockers, routeBlockers...)
 		if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound {
@@ -828,7 +828,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		} else {
 			blockers, err := s.impactRules.Check(tx, p)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[StabilizationResult]{}, err
 			}
 			result.Blockers = append(result.Blockers, blockers...)
 		}
@@ -838,14 +838,14 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				next := change
 				next.Status = "stabilized"
 				if err := changes.UpdateChangeSet(change, next); err != nil {
-					return nil, 0, err
+					return operationResult[StabilizationResult]{}, err
 				}
 			}
 		}
 		if err := g3Audit(tx, actor, projectID, "revision.stabilize", changeID, map[string]any{"status": result.Status, "blockers": result.Blockers}); err != nil {
-			return nil, 0, err
+			return operationResult[StabilizationResult]{}, err
 		}
-		return result, 200, nil
+		return operationResult[StabilizationResult]{Value: result, Status: operationStatusOK}, nil
 	})
 }
 
@@ -853,13 +853,13 @@ func (s *Service) CreateChangeDraft(ctx context.Context, actor Actor, projectID,
 	if err := validateExtendedChangeInput(input); err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, "createChangeDraft", projectID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationCreateChangeDraft, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		if p.Status != "active" || p.CurrentContextRevision != input.ExpectedContextRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChangeSet]{}, ErrVersionConflict
 		}
 		store, ok := tx.(changeSetTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, Reason: input.Reason, Status: "draft", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: time.Now().UTC()}
 		keys := make([]string, 0, len(input.Fields))
@@ -870,58 +870,58 @@ func (s *Service) CreateChangeDraft(ctx context.Context, actor Actor, projectID,
 		for _, key := range keys {
 			field := input.Fields[key]
 			if p.Spec[key] != field.OldValue {
-				return nil, 0, ErrVersionConflict
+				return operationResult[ChangeSet]{}, ErrVersionConflict
 			}
 			change.Fields = append(change.Fields, ChangeFieldDelta{Key: key, OldValue: field.OldValue, NewValue: field.NewValue})
 		}
 		for _, id := range input.AffectedChapterIDs {
 			chapter, err := tx.Chapter(projectID, id)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[ChangeSet]{}, err
 			}
 			change.Impacts = append(change.Impacts, ChangeImpact{ChapterID: id, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: input.Reason, Status: "open"})
 		}
 		pinned, err := s.PinSemanticDeltas(ctx, tx, actor, p, change.ID, input.SemanticDeltas)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		change.SemanticDeltas = pinned
 		if err := store.InsertChangeSet(change); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "change_set.draft", change.ID, nil); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
-		return change, 201, nil
+		return operationResult[ChangeSet]{Value: change, Status: operationStatusCreated}, nil
 	})
 }
 func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
-	return s.operation(ctx, actor, "assessChangeSet", projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationAssessChangeSet, projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		store, ok := tx.(changeSetTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		change, err := store.ChangeSet(projectID, changeID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		if !slices.Contains([]string{"draft", "assessed"}, change.Status) {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChangeSet]{}, ErrVersionConflict
 		}
 		if err := AssessChangeImpact(tx, p, change); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		next := change
 		next.Status = "assessed"
 		if err := store.UpdateChangeSet(change, next); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "change_set.assess", changeID, nil); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
-		return next, 200, nil
+		return operationResult[ChangeSet]{Value: next, Status: operationStatusOK}, nil
 	})
 }

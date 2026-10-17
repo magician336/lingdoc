@@ -61,9 +61,9 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 		t.Fatalf("seed context revision: %v", err)
 	}
 
-	service, ok := handler.read.(*Service)
+	service, ok := testRuntime(handler).service.(*Service)
 	if !ok {
-		t.Fatalf("workspace handler service = %T, want *Service", handler.read)
+		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
 	}
 	actor := Actor{TenantID: 7, UserID: deliveryActorID}
 	project, err := service.GetProject(policyContext(), actor, "project-1")

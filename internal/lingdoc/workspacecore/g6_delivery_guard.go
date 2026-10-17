@@ -33,7 +33,7 @@ func (s *Service) AuthorizeDeliveryExportInTransaction(ctx context.Context, tx T
 		return ErrHumanDecisionRequired
 	}
 	actor.Role = caller.Role
-	p, err := s.authorizeProject(ctx, tx, actor, projectID, "ops-control")
+	p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationOpsControl, ""))
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ type DeliveryRuntimeObjects struct {
 // the same transaction as the new event. It performs no source/main-pool IO.
 func (s *Service) ObserveDeliveryRuntime(ctx context.Context, actor Actor, projectID, operation, status string, durationMS int64, objects DeliveryRuntimeObjects) error {
 	return s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -232,7 +232,7 @@ func (s *Service) PrepareDeliveryExportNativeBasis(ctx context.Context, actor Ac
 		if err := s.AuthorizeDeliveryExportInTransaction(ctx, tx, actor, projectID); err != nil {
 			return err
 		}
-		p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -270,7 +270,7 @@ func (s *Service) ValidateDeliveryExportNativeBasisInTransaction(ctx context.Con
 	if err := s.AuthorizeDeliveryExportInTransaction(ctx, tx, actor, projectID); err != nil {
 		return err
 	}
-	p, err := s.authorizeProject(ctx, tx, actor, projectID, "read")
+	p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 	if err != nil {
 		return err
 	}

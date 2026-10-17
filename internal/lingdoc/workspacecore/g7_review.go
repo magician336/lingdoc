@@ -60,7 +60,7 @@ func (s *Service) GetChapterReview(ctx context.Context, actor Actor, pid, cid st
 	}
 	result := ChapterReviewState{ChapterID: cid, ContextRevision: 0, SpecRevision: gc.SpecRevision, Status: "DRAFT"}
 	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, pid, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -109,38 +109,38 @@ func (s *Service) ChangeChapterReview(ctx context.Context, actor Actor, pid, cid
 	if gc.ChapterVersionID == nil || *gc.ChapterVersionID != input.ChapterVersionID {
 		return nil, 0, false, ErrVersionConflict
 	}
-	capability := "write:" + cid
+	reviewAction := AuthorizationWrite
 	if input.Action == "return" {
-		capability = "review:" + cid
+		reviewAction = AuthorizationReview
 	}
-	return s.operation(ctx, actor, "chapterReview", pid+"/"+cid, key, input, pid, capability, func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationChapterReview, pid+"/"+cid, key, input, authorizationRequest(actor, pid, reviewAction, cid), chapterReviewSourceIDs), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChapterReviewState], error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.CurrentContextRevision != input.ExpectedContextRevision || p.SpecRevision != gc.SpecRevision || p.Status != "active" {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChapterReviewState]{}, ErrVersionConflict
 		}
 		c, err := tx.Chapter(pid, cid)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ChapterReviewState]{}, err
 		}
 		if c.CurrentVersionID == nil || *c.CurrentVersionID != input.ChapterVersionID {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChapterReviewState]{}, ErrVersionConflict
 		}
 		store, ok := tx.(g5Transaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChapterReviewState]{}, ErrInvalidState
 		}
 		var old ChapterReviewState
 		version, err := store.G5Get(pid, "chapter_review", cid, &old)
 		if err != nil && err != ErrNotFound {
-			return nil, 0, err
+			return operationResult[ChapterReviewState]{}, err
 		}
 		if err == ErrNotFound {
 			version = 0
 		}
 		if version != input.ExpectedReviewVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChapterReviewState]{}, ErrVersionConflict
 		}
 		if input.Action == "return" && (old.Status != "IN_REVIEW" || old.ChapterVersionID != input.ChapterVersionID) {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChapterReviewState]{}, ErrInvalidState
 		}
 		status := "IN_REVIEW"
 		if input.Action == "return" {
@@ -148,12 +148,12 @@ func (s *Service) ChangeChapterReview(ctx context.Context, actor Actor, pid, cid
 		}
 		next := ChapterReviewState{ChapterID: cid, ChapterVersionID: input.ChapterVersionID, ContextRevision: p.CurrentContextRevision, SpecRevision: p.SpecRevision, Version: version + 1, Status: status, ActorID: actor.UserID, Reason: input.Reason, UpdatedAt: time.Now().UTC()}
 		if err := store.G5Put(pid, "chapter_review", cid, version, next); err != nil {
-			return nil, 0, err
+			return operationResult[ChapterReviewState]{}, err
 		}
 		if err := g5Audit(tx, actor, pid, "chapter."+input.Action, cid, input.Reason); err != nil {
-			return nil, 0, err
+			return operationResult[ChapterReviewState]{}, err
 		}
-		return next, 200, nil
+		return operationResult[ChapterReviewState]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid, key string, input ChapterCommentInput) (json.RawMessage, int, bool, error) {
@@ -162,7 +162,7 @@ func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid,
 	}
 	var historical ChapterVersion
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, pid, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		var err error
@@ -178,37 +178,37 @@ func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid,
 	if input.Selection != nil && !reviewanchor.Valid(historical.BodyMarkdown, *input.Selection) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	capability := "review:" + cid
-	if err := s.Authorize(ctx, actor, pid, capability); err != nil {
-		capability = "write:" + cid
+	reviewAction := AuthorizationReview
+	if err := s.AuthorizeRequest(ctx, authorizationRequest(actor, pid, reviewAction, cid)); err != nil {
+		reviewAction = AuthorizationWrite
 	}
-	return s.operation(ctx, actor, "chapterComment", pid+"/"+cid, key, input, pid, capability, func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationChapterComment, pid+"/"+cid, key, input, authorizationRequest(actor, pid, reviewAction, cid), chapterCommentSourceIDs), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChapterComment], error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.CurrentContextRevision != input.ExpectedContextRevision || p.Status != "active" {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChapterComment]{}, ErrVersionConflict
 		}
 		version, err := tx.ChapterVersion(pid, cid, input.ChapterVersionID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ChapterComment]{}, err
 		}
 		if version.BodyMarkdown != historical.BodyMarkdown {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChapterComment]{}, ErrVersionConflict
 		}
 		store, ok := tx.(g5Transaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChapterComment]{}, ErrInvalidState
 		}
 		now := time.Now().UTC()
 		comment := ChapterComment{ID: uuid.NewString(), ChapterID: cid, ChapterVersionID: input.ChapterVersionID, ContextRevision: p.CurrentContextRevision, Version: 1, ActorID: actor.UserID, Body: input.Body, Selection: input.Selection, CreatedAt: now, UpdatedAt: now}
 		if input.ID != "" {
 			_, err = store.G5Get(pid, "chapter_comment", input.ID, &comment)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[ChapterComment]{}, err
 			}
 			if comment.ChapterID != cid || comment.ChapterVersionID != input.ChapterVersionID || comment.Version != input.ExpectedVersion {
-				return nil, 0, ErrVersionConflict
+				return operationResult[ChapterComment]{}, ErrVersionConflict
 			}
 			if comment.ActorID != actor.UserID && !projectOwner(p, actor.UserID) {
-				return nil, 0, ErrNotFound
+				return operationResult[ChapterComment]{}, ErrNotFound
 			}
 			comment.Version++
 			comment.UpdatedAt = now
@@ -220,19 +220,19 @@ func (s *Service) SaveChapterComment(ctx context.Context, actor Actor, pid, cid,
 			}
 		}
 		if err := store.G5Put(pid, "chapter_comment", comment.ID, input.ExpectedVersion, comment); err != nil {
-			return nil, 0, err
+			return operationResult[ChapterComment]{}, err
 		}
 		if err := g5Audit(tx, actor, pid, "chapter.comment", comment.ID, ""); err != nil {
-			return nil, 0, err
+			return operationResult[ChapterComment]{}, err
 		}
-		return comment, 201, nil
+		return operationResult[ChapterComment]{Value: comment, Status: operationStatusCreated}, nil
 	})
 }
 func (s *Service) ListChapterComments(ctx context.Context, actor Actor, pid, cid, versionID string) ([]ChapterComment, error) {
 	var sourceIDs []string
 	var result []ChapterComment
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, pid, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		if _, err := tx.Chapter(pid, cid); err != nil {

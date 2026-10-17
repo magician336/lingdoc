@@ -231,6 +231,12 @@ func (s *applicationServiceStub) ReassessChangeSet(_ context.Context, actor Acto
 	return json.RawMessage(`{"id":"reassessed-1","project_id":"` + projectID + `","reassessed_from_id":"` + changeSetID + `","status":"assessed"}`), http.StatusCreated, false, nil
 }
 
+func (s *applicationServiceStub) ReassessChangeSetResult(_ context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	s.reassessCalled = true
+	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
+	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: "reassessed-1", ProjectID: projectID, ReassessedFromID: changeSetID, Status: "assessed"}}, nil
+}
+
 func (s *applicationServiceStub) RejectChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
 	s.rejectCalled = true
 	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key

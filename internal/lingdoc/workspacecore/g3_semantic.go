@@ -344,7 +344,7 @@ func (s *Service) PinSemanticDeltas(ctx context.Context, tx Transaction, actor A
 			return nil, ErrInvalidRequest
 		}
 		seen[key] = true
-		if _, err := s.authorizeProject(ctx, tx, actor, p.ID, "write"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, p.ID, AuthorizationWrite, "")); err != nil {
 			return nil, err
 		}
 		if delta.Kind == "RuleBinding" {
@@ -552,7 +552,7 @@ func RouteEvaluationFields(tx Transaction, p Project) (map[string]string, error)
 func (s *Service) ListRouteNodes(ctx context.Context, actor Actor, projectID string) ([]RouteNode, error) {
 	var nodes []RouteNode
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(semanticTransaction)
@@ -570,7 +570,7 @@ func (s *Service) ListRouteNodes(ctx context.Context, actor Actor, projectID str
 	for _, node := range nodes {
 		var ids []string
 		err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-			p, e := s.authorizeProject(ctx, tx, actor, projectID, "read")
+			p, e := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
 			if e != nil {
 				return e
 			}

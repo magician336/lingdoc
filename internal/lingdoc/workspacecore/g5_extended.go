@@ -61,7 +61,7 @@ type MemberDirectoryEntry struct {
 func (s *Service) ProjectMemberDirectory(ctx context.Context, a Actor, pid string) ([]MemberDirectoryEntry, error) {
 	var out []MemberDirectoryEntry
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, a, pid, "manage"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(a, pid, AuthorizationManage, "")); err != nil {
 			return err
 		}
 		db, err := TransactionDatabase(tx)
@@ -83,24 +83,24 @@ func (s *Service) SetMemberAssignment(ctx context.Context, a Actor, pid, user, k
 	if input.Assignment.UserID != user || input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, a, "memberAssignment", pid+"/"+user, key, input, pid, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, a, operationInput(operationMemberAssignment, pid+"/"+user, key, input, authorizationRequest(a, pid, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[Project], error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[Project]{}, ErrVersionConflict
 		}
 		old, exists := projectMember(p, user)
 		if !exists || governanceRole(old) == "owner" || old.Status != "" && old.Status != "active" {
-			return nil, 0, ErrInvalidState
+			return operationResult[Project]{}, ErrInvalidState
 		}
 		nextMember := input.Assignment
 		if err := validateInvitation(tx, p, nextMember); err != nil {
-			return nil, 0, err
+			return operationResult[Project]{}, err
 		}
 		active, err := tx.ActiveMember(Actor{TenantID: a.TenantID, UserID: user})
 		if err != nil {
-			return nil, 0, err
+			return operationResult[Project]{}, err
 		}
 		if !active {
-			return nil, 0, ErrNotFound
+			return operationResult[Project]{}, ErrNotFound
 		}
 		nextMember.Role = "collaborator"
 		nextMember.Status = "active"
@@ -113,15 +113,15 @@ func (s *Service) SetMemberAssignment(ctx context.Context, a Actor, pid, user, k
 			}
 		}
 		if err := tx.UpdateProject(a.TenantID, p, next); err != nil {
-			return nil, 0, err
+			return operationResult[Project]{}, err
 		}
 		if err := tx.ReplaceMembers(pid, next.Members); err != nil {
-			return nil, 0, err
+			return operationResult[Project]{}, err
 		}
 		if err := g5Audit(tx, a, pid, "member.assignment", user, input.Reason); err != nil {
-			return nil, 0, err
+			return operationResult[Project]{}, err
 		}
-		return next, 200, nil
+		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 
@@ -223,35 +223,35 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key 
 			return nil, 0, false, ErrInvalidRequest
 		}
 	}
-	return s.operation(ctx, a, "apiKeyProjectGrant", pid, key, input, pid, "manage", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, a, operationInput(operationApiKeyProjectGrant, pid, key, input, authorizationRequest(a, pid, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ProjectAPIKeyGrant], error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ProjectAPIKeyGrant]{}, ErrVersionConflict
 		}
 		db, err := TransactionDatabase(tx)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
 		var count int64
 		if err := db.Table("tenant_api_keys").Where("id=? AND tenant_id=?", input.KeyID, a.TenantID).Count(&count).Error; err != nil {
-			return nil, 0, err
+			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
 		if count != 1 {
-			return nil, 0, ErrNotFound
+			return operationResult[ProjectAPIKeyGrant]{}, ErrNotFound
 		}
 		if input.Active {
 			if _, err := currentMachineNativeKey(tx, a.TenantID, input.KeyID); err != nil {
-				return nil, 0, err
+				return operationResult[ProjectAPIKeyGrant]{}, err
 			}
 		}
 		store, ok := tx.(g5Transaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ProjectAPIKeyGrant]{}, ErrInvalidState
 		}
 		id := hashImpactValue(input.KeyID)
 		var old ProjectAPIKeyGrant
 		version, err := store.G5Get(pid, "api_key_grant", id, &old)
 		if err != nil && err != ErrNotFound {
-			return nil, 0, err
+			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
 		if err == ErrNotFound {
 			version = 0
@@ -259,12 +259,12 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key 
 		input.CreatedBy = a.UserID
 		input.UpdatedAt = time.Now().UTC()
 		if err := store.G5Put(pid, "api_key_grant", id, version, input); err != nil {
-			return nil, 0, err
+			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
 		if err := g5Audit(tx, a, pid, "api_key.scope", id, input.Reason); err != nil {
-			return nil, 0, err
+			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
-		return input, 200, nil
+		return operationResult[ProjectAPIKeyGrant]{Value: input, Status: operationStatusOK}, nil
 	})
 }
 func authorizeAPIKeyProject(ctx context.Context, tx Transaction, pid, capability string) error {
@@ -325,7 +325,7 @@ func authorizeAPIKeyProject(ctx context.Context, tx Transaction, pid, capability
 func (s *Service) ListMyProjectInvitations(ctx context.Context, a Actor) ([]MemberInvitation, error) {
 	result := []MemberInvitation{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if err := s.authorizeTenant(ctx, tx, a, "read"); err != nil {
+		if err := s.authorizeTenant(ctx, tx, authorizationRequest(a, "", AuthorizationRead, "")); err != nil {
 			return err
 		}
 		db, err := TransactionDatabase(tx)
@@ -353,7 +353,7 @@ func (s *Service) ListMyProjectInvitations(ctx context.Context, a Actor) ([]Memb
 func (s *Service) ListOwnerTransfers(ctx context.Context, a Actor, pid string) ([]OwnerTransfer, error) {
 	var result []OwnerTransfer
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, a, pid, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(a, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -390,37 +390,37 @@ func (s *Service) RejectOwnerTransfer(ctx context.Context, a Actor, pid, id, key
 	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.operation(ctx, a, "rejectOwnerTransfer", pid+"/"+id, key, input, pid, "read", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, a, operationInput(operationRejectOwnerTransfer, pid+"/"+id, key, input, authorizationRequest(a, pid, AuthorizationRead, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[OwnerTransfer], error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return nil, 0, ErrVersionConflict
+			return operationResult[OwnerTransfer]{}, ErrVersionConflict
 		}
 		db, err := TransactionDatabase(tx)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[OwnerTransfer]{}, err
 		}
 		store, ok := tx.(ownerTransferTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[OwnerTransfer]{}, ErrInvalidState
 		}
 		item, err := store.OwnerTransfer(pid, id)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[OwnerTransfer]{}, err
 		}
 		if item.Status != "pending" || item.ToUserID != a.UserID && !projectOwner(p, a.UserID) {
-			return nil, 0, ErrNotFound
+			return operationResult[OwnerTransfer]{}, ErrNotFound
 		}
 		if time.Since(item.CreatedAt) > 72*time.Hour {
-			return nil, 0, ErrInvalidState
+			return operationResult[OwnerTransfer]{}, ErrInvalidState
 		}
 		update := db.Model(&ownerTransferRow{}).Where("id=? AND project_id=? AND status='pending'", id, pid).Update("status", "cancelled")
 		if err := affected(update); err != nil {
-			return nil, 0, err
+			return operationResult[OwnerTransfer]{}, err
 		}
 		item.Status = "cancelled"
 		if err := g5Audit(tx, a, pid, "owner.transfer.reject", id, input.Reason); err != nil {
-			return nil, 0, err
+			return operationResult[OwnerTransfer]{}, err
 		}
-		return item, 200, nil
+		return operationResult[OwnerTransfer]{Value: item, Status: operationStatusOK}, nil
 	})
 }
 

@@ -16,7 +16,7 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 	}
 	proof := &g1ProvenanceProof{ActorID: actor.UserID, TenantID: actor.TenantID, Identity: candidateIdentityHash(ctx), ForModel: forModel, Pins: map[string]g1ProvenancePin{}, States: map[string]bool{}, Requests: map[string]g1ProvenancePin{}, FreshPins: map[string]g1ProvenancePin{}, NativeBefore: map[string]string{}}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, pid, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -92,7 +92,7 @@ func (s *Service) g1Prepare(ctx context.Context, actor Actor, pid string, reques
 		proof.States[id] = allowed
 	}
 	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		current, err := s.authorizeProject(ctx, tx, actor, pid, "read")
+		current, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -196,7 +196,7 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 	}
 	requests := []g1ProvenanceRequest{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, pid, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -462,7 +462,7 @@ func (s *Service) PrepareProjectProvenance(ctx context.Context, actor Actor, pid
 		if _, ok := tx.(g5Transaction); !ok {
 			return nil
 		}
-		current, e := s.authorizeProject(prepared, tx, actor, pid, "read")
+		current, e := s.authorizeProject(prepared, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if e != nil {
 			return e
 		}
@@ -492,7 +492,7 @@ func (s *Service) ValidateProjectProvenanceInTransaction(ctx context.Context, tx
 	if !ok || proof.Frozen || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || !g1IdentityMatches(ctx, actor) || proof.Identity != candidateIdentityHash(ctx) || proof.ForModel != forModel || proof.Project.ID != p.ID || g1ProjectHash(proof.Project) != g1ProjectHash(p) || hashImpactValue(proof.Snapshot) != hashImpactValue(snapshot) {
 		return ErrSourceUnavailable
 	}
-	current, err := s.authorizeProject(ctx, tx, actor, p.ID, "read")
+	current, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, p.ID, AuthorizationRead, ""))
 	if err != nil {
 		return err
 	}
@@ -517,7 +517,7 @@ func (s *Service) ValidateProjectProvenanceSnapshot(ctx context.Context, actor A
 		return err
 	}
 	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, actor, pid, "read")
+		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 		if err != nil {
 			return err
 		}
@@ -546,7 +546,7 @@ func (s *Service) PrepareFrozenProjectProvenance(ctx context.Context, actor Acto
 	}
 	requests := []g1ProvenanceRequest{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, pid, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(g5Transaction)
@@ -592,7 +592,7 @@ func (s *Service) ValidateFrozenProjectProvenanceInTransaction(ctx context.Conte
 	if !ok || !proof.Frozen || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.ForModel != forModel || proof.Project.ID != pid || proof.Identity != candidateIdentityHash(ctx) || !g1IdentityMatches(ctx, actor) || hashImpactValue(proof.Snapshot) != hashImpactValue(snapshot) || (len(spec) > 0 || snapshot.Digest != "") && ValidateFrozenProvenanceInput(spec, snapshot) != nil {
 		return ErrSourceUnavailable
 	}
-	current, err := s.authorizeProject(ctx, tx, actor, pid, "read")
+	current, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
 	if err != nil {
 		return err
 	}

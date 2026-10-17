@@ -47,7 +47,7 @@ func (t gormTransaction) ContextRevisions(projectID string) ([]ContextRevisionRe
 func (s *Service) ListContextRevisions(ctx context.Context, actor Actor, projectID string) ([]ContextRevisionRecord, error) {
 	var result []ContextRevisionRecord
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, actor, projectID, "read"); err != nil {
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
 		store, ok := tx.(interface {
@@ -77,26 +77,26 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 	if err := validateExtendedChangeInput(input); err != nil {
 		return nil, 0, false, err
 	}
-	return s.operation(ctx, actor, "editChangeDraft", projectID+"/"+changeID, key, input, projectID, "write", func(tx Transaction, p Project) (any, int, error) {
+	return runOperation(s, ctx, actor, sourceOperationInput(operationEditChangeDraft, projectID+"/"+changeID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		if p.Status != "active" || p.CurrentContextRevision != input.ExpectedContextRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChangeSet]{}, ErrVersionConflict
 		}
 		store, ok := tx.(changeSetTransaction)
 		if !ok {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		old, err := store.ChangeSet(projectID, changeID)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		if !slices.Contains([]string{"draft", "assessed"}, old.Status) || old.TemplateUpgrade != nil {
-			return nil, 0, ErrInvalidState
+			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if old.CreatedBy != actor.UserID && !projectOwner(p, actor.UserID) {
-			return nil, 0, ErrNotFound
+			return operationResult[ChangeSet]{}, ErrNotFound
 		}
 		if old.BaseContextRevision != p.CurrentContextRevision || old.BaseSpecRevision != p.SpecRevision {
-			return nil, 0, ErrVersionConflict
+			return operationResult[ChangeSet]{}, ErrVersionConflict
 		}
 		next := old
 		next.Status = "draft"
@@ -111,29 +111,29 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		for _, key := range keys {
 			value := input.Fields[key]
 			if p.Spec[key] != value.OldValue {
-				return nil, 0, ErrVersionConflict
+				return operationResult[ChangeSet]{}, ErrVersionConflict
 			}
 			next.Fields = append(next.Fields, ChangeFieldDelta{Key: key, OldValue: value.OldValue, NewValue: value.NewValue})
 		}
 		for _, id := range input.AffectedChapterIDs {
 			chapter, err := tx.Chapter(projectID, id)
 			if err != nil {
-				return nil, 0, err
+				return operationResult[ChangeSet]{}, err
 			}
 			next.Impacts = append(next.Impacts, ChangeImpact{ChapterID: id, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: input.Reason, Status: "open"})
 		}
 		pinned, err := s.PinSemanticDeltas(ctx, tx, actor, p, next.ID, input.SemanticDeltas)
 		if err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		next.SemanticDeltas = pinned
 		if err := store.UpdateChangeSet(old, next); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
 		if err := g3Audit(tx, actor, projectID, "change_set.edit", changeID, map[string]any{"status": "draft"}); err != nil {
-			return nil, 0, err
+			return operationResult[ChangeSet]{}, err
 		}
-		return next, 200, nil
+		return operationResult[ChangeSet]{Value: next, Status: operationStatusOK}, nil
 	})
 }
 func (s *Service) ReverseChangeSet(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
@@ -147,7 +147,7 @@ func (s *Service) ReverseChangeSet(ctx context.Context, actor Actor, projectID, 
 	var inverse []SemanticDelta
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		var err error
-		p, err = s.authorizeProject(ctx, tx, actor, projectID, "manage")
+		p, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
 		if err != nil {
 			return err
 		}
