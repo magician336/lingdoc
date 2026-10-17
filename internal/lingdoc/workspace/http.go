@@ -69,38 +69,42 @@ func NewHandler(deps HandlerDependencies) *Handler {
 		}
 	}
 	// A focused test double may implement one port without carrying the legacy
-	// interface. Keep that seam directly injectable as well.
-	if projects == nil {
-		if candidate, ok := any(deps.Read).(ProjectApplication); ok {
-			projects = candidate
-		} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
-			projects = candidate
+	// interface. Keep that seam directly injectable as well. When both split
+	// ports are present, do not infer a broad route application from either one;
+	// the split adapters below must preserve read/write routing.
+	if deps.Read == nil || deps.Write == nil {
+		if projects == nil {
+			if candidate, ok := any(deps.Read).(ProjectApplication); ok {
+				projects = candidate
+			} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
+				projects = candidate
+			}
 		}
-	}
-	if members == nil {
-		if candidate, ok := any(deps.Write).(MembershipApplication); ok {
-			members = candidate
+		if members == nil {
+			if candidate, ok := any(deps.Write).(MembershipApplication); ok {
+				members = candidate
+			}
 		}
-	}
-	if chapters == nil {
-		if candidate, ok := any(deps.Read).(ChapterApplication); ok {
-			chapters = candidate
-		} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
-			chapters = candidate
+		if chapters == nil {
+			if candidate, ok := any(deps.Read).(ChapterApplication); ok {
+				chapters = candidate
+			} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
+				chapters = candidate
+			}
 		}
-	}
-	if templatesApp == nil {
-		if candidate, ok := any(deps.Read).(TemplateApplication); ok {
-			templatesApp = candidate
-		} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
-			templatesApp = candidate
+		if templatesApp == nil {
+			if candidate, ok := any(deps.Read).(TemplateApplication); ok {
+				templatesApp = candidate
+			} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
+				templatesApp = candidate
+			}
 		}
-	}
-	if changeSets == nil {
-		if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
-			changeSets = candidate
-		} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
-			changeSets = candidate
+		if changeSets == nil {
+			if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
+				changeSets = candidate
+			} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
+				changeSets = candidate
+			}
 		}
 	}
 	// A composition root may provide the intentionally split read and write
