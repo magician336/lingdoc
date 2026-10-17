@@ -616,6 +616,23 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if assessed.Status != "assessed" || assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: publishedV2.ID, Version: publishedV2.Version, Hash: publishedV2.RulesetHash}) {
 		t.Fatalf("active migration did not assess an exact v2 RuleSet snapshot: %+v ref=%+v", assessed, assessedRef)
 	}
+	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project.change_set.apply", "g4_fail_change_set_apply_audit", true)
+	request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets/"+assessed.ID+"/apply", `{}`, "g4-migrate-apply-v2", http.StatusInternalServerError)
+	setG4AuditFailureTrigger(t, db, dialect, "lingdoc_project_audits", "project.change_set.apply", "g4_fail_change_set_apply_audit", false)
+	var rolledBackMigration workspacecore.Project
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &rolledBackMigration)
+	if rolledBackMigration.ProjectVersion != currentProject.ProjectVersion || rolledBackMigration.TemplateCopyVersion != currentProject.TemplateCopyVersion {
+		t.Fatalf("failed ChangeSet apply audit partially migrated the project: before=%d/%d after=%d/%d", currentProject.ProjectVersion, currentProject.TemplateCopyVersion, rolledBackMigration.ProjectVersion, rolledBackMigration.TemplateCopyVersion)
+	}
+	var assessedAfterAuditFailure workspacecore.ChangeSet
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/change-sets/"+assessed.ID, "", "", http.StatusOK), &assessedAfterAuditFailure)
+	if assessedAfterAuditFailure.Status != "assessed" {
+		t.Fatalf("failed ChangeSet apply audit changed the proposal state: %+v", assessedAfterAuditFailure)
+	}
+	var failedApplyAuditCount int64
+	if err := db.Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", assessed.ID).Count(&failedApplyAuditCount).Error; err != nil || failedApplyAuditCount != 0 {
+		t.Fatalf("failed ChangeSet apply audit persisted an event: count=%d err=%v", failedApplyAuditCount, err)
+	}
 	var applied workspacecore.ChangeSet
 	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets/"+assessed.ID+"/apply", `{}`, "g4-migrate-apply-v2", http.StatusOK), &applied)
 	if applied.Status != "applied" {
@@ -625,26 +642,6 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	newRef := lingdoctemplate.RuleSetReferenceFor(currentProject.TemplateCopy.Definition)
 	if newRef == nil || *newRef != *assessedRef || currentProject.TemplateCopyVersion != 4 {
 		t.Fatalf("applied project did not advance to RuleSet v2 copy: project=%+v ref=%+v", currentProject.TemplateCopy, newRef)
-	}
-	var projectAuditEvents []workspacecore.AuditEvent
-	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/audit", "", "", http.StatusOK), &projectAuditEvents)
-	var migrationAudit *workspacecore.AuditEvent
-	for i := range projectAuditEvents {
-		if projectAuditEvents[i].Action == "project.change_set.apply" && projectAuditEvents[i].Target == assessed.ID {
-			migrationAudit = &projectAuditEvents[i]
-		}
-	}
-	if migrationAudit == nil {
-		t.Fatalf("HTTP project audit did not expose the RuleSet migration apply: %+v", projectAuditEvents)
-	}
-	migrationDetails, ok := migrationAudit.Details["template_upgrade"].(map[string]any)
-	if !ok || migrationDetails["change_set_id"] != assessed.ID || migrationDetails["reason"] != migrationInput.Reason ||
-		migrationDetails["ruleset_id"] != publishedV2.ID || migrationDetails["ruleset_version"] != publishedV2.Version ||
-		migrationDetails["ruleset_source_hash"] != publishedV2.RulesetHash || migrationDetails["content_hash"] != currentProject.TemplateCopy.ContentHash ||
-		migrationDetails["effective_ruleset_hash"] != currentProject.TemplateCopy.RulesetHash || migrationDetails["override_count"] != float64(0) ||
-		migrationDetails["binding_action"] != "bind_ruleset" || migrationDetails["base_copy_version"] != float64(migrationInput.TemplateUpgrade.ExpectedTemplateCopyVersion) ||
-		migrationDetails["target_copy_version"] != float64(currentProject.TemplateCopyVersion) || migrationAudit.ActorID != g4E2EActorID || migrationAudit.CreatedAt.IsZero() {
-		t.Fatalf("HTTP migration audit lost exact binding details: %+v", migrationAudit)
 	}
 	var newPreflight delivery.CheckResult
 	newVersionBody := fmt.Sprintf(`{"expected_project_version":%d}`, currentProject.ProjectVersion)
@@ -681,6 +678,89 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if !foundV2Preflight {
 		t.Fatalf("tenant-authorized HTTP audit history did not expose the v2 preflight: %+v", auditEnvelope.Items)
 	}
+
+	// Repeat the upgrade with an allowlisted project override. The project audit
+	// endpoint must independently expose exact source identity, override and
+	// effective hash, migration reason, and both copy versions after persistence.
+	v3Body := strings.Replace(draftBody, `"version":"`+g4E2EVersion+`"`, `"version":"v3"`, 1)
+	v3Body = strings.Replace(v3Body, `"maximum":500`, `"maximum":350`, 1)
+	request(second.router, http.MethodPost, "/rule-sets", v3Body, "", http.StatusCreated)
+	var publishedV3 lingdoctemplate.RuleSet
+	decode(request(second.router, http.MethodPost, "/rule-sets/"+g4E2ERuleSet+"/versions/v3/publish", `{}`, "", http.StatusOK), &publishedV3)
+	var beforeV3 workspacecore.Project
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID, "", "", http.StatusOK), &beforeV3)
+	definitionV3 := beforeV3.TemplateCopy.Definition
+	minimumOverride := 8.0 // JSON-decoded numeric parameters use float64.
+	migrationV3 := workspacecore.CreateChangeSetInput{
+		ExpectedContextRevision: beforeV3.CurrentContextRevision,
+		Reason:                  "按项目方法章节要求迁移至规则集 v3 并收紧最小字数",
+		TemplateUpgrade: &workspacecore.TemplateUpgradeInput{
+			ExpectedProjectVersion: beforeV3.ProjectVersion, ExpectedTemplateCopyVersion: beforeV3.TemplateCopyVersion,
+			RuleSetRef:           &lingdoctemplate.RuleSetReference{ID: publishedV3.ID, Version: publishedV3.Version, Hash: publishedV3.RulesetHash},
+			RuleBindingOverrides: []lingdoctemplate.RuleBindingOverride{{RuleID: "method-length", Parameters: map[string]any{"minimum": minimumOverride}}},
+			Fields:               append([]lingdoctemplate.Field{}, definitionV3.Fields...), Sections: append([]lingdoctemplate.Section{}, definitionV3.Sections...),
+			Terms: append([]lingdoctemplate.Term{}, definitionV3.Terms...), RequiredFields: append([]string{}, definitionV3.RequiredFields...),
+			Rules: append([]lingdoctemplate.Rule{}, definitionV3.Rules...),
+		},
+	}
+	migrationV3JSON, err := json.Marshal(migrationV3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var assessedV3 workspacecore.ChangeSet
+	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets", string(migrationV3JSON), "g4-migrate-assess-v3", http.StatusCreated), &assessedV3)
+	var appliedV3 workspacecore.ChangeSet
+	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/change-sets/"+assessedV3.ID+"/apply", `{}`, "g4-migrate-apply-v3", http.StatusOK), &appliedV3)
+	if appliedV3.Status != "applied" {
+		t.Fatalf("active RuleSet v3 override migration was not applied: %+v", appliedV3)
+	}
+	var projectAuditEvents []workspacecore.AuditEvent
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/audit", "", "", http.StatusOK), &projectAuditEvents)
+	applyAudits := map[string]workspacecore.AuditEvent{}
+	for _, event := range projectAuditEvents {
+		if event.Action == "project.change_set.apply" {
+			applyAudits[event.Target] = event
+		}
+	}
+	assertUpgradeAudit := func(change workspacecore.ChangeSet, wantRef lingdoctemplate.RuleSetReference, oldCopyVersion, newCopyVersion int64, wantOverride bool) {
+		t.Helper()
+		event, ok := applyAudits[change.ID]
+		if !ok {
+			t.Fatalf("GET project audit did not return ChangeSet apply event %s: %+v", change.ID, projectAuditEvents)
+		}
+		upgrade, ok := event.Details["template_upgrade"].(map[string]any)
+		if !ok {
+			t.Fatalf("ChangeSet apply event omitted template upgrade details: %+v", event)
+		}
+		if upgrade["ruleset_id"] != wantRef.ID || upgrade["ruleset_version"] != wantRef.Version || upgrade["ruleset_source_hash"] != wantRef.Hash {
+			t.Fatalf("migration audit lost exact RuleSet source identity: %+v want=%+v", upgrade, wantRef)
+		}
+		if upgrade["old_copy_version"] != float64(oldCopyVersion) || upgrade["new_copy_version"] != float64(newCopyVersion) ||
+			upgrade["reason"] != change.Reason || event.Details["reason"] != change.Reason || event.Reason != change.Reason {
+			t.Fatalf("migration audit lost reason/copy transition: event=%+v upgrade=%+v want=%d->%d reason=%q", event, upgrade, oldCopyVersion, newCopyVersion, change.Reason)
+		}
+		if upgrade["effective_ruleset_hash"] == "" || upgrade["ruleset_hash"] != upgrade["effective_ruleset_hash"] {
+			t.Fatalf("migration audit lost effective RuleSet hash: %+v", upgrade)
+		}
+		if wantOverride {
+			if upgrade["override_count"] != float64(1) {
+				t.Fatalf("override migration audit count=%v, want one: %+v", upgrade["override_count"], upgrade)
+			}
+			overrides, ok := upgrade["overrides"].([]any)
+			if !ok || len(overrides) != 1 {
+				t.Fatalf("override migration audit omitted the effective override: %+v", upgrade)
+			}
+			override, ok := overrides[0].(map[string]any)
+			parameters, parametersOK := override["parameters"].(map[string]any)
+			if !ok || !parametersOK || override["rule_id"] != "method-length" || parameters["minimum"] != minimumOverride {
+				t.Fatalf("override migration audit mismatch: %+v", overrides)
+			}
+		} else if upgrade["override_count"] != float64(0) {
+			t.Fatalf("ordinary migration unexpectedly has overrides: %+v", upgrade)
+		}
+	}
+	assertUpgradeAudit(assessed, lingdoctemplate.RuleSetReference{ID: publishedV2.ID, Version: publishedV2.Version, Hash: publishedV2.RulesetHash}, 3, 4, false)
+	assertUpgradeAudit(assessedV3, lingdoctemplate.RuleSetReference{ID: publishedV3.ID, Version: publishedV3.Version, Hash: publishedV3.RulesetHash}, 4, 5, true)
 }
 
 func setG4AuditFailureTrigger(t *testing.T, db *gorm.DB, dialect, table, action, trigger string, enabled bool) {

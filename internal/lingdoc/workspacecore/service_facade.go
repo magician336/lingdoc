@@ -2126,12 +2126,15 @@ func templateUpgradeAuditDetails(change ChangeSet, targetCopy *ProjectTemplateCo
 		"reason":                     change.Reason,
 		"base_copy_version":          upgrade.BaseTemplateCopyVersion,
 		"base_template_copy_version": upgrade.BaseTemplateCopyVersion,
+		"old_copy_version":           upgrade.BaseTemplateCopyVersion,
 		"target_copy_version":        upgrade.Preview.TargetCopyVersion,
+		"new_copy_version":           upgrade.Preview.TargetCopyVersion,
 		"target_content_hash":        upgrade.Preview.TargetContentHash,
 		"target_ruleset_hash":        upgrade.Preview.TargetRulesetHash,
 	}
 	if targetCopy != nil {
 		details["target_copy_version"] = targetCopy.Version
+		details["new_copy_version"] = targetCopy.Version
 		details["content_hash"] = targetCopy.ContentHash
 		details["ruleset_hash"] = targetCopy.RulesetHash
 		details["effective_ruleset_hash"] = targetCopy.RulesetHash
@@ -2152,6 +2155,7 @@ func templateUpgradeAuditDetails(change ChangeSet, targetCopy *ProjectTemplateCo
 		overrides = []lingdoctemplate.RuleBindingOverride{}
 	}
 	details["rule_binding_overrides"] = overrides
+	details["overrides"] = overrides
 	details["override_count"] = len(overrides)
 	if len(overrides) > 0 {
 		details["binding_action"] = "override_ruleset"
@@ -2396,6 +2400,14 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		}
 		if change.Status != "assessed" {
 			return operationResult[ChangeSet]{}, ErrInvalidState
+		}
+		// A governed template migration must never commit without a durable
+		// audit record. Check the transactional audit capability before any
+		// stale-state or project-copy writes are attempted.
+		if change.TemplateUpgrade != nil {
+			if _, ok := tx.(auditTransaction); !ok {
+				return operationResult[ChangeSet]{}, fmt.Errorf("%w: template upgrade apply requires transactional audit", ErrInvalidState)
+			}
 		}
 		if change.TemplateUpgrade != nil && templateUpgradeChangesRuleSetBinding(p.TemplateCopy, change.TemplateUpgrade.Definition) {
 			if err := s.recheckTemplateUpgradeRuleSet(ctx, tx, actor, change.TemplateUpgrade.Definition); err != nil {

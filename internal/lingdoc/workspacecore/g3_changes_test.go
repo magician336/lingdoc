@@ -11,6 +11,41 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
+// g4AuditlessRepository masks the optional audit capability while keeping the
+// normal workspace and ChangeSet persistence ports available to the service.
+type g4AuditlessRepository struct{ inner Repository }
+
+func (r g4AuditlessRepository) Transaction(ctx context.Context, options TransactionOptions, fn func(Transaction) error) error {
+	return r.inner.Transaction(ctx, options, func(tx Transaction) error {
+		changes, ok := tx.(changeSetTransaction)
+		if !ok {
+			return ErrInvalidState
+		}
+		return fn(g4AuditlessTransaction{Transaction: tx, changes: changes})
+	})
+}
+
+type g4AuditlessTransaction struct {
+	Transaction
+	changes changeSetTransaction
+}
+
+func (tx g4AuditlessTransaction) InsertChangeSet(change ChangeSet) error {
+	return tx.changes.InsertChangeSet(change)
+}
+func (tx g4AuditlessTransaction) ChangeSet(projectID, changeSetID string) (ChangeSet, error) {
+	return tx.changes.ChangeSet(projectID, changeSetID)
+}
+func (tx g4AuditlessTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
+	return tx.changes.ChangeSets(projectID)
+}
+func (tx g4AuditlessTransaction) UpdateChangeSet(previous, next ChangeSet) error {
+	return tx.changes.UpdateChangeSet(previous, next)
+}
+func (tx g4AuditlessTransaction) InvalidateChapterConfirmations(projectID string, chapterIDs []string) error {
+	return tx.changes.InvalidateChapterConfirmations(projectID, chapterIDs)
+}
+
 func seedActiveG3Project(t *testing.T, svc *Service, actor Actor) Project {
 	t.Helper()
 	seedTenantMember(t, svc, actor)
@@ -228,6 +263,49 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	assessedRef := lingdoctemplate.RuleSetReferenceFor(change.TemplateUpgrade.Definition)
 	if assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash}) {
 		t.Fatalf("ChangeSet did not pin the exact target RuleSet before assessment: %+v", assessedRef)
+	}
+	noAuditKey := "ruleset-migration-apply-without-audit"
+	var copiesBeforeNoAudit, operationsBeforeNoAudit, auditsBeforeNoAudit int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesBeforeNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", noAuditKey).Count(&operationsBeforeNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", change.ID).Count(&auditsBeforeNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	originalRepository := svc.repository
+	svc.repository = g4AuditlessRepository{inner: originalRepository}
+	_, _, noAuditReplay, noAuditErr := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, noAuditKey)
+	svc.repository = originalRepository
+	if !errors.Is(noAuditErr, ErrInvalidState) || noAuditReplay {
+		t.Fatalf("apply without transactional audit: replay=%v err=%v, want a non-replayed fail-closed rejection", noAuditReplay, noAuditErr)
+	}
+	projectAfterNoAudit, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeAfterNoAudit, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiesAfterNoAudit, operationsAfterNoAudit, auditsAfterNoAudit int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesAfterNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", noAuditKey).Count(&operationsAfterNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", change.ID).Count(&auditsAfterNoAudit).Error; err != nil {
+		t.Fatal(err)
+	}
+	if projectAfterNoAudit.ProjectVersion != project.ProjectVersion || projectAfterNoAudit.TemplateCopyVersion != project.TemplateCopyVersion ||
+		changeAfterNoAudit.Status != "assessed" || copiesAfterNoAudit != copiesBeforeNoAudit ||
+		operationsAfterNoAudit != operationsBeforeNoAudit || auditsAfterNoAudit != auditsBeforeNoAudit {
+		t.Fatalf("missing-audit rejection left partial writes: project=%+v change=%+v copies %d->%d operations %d->%d audits %d->%d",
+			projectAfterNoAudit, changeAfterNoAudit, copiesBeforeNoAudit, copiesAfterNoAudit,
+			operationsBeforeNoAudit, operationsAfterNoAudit, auditsBeforeNoAudit, auditsAfterNoAudit)
 	}
 	applyKey := "ruleset-migration-apply-v2"
 	var copiesBefore, operationsBefore, auditsBefore int64
