@@ -334,8 +334,8 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	if applyAudit.ActorID != owner.UserID || applyAudit.CreatedAt.IsZero() {
 		t.Fatalf("migration audit lost actor or timestamp: %+v", applyAudit)
 	}
-	if applyAudit.Reason != "" {
-		t.Fatalf("legacy top-level reason unexpectedly reconstructed from details: %q", applyAudit.Reason)
+	if applyAudit.Reason != change.Reason {
+		t.Fatalf("migration audit lost reason: got %q want %q", applyAudit.Reason, change.Reason)
 	}
 	upgradeAudit, ok := applyAudit.Details["template_upgrade"].(map[string]any)
 	if !ok {
