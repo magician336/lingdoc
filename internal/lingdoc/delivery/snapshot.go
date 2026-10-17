@@ -117,26 +117,28 @@ const DeliveryKindInternalDemo = "internal_demo"
 const unattributedTarget = "unresolved-project"
 
 type CheckResult struct {
-	ProjectVersion int          `json:"project_version"`
-	RulesetHash    string       `json:"ruleset_hash"`
-	Status         CheckStatus  `json:"status"`
-	Issues         []CheckIssue `json:"issues"`
+	ProjectVersion int                               `json:"project_version"`
+	RulesetHash    string                            `json:"ruleset_hash"`
+	RuleSetRef     *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Status         CheckStatus                       `json:"status"`
+	Issues         []CheckIssue                      `json:"issues"`
 }
 
 // CheckIssue is the shared ValidationIssue shape. Code and ChapterID stay internal for tests.
 type CheckIssue struct {
-	ID               string            `json:"id"`
-	RuleID           string            `json:"rule_id"`
-	RulesetHash      string            `json:"ruleset_hash"`
-	Severity         string            `json:"severity"`
-	TargetID         string            `json:"target_id"`
-	TargetVersion    *string           `json:"target_version"`
-	Evidence         []string          `json:"evidence"`
-	EvaluatorVersion string            `json:"evaluator_version"`
-	Message          string            `json:"message"`
-	Disposition      *IssueDisposition `json:"disposition,omitempty"`
-	Code             string            `json:"-"`
-	ChapterID        string            `json:"-"`
+	ID               string                            `json:"id"`
+	RuleID           string                            `json:"rule_id"`
+	RulesetHash      string                            `json:"ruleset_hash"`
+	RuleSetRef       *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Severity         string                            `json:"severity"`
+	TargetID         string                            `json:"target_id"`
+	TargetVersion    *string                           `json:"target_version"`
+	Evidence         []string                          `json:"evidence"`
+	EvaluatorVersion string                            `json:"evaluator_version"`
+	Message          string                            `json:"message"`
+	Disposition      *IssueDisposition                 `json:"disposition,omitempty"`
+	Code             string                            `json:"-"`
+	ChapterID        string                            `json:"-"`
 }
 
 // IssueDisposition is human workflow metadata attached to a finding. It does
@@ -148,13 +150,14 @@ type IssueDisposition struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 type ReleaseSnapshot struct {
-	ID             string        `json:"id"`
-	ProjectID      string        `json:"project_id"`
-	FrozenInput    DeliveryInput `json:"frozen_input"`
-	SnapshotDigest string        `json:"snapshot_digest"`
-	Check          CheckResult   `json:"check"`
-	IsCurrent      bool          `json:"is_current"`
-	CreatedAt      time.Time     `json:"created_at"`
+	ID             string                            `json:"id"`
+	ProjectID      string                            `json:"project_id"`
+	RuleSetRef     *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	FrozenInput    DeliveryInput                     `json:"frozen_input"`
+	SnapshotDigest string                            `json:"snapshot_digest"`
+	Check          CheckResult                       `json:"check"`
+	IsCurrent      bool                              `json:"is_current"`
+	CreatedAt      time.Time                         `json:"created_at"`
 }
 
 type SnapshotStore interface {
@@ -187,6 +190,12 @@ type FreezeRecorder interface {
 	RecordFreeze(snapshot ReleaseSnapshot, attempt FreezeAttempt, requestHash string) (ReleaseSnapshot, bool, error)
 }
 
+// RuleSetUseFreezeRecorder commits the governed RuleSet-use audit beside the
+// frozen snapshot and its idempotency record.
+type RuleSetUseFreezeRecorder interface {
+	RecordFreezeWithRuleSetUse(ReleaseSnapshot, FreezeAttempt, string, lingdoctemplate.RuleSetUseAuditEvent) (ReleaseSnapshot, bool, error)
+}
+
 // SnapshotLister 是 SnapshotStore 的可选能力：列出项目下冻结过的快照。
 //
 // 它与 FreezeRecorder 分成两个接口，是因为两者服务的是不同的问法：重放问
@@ -209,6 +218,7 @@ type MemorySnapshotStore struct {
 	mu        sync.RWMutex
 	snapshots map[string]ReleaseSnapshot
 	freezes   map[string]freezeRecord
+	useAudits []lingdoctemplate.RuleSetUseAuditEvent
 }
 
 func NewMemorySnapshotStore() *MemorySnapshotStore {
@@ -286,6 +296,26 @@ func (s *MemorySnapshotStore) RecordFreeze(snapshot ReleaseSnapshot, attempt Fre
 	return cloneSnapshot(stored), false, nil
 }
 
+func (s *MemorySnapshotStore) RecordFreezeWithRuleSetUse(snapshot ReleaseSnapshot, attempt FreezeAttempt, requestHash string, event lingdoctemplate.RuleSetUseAuditEvent) (ReleaseSnapshot, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index := freezeIndex(attempt)
+	if record, ok := s.freezes[index]; ok {
+		return s.replayed(attempt.ProjectID, record, requestHash)
+	}
+	stored := cloneSnapshot(snapshot)
+	s.snapshots[snapshotIndex(snapshot.ProjectID, snapshot.ID)] = stored
+	s.freezes[index] = freezeRecord{SnapshotID: snapshot.ID, RequestHash: requestHash}
+	s.useAudits = append(s.useAudits, event)
+	return cloneSnapshot(stored), false, nil
+}
+
+func (s *MemorySnapshotStore) RuleSetUseAudits() []lingdoctemplate.RuleSetUseAuditEvent {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return append([]lingdoctemplate.RuleSetUseAuditEvent(nil), s.useAudits...)
+}
+
 // replayed 由调用方持锁调用。索引与快照永远在同一次写入里成对落下，所以
 // 「索引在、快照不在」只可能来自别的实现——那种情况下宁可说找不到，
 // 也不要交出一份谁也读不回来的快照。
@@ -348,7 +378,7 @@ func (s *ReleaseService) Freeze(input DeliveryInput) (ReleaseSnapshot, error) {
 	if err != nil {
 		return ReleaseSnapshot{}, err
 	}
-	return ReleaseSnapshot{ID: id, ProjectID: frozen.ProjectID, FrozenInput: frozen, SnapshotDigest: digest, Check: Evaluate(frozen), IsCurrent: true, CreatedAt: s.now().UTC()}, nil
+	return ReleaseSnapshot{ID: id, ProjectID: frozen.ProjectID, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(frozen.Template), FrozenInput: frozen, SnapshotDigest: digest, Check: Evaluate(frozen), IsCurrent: true, CreatedAt: s.now().UTC()}, nil
 }
 
 func (s *ReleaseService) Prepare(input DeliveryInput) (ReleaseSnapshot, error) {
@@ -382,9 +412,9 @@ func (s *ReleaseService) Get(projectID, snapshotID string) (ReleaseSnapshot, err
 type issueFunc func(ruleID, code, chapterID, message string)
 
 func Evaluate(input DeliveryInput) CheckResult {
-	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: input.Template.RulesetHash, Status: CheckPassed, Issues: []CheckIssue{}}
+	result := CheckResult{ProjectVersion: input.ProjectVersion, RulesetHash: input.Template.RulesetHash, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(input.Template), Status: CheckPassed, Issues: []CheckIssue{}}
 	severities := ruleSeverities(input.Template.Rules)
-	if len(severities) == 0 {
+	if !hasRulesForScene(input.Template, "preflight") {
 		result.Status = CheckNotEvaluated
 		return result
 	}
@@ -416,7 +446,7 @@ func Evaluate(input DeliveryInput) CheckResult {
 		}
 		canonicalEvidence := append([]string{}, evidence...)
 		sort.Strings(canonicalEvidence)
-		result.Issues = append(result.Issues, CheckIssue{ID: id, RuleID: ruleID, RulesetHash: input.Template.RulesetHash, Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Evidence: canonicalEvidence, EvaluatorVersion: lingdoctemplate.EvaluatorVersion, Message: message, Code: code, ChapterID: chapterID})
+		result.Issues = append(result.Issues, CheckIssue{ID: id, RuleID: ruleID, RulesetHash: input.Template.RulesetHash, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(input.Template), Severity: severity, TargetID: target, TargetVersion: cloneVersion(targetVersion), Evidence: canonicalEvidence, EvaluatorVersion: lingdoctemplate.EvaluatorVersion, Message: message, Code: code, ChapterID: chapterID})
 		if severity == SeverityBlocking {
 			result.Status = CheckBlocked
 		}
@@ -438,7 +468,9 @@ func Evaluate(input DeliveryInput) CheckResult {
 		issue(RuleRequiredFields, "template_rules_invalid", "", "模板规则结构无效，无法安全执行检查")
 	} else {
 		for _, evaluation := range evaluated.Evaluations {
-			if evaluation.Status != lingdoctemplate.EvaluationIssue || isLegacyTemplateRule(evaluation.RuleID) {
+			if isLegacyTemplateRule(evaluation.RuleID) ||
+				(evaluation.Status != lingdoctemplate.EvaluationIssue &&
+					!(evaluation.Status == lingdoctemplate.EvaluationUnknown && evaluation.Severity == SeverityBlocking)) {
 				continue
 			}
 			kind, id, _ := strings.Cut(evaluation.TargetRef, "/")
@@ -467,7 +499,11 @@ func Evaluate(input DeliveryInput) CheckResult {
 				}
 			}
 			version := evaluation.TargetVersion
-			addTarget(evaluation.Severity, evaluation.RuleID, "template_rule_issue", target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
+			code := "template_rule_issue"
+			if evaluation.Status == lingdoctemplate.EvaluationUnknown {
+				code = "template_rule_unavailable"
+			}
+			addTarget(evaluation.Severity, evaluation.RuleID, code, target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
 		}
 	}
 
@@ -743,6 +779,10 @@ func cloneSlice[T any](values []T) []T {
 	return out
 }
 func cloneSnapshot(snapshot ReleaseSnapshot) ReleaseSnapshot {
+	if snapshot.RuleSetRef != nil {
+		ref := *snapshot.RuleSetRef
+		snapshot.RuleSetRef = &ref
+	}
 	snapshot.FrozenInput = cloneInput(snapshot.FrozenInput)
 	snapshot.Check.Issues = cloneIssues(snapshot.Check.Issues)
 	return snapshot
@@ -755,6 +795,10 @@ func cloneIssues(issues []CheckIssue) []CheckIssue {
 	out := make([]CheckIssue, len(issues))
 	for i, issue := range issues {
 		out[i] = issue
+		if issue.RuleSetRef != nil {
+			ref := *issue.RuleSetRef
+			out[i].RuleSetRef = &ref
+		}
 		out[i].TargetVersion = cloneVersion(issue.TargetVersion)
 		if issue.Disposition != nil {
 			copy := *issue.Disposition

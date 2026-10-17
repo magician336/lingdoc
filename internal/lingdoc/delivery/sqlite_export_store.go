@@ -1,10 +1,13 @@
 package delivery
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -36,6 +39,7 @@ type exportArtifactRow struct {
 	ProjectID         string    `gorm:"column:project_id;not null;size:64"`
 	SnapshotID        string    `gorm:"column:snapshot_id;not null;size:64"`
 	Status            string    `gorm:"column:status;not null;size:16"`
+	RuleSetRefJSON    string    `gorm:"column:ruleset_ref_json;not null;type:text"`
 	FileSHA256        string    `gorm:"column:file_sha256;not null;size:64"`
 	FailureCode       string    `gorm:"column:failure_code;not null;size:64"`
 	FileBlob          []byte    `gorm:"column:file_blob"`
@@ -53,49 +57,78 @@ type exportArtifactRow struct {
 // （exportArtifactListRow.artifact 先还原成完整行再走 exportArtifactRow.artifact），
 // 免得两条读取路径对同一行给出不同状态。
 type exportArtifactListRow struct {
-	ID          string    `gorm:"column:id"`
-	ProjectID   string    `gorm:"column:project_id"`
-	SnapshotID  string    `gorm:"column:snapshot_id"`
-	Status      string    `gorm:"column:status"`
-	FileSHA256  string    `gorm:"column:file_sha256"`
-	FailureCode string    `gorm:"column:failure_code"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
+	ID             string    `gorm:"column:id"`
+	ProjectID      string    `gorm:"column:project_id"`
+	SnapshotID     string    `gorm:"column:snapshot_id"`
+	Status         string    `gorm:"column:status"`
+	RuleSetRefJSON string    `gorm:"column:ruleset_ref_json"`
+	FileSHA256     string    `gorm:"column:file_sha256"`
+	FailureCode    string    `gorm:"column:failure_code"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
 }
 
 func (exportArtifactRow) TableName() string     { return "lingdoc_export_artifacts" }
 func (exportArtifactListRow) TableName() string { return "lingdoc_export_artifacts" }
 
 // exportListColumns 是投影读出的列清单，与 exportArtifactListRow 的字段一一对应。
-const exportListColumns = "id, project_id, snapshot_id, status, file_sha256, failure_code, created_at"
+const exportListColumns = "id, project_id, snapshot_id, status, ruleset_ref_json, file_sha256, failure_code, created_at"
 
-func (row exportArtifactRow) artifact() ExportArtifact {
+func (row exportArtifactRow) artifact() (ExportArtifact, error) {
+	ref, err := decodeRuleSetReference(row.RuleSetRefJSON)
+	if err != nil {
+		return ExportArtifact{}, err
+	}
 	return ExportArtifact{
 		ID: row.ID, ProjectID: row.ProjectID, SnapshotID: row.SnapshotID,
-		Status: ExportStatus(row.Status), FileSHA256: row.FileSHA256,
+		RuleSetRef: ref,
+		Status:     ExportStatus(row.Status), FileSHA256: row.FileSHA256,
 		FailureCode: row.FailureCode, CreatedAt: row.CreatedAt.UTC(),
 		// 归一与 cloneExport 一致：空字节落成 nil，否则两个实现的 DeepEqual 会在
 		// 「NULL 读回来是 nil」与「空 blob 读回来是 []byte{}」上分家。
 		file: append([]byte(nil), row.FileBlob...),
-	}
+	}, nil
 }
 
-func (row exportArtifactListRow) artifact() ExportArtifact {
-	return exportArtifactRow{
+func (row exportArtifactListRow) artifact() (ExportArtifact, error) {
+	return (exportArtifactRow{
 		ID: row.ID, ProjectID: row.ProjectID, SnapshotID: row.SnapshotID,
-		Status: row.Status, FileSHA256: row.FileSHA256,
+		Status: row.Status, RuleSetRefJSON: row.RuleSetRefJSON, FileSHA256: row.FileSHA256,
 		FailureCode: row.FailureCode, CreatedAt: row.CreatedAt,
-	}.artifact()
+	}).artifact()
+}
+
+func encodeRuleSetReference(ref *lingdoctemplate.RuleSetReference) (string, error) {
+	if ref == nil {
+		return "", nil
+	}
+	raw, err := json.Marshal(ref)
+	return string(raw), err
+}
+
+func decodeRuleSetReference(raw string) (*lingdoctemplate.RuleSetReference, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var ref lingdoctemplate.RuleSetReference
+	if err := json.Unmarshal([]byte(raw), &ref); err != nil {
+		return nil, fmt.Errorf("decode export RuleSet reference: %w", err)
+	}
+	return &ref, nil
 }
 
 // SaveExport 是**建或替换**，与内存实现的 `map[k] = v` 同语义。理由与
 // SQLiteSnapshotStore.Save 逐字相同：只更新 payload 列，绝不碰 action_* 三列。
 func (s *SQLiteExportStore) SaveExport(artifact ExportArtifact) error {
+	ruleSetRefJSON, err := encodeRuleSetReference(artifact.RuleSetRef)
+	if err != nil {
+		return err
+	}
 	return s.db.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"project_id", "snapshot_id", "status", "file_sha256", "failure_code", "file_blob", "created_at"}),
+		DoUpdates: clause.AssignmentColumns([]string{"project_id", "snapshot_id", "status", "ruleset_ref_json", "file_sha256", "failure_code", "file_blob", "created_at"}),
 	}).Create(&exportArtifactRow{
 		ID: artifact.ID, ProjectID: artifact.ProjectID, SnapshotID: artifact.SnapshotID,
-		Status: string(artifact.Status), FileSHA256: artifact.FileSHA256,
+		Status: string(artifact.Status), RuleSetRefJSON: ruleSetRefJSON, FileSHA256: artifact.FileSHA256,
 		FailureCode: artifact.FailureCode, FileBlob: artifact.file,
 		CreatedAt: artifact.CreatedAt.UTC(),
 	}).Error
@@ -109,7 +142,7 @@ func (s *SQLiteExportStore) GetExport(projectID, exportID string) (ExportArtifac
 		}
 		return ExportArtifact{}, err
 	}
-	return row.artifact(), nil
+	return row.artifact()
 }
 
 // ListExports 返回该项目下的产物（**不含字节**），新的在前。排序兜底与
@@ -123,7 +156,11 @@ func (s *SQLiteExportStore) ListExports(projectID string) ([]ExportArtifact, err
 	// 显式 make：没有产物时返回 `[]` 而不是 nil（见 ExportLister 注释）。
 	artifacts := make([]ExportArtifact, 0, len(rows))
 	for _, row := range rows {
-		artifacts = append(artifacts, row.artifact())
+		artifact, err := row.artifact()
+		if err != nil {
+			return nil, err
+		}
+		artifacts = append(artifacts, artifact)
 	}
 	return artifacts, nil
 }
@@ -146,9 +183,13 @@ func (s *SQLiteExportStore) ReplayExport(attempt ExportAttempt, requestHash stri
 // 失败产物同样入账。§6 说「重试新任务是明确的新动作」，所以重试要换新键；同一个键
 // 于是永远换回同一个结果，包括失败。
 func (s *SQLiteExportStore) RecordExport(artifact ExportArtifact, attempt ExportAttempt, requestHash string) (ExportArtifact, bool, error) {
+	ruleSetRefJSON, err := encodeRuleSetReference(artifact.RuleSetRef)
+	if err != nil {
+		return ExportArtifact{}, false, err
+	}
 	row := exportArtifactRow{
 		ID: artifact.ID, ProjectID: artifact.ProjectID, SnapshotID: artifact.SnapshotID,
-		Status: string(artifact.Status), FileSHA256: artifact.FileSHA256,
+		Status: string(artifact.Status), RuleSetRefJSON: ruleSetRefJSON, FileSHA256: artifact.FileSHA256,
 		FailureCode: artifact.FailureCode, FileBlob: artifact.file,
 		CreatedAt: artifact.CreatedAt.UTC(),
 	}
@@ -178,6 +219,20 @@ func (s *SQLiteExportStore) RecordExport(artifact ExportArtifact, attempt Export
 	return stored, false, nil
 }
 
+func (s *SQLiteExportStore) RecordExportWithRuleSetUse(artifact ExportArtifact, attempt ExportAttempt, requestHash string, event lingdoctemplate.RuleSetUseAuditEvent) (ExportArtifact, bool, error) {
+	var stored ExportArtifact
+	var replayed bool
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var err error
+		stored, replayed, err = (&SQLiteExportStore{db: tx}).RecordExport(artifact, attempt, requestHash)
+		if err != nil || replayed {
+			return err
+		}
+		return rulesetstore.RecordRuleSetUseInTransaction(tx, event)
+	})
+	return stored, replayed, err
+}
+
 func (s *SQLiteExportStore) lookupExport(attempt ExportAttempt) (exportArtifactRow, error) {
 	var row exportArtifactRow
 	err := s.db.Where("project_id = ? AND action_actor_id = ? AND action_key = ?",
@@ -204,5 +259,5 @@ func (s *SQLiteExportStore) readExport(projectID, exportID string) (ExportArtifa
 		}
 		return ExportArtifact{}, err
 	}
-	return row.artifact(), nil
+	return row.artifact()
 }

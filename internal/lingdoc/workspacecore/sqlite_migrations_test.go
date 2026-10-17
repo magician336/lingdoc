@@ -29,7 +29,11 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		"000033_lingdoc_working_copies.up.sql",
 		"000034_lingdoc_selected_rewrites.up.sql",
 		"000035_lingdoc_project_template_copies.up.sql",
-		"000038_lingdoc_satisfied_change_sets.up.sql",
+		"000036_lingdoc_rule_sets.up.sql",
+		"000039_lingdoc_ruleset_export_reference.up.sql",
+		"000040_lingdoc_ruleset_use_audits.up.sql",
+		"000041_lingdoc_template_version_ruleset_ref.up.sql",
+		"000042_lingdoc_satisfied_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if err != nil {
@@ -39,7 +43,7 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 	}
-	for _, table := range []string{"lingdoc_projects", "lingdoc_members", "lingdoc_member_permissions", "lingdoc_chapters", "lingdoc_chapter_versions", "lingdoc_working_copies", "lingdoc_selected_rewrites", "lingdoc_operations", "lingdoc_project_assets", "lingdoc_asset_revisions", "lingdoc_candidates", "lingdoc_chapter_confirmations", "lingdoc_generation_runs", "lingdoc_release_snapshots", "lingdoc_export_artifacts", "lingdoc_change_sets", "lingdoc_project_template_copies"} {
+	for _, table := range []string{"lingdoc_projects", "lingdoc_members", "lingdoc_member_permissions", "lingdoc_chapters", "lingdoc_chapter_versions", "lingdoc_working_copies", "lingdoc_selected_rewrites", "lingdoc_operations", "lingdoc_project_assets", "lingdoc_asset_revisions", "lingdoc_candidates", "lingdoc_chapter_confirmations", "lingdoc_generation_runs", "lingdoc_release_snapshots", "lingdoc_export_artifacts", "lingdoc_change_sets", "lingdoc_project_template_copies", "lingdoc_rule_sets", "lingdoc_ruleset_use_audits"} {
 		var count int
 		if err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("migration did not create %s: count=%d error=%v", table, count, err)
@@ -81,7 +85,7 @@ func TestSQLiteSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
 			t.Fatalf("insert %s status: %v", status, err)
 		}
 	}
-	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000038_lingdoc_satisfied_change_sets.up.sql"))
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000042_lingdoc_satisfied_change_sets.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +110,7 @@ func TestSQLiteSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
 		VALUES ('invalid-1', 'project-1', 'owner', 'invalid', 'unknown', 4, 3)`); err == nil {
 		t.Fatal("upgrade migration stopped enforcing the status constraint")
 	}
-	downgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000038_lingdoc_satisfied_change_sets.down.sql"))
+	downgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000042_lingdoc_satisfied_change_sets.down.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

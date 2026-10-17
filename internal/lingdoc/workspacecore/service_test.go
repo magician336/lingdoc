@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -88,7 +89,11 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			"000033_lingdoc_working_copies.up.sql",
 			"000034_lingdoc_selected_rewrites.up.sql",
 			"000035_lingdoc_project_template_copies.up.sql",
-			"000038_lingdoc_satisfied_change_sets.up.sql",
+			"000036_lingdoc_rule_sets.up.sql",
+			"000039_lingdoc_ruleset_export_reference.up.sql",
+			"000040_lingdoc_ruleset_use_audits.up.sql",
+			"000041_lingdoc_template_version_ruleset_ref.up.sql",
+			"000042_lingdoc_satisfied_change_sets.up.sql",
 		} {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 			if err != nil {
@@ -930,6 +935,43 @@ func TestProjectTemplateCopyIsPrivateVersionedAndDurable(t *testing.T) {
 	}
 	if _, _, _, err := svc.SaveTemplateCopy(ctx, owner, project.ID, "copy-edit-blocking", unsafeEdit); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("project-authored blocking rule was accepted: %v", err)
+	}
+}
+
+func TestTemplateVersionRuleSetReferenceIsPersistedAndReadBack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "template-version-ruleset-ref.db")
+	svc := testStore(t, path)
+	ctx := context.Background()
+	owner := Actor{TenantID: 890, UserID: "owner", Role: types.TenantRoleAdmin}
+	seedTenantMember(t, svc, owner)
+	created, _, _, err := svc.CreateProject(ctx, owner, "ruleset-ref-create", CreateProjectInput{Name: "规则引用读回", TemplateID: lingdoctemplate.DemoTemplateID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := asProject(t, created)
+	set := publishedWorkspaceRuleSet(t)
+	service := svc.WithRuleSetSnapshotReader(&transactionalRuleSetSnapshotReaderStub{set: set})
+	boundRaw, _, _, err := service.BindTemplateCopyRuleSet(ctx, owner, project.ID, "ruleset-ref-bind", BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+		RuleSetID: set.ID, RuleSetVersion: set.Version,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := asProject(t, boundRaw)
+	ref := bound.TemplateCopy.TemplateVersionRuleSetRef
+	if ref == nil || ref.ID != set.ID || ref.Version != set.Version || ref.Hash != set.RulesetHash {
+		t.Fatalf("bound TemplateVersion reference = %+v, want exact RuleSet identity/version/hash", ref)
+	}
+	// Reopen through a separate service/DB handle and read the explicit
+	// template-version column, not merely the serialized evaluator snapshot.
+	restarted := testStore(t, path)
+	persisted, err := restarted.GetTemplateCopy(ctx, owner, bound.ID, bound.TemplateCopyVersion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.TemplateVersionRuleSetRef == nil || *persisted.TemplateVersionRuleSetRef != *ref || persisted.Definition.RuleSetRef == nil || *persisted.Definition.RuleSetRef != *ref {
+		t.Fatalf("TemplateVersion reference did not survive database reopen: persisted=%+v definition=%+v want=%+v", persisted.TemplateVersionRuleSetRef, persisted.Definition.RuleSetRef, ref)
 	}
 }
 

@@ -48,6 +48,9 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
 	for _, file := range []string{
 		"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
 		"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
@@ -61,7 +64,11 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 		"000112_lingdoc_working_copies.up.sql",
 		"000113_lingdoc_selected_rewrites.up.sql",
 		"000114_lingdoc_project_template_copies.up.sql",
-		"000117_lingdoc_satisfied_change_sets.up.sql",
+		"000115_lingdoc_rule_sets.up.sql",
+		"000118_lingdoc_ruleset_export_reference.up.sql",
+		"000119_lingdoc_ruleset_use_audits.up.sql",
+		"000120_lingdoc_template_version_ruleset_ref.up.sql",
+		"000121_lingdoc_satisfied_change_sets.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
@@ -77,7 +84,8 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err := db.Exec("INSERT INTO tenant_members (tenant_id,user_id,status) VALUES (1,'owner','active')").Error; err != nil {
 		t.Fatal(err)
 	}
-	s := NewService(NewGORMRepository(db))
+	reader := &ruleSetSnapshotReaderStub{set: publishedWorkspaceRuleSet(t)}
+	s := NewService(NewGORMRepository(db)).WithRuleSetSnapshotReader(reader)
 	ctx := context.Background()
 	actor := Actor{TenantID: 1, UserID: "owner"}
 	input := CreateProjectInput{Name: "Postgres synthetic", TemplateID: "template-demo"}
@@ -85,10 +93,22 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err != nil || code != 201 {
 		t.Fatalf("create: %d %v", code, err)
 	}
-	id := asProject(t, created).ID
+	createdProject := asProject(t, created)
+	id := createdProject.ID
 	second, _, replay, err := s.CreateProject(ctx, actor, "pg-create-key", input)
 	if err != nil || !replay || string(second) != string(created) {
 		t.Fatalf("replay: %v %v", replay, err)
+	}
+	boundRaw, code, replay, err := s.BindTemplateCopyRuleSet(ctx, actor, id, "pg-bind-ruleset-key", BindTemplateCopyRuleSetInput{
+		ExpectedProjectVersion: createdProject.ProjectVersion, ExpectedTemplateCopyVersion: createdProject.TemplateCopyVersion,
+		RuleSetID: reader.set.ID, RuleSetVersion: reader.set.Version,
+	})
+	if err != nil || code != 200 || replay {
+		t.Fatalf("bind RuleSet: code=%d replay=%v err=%v", code, replay, err)
+	}
+	boundProject := asProject(t, boundRaw)
+	if boundProject.TemplateCopy == nil || boundProject.TemplateCopy.Definition.RuleSetSnapshot == nil || boundProject.TemplateCopy.Definition.RuleSetSnapshot.RulesetHash != reader.set.RulesetHash {
+		t.Fatalf("PostgreSQL binding response lost the published snapshot: %+v", boundProject.TemplateCopy)
 	}
 	spec := SaveSpecInput{Fields: map[string]string{"research_subject": "synthetic", "research_goal": "persistence"}}
 	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-spec-key", spec); err != nil {
@@ -97,7 +117,11 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if _, _, _, err := s.SaveSpec(ctx, actor, id, "pg-stale-key", spec); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("CAS: %v", err)
 	}
-	if _, _, _, err := s.ActivateProject(ctx, actor, id, "pg-activate-key", ActivateProjectInput{ExpectedSpecRevision: 1, ExpectedProjectVersion: 2, ReviewedProjectVersion: 2}); err != nil {
+	projectAfterSpec, err := s.GetProject(ctx, actor, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.ActivateProject(ctx, actor, id, "pg-activate-key", ActivateProjectInput{ExpectedSpecRevision: projectAfterSpec.SpecRevision, ExpectedProjectVersion: projectAfterSpec.ProjectVersion, ReviewedProjectVersion: projectAfterSpec.ProjectVersion}); err != nil {
 		t.Fatal(err)
 	}
 	chapters, err := s.ListChapters(ctx, actor, id)
@@ -142,6 +166,10 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	}
 	defer reopenedSQL.Close()
 	reopenedService := NewService(NewGORMRepository(reopened))
+	reopenedProject, err := reopenedService.GetProject(ctx, actor, id)
+	if err != nil || reopenedProject.TemplateCopy == nil || reopenedProject.TemplateCopy.Definition.RuleSetSnapshot == nil || reopenedProject.TemplateCopy.Definition.RuleSetSnapshot.RulesetHash != reader.set.RulesetHash {
+		t.Fatalf("reopen lost the project-copy RuleSet snapshot: %+v err=%v", reopenedProject.TemplateCopy, err)
+	}
 	read, err := reopenedService.GenerationContext(ctx, actor, id, chapters[0].ID)
 	if err != nil || read.ChapterBody != "durable text" || read.ChapterVersionID == nil {
 		t.Fatalf("reopen: %+v %v", read, err)
@@ -222,7 +250,7 @@ func TestPostgresSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
 			t.Fatalf("insert %s status: %v", status, err)
 		}
 	}
-	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000117_lingdoc_satisfied_change_sets.up.sql"))
+	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000121_lingdoc_satisfied_change_sets.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

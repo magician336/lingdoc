@@ -40,7 +40,10 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	// New callers should inject the focused ports above; this adapter is the only
 	// place where the legacy cross-use-case surface is widened again.
 	var legacy ApplicationService = deps.Service
-	if legacy == nil {
+	// When both focused ports are present, keep them split even if a broad test
+	// double or adapter happens to implement ApplicationService as well. Inferring
+	// the legacy adapter from Read first would route mutations through the read port.
+	if legacy == nil && (deps.Read == nil || deps.Write == nil) {
 		if candidate, ok := any(deps.Read).(ApplicationService); ok {
 			legacy = candidate
 		} else if candidate, ok := any(deps.Write).(ApplicationService); ok {
@@ -66,38 +69,42 @@ func NewHandler(deps HandlerDependencies) *Handler {
 		}
 	}
 	// A focused test double may implement one port without carrying the legacy
-	// interface. Keep that seam directly injectable as well.
-	if projects == nil {
-		if candidate, ok := any(deps.Read).(ProjectApplication); ok {
-			projects = candidate
-		} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
-			projects = candidate
+	// interface. Keep that seam directly injectable as well. When both split
+	// ports are present, do not infer a broad route application from either one;
+	// the split adapters below must preserve read/write routing.
+	if deps.Read == nil || deps.Write == nil {
+		if projects == nil {
+			if candidate, ok := any(deps.Read).(ProjectApplication); ok {
+				projects = candidate
+			} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
+				projects = candidate
+			}
 		}
-	}
-	if members == nil {
-		if candidate, ok := any(deps.Write).(MembershipApplication); ok {
-			members = candidate
+		if members == nil {
+			if candidate, ok := any(deps.Write).(MembershipApplication); ok {
+				members = candidate
+			}
 		}
-	}
-	if chapters == nil {
-		if candidate, ok := any(deps.Read).(ChapterApplication); ok {
-			chapters = candidate
-		} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
-			chapters = candidate
+		if chapters == nil {
+			if candidate, ok := any(deps.Read).(ChapterApplication); ok {
+				chapters = candidate
+			} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
+				chapters = candidate
+			}
 		}
-	}
-	if templatesApp == nil {
-		if candidate, ok := any(deps.Read).(TemplateApplication); ok {
-			templatesApp = candidate
-		} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
-			templatesApp = candidate
+		if templatesApp == nil {
+			if candidate, ok := any(deps.Read).(TemplateApplication); ok {
+				templatesApp = candidate
+			} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
+				templatesApp = candidate
+			}
 		}
-	}
-	if changeSets == nil {
-		if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
-			changeSets = candidate
-		} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
-			changeSets = candidate
+		if changeSets == nil {
+			if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
+				changeSets = candidate
+			} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
+				changeSets = candidate
+			}
 		}
 	}
 	// A composition root may provide the intentionally split read and write
@@ -238,6 +245,9 @@ func (a splitTemplateApplication) ChangeTemplateResult(ctx context.Context, acto
 func (a splitTemplateApplication) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
 	return a.write.SaveTemplateCopyResult(ctx, actor, projectID, key, input)
 }
+func (a splitTemplateApplication) BindTemplateCopyRuleSetResult(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (ProjectMutationResult, error) {
+	return a.write.BindTemplateCopyRuleSetResult(ctx, actor, projectID, key, input)
+}
 
 type splitChangeSetApplication struct {
 	read  WorkspaceReadApplication
@@ -286,6 +296,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/template-copies/:version", h.getTemplateCopy)
 	routes.Write.POST("/projects/:projectId/template-copy/preview", h.previewTemplateCopyEdit)
 	routes.Write.PUT("/projects/:projectId/template-copy", h.saveTemplateCopy)
+	routes.Write.PUT("/projects/:projectId/template-copy/rule-set", h.bindTemplateCopyRuleSet)
 	routes.Write.POST("/projects/:projectId/discard", h.discardProject)
 	routes.Write.POST("/projects/:projectId/restore", h.restoreProject)
 	routes.Write.POST("/projects/:projectId/owner-transfer", h.requestOwnerTransfer)
@@ -766,6 +777,27 @@ func (h *Handler) saveTemplateCopy(c *gin.Context) {
 		return
 	}
 	result, err := h.templatesApp.SaveTemplateCopyResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
+	if err != nil {
+		sendError(c, err)
+		return
+	}
+	sendOK(c, http.StatusOK, result.Project, result.Replayed)
+}
+
+func (h *Handler) bindTemplateCopyRuleSet(c *gin.Context) {
+	actor, ok := identity(c)
+	if !ok {
+		return
+	}
+	key, ok := idempotencyKey(c)
+	if !ok {
+		return
+	}
+	var input BindTemplateCopyRuleSetInput
+	if !decodeBody(c, &input) {
+		return
+	}
+	result, err := h.templatesApp.BindTemplateCopyRuleSetResult(c.Request.Context(), actor, c.Param("projectId"), key, input)
 	if err != nil {
 		sendError(c, err)
 		return

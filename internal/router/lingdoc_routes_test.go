@@ -10,6 +10,8 @@ import (
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -24,13 +26,14 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}}
 	routes := newLingDocRegistrar(v1, guards)
 	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
+	registerLingDocRuleSetRoutes(v1, guards, rulesetstore.NewHTTPHandler(rulesetstore.NewStore(nil, nil), testRuleSetRequestInfo))
 	workspace.RegisterDeliveryRoutesWithGroups(routes.groups(), &workspace.DeliveryHandler{})
 	workspace.RegisterDeliveryExportRoutes(routes.write, &workspace.DeliveryExportHandler{})
 	candidateadoption.RegisterRoutes(routes.write, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
 	generation.RegisterRoutes(routes.write, generation.NewHandler(nil, nil))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
-	if got := len(engine.Routes()); got != 56 {
-		t.Fatalf("registered %d LingDoc routes, want 56", got)
+	if got := len(engine.Routes()); got != 65 {
+		t.Fatalf("registered %d LingDoc routes, want 65", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
@@ -64,6 +67,7 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
+	registerLingDocRuleSetRoutes(v1, guards, rulesetstore.NewHTTPHandler(rulesetstore.NewStore(nil, nil), testRuleSetRequestInfo))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 
 	for _, route := range []struct{ method, path string }{
@@ -74,12 +78,76 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 		{http.MethodGet, "/api/v1/lingdoc/projects/:projectId/chapters/:chapterId/working-copy"},
 		{http.MethodPut, "/api/v1/lingdoc/projects/:projectId/chapters/:chapterId/working-copy"},
 		{http.MethodPost, "/api/v1/lingdoc/projects/:projectId/chapters/:chapterId/working-copy/commit"},
+		{http.MethodGet, "/api/v1/lingdoc/rule-sets/definitions"},
+		{http.MethodGet, "/api/v1/lingdoc/rule-sets/:ruleSetID/versions"},
+		{http.MethodGet, "/api/v1/lingdoc/projects/:projectId/rule-set-use-audits"},
+		{http.MethodPost, "/api/v1/lingdoc/rule-sets"},
+		{http.MethodPost, "/api/v1/lingdoc/rule-sets/:ruleSetID/versions/:version/publish"},
 	} {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.method, route.path)
 		if !ok || !policy.RequireFullAccess {
 			t.Errorf("API-key policy for %s %s = %#v, registered=%v; want full access", route.method, route.path, policy, ok)
 		}
 	}
+}
+
+type ruleSetRouteStub struct {
+	rulesetstore.Application
+	createCalls int
+}
+
+func (s *ruleSetRouteStub) CreateDraft(context.Context, rulesetstore.Actor, template.RuleSet) error {
+	s.createCalls++
+	return nil
+}
+
+func TestLingDocRuleSetWritesRequireTenantAdmin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	v1 := engine.Group("/api/v1")
+	enabled := true
+	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
+	v1.Use(guards.apiKeyAuthorizer.Middleware())
+	service := &ruleSetRouteStub{}
+	registerLingDocRuleSetRoutes(v1, guards, rulesetstore.NewHTTPHandler(service, testRuleSetRequestInfo))
+	guards.assertAPIKeyPoliciesMatchRoutes(engine)
+
+	request := func(role types.TenantRole, method, path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
+		ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(1))
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
+		req := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(ctx)
+		res := httptest.NewRecorder()
+		engine.ServeHTTP(res, req)
+		return res
+	}
+	body := `{"ruleset_id":"route-rules","version":"v1","bindings":[]}`
+	for _, role := range []types.TenantRole{types.TenantRoleViewer, types.TenantRoleContributor} {
+		if res := request(role, http.MethodPost, "/api/v1/lingdoc/rule-sets", body); res.Code != http.StatusForbidden {
+			t.Fatalf("%s POST rulesets = %d %s, want 403", role, res.Code, res.Body.String())
+		}
+	}
+	if service.createCalls != 0 {
+		t.Fatalf("denied callers reached application %d times, want 0", service.createCalls)
+	}
+	if res := request(types.TenantRoleAdmin, http.MethodPost, "/api/v1/lingdoc/rule-sets", body); res.Code != http.StatusCreated {
+		t.Fatalf("admin POST rulesets = %d %s, want 201", res.Code, res.Body.String())
+	}
+	if service.createCalls != 1 {
+		t.Fatalf("admin application calls = %d, want 1", service.createCalls)
+	}
+}
+
+func testRuleSetRequestInfo(c *gin.Context) (rulesetstore.Actor, string, bool) {
+	ctx := c.Request.Context()
+	userID, userOK := types.UserIDFromContext(ctx)
+	tenantID, tenantOK := types.TenantIDFromContext(ctx)
+	requestID, _ := types.RequestIDFromContext(ctx)
+	if !userOK || !tenantOK {
+		return rulesetstore.Actor{}, requestID, false
+	}
+	return rulesetstore.Actor{TenantID: tenantID, UserID: userID, Role: string(types.TenantRoleFromContext(ctx))}, requestID, true
 }
 
 func TestLingDocRegistrarUsesExplicitPostPolicyGroups(t *testing.T) {

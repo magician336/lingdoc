@@ -20,13 +20,14 @@ const (
 // Preflight. It does not grant export permission; Prepare always evaluates the
 // frozen input again through Evaluate.
 type TemplateCheckResult struct {
-	ProjectVersion      int                          `json:"project_version"`
-	TemplateCopyID      string                       `json:"template_copy_id,omitempty"`
-	TemplateCopyVersion int64                        `json:"template_copy_version,omitempty"`
-	ContentHash         string                       `json:"content_hash,omitempty"`
-	RulesetHash         string                       `json:"ruleset_hash"`
-	Status              TemplateCheckStatus          `json:"status"`
-	Evaluations         []lingdoctemplate.Evaluation `json:"evaluations"`
+	ProjectVersion      int                               `json:"project_version"`
+	TemplateCopyID      string                            `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion int64                             `json:"template_copy_version,omitempty"`
+	ContentHash         string                            `json:"content_hash,omitempty"`
+	RulesetHash         string                            `json:"ruleset_hash"`
+	RuleSetRef          *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
+	Status              TemplateCheckStatus               `json:"status"`
+	Evaluations         []lingdoctemplate.Evaluation      `json:"evaluations"`
 }
 
 // EvaluateTemplate executes the allowlisted evaluator on a deterministic
@@ -98,26 +99,46 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		projection.Sources = append(projection.Sources, lingdoctemplate.SourceInput{ID: id, Version: version, Available: available})
 	}
 
-	evaluations, err := lingdoctemplate.Evaluate(input.Template, projection)
+	evaluations, err := lingdoctemplate.EvaluateScene(input.Template, "preflight", projection)
 	if err != nil {
 		return TemplateCheckResult{}, err
 	}
 	result := TemplateCheckResult{
 		ProjectVersion: input.ProjectVersion, TemplateCopyID: input.TemplateCopyID,
 		TemplateCopyVersion: input.TemplateCopyVersion, ContentHash: input.TemplateCopyContentHash,
-		RulesetHash: input.Template.RulesetHash, Status: TemplateCheckPassed,
+		RulesetHash: input.Template.RulesetHash, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(input.Template), Status: TemplateCheckPassed,
 		Evaluations: evaluations,
 	}
-	if len(input.Template.Rules) == 0 {
+	if !hasRulesForScene(input.Template, "preflight") {
 		result.Status = TemplateCheckNotEvaluated
 	}
 	for _, evaluation := range evaluations {
-		if evaluation.Status == lingdoctemplate.EvaluationIssue && evaluation.Severity == SeverityBlocking {
+		if evaluation.Severity == SeverityBlocking &&
+			(evaluation.Status == lingdoctemplate.EvaluationIssue || evaluation.Status == lingdoctemplate.EvaluationUnknown) {
 			result.Status = TemplateCheckBlocked
 			break
 		}
 	}
 	return result, nil
+}
+
+func hasRulesForScene(definition lingdoctemplate.Template, scene string) bool {
+	if len(definition.Rules) > 0 {
+		return true
+	}
+	if definition.RuleSetSnapshot == nil {
+		return false
+	}
+	for _, binding := range definition.RuleSetSnapshot.Bindings {
+		if binding.Enabled {
+			for _, triggerScene := range binding.TriggerScenes {
+				if triggerScene == scene {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func confirmationMatches(input DeliveryInput, chapter SnapshotChapter) bool {

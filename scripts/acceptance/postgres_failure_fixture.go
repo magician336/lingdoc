@@ -35,7 +35,9 @@ var lingdocMigrations = []string{
 	"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
 	"000111_lingdoc_change_sets.up.sql", "000112_lingdoc_working_copies.up.sql",
 	"000113_lingdoc_selected_rewrites.up.sql", "000114_lingdoc_project_template_copies.up.sql",
-	"000117_lingdoc_satisfied_change_sets.up.sql",
+	"000115_lingdoc_rule_sets.up.sql", "000118_lingdoc_ruleset_export_reference.up.sql",
+	"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
+	"000121_lingdoc_satisfied_change_sets.up.sql",
 }
 
 func main() {
@@ -197,6 +199,9 @@ func applyLingDocMigrations(dsn string) error {
 		return err
 	}
 	defer db.Close()
+	if _, err := db.ExecContext(context.Background(), "CREATE TABLE IF NOT EXISTS tenants (id BIGINT PRIMARY KEY)"); err != nil {
+		return fmt.Errorf("create base tenants table: %w", err)
+	}
 	for _, migration := range lingdocMigrations {
 		raw, err := os.ReadFile(filepath.Join("migrations", "versioned", migration))
 		if err != nil {

@@ -21,12 +21,14 @@ import (
 )
 
 // Repository owns atomic commit/rollback and database isolation. Callbacks see
-// only domain values. ReadOnly gives a repeatable snapshot; RetryLocks allows
-// bounded retries of rolled-back spec transactions, never partial writes.
+// only domain values. ReadOnly and RepeatableRead request a stable snapshot;
+// RepeatableRead allows audited reads to append their authorization event.
+// RetryLocks allows bounded retries of rolled-back spec transactions, never
+// partial writes.
 type Repository interface {
 	Transaction(context.Context, TransactionOptions, func(Transaction) error) error
 }
-type TransactionOptions struct{ ReadOnly, RetryLocks bool }
+type TransactionOptions struct{ ReadOnly, RetryLocks, RepeatableRead bool }
 
 // Transaction is a storage port, not a second application service. Conditional
 // writes return ErrVersionConflict unless the expected state alone changes.
@@ -250,28 +252,29 @@ func (a legacyProjectAuthorizerAdapter) AuthorizeProject(tx Transaction, request
 type operationName string
 
 const (
-	operationDiscardProject       operationName = "discardProject"
-	operationRestoreProject       operationName = "restoreProject"
-	operationSaveTemplateCopy     operationName = "saveTemplateCopy"
-	operationChangeTemplate       operationName = "changeTemplate"
-	operationCreateProject        operationName = "createProject"
-	operationSaveSpec             operationName = "saveSpec"
-	operationCreateChangeSet      operationName = "createChangeSet"
-	operationReassessChangeSet    operationName = "reassessChangeSet"
-	operationApplyChangeSet       operationName = "applyChangeSet"
-	operationRejectChangeSet      operationName = "rejectChangeSet"
-	operationCreateDraftCandidate operationName = "createDraftCandidate"
-	operationValidationIssue      operationName = "validationIssueDisposition"
-	operationRequestOwnerTransfer operationName = "requestOwnerTransfer"
-	operationAcceptOwnerTransfer  operationName = "acceptOwnerTransfer"
-	operationTransferOwner        operationName = "transferOwner"
-	operationSaveMembers          operationName = "saveMembers"
-	operationActivateProject      operationName = "activateProject"
-	operationSaveChapter          operationName = "saveChapter"
-	operationSaveWorkingCopy      operationName = "saveWorkingCopy"
-	operationApplySelectedRewrite operationName = "applySelectedRewrite"
-	operationCommitWorkingCopy    operationName = "commitWorkingCopy"
-	operationRestoreWorkingCopy   operationName = "restoreWorkingCopy"
+	operationDiscardProject          operationName = "discardProject"
+	operationRestoreProject          operationName = "restoreProject"
+	operationSaveTemplateCopy        operationName = "saveTemplateCopy"
+	operationBindTemplateCopyRuleSet operationName = "bindTemplateCopyRuleSet"
+	operationChangeTemplate          operationName = "changeTemplate"
+	operationCreateProject           operationName = "createProject"
+	operationSaveSpec                operationName = "saveSpec"
+	operationCreateChangeSet         operationName = "createChangeSet"
+	operationReassessChangeSet       operationName = "reassessChangeSet"
+	operationApplyChangeSet          operationName = "applyChangeSet"
+	operationRejectChangeSet         operationName = "rejectChangeSet"
+	operationCreateDraftCandidate    operationName = "createDraftCandidate"
+	operationValidationIssue         operationName = "validationIssueDisposition"
+	operationRequestOwnerTransfer    operationName = "requestOwnerTransfer"
+	operationAcceptOwnerTransfer     operationName = "acceptOwnerTransfer"
+	operationTransferOwner           operationName = "transferOwner"
+	operationSaveMembers             operationName = "saveMembers"
+	operationActivateProject         operationName = "activateProject"
+	operationSaveChapter             operationName = "saveChapter"
+	operationSaveWorkingCopy         operationName = "saveWorkingCopy"
+	operationApplySelectedRewrite    operationName = "applySelectedRewrite"
+	operationCommitWorkingCopy       operationName = "commitWorkingCopy"
+	operationRestoreWorkingCopy      operationName = "restoreWorkingCopy"
 )
 
 type operationSourceDecoder[I any] func(ChapterWorkspaceTransaction, operationDescriptor[I], OperationResult, bool) ([]string, error)
@@ -493,10 +496,35 @@ func isReplayPayloadDecodeError(err error) bool {
 type Service struct {
 	repository Repository
 	templates  TemplateReader
+	ruleSets   RuleSetSnapshotReader
 	sources    SourcePolicy
 	authorizer AuthorizationPolicy
 	audit      AuditSink
 	mode       AuthorizationMode
+}
+
+// RuleSetSnapshotReader reads an exact tenant-scoped RuleSet version. The
+// returned value must be an immutable snapshot with server-verified hashes.
+type RuleSetSnapshotReader interface {
+	GetVersion(context.Context, Actor, string, string) (lingdoctemplate.RuleSet, error)
+}
+
+// TransactionalRuleSetSnapshotReader revalidates and locks the exact RuleSet
+// version using the same storage transaction that persists its project copy.
+// Production adapters implement this to serialize binding against withdraw or
+// recall transitions. Binding fails closed unless the configured reader has
+// this capability; a detached read cannot authorize a new binding safely.
+type TransactionalRuleSetSnapshotReader interface {
+	GetVersionInTransaction(context.Context, Transaction, Actor, string, string) (lingdoctemplate.RuleSet, error)
+}
+
+// WithRuleSetSnapshotReader connects project-copy binding to the independent
+// RuleSet store. It is configured once at the composition root.
+func (s *Service) WithRuleSetSnapshotReader(reader RuleSetSnapshotReader) *Service {
+	if s != nil {
+		s.ruleSets = reader
+	}
+	return s
 }
 
 func NewService(repository Repository, readers ...TemplateReader) *Service {
@@ -824,7 +852,11 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 	if err != nil {
 		return err
 	}
-	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+	// Authorization checks append their decision to the project audit log in
+	// this transaction. Keep the decision and audit on one transaction, but do
+	// not mark it read-only: PostgreSQL correctly rejects writes in a read-only
+	// transaction even when SQLite permits them.
+	return s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, request)
 		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, request.capability(), err)
 		return err
@@ -832,7 +864,9 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) (err error) {
+	// GetProject also records the authorization decision in the same
+	// transaction, so PostgreSQL requires a writable transaction here.
+	err := s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) (err error) {
 		request := authorizationRequest(actor, id, AuthorizationRead, "")
 		result, err = s.authorizeProject(ctx, tx, request)
 		_ = s.recordAuditInTransaction(ctx, tx, actor, id, request.capability(), err)
@@ -1032,7 +1066,7 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 			return nil, 0, false, err
 		}
 	}
-	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: operation.Name == operationSaveSpec || operation.Name == operationCreateProject || operation.Name == operationSaveTemplateCopy}, func(tx Transaction) error {
+	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: operation.Name == operationSaveSpec || operation.Name == operationCreateProject || operation.Name == operationSaveTemplateCopy || operation.Name == operationBindTemplateCopyRuleSet}, func(tx Transaction) error {
 		operations, ok := any(tx).(OperationTransaction)
 		if !ok {
 			return ErrInvalidState
@@ -1225,6 +1259,15 @@ type TemplateCopyDefinitionInput struct {
 	Rules                       []lingdoctemplate.Rule    `json:"rules"`
 }
 
+type BindTemplateCopyRuleSetInput struct {
+	ExpectedProjectVersion      int64                                 `json:"expected_project_version"`
+	ExpectedTemplateCopyVersion int64                                 `json:"expected_template_copy_version"`
+	RuleSetRef                  *lingdoctemplate.RuleSetReference     `json:"ruleset_ref,omitempty"`
+	RuleSetID                   string                                `json:"ruleset_id"`
+	RuleSetVersion              string                                `json:"ruleset_version"`
+	Overrides                   []lingdoctemplate.RuleBindingOverride `json:"overrides,omitempty"`
+}
+
 func projectTemplateCopy(actor Actor, projectID string, version int64, source lingdoctemplate.Template, status string) (*ProjectTemplateCopy, error) {
 	definition, err := lingdoctemplate.WithHashes(source)
 	if err != nil {
@@ -1234,7 +1277,8 @@ func projectTemplateCopy(actor Actor, projectID string, version int64, source li
 		ID: uuid.NewString(), ProjectID: projectID, SourceTemplateID: source.ID,
 		SourceTemplateVersion: source.Version, Version: version, Status: status,
 		ContentHash: definition.ContentHash, RulesetHash: definition.RulesetHash,
-		Definition: definition, CreatedBy: actor.UserID, CreatedAt: time.Now().UTC(),
+		TemplateVersionRuleSetRef: lingdoctemplate.RuleSetReferenceFor(definition),
+		Definition:                definition, CreatedBy: actor.UserID, CreatedAt: time.Now().UTC(),
 	}, nil
 }
 
@@ -1248,10 +1292,16 @@ func validateProjectTemplateCopy(copy *ProjectTemplateCopy) error {
 		copy.Definition.ID != copy.SourceTemplateID || copy.Definition.Version != copy.SourceTemplateVersion {
 		return ErrInvalidState
 	}
+	if !reflect.DeepEqual(copy.TemplateVersionRuleSetRef, lingdoctemplate.RuleSetReferenceFor(copy.Definition)) {
+		return ErrInvalidState
+	}
 	return nil
 }
 
 func editableTemplateDefinition(current lingdoctemplate.Template, input TemplateCopyDefinitionInput) (lingdoctemplate.Template, error) {
+	if current.RuleSetSnapshot != nil && !reflect.DeepEqual(input.Rules, current.Rules) {
+		return lingdoctemplate.Template{}, fmt.Errorf("%w: ruleset-bound copies cannot edit legacy rules independently", ErrInvalidRequest)
+	}
 	serverRules := make(map[string]lingdoctemplate.Rule, len(current.Rules))
 	for _, rule := range current.Rules {
 		serverRules[rule.ID] = rule
@@ -1489,10 +1539,127 @@ func (s *Service) SaveTemplateCopy(ctx context.Context, actor Actor, projectID, 
 	})
 }
 
+// BindTemplateCopyRuleSet appends a new project-copy version containing the
+// exact published RuleSet snapshot. Reads are authorized before consulting the
+// separate RuleSet store; the final project write rechecks authorization and
+// version conditions in its own transaction.
+func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (json.RawMessage, int, bool, error) {
+	if input.RuleSetRef != nil {
+		ref := *input.RuleSetRef
+		ref.ID, ref.Version = strings.TrimSpace(ref.ID), strings.TrimSpace(ref.Version)
+		if (input.RuleSetID != "" && input.RuleSetID != ref.ID) ||
+			(input.RuleSetVersion != "" && input.RuleSetVersion != ref.Version) ||
+			(ref.Hash != "" && len(ref.Hash) != 64) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+		input.RuleSetRef = &ref
+		input.RuleSetID, input.RuleSetVersion = ref.ID, ref.Version
+	}
+	input.RuleSetID = strings.TrimSpace(input.RuleSetID)
+	input.RuleSetVersion = strings.TrimSpace(input.RuleSetVersion)
+	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.RuleSetID == "" || input.RuleSetVersion == "" || len(input.RuleSetID) > 64 || len(input.RuleSetVersion) > 64 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if s.ruleSets == nil {
+		return nil, 0, false, ErrInvalidState
+	}
+
+	return runOperation(s, ctx, actor,
+		operationInput(operationBindTemplateCopyRuleSet, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationManage, "")),
+		mutationPort[ProjectMutationTransaction],
+		func(tx ProjectMutationTransaction, p Project) (operationResult[Project], error) {
+			audit, auditOK := tx.(auditTransaction)
+			if !auditOK {
+				return operationResult[Project]{}, ErrInvalidState
+			}
+			if p.Status != "draft" || p.DiscardedAt != nil || p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyDraft {
+				return operationResult[Project]{}, ErrInvalidState
+			}
+			if p.ProjectVersion != input.ExpectedProjectVersion || p.TemplateCopyVersion != input.ExpectedTemplateCopyVersion {
+				return operationResult[Project]{}, ErrVersionConflict
+			}
+			set, err := s.ruleSetVersionForBinding(ctx, tx, actor, input.RuleSetID, input.RuleSetVersion)
+			if err != nil {
+				return operationResult[Project]{}, err
+			}
+			if set.ID != input.RuleSetID || set.Version != input.RuleSetVersion {
+				return operationResult[Project]{}, ErrNotFound
+			}
+			if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+				if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+					return operationResult[Project]{}, ErrInvalidState
+				}
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+			if input.RuleSetRef != nil && input.RuleSetRef.Hash != "" && input.RuleSetRef.Hash != set.RulesetHash {
+				return operationResult[Project]{}, ErrVersionConflict
+			}
+			if templateRef := lingdoctemplate.RuleSetReferenceFor(p.TemplateCopy.Definition); templateRef != nil &&
+				(templateRef.ID != set.ID || templateRef.Version != set.Version || templateRef.Hash != set.RulesetHash) {
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+			if err := lingdoctemplate.ValidateRuleBindingOverrides(set, input.Overrides); err != nil {
+				return operationResult[Project]{}, ErrInvalidRequest
+			}
+			definition := lingdoctemplate.Clone(p.TemplateCopy.Definition)
+			definition.RuleSetSnapshot = lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &set}).RuleSetSnapshot
+			definition.RuleSetRef = &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+			definition.RuleBindingOverrides = lingdoctemplate.CloneRuleBindingOverrides(input.Overrides)
+			definition.ContentHash, definition.RulesetHash = "", ""
+			copy, err := projectTemplateCopy(actor, projectID, p.TemplateCopyVersion+1, definition, TemplateCopyDraft)
+			if err != nil {
+				return operationResult[Project]{}, err
+			}
+			next := p
+			next.TemplateCopyVersion, next.TemplateCopy = copy.Version, copy
+			next.ProjectVersion++
+			if err := tx.UpdateProject(actor.TenantID, p, next); err != nil {
+				return operationResult[Project]{}, err
+			}
+			action := "project_template.bind_ruleset"
+			if len(input.Overrides) > 0 {
+				action = "project_template.override_ruleset"
+			}
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: action, Target: copy.ID, Details: map[string]any{"copy_version": copy.Version, "ruleset_id": set.ID, "ruleset_version": set.Version, "ruleset_hash": set.RulesetHash, "content_hash": copy.ContentHash, "override_count": len(input.Overrides)}, CreatedAt: copy.CreatedAt}); err != nil {
+				return operationResult[Project]{}, err
+			}
+			return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
+		})
+}
+
+func (s *Service) ruleSetVersionForBinding(ctx context.Context, tx any, actor Actor, id, version string) (lingdoctemplate.RuleSet, error) {
+	reader, ok := s.ruleSets.(TransactionalRuleSetSnapshotReader)
+	if !ok || reader == nil {
+		// Binding must share the RuleSet state check and project-copy write in
+		// one transaction. Falling back to GetVersion can bind a version that
+		// was withdrawn after the independent read completed.
+		return lingdoctemplate.RuleSet{}, ErrInvalidState
+	}
+	transaction, ok := tx.(Transaction)
+	if !ok {
+		return lingdoctemplate.RuleSet{}, ErrInvalidState
+	}
+	return reader.GetVersionInTransaction(ctx, transaction, actor, id, version)
+}
+
 // SaveTemplateCopyResult exposes the saved project without transport fields.
 func (s *Service) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
 	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
 		return s.SaveTemplateCopy(ctx, actor, projectID, key, input)
+	}, "project mutation result")
+	if err != nil {
+		return ProjectMutationResult{Replayed: replayed}, err
+	}
+	return ProjectMutationResult{Project: project, Replayed: replayed}, nil
+}
+
+// BindTemplateCopyRuleSetResult exposes the saved project without transport fields.
+func (s *Service) BindTemplateCopyRuleSetResult(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (ProjectMutationResult, error) {
+	project, replayed, err := adaptMutationResult[Project](func() (json.RawMessage, int, bool, error) {
+		return s.BindTemplateCopyRuleSet(ctx, actor, projectID, key, input)
 	}, "project mutation result")
 	if err != nil {
 		return ProjectMutationResult{Replayed: replayed}, err
@@ -1832,6 +1999,16 @@ func validateChangeSetInput(input CreateChangeSetInput) error {
 		if upgrade.ExpectedProjectVersion < 1 || upgrade.ExpectedTemplateCopyVersion < 1 || upgrade.Fields == nil || upgrade.Sections == nil || upgrade.Terms == nil || upgrade.Rules == nil {
 			return ErrInvalidRequest
 		}
+		if upgrade.RuleSetRef != nil {
+			ref := *upgrade.RuleSetRef
+			ref.ID = strings.TrimSpace(ref.ID)
+			ref.Version = strings.TrimSpace(ref.Version)
+			if ref.ID == "" || ref.Version == "" || len(ref.ID) > 64 || len(ref.Version) > 64 || len(ref.Hash) != 64 {
+				return ErrInvalidRequest
+			}
+		} else if upgrade.RuleBindingOverrides != nil {
+			return ErrInvalidRequest
+		}
 		for key, value := range upgrade.FieldValues {
 			if strings.TrimSpace(key) == "" || len(value) > 10000 {
 				return ErrInvalidRequest
@@ -1847,6 +2024,147 @@ func editableTemplateDefinitionFromUpgrade(current lingdoctemplate.Template, inp
 		Fields: input.Fields, Sections: input.Sections, Terms: input.Terms,
 		RequiredFields: input.RequiredFields, Rules: input.Rules,
 	})
+}
+
+// bindUpgradeRuleSet resolves the requested immutable reference inside the
+// ChangeSet transaction. The assessed ChangeSet stores the exact snapshot;
+// Apply rechecks that exact version's lifecycle in its own transaction before
+// changing the active project copy.
+func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, current, definition lingdoctemplate.Template, input TemplateUpgradeInput) (lingdoctemplate.Template, error) {
+	if input.RuleSetRef == nil {
+		return definition, nil
+	}
+	ref := *input.RuleSetRef
+	ref.ID, ref.Version = strings.TrimSpace(ref.ID), strings.TrimSpace(ref.Version)
+	if len(ref.Hash) != 64 {
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	set, err := s.ruleSetVersionForBinding(ctx, tx, actor, ref.ID, ref.Version)
+	if err != nil {
+		return lingdoctemplate.Template{}, err
+	}
+	if set.ID != ref.ID || set.Version != ref.Version {
+		return lingdoctemplate.Template{}, ErrNotFound
+	}
+	if ref.Hash != "" && ref.Hash != set.RulesetHash {
+		return lingdoctemplate.Template{}, ErrVersionConflict
+	}
+	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+			return lingdoctemplate.Template{}, ErrInvalidState
+		}
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	overrides := input.RuleBindingOverrides
+	currentRef := lingdoctemplate.RuleSetReferenceFor(current)
+	if overrides == nil && currentRef != nil && currentRef.ID == set.ID && currentRef.Version == set.Version && currentRef.Hash == set.RulesetHash {
+		overrides = current.RuleBindingOverrides
+	}
+	if err := lingdoctemplate.ValidateRuleBindingOverrides(set, overrides); err != nil {
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	definition.RuleSetSnapshot = lingdoctemplate.Clone(lingdoctemplate.Template{RuleSetSnapshot: &set}).RuleSetSnapshot
+	definition.RuleSetRef = &lingdoctemplate.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	definition.RuleBindingOverrides = lingdoctemplate.CloneRuleBindingOverrides(overrides)
+	definition.ContentHash, definition.RulesetHash = "", ""
+	definition, err = lingdoctemplate.WithHashes(definition)
+	if err != nil {
+		return lingdoctemplate.Template{}, ErrInvalidRequest
+	}
+	return definition, nil
+}
+
+func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, actor Actor, definition lingdoctemplate.Template) error {
+	ref := lingdoctemplate.RuleSetReferenceFor(definition)
+	if ref == nil {
+		return nil
+	}
+	if definition.RuleSetRef != nil && *definition.RuleSetRef != *ref {
+		return ErrInvalidState
+	}
+	set, err := s.ruleSetVersionForBinding(ctx, tx, actor, ref.ID, ref.Version)
+	if err != nil {
+		return err
+	}
+	if set.ID != ref.ID || set.Version != ref.Version {
+		return ErrNotFound
+	}
+	if set.RulesetHash != ref.Hash {
+		return ErrVersionConflict
+	}
+	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+			return ErrInvalidState
+		}
+		return fmt.Errorf("%w: current RuleSet snapshot is invalid", ErrInvalidState)
+	}
+	return nil
+}
+
+func templateUpgradeChangesRuleSetBinding(current *ProjectTemplateCopy, target lingdoctemplate.Template) bool {
+	targetRef := lingdoctemplate.RuleSetReferenceFor(target)
+	if targetRef == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	currentRef := lingdoctemplate.RuleSetReferenceFor(current.Definition)
+	return currentRef == nil || *currentRef != *targetRef ||
+		!reflect.DeepEqual(current.Definition.RuleBindingOverrides, target.RuleBindingOverrides)
+}
+
+// templateUpgradeAuditDetails records the immutable migration identity in the
+// JSON details column. AuditEvent.Reason is intentionally duplicated here:
+// gormTransaction reconstructs events from details_json and does not persist
+// the top-level Reason field.
+func templateUpgradeAuditDetails(change ChangeSet, targetCopy *ProjectTemplateCopy) map[string]any {
+	upgrade := change.TemplateUpgrade
+	if upgrade == nil {
+		return nil
+	}
+	details := map[string]any{
+		"change_set_id":              change.ID,
+		"reason":                     change.Reason,
+		"base_copy_version":          upgrade.BaseTemplateCopyVersion,
+		"base_template_copy_version": upgrade.BaseTemplateCopyVersion,
+		"old_copy_version":           upgrade.BaseTemplateCopyVersion,
+		"target_copy_version":        upgrade.Preview.TargetCopyVersion,
+		"new_copy_version":           upgrade.Preview.TargetCopyVersion,
+		"target_content_hash":        upgrade.Preview.TargetContentHash,
+		"target_ruleset_hash":        upgrade.Preview.TargetRulesetHash,
+	}
+	if targetCopy != nil {
+		details["target_copy_version"] = targetCopy.Version
+		details["new_copy_version"] = targetCopy.Version
+		details["content_hash"] = targetCopy.ContentHash
+		details["ruleset_hash"] = targetCopy.RulesetHash
+		details["effective_ruleset_hash"] = targetCopy.RulesetHash
+	} else {
+		details["content_hash"] = upgrade.Preview.TargetContentHash
+		details["ruleset_hash"] = upgrade.Preview.TargetRulesetHash
+		details["effective_ruleset_hash"] = upgrade.Preview.TargetRulesetHash
+	}
+	ref := lingdoctemplate.RuleSetReferenceFor(upgrade.Definition)
+	if ref != nil {
+		details["ruleset_id"] = ref.ID
+		details["ruleset_version"] = ref.Version
+		details["ruleset_source_hash"] = ref.Hash
+		details["source_ruleset_hash"] = ref.Hash
+	}
+	overrides := lingdoctemplate.CloneRuleBindingOverrides(upgrade.Definition.RuleBindingOverrides)
+	if overrides == nil {
+		overrides = []lingdoctemplate.RuleBindingOverride{}
+	}
+	details["rule_binding_overrides"] = overrides
+	details["overrides"] = overrides
+	details["override_count"] = len(overrides)
+	if len(overrides) > 0 {
+		details["binding_action"] = "override_ruleset"
+	} else if ref != nil {
+		details["binding_action"] = "bind_ruleset"
+	}
+	return details
 }
 
 // templateSpecAfterUpgrade keeps orphaned historic values available for review,
@@ -1900,6 +2218,10 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 			if err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
+			definition, err = s.bindUpgradeRuleSet(ctx, tx, actor, p.TemplateCopy.Definition, definition, *requested)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
 			if _, err := templateSpecAfterUpgrade(p.Spec, definition, requested.FieldValues); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
@@ -1950,9 +2272,9 @@ func (s *Service) CreateChangeSet(ctx context.Context, actor Actor, projectID, k
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			details := map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts}
+			details := map[string]any{"base_context_revision": change.BaseContextRevision, "fields": change.Fields, "impacts": change.Impacts, "reason": change.Reason}
 			if change.TemplateUpgrade != nil {
-				details["template_upgrade"] = map[string]any{"base_template_copy_version": change.TemplateUpgrade.BaseTemplateCopyVersion, "target_content_hash": change.TemplateUpgrade.Preview.TargetContentHash, "target_ruleset_hash": change.TemplateUpgrade.Preview.TargetRulesetHash}
+				details["template_upgrade"] = templateUpgradeAuditDetails(change, nil)
 			}
 			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.create", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: change.CreatedAt}); err != nil {
 				return operationResult[ChangeSet]{}, err
@@ -2081,6 +2403,19 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if change.Status != "assessed" {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
+		// A governed template migration must never commit without a durable
+		// audit record. Check the transactional audit capability before any
+		// stale-state or project-copy writes are attempted.
+		if change.TemplateUpgrade != nil {
+			if _, ok := tx.(auditTransaction); !ok {
+				return operationResult[ChangeSet]{}, fmt.Errorf("%w: template upgrade apply requires transactional audit", ErrInvalidState)
+			}
+		}
+		if change.TemplateUpgrade != nil && templateUpgradeChangesRuleSetBinding(p.TemplateCopy, change.TemplateUpgrade.Definition) {
+			if err := s.recheckTemplateUpgradeRuleSet(ctx, tx, actor, change.TemplateUpgrade.Definition); err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
+		}
 		upgradeStale := change.TemplateUpgrade != nil && (p.TemplateCopy == nil || p.TemplateCopyVersion != change.TemplateUpgrade.BaseTemplateCopyVersion)
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
@@ -2206,11 +2541,11 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			return operationResult[ChangeSet]{}, err
 		}
 		if audit, ok := tx.(auditTransaction); ok {
-			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec}
+			details := map[string]any{"base_context_revision": change.BaseContextRevision, "target_context_revision": targetContext, "target_spec_revision": targetSpec, "reason": change.Reason, "change_set_id": change.ID}
 			if change.TemplateUpgrade != nil {
-				details["template_upgrade"] = map[string]any{"base_copy_version": change.TemplateUpgrade.BaseTemplateCopyVersion, "target_copy_version": next.TemplateCopyVersion, "content_hash": next.TemplateCopy.ContentHash, "ruleset_hash": next.TemplateCopy.RulesetHash}
+				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)
 			}
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, CreatedAt: now}); err != nil {
+			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
