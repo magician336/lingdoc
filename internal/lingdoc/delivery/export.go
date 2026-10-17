@@ -313,8 +313,8 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 	if snapshots == nil || exports == nil || renderer == nil || validator == nil || currentness == nil || access == nil {
 		return nil
 	}
-	actions, ok := exports.(ExportRecorder)
-	if !ok {
+	transactional, err := NewTransactionalExportPort(exports)
+	if err != nil {
 		return nil
 	}
 	var audit workspacecore.AuditSink
@@ -322,7 +322,7 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 		audit = audits[0]
 	}
 	return &ExportService{
-		snapshots: snapshots, exports: exports, actions: actions,
+		snapshots: snapshots, exports: exports, actions: transactional,
 		renderer: renderer, validator: validator, currentness: currentness, access: access, audit: audit,
 		now: time.Now,
 	}
@@ -335,8 +335,8 @@ func NewExportServiceWithAccessPolicy(snapshots SnapshotStore, exports ExportSto
 	if snapshots == nil || exports == nil || renderer == nil || validator == nil || policy == nil {
 		return nil
 	}
-	actions, ok := exports.(ExportRecorder)
-	if !ok {
+	transactional, err := NewTransactionalExportPort(exports)
+	if err != nil {
 		return nil
 	}
 	var audit workspacecore.AuditSink
@@ -344,7 +344,7 @@ func NewExportServiceWithAccessPolicy(snapshots SnapshotStore, exports ExportSto
 		audit = audits[0]
 	}
 	return &ExportService{
-		snapshots: snapshots, exports: exports, actions: actions,
+		snapshots: snapshots, exports: exports, actions: transactional,
 		renderer: renderer, validator: validator, policy: policy, audit: audit,
 		now: time.Now,
 	}
