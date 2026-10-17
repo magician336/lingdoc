@@ -103,7 +103,7 @@ func openDeliveryTestDB(t *testing.T) *gorm.DB {
 func openDeliveryTestDBAt(t *testing.T, path string) *gorm.DB {
 	t.Helper()
 	db := openDeliveryDBAt(t, path)
-	for _, name := range []string{"000018_lingdoc_workspace.up.sql", "000024_lingdoc_delivery_stores.up.sql", "000037_lingdoc_ruleset_export_reference.up.sql", "000038_lingdoc_ruleset_use_audits.up.sql"} {
+	for _, name := range []string{"000018_lingdoc_workspace.up.sql", "000024_lingdoc_delivery_stores.up.sql", "000039_lingdoc_ruleset_export_reference.up.sql", "000040_lingdoc_ruleset_use_audits.up.sql"} {
 		applyDeliveryMigration(t, db, name)
 	}
 	return db

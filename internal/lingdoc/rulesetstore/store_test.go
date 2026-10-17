@@ -375,7 +375,7 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 	if err := db.Exec(string(migration)).Error; err != nil {
 		t.Fatal(err)
 	}
-	usageMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000038_lingdoc_ruleset_use_audits.up.sql"))
+	usageMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000040_lingdoc_ruleset_use_audits.up.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -199,17 +199,18 @@ func Validate(t Template) error {
 		if err := CanBindRuleSet(*t.RuleSetSnapshot); err != nil {
 			return fmt.Errorf("%w: template rule set snapshot is not bindable: %v", ErrInvalidDefinition, err)
 		}
-		compiled, err := CompileRuleSet(*t.RuleSetSnapshot)
+		effectiveRuleSet, err := effectiveRuleSetWithOverrides(*t.RuleSetSnapshot, t.RuleBindingOverrides)
 		if err != nil {
-			return fmt.Errorf("%w: template rule set snapshot cannot be compiled: %v", ErrInvalidDefinition, err)
+			return fmt.Errorf("%w: invalid project RuleSet override: %v", ErrInvalidDefinition, err)
+		}
+		compiled, err := CompileRuleSet(effectiveRuleSet)
+		if err != nil {
+			return fmt.Errorf("%w: effective project RuleSet cannot be compiled: %v", ErrInvalidDefinition, err)
 		}
 		for _, rule := range compiled {
 			if ruleIDs[rule.ID] {
 				return fmt.Errorf("%w: rule set binding duplicates template rule %q", ErrInvalidDefinition, rule.ID)
 			}
-		}
-		if err := ValidateRuleBindingOverrides(*t.RuleSetSnapshot, t.RuleBindingOverrides); err != nil {
-			return fmt.Errorf("%w: invalid project RuleSet override: %v", ErrInvalidDefinition, err)
 		}
 	} else if len(t.RuleBindingOverrides) > 0 {
 		return fmt.Errorf("%w: RuleSet overrides require an immutable snapshot", ErrInvalidDefinition)

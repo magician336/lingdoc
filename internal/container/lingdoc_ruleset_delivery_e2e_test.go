@@ -155,8 +155,8 @@ func applyG4E2ESQLiteSchema(t *testing.T, db *gorm.DB) {
 		"000030_lingdoc_project_baseline.up.sql", "000031_lingdoc_citation_usages.up.sql",
 		"000032_lingdoc_change_sets.up.sql", "000033_lingdoc_working_copies.up.sql",
 		"000034_lingdoc_selected_rewrites.up.sql", "000035_lingdoc_project_template_copies.up.sql",
-		"000036_lingdoc_rule_sets.up.sql", "000037_lingdoc_ruleset_export_reference.up.sql",
-		"000038_lingdoc_ruleset_use_audits.up.sql", "000039_lingdoc_template_version_ruleset_ref.up.sql",
+		"000036_lingdoc_rule_sets.up.sql", "000039_lingdoc_ruleset_export_reference.up.sql",
+		"000040_lingdoc_ruleset_use_audits.up.sql", "000041_lingdoc_template_version_ruleset_ref.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", name))
 		if err != nil {
@@ -200,8 +200,8 @@ func applyG4E2EPostgresSchema(t *testing.T, db *gorm.DB) {
 		"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
 		"000111_lingdoc_change_sets.up.sql", "000112_lingdoc_working_copies.up.sql",
 		"000113_lingdoc_selected_rewrites.up.sql", "000114_lingdoc_project_template_copies.up.sql",
-		"000115_lingdoc_rule_sets.up.sql", "000116_lingdoc_ruleset_export_reference.up.sql",
-		"000117_lingdoc_ruleset_use_audits.up.sql", "000118_lingdoc_template_version_ruleset_ref.up.sql",
+		"000115_lingdoc_rule_sets.up.sql", "000118_lingdoc_ruleset_export_reference.up.sql",
+		"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "versioned", name))
 		if err != nil {

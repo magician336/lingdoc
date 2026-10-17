@@ -29,8 +29,9 @@ func TestSQLiteProductionMigrationBatch(t *testing.T) {
 		"000034_lingdoc_selected_rewrites.up.sql",
 		"000035_lingdoc_project_template_copies.up.sql",
 		"000036_lingdoc_rule_sets.up.sql",
-		"000038_lingdoc_ruleset_use_audits.up.sql",
-		"000039_lingdoc_template_version_ruleset_ref.up.sql",
+		"000039_lingdoc_ruleset_export_reference.up.sql",
+		"000040_lingdoc_ruleset_use_audits.up.sql",
+		"000041_lingdoc_template_version_ruleset_ref.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
 		if err != nil {

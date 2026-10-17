@@ -831,7 +831,7 @@ func exportRouterWithUnrenderableBody(t *testing.T) *gin.Engine {
 func TestExportDownloadRejectsCorruptedPersistedBytes(t *testing.T) {
 	handler, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db, deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}), deliveryMethodChapter())
-	for _, name := range []string{"000024_lingdoc_delivery_stores.up.sql", "000037_lingdoc_ruleset_export_reference.up.sql"} {
+	for _, name := range []string{"000024_lingdoc_delivery_stores.up.sql", "000039_lingdoc_ruleset_export_reference.up.sql"} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 		if err != nil {
 			t.Fatal(err)

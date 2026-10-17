@@ -331,6 +331,23 @@ func TestTemplateRejectsNonPublishedOrConflictingRuleSetSnapshot(t *testing.T) {
 	}
 }
 
+func TestTemplateRejectsEnabledOverrideCollisionBeforeHashing(t *testing.T) {
+	draft := testRuleSet()
+	// The fourth binding is disabled in the immutable version. Its ID only
+	// conflicts with a legacy template rule after the project enables it.
+	draft.Bindings[3].RuleID = RuleRequiredFields
+	published, err := PublishRuleSet(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	definition := DemoTemplate()
+	definition.RuleSetSnapshot = &published
+	definition.RuleBindingOverrides = []RuleBindingOverride{{RuleID: RuleRequiredFields, Enabled: boolPointer(true)}}
+	if _, err := WithHashes(definition); !errors.Is(err, ErrInvalidDefinition) {
+		t.Fatalf("enabled RuleSet rule colliding with a legacy template rule error = %v, want ErrInvalidDefinition", err)
+	}
+}
+
 func TestEvaluatePinsLegacyDemoHashOnlyForUnchangedDemoRules(t *testing.T) {
 	input := EvaluationInput{ProjectID: "project-1", TargetVersion: "copy/1"}
 	baseline, err := Evaluate(DemoTemplate(), input)

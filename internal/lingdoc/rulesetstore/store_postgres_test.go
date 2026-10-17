@@ -89,9 +89,9 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	}
 	for _, name := range []string{
 		"000115_lingdoc_rule_sets.up.sql",
-		"000116_lingdoc_ruleset_export_reference.up.sql",
-		"000117_lingdoc_ruleset_use_audits.up.sql",
-		"000118_lingdoc_template_version_ruleset_ref.up.sql",
+		"000118_lingdoc_ruleset_export_reference.up.sql",
+		"000119_lingdoc_ruleset_use_audits.up.sql",
+		"000120_lingdoc_template_version_ruleset_ref.up.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", name))
 		if err != nil {

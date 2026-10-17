@@ -2025,8 +2025,9 @@ func editableTemplateDefinitionFromUpgrade(current lingdoctemplate.Template, inp
 }
 
 // bindUpgradeRuleSet resolves the requested immutable reference inside the
-// ChangeSet transaction. The assessed ChangeSet stores the exact snapshot,
-// so Apply never re-reads a mutable alias or changes historical deliveries.
+// ChangeSet transaction. The assessed ChangeSet stores the exact snapshot;
+// Apply rechecks that exact version's lifecycle in its own transaction before
+// changing the active project copy.
 func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, current, definition lingdoctemplate.Template, input TemplateUpgradeInput) (lingdoctemplate.Template, error) {
 	if input.RuleSetRef == nil {
 		return definition, nil
@@ -2069,6 +2070,46 @@ func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, c
 		return lingdoctemplate.Template{}, ErrInvalidRequest
 	}
 	return definition, nil
+}
+
+func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, actor Actor, definition lingdoctemplate.Template) error {
+	ref := lingdoctemplate.RuleSetReferenceFor(definition)
+	if ref == nil {
+		return nil
+	}
+	if definition.RuleSetRef != nil && *definition.RuleSetRef != *ref {
+		return ErrInvalidState
+	}
+	set, err := s.ruleSetVersionForBinding(ctx, tx, actor, ref.ID, ref.Version)
+	if err != nil {
+		return err
+	}
+	if set.ID != ref.ID || set.Version != ref.Version {
+		return ErrNotFound
+	}
+	if set.RulesetHash != ref.Hash {
+		return ErrVersionConflict
+	}
+	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
+		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
+			return ErrInvalidState
+		}
+		return fmt.Errorf("%w: current RuleSet snapshot is invalid", ErrInvalidState)
+	}
+	return nil
+}
+
+func templateUpgradeChangesRuleSetBinding(current *ProjectTemplateCopy, target lingdoctemplate.Template) bool {
+	targetRef := lingdoctemplate.RuleSetReferenceFor(target)
+	if targetRef == nil {
+		return false
+	}
+	if current == nil {
+		return true
+	}
+	currentRef := lingdoctemplate.RuleSetReferenceFor(current.Definition)
+	return currentRef == nil || *currentRef != *targetRef ||
+		!reflect.DeepEqual(current.Definition.RuleBindingOverrides, target.RuleBindingOverrides)
 }
 
 // templateSpecAfterUpgrade keeps orphaned historic values available for review,
@@ -2306,6 +2347,11 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		}
 		if change.Status != "assessed" {
 			return operationResult[ChangeSet]{}, ErrInvalidState
+		}
+		if change.TemplateUpgrade != nil && templateUpgradeChangesRuleSetBinding(p.TemplateCopy, change.TemplateUpgrade.Definition) {
+			if err := s.recheckTemplateUpgradeRuleSet(ctx, tx, actor, change.TemplateUpgrade.Definition); err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
 		}
 		upgradeStale := change.TemplateUpgrade != nil && (p.TemplateCopy == nil || p.TemplateCopyVersion != change.TemplateUpgrade.BaseTemplateCopyVersion)
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
