@@ -180,5 +180,9 @@ func NewLingDocDelivery(deps DeliveryDependencies) (LingDocDelivery, error) {
 	if deps.Renderer == nil {
 		deps.Renderer = delivery.DOCXRenderer{}
 	}
-	return LingDocDelivery{Releases: delivery.NewReleaseService(deps.Snapshots, deps.Currentness), Exports: delivery.NewExportService(deps.Snapshots, deps.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access, deps.Audit)}, nil
+	ports, err := delivery.NewTransactionalDeliveryPort(deps.Snapshots, deps.Exports)
+	if err != nil {
+		return LingDocDelivery{}, err
+	}
+	return LingDocDelivery{Releases: delivery.NewReleaseService(ports.Snapshots, deps.Currentness), Exports: delivery.NewExportService(ports.Snapshots, ports.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access, deps.Audit)}, nil
 }

@@ -80,6 +80,7 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	// under test. Keep only the columns needed by their ALTER statements and FK.
 	for _, statement := range []string{
 		`CREATE TABLE lingdoc_projects (id VARCHAR(64) PRIMARY KEY, tenant_id BIGINT NOT NULL)`,
+		`CREATE TABLE lingdoc_members (project_id VARCHAR(64) NOT NULL, user_id VARCHAR(64) NOT NULL, role VARCHAR(20) NOT NULL, PRIMARY KEY (project_id, user_id))`,
 		`CREATE TABLE lingdoc_project_template_copies (id VARCHAR(64) PRIMARY KEY)`,
 		`CREATE TABLE lingdoc_export_artifacts (id VARCHAR(64) PRIMARY KEY, project_id VARCHAR(64) NOT NULL, snapshot_id VARCHAR(64) NOT NULL)`,
 	} {
@@ -151,13 +152,17 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_projects (id, tenant_id) VALUES (?, ?)", "project-pg-ruleset", actor.TenantID).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-pg-ruleset", actor.UserID, "owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	event := template.RuleSetUseAuditEvent{
 		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 		ProjectID: "project-pg-ruleset", Action: "preflight", RuleSetID: published.ID,
 		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
-		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID, TemplateVersion: verifiedTemplate.Version,
 		TemplateCopyID: "copy-pg-ruleset", TemplateCopyVersion: 2, ProjectVersion: 7,
-		ResourceID: "snapshot-pg-ruleset", Outcome: "passed", CreatedAt: time.Now().UTC(),
+		ResourceID: "snapshot-pg-ruleset", Outcome: "passed", CreatedAt: time.Now().UTC(), VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding,
 	}
 	if err := store.RecordRuleSetUse(context.Background(), event); err != nil {
 		t.Fatalf("record PostgreSQL RuleSet-use audit: %v", err)

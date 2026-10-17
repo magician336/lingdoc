@@ -40,7 +40,9 @@ export interface UnsavedInputOptions {
 }
 
 export function unsavedInputsAreDirty(state: UnsavedInputState, options: UnsavedInputOptions = {}): boolean {
-  return state.chapterChanged || state.specChanged || state.templateChanged || state.saving || state.reviewChanged ||
+  // A successful conditions apply/reject has durably handled both the spec
+  // fields and its auxiliary reason/chapter inputs. Other drafts remain dirty.
+  return state.chapterChanged || (!options.conditionsHandled && state.specChanged) || state.templateChanged || state.saving || state.reviewChanged ||
     (!options.conditionsHandled && state.conditionsChanged)
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
@@ -263,6 +264,78 @@ func TestActiveRuleSetMigrationUsesExactVersionedChangeSet(t *testing.T) {
 	assessedRef := lingdoctemplate.RuleSetReferenceFor(change.TemplateUpgrade.Definition)
 	if assessedRef == nil || *assessedRef != (lingdoctemplate.RuleSetReference{ID: v2.ID, Version: v2.Version, Hash: v2.RulesetHash}) {
 		t.Fatalf("ChangeSet did not pin the exact target RuleSet before assessment: %+v", assessedRef)
+	}
+	// The ChangeSet payload is the durable evidence boundary. If its stored
+	// preview hash is damaged after assessment, Apply must reject it before
+	// changing the active copy or recording a migration operation/audit.
+	var tamperedFields struct {
+		Fields          []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+	}
+	if err := json.Unmarshal([]byte(func() string {
+		var row changeSetRow
+		if err := svc.testDB().Where("id = ? AND project_id = ?", change.ID, project.ID).First(&row).Error; err != nil {
+			t.Fatalf("read assessed ChangeSet payload: %v", err)
+		}
+		return row.FieldsJSON
+	}()), &tamperedFields); err != nil {
+		t.Fatal(err)
+	}
+	if tamperedFields.TemplateUpgrade == nil {
+		t.Fatal("assessed ChangeSet did not persist template upgrade evidence")
+	}
+	originalFieldsJSON, err := json.Marshal(tamperedFields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tamperedFields.TemplateUpgrade.Preview.TargetRulesetHash = strings.Repeat("f", 64)
+	tamperedPayload, err := json.Marshal(tamperedFields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&changeSetRow{}).Where("id = ? AND project_id = ?", change.ID, project.ID).Update("fields_json", string(tamperedPayload)).Error; err != nil {
+		t.Fatal(err)
+	}
+	var copiesBeforeEvidenceTamper, operationsBeforeEvidenceTamper, auditsBeforeEvidenceTamper int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesBeforeEvidenceTamper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", "ruleset-migration-tampered-evidence").Count(&operationsBeforeEvidenceTamper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", change.ID).Count(&auditsBeforeEvidenceTamper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, replayed, err := svc.ApplyChangeSet(context.Background(), owner, project.ID, change.ID, "ruleset-migration-tampered-evidence"); !errors.Is(err, ErrInvalidState) || replayed {
+		t.Fatalf("tampered migration evidence: replayed=%v err=%v, want fail-closed non-replayed rejection", replayed, err)
+	}
+	unchangedProject, err := svc.GetProject(context.Background(), owner, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchangedChange, err := svc.GetChangeSet(context.Background(), owner, project.ID, change.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiesAfterEvidenceTamper, operationsAfterEvidenceTamper, auditsAfterEvidenceTamper int64
+	if err := svc.testDB().Model(&projectTemplateCopyRow{}).Where("project_id = ?", project.ID).Count(&copiesAfterEvidenceTamper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Model(&operationRow{}).Where("key = ?", "ruleset-migration-tampered-evidence").Count(&operationsAfterEvidenceTamper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.testDB().Table("lingdoc_project_audits").Where("project_id = ? AND action = ? AND target = ?", project.ID, "project.change_set.apply", change.ID).Count(&auditsAfterEvidenceTamper).Error; err != nil {
+		t.Fatal(err)
+	}
+	if unchangedProject.ProjectVersion != project.ProjectVersion || unchangedProject.TemplateCopyVersion != project.TemplateCopyVersion ||
+		unchangedChange.Status != "assessed" || copiesAfterEvidenceTamper != copiesBeforeEvidenceTamper ||
+		operationsAfterEvidenceTamper != operationsBeforeEvidenceTamper || auditsAfterEvidenceTamper != auditsBeforeEvidenceTamper {
+		t.Fatalf("tampered migration evidence left partial writes: project=%+v change=%+v copies %d->%d operations %d->%d audits %d->%d",
+			unchangedProject, unchangedChange, copiesBeforeEvidenceTamper, copiesAfterEvidenceTamper,
+			operationsBeforeEvidenceTamper, operationsAfterEvidenceTamper, auditsBeforeEvidenceTamper, auditsAfterEvidenceTamper)
+	}
+	if err := svc.testDB().Model(&changeSetRow{}).Where("id = ? AND project_id = ?", change.ID, project.ID).Update("fields_json", string(originalFieldsJSON)).Error; err != nil {
+		t.Fatal(err)
 	}
 	noAuditKey := "ruleset-migration-apply-without-audit"
 	var copiesBeforeNoAudit, operationsBeforeNoAudit, auditsBeforeNoAudit int64
