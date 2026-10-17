@@ -626,6 +626,25 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	if newRef == nil || *newRef != *assessedRef || currentProject.TemplateCopyVersion != 4 {
 		t.Fatalf("applied project did not advance to RuleSet v2 copy: project=%+v ref=%+v", currentProject.TemplateCopy, newRef)
 	}
+	var projectAuditEvents []workspacecore.AuditEvent
+	decode(request(second.router, http.MethodGet, "/projects/"+project.ID+"/audit", "", "", http.StatusOK), &projectAuditEvents)
+	var migrationAudit *workspacecore.AuditEvent
+	for i := range projectAuditEvents {
+		if projectAuditEvents[i].Action == "project.change_set.apply" && projectAuditEvents[i].Target == assessed.ID {
+			migrationAudit = &projectAuditEvents[i]
+		}
+	}
+	if migrationAudit == nil {
+		t.Fatalf("HTTP project audit did not expose the RuleSet migration apply: %+v", projectAuditEvents)
+	}
+	migrationDetails, ok := migrationAudit.Details["template_upgrade"].(map[string]any)
+	if !ok || migrationDetails["change_set_id"] != assessed.ID || migrationDetails["reason"] != migrationInput.Reason ||
+		migrationDetails["ruleset_id"] != publishedV2.ID || migrationDetails["ruleset_version"] != publishedV2.Version ||
+		migrationDetails["ruleset_source_hash"] != publishedV2.RulesetHash || migrationDetails["content_hash"] != currentProject.TemplateCopy.ContentHash ||
+		migrationDetails["effective_ruleset_hash"] != currentProject.TemplateCopy.RulesetHash || migrationDetails["override_count"] != float64(0) ||
+		migrationDetails["target_copy_version"] != float64(currentProject.TemplateCopyVersion) {
+		t.Fatalf("HTTP migration audit lost exact binding details: %+v", migrationAudit)
+	}
 	var newPreflight delivery.CheckResult
 	newVersionBody := fmt.Sprintf(`{"expected_project_version":%d}`, currentProject.ProjectVersion)
 	decode(request(second.router, http.MethodPost, "/projects/"+project.ID+"/checks", newVersionBody, "", http.StatusOK), &newPreflight)
