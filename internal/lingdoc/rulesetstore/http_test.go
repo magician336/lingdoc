@@ -107,6 +107,22 @@ func TestHTTPRuleSetGovernanceLifecycleAndAuthorization(t *testing.T) {
 		auditEnvelope.Data.Items[0].ProjectID != "project-audit-http" || auditEnvelope.Data.Items[0].RuleSetHash != useAudit.RuleSetHash {
 		t.Fatalf("tenant member could not read exact use audit: items=%+v err=%v body=%s", auditEnvelope.Data.Items, err, auditResponse.Body.String())
 	}
+	pageResponse := request(http.MethodGet, "/projects/project-audit-http/rule-set-use-audits?limit=1&action=preflight", "", "viewer", "viewer", http.StatusOK)
+	var pageEnvelope struct {
+		Data struct {
+			Items      []template.RuleSetUseAuditEvent `json:"items"`
+			NextCursor string                          `json:"next_cursor"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(pageResponse.Body.Bytes(), &pageEnvelope); err != nil || len(pageEnvelope.Data.Items) != 1 || pageEnvelope.Data.Items[0].Action != "preflight" {
+		t.Fatalf("filtered audit page = %+v err=%v body=%s", pageEnvelope.Data, err, pageResponse.Body.String())
+	}
+	for _, path := range []string{
+		"/projects/project-audit-http/rule-set-use-audits?limit=0",
+		"/projects/project-audit-http/rule-set-use-audits?from=not-a-time",
+	} {
+		request(http.MethodGet, path, "", "viewer", "viewer", http.StatusBadRequest)
+	}
 	request(http.MethodGet, "/projects/project-audit-http/rule-set-use-audits", "", "removed", "viewer", http.StatusForbidden)
 	request(http.MethodGet, "/projects/empty-project/rule-set-use-audits", "", "removed", "viewer", http.StatusForbidden)
 	request(http.MethodPost, "/rule-sets/proposal-rules/versions/v1/publish", "", "viewer", "viewer", http.StatusForbidden)

@@ -2,6 +2,8 @@ package rulesetstore
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,6 +15,39 @@ import (
 )
 
 var ErrInvalidRuleSetUseAudit = errors.New("invalid ruleset use audit event")
+
+const (
+	RuleSetUseAuditDefaultLimit = 50
+	RuleSetUseAuditMaxLimit     = 100
+	auditCursorVersion          = 1
+	auditCursorMaxBytes         = 1024
+)
+
+// RuleSetUseAuditQuery is the bounded, keyset-paginated history query. From is
+// inclusive and To is exclusive; both are normalized to UTC before querying.
+type RuleSetUseAuditQuery struct {
+	Cursor string
+	Limit  int
+	Action string
+	From   *time.Time
+	To     *time.Time
+}
+
+type RuleSetUseAuditPage struct {
+	Items      []template.RuleSetUseAuditEvent `json:"items"`
+	NextCursor string                          `json:"next_cursor,omitempty"`
+}
+
+type ruleSetUseAuditCursor struct {
+	Version   int    `json:"v"`
+	TenantID  uint64 `json:"tenant_id"`
+	ProjectID string `json:"project_id"`
+	Action    string `json:"action,omitempty"`
+	From      string `json:"from,omitempty"`
+	To        string `json:"to,omitempty"`
+	CreatedAt string `json:"created_at"`
+	ID        string `json:"id"`
+}
 
 type ruleSetUseAuditRow struct {
 	ID                   string    `gorm:"primaryKey;size:36"`
@@ -89,57 +124,205 @@ func RecordRuleSetUseInTransaction(tx *gorm.DB, event template.RuleSetUseAuditEv
 }
 
 func (s *Store) ListRuleSetUseAudits(ctx context.Context, actor Actor, projectID string) ([]template.RuleSetUseAuditEvent, error) {
+	page, err := s.ListRuleSetUseAuditsPage(ctx, actor, projectID, RuleSetUseAuditQuery{Limit: RuleSetUseAuditDefaultLimit})
+	return page.Items, err
+}
+
+// ListRuleSetUseAuditsPage returns a stable newest-first page. Authorization
+// runs before the history query, including when the page is empty. The audit
+// rows are fetched once and their referenced RuleSet versions are batch-loaded
+// before any historical state is checked, avoiding one query per event.
+func (s *Store) ListRuleSetUseAuditsPage(ctx context.Context, actor Actor, projectID string, query RuleSetUseAuditQuery) (RuleSetUseAuditPage, error) {
 	if err := s.validateActor(actor); err != nil {
-		return nil, err
+		return RuleSetUseAuditPage{}, err
 	}
 	if strings.TrimSpace(projectID) == "" {
-		return nil, ErrInvalidRuleSetUseAudit
+		return RuleSetUseAuditPage{}, ErrInvalidRuleSetUseAudit
 	}
-	var rows []ruleSetUseAuditRow
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	normalized, cursor, err := normalizeRuleSetUseAuditQuery(actor.TenantID, projectID, query)
+	if err != nil {
+		return RuleSetUseAuditPage{}, err
+	}
+	var events []template.RuleSetUseAuditEvent
+	var nextCursor string
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Authorize the tenant even when the project has no usage rows. Without
 		// this explicit check an inactive/non-member caller could distinguish an
 		// empty audit history from a forbidden project by receiving an empty list.
 		if err := s.authorize(ctx, tx, actor, ActionRead, nil); err != nil {
 			return err
 		}
-		var versions []ruleSetUseAuditRow
-		if err := tx.Where("tenant_id = ? AND project_id = ?", actor.TenantID, projectID).
-			Order("created_at DESC, id DESC").Find(&versions).Error; err != nil {
+		queryDB := tx.Where("tenant_id = ? AND project_id = ?", actor.TenantID, projectID)
+		if normalized.Action != "" {
+			queryDB = queryDB.Where("action = ?", normalized.Action)
+		}
+		if normalized.From != nil {
+			queryDB = queryDB.Where("created_at >= ?", normalized.From.UTC())
+		}
+		if normalized.To != nil {
+			queryDB = queryDB.Where("created_at < ?", normalized.To.UTC())
+		}
+		if cursor != nil {
+			queryDB = queryDB.Where("(created_at < ? OR (created_at = ? AND id < ?))", cursor.createdAt(), cursor.createdAt(), cursor.ID)
+		}
+		var rows []ruleSetUseAuditRow
+		if err := queryDB.Order("created_at DESC, id DESC").Limit(normalized.Limit + 1).Find(&rows).Error; err != nil {
 			return err
 		}
-		for _, row := range versions {
-			version, err := loadVersion(tx, row.TenantID, row.RuleSetID, row.RuleSetVersion)
+		hasMore := len(rows) > normalized.Limit
+		if hasMore {
+			rows = rows[:normalized.Limit]
+		}
+		sets, err := batchLoadRuleSetVersions(tx, actor.TenantID, rows)
+		if err != nil {
+			return err
+		}
+		events = make([]template.RuleSetUseAuditEvent, 0, len(rows))
+		authorized := make(map[string]struct{}, len(sets))
+		for _, row := range rows {
+			set, ok := sets[auditRuleSetKey(row.RuleSetID, row.RuleSetVersion)]
+			if !ok {
+				return ErrRuleSetNotFound
+			}
+			if set.RulesetHash != row.RuleSetHash {
+				return fmt.Errorf("%w: source RuleSet hash mismatch", ErrInvalidRuleSetUseAudit)
+			}
+			key := auditRuleSetKey(row.RuleSetID, row.RuleSetVersion)
+			if _, ok := authorized[key]; !ok {
+				if err := s.authorize(ctx, tx, actor, ActionRead, &set); err != nil {
+					return err
+				}
+				authorized[key] = struct{}{}
+			}
+			events = append(events, ruleSetUseAuditEventFromRow(row))
+		}
+		if hasMore && len(rows) > 0 {
+			last := rows[len(rows)-1]
+			nextCursor, err = encodeRuleSetUseAuditCursor(ruleSetUseAuditCursor{
+				Version: auditCursorVersion, TenantID: actor.TenantID, ProjectID: projectID,
+				Action: normalized.Action, From: normalized.fromString(), To: normalized.toString(),
+				CreatedAt: last.CreatedAt.UTC().Format(time.RFC3339Nano), ID: last.ID,
+			})
 			if err != nil {
 				return err
 			}
-			set, err := decodeRuleSet(version)
-			if err != nil {
-				return err
-			}
-			if err := s.authorize(ctx, tx, actor, ActionRead, &set); err != nil {
-				return err
-			}
-			rows = append(rows, row)
 		}
 		return nil
 	})
 	if err != nil {
+		return RuleSetUseAuditPage{}, err
+	}
+	return RuleSetUseAuditPage{Items: events, NextCursor: nextCursor}, nil
+}
+
+func (c ruleSetUseAuditCursor) createdAt() time.Time {
+	parsed, _ := time.Parse(time.RFC3339Nano, c.CreatedAt)
+	return parsed.UTC()
+}
+
+func (q RuleSetUseAuditQuery) fromString() string {
+	if q.From == nil {
+		return ""
+	}
+	return q.From.UTC().Format(time.RFC3339Nano)
+}
+
+func (q RuleSetUseAuditQuery) toString() string {
+	if q.To == nil {
+		return ""
+	}
+	return q.To.UTC().Format(time.RFC3339Nano)
+}
+
+func normalizeRuleSetUseAuditQuery(tenantID uint64, projectID string, query RuleSetUseAuditQuery) (RuleSetUseAuditQuery, *ruleSetUseAuditCursor, error) {
+	if query.Limit == 0 {
+		query.Limit = RuleSetUseAuditDefaultLimit
+	}
+	if query.Limit < 1 || query.Limit > RuleSetUseAuditMaxLimit || (query.Action != "" && !validUseAction(query.Action)) {
+		return RuleSetUseAuditQuery{}, nil, ErrInvalidRuleSetUseAudit
+	}
+	if query.From != nil {
+		from := query.From.UTC()
+		query.From = &from
+	}
+	if query.To != nil {
+		to := query.To.UTC()
+		query.To = &to
+	}
+	if query.From != nil && query.To != nil && query.From.After(*query.To) {
+		return RuleSetUseAuditQuery{}, nil, ErrInvalidRuleSetUseAudit
+	}
+	if query.Cursor == "" {
+		return query, nil, nil
+	}
+	if len(query.Cursor) > auditCursorMaxBytes {
+		return RuleSetUseAuditQuery{}, nil, ErrInvalidRuleSetUseAudit
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(query.Cursor)
+	if err != nil {
+		return RuleSetUseAuditQuery{}, nil, ErrInvalidRuleSetUseAudit
+	}
+	var cursor ruleSetUseAuditCursor
+	if err := json.Unmarshal(raw, &cursor); err != nil || cursor.Version != auditCursorVersion || cursor.TenantID != tenantID || cursor.ProjectID != projectID || cursor.Action != query.Action || cursor.From != query.fromString() || cursor.To != query.toString() || cursor.ID == "" {
+		return RuleSetUseAuditQuery{}, nil, ErrInvalidRuleSetUseAudit
+	}
+	if _, err := time.Parse(time.RFC3339Nano, cursor.CreatedAt); err != nil {
+		return RuleSetUseAuditQuery{}, nil, ErrInvalidRuleSetUseAudit
+	}
+	return query, &cursor, nil
+}
+
+func encodeRuleSetUseAuditCursor(cursor ruleSetUseAuditCursor) (string, error) {
+	raw, err := json.Marshal(cursor)
+	if err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+func auditRuleSetKey(id, version string) string { return id + "\x00" + version }
+
+func batchLoadRuleSetVersions(tx *gorm.DB, tenantID uint64, rows []ruleSetUseAuditRow) (map[string]template.RuleSet, error) {
+	sets := make(map[string]template.RuleSet)
+	if len(rows) == 0 {
+		return sets, nil
+	}
+	clauses := make([]string, 0, len(rows))
+	args := []any{tenantID}
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		key := auditRuleSetKey(row.RuleSetID, row.RuleSetVersion)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		clauses = append(clauses, "(ruleset_id = ? AND version = ?)")
+		args = append(args, row.RuleSetID, row.RuleSetVersion)
+	}
+	var versions []ruleSetVersionRow
+	if err := tx.Where("tenant_id = ? AND ("+strings.Join(clauses, " OR ")+")", args...).Find(&versions).Error; err != nil {
 		return nil, err
 	}
-	events := make([]template.RuleSetUseAuditEvent, 0, len(rows))
-	for _, row := range rows {
-		events = append(events, template.RuleSetUseAuditEvent{
-			ID: row.ID, TenantID: row.TenantID, ActorID: row.ActorID, ActorRole: row.ActorRole,
-			ProjectID: row.ProjectID, Action: row.Action, RuleSetID: row.RuleSetID,
-			RuleSetVersion: row.RuleSetVersion, RuleSetHash: row.RuleSetHash,
-			EffectiveRulesetHash: row.EffectiveRulesetHash, TemplateID: row.TemplateID,
-			TemplateVersion: row.TemplateVersion, TemplateCopyID: row.TemplateCopyID,
-			TemplateCopyVersion: row.TemplateCopyVersion, ProjectVersion: row.ProjectVersion,
-			ResourceID: row.ResourceID, Outcome: row.Outcome, CreatedAt: row.CreatedAt.UTC(),
-		})
+	for _, row := range versions {
+		set, err := decodeRuleSet(row)
+		if err != nil {
+			return nil, err
+		}
+		sets[auditRuleSetKey(row.RuleSetID, row.Version)] = set
 	}
-	return events, nil
+	return sets, nil
+}
+
+func ruleSetUseAuditEventFromRow(row ruleSetUseAuditRow) template.RuleSetUseAuditEvent {
+	return template.RuleSetUseAuditEvent{
+		ID: row.ID, TenantID: row.TenantID, ActorID: row.ActorID, ActorRole: row.ActorRole,
+		ProjectID: row.ProjectID, Action: row.Action, RuleSetID: row.RuleSetID,
+		RuleSetVersion: row.RuleSetVersion, RuleSetHash: row.RuleSetHash,
+		EffectiveRulesetHash: row.EffectiveRulesetHash, TemplateID: row.TemplateID,
+		TemplateVersion: row.TemplateVersion, TemplateCopyID: row.TemplateCopyID,
+		TemplateCopyVersion: row.TemplateCopyVersion, ProjectVersion: row.ProjectVersion,
+		ResourceID: row.ResourceID, Outcome: row.Outcome, CreatedAt: row.CreatedAt.UTC(),
+	}
 }
 
 func normalizeRuleSetUseAudit(event template.RuleSetUseAuditEvent) (template.RuleSetUseAuditEvent, error) {
