@@ -40,7 +40,10 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	// New callers should inject the focused ports above; this adapter is the only
 	// place where the legacy cross-use-case surface is widened again.
 	var legacy ApplicationService = deps.Service
-	if legacy == nil {
+	// When both focused ports are present, keep them split even if a broad test
+	// double or adapter happens to implement ApplicationService as well. Inferring
+	// the legacy adapter from Read first would route mutations through the read port.
+	if legacy == nil && (deps.Read == nil || deps.Write == nil) {
 		if candidate, ok := any(deps.Read).(ApplicationService); ok {
 			legacy = candidate
 		} else if candidate, ok := any(deps.Write).(ApplicationService); ok {
@@ -1273,3 +1276,4 @@ func (h *Handler) DeliveryInputBuilder() DeliveryInputAssembler {
 	}
 	return h.integration.DeliveryInputBuilder()
 }
+
