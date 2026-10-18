@@ -39,6 +39,13 @@ type stabilizationScope struct {
 	// ChangeID scopes the task scan to one change set (Owner stabilization).
 	// An empty ChangeID scans every task of the current context revision, which
 	// is what the read-only gate asks: "is this revision as a whole released?".
+	//
+	// The zero value therefore means two opposite things depending on the entry,
+	// so it is not a safe default: the Owner loop has always compared
+	// ChangeSetID unconditionally and an empty id made it evaluate NOTHING, while
+	// the gate has always scanned everything. StabilizeRevision resolves and
+	// validates the ChangeSet before reaching this evaluation, so the Owner entry
+	// never passes an empty id; do not reuse this field for a third meaning.
 	ChangeID string
 
 	// RecheckImpactedObjects enables the impacted-object confirmation re-read
@@ -122,6 +129,12 @@ type stabilizationConditions struct {
 
 	// PreflightIDs are the BLOCK_RELEASE closure evidence ids that must be
 	// re-verified against a live preflight basis.
+	//
+	// Only the gate consumes this. The Owner path re-derives its own preflight
+	// ids from a read-only snapshot taken before the write transaction, so the
+	// copy collected here is intentionally unused there - switching the Owner
+	// over to it would change which snapshot it rechecks, which is a behaviour
+	// change and not a refactor.
 	PreflightIDs []string
 
 	// ClosureSourceIDs are the source ids carried by the CURRENT closure
@@ -130,6 +143,13 @@ type stabilizationConditions struct {
 
 	// StaleTransitions lists, in evaluation order, the tasks the Owner entry must
 	// record as STALE. Empty for the read-only gate, which writes nothing.
+	//
+	// Executing them after the evaluation instead of inside the loop changes one
+	// thing worth naming: if a STALE transition is required AND a later
+	// infrastructure error occurs (RouteStabilizationBlockers, the rules
+	// checker), the error returned to the caller is the latter, where the
+	// in-loop version could return the write error. Nothing is persisted either
+	// way, because the whole write transaction rolls back on error.
 	StaleTransitions []ImpactTask
 }
 
@@ -224,11 +244,18 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 		// Gate-only condition: a DONE task with no closure evidence discharges
 		// nothing. The Owner path has never expressed this and gains nothing from
 		// it, so it stays gate-only.
+		//
+		// It is recorded WITHOUT stopping the evaluation, because the Owner loop
+		// has no such condition and must keep running the receipt check below: a
+		// DONE RECOMPUTE task with empty evidence fails verifyImpactActionResult
+		// (len(refs) != 1) and has always been reported as result_receipt_stale on
+		// the Owner side. Short-circuiting here would silently drop that blocker.
+		// The gate stops here anyway, because a fail-fast consumer returns on the
+		// recorded error exactly where the gate loop used to return.
 		if len(task.ClosureEvidence) == 0 {
 			if result.record(stabilizationFailure{GateError: ErrInvalidState}, scope) {
 				return result, nil
 			}
-			continue
 		}
 		if task.Action == "BLOCK_RELEASE" {
 			for _, ref := range task.ClosureEvidence {
@@ -300,6 +327,13 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 	// its preflight basis cannot even be computed without a bound copy. Giving
 	// the gate the machine-readable code instead would change its error identity,
 	// which #210 explicitly forbids, so the collapsed rendering stays.
+	//
+	// NOTE: the gate rendering below is unreachable in practice and is kept only
+	// to express the symmetry. AssertRevisionStabilized calls
+	// preflightBasisInTransaction first, which already returns ErrInvalidState
+	// for an unbound copy, so this branch never decides anything for the gate and
+	// has no guard of its own. Do not mistake it for an independent line of
+	// defence.
 	if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound {
 		if result.record(stabilizationFailure{Code: "template_unbound", Reason: "当前模板未绑定", GateError: ErrInvalidState}, scope) {
 			return result, nil

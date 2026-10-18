@@ -283,6 +283,31 @@ func guardConditions(t *testing.T, svc *Service, p Project, scope stabilizationS
 	return out
 }
 
+// An empty-closure-evidence DONE task must not make the Owner path go quiet.
+//
+// The gate rejects such a task outright, but the Owner path has never had that
+// condition: for a RECOMPUTE task it runs the receipt check, which fails on
+// len(refs) != 1, and reports result_receipt_stale. A shared evaluation that
+// short-circuits on the gate-only condition silently drops that blocker - the
+// Owner would report a task that discharges nothing as if it were fine.
+//
+// Only reachable through the store seam (the production complete path forbids
+// empty closure evidence), which is exactly why it needs a guard.
+func TestStabilizationStillReportsReceiptTaskWithNoClosureEvidence(t *testing.T) {
+	svc, actor, p, _, change := guardFixture(t, "guard-empty-closure")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+	task := guardTask(t, svc, ImpactTask{ID: "guard-empty-closure-task", ProjectID: p.ID, ChangeSetID: change.ID,
+		Target:         ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)},
+		TargetRevision: p.CurrentContextRevision, Action: "RECOMPUTE", Status: "DONE", Disposition: "completed"})
+
+	result, err := runStabilization(t, svc, actor, p.ID, change.ID, "guard-empty-closure-stabilize")
+	require.NoError(t, err)
+	require.Equal(t, "BLOCKED", result.Status, "a DONE receipt task with no evidence must still block: %+v", result.Blockers)
+	blocker := blockerFor(t, result, "result_receipt_stale")
+	require.Equal(t, task.ID, blocker.TargetID, "the receipt check, not silence, must explain it: %+v", blocker)
+}
+
 // Fail-fast fidelity. AssertRevisionStabilized used to return from INSIDE its
 // task loop, so conditions after the failing task were never evaluated at all.
 // The shared evaluation collects conditions and lets the consumer pick, which
