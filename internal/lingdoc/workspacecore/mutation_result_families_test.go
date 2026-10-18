@@ -13,7 +13,7 @@ func TestStandardMutationResultFamiliesPreserveTypedValueAndReplay(t *testing.T)
 	t.Run("chapter", func(t *testing.T) {
 		svc := testStore(t, filepath.Join(t.TempDir(), "chapter.db"))
 		actor := Actor{TenantID: 401, UserID: "owner"}
-		project := seedActiveG3Project(t, svc, actor)
+		project := seedActiveImpactProject(t, svc, actor)
 		chapters, err := svc.ListChapters(ctx, actor, project.ID)
 		if err != nil || len(chapters) == 0 {
 			t.Fatalf("chapters: %v %+v", err, chapters)
@@ -38,7 +38,7 @@ func TestStandardMutationResultFamiliesPreserveTypedValueAndReplay(t *testing.T)
 	t.Run("owner transfer", func(t *testing.T) {
 		svc := testStore(t, filepath.Join(t.TempDir(), "owner-transfer.db"))
 		actor := Actor{TenantID: 402, UserID: "owner"}
-		project := seedActiveG3Project(t, svc, actor)
+		project := seedActiveImpactProject(t, svc, actor)
 		recipient := Actor{TenantID: actor.TenantID, UserID: "recipient"}
 		seedTenantMember(t, svc, recipient)
 		input := OwnerTransferInput{ExpectedProjectVersion: project.ProjectVersion, ToUserID: recipient.UserID}
@@ -61,7 +61,7 @@ func TestStandardMutationResultFamiliesPreserveTypedValueAndReplay(t *testing.T)
 	t.Run("change set", func(t *testing.T) {
 		svc := testStore(t, filepath.Join(t.TempDir(), "change-set.db"))
 		actor := Actor{TenantID: 403, UserID: "owner"}
-		project := seedActiveG3Project(t, svc, actor)
+		project := seedActiveImpactProject(t, svc, actor)
 		chapters, err := svc.ListChapters(ctx, actor, project.ID)
 		if err != nil || len(chapters) == 0 {
 			t.Fatalf("chapters: %v %+v", err, chapters)
@@ -134,7 +134,7 @@ func TestApplyChangeSetResultPreservesStaleVersionConflict(t *testing.T) {
 	ctx := context.Background()
 	svc := testStore(t, filepath.Join(t.TempDir(), "stale-change-set.db"))
 	actor := Actor{TenantID: 405, UserID: "owner"}
-	project := seedActiveG3Project(t, svc, actor)
+	project := seedActiveImpactProject(t, svc, actor)
 	chapters, err := svc.ListChapters(ctx, actor, project.ID)
 	if err != nil || len(chapters) == 0 {
 		t.Fatalf("chapters: %v %+v", err, chapters)

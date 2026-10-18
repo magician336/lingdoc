@@ -300,7 +300,7 @@ func (s *Service) ControlRuntime(ctx context.Context, actor Actor, projectID, ke
 		if err != nil {
 			return operationResult[RuntimeControl]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "runtime."+input.Action, next.ID, map[string]any{"scope": next.Scope, "version": next.Version, "recovery_verified": next.RecoveryVerified, "snapshot_id": next.SnapshotID, "export_id": next.ExportID}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "runtime."+input.Action, next.ID, map[string]any{"scope": next.Scope, "version": next.Version, "recovery_verified": next.RecoveryVerified, "snapshot_id": next.SnapshotID, "export_id": next.ExportID}); err != nil {
 			return operationResult[RuntimeControl]{}, err
 		}
 		return operationResult[RuntimeControl]{Value: next, Status: operationStatusOK}, nil
@@ -462,7 +462,7 @@ func (s *Service) SaveRuntimeAlertRule(ctx context.Context, actor Actor, project
 		if err := store.G6Insert(actor.TenantID, p.ID, "alert_rule", input.ID, 1, input); err != nil {
 			return operationResult[RuntimeAlertRule]{}, err
 		}
-		if err := g3Audit(tx, actor, p.ID, "runtime.alert_rule", input.ID, map[string]any{"signal": input.Signal, "action": input.Action}); err != nil {
+		if err := recordAuditEvent(tx, actor, p.ID, "runtime.alert_rule", input.ID, map[string]any{"signal": input.Signal, "action": input.Action}); err != nil {
 			return operationResult[RuntimeAlertRule]{}, err
 		}
 		return operationResult[RuntimeAlertRule]{Value: input, Status: operationStatusCreated}, nil

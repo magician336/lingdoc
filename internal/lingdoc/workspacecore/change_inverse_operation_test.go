@@ -21,7 +21,7 @@ func r25InverseFieldFixture(t *testing.T) (*Service, Actor, Project, ChangeSet, 
 	path := filepath.Join(t.TempDir(), "inverse.db")
 	s := testStore(t, path)
 	a := Actor{TenantID: 925, UserID: "owner"}
-	p := seedActiveG3Project(t, s, a)
+	p := seedActiveImpactProject(t, s, a)
 	chapters, err := s.ListChapters(context.Background(), a, p.ID)
 	if err != nil || len(chapters) == 0 {
 		t.Fatalf("chapters: %v", err)

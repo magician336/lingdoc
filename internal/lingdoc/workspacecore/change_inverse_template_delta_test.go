@@ -17,7 +17,7 @@ func r26TemplateDeltaFixture(t *testing.T, migrateGoal bool) (*Service, Actor, P
 	path := filepath.Join(t.TempDir(), "template-inverse-current-baseline.db")
 	s := testStore(t, path)
 	a := Actor{TenantID: 926, UserID: "r26-owner"}
-	baseline := seedActiveG3Project(t, s, a)
+	baseline := seedActiveImpactProject(t, s, a)
 	if baseline.TemplateCopy == nil || baseline.TemplateCopy.Status != TemplateCopyBound {
 		t.Fatal("fixture requires a real bound template")
 	}
@@ -192,7 +192,7 @@ func TestR26TemplateInverseRejectsUntrustedTargetHistory(t *testing.T) {
 				store := tx.(gormTransaction)
 				var revision ContextRevisionRecord
 				key := strconv.FormatInt(*source.TargetContextRevision, 10)
-				version, err := store.g3Read(target.ID, "revision", key, &revision)
+				version, err := store.readVersionedRecord(target.ID, "revision", key, &revision)
 				if err != nil {
 					return err
 				}
@@ -219,7 +219,7 @@ func TestR26TemplateInverseRejectsUntrustedTargetHistory(t *testing.T) {
 						return err
 					}
 				}
-				return store.g3CAS(target.ID, "revision", key, version, revision)
+				return store.compareAndSwapVersionedRecord(target.ID, "revision", key, version, revision)
 			})
 			if err != nil {
 				t.Fatal(err)

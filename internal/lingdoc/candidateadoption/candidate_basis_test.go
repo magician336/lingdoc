@@ -158,7 +158,7 @@ func TestCandidateAdoptionStoresRealVersionDependencyAndRechecksReplay(t *testin
 
 func TestCandidateDependencyFailureRollsBackAllFormalWrites(t *testing.T) {
 	store, _, in, policy := newBoundCandidateFixture(t, true)
-	// No G3 table: the real edge write must fail rather than silently skip it.
+	// No impact records table: the real edge write must fail rather than silently skip it.
 	service := NewCandidateAdoptionService(store, policy, allowAuthorizer{})
 	_, err := service.AcceptCandidate(context.Background(), in)
 	require.Error(t, err)

@@ -179,7 +179,7 @@ func (s *Service) createChangeDraftMutation(ctx context.Context, actor Actor, pr
 		if err := storeAgentChangeDraftFields(ctx, tx, p, change, input); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "change_set.draft", change.ID, map[string]any{"reverses_change_set_id": sourceID}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "change_set.draft", change.ID, map[string]any{"reverses_change_set_id": sourceID}); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		return operationResult[ChangeSet]{Value: change, Status: operationStatusCreated}, nil

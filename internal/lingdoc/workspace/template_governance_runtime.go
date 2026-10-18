@@ -733,7 +733,7 @@ func BuiltinTemplateGovernanceFixtures() []ReviewedTemplateFixture {
 }
 
 // Check projects actual current chapter/confirmation/source state through the
-// sole evaluator. It is called in G3's parent transaction; no public service
+// sole evaluator. It is called in the caller's parent transaction; no public service
 // read or model call can compete for SQLite's one connection here.
 func (r *TemplateGovernanceRuntime) Check(tx core.Transaction, expected core.Project) ([]core.ImpactBlocker, error) {
 	db, err := core.TransactionDatabase(tx)

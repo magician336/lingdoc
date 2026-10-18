@@ -453,7 +453,7 @@ func impactSourceDecoder[I any](tx ChapterWorkspaceTransaction, op operationDesc
 	if err := inverseOperationAccess(sourceTx, op.Request, string(op.Name), op.Target, op.Input); err != nil {
 		return nil, err
 	}
-	return G3OperationSourceIDs(sourceTx, string(op.Name), op.Target, op.Request.ProjectID, op.Input)
+	return OperationSourceIDs(sourceTx, string(op.Name), op.Target, op.Request.ProjectID, op.Input)
 }
 func chapterCommentSourceIDs(tx ChapterWorkspaceTransaction, op operationDescriptor[ChapterCommentInput], _ OperationResult, _ bool) ([]string, error) {
 	chapterID := strings.TrimPrefix(op.Target, op.Request.ProjectID+"/")

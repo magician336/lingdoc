@@ -28,7 +28,7 @@ func pr150NewRecoveryFixture(t *testing.T) *pr150RecoveryFixture {
 	path := filepath.Join(t.TempDir(), "pr150-decision-recovery.sqlite")
 	s := testStore(t, path)
 	owner := Actor{TenantID: 15150, UserID: "pr150-original-owner", Role: types.TenantRoleOwner}
-	p := seedActiveG3Project(t, s, owner)
+	p := seedActiveImpactProject(t, s, owner)
 	chapters, err := s.ListChapters(context.Background(), owner, p.ID)
 	if err != nil || len(chapters) == 0 {
 		t.Fatalf("read fixture chapters: chapters=%d err=%v", len(chapters), err)
