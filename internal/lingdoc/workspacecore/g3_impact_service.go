@@ -889,11 +889,15 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 // Target-version replacement is deliberately not a trigger for "complete":
 // completion is exactly the action that re-targets a task, because it validates
 // and records caller-supplied closure evidence for the current version. Applying
-// the rule there would destroy valid work. Every other action works the task as
-// recorded, so a replaced version does invalidate it.
+// the rule there would destroy valid work.
 //
-// It returns a reason only; it never mutates. The caller owns the write so the
-// transition, its version bump and its audit entry happen together.
+// "assign" is excluded for the same reason from the other side: naming a
+// responsible person does not work the task against its recorded version at all,
+// so a replaced version says nothing about whether the delegation is still
+// meaningful. Without this carve-out the ordinary owner flow (assign, then
+// complete against the current version) marked the task STALE on the assign and
+// could never close it, which left a change that invalidates chapter
+// confirmations unable to reach STABILIZED at all.
 func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, actor Actor, p Project, task ImpactTask, action string) string {
 	if task.TargetRevision != p.CurrentContextRevision {
 		// The task belongs to a superseded context revision; every fact it was
@@ -914,7 +918,7 @@ func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, act
 			return ImpactTaskStaleAssigneeRevoked
 		}
 	}
-	if reason := staleTargetReason(tx, p, task.Target); reason != "" && action != "complete" {
+	if reason := staleTargetReason(tx, p, task.Target); reason != "" && action != "complete" && action != "assign" {
 		// A version replacement means the task can no longer be worked as
 		// recorded, so it is invalidated with an explicit reason.
 		return reason
