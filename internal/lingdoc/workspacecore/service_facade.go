@@ -2343,7 +2343,9 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 				return operationResult[ChangeSet]{}, fmt.Errorf("%w: template migration is no longer valid", ErrInvalidState)
 			}
 			for fieldID, value := range migratedSpec {
-				if next.Spec[fieldID] == value {
+				// An explicit empty value still materializes a previously absent field.
+				previous, present := next.Spec[fieldID]
+				if present && previous == value {
 					continue
 				}
 				next.Spec[fieldID] = value

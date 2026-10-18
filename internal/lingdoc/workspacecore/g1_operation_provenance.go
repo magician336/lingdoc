@@ -31,7 +31,7 @@ func g1OperationProvenanceID(id OperationIdentity) string {
 
 func g1MutableChangeReceipt(op string) bool {
 	switch op {
-	case "createChangeSet", "createChangeDraft", "editChangeDraft", "assessChangeSet":
+	case "createChangeSet", "createChangeDraft", "editChangeDraft", "assessChangeSet", "reassessChangeSet":
 		return true
 	default:
 		return false
