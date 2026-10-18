@@ -101,6 +101,17 @@ func TestTemplateUpgradeRequiresExactRuleSetHash(t *testing.T) {
 	}
 }
 
+func TestProjectTemplateCopyRejectsRefOnlyRuleSetBinding(t *testing.T) {
+	definition := lingdoctemplate.DemoTemplate()
+	definition.RuleSetRef = &lingdoctemplate.RuleSetReference{
+		ID: "grant-rules", Version: "v1", Hash: strings.Repeat("a", 64),
+	}
+	_, err := projectTemplateCopy(Actor{TenantID: 1, UserID: "owner"}, "project-1", 1, definition, TemplateCopyDraft)
+	if !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("ref-only project copy error = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestBindTemplateCopyRuleSetStoresImmutablePublishedSnapshot(t *testing.T) {
 	repository := fakeWorkspace()
 	repository.project.Status = "draft"

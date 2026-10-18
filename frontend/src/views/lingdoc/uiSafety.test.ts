@@ -15,6 +15,8 @@ test('saved server drafts do not warn; each unsaved input and an in-flight save 
   assert.equal(unsavedInputsAreDirty(clean), false)
   for (const field of Object.keys(clean)) assert.equal(unsavedInputsAreDirty({ ...clean, [field]: true }), true, field)
   assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }, { conditionsHandled: true }), false)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true, specChanged: true }, { conditionsHandled: true }), false)
+  assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true, chapterChanged: true }, { conditionsHandled: true }), true)
   assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }), true)
 })
 
@@ -109,7 +111,7 @@ test('refresh guard protects hidden unsaved conditions inputs and releases their
 test('handled conditions never release cross-chapter editor drafts or a pending save', () => {
   assert.equal(hasUnsavedInputs({ ...clean, editorUnsaved: true }), true)
   assert.equal(hasUnsavedInputs({ ...clean, saving: true }), true)
-  for (const field of ['editorUnsaved', 'saving', 'specChanged', 'reviewChanged'] as const) {
+  for (const field of ['editorUnsaved', 'saving', 'reviewChanged'] as const) {
     assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true, [field]: true }, { conditionsHandled: true }), true, field)
   }
 })

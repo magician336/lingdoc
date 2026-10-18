@@ -15015,6 +15015,58 @@
               "type": "string",
               "minLength": 1
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 1024
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "check",
+                "preflight",
+                "release_snapshot",
+                "export"
+              ]
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
           }
         ],
         "responses": {
@@ -15707,6 +15759,87 @@
                 }
               }
             }
+          }
+        },
+        "x-domain": "template-governance",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/rule-set-use-audit-metrics": {
+      "get": {
+        "operationId": "readRuleSetUseAuditMetrics",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取项目规则集使用运行指标",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前租户有权读取的审计查询延迟、页大小、验证失败和事务能力指标",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetMetricsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "指标查询范围无效"
+          },
+          "401": {
+            "description": "需要有效的租户身份",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前租户成员无权读取",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目不存在或不可访问"
+          },
+          "503": {
+            "description": "指标存储不可用"
           }
         },
         "x-domain": "template-governance",
@@ -19358,10 +19491,15 @@
                 "items": {
                   "$ref": "#/components/schemas/RuleSetUseAuditEvent"
                 }
+              },
+              "next_cursor": {
+                "type": "string",
+                "nullable": true
               }
             },
             "required": [
-              "items"
+              "items",
+              "next_cursor"
             ],
             "additionalProperties": false
           },
@@ -19655,6 +19793,94 @@
             },
             "required": [
               "items"
+            ],
+            "additionalProperties": false
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RuleSetMetricsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "object",
+            "properties": {
+              "audit_query_count": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "audit_query_p95_ms": {
+                "type": "number",
+                "format": "double",
+                "minimum": 0
+              },
+              "audit_query_p99_ms": {
+                "type": "number",
+                "format": "double",
+                "minimum": 0
+              },
+              "audit_page_size_count": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "audit_page_size_p95": {
+                "type": "number",
+                "format": "double",
+                "minimum": 0
+              },
+              "audit_page_size_p99": {
+                "type": "number",
+                "format": "double",
+                "minimum": 0
+              },
+              "audit_page_size_distribution": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "verification_failures": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "transactional_capability_errors": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              }
+            },
+            "required": [
+              "audit_query_count",
+              "audit_query_p95_ms",
+              "audit_query_p99_ms",
+              "audit_page_size_count",
+              "audit_page_size_p95",
+              "audit_page_size_p99",
+              "audit_page_size_distribution",
+              "verification_failures",
+              "transactional_capability_errors"
             ],
             "additionalProperties": false
           },

@@ -106,21 +106,35 @@ func EvaluateTemplateScene(input DeliveryInput, scene string) (TemplateCheckResu
 		projection.Sources = append(projection.Sources, lingdoctemplate.SourceInput{ID: id, Version: version, Available: available})
 	}
 
+	binding, err := verifiedRuleSetBinding(input)
+	if err != nil {
+		return TemplateCheckResult{}, err
+	}
 	var evaluations []lingdoctemplate.Evaluation
-	var err error
 	if legacyIndependentRuleSnapshot(input) {
-		// Historical #122 copies froze an independent compiled projection.
+		// Historical independent snapshots keep their reviewed compiled projection.
 		evaluations, err = lingdoctemplate.EvaluateRuleSet(input.Template, *input.RuleSetSnapshot, scene, projection)
+	} else if binding != nil {
+		evaluations, err = lingdoctemplate.EvaluateSceneWithBinding(input.Template, *binding, scene, projection)
 	} else {
 		evaluations, err = lingdoctemplate.EvaluateScene(input.Template, scene, projection)
 	}
 	if err != nil {
 		return TemplateCheckResult{}, err
 	}
+	rulesetHash := FrozenRuleSetHash(input)
+	var ruleSetRef *lingdoctemplate.RuleSetReference
+	if binding != nil {
+		rulesetHash = binding.EffectiveHash
+		ref := binding.Reference
+		ruleSetRef = &ref
+	} else {
+		ruleSetRef = lingdoctemplate.RuleSetReferenceFor(input.Template)
+	}
 	result := TemplateCheckResult{
 		ProjectVersion: input.ProjectVersion, TemplateCopyID: input.TemplateCopyID,
 		TemplateCopyVersion: input.TemplateCopyVersion, ContentHash: input.TemplateCopyContentHash,
-		RulesetHash: FrozenRuleSetHash(input), RuleSetRef: lingdoctemplate.RuleSetReferenceFor(input.Template), Status: TemplateCheckPassed,
+		RulesetHash: rulesetHash, RuleSetRef: ruleSetRef, Status: TemplateCheckPassed,
 		Evaluations: evaluations,
 	}
 	if !hasRulesForScene(input.Template, scene) && !legacyIndependentRuleSnapshot(input) || legacyIndependentRuleSnapshot(input) && len(evaluations) == 0 {

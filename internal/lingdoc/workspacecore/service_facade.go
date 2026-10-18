@@ -980,6 +980,11 @@ type BindTemplateCopyRuleSetInput struct {
 }
 
 func projectTemplateCopy(actor Actor, projectID string, version int64, source lingdoctemplate.Template, status string) (*ProjectTemplateCopy, error) {
+	if source.RuleSetSnapshot != nil || source.RuleSetRef != nil {
+		if _, err := lingdoctemplate.VerifyRuleSetBinding(source); err != nil {
+			return nil, ErrInvalidRequest
+		}
+	}
 	definition, err := lingdoctemplate.WithHashes(source)
 	if err != nil {
 		return nil, ErrInvalidRequest
@@ -1047,6 +1052,11 @@ func validateProjectTemplateCopy(copy *ProjectTemplateCopy) error {
 		copy.Definition.ContentHash != copy.ContentHash || copy.Definition.RulesetHash != compiledHash ||
 		copy.Definition.ID != copy.SourceTemplateID || copy.Definition.Version != copy.SourceTemplateVersion {
 		return ErrInvalidState
+	}
+	if copy.Definition.RuleSetSnapshot != nil || copy.Definition.RuleSetRef != nil {
+		if _, err := lingdoctemplate.VerifyRuleSetBinding(copy.Definition); err != nil {
+			return ErrInvalidState
+		}
 	}
 	if !reflect.DeepEqual(copy.TemplateVersionRuleSetRef, lingdoctemplate.RuleSetReferenceFor(copy.Definition)) {
 		return ErrInvalidState
@@ -1887,7 +1897,42 @@ func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, c
 	return definition, nil
 }
 
-func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, actor Actor, definition lingdoctemplate.Template) error {
+// verifyTemplateUpgradeEvidence checks the immutable RuleSet binding and the
+// hashes persisted with a ChangeSet. The assessed payload is itself durable
+// evidence; Apply must not trust a tampered preview or recompute a different
+// effective identity while creating the next project copy.
+func verifyTemplateUpgradeEvidence(upgrade *TemplateUpgrade) (lingdoctemplate.VerifiedRuleSetBinding, error) {
+	if upgrade == nil || (upgrade.Definition.RuleSetSnapshot == nil && upgrade.Definition.RuleSetRef == nil) {
+		return lingdoctemplate.VerifiedRuleSetBinding{}, nil
+	}
+	contentHash, effectiveHash, err := lingdoctemplate.Hashes(upgrade.Definition)
+	if err != nil {
+		return lingdoctemplate.VerifiedRuleSetBinding{}, fmt.Errorf("%w: invalid template upgrade RuleSet evidence: %v", ErrInvalidState, err)
+	}
+	if upgrade.Definition.ContentHash != contentHash || upgrade.Definition.RulesetHash != effectiveHash ||
+		upgrade.Preview.TargetContentHash != contentHash || upgrade.Preview.TargetRulesetHash != effectiveHash {
+		return lingdoctemplate.VerifiedRuleSetBinding{}, fmt.Errorf("%w: template upgrade evidence hash mismatch", ErrInvalidState)
+	}
+	evidence, err := lingdoctemplate.VerifyRuleSetBinding(upgrade.Definition)
+	if err != nil {
+		return lingdoctemplate.VerifiedRuleSetBinding{}, fmt.Errorf("%w: invalid template upgrade RuleSet evidence: %v", ErrInvalidState, err)
+	}
+	ref := lingdoctemplate.RuleSetReferenceFor(upgrade.Definition)
+	if ref == nil || evidence.Reference != *ref || evidence.ContentHash != contentHash || evidence.EffectiveHash != effectiveHash {
+		return lingdoctemplate.VerifiedRuleSetBinding{}, fmt.Errorf("%w: template upgrade RuleSet evidence identity mismatch", ErrInvalidState)
+	}
+	return evidence, nil
+}
+
+func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, actor Actor, upgrade *TemplateUpgrade) error {
+	evidence, err := verifyTemplateUpgradeEvidence(upgrade)
+	if err != nil {
+		return err
+	}
+	if upgrade == nil {
+		return nil
+	}
+	definition := upgrade.Definition
 	ref := lingdoctemplate.RuleSetReferenceFor(definition)
 	if ref == nil {
 		return nil
@@ -1903,6 +1948,9 @@ func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, act
 		return ErrNotFound
 	}
 	if set.RulesetHash != ref.Hash {
+		return ErrVersionConflict
+	}
+	if evidence.Snapshot.ID != set.ID || evidence.Snapshot.Version != set.Version || evidence.Snapshot.RulesetHash != set.RulesetHash {
 		return ErrVersionConflict
 	}
 	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
@@ -2277,8 +2325,8 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 				return operationResult[ChangeSet]{}, fmt.Errorf("%w: template upgrade apply requires transactional audit", ErrInvalidState)
 			}
 		}
-		if change.TemplateUpgrade != nil && templateUpgradeChangesRuleSetBinding(p.TemplateCopy, change.TemplateUpgrade.Definition) {
-			if err := s.recheckTemplateUpgradeRuleSet(ctx, tx, actor, change.TemplateUpgrade.Definition); err != nil {
+		if change.TemplateUpgrade != nil {
+			if err := s.recheckTemplateUpgradeRuleSet(ctx, tx, actor, change.TemplateUpgrade); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}

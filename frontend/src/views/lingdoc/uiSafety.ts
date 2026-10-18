@@ -43,7 +43,7 @@ export interface UnsavedInputOptions {
 }
 
 export function unsavedInputsAreDirty(state: UnsavedInputState, options: UnsavedInputOptions = {}): boolean {
-  return state.chapterChanged || state.specChanged || state.templateChanged || state.saving || state.reviewChanged ||
+  return state.chapterChanged || (!options.conditionsHandled && state.specChanged) || state.templateChanged || state.saving || state.reviewChanged ||
     state.editorUnsaved === true || (!options.conditionsHandled && state.conditionsChanged === true)
 }
 

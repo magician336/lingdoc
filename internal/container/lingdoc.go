@@ -23,13 +23,14 @@ import (
 // receives only application ports and has no knowledge of GORM construction.
 type LingDocWorkspace struct {
 	dig.Out
-	Guard       *workspace.FullWorkflowGuard
-	Handler     *workspace.Handler
-	RuleSets    *rulesetstore.HTTPHandler
-	Projects    workspace.ApplicationService
-	Integration workspace.WorkspaceIntegration
-	Runtime     *workspace.SourceRuntime
-	Audit       workspacecore.AuditSink
+	Guard              *workspace.FullWorkflowGuard
+	Handler            *workspace.Handler
+	RuleSets           *rulesetstore.HTTPHandler
+	Projects           workspace.ApplicationService
+	Integration        workspace.WorkspaceIntegration
+	Runtime            *workspace.SourceRuntime
+	Audit              workspacecore.AuditSink
+	CapabilityObserver delivery.TransactionalCapabilityObserver
 }
 
 func NewLingDocWorkspaceHandler(
@@ -79,7 +80,7 @@ func NewLingDocWorkspaceHandler(
 		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
 	})
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
-	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}, nil
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
 }
 
 type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }
@@ -177,13 +178,14 @@ func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.Audi
 // ports; this refactor does not add an unimplemented HTTP endpoint.
 type DeliveryDependencies struct {
 	dig.In
-	Snapshots   delivery.SnapshotStore       `optional:"true"`
-	Exports     delivery.ExportStore         `optional:"true"`
-	Currentness delivery.CurrentnessChecker  `optional:"true"`
-	Access      delivery.ExportAccessChecker `optional:"true"`
-	Renderer    delivery.FrozenRenderer      `optional:"true"`
-	Validator   delivery.FrozenValidator     `optional:"true"`
-	Audit       workspacecore.AuditSink      `optional:"true"`
+	Snapshots          delivery.SnapshotStore                   `optional:"true"`
+	Exports            delivery.ExportStore                     `optional:"true"`
+	Currentness        delivery.CurrentnessChecker              `optional:"true"`
+	Access             delivery.ExportAccessChecker             `optional:"true"`
+	Renderer           delivery.FrozenRenderer                  `optional:"true"`
+	Validator          delivery.FrozenValidator                 `optional:"true"`
+	Audit              workspacecore.AuditSink                  `optional:"true"`
+	CapabilityObserver delivery.TransactionalCapabilityObserver `optional:"true"`
 }
 type LingDocDelivery struct {
 	dig.Out
@@ -198,5 +200,9 @@ func NewLingDocDelivery(deps DeliveryDependencies) (LingDocDelivery, error) {
 	if deps.Renderer == nil {
 		deps.Renderer = delivery.DOCXRenderer{}
 	}
-	return LingDocDelivery{Releases: delivery.NewReleaseService(deps.Snapshots, deps.Currentness), Exports: delivery.NewExportService(deps.Snapshots, deps.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access, deps.Audit)}, nil
+	ports, err := delivery.NewTransactionalDeliveryPortWithObserver(deps.Snapshots, deps.Exports, deps.CapabilityObserver)
+	if err != nil {
+		return LingDocDelivery{}, err
+	}
+	return LingDocDelivery{Releases: delivery.NewReleaseService(ports.Snapshots, deps.Currentness), Exports: delivery.NewExportService(ports.Snapshots, ports.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access, deps.Audit)}, nil
 }

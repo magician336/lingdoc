@@ -29,6 +29,27 @@ env:
   GOPROXY: https://proxy.golang.org,direct
 
 jobs:
+  scope:
+    name: Scope latest PR update
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select Go paths changed by this update
+        id: scope
+        env:
+          LINGDOC_SCOPE_PATHS: |
+            **/*.go
+            **/go.mod
+            **/go.sum
+            .golangci.yml
+            .github/workflows/go-lint.yml
+        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+
   # Path filters above start this workflow for any Go change; the matrix still
   # used to lint all three modules. Detect which modules the PR actually
   # touches so a root-only change (migrations test, handler, …) does not queue
@@ -36,6 +57,8 @@ jobs:
   # lints every module, since they share the root config.
   changes:
     name: detect lint modules
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     outputs:
       modules: ${{ steps.detect.outputs.modules }}

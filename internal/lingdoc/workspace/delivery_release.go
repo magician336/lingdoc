@@ -30,7 +30,7 @@ type DeliveryReleaseService struct {
 	inputs       *candidateadoption.DeliveryInputService
 	builder      DeliveryInputAssembler
 	store        delivery.SnapshotStore
-	freezes      delivery.FreezeRecorder
+	freezes      delivery.TransactionalSnapshotPort
 	sources      candidateadoption.SourcePolicy
 	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
@@ -77,8 +77,8 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 	if inputs == nil || inputs.Reader == nil || builder == nil || store == nil {
 		return nil
 	}
-	freezes, ok := store.(delivery.FreezeRecorder)
-	if !ok {
+	freezes, err := delivery.NewTransactionalSnapshotPort(store)
+	if err != nil {
 		return nil
 	}
 	var reviewer sourcepolicy.Reviewer

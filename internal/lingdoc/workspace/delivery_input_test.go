@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 )
 
@@ -471,6 +472,27 @@ func TestDeliveryLinkRequiresAnIdentity(t *testing.T) {
 	_, err := service.Check(context.Background(), deliveryActorID, "project-1", deliveryProjectVersion)
 	if !errors.Is(err, candidateadoption.ErrSourceAccessDenied) {
 		t.Fatalf("Check = %v, want ErrSourceAccessDenied", err)
+	}
+}
+
+func TestDeliveryInputBuilderRejectsRefOnlyTemplateBeforeSourceReview(t *testing.T) {
+	definition := lingdoctemplate.DemoTemplate()
+	definition.RuleSetRef = &lingdoctemplate.RuleSetReference{
+		ID: "grant-rules", Version: "v1", Hash: strings.Repeat("a", 64),
+	}
+	definition, err := lingdoctemplate.WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := &DeliveryInputBuilder{templates: delivery.FixedTemplateReader{}}
+	_, err = builder.Build(policyContext(), deliveryActorID, candidateadoption.WorkspaceDeliveryInput{
+		ProjectID: "project-1", TemplateID: definition.ID, TemplateVersion: definition.Version,
+		TemplateCopyID: "copy-1", TemplateCopyVersion: 1,
+		TemplateCopyContentHash: definition.ContentHash, TemplateCopyRulesetHash: definition.RulesetHash,
+		TemplateDefinition: &definition,
+	})
+	if !errors.Is(err, candidateadoption.ErrInvalidState) {
+		t.Fatalf("ref-only delivery input error = %v, want ErrInvalidState", err)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/stretchr/testify/require"
@@ -60,7 +61,7 @@ func newWrapperG4AuditFixture(t *testing.T) (deliveryGuardFixture, *wrapperG4Use
 	require.NoError(t, err)
 	var project core.Project
 	require.NoError(t, json.Unmarshal(raw, &project))
-	set, err := lingdoctemplate.PublishRuleSet(lingdoctemplate.RuleSet{
+	draft := lingdoctemplate.RuleSet{
 		ID: "wrapper-g4-audit", Version: "v1", State: lingdoctemplate.RuleSetDraft,
 		Bindings: []lingdoctemplate.RuleBinding{{
 			RuleID: "wrapper-goal-pattern", DefinitionID: "pattern", DefinitionVersion: "1",
@@ -68,7 +69,13 @@ func newWrapperG4AuditFixture(t *testing.T) (deliveryGuardFixture, *wrapperG4Use
 			Severity: delivery.SeverityBlocking, TriggerScenes: []string{"write_check", "preflight"},
 			Enabled: true, Owner: "fixture", Parameters: map[string]any{"pattern": "^unoverridden$"},
 		}},
-	})
+	}
+	// Freeze/export now verify the immutable source in the real RuleSet store.
+	// Publish the fixture through that store rather than bypassing this check.
+	catalog := rulesetstore.NewStore(f.db, rulesetstore.TenantMembershipAuthorizer{})
+	catalogActor := rulesetstore.Actor{TenantID: f.actor.TenantID, UserID: f.actor.UserID, Role: string(f.actor.Role)}
+	require.NoError(t, catalog.CreateDraft(f.ctx, catalogActor, draft))
+	set, err := catalog.Publish(f.ctx, catalogActor, draft.ID, draft.Version)
 	require.NoError(t, err)
 	f.projects.WithRuleSetSnapshotReader(wrapperG4RuleSetReader{set})
 	raw, _, _, err = f.projects.BindTemplateCopyRuleSet(f.ctx, f.actor, project.ID, "wrapper-g4-bind", core.BindTemplateCopyRuleSetInput{

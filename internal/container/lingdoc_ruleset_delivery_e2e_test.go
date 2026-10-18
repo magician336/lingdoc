@@ -160,6 +160,7 @@ func applyG4E2ESQLiteSchema(t *testing.T, db *gorm.DB) {
 		"000036_lingdoc_rule_sets.up.sql", "000037_lingdoc_full_workflow.up.sql",
 		"000039_lingdoc_ruleset_export_reference.up.sql",
 		"000040_lingdoc_ruleset_use_audits.up.sql", "000041_lingdoc_template_version_ruleset_ref.up.sql",
+		"000042_lingdoc_ruleset_metrics.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", name))
 		if err != nil {
@@ -208,6 +209,7 @@ func applyG4E2EPostgresSchema(t *testing.T, db *gorm.DB) {
 		"000115_lingdoc_rule_sets.up.sql", "000116_lingdoc_full_workflow.up.sql",
 		"000118_lingdoc_ruleset_export_reference.up.sql",
 		"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
+		"000121_lingdoc_ruleset_metrics.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "versioned", name))
 		if err != nil {
@@ -827,7 +829,7 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	}
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	adoptionStore := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	projectAuthorizer := g4E2EWorkspaceAuthorizer{candidateAdoptionWorkspaceAuthorizer{service: parts.Projects}}
+	projectAuthorizer := candidateAdoptionWorkspaceAuthorizer{service: parts.Projects}
 	inputs := &candidateadoption.DeliveryInputService{Reader: adoptionStore, Authorizer: projectAuthorizer}
 	policy := workspace.NewAccessPolicy(parts.Projects, parts.Runtime, adoptionStore)
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
@@ -862,16 +864,6 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	workspace.RegisterDeliveryExportRoutes(group, workspace.NewDeliveryExportHandler(workspace.GuardFullWorkflowExport(exports, parts.Guard)))
 	candidateadoption.RegisterRoutes(group, confirmHandler)
 	return g4E2EHTTP{router: engine, ruleSetStore: ruleSetStore, reader: adoptionStore, builder: parts.Integration.DeliveryInputBuilder(), releases: releases}
-}
-
-// Share the production transaction-aware authorization port with adoption and
-// confirmation; a separate pool read would re-enter the one-connection fixture.
-type g4E2EWorkspaceAuthorizer struct {
-	candidateAdoptionWorkspaceAuthorizer
-}
-
-func (a g4E2EWorkspaceAuthorizer) AuthorizeProject(ctx context.Context, actorID, projectID string) error {
-	return a.Authorize(ctx, actorID, projectID, "read")
 }
 
 func closeG4E2EDatabase(t *testing.T, db *gorm.DB) {
