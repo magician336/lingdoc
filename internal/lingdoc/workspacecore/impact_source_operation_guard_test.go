@@ -229,3 +229,53 @@ func TestProjectionRejectsMalformedPayloads(t *testing.T) {
 		})
 	}
 }
+
+// Both endpoints of a dependency edge must contribute to the authorized set.
+//
+// The fixture above gives every operation the same single cited chapter, so a
+// resolver that silently dropped one of two references still resolved to the
+// same one-element set and stayed green. Authorizing only one endpoint would
+// let a target's own sources through unchecked, so this case cites the two
+// endpoints with *different* sources and requires both in the resolved set.
+func TestProjectionAuthorizesBothDependencyEdgeEndpoints(t *testing.T) {
+	svc, actor, p, _, _, _ := projectionFixture(t, "both-ends")
+	chapters := mustListChapters(t, svc, actor, p.ID)
+	require.GreaterOrEqual(t, len(chapters), 2)
+
+	// Re-cite each endpoint against a distinct source.
+	for i, id := range []string{"guard-source-a", "guard-source-b"} {
+		chapter := chapters[i]
+		if _, _, _, err := svc.SaveChapter(context.Background(), actor, p.ID, chapter.ID, "both-ends-cite-"+id,
+			SaveChapterInput{
+				ExpectedChapterVersionID: chapter.CurrentVersionID, ExpectedSpecRevision: p.SpecRevision,
+				BodyMarkdown: "两端守护 [[source:" + id + "]]", SourceIDs: []string{id},
+			}); err != nil {
+			t.Fatalf("cite chapter %s with %s: %v", chapter.ID, id, err)
+		}
+	}
+	chapters = mustListChapters(t, svc, actor, p.ID)
+	p = reloadProject(t, svc, actor, p.ID)
+
+	raw, _, _, err := svc.CreateDependencyEdge(context.Background(), actor, p.ID, "guard-both-ends", DependencyEdgeInput{
+		ExpectedContextRevision: p.CurrentContextRevision,
+		Source:                  chapterVersionRef(chapters[0]), Target: chapterVersionRef(chapters[1]),
+		Relation: "supports", Action: "REVALIDATE_EVIDENCE", Origin: "user", Reason: "守护 两端", Confidence: 0.9})
+	if err != nil {
+		t.Fatalf("create dependency edge: %v", err)
+	}
+	edge := decodeEdge(t, raw)
+
+	for _, op := range []struct {
+		name   string
+		target string
+		body   any
+	}{
+		{"createDependencyEdge", p.ID, DependencyEdgeInput{Source: edge.Source, Target: edge.Target}},
+		{"decideDependencyEdge", p.ID + "/" + edge.ID, nil},
+	} {
+		ids, err := resolveProjection(t, svc, op.name, op.target, p.ID, op.body)
+		require.NoError(t, err, "%s", op.name)
+		require.Equal(t, []string{"guard-source-a", "guard-source-b"}, ids,
+			"%s must authorize BOTH edge endpoints, not just the source", op.name)
+	}
+}
