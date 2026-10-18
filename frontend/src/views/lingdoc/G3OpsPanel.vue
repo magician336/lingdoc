@@ -40,7 +40,7 @@
         </div>
       </article>
       <article v-if="assessment"><h3>影响预览 · 基线 {{ assessment.context_revision }}</h3><p>评估指纹 {{ assessment.input_hash }}</p><ul><li v-for="(impact, index) in assessment.impacts" :key="index"><strong>{{ impact.certainty === 'definite' ? '确定影响' : '可能影响，等待人工判断' }}</strong>：{{ kindLabel(impact.target.kind) }}/{{ impact.target.id }} @ {{ impact.target.version }} · {{ actionLabel(impact.action) }}<ul><li v-for="cause in impact.causes" :key="cause.edge_id">{{ cause.reason }} · {{ cause.edge_id }}</li></ul></li></ul></article>
-      <article v-if="stabilization"><h3>{{ stabilization.status === 'STABILIZED' ? '当前变更已稳定' : '仍有稳定化阻断' }}</h3><p>稳定后仍需冻结快照与交付 Preflight。</p><ul><li v-for="(blocker, index) in stabilization.blockers" :key="index">{{ blocker.reason }} · {{ blocker.target_id }}</li></ul></article>
+      <article v-if="stabilization"><h3>{{ stabilization.status === 'STABILIZED' ? '当前变更已稳定' : '仍有稳定化阻断' }}</h3><p>稳定后仍需冻结快照与交付 Preflight。</p><p>判定时间 {{ stabilization.checked_at }}</p><ul><li v-for="(blocker, index) in stabilization.blockers" :key="index">{{ blocker.reason }} · {{ blocker.target_id }}</li></ul><p v-if="stabilization.stale_task_ids.length">已失效任务 {{ stabilization.stale_task_ids.join('、') }}：依据已消失，既不算闭环也不算阻断。</p></article>
       <details><summary>正式基线历史</summary><p v-for="revision in revisions" :key="revision.revision">基线 {{ revision.revision }} · 条件 {{ revision.spec_revision }} · 模板副本 {{ revision.template_copy_version }} · {{ revision.created_at }}</p></details>
     </template>
     <template v-if="tab === 'impacts'">
