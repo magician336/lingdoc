@@ -26,10 +26,10 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 
 - 从 Issue、Spec、代码、迁移、OpenAPI、CI 和现有文档推导范围、消费者、验收项和默认参数；
 - 创建验收矩阵、测试夹具、合成数据和可复现的本地/staging 依赖；
-- 执行单测、application/HTTP、浏览器、真实适配器、迁移、重启读回、失败恢复和并发验证；
+- 执行单测、application/HTTP、浏览器、真实适配器、迁移、重启读回、失败恢复和并发验证；真实服务链路若不属于本 PR 的交付范围，必须转成独立验收 Issue 并在当前矩阵显式跟踪。
 - 配置已获授权的外部模型调用，记录用量、限流、失败原因和脱敏响应证据；
 - 更新当前 head 的验收报告、健康评分、PR body、Issue 状态和 Draft/Ready 建议；
-- 将无法执行的项准确标为 `NOT RUN` 或 `BLOCKED`，写清阻塞事实和解除条件。
+- 将无法执行的项准确标为 `NOT RUN`、`N/A` 或 `WARNING`，写清事实、影响和解除条件；只有当前交付范围内且必须完成的 `NOT RUN`/`BLOCKED` 才阻止放行。
 
 ### 只有这些情况才向人提问
 
@@ -37,7 +37,15 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 - 业务方尚未定义的验收阈值、用户可见取舍或不可逆决策；
 - 付费、生产写入、外部发布、合并等需要明确授权的动作。
 
-API Key 只能通过环境变量、Secret store 或 CI Secret 提供，不能要求用户把密钥粘贴到聊天、Issue 或 PR。若没有真实生产库，Agent 应自动创建生产同构的 SQLite/PostgreSQL staging 演练；报告必须把它与真实生产迁移分开。
+API Key 只能通过环境变量、Secret store 或 CI Secret 提供，不能要求用户把密钥粘贴到聊天、Issue 或 PR。若没有真实生产库，Agent 应自动创建生产同构的 SQLite/PostgreSQL staging 演练；报告必须把它与真实生产迁移分开，并将“真实生产迁移/回滚”标为 `N/A`，因为当前没有可验收的生产目标。
+
+### 门禁状态和例外语义
+
+- `PASS`：当前 head 有可复核证据，满足本次交付要求。
+- `PASS (follow-up)`：本次交付接受该项不作为阻塞；真实服务验收事项必须链接到独立 GitHub Issue，不能把未运行写成已实测。
+- `N/A`：验收前提在当前目标中不存在，例如仓库没有真实生产数据库；该项不计入当前 PR 的必需矩阵。
+- `WARNING`：宿主工具链或运行环境有局部限制，但等价的 WSL2、CI 或 staging 路径已通过；警告必须保留在报告中，但不阻止放行。
+- `NOT RUN`/`BLOCKED`：仅当该项属于当前 PR 的必需范围时阻止 Ready；外部真实服务链路可以按上面的 `PASS (follow-up)` 转移到独立验收 Issue。
 
 ## 0. 最小输入门：先自动补齐再一次性询问
 
@@ -63,7 +71,7 @@ API Key 只能通过环境变量、Secret store 或 CI Secret 提供，不能要
 - 成功、失败、权限和恢复结果；
 - 持久化、迁移、重启读回、并发和无部分写入；
 - 测试、CI、运行报告或人工验收证据；
-- `TODO`、`PASS`、`NOT RUN` 或 `BLOCKED` 状态。
+- `TODO`、`PASS`、`PASS (follow-up)`、`N/A`、`WARNING`、`NOT RUN` 或 `BLOCKED` 状态。
 
 在写代码前决定：哪个模块拥有真相，哪个事务保护读取/校验/写入/审计，哪些 reader/writer port 必需，失败时如何零写入和幂等重试。未决规则先记录为决策或 Issue，不用代码猜测。
 
@@ -86,7 +94,7 @@ Agent 在请求人工审查前完成以下工作：
 - PR body 的 SHA、CI 链接和结论都指向当前 head；
 - 完成 `lingdoc-health-scoring` 的合并前复评。
 
-只要必需项有 `TODO`、`NOT RUN` 或 `BLOCKED`，保持 Draft。绿色通用 CI 不能替代 Spec 证据。
+只要当前交付范围内的必需项有 `TODO`、`NOT RUN` 或 `BLOCKED`，保持 Draft。`N/A`、`WARNING` 和已链接真实服务验收 Issue 的 `PASS (follow-up)` 不阻塞当前 PR。绿色通用 CI 不能替代 Spec 证据。
 
 Agent 不应把常规测试、日志整理、报告编写或本地依赖准备交给用户。只有外部输入确实缺失、环境不可访问或需要业务判断时，才在报告中列出一项精确的人工请求。
 
@@ -102,7 +110,7 @@ Agent 不应把常规测试、日志整理、报告编写或本地依赖准备�
 
 评审发现新的不变量时，先更新验收矩阵，再修改代码。连续两轮出现新的 `Blocker` 时，停止堆补丁，重新切分 Spec、补决策记录或拆 PR。
 
-只有在 PR 非 Draft、评审阻断已解决、当前 head 的必需 CI 全部通过时才合并。只有最后一个交付切片完成全部矩阵项后才关闭 Issue。
+只有在 PR 非 Draft、评审阻断已解决、当前 head 的必需 CI 全部通过时才合并。`PASS (follow-up)` 只代表当前 PR 的范围决策，不代表真实服务验收 Issue 已关闭；只有最后一个交付切片完成全部矩阵项后才关闭主 Issue。
 
 ## 交付格式
 
