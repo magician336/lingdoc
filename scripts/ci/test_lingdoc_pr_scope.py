@@ -56,6 +56,15 @@ class ScopeTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 gate.git_range(event)
 
+    def test_latest_range_is_used_only_for_synchronize(self):
+        event = {"action": "synchronize",
+                 "pull_request": {"base": {"sha": "a" * 40},
+                                  "head": {"sha": "b" * 40}}}
+        with patch.object(subprocess, "check_output", return_value="c" * 40):
+            self.assertEqual(gate.latest_git_range(Path.cwd(), event), "c" * 40 + "..." + "b" * 40)
+        event["action"] = "opened"
+        self.assertEqual(gate.latest_git_range(Path.cwd(), event), "a" * 40 + "..." + "b" * 40)
+
     def test_missing_event_is_an_error_not_an_empty_diff(self):
         with self.assertRaises(ValueError):
             gate.git_range({})

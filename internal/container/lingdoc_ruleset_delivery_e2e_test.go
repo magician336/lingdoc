@@ -123,6 +123,8 @@ func applyG4E2ESQLiteSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, statement := range []string{
 		"CREATE TABLE tenants (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT, is_active INTEGER NOT NULL, deleted_at DATETIME)",
+		"INSERT INTO users (id, username, is_active) VALUES ('g4-e2e-admin', 'g4-e2e-admin', 1)",
 		"INSERT INTO tenants (id) VALUES (9142)",
 		"CREATE TABLE chunks (id VARCHAR(36) PRIMARY KEY, deleted_at DATETIME)",
 		`CREATE TABLE tenant_members (
@@ -155,8 +157,10 @@ func applyG4E2ESQLiteSchema(t *testing.T, db *gorm.DB) {
 		"000030_lingdoc_project_baseline.up.sql", "000031_lingdoc_citation_usages.up.sql",
 		"000032_lingdoc_change_sets.up.sql", "000033_lingdoc_working_copies.up.sql",
 		"000034_lingdoc_selected_rewrites.up.sql", "000035_lingdoc_project_template_copies.up.sql",
-		"000036_lingdoc_rule_sets.up.sql", "000039_lingdoc_ruleset_export_reference.up.sql",
+		"000036_lingdoc_rule_sets.up.sql", "000037_lingdoc_full_workflow.up.sql",
+		"000039_lingdoc_ruleset_export_reference.up.sql",
 		"000040_lingdoc_ruleset_use_audits.up.sql", "000041_lingdoc_template_version_ruleset_ref.up.sql",
+		"000042_lingdoc_ruleset_metrics.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "sqlite", name))
 		if err != nil {
@@ -172,6 +176,8 @@ func applyG4E2EPostgresSchema(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, statement := range []string{
 		"CREATE TABLE tenants (id BIGINT PRIMARY KEY)",
+		"CREATE TABLE users (id VARCHAR(64) PRIMARY KEY, username TEXT, is_active BOOLEAN NOT NULL, deleted_at TIMESTAMPTZ)",
+		"INSERT INTO users (id, username, is_active) VALUES ('g4-e2e-admin', 'g4-e2e-admin', TRUE)",
 		"INSERT INTO tenants (id) VALUES (9142)",
 		"CREATE TABLE chunks (id VARCHAR(36) PRIMARY KEY, deleted_at TIMESTAMPTZ)",
 		`CREATE TABLE tenant_members (
@@ -200,8 +206,10 @@ func applyG4E2EPostgresSchema(t *testing.T, db *gorm.DB) {
 		"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
 		"000111_lingdoc_change_sets.up.sql", "000112_lingdoc_working_copies.up.sql",
 		"000113_lingdoc_selected_rewrites.up.sql", "000114_lingdoc_project_template_copies.up.sql",
-		"000115_lingdoc_rule_sets.up.sql", "000118_lingdoc_ruleset_export_reference.up.sql",
+		"000115_lingdoc_rule_sets.up.sql", "000116_lingdoc_full_workflow.up.sql",
+		"000118_lingdoc_ruleset_export_reference.up.sql",
 		"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
+		"000121_lingdoc_ruleset_metrics.up.sql",
 	} {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "migrations", "versioned", name))
 		if err != nil {
@@ -361,8 +369,16 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 
 	var projectAfterSpec workspacecore.Project
 	decode(request(first.router, http.MethodPut, "/projects/"+project.ID+"/spec", `{"expected_spec_revision":0,"fields":{"research_subject":"Synthetic subject","research_goal":"Synthetic goal"}}`, "g4-save-spec-01", http.StatusOK), &projectAfterSpec)
+	var activationRead struct {
+		ID string `json:"id"`
+	}
+	readBody := fmt.Sprintf(`{"expected_project_version":%d}`, projectAfterSpec.ProjectVersion)
+	decode(request(first.router, http.MethodPost, "/projects/"+project.ID+"/activation-read", readBody, "", http.StatusCreated), &activationRead)
+	if activationRead.ID == "" {
+		t.Fatal("production activation read did not return a receipt")
+	}
 	var active workspacecore.Project
-	activateBody := fmt.Sprintf(`{"expected_spec_revision":1,"expected_project_version":%d,"reviewed_project_version":%d}`, projectAfterSpec.ProjectVersion, projectAfterSpec.ProjectVersion)
+	activateBody := fmt.Sprintf(`{"expected_spec_revision":1,"expected_project_version":%d,"reviewed_project_version":%d,"activation_read_id":%q}`, projectAfterSpec.ProjectVersion, projectAfterSpec.ProjectVersion, activationRead.ID)
 	decode(request(first.router, http.MethodPost, "/projects/"+project.ID+"/activate", activateBody, "g4-activate-01", http.StatusOK), &active)
 	var chapters []workspacecore.Chapter
 	decode(request(first.router, http.MethodGet, "/projects/"+project.ID+"/chapters", "", "", http.StatusOK), &chapters)
@@ -395,6 +411,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, g4E2ETenantID)
 	ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleAdmin)
 	ctx = types.WithCaller(ctx, types.Caller{TenantID: g4E2ETenantID, UserID: g4E2EActorID, Role: types.TenantRoleAdmin})
+	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: g4E2EActorID})
 	workspaceInput, err := first.reader.ReadDeliveryInput(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("read workspace input before Template Check: %v", err)
@@ -806,13 +823,13 @@ type g4E2EHTTP struct {
 
 func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	t.Helper()
-	parts, err := NewLingDocWorkspaceHandler(db, nil, nil, nil, nil, NewLingDocTemplateCatalog())
+	parts, err := NewLingDocWorkspaceHandler(db, nil, nil, nil, nil, nil, nil, NewLingDocTemplateCatalog())
 	if err != nil {
 		t.Fatalf("build production LingDoc workspace composition: %v", err)
 	}
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	adoptionStore := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	projectAuthorizer := g4E2EWorkspaceAuthorizer{service: parts.Projects}
+	projectAuthorizer := candidateAdoptionWorkspaceAuthorizer{service: parts.Projects}
 	inputs := &candidateadoption.DeliveryInputService{Reader: adoptionStore, Authorizer: projectAuthorizer}
 	policy := workspace.NewAccessPolicy(parts.Projects, parts.Runtime, adoptionStore)
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
@@ -834,38 +851,19 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 		ctx = context.WithValue(ctx, types.TenantIDContextKey, g4E2ETenantID)
 		ctx = context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleAdmin)
 		ctx = types.WithCaller(ctx, types.Caller{TenantID: g4E2ETenantID, UserID: g4E2EActorID, Role: types.TenantRoleAdmin})
+		ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: g4E2EActorID})
 		c.Request = c.Request.WithContext(ctx)
 		c.Set("request_id", "g4-e2e")
 		c.Next()
 	})
 	group := engine.Group("/api/v1/lingdoc")
 	parts.Handler.Register(workspace.RouteGroups{Read: group, Write: group})
+	parts.Handler.RegisterFullRoutes(group)
 	parts.RuleSets.Register(group, group)
-	workspace.RegisterDeliveryRoutes(group, workspace.NewDeliveryHandler(releases))
-	workspace.RegisterDeliveryExportRoutes(group, workspace.NewDeliveryExportHandler(exports))
+	workspace.RegisterDeliveryRoutes(group, workspace.NewDeliveryHandler(workspace.GuardFullWorkflowRelease(releases, parts.Guard)))
+	workspace.RegisterDeliveryExportRoutes(group, workspace.NewDeliveryExportHandler(workspace.GuardFullWorkflowExport(exports, parts.Guard)))
 	candidateadoption.RegisterRoutes(group, confirmHandler)
 	return g4E2EHTTP{router: engine, ruleSetStore: ruleSetStore, reader: adoptionStore, builder: parts.Integration.DeliveryInputBuilder(), releases: releases}
-}
-
-type g4E2EWorkspaceAuthorizer struct{ service workspace.ApplicationService }
-
-func (a g4E2EWorkspaceAuthorizer) Authorize(ctx context.Context, actorID, projectID, capability string) error {
-	tenantID, ok := types.TenantIDFromContext(ctx)
-	if !ok || a.service == nil {
-		return candidateadoption.ErrNotFound
-	}
-	err := a.service.Authorize(ctx, workspace.Actor{TenantID: tenantID, UserID: actorID}, projectID, capability)
-	if errors.Is(err, workspace.ErrNotFound) {
-		return candidateadoption.ErrNotFound
-	}
-	if errors.Is(err, workspace.ErrInvalidRequest) {
-		return candidateadoption.ErrInvalidRequest
-	}
-	return err
-}
-
-func (a g4E2EWorkspaceAuthorizer) AuthorizeProject(ctx context.Context, actorID, projectID string) error {
-	return a.Authorize(ctx, actorID, projectID, "read")
 }
 
 func closeG4E2EDatabase(t *testing.T, db *gorm.DB) {

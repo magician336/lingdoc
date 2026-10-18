@@ -234,10 +234,22 @@ func (s *applicationServiceStub) ApplyChangeSetResult(_ context.Context, actor A
 	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: changeSetID, ProjectID: projectID, Status: "applied"}}, nil
 }
 
+func (s *applicationServiceStub) ReassessChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	s.reassessCalled = true
+	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
+	return json.RawMessage(`{"id":"reassessed-1","project_id":"` + projectID + `","reassessed_from_id":"` + changeSetID + `","status":"assessed"}`), http.StatusCreated, false, nil
+}
+
 func (s *applicationServiceStub) ReassessChangeSetResult(_ context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
 	s.reassessCalled = true
 	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
 	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: "reassessed-1", ProjectID: projectID, ReassessedFromID: changeSetID, Status: "assessed"}}, nil
+}
+
+func (s *applicationServiceStub) RejectChangeSet(_ context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
+	s.rejectCalled = true
+	s.actor, s.changeSetID, s.changeSetKey = actor, changeSetID, key
+	return json.RawMessage(`{"id":"` + changeSetID + `","project_id":"` + projectID + `","status":"rejected"}`), http.StatusOK, false, nil
 }
 
 func (s *applicationServiceStub) RejectChangeSetResult(_ context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
@@ -670,25 +682,6 @@ func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 	}
 }
 
-func TestReassessChangeSetRejectsAnyRequestBody(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	service := &applicationServiceStub{}
-	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
-	engine := gin.New()
-	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
-	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
-	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-	for _, body := range []string{`{}`, `{`, ` `} {
-		request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reassess", strings.NewReader(body)).WithContext(ctx)
-		request.Header.Set("Idempotency-Key", "change-reassess-body")
-		response := httptest.NewRecorder()
-		engine.ServeHTTP(response, request)
-		if response.Code != http.StatusBadRequest || service.reassessCalled {
-			t.Fatalf("body %q: status=%d delegated=%v body=%s", body, response.Code, service.reassessCalled, response.Body.String())
-		}
-	}
-}
-
 func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{applyStatus: http.StatusConflict}
@@ -714,5 +707,24 @@ func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 	}
 	if body.Error.Code != "version_conflict" {
 		t.Fatalf("error code = %q, want version_conflict; body=%s", body.Error.Code, response.Body.String())
+	}
+}
+
+func TestReassessChangeSetRejectsAnyRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &applicationServiceStub{}
+	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	for _, body := range []string{`{}`, `{`, ` `} {
+		request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reassess", strings.NewReader(body)).WithContext(ctx)
+		request.Header.Set("Idempotency-Key", "change-reassess-body")
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest || service.reassessCalled {
+			t.Fatalf("body %q: status=%d delegated=%v body=%s", body, response.Code, service.reassessCalled, response.Body.String())
+		}
 	}
 }

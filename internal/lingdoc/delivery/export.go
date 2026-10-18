@@ -313,8 +313,8 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 	if snapshots == nil || exports == nil || renderer == nil || validator == nil || currentness == nil || access == nil {
 		return nil
 	}
-	actions, ok := exports.(ExportRecorder)
-	if !ok {
+	transactional, err := NewTransactionalExportPort(exports)
+	if err != nil {
 		return nil
 	}
 	var audit workspacecore.AuditSink
@@ -322,7 +322,7 @@ func NewExportService(snapshots SnapshotStore, exports ExportStore, renderer Fro
 		audit = audits[0]
 	}
 	return &ExportService{
-		snapshots: snapshots, exports: exports, actions: actions,
+		snapshots: snapshots, exports: exports, actions: transactional,
 		renderer: renderer, validator: validator, currentness: currentness, access: access, audit: audit,
 		now: time.Now,
 	}
@@ -335,8 +335,8 @@ func NewExportServiceWithAccessPolicy(snapshots SnapshotStore, exports ExportSto
 	if snapshots == nil || exports == nil || renderer == nil || validator == nil || policy == nil {
 		return nil
 	}
-	actions, ok := exports.(ExportRecorder)
-	if !ok {
+	transactional, err := NewTransactionalExportPort(exports)
+	if err != nil {
 		return nil
 	}
 	var audit workspacecore.AuditSink
@@ -344,7 +344,7 @@ func NewExportServiceWithAccessPolicy(snapshots SnapshotStore, exports ExportSto
 		audit = audits[0]
 	}
 	return &ExportService{
-		snapshots: snapshots, exports: exports, actions: actions,
+		snapshots: snapshots, exports: exports, actions: transactional,
 		renderer: renderer, validator: validator, policy: policy, audit: audit,
 		now: time.Now,
 	}
@@ -414,6 +414,15 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 		if actor.TenantID == 0 || !actor.Role.IsValid() {
 			return ExportArtifact{}, false, ErrExportUnavailable
 		}
+		binding, bindingErr := VerifiedRuleSetBindingForInput(snapshot.FrozenInput)
+		if bindingErr != nil || binding == nil {
+			if bindingErr != nil {
+				return ExportArtifact{}, false, bindingErr
+			}
+			return ExportArtifact{}, false, ErrExportUnavailable
+		}
+		templateCopy := lingdoctemplate.Clone(snapshot.FrozenInput.Template)
+		bindingCopy := binding.Clone()
 		event := lingdoctemplate.RuleSetUseAuditEvent{
 			ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: string(actor.Role),
 			ProjectID: projectID, Action: "export", RuleSetID: artifact.RuleSetRef.ID,
@@ -422,7 +431,7 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 			TemplateID:           snapshot.FrozenInput.Template.ID, TemplateVersion: snapshot.FrozenInput.Template.Version,
 			TemplateCopyID: snapshot.FrozenInput.TemplateCopyID, TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion,
 			ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: artifact.ID,
-			Outcome: string(artifact.Status), CreatedAt: s.now().UTC(),
+			Outcome: string(artifact.Status), CreatedAt: s.now().UTC(), VerifiedTemplate: &templateCopy, VerifiedBinding: &bindingCopy,
 		}
 		audited, ok := s.actions.(RuleSetUseExportRecorder)
 		if !ok {
@@ -450,6 +459,15 @@ func (s *ExportService) recordFailedRuleSetUse(ctx context.Context, actor Actor,
 	if s.useAuditor == nil || actor.TenantID == 0 || !actor.Role.IsValid() {
 		return ErrExportUnavailable
 	}
+	binding, bindingErr := VerifiedRuleSetBindingForInput(snapshot.FrozenInput)
+	if bindingErr != nil || binding == nil {
+		if bindingErr != nil {
+			return bindingErr
+		}
+		return ErrExportUnavailable
+	}
+	templateCopy := lingdoctemplate.Clone(snapshot.FrozenInput.Template)
+	bindingCopy := binding.Clone()
 	outcome := "failed"
 	if errors.Is(cause, ErrExportPreflightBlocked) {
 		outcome = "blocked"
@@ -462,7 +480,7 @@ func (s *ExportService) recordFailedRuleSetUse(ctx context.Context, actor Actor,
 		EffectiveRulesetHash: snapshot.FrozenInput.Template.RulesetHash,
 		TemplateID:           snapshot.FrozenInput.Template.ID, TemplateVersion: snapshot.FrozenInput.Template.Version,
 		TemplateCopyID: snapshot.FrozenInput.TemplateCopyID, TemplateCopyVersion: snapshot.FrozenInput.TemplateCopyVersion,
-		ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: snapshotID, Outcome: outcome, CreatedAt: s.now().UTC(),
+		ProjectVersion: int64(snapshot.FrozenInput.ProjectVersion), ResourceID: snapshotID, Outcome: outcome, CreatedAt: s.now().UTC(), VerifiedTemplate: &templateCopy, VerifiedBinding: &bindingCopy,
 	}
 	return s.useAuditor.RecordRuleSetUse(ctx, event)
 }
@@ -474,6 +492,9 @@ func (s *ExportService) produce(ctx context.Context, actor Actor, projectID, sna
 	snapshot, err := s.snapshots.Get(projectID, snapshotID)
 	if err != nil {
 		return ExportArtifact{}, err
+	}
+	if err := ValidateRuleSnapshotReceipt(snapshot); err != nil {
+		return ExportArtifact{}, ErrExportPreflightBlocked
 	}
 	if snapshot.Check.Status != CheckPassed {
 		return ExportArtifact{}, ErrExportPreflightBlocked
@@ -617,17 +638,7 @@ func (s *ExportService) authorize(ctx context.Context, actor Actor, projectID st
 
 func (s *ExportService) isCurrent(ctx context.Context, actor Actor, input DeliveryInput) (bool, error) {
 	if s.policy != nil {
-		chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
-		for _, chapter := range input.Chapters {
-			chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
-		}
-		sources := make([]lingdocaccess.Source, 0, len(input.Sources))
-		for _, source := range input.Sources {
-			sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
-		}
-		return s.policy.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: input.ProjectID}, lingdocaccess.CurrentnessInput{
-			Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources,
-		})
+		return s.policy.Current(ctx, lingdocaccess.LingDocAccessContext{TenantID: actor.TenantID, UserID: actor.UserID, Role: string(actor.Role), ProjectID: input.ProjectID}, AccessCurrentnessInput(input))
 	}
 	if s.currentness == nil {
 		return false, ErrExportUnavailable

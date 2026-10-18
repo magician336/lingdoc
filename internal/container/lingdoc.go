@@ -23,12 +23,14 @@ import (
 // receives only application ports and has no knowledge of GORM construction.
 type LingDocWorkspace struct {
 	dig.Out
-	Handler     *workspace.Handler
-	RuleSets    *rulesetstore.HTTPHandler
-	Projects    workspace.ApplicationService
-	Integration workspace.WorkspaceIntegration
-	Runtime     *workspace.SourceRuntime
-	Audit       workspacecore.AuditSink
+	Guard              *workspace.FullWorkflowGuard
+	Handler            *workspace.Handler
+	RuleSets           *rulesetstore.HTTPHandler
+	Projects           workspace.ApplicationService
+	Integration        workspace.WorkspaceIntegration
+	Runtime            *workspace.SourceRuntime
+	Audit              workspacecore.AuditSink
+	CapabilityObserver delivery.TransactionalCapabilityObserver
 }
 
 func NewLingDocWorkspaceHandler(
@@ -37,6 +39,8 @@ func NewLingDocWorkspaceHandler(
 	knowledge interfaces.KnowledgeBaseService,
 	audit interfaces.AuditLogService,
 	models interfaces.ModelService,
+	knowledgeObjects interfaces.KnowledgeService,
+	webSearch interfaces.WebSearchService,
 	templates lingdoctemplate.Reader,
 ) (LingDocWorkspace, error) {
 	if templates == nil {
@@ -48,7 +52,26 @@ func NewLingDocWorkspaceHandler(
 	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), nil, auditSink).
 		WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
 	runtime.ConnectProjects(projectService)
+	runtime.EnableFullWorkflowPolicy()
+	projectService.RequireActivationRead(true)
+	projectService.SetRuntimeMode("real")
+	research := workspace.NewG2ResearchAdapter(db, projectService, runtime, kbShares, knowledgeObjects, webSearch)
+	model := workspace.NewG2HostAgentModel(models)
+	projectService.ConfigureG2(workspacecore.G2Runtime{Sources: research, Research: research, Imports: research, Model: model, Actions: workspace.NewG2ActionExecutor(projectService, runtime, nil)})
+	governance, err := workspace.NewTemplateGovernanceRuntime(db, projectService, runtime, model)
+	if err != nil {
+		return LingDocWorkspace{}, err
+	}
+	projectService.SetTemplateCatalogResolver(governance)
+	projectService.SetImpactRuleChecker(governance.ImpactRuleChecker())
+	guard := workspace.NewFullWorkflowGuard(projectService, runtime)
 	handler := workspace.NewHandler(workspace.HandlerDependencies{
+		FullWorkflow:     &workspace.FullWorkflowDependencies{Core: projectService, Governance: governance},
+		Projects:         projectService,
+		Members:          projectService,
+		Chapters:         projectService,
+		TemplateApp:      projectService,
+		ChangeSets:       projectService,
 		Read:             projectService,
 		Write:            projectService,
 		Sources:          runtime,
@@ -57,7 +80,7 @@ func NewLingDocWorkspaceHandler(
 		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
 	})
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
-	return LingDocWorkspace{Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink}, nil
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
 }
 
 type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }
@@ -114,11 +137,7 @@ func lingDocRuleSetRequestInfo(c *gin.Context) (rulesetstore.Actor, string, bool
 	}, requestID, true
 }
 
-// NewLingDocTemplateCatalog is the explicit composition point for the
-// versioned catalog. The current catalog is the immutable internal demo
-// version; callers must inject it rather than receiving a silent constructor
-// fallback. Replacing this provider with the formal catalog keeps every
-// workspace, generation, and delivery consumer on one reader instance.
+// NewLingDocTemplateCatalog supplies one explicit reader to every consumer.
 func NewLingDocTemplateCatalog() lingdoctemplate.Reader {
 	return lingdoctemplate.FixedDemoReader{}
 }
@@ -159,13 +178,14 @@ func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.Audi
 // ports; this refactor does not add an unimplemented HTTP endpoint.
 type DeliveryDependencies struct {
 	dig.In
-	Snapshots   delivery.SnapshotStore       `optional:"true"`
-	Exports     delivery.ExportStore         `optional:"true"`
-	Currentness delivery.CurrentnessChecker  `optional:"true"`
-	Access      delivery.ExportAccessChecker `optional:"true"`
-	Renderer    delivery.FrozenRenderer      `optional:"true"`
-	Validator   delivery.FrozenValidator     `optional:"true"`
-	Audit       workspacecore.AuditSink      `optional:"true"`
+	Snapshots          delivery.SnapshotStore                   `optional:"true"`
+	Exports            delivery.ExportStore                     `optional:"true"`
+	Currentness        delivery.CurrentnessChecker              `optional:"true"`
+	Access             delivery.ExportAccessChecker             `optional:"true"`
+	Renderer           delivery.FrozenRenderer                  `optional:"true"`
+	Validator          delivery.FrozenValidator                 `optional:"true"`
+	Audit              workspacecore.AuditSink                  `optional:"true"`
+	CapabilityObserver delivery.TransactionalCapabilityObserver `optional:"true"`
 }
 type LingDocDelivery struct {
 	dig.Out
@@ -180,5 +200,9 @@ func NewLingDocDelivery(deps DeliveryDependencies) (LingDocDelivery, error) {
 	if deps.Renderer == nil {
 		deps.Renderer = delivery.DOCXRenderer{}
 	}
-	return LingDocDelivery{Releases: delivery.NewReleaseService(deps.Snapshots, deps.Currentness), Exports: delivery.NewExportService(deps.Snapshots, deps.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access, deps.Audit)}, nil
+	ports, err := delivery.NewTransactionalDeliveryPortWithObserver(deps.Snapshots, deps.Exports, deps.CapabilityObserver)
+	if err != nil {
+		return LingDocDelivery{}, err
+	}
+	return LingDocDelivery{Releases: delivery.NewReleaseService(ports.Snapshots, deps.Currentness), Exports: delivery.NewExportService(ports.Snapshots, ports.Exports, deps.Renderer, deps.Validator, deps.Currentness, deps.Access, deps.Audit)}, nil
 }

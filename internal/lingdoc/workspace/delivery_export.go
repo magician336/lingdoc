@@ -20,7 +20,7 @@ import (
 // 导出时取不到，而那看起来会像是「快照不存在」而不是「装配错了」。
 type DeliveryExportService struct {
 	snapshots   delivery.SnapshotStore
-	exports     delivery.ExportStore
+	exports     delivery.TransactionalExportPort
 	renderer    delivery.FrozenRenderer
 	validator   delivery.FrozenValidator
 	inputs      *candidateadoption.DeliveryInputService
@@ -85,7 +85,8 @@ func NewDeliveryExportServiceWithCurrentness(
 	if renderer == nil || validator == nil {
 		return nil
 	}
-	if _, ok := exports.(delivery.ExportRecorder); !ok {
+	exportPort, err := delivery.NewTransactionalExportPort(exports)
+	if err != nil {
 		return nil
 	}
 	var audit AuditSink
@@ -96,7 +97,7 @@ func NewDeliveryExportServiceWithCurrentness(
 	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
 		reviewer = candidate
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, currentness: currentness, audit: audit}
+	return &DeliveryExportService{snapshots: snapshots, exports: exportPort, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, currentness: currentness, audit: audit}
 }
 
 // NewDeliveryExportServiceWithPolicy uses the shared application policy for
@@ -114,7 +115,8 @@ func NewDeliveryExportServiceWithPolicy(
 	if snapshots == nil || exports == nil || policy == nil || renderer == nil || validator == nil {
 		return nil
 	}
-	if _, ok := exports.(delivery.ExportRecorder); !ok {
+	exportPort, err := delivery.NewTransactionalExportPort(exports)
+	if err != nil {
 		return nil
 	}
 	var audit AuditSink
@@ -125,7 +127,7 @@ func NewDeliveryExportServiceWithPolicy(
 	if candidate, ok := sources.(sourcepolicy.Reviewer); ok {
 		reviewer = candidate
 	}
-	return &DeliveryExportService{snapshots: snapshots, exports: exports, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, policy: policy, audit: audit}
+	return &DeliveryExportService{snapshots: snapshots, exports: exportPort, renderer: renderer, validator: validator, inputs: inputs, sources: sources, reviewer: reviewer, policy: policy, audit: audit}
 }
 
 // WithRuleSetUseAuditor wires the durable use-audit store required by
@@ -398,13 +400,5 @@ func (s *DeliveryExportService) reviewCurrentSources(ctx context.Context, projec
 }
 
 func accessInputFromDelivery(input delivery.DeliveryInput) lingdocaccess.CurrentnessInput {
-	chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
-	for _, chapter := range input.Chapters {
-		chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
-	}
-	sources := make([]lingdocaccess.Source, 0, len(input.Sources))
-	for _, source := range input.Sources {
-		sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
-	}
-	return lingdocaccess.CurrentnessInput{Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources}
+	return delivery.AccessCurrentnessInput(input)
 }

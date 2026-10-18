@@ -46,7 +46,7 @@ func Validate(in Input, file []byte) error {
 			return fmt.Errorf("paragraph %d is %q, want %q", i+1, actual[i], spec.Text)
 		}
 	}
-	return nil
+	return validateRichStructure(file, expected)
 }
 
 const documentPart = "word/document.xml"

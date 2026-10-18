@@ -34,7 +34,7 @@ func (h *SourceRuntime) CandidateAdoptionSourcePolicy() candidateadoption.Source
 	if h == nil || h.db == nil || h.bindings == nil || h.gateway == nil {
 		return nil
 	}
-	return &candidateAdoptionSourcePolicy{reviewer: h.sourceRevalidator()}
+	return &candidateAdoptionSourcePolicy{reviewer: h.sourceRevalidator(), service: h.service}
 }
 
 // WorkspaceSourcePolicy 把同一台判定器接到 T08（章节保存）上。
@@ -187,10 +187,16 @@ func legacySourcePolicyReview(ctx context.Context, projectID, actorID string, po
 // sourceRevalidator 组装产出侧与复核侧共用的那台判定器。调用方负责确认依赖齐备：
 // 它只被那几个带 nil 守卫的装配入口调用。
 func (h *SourceRuntime) sourceRevalidator() sourcepolicy.Reviewer {
+	return h.sourceReviewerForGateway(h.gateway)
+}
+
+// Model and delegated readers share source reconstruction while retaining their
+// own asset-use policy. A different gateway must never widen the model scope.
+func (h *SourceRuntime) sourceReviewerForGateway(gateway evidence.AssetGateway) sourcepolicy.Reviewer {
 	origins := h.origins()
 	return &sourceRevalidator{
-		db: h.db, bindings: h.bindings, gateway: h.gateway, origins: origins,
-		policy: evidence.NewSourcePolicy(h.gateway, origins, h.bindings),
+		db: h.db, bindings: h.bindings, gateway: gateway, origins: origins,
+		policy: evidence.NewSourcePolicy(gateway, origins, h.bindings),
 	}
 }
 
@@ -199,6 +205,7 @@ func (h *SourceRuntime) sourceRevalidator() sourcepolicy.Reviewer {
 // 给确认记录钉住——确认之后资料再前进就该判失效，而不是静默沿用旧坐标。
 type candidateAdoptionSourcePolicy struct {
 	reviewer sourcepolicy.Reviewer
+	service  ApplicationService
 }
 
 // 装配处靠类型断言才能把复核接给确认服务（candidate_adoption_http.go:26），而断言失败是
@@ -273,8 +280,15 @@ func recheckContext(ctx context.Context, actorID string) (context.Context, evide
 		return nil, evidence.Actor{}, false
 	}
 	actor := evidence.Actor{UserID: actorID, TenantID: strconv.FormatUint(tenantID, 10)}
-	checked := types.WithCaller(ctx, types.Caller{TenantID: tenantID, UserID: actorID, Role: types.TenantRoleViewer})
-	return types.WithExecutionTenant(checked, tenantID), actor, true
+	caller := types.CallerFromContext(ctx)
+	if caller.TenantID != tenantID || caller.UserID != actorID {
+		return nil, evidence.Actor{}, false
+	}
+	if contextUser, exists := types.UserIDFromContext(ctx); exists && contextUser != actorID {
+		return nil, evidence.Actor{}, false
+	}
+	// Preserve Caller, Principal and API key scope. Execution scope is not a grant.
+	return types.WithExecutionTenant(ctx, tenantID), actor, true
 }
 
 // sourceRevalidator 是「这批已经产出的引用此刻还能不能当证据」这一问的唯一实现。
@@ -561,4 +575,74 @@ func assetVersionsOf(sources []evidence.Source) []candidateadoption.AssetVersion
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].AssetID < out[j].AssetID })
 	return out
+}
+
+var _ candidateadoption.CandidateEvidencePolicy = (*candidateAdoptionSourcePolicy)(nil)
+
+type candidateEvidenceTransactionSelector interface {
+	SelectGenerationEvidenceInTransaction(context.Context, workspacecore.Transaction, workspacecore.Actor, string, string, []workspacecore.G2VersionRef, bool, []string) (workspacecore.G2EvidenceSelection, error)
+}
+
+func candidateEvidenceActor(ctx context.Context, actorID string) (context.Context, workspacecore.Actor, error) {
+	checked, _, ok := recheckContext(ctx, actorID)
+	if !ok {
+		return nil, workspacecore.Actor{}, candidateadoption.ErrSourceAccessDenied
+	}
+	caller := types.CallerFromContext(checked)
+	return checked, workspacecore.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}, nil
+}
+
+func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (workspacecore.G2EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return workspacecore.G2EvidenceSelection{}, err
+	}
+	port, ok := p.service.(g2EvidenceSelector)
+	if !ok {
+		return workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	selected, err := port.SelectGenerationEvidence(checked, actor, projectID, chapterID, refs, true)
+	if err != nil {
+		return selected, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	if err = p.Validate(checked, projectID, actorID, sourceIDs); err != nil {
+		return selected, err
+	}
+	return selected, nil
+}
+
+func (p *candidateAdoptionSourcePolicy) ValidateCandidateEvidenceInTransaction(ctx context.Context, tx *gorm.DB, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (workspacecore.G2EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return workspacecore.G2EvidenceSelection{}, err
+	}
+	port, ok := p.service.(candidateEvidenceTransactionSelector)
+	if !ok || tx == nil {
+		return workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	selected, err := port.SelectGenerationEvidenceInTransaction(checked, workspacecore.NewTransactionAdapter(tx), actor, projectID, chapterID, refs, true, sourceIDs)
+	if err != nil {
+		return selected, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	return selected, nil
+}
+
+type candidateEvidenceProofPreparer interface {
+	PrepareCandidateGenerationEvidence(context.Context, workspacecore.Actor, string, string, []workspacecore.G2VersionRef, []string) (context.Context, workspacecore.G2EvidenceSelection, error)
+}
+
+func (p *candidateAdoptionSourcePolicy) PrepareCandidateEvidence(ctx context.Context, projectID, chapterID, actorID string, refs []workspacecore.G2VersionRef, sourceIDs []string) (context.Context, workspacecore.G2EvidenceSelection, error) {
+	checked, actor, err := candidateEvidenceActor(ctx, actorID)
+	if err != nil {
+		return ctx, workspacecore.G2EvidenceSelection{}, err
+	}
+	port, ok := p.service.(candidateEvidenceProofPreparer)
+	if !ok {
+		return ctx, workspacecore.G2EvidenceSelection{}, candidateadoption.ErrDependencyUnavailable
+	}
+	prepared, selected, err := port.PrepareCandidateGenerationEvidence(checked, actor, projectID, chapterID, refs, sourceIDs)
+	if err != nil {
+		return ctx, selected, errors.Join(candidateadoption.ErrSourceAccessDenied, err)
+	}
+	return prepared, selected, nil
 }

@@ -252,6 +252,7 @@ type KnowledgeSearchService interface {
 }
 
 type HandlerDependencies struct {
+	FullWorkflow *FullWorkflowDependencies
 	// Service is retained for compatibility with older adapters. New route
 	// composition should provide the focused application ports below.
 	Service          ApplicationService

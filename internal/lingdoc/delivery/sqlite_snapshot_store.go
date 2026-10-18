@@ -8,6 +8,8 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -267,20 +269,31 @@ func snapshotFromRow(row releaseSnapshotRow) (ReleaseSnapshot, error) {
 // 若遗漏，规则结果仍看似正确，但导出审计无法指回确切的 TemplateVersion 副本。
 // 这些非同形字段由本 DTO 与 sqlite_store_test.go 的往返用例共同固定。
 type storageInput struct {
-	ProjectID               string            `json:"project_id"`
-	ProjectName             string            `json:"project_name"`
-	ProjectVersion          int               `json:"project_version"`
-	SpecRevision            int               `json:"spec_revision"`
-	Spec                    map[string]string `json:"spec"`
-	Template                Template          `json:"template"`
-	TemplateCopyID          string            `json:"template_copy_id,omitempty"`
-	TemplateCopyVersion     int64             `json:"template_copy_version,omitempty"`
-	TemplateCopyContentHash string            `json:"template_copy_content_hash,omitempty"`
-	Chapters                []storageChapter  `json:"chapters"`
-	Sources                 []FrozenSource    `json:"sources"`
-	AssetVersions           []AssetVersion    `json:"asset_versions"`
-	PolicyAssetIDs          []string          `json:"policy_asset_ids"`
-	DeliveryKind            string            `json:"delivery_kind"`
+	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
+	TemplateCopyRulesetHash string                     `json:"template_copy_ruleset_hash,omitempty"`
+	SourceRuleSetID         string                     `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion    string                     `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash       string                     `json:"source_ruleset_hash,omitempty"`
+	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
+	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
+
+	TemplateCopyID          string `json:"template_copy_id,omitempty"`
+	TemplateCopyVersion     int64  `json:"template_copy_version,omitempty"`
+	TemplateCopyContentHash string `json:"template_copy_content_hash,omitempty"`
+
+	ProjectID       string                          `json:"project_id"`
+	ProjectName     string                          `json:"project_name"`
+	ProjectVersion  int                             `json:"project_version"`
+	SpecRevision    int                             `json:"spec_revision"`
+	ContextRevision int64                           `json:"context_revision,omitempty"`
+	Spec            map[string]string               `json:"spec"`
+	SpecProvenance  *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
+	Template        Template                        `json:"template"`
+	Chapters        []storageChapter                `json:"chapters"`
+	Sources         []FrozenSource                  `json:"sources"`
+	AssetVersions   []AssetVersion                  `json:"asset_versions"`
+	PolicyAssetIDs  []string                        `json:"policy_asset_ids"`
+	DeliveryKind    string                          `json:"delivery_kind"`
 }
 
 // storageChapter 在外层补一个 SectionID。外层字段比嵌入的那一层浅，encoding/json
@@ -293,6 +306,7 @@ type storageChapter struct {
 
 // storageCheck 与 storageIssue 同理：CheckIssue.Code 与 ChapterID 也是 json:"-"。
 type storageCheck struct {
+	ReceiptID      string                            `json:"receipt_id,omitempty"`
 	ProjectVersion int                               `json:"project_version"`
 	RulesetHash    string                            `json:"ruleset_hash"`
 	RuleSetRef     *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
@@ -309,11 +323,10 @@ type storageIssue struct {
 func encodeFrozenInput(input DeliveryInput) (string, error) {
 	stored := storageInput{
 		ProjectID: input.ProjectID, ProjectName: input.ProjectName,
-		ProjectVersion: input.ProjectVersion, SpecRevision: input.SpecRevision,
-		Spec: input.Spec, Template: input.Template,
-		TemplateCopyID: input.TemplateCopyID, TemplateCopyVersion: input.TemplateCopyVersion,
-		TemplateCopyContentHash: input.TemplateCopyContentHash,
-		Sources:                 input.Sources, AssetVersions: input.AssetVersions,
+		ProjectVersion: input.ProjectVersion, SpecRevision: input.SpecRevision, ContextRevision: input.ContextRevision,
+		Spec: input.Spec, SpecProvenance: input.SpecProvenance, Template: input.Template,
+		RuleSetSnapshot: input.RuleSetSnapshot, TemplateCopyRulesetHash: input.TemplateCopyRulesetHash, SourceRuleSetID: input.SourceRuleSetID, SourceRuleSetVersion: input.SourceRuleSetVersion, SourceRuleSetHash: input.SourceRuleSetHash, BindingPolicies: input.BindingPolicies, SourcePolicyHash: input.SourcePolicyHash, TemplateCopyID: input.TemplateCopyID, TemplateCopyVersion: input.TemplateCopyVersion, TemplateCopyContentHash: input.TemplateCopyContentHash,
+		Sources: input.Sources, AssetVersions: input.AssetVersions,
 		PolicyAssetIDs: input.PolicyAssetIDs, DeliveryKind: input.DeliveryKind,
 	}
 	stored.Chapters = make([]storageChapter, 0, len(input.Chapters))
@@ -337,11 +350,10 @@ func decodeFrozenInput(raw string) (DeliveryInput, error) {
 	}
 	input := DeliveryInput{
 		ProjectID: stored.ProjectID, ProjectName: stored.ProjectName,
-		ProjectVersion: stored.ProjectVersion, SpecRevision: stored.SpecRevision,
-		Spec: stored.Spec, Template: stored.Template,
-		TemplateCopyID: stored.TemplateCopyID, TemplateCopyVersion: stored.TemplateCopyVersion,
-		TemplateCopyContentHash: stored.TemplateCopyContentHash,
-		Sources:                 stored.Sources, AssetVersions: stored.AssetVersions,
+		ProjectVersion: stored.ProjectVersion, SpecRevision: stored.SpecRevision, ContextRevision: stored.ContextRevision,
+		Spec: stored.Spec, SpecProvenance: stored.SpecProvenance, Template: stored.Template,
+		RuleSetSnapshot: stored.RuleSetSnapshot, TemplateCopyRulesetHash: stored.TemplateCopyRulesetHash, SourceRuleSetID: stored.SourceRuleSetID, SourceRuleSetVersion: stored.SourceRuleSetVersion, SourceRuleSetHash: stored.SourceRuleSetHash, BindingPolicies: stored.BindingPolicies, SourcePolicyHash: stored.SourcePolicyHash, TemplateCopyID: stored.TemplateCopyID, TemplateCopyVersion: stored.TemplateCopyVersion, TemplateCopyContentHash: stored.TemplateCopyContentHash,
+		Sources: stored.Sources, AssetVersions: stored.AssetVersions,
 		PolicyAssetIDs: stored.PolicyAssetIDs, DeliveryKind: stored.DeliveryKind,
 	}
 	input.Chapters = make([]SnapshotChapter, 0, len(stored.Chapters))
@@ -354,7 +366,7 @@ func decodeFrozenInput(raw string) (DeliveryInput, error) {
 }
 
 func encodeCheck(check CheckResult) (string, error) {
-	stored := storageCheck{ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, RuleSetRef: check.RuleSetRef, Status: check.Status}
+	stored := storageCheck{ReceiptID: check.ReceiptID, ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, RuleSetRef: check.RuleSetRef, Status: check.Status}
 	stored.Issues = make([]storageIssue, 0, len(check.Issues))
 	for _, issue := range check.Issues {
 		stored.Issues = append(stored.Issues, storageIssue{CheckIssue: issue, Code: issue.Code, ChapterID: issue.ChapterID})
@@ -371,7 +383,7 @@ func decodeCheck(raw string) (CheckResult, error) {
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return CheckResult{}, fmt.Errorf("decode check result: %w", err)
 	}
-	check := CheckResult{ProjectVersion: stored.ProjectVersion, RulesetHash: stored.RulesetHash, RuleSetRef: stored.RuleSetRef, Status: stored.Status}
+	check := CheckResult{ReceiptID: stored.ReceiptID, ProjectVersion: stored.ProjectVersion, RulesetHash: stored.RulesetHash, RuleSetRef: stored.RuleSetRef, Status: stored.Status}
 	check.Issues = make([]CheckIssue, 0, len(stored.Issues))
 	for _, issue := range stored.Issues {
 		restored := issue.CheckIssue
@@ -379,5 +391,5 @@ func decodeCheck(raw string) (CheckResult, error) {
 		check.Issues = append(check.Issues, restored)
 	}
 	// 与 decodeFrozenInput 同一条：issues 是数组，空集也不该落成 null。
-	return CheckResult{ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, RuleSetRef: check.RuleSetRef, Status: check.Status, Issues: cloneIssues(check.Issues)}, nil
+	return CheckResult{ReceiptID: check.ReceiptID, ProjectVersion: check.ProjectVersion, RulesetHash: check.RulesetHash, RuleSetRef: check.RuleSetRef, Status: check.Status, Issues: cloneIssues(check.Issues)}, nil
 }

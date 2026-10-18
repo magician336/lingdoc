@@ -38,13 +38,31 @@ func TestWorkspaceUsesStructuredAuthorizationRequests(t *testing.T) {
 	if _, _, _, err := service.SaveChapter(context.Background(), actor, "p", "c", "structured-write", SaveChapterInput{ExpectedSpecRevision: 1, BodyMarkdown: "body", SourceIDs: []string{}}); err != nil {
 		t.Fatalf("save chapter: %v", err)
 	}
-	if len(policy.projects) != 2 {
-		t.Fatalf("project requests = %+v, want preflight and commit requests", policy.projects)
-	}
+	// G1 now reads the current project provenance before the existing write
+	// preflight and commit. Every request must remain structured and scoped;
+	// the extra read must not replace either write authorization check.
+	reads, writes := 0, 0
 	for _, request := range policy.projects {
-		if request.Action != AuthorizationWrite || request.ProjectID != "p" || request.Resource != "c" {
-			t.Fatalf("project request = %+v, want write:p:c", request)
+		if request.Actor != actor || request.ProjectID != "p" {
+			t.Fatalf("authorization changed actor/project scope: %+v", request)
 		}
+		switch request.Action {
+		case AuthorizationRead:
+			reads++
+			if request.Resource != "" {
+				t.Fatalf("project provenance read has unexpected resource: %+v", request)
+			}
+		case AuthorizationWrite:
+			writes++
+			if request.Resource != "c" {
+				t.Fatalf("chapter write has wrong resource: %+v", request)
+			}
+		default:
+			t.Fatalf("unexpected authorization request: %+v", request)
+		}
+	}
+	if reads != 1 || writes != 2 {
+		t.Fatalf("project requests = %+v, want one provenance read plus preflight and commit writes", policy.projects)
 	}
 }
 

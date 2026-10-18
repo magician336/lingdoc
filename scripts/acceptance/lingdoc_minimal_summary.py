@@ -14,6 +14,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from lingdoc_source_binding import capture_source_binding, compare_source_bindings
 
 
 def run_check(name: str, argv: list[str], root: Path) -> dict[str, object]:
@@ -45,11 +46,19 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    sha = os.environ.get("LINGDOC_ACCEPTANCE_HEAD_SHA") or os.environ.get("GITHUB_SHA")
-    if not sha:
-        sha_result = {"status": "BLOCKED", "reason": "CI did not provide a commit SHA"}
-    else:
-        sha_result = {"status": "PASS", "value": sha}
+    claimed_head = os.environ.get("LINGDOC_ACCEPTANCE_HEAD_SHA")
+    source_before = capture_source_binding(root, claimed_head, artifact_paths=(args.output,), runner_path=Path(__file__))
+    if source_before["status"] != "PASS":
+        print("BLOCKED: source binding: " + source_before["reason"])
+        return 2
+    checks = [
+        run_check("acceptance_unit_tests", [sys.executable, "-m", "unittest", "discover", "-s", "scripts/acceptance", "-p", "test_*.py"], root),
+    ]
+    source_after = capture_source_binding(root, claimed_head, artifact_paths=(args.output,), ignore_new_artifacts=True,
+                                          runner_path=Path(__file__))
+    sha_result = compare_source_bindings(source_before, source_after)
+    sha = source_before["checkout_commit"]
+    sha_result["value"] = sha
     report = {
         "schema": "lingdoc-minimal-acceptance/v1",
         "recorded_at": datetime.now(timezone.utc).isoformat(),
@@ -57,9 +66,7 @@ def main() -> int:
         "ref": os.environ.get("GITHUB_REF", "local"),
         "commit": sha,
         "commit_binding": sha_result,
-        "checks": [
-            run_check("acceptance_unit_tests", [sys.executable, "-m", "unittest", "discover", "-s", "scripts/acceptance", "-p", "test_*.py"], root),
-        ],
+        "checks": checks,
         "not_run": [
             {"name": "real_provider_timeout", "status": "NOT RUN"},
             {"name": "word_manual_roundtrip", "status": "NOT RUN"},
@@ -67,7 +74,7 @@ def main() -> int:
         ],
     }
     statuses = [item["status"] for item in report["checks"]]
-    report["overall"] = "FAIL" if "FAIL" in statuses else "BLOCKED" if "BLOCKED" in statuses or sha_result["status"] == "BLOCKED" else "PASS"
+    report["overall"] = "FAIL" if "FAIL" in statuses else "BLOCKED" if "BLOCKED" in statuses or sha_result["status"] != "PASS" else "PASS"
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"commit": sha, "overall": report["overall"]}, ensure_ascii=False))

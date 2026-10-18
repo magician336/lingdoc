@@ -204,6 +204,12 @@ func (s *SourceService) GetSource(ctx context.Context, actor Actor, projectID, s
 		return evidence.Source{}, ErrSourceUnavailable
 	}
 	verdict := verdicts[0]
+	if verdict.SourceID != source.ID || verdict.Source.ID != source.ID {
+		return evidence.Source{}, ErrSourceUnavailable
+	}
+	// Return the exact projection reviewed, including changes after the initial
+	// catalog read. Never authorize a fresh source and return the older excerpt.
+	source = verdict.Source
 	if !verdict.Usable {
 		if verdict.AssetDeny != "" {
 			s.recordSourceAudit(ctx, actor, projectID, "source.read", ErrSourceUnavailable)

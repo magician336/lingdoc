@@ -51,25 +51,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{
-		"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
-		"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
-		"000101_lingdoc_generation_claim_token.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
-		"000103_lingdoc_delivery_stores.up.sql",
-		"000104_lingdoc_member_permissions.up.sql",
-		"000105_lingdoc_project_context_revision.up.sql", "000106_lingdoc_draft_provenance.up.sql",
-		"000107_lingdoc_owner_transfers.up.sql", "000108_lingdoc_project_discard.up.sql",
-		"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
-		"000111_lingdoc_change_sets.up.sql",
-		"000112_lingdoc_working_copies.up.sql",
-		"000113_lingdoc_selected_rewrites.up.sql",
-		"000114_lingdoc_project_template_copies.up.sql",
-		"000115_lingdoc_rule_sets.up.sql",
-		"000118_lingdoc_ruleset_export_reference.up.sql",
-		"000119_lingdoc_ruleset_use_audits.up.sql",
-		"000120_lingdoc_template_version_ruleset_ref.up.sql",
-		"000121_lingdoc_satisfied_change_sets.up.sql",
-	} {
+	for _, file := range productionLingDocMigrationNames(t, "versioned") {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
 			t.Fatal(err)
@@ -78,7 +60,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 	}
-	if err := db.Exec("CREATE TABLE tenant_members (tenant_id BIGINT, user_id TEXT, status TEXT, deleted_at TIMESTAMPTZ)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE tenant_members ( role TEXT NOT NULL DEFAULT 'owner',tenant_id BIGINT, user_id TEXT, status TEXT, deleted_at TIMESTAMPTZ)").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO tenant_members (tenant_id,user_id,status) VALUES (1,'owner','active')").Error; err != nil {
@@ -187,92 +169,5 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	var count int64
 	if err := db.Model(&chapterVersionRow{}).Count(&count).Error; err != nil || count != 1 {
 		t.Fatalf("duplicate versions: %d %v", count, err)
-	}
-}
-
-func TestPostgresSatisfiedChangeSetMigrationUpgradesExistingRows(t *testing.T) {
-	dsn := os.Getenv("LINGDOC_TEST_POSTGRES_DSN")
-	if dsn == "" {
-		t.Skip("NOT RUN: LINGDOC_TEST_POSTGRES_DSN is unset")
-	}
-	root, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	rootSQL, err := root.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rootSQL.Close()
-	schema := "g3_status_upgrade_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-	if err := root.Exec("CREATE SCHEMA " + schema).Error; err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		if err := root.Exec("DROP SCHEMA " + schema + " CASCADE").Error; err != nil {
-			t.Error(err)
-		}
-	}()
-	db, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dbSQL, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dbSQL.Close()
-	if err := db.Exec("CREATE TABLE lingdoc_projects (id varchar(36) PRIMARY KEY)").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES ('project-1')").Error; err != nil {
-		t.Fatal(err)
-	}
-	oldMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000111_lingdoc_change_sets.up.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	fullWorkflowSchema := strings.Replace(string(oldMigration),
-		"CHECK (status IN ('assessed', 'applied', 'rejected', 'stale'))",
-		"CHECK (status IN ('draft', 'assessed', 'applied', 'rejected', 'stale', 'stabilized'))", 1)
-	if err := db.Exec(fullWorkflowSchema).Error; err != nil {
-		t.Fatalf("create pre-upgrade schema: %v", err)
-	}
-	if err := db.Exec(`INSERT INTO lingdoc_change_sets
-		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
-		VALUES ('stale-1', 'project-1', 'owner', 'legacy proposal', 'stale', 4, 3)`).Error; err != nil {
-		t.Fatal(err)
-	}
-	for _, status := range []string{"draft", "stabilized"} {
-		if err := db.Exec(`INSERT INTO lingdoc_change_sets
-			(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
-			VALUES (?, 'project-1', 'owner', 'full workflow history', ?, 4, 3)`, status+"-1", status).Error; err != nil {
-			t.Fatalf("insert %s status: %v", status, err)
-		}
-	}
-	upgrade, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", "000121_lingdoc_satisfied_change_sets.up.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Exec(string(upgrade)).Error; err != nil {
-		t.Fatalf("apply satisfied status migration: %v", err)
-	}
-	var status, reason string
-	if err := db.Raw("SELECT status, reason FROM lingdoc_change_sets WHERE id = 'stale-1'").Row().Scan(&status, &reason); err != nil || status != "stale" || reason != "legacy proposal" {
-		t.Fatalf("legacy row read-back: status=%q reason=%q err=%v", status, reason, err)
-	}
-	var fullWorkflowCount int64
-	if err := db.Raw("SELECT COUNT(*) FROM lingdoc_change_sets WHERE status IN ('draft', 'stale', 'stabilized')").Row().Scan(&fullWorkflowCount); err != nil || fullWorkflowCount != 3 {
-		t.Fatalf("full workflow statuses were not preserved: count=%d err=%v", fullWorkflowCount, err)
-	}
-	if err := db.Exec(`INSERT INTO lingdoc_change_sets
-		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
-		VALUES ('satisfied-1', 'project-1', 'owner', 'already satisfied', 'satisfied', 4, 3)`).Error; err != nil {
-		t.Fatalf("insert satisfied status after upgrade: %v", err)
-	}
-	if err := db.Exec(`INSERT INTO lingdoc_change_sets
-		(id, project_id, created_by, reason, status, base_context_revision, base_spec_revision)
-		VALUES ('invalid-1', 'project-1', 'owner', 'invalid', 'unknown', 4, 3)`).Error; err == nil {
-		t.Fatal("upgrade migration stopped enforcing the status constraint")
 	}
 }

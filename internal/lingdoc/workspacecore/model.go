@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"strings"
 	"time"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -22,6 +24,7 @@ type Member struct {
 }
 
 type Project struct {
+	CurrentSnapshotID      string               `json:"current_snapshot_id,omitempty"`
 	ID                     string               `json:"id"`
 	Name                   string               `json:"name"`
 	Status                 string               `json:"status"`
@@ -44,6 +47,12 @@ type Project struct {
 // published template version. Lifecycle status may advance; Definition and
 // its server-computed hashes never change after the row is inserted.
 type ProjectTemplateCopy struct {
+	BindingPolicies           []governance.BindingPolicy        `json:"binding_policies,omitempty"`
+	SourcePolicyHash          string                            `json:"source_policy_hash,omitempty"`
+	RuleSetSnapshot           *lingdoctemplate.RuleSet          `json:"rule_set_snapshot,omitempty"`
+	SourceRuleSetID           string                            `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion      string                            `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash         string                            `json:"source_ruleset_hash,omitempty"`
 	ID                        string                            `json:"id"`
 	ProjectID                 string                            `json:"project_id"`
 	SourceTemplateID          string                            `json:"source_template_id"`
@@ -195,14 +204,15 @@ type ChangeImpact struct {
 }
 
 type ChangeSet struct {
+	SemanticDeltas        []SemanticDelta    `json:"semantic_deltas,omitempty"`
 	ID                    string             `json:"id"`
 	ProjectID             string             `json:"project_id"`
 	CreatedBy             string             `json:"created_by"`
 	ReassessedFromID      string             `json:"reassessed_from_id,omitempty"`
 	ReversesChangeSetID   string             `json:"reverses_change_set_id,omitempty"`
-	StaleReason           string             `json:"stale_reason,omitempty"`
 	DecisionBy            string             `json:"decision_by,omitempty"`
 	DecidedAt             *time.Time         `json:"decided_at,omitempty"`
+	StaleReason           string             `json:"stale_reason,omitempty"`
 	Reason                string             `json:"reason"`
 	Status                string             `json:"status"`
 	BaseContextRevision   int64              `json:"base_context_revision"`
@@ -296,9 +306,10 @@ type TemplateMigrationPreview struct {
 }
 
 type ReviewItem struct {
-	ID                string `json:"id"`
-	Statement         string `json:"statement"`
-	OriginCandidateID string `json:"origin_candidate_id"`
+	ID                string               `json:"id"`
+	Statement         string               `json:"statement"`
+	OriginCandidateID string               `json:"origin_candidate_id"`
+	Anchor            *reviewanchor.Anchor `json:"anchor,omitempty"`
 }
 
 // CitationUsage records the human context for one source used by a chapter.
@@ -630,6 +641,9 @@ func decodeSpecFields(raw string, spec map[string]string) (map[string]SpecField,
 		if err := json.Unmarshal([]byte(raw), &fields); err != nil {
 			return nil, err
 		}
+	}
+	if fields == nil {
+		fields = map[string]SpecField{}
 	}
 	for key, value := range spec {
 		field, ok := fields[key]

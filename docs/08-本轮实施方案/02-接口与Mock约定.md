@@ -6,7 +6,7 @@
 
 共用 `contracts/openapi.json` 描述 HTTP，`contracts/scenarios.json` 描述行为，`contracts/workflow.json` 描述一次连续交付。每个提供方维护本域内容；消费者提出缺失的输入/输出，不另抄一套字段。
 
-OpenAPI 有 25 个操作，其中 22 个标为 core。这个数量是请求入口数，不是 22 个独立任务或必须一次冻结的范围。`saveMembers`、`retrieveSources`、`checkCurrent` 标为 optional：成员先配置固定测试组，检索包含在生成中，检查包含在准备交付中；内部权限/检索/检查逻辑仍要实现。
+2026-10-16固定契约有56个操作，其中53个标为core、3个optional（实际计数以validate_artifacts.py结果为准）。这个数量是请求入口数，不是 22 个独立任务或必须一次冻结的范围。`saveMembers`、`retrieveSources`、`checkCurrent` 标为 optional：成员先配置固定测试组，检索包含在生成中，检查包含在准备交付中；内部权限/检索/检查逻辑仍要实现。
 
 本轮方案文件位于 `docs/08-本轮实施方案/contracts/`；Go 内部共享 DTO/小接口和合成测试资料的实际目录在 T01 接入现有仓库时确定。以最小模块接入，不新建微服务、第二套账号系统或通用工作流平台。
 

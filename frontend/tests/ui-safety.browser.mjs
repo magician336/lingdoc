@@ -1,3 +1,5 @@
+// Historical #109 plaintext-editor fixture. NOT the current continuous-editor acceptance runner.
+// Use conditions-safety.browser.mjs for current navigation/conditions checks; keep this source for history.
 // Optional local component integration test. Uses real Vue SFCs with synthetic
 // API providers; no product service, credentials, external API or model calls.
 import fs from 'node:fs'

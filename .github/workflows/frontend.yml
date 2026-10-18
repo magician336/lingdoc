@@ -26,8 +26,29 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  scope:
+    name: Scope latest PR update
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select frontend paths changed by this update
+        id: scope
+        env:
+          LINGDOC_SCOPE_PATHS: |
+            frontend/**
+            scripts/build_frontend_dist.sh
+            .github/workflows/frontend.yml
+        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+
   verify:
     name: Test, type-check, and build
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -56,6 +77,8 @@ jobs:
 
   docker-image:
     name: Docker multi-stage image
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

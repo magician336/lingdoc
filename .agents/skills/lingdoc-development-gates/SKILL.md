@@ -1,6 +1,6 @@
 ---
 name: lingdoc-development-gates
-description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR 准备：先锁定范围、验收矩阵和不可变契约，再用当前 head 闭环验证并决定 Draft/Ready。适用于涉及 Spec、数据库、权限、跨模块、并发、审计或真实适配器的变更。"
+description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR 准备：Agent 自动锁定范围、执行验收和收集当前 head 证据，只有不可推断的外部输入和最终审查交给人。适用于涉及 Spec、数据库、权限、跨模块、并发、审计或真实适配器的变更。"
 ---
 
 # LingDoc 开发门禁
@@ -18,6 +18,46 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 
 纯文字、换行或单文件机械重命名可以跳过完整矩阵，但仍需说明影响范围并通过现有 CI。
 
+## 人机分工：Agent 默认接管
+
+本 Skill 的默认模式是“Agent 做完，人审结果”。不要把可由仓库、Issue、Spec、CI 或本地环境推导的事实退回给用户确认。
+
+### Agent 必须主动完成
+
+- 从 Issue、Spec、代码、迁移、OpenAPI、CI 和现有文档推导范围、消费者、验收项和默认参数；
+- 创建验收矩阵、测试夹具、合成数据和可复现的本地/staging 依赖；
+- 执行单测、application/HTTP、浏览器、真实适配器、迁移、重启读回、失败恢复和并发验证；真实服务链路若不属于本 PR 的交付范围，必须转成独立验收 Issue 并在当前矩阵显式跟踪。
+- 配置已获授权的外部模型调用，记录用量、限流、失败原因和脱敏响应证据；
+- 更新当前 head 的验收报告、健康评分、PR body、Issue 状态和 Draft/Ready 建议；
+- 将无法执行的项准确标为 `NOT RUN`、`N/A` 或 `WARNING`，写清事实、影响和解除条件；只有当前交付范围内且必须完成的 `NOT RUN`/`BLOCKED` 才阻止放行。
+
+### 只有这些情况才向人提问
+
+- 不可从仓库或上下文推断的外部事实：模型供应商、模型名、API Key、外部 endpoint、SSO 测试账号；
+- 业务方尚未定义的验收阈值、用户可见取舍或不可逆决策；
+- 付费、生产写入、外部发布、合并等需要明确授权的动作。
+
+API Key 只能通过环境变量、Secret store 或 CI Secret 提供，不能要求用户把密钥粘贴到聊天、Issue 或 PR。若没有真实生产库，Agent 应自动创建生产同构的 SQLite/PostgreSQL staging 演练；报告必须把它与真实生产迁移分开，并将“真实生产迁移/回滚”标为 `N/A`，因为当前没有可验收的生产目标。
+
+### 门禁状态和例外语义
+
+- `PASS`：当前 head 有可复核证据，满足本次交付要求。
+- `PASS (follow-up)`：本次交付接受该项不作为阻塞；真实服务验收事项必须链接到独立 GitHub Issue，不能把未运行写成已实测。
+- `N/A`：验收前提在当前目标中不存在，例如仓库没有真实生产数据库；该项不计入当前 PR 的必需矩阵。
+- `WARNING`：宿主工具链或运行环境有局部限制，但等价的 WSL2、CI 或 staging 路径已通过；警告必须保留在报告中，但不阻止放行。
+- `NOT RUN`/`BLOCKED`：仅当该项属于当前 PR 的必需范围时阻止 Ready；外部真实服务链路可以按上面的 `PASS (follow-up)` 转移到独立验收 Issue。
+
+## 0. 最小输入门：先自动补齐再一次性询问
+
+开始工作后先扫描 Issue、Spec、`AGENTS.md`、`docs/agents/development-rules.md`、迁移、CI 和当前工作区，并将需要的输入分类：
+
+- `[DERIVED]`：从仓库或 Issue 得到，Agent 直接采用；
+- `[GENERATED]`：由 Agent 创建，例如测试账号、合成数据、临时数据库和 Playwright 浏览器；
+- `[REQUIRED]`：只能由用户提供，例如供应商/API Key、外部 URL 或 SSO 账号；
+- `[APPROVAL]`：涉及费用、生产写入、发布或合并的授权。
+
+只有存在 `[REQUIRED]` 或 `[APPROVAL]` 时才发起一次合并提问，并列出推荐默认值。收到输入后继续执行，不再逐项打断用户。输入缺失时只阻塞受影响的矩阵行，不阻塞可以独立完成的本地工作。
+
 ## 工作流程
 
 ### 1. 代码前门：锁定目的地
@@ -31,7 +71,7 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 - 成功、失败、权限和恢复结果；
 - 持久化、迁移、重启读回、并发和无部分写入；
 - 测试、CI、运行报告或人工验收证据；
-- `TODO`、`PASS`、`NOT RUN` 或 `BLOCKED` 状态。
+- `TODO`、`PASS`、`PASS (follow-up)`、`N/A`、`WARNING`、`NOT RUN` 或 `BLOCKED` 状态。
 
 在写代码前决定：哪个模块拥有真相，哪个事务保护读取/校验/写入/审计，哪些 reader/writer port 必需，失败时如何零写入和幂等重试。未决规则先记录为决策或 Issue，不用代码猜测。
 
@@ -43,9 +83,9 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 - 代码、迁移、OpenAPI、Spec、PR body 和测试名称使用同一术语。
 - 开发计划完成后运行一次 `lingdoc-health-scoring`，记录风险和未验证证据。存在未决规则时，可用 Wayfinder 建立决策票；决策未解决前保持 Draft。
 
-### 3. 评审前门：只接受当前 head 证据
+### 3. 验收门：Agent 闭环完成，准备交给人审
 
-提 PR 前确认：
+Agent 在请求人工审查前完成以下工作：
 
 - 矩阵每一项都有当前 head 的实现位置和证据；
 - 定向测试、构建、lint 和相关集成测试的命令及结果已记录；
@@ -54,9 +94,13 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 - PR body 的 SHA、CI 链接和结论都指向当前 head；
 - 完成 `lingdoc-health-scoring` 的合并前复评。
 
-只要必需项有 `TODO`、`NOT RUN` 或 `BLOCKED`，保持 Draft。绿色通用 CI 不能替代 Spec 证据。
+只要当前交付范围内的必需项有 `TODO`、`NOT RUN` 或 `BLOCKED`，保持 Draft。`N/A`、`WARNING` 和已链接真实服务验收 Issue 的 `PASS (follow-up)` 不阻塞当前 PR。绿色通用 CI 不能替代 Spec 证据。
 
-### 4. 评审反馈和合并
+Agent 不应把常规测试、日志整理、报告编写或本地依赖准备交给用户。只有外部输入确实缺失、环境不可访问或需要业务判断时，才在报告中列出一项精确的人工请求。
+
+### 4. 人审、反馈和合并
+
+人收到的是可审查的结果包，而不是待人执行的测试清单。结果包至少包含当前 head、矩阵状态、命令和结果、失败证据、环境限制、健康评分和剩余决策。人负责审查代码与证据，并决定是否转 Ready、合并或接受后续风险。
 
 将评审意见分为：
 
@@ -66,7 +110,7 @@ description: "按 LingDoc 的 Spec-first 两道门推进 G1–G7 开发和 PR �
 
 评审发现新的不变量时，先更新验收矩阵，再修改代码。连续两轮出现新的 `Blocker` 时，停止堆补丁，重新切分 Spec、补决策记录或拆 PR。
 
-只有在 PR 非 Draft、评审阻断已解决、当前 head 的必需 CI 全部通过时才合并。只有最后一个交付切片完成全部矩阵项后才关闭 Issue。
+只有在 PR 非 Draft、评审阻断已解决、当前 head 的必需 CI 全部通过时才合并。`PASS (follow-up)` 只代表当前 PR 的范围决策，不代表真实服务验收 Issue 已关闭；只有最后一个交付切片完成全部矩阵项后才关闭主 Issue。
 
 ## 交付格式
 

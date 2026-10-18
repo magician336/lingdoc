@@ -30,7 +30,7 @@ type DeliveryReleaseService struct {
 	inputs       *candidateadoption.DeliveryInputService
 	builder      DeliveryInputAssembler
 	store        delivery.SnapshotStore
-	freezes      delivery.FreezeRecorder
+	freezes      delivery.TransactionalSnapshotPort
 	sources      candidateadoption.SourcePolicy
 	reviewer     sourcepolicy.Reviewer
 	policy       AccessPolicy
@@ -77,8 +77,8 @@ func buildDeliveryReleaseService(inputs *candidateadoption.DeliveryInputService,
 	if inputs == nil || inputs.Reader == nil || builder == nil || store == nil {
 		return nil
 	}
-	freezes, ok := store.(delivery.FreezeRecorder)
-	if !ok {
+	freezes, err := delivery.NewTransactionalSnapshotPort(store)
+	if err != nil {
 		return nil
 	}
 	var reviewer sourcepolicy.Reviewer
@@ -121,7 +121,7 @@ func (s *DeliveryReleaseService) TemplateCheck(ctx context.Context, actorID, pro
 	if err != nil {
 		return delivery.TemplateCheckResult{}, err
 	}
-	result, err := delivery.EvaluateTemplate(input)
+	result, err := delivery.EvaluateTemplateScene(input, "write_check")
 	if err != nil {
 		return delivery.TemplateCheckResult{}, err
 	}
@@ -161,7 +161,13 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 		return delivery.ReleaseSnapshot{}, false, err
 	}
 	if found {
-		return replay, true, nil
+		// Replay is a read of this historical snapshot, including its sources.
+		// The current revision may no longer cite the historical sources.
+		visible, err := s.Get(ctx, actorID, projectID, replay.ID)
+		if err != nil {
+			return delivery.ReleaseSnapshot{}, false, err
+		}
+		return visible, true, nil
 	}
 	// 3. 只有新动作才比版本，也只有新动作才读工作区。
 	input, err := s.assemble(ctx, actorID, projectID, expectedProjectVersion)
@@ -195,7 +201,11 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
-	return recorded, replayed, nil
+	visible, err := s.Get(ctx, actorID, projectID, recorded.ID)
+	if err != nil {
+		return delivery.ReleaseSnapshot{}, false, err
+	}
+	return visible, replayed, nil
 }
 
 func (s *DeliveryReleaseService) recordRuleSetUse(ctx context.Context, actorID string, input delivery.DeliveryInput, action, resourceID, outcome string) error {
@@ -333,10 +343,19 @@ func (s *DeliveryReleaseService) Get(ctx context.Context, actorID, projectID, sn
 // Source access remains revocable, so a snapshot quoting a source the caller
 // can no longer access must still be denied.
 func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, actorID, projectID string, snapshot delivery.ReleaseSnapshot) error {
-	if s == nil || (s.sources == nil && s.reviewer == nil && s.policy == nil) {
-		// The small legacy adapters do not have a source-level reader. Production
-		// composition always wires the shared Reviewer; retain this compatibility
-		// path only when there is no shared policy claiming production guarantees.
+	if s == nil {
+		return candidateadoption.ErrDependencyUnavailable
+	}
+	if provenance, ok := s.builder.(interface {
+		AuthorizeFrozenProvenance(context.Context, string, string, delivery.DeliveryInput) error
+	}); ok {
+		if err := provenance.AuthorizeFrozenProvenance(ctx, actorID, projectID, snapshot.FrozenInput); err != nil {
+			return err
+		}
+	}
+	if s.sources == nil && s.reviewer == nil && s.policy == nil {
+		// Legacy adapters may omit a source reader; a configured production
+		// policy must still supply one rather than conflate access and currentness.
 		return nil
 	}
 	ids := make([]string, 0)
@@ -352,6 +371,17 @@ func (s *DeliveryReleaseService) authorizeSnapshotSources(ctx context.Context, a
 			}
 			seen[id] = struct{}{}
 			ids = append(ids, id)
+		}
+	}
+	// Frozen excerpts remain sensitive even if a historical chapter's source
+	// list is incomplete. Authorize the union before returning either body.
+	for _, source := range snapshot.FrozenInput.Sources {
+		id := strings.TrimSpace(source.ID)
+		if id != "" {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				ids = append(ids, id)
+			}
 		}
 	}
 	if len(ids) == 0 {
@@ -404,6 +434,10 @@ func (s *DeliveryReleaseService) List(ctx context.Context, actorID, projectID st
 		snapshots = snapshots[:deliveryHistoryLimit]
 	}
 	for index := range snapshots {
+		if err := s.authorizeSnapshotSources(ctx, actorID, projectID, snapshots[index]); err != nil {
+			// No partial list or historical body escapes on denial.
+			return nil, false, err
+		}
 		current, err := s.stillCurrent(ctx, actorID, snapshots[index].FrozenInput)
 		if err != nil {
 			return nil, false, err
@@ -503,7 +537,23 @@ func deliveryCurrentness(ctx context.Context, reader candidateadoption.DeliveryI
 
 // sameDeliveryState 逐项对照冻结输入与此刻的工作区。
 func sameDeliveryState(frozen delivery.DeliveryInput, current candidateadoption.WorkspaceDeliveryInput) bool {
-	if frozen.ProjectVersion != int(current.ProjectVersion) || frozen.SpecRevision != current.SpecRevision {
+	if frozen.ProjectVersion != int(current.ProjectVersion) || frozen.SpecRevision != current.SpecRevision || delivery.FrozenContextRevision(frozen) != current.ContextRevision {
+		return false
+	}
+
+	if frozen.Template.ID != current.TemplateID || frozen.Template.Version != current.TemplateVersion {
+		return false
+	}
+	if frozen.TemplateCopyID != current.TemplateCopyID || frozen.TemplateCopyVersion != current.TemplateCopyVersion || frozen.TemplateCopyContentHash != current.TemplateCopyContentHash {
+		return false
+	}
+	if frozen.TemplateCopyID != "" && delivery.FrozenRuleSetHash(frozen) != current.TemplateCopyRulesetHash {
+		return false
+	}
+	if (frozen.RuleSetSnapshot == nil) != (current.RuleSetSnapshot == nil) {
+		return false
+	}
+	if frozen.SourceRuleSetID != current.SourceRuleSetID || frozen.SourceRuleSetVersion != current.SourceRuleSetVersion || frozen.SourceRuleSetHash != current.SourceRuleSetHash || frozen.SourcePolicyHash != current.SourcePolicyHash {
 		return false
 	}
 	// 章节集合与逐章版本都要对得上：新增、删除、改动任一章节都会让冻结输入不再

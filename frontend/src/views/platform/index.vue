@@ -1,5 +1,5 @@
 <template>
-    <div class="main" ref="dropzone">
+    <div class="main" :class="{ 'main--lingdoc-narrow': shellNarrow }" ref="dropzone">
         <Menu></Menu>
         <div v-if="isRouterAlive" class="platform-route-outlet">
             <RouterView />
@@ -15,12 +15,12 @@
              右侧抽屉弹出时会自然覆盖；仅在有待处理邀请时渲染。 -->
         <GlobalInvitationBell />
         <!-- 带遮罩层的新手引导：首次进入自动开启，可从用户菜单顶部昵称旁帮助按钮重新打开 -->
-        <NewUserGuide />
+        <NewUserGuide v-if="!isLingDocRoute" />
     </div>
 </template>
 <script setup lang="ts">
 import Menu from '@/components/menu.vue'
-import { ref, onMounted, onUnmounted, nextTick, provide, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, provide, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router'
 import UploadMask from '@/components/upload-mask.vue'
 import Settings from '@/views/settings/Settings.vue'
@@ -43,6 +43,23 @@ let ismask = ref(false)
 const { t } = useI18n();
 
 const isRouterAlive = ref(true)
+
+// 灵档路由的窄屏外壳适配（真服务视觉复核 r3）：
+// 视口 ≤600px 时 .main 的 min-width:600 会造成整页横向溢出，而宿主侧栏
+// 不会自动收起。这里仅在 LingDoc 路由 + 窄屏时套用同款的 60px 收起样式
+// （只读复用 .aside_box--collapsed 的视觉尺寸），不写入 uiStore / localStorage，
+// 不影响其他路由与用户侧栏偏好；离开窄屏或路由即恢复。
+const isLingDocRoute = computed(() => route.path.startsWith('/platform/lingdoc'))
+const narrowShellMq = typeof window !== 'undefined' ? window.matchMedia('(max-width: 600px)') : null
+const shellNarrow = ref(false)
+function syncShellNarrow() {
+    shellNarrow.value = !!(isLingDocRoute.value && narrowShellMq && narrowShellMq.matches)
+}
+watch(isLingDocRoute, syncShellNarrow)
+onMounted(() => {
+    syncShellNarrow()
+    narrowShellMq?.addEventListener?.('change', syncShellNarrow)
+})
 const reloadApp = () => {
     isRouterAlive.value = false
     nextTick(() => {
@@ -228,6 +245,7 @@ function maybeOpenCmdkFromRoute() {
 
 // 组件卸载时移除全局事件监听器
 onUnmounted(() => {
+    narrowShellMq?.removeEventListener?.('change', syncShellNarrow)
     document.removeEventListener('dragenter', handleGlobalDragEnter, true);
     document.removeEventListener('dragover', handleGlobalDragOver, true);
     document.removeEventListener('dragleave', handleGlobalDragLeave, true);
@@ -253,6 +271,17 @@ onUnmounted(() => {
     min-height: 0;
     /* 统一整页背景，让左侧菜单与右侧内容区视觉连贯 */
     background: var(--td-bg-color-container);
+}
+
+/* 仅 LingDoc 路由 + ≤600px 视口：外壳允许收缩并套用侧栏收起尺寸，
+   消除窄屏横向溢出；不影响其他路由与用户侧栏偏好。 */
+.main--lingdoc-narrow {
+    min-width: 0;
+}
+
+.main--lingdoc-narrow .aside_box {
+    width: 60px;
+    min-width: 60px;
 }
 
 /* 右侧路由区：占满剩余宽度与整列高度，并把 min-height:0 传给子页面以便内部 flex 滚动 */

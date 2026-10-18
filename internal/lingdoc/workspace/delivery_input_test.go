@@ -11,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 )
 
@@ -302,7 +303,7 @@ func TestDeliveryLinkSurfacesUnsupportedMarkdownBeforeExport(t *testing.T) {
 	handler, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db,
 		deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID),
-			"- 列表项 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
+			"> 引用块 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
 		deliveryMethodChapter(),
 	)
 	service := newDeliveryReleaseService(t, handler)
@@ -434,7 +435,7 @@ func TestDeliveryLinkReportsDriftAfterTheWorkspaceMoves(t *testing.T) {
 	}
 }
 
-func TestDeliveryLinkReportsSourceRevocationAsNotCurrent(t *testing.T) {
+func TestDeliveryLinkRejectsSourceRevocationBeforeReturningSnapshot(t *testing.T) {
 	handler, db, assetID := seedBoundSource(t)
 	sourceAuthorizer := &switchableAssetAuthorizer{}
 	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, sourceAuthorizer)
@@ -450,11 +451,11 @@ func TestDeliveryLinkReportsSourceRevocationAsNotCurrent(t *testing.T) {
 	}
 	sourceAuthorizer.revoked = true
 	got, err := service.Get(ctx, deliveryActorID, "project-1", snapshot.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
+	if !errors.Is(err, candidateadoption.ErrSourceAccessDenied) {
+		t.Fatalf("Get: %v, want explicit source access denial", err)
 	}
-	if got.IsCurrent {
-		t.Fatal("revoked source kept the frozen snapshot current")
+	if got.ID != "" || len(got.FrozenInput.Chapters) != 0 || len(got.FrozenInput.Sources) != 0 {
+		t.Fatal("revoked snapshot read returned frozen content")
 	}
 }
 
@@ -471,6 +472,27 @@ func TestDeliveryLinkRequiresAnIdentity(t *testing.T) {
 	_, err := service.Check(context.Background(), deliveryActorID, "project-1", deliveryProjectVersion)
 	if !errors.Is(err, candidateadoption.ErrSourceAccessDenied) {
 		t.Fatalf("Check = %v, want ErrSourceAccessDenied", err)
+	}
+}
+
+func TestDeliveryInputBuilderRejectsRefOnlyTemplateBeforeSourceReview(t *testing.T) {
+	definition := lingdoctemplate.DemoTemplate()
+	definition.RuleSetRef = &lingdoctemplate.RuleSetReference{
+		ID: "grant-rules", Version: "v1", Hash: strings.Repeat("a", 64),
+	}
+	definition, err := lingdoctemplate.WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	builder := &DeliveryInputBuilder{templates: delivery.FixedTemplateReader{}}
+	_, err = builder.Build(policyContext(), deliveryActorID, candidateadoption.WorkspaceDeliveryInput{
+		ProjectID: "project-1", TemplateID: definition.ID, TemplateVersion: definition.Version,
+		TemplateCopyID: "copy-1", TemplateCopyVersion: 1,
+		TemplateCopyContentHash: definition.ContentHash, TemplateCopyRulesetHash: definition.RulesetHash,
+		TemplateDefinition: &definition,
+	})
+	if !errors.Is(err, candidateadoption.ErrInvalidState) {
+		t.Fatalf("ref-only delivery input error = %v, want ErrInvalidState", err)
 	}
 }
 

@@ -97,15 +97,32 @@ func TestRuleSetUseAuditPersistsAndReadsExactIdentity(t *testing.T) {
 	if err := db.Exec("INSERT INTO lingdoc_projects (id) VALUES (?)", "project-audit").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-audit", actor.UserID, "owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	verifiedTemplate, verifiedBinding := verifiedAuditEvidence(t, published)
 	event := template.RuleSetUseAuditEvent{
 		TenantID: actor.TenantID, ActorID: actor.UserID, ActorRole: actor.Role,
 		ProjectID: "project-audit", Action: "preflight", RuleSetID: published.ID,
 		RuleSetVersion: published.Version, RuleSetHash: published.RulesetHash,
-		EffectiveRulesetHash: strings.Repeat("a", 64), TemplateID: "template-demo", TemplateVersion: "1",
+		EffectiveRulesetHash: verifiedBinding.EffectiveHash, TemplateID: verifiedTemplate.ID, TemplateVersion: verifiedTemplate.Version,
 		TemplateCopyID: "copy-1", TemplateCopyVersion: 2, ProjectVersion: 7, ResourceID: "snapshot-1", Outcome: "blocked",
-		CreatedAt: time.Now().UTC()}
+		CreatedAt: time.Now().UTC(), VerifiedTemplate: &verifiedTemplate, VerifiedBinding: &verifiedBinding}
 	if err := store.RecordRuleSetUse(ctx, event); err != nil {
 		t.Fatal(err)
+	}
+	missingEvidence := event
+	missingEvidence.VerifiedTemplate = nil
+	missingEvidence.VerifiedBinding = nil
+	if err := store.RecordRuleSetUse(ctx, missingEvidence); !errors.Is(err, ErrInvalidRuleSetUseAudit) {
+		t.Fatalf("missing verified evidence error = %v, want ErrInvalidRuleSetUseAudit", err)
+	}
+	forgedEvidence := event
+	forged := verifiedBinding.Clone()
+	forged.EffectiveHash = strings.Repeat("f", 64)
+	forgedEvidence.VerifiedBinding = &forged
+	if err := store.RecordRuleSetUse(ctx, forgedEvidence); !errors.Is(err, ErrInvalidRuleSetUseAudit) {
+		t.Fatalf("forged verified evidence error = %v, want ErrInvalidRuleSetUseAudit", err)
 	}
 	events, err := store.ListRuleSetUseAudits(ctx, actor, event.ProjectID)
 	if err != nil {
@@ -365,7 +382,10 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 	if err := db.Exec("INSERT INTO tenants (id) VALUES (1), (2)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE lingdoc_projects (id TEXT PRIMARY KEY, tenant_id INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE TABLE lingdoc_members (project_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, PRIMARY KEY (project_id, user_id))").Error; err != nil {
 		t.Fatal(err)
 	}
 	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000036_lingdoc_rule_sets.up.sql"))
@@ -380,6 +400,13 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.Exec(string(usageMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
+	metricsMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000042_lingdoc_ruleset_metrics.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(metricsMigration)).Error; err != nil {
 		t.Fatal(err)
 	}
 	if withAudit {
@@ -416,4 +443,21 @@ func testDraft(version string) template.RuleSet {
 			Enabled: true, Owner: "tenant-1",
 		}},
 	}
+}
+
+func verifiedAuditEvidence(t *testing.T, set template.RuleSet) (template.Template, template.VerifiedRuleSetBinding) {
+	t.Helper()
+	definition := template.DemoTemplate()
+	definition.RuleSetSnapshot = &set
+	definition.RuleSetRef = &template.RuleSetReference{ID: set.ID, Version: set.Version, Hash: set.RulesetHash}
+	var err error
+	definition, err = template.WithHashes(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := template.VerifyRuleSetBinding(definition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return definition, binding
 }

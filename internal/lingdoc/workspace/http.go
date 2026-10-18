@@ -19,15 +19,21 @@ import (
 )
 
 type Handler struct {
-	projects     ProjectApplication
-	members      MembershipApplication
-	chapters     ChapterApplication
-	templatesApp TemplateApplication
-	changeSets   ChangeSetApplication
-	sources      SourceApplicationService
-	integration  WorkspaceIntegration
-	rewrites     SelectedRewriteApplication
-	templates    delivery.TemplateReader
+	full *FullWorkflowDependencies
+	// Optional G5/G7 extensions follow the transport direction as well; a
+	// read dependency must never become the implicit review-anchor writer.
+	machineReads       machineReadApplication
+	reviewAnchorsRead  reviewAnchorReadApplication
+	reviewAnchorsWrite reviewAnchorWriteApplication
+	projects           ProjectApplication
+	members            MembershipApplication
+	chapters           ChapterApplication
+	templatesApp       TemplateApplication
+	changeSets         ChangeSetApplication
+	sources            SourceApplicationService
+	integration        WorkspaceIntegration
+	rewrites           SelectedRewriteApplication
+	templates          delivery.TemplateReader
 }
 
 func NewHandler(deps HandlerDependencies) *Handler {
@@ -50,7 +56,9 @@ func NewHandler(deps HandlerDependencies) *Handler {
 			legacy = candidate
 		}
 	}
-	if legacy != nil {
+	// Keep the legacy extension bridge, but never infer the five route ports
+	// from one side when explicit read/write dependencies were supplied.
+	if legacy != nil && (deps.Service != nil || deps.Read == nil || deps.Write == nil) {
 		adapter := legacyApplicationAdapter{ApplicationService: legacy}
 		if projects == nil {
 			projects = adapter
@@ -69,9 +77,8 @@ func NewHandler(deps HandlerDependencies) *Handler {
 		}
 	}
 	// A focused test double may implement one port without carrying the legacy
-	// interface. Keep that seam directly injectable as well. When both split
-	// ports are present, do not infer a broad route application from either one;
-	// the split adapters below must preserve read/write routing.
+	// interface. With both read/write ports present, use the split adapters below
+	// rather than a broad interface inferred from just one dependency.
 	if deps.Read == nil || deps.Write == nil {
 		if projects == nil {
 			if candidate, ok := any(deps.Read).(ProjectApplication); ok {
@@ -129,7 +136,24 @@ func NewHandler(deps HandlerDependencies) *Handler {
 			changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
 		}
 	}
+	// Explicit compatibility injection remains supported. Otherwise resolve
+	// optional extensions independently so distinct read/write services stay split.
+	var readExtension, writeExtension any = deps.Service, deps.Service
+	if deps.Service == nil {
+		readExtension, writeExtension = deps.Read, deps.Write
+		if readExtension == nil {
+			readExtension = deps.Write
+		}
+		if writeExtension == nil {
+			writeExtension = deps.Read
+		}
+	}
+	machineReads, _ := readExtension.(machineReadApplication)
+	anchorReads, _ := readExtension.(reviewAnchorReadApplication)
+	anchorWrites, _ := writeExtension.(reviewAnchorWriteApplication)
 	return &Handler{
+		full: deps.FullWorkflow, machineReads: machineReads,
+		reviewAnchorsRead: anchorReads, reviewAnchorsWrite: anchorWrites,
 		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
 		sources: deps.Sources, integration: deps.Integration,
 		rewrites: deps.SelectedRewrites, templates: templates,
@@ -138,7 +162,7 @@ func NewHandler(deps HandlerDependencies) *Handler {
 
 // legacyApplicationAdapter makes the migration boundary explicit in the
 // composition root while keeping old test doubles and transports working.
-// The handler itself stores only focused ports.
+// Existing route families consume only the focused ports.
 type legacyApplicationAdapter struct{ ApplicationService }
 
 type splitProjectApplication struct {
@@ -263,14 +287,15 @@ func (a splitChangeSetApplication) ListChangeSets(ctx context.Context, actor Act
 func (a splitChangeSetApplication) GetChangeSet(ctx context.Context, actor Actor, projectID, changeSetID string) (ChangeSet, error) {
 	return a.read.GetChangeSet(ctx, actor, projectID, changeSetID)
 }
-func (a splitChangeSetApplication) ReassessChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	return a.write.ReassessChangeSetResult(ctx, actor, projectID, changeSetID, key)
-}
 func (a splitChangeSetApplication) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
 	return a.write.ApplyChangeSetResult(ctx, actor, projectID, changeSetID, key)
 }
 func (a splitChangeSetApplication) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
 	return a.write.RejectChangeSetResult(ctx, actor, projectID, changeSetID, key)
+}
+
+func (a splitChangeSetApplication) ReassessChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
+	return a.write.ReassessChangeSetResult(ctx, actor, projectID, changeSetID, key)
 }
 
 func (h *Handler) Register(routes RouteGroups) {
@@ -304,6 +329,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/working-copy", h.getWorkingCopy)
+	routes.Read.GET("/projects/:projectId/chapters/:chapterId/confirmations/current", h.getCurrentConfirmation)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/versions", h.listChapterVersions)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
@@ -312,6 +338,7 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy", h.saveWorkingCopy)
+	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor", h.setReviewAnchor)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
@@ -345,6 +372,24 @@ func sendError(c *gin.Context, err error) {
 	}
 	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
 	switch {
+	case errors.Is(err, core.ErrHumanDecisionRequired):
+		status, code, message = 403, "human_decision_required", "此操作需要实际成员本人确认。"
+	case errors.Is(err, core.ErrProjectInvitationRequired):
+		status, code, message = 422, "project_invitation_required", "请使用邀请接受与逐成员分配流程；批量直接加入已停用。"
+	case errors.Is(err, core.ErrRuntimePaused):
+		status, code, message = 423, "runtime_paused", "当前范围已暂停，请由负责人核对并恢复。"
+	case errors.Is(err, core.ErrRuntimeRecoveryRequired):
+		status, code, message = 422, "runtime_recovery_required", "恢复前需要核对当前检查、快照和导出文件。"
+	case errors.Is(err, core.ErrG2ConsentRequired):
+		status, code, message = 422, "confirmation_required", "请明确核对范围并确认该操作。"
+	case errors.Is(err, core.ErrG2EvidenceIncomplete):
+		status, code, message = 422, "evidence_incomplete", "证据卡、原文定位或当前版本尚不完整。"
+	case errors.Is(err, core.ErrG2OutcomeUnknown):
+		status, code, message = 409, "outcome_unknown", "原操作结果尚待核对，请勿重复执行。"
+	case errors.Is(err, core.ErrG2Unavailable):
+		status, code, message = 503, "dependency_unavailable", "资料或模型能力暂不可用。"
+	case errors.Is(err, core.ErrSemanticBatchStagingRequired):
+		status, code, message = 400, "invalid_request", "关联主张与证据卡请分两次正式变更：先应用主张，再按新主张版本复核并提交证据卡变更。"
 	case errors.Is(err, ErrInvalidRequest):
 		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
 	case errors.Is(err, evidence.ErrInvalidBinding):
@@ -381,6 +426,8 @@ func sendError(c *gin.Context, err error) {
 		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
 		// 措辞不再提「尚未接入」——来源复核已经接入，答 403 是有判据的拒绝，不是缺席。
 		status, code, message = 403, "source_access_denied", "资料不可用或未获授权。"
+	case errors.Is(err, core.ErrRevisionNotStable):
+		status, code, message = 422, "context_unstable", "正式变更尚未完成稳定化。请用当前交付检查回执闭环影响任务，再由 Owner 检查稳定化后冻结。"
 	case errors.Is(err, ErrInvalidState):
 		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
 	// 交付链（T12 候选采纳 / T13 冻结）的判定。这些是各自包里的 sentinel，
@@ -470,20 +517,6 @@ func decodeBody(c *gin.Context, dst any) bool {
 	}
 	var tail any
 	if err := decoder.Decode(&tail); err != io.EOF {
-		sendError(c, ErrInvalidRequest)
-		return false
-	}
-	return true
-}
-
-// requireEmptyBody enforces the bodyless contract of operations whose full
-// idempotency payload is determined by their path and headers.
-func requireEmptyBody(c *gin.Context) bool {
-	if c.Request.Body == nil || c.Request.Body == http.NoBody {
-		return true
-	}
-	n, err := io.CopyN(io.Discard, c.Request.Body, 1)
-	if n > 0 || (err != nil && err != io.EOF) {
 		sendError(c, ErrInvalidRequest)
 		return false
 	}
@@ -1243,14 +1276,22 @@ func (h *Handler) reassessChangeSet(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if !requireEmptyBody(c) {
-		return
+	// Reassessment has no client payload. Read at most one byte so even
+	// whitespace or a misleading Content-Length cannot reach the service.
+	if c.Request.Body != nil {
+		body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1))
+		if err != nil || len(body) != 0 {
+			sendError(c, ErrInvalidRequest)
+			return
+		}
 	}
 	result, err := h.changeSets.ReassessChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {
 		sendError(c, err)
 		return
 	}
+	// Reassessment creates a new assessment; retain the existing 201 contract,
+	// including the persisted response status on idempotent replay.
 	sendOK(c, http.StatusCreated, result.ChangeSet, result.Replayed)
 }
 

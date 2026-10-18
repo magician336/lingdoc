@@ -442,20 +442,22 @@ func EvaluateRuleSet(t Template, set RuleSet, scene string, input EvaluationInpu
 // combined hash changes when either the legacy rules or the bound RuleSet
 // identity/version/hash changes.
 func EvaluateBoundRuleSet(t Template, set RuleSet, scene string, input EvaluationInput) ([]Evaluation, error) {
-	if t.RuleSetSnapshot == nil || t.RuleSetSnapshot.ID != set.ID || t.RuleSetSnapshot.Version != set.Version || t.RuleSetSnapshot.RulesetHash != set.RulesetHash {
-		return nil, fmt.Errorf("%w: evaluation RuleSet does not match the template snapshot", ErrInvalidRuleSet)
-	}
-	if err := CanBindRuleSet(set); err != nil {
-		return nil, err
-	}
-	if !allowedRuleScenes[scene] {
-		return nil, fmt.Errorf("%w: unsupported rule scene %q", ErrInvalidRuleSet, scene)
-	}
-	_, effectiveHash, err := Hashes(t)
+	binding, err := VerifyRuleSetBinding(t)
 	if err != nil {
 		return nil, err
 	}
-	effectiveSet, err := effectiveRuleSetWithOverrides(set, t.RuleBindingOverrides)
+	if binding.Snapshot.ID != set.ID || binding.Snapshot.Version != set.Version || binding.Snapshot.RulesetHash != set.RulesetHash {
+		return nil, fmt.Errorf("%w: evaluation RuleSet does not match the template snapshot", ErrInvalidRuleSet)
+	}
+	return evaluateVerifiedRuleSet(t, binding, scene, input)
+}
+
+func evaluateVerifiedRuleSet(t Template, binding VerifiedRuleSetBinding, scene string, input EvaluationInput) ([]Evaluation, error) {
+	if !allowedRuleScenes[scene] {
+		return nil, fmt.Errorf("%w: unsupported rule scene %q", ErrInvalidRuleSet, scene)
+	}
+	effectiveHash := binding.EffectiveHash
+	effectiveSet, err := effectiveRuleSetWithOverrides(binding.Snapshot, binding.Overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -480,8 +482,8 @@ func EvaluateBoundRuleSet(t Template, set RuleSet, scene string, input Evaluatio
 	evaluations, err := evaluateTemplate(definition, input, effectiveHash)
 	if err == nil {
 		for i := range evaluations {
-			evaluations[i].RuleSetID = set.ID
-			evaluations[i].RuleSetVersion = set.Version
+			evaluations[i].RuleSetID = binding.Snapshot.ID
+			evaluations[i].RuleSetVersion = binding.Snapshot.Version
 		}
 	}
 	return evaluations, err

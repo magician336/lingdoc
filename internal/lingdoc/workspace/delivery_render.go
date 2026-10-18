@@ -43,6 +43,12 @@ func (DeliveryDocument) RenderFrozen(input delivery.DeliveryInput) ([]byte, erro
 // ValidateFrozen 拿渲染器刚产出的字节核对冻结输入。它不问渲染器说了什么，
 // 只问文件里有什么——§7 要求这一步在提供下载**之前**发生。
 func (DeliveryDocument) ValidateFrozen(input delivery.DeliveryInput, file []byte) error {
+	if err := delivery.ValidateFrozenRuleSnapshot(input); err != nil {
+		return err
+	}
+	if input.RuleSetSnapshot != nil && delivery.Evaluate(input).Status != delivery.CheckPassed {
+		return delivery.ErrExportPreflightBlocked
+	}
 	document, err := documentOf(input)
 	if err != nil {
 		return err

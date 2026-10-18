@@ -2,7 +2,6 @@ package workspace
 
 import (
 	"context"
-
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -12,14 +11,15 @@ import (
 // SourceRuntime is the production read-side/source adapter. HTTP holds only
 // its application/integration ports; live adapters are shared by all consumers.
 type SourceRuntime struct {
-	service   ApplicationService
-	bindings  *evidence.Bindings
-	gateway   evidence.AssetGateway
-	kbShares  interfaces.KBShareService
-	knowledge interfaces.KnowledgeBaseService
-	templates delivery.TemplateReader
-	db        *gorm.DB
-	audit     AuditSink
+	service      ApplicationService
+	bindings     *evidence.Bindings
+	modelGateway evidence.AssetGateway
+	gateway      evidence.AssetGateway
+	kbShares     interfaces.KBShareService
+	knowledge    interfaces.KnowledgeBaseService
+	templates    delivery.TemplateReader
+	db           *gorm.DB
+	audit        AuditSink
 }
 
 func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService, templates delivery.TemplateReader, audits ...AuditSink) *SourceRuntime {
@@ -34,6 +34,16 @@ func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interf
 // ConnectProjects is called only at composition time to connect the mutually
 // dependent project authorization and current source-recheck ports.
 func (r *SourceRuntime) ConnectProjects(service ApplicationService) { r.service = service }
+func (r *SourceRuntime) EnableFullWorkflowPolicy() {
+	r.gateway = NewG2ProjectAssetPolicyGateway(r.db, liveGORMSourceGateway{db: r.db, base: r.gateway})
+	r.modelGateway = NewG2ModelAssetPolicyGateway(r.db, r.gateway)
+}
+func (r *SourceRuntime) generationGateway() evidence.AssetGateway {
+	if r.modelGateway != nil {
+		return r.modelGateway
+	}
+	return r.gateway
+}
 func (r *SourceRuntime) application() *SourceService {
 	return NewSourceServiceWithReviewer(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
 }
