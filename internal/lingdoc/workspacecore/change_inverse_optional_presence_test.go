@@ -118,7 +118,7 @@ func TestR27OptionalTemplateFieldUpgradeReverseAfterReopen(t *testing.T) {
 			}
 			first := bytes.Clone(raw)
 			inverse := pr150DecodeChange(t, raw)
-			raw, status, replayed, err = s.ApplyChangeSet(context.Background(), a, current.ID, inverse.ID, "r27-apply-inverse")
+			_, status, replayed, err = s.ApplyChangeSet(context.Background(), a, current.ID, inverse.ID, "r27-apply-inverse")
 			if err != nil || status != 200 || replayed {
 				t.Fatalf("apply optional inverse: status=%d replay=%v err=%v", status, replayed, err)
 			}
