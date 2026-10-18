@@ -87,8 +87,38 @@ func (t gormTransaction) ImpactAssessment(project, id string) (ImpactAssessment,
 	_, err := t.g3Read(project, "assessment", id, &value)
 	return value, err
 }
-func impactTaskIdentity(task ImpactTask) string {
+
+// ImpactTaskIdentity is the logical identity of an impact task:
+// change_set_id + target_ref + target_revision + action_type. Two impacts with
+// the same identity are the same obligation, so a replayed, duplicated or
+// out-of-order event must merge into the existing task instead of creating a
+// second one. Different action types stay independent because the action is
+// part of the identity.
+func ImpactTaskIdentity(task ImpactTask) string {
 	return fmt.Sprintf("%s/%s/%s/%d/%s", task.ChangeSetID, task.Target.Kind, task.Target.ID, task.TargetRevision, task.Action)
+}
+
+func impactTaskIdentity(task ImpactTask) string { return ImpactTaskIdentity(task) }
+
+// impactTaskID derives a stable task ID from the logical identity. Deriving the
+// ID (rather than minting a random UUID) is what makes the identity derivable
+// across a service restart: a redelivered event recomputes the same ID and
+// therefore addresses the same task row. No schema change is required because
+// the persisted record is already keyed by the identity string.
+func impactTaskID(projectID, identity string) string {
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(projectID+"|"+identity)).String()
+}
+
+// ImpactTaskID exposes the derived ID so the service can build a task that
+// addresses an existing row before attempting an insert.
+func ImpactTaskID(projectID string, changeSetID string, target ObjectVersionRef, targetRevision int64, action string) string {
+	return impactTaskID(projectID, ImpactTaskIdentity(ImpactTask{ChangeSetID: changeSetID, Target: target, TargetRevision: targetRevision, Action: action}))
+}
+
+func (t gormTransaction) ImpactTaskByIdentity(project, identity string) (ImpactTask, error) {
+	var task ImpactTask
+	_, err := t.g3Read(project, "task", identity, &task)
+	return task, err
 }
 func (t gormTransaction) InsertImpactTask(task ImpactTask) error {
 	// Unique logical identity makes transaction replay/out-of-order redelivery safe.
@@ -96,6 +126,11 @@ func (t gormTransaction) InsertImpactTask(task ImpactTask) error {
 	var old ImpactTask
 	version, err := t.g3Read(task.ProjectID, "task", key, &old)
 	if err == nil {
+		// Idempotent merge: a redelivered event contributes only the causes it
+		// adds. Nothing is duplicated and nothing is lost, and a redelivery
+		// that adds no new cause performs no write at all, so it also produces
+		// no version bump and no second audit trail entry.
+		merged := false
 		for _, cause := range task.Causes {
 			found := false
 			for _, prior := range old.Causes {
@@ -105,9 +140,14 @@ func (t gormTransaction) InsertImpactTask(task ImpactTask) error {
 			}
 			if !found {
 				old.Causes = append(old.Causes, cause)
+				merged = true
 			}
 		}
+		if !merged {
+			return nil
+		}
 		old.Version = version + 1
+		old.UpdatedAt = time.Now().UTC()
 		return t.g3CAS(task.ProjectID, "task", key, version, old)
 	}
 	if err != ErrNotFound {

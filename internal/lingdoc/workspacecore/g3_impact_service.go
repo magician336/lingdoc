@@ -604,15 +604,78 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 			}
 		}
 		now := time.Now().UTC()
-		task := ImpactTask{ID: uuid.NewString(), ProjectID: p.ID, ChangeSetID: change.ID, Target: impact.Target, TargetRevision: p.CurrentContextRevision, Action: impact.Action, Severity: "blocking", ResponsibilityDomain: domain, Status: "OPEN", Causes: impact.Causes, Version: 1, ClosureEvidence: []ObjectVersionRef{}, CreatedAt: now, UpdatedAt: now}
+		// Identity is change_set_id + target_ref + target_revision + action_type.
+		// Deriving the ID from that identity makes a duplicated, replayed or
+		// out-of-order event address the same task instead of minting a second
+		// one, and it survives a service restart because the ID is recomputed
+		// rather than remembered.
+		task := ImpactTask{ID: ImpactTaskID(p.ID, change.ID, impact.Target, p.CurrentContextRevision, impact.Action), ProjectID: p.ID, ChangeSetID: change.ID, Target: impact.Target, TargetRevision: p.CurrentContextRevision, Action: impact.Action, Severity: "blocking", ResponsibilityDomain: domain, Status: "OPEN", Causes: impact.Causes, Version: 1, ClosureEvidence: []ObjectVersionRef{}, CreatedAt: now, UpdatedAt: now}
+		// A delayed or out-of-order redelivery must be judged against the
+		// current domain truth, not against the stored event payload. If the
+		// target version was already replaced, the task is born STALE with an
+		// explicit reason instead of an actionable-looking OPEN task.
+		if reason := staleTargetReason(tx, p, impact.Target); reason != "" {
+			task.Status = "STALE"
+			task.StaleReason = reason
+			task.StaleAt = now
+		}
 		if err := store.InsertImpactTask(task); err != nil {
 			return err
 		}
+		// The handoff record is keyed by the same identity, so a redelivery
+		// re-issues no second handoff.
 		if err := store.InsertImpactHandoff(task); err != nil {
 			return err
 		}
 	}
 	return store.RecordContextRevision(p, change)
+}
+
+// markImpactTaskStale performs the STALE transition, its version bump and its
+// audit entry together, so a caller never leaves a half-applied invalidation.
+//
+// Idempotency: a task that is already STALE is returned untouched, so repeated
+// triggers produce no second write, no second version bump and no second audit
+// entry.
+func (s *Service) markImpactTaskStale(tx Transaction, actor Actor, p Project, store impactTransaction, task ImpactTask, reason string) (ImpactTask, error) {
+	if task.Status == "STALE" {
+		return task, nil
+	}
+	stale := task
+	now := time.Now().UTC()
+	stale.Status = "STALE"
+	stale.StaleReason = reason
+	stale.StaleAt = now
+	stale.UpdatedAt = now
+	stale.Version++
+	if err := store.UpdateImpactTask(task, stale); err != nil {
+		return ImpactTask{}, err
+	}
+	if err := g3Audit(tx, actor, p.ID, "impact_task.stale", task.ID, map[string]any{
+		"status": stale.Status, "stale_reason": reason, "target_revision": stale.TargetRevision, "target": stale.Target}); err != nil {
+		return ImpactTask{}, err
+	}
+	return stale, nil
+}
+
+// staleTargetReason reports why an impact target no longer supports work on
+// the version a task was raised against. It re-reads the current domain truth
+// instead of trusting a stored payload, so a redelivered or delayed event is
+// classified the same way a fresh one would be.
+func staleTargetReason(tx Transaction, p Project, target ObjectVersionRef) string {
+	if !validObjectRef(target) {
+		return ImpactTaskStaleTargetReplaced
+	}
+	if _, err := currentImpactObject(tx, p, target); err != nil {
+		// The object is gone or no longer valid at the exact version the task
+		// names: the obligation was raised against a version that has been
+		// replaced. An adapter or infrastructure failure is deliberately not
+		// treated as staleness, because it is not evidence about the version.
+		if errors.Is(err, ErrVersionConflict) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidState) {
+			return ImpactTaskStaleTargetReplaced
+		}
+	}
+	return ""
 }
 func (s *Service) GetImpactAssessment(ctx context.Context, actor Actor, projectID, changeID string) (ImpactAssessment, error) {
 	var result ImpactAssessment
@@ -709,10 +772,23 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 		if task.Version != input.ExpectedVersion {
 			return operationResult[ImpactTask]{}, ErrVersionConflict
 		}
+		// Re-check the task's basis before doing anything with it. When the
+		// basis is gone the task becomes STALE with an explicit reason rather
+		// than silently failing the action, so the obligation stays visible and
+		// auditable instead of vanishing or being mistaken for success.
+		if task.Status != "STALE" {
+			if reason := s.impactTaskStaleReason(ctx, tx, actor, p, task, input.Action); reason != "" {
+				stale, err := s.markImpactTaskStale(tx, actor, p, store, task, reason)
+				if err != nil {
+					return operationResult[ImpactTask]{}, err
+				}
+				return operationResult[ImpactTask]{Value: stale, Status: operationStatusOK}, nil
+			}
+		}
 		if task.TargetRevision != p.CurrentContextRevision || input.TargetRevision != p.CurrentContextRevision {
 			return operationResult[ImpactTask]{}, ErrVersionConflict
 		}
-		if slices.Contains([]string{"DONE", "DISMISSED", "CANCELLED", "STALE"}, task.Status) {
+		if slices.Contains(ImpactTaskClosedStatuses, task.Status) || task.Status == "STALE" {
 			return operationResult[ImpactTask]{}, ErrInvalidState
 		}
 		old := task
@@ -798,6 +874,54 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 		return operationResult[ImpactTask]{Value: task, Status: operationStatusOK}, nil
 	})
 }
+
+// impactTaskStaleReason decides, against current domain truth, whether the
+// basis an impact task was raised against still holds. It returns "" when the
+// task can still be worked, otherwise a stable reason code.
+//
+// The triggers are deliberately distinct so a consumer can tell them apart
+// without re-deriving them:
+//   - the task belongs to a superseded context revision,
+//   - a source backing the target is no longer readable by the responsible actor,
+//   - the assignee lost the capability or scope needed to act,
+//   - the version the task names was replaced.
+//
+// Target-version replacement is deliberately not a trigger for "complete":
+// completion is exactly the action that re-targets a task, because it validates
+// and records caller-supplied closure evidence for the current version. Applying
+// the rule there would destroy valid work. Every other action works the task as
+// recorded, so a replaced version does invalidate it.
+//
+// It returns a reason only; it never mutates. The caller owns the write so the
+// transition, its version bump and its audit entry happen together.
+func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, actor Actor, p Project, task ImpactTask, action string) string {
+	if task.TargetRevision != p.CurrentContextRevision {
+		// The task belongs to a superseded context revision; every fact it was
+		// assessed against has moved on.
+		return ImpactTaskStaleTargetReplaced
+	}
+	// A responsible actor whose access to the target's sources was revoked can
+	// no longer produce a trustworthy result for this task.
+	ids, err := impactSourceIDsForRefs(tx, p, []ObjectVersionRef{task.Target})
+	if err == nil && s.checkSources(ctx, actor, p.ID, ids) != nil {
+		return ImpactTaskStaleSourceRevoked
+	}
+	// An assignee that lost project write scope cannot discharge the task.
+	if task.AssigneeID != "" && task.AssigneeID != actor.UserID {
+		recipient := actor
+		recipient.UserID = task.AssigneeID
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(recipient, p.ID, AuthorizationWrite, "")); err != nil {
+			return ImpactTaskStaleAssigneeRevoked
+		}
+	}
+	if reason := staleTargetReason(tx, p, task.Target); reason != "" && action != "complete" {
+		// A version replacement means the task can no longer be worked as
+		// recorded, so it is invalidated with an explicit reason.
+		return reason
+	}
+	return ""
+}
+
 func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
@@ -819,6 +943,9 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 			return err
 		}
 		for _, task := range tasks {
+			// Only closed tasks contribute closure evidence. A STALE task
+			// contributed nothing, so feeding its evidence into the write guard
+			// would only reintroduce the invalidation the task already records.
 			if task.ChangeSetID == changeID && task.TargetRevision == p.CurrentContextRevision && task.Status == "DONE" {
 				if task.Action == "BLOCK_RELEASE" {
 					for _, ref := range task.ClosureEvidence {
@@ -861,7 +988,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains([]string{"applied", "stabilized"}, change.Status) {
 			return operationResult[StabilizationResult]{}, ErrVersionConflict
 		}
-		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, CheckedAt: time.Now().UTC()}
+		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, StaleTaskIDs: []string{}, CheckedAt: time.Now().UTC()}
 		store := tx.(impactTransaction)
 		tasks, err := store.ImpactTasks(projectID)
 		if err != nil {
@@ -869,6 +996,14 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		}
 		for _, task := range tasks {
 			if task.ChangeSetID != changeID || task.TargetRevision != p.CurrentContextRevision {
+				continue
+			}
+			// A STALE task records an invalidated obligation. It must not block
+			// (the basis it was raised against no longer exists, so no actor can
+			// ever discharge it) and it must not count as closure. It is
+			// reported explicitly instead of being dropped.
+			if task.Status == "STALE" {
+				result.StaleTaskIDs = append(result.StaleTaskIDs, task.ID)
 				continue
 			}
 			if task.Severity == "blocking" && task.Status != "DONE" {
@@ -885,6 +1020,18 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				for _, ref := range task.ClosureEvidence {
 					state, err := currentImpactObject(tx, p, ref)
 					if err != nil || ((task.Action == "REVIEW_REQUIRED" || task.Action == "INVALIDATE_CONFIRMATION" || task.Action == "REVALIDATE_EVIDENCE") && (!state.Confirmed && (task.Action != "REVIEW_REQUIRED" || task.Target.Kind != "ResearchClaim" || task.HumanDecision != "reviewed" || !researchClaimReviewCurrent(tx, p, ref)))) {
+						// Re-checked before closure: the version this result was
+						// produced against has been replaced, so the result no
+						// longer holds. Record the invalidation as an explicit
+						// STALE transition instead of only reporting a blocker, so
+						// the task stops claiming to be DONE and stays explainable.
+						if err != nil {
+							if _, markErr := s.markImpactTaskStale(tx, actor, p, store, task, ImpactTaskStaleTargetReplaced); markErr != nil {
+								return operationResult[StabilizationResult]{}, markErr
+							}
+							result.StaleTaskIDs = append(result.StaleTaskIDs, task.ID)
+							continue
+						}
 						result.Blockers = append(result.Blockers, ImpactBlocker{Code: "closure_stale", TargetID: task.ID, Reason: "闭环证据已变化，需重新处理"})
 					}
 				}

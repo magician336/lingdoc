@@ -250,6 +250,13 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 			if task.TargetRevision != p.CurrentContextRevision {
 				continue
 			}
+			// STALE is terminal but is not closure: the obligation was
+			// invalidated, not discharged. It is reported as its own distinct
+			// failure so a caller can never read it as a satisfied task, and so
+			// it is never silently dropped by the generic "not DONE" branch.
+			if task.Status == "STALE" {
+				return fmt.Errorf("%w: current impact task %s is STALE (%s)", ErrInvalidState, task.ID, task.StaleReason)
+			}
 			if task.Severity == "blocking" && task.Status != "DONE" {
 				return fmt.Errorf("%w: current impact task %s remains %s", ErrInvalidState, task.ID, task.Status)
 			}
