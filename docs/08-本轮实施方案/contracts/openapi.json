@@ -16382,10 +16382,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/DependencyEdge"
-                  }
+                  "$ref": "#/components/schemas/DependencyEdgeListResponse"
                 }
               }
             }
@@ -16438,7 +16435,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DependencyEdge"
+                  "$ref": "#/components/schemas/DependencyEdgeResponse"
                 }
               }
             }
@@ -16515,7 +16512,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/DependencyEdge"
+                  "$ref": "#/components/schemas/DependencyEdgeResponse"
                 }
               }
             }
@@ -16691,7 +16688,9 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "data"
+          "data",
+          "request_id",
+          "meta"
         ],
         "properties": {
           "data": {
@@ -16699,6 +16698,9 @@
             "items": {
               "$ref": "#/components/schemas/ImpactTask"
             }
+          },
+          "request_id": {
+            "type": "string"
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
@@ -16709,11 +16711,59 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "data"
+          "data",
+          "request_id",
+          "meta"
         ],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/ImpactTask"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+"DependencyEdgeListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyEdge"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+"DependencyEdgeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DependencyEdge"
+          },
+          "request_id": {
+            "type": "string"
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
@@ -16846,11 +16896,16 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "data"
+          "data",
+          "request_id",
+          "meta"
         ],
         "properties": {
           "data": {
             "$ref": "#/components/schemas/StabilizationResult"
+          },
+          "request_id": {
+            "type": "string"
           },
           "meta": {
             "$ref": "#/components/schemas/ResponseMeta"
