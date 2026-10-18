@@ -177,16 +177,7 @@ func (s *DeliveryExportService) Download(ctx context.Context, actorID, projectID
 	if err != nil {
 		return delivery.ExportArtifact{}, nil, err
 	}
-	if s.policy == nil {
-		if err := s.authorize(ctx, actorID, projectID); err != nil {
-			s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
-			return delivery.ExportArtifact{}, nil, err
-		}
-		if err := s.authorizeSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
-			s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
-			return delivery.ExportArtifact{}, nil, err
-		}
-	} else if err := s.currentSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
+	if err := s.authorizeSnapshotSources(ctx, actorID, projectID, artifact.SnapshotID); err != nil {
 		s.recordDeliveryAudit(ctx, actorID, projectID, "delivery.download", err)
 		return delivery.ExportArtifact{}, nil, err
 	}
@@ -223,64 +214,30 @@ func (s *DeliveryExportService) authorizeSnapshotSources(ctx context.Context, ac
 	if err := s.authorize(ctx, actorID, projectID); err != nil {
 		return err
 	}
-	return s.currentSnapshotSources(ctx, actorID, projectID, snapshotID)
-}
-
-func (s *DeliveryExportService) currentSnapshotSources(ctx context.Context, actorID, projectID, snapshotID string) error {
 	snapshot, err := s.snapshots.Get(projectID, snapshotID)
 	if err != nil {
 		return err
 	}
-	if !snapshot.IsCurrent {
-		return candidateadoption.ErrStaleInput
-	}
-	if snapshot.Check.Status != delivery.CheckPassed {
-		// Keep the established preflight_blocked response for snapshots that were
-		// never eligible for export; no file can be rendered from these inputs.
+	// A verified export is a historical read. Ordinary project, template,
+	// chapter, or context changes make the snapshot historical but do not
+	// invalidate its already-validated bytes. Only frozen source access is
+	// rechecked here; Start still enforces currentness before rendering.
+	ids := snapshotSourceIDs(snapshot.FrozenInput)
+	if len(ids) == 0 {
 		return nil
 	}
-	if s.policy != nil {
-		current, err := s.policy.Current(ctx, LingDocAccessContext{TenantID: s.deliveryActor(ctx, actorID).TenantID, UserID: actorID, ProjectID: projectID}, accessInputFromDelivery(snapshot.FrozenInput))
-		if err != nil {
-			return err
-		}
-		if !current {
-			return candidateadoption.ErrStaleInput
-		}
-		return nil
-	}
-	ids := make([]string, 0)
-	for _, chapter := range snapshot.FrozenInput.Chapters {
+	return s.reviewCurrentSources(ctx, projectID, actorID, ids)
+}
+
+func snapshotSourceIDs(input delivery.DeliveryInput) []string {
+	ids := make([]string, 0, len(input.Sources))
+	for _, chapter := range input.Chapters {
 		ids = append(ids, chapter.SourceIDs...)
 	}
-	ids = normalizeSourceIDs(ids)
-	if len(ids) == 0 {
-		if s.currentness == nil {
-			return nil
-		}
-		current, err := s.currentness.Current(ctx, actorID, snapshot.FrozenInput)
-		if err != nil {
-			return err
-		}
-		if !current {
-			return candidateadoption.ErrStaleInput
-		}
-		return nil
+	for _, source := range input.Sources {
+		ids = append(ids, source.ID)
 	}
-	if err := s.reviewCurrentSources(ctx, projectID, actorID, ids); err != nil {
-		return err
-	}
-	if s.currentness == nil {
-		return nil
-	}
-	current, err := s.currentness.Current(ctx, actorID, snapshot.FrozenInput)
-	if err != nil {
-		return err
-	}
-	if !current {
-		return candidateadoption.ErrStaleInput
-	}
-	return nil
+	return normalizeSourceIDs(ids)
 }
 
 func (s *DeliveryExportService) authorize(ctx context.Context, actorID, projectID string) error {
