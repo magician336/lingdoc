@@ -93,6 +93,7 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 		"000118_lingdoc_ruleset_export_reference.up.sql",
 		"000119_lingdoc_ruleset_use_audits.up.sql",
 		"000120_lingdoc_template_version_ruleset_ref.up.sql",
+		"000121_lingdoc_ruleset_metrics.up.sql",
 	} {
 		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", name))
 		if err != nil {
@@ -172,6 +173,10 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 		readBack[0].RuleSetVersion != published.Version || readBack[0].RuleSetHash != published.RulesetHash ||
 		readBack[0].EffectiveRulesetHash != event.EffectiveRulesetHash || readBack[0].ResourceID != event.ResourceID {
 		t.Fatalf("PostgreSQL RuleSet-use audit readback = %+v, err=%v", readBack, err)
+	}
+	metrics, err := store.ReadRuleSetMetrics(context.Background(), actor, event.ProjectID, RuleSetMetricsQuery{})
+	if err != nil || metrics.AuditQueryCount == 0 || metrics.AuditPageSizeCount == 0 || metrics.AuditQueryP95Ms <= 0 || metrics.AuditQueryP99Ms < metrics.AuditQueryP95Ms {
+		t.Fatalf("PostgreSQL RuleSet metrics readback = %+v, err=%v", metrics, err)
 	}
 	for _, tableColumn := range [][2]string{
 		{"lingdoc_export_artifacts", "ruleset_ref_json"},

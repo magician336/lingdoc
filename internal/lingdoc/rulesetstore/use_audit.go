@@ -75,11 +75,17 @@ func (ruleSetUseAuditRow) TableName() string { return "lingdoc_ruleset_use_audit
 // RecordRuleSetUse validates the exact persisted source version and appends
 // its use event in a transaction. A use of an unknown or hash-mismatched
 // RuleSet is never recorded as if it were valid.
-func (s *Store) RecordRuleSetUse(ctx context.Context, event template.RuleSetUseAuditEvent) error {
-	if err := s.validateActor(Actor{TenantID: event.TenantID, UserID: event.ActorID, Role: event.ActorRole}); err != nil {
+func (s *Store) RecordRuleSetUse(ctx context.Context, event template.RuleSetUseAuditEvent) (err error) {
+	actor := Actor{TenantID: event.TenantID, UserID: event.ActorID, Role: event.ActorRole}
+	defer func() {
+		if err != nil {
+			s.recordVerificationFailure(ctx, actor, event.ProjectID, err, "record_rule_set_use")
+		}
+	}()
+	if err = s.validateActor(actor); err != nil {
 		return err
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		set, err := loadVersion(tx, event.TenantID, event.RuleSetID, event.RuleSetVersion)
 		if err != nil {
 			return err
@@ -101,6 +107,7 @@ func (s *Store) RecordRuleSetUse(ctx context.Context, event template.RuleSetUseA
 		}
 		return RecordRuleSetUseInTransaction(tx, event)
 	})
+	return err
 }
 
 // RecordRuleSetUseInTransaction lets snapshot/export adapters commit the use
@@ -242,8 +249,12 @@ func (s *Store) ListRuleSetUseAudits(ctx context.Context, actor Actor, projectID
 // runs before the history query, including when the page is empty. The audit
 // rows are fetched once and their referenced RuleSet versions are batch-loaded
 // before any historical state is checked, avoiding one query per event.
-func (s *Store) ListRuleSetUseAuditsPage(ctx context.Context, actor Actor, projectID string, query RuleSetUseAuditQuery) (RuleSetUseAuditPage, error) {
-	if err := s.validateActor(actor); err != nil {
+func (s *Store) ListRuleSetUseAuditsPage(ctx context.Context, actor Actor, projectID string, query RuleSetUseAuditQuery) (page RuleSetUseAuditPage, err error) {
+	started := time.Now()
+	defer func() {
+		s.recordAuditQueryMetrics(ctx, actor, projectID, len(page.Items), time.Since(started), err)
+	}()
+	if err = s.validateActor(actor); err != nil {
 		return RuleSetUseAuditPage{}, err
 	}
 	if strings.TrimSpace(projectID) == "" {

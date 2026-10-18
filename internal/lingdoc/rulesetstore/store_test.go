@@ -402,6 +402,13 @@ func openStoreTestDB(t *testing.T, withAudit bool) *gorm.DB {
 	if err := db.Exec(string(usageMigration)).Error; err != nil {
 		t.Fatal(err)
 	}
+	metricsMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000042_lingdoc_ruleset_metrics.up.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(string(metricsMigration)).Error; err != nil {
+		t.Fatal(err)
+	}
 	if withAudit {
 		if err := db.Exec(`CREATE TABLE audit_logs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -1,6 +1,7 @@
 package delivery
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -28,6 +29,13 @@ type TransactionalExportPort interface {
 	RuleSetUseExportRecorder
 }
 
+// TransactionalCapabilityObserver receives composition failures that would
+// otherwise only be visible in a startup error. Implementations persist a
+// low-cardinality capability/reason sample for the authorized metrics seam.
+type TransactionalCapabilityObserver interface {
+	RecordTransactionalCapabilityError(context.Context, string, string)
+}
+
 // TransactionalDeliveryPort is the composition-root value for a governed
 // release/export pair. The two stores may use different adapters, but both
 // must expose their atomic artifact+idempotency+audit write before the pair is
@@ -40,11 +48,15 @@ type TransactionalDeliveryPort struct {
 // NewTransactionalDeliveryPort validates both sides of the governed delivery
 // graph in one composition call.
 func NewTransactionalDeliveryPort(snapshots SnapshotStore, exports ExportStore) (TransactionalDeliveryPort, error) {
-	snapshotPort, err := NewTransactionalSnapshotPort(snapshots)
+	return NewTransactionalDeliveryPortWithObserver(snapshots, exports, nil)
+}
+
+func NewTransactionalDeliveryPortWithObserver(snapshots SnapshotStore, exports ExportStore, observer TransactionalCapabilityObserver) (TransactionalDeliveryPort, error) {
+	snapshotPort, err := newTransactionalSnapshotPort(snapshots, observer)
 	if err != nil {
 		return TransactionalDeliveryPort{}, err
 	}
-	exportPort, err := NewTransactionalExportPort(exports)
+	exportPort, err := newTransactionalExportPort(exports, observer)
 	if err != nil {
 		return TransactionalDeliveryPort{}, err
 	}
@@ -55,8 +67,15 @@ func NewTransactionalDeliveryPort(snapshots SnapshotStore, exports ExportStore) 
 // during composition, before any HTTP request can discover a missing audit
 // transaction.
 func NewTransactionalSnapshotPort(store SnapshotStore) (TransactionalSnapshotPort, error) {
+	return newTransactionalSnapshotPort(store, nil)
+}
+
+func newTransactionalSnapshotPort(store SnapshotStore, observer TransactionalCapabilityObserver) (TransactionalSnapshotPort, error) {
 	port, ok := store.(TransactionalSnapshotPort)
 	if !ok {
+		if observer != nil {
+			observer.RecordTransactionalCapabilityError(context.Background(), "snapshot", "missing_atomic_audit_port")
+		}
 		return nil, fmt.Errorf("%w: snapshot store must implement atomic RuleSet-use recording", ErrTransactionalPortUnavailable)
 	}
 	return port, nil
@@ -65,8 +84,15 @@ func NewTransactionalSnapshotPort(store SnapshotStore) (TransactionalSnapshotPor
 // NewTransactionalExportPort validates the export persistence capability
 // during composition, before rendering or idempotency state can be touched.
 func NewTransactionalExportPort(store ExportStore) (TransactionalExportPort, error) {
+	return newTransactionalExportPort(store, nil)
+}
+
+func newTransactionalExportPort(store ExportStore, observer TransactionalCapabilityObserver) (TransactionalExportPort, error) {
 	port, ok := store.(TransactionalExportPort)
 	if !ok {
+		if observer != nil {
+			observer.RecordTransactionalCapabilityError(context.Background(), "export", "missing_atomic_audit_port")
+		}
 		return nil, fmt.Errorf("%w: export store must implement atomic RuleSet-use recording", ErrTransactionalPortUnavailable)
 	}
 	return port, nil
