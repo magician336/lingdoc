@@ -14892,17 +14892,7 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              },
-              "example": {}
-            }
-          }
-        },
+        "description": "仅凭路径与原 Idempotency-Key 重评，必须发送 0 字节请求体；不得发送 {}、null 或空白。权限与当前基线由服务端重新核验。",
         "responses": {
           "201": {
             "description": "已在当前基线上创建新的重评结果；目标值已全部满足时返回 satisfied，原过期记录保留",

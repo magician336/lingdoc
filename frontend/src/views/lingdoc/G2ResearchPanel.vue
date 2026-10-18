@@ -112,6 +112,8 @@ const cardForm=reactive({id:'',version:0,anchors:[] as string[],claim:'',support
 const taskSaved=ref(JSON.stringify(taskForm)),claimSaved=ref(JSON.stringify(claimForm)),cardSaved=ref(JSON.stringify(cardForm))
 const cardFilter=ref(''),visibleCards=computed(()=>cards.value.filter(card=>!cardFilter.value||card.status===cardFilter.value))
 const importResult=ref<api.ResearchResult|null>(null),importForm=reactive({purpose:'',mode:'metadata_only' as api.ImportCandidate['save_mode'],scope:'personal' as api.ImportCandidate['scope'],license:'',model:false,kb:''})
+type TurnCopySource=Pick<api.AgentTurn,'id'|'project_id'|'session_id'|'version'>
+const taskDraftSource=ref<TurnCopySource|null>(null),turnReadSequences=new Map<string,number>()
 const agent=ref<api.LingDocAgent>('task_assistant'),sessions=ref<api.AgentSession[]>([]),sessionId=ref(''),turns=ref<api.AgentTurn[]>([]),userInput=ref('')
 const contextForm=reactive({chapter:'',task:'',anchors:[] as string[],cards:[] as string[],consent:false}),contextPreview=ref<api.AgentContextPackage|null>(null)
 type SpecCandidate={field:string;value:string;turn:api.AgentTurn;basis:AgentSpecCandidateBasis}
@@ -129,7 +131,7 @@ const actionKinds:api.ActionProposal['action'][]=['save_spec','create_change_set
 const actionForm=reactive({action:'save_spec' as api.ActionProposal['action'],field:'',value:'',target:'',knowledge:'',effect:'',changeDraft:''})
 const policyAsset=ref(''),assetPolicy=ref<api.ProjectAssetPolicy|null>(null)
 const policyForm=reactive({scope:'personal' as api.ProjectAssetPolicy['scope'],purpose:'',users:[] as string[],model:false})
-type Confirmation={title:string;summary:string;execute:(reason:string)=>Promise<void>}
+type Confirmation={title:string;summary:string;execute:(reason:string)=>Promise<void>;sourceTurn?:TurnCopySource}
 const confirming=ref<Confirmation|null>(null),confirmDialog=ref<HTMLDialogElement|null>(null),confirmReason=ref(''),confirmChecked=ref(false),confirmingBusy=ref(false)
 let oldFocus:HTMLElement|null=null,poll:ReturnType<typeof setTimeout>|undefined
 const labels:Record<string,string>={draft:'草稿',approved:'已批准',running:'运行中',completed:'已完成',failed:'失败',cancelled:'已终止',stale:'历史结果，基线已变',ready:'已就绪',pending:'等待处理',awaiting_consent:'等待明确确认',importing:'处理中',imported:'已保存',processing:'处理中',available:'可读',unavailable:'不可读',inspected_original:'已读取网页原文',CURRENT:'当前定位',CANDIDATE:'候选证据',CONFIRMED:'已人工确认适用范围',NEEDS_REVIEW:'需复核',INSUFFICIENT:'证据不足',SUPERSEDED:'已替代',active:'当前',disputed:'有争议',superseded:'已替代',proposed:'待确认提案',confirmed:'已执行',rejected:'已拒绝',outcome_unknown:'结果待核对'}
@@ -145,10 +147,11 @@ function responseRows(value:unknown):Array<{id:string;name:string}>{
  const result=value as {data?:unknown},list=Array.isArray(result?.data)?result.data:[]
  return list.filter((item):item is {id:string;name?:string}=>!!item&&typeof item==='object'&&typeof item.id==='string').map(item=>({id:item.id,name:item.name||item.id}))
 }
-function resetTask(){Object.assign(taskForm,{id:'',version:0,goal:'',queries:'',assets:[],provider:'',chapter:'',type:'',scope:'当前课题研究范围',exclusions:'',output:'候选资料、反例与证据缺口'});taskSaved.value=JSON.stringify(taskForm)}
+function resetTask(){taskDraftSource.value=null;Object.assign(taskForm,{id:'',version:0,goal:'',queries:'',assets:[],provider:'',chapter:'',type:'',scope:'当前课题研究范围',exclusions:'',output:'候选资料、反例与证据缺口'});taskSaved.value=JSON.stringify(taskForm)}
 function resetClaim(){Object.assign(claimForm,{id:'',version:0,text:'',scope:'',status:'active',explanation:''});claimSaved.value=JSON.stringify(claimForm)}
 function resetCard(){Object.assign(cardForm,{id:'',version:0,anchors:[],claim:'',support:'supports',chapters:[],scope:'',limits:'',gaps:'',alternative:''});cardSaved.value=JSON.stringify(cardForm)}
 function clearSensitive(){
+ taskDraftSource.value=null;turnReadSequences.clear()
  tasks.value=[];runs.value=[];anchors.value=[];claims.value=[];cards.value=[];imports.value=[];proposals.value=[];assets.value=[];chapters.value=[];changes.value=[];releases.value=[];providers.value=[];knowledgeBases.value=[]
  source.value=null;selectedRun.value=null;selection.value=null;turns.value=[];sessions.value=[];sessionId.value='';userInput.value='';sourceId.value='';contextPreview.value=null;contextForm.consent=false;contextForm.anchors=[];contextForm.cards=[];contextForm.task='';contextForm.chapter='';importResult.value=null
  changeDraftTurn.value=null;changeDraftChapterIDs.value=[];actionForm.changeDraft='';specCandidate.value=null;specCandidateFresh.value=null;specCandidateAttempt.value=null;specCandidateUnknown.value=false;specManagePermission.value=null
@@ -165,7 +168,7 @@ async function refresh(){
  if(!epoch.accepts(token))return
  const setters:Array<(data:any)=>void>=[value=>{tasks.value=value},value=>{runs.value=value},value=>{anchors.value=value},value=>{claims.value=value},value=>{cards.value=value},value=>{imports.value=value},value=>{proposals.value=value},value=>{chapters.value=value},value=>{assets.value=value},value=>{changes.value=value},value=>{releases.value=value.items||[]}]
  for(let index=0;index<results.length;index++){const result=results[index]!;if(result.status==='rejected'){report(result.reason);if(!epoch.accepts(token))break;continue}if(index<setters.length)setters[index]!((result.value as {data:unknown}).data);if(index===11)providers.value=responseRows(result.value);if(index===12)knowledgeBases.value=responseRows(result.value)}
- if(epoch.accepts(token)){if(selectedRun.value)selectedRun.value=runs.value.find(run=>run.id===selectedRun.value?.id)||null;for(const proposal of proposals.value)if(['completed','rejected','failed'].includes(proposal.status))unknown.delete('action-'+proposal.id);for(const item of imports.value)if(['imported','rejected','failed','processing'].includes(item.status))unknown.delete('import-'+item.id);for(const task of tasks.value)if(!['approved','running'].includes(task.status))unknown.delete('run-'+task.id);loading.value=false;schedulePoll()}
+ if(epoch.accepts(token)){if(selectedRun.value)selectedRun.value=runs.value.find(run=>run.id===selectedRun.value?.id)||null;for(const proposal of proposals.value)if(['completed','rejected','failed'].includes(proposal.status))unknown.delete('action-'+proposal.id);for(const item of imports.value)if(['imported','rejected','failed','processing'].includes(item.status))unknown.delete('import-'+item.id);for(const task of tasks.value)if(!['approved','running'].includes(task.status))unknown.delete('run-'+task.id);await refreshTurnCopies(token);if(epoch.accepts(token)){loading.value=false;schedulePoll()}}
 }
 async function write<T>(slot:string,input:unknown,call:(key:string)=>Promise<T>,long=false):Promise<T|undefined>{
  if(props.readonly||pending.has(slot)||unknown.has(slot))return
@@ -174,10 +177,10 @@ async function write<T>(slot:string,input:unknown,call:(key:string)=>Promise<T>,
  catch(cause){if(epoch.accepts(token)){const problem=cause as {status?:number;$httpStatus?:number;code?:string;error?:{code?:string}};const status=problem.$httpStatus||problem.status;if(long&&(!status||[408,502,503,504].includes(status)||(problem.code||problem.error?.code)==='outcome_unknown')){unknown.add(slot);if(slot.startsWith('turn-'))unknownTurnIDs.set(slot,beforeTurns)}report(cause)}}
  finally{pending.delete(slot)}
 }
-function requestConfirmation(title:string,summary:string,execute:Confirmation['execute']){confirming.value={title,summary,execute};confirmChecked.value=false;confirmReason.value='';oldFocus=document.activeElement as HTMLElement|null;void nextTick(()=>{confirmDialog.value?.showModal();confirmDialog.value?.querySelector('textarea')?.focus()})}
+function requestConfirmation(title:string,summary:string,execute:Confirmation['execute'],sourceTurn?:TurnCopySource){if(confirmingBusy.value)return;confirming.value={title,summary,execute,sourceTurn:sourceTurn?{id:sourceTurn.id,project_id:sourceTurn.project_id,session_id:sourceTurn.session_id,version:sourceTurn.version}:undefined};confirmChecked.value=false;confirmReason.value='';oldFocus=document.activeElement as HTMLElement|null;void nextTick(()=>{confirmDialog.value?.showModal();confirmDialog.value?.querySelector('textarea')?.focus()})}
 function cancelConfirmation(){if(confirmingBusy.value)return;confirmDialog.value?.close();confirming.value=null;oldFocus?.focus()}
 async function executeConfirmation(){if(!confirming.value||!confirmChecked.value||!confirmReason.value.trim())return;const request=confirming.value;confirmingBusy.value=true;try{await request.execute(confirmReason.value.trim())}catch(cause){report(cause)}finally{confirmingBusy.value=false;cancelConfirmation()}}
-function editTask(task:api.ResearchTask){Object.assign(taskForm,{id:task.id,version:task.version,goal:task.goal,queries:task.queries.join('\n'),assets:[...task.asset_ids],provider:task.provider_id||'',chapter:task.chapter_id||'',type:task.question_type,scope:task.scope,exclusions:task.exclusions.join('\n'),output:task.expected_output});tab.value='tasks';taskSaved.value=JSON.stringify(taskForm)}
+function editTask(task:api.ResearchTask){taskDraftSource.value=null;Object.assign(taskForm,{id:task.id,version:task.version,goal:task.goal,queries:task.queries.join('\n'),assets:[...task.asset_ids],provider:task.provider_id||'',chapter:task.chapter_id||'',type:task.question_type,scope:task.scope,exclusions:task.exclusions.join('\n'),output:task.expected_output});tab.value='tasks';taskSaved.value=JSON.stringify(taskForm)}
 async function saveTask(){
  const queries=nonemptyResearchQueries(taskForm.queries);if(queries.length<2||!taskForm.assets.length&&!taskForm.provider){error.value='请填写至少两条查询，并选择项目资料或联网搜索。';return}
  const input:api.SaveResearchTaskInput={...expectation(taskForm.version),task_id:taskForm.id||undefined,chapter_id:taskForm.chapter||undefined,goal:taskForm.goal,question_type:taskForm.type,scope:taskForm.scope,exclusions:nonemptyResearchQueries(taskForm.exclusions),queries,asset_ids:[...taskForm.assets],provider_id:taskForm.provider||undefined,expected_output:taskForm.output}
@@ -227,9 +230,46 @@ function contextInput():api.AgentContextInput{return {...expectation(),chapter_i
 async function previewContext(){const token=epoch.capture();try{const result=await api.previewAgentContext(props.project.id,contextInput());if(epoch.accepts(token))contextPreview.value=result.data}catch(cause){if(epoch.accepts(token))report(cause)}}
 async function loadSessions(){const token=epoch.capture(),chosen=agent.value;try{const result=await api.listAgentSessions(props.project.id,chosen);if(epoch.accepts(token)&&agent.value===chosen)sessions.value=result.data}catch(cause){if(epoch.accepts(token))report(cause)}}
 async function newSession(){const chosen=agent.value,input=expectation();const result=await write('session-create',input,key=>api.createAgentSession(props.project.id,chosen,input,key));if(result&&chosen===agent.value){await loadSessions();sessionId.value=result.data.id}}
+function sameTurnCopy(turn:TurnCopySource,copy:TurnCopySource|null|undefined){return !!copy&&turn.id===copy.id&&turn.project_id===copy.project_id&&turn.session_id===copy.session_id}
+function invalidateRestrictedCopies(rows:readonly api.AgentTurn[],session:string){
+ const restricted=rows.filter(turn=>turn.status==='restricted'&&turn.project_id===props.project.id&&turn.session_id===session)
+ if(!restricted.length)return
+ let cleared=false
+ for(const turn of restricted){
+  if(sameTurnCopy(turn,taskDraftSource.value)){
+   // Manual channel/chapter choices and unrelated forms are not derived text.
+   Object.assign(taskForm,{goal:'',queries:'',scope:'',type:'',exclusions:'',output:''});taskDraftSource.value=null;cleared=true
+  }
+  if(sameTurnCopy(turn,changeDraftTurn.value)){
+   changeDraftTurn.value=null;changeDraftChapterIDs.value=[];actionForm.changeDraft='';if(actionForm.action==='create_change_set')actionForm.effect='';keys.accepted('action-create');cleared=true
+  }
+  if(sameTurnCopy(turn,specCandidate.value?.turn)){
+   specCandidate.value=null;specCandidateFresh.value=null;specCandidateAttempt.value=null;specCandidateUnknown.value=false;keys.accepted('agent-spec-save');cleared=true
+  }
+  if(sameTurnCopy(turn,confirming.value?.sourceTurn)){
+   confirmDialog.value?.close();confirming.value=null;confirmChecked.value=false;confirmReason.value='';cleared=true
+  }
+ }
+ if(cleared)error.value='该会话来源已不可用，相关 AI 派生输入已清除；独立人工输入保留。保存结果未知时请读取服务端状态，不会自动重试。'
+}
+async function readCurrentTurns(session:string,token:ReturnType<G2ResponseEpoch['capture']>){
+ const id=props.project.id,sequence=(turnReadSequences.get(session)||0)+1;turnReadSequences.set(session,sequence)
+ const result=await api.getAgentTurns(id,session)
+ if(!epoch.accepts(token)||props.project.id!==id||turnReadSequences.get(session)!==sequence)return null
+ invalidateRestrictedCopies(result.data,session)
+ return result.data
+}
+async function refreshTurnCopies(token:ReturnType<G2ResponseEpoch['capture']>){
+ const sessionsToRead=new Set([sessionId.value,taskDraftSource.value?.session_id,changeDraftTurn.value?.session_id,specCandidate.value?.turn.session_id].filter((id):id is string=>!!id))
+ for(const selected of sessionsToRead){
+  if(!epoch.accepts(token))return
+  try{const rows=await readCurrentTurns(selected,token);if(rows&&epoch.accepts(token)&&sessionId.value===selected)turns.value=rows}
+  catch(cause){if(epoch.accepts(token))report(cause)}
+ }
+}
 async function loadTurns(){
  turns.value=[];if(!sessionId.value)return;const token=epoch.capture(),selected=sessionId.value
- try{const result=await api.getAgentTurns(props.project.id,selected);if(epoch.accepts(token)&&sessionId.value===selected){turns.value=result.data;const oldIDs=unknownTurnIDs.get('turn-'+selected);if(oldIDs&&result.data.some(turn=>!oldIDs.has(turn.id)&&['completed','stale'].includes(turn.status))){unknown.delete('turn-'+selected);unknownTurnIDs.delete('turn-'+selected)}}}catch(cause){if(epoch.accepts(token))report(cause)}
+ try{const rows=await readCurrentTurns(selected,token);if(rows&&epoch.accepts(token)&&sessionId.value===selected){turns.value=rows;const oldIDs=unknownTurnIDs.get('turn-'+selected);if(oldIDs&&rows.some(turn=>!oldIDs.has(turn.id)&&['completed','stale'].includes(turn.status))){unknown.delete('turn-'+selected);unknownTurnIDs.delete('turn-'+selected)}}}catch(cause){if(epoch.accepts(token))report(cause)}
 }
 async function sendTurn(){
  const selected=sessionId.value,input={...contextInput(),user_input:userInput.value}
@@ -259,7 +299,7 @@ function prepareAgentChangeDraft(turn:api.AgentTurn){
  Object.assign(actionForm,{action:'create_change_set',target:props.project.id,effect:'仅创建待评估草稿：'+draft.reason,changeDraft:JSON.stringify({expected_context_revision:draft.expected_context_revision,reason:draft.reason,fields},null,2)})
  tab.value='agents';message.value='候选已放入下方动作提案表单。请核对并勾选至少一章作为建议复核范围，再编辑新值和原因；登记不执行，仍需单独明确确认。'
 }
-function adoptTaskSuggestion(turn:api.AgentTurn){const draft=turn.suggestions?.task_card;if(!draft)return;resetTask();Object.assign(taskForm,{goal:draft.goal||'',queries:(draft.queries||[]).join('\n'),scope:draft.scope||'',type:draft.question_type||'',exclusions:(draft.exclusions||[]).join('\n'),output:draft.expected_output||''});tab.value='tasks';message.value='建议已放入可编辑草稿，请自行选择资料与搜索渠道后保存。'}
+function adoptTaskSuggestion(turn:api.AgentTurn){const draft=turn.suggestions?.task_card;if(!draft)return;resetTask();taskDraftSource.value={id:turn.id,project_id:turn.project_id,session_id:turn.session_id,version:turn.version};Object.assign(taskForm,{goal:draft.goal||'',queries:(draft.queries||[]).join('\n'),scope:draft.scope||'',type:draft.question_type||'',exclusions:(draft.exclusions||[]).join('\n'),output:draft.expected_output||''});tab.value='tasks';message.value='建议已放入可编辑草稿，请自行选择资料与搜索渠道后保存。'}
 function saveConversationCandidate(turn:api.AgentTurn){requestConfirmation('保存 AI 生成候选','只保存本轮对话候选，不产生正式定位或证据卡。',async reason=>{const input:api.CreateImportCandidateInput={...expectation(),conversation_session_id:turn.session_id,conversation_turn_ids:[turn.id],title:'助手对话候选',purpose:reason,save_mode:'metadata_only',scope:'personal',model_use_allowed:false,license:'AI 生成内容，来源与正确性尚待核实'};await write('conversation-'+turn.id,input,key=>api.createImportCandidate(props.project.id,input,key))})}
 function eligibleSpecTurn(turn:api.AgentTurn){
  const current=turns.value.find(item=>item.id===turn.id&&item.version===turn.version&&item.reply===turn.reply&&item.status==='completed')
@@ -281,11 +321,11 @@ async function readSpecCandidateBasis(){
  const draft=specCandidate.value;if(!draft||pending.has('agent-spec-read')||pending.has('agent-spec-save')||specCandidateUnknown.value)return
  const token=epoch.capture(),sequence=++specReadSequence,id=props.project.id,user=props.currentUserId,tenant=candidateTenant();pending.add('agent-spec-read');specCandidateFresh.value=null
  try{
-  const [p,t,permission]=await Promise.all([api.getAgentSpecCandidateProject(id),api.getAgentTurns(id,draft.turn.session_id),getEffectivePermission(id,'manage')])
-  if(!epoch.accepts(token)||sequence!==specReadSequence||props.project.id!==id||props.currentUserId!==user||candidateTenant()!==tenant||specCandidate.value!==draft)return
-  const turn=t.data.find(item=>item.id===draft.turn.id)
+  const [p,t,permission]=await Promise.all([api.getAgentSpecCandidateProject(id),readCurrentTurns(draft.turn.session_id,token),getEffectivePermission(id,'manage')])
+  if(!t||!epoch.accepts(token)||sequence!==specReadSequence||props.project.id!==id||props.currentUserId!==user||candidateTenant()!==tenant||specCandidate.value!==draft)return
+  const turn=t.find(item=>item.id===draft.turn.id)
   if(!turn||!eligibleAgentSpecTurn(turn,sessions.value.find(session=>session.id===turn.session_id),p.data,user)||p.data.id!==id||permission.data.allowed!==true||permission.data.capability!=='manage'||permission.data.project_version!==p.data.project_version)throw new Error('当前会话、草稿或管理许可已不可用；不能关联旧来源。')
-  turns.value=t.data;specCandidateFresh.value={project:p.data,turn};specManagePermission.value=permission.data;emit('changed');message.value='已读取当前条件与真实会话。比较当前值和候选值后，再明确关联；输入没有改变。'
+  if(sessionId.value===draft.turn.session_id)turns.value=t;specCandidateFresh.value={project:p.data,turn};specManagePermission.value=permission.data;emit('changed');message.value='已读取当前条件与真实会话。比较当前值和候选值后，再明确关联；输入没有改变。'
  }catch(cause){if(epoch.accepts(token)&&sequence===specReadSequence)report(cause)}
  finally{if(sequence===specReadSequence)pending.delete('agent-spec-read')}
 }
@@ -300,7 +340,7 @@ function confirmSpecCandidate(){
  try{
   const input=specCandidateUnknown.value ? specCandidateAttempt.value!.input : buildAgentSpecCandidateInput(props.project,draft.turn,draft.field,draft.value)
   const field=Object.keys(input.field_metadata)[0]!
-  requestConfirmation(specCandidateUnknown.value?'人工重试同一候选保存':'保存待确认研究条件',field+'\n当前值：'+(props.project.spec[field]||'（空）')+'\n候选值：'+input.fields[field]+'\n条件版本 '+input.expected_spec_revision+' · 轮次 '+draft.turn.id+' / '+draft.turn.version+'\n保存仍待人工确认，不自动立项。',async()=>{await submitSpecCandidate(draft,input)})
+  requestConfirmation(specCandidateUnknown.value?'人工重试同一候选保存':'保存待确认研究条件',field+'\n当前值：'+(props.project.spec[field]||'（空）')+'\n候选值：'+input.fields[field]+'\n条件版本 '+input.expected_spec_revision+' · 轮次 '+draft.turn.id+' / '+draft.turn.version+'\n保存仍待人工确认，不自动立项。',async()=>{await submitSpecCandidate(draft,input)},draft.turn)
  }catch(cause){report(cause)}
 }
 async function submitSpecCandidate(draft:SpecCandidate,input:api.SaveAgentSpecCandidateInput){
@@ -330,7 +370,7 @@ function discardSpecCandidate(){
  requestConfirmation('放弃此候选输入',specCandidateUnknown.value?'原请求结果仍未知。放弃输入不会撤销可能已保存的条件，请后续读取服务端状态。':'只放弃本页候选输入，不修改已保存条件。',async()=>{specCandidate.value=null;specCandidateFresh.value=null;specCandidateAttempt.value=null;specCandidateUnknown.value=false})
 }
 async function proposeAction(){
- const token=epoch.capture(),action=actionForm.action;let target=actionForm.target,input:Record<string,unknown>={},sourceIDs:string[]=[]
+ const token=epoch.capture(),action=actionForm.action,confirmationSource=actionForm.action==='create_change_set'?changeDraftTurn.value:undefined;let target=actionForm.target,input:Record<string,unknown>={},sourceIDs:string[]=[]
  try{
   if(action==='create_change_set'){
    const source=changeDraftTurn.value
@@ -360,7 +400,7 @@ async function proposeAction(){
      checkedChangeDraftChapters(input.affected_chapter_ids as string[])
     }
     await write('action-create',payload,key=>api.createActionProposal(props.project.id,payload,key))
-   })
+   },confirmationSource||undefined)
  }catch(cause){if(epoch.accepts(token))report(cause)}
 }
 function decideAction(proposal:api.ActionProposal,accept:boolean){requestConfirmation(accept?'明确确认并执行动作':'拒绝动作提案',actionLabel(proposal.action)+'\n'+proposal.expected_effect+'\n'+proposal.reversibility+'\n基线 '+proposal.basis.context_revision+'\n输入：'+JSON.stringify(proposal.input,null,2),async reason=>{const input={...expectation(proposal.version),confirmed:true,reason};await write('action-'+proposal.id,input,key=>accept?api.confirmActionProposal(props.project.id,proposal.id,input,key):api.rejectActionProposal(props.project.id,proposal.id,input,key),accept)})}

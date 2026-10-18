@@ -680,9 +680,16 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 	hash := sha256.Sum256(encoded)
 	hashString := hex.EncodeToString(hash[:])
 	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
-	ctx, err = s.g1PrepareOperation(ctx, actor, op, target, projectID, body)
+	prepared, cached, err := s.g1PrepareCachedChangeOperation(ctx, actor, operation.Request, id, body)
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, isReplayPayloadDecodeError(err), err
+	}
+	ctx = prepared
+	if !cached {
+		ctx, err = s.g1PrepareOperation(ctx, actor, op, target, projectID, body)
+		if err != nil {
+			return nil, 0, false, err
+		}
 	}
 	var result OperationResult
 	var replayed bool
@@ -820,6 +827,9 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 			return err
 		}
 		result = OperationResult{BodyHash: hashString, Body: raw, Status: code, Output: output}
+		if err := g1StoreOperationProvenance(tx, id, result, value); err != nil {
+			return err
+		}
 		if _, ok := tx.(gormTransaction); ok && projectID != "" {
 			current, err := tx.Project(actor.TenantID, projectID)
 			if err != nil {

@@ -1992,6 +1992,11 @@ func (s *Service) CreateActionProposal(ctx context.Context, actor Actor, project
 	if !json.Valid(input.Input) || len(input.Input) > 60000 || input.TargetID == "" || input.ExpectedEffect == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	if input.Action == "create_change_set" {
+		if body, status, replayed, err := s.replayAgentChangeDraftProposal(ctx, actor, projectID, key, input); err != nil || status != 0 {
+			return body, status, replayed, err
+		}
+	}
 	sourceIDs, sourceErr := s.actionProposalSources(ctx, actor, projectID, input)
 	if sourceErr != nil {
 		return nil, 0, false, sourceErr

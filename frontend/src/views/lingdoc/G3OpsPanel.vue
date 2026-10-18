@@ -267,7 +267,10 @@ async function changeAction(change: api.MainlineChangeSet, action: ChangeAction)
   if (action === 'reverse') { await mutate(`reverse-${change.id}`, {}, key => api.reverseMainlineChange(projectId, change.id, key), '逆向提议已创建，需重新评估与 Owner 应用。'); return }
   if (action === 'reassess') { await mutate(`reassess-${change.id}`, {}, key => api.reassessMainlineChange(projectId, change.id, key), '已按当前基线重评，原提议保留为历史；请查看新记录状态。', true); return }
   const result = await mutate(`assess-${change.id}`, {}, key => api.assessMainlineChange(projectId, change.id, key), '影响已按当前输入评估。')
-  if (result && props.project.id===projectId && currentIdentity.value===identity) await showAssessment(change)
+  if (result && props.project.id===projectId && currentIdentity.value===identity) {
+    const assessed=changes.value.find(item=>item.id===change.id&&item.project_id===projectId&&item.status==='assessed')
+    if(assessed)await showAssessment(assessed)
+  }
 }
 async function addDependency() { if (!reason.value.trim()) return; const input: api.DependencyEdgeInput = { expected_context_revision: props.project.current_context_revision, source: { ...sourceRef.value }, target: { ...targetRef.value }, action: edgeAction.value, origin: 'user', relation: 'uses', reason: reason.value, confidence: 1 }; const result=await mutate('edge', input, key => api.createDependency(props.project.id, input, key), '人工依赖已按版本登记。');if(result){targetRef.value={kind:'ChapterVersion',id:'',version:''};sourceRef.value={kind:'ProjectSpec',id:props.project.id,version:String(props.project.spec_revision)};edgeAction.value='REVIEW_REQUIRED'} }
 async function decideEdge(edge: api.DependencyEdge, decision: 'confirm' | 'reject') { if (!reason.value.trim()) { error.value = '请填写人工判断理由。'; return }; const input = { expected_version: edge.version, decision, reason: reason.value }; await mutate(`edge-${edge.id}`, input, key => api.decideDependency(props.project.id, edge.id, input, key), '版本绑定的人工决定已保留。') }

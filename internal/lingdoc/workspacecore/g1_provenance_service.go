@@ -432,6 +432,9 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 		if err := json.Unmarshal(body, &change); err != nil {
 			return nil, err
 		}
+		if visible, handled, err := s.g1CachedChangeProjection(ctx, actor, pid, body, change); handled || err != nil {
+			return visible, err
+		}
 		visible, err := s.g1ChangeProjection(ctx, actor, change)
 		if err != nil {
 			return nil, err

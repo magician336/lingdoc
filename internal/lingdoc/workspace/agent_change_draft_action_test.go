@@ -21,7 +21,7 @@ func agentDraftExpectation(p core.Project, version int64) core.G2Expectation {
 // The provider is an in-process existing chat stub. The real host parser,
 // SendAgentTurn, stored suggestions, proposal confirmation and G3 service run.
 // This helper models the existing editable UI adapter, not a browser E2E.
-func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture) (core.AgentTurn, core.AgentChangeDraftInput, *acceptanceChatStub) {
+func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture, selectedSourceIDs ...string) (core.AgentTurn, core.AgentChangeDraftInput, *acceptanceChatStub) {
 	t.Helper()
 	p, err := f.projects.GetProject(f.ctx, f.actor, f.project.ID)
 	require.NoError(t, err)
@@ -42,7 +42,7 @@ func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture) (core.AgentTurn, 
 	var session core.AgentSession
 	require.NoError(t, json.Unmarshal(raw, &session))
 	raw, _, _, err = f.projects.SendAgentTurn(f.ctx, f.actor, p.ID, session.ID, "agent-draft-turn", core.AgentTurnInput{
-		AgentContextInput: core.AgentContextInput{G2Expectation: agentDraftExpectation(p, session.Version), SourceIDs: []string{}, CardRefs: []core.G2VersionRef{}},
+		AgentContextInput: core.AgentContextInput{G2Expectation: agentDraftExpectation(p, session.Version), SourceIDs: append([]string{}, selectedSourceIDs...), CardRefs: []core.G2VersionRef{}, SensitiveContextConfirmed: len(selectedSourceIDs) > 0},
 		UserInput:         "请将 research_goal 改为：" + agentDraftSyntheticValue + "。只提出草稿。",
 	})
 	require.NoError(t, err)

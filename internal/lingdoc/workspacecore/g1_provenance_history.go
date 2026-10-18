@@ -118,6 +118,11 @@ func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, ch
 		}
 		return ctx, err
 	}
+	return s.g1PrepareChangeProvenanceHistory(ctx, actor, change, history, seen)
+}
+
+// Shared validation for both current ChangeSet history and an immutable operation receipt.
+func (s *Service) g1PrepareChangeProvenanceHistory(ctx context.Context, actor Actor, change ChangeSet, history g1ChangeProvenance, seen map[string]bool) (context.Context, error) {
 	if history.Snapshot.SpecRevision != change.BaseSpecRevision || history.Snapshot.ContextRevision != change.BaseContextRevision {
 		return ctx, ErrSourceUnavailable
 	}

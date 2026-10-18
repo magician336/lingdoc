@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -64,6 +65,10 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 				return operationResult[ChangeSet]{}, err
 			}
 			definition := lingdoctemplate.Clone(oldCopy.Definition)
+			values, err := inverseTemplateFieldValues(tx, p, source, baseline, definition)
+			if err != nil {
+				return operationResult[ChangeSet]{}, err
+			}
 			upgrade := &TemplateUpgradeInput{
 				ExpectedProjectVersion: p.ProjectVersion, ExpectedTemplateCopyVersion: p.TemplateCopyVersion,
 				Fields:         append([]lingdoctemplate.Field{}, definition.Fields...),
@@ -71,7 +76,7 @@ func (s *Service) reverseChangeSetOperation(ctx context.Context, actor Actor, pr
 				Terms:          append([]lingdoctemplate.Term{}, definition.Terms...),
 				RequiredFields: slices.Clone(definition.RequiredFields),
 				Rules:          append([]lingdoctemplate.Rule{}, definition.Rules...),
-				FieldValues:    maps.Clone(baseline.Spec),
+				FieldValues:    values,
 			}
 			if ref := lingdoctemplate.RuleSetReferenceFor(definition); ref != nil {
 				value := *ref
@@ -141,6 +146,112 @@ func inverseTemplateBaseline(tx Transaction, actor Actor, projectID string, sour
 	}
 	copy, err := reader.ProjectTemplateCopy(actor.TenantID, projectID, source.TemplateUpgrade.BaseTemplateCopyVersion)
 	return baseline, copy, err
+}
+
+// Only values actually changed by this template application may be restored.
+// Frozen hashes identify history; existing G1/source/Owner guards still decide
+// access before replay and before the original mutation callback commits.
+func inverseTemplateFieldValues(tx Transaction, p Project, source ChangeSet, baseline ContextRevisionRecord, definition lingdoctemplate.Template) (map[string]string, error) {
+	upgrade := source.TemplateUpgrade
+	if upgrade == nil || source.ProjectID != p.ID || source.TargetContextRevision == nil || source.TargetSpecRevision == nil ||
+		*source.TargetContextRevision != source.BaseContextRevision+1 || *source.TargetSpecRevision != source.BaseSpecRevision+1 ||
+		baseline.ProjectID != p.ID || baseline.Revision != source.BaseContextRevision || baseline.SpecRevision != source.BaseSpecRevision ||
+		baseline.TemplateCopyVersion != upgrade.BaseTemplateCopyVersion || len(source.Fields) != 0 || len(source.SemanticDeltas) != 0 {
+		return nil, ErrInvalidState
+	}
+	reader, ok := tx.(interface {
+		ContextRevisions(string) ([]ContextRevisionRecord, error)
+	})
+	if !ok {
+		return nil, ErrInvalidState
+	}
+	history, err := reader.ContextRevisions(p.ID)
+	if err != nil {
+		return nil, err
+	}
+	var target ContextRevisionRecord
+	found := false
+	for _, revision := range history {
+		if revision.Revision != *source.TargetContextRevision {
+			continue
+		}
+		if found {
+			return nil, ErrInvalidState
+		}
+		target, found = revision, true
+	}
+	if !found || target.ProjectID != p.ID || target.ChangeSetID != source.ID || target.SpecRevision != *source.TargetSpecRevision ||
+		target.TemplateCopyVersion != upgrade.BaseTemplateCopyVersion+1 {
+		return nil, ErrInvalidState
+	}
+	for _, revision := range []ContextRevisionRecord{baseline, target} {
+		if err := validateInverseTemplateRevision(tx, revision); err != nil {
+			return nil, err
+		}
+	}
+	// A later template/binding change is independent work too. Do not undo it
+	// while reversing an older source, even if all field values happen to match.
+	if p.CurrentContextRevision < target.Revision || p.SpecRevision < target.SpecRevision ||
+		p.TemplateCopyVersion != target.TemplateCopyVersion || p.TemplateCopy == nil || p.TemplateCopy.Version != target.TemplateCopyVersion {
+		return nil, ErrVersionConflict
+	}
+	if p.TemplateCopy.Status != TemplateCopyBound || p.TemplateCopy.ProjectID != p.ID || validateProjectTemplateCopy(p.TemplateCopy) != nil {
+		return nil, ErrInvalidState
+	}
+	contentHash, rulesetHash, err := lingdoctemplate.Hashes(upgrade.Definition)
+	if err != nil || upgrade.Definition.ContentHash != contentHash || upgrade.Definition.RulesetHash != rulesetHash ||
+		upgrade.Preview.TargetContentHash != contentHash || upgrade.Preview.TargetRulesetHash != rulesetHash ||
+		p.TemplateCopy.Definition.ContentHash != contentHash || p.TemplateCopy.Definition.RulesetHash != rulesetHash {
+		return nil, ErrInvalidState
+	}
+	if _, err := verifyTemplateUpgradeEvidence(upgrade); err != nil {
+		return nil, err
+	}
+	expected, err := templateSpecAfterUpgrade(baseline.Spec, upgrade.Definition, upgrade.FieldValues)
+	if err != nil || !maps.Equal(expected, target.Spec) {
+		return nil, ErrInvalidState
+	}
+	values := map[string]string{}
+	for key, oldValue := range baseline.Spec {
+		targetValue, targetPresent := target.Spec[key]
+		if !targetPresent {
+			return nil, ErrInvalidState
+		}
+		if targetValue == oldValue {
+			continue
+		}
+		currentValue, currentPresent := p.Spec[key]
+		if !currentPresent || currentValue != targetValue {
+			return nil, ErrVersionConflict
+		}
+		values[key] = oldValue
+	}
+	// Newly introduced values keep the existing readable-orphan behavior of a
+	// structural migration. There is no implicit delete or empty-string value.
+	if _, err := templateSpecAfterUpgrade(p.Spec, definition, values); err != nil {
+		return nil, fmt.Errorf("%w: current fields are incompatible with the historical template: %v", ErrVersionConflict, err)
+	}
+	return values, nil
+}
+
+func validateInverseTemplateRevision(tx Transaction, revision ContextRevisionRecord) error {
+	snapshot := revision.SpecProvenance
+	if snapshot.ProjectID != revision.ProjectID || snapshot.ContextRevision != revision.Revision || snapshot.SpecRevision != revision.SpecRevision ||
+		snapshot.TemplateCopyVersion != revision.TemplateCopyVersion || len(snapshot.Fields) != len(revision.Spec) || ValidateFrozenProvenanceInput(revision.Spec, snapshot) != nil {
+		return ErrInvalidState
+	}
+	store, ok := tx.(g5Transaction)
+	if !ok {
+		return ErrInvalidState
+	}
+	var persisted ProjectProvenanceSnapshot
+	if _, err := store.G5Get(revision.ProjectID, "g1_snapshot", snapshot.Digest, &persisted); err != nil {
+		return err
+	}
+	if hashImpactValue(persisted) != hashImpactValue(snapshot) {
+		return ErrInvalidState
+	}
+	return nil
 }
 
 // Called from g1PrepareOperation after its short current-project read, and
@@ -225,7 +336,7 @@ func inverseTemplatePolicyBasis(tx Transaction, actor Actor, p Project, change C
 	if err != nil {
 		return nil, err
 	}
-	_, historical, err := inverseTemplateBaseline(tx, actor, p.ID, source)
+	baseline, historical, err := inverseTemplateBaseline(tx, actor, p.ID, source)
 	if err != nil {
 		return nil, err
 	}
@@ -237,6 +348,15 @@ func inverseTemplatePolicyBasis(tx Transaction, actor Actor, p Project, change C
 	if definition.ContentHash != target.ContentHash || definition.RulesetHash != target.RulesetHash ||
 		hashImpactValue(lingdoctemplate.RuleSetReferenceFor(definition)) != hashImpactValue(lingdoctemplate.RuleSetReferenceFor(target)) ||
 		hashImpactValue(append([]lingdoctemplate.RuleBindingOverride{}, definition.RuleBindingOverrides...)) != hashImpactValue(append([]lingdoctemplate.RuleBindingOverride{}, target.RuleBindingOverrides...)) {
+		return nil, ErrVersionConflict
+	}
+	// Recheck on the cache-miss Apply path too: an older assessed inverse may
+	// still contain the unsafe full baseline, or have been reassessed later.
+	values, err := inverseTemplateFieldValues(tx, p, source, baseline, definition)
+	if err != nil {
+		return nil, err
+	}
+	if !maps.Equal(values, change.TemplateUpgrade.FieldValues) {
 		return nil, ErrVersionConflict
 	}
 	return &historical, nil

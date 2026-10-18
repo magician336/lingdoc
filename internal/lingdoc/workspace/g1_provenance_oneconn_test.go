@@ -190,8 +190,36 @@ func TestG1ActualSourceHistoryRemainsProtectedAfterHumanFieldChange(t *testing.T
 	}
 	_, _, _, err = f.projects.ReverseChangeSet(f.ctx, f.actor, p.ID, change.ID, "g1-history-denied-inverse")
 	require.ErrorIs(t, err, core.ErrSourceUnavailable)
-	_, _, _, err = f.projects.CreateChangeSet(f.ctx, f.actor, p.ID, "g1-history-change", core.CreateChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision, Reason: "人工更新合成条件", Fields: map[string]core.ChangeFieldInput{"research_subject": {OldValue: input.Fields["research_subject"], NewValue: "明确人类新条件"}}, AffectedChapterIDs: []string{chapters[0].ID}})
+	// Read projections above deliberately redact historical fields. A mutation
+	// replay must instead reauthorize its complete immutable receipt before
+	// returning it, even though the live formal field is now independent human text.
+	retry := core.CreateChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision, Reason: "人工更新合成条件", Fields: map[string]core.ChangeFieldInput{"research_subject": {OldValue: input.Fields["research_subject"], NewValue: "明确人类新条件"}}, AffectedChapterIDs: []string{chapters[0].ID}}
+	var operationsBefore, auditsBefore int64
+	require.NoError(t, f.db.Table("lingdoc_operations").Count(&operationsBefore).Error)
+	require.NoError(t, f.db.Table("lingdoc_project_audits").Count(&auditsBefore).Error)
+	denied, _, replayed, err := f.projects.CreateChangeSet(f.ctx, f.actor, p.ID, "g1-history-change", retry)
+	require.ErrorIs(t, err, core.ErrSourceUnavailable)
+	require.Empty(t, denied)
+	require.False(t, replayed)
+	// Revocation preserves the operation. Current source access permits the
+	// same old request to recover its original receipt without rerunning it.
+	require.NoError(t, f.db.Exec("UPDATE knowledge_bases SET deleted_at=NULL WHERE id=?", "kb-runtime").Error)
+	restored, status, replayed, err := f.projects.CreateChangeSet(f.ctx, f.actor, p.ID, "g1-history-change", retry)
 	require.NoError(t, err)
+	require.True(t, replayed)
+	require.Equal(t, 201, status)
+	require.JSONEq(t, string(raw), string(restored))
+	after, err := f.projects.GetProject(f.ctx, f.actor, p.ID)
+	require.NoError(t, err)
+	require.Equal(t, current.Spec, after.Spec)
+	require.Equal(t, current.ProjectVersion, after.ProjectVersion)
+	require.Equal(t, current.SpecRevision, after.SpecRevision)
+	require.Equal(t, current.CurrentContextRevision, after.CurrentContextRevision)
+	var operationsAfter, auditsAfter int64
+	require.NoError(t, f.db.Table("lingdoc_operations").Count(&operationsAfter).Error)
+	require.NoError(t, f.db.Table("lingdoc_project_audits").Count(&auditsAfter).Error)
+	require.Equal(t, operationsBefore, operationsAfter)
+	require.Equal(t, auditsBefore, auditsAfter)
 	require.NotEqual(t, context.DeadlineExceeded, f.ctx.Err())
 }
 
