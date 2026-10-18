@@ -926,6 +926,104 @@ func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, act
 	return ""
 }
 
+// impactConfirmationBlockers re-reads the CURRENT confirmation of every object
+// the change set's persisted impact assessment recorded as impacted, and reports
+// each one that is no longer confirmed at its current version.
+//
+// Why this exists: the task loop above only re-reads closure evidence attached to
+// DONE tasks. A task that went STALE is deliberately neither a blocker nor
+// closure (#200) - its basis is gone, so no actor can ever discharge it - which
+// left its impacted object with no obligation at all. Nothing blocked on it and
+// nothing checked it, so an impacted chapter could be left unconfirmed while
+// stabilization still reported STABILIZED. Reading the assessment closes that
+// gap without making STALE blocking again, which would be an unresolvable
+// deadlock.
+//
+// The re-read is deliberately scoped to the assessment's own objects and skipped
+// for any object a DONE task re-targeted: completing a task legitimately moves
+// it onto a newer version, so the assessed version is expected to be stale there
+// and the task's own closure check already covers the current one.
+func impactConfirmationBlockers(tx Transaction, p Project, store impactTransaction, changeID string) []ImpactBlocker {
+	assessment, err := store.ImpactAssessment(p.ID, changeID)
+	if err != nil {
+		// A change set with no stored assessment has no impacted object set to
+		// re-read; the task, route, template and rule checks still apply.
+		return nil
+	}
+	tasks, err := store.ImpactTasks(p.ID)
+	if err != nil {
+		return nil
+	}
+	// An object is accounted for when a DONE task of this change set carries it
+	// as closure evidence: that task already verified the current confirmation.
+	accountedFor := map[string]bool{}
+	for _, task := range tasks {
+		if task.ChangeSetID != changeID || task.Status != "DONE" {
+			continue
+		}
+		for _, ref := range task.ClosureEvidence {
+			accountedFor[ref.Kind+"/"+ref.ID] = true
+		}
+	}
+	blockers := []ImpactBlocker{}
+	for _, object := range assessment.Objects {
+		identity := object.Ref.Kind + "/" + object.Ref.ID
+		if accountedFor[identity] {
+			continue
+		}
+		// The spec revision recorded by the assessment is the revision the change
+		// set was assessed against, and applying that very change set advances the
+		// spec. Treating that expected step as drift would block every stabilization,
+		// so the spec root is judged on its CURRENT confirmation instead of its
+		// assessed version.
+		if object.Ref.Kind == "ProjectSpec" {
+			if _, err := currentImpactObject(tx, p, ObjectVersionRef{Kind: "ProjectSpec", ID: object.Ref.ID,
+				Version: strconv.FormatInt(p.SpecRevision, 10)}); err != nil {
+				blockers = append(blockers, ImpactBlocker{Code: "impact_object_stale", TargetID: object.Ref.ID,
+					Reason: "受影响对象的版本已被替换，需重新评估影响"})
+			}
+			continue
+		}
+		// Re-read against current domain truth rather than the stored snapshot:
+		// only the CURRENT version of the object decides, so a re-targeted object
+		// is judged on the version that is live now.
+		state, err := currentImpactObject(tx, p, assessmentObjectsCurrent(tx, p, object.Ref))
+		if err != nil {
+			// The object is unreadable at any current version. A task that
+			// legitimately moved the object on would have accounted for it above,
+			// so this is real drift worth reporting rather than a silent pass.
+			blockers = append(blockers, ImpactBlocker{Code: "impact_object_stale", TargetID: object.Ref.ID,
+				Reason: "受影响对象的版本已被替换，需重新评估影响"})
+			continue
+		}
+		if !state.Confirmed {
+			blockers = append(blockers, ImpactBlocker{Code: "impact_object_unconfirmed", TargetID: object.Ref.ID,
+				Reason: "受影响对象的当前确认已失效，需重新确认"})
+		}
+	}
+	return blockers
+}
+
+// assessmentObjectsCurrent resolves the version an impacted object should be
+// judged at. The assessed version is used when it is still current. When the
+// object has since been re-targeted, the chapter's live current version is
+// resolved from domain truth, because an impacted object that was repaired and
+// re-confirmed must be judged on the version that exists now rather than on the
+// replaced one it was originally assessed against.
+func assessmentObjectsCurrent(tx Transaction, p Project, ref ObjectVersionRef) ObjectVersionRef {
+	if ref.Kind != "ChapterVersion" {
+		// For every other kind the recorded version is the identity; a semantic
+		// object is replaced by writing a new version, never by silently
+		// re-pointing the old one.
+		return ref
+	}
+	chapter, err := tx.Chapter(p.ID, ref.ID)
+	if err != nil || chapter.CurrentVersionID == nil {
+		return ref
+	}
+	return ObjectVersionRef{Kind: "ChapterVersion", ID: ref.ID, Version: *chapter.CurrentVersionID}
+}
+
 func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
@@ -1041,6 +1139,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				}
 			}
 		}
+		result.Blockers = append(result.Blockers, impactConfirmationBlockers(tx, p, store, changeID)...)
 		routeBlockers, err := RouteStabilizationBlockers(tx, p)
 		if err != nil {
 			return operationResult[StabilizationResult]{}, err
