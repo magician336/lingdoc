@@ -16,6 +16,10 @@ import (
 
 var ErrImpactObjectUnavailable = errors.New("current impact object adapter is unavailable")
 
+// ErrDependencyDecided reports that a human already decided this dependency
+// pair, so an automated run may not silently re-propose or overwrite it.
+var ErrDependencyDecided = errors.New("dependency edge already decided")
+
 func (s *Service) SetImpactRuleChecker(checker ImpactRuleChecker) { s.impactRules = checker }
 func validObjectRef(ref ObjectVersionRef) bool {
 	return ref.ID != "" && ref.Version != "" && len(ref.ID) <= 128 && len(ref.Version) <= 128 && slices.Contains([]string{"ProjectSpec", "ProjectAsset", "SourceAnchor", "EvidenceCard", "ResearchClaim", "ChapterVersion", "TemplateCopy", "RuleSet", "RuleBinding", "RouteNode", "ResearchRun", "ComputationReceipt"}, ref.Kind)
@@ -185,6 +189,19 @@ func (s *Service) CreateDependencyEdge(ctx context.Context, actor Actor, project
 				return operationResult[DependencyEdge]{Value: edge, Status: operationStatusOK}, nil
 			}
 		}
+		if input.Origin == "ai" {
+			// An automated run may add a candidate, but it may not resurrect the
+			// exact tuple a human replaced with decision="modify": that is the one
+			// case where re-proposing would undo a recorded human decision.
+			for _, edge := range edges {
+				if edge.Source != input.Source || edge.Target != input.Target {
+					continue
+				}
+				if edge.SupersededRelation == input.Relation && edge.SupersededAction == input.Action {
+					return operationResult[DependencyEdge]{}, ErrDependencyDecided
+				}
+			}
+		}
 		now := time.Now().UTC()
 		status := "confirmed"
 		if input.Origin == "ai" {
@@ -204,7 +221,17 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
-	if input.ExpectedVersion < 1 || !slices.Contains([]string{"confirm", "reject"}, input.Decision) || strings.TrimSpace(input.Reason) == "" {
+	if input.ExpectedVersion < 1 || !slices.Contains([]string{"confirm", "reject", "modify"}, input.Decision) || strings.TrimSpace(input.Reason) == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if input.Decision == "modify" {
+		if (input.Relation == nil && input.Action == nil && input.Confidence == nil) ||
+			(input.Relation != nil && (strings.TrimSpace(*input.Relation) == "" || len(*input.Relation) > 128)) ||
+			(input.Action != nil && !validImpactAction(*input.Action)) ||
+			(input.Confidence != nil && (math.IsNaN(*input.Confidence) || *input.Confidence < 0 || *input.Confidence > 1)) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+	} else if input.Relation != nil || input.Action != nil || input.Confidence != nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	var edge DependencyEdge
@@ -240,6 +267,21 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 		if input.Decision == "confirm" {
 			next.Status = "confirmed"
 		}
+		if input.Decision == "modify" {
+			// A modification is a confirmation of the corrected candidate, not a
+			// new candidate: it stays confirmed and becomes binding.
+			next.Status = "confirmed"
+			next.SupersededRelation, next.SupersededAction = old.Relation, old.Action
+			if input.Relation != nil {
+				next.Relation = *input.Relation
+			}
+			if input.Action != nil {
+				next.Action = *input.Action
+			}
+			if input.Confidence != nil {
+				next.Confidence = *input.Confidence
+			}
+		}
 		next.Version++
 		next.ActorID = actor.UserID
 		next.Reason = input.Reason
@@ -247,7 +289,11 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 		if err := store.UpdateDependencyEdge(old, next); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "dependency."+input.Decision, edgeID, map[string]any{"version": next.Version}); err != nil {
+		details := map[string]any{"version": next.Version}
+		if input.Decision == "modify" {
+			details["relation"], details["action"], details["confidence"] = next.Relation, next.Action, next.Confidence
+		}
+		if err := g3Audit(tx, actor, projectID, "dependency."+input.Decision, edgeID, details); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
 		return operationResult[DependencyEdge]{Value: next, Status: operationStatusOK}, nil
@@ -570,24 +616,53 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 }
 func (s *Service) GetImpactAssessment(ctx context.Context, actor Actor, projectID, changeID string) (ImpactAssessment, error) {
 	var result ImpactAssessment
+	var project Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
+		var err error
+		project, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
+		if err != nil {
 			return err
 		}
 		store, ok := tx.(impactTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		var err error
 		result, err = store.ImpactAssessment(projectID, changeID)
 		return err
 	})
 	if err != nil {
 		return result, err
 	}
-	var sources []string
+	// Edges and impacts name objects that may sit outside Objects (a suggested
+	// edge target is deliberately not a required object), so authorization has to
+	// cover every ref the response exposes, not just the required set.
+	refs := map[string]ObjectVersionRef{}
 	for _, state := range result.Objects {
-		sources = append(sources, state.SourceIDs...)
+		refs[refIdentity(state.Ref)] = state.Ref
+	}
+	for _, edge := range result.Edges {
+		refs[refIdentity(edge.Source)] = edge.Source
+		refs[refIdentity(edge.Target)] = edge.Target
+	}
+	for _, impact := range result.Impacts {
+		refs[refIdentity(impact.Target)] = impact.Target
+		for _, cause := range impact.Causes {
+			refs[refIdentity(cause.Source)] = cause.Source
+		}
+	}
+	var sources []string
+	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		for _, ref := range refs {
+			state, err := currentImpactObject(tx, project, ref)
+			if err != nil {
+				return err
+			}
+			sources = append(sources, state.SourceIDs...)
+		}
+		return nil
+	})
+	if err != nil {
+		return ImpactAssessment{}, err
 	}
 	if err := s.checkSources(ctx, actor, projectID, sources); err != nil {
 		return ImpactAssessment{}, err

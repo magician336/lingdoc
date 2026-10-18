@@ -18,20 +18,25 @@ type ImpactObjectState struct {
 	ContextRevision int64            `json:"context_revision"`
 }
 type DependencyEdge struct {
-	ID         string           `json:"id"`
-	ProjectID  string           `json:"project_id"`
-	Source     ObjectVersionRef `json:"source"`
-	Target     ObjectVersionRef `json:"target"`
-	Relation   string           `json:"relation"`
-	Action     string           `json:"action"`
-	Origin     string           `json:"origin"`
-	Reason     string           `json:"reason"`
-	Status     string           `json:"status"`
-	Confidence float64          `json:"confidence"`
-	ActorID    string           `json:"actor_id"`
-	Version    int64            `json:"version"`
-	CreatedAt  time.Time        `json:"created_at"`
-	UpdatedAt  time.Time        `json:"updated_at"`
+	ID        string           `json:"id"`
+	ProjectID string           `json:"project_id"`
+	Source    ObjectVersionRef `json:"source"`
+	Target    ObjectVersionRef `json:"target"`
+	Relation  string           `json:"relation"`
+	Action    string           `json:"action"`
+	Origin    string           `json:"origin"`
+	Reason    string           `json:"reason"`
+	Status    string           `json:"status"`
+	// SupersededRelation/SupersededAction remember the tuple a human replaced
+	// with decision="modify", so a later automated run that re-proposes it is
+	// rejected instead of silently resurrecting the corrected candidate.
+	SupersededRelation string    `json:"superseded_relation,omitempty"`
+	SupersededAction   string    `json:"superseded_action,omitempty"`
+	Confidence         float64   `json:"confidence"`
+	ActorID            string    `json:"actor_id"`
+	Version            int64     `json:"version"`
+	CreatedAt          time.Time `json:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at"`
 }
 type DependencyEdgeInput struct {
 	ExpectedContextRevision int64            `json:"expected_context_revision"`
@@ -47,6 +52,12 @@ type DependencyDecisionInput struct {
 	ExpectedVersion int64  `json:"expected_version"`
 	Decision        string `json:"decision"`
 	Reason          string `json:"reason"`
+	// Optional rebinding for decision="modify". Pointer and omitempty keep the
+	// existing confirm/reject payloads byte-for-byte backward compatible, and
+	// let "modify" distinguish "leave this field alone" from "set it to empty".
+	Relation   *string  `json:"relation,omitempty"`
+	Action     *string  `json:"action,omitempty"`
+	Confidence *float64 `json:"confidence,omitempty"`
 }
 type ImpactCause struct {
 	EdgeID string           `json:"edge_id"`
