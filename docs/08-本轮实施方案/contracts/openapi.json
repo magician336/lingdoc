@@ -13999,7 +13999,14 @@
         ],
         "responses": {
           "200": {
-            "description": "变更集列表"
+            "description": "变更集列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetListResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "资源不存在或不可访问"
@@ -14084,7 +14091,14 @@
         },
         "responses": {
           "201": {
-            "description": "已生成变更预览与迁移/影响摘要"
+            "description": "已生成变更预览与迁移/影响摘要",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "请求错误或迁移失败"
@@ -14130,7 +14144,14 @@
         ],
         "responses": {
           "200": {
-            "description": "变更预览"
+            "description": "变更预览",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "资源不存在或不可访问"
@@ -14871,20 +14892,17 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object"
-              },
-              "example": {}
-            }
-          }
-        },
+        "description": "仅凭路径与原 Idempotency-Key 重评，必须发送 0 字节请求体；不得发送 {}、null 或空白。权限与当前基线由服务端重新核验。",
         "responses": {
           "201": {
-            "description": "已在当前基线上创建新的评估；原过期记录保留"
+            "description": "已在当前基线上创建新的重评结果；目标值已全部满足时返回 satisfied，原过期记录保留",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                }
+              }
+            }
           },
           "404": {
             "description": "资源不存在或不可访问"
@@ -14894,6 +14912,9 @@
           },
           "422": {
             "description": "当前状态不允许"
+          },
+          "400": {
+            "description": "请求体必须为空，且 Idempotency-Key 格式无效时拒绝"
           }
         },
         "x-domain": "workspace",
@@ -15845,6 +15866,168 @@
         "x-domain": "template-governance",
         "x-delivery-phase": "core"
       }
+    },
+    "/projects/{projectId}/change-sets/drafts": {
+      "post": {
+        "operationId": "createChangeDraft",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "创建研究条件或语义变更草稿，正式对象保持不变",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendedChangeSetInput"
+              },
+              "example": {
+                "expected_context_revision": 1,
+                "reason": "合成演示：调整研究目标，仅准备草稿等待人工评估",
+                "fields": {
+                  "research_goal": {
+                    "old_value": "验证文档整理流程",
+                    "new_value": "验证证据定位与文档整理流程"
+                  }
+                },
+                "affected_chapter_ids": [
+                  "chapter-1"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已创建草稿；需另行 Assess 和 Owner Apply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误或迁移失败"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "版本或幂等冲突"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/change-sets/{changeSetId}/draft": {
+      "put": {
+        "operationId": "editChangeDraft",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "编辑尚未应用的变更草稿",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExtendedChangeSetInput"
+              },
+              "example": {
+                "expected_context_revision": 1,
+                "reason": "合成演示：调整研究目标，仅准备草稿等待人工评估",
+                "fields": {
+                  "research_goal": {
+                    "old_value": "验证文档整理流程",
+                    "new_value": "验证证据定位与文档整理流程"
+                  }
+                },
+                "affected_chapter_ids": [
+                  "chapter-1"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "请求错误或迁移失败"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "版本或幂等冲突"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          },
+          "200": {
+            "description": "已保存当前草稿",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
     }
   },
   "components": {
@@ -16403,6 +16586,11 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 2000
+          },
+          "reverses_change_set_id": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "原已应用的普通字段 ChangeSet；仅用于创建其反向提案"
           },
           "template_upgrade": {
             "$ref": "#/components/schemas/TemplateUpgradeInput"
@@ -19897,6 +20085,603 @@
           "meta"
         ],
         "additionalProperties": false
+      },
+      "ChangeSetField": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "old_value": {
+            "type": "string"
+          },
+          "new_value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "old_value",
+          "new_value"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeImpact": {
+        "type": "object",
+        "properties": {
+          "chapter_id": {
+            "type": "string"
+          },
+          "chapter_version_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "title": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "reviewed",
+              "stale"
+            ]
+          }
+        },
+        "required": [
+          "chapter_id",
+          "title",
+          "reason",
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeSet": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "reassessed_from_id": {
+            "type": "string"
+          },
+          "reverses_change_set_id": {
+            "type": "string",
+            "description": "此提案反向撤回的原 ChangeSet ID"
+          },
+          "stale_reason": {
+            "type": "string"
+          },
+          "decision_by": {
+            "type": "string",
+            "description": "应用或驳回该变更的当前 Owner；尚未作出决定时省略"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Owner 应用或驳回该变更的 UTC 时间；尚未作出决定时省略"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "assessed",
+              "applied",
+              "rejected",
+              "stale",
+              "stabilized",
+              "satisfied"
+            ]
+          },
+          "base_context_revision": {
+            "type": "integer"
+          },
+          "target_context_revision": {
+            "type": "integer",
+            "nullable": true
+          },
+          "base_spec_revision": {
+            "type": "integer"
+          },
+          "target_spec_revision": {
+            "type": "integer",
+            "nullable": true
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeSetField"
+            }
+          },
+          "impacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeImpact"
+            }
+          },
+          "template_upgrade": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "applied_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "semantic_deltas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/G3SemanticDelta"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "created_by",
+          "reason",
+          "status",
+          "base_context_revision",
+          "base_spec_revision",
+          "fields",
+          "impacts",
+          "created_at"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeSetResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ChangeSet"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "ChangeSetListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChangeSet"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "G3EvidenceVersionRef": {
+        "type": "object",
+        "required": [
+          "id",
+          "version"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "EvidenceCardSemanticInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claim_ref",
+          "anchor_refs",
+          "support_type",
+          "scope",
+          "scope_chapter_ids",
+          "confirmed"
+        ],
+        "properties": {
+          "claim_ref": {
+            "$ref": "#/components/schemas/G3EvidenceVersionRef"
+          },
+          "anchor_refs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/components/schemas/G3EvidenceVersionRef"
+            }
+          },
+          "support_type": {
+            "type": "string",
+            "enum": [
+              "supports",
+              "refutes",
+              "qualifies",
+              "background"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "minLength": 1
+          },
+          "scope_chapter_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "limitations": {
+            "type": "string"
+          },
+          "gaps": {
+            "type": "string"
+          },
+          "alternative_explanation": {
+            "type": "string"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        },
+        "description": "仅提交证据关系语义；不接收 status、confirmation、source_ids 等权威字段。Owner Apply 追加 CANDIDATE 版本，并使相关正式消费者进入复核；不继承旧核对记录。"
+      },
+      "G3SemanticDelta": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "target_id",
+          "expected_version"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ResearchClaim",
+              "ProjectAssetScope",
+              "RuleBinding",
+              "RouteNode",
+              "EvidenceCard"
+            ]
+          },
+          "target_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "before": {
+            "type": "object",
+            "readOnly": true
+          },
+          "before_hash": {
+            "type": "string",
+            "readOnly": true
+          },
+          "provenance_hash": {
+            "type": "string",
+            "readOnly": true
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "readOnly": true
+          },
+          "proposed_claim": {
+            "type": "object",
+            "description": "既有 SaveResearchClaimInput 语义，必须显式 confirmed；服务端严格解码。"
+          },
+          "proposed_asset_policy": {
+            "type": "object",
+            "description": "既有 ProjectAssetPolicy；当前授权仍由服务端重检。"
+          },
+          "proposed_binding": {
+            "$ref": "#/components/schemas/RuleBindingOverride"
+          },
+          "proposed_route": {
+            "type": "object",
+            "description": "既有 RouteNode 提案；名称、inputs、required 与 status 由服务端验证。"
+          },
+          "proposed_card": {
+            "$ref": "#/components/schemas/EvidenceCardSemanticInput"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "proposed_claim"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "ResearchClaim"
+                ]
+              },
+              "expected_version": {
+                "minimum": 1
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "proposed_asset_policy"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_binding"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_route"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_card"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "proposed_asset_policy"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "ProjectAssetScope"
+                ]
+              },
+              "expected_version": {
+                "minimum": 1
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "proposed_claim"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_binding"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_route"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_card"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "proposed_binding"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "RuleBinding"
+                ]
+              },
+              "expected_version": {
+                "minimum": 1
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "proposed_claim"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_asset_policy"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_route"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_card"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "proposed_route"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "RouteNode"
+                ]
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "proposed_claim"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_asset_policy"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_binding"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_card"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "required": [
+              "proposed_card"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "EvidenceCard"
+                ]
+              },
+              "expected_version": {
+                "minimum": 1
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "proposed_claim"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_asset_policy"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_binding"
+                  ]
+                },
+                {
+                  "required": [
+                    "proposed_route"
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "ExtendedChangeSetInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_context_revision",
+          "reason"
+        ],
+        "properties": {
+          "expected_context_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "old_value",
+                "new_value"
+              ],
+              "properties": {
+                "old_value": {
+                  "type": "string"
+                },
+                "new_value": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "affected_chapter_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "semantic_deltas": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/G3SemanticDelta"
+            }
+          }
+        },
+        "description": "创建或编辑草稿不改正式对象。需服务端当前版本、权限和全部旧/拟议来源核对；评估后由当前 Owner 独立 Apply。 同一批次不能修改相互关联的 ResearchClaim 与 EvidenceCard（包括卡原关联与拟议关联），请分两次正式变更，并对新主张版本重新复核证据卡。"
       }
     }
   },

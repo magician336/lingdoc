@@ -657,7 +657,7 @@ func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 		t.Fatalf("preview delegation: status=%d called=%v input=%#v key=%q body=%s", response.Code, service.called, service.changeSetInput, service.changeSetKey, response.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reassess", strings.NewReader(`{}`)).WithContext(ctx)
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reassess", nil).WithContext(ctx)
 	request.Header.Set("Idempotency-Key", "change-reassess-1")
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
@@ -707,5 +707,24 @@ func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 	}
 	if body.Error.Code != "version_conflict" {
 		t.Fatalf("error code = %q, want version_conflict; body=%s", body.Error.Code, response.Body.String())
+	}
+}
+
+func TestReassessChangeSetRejectsAnyRequestBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service := &applicationServiceStub{}
+	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	for _, body := range []string{`{}`, `{`, ` `} {
+		request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/change-1/reassess", strings.NewReader(body)).WithContext(ctx)
+		request.Header.Set("Idempotency-Key", "change-reassess-body")
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest || service.reassessCalled {
+			t.Fatalf("body %q: status=%d delegated=%v body=%s", body, response.Code, service.reassessCalled, response.Body.String())
+		}
 	}
 }

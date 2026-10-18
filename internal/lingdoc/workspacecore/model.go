@@ -209,6 +209,9 @@ type ChangeSet struct {
 	ProjectID             string             `json:"project_id"`
 	CreatedBy             string             `json:"created_by"`
 	ReassessedFromID      string             `json:"reassessed_from_id,omitempty"`
+	ReversesChangeSetID   string             `json:"reverses_change_set_id,omitempty"`
+	DecisionBy            string             `json:"decision_by,omitempty"`
+	DecidedAt             *time.Time         `json:"decided_at,omitempty"`
 	StaleReason           string             `json:"stale_reason,omitempty"`
 	Reason                string             `json:"reason"`
 	Status                string             `json:"status"`
@@ -265,6 +268,7 @@ type CreateChangeSetInput struct {
 	Fields                  map[string]ChangeFieldInput `json:"fields"`
 	AffectedChapterIDs      []string                    `json:"affected_chapter_ids"`
 	Reason                  string                      `json:"reason"`
+	ReversesChangeSetID     string                      `json:"reverses_change_set_id,omitempty"`
 	TemplateUpgrade         *TemplateUpgradeInput       `json:"template_upgrade,omitempty"`
 }
 

@@ -80,7 +80,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_projects":                {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
 }
 
-const expectedSQLiteMigrationVersion = 42
+const expectedSQLiteMigrationVersion = 43
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

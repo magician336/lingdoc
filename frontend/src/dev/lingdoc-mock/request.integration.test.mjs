@@ -31,7 +31,7 @@ function requestModule() {
     require: name => { if (!(name in imports)) throw new Error('Unisolated import: ' + name); return imports[name] },
   })
   new vm.Script(compiled, { filename: 'actual-request.ts' }).runInContext(context)
-  return { get: module.exports.get, refreshCalls: () => refreshCalls }
+  return { get: module.exports.get, post: module.exports.post, postNoBody: module.exports.postNoBody, refreshCalls: () => refreshCalls }
 }
 
 test('real request.ts + Axios preserve mock success and structured 422', async () => {
@@ -58,6 +58,52 @@ test('real request.ts + Axios preserve mock success and structured 422', async (
     assert.equal(error.request_id, 't06')
     return true
   })
+  assert.equal(request.refreshCalls(), 0)
+})
+
+test('bodyless POST keeps undefined through real Axios JSON transforms and serializes zero bytes', async () => {
+  const request = requestModule()
+  const calls = []
+  const adapter = async config => {
+    // Axios dispatchRequest has already run the real configured JSON transform.
+    // Request constructs an actual fetch-compatible payload, with no socket IO.
+    const wire = new Request(new URL(config.url, config.baseURL), {
+      method: config.method,
+      headers: config.headers.toJSON(),
+      body: config.data,
+    })
+    const bytes = new Uint8Array(await wire.arrayBuffer())
+    calls.push({ config, bytes, text: new TextDecoder().decode(bytes) })
+    return { data: { data: { status: 'satisfied' } }, status: 201, statusText: 'Created', headers: {}, config }
+  }
+  const path = '/api/v1/lingdoc/projects/project%2Fother/change-sets/stale%3Fother/reassess'
+  const config = { adapter, headers: { 'Idempotency-Key': 'reassess-original-001' } }
+  const result = await request.postNoBody(path, config)
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].config.url, path)
+  assert.equal(calls[0].config.method, 'post')
+  assert.equal(calls[0].config.data, undefined)
+  assert.equal(calls[0].bytes.byteLength, 0)
+  assert.equal(calls[0].config.headers.get('Content-Type'), 'application/json')
+  assert.equal(calls[0].config.headers.get('Idempotency-Key'), 'reassess-original-001')
+  assert.equal(calls[0].config.headers.get('X-Tenant-ID'), '7')
+  assert.equal(result.data.status, 'satisfied')
+  assert.equal(result.$httpStatus, 201)
+
+  // Preserve existing JSON POST behavior. null is four bytes under this
+  // application's JSON content type and is not a valid bodyless workaround.
+  await request.post(path, {}, config)
+  await request.post(path, null, config)
+  assert.equal(calls[1].text, '{}')
+  assert.equal(calls[2].text, 'null')
+  assert.equal(calls[2].bytes.byteLength, 4)
+
+  // A caller config cannot accidentally reintroduce a data/url/method value.
+  await request.postNoBody(path, { ...config, data: { unwanted: true }, method: 'put', url: '/other' })
+  assert.equal(calls[3].config.url, path)
+  assert.equal(calls[3].config.method, 'post')
+  assert.equal(calls[3].config.data, undefined)
+  assert.equal(calls[3].bytes.byteLength, 0)
   assert.equal(request.refreshCalls(), 0)
 })
 

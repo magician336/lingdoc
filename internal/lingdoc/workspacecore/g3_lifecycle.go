@@ -77,6 +77,20 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 	if err := validateExtendedChangeInput(input); err != nil {
 		return nil, 0, false, err
 	}
+	// Prepare outside runOperation as well so the mutation closure captures
+	// the exact prepared context needed by its native sidecar update.
+	id := OperationIdentity{Actor: actor, Operation: string(operationEditChangeDraft), Target: projectID + "/" + changeID, Key: key}
+	prepared, cached, err := s.g1PrepareCachedChangeOperation(ctx, actor, authorizationRequest(actor, projectID, AuthorizationWrite, ""), id, input)
+	if err != nil {
+		return nil, 0, isReplayPayloadDecodeError(err), err
+	}
+	if !cached {
+		prepared, err = s.g1PrepareOperation(ctx, actor, string(operationEditChangeDraft), projectID+"/"+changeID, projectID, input)
+		if err != nil {
+			return nil, 0, false, err
+		}
+	}
+	ctx = prepared
 	return runOperation(s, ctx, actor, sourceOperationInput(operationEditChangeDraft, projectID+"/"+changeID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
 		if p.Status != "active" || p.CurrentContextRevision != input.ExpectedContextRevision {
 			return operationResult[ChangeSet]{}, ErrVersionConflict
@@ -97,6 +111,9 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		}
 		if old.BaseContextRevision != p.CurrentContextRevision || old.BaseSpecRevision != p.SpecRevision {
 			return operationResult[ChangeSet]{}, ErrVersionConflict
+		}
+		if err := validateChangeTemplateInput(p, input.Fields); err != nil {
+			return operationResult[ChangeSet]{}, err
 		}
 		next := old
 		next.Status = "draft"
@@ -130,6 +147,9 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		if err := store.UpdateChangeSet(old, next); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
+		if err := storeAgentChangeDraftEditFields(ctx, tx, p, old, next, input); err != nil {
+			return operationResult[ChangeSet]{}, err
+		}
 		if err := g3Audit(tx, actor, projectID, "change_set.edit", changeID, map[string]any{"status": "draft"}); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
@@ -137,109 +157,7 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 	})
 }
 func (s *Service) ReverseChangeSet(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
-	var p Project
-	var change ChangeSet
-	var baseline ContextRevisionRecord
-	var templateCopy ProjectTemplateCopy
-	var inverse []SemanticDelta
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		var err error
-		p, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
-		if err != nil {
-			return err
-		}
-		if !projectOwner(p, actor.UserID) {
-			return ErrNotFound
-		}
-		store, ok := tx.(changeSetTransaction)
-		if !ok {
-			return ErrInvalidState
-		}
-		change, err = store.ChangeSet(projectID, changeID)
-		if err != nil {
-			return err
-		}
-		if !slices.Contains([]string{"applied", "stabilized"}, change.Status) {
-			return ErrInvalidState
-		}
-		inverse, err = BuildInverseSemanticDeltas(tx, p, change)
-		if err != nil {
-			return err
-		}
-		if change.TemplateUpgrade != nil {
-			records, ok := tx.(interface {
-				ContextRevisions(string) ([]ContextRevisionRecord, error)
-			})
-			if !ok {
-				return ErrInvalidState
-			}
-			history, err := records.ContextRevisions(projectID)
-			if err != nil {
-				return err
-			}
-			found := false
-			for _, revision := range history {
-				if revision.Revision == change.BaseContextRevision {
-					baseline = revision
-					found = true
-				}
-			}
-			if !found {
-				return ErrInvalidState
-			}
-			reader, ok := tx.(interface {
-				ProjectTemplateCopy(uint64, string, int64) (ProjectTemplateCopy, error)
-			})
-			if !ok {
-				return ErrInvalidState
-			}
-			templateCopy, err = reader.ProjectTemplateCopy(actor.TenantID, projectID, change.TemplateUpgrade.BaseTemplateCopyVersion)
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, 0, false, err
-	}
-	prepared, err := s.g1PrepareChangeProvenance(ctx, actor, change, map[string]bool{})
-	if err != nil {
-		return nil, 0, false, err
-	}
-	ctx = context.WithValue(prepared, g1ReverseSourceKey{}, change.ID)
-	if change.TemplateUpgrade != nil {
-		if err := s.AssertFrozenProjectProvenance(ctx, actor, projectID, baseline.Spec, baseline.SpecProvenance, false); err != nil {
-			return nil, 0, false, err
-		}
-	}
-	fields := map[string]ChangeFieldInput{}
-	for _, delta := range change.Fields {
-		if p.Spec[delta.Key] != delta.NewValue {
-			return nil, 0, false, ErrVersionConflict
-		}
-		fields[delta.Key] = ChangeFieldInput{OldValue: delta.NewValue, NewValue: delta.OldValue}
-	}
-	input := CreateChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision, Reason: "逆向变更 " + changeID, Fields: fields, AffectedChapterIDs: []string{}}
-	for _, impact := range change.Impacts {
-		input.AffectedChapterIDs = append(input.AffectedChapterIDs, impact.ChapterID)
-	}
-	if change.TemplateUpgrade != nil {
-		definition := templateCopy.Definition
-		input.TemplateUpgrade = &TemplateUpgradeInput{ExpectedProjectVersion: p.ProjectVersion, ExpectedTemplateCopyVersion: p.TemplateCopyVersion, Fields: definition.Fields, Sections: definition.Sections, Terms: definition.Terms, RequiredFields: definition.RequiredFields, Rules: definition.Rules, FieldValues: maps.Clone(baseline.Spec)}
-	}
-	if len(inverse) > 0 {
-		if input.TemplateUpgrade != nil {
-			return nil, 0, false, ErrInvalidRequest
-		}
-		return s.CreateChangeDraft(ctx, actor, projectID, key, ExtendedChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision, Reason: input.Reason, Fields: fields, AffectedChapterIDs: input.AffectedChapterIDs, SemanticDeltas: inverse})
-	}
-	// Reverse is a new assessed proposal. Only the existing Owner apply action
-	// can advance the revision, after all current-source/impact checks.
-	return s.CreateChangeSet(ctx, actor, projectID, key, input)
+	return s.reverseChangeSetOperation(ctx, actor, projectID, changeID, key)
 }
 func recordContextRevisionSnapshot(t gormTransaction, p Project, change ChangeSet) error {
 	var old ContextRevisionRecord

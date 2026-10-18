@@ -304,6 +304,12 @@ func G3OperationSourceIDs(tx Transaction, op, target, projectID string, body any
 	// Replays of applied proposals check original cited sources plus the actual
 	// current objects. They do not require a second revision application.
 	if op == "applyChangeSet" {
+		// SATISFIED is intentionally assessment-free and terminal. Current
+		// project/Owner authorization already ran before this decoder; reject
+		// the invalid business action instead of reading a nonexistent plan.
+		if change.Status == "satisfied" {
+			return nil, ErrInvalidState
+		}
 		store, ok := tx.(impactTransaction)
 		if !ok {
 			return nil, ErrInvalidState

@@ -61,6 +61,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 		t.Fatalf("seed context revision: %v", err)
 	}
 
+	seedDeliveryBoundTemplateCopy(t, db, "g3-delivery-copy")
 	service, ok := testRuntime(handler).service.(*Service)
 	if !ok {
 		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
@@ -70,6 +71,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read project: %v", err)
 	}
+	assertDeliveryBoundTemplatePrerequisites(t, service, policyContext(), actor, project)
 	if project.CurrentContextRevision != 1 || project.SpecRevision != deliverySpecRevision {
 		t.Fatalf("initial revisions = context %d spec %d", project.CurrentContextRevision, project.SpecRevision)
 	}

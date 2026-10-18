@@ -9,6 +9,8 @@ import (
 
 func g2FullError(c *gin.Context, err error) {
 	switch {
+	case errors.Is(err, core.ErrFormalChangeRequired):
+		sendErrorDetails(c, 422, "invalid_state", "该对象已确认或进入正式依据，请在“正式变更”中建立 G3 草稿，评估后由 Owner 应用。", nil)
 	case errors.Is(err, core.ErrG2ConsentRequired):
 		sendErrorDetails(c, 422, "confirmation_required", "请明确核对范围并确认该操作。", nil)
 	case errors.Is(err, core.ErrG2EvidenceIncomplete):

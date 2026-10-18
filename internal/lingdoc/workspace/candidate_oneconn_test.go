@@ -55,6 +55,51 @@ type candidateOneConnFixture struct {
 	card      core.EvidenceCard
 }
 
+// The old delivery fixture starts with a hand-written active project, so it
+// intentionally skips CreateProject/ActivateProject. Reuse the server-hashed
+// bound-copy seed here whenever that fixture exercises modern G3 mutations.
+// This is the existing one-connection fixture's copy seed, not a product repair.
+func seedDeliveryBoundTemplateCopy(t *testing.T, db *gorm.DB, copyID string) {
+	t.Helper()
+	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS lingdoc_project_template_copies(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,source_template_id TEXT NOT NULL,source_template_version TEXT NOT NULL,version INTEGER NOT NULL,status TEXT NOT NULL,content_hash TEXT NOT NULL,ruleset_hash TEXT NOT NULL,definition_json TEXT NOT NULL,created_by TEXT NOT NULL,created_at DATETIME NOT NULL,UNIQUE(project_id,version))`).Error)
+	definition, err := core.ContractDemoTemplate{}.Get("template-demo", "1")
+	require.NoError(t, err)
+	definition, err = template.WithHashes(definition)
+	require.NoError(t, err)
+	definitionJSON, err := json.Marshal(definition)
+	require.NoError(t, err)
+	require.NoError(t, db.Exec(`INSERT INTO lingdoc_project_template_copies(id,project_id,source_template_id,source_template_version,version,status,content_hash,ruleset_hash,definition_json,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, copyID, "project-1", "template-demo", "1", 1, core.TemplateCopyBound, definition.ContentHash, definition.RulesetHash, string(definitionJSON), "reader", time.Now().UTC()).Error)
+	require.NoError(t, db.Exec("UPDATE lingdoc_projects SET current_context_revision=1,template_copy_version=1 WHERE id=?", "project-1").Error)
+}
+
+func assertDeliveryBoundTemplatePrerequisites(t *testing.T, service *core.Service, ctx context.Context, actor core.Actor, project core.Project) {
+	t.Helper()
+	require.Equal(t, "active", project.Status)
+	require.NotNil(t, project.TemplateCopy, "modern G3 fixture must load its real server-owned template copy")
+	require.Positive(t, project.TemplateCopyVersion)
+	copy, err := service.GetTemplateCopy(ctx, actor, project.ID, project.TemplateCopyVersion)
+	require.NoError(t, err)
+	require.Equal(t, core.TemplateCopyBound, copy.Status)
+	require.Equal(t, project.ID, copy.ProjectID)
+	require.Equal(t, project.TemplateCopyVersion, copy.Version)
+	require.Equal(t, project.TemplateID, copy.SourceTemplateID)
+	require.Equal(t, project.TemplateVersion, copy.SourceTemplateVersion)
+	definition, err := template.WithHashes(copy.Definition)
+	require.NoError(t, err)
+	require.Equal(t, definition.ContentHash, copy.ContentHash)
+	require.Equal(t, definition.RulesetHash, copy.RulesetHash)
+	require.Equal(t, copy.ContentHash, project.TemplateCopy.ContentHash)
+	owner := false
+	for _, member := range project.Members {
+		if member.UserID == actor.UserID && (member.Role == "owner" || member.GovernanceRole == "owner") && (member.Status == "" || member.Status == "active") {
+			owner = true
+		}
+	}
+	require.True(t, owner, "fixture actor must be the current active project Owner")
+	require.NoError(t, service.Authorize(ctx, actor, project.ID, "manage"))
+	require.NoError(t, service.Authorize(ctx, actor, project.ID, "write"))
+}
+
 // Only an external sharing service is stubbed; same-tenant access takes the
 // existing owner branch. Core, SourceRuntime, G2ResearchAdapter, bindings,
 // original text, model consent and adoption persistence are actual adapters.
@@ -67,7 +112,6 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 		`CREATE TABLE knowledge_bases(id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,chunking_config TEXT,deleted_at DATETIME)`,
 		`CREATE TABLE lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,
 		`CREATE TABLE lingdoc_g2_object_versions(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id,version))`,
-		`CREATE TABLE lingdoc_project_template_copies(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,source_template_id TEXT NOT NULL,source_template_version TEXT NOT NULL,version INTEGER NOT NULL,status TEXT NOT NULL,content_hash TEXT NOT NULL,ruleset_hash TEXT NOT NULL,definition_json TEXT NOT NULL,created_by TEXT NOT NULL,created_at DATETIME NOT NULL,UNIQUE(project_id,version))`,
 		`CREATE TABLE lingdoc_working_copies(project_id TEXT NOT NULL,chapter_id TEXT NOT NULL,base_chapter_version_id TEXT,spec_revision INTEGER NOT NULL,working_copy_revision INTEGER NOT NULL,body_markdown TEXT NOT NULL,source_ids_json TEXT NOT NULL,citation_usages_json TEXT NOT NULL,review_items_json TEXT NOT NULL,created_at DATETIME,updated_at DATETIME,PRIMARY KEY(project_id,chapter_id))`,
 	} {
 		require.NoError(t, db.Exec(ddl).Error)
@@ -78,14 +122,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	require.NoError(t, os.WriteFile(originPath, []byte(sourcePolicyQuote), 0600))
 	require.NoError(t, db.Exec("UPDATE knowledges SET file_type='txt',file_path=? WHERE id=?", originPath, "knowledge-1").Error)
 	require.NoError(t, db.Exec("UPDATE chunks SET source_content=content WHERE id=?", "source-1").Error)
-	definition, err := core.ContractDemoTemplate{}.Get("template-demo", "1")
-	require.NoError(t, err)
-	definition, err = template.WithHashes(definition)
-	require.NoError(t, err)
-	definitionJSON, err := json.Marshal(definition)
-	require.NoError(t, err)
-	require.NoError(t, db.Exec(`INSERT INTO lingdoc_project_template_copies(id,project_id,source_template_id,source_template_version,version,status,content_hash,ruleset_hash,definition_json,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, "actual-copy", "project-1", "template-demo", "1", 1, core.TemplateCopyBound, definition.ContentHash, definition.RulesetHash, string(definitionJSON), "reader", time.Now().UTC()).Error)
-	require.NoError(t, db.Exec("UPDATE lingdoc_projects SET current_context_revision=1,template_copy_version=1 WHERE id=?", "project-1").Error)
+	seedDeliveryBoundTemplateCopy(t, db, "actual-copy")
 	// A second, genuinely bound asset is deliberately excluded from generation.
 	require.NoError(t, db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status) VALUES(?,?,?,?,?,?,?,?,?,?)`, "unused-knowledge", 7, "kb-1", "file", "Unused synthetic", "txt", 0, "unused-hash", "", "completed").Error)
 	shares := candidateOneConnShares{}
@@ -95,7 +132,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewG2ResearchAdapter(db, projects, runtime, shares, nil, nil)
 	projects.ConfigureG2(core.G2Runtime{Sources: adapter})
-	_, err = runtime.bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "unused-knowledge", KnowledgeBaseID: "kb-1", CreatedBy: "reader", Title: "Unused synthetic", Signal: evidence.KnowledgeSignal{KnowledgeID: "unused-knowledge", ParseStatus: "completed", FileHash: "unused-hash"}})
+	_, err := runtime.bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "unused-knowledge", KnowledgeBaseID: "kb-1", CreatedBy: "reader", Title: "Unused synthetic", Signal: evidence.KnowledgeSignal{KnowledgeID: "unused-knowledge", ParseStatus: "completed", FileHash: "unused-hash"}})
 	require.NoError(t, err)
 	actor := core.Actor{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}
 	ctx := types.WithExecutionTenant(types.WithCaller(policyContext(), types.Caller{TenantID: 7, UserID: "reader", Role: types.TenantRoleOwner}), 7)

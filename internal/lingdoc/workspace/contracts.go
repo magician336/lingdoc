@@ -74,7 +74,6 @@ type WorkspaceReadApplication interface {
 
 // WorkspaceWriteApplication is the route-facing mutation port.
 type WorkspaceWriteApplication interface {
-	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	CreateProjectResult(context.Context, Actor, string, CreateProjectInput) (CreateProjectResult, error)
 	SaveSpecResult(context.Context, Actor, string, string, SaveSpecInput) (SaveSpecResult, error)
 	ActivateProjectResult(context.Context, Actor, string, string, ActivateProjectInput) (ProjectMutationResult, error)
@@ -94,6 +93,7 @@ type WorkspaceWriteApplication interface {
 	CommitWorkingCopyResult(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (CommittedChapterMutationResult, error)
 	RestoreWorkingCopyResult(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (WorkingCopyMutationResult, error)
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }
@@ -156,10 +156,10 @@ type TemplateApplication interface {
 // ChangeSetApplication is the focused application port for context-change
 // assessment and its explicit apply/reject lifecycle.
 type ChangeSetApplication interface {
-	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
 	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }

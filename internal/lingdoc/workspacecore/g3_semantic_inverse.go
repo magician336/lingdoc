@@ -21,11 +21,27 @@ func BuildInverseSemanticDeltas(tx Transaction, p Project, change ChangeSet) ([]
 		if err != nil {
 			return nil, err
 		}
-		if version != delta.ExpectedVersion+1 || len(delta.Before) == 0 {
+		// Evidence source confirmation appends a lifecycle version without
+		// changing the relation. Its exact meaning is checked below, then the
+		// inverse pins this current version and rechecks all current sources.
+		if len(delta.Before) == 0 || version < delta.ExpectedVersion+1 || (delta.Kind != "EvidenceCard" && version != delta.ExpectedVersion+1) {
 			return nil, ErrVersionConflict
 		}
 		inverse := SemanticDelta{Kind: delta.Kind, TargetID: delta.TargetID, ExpectedVersion: version}
 		switch delta.Kind {
+		case "EvidenceCard":
+			var old, now EvidenceCard
+			if err := json.Unmarshal(delta.Before, &old); err != nil {
+				return nil, err
+			}
+			if err := json.Unmarshal(current.Body, &now); err != nil {
+				return nil, err
+			}
+			if delta.ProposedCard == nil || !sameCardSemanticInput(cardSemanticInput(now), *delta.ProposedCard) {
+				return nil, ErrVersionConflict
+			}
+			input := cardSemanticInput(old)
+			inverse.ProposedCard = &input
 		case "ResearchClaim":
 			var old ResearchClaim
 			if err := json.Unmarshal(delta.Before, &old); err != nil {

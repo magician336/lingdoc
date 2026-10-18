@@ -328,6 +328,12 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 // changed text, scope, consent, binding or route requires a fresh human draft.
 func semanticMeaning(kind string, body json.RawMessage) (any, error) {
 	switch kind {
+	case "EvidenceCard":
+		var value EvidenceCard
+		if e := json.Unmarshal(body, &value); e != nil {
+			return nil, e
+		}
+		return cardSemanticInput(value), nil
 	case "ResearchClaim":
 		var value ResearchClaim
 		if e := json.Unmarshal(body, &value); e != nil {

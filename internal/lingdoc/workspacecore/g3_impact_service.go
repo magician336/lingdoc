@@ -853,47 +853,7 @@ func (s *Service) CreateChangeDraft(ctx context.Context, actor Actor, projectID,
 	if err := validateExtendedChangeInput(input); err != nil {
 		return nil, 0, false, err
 	}
-	return runOperation(s, ctx, actor, sourceOperationInput(operationCreateChangeDraft, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
-		if p.Status != "active" || p.CurrentContextRevision != input.ExpectedContextRevision {
-			return operationResult[ChangeSet]{}, ErrVersionConflict
-		}
-		store, ok := tx.(changeSetTransaction)
-		if !ok {
-			return operationResult[ChangeSet]{}, ErrInvalidState
-		}
-		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, Reason: input.Reason, Status: "draft", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: time.Now().UTC()}
-		keys := make([]string, 0, len(input.Fields))
-		for key := range input.Fields {
-			keys = append(keys, key)
-		}
-		slices.Sort(keys)
-		for _, key := range keys {
-			field := input.Fields[key]
-			if p.Spec[key] != field.OldValue {
-				return operationResult[ChangeSet]{}, ErrVersionConflict
-			}
-			change.Fields = append(change.Fields, ChangeFieldDelta{Key: key, OldValue: field.OldValue, NewValue: field.NewValue})
-		}
-		for _, id := range input.AffectedChapterIDs {
-			chapter, err := tx.Chapter(projectID, id)
-			if err != nil {
-				return operationResult[ChangeSet]{}, err
-			}
-			change.Impacts = append(change.Impacts, ChangeImpact{ChapterID: id, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: input.Reason, Status: "open"})
-		}
-		pinned, err := s.PinSemanticDeltas(ctx, tx, actor, p, change.ID, input.SemanticDeltas)
-		if err != nil {
-			return operationResult[ChangeSet]{}, err
-		}
-		change.SemanticDeltas = pinned
-		if err := store.InsertChangeSet(change); err != nil {
-			return operationResult[ChangeSet]{}, err
-		}
-		if err := g3Audit(tx, actor, projectID, "change_set.draft", change.ID, nil); err != nil {
-			return operationResult[ChangeSet]{}, err
-		}
-		return operationResult[ChangeSet]{Value: change, Status: operationStatusCreated}, nil
-	})
+	return runOperation(s, ctx, actor, sourceOperationInput(operationCreateChangeDraft, projectID, key, input, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], s.createChangeDraftMutation(ctx, actor, projectID, input))
 }
 func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
 	return runOperation(s, ctx, actor, sourceOperationInput(operationAssessChangeSet, projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, authorizationRequest(actor, projectID, AuthorizationWrite, ""), impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ChangeSet], error) {
@@ -910,6 +870,9 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 		}
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
 			return operationResult[ChangeSet]{}, ErrVersionConflict
+		}
+		if err := validateChangeTemplateFields(p, change.Fields); err != nil {
+			return operationResult[ChangeSet]{}, err
 		}
 		if err := AssessChangeImpact(tx, p, change); err != nil {
 			return operationResult[ChangeSet]{}, err

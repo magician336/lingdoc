@@ -108,6 +108,16 @@ func (e *G2ActionExecutor) ExecuteAgentAction(ctx context.Context, actor core.Ac
 		}
 		input.Confirmed = true
 		raw, _, _, err = e.projects.ConfirmEvidenceCard(ctx, actor, proposal.ProjectID, proposal.TargetID, key, input)
+	case "create_change_set":
+		input, cause := core.DecodeAgentChangeDraftInput(proposal.ProjectID, proposal.TargetID, proposal.Basis.ContextRevision, proposal.Input)
+		if cause != nil {
+			return nil, cause
+		}
+		prepared, cause := e.projects.PrepareAgentChangeDraft(ctx, actor, proposal, input)
+		if cause != nil {
+			return nil, cause
+		}
+		raw, _, _, err = e.projects.CreateChangeDraft(prepared, actor, proposal.ProjectID, key, input.ExtendedChangeSetInput)
 	case "apply_change_set":
 		var input struct{}
 		if err = g2ActionInput(proposal.Input, &input); err != nil {

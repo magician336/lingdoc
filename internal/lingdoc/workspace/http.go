@@ -388,6 +388,8 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 409, "outcome_unknown", "原操作结果尚待核对，请勿重复执行。"
 	case errors.Is(err, core.ErrG2Unavailable):
 		status, code, message = 503, "dependency_unavailable", "资料或模型能力暂不可用。"
+	case errors.Is(err, core.ErrSemanticBatchStagingRequired):
+		status, code, message = 400, "invalid_request", "关联主张与证据卡请分两次正式变更：先应用主张，再按新主张版本复核并提交证据卡变更。"
 	case errors.Is(err, ErrInvalidRequest):
 		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
 	case errors.Is(err, evidence.ErrInvalidBinding):
@@ -1273,6 +1275,15 @@ func (h *Handler) reassessChangeSet(c *gin.Context) {
 	key, ok := idempotencyKey(c)
 	if !ok {
 		return
+	}
+	// Reassessment has no client payload. Read at most one byte so even
+	// whitespace or a misleading Content-Length cannot reach the service.
+	if c.Request.Body != nil {
+		body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1))
+		if err != nil || len(body) != 0 {
+			sendError(c, ErrInvalidRequest)
+			return
+		}
 	}
 	result, err := h.changeSets.ReassessChangeSetResult(c.Request.Context(), actor, c.Param("projectId"), c.Param("changeSetId"), key)
 	if err != nil {

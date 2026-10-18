@@ -6,9 +6,10 @@ import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const ts = require('typescript')
 const source = fs.readFileSync(new URL('./mainlineChanges.ts', import.meta.url), 'utf8')
-function harness() {
+function harness(result) {
   const calls = [], exports = {}
-  const transport = Object.fromEntries(['get', 'post', 'put'].map(method => [method, async (url, input, options) => { calls.push({ method, url, input, options }); return { data: null, request_id: 'synthetic.test', meta: { replayed: false, refresh_required: false } } }]))
+  const transport = Object.fromEntries(['get', 'post', 'put'].map(method => [method, async (url, input, options) => { calls.push({ method, url, input, options }); return result ?? { data: null, request_id: 'synthetic.test', meta: { replayed: false, refresh_required: false } } }]))
+  transport.postNoBody = (url, options) => transport.post(url, undefined, options)
   const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   vm.runInNewContext(compiled, { exports, require(name) { assert.equal(name, '@/utils/request'); return transport } })
   return { api: exports, calls }
@@ -74,4 +75,19 @@ test('all runtime scope kinds preserve the exact proposal without asserting perm
  for(const scope of [{kind:'tenant',value:'7'},{kind:'project',value:'p'},{kind:'template_version',value:'1'},{kind:'ruleset_hash',value:'actual.hash'},{kind:'runtime_mode',value:'mock'}])await api.controlRuntime('p',{expected_version:9,scope,action:'pause',reason:'actual.report'},'current-scope-key')
  assert.equal(calls.length,5)
  for(const call of calls){assert.equal(call.input.expected_version,9);assert.equal(call.input.recovery_verified,undefined);assert.equal(call.input.permission_granted,undefined);assert.equal(call.options.headers['Idempotency-Key'],'current-scope-key')}
+})
+
+
+test('stale reassessment reuses the existing endpoint with encoded segments and the caller original key', async () => {
+  const response = { data: { id: 'satisfied-current', status: 'satisfied', decision_by: 'actual-owner', decided_at: '2026-10-17T12:00:00Z', reassessed_from_id: 'stale?other', reverses_change_set_id: 'original/other', stale_reason: 'target_already_current' }, request_id: 'actual.response', meta: { replayed: true, refresh_required: false } }
+  const { api, calls } = harness(response)
+  const result = await api.reassessMainlineChange('project/other', 'stale?other', 'reassess-original-001')
+  assert.equal(calls[0].method, 'post')
+  assert.equal(calls[0].url, '/api/v1/lingdoc/projects/project%2Fother/change-sets/stale%3Fother/reassess')
+  assert.equal(calls[0].input, undefined)
+  assert.equal(calls[0].options.headers['Idempotency-Key'], 'reassess-original-001')
+  assert.equal(result, response)
+  assert.equal(result.data.status, 'satisfied')
+  assert.equal(result.data.decision_by, 'actual-owner')
+  assert.equal(result.meta.replayed, true)
 })

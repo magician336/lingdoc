@@ -194,6 +194,16 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 	if proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof); ok && proof.ActorID == actor.UserID && proof.TenantID == actor.TenantID && proof.Project.ID == pid && proof.Operation == op && proof.OperationBody == hashImpactValue(body) {
 		return ctx, nil
 	}
+	if op == string(operationEditChangeDraft) {
+		input, ok := body.(ExtendedChangeSetInput)
+		if !ok {
+			return ctx, ErrInvalidRequest
+		}
+		prepared, handled, err := s.prepareAgentChangeDraftEdit(ctx, actor, pid, target, input)
+		if err != nil || handled {
+			return prepared, err
+		}
+	}
 	requests := []g1ProvenanceRequest{}
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, pid, AuthorizationRead, ""))
@@ -203,6 +213,10 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 		requests = g1FieldRequests(p)
 		return nil
 	})
+	if err != nil {
+		return ctx, err
+	}
+	ctx, err = s.prepareInverseOperationProvenance(ctx, actor, op, target, pid, body)
 	if err != nil {
 		return ctx, err
 	}
@@ -417,6 +431,9 @@ func (s *Service) g1OperationProjection(ctx context.Context, actor Actor, op, pi
 		var change ChangeSet
 		if err := json.Unmarshal(body, &change); err != nil {
 			return nil, err
+		}
+		if visible, handled, err := s.g1CachedChangeProjection(ctx, actor, pid, body, change); handled || err != nil {
+			return visible, err
 		}
 		visible, err := s.g1ChangeProjection(ctx, actor, change)
 		if err != nil {

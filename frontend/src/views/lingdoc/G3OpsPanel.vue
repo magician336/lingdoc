@@ -7,17 +7,38 @@
     <label v-if="canWrite">本次操作说明<textarea :disabled="busy" v-model="reason" maxlength="2000" placeholder="变更、依赖决定、任务处置、暂停或试用决策的原因" /></label>
     <template v-if="tab === 'changes'">
       <form v-if="canWrite && project.status === 'active'" @submit.prevent="saveDraft"><h3>{{ editId ? '编辑拟议变更' : '起草研究条件变更' }}</h3><label>研究条件<select :disabled="busy" v-model="draftField"><option value="">选择字段</option><option v-for="(_, name) in project.spec" :key="name" :value="name">{{ name }}</option></select></label><label>当前值<output>{{ project.spec[draftField] || '尚未选择' }}</output></label><label>拟议值<textarea :disabled="busy" v-model="draftValue" :required="!!draftField" /></label><fieldset><legend>语义修改</legend><p>先加入要修改的对象，再保存整份草稿。对象编号、版本和原值由服务端核对。</p>
- <label>对象类型<select :disabled="busy" v-model="semanticKind" @change="resetSemanticEditor"><option value="ResearchClaim">研究主张</option><option value="ProjectAssetScope">资料使用范围</option><option value="RuleBinding">独立规则绑定</option><option value="RouteNode">技术路线节点</option></select></label>
+ <label>对象类型<select :disabled="busy" v-model="semanticKind" @change="resetSemanticEditor"><option value="ResearchClaim">研究主张</option><option value="EvidenceCard">已确认的证据关系</option><option value="ProjectAssetScope">资料使用范围</option><option value="RuleBinding">独立规则绑定</option><option value="RouteNode">技术路线节点</option></select></label>
  <label>已有对象<select :disabled="busy" v-model="semanticTarget" @change="selectSemanticTarget"><option value="">选择对象，或在下方填写新路线编号</option><option v-for="item in semanticOptions" :key="item.id" :value="item.id">{{ item.label }} · {{ item.id }} @ {{ item.version }}</option></select></label>
  <div class="grid"><label>对象编号<input :disabled="busy" v-model="semanticTarget" /></label><label>当前版本<input :disabled="busy" v-model.number="semanticVersion" type="number" min="0" /></label></div>
  <template v-if="semanticKind==='ResearchClaim'"><label>主张内容<textarea :disabled="busy" v-model="claimText" /></label><label>适用范围<input :disabled="busy" v-model="claimScope" /></label><label>状态<select :disabled="busy" v-model="claimStatus"><option value="active">当前有效</option><option value="disputed">存在争议</option><option value="superseded">已被替代</option></select></label><label>解释<textarea :disabled="busy" v-model="claimExplanation" /></label><label><input :disabled="busy" v-model="claimConsent" type="checkbox" />我确认提交这些语义修改；主张仍须按证据复核。</label></template>
+ <template v-if="semanticKind==='EvidenceCard'"><p>编辑主张与原文锚点的精确编号和版本、关系、范围及限制。保存仅建立变更草稿；Owner 应用后新卡为待确认候选，旧版核对记录保留。</p><label>拟议证据关系（JSON）<textarea :disabled="busy" v-model="cardEditor" /></label><label><input :disabled="busy" v-model="cardConsent" type="checkbox" />我确认提交以上证据语义修改；不沿用旧版来源确认。</label></template>
  <template v-if="semanticKind==='ProjectAssetScope'"><label>范围<select :disabled="busy" v-model="assetScope"><option value="personal">个人</option><option value="project">课题</option><option value="team">团队</option></select></label><label>明确使用目的<input :disabled="busy" v-model="assetPurpose" /></label><label>收窄到指定成员<select :disabled="busy" v-model="assetUsers" multiple><option v-for="member in activeMembers" :key="member.user_id">{{ member.user_id }}</option></select></label><label><input :disabled="busy" v-model="assetModelConsent" type="checkbox" />明确允许用于模型处理</label><p>服务端继续核对当前底座资料授权。</p></template>
  <template v-if="semanticKind==='RuleBinding'"><p v-if="!currentBindingPolicy">当前副本未返回可覆盖政策；提交将由服务端政策审核。</p><p v-else>已审政策 {{ bindingView?.source_policy_hash }} · 可修改参数 {{ currentBindingPolicy.allowed_parameter_keys?.join('、') || '无' }}</p><label>启用状态<select :disabled="busy" v-model="bindingEnabled"><option value="">保持当前</option><option value="true">启用</option><option value="false">申请停用</option></select></label><label>严重度<select :disabled="busy" v-model="bindingSeverity"><option value="">保持当前</option><option value="blocking">阻断</option><option value="warning">警告</option><option value="info">提示</option></select></label><div class="grid"><label>新目标类型<input :disabled="busy" v-model="bindingTargetKind" placeholder="留空保持当前" /></label><label>新目标编号<input :disabled="busy" v-model="bindingTargetId" placeholder="留空保持当前" /></label></div><label>声明式参数<textarea :disabled="busy" v-model="bindingParameters" /></label><label>删除的已审参数键<input :disabled="busy" v-model="bindingRemoveKeys" placeholder="逗号分隔，留空不删除" /></label></template>
  <template v-if="semanticKind==='RouteNode'"><p>新节点当前版本填 0；已有节点保持读取的当前版本。</p><label>路线名称<input :disabled="busy" v-model="routeName" /></label><label>就绪状态<select :disabled="busy" v-model="routeStatus"><option value="planned">拟定</option><option value="ready">已人工复核就绪</option><option value="blocked">被阻断</option><option value="retired">停用</option></select></label><label><input :disabled="busy" v-model="routeRequired" type="checkbox" />必经节点</label><div class="grid"><label>依赖类型<select :disabled="busy" v-model="routeInput.kind"><option v-for="kind in objectKinds" :key="kind">{{ kind }}</option></select></label><label>依赖编号<input :disabled="busy" v-model="routeInput.id" /></label><label>依赖当前版本<input :disabled="busy" v-model="routeInput.version" /></label></div><button type="button" @click="addRouteInput">加入真实版本依赖</button><ul><li v-for="(input,index) in routeInputs" :key="index">{{ kindLabel(input.kind) }}/{{ input.id }} @ {{ input.version }} <button type="button" @click="routeInputs=routeInputs.filter((_,i)=>i!==index)">移除</button></li></ul></template>
  <button type="button" :disabled="busy" @click="addSemanticDelta">加入拟议变更</button><article v-for="(delta,index) in semanticDraft" :key="delta.kind+'/'+delta.target_id"><strong>{{ kindLabel(delta.kind) }}/{{ delta.target_id }} @ {{ delta.expected_version }}</strong><pre>{{ semanticText(delta) }}</pre><button type="button" @click="semanticDraft=semanticDraft.filter((_,i)=>i!==index)">移出草稿</button></article>
  </fieldset><label>明确受影响章节<select :disabled="busy" v-model="affectedIds" multiple><option v-for="chapter in chapters" :key="chapter.id" :value="chapter.id">{{ chapter.title }}</option></select></label><button :disabled="busy || !reason.trim()">保存拟议草稿</button><button v-if="editId" type="button" @click="editId = ''">取消编辑</button></form>
       <p v-if="!changes.length && !loading">还没有拟议变更。</p>
-      <article v-for="change in changes" :key="change.id"><h3>{{ change.reason }}</h3><p>{{ label(change.status) }} · 基线 {{ change.base_context_revision }}<span v-if="change.target_context_revision"> → {{ change.target_context_revision }}</span></p><table><thead><tr><th>条件</th><th>原值</th><th>拟议值</th></tr></thead><tbody><tr v-for="field in change.fields" :key="field.key"><td>{{ field.key }}</td><td>{{ field.old_value }}</td><td>{{ field.new_value }}</td></tr></tbody></table><details v-for="delta in change.semantic_deltas || []" :key="delta.kind+'/'+delta.target_id"><summary>{{ kindLabel(delta.kind) }}/{{ delta.target_id }} @ {{ delta.expected_version }}</summary><div class="grid"><div><strong>服务器原值</strong><pre>{{ semanticText(delta,true) }}</pre></div><div><strong>拟议修改</strong><pre>{{ semanticText(delta) }}</pre></div></div></details><div class="actions"><button :disabled="busy || change.status === 'draft'" @click="showAssessment(change)">查看影响依据</button><button v-if="canWrite && ['draft','assessed'].includes(change.status)" :disabled="busy" @click="editDraft(change)">编辑草稿</button><button v-if="canWrite && ['draft','assessed'].includes(change.status)" :disabled="busy" @click="changeAction(change, 'assess')">评估当前影响</button><button v-if="canOwner && change.status === 'assessed'" :disabled="busy" @click="changeAction(change, 'apply')">Owner 应用</button><button v-if="canOwner && change.status === 'assessed'" :disabled="busy" @click="changeAction(change, 'reject')">Owner 驳回</button><button v-if="canOwner && change.status === 'applied'" :disabled="busy" @click="changeAction(change, 'stabilize')">检查稳定化</button><button v-if="canOwner && ['applied','stabilized'].includes(change.status)" :disabled="busy" @click="changeAction(change, 'reverse')">起草逆向变更</button></div></article>
+      <article v-for="change in changes" :key="change.id" :id="changeAnchor(change.id)">
+        <h3>{{ change.reason }}</h3><p>{{ label(change.status) }} · 基线 {{ change.base_context_revision }}<span v-if="change.target_context_revision"> → {{ change.target_context_revision }}</span></p>
+        <p>变更编号：{{ change.id }}</p>
+        <p v-if="change.decision_by || change.decided_at">{{ decisionText(change) }}</p>
+        <p v-if="change.reassessed_from_id">重评来源：<a :href="changeLink(change.reassessed_from_id)">{{ change.reassessed_from_id }}</a></p>
+        <p v-if="change.reverses_change_set_id">逆向来源：<a :href="changeLink(change.reverses_change_set_id)">{{ change.reverses_change_set_id }}</a></p>
+        <p v-if="change.stale_reason" class="notice">陈旧原因：{{ change.stale_reason }}</p>
+        <p v-if="change.status === 'satisfied'" class="notice">当前目标已满足，未新增正式基线。</p>
+        <table><thead><tr><th>条件</th><th>原值</th><th>拟议值</th></tr></thead><tbody><tr v-for="field in change.fields" :key="field.key"><td>{{ field.key }}</td><td>{{ field.old_value }}</td><td>{{ field.new_value }}</td></tr></tbody></table>
+        <details v-for="delta in change.semantic_deltas || []" :key="delta.kind+'/'+delta.target_id"><summary>{{ kindLabel(delta.kind) }}/{{ delta.target_id }} @ {{ delta.expected_version }}</summary><div class="grid"><div><strong>服务器原值</strong><pre>{{ semanticText(delta,true) }}</pre></div><div><strong>拟议修改</strong><pre>{{ semanticText(delta) }}</pre></div></div></details>
+        <div class="actions">
+          <button :disabled="busy || ['draft','satisfied'].includes(change.status)" @click="showAssessment(change)">查看影响依据</button>
+          <button v-if="canEditDraft(change)" :disabled="busy || loading" @click="editDraft(change)">编辑草稿</button>
+          <button v-if="changeActionAllowed(change, 'assess')" :disabled="busy || loading" @click="changeAction(change, 'assess')">评估当前影响</button>
+          <button v-if="changeActionAllowed(change, 'reassess')" :disabled="busy || loading" @click="changeAction(change, 'reassess')">按当前基线重评</button>
+          <button v-if="changeActionAllowed(change, 'apply')" :disabled="busy || loading" @click="changeAction(change, 'apply')">Owner 应用</button>
+          <button v-if="changeActionAllowed(change, 'reject')" :disabled="busy || loading" @click="changeAction(change, 'reject')">Owner 驳回</button>
+          <button v-if="changeActionAllowed(change, 'stabilize')" :disabled="busy || loading" @click="changeAction(change, 'stabilize')">检查稳定化</button>
+          <button v-if="changeActionAllowed(change, 'reverse')" :disabled="busy || loading" @click="changeAction(change, 'reverse')">起草逆向变更</button>
+        </div>
+      </article>
       <article v-if="assessment"><h3>影响预览 · 基线 {{ assessment.context_revision }}</h3><p>评估指纹 {{ assessment.input_hash }}</p><ul><li v-for="(impact, index) in assessment.impacts" :key="index"><strong>{{ impact.certainty === 'definite' ? '确定影响' : '可能影响，等待人工判断' }}</strong>：{{ kindLabel(impact.target.kind) }}/{{ impact.target.id }} @ {{ impact.target.version }} · {{ actionLabel(impact.action) }}<ul><li v-for="cause in impact.causes" :key="cause.edge_id">{{ cause.reason }} · {{ cause.edge_id }}</li></ul></li></ul></article>
       <article v-if="stabilization"><h3>{{ stabilization.status === 'STABILIZED' ? '当前变更已稳定' : '仍有稳定化阻断' }}</h3><p>稳定后仍需冻结快照与交付 Preflight。</p><ul><li v-for="(blocker, index) in stabilization.blockers" :key="index">{{ blocker.reason }} · {{ blocker.target_id }}</li></ul></article>
       <details><summary>正式基线历史</summary><p v-for="revision in revisions" :key="revision.revision">基线 {{ revision.revision }} · 条件 {{ revision.spec_revision }} · 模板副本 {{ revision.template_copy_version }} · {{ revision.created_at }}</p></details>
@@ -62,7 +83,7 @@ import { computed, ref, watch } from 'vue'
 import type { Chapter, Project } from '@/api/lingdoc/workspace'
 import { listChapters, applyChangeSet, rejectChangeSet } from '@/api/lingdoc/workspace'
 import * as api from '@/api/lingdoc/mainlineChanges'
-import { listResearchClaims, type ResearchClaim } from '@/api/lingdoc/g2'
+import { listResearchClaims, listEvidenceCards, type ResearchClaim, type EvidenceCard } from '@/api/lingdoc/g2'
 import { listAssets, type Asset } from '@/api/lingdoc/workspace'
 import { useAuthStore } from '@/stores/auth'
 const props = withDefaults(defineProps<{ project: Project; readonly?: boolean; currentUserId?: string; preflightReceiptId?: string }>(), { readonly: true, currentUserId: '', preflightReceiptId: '' })
@@ -79,11 +100,12 @@ const windows = ref<api.TrialWindow[]>([]), selectedWindow = ref<api.TrialWindow
 const activeMembers = computed(() => props.project.members.filter(member => !member.status || member.status === 'active'))
 const ownMember = computed(() => activeMembers.value.find(member => member.user_id === props.currentUserId))
 const canWrite = computed(() => !props.readonly)
-const canOwner = computed(() => canWrite.value && (ownMember.value?.role === 'owner' || ownMember.value?.governance_role === 'owner'))
+const canOwner = computed(() => canWrite.value && ownMember.value?.role === 'owner')
 const canManage = computed(() => canOwner.value || canWrite.value && ownMember.value?.governance_role === 'admin')
 const draftField = ref(''), draftValue = ref(''), affectedIds = ref<string[]>([]), editId = ref('')
 const semanticKind = ref<api.SemanticDelta['kind']>('ResearchClaim'), semanticTarget = ref(''), semanticVersion = ref(1), semanticDraft = ref<api.SemanticDelta[]>([])
 const claimText = ref(''), claimScope = ref(''), claimStatus = ref<'active' | 'disputed' | 'superseded'>('active'), claimExplanation = ref(''), claimConsent = ref(false)
+const cardEditor = ref('{}'), cardConsent = ref(false), cards = ref<EvidenceCard[]>([])
 const assetScope = ref<'personal' | 'project' | 'team'>('project'), assetPurpose = ref(''), assetUsers = ref<string[]>([]), assetModelConsent = ref(false)
 const bindingEnabled = ref(''), bindingSeverity = ref(''), bindingTargetKind = ref(''), bindingTargetId = ref(''), bindingParameters = ref('{}'), bindingRemoveKeys = ref('')
 const routeName = ref(''), routeStatus = ref<api.RouteNode['status']>('planned'), routeRequired = ref(false), routeInputs = ref<api.ObjectVersionRef[]>([]), routeInput = ref<api.ObjectVersionRef>({ kind: 'ChapterVersion', id: '', version: '' })
@@ -91,15 +113,17 @@ const claims = ref<ResearchClaim[]>([]), assets = ref<Asset[]>([]), routes = ref
 const bindingView = computed(() => props.project.template_copy as (NonNullable<typeof props.project.template_copy> & api.ProjectBindingView) | undefined)
 const semanticOptions = computed(() => {
  if (semanticKind.value === 'ResearchClaim') return claims.value.map(item => ({ id: item.id, version: item.version, label: item.text }))
+ if (semanticKind.value === 'EvidenceCard') return cards.value.map(item => ({ id: item.id, version: item.version, label: `${item.support_type} · ${item.scope}` }))
  if (semanticKind.value === 'ProjectAssetScope') return assets.value.map(item => ({ id: item.id, version: item.asset_revision, label: item.title }))
  if (semanticKind.value === 'RuleBinding') return (bindingView.value?.rule_set_snapshot?.bindings || []).map(item => ({ id: item.rule_id, version: props.project.template_copy_version || props.project.template_copy?.version || 0, label: item.rule_id }))
  return routes.value.map(item => ({ id: item.id, version: item.version, label: item.name }))
 })
 const currentBindingPolicy = computed(() => bindingView.value?.binding_policies?.find(item => item.rule_id === semanticTarget.value))
-function resetSemanticEditor() { claimText.value='';claimScope.value='';claimExplanation.value='';claimStatus.value='active';semanticTarget.value='';semanticVersion.value=semanticKind.value==='RouteNode'?0:1;claimConsent.value=false;assetModelConsent.value=false;assetPurpose.value='';assetUsers.value=[];routeStatus.value='planned';routeInputs.value=[];routeName.value='';routeRequired.value=false;bindingParameters.value='{}';bindingRemoveKeys.value='';bindingEnabled.value='';bindingSeverity.value='';bindingTargetKind.value='';bindingTargetId.value='' }
+function resetSemanticEditor() { cardEditor.value='{}';cardConsent.value=false;claimText.value='';claimScope.value='';claimExplanation.value='';claimStatus.value='active';semanticTarget.value='';semanticVersion.value=semanticKind.value==='RouteNode'?0:1;claimConsent.value=false;assetModelConsent.value=false;assetPurpose.value='';assetUsers.value=[];routeStatus.value='planned';routeInputs.value=[];routeName.value='';routeRequired.value=false;bindingParameters.value='{}';bindingRemoveKeys.value='';bindingEnabled.value='';bindingSeverity.value='';bindingTargetKind.value='';bindingTargetId.value='' }
 function selectSemanticTarget() {
  const selected = semanticOptions.value.find(item => item.id === semanticTarget.value); if (selected) semanticVersion.value = selected.version
  if (semanticKind.value === 'ResearchClaim') { const claim=claims.value.find(item=>item.id===semanticTarget.value);if(claim){claimText.value=claim.text;claimScope.value=claim.scope;claimStatus.value=claim.status as typeof claimStatus.value;claimExplanation.value=claim.explanation||''};claimConsent.value=false }
+ if (semanticKind.value === 'EvidenceCard') { const card=cards.value.find(item=>item.id===semanticTarget.value);if(card){cardEditor.value=JSON.stringify({claim_ref:card.claim_ref,anchor_refs:card.anchor_refs,support_type:card.support_type,scope:card.scope,scope_chapter_ids:card.scope_chapter_ids,limitations:card.limitations,gaps:card.gaps,alternative_explanation:card.alternative_explanation},null,2)};cardConsent.value=false }
  if (semanticKind.value === 'ProjectAssetScope') {assetModelConsent.value=false;assetPurpose.value='';assetUsers.value=[]}
  if (semanticKind.value === 'RouteNode') { const route=routes.value.find(item=>item.id===semanticTarget.value);if(route){routeName.value=route.name;routeStatus.value=route.status;routeRequired.value=route.required;routeInputs.value=route.inputs.map(item=>({...item}))} }
 }
@@ -109,13 +133,14 @@ function addSemanticDelta() {
  if(!semanticTarget.value.trim() || !Number.isInteger(semanticVersion.value) || semanticVersion.value < 0 || (semanticKind.value !== 'RouteNode' && semanticVersion.value < 1)){error.value='请选定实际对象和当前版本，新路线节点版本为 0。';return}
  const delta:api.SemanticDelta={kind:semanticKind.value,target_id:semanticTarget.value.trim(),expected_version:semanticVersion.value}
  if(delta.kind==='ResearchClaim') {if(!claimText.value.trim()||!claimScope.value.trim()||!claimConsent.value){error.value='请填写主张和范围，并明确确认提交语义修改。';return};delta.proposed_claim={text:claimText.value,scope:claimScope.value,status:claimStatus.value,explanation:claimExplanation.value,confirmed:claimConsent.value}}
+ if(delta.kind==='EvidenceCard') {if(!cardConsent.value){error.value='请明确确认提交证据语义修改。';return};try{const value=JSON.parse(cardEditor.value);if(!value||Array.isArray(value)||typeof value!=='object'||!value.claim_ref||!Array.isArray(value.anchor_refs)||!value.anchor_refs.length||!Array.isArray(value.scope_chapter_ids)||!value.scope_chapter_ids.length||!value.scope||!['supports','refutes','qualifies','background'].includes(value.support_type))throw Error();const keys=['claim_ref','anchor_refs','support_type','scope','scope_chapter_ids','limitations','gaps','alternative_explanation'];if(Object.keys(value).some(key=>!keys.includes(key)))throw Error();delta.proposed_card={...value,confirmed:cardConsent.value}}catch{error.value='请填写合法证据关系 JSON，仅包含主张、锚点、关系、范围及限制。';return}}
  if(delta.kind==='ProjectAssetScope') {if(!assetPurpose.value.trim()){error.value='请明确资料使用目的。';return};delta.proposed_asset_policy={scope:assetScope.value,purpose:assetPurpose.value,allowed_user_ids:[...assetUsers.value],model_use_allowed:assetModelConsent.value}}
  if(delta.kind==='RuleBinding') {let parameters:Record<string,unknown>;try{parameters=JSON.parse(bindingParameters.value);if(!parameters||Array.isArray(parameters)||typeof parameters!=='object')throw Error()}catch{error.value='规则参数须为合法的声明式 JSON 对象。';return};const override:api.RuleBindingOverride={rule_id:delta.target_id,parameters};if(bindingEnabled.value)override.enabled=bindingEnabled.value==='true';if(bindingSeverity.value)override.severity=bindingSeverity.value;if(bindingTargetKind.value)override.target_kind=bindingTargetKind.value;if(bindingTargetId.value)override.target_id=bindingTargetId.value;const remove=bindingRemoveKeys.value.split(',').map(item=>item.trim()).filter(Boolean);if(remove.length)override.remove_parameter_keys=remove;delta.proposed_binding=override}
  if(delta.kind==='RouteNode'){if(!routeName.value.trim()){error.value='请填写路线节点名称。';return};delta.proposed_route={name:routeName.value,status:routeStatus.value,required:routeRequired.value,inputs:routeInputs.value.map(item=>({...item}))}}
  if(semanticDraft.value.some(item=>item.kind===delta.kind&&item.target_id===delta.target_id)){error.value='同一对象不能在一份草稿中出现两个语义修改。';return}
  semanticDraft.value=[...semanticDraft.value,delta];message.value='语义修改已加入待提交草稿，正式对象尚未改变。'
 }
-function semanticText(delta:api.SemanticDelta,before=false) { const value=before?delta.before:delta.proposed_claim||delta.proposed_asset_policy||delta.proposed_binding||delta.proposed_route;return JSON.stringify(value||{},null,2) }
+function semanticText(delta:api.SemanticDelta,before=false) { const value=before?delta.before:delta.proposed_card||delta.proposed_claim||delta.proposed_asset_policy||delta.proposed_binding||delta.proposed_route;return JSON.stringify(value||{},null,2) }
 
 const objectKinds = ['ProjectSpec', 'ProjectAsset', 'SourceAnchor', 'EvidenceCard', 'ResearchClaim', 'ChapterVersion', 'TemplateCopy', 'RuleSet', 'RuleBinding', 'RouteNode']
 const impactActions = ['REVALIDATE_EVIDENCE', 'RETRIEVE_CANDIDATES', 'REVIEW_REQUIRED', 'REGENERATE', 'RECOMPUTE', 'INVALIDATE_CONFIRMATION', 'BLOCK_RELEASE']
@@ -150,18 +175,18 @@ const trialStart = ref(''), trialEnd = ref(''), targetSamples = ref(10), minimum
 const reviewResult = ref<api.TrialSample['quality_result'] | ''>(''), humanDecision = ref<api.TrialReviewInput['human_decision'] | ''>(''), wordEvidence = ref(''), repairOwner = ref(''), repairVersion = ref(''), rerunEvidence = ref(''), trialDecision = ref<api.TrialDecision['decision'] | ''>('')
 const operationKeys = new Map<string, { payload: string; key: string }>()
 let epoch = 0
-function label(state: string) { return ({ draft: '草稿', assessed: '已评估', applied: '已应用', stabilized: '已稳定', rejected: '已驳回', stale: '已陈旧', confirmed: '已确认', suggested: '建议，等待人工判断', DRAFT: '草稿', LOCKED: '已锁定', PAUSED: '已暂停', CLOSED: '已关闭', OPEN: '待处理', IN_PROGRESS: '处理中', WAITING_USER: '等待人工', DONE: '已完成', WAITING_HUMAN: '等待责任签署', DECIDED: '已共同决定' } as Record<string, string>)[state] || state }
+function label(state: string) { return ({ draft: '草稿', assessed: '已评估', applied: '已应用', stabilized: '已稳定', satisfied: '目标已满足', rejected: '已驳回', stale: '已陈旧', confirmed: '已确认', suggested: '建议，等待人工判断', DRAFT: '草稿', LOCKED: '已锁定', PAUSED: '已暂停', CLOSED: '已关闭', OPEN: '待处理', IN_PROGRESS: '处理中', WAITING_USER: '等待人工', DONE: '已完成', WAITING_HUMAN: '等待责任签署', DECIDED: '已共同决定' } as Record<string, string>)[state] || state }
 function kindLabel(kind: string) { return ({ ProjectSpec: '研究条件', ProjectAsset: '项目资料', SourceAnchor: '资料锚点', EvidenceCard: '证据卡', ResearchClaim: '研究主张', ChapterVersion: '章节版本', TemplateCopy: '模板副本', RuleSet: '规则版本', RuleBinding: '独立规则绑定', ProjectAssetScope: '资料使用范围', ResearchRun: '完整调研回执', ComputationReceipt: '实际重算回执', RouteNode: '技术路线节点' } as Record<string, string>)[kind] || kind }
 function actionLabel(action: string) { return ({ REVALIDATE_EVIDENCE: '重新核验证据', RETRIEVE_CANDIDATES: '重新调研候选', REVIEW_REQUIRED: '人工复核', REGENERATE: '重新生成', RECOMPUTE: '重新计算', INVALIDATE_CONFIRMATION: '重新确认', BLOCK_RELEASE: '阻止发布' } as Record<string, string>)[action] || action }
 function roleLabel(role: typeof decisionRoles[number]) { return { product: '产品', qa: 'QA', safety: '安全' }[role] }
 function errorText(err: unknown) { const item = err as { message?: string; error?: { message?: string } }; return item.error?.message || item.message || '读取或提交失败，请检查当前权限和版本后重试。' }
-async function mutate<T>(slot: string, payload: unknown, call: (key: string) => Promise<T>, success: string): Promise<T | undefined> {
+async function mutate<T>(slot: string, payload: unknown, call: (key: string) => Promise<T>, success: string, preserveReason = false): Promise<T | undefined> {
   if (props.readonly || busy.value) return
   const projectId = props.project.id, requestEpoch=epoch, identity=currentIdentity.value, submittedReason=reason.value, stamp = JSON.stringify(payload)
   let entry = operationKeys.get(slot)
   if (!entry || entry.payload !== stamp) { entry = { payload: stamp, key: `lingdoc-${crypto.randomUUID()}` }; operationKeys.set(slot, entry) }
   busy.value = true; error.value = ''; message.value = ''
-  try { const result = await call(entry.key); if (props.project.id !== projectId || currentIdentity.value!==identity) return; emit('changed');if(epoch!==requestEpoch)return;operationKeys.delete(slot);if(reason.value===submittedReason)reason.value='';message.value = success; await refresh(); return result }
+  try { const result = await call(entry.key); if (props.project.id !== projectId || currentIdentity.value!==identity) return; emit('changed');if(epoch!==requestEpoch)return;operationKeys.delete(slot);if(!preserveReason&&reason.value===submittedReason)reason.value='';message.value = success; await refresh(); return result }
   catch (err) { if (props.project.id === projectId && epoch===requestEpoch && currentIdentity.value===identity) error.value = errorText(err) }
   finally { busy.value = false }
 }
@@ -170,22 +195,82 @@ async function refresh() {
   if(tab.value==='runtime')runtimeReadReady.value=false
   loading.value = true; error.value = ''
   try {
-    if (tab.value === 'changes') { const result = await Promise.all([api.listMainlineChanges(id), listChapters(id), api.listContextRevisions(id), listResearchClaims(id), listAssets(id), api.listRouteNodes(id)]); if (epoch === stamp && identity===currentIdentity.value) { changes.value = result[0].data || []; chapters.value = result[1].data || []; revisions.value = result[2].data || []; claims.value = result[3].data || []; assets.value = result[4].data || []; routes.value = result[5].data || [] } }
+    if (tab.value === 'changes') { const result = await Promise.all([api.listMainlineChanges(id), listChapters(id), api.listContextRevisions(id), listResearchClaims(id), listAssets(id), api.listRouteNodes(id), listEvidenceCards(id)]); if (epoch === stamp && identity===currentIdentity.value) { changes.value = result[0].data || []; chapters.value = result[1].data || []; revisions.value = result[2].data || []; claims.value = result[3].data || []; assets.value = result[4].data || []; routes.value = result[5].data || []; cards.value = result[6].data || [] } }
     if (tab.value === 'impacts') { const result = await Promise.all([api.listDependencies(id), api.listImpactTasks(id)]); if (epoch === stamp && identity===currentIdentity.value) { edges.value = result[0].data || []; tasks.value = result[1].data || [] } }
     if (tab.value === 'runtime') { const result = await Promise.all([api.listRuntimeControls(id), api.getRuntimeMetrics(id), api.listRuntimeEvents(id, correlation.value), api.listRuntimeAlerts(id)]); if (epoch === stamp && identity===currentIdentity.value) { controls.value = result[0].data || []; metrics.value = result[1].data; events.value = result[2].data || []; alerts.value = result[3].data || [];runtimeReadReady.value=true;await loadEvidenceCatalog() } }
     if (tab.value === 'trial') { const result = await api.listTrialWindows(id); if (epoch === stamp && identity===currentIdentity.value) { windows.value = result.data || []; const next = windows.value.find(window => window.id === selectedWindow.value?.id); selectedWindow.value = next || null; if (next) await selectWindow(next);await loadEvidenceCatalog() } }
   } catch (err) { if (epoch === stamp) error.value = errorText(err) }
   finally { if (epoch === stamp) loading.value = false }
 }
-function editDraft(change: api.MainlineChangeSet) { if (change.fields.length > 1 || change.template_upgrade) { error.value = '多字段和模板结构变更请使用对应模板入口。'; return }; const field = change.fields[0]; editId.value = change.id; draftField.value = field?.key || ''; draftValue.value = field?.new_value || ''; semanticDraft.value = JSON.parse(JSON.stringify(change.semantic_deltas || [])); affectedIds.value = change.impacts.map(impact => impact.chapter_id); reason.value = change.reason }
-async function saveDraft() { if ((!draftField.value && !semanticDraft.value.length) || !reason.value.trim()) { error.value='请加入研究条件或语义修改，并填写说明。';return }; const input: api.ChangeDraftInput = { expected_context_revision: props.project.current_context_revision, fields: draftField.value ? { [draftField.value]: { old_value: props.project.spec[draftField.value] || '', new_value: draftValue.value } } : {}, semantic_deltas: JSON.parse(JSON.stringify(semanticDraft.value)), affected_chapter_ids: [...affectedIds.value], reason: reason.value }; const changeId = editId.value; const result = await mutate('draft', input, key => changeId ? api.editChangeDraft(props.project.id, changeId, input, key) : api.createChangeDraft(props.project.id, input, key), '拟议草稿已保存，尚未改变正式基线。'); if (result) {editId.value = ''; semanticDraft.value=[];draftField.value='';draftValue.value='';affectedIds.value=[];resetSemanticEditor()} }
-async function showAssessment(change: api.MainlineChangeSet) { const projectId=props.project.id; try { const result = await api.getImpactAssessment(projectId, change.id); if (props.project.id===projectId && change.project_id===projectId) assessment.value=result.data } catch (err) { if(props.project.id===projectId) error.value=errorText(err) } }
-async function changeAction(change: api.MainlineChangeSet, action: 'assess' | 'apply' | 'reject' | 'stabilize' | 'reverse') {
-  if (action === 'stabilize') { const result = await mutate(`stabilize-${change.id}`, {}, key => api.stabilizeRevision(props.project.id, change.id, key), '已读取稳定化结果。'); if (result) stabilization.value = result.data; return }
-  if (action === 'apply') { await mutate(`apply-${change.id}`, {}, key => applyChangeSet(props.project.id, change.id, key), 'Owner 应用结果已记录，请处理影响任务。'); return }
-  if (action === 'reject') { await mutate(`reject-${change.id}`, {}, key => rejectChangeSet(props.project.id, change.id, key), 'Owner 驳回结果已记录。'); return }
-  if (action === 'reverse') { await mutate(`reverse-${change.id}`, {}, key => api.reverseMainlineChange(props.project.id, change.id, key), '逆向提议已创建，需重新评估与 Owner 应用。'); return }
-  await mutate(`assess-${change.id}`, {}, key => api.assessMainlineChange(props.project.id, change.id, key), '影响已按当前输入评估。'); await showAssessment(change)
+type ChangeAction = 'assess' | 'reassess' | 'apply' | 'reject' | 'stabilize' | 'reverse'
+function changeAnchor(id: string) { return `g3-change-${encodeURIComponent(id)}` }
+function changeLink(id: string) { return `#${encodeURIComponent(changeAnchor(id))}` }
+function decisionText(change: api.MainlineChangeSet) {
+  const parts: string[] = []
+  if (change.decision_by) parts.push(`决定人：${change.decision_by}`)
+  if (change.decided_at) parts.push(`决定时间：${change.decided_at}`)
+  return parts.join(' · ')
+}
+function currentChange(change: api.MainlineChangeSet) {
+  if (change.project_id !== props.project.id) return undefined
+  return changes.value.find(item => item.id === change.id && item.project_id === props.project.id)
+}
+function changeActionAllowed(change: api.MainlineChangeSet, action: ChangeAction) {
+  const current = currentChange(change)
+  if (!canWrite.value || props.project.status !== 'active' || !current) return false
+  if (action === 'assess') return ['draft', 'assessed'].includes(current.status)
+  if (action === 'reassess') return current.status === 'stale'
+  if (!canOwner.value) return false
+  if (action === 'apply' || action === 'reject') return current.status === 'assessed'
+  if (action === 'stabilize') return current.status === 'applied'
+  return action === 'reverse' && ['applied', 'stabilized'].includes(current.status)
+}
+function canEditDraft(change: api.MainlineChangeSet) {
+  const current = currentChange(change)
+  return Boolean(current && changeActionAllowed(current, 'assess') && (current.created_by === props.currentUserId || canOwner.value))
+}
+function editDraft(change: api.MainlineChangeSet) {
+  if (busy.value || loading.value) return
+  const current = currentChange(change)
+  if (!current || !canEditDraft(current)) { error.value = '当前角色或变更状态不允许编辑此草稿。'; return }
+  if (current.fields.length > 1 || current.template_upgrade) { error.value = '多字段和模板结构变更请使用对应模板入口。'; return }
+  const field = current.fields[0]
+  editId.value = current.id; draftField.value = field?.key || ''; draftValue.value = field?.new_value || ''
+  semanticDraft.value = JSON.parse(JSON.stringify(current.semantic_deltas || [])); affectedIds.value = current.impacts.map(impact => impact.chapter_id); reason.value = current.reason
+}
+async function saveDraft() {
+  if (!canWrite.value || props.project.status !== 'active' || busy.value || loading.value) return
+  if (editId.value) {
+    const current = changes.value.find(change => change.id === editId.value)
+    if (!current || !canEditDraft(current)) { error.value = '草稿状态或当前编辑权限已改变，请重新读取；未提交输入已保留。'; return }
+  }
+  if ((!draftField.value && !semanticDraft.value.length) || !reason.value.trim()) { error.value='请加入研究条件或语义修改，并填写说明。';return }
+  const input: api.ChangeDraftInput = { expected_context_revision: props.project.current_context_revision, fields: draftField.value ? { [draftField.value]: { old_value: props.project.spec[draftField.value] || '', new_value: draftValue.value } } : {}, semantic_deltas: JSON.parse(JSON.stringify(semanticDraft.value)), affected_chapter_ids: [...affectedIds.value], reason: reason.value }
+  const changeId = editId.value
+  const result = await mutate('draft', input, key => changeId ? api.editChangeDraft(props.project.id, changeId, input, key) : api.createChangeDraft(props.project.id, input, key), '拟议草稿已保存，尚未改变正式基线。')
+  if (result) {editId.value = ''; semanticDraft.value=[];draftField.value='';draftValue.value='';affectedIds.value=[];resetSemanticEditor()}
+}
+async function showAssessment(change: api.MainlineChangeSet) {
+  const projectId=props.project.id, requestEpoch=epoch, identity=currentIdentity.value
+  if (change.project_id !== projectId) return
+  if (change.status === 'draft' || change.status === 'satisfied') { assessment.value = null; return }
+  try { const result = await api.getImpactAssessment(projectId, change.id); if (props.project.id===projectId && epoch===requestEpoch && currentIdentity.value===identity) assessment.value=result.data }
+  catch (err) { if(props.project.id===projectId && epoch===requestEpoch && currentIdentity.value===identity) error.value=errorText(err) }
+}
+async function changeAction(change: api.MainlineChangeSet, action: ChangeAction) {
+  if (busy.value || loading.value) return
+  if (!changeActionAllowed(change, action)) { error.value = '当前角色或变更状态不允许此操作，请重新读取。'; return }
+  const projectId=props.project.id, identity=currentIdentity.value
+  if (action === 'stabilize') { const result = await mutate(`stabilize-${change.id}`, {}, key => api.stabilizeRevision(projectId, change.id, key), '已读取稳定化结果。'); if (result && props.project.id===projectId && currentIdentity.value===identity) stabilization.value = result.data; return }
+  if (action === 'apply') { await mutate(`apply-${change.id}`, {}, key => applyChangeSet(projectId, change.id, key), 'Owner 应用结果已记录，请处理影响任务。'); return }
+  if (action === 'reject') { await mutate(`reject-${change.id}`, {}, key => rejectChangeSet(projectId, change.id, key), 'Owner 驳回结果已记录。'); return }
+  if (action === 'reverse') { await mutate(`reverse-${change.id}`, {}, key => api.reverseMainlineChange(projectId, change.id, key), '逆向提议已创建，需重新评估与 Owner 应用。'); return }
+  if (action === 'reassess') { await mutate(`reassess-${change.id}`, {}, key => api.reassessMainlineChange(projectId, change.id, key), '已按当前基线重评，原提议保留为历史；请查看新记录状态。', true); return }
+  const result = await mutate(`assess-${change.id}`, {}, key => api.assessMainlineChange(projectId, change.id, key), '影响已按当前输入评估。')
+  if (result && props.project.id===projectId && currentIdentity.value===identity) {
+    const assessed=changes.value.find(item=>item.id===change.id&&item.project_id===projectId&&item.status==='assessed')
+    if(assessed)await showAssessment(assessed)
+  }
 }
 async function addDependency() { if (!reason.value.trim()) return; const input: api.DependencyEdgeInput = { expected_context_revision: props.project.current_context_revision, source: { ...sourceRef.value }, target: { ...targetRef.value }, action: edgeAction.value, origin: 'user', relation: 'uses', reason: reason.value, confidence: 1 }; const result=await mutate('edge', input, key => api.createDependency(props.project.id, input, key), '人工依赖已按版本登记。');if(result){targetRef.value={kind:'ChapterVersion',id:'',version:''};sourceRef.value={kind:'ProjectSpec',id:props.project.id,version:String(props.project.spec_revision)};edgeAction.value='REVIEW_REQUIRED'} }
 async function decideEdge(edge: api.DependencyEdge, decision: 'confirm' | 'reject') { if (!reason.value.trim()) { error.value = '请填写人工判断理由。'; return }; const input = { expected_version: edge.version, decision, reason: reason.value }; await mutate(`edge-${edge.id}`, input, key => api.decideDependency(props.project.id, edge.id, input, key), '版本绑定的人工决定已保留。') }
@@ -379,7 +464,7 @@ function resetWindowForm(){trialStart.value='';trialEnd.value='';targetSamples.v
 function resetReviewForm(){reviewingSample.value=null;reviewResult.value='';humanDecision.value='';wordEvidence.value='';repairOwner.value='';repairVersion.value='';rerunEvidence.value=''}
 function resetAllForms(){editId.value='';draftField.value='';draftValue.value='';affectedIds.value=[];semanticDraft.value=[];resetSemanticEditor();targetRef.value={kind:'ChapterVersion',id:'',version:''};sourceRef.value={kind:'ProjectSpec',id:props.project.id,version:String(props.project.spec_revision)};edgeAction.value='REVIEW_REQUIRED';assignees.value={};closingTask.value=null;closureVersion.value='';closureReceipt.value='';closureDecision.value='';computationReceipt.value=null;receiptRequest++;receiptLoading.value=false;preflightChange.value='';preflightReceiptBaseline.value=props.preflightReceiptId || '';preflightSnapshot.value=preflightReceiptBaseline.value;recoverySnapshot.value='';recoveryExport.value='';alertSignal.value='';alertResponsible.value='';alertAction.value='notify';resetWindowForm();resetSampleForm();runtimeScopeKind.value='project';runtimeModeScope.value='';alertSeverity.value='';resetReviewForm();trialDecision.value='';reason.value=''}
 const hasUnsavedChanges=computed(()=>Boolean(
- reason.value.trim()||editId.value||draftField.value||draftValue.value||affectedIds.value.length||semanticDraft.value.length||semanticTarget.value||claimText.value||claimScope.value||claimExplanation.value||claimConsent.value||assetPurpose.value||assetUsers.value.length||assetModelConsent.value||bindingEnabled.value||bindingSeverity.value||bindingTargetKind.value||bindingTargetId.value||(bindingParameters.value.trim()!==''&&bindingParameters.value.trim()!=='{}')||bindingRemoveKeys.value||routeName.value||routeInputs.value.length||routeInput.value.id||routeInput.value.version||routeRequired.value||routeStatus.value!=='planned'||targetRef.value.id||targetRef.value.version||targetRef.value.kind!=='ChapterVersion'||sourceRef.value.kind!=='ProjectSpec'||sourceRef.value.id!==props.project.id||sourceRef.value.version!==String(props.project.spec_revision)||edgeAction.value!=='REVIEW_REQUIRED'||Object.values(assignees.value).some(Boolean)||closingTask.value||closureVersion.value||closureReceipt.value||closureDecision.value||preflightChange.value||preflightSnapshot.value!==preflightReceiptBaseline.value||recoverySnapshot.value||recoveryExport.value||alertSignal.value||alertResponsible.value||alertAction.value!=='notify'||trialStart.value||trialEnd.value||targetSamples.value!==10||minimumSamples.value!==10||includedUsers.value.length||Object.values(decisionOwners.value).some(Boolean)||trialSupport.value||trialRedaction.value||trialExit.value||selectedEvidenceKey.value||sampleOwnershipConfirmed.value||JSON.stringify(sampleForm.value)!==JSON.stringify(freshSampleForm())||runtimeScopeKind.value!=='project'||runtimeModeScope.value||alertSeverity.value||reviewingSample.value||reviewResult.value||humanDecision.value||wordEvidence.value||repairOwner.value||repairVersion.value||rerunEvidence.value||trialDecision.value
+ reason.value.trim()||editId.value||draftField.value||draftValue.value||affectedIds.value.length||semanticDraft.value.length||semanticTarget.value||cardConsent.value||(cardEditor.value.trim()!==''&&cardEditor.value.trim()!=='{}')||claimText.value||claimScope.value||claimExplanation.value||claimConsent.value||assetPurpose.value||assetUsers.value.length||assetModelConsent.value||bindingEnabled.value||bindingSeverity.value||bindingTargetKind.value||bindingTargetId.value||(bindingParameters.value.trim()!==''&&bindingParameters.value.trim()!=='{}')||bindingRemoveKeys.value||routeName.value||routeInputs.value.length||routeInput.value.id||routeInput.value.version||routeRequired.value||routeStatus.value!=='planned'||targetRef.value.id||targetRef.value.version||targetRef.value.kind!=='ChapterVersion'||sourceRef.value.kind!=='ProjectSpec'||sourceRef.value.id!==props.project.id||sourceRef.value.version!==String(props.project.spec_revision)||edgeAction.value!=='REVIEW_REQUIRED'||Object.values(assignees.value).some(Boolean)||closingTask.value||closureVersion.value||closureReceipt.value||closureDecision.value||preflightChange.value||preflightSnapshot.value!==preflightReceiptBaseline.value||recoverySnapshot.value||recoveryExport.value||alertSignal.value||alertResponsible.value||alertAction.value!=='notify'||trialStart.value||trialEnd.value||targetSamples.value!==10||minimumSamples.value!==10||includedUsers.value.length||Object.values(decisionOwners.value).some(Boolean)||trialSupport.value||trialRedaction.value||trialExit.value||selectedEvidenceKey.value||sampleOwnershipConfirmed.value||JSON.stringify(sampleForm.value)!==JSON.stringify(freshSampleForm())||runtimeScopeKind.value!=='project'||runtimeModeScope.value||alertSeverity.value||reviewingSample.value||reviewResult.value||humanDecision.value||wordEvidence.value||repairOwner.value||repairVersion.value||rerunEvidence.value||trialDecision.value
 ))
 const preflightChanges=computed(()=>changes.value.filter(change=>['applied','stabilized'].includes(change.status)&&change.target_context_revision===props.project.current_context_revision))
 function syncPreflightReceipt(next:string){const untouched=preflightSnapshot.value===preflightReceiptBaseline.value;if(!hasUnsavedChanges.value&&!busy.value&&untouched){preflightSnapshot.value=next}preflightReceiptBaseline.value=next}
@@ -388,8 +473,8 @@ watch(hasUnsavedChanges,value=>emit('dirty',value),{immediate:true})
 watch(()=>props.project.spec_revision,(next,previous)=>{if(sourceRef.value.kind==='ProjectSpec'&&sourceRef.value.id===props.project.id&&sourceRef.value.version===String(previous)){sourceRef.value={...sourceRef.value,version:String(next)}}})
 defineExpose({hasUnsavedChanges,busy})
 
-watch(() => props.project.id, () => { epoch++; evidenceRequest++; runtimeReadReady.value=false; evidenceOptions.value=[];releaseOptions.value=[];exportOptions.value=[];evidenceReadError.value='';evidenceLoading.value=false;resetAllForms(); operationKeys.clear(); changes.value = []; edges.value = []; tasks.value = []; windows.value = []; assessment.value = null; stabilization.value = null; selectedWindow.value = null; trialReport.value = null; samples.value = []; decisions.value = []; controls.value = []; events.value = []; metrics.value = null; editId.value = ''; semanticDraft.value=[];claims.value=[];assets.value=[];routes.value=[];semanticTarget.value='';claimConsent.value=false;routeInputs.value=[];reviewingSample.value = null; closingTask.value = null; reason.value = ''; sourceRef.value = { kind: 'ProjectSpec', id: props.project.id, version: String(props.project.spec_revision) }; void refresh() }, { immediate: true })
-watch(currentIdentity,()=>{epoch++;evidenceRequest++;runtimeReadReady.value=false;controls.value=[];events.value=[];alerts.value=[];metrics.value=null;windows.value=[];selectedWindow.value=null;samples.value=[];trialReport.value=null;decisions.value=[];reviewingSample.value=null;evidenceOptions.value=[];releaseOptions.value=[];exportOptions.value=[];sampleFacts.value=null;sampleFactsIdentity.value='';evidenceLoading.value=false;operationKeys.clear();error.value='当前身份已改变，已保留未提交输入；请重新读取并核对当前身份的证据。'})
+watch(() => props.project.id, () => { epoch++; evidenceRequest++; runtimeReadReady.value=false; evidenceOptions.value=[];releaseOptions.value=[];exportOptions.value=[];evidenceReadError.value='';evidenceLoading.value=false;resetAllForms(); operationKeys.clear(); changes.value = []; edges.value = []; tasks.value = []; windows.value = []; assessment.value = null; stabilization.value = null; selectedWindow.value = null; trialReport.value = null; samples.value = []; decisions.value = []; controls.value = []; events.value = []; metrics.value = null; editId.value = ''; semanticDraft.value=[];claims.value=[];cards.value=[];assets.value=[];routes.value=[];semanticTarget.value='';claimConsent.value=false;routeInputs.value=[];reviewingSample.value = null; closingTask.value = null; reason.value = ''; sourceRef.value = { kind: 'ProjectSpec', id: props.project.id, version: String(props.project.spec_revision) }; void refresh() }, { immediate: true })
+watch(currentIdentity,()=>{cards.value=[];epoch++;evidenceRequest++;runtimeReadReady.value=false;controls.value=[];events.value=[];alerts.value=[];metrics.value=null;windows.value=[];selectedWindow.value=null;samples.value=[];trialReport.value=null;decisions.value=[];reviewingSample.value=null;evidenceOptions.value=[];releaseOptions.value=[];exportOptions.value=[];sampleFacts.value=null;sampleFactsIdentity.value='';evidenceLoading.value=false;operationKeys.clear();error.value='当前身份已改变，已保留未提交输入；请重新读取并核对当前身份的证据。'})
 watch(()=>props.project.current_context_revision,()=>{sampleFacts.value=null;sampleFactsIdentity.value='';runtimeReadReady.value=false})
 watch(tab, () => { void refresh() })
 </script>

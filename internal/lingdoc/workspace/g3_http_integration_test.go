@@ -74,6 +74,18 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("seed context revision: %v", err)
 	}
 
+	seedDeliveryBoundTemplateCopy(t, db, "g3-http-copy")
+	service, ok := testRuntime(handler).service.(*Service)
+	if !ok {
+		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
+	}
+	actor := Actor{TenantID: 7, UserID: deliveryActorID}
+	project, err := service.GetProject(policyContext(), actor, "project-1")
+	if err != nil {
+		t.Fatalf("read modern G3 HTTP fixture: %v", err)
+	}
+	assertDeliveryBoundTemplatePrerequisites(t, service, policyContext(), actor, project)
+
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	body := `{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"公开的合成调查样本","new_value":"新的研究对象"}},"affected_chapter_ids":["chapter-1","chapter-2"],"reason":"研究对象发生变化"}`

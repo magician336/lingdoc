@@ -70,7 +70,7 @@ export interface AgentContextInput extends G2Expectation { chapter_id?: string; 
 export type LingDocAgent = 'task_assistant' | 'research_agent'
 export interface AgentSession { id: string; project_id: string; version: number; agent: LingDocAgent; created_by: string; created_at: string }
 export interface AgentTurn {
-  id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string; suggestions?: { reply?: string; task_card?: Partial<SaveResearchTaskInput> }
+  id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string; suggestions?: { reply?: string; task_card?: Partial<SaveResearchTaskInput>; change_draft?: AgentChangeDraftSuggestion }
   context: AgentContextPackage; status: string; failure_code?: string; model_id?: string; run_mode: string; input_tokens: number; output_tokens: number; created_by: string; created_at: string
 }
 // Only a real completed server turn can supply this provenance. No client grant flags.
@@ -83,8 +83,9 @@ export interface SaveAgentSpecCandidateInput {
     provenance: { source_type: 'agent_turn'; source_id: string; source_version: string; purpose: 'project_spec'; locator: 'reply' }
   }>
 }
+export interface AgentChangeDraftSuggestion { expected_context_revision: number; reason: string; fields: Record<string,string>; affected_chapter_ids: string[] }
 export interface ActionProposal {
-  id: string; project_id: string; version: number; action: 'save_spec' | 'bind_asset' | 'create_evidence_card' | 'confirm_evidence_card' | 'apply_change_set' | 'commit_working_copy' | 'export'
+  id: string; project_id: string; version: number; action: 'save_spec' | 'create_change_set' | 'bind_asset' | 'create_evidence_card' | 'confirm_evidence_card' | 'apply_change_set' | 'commit_working_copy' | 'export'
   target_id: string; input: Record<string, unknown>; input_hash: string; source_ids: string[]; basis: G2Basis; expected_effect: string; reversibility: string; status: string; result?: unknown; failure_code?: string; created_by: string; created_at: string
 }
 export interface CreateActionProposalInput extends G2Expectation { action: ActionProposal['action']; target_id: string; input: Record<string, unknown>; source_ids: string[]; expected_effect: string }

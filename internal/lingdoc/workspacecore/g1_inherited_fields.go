@@ -25,14 +25,17 @@ func (s *Service) g1RestoreInheritedFields(ctx context.Context, tx Transaction, 
 	if err != nil {
 		return err
 	}
-	if len(history.InheritedFields) == 0 {
+	if len(history.InheritedFields) == 0 && len(history.ProposedFields) == 0 {
 		return nil
 	}
 	proof, ok := ctx.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
 	if !ok || proof.ActorID != actor.UserID || proof.TenantID != actor.TenantID || proof.Identity != candidateIdentityHash(ctx) {
 		return fmt.Errorf("%w: inverse provenance context is missing or mismatched", ErrSourceUnavailable)
 	}
-	for key, ref := range history.InheritedFields {
+	fields := map[string]SpecProvenanceRef{}
+	maps.Copy(fields, history.InheritedFields)
+	maps.Copy(fields, history.ProposedFields)
+	for key, ref := range fields {
 		value, present := next.Spec[key]
 		// A subsequently edited inverse is new human input, not a restoration.
 		if !present || hashImpactValue(value) != ref.ValueHash || ref.PinID == "" {
@@ -62,6 +65,11 @@ func (s *Service) g1RestoreInheritedFields(ctx context.Context, tx Transaction, 
 			if slices.Contains(pin.OriginalAIHashes, hashImpactValue(strings.TrimSpace(value))) {
 				field.Origin = "ai_generated"
 			}
+		}
+		if proposed, exists := history.ProposedFields[key]; exists && proposed == ref {
+			// Per-field server origin is exact; a different suggestion string or
+			// whitespace edit cannot become generated merely by matching elsewhere.
+			field.Origin = agentProposedOrigin(history.ProposedOrigins[key])
 		}
 		field.Status = "pending_confirmation"
 		next.SpecFields[key] = field
@@ -103,7 +111,17 @@ func (s *Service) g1AssertActionProvenance(ctx context.Context, actor Actor, pro
 	if history.Snapshot.SpecRevision != proposal.Basis.SpecRevision || history.Snapshot.ContextRevision != proposal.Basis.ContextRevision {
 		return ErrSourceUnavailable
 	}
-	return s.AssertFrozenProjectProvenance(ctx, actor, proposal.ProjectID, history.Spec, history.Snapshot, false)
+	if err := s.AssertFrozenProjectProvenance(ctx, actor, proposal.ProjectID, history.Spec, history.Snapshot, false); err != nil {
+		return err
+	}
+	if proposal.Action == "create_change_set" {
+		input, err := DecodeAgentChangeDraftInput(proposal.ProjectID, proposal.TargetID, proposal.Basis.ContextRevision, proposal.Input)
+		if err != nil {
+			return err
+		}
+		return s.assertAgentChangeDraftProvenance(ctx, actor, proposal.ProjectID, input)
+	}
+	return nil
 }
 
 func (s *Service) g1ActionProjection(ctx context.Context, actor Actor, proposal ActionProposal) (ActionProposal, error) {

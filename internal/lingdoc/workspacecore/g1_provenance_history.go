@@ -12,6 +12,8 @@ type g1ChangeProvenance struct {
 	Spec               map[string]string            `json:"spec"`
 	InheritedChangeIDs []string                     `json:"inherited_change_ids,omitempty"`
 	InheritedFields    map[string]SpecProvenanceRef `json:"inherited_fields,omitempty"`
+	ProposedFields     map[string]SpecProvenanceRef `json:"proposed_fields,omitempty"`
+	ProposedOrigins    map[string]string            `json:"proposed_origins,omitempty"`
 }
 type g1ReverseSourceKey struct{}
 
@@ -62,7 +64,28 @@ func g1RecordChangeProvenance(t gormTransaction, change ChangeSet) error {
 	if err != nil {
 		return err
 	}
-	return t.G5Put(p.ID, "g1_change_provenance", change.ID, 0, g1ChangeProvenance{Snapshot: snapshot, Spec: maps.Clone(p.Spec)})
+	history := g1ChangeProvenance{Snapshot: snapshot, Spec: maps.Clone(p.Spec)}
+	// Reassessment creates a new ChangeSet. Preserve only unchanged proposed
+	// new-value identities; a new baseline never converts AI text into human text.
+	if change.ReassessedFromID != "" {
+		var prior g1ChangeProvenance
+		if _, err := t.G5Get(p.ID, "g1_change_provenance", change.ReassessedFromID, &prior); err != nil {
+			return err
+		}
+		for _, field := range change.Fields {
+			if ref, exists := prior.ProposedFields[field.Key]; exists && ref.ValueHash == hashImpactValue(field.NewValue) {
+				if history.ProposedFields == nil {
+					history.ProposedFields = map[string]SpecProvenanceRef{}
+				}
+				history.ProposedFields[field.Key] = ref
+				if history.ProposedOrigins == nil {
+					history.ProposedOrigins = map[string]string{}
+				}
+				history.ProposedOrigins[field.Key] = agentProposedOrigin(prior.ProposedOrigins[field.Key])
+			}
+		}
+	}
+	return t.G5Put(p.ID, "g1_change_provenance", change.ID, 0, history)
 }
 
 func (s *Service) AssertChangeProvenance(ctx context.Context, actor Actor, change ChangeSet) error {
@@ -95,6 +118,11 @@ func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, ch
 		}
 		return ctx, err
 	}
+	return s.g1PrepareChangeProvenanceHistory(ctx, actor, change, history, seen)
+}
+
+// Shared validation for both current ChangeSet history and an immutable operation receipt.
+func (s *Service) g1PrepareChangeProvenanceHistory(ctx context.Context, actor Actor, change ChangeSet, history g1ChangeProvenance, seen map[string]bool) (context.Context, error) {
 	if history.Snapshot.SpecRevision != change.BaseSpecRevision || history.Snapshot.ContextRevision != change.BaseContextRevision {
 		return ctx, ErrSourceUnavailable
 	}
@@ -106,6 +134,10 @@ func (s *Service) g1PrepareChangeProvenance(ctx context.Context, actor Actor, ch
 		}
 	}
 	prepared, err := s.PrepareFrozenProjectProvenance(ctx, actor, change.ProjectID, history.Spec, history.Snapshot, false)
+	if err != nil {
+		return ctx, err
+	}
+	prepared, err = s.prepareProposedChangeFields(prepared, actor, change, history.ProposedFields)
 	if err != nil {
 		return ctx, err
 	}

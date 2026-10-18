@@ -266,6 +266,11 @@ export function post<T = any>(url: string, data = {}, config?: any): Promise<Wit
   return instance.post<T>(url, data, config) as unknown as Promise<WithStatus<T>>;
 }
 
+// Bypass post's default {} for endpoints whose contract has no request body.
+export function postNoBody<T = any>(url: string, config?: any): Promise<WithStatus<T>> {
+  return instance.request<T>({ ...config, method: "post", url, data: undefined }) as unknown as Promise<WithStatus<T>>;
+}
+
 export function put<T = any>(url: string, data = {}, config?: any): Promise<WithStatus<T>> {
   return instance.put<T>(url, data, config) as unknown as Promise<WithStatus<T>>;
 }

@@ -592,7 +592,7 @@
             </div>
           </div>
           <p v-if="lastChangeSet" class="muted" role="status">
-            变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}<template v-if="lastChangeSet.status === 'applied'">；请重新确认受影响章节。</template><template v-else-if="lastChangeSet.status === 'stale'">；基线已过期，请重新生成预览。</template><template v-else>。</template>
+            变更 {{ lastChangeSet.id.slice(0, 8) }} 已{{ changeSetStatusLabel(lastChangeSet.status) }}<template v-if="lastChangeSet.status === 'applied'">；请重新确认受影响章节。</template><template v-else-if="lastChangeSet.status === 'stale'">；基线已过期，请重新生成预览。</template><template v-else-if="lastChangeSet.status === 'satisfied'">；当前项目已包含拟议值，无待应用内容。</template><template v-else>。</template>
           </p>
         </section>
 
@@ -726,6 +726,9 @@
         <ChapterReviewPanel v-if="fullPanel === 'review' && chapter" ref="chapterReviewPanelRef" :project="project" :chapter="chapter" :current-user-id="auth.currentUserId ?? ''" :selection="commentSelection" :readonly="fullReadonly" :formal-current="!workingCopyDiffersFromFormal && !chapterChanged" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @locate="locateComment" />
       </section>
     </div>
+    <ChapterCommitReview v-if="pendingChapterCommit && chapter" :chapter-title="chapter.title"
+      @wording="commitWordingDraft" @semantic="routeSemanticDraft" @cancel="pendingChapterCommit = null" />
+    <p v-if="commitIntentNotice" class="muted" role="status">{{ commitIntentNotice }}</p>
     <div v-if="activationOpen && activationDiff && project" ref="activationDialogRef" class="full-workflow-backdrop" @mousedown.self="closeActivationReview">
       <section class="full-workflow-dialog activation-review" role="dialog" aria-modal="true" aria-labelledby="activation-title" tabindex="-1">
         <header class="full-workflow-head"><strong id="activation-title">立项前核对研究条件</strong><button type="button" :disabled="busy" @click="closeActivationReview">返回修改 ×</button></header>
@@ -755,6 +758,8 @@ import ProjectMembers from './ProjectMembers.vue'
 import G2ResearchPanel from './G2ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
 import G3OpsPanel from './G3OpsPanel.vue'
+import ChapterCommitReview from './ChapterCommitReview.vue'
+import { sameChapterCommitBasis, type ChapterCommitBasis } from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
 import ProjectCollaborationPanel from './ProjectCollaborationPanel.vue'
 import { listMyProjectInvitations, acceptProjectInvitation, type ProjectInvitation } from '@/api/lingdoc/collaboration'
@@ -1532,7 +1537,7 @@ const unsavedInputState = computed<UnsavedInputState>(() => ({
 }))
 const unsavedInputs = computed(() => fullPanelDirty.value || memberDraftDirty.value || unsavedInputsAreDirty(unsavedInputState.value))
 function changeSetStatusLabel(status: ChangeSet['status']): string {
-  return ({ assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期' })[status]
+  return ({ draft: '保存为草稿', assessed: '生成预览', applied: '应用', rejected: '驳回', stale: '标记为过期', stabilized: '完成稳定化', satisfied: '满足' })[status]
 }
 function hydrateCitationUsages(item: { citation_usages?: CitationUsage[] } | null) {
   const next: Record<string, CitationUsage> = {}
@@ -2633,10 +2638,46 @@ function rejectRewriteCandidate() {
   clearRewriteCandidate()
 }
 
-async function commitDraft() {
+const pendingChapterCommit = ref<ChapterCommitBasis | null>(null)
+const commitIntentNotice = ref('')
+function currentChapterCommitBasis(): ChapterCommitBasis | null {
+  if (!project.value || !chapter.value || !workingCopy.value) return null
+  return {
+    projectId: project.value.id, chapterId: chapter.value.id,
+    identity: `${auth.effectiveTenantId}:${auth.currentUserId}`, session: editorSessionEpoch,
+    specRevision: project.value.spec_revision, workingCopyRevision: workingCopy.value.working_copy_revision,
+    chapterVersionId: chapter.value.current_version_id ?? null,
+  }
+}
+function commitDraft() {
   if (!project.value || !chapter.value || !workingCopy.value || busy.value || workingCopySaving.value || chapterChanged.value) return
   if (!workingCopyDiffersFromFormal.value) return
-  if (!window.confirm('将当前工作副本提交为新的正式章节版本？提交后需要重新确认本章。')) return
+  commitIntentNotice.value = ''
+  pendingChapterCommit.value = currentChapterCommitBasis()
+}
+function currentCommitChoice(): ChapterCommitBasis | null {
+  const reviewed = pendingChapterCommit.value
+  if (!reviewed || busy.value || workingCopySaving.value || chapterChanged.value || !sameChapterCommitBasis(reviewed, currentChapterCommitBasis())) {
+    pendingChapterCommit.value = null
+    errorMessage.value = '提交前的章节、工作副本或身份已变化。原稿保留，请重新查看后选择修改性质。'
+    return null
+  }
+  return reviewed
+}
+function routeSemanticDraft() {
+  if (!currentCommitChoice()) return
+  pendingChapterCommit.value = null
+  commitIntentNotice.value = '正文仍保留在工作副本，尚未提交。请在正式变更中填写实际条件或语义差异并评估；只有当前 Owner 应用后才改变研究基线。'
+  openFullPanel('changes')
+}
+watch([() => project.value?.id, () => chapter.value?.id, () => auth.currentUserId, () => auth.effectiveTenantId], () => {
+  pendingChapterCommit.value = null
+  commitIntentNotice.value = ''
+})
+async function commitWordingDraft() {
+  const reviewed = currentCommitChoice()
+  if (!reviewed || !project.value || !chapter.value || !workingCopy.value || !workingCopyDiffersFromFormal.value) return
+  pendingChapterCommit.value = null
   busy.value = true
   errorMessage.value = ''
   const projectId = project.value.id

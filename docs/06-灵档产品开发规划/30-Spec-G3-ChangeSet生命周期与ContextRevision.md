@@ -42,6 +42,8 @@
 - G1 activation from revision 0 to 1 remains a separate baseline-confirmation action. Active ProjectSpec semantic changes cannot use ordinary save.
 - Concurrent proposals may share a baseline, but only one can apply first. Later stale application cannot create a revision or business tasks. Persist or return staleness without partial formal writes.
 - Same idempotency key and payload return the original result only after current authorization checks; changed payload conflicts. Reversal creates a new inverse ChangeSet against the current revision.
+- Reassessing a stale field ChangeSet whose every proposed value is already current creates a terminal `SATISFIED` record linked to the unchanged stale history; it does not advance revisions or create impacts, and it cannot be applied or rejected.
+- The reassess HTTP operation is bodyless: its idempotency payload is determined by the project/change-set path and key. Any request body is rejected; the OpenAPI response describes both `assessed` and `satisfied` outcomes.
 - The UI presents before/after values, assessment basis, impact status, Owner decision, stale reasons and recovery actions using accessible LingDoc language.
 
 ## Testing Decisions

@@ -146,3 +146,95 @@ test('明确填入的页码与段落在真实定位确认中保留',async()=>{
  assert.equal(request.args[1].paragraph,3)
  f.close()
 })
+
+function changeDraftChapter(project='project',id='chapter-1'){return {id,project_id:project,title:'建议复核 '+id}}
+function changeDraftTurn(){return {id:'draft-turn',project_id:'project',session_id:'session',version:2,created_by:'owner',status:'completed',agent:'task_assistant',reply:'合成候选',run_mode:'real_api_fake_model',context:{project_version:7,spec_revision:3,context_revision:4,source_refs:[]},suggestions:{change_draft:{expected_context_revision:4,reason:'明确修改合成研究条件',fields:{topic:'模型拟议主题'},affected_chapter_ids:[]}}}}
+test('模型空章节候选先提示人选章，再复用可编辑提案和两次人工确认',async()=>{
+ const f=fixture({workspace:{listChapters:project=>Promise.resolve({data:[changeDraftChapter(project),changeDraftChapter(project,'chapter-2')]})},api:{createActionProposal:(project,input)=>{f.calls.push({method:'createActionProposal',args:[project,input]});return Promise.resolve({data:{id:'proposal',version:1,project_id:project,action:input.action,target_id:project,status:'pending',input:input.input,basis:{context_revision:4},source_ids:[],expected_effect:input.expected_effect,reversibility:'仅草稿'}})}}});await tick()
+ f.state.prepareAgentChangeDraft(changeDraftTurn());await tick()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ assert.deepEqual([...f.state.changeDraftChapterIDs.value],[])
+ const original=f.state.actionForm.changeDraft
+ await f.state.proposeAction();await tick()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ assert.equal(f.state.confirming.value,null);assert.match(f.state.error.value,/至少.*一章/)
+ assert.equal(f.state.actionForm.changeDraft,original)
+ const edit=JSON.parse(original);edit.fields.topic.new_value='人工编辑后的模型候选';edit.reason='人工编辑候选原因';edit.affected_chapter_ids=['ignored-json-chapter'];f.state.actionForm.changeDraft=JSON.stringify(edit)
+ f.state.changeDraftChapterIDs.value=['chapter-2']
+ await f.state.proposeAction();await tick()
+ assert.equal(f.state.error.value,'')
+ await f.state.executeConfirmation()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='确认登记待执行提案'
+ await f.state.executeConfirmation()
+ const request=f.calls.find(call=>call.method==='createActionProposal')
+ assert.ok(request);assert.equal(request.args[1].action,'create_change_set');assert.equal(request.args[1].target_id,'project')
+ const input=request.args[1].input
+ assert.equal(input.fields.topic.old_value,'合成主题');assert.equal(input.fields.topic.new_value,'人工编辑后的模型候选')
+ assert.equal(input.reason,'人工编辑候选原因');assert.deepEqual([...input.affected_chapter_ids],['chapter-2'])
+ assert.equal(input.field_metadata.topic.origin,'ai_assisted_human');assert.equal(input.field_metadata.topic.provenance.source_id,'draft-turn');assert.equal(input.field_metadata.topic.provenance.source_version,'2')
+ assert.equal(input.confirmed,undefined);assert.equal(input.human_confirmed,undefined)
+ assert.equal(f.calls.some(call=>call.method==='confirmActionProposal'),false)
+ f.state.decideAction({id:'proposal',version:1,action:'create_change_set',status:'pending',basis:{context_revision:4},expected_effect:'只创建草稿',reversibility:'正式版本不变',input},true)
+ await f.state.executeConfirmation()
+ assert.equal(f.calls.some(call=>call.method==='confirmActionProposal'),false)
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='本人确认仅创建草稿'
+ await f.state.executeConfirmation()
+ const confirm=f.calls.find(call=>call.method==='confirmActionProposal')
+ assert.ok(confirm);assert.equal(confirm.args[2].confirmed,true);assert.equal(confirm.args[2].expected_project_version,7);assert.equal(confirm.args[2].expected_version,1)
+ assert.equal(f.calls.some(call=>call.method==='applyChangeSet'||call.method==='createChangeSet'),false)
+ f.close()
+})
+test('变更候选不静默重绑陈旧版本，切换操作者清除其来源和草稿',async()=>{
+ const f=fixture();await tick();f.state.prepareAgentChangeDraft(changeDraftTurn())
+ f.props.project={...f.props.project,project_version:8};await tick();await f.state.proposeAction()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ assert.match(f.state.error.value,/陈旧/)
+ f.props.currentUserId='other-user';await tick()
+ assert.equal(f.state.changeDraftTurn.value,null);assert.equal(f.state.actionForm.changeDraft,'')
+ f.close()
+})
+
+test('切换项目清除人工选章，旧项目确认闭包不能提交',async()=>{
+ const f=fixture({workspace:{listChapters:project=>Promise.resolve({data:[changeDraftChapter(project,project+'-chapter')]})}});await tick()
+ f.state.prepareAgentChangeDraft(changeDraftTurn());f.state.changeDraftChapterIDs.value=['project-chapter']
+ await f.state.proposeAction();const oldConfirmation=f.state.confirming.value
+ assert.ok(oldConfirmation)
+ f.props.project={...f.props.project,id:'second-project'};await tick()
+ assert.deepEqual([...f.state.changeDraftChapterIDs.value],[])
+ assert.equal(f.state.changeDraftTurn.value,null);assert.equal(f.state.actionForm.changeDraft,'')
+ assert.equal(f.state.confirming.value,null)
+ await assert.rejects(()=>oldConfirmation.execute('旧界面不得提交'),/课题或身份已变化/)
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ f.close()
+})
+
+test('模型合法章节仅预选，最终确认前不可见的章节阻断请求',async()=>{
+ const f=fixture({workspace:{listChapters:project=>Promise.resolve({data:[changeDraftChapter(project)]})}});await tick()
+ const turn=changeDraftTurn();turn.suggestions.change_draft.affected_chapter_ids=['chapter-1']
+ f.state.prepareAgentChangeDraft(turn)
+ assert.deepEqual([...f.state.changeDraftChapterIDs.value],['chapter-1'])
+ assert.equal(JSON.parse(f.state.actionForm.changeDraft).affected_chapter_ids,undefined)
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ await f.state.proposeAction();assert.ok(f.state.confirming.value)
+ f.state.chapters.value=[]
+ f.state.confirmChecked.value=true;f.state.confirmReason.value='核对后当前章节已不可见'
+ await f.state.executeConfirmation()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ assert.match(f.state.error.value,/陈旧|不可见/)
+ assert.equal(JSON.parse(f.state.actionForm.changeDraft).fields.topic.new_value,'模型拟议主题')
+ f.close()
+})
+
+test('直接触发函数也拒绝其他项目章节及当前只读身份',async()=>{
+ const f=fixture({workspace:{listChapters:project=>Promise.resolve({data:[changeDraftChapter(project),changeDraftChapter('other-project','other-chapter')]})}});await tick()
+ f.state.prepareAgentChangeDraft(changeDraftTurn());f.state.changeDraftChapterIDs.value=['other-chapter']
+ await f.state.proposeAction()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ assert.match(f.state.error.value,/不属于当前课题/)
+ f.state.changeDraftChapterIDs.value=['chapter-1'];f.props.readonly=true;await tick()
+ await f.state.proposeAction()
+ assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
+ assert.match(f.state.error.value,/无权/)
+ f.close()
+})

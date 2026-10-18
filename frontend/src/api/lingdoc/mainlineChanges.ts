@@ -1,11 +1,11 @@
-import { get, post, put } from '@/utils/request'
+import { get, post, postNoBody, put } from '@/utils/request'
 import type { ChangeSet, Result } from './workspace'
-import type { ResearchRun } from './g2'
+import type { ResearchRun, G2VersionRef } from './g2'
 import type { GenerationRun, GenerationCandidateSummary } from './generation'
 import type { Candidate } from './candidateAdoption'
 import type { ReleaseSnapshot, ExportArtifact } from './delivery'
 
-export type MainlineChangeSet = Omit<ChangeSet, 'status'> & { status: 'draft' | 'assessed' | 'applied' | 'stabilized' | 'rejected' | 'stale'; semantic_deltas?: SemanticDelta[] }
+export type MainlineChangeSet = ChangeSet & { semantic_deltas?: SemanticDelta[] }
 export interface ObjectVersionRef { kind: string; id: string; version: string }
 export interface DependencyEdge { id: string; project_id: string; source: ObjectVersionRef; target: ObjectVersionRef; relation: string; action: string; origin: 'user' | 'rule' | 'ai'; reason: string; status: 'suggested' | 'confirmed' | 'rejected'; confidence: number; actor_id: string; version: number }
 export interface DependencyEdgeInput { expected_context_revision: number; source: ObjectVersionRef; target: ObjectVersionRef; relation: string; action: string; origin: 'user' | 'ai'; reason: string; confidence: number }
@@ -16,7 +16,8 @@ export interface ImpactComputationReceipt { id: string; version: number; project
 export interface ContextRevisionRecord { project_id: string; revision: number; change_set_id: string; spec_revision: number; template_copy_version: number; spec: Record<string, string>; created_at: string }
 export interface RuleBindingOverride { rule_id: string; enabled?: boolean; target_kind?: string; target_id?: string; severity?: string; parameters?: Record<string, unknown>; remove_parameter_keys?: string[] }
 export interface RouteNode { id: string; project_id: string; version: number; name: string; inputs: ObjectVersionRef[]; required: boolean; status: 'planned' | 'ready' | 'blocked' | 'retired'; context_revision: number }
-export interface SemanticDelta { kind: 'ResearchClaim' | 'ProjectAssetScope' | 'RuleBinding' | 'RouteNode'; target_id: string; expected_version: number; before_hash?: string; before?: Record<string, unknown>; source_ids?: string[]; proposed_claim?: { text: string; scope: string; status: 'active' | 'disputed' | 'superseded'; explanation?: string; confirmed: boolean; reason?: string }; proposed_asset_policy?: { asset_id?: string; scope: 'personal' | 'project' | 'team'; purpose: string; allowed_user_ids: string[]; model_use_allowed: boolean }; proposed_binding?: RuleBindingOverride; proposed_route?: Pick<RouteNode, 'name' | 'inputs' | 'required' | 'status'> }
+export interface EvidenceCardSemanticInput { claim_ref: G2VersionRef; anchor_refs: G2VersionRef[]; support_type: 'supports' | 'refutes' | 'qualifies' | 'background'; scope: string; scope_chapter_ids: string[]; limitations: string; gaps: string; alternative_explanation: string; confirmed: boolean }
+export interface SemanticDelta { kind: 'EvidenceCard' | 'ResearchClaim' | 'ProjectAssetScope' | 'RuleBinding' | 'RouteNode'; target_id: string; expected_version: number; before_hash?: string; before?: Record<string, unknown>; source_ids?: string[]; proposed_card?: EvidenceCardSemanticInput; proposed_claim?: { text: string; scope: string; status: 'active' | 'disputed' | 'superseded'; explanation?: string; confirmed: boolean; reason?: string }; proposed_asset_policy?: { asset_id?: string; scope: 'personal' | 'project' | 'team'; purpose: string; allowed_user_ids: string[]; model_use_allowed: boolean }; proposed_binding?: RuleBindingOverride; proposed_route?: Pick<RouteNode, 'name' | 'inputs' | 'required' | 'status'> }
 export interface ProjectBindingView { rule_set_snapshot?: { bindings: Array<{ rule_id: string; target_kind: string; target_id: string; severity: string; enabled: boolean; parameters?: Record<string, unknown> }> }; binding_policies?: Array<{ rule_id: string; may_disable: boolean; allowed_severities?: string[]; allowed_parameter_keys?: string[] }>; source_policy_hash?: string }
 export interface ChangeDraftInput { semantic_deltas?: SemanticDelta[]; expected_context_revision: number; reason: string; fields: Record<string, { old_value: string; new_value: string }>; affected_chapter_ids: string[] }
 export interface ImpactTaskActionInput { expected_version: number; target_revision: number; action: 'assign' | 'start' | 'wait' | 'complete' | 'dismiss' | 'cancel'; assignee_id?: string; human_decision?: string; reason: string; closure_evidence: ObjectVersionRef[] }
@@ -52,6 +53,7 @@ export const listMainlineChanges = (id: string) => get<Result<MainlineChangeSet[
 export const createChangeDraft = (id: string, input: ChangeDraftInput, key: string) => post<Result<MainlineChangeSet>>(`${base(id)}/change-sets/drafts`, input, headers(key))
 export const editChangeDraft = (id: string, changeId: string, input: ChangeDraftInput, key: string) => put<Result<MainlineChangeSet>>(`${base(id)}/change-sets/${segment(changeId)}/draft`, input, headers(key))
 export const assessMainlineChange = (id: string, changeId: string, key: string) => post<Result<MainlineChangeSet>>(`${base(id)}/change-sets/${segment(changeId)}/assess`, {}, headers(key))
+export const reassessMainlineChange = (id: string, changeId: string, key: string) => postNoBody<Result<MainlineChangeSet>>(`${base(id)}/change-sets/${segment(changeId)}/reassess`, headers(key))
 export const getImpactAssessment = (id: string, changeId: string) => get<Result<ImpactAssessment>>(`${base(id)}/change-sets/${segment(changeId)}/impact-assessment`)
 export const stabilizeRevision = (id: string, changeId: string, key: string) => post<Result<StabilizationResult>>(`${base(id)}/change-sets/${segment(changeId)}/stabilize`, {}, headers(key))
 export const reverseMainlineChange = (id: string, changeId: string, key: string) => post<Result<MainlineChangeSet>>(`${base(id)}/change-sets/${segment(changeId)}/reverse`, {}, headers(key))

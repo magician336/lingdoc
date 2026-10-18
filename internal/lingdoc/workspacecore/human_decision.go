@@ -25,7 +25,7 @@ func RequireHumanDecision(ctx context.Context) error {
 
 func requiresHumanOperation(op string) bool {
 	switch op {
-	case "discardProject", "restoreProject", "activateProject", "applyChangeSet", "stabilizeRevision", "transferOwner", "requestOwnerTransfer", "acceptOwnerTransfer", "rejectOwnerTransfer", "inviteMember", "acceptMemberInvitation", "memberAssignment", "memberLifecycle", "apiKeyProjectGrant", "chapterReview", "chapterComment":
+	case "discardProject", "restoreProject", "activateProject", "applyChangeSet", "reverseChangeSet", "stabilizeRevision", "transferOwner", "requestOwnerTransfer", "acceptOwnerTransfer", "rejectOwnerTransfer", "inviteMember", "acceptMemberInvitation", "memberAssignment", "memberLifecycle", "apiKeyProjectGrant", "chapterReview", "chapterComment":
 		return true
 	}
 	return false

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -406,7 +407,16 @@ func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, er
 }
 
 func (t gormTransaction) RecordAudit(event AuditEvent) error {
-	details, err := json.Marshal(event.Details)
+	// Reason is part of the domain audit, including events whose caller did
+	// not redundantly place it into Details. Do not mutate the caller's map.
+	values := maps.Clone(event.Details)
+	if event.Reason != "" {
+		if values == nil {
+			values = map[string]any{}
+		}
+		values["reason"] = event.Reason
+	}
+	details, err := json.Marshal(values)
 	if err != nil {
 		return err
 	}
@@ -434,10 +444,13 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 
 func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 	var fieldData struct {
-		Fields           []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade  *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-		ReassessedFromID string             `json:"reassessed_from_id,omitempty"`
-		StaleReason      string             `json:"stale_reason,omitempty"`
+		Fields              []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade     *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID    string             `json:"reassessed_from_id,omitempty"`
+		ReversesChangeSetID string             `json:"reverses_change_set_id,omitempty"`
+		StaleReason         string             `json:"stale_reason,omitempty"`
+		DecisionBy          string             `json:"decision_by,omitempty"`
+		DecidedAt           *time.Time         `json:"decided_at,omitempty"`
 	}
 	// Earlier ChangeSets stored a bare array. Continue reading that shape while
 	// new records use an envelope to keep the schema migration-free.
@@ -474,17 +487,22 @@ func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
 		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision,
 		Fields: fieldData.Fields, TemplateUpgrade: fieldData.TemplateUpgrade, Impacts: impacts,
-		ReassessedFromID: fieldData.ReassessedFromID, StaleReason: fieldData.StaleReason,
+		ReassessedFromID: fieldData.ReassessedFromID, ReversesChangeSetID: fieldData.ReversesChangeSetID, StaleReason: fieldData.StaleReason,
+		DecisionBy: fieldData.DecisionBy, DecidedAt: fieldData.DecidedAt,
 		CreatedAt: row.CreatedAt, AppliedAt: row.AppliedAt}, nil
 }
 
 func encodeChangeSetFields(change ChangeSet) (string, error) {
 	raw, err := json.Marshal(struct {
-		Fields           []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade  *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-		ReassessedFromID string             `json:"reassessed_from_id,omitempty"`
-		StaleReason      string             `json:"stale_reason,omitempty"`
-	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade, ReassessedFromID: change.ReassessedFromID, StaleReason: change.StaleReason})
+		Fields              []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade     *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID    string             `json:"reassessed_from_id,omitempty"`
+		ReversesChangeSetID string             `json:"reverses_change_set_id,omitempty"`
+		StaleReason         string             `json:"stale_reason,omitempty"`
+		DecisionBy          string             `json:"decision_by,omitempty"`
+		DecidedAt           *time.Time         `json:"decided_at,omitempty"`
+	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade, ReassessedFromID: change.ReassessedFromID, ReversesChangeSetID: change.ReversesChangeSetID, StaleReason: change.StaleReason,
+		DecisionBy: change.DecisionBy, DecidedAt: change.DecidedAt})
 	return string(raw), err
 }
 
@@ -592,7 +610,7 @@ func (t gormTransaction) UpdateChangeSet(previous, next ChangeSet) error {
 		return err
 	}
 	result := t.db.Model(&changeSetRow{}).Where("id = ? AND project_id = ? AND status = ?", previous.ID, previous.ProjectID, previous.Status).
-		Updates(map[string]any{"status": next.Status, "target_context_revision": next.TargetContextRevision,
+		Updates(map[string]any{"reason": next.Reason, "status": next.Status, "target_context_revision": next.TargetContextRevision,
 			"target_spec_revision": next.TargetSpecRevision, "fields_json": fields, "impacts_json": string(impacts), "applied_at": next.AppliedAt})
 	return affected(result)
 }

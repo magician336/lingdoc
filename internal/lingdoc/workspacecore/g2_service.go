@@ -84,6 +84,12 @@ func (s *Service) g2Read(ctx context.Context, actor Actor, projectID, capability
 	})
 }
 func g2EmbeddedSources(raw json.RawMessage) []string {
+	// New-value provenance refers to a typed AgentTurn, not a document source.
+	// Replays use the server-collected source set; G1 rechecks the exact turn.
+	var action ActionProposal
+	if json.Unmarshal(raw, &action) == nil && action.Action == "create_change_set" && action.InputHash != "" {
+		return g2IDs(action.SourceIDs)
+	}
 	var tree any
 	if json.Unmarshal(raw, &tree) != nil {
 		return nil
@@ -1199,6 +1205,9 @@ func (s *Service) SaveResearchClaim(ctx context.Context, actor Actor, projectID,
 			if previous.Version != input.ExpectedVersion {
 				return nil, 0, ErrVersionConflict
 			}
+			if err := requireDraftG2Edit(tx, p, ObjectVersionRef{Kind: "ResearchClaim", ID: previous.ID, Version: strconv.FormatInt(previous.Version, 10)}); err != nil {
+				return nil, 0, err
+			}
 			claim.ID = previous.ID
 			claim.Version = previous.Version + 1
 			old = stored
@@ -1312,6 +1321,9 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 			}
 			if previous.Version != input.ExpectedVersion {
 				return nil, 0, ErrVersionConflict
+			}
+			if err := requireDraftG2Edit(tx, p, ObjectVersionRef{Kind: "EvidenceCard", ID: previous.ID, Version: strconv.FormatInt(previous.Version, 10)}); err != nil {
+				return nil, 0, err
 			}
 			card.ID = previous.ID
 			card.Version = previous.Version + 1
@@ -1960,6 +1972,8 @@ func g2ActionCapability(action string) (string, string, error) {
 		return "evidence-write", "创建新候选版本；保留历史", nil
 	case "confirm_evidence_card":
 		return "evidence-confirm", "撤销有效确认并重新复核；保留原记录", nil
+	case "create_change_set":
+		return "write", "只创建待评估草稿；拒绝提案不改变正式版本", nil
 	case "apply_change_set":
 		return "manage", "通过反向 ChangeSet 恢复；保留历史", nil
 	case "commit_working_copy":
@@ -1978,11 +1992,39 @@ func (s *Service) CreateActionProposal(ctx context.Context, actor Actor, project
 	if !json.Valid(input.Input) || len(input.Input) > 60000 || input.TargetID == "" || input.ExpectedEffect == "" {
 		return nil, 0, false, ErrInvalidRequest
 	}
+	if input.Action == "create_change_set" {
+		if body, status, replayed, err := s.replayAgentChangeDraftProposal(ctx, actor, projectID, key, input); err != nil || status != 0 {
+			return body, status, replayed, err
+		}
+	}
 	sourceIDs, sourceErr := s.actionProposalSources(ctx, actor, projectID, input)
 	if sourceErr != nil {
 		return nil, 0, false, sourceErr
 	}
 	input.SourceIDs = g2IDs(append(input.SourceIDs, sourceIDs...))
+	if input.Action == "create_change_set" {
+		request, err := DecodeAgentChangeDraftInput(projectID, input.TargetID, input.ExpectedContextRevision, input.Input)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		current, err := s.GetProject(ctx, actor, projectID)
+		if err != nil {
+			return nil, 0, false, err
+		}
+		basis := g2BasisFor(current, Chapter{})
+		if !g2ExpectationMatches(current, input.G2Expectation) {
+			return nil, 0, false, ErrVersionConflict
+		}
+		if _, err := s.validateAgentChangeDraftProvenance(ctx, actor, projectID, basis, request); err != nil {
+			return nil, 0, false, err
+		}
+		// The source validator compares each new value with that key's actual
+		// stored suggestion and canonicalizes origin; client labels are not proof.
+		input.Input, err = json.Marshal(request)
+		if err != nil {
+			return nil, 0, false, err
+		}
+	}
 	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", projectID+"/"+input.TargetID, key, input, input.SourceIDs, func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input.G2Expectation) {
 			return nil, 0, ErrVersionConflict
@@ -2304,8 +2346,11 @@ func (s *Service) researchTaskCapability(ctx context.Context, actor Actor, proje
 }
 
 func (s *Service) actionProposalSources(ctx context.Context, actor Actor, projectID string, input CreateActionProposalInput) ([]string, error) {
-	sourceIDs := g2EmbeddedSources(input.Input)
-	err := s.g2Read(ctx, actor, projectID, "agent", func(tx Transaction, _ Project) error {
+	sourceIDs := []string{}
+	if input.Action != "create_change_set" {
+		sourceIDs = g2EmbeddedSources(input.Input)
+	}
+	err := s.g2Read(ctx, actor, projectID, "agent", func(tx Transaction, p Project) error {
 		switch input.Action {
 		case "confirm_evidence_card":
 			card, _, err := g2Load[EvidenceCard](tx, projectID, G2CardKind, input.TargetID)
@@ -2328,6 +2373,21 @@ func (s *Service) actionProposalSources(ctx context.Context, actor Actor, projec
 				}
 				sourceIDs = append(sourceIDs, anchor.SourceID)
 			}
+		case "create_change_set":
+			request, err := DecodeAgentChangeDraftInput(projectID, input.TargetID, input.ExpectedContextRevision, input.Input)
+			if err != nil {
+				return err
+			}
+			found, err := G3OperationSourceIDs(tx, string(operationCreateChangeDraft), projectID, projectID, request.ExtendedChangeSetInput)
+			if err != nil {
+				return err
+			}
+			sourceIDs = append(sourceIDs, found...)
+			found, err = agentChangeDraftSources(tx, actor, p, request)
+			if err != nil {
+				return err
+			}
+			sourceIDs = append(sourceIDs, found...)
 		case "commit_working_copy":
 			copy, err := tx.WorkingCopy(projectID, input.TargetID)
 			if err != nil {

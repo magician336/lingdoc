@@ -66,6 +66,7 @@ type ChangeSetMutationTransaction interface {
 	ProjectMembershipTransaction
 	ChapterWorkspaceTransaction
 	changeSetTransaction
+	AuditTransaction
 }
 
 type CandidateMutationTransaction interface {
@@ -200,6 +201,7 @@ type operationName string
 
 const (
 	operationReassessChangeSet          operationName = "reassessChangeSet"
+	operationReverseChangeSet           operationName = "reverseChangeSet"
 	operationCreateDependencyEdge       operationName = "createDependencyEdge"
 	operationDecideDependencyEdge       operationName = "decideDependencyEdge"
 	operationActOnImpactTask            operationName = "actOnImpactTask"
@@ -280,13 +282,31 @@ const (
 )
 
 type operationDescriptor[I any] struct {
-	Name      operationName
-	Target    string
-	Key       string
-	Input     I
-	Request   AuthorizationRequest
-	SourceIDs operationSourceDecoder[I]
-	Output    operationOutputKind
+	Name         operationName
+	Target       string
+	Key          string
+	Input        I
+	Request      AuthorizationRequest
+	SourceIDs    operationSourceDecoder[I]
+	Output       operationOutputKind
+	CheckProject func(Project) error
+}
+
+// Owner-only business decisions keep their current-project precondition on
+// both new operations and replays. G5 manage permission alone is not an
+// academic decision grant (a former Owner can remain a project Admin).
+func ownerDecisionOperation[I any](operation operationDescriptor[I]) operationDescriptor[I] {
+	actor := operation.Request.Actor
+	operation.CheckProject = func(p Project) error {
+		if !projectOwner(p, actor.UserID) {
+			return ErrNotFound
+		}
+		if p.Status != "active" || p.DiscardedAt != nil {
+			return ErrInvalidState
+		}
+		return nil
+	}
+	return operation
 }
 
 func operationInput[I any](name operationName, target, key string, input I, request AuthorizationRequest) operationDescriptor[I] {
@@ -303,7 +323,7 @@ func operationOutputFor(name operationName) operationOutputKind {
 	switch name {
 	case operationApiKeyProjectGrant:
 		return operationOutputAPIKeyGrant
-	case operationReassessChangeSet, operationCreateChangeDraft, operationAssessChangeSet, operationEditChangeDraft:
+	case operationReassessChangeSet, operationReverseChangeSet, operationCreateChangeDraft, operationAssessChangeSet, operationEditChangeDraft:
 		return operationOutputChangeSet
 	case operationChapterComment:
 		return operationOutputChapterComment
@@ -428,6 +448,9 @@ func extendedTransaction(port any) (Transaction, error) {
 func impactSourceDecoder[I any](tx ChapterWorkspaceTransaction, op operationDescriptor[I], _ OperationResult, _ bool) ([]string, error) {
 	sourceTx, err := extendedTransaction(tx)
 	if err != nil {
+		return nil, err
+	}
+	if err := inverseOperationAccess(sourceTx, op.Request, string(op.Name), op.Target, op.Input); err != nil {
 		return nil, err
 	}
 	return G3OperationSourceIDs(sourceTx, string(op.Name), op.Target, op.Request.ProjectID, op.Input)

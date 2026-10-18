@@ -22,6 +22,7 @@ type SemanticDelta struct {
 	Before              json.RawMessage             `json:"before,omitempty"`
 	ProvenanceHash      string                      `json:"provenance_hash,omitempty"`
 	SourceIDs           []string                    `json:"source_ids,omitempty"`
+	ProposedCard        *EvidenceCardSemanticInput  `json:"proposed_card,omitempty"`
 	ProposedClaim       *SaveResearchClaimInput     `json:"proposed_claim,omitempty"`
 	ProposedAssetPolicy *ProjectAssetPolicy         `json:"proposed_asset_policy,omitempty"`
 	ProposedBinding     *governance.BindingOverride `json:"proposed_binding,omitempty"`
@@ -153,7 +154,7 @@ func validSemanticDelta(delta SemanticDelta) bool {
 		return false
 	}
 	count := 0
-	for _, found := range []bool{delta.ProposedClaim != nil, delta.ProposedAssetPolicy != nil, delta.ProposedBinding != nil, delta.ProposedRoute != nil} {
+	for _, found := range []bool{delta.ProposedClaim != nil, delta.ProposedAssetPolicy != nil, delta.ProposedBinding != nil, delta.ProposedRoute != nil, delta.ProposedCard != nil} {
 		if found {
 			count++
 		}
@@ -162,6 +163,8 @@ func validSemanticDelta(delta SemanticDelta) bool {
 		return false
 	}
 	switch delta.Kind {
+	case "EvidenceCard":
+		return delta.ProposedCard != nil && delta.ExpectedVersion > 0
 	case "ResearchClaim":
 		return delta.ProposedClaim != nil && delta.ExpectedVersion > 0
 	case "ProjectAssetScope":
@@ -177,6 +180,18 @@ func currentSemanticValue(tx Transaction, p Project, delta SemanticDelta) (Seman
 	out := SemanticCurrentValue{Ref: semanticRef(delta), SourceIDs: []string{}}
 	var value any
 	switch delta.Kind {
+	case "EvidenceCard":
+		card, _, err := g2Load[EvidenceCard](tx, p.ID, G2CardKind, delta.TargetID)
+		if err != nil {
+			return out, err
+		}
+		out.Ref.Version = strconv.FormatInt(card.Version, 10)
+		out.SourceIDs = slices.Clone(card.SourceIDs)
+		out.ProvenanceHash = hashImpactValue(struct {
+			Basis        G2Basis
+			Confirmation *EvidenceConfirmation
+		}{card.Basis, card.Confirmation})
+		value = card
 	case "ResearchClaim":
 		claim, _, err := g2Load[ResearchClaim](tx, p.ID, G2ClaimKind, delta.TargetID)
 		if err != nil {
@@ -282,6 +297,9 @@ func validateSemanticProposal(tx Transaction, p Project, delta SemanticDelta) er
 		return ErrInvalidRequest
 	}
 	switch delta.Kind {
+	case "EvidenceCard":
+		_, err := evidenceSemanticSources(tx, p, *delta.ProposedCard)
+		return err
 	case "ResearchClaim":
 		input := delta.ProposedClaim
 		if !input.Confirmed {
@@ -332,6 +350,9 @@ func semanticValueHash(value SemanticCurrentValue) string {
 	}{value.Ref, value.Body, value.ProvenanceHash})
 }
 func (s *Service) PinSemanticDeltas(ctx context.Context, tx Transaction, actor Actor, p Project, changeID string, deltas []SemanticDelta) ([]SemanticDelta, error) {
+	if err := validateCurrentCardClaimBatch(tx, p, deltas); err != nil {
+		return nil, err
+	}
 	store, ok := tx.(semanticTransaction)
 	if !ok {
 		return nil, ErrInvalidState
@@ -366,6 +387,13 @@ func (s *Service) PinSemanticDeltas(ctx context.Context, tx Transaction, actor A
 		delta.BeforeHash = semanticValueHash(value)
 		delta.ProvenanceHash = value.ProvenanceHash
 		delta.SourceIDs = value.SourceIDs
+		if delta.ProposedCard != nil {
+			ids, e := evidenceSemanticSources(tx, p, *delta.ProposedCard)
+			if e != nil {
+				return nil, e
+			}
+			delta.SourceIDs = append(delta.SourceIDs, ids...)
+		}
 		if delta.ProposedBinding != nil && delta.ProposedBinding.TargetKind == "chapter" && delta.ProposedBinding.TargetID != "" {
 			chapter, e := tx.Chapter(p.ID, delta.ProposedBinding.TargetID)
 			if e != nil {
@@ -391,6 +419,9 @@ func (s *Service) PinSemanticDeltas(ctx context.Context, tx Transaction, actor A
 	return pinned, nil
 }
 func ValidateSemanticDeltas(tx Transaction, p Project, change ChangeSet) error {
+	if err := validateCurrentCardClaimBatch(tx, p, change.SemanticDeltas); err != nil {
+		return err
+	}
 	for _, delta := range change.SemanticDeltas {
 		if !validSemanticDelta(delta) || delta.BeforeHash == "" {
 			return ErrInvalidRequest
@@ -421,6 +452,10 @@ func (s *Service) ApplySemanticDeltas(ctx context.Context, tx Transaction, actor
 	bindingOverrides := []governance.BindingOverride{}
 	for _, delta := range change.SemanticDeltas {
 		switch delta.Kind {
+		case "EvidenceCard":
+			if err := s.applyEvidenceCardDelta(ctx, tx, actor, before, *next, delta, change.Reason); err != nil {
+				return err
+			}
 		case "ResearchClaim":
 			claimInput := *delta.ProposedClaim
 			claimInput.Reason = change.Reason
@@ -622,6 +657,9 @@ func currentRouteImpactObject(tx Transaction, p Project, ref ObjectVersionRef, s
 	return state, nil
 }
 func semanticSourceIDs(tx Transaction, p Project, deltas []SemanticDelta) ([]string, error) {
+	if err := validateCurrentCardClaimBatch(tx, p, deltas); err != nil {
+		return nil, err
+	}
 	ids := []string{}
 	for _, delta := range deltas {
 		current, err := currentSemanticValue(tx, p, delta)
@@ -630,6 +668,13 @@ func semanticSourceIDs(tx Transaction, p Project, deltas []SemanticDelta) ([]str
 		}
 		ids = append(ids, delta.SourceIDs...)
 		ids = append(ids, current.SourceIDs...)
+		if delta.ProposedCard != nil {
+			proposedIDs, e := evidenceSemanticSources(tx, p, *delta.ProposedCard)
+			if e != nil {
+				return nil, e
+			}
+			ids = append(ids, proposedIDs...)
+		}
 		if delta.ProposedBinding != nil && delta.ProposedBinding.TargetKind == "chapter" && delta.ProposedBinding.TargetID != "" {
 			chapter, e := tx.Chapter(p.ID, delta.ProposedBinding.TargetID)
 			if e != nil {
@@ -678,6 +723,9 @@ func RouteStabilizationBlockers(tx Transaction, p Project) ([]ImpactBlocker, err
 	return out, nil
 }
 func validateExtendedChangeInput(input ExtendedChangeSetInput) error {
+	if err := validateCardClaimBatch(input.SemanticDeltas); err != nil {
+		return err
+	}
 	if input.ExpectedContextRevision < 1 || strings.TrimSpace(input.Reason) == "" || len(input.Reason) > 2000 || len(input.SemanticDeltas) > 100 {
 		return ErrInvalidRequest
 	}
@@ -690,6 +738,9 @@ func validateExtendedChangeInput(input ExtendedChangeSetInput) error {
 		}
 	}
 	for _, delta := range input.SemanticDeltas {
+		if delta.ProposedCard != nil && !delta.ProposedCard.Confirmed {
+			return ErrG2ConsentRequired
+		}
 		if delta.ProposedClaim != nil && !delta.ProposedClaim.Confirmed {
 			return ErrG2ConsentRequired
 		}
