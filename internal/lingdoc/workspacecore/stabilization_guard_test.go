@@ -268,6 +268,78 @@ func TestReleaseGateRejectsUnconfirmedClosureEvidence(t *testing.T) {
 	requireGateError(t, svc.AssertRevisionStabilized(context.Background(), actor, p.ID), ErrInvalidState, "")
 }
 
+// guardConditions runs the shared stabilization evaluation directly, so a guard
+// can pin the evaluation itself (what it stops at, what it collects) instead
+// of only what the two public entries return. The public entries return the
+// first gate error either way, so several differences are invisible there.
+func guardConditions(t *testing.T, svc *Service, p Project, scope stabilizationScope) stabilizationConditions {
+	t.Helper()
+	var out stabilizationConditions
+	require.NoError(t, svc.repository.Transaction(context.Background(), TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		var err error
+		out, err = svc.stabilizationConditions(tx, p, tx.(impactTransaction), scope)
+		return err
+	}))
+	return out
+}
+
+// Fail-fast fidelity. AssertRevisionStabilized used to return from INSIDE its
+// task loop, so conditions after the failing task were never evaluated at all.
+// The shared evaluation collects conditions and lets the consumer pick, which
+// is observationally identical for the gate's own return value but not for the
+// evaluation itself: without fail-fast a later infrastructure error could
+// displace the task error the gate returns, and the gate would read objects it
+// used not to read.
+//
+// No assertion on AssertRevisionStabilized can separate the two - it returns
+// the first gate error either way - so this pins the evaluation contract
+// directly: GateFailFast stops at the failing task, the Owner-shaped scope
+// keeps evaluating and sees the later route condition too.
+func TestStabilizationConditionsGateFailFastStopsAtFirstFailingTask(t *testing.T) {
+	svc, actor, p, chapter, change := guardFixture(t, "guard-failfast")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+	// One open blocking task: the very first condition of the loop rejects.
+	guardTask(t, svc, ImpactTask{ID: "guard-failfast-task", ProjectID: p.ID, ChangeSetID: change.ID,
+		Target: ObjectVersionRef{Kind: "Chapter", ID: chapter.ID, Version: "1"}, TargetRevision: p.CurrentContextRevision,
+		Action: "RECOMPUTE", Status: "open", Severity: "blocking"})
+	// One required route that is not current: the condition evaluated right after.
+	node := appendRouteNode(t, svc, p, "guard-failfast-route", true, "planned")
+
+	evaluate := func(t *testing.T, scope stabilizationScope) stabilizationConditions {
+		t.Helper()
+		return guardConditions(t, svc, p, scope)
+	}
+
+	fast := evaluate(t, stabilizationScope{GateFailFast: true})
+	require.Len(t, fast.Failures, 1, "a fail-fast gate must not evaluate past the failing task: %+v", fast.Failures)
+	require.Equal(t, "impact_task_open", fast.Failures[0].Code)
+	requireGateError(t, fast.GateError(), ErrInvalidState, "guard-failfast-task")
+
+	full := evaluate(t, stabilizationScope{})
+	codes := []string{}
+	for _, blocker := range full.OwnerBlockers() {
+		codes = append(codes, blocker.Code)
+	}
+	require.Equal(t, []string{"impact_task_open", "required_route_not_current"}, codes,
+		"without fail-fast the later route condition must also be evaluated")
+	require.Equal(t, node.ID, blockerFor(t, StabilizationResult{Blockers: full.OwnerBlockers()}, "required_route_not_current").TargetID)
+}
+
+// NOT BUILT (recorded on purpose): the gate's fall-through for result tasks is
+// observable only through the source set it re-authorizes, and a computation
+// receipt can only carry a NON-EMPTY source set if those sources are real chunks
+// (ImpactSourceDigest resolves every id). No such fixture exists in this package,
+// and faking ids makes the receipt check itself fail first, which is
+// indistinguishable from the fall-through at this seam. Building it needs a
+// source-backed chapter plus a matching receipt; #209 already recorded the same
+// cost for the neighbouring RETRIEVE_CANDIDATES case. Release condition: seed a
+// real source, then assert
+// `guardConditions(gate).ClosureSourceIDs` contains `receipt.SourceIDs` while the
+// Owner-shaped scope does not. The production behaviour is pinned by
+// stabilizationScope.ClosureSourcesOfResultTasks instead, which is where the next
+// reader will look.
+//
 // Owner path: a required route that is not current must produce the literal
 // code required_route_not_current.
 func TestStabilizationBlocksNotCurrentRequiredRoute(t *testing.T) {

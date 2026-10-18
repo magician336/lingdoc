@@ -247,7 +247,7 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 		// stabilization path consumes. This entry adds only what is deliberately
 		// gate-shaped: it writes nothing, it fails fast on the first unsatisfied
 		// condition, and it re-authorizes sources afterwards.
-		conditions, e := s.stabilizationConditions(tx, p, store, stabilizationScope{})
+		conditions, e := s.stabilizationConditions(tx, p, store, stabilizationScope{GateFailFast: true, ClosureSourcesOfResultTasks: true})
 		if e != nil {
 			return e
 		}

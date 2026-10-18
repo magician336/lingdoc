@@ -53,6 +53,40 @@ type stabilizationScope struct {
 	// is a real semantic gap between the two entries, it needs a product
 	// decision, and it is NOT closed by this refactor.
 	RecheckImpactedObjects bool
+
+	// GateFailFast makes the evaluation stop at the first condition the gate
+	// would reject on, instead of evaluating the remaining conditions and
+	// letting the consumer pick the first one afterwards.
+	//
+	// ADJUDICATION (fail-fast fidelity, not one of the four single-sided
+	// conditions). The gate used to return from inside its loop, so conditions
+	// after the failing one were never evaluated. Collecting them all and
+	// selecting afterwards would be observationally different in two ways: the
+	// gate would read objects it used not to read, and a later infrastructure
+	// error (RouteStabilizationBlockers, the rules checker) could displace the
+	// task error the gate actually returns today. The Owner path needs the whole
+	// list and leaves this false.
+	GateFailFast bool
+
+	// ClosureSourcesOfResultTasks makes a verified RECOMPUTE/RETRIEVE_CANDIDATES
+	// task fall through into the closure-evidence loop instead of stopping after
+	// the receipt check.
+	//
+	// ADJUDICATION (pre-existing asymmetry, preserved). The Owner loop has always
+	// stopped after the receipt check; the gate loop has always fallen through.
+	// The fall-through is not dead code: currentImpactObject resolves a
+	// ComputationReceipt to the receipt's own SourceIDs, and the gate adds exactly
+	// those to the set it re-authorizes in checkSources. A single shared condition
+	// would have to pick one of the two, and picking the Owner's would silently
+	// shrink the gate's authorization set - a weakening disguised as a refactor.
+	ClosureSourcesOfResultTasks bool
+}
+
+// record appends one evaluated condition and reports whether a fail-fast
+// consumer must stop evaluating now.
+func (c *stabilizationConditions) record(f stabilizationFailure, scope stabilizationScope) bool {
+	c.Failures = append(c.Failures, f)
+	return scope.GateFailFast && f.GateError != nil
 }
 
 // stabilizationFailure is one evaluated condition that is currently unsatisfied.
@@ -167,8 +201,10 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 		// result to report into and rejects on it as its own distinct failure, so
 		// a caller can never read it as a satisfied task.
 		if task.Status == "STALE" {
-			result.Failures = append(result.Failures, stabilizationFailure{task: task, StaleReport: true,
-				GateError: fmt.Errorf("%w: current impact task %s is STALE (%s)", ErrInvalidState, task.ID, task.StaleReason)})
+			if result.record(stabilizationFailure{task: task, StaleReport: true,
+				GateError: fmt.Errorf("%w: current impact task %s is STALE (%s)", ErrInvalidState, task.ID, task.StaleReason)}, scope) {
+				return result, nil
+			}
 			continue
 		}
 		if task.Severity == "blocking" && task.Status != "DONE" {
@@ -176,8 +212,10 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 			// same shape): the Owner path reports this as a blocker in a 200
 			// response, the gate rejects with an error naming the task. Both
 			// renderings are kept verbatim rather than unified.
-			result.Failures = append(result.Failures, stabilizationFailure{Code: "impact_task_open", TargetID: task.ID, Reason: task.Action,
-				GateError: fmt.Errorf("%w: current impact task %s remains %s", ErrInvalidState, task.ID, task.Status)})
+			if result.record(stabilizationFailure{Code: "impact_task_open", TargetID: task.ID, Reason: task.Action,
+				GateError: fmt.Errorf("%w: current impact task %s remains %s", ErrInvalidState, task.ID, task.Status)}, scope) {
+				return result, nil
+			}
 			continue
 		}
 		if task.Status != "DONE" {
@@ -187,7 +225,9 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 		// nothing. The Owner path has never expressed this and gains nothing from
 		// it, so it stays gate-only.
 		if len(task.ClosureEvidence) == 0 {
-			result.Failures = append(result.Failures, stabilizationFailure{GateError: ErrInvalidState})
+			if result.record(stabilizationFailure{GateError: ErrInvalidState}, scope) {
+				return result, nil
+			}
 			continue
 		}
 		if task.Action == "BLOCK_RELEASE" {
@@ -198,10 +238,22 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 		}
 		if task.Action == "RECOMPUTE" || task.Action == "RETRIEVE_CANDIDATES" {
 			if e := verifyImpactActionResult(tx, p, task, task.ClosureEvidence); e != nil {
-				result.Failures = append(result.Failures, stabilizationFailure{Code: "result_receipt_stale", TargetID: task.ID,
-					Reason: "服务端结果回执未完成或已经过期", GateError: e})
+				if result.record(stabilizationFailure{Code: "result_receipt_stale", TargetID: task.ID,
+					Reason: "服务端结果回执未完成或已经过期", GateError: e}, scope) {
+					return result, nil
+				}
+				continue
 			}
-			continue
+			// Pre-existing asymmetry, preserved deliberately (see
+			// stabilizationScope.ClosureSourcesOfResultTasks): the Owner path has
+			// always stopped here, the gate has always fallen through into the
+			// closure-evidence loop below. Falling through is what puts a
+			// computation receipt's own SourceIDs into the set the gate
+			// re-authorizes, so collapsing it here would silently shrink the
+			// gate's authorization set.
+			if !scope.ClosureSourcesOfResultTasks {
+				continue
+			}
 		}
 		for _, ref := range task.ClosureEvidence {
 			state, e := currentImpactObject(tx, p, ref)
@@ -211,15 +263,19 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 				// The Owner path records the invalidation as an explicit STALE
 				// transition (a write, therefore returned as data); the gate just
 				// propagates the read failure.
-				result.Failures = append(result.Failures, stabilizationFailure{task: task, StaleTransition: true, StaleReport: true, GateError: e})
 				result.StaleTransitions = append(result.StaleTransitions, task)
 				invalidated[task.ID] = true
+				if result.record(stabilizationFailure{task: task, StaleTransition: true, StaleReport: true, GateError: e}, scope) {
+					return result, nil
+				}
 				continue
 			}
 			result.ClosureSourceIDs = append(result.ClosureSourceIDs, state.SourceIDs...)
 			if slices.Contains([]string{"REVIEW_REQUIRED", "INVALIDATE_CONFIRMATION", "REVALIDATE_EVIDENCE"}, task.Action) && !state.Confirmed && (task.Action != "REVIEW_REQUIRED" || task.Target.Kind != "ResearchClaim" || task.HumanDecision != "reviewed" || !researchClaimReviewCurrent(tx, p, ref)) {
-				result.Failures = append(result.Failures, stabilizationFailure{Code: "closure_stale", TargetID: task.ID,
-					Reason: "闭环证据已变化，需重新处理", GateError: ErrInvalidState})
+				if result.record(stabilizationFailure{Code: "closure_stale", TargetID: task.ID,
+					Reason: "闭环证据已变化，需重新处理", GateError: ErrInvalidState}, scope) {
+					return result, nil
+				}
 			}
 		}
 	}
@@ -233,7 +289,9 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 		return stabilizationConditions{}, err
 	}
 	for _, blocker := range routeBlockers {
-		result.Failures = append(result.Failures, stabilizationFailure{Code: blocker.Code, TargetID: blocker.TargetID, Reason: blocker.Reason, GateError: ErrInvalidState})
+		if result.record(stabilizationFailure{Code: blocker.Code, TargetID: blocker.TargetID, Reason: blocker.Reason, GateError: ErrInvalidState}, scope) {
+			return result, nil
+		}
 	}
 	// ADJUDICATION #1 (merged, presentation preserved). The template binding
 	// condition is evaluated once, here. The Owner path reports it as the
@@ -243,7 +301,9 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 	// the gate the machine-readable code instead would change its error identity,
 	// which #210 explicitly forbids, so the collapsed rendering stays.
 	if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound {
-		result.Failures = append(result.Failures, stabilizationFailure{Code: "template_unbound", Reason: "当前模板未绑定", GateError: ErrInvalidState})
+		if result.record(stabilizationFailure{Code: "template_unbound", Reason: "当前模板未绑定", GateError: ErrInvalidState}, scope) {
+			return result, nil
+		}
 	}
 	// ADJUDICATION #2 (merged, presentation preserved). One availability check,
 	// two return types: the Owner path reports a blocker inside a 200 response,
@@ -251,15 +311,19 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 	// would either make the gate accept a governance gap or make stabilization
 	// fail instead of reporting, so both renderings are kept.
 	if s.impactRules == nil {
-		result.Failures = append(result.Failures, stabilizationFailure{Code: "rules_checker_unavailable", Reason: "缺少当前规则检查器", GateError: ErrImpactObjectUnavailable})
+		if result.record(stabilizationFailure{Code: "rules_checker_unavailable", Reason: "缺少当前规则检查器", GateError: ErrImpactObjectUnavailable}, scope) {
+			return result, nil
+		}
 	} else {
 		blockers, err := s.impactRules.Check(tx, p)
 		if err != nil {
 			return stabilizationConditions{}, err
 		}
 		for _, blocker := range blockers {
-			result.Failures = append(result.Failures, stabilizationFailure{Code: blocker.Code, TargetID: blocker.TargetID, Reason: blocker.Reason,
-				GateError: fmt.Errorf("%w: current rules block release", ErrInvalidState)})
+			if result.record(stabilizationFailure{Code: blocker.Code, TargetID: blocker.TargetID, Reason: blocker.Reason,
+				GateError: fmt.Errorf("%w: current rules block release", ErrInvalidState)}, scope) {
+				return result, nil
+			}
 		}
 	}
 	return result, nil
