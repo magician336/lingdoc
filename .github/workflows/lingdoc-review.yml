@@ -64,11 +64,13 @@ jobs:
         if: steps.scope.outputs.contracts == 'true'
         id: contracts
         run: |
+          python -m unittest discover -s scripts/ci -p 'test_lingdoc_routes.py' -v
           scratch=$(mktemp -d "$RUNNER_TEMP/lingdoc-contracts.XXXXXX")
           cp -R "docs/08-本轮实施方案/contracts/." "$scratch/"
+          cp scripts/ci/check_lingdoc_routes.py "$scratch/check_lingdoc_routes.py"
           # Never mistake the committed report for a result from this run.
           rm -f "$scratch/validation-result.json"
-          python -X utf8 "$scratch/validate_artifacts.py" | tee "$RUNNER_TEMP/lingdoc-checks/contracts.log"
+          python -X utf8 "$scratch/validate_artifacts.py" --source-root "$GITHUB_WORKSPACE" | tee "$RUNNER_TEMP/lingdoc-checks/contracts.log"
           cp "$scratch/validation-result.json" "$RUNNER_TEMP/lingdoc-checks/validation-result.json"
           python - <<'PY'
           import json, os

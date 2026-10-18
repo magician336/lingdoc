@@ -1,5 +1,7 @@
 """Validate design examples and the reference trace; does not run the application."""
+import argparse
 import copy
+import importlib.util
 import hashlib
 import json
 import re
@@ -10,10 +12,21 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 from jsonschema import Draft7Validator, FormatChecker, RefResolver
 
 ROOT=Path(__file__).resolve().parent
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--source-root',type=Path,default=ROOT.parents[2],
+                    help='actual repository source, also when this contract directory is a scratch copy')
+args=parser.parse_args()
+checker_path=ROOT/'check_lingdoc_routes.py'
+if not checker_path.is_file():
+    checker_path=args.source_root/'scripts/ci/check_lingdoc_routes.py'
+checker_loader=importlib.util.spec_from_file_location('lingdoc_route_parity',checker_path)
+checker=importlib.util.module_from_spec(checker_loader)
+checker_loader.loader.exec_module(checker)
 def read(name): return json.loads((ROOT/name).read_text(encoding='utf-8'))
 spec=read('openapi.json')
 cases=read('scenarios.json')
 flow=read('workflow.json')
+route_parity=checker.check(args.source_root,spec)
 def canon(x): return json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
 def sha(x): return hashlib.sha256(canon(x)).hexdigest()
 def ptr(root,p):
@@ -32,14 +45,7 @@ def walk(x):
     elif isinstance(x,list):
         for value in x: walk(value)
 walk(spec)
-def normalize(x):
-    if isinstance(x,list): return [normalize(v) for v in x]
-    if not isinstance(x,dict): return x
-    result={k:normalize(v) for k,v in x.items() if k!='nullable'}
-    if x.get('nullable'):
-        assert isinstance(result.get('type'),str)
-        result['type']=[result['type'],'null']
-    return result
+normalize=checker.normalize_openapi_schema
 normalized=normalize(spec)
 resolver=RefResolver.from_schema(normalized)
 checks=0
@@ -565,7 +571,7 @@ for label,action in [
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'
 assert scenario_totals['checks_tied']>=1,'no check was tied back to a published response example'
 
-report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','paths':len(spec['paths']),
+report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','route_parity':route_parity,'paths':len(spec['paths']),
  'operations':len(ops),'core_operations':sum(o['x-delivery-phase']=='core' for o in ops.values()),
  'schemas':len(spec['components']['schemas']),'local_refs':refs,'shape_checks':checks,
  'scenarios':len(cases['scenarios']),'scenario_example_references':scenario_steps,'continuous_trace_steps':len(resolved),
