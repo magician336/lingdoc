@@ -46,6 +46,7 @@ type AuditSink = core.AuditSink
 type ContractDemoTemplate = core.ContractDemoTemplate
 type TemplateField = core.TemplateField
 type ChangeSet = core.ChangeSet
+type DependencyEdge = core.DependencyEdge
 type TemplateUpgrade = core.TemplateUpgrade
 type TemplateUpgradeInput = core.TemplateUpgradeInput
 type TemplateUpgradeImpact = core.TemplateUpgradeImpact
@@ -79,6 +80,7 @@ var (
 	ErrInvalidRequest      = core.ErrInvalidRequest
 	ErrInvalidState        = core.ErrInvalidState
 	ErrVersionConflict     = core.ErrVersionConflict
+	ErrDependencyDecided   = core.ErrDependencyDecided
 	ErrIdempotencyConflict = core.ErrIdempotencyConflict
 	ErrRequestInProgress   = core.ErrRequestInProgress
 	ErrSourceUnavailable   = core.ErrSourceUnavailable

@@ -16028,6 +16028,184 @@
         "x-domain": "workspace",
         "x-delivery-phase": "core"
       }
+    },
+    "/projects/{projectId}/dependencies": {
+      "get": {
+        "operationId": "listDependencyEdges",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取依赖边；逐边按来源授权过滤，不可访问对象的边不返回",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "依赖边列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DependencyEdge"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      },
+      "post": {
+        "operationId": "createDependencyEdge",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "登记依赖边；origin=ai 时状态为 suggested，user/rule 时为 confirmed",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyEdgeInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已登记；同一 (source,target,relation,action) 复用既有边",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyEdge"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "该依赖已被人工定论，自动运行不得覆盖（dependency_decided）"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/dependencies/{edgeId}/decision": {
+      "post": {
+        "operationId": "decideDependencyEdge",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "人工确认、修改或拒绝候选依赖；决定绑定 expected_version",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "edgeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyDecisionInput"
+              },
+              "example": {
+                "expected_version": 1,
+                "decision": "modify",
+                "reason": "人工修正为强制重算",
+                "relation": "constrains",
+                "action": "REGENERATE",
+                "confidence": 0.9
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "决定已记录；modify 后仍为 confirmed 且 version+1",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyEdge"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法；modify 至少要改一个字段"
+          },
+          "403": {
+            "description": "该操作需要实际成员作出决定"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "边版本已变化，或该边已有结论（version_conflict / 当前状态不允许）"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
     }
   },
   "components": {
@@ -20682,6 +20860,250 @@
           }
         },
         "description": "创建或编辑草稿不改正式对象。需服务端当前版本、权限和全部旧/拟议来源核对；评估后由当前 Owner 独立 Apply。 同一批次不能修改相互关联的 ResearchClaim 与 EvidenceCard（包括卡原关联与拟议关联），请分两次正式变更，并对新主张版本重新复核证据卡。"
+      },
+      "ObjectVersionRef": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ProjectSpec",
+              "ProjectAsset",
+              "SourceAnchor",
+              "EvidenceCard",
+              "ResearchClaim",
+              "ChapterVersion",
+              "TemplateCopy",
+              "RuleSet",
+              "RuleBinding",
+              "RouteNode",
+              "ResearchRun",
+              "ComputationReceipt"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "对象版本坐标；决定与影响解析都绑定在此版本上。"
+          }
+        }
+      },
+      "DependencyEdge": {
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "source",
+          "target",
+          "relation",
+          "action",
+          "origin",
+          "reason",
+          "status",
+          "confidence",
+          "actor_id",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "user",
+              "rule",
+              "ai"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "confirmed",
+              "rejected"
+            ],
+            "description": "由服务端决定。suggested 边在影响评估中只产生 certainty=possible，不进入 required objects，不能独立阻断或放行交付；客户端不得本地推断。"
+          },
+          "superseded_relation": {
+            "type": "string",
+            "description": "decision=modify 时被替换掉的原 relation；自动运行再提出该元组会被拒绝（dependency_decided）。"
+          },
+          "superseded_action": {
+            "type": "string",
+            "description": "decision=modify 时被替换掉的原 action。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DependencyEdgeInput": {
+        "type": "object",
+        "required": [
+          "expected_context_revision",
+          "source",
+          "target",
+          "relation",
+          "action",
+          "origin",
+          "reason",
+          "confidence"
+        ],
+        "properties": {
+          "expected_context_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "user",
+              "rule",
+              "ai"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "DependencyDecisionInput": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "decision",
+          "reason"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "决定所针对的边版本；不匹配返回 409，避免静默覆盖后续改动。"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "reject",
+              "modify"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ],
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          }
+        },
+        "description": "confirm/reject 不得携带 relation/action/confidence；modify 至少要携带其中之一。"
       }
     }
   },

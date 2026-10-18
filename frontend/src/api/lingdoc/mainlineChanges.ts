@@ -7,8 +7,17 @@ import type { ReleaseSnapshot, ExportArtifact } from './delivery'
 
 export type MainlineChangeSet = ChangeSet & { semantic_deltas?: SemanticDelta[] }
 export interface ObjectVersionRef { kind: string; id: string; version: string }
-export interface DependencyEdge { id: string; project_id: string; source: ObjectVersionRef; target: ObjectVersionRef; relation: string; action: string; origin: 'user' | 'rule' | 'ai'; reason: string; status: 'suggested' | 'confirmed' | 'rejected'; confidence: number; actor_id: string; version: number }
-export interface DependencyEdgeInput { expected_context_revision: number; source: ObjectVersionRef; target: ObjectVersionRef; relation: string; action: string; origin: 'user' | 'ai'; reason: string; confidence: number }
+// Status/certainty are server-decided: 'suggested' edges report certainty
+// 'possible' and never enter the required object set, so they cannot gate a
+// delivery. Clients must not re-derive either value locally.
+export interface DependencyEdge { id: string; project_id: string; source: ObjectVersionRef; target: ObjectVersionRef; relation: string; action: string; origin: DependencyOrigin; reason: string; status: DependencyStatus; superseded_relation?: string; superseded_action?: string; confidence: number; actor_id: string; version: number; created_at: string; updated_at: string }
+export type DependencyOrigin = 'user' | 'rule' | 'ai'
+export type DependencyStatus = 'suggested' | 'confirmed' | 'rejected'
+export type DependencyDecision = 'confirm' | 'reject' | 'modify'
+export interface DependencyEdgeInput { expected_context_revision: number; source: ObjectVersionRef; target: ObjectVersionRef; relation: string; action: string; origin: DependencyOrigin; reason: string; confidence: number }
+// 'modify' rebinds relation/action/confidence and leaves the edge confirmed;
+// the optional fields are omitted (not empty) to leave a value untouched.
+export interface DependencyDecisionInput { expected_version: number; decision: DependencyDecision; reason: string; relation?: string; action?: string; confidence?: number }
 export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: string; responsibility_domain: string; assignee_id?: string; status: string; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; closure_evidence: ObjectVersionRef[] }
 export interface ImpactAssessment { change_set_id: string; context_revision: number; input_hash: string; ruleset_hash: string; impacts: Array<{ target: ObjectVersionRef; action: string; certainty: 'definite' | 'possible'; causes: Array<{ edge_id: string; reason: string }> }> }
 export interface StabilizationResult { change_set_id: string; context_revision: number; status: 'BLOCKED' | 'STABILIZED'; blockers: Array<{ code: string; target_id?: string; reason: string }> }
@@ -62,7 +71,7 @@ export const listRouteNodes = (id: string) => get<Result<RouteNode[]>>(`${base(i
 export const listContextRevisions = (id: string) => get<Result<ContextRevisionRecord[]>>(`${base(id)}/context-revisions`)
 export const listDependencies = (id: string) => get<Result<DependencyEdge[]>>(`${base(id)}/dependencies`)
 export const createDependency = (id: string, input: DependencyEdgeInput, key: string) => post<Result<DependencyEdge>>(`${base(id)}/dependencies`, input, headers(key))
-export const decideDependency = (id: string, edgeId: string, input: { expected_version: number; decision: 'confirm' | 'reject'; reason: string }, key: string) => post<Result<DependencyEdge>>(`${base(id)}/dependencies/${segment(edgeId)}/decision`, input, headers(key))
+export const decideDependency = (id: string, edgeId: string, input: DependencyDecisionInput, key: string) => post<Result<DependencyEdge>>(`${base(id)}/dependencies/${segment(edgeId)}/decision`, input, headers(key))
 export const listImpactTasks = (id: string) => get<Result<ImpactTask[]>>(`${base(id)}/impact-tasks`)
 export const actOnImpactTask = (id: string, taskId: string, input: ImpactTaskActionInput, key: string) => post<Result<ImpactTask>>(`${base(id)}/impact-tasks/${segment(taskId)}/actions`, input, headers(key))
 export const listRuntimeControls = (id: string) => get<Result<RuntimeControl[]>>(`${base(id)}/runtime/controls`)
