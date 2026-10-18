@@ -400,8 +400,18 @@ func TestReleaseGateFailsOnUnavailableAndBlockingRuleChecker(t *testing.T) {
 // is in question.
 func guardClaim(t *testing.T, svc *Service, p Project, id string) ObjectVersionRef {
 	t.Helper()
+	return guardClaimOnBasis(t, svc, p, id, p.SpecRevision)
+}
+
+// guardClaimOnBasis stores a ResearchClaim recorded against a SPECIFIC spec
+// revision, so a guard can separate "the decision was a review" from "the claim
+// the review was recorded against is still the current one". Passing anything
+// other than the current spec revision models a claim whose basis has been
+// overtaken by a later spec revision.
+func guardClaimOnBasis(t *testing.T, svc *Service, p Project, id string, specRevision int64) ObjectVersionRef {
+	t.Helper()
 	claim := ResearchClaim{ID: id, ProjectID: p.ID, Version: 1, Text: "守护 合成研究主张", Scope: "守护范围",
-		Status: "active", Basis: G2Basis{ProjectVersion: p.ProjectVersion, SpecRevision: p.SpecRevision,
+		Status: "active", Basis: G2Basis{ProjectVersion: p.ProjectVersion, SpecRevision: specRevision,
 			ContextRevision: p.CurrentContextRevision}, Reason: "守护 合成主张", CreatedBy: "owner",
 		CreatedAt: time.Now().UTC()}
 	require.NoError(t, svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
@@ -453,6 +463,74 @@ func TestReleaseGateRequiresHumanReviewOfResearchClaim(t *testing.T) {
 		HumanDecision: "deferred", ClosureEvidence: []ObjectVersionRef{ref}})
 
 	requireGateError(t, svc.AssertRevisionStabilized(context.Background(), actor, p.ID), ErrInvalidState, "")
+}
+
+// The two guards above cannot tell the human-review escape apart from a mere
+// "the decision was not a review": both reach the same closure_stale branch
+// through the HumanDecision term, so deleting the review-currentness check
+// entirely would leave them green. These two isolate the review itself: the
+// decision IS a review, and only the claim it was recorded against is no longer
+// current. Nothing else in the condition can fire, so the check is the only
+// thing standing between this state and stabilization.
+
+// Owner path: a recorded human review of a claim whose basis has been overtaken
+// is not a review of anything current, and must still block.
+func TestStabilizationRejectsReviewedClaimOnStaleBasis(t *testing.T) {
+	svc, actor, p, _, change := guardFixture(t, "guard-claim-stale-owner")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+
+	staleBasis := p.SpecRevision - 1
+	if staleBasis < 0 {
+		staleBasis = 0
+	}
+	ref := guardClaimOnBasis(t, svc, p, "guard-claim-stale-owner-claim", staleBasis)
+	guardTask(t, svc, ImpactTask{ID: "guard-claim-stale-owner", ProjectID: p.ID, ChangeSetID: change.ID, Target: ref,
+		TargetRevision: p.CurrentContextRevision, Action: "REVIEW_REQUIRED", Status: "DONE", Disposition: "completed",
+		HumanDecision: "reviewed", ClosureEvidence: []ObjectVersionRef{ref}})
+
+	blocked, err := runStabilization(t, svc, actor, p.ID, change.ID, "guard-claim-stale-owner")
+	require.NoError(t, err)
+	require.Equal(t, "BLOCKED", blocked.Status, "a review of an overtaken claim must block: %+v", blocked.Blockers)
+	blocker := blockerFor(t, blocked, "closure_stale")
+	require.Equal(t, "guard-claim-stale-owner", blocker.TargetID)
+}
+
+// Gate path: the same state must refuse the gate.
+func TestReleaseGateRejectsReviewedClaimOnStaleBasis(t *testing.T) {
+	svc, actor, p, _, change := guardFixture(t, "guard-claim-stale-gate")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+	markChangeSetStabilized(t, svc, actor, p.ID, change.ID)
+
+	staleBasis := p.SpecRevision - 1
+	if staleBasis < 0 {
+		staleBasis = 0
+	}
+	ref := guardClaimOnBasis(t, svc, p, "guard-claim-stale-gate-claim", staleBasis)
+	guardTask(t, svc, ImpactTask{ID: "guard-claim-stale-gate", ProjectID: p.ID, ChangeSetID: change.ID, Target: ref,
+		TargetRevision: p.CurrentContextRevision, Action: "REVIEW_REQUIRED", Status: "DONE", Disposition: "completed",
+		HumanDecision: "reviewed", ClosureEvidence: []ObjectVersionRef{ref}})
+
+	requireGateError(t, svc.AssertRevisionStabilized(context.Background(), actor, p.ID), ErrInvalidState, "")
+}
+
+// Gate path, accepted direction: a recorded human review of a CURRENT claim is
+// the one state in which the review escape must open the gate. Without this case
+// the gate-side guard only pins the rejection, so deleting or inverting the
+// review-currentness check would leave the gate side green.
+func TestReleaseGateAcceptsReviewedCurrentClaim(t *testing.T) {
+	svc, actor, p, _, change := guardFixture(t, "guard-claim-gate-current")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+	markChangeSetStabilized(t, svc, actor, p.ID, change.ID)
+	ref := guardClaim(t, svc, p, "guard-claim-gate-current-claim")
+	guardTask(t, svc, ImpactTask{ID: "guard-claim-gate-current", ProjectID: p.ID, ChangeSetID: change.ID, Target: ref,
+		TargetRevision: p.CurrentContextRevision, Action: "REVIEW_REQUIRED", Status: "DONE", Disposition: "completed",
+		HumanDecision: "reviewed", ClosureEvidence: []ObjectVersionRef{ref}})
+
+	require.NoError(t, svc.AssertRevisionStabilized(context.Background(), actor, p.ID),
+		"a recorded human review of a current claim must open the gate")
 }
 
 // Owner path: a BLOCK_RELEASE task closed against a preflight receipt that is

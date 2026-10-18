@@ -963,7 +963,13 @@ func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, act
 // for any object a DONE task re-targeted: completing a task legitimately moves
 // it onto a newer version, so the assessed version is expected to be stale there
 // and the task's own closure check already covers the current one.
-func impactConfirmationBlockers(tx Transaction, p Project, store impactTransaction, changeID string) []ImpactBlocker {
+//
+// invalidated carries the ids of tasks whose closure evidence was found
+// unreadable during THIS evaluation and which the Owner path has therefore
+// turned into STALE transitions. Their record no longer says DONE by the time
+// this runs, so they must not be counted as closure here either. The gate passes
+// nil: it does not perform this re-read at all (see stabilizationScope).
+func impactConfirmationBlockers(tx Transaction, p Project, store impactTransaction, changeID string, invalidated map[string]bool) []ImpactBlocker {
 	assessment, err := store.ImpactAssessment(p.ID, changeID)
 	if err != nil {
 		// A change set with no stored assessment has no impacted object set to
@@ -979,6 +985,9 @@ func impactConfirmationBlockers(tx Transaction, p Project, store impactTransacti
 	accountedFor := map[string]bool{}
 	for _, task := range tasks {
 		if task.ChangeSetID != changeID || task.Status != "DONE" {
+			continue
+		}
+		if invalidated[task.ID] {
 			continue
 		}
 		for _, ref := range task.ClosureEvidence {
@@ -1112,71 +1121,22 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		}
 		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, StaleTaskIDs: []string{}, CheckedAt: time.Now().UTC()}
 		store := tx.(impactTransaction)
-		tasks, err := store.ImpactTasks(projectID)
+		// Every "what counts as not stabilized" condition is decided by the one
+		// evaluation in stabilizationConditions. This entry owns only what is
+		// deliberately Owner-shaped: executing the STALE transitions the
+		// evaluation returned, reporting the result structurally, advancing the
+		// ChangeSet status and writing the audit event.
+		conditions, err := s.stabilizationConditions(tx, p, store, stabilizationScope{ChangeID: changeID, RecheckImpactedObjects: true})
 		if err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
-		for _, task := range tasks {
-			if task.ChangeSetID != changeID || task.TargetRevision != p.CurrentContextRevision {
-				continue
-			}
-			// A STALE task records an invalidated obligation. It must not block
-			// (the basis it was raised against no longer exists, so no actor can
-			// ever discharge it) and it must not count as closure. It is
-			// reported explicitly instead of being dropped.
-			if task.Status == "STALE" {
-				result.StaleTaskIDs = append(result.StaleTaskIDs, task.ID)
-				continue
-			}
-			if task.Severity == "blocking" && task.Status != "DONE" {
-				result.Blockers = append(result.Blockers, ImpactBlocker{Code: "impact_task_open", TargetID: task.ID, Reason: task.Action})
-				continue
-			}
-			if task.Status == "DONE" && (task.Action == "RECOMPUTE" || task.Action == "RETRIEVE_CANDIDATES") {
-				if err := verifyImpactActionResult(tx, p, task, task.ClosureEvidence); err != nil {
-					result.Blockers = append(result.Blockers, ImpactBlocker{Code: "result_receipt_stale", TargetID: task.ID, Reason: "服务端结果回执未完成或已经过期"})
-				}
-				continue
-			}
-			if task.Status == "DONE" && task.Action != "BLOCK_RELEASE" {
-				for _, ref := range task.ClosureEvidence {
-					state, err := currentImpactObject(tx, p, ref)
-					if err != nil || ((task.Action == "REVIEW_REQUIRED" || task.Action == "INVALIDATE_CONFIRMATION" || task.Action == "REVALIDATE_EVIDENCE") && (!state.Confirmed && (task.Action != "REVIEW_REQUIRED" || task.Target.Kind != "ResearchClaim" || task.HumanDecision != "reviewed" || !researchClaimReviewCurrent(tx, p, ref)))) {
-						// Re-checked before closure: the version this result was
-						// produced against has been replaced, so the result no
-						// longer holds. Record the invalidation as an explicit
-						// STALE transition instead of only reporting a blocker, so
-						// the task stops claiming to be DONE and stays explainable.
-						if err != nil {
-							if _, markErr := s.markImpactTaskStale(tx, actor, p, store, task, ImpactTaskStaleTargetReplaced); markErr != nil {
-								return operationResult[StabilizationResult]{}, markErr
-							}
-							result.StaleTaskIDs = append(result.StaleTaskIDs, task.ID)
-							continue
-						}
-						result.Blockers = append(result.Blockers, ImpactBlocker{Code: "closure_stale", TargetID: task.ID, Reason: "闭环证据已变化，需重新处理"})
-					}
-				}
+		for _, task := range conditions.StaleTransitions {
+			if _, markErr := s.markImpactTaskStale(tx, actor, p, store, task, ImpactTaskStaleTargetReplaced); markErr != nil {
+				return operationResult[StabilizationResult]{}, markErr
 			}
 		}
-		result.Blockers = append(result.Blockers, impactConfirmationBlockers(tx, p, store, changeID)...)
-		routeBlockers, err := RouteStabilizationBlockers(tx, p)
-		if err != nil {
-			return operationResult[StabilizationResult]{}, err
-		}
-		result.Blockers = append(result.Blockers, routeBlockers...)
-		if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound {
-			result.Blockers = append(result.Blockers, ImpactBlocker{Code: "template_unbound", Reason: "当前模板未绑定"})
-		}
-		if s.impactRules == nil {
-			result.Blockers = append(result.Blockers, ImpactBlocker{Code: "rules_checker_unavailable", Reason: "缺少当前规则检查器"})
-		} else {
-			blockers, err := s.impactRules.Check(tx, p)
-			if err != nil {
-				return operationResult[StabilizationResult]{}, err
-			}
-			result.Blockers = append(result.Blockers, blockers...)
-		}
+		result.Blockers = append(result.Blockers, conditions.OwnerBlockers()...)
+		result.StaleTaskIDs = append(result.StaleTaskIDs, conditions.OwnerStaleTaskIDs()...)
 		if len(result.Blockers) == 0 {
 			result.Status = "STABILIZED"
 			if change.Status != "stabilized" {
