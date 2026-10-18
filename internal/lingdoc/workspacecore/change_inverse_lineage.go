@@ -18,7 +18,7 @@ type inverseLineageTransaction interface {
 // SQLite has no SELECT FOR UPDATE: a no-op identity update takes its writer
 // lock without changing any source ChangeSet value or lifecycle field.
 func (t gormTransaction) LockInverseSource(projectID, sourceID string) error {
-	if t.db.Dialector.Name() == "sqlite" {
+	if t.db.Name() == "sqlite" {
 		return affected(t.db.Model(&changeSetRow{}).Where("project_id = ? AND id = ?", projectID, sourceID).UpdateColumn("id", sourceID))
 	}
 	var row changeSetRow

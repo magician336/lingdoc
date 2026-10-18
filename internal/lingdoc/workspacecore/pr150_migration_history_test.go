@@ -206,7 +206,11 @@ func pr150MigrationRows(t *testing.T, db *sql.DB, query string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			t.Errorf("close migration snapshot rows: %v", err)
+		}
+	}()
 	columns, err := rows.Columns()
 	if err != nil {
 		t.Fatal(err)
