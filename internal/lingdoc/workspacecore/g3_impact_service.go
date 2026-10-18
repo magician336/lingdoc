@@ -875,6 +875,18 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 	})
 }
 
+// impactTaskVersionNeutralActions are the actions that do not work a task
+// against the version it was raised against.
+//
+// "complete" is the re-targeting action: it validates and records caller-supplied
+// closure evidence for the current version, so a replaced version is expected
+// there. "assign" only names a responsible person and "wait" only parks the task
+// while a human decision is outstanding; neither engages the recorded version, so
+// staling them would let a non-committal action destroy work that is still
+// perfectly dischargeable. "start" is deliberately NOT here: starting work
+// against a version that no longer exists is meaningless, so it must stale.
+var impactTaskVersionNeutralActions = []string{"complete", "assign", "wait"}
+
 // impactTaskStaleReason decides, against current domain truth, whether the
 // basis an impact task was raised against still holds. It returns "" when the
 // task can still be worked, otherwise a stable reason code.
@@ -918,7 +930,15 @@ func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, act
 			return ImpactTaskStaleAssigneeRevoked
 		}
 	}
-	if reason := staleTargetReason(tx, p, task.Target); reason != "" && action != "complete" && action != "assign" {
+	// "assign" and "wait" are exempt for the same reason from the other side:
+	// neither names a responsible person nor parks a task "working" against its
+	// recorded version, so a replaced version says nothing about whether they are
+	// still meaningful. Without these carve-outs the ordinary owner flows
+	// (assign then complete, suspend then resume then complete) marked the task
+	// STALE on a non-committal action and could never close it, which left a
+	// change that invalidates chapter confirmations unable to reach STABILIZED at
+	// all.
+	if reason := staleTargetReason(tx, p, task.Target); reason != "" && !slices.Contains(impactTaskVersionNeutralActions, action) {
 		// A version replacement means the task can no longer be worked as
 		// recorded, so it is invalidated with an explicit reason.
 		return reason

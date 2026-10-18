@@ -67,3 +67,48 @@ func TestG3200AssignDoesNotStaleAReplacedTarget(t *testing.T) {
 		t.Fatalf("assign after STALE error = %v, want ErrInvalidState", err)
 	}
 }
+
+// The same carve-out must cover "wait": parking a task while a human decision is
+// outstanding does not work the task against its recorded version either, so a
+// replaced version says nothing about whether the task may sit in WAITING_USER.
+// Without this, the ordinary "suspend -> someone re-confirms -> resume -> complete"
+// flow ends in a terminal STALE task nobody can close.
+func TestG3200WaitDoesNotStaleAReplacedTarget(t *testing.T) {
+	svc := g3_200_impactTaskStore(t, filepath.Join(t.TempDir(), "g3-200-wait.db"))
+	actor := Actor{TenantID: 3211, UserID: "owner"}
+	p, _, change := g3_200_appliedFixture(t, svc, actor)
+	task := g3_200_taskFor(t, g3_200_tasks(t, svc, actor, p.ID), change.ID)
+
+	g3_200_replaceTargetChapterBody(t, svc, actor, p, task.Target.ID, "g3-200-wait-replace", "G3-200 挂起前被替换的正文")
+
+	// "wait" is only meaningful for the responsible person, so take ownership
+	// first. Assigning must itself survive the replaced version.
+	assignedRaw, _, _, err := svc.ActOnImpactTask(context.Background(), actor, p.ID, task.ID, "g3-200-wait-assign", ImpactTaskActionInput{
+		ExpectedVersion: task.Version, TargetRevision: p.CurrentContextRevision, Action: "assign",
+		AssigneeID: actor.UserID, Reason: "指派给 Owner",
+	})
+	if err != nil {
+		t.Fatalf("assign before wait failed: %v", err)
+	}
+	var assigned ImpactTask
+	if err := json.Unmarshal(assignedRaw, &assigned); err != nil {
+		t.Fatal(err)
+	}
+
+	raw, _, _, err := svc.ActOnImpactTask(context.Background(), actor, p.ID, task.ID, "g3-200-wait", ImpactTaskActionInput{
+		ExpectedVersion: assigned.Version, TargetRevision: p.CurrentContextRevision, Action: "wait", Reason: "等待人工判断",
+	})
+	if err != nil {
+		t.Fatalf("parking a task with a replaced target must succeed, got %v", err)
+	}
+	var waiting ImpactTask
+	if err := json.Unmarshal(raw, &waiting); err != nil {
+		t.Fatal(err)
+	}
+	if waiting.Status == "STALE" {
+		t.Fatalf("wait must not stale the task: %+v", waiting)
+	}
+	if waiting.Status != "WAITING_USER" {
+		t.Fatalf("wait did not park the task: %+v", waiting)
+	}
+}
