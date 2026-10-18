@@ -99,9 +99,39 @@ type ImpactTask struct {
 	Disposition          string             `json:"disposition,omitempty"`
 	HumanDecision        string             `json:"human_decision,omitempty"`
 	ClosureEvidence      []ObjectVersionRef `json:"closure_evidence"`
-	CreatedAt            time.Time          `json:"created_at"`
-	UpdatedAt            time.Time          `json:"updated_at"`
+	// StaleReason explains why a task became STALE. STALE is terminal but is
+	// not closure: the basis the task was raised against no longer exists, so
+	// the task cannot be completed and must not satisfy the release gate.
+	StaleReason string    `json:"stale_reason,omitempty"`
+	StaleAt     time.Time `json:"stale_at,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
+
+// Stale reason codes. They are part of the task contract: a consumer must be
+// able to tell a replaced target version from a revoked source or a revoked
+// responsible actor without re-deriving it from timing.
+const (
+	// ImpactTaskStaleTargetReplaced means the exact target version the task was
+	// raised against is no longer the current version of that object.
+	ImpactTaskStaleTargetReplaced = "target_version_replaced"
+	// ImpactTaskStaleSourceRevoked means a source backing the task's target is
+	// no longer readable by the responsible actor.
+	ImpactTaskStaleSourceRevoked = "source_revoked"
+	// ImpactTaskStaleAssigneeRevoked means the assignee lost the capability or
+	// project scope required to act on the task.
+	ImpactTaskStaleAssigneeRevoked = "assignee_revoked"
+)
+
+// ImpactTaskStatuses lists every reachable task state. STALE is terminal and
+// explicitly excluded from the closed set: it records that the basis is gone,
+// not that the impact was handled.
+var ImpactTaskStatuses = []string{"OPEN", "IN_PROGRESS", "WAITING_USER", "DONE", "DISMISSED", "STALE", "CANCELLED"}
+
+// ImpactTaskClosedStatuses are the states that count as a closed loop for the
+// impact. STALE is intentionally absent: an invalidated task is never closure.
+var ImpactTaskClosedStatuses = []string{"DONE", "DISMISSED", "CANCELLED"}
+
 type ImpactTaskActionInput struct {
 	HumanDecision   string             `json:"human_decision,omitempty"`
 	ExpectedVersion int64              `json:"expected_version"`
@@ -121,7 +151,12 @@ type StabilizationResult struct {
 	ContextRevision int64           `json:"context_revision"`
 	Status          string          `json:"status"`
 	Blockers        []ImpactBlocker `json:"blockers"`
-	CheckedAt       time.Time       `json:"checked_at"`
+	// StaleTaskIDs lists tasks that were invalidated before stabilization.
+	// They are neither blockers (their basis is gone, so blocking would be an
+	// unresolvable deadlock) nor closure (nothing was discharged). Reporting
+	// them keeps the transition from being silently dropped.
+	StaleTaskIDs []string  `json:"stale_task_ids"`
+	CheckedAt    time.Time `json:"checked_at"`
 }
 type ImpactRuleChecker interface {
 	Check(Transaction, Project) ([]ImpactBlocker, error)
@@ -139,6 +174,7 @@ type impactTransaction interface {
 	InsertImpactTask(ImpactTask) error
 	ImpactTasks(string) ([]ImpactTask, error)
 	ImpactTask(string, string) (ImpactTask, error)
+	ImpactTaskByIdentity(string, string) (ImpactTask, error)
 	UpdateImpactTask(ImpactTask, ImpactTask) error
 	InsertImpactHandoff(ImpactTask) error
 	RecordContextRevision(Project, ChangeSet) error

@@ -18,9 +18,20 @@ export interface DependencyEdgeInput { expected_context_revision: number; source
 // 'modify' rebinds relation/action/confidence and leaves the edge confirmed;
 // the optional fields are omitted (not empty) to leave a value untouched.
 export interface DependencyDecisionInput { expected_version: number; decision: DependencyDecision; reason: string; relation?: string; action?: string; confidence?: number }
-export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: string; responsibility_domain: string; assignee_id?: string; status: string; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; closure_evidence: ObjectVersionRef[] }
+// A task's identity is change_set_id + target_ref + target_revision +
+// action_type, and `id` is derived from that identity, so a redelivered event
+// addresses the same task rather than forking a second one. Duplicate causes
+// merge into `causes` instead of appending a second task.
+// 'STALE' is terminal but is NOT closure: the basis the task was raised against
+// no longer exists, so it satisfies no gate. `stale_reason` explains which of
+// target_version_replaced | source_revoked | assignee_revoked applied.
+export type ImpactTaskStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_USER' | 'DONE' | 'DISMISSED' | 'STALE' | 'CANCELLED'
+export type ImpactTaskStaleReason = 'target_version_replaced' | 'source_revoked' | 'assignee_revoked'
+export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: string; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
 export interface ImpactAssessment { change_set_id: string; context_revision: number; input_hash: string; ruleset_hash: string; impacts: Array<{ target: ObjectVersionRef; action: string; certainty: 'definite' | 'possible'; causes: Array<{ edge_id: string; reason: string }> }> }
-export interface StabilizationResult { change_set_id: string; context_revision: number; status: 'BLOCKED' | 'STABILIZED'; blockers: Array<{ code: string; target_id?: string; reason: string }> }
+// A 'complete' whose recorded target version was replaced becomes STALE, not
+// DONE, so clients must render the reason rather than treating it as closed.
+export interface StabilizationResult { change_set_id: string; context_revision: number; status: 'BLOCKED' | 'STABILIZED'; blockers: Array<{ code: string; target_id?: string; reason: string }>; stale_task_ids: string[] }
 export interface ImpactComputationReceipt { id: string; version: number; project_id: string; status: string; project_version: number; context_revision: number; template_copy_version: number; ruleset_hash: string; input_hash: string; computation_basis_hash: string; source_basis_hash: string; source_ids: string[]; evaluations: Array<{ status: string; rule_id?: string; ruleset_hash?: string; evaluator_version?: string }>; checked_at: string }
 export interface ContextRevisionRecord { project_id: string; revision: number; change_set_id: string; spec_revision: number; template_copy_version: number; spec: Record<string, string>; created_at: string }
 export interface RuleBindingOverride { rule_id: string; enabled?: boolean; target_kind?: string; target_id?: string; severity?: string; parameters?: Record<string, unknown>; remove_parameter_keys?: string[] }
