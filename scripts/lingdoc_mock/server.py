@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import importlib.util
 import json
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +15,13 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from jsonschema import Draft7Validator, FormatChecker, RefResolver
+
+# Locate code from this script, never from a caller-selected --spec directory.
+# Importing the checker has no report writes or route validation side effects.
+_normalizer_path = Path(__file__).resolve().parents[1] / "ci/check_lingdoc_routes.py"
+_normalizer_spec = importlib.util.spec_from_file_location("lingdoc_mock_schema_normalizer", _normalizer_path)
+_normalizer_module = importlib.util.module_from_spec(_normalizer_spec)
+_normalizer_spec.loader.exec_module(_normalizer_module)
 
 PREFIX = "/api/v1/lingdoc"
 SPEC_PATH = Path(__file__).resolve().parents[2] / "docs/08-本轮实施方案/contracts/openapi.json"
@@ -29,22 +37,24 @@ class MockError(Exception):
         self.code, self.status = code, status
 
 
-def normalize(value):
-    """Same OAS 3.0 nullable -> JSON Schema convention as validate_artifacts.py."""
+def _check_resolver_scope(value):
+    """Keep fixture schemas local before handing them to the shared normalizer."""
     if isinstance(value, list):
-        return [normalize(item) for item in value]
-    if not isinstance(value, dict):
-        return value
-    if "$id" in value or "$schema" in value:
-        raise ValueError("Mock schemas may not change resolver scope")
-    if "$ref" in value and not value["$ref"].startswith("#/"):
-        raise ValueError("Mock only supports local OpenAPI references")
-    result = {key: normalize(item) for key, item in value.items() if key != "nullable"}
-    if value.get("nullable"):
-        if not isinstance(result.get("type"), str):
-            raise ValueError("nullable requires an explicit schema type")
-        result["type"] = [result["type"], "null"]
-    return result
+        for item in value:
+            _check_resolver_scope(item)
+    elif isinstance(value, dict):
+        if "$id" in value or "$schema" in value:
+            raise ValueError("Mock schemas may not change resolver scope")
+        if "$ref" in value and (not isinstance(value["$ref"], str) or not value["$ref"].startswith("#/")):
+            raise ValueError("Mock only supports local OpenAPI references")
+        for item in value.values():
+            _check_resolver_scope(item)
+
+
+def normalize(value):
+    """Use the same strict nullable semantics as the contract artifact checker."""
+    _check_resolver_scope(value)
+    return _normalizer_module.normalize_openapi_schema(value)
 
 
 class ContractMock:
