@@ -30,7 +30,11 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rootSQL.Close()
+	defer func() {
+		if err := rootSQL.Close(); err != nil {
+			t.Errorf("close test database: %v", err)
+		}
+	}()
 
 	schema := fmt.Sprintf("ruleset_store_%d", time.Now().UnixNano())
 	if err := root.Exec("CREATE SCHEMA " + schema).Error; err != nil {
@@ -50,7 +54,11 @@ func TestPostgresRuleSetMigrationAndLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqlDB.Close()
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("close test database: %v", err)
+		}
+	}()
 	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
 		t.Fatal(err)
 	}

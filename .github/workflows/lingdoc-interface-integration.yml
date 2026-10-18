@@ -62,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 2
           persist-credentials: false
       - uses: actions/setup-go@v6
         with:
@@ -79,7 +80,7 @@ jobs:
       - name: Repeat sequential API contract without race instrumentation
         run: go test -count=20 -run '^TestLingDocRealAPIThroughMainRegistration$' ./internal/router
       - name: Verify RuleSet HTTP-to-export persistence on SQLite and PostgreSQL
-        run: go test -count=1 -v -run '^TestRuleSetProductionHTTPToExportPersistsAcrossRestart(SQLite|Postgres)$' ./internal/container/lingdoc.go ./internal/container/lingdoc_ruleset_delivery_e2e_test.go
+        run: go test -count=1 -v -run '^TestRuleSetProductionHTTPToExportPersistsAcrossRestart(SQLite|Postgres)$' ./internal/container
       - name: Upload backend closeout logs and status matrix
         if: always()
         uses: actions/upload-artifact@v4

@@ -400,13 +400,5 @@ func (s *DeliveryExportService) reviewCurrentSources(ctx context.Context, projec
 }
 
 func accessInputFromDelivery(input delivery.DeliveryInput) lingdocaccess.CurrentnessInput {
-	chapters := make([]lingdocaccess.ChapterVersion, 0, len(input.Chapters))
-	for _, chapter := range input.Chapters {
-		chapters = append(chapters, lingdocaccess.ChapterVersion{ChapterID: chapter.ChapterID, ChapterVersionID: chapter.ChapterVersionID})
-	}
-	sources := make([]lingdocaccess.Source, 0, len(input.Sources))
-	for _, source := range input.Sources {
-		sources = append(sources, lingdocaccess.Source{ID: source.ID, ProjectID: source.ProjectID, AssetID: source.AssetID, AssetRevision: source.AssetRevision, Locator: source.Locator, QuotedTextHash: source.QuotedTextHash})
-	}
-	return lingdocaccess.CurrentnessInput{Kind: lingdocaccess.DeliveryInput, ProjectID: input.ProjectID, ProjectVersion: int64(input.ProjectVersion), SpecRevision: int64(input.SpecRevision), Chapters: chapters, Sources: sources}
+	return delivery.AccessCurrentnessInput(input)
 }

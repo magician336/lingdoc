@@ -8,6 +8,7 @@ import (
 	"fmt"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
+	"maps"
 	"reflect"
 	"strings"
 	"time"
@@ -69,15 +70,6 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 	if err != nil {
 		return Project{}, err
 	}
-	for key, field := range specFields {
-		if field.Provenance != nil && !field.Provenance.Accessible {
-			field.Provenance.NeedsReview = true
-			field.Status = "pending_confirmation"
-			field.Value = ""
-			specFields[key] = field
-			spec[key] = ""
-		}
-	}
 	var members []memberRow
 	if err := tx.Where("project_id = ?", row.ID).Order("user_id").Find(&members).Error; err != nil {
 		return Project{}, err
@@ -116,9 +108,15 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 			ContentHash: copyRow.ContentHash, RulesetHash: copyRow.RulesetHash, TemplateVersionRuleSetRef: ruleSetRef, Definition: definition,
 			CreatedBy: copyRow.CreatedBy, CreatedAt: copyRow.CreatedAt,
 		}
-		if validateProjectTemplateCopy(p.TemplateCopy) != nil {
-			return Project{}, ErrInvalidState
-		}
+	}
+	if err := hydrateTemplateBinding(tx, p.TemplateCopy); err != nil {
+		return Project{}, err
+	}
+	// The source policy and legacy source RuleSet live in the sidecar. Load
+	// them before checking source/effective hashes or a valid legacy copy is
+	// rejected, and a tampered canonical sidecar would escape validation.
+	if p.TemplateCopy != nil && validateProjectTemplateCopy(p.TemplateCopy) != nil {
+		return Project{}, ErrInvalidState
 	}
 	for _, m := range members {
 		member := Member{UserID: m.UserID, Role: m.Role}
@@ -136,6 +134,9 @@ func projectView(tx *gorm.DB, row projectRow) (Project, error) {
 			if err := json.Unmarshal([]byte(permission.FunctionScopesJSON), &member.FunctionScopes); err != nil {
 				return Project{}, err
 			}
+		}
+		if member.Role == "owner" {
+			member.GovernanceRole = "owner"
 		}
 		p.Members = append(p.Members, member)
 	}
@@ -164,12 +165,19 @@ func (t gormTransaction) ProjectTemplateCopy(tenantID uint64, projectID string, 
 	if err != nil {
 		return ProjectTemplateCopy{}, err
 	}
-	return ProjectTemplateCopy{
+	copy := ProjectTemplateCopy{
 		ID: row.ID, ProjectID: row.ProjectID, SourceTemplateID: row.SourceTemplateID,
 		SourceTemplateVersion: row.SourceTemplateVersion, Version: row.Version, Status: row.Status,
 		ContentHash: row.ContentHash, RulesetHash: row.RulesetHash, TemplateVersionRuleSetRef: ruleSetRef, Definition: definition,
 		CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt,
-	}, nil
+	}
+	if err := hydrateTemplateBinding(t.db, &copy); err != nil {
+		return ProjectTemplateCopy{}, err
+	}
+	if validateProjectTemplateCopy(&copy) != nil {
+		return ProjectTemplateCopy{}, ErrInvalidState
+	}
+	return copy, nil
 }
 func (t gormTransaction) Projects(actor Actor, limit int) ([]Project, error) {
 	var rows []projectRow
@@ -253,12 +261,19 @@ func (t gormTransaction) UpdateProject(tenantID uint64, previous, next Project) 
 	if err := affected(result); err != nil {
 		return err
 	}
-	return t.persistTemplateCopyTransition(previous, next)
+	if err := t.persistTemplateCopyTransition(previous, next); err != nil {
+		return err
+	}
+	_, err = g1PersistSnapshot(t, next)
+	return err
 }
 
 func (t gormTransaction) insertProjectTemplateCopy(copy ProjectTemplateCopy) error {
 	raw, err := json.Marshal(copy.Definition)
 	if err != nil {
+		return err
+	}
+	if err := saveTemplateBinding(t, copy); err != nil {
 		return err
 	}
 	ruleSetRefRaw, err := json.Marshal(copy.TemplateVersionRuleSetRef)
@@ -294,7 +309,7 @@ func (t gormTransaction) persistTemplateCopyTransition(previous, next Project) e
 			!reflect.DeepEqual(previous.TemplateCopy.TemplateVersionRuleSetRef, next.TemplateCopy.TemplateVersionRuleSetRef) ||
 			previous.TemplateCopy.SourceTemplateID != next.TemplateCopy.SourceTemplateID || previous.TemplateCopy.SourceTemplateVersion != next.TemplateCopy.SourceTemplateVersion ||
 			previous.TemplateCopy.Version != next.TemplateCopy.Version || previous.TemplateCopy.CreatedBy != next.TemplateCopy.CreatedBy ||
-			!previous.TemplateCopy.CreatedAt.Equal(next.TemplateCopy.CreatedAt) || !reflect.DeepEqual(previous.TemplateCopy.Definition, next.TemplateCopy.Definition) {
+			!previous.TemplateCopy.CreatedAt.Equal(next.TemplateCopy.CreatedAt) || previous.TemplateCopy.SourcePolicyHash != next.TemplateCopy.SourcePolicyHash || !reflect.DeepEqual(previous.TemplateCopy.BindingPolicies, next.TemplateCopy.BindingPolicies) || !reflect.DeepEqual(previous.TemplateCopy.RuleSetSnapshot, next.TemplateCopy.RuleSetSnapshot) || previous.TemplateCopy.SourceRuleSetHash != next.TemplateCopy.SourceRuleSetHash || previous.TemplateCopy.SourceRuleSetID != next.TemplateCopy.SourceRuleSetID || previous.TemplateCopy.SourceRuleSetVersion != next.TemplateCopy.SourceRuleSetVersion || !reflect.DeepEqual(previous.TemplateCopy.Definition, next.TemplateCopy.Definition) {
 			return ErrInvalidState
 		}
 		if previous.TemplateCopy.Status == next.TemplateCopy.Status {
@@ -385,10 +400,6 @@ func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, er
 			if err := json.Unmarshal([]byte(row.ProvenanceJSON), provenance); err != nil {
 				return nil, err
 			}
-			if !provenance.Accessible {
-				provenance.NeedsReview = true
-				row.Content = ""
-			}
 		}
 		result = append(result, DraftCandidate{ID: row.ID, ProjectID: row.ProjectID, Kind: row.Kind, Title: row.Title, Content: row.Content, Level: row.Level, BasedOnContextRevision: row.BasedOnContextRevision, Provenance: provenance, CreatedBy: row.CreatedBy, CreatedAt: row.CreatedAt})
 	}
@@ -396,7 +407,16 @@ func (t gormTransaction) DraftCandidates(projectID string) ([]DraftCandidate, er
 }
 
 func (t gormTransaction) RecordAudit(event AuditEvent) error {
-	details, err := json.Marshal(event.Details)
+	// Reason is part of the domain audit, including events whose caller did
+	// not redundantly place it into Details. Do not mutate the caller's map.
+	values := maps.Clone(event.Details)
+	if event.Reason != "" {
+		if values == nil {
+			values = map[string]any{}
+		}
+		values["reason"] = event.Reason
+	}
+	details, err := json.Marshal(values)
 	if err != nil {
 		return err
 	}
@@ -424,8 +444,13 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 
 func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 	var fieldData struct {
-		Fields          []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		Fields              []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade     *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID    string             `json:"reassessed_from_id,omitempty"`
+		ReversesChangeSetID string             `json:"reverses_change_set_id,omitempty"`
+		StaleReason         string             `json:"stale_reason,omitempty"`
+		DecisionBy          string             `json:"decision_by,omitempty"`
+		DecidedAt           *time.Time         `json:"decided_at,omitempty"`
 	}
 	// Earlier ChangeSets stored a bare array. Continue reading that shape while
 	// new records use an envelope to keep the schema migration-free.
@@ -462,18 +487,29 @@ func decodeChangeSet(row changeSetRow) (ChangeSet, error) {
 		Status: row.Status, BaseContextRevision: row.BaseContextRevision, TargetContextRevision: row.TargetContextRevision,
 		BaseSpecRevision: row.BaseSpecRevision, TargetSpecRevision: row.TargetSpecRevision,
 		Fields: fieldData.Fields, TemplateUpgrade: fieldData.TemplateUpgrade, Impacts: impacts,
+		ReassessedFromID: fieldData.ReassessedFromID, ReversesChangeSetID: fieldData.ReversesChangeSetID, StaleReason: fieldData.StaleReason,
+		DecisionBy: fieldData.DecisionBy, DecidedAt: fieldData.DecidedAt,
 		CreatedAt: row.CreatedAt, AppliedAt: row.AppliedAt}, nil
 }
 
 func encodeChangeSetFields(change ChangeSet) (string, error) {
 	raw, err := json.Marshal(struct {
-		Fields          []ChangeFieldDelta `json:"fields"`
-		TemplateUpgrade *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade})
+		Fields              []ChangeFieldDelta `json:"fields"`
+		TemplateUpgrade     *TemplateUpgrade   `json:"template_upgrade,omitempty"`
+		ReassessedFromID    string             `json:"reassessed_from_id,omitempty"`
+		ReversesChangeSetID string             `json:"reverses_change_set_id,omitempty"`
+		StaleReason         string             `json:"stale_reason,omitempty"`
+		DecisionBy          string             `json:"decision_by,omitempty"`
+		DecidedAt           *time.Time         `json:"decided_at,omitempty"`
+	}{Fields: change.Fields, TemplateUpgrade: change.TemplateUpgrade, ReassessedFromID: change.ReassessedFromID, ReversesChangeSetID: change.ReversesChangeSetID, StaleReason: change.StaleReason,
+		DecisionBy: change.DecisionBy, DecidedAt: change.DecidedAt})
 	return string(raw), err
 }
 
 func (t gormTransaction) InsertChangeSet(change ChangeSet) error {
+	if err := g1RecordChangeProvenance(t, change); err != nil {
+		return err
+	}
 	fields, err := encodeChangeSetFields(change)
 	if err != nil {
 		return err
@@ -498,6 +534,10 @@ func (t gormTransaction) ChangeSet(projectID, id string) (ChangeSet, error) {
 	if err != nil {
 		return ChangeSet{}, err
 	}
+	change, err = HydrateSemanticChange(t, change)
+	if err != nil {
+		return ChangeSet{}, err
+	}
 	return t.withCurrentImpactStatus(change)
 }
 
@@ -509,6 +549,10 @@ func (t gormTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
 	result := make([]ChangeSet, 0, len(rows))
 	for _, row := range rows {
 		change, err := decodeChangeSet(row)
+		if err != nil {
+			return nil, err
+		}
+		change, err = HydrateSemanticChange(t, change)
 		if err != nil {
 			return nil, err
 		}
@@ -566,7 +610,7 @@ func (t gormTransaction) UpdateChangeSet(previous, next ChangeSet) error {
 		return err
 	}
 	result := t.db.Model(&changeSetRow{}).Where("id = ? AND project_id = ? AND status = ?", previous.ID, previous.ProjectID, previous.Status).
-		Updates(map[string]any{"status": next.Status, "target_context_revision": next.TargetContextRevision,
+		Updates(map[string]any{"reason": next.Reason, "status": next.Status, "target_context_revision": next.TargetContextRevision,
 			"target_spec_revision": next.TargetSpecRevision, "fields_json": fields, "impacts_json": string(impacts), "applied_at": next.AppliedAt})
 	return affected(result)
 }
@@ -596,6 +640,9 @@ func (t gormTransaction) InvalidateChapterConfirmations(projectID string, chapte
 }
 
 func (t gormTransaction) InsertOwnerTransfer(transfer OwnerTransfer) error {
+	if err := t.db.Model(&ownerTransferRow{}).Where("project_id=? AND status='pending' AND created_at < ?", transfer.ProjectID, time.Now().UTC().Add(-72*time.Hour)).Update("status", "cancelled").Error; err != nil {
+		return err
+	}
 	return t.db.Create(&ownerTransferRow{ID: transfer.ID, ProjectID: transfer.ProjectID, FromUserID: transfer.FromUserID, ToUserID: transfer.ToUserID, Status: transfer.Status, ExpectedProjectVersion: transfer.ExpectedProjectVersion, CreatedAt: transfer.CreatedAt}).Error
 }
 
@@ -614,7 +661,14 @@ func (t gormTransaction) AcceptOwnerTransfer(projectID, id string, version int64
 
 func (t gormTransaction) SetMemberRole(projectID, userID, role string) error {
 	result := t.db.Model(&memberRow{}).Where("project_id = ? AND user_id = ?", projectID, userID).Update("role", role)
-	return affected(result)
+	if err := affected(result); err != nil {
+		return err
+	}
+	governance := "member"
+	if role == "owner" {
+		governance = "owner"
+	}
+	return permissionSchemaError(t.db.Model(&memberPermissionRow{}).Where("project_id=? AND user_id=?", projectID, userID).Updates(map[string]any{"governance_role": governance, "function_roles_json": "[]", "function_scopes_json": "{}"}).Error)
 }
 
 func (t gormTransaction) EnsureMember(projectID, userID, role string) error {
@@ -908,7 +962,3 @@ func isSQLiteLockError(err error) bool {
 
 var _ Repository = (*GORMRepository)(nil)
 var _ Transaction = gormTransaction{}
-var _ ProjectMembershipTransaction = gormTransaction{}
-var _ ChapterWorkspaceTransaction = gormTransaction{}
-var _ OperationTransaction = gormTransaction{}
-var _ AuditTransaction = gormTransaction{}

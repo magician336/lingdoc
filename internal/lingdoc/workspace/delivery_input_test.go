@@ -303,7 +303,7 @@ func TestDeliveryLinkSurfacesUnsupportedMarkdownBeforeExport(t *testing.T) {
 	handler, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db,
 		deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID),
-			"- 列表项 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
+			"> 引用块 [[source:"+deliverySourceID+"]]", []string{deliverySourceID}),
 		deliveryMethodChapter(),
 	)
 	service := newDeliveryReleaseService(t, handler)
@@ -435,7 +435,7 @@ func TestDeliveryLinkReportsDriftAfterTheWorkspaceMoves(t *testing.T) {
 	}
 }
 
-func TestDeliveryLinkReportsSourceRevocationAsNotCurrent(t *testing.T) {
+func TestDeliveryLinkRejectsSourceRevocationBeforeReturningSnapshot(t *testing.T) {
 	handler, db, assetID := seedBoundSource(t)
 	sourceAuthorizer := &switchableAssetAuthorizer{}
 	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, sourceAuthorizer)
@@ -451,11 +451,11 @@ func TestDeliveryLinkReportsSourceRevocationAsNotCurrent(t *testing.T) {
 	}
 	sourceAuthorizer.revoked = true
 	got, err := service.Get(ctx, deliveryActorID, "project-1", snapshot.ID)
-	if err != nil {
-		t.Fatalf("Get: %v", err)
+	if !errors.Is(err, candidateadoption.ErrSourceAccessDenied) {
+		t.Fatalf("Get: %v, want explicit source access denial", err)
 	}
-	if got.IsCurrent {
-		t.Fatal("revoked source kept the frozen snapshot current")
+	if got.ID != "" || len(got.FrozenInput.Chapters) != 0 || len(got.FrozenInput.Sources) != 0 {
+		t.Fatal("revoked snapshot read returned frozen content")
 	}
 }
 

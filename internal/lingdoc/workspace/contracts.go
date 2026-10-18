@@ -48,6 +48,7 @@ type ApplicationService interface {
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
 	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }
@@ -92,6 +93,7 @@ type WorkspaceWriteApplication interface {
 	CommitWorkingCopyResult(context.Context, Actor, string, string, string, CommitWorkingCopyInput) (CommittedChapterMutationResult, error)
 	RestoreWorkingCopyResult(context.Context, Actor, string, string, string, RestoreWorkingCopyInput) (WorkingCopyMutationResult, error)
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }
@@ -157,6 +159,7 @@ type ChangeSetApplication interface {
 	CreateChangeSetResult(context.Context, Actor, string, string, CreateChangeSetInput) (ChangeSetMutationResult, error)
 	ListChangeSets(context.Context, Actor, string) ([]ChangeSet, error)
 	GetChangeSet(context.Context, Actor, string, string) (ChangeSet, error)
+	ReassessChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	ApplyChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }
@@ -249,6 +252,7 @@ type KnowledgeSearchService interface {
 }
 
 type HandlerDependencies struct {
+	FullWorkflow *FullWorkflowDependencies
 	// Service is retained for compatibility with older adapters. New route
 	// composition should provide the focused application ports below.
 	Service          ApplicationService

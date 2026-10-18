@@ -8,6 +8,8 @@ import (
 	"fmt"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"gorm.io/gorm"
 )
 
@@ -15,10 +17,17 @@ import (
 // input consumed by T13. Template rules and current source records are resolved
 // by their owning providers after this consistent read.
 type WorkspaceDeliveryInput struct {
+	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
+	SourceRuleSetID         string                     `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion    string                     `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash       string                     `json:"source_ruleset_hash,omitempty"`
+	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
+	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
 	ProjectID               string                     `json:"project_id"`
 	ProjectName             string                     `json:"project_name"`
 	ProjectVersion          int64                      `json:"project_version"`
 	SpecRevision            int                        `json:"spec_revision"`
+	ContextRevision         int64                      `json:"context_revision,omitempty"`
 	Spec                    map[string]string          `json:"spec"`
 	TemplateID              string                     `json:"template_id"`
 	TemplateVersion         string                     `json:"template_version"`
@@ -98,7 +107,7 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 		}
 		result = WorkspaceDeliveryInput{
 			ProjectID: project.ID, ProjectName: project.Name, ProjectVersion: project.ProjectVersion,
-			SpecRevision: int(project.SpecRevision), Spec: spec,
+			SpecRevision: int(project.SpecRevision), Spec: spec, ContextRevision: project.CurrentContextRevision,
 			TemplateID: project.TemplateID, TemplateVersion: project.TemplateVersion,
 			Chapters: []WorkspaceDeliveryChapter{},
 		}
@@ -114,9 +123,46 @@ func (s *SQLiteCandidateAdoptionStore) ReadDeliveryInput(ctx context.Context, pr
 			result.TemplateCopyID, result.TemplateCopyVersion = copy.ID, copy.Version
 			result.TemplateCopyContentHash, result.TemplateCopyRulesetHash = copy.ContentHash, copy.RulesetHash
 			result.TemplateDefinition = &definition
+			binding, err := readDeliveryBinding(tx, projectID, copy.ID)
+			if err != nil {
+				return err
+			}
+			result.RuleSetSnapshot = binding.RuleSetSnapshot
+			result.SourceRuleSetID = binding.SourceRuleSetID
+			result.SourceRuleSetVersion = binding.SourceRuleSetVersion
+			result.SourceRuleSetHash = binding.SourceRuleSetHash
+			result.BindingPolicies = binding.BindingPolicies
+			result.SourcePolicyHash = binding.SourcePolicyHash
+			if definition.RuleSetSnapshot != nil || definition.RuleSetRef != nil {
+				// WorkspaceCore owns canonical source/effective hash validation.
+				// Reuse its exact version reader on this same snapshot transaction;
+				// the source sidecar hash is not the effective template hash.
+				reader, ok := core.NewTransactionAdapter(tx).(interface {
+					ProjectTemplateCopy(uint64, string, int64) (core.ProjectTemplateCopy, error)
+				})
+				if !ok {
+					return ErrInvalidState
+				}
+				if _, err := reader.ProjectTemplateCopy(project.TenantID, projectID, copy.Version); err != nil {
+					return err
+				}
+			} else if binding.RuleSetSnapshot != nil && binding.RuleSetSnapshot.RulesetHash != copy.RulesetHash {
+				return ErrInvalidState
+			}
 			if copy.Status != "bound" {
 				return ErrInvalidState
 			}
+		}
+		if tx.Migrator().HasTable("lingdoc_g3_records") {
+			current, err := core.NewTransactionAdapter(tx).Project(project.TenantID, projectID)
+			if err != nil {
+				return err
+			}
+			fields, err := core.RouteEvaluationFields(core.NewTransactionAdapter(tx), current)
+			if err != nil {
+				return err
+			}
+			result.Spec = fields
 		}
 		var rows []chapterRow
 		if err := tx.Where("project_id = ?", projectID).Order("section_id ASC, id ASC").Find(&rows).Error; err != nil {

@@ -30,6 +30,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 		deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}),
 		deliveryMethodChapter(),
 	)
+	ensureG3ExtensionTables(t, db)
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS lingdoc_operations (
 			tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, operation TEXT NOT NULL,
@@ -45,7 +46,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS lingdoc_change_sets (
 			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_by TEXT NOT NULL,
-			reason TEXT NOT NULL, status TEXT NOT NULL, base_context_revision INTEGER NOT NULL,
+			reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','assessed','applied','rejected','stale','stabilized')), base_context_revision INTEGER NOT NULL,
 			target_context_revision INTEGER, base_spec_revision INTEGER NOT NULL,
 			target_spec_revision INTEGER, fields_json TEXT NOT NULL DEFAULT '[]',
 			impacts_json TEXT NOT NULL DEFAULT '[]', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -60,20 +61,22 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 		t.Fatalf("seed context revision: %v", err)
 	}
 
+	seedDeliveryBoundTemplateCopy(t, db, "g3-delivery-copy")
 	service, ok := testRuntime(handler).service.(*Service)
 	if !ok {
-		t.Fatalf("workspace runtime service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
 	}
 	actor := Actor{TenantID: 7, UserID: deliveryActorID}
-	project, err := service.GetProject(context.Background(), actor, "project-1")
+	project, err := service.GetProject(policyContext(), actor, "project-1")
 	if err != nil {
 		t.Fatalf("read project: %v", err)
 	}
+	assertDeliveryBoundTemplatePrerequisites(t, service, policyContext(), actor, project)
 	if project.CurrentContextRevision != 1 || project.SpecRevision != deliverySpecRevision {
 		t.Fatalf("initial revisions = context %d spec %d", project.CurrentContextRevision, project.SpecRevision)
 	}
 
-	changeRaw, status, replay, err := service.CreateChangeSet(context.Background(), actor, "project-1", "g3-delivery-create", CreateChangeSetInput{
+	changeRaw, status, replay, err := service.CreateChangeSet(policyContext(), actor, "project-1", "g3-delivery-create", CreateChangeSetInput{
 		ExpectedContextRevision: project.CurrentContextRevision,
 		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: "公开的合成调查样本", NewValue: "新的研究对象"}},
 		AffectedChapterIDs:      []string{deliveryChapterID, "chapter-2"},
@@ -89,7 +92,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 	if len(change.Impacts) != 2 || change.Status != "assessed" {
 		t.Fatalf("preview = %+v", change)
 	}
-	if _, status, replay, err := service.ApplyChangeSet(context.Background(), actor, "project-1", change.ID, "g3-delivery-apply"); err != nil || status != 200 || replay {
+	if _, status, replay, err := service.ApplyChangeSet(policyContext(), actor, "project-1", change.ID, "g3-delivery-apply"); err != nil || status != 200 || replay {
 		t.Fatalf("apply changeset: status=%d replay=%v err=%v", status, replay, err)
 	}
 
@@ -100,7 +103,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 	if release == nil {
 		t.Fatal("delivery release service did not assemble")
 	}
-	project, err = service.GetProject(context.Background(), actor, "project-1")
+	project, err = service.GetProject(policyContext(), actor, "project-1")
 	if err != nil {
 		t.Fatalf("read changed project: %v", err)
 	}
@@ -131,7 +134,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 	}
 
 	confirmations := candidateadoption.NewConfirmationService(store, handler.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), g3ConfirmationAuthorizer{})
-	currentInput, err := store.ReadDeliveryInput(context.Background(), "project-1")
+	currentInput, err := store.ReadDeliveryInput(policyContext(), "project-1")
 	if err != nil {
 		t.Fatalf("read current delivery input: %v", err)
 	}
@@ -151,7 +154,7 @@ func TestG3ChangeReviewBlocksAndRestoresDelivery(t *testing.T) {
 			t.Fatalf("confirm %s: replayed=%v err=%v", chapter.ChapterID, replayed, err)
 		}
 	}
-	project, err = service.GetProject(context.Background(), actor, "project-1")
+	project, err = service.GetProject(policyContext(), actor, "project-1")
 	if err != nil {
 		t.Fatalf("read re-confirmed project: %v", err)
 	}

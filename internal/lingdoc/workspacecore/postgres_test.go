@@ -51,23 +51,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{
-		"000097_lingdoc_workspace.up.sql", "000098_lingdoc_evidence_assets.up.sql",
-		"000099_lingdoc_candidate_adoption.up.sql", "000100_lingdoc_generation_runs.up.sql",
-		"000101_lingdoc_generation_claim_token.up.sql", "000102_lingdoc_chapter_confirmation_requests.up.sql",
-		"000103_lingdoc_delivery_stores.up.sql",
-		"000104_lingdoc_member_permissions.up.sql",
-		"000105_lingdoc_project_context_revision.up.sql", "000106_lingdoc_draft_provenance.up.sql",
-		"000107_lingdoc_owner_transfers.up.sql", "000108_lingdoc_project_discard.up.sql",
-		"000109_lingdoc_project_baseline.up.sql", "000110_lingdoc_citation_usages.up.sql",
-		"000111_lingdoc_change_sets.up.sql",
-		"000112_lingdoc_working_copies.up.sql",
-		"000113_lingdoc_selected_rewrites.up.sql",
-		"000114_lingdoc_project_template_copies.up.sql",
-		"000115_lingdoc_rule_sets.up.sql", "000118_lingdoc_ruleset_export_reference.up.sql",
-		"000119_lingdoc_ruleset_use_audits.up.sql", "000120_lingdoc_template_version_ruleset_ref.up.sql",
-		"000121_lingdoc_ruleset_metrics.up.sql",
-	} {
+	for _, file := range productionLingDocMigrationNames(t, "versioned") {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned", file))
 		if err != nil {
 			t.Fatal(err)
@@ -76,7 +60,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 			t.Fatalf("%s: %v", file, err)
 		}
 	}
-	if err := db.Exec("CREATE TABLE tenant_members (tenant_id BIGINT, user_id TEXT, status TEXT, deleted_at TIMESTAMPTZ)").Error; err != nil {
+	if err := db.Exec("CREATE TABLE tenant_members ( role TEXT NOT NULL DEFAULT 'owner',tenant_id BIGINT, user_id TEXT, status TEXT, deleted_at TIMESTAMPTZ)").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO tenant_members (tenant_id,user_id,status) VALUES (1,'owner','active')").Error; err != nil {

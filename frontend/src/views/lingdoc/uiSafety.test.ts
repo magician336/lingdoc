@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, installUnloadGuard, reviewDraftsAreDirty, unsavedInputsAreDirty } from './uiSafety'
+import { canLeaveWorkspace, conditionsChangeInputsAreDirty, conditionsChangeSnapshot, confirmationBlockReasons, hasUnsavedInputs, installUnloadGuard, reviewDraftsAreDirty, unsavedInputsAreDirty } from './uiSafety'
 
-const clean = { chapterChanged: false, specChanged: false, templateChanged: false, saving: false, reviewChanged: false, conditionsChanged: false }
+const clean = { chapterChanged: false, specChanged: false, templateChanged: false, saving: false, reviewChanged: false, conditionsChanged: false, editorUnsaved: false }
 function unloadEvent() {
   const event = new Event('beforeunload', { cancelable: true })
   // Node's Event is not a browser BeforeUnloadEvent; provide its writable field.
@@ -10,6 +10,8 @@ function unloadEvent() {
   return event
 }
 test('saved server drafts do not warn; each unsaved input and an in-flight save does', () => {
+  assert.equal(hasUnsavedInputs(clean), false)
+  for (const field of Object.keys(clean)) assert.equal(hasUnsavedInputs({ ...clean, [field]: true }), true, field)
   assert.equal(unsavedInputsAreDirty(clean), false)
   for (const field of Object.keys(clean)) assert.equal(unsavedInputsAreDirty({ ...clean, [field]: true }), true, field)
   assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true }, { conditionsHandled: true }), false)
@@ -106,13 +108,21 @@ test('refresh guard protects hidden unsaved conditions inputs and releases their
   remove()
 })
 
+test('handled conditions never release cross-chapter editor drafts or a pending save', () => {
+  assert.equal(hasUnsavedInputs({ ...clean, editorUnsaved: true }), true)
+  assert.equal(hasUnsavedInputs({ ...clean, saving: true }), true)
+  for (const field of ['editorUnsaved', 'saving', 'reviewChanged'] as const) {
+    assert.equal(unsavedInputsAreDirty({ ...clean, conditionsChanged: true, [field]: true }, { conditionsHandled: true }), true, field)
+  }
+})
+
 const confirmable = { busy: false, saving: false, unsaved: false, needsCommit: false, missingReasons: 0 }
 test('confirmation explains every blocker; completed confirmation has no stale disabled reason', () => {
   assert.deepEqual(confirmationBlockReasons(confirmable), [])
-  assert.deepEqual(confirmationBlockReasons({ ...confirmable, missingReasons: 2 }), ['还有 2 条待核事项未填写处理理由'])
+  assert.deepEqual(confirmationBlockReasons({ ...confirmable, missingReasons: 2 }), ['还有 2 条待核事项未完成处理（需选择处理方式并填写理由）'])
   assert.deepEqual(confirmationBlockReasons({ ...confirmable, busy: true, saving: true }), ['工作副本正在保存，请等待保存完成'])
   assert.deepEqual(confirmationBlockReasons({ ...confirmable, busy: true }), ['当前操作尚未完成，请稍候'])
   assert.deepEqual(confirmationBlockReasons({ ...confirmable, unsaved: true, needsCommit: true, missingReasons: 1 }), [
-    '请先保存当前修改', '请先将工作副本提交为正式版本', '还有 1 条待核事项未填写处理理由',
+    '请先保存当前修改', '请先将工作副本提交为正式版本', '还有 1 条待核事项未完成处理（需选择处理方式并填写理由）',
   ])
 })

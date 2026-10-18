@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -22,12 +23,26 @@ func (r g4AuditlessRepository) Transaction(ctx context.Context, options Transact
 		if !ok {
 			return ErrInvalidState
 		}
-		return fn(g4AuditlessTransaction{Transaction: tx, changes: changes})
+		ports, ok := tx.(g4AuditlessSourcePorts)
+		if !ok {
+			return ErrInvalidState
+		}
+		return fn(g4AuditlessTransaction{Transaction: tx, changes: changes, g4AuditlessSourcePorts: ports})
 	})
+}
+
+// Preserve the real source/history/impact readers in the same transaction.
+// Only audit capability is deliberately absent in this failure fixture.
+type g4AuditlessSourcePorts interface {
+	g5Transaction
+	impactSourceReadTransaction
+	impactTransaction
+	semanticTransaction
 }
 
 type g4AuditlessTransaction struct {
 	Transaction
+	g4AuditlessSourcePorts
 	changes changeSetTransaction
 }
 
@@ -842,6 +857,117 @@ func TestChangeSetStaleApplyDoesNotMutateProject(t *testing.T) {
 	}
 }
 
+func TestStaleChangeSetCanBeReassessedAgainstCurrentBaseline(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess.db"))
+	actor := Actor{TenantID: 314, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	create := func(key, field, oldValue, newValue string) ChangeSet {
+		t.Helper()
+		raw, status, replay, err := svc.CreateChangeSet(context.Background(), actor, project.ID, key, CreateChangeSetInput{
+			ExpectedContextRevision: project.CurrentContextRevision,
+			Fields:                  map[string]ChangeFieldInput{field: {OldValue: oldValue, NewValue: newValue}},
+			AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "研究条件调整",
+		})
+		if err != nil || status != 201 || replay {
+			t.Fatalf("create %s: status=%d replay=%v err=%v", field, status, replay, err)
+		}
+		var change ChangeSet
+		if err := json.Unmarshal(raw, &change); err != nil {
+			t.Fatalf("decode %s: %v", field, err)
+		}
+		return change
+	}
+	first := create("g3-reassess-first", "research_subject", "旧主题", "新主题")
+	stale := create("g3-reassess-second", "research_goal", "旧目标", "新目标")
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, first.ID, "g3-reassess-first-apply"); err != nil || status != 200 {
+		t.Fatalf("apply first change: status=%d err=%v", status, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-second-apply"); err != nil || status != 409 {
+		t.Fatalf("mark second change stale: status=%d err=%v", status, err)
+	}
+	old, err := svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || old.Status != "stale" || old.StaleReason == "" {
+		t.Fatalf("stale history: %+v err=%v", old, err)
+	}
+
+	response, status, replay, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-copy")
+	if err != nil || status != 201 || replay {
+		t.Fatalf("reassess: status=%d replay=%v err=%v", status, replay, err)
+	}
+	var reassessed ChangeSet
+	if err := json.Unmarshal(response, &reassessed); err != nil {
+		t.Fatalf("decode reassessed change: %v", err)
+	}
+	current, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reassessed.ID == stale.ID || reassessed.ReassessedFromID != stale.ID || reassessed.Status != "assessed" || reassessed.BaseContextRevision != current.CurrentContextRevision || reassessed.BaseSpecRevision != current.SpecRevision || len(reassessed.Fields) != 1 || reassessed.Fields[0].OldValue != current.Spec["research_goal"] {
+		t.Fatalf("reassessed proposal did not use current baseline: %+v current=%+v", reassessed, current)
+	}
+	if len(reassessed.Impacts) != 1 || !sameVersion(reassessed.Impacts[0].ChapterVersionID, chapters[0].CurrentVersionID) {
+		t.Fatalf("reassessed impact did not refresh chapter version: %+v", reassessed.Impacts)
+	}
+	replayBody, replayStatus, replayed, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-copy")
+	if err != nil || replayStatus != 201 || !replayed || string(replayBody) != string(response) {
+		t.Fatalf("reassess replay: status=%d replay=%v identical=%v err=%v", replayStatus, replayed, string(replayBody) == string(response), err)
+	}
+	old, err = svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || old.Status != "stale" || old.StaleReason == "" {
+		t.Fatalf("reassessment rewrote stale history: %+v err=%v", old, err)
+	}
+	if _, status, replay, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, reassessed.ID, "g3-reassess-apply"); err != nil || status != 200 || replay {
+		t.Fatalf("apply reassessed proposal: status=%d replay=%v err=%v", status, replay, err)
+	}
+	current, err = svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || current.CurrentContextRevision != project.CurrentContextRevision+2 || current.Spec["research_goal"] != "新目标" {
+		t.Fatalf("current project after reassessed apply: %+v err=%v", current, err)
+	}
+}
+
+func TestReassessChangeSetRejectsChangedTargetField(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-conflict.db"))
+	actor := Actor{TenantID: 315, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	input := func(value string) CreateChangeSetInput {
+		return CreateChangeSetInput{ExpectedContextRevision: project.CurrentContextRevision,
+			Fields:             map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: value}},
+			AffectedChapterIDs: []string{chapters[0].ID}, Reason: "目标调整"}
+	}
+	firstRaw, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-conflict-first", input("目标一"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondRaw, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-conflict-second", input("目标二"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first, second ChangeSet
+	if err := json.Unmarshal(firstRaw, &first); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(secondRaw, &second); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, first.ID, "g3-reassess-conflict-apply-first"); err != nil || status != 200 {
+		t.Fatalf("apply first: status=%d err=%v", status, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, second.ID, "g3-reassess-conflict-apply-second"); err != nil || status != 409 {
+		t.Fatalf("mark second stale: status=%d err=%v", status, err)
+	}
+	if _, _, _, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, second.ID, "g3-reassess-conflict-copy"); !errors.Is(err, ErrVersionConflict) {
+		t.Fatalf("reassess conflicting target error = %v, want ErrVersionConflict", err)
+	}
+}
+
 func TestChangeSetApplyRollsBackProjectAndAuditOnInvalidationFailure(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g3-rollback.db"))
 	actor := Actor{TenantID: 305, UserID: "owner"}
@@ -1028,7 +1154,11 @@ func TestChangeSetInvalidatesOnlyCurrentChapterVersion(t *testing.T) {
 		t.Fatalf("decode second chapter: %v", err)
 	}
 	db := svc.repository.(*GORMRepository).db
-	if err := db.Model(&chapterVersionRow{}).Where("id IN ?", []string{*first.CurrentVersionID, *second.CurrentVersionID}).Update("confirmation_valid", true).Error; err != nil {
+	// Equal timestamps are valid on coarse clocks and within rapid writes.
+	// Assert history/current identity by the returned version IDs, not row order.
+	if err := db.Model(&chapterVersionRow{}).Where("id IN ?", []string{*first.CurrentVersionID, *second.CurrentVersionID}).Updates(map[string]any{
+		"confirmation_valid": true, "created_at": time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+	}).Error; err != nil {
 		t.Fatalf("seed confirmations: %v", err)
 	}
 	changeRaw, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-history-change", CreateChangeSetInput{
@@ -1050,8 +1180,14 @@ func TestChangeSetInvalidatesOnlyCurrentChapterVersion(t *testing.T) {
 	if err := db.Where("chapter_id = ?", chapter.ID).Order("created_at").Find(&versions).Error; err != nil {
 		t.Fatalf("read versions: %v", err)
 	}
-	if len(versions) != 2 || !versions[0].ConfirmationValid || versions[1].ConfirmationValid {
-		t.Fatalf("historical confirmation state = %#v, want old=true current=false", versions)
+	states := make(map[string]bool, len(versions))
+	for _, version := range versions {
+		states[version.ID] = version.ConfirmationValid
+	}
+	oldValid, oldFound := states[*first.CurrentVersionID]
+	currentValid, currentFound := states[*second.CurrentVersionID]
+	if len(versions) != 2 || !oldFound || !currentFound || !oldValid || currentValid {
+		t.Fatalf("historical confirmation state = %#v, want old=true current=false by version ID", versions)
 	}
 }
 
@@ -1112,6 +1248,10 @@ func TestChangeSetRejectsMalformedAndMissingImpacts(t *testing.T) {
 	svc := testStore(t, filepath.Join(t.TempDir(), "g3-invalid.db"))
 	actor := Actor{TenantID: 306, UserID: "owner"}
 	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("valid chapter fixture: %+v err=%v", chapters, err)
+	}
 	base := func() CreateChangeSetInput {
 		return CreateChangeSetInput{ExpectedContextRevision: project.CurrentContextRevision,
 			Fields:             map[string]ChangeFieldInput{"research_subject": {OldValue: "旧主题", NewValue: "新主题"}},
@@ -1120,7 +1260,7 @@ func TestChangeSetRejectsMalformedAndMissingImpacts(t *testing.T) {
 	if _, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-invalid-field", CreateChangeSetInput{
 		ExpectedContextRevision: project.CurrentContextRevision,
 		Fields:                  map[string]ChangeFieldInput{"unsupported": {OldValue: "a", NewValue: "b"}},
-		AffectedChapterIDs:      []string{"missing-chapter"}, Reason: "非法字段",
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "非法字段",
 	}); !errors.Is(err, ErrInvalidRequest) {
 		t.Fatalf("unsupported field error = %v, want ErrInvalidRequest", err)
 	}
@@ -1171,5 +1311,394 @@ func TestChangeSetApplyRequiresOwnerAndActiveProject(t *testing.T) {
 		AffectedChapterIDs:      []string{"missing"}, Reason: "非 active",
 	}); !errors.Is(err, ErrInvalidState) {
 		t.Fatalf("draft changeset error = %v, want ErrInvalidState", err)
+	}
+}
+
+func TestChangeSetApplyRollsBackWhenAuditWriteFails(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-audit-rollback.db"))
+	actor := Actor{TenantID: 318, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	raw, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-audit-rollback-create", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: "旧主题", NewValue: "新主题"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "验证审计失败回滚",
+	})
+	if err != nil {
+		t.Fatalf("create changeset: %v", err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(raw, &change); err != nil {
+		t.Fatalf("decode changeset: %v", err)
+	}
+	if err := svc.testDB().Exec("DROP TABLE lingdoc_project_audits").Error; err != nil {
+		t.Fatalf("drop audit table: %v", err)
+	}
+	if _, status, replay, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, change.ID, "g3-audit-rollback-apply"); err == nil || status != 0 || replay {
+		t.Fatalf("expected audit failure: status=%d replay=%v err=%v", status, replay, err)
+	}
+	current, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || current.CurrentContextRevision != project.CurrentContextRevision || current.Spec["research_subject"] != "旧主题" {
+		t.Fatalf("project changed despite audit failure: project=%+v err=%v", current, err)
+	}
+	stored, err := svc.GetChangeSet(context.Background(), actor, project.ID, change.ID)
+	if err != nil || stored.Status != "assessed" || stored.DecisionBy != "" || stored.DecidedAt != nil {
+		t.Fatalf("decision changed despite audit failure: changeset=%+v err=%v", stored, err)
+	}
+}
+
+func TestInverseChangeSetRejectsNonAppliedSourceAndIncorrectDelta(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-inverse-reject.db"))
+	actor := Actor{TenantID: 302, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	raw, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-reject-source", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: "新目标"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "原始提案",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var source ChangeSet
+	if err := json.Unmarshal(raw, &source); err != nil {
+		t.Fatal(err)
+	}
+	inverse := CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "新目标", NewValue: "旧目标"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "逆向提案", ReversesChangeSetID: source.ID,
+	}
+	if _, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-unapplied", inverse); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("inverse of assessed source error = %v, want ErrInvalidState", err)
+	}
+	if _, _, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, source.ID, "g3-inverse-reject-apply"); err != nil {
+		t.Fatal(err)
+	}
+	current, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongDelta := inverse
+	wrongDelta.ExpectedContextRevision = current.CurrentContextRevision
+	wrongDelta.Fields = map[string]ChangeFieldInput{"research_goal": {OldValue: "新目标", NewValue: "另一个目标"}}
+	if _, _, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-wrong-delta", wrongDelta); !errors.Is(err, ErrInvalidRequest) {
+		t.Fatalf("non-inverse delta error = %v, want ErrInvalidRequest", err)
+	}
+	if _, err := svc.GetChangeSet(context.Background(), actor, project.ID, source.ID); err != nil {
+		t.Fatalf("rejected inverse altered source history: %v", err)
+	}
+}
+
+func TestAppliedChangeSetCreatesLinkedInverseOnCurrentRevision(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-inverse.db"))
+	actor := Actor{TenantID: 301, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	input := CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: "新目标"}},
+		AffectedChapterIDs:      []string{chapters[0].ID},
+		Reason:                  "调整研究目标",
+	}
+	raw, status, replayed, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-source-create", input)
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("create source ChangeSet: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	var source ChangeSet
+	if err := json.Unmarshal(raw, &source); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, replayed, err = svc.ApplyChangeSet(context.Background(), actor, project.ID, source.ID, "g3-inverse-source-apply"); err != nil || status != 200 || replayed {
+		t.Fatalf("apply source ChangeSet: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	current, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inverseInput := CreateChangeSetInput{
+		ExpectedContextRevision: current.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "新目标", NewValue: "旧目标"}},
+		AffectedChapterIDs:      []string{chapters[0].ID},
+		Reason:                  "恢复原研究目标",
+		ReversesChangeSetID:     source.ID,
+	}
+	first, status, replayed, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-create", inverseInput)
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("create inverse ChangeSet: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	var inverse ChangeSet
+	if err := json.Unmarshal(first, &inverse); err != nil {
+		t.Fatal(err)
+	}
+	if inverse.Status != "assessed" || inverse.BaseContextRevision != current.CurrentContextRevision || inverse.ReversesChangeSetID != source.ID {
+		t.Fatalf("inverse proposal did not preserve current baseline and source link: %+v", inverse)
+	}
+	persisted, err := svc.GetChangeSet(context.Background(), actor, project.ID, inverse.ID)
+	if err != nil || persisted.ReversesChangeSetID != source.ID {
+		t.Fatalf("inverse link read-back: change=%+v err=%v", persisted, err)
+	}
+	replayBody, replayStatus, replayed, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-create", inverseInput)
+	if err != nil || replayStatus != 201 || !replayed || string(replayBody) != string(first) {
+		t.Fatalf("inverse create replay: status=%d replay=%v same=%v err=%v", replayStatus, replayed, string(replayBody) == string(first), err)
+	}
+	if _, status, replayed, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-duplicate", inverseInput); !errors.Is(err, ErrInvalidState) || replayed || status != 0 {
+		t.Fatalf("second inverse proposal: status=%d replay=%v err=%v, want ErrInvalidState", status, replayed, err)
+	}
+	other, status, replayed, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-inverse-intervening-create", CreateChangeSetInput{
+		ExpectedContextRevision: current.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: "旧主题", NewValue: "新主题"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "并行调整研究对象",
+	})
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("create intervening ChangeSet: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	var intervening ChangeSet
+	if err := json.Unmarshal(other, &intervening); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, intervening.ID, "g3-inverse-intervening-apply"); err != nil || status != 200 || replayed {
+		t.Fatalf("apply intervening ChangeSet: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, inverse.ID, "g3-inverse-stale-apply"); err != nil || status != 409 {
+		t.Fatalf("stale inverse apply: status=%d err=%v, want conflict", status, err)
+	}
+	reassessedRaw, status, replayed, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, inverse.ID, "g3-inverse-reassess")
+	if err != nil || status != 201 || replayed {
+		t.Fatalf("reassess stale inverse: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	var reassessed ChangeSet
+	if err := json.Unmarshal(reassessedRaw, &reassessed); err != nil {
+		t.Fatal(err)
+	}
+	if reassessed.ReversesChangeSetID != source.ID || reassessed.ReassessedFromID != inverse.ID || reassessed.BaseContextRevision != current.CurrentContextRevision+1 {
+		t.Fatalf("reassessed inverse lost its source/baseline link: %+v", reassessed)
+	}
+	if _, status, replayed, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, reassessed.ID, "g3-inverse-apply"); err != nil || status != 200 || replayed {
+		t.Fatalf("apply inverse ChangeSet: status=%d replay=%v err=%v", status, replayed, err)
+	}
+	current, err = svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || current.Spec["research_goal"] != "旧目标" || current.CurrentContextRevision != project.CurrentContextRevision+3 {
+		t.Fatalf("inverse formal result: project=%+v err=%v", current, err)
+	}
+	unchangedSource, err := svc.GetChangeSet(context.Background(), actor, project.ID, source.ID)
+	if err != nil || unchangedSource.Status != "applied" || unchangedSource.ReversesChangeSetID != "" {
+		t.Fatalf("source history was rewritten: source=%+v err=%v", unchangedSource, err)
+	}
+	events, err := svc.ListAuditEvents(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundInverseApply := false
+	for _, event := range events {
+		if event.Action == "project.change_set.apply" && event.Target == reassessed.ID && event.Details["reverses_change_set_id"] == source.ID {
+			foundInverseApply = true
+			break
+		}
+	}
+	if !foundInverseApply {
+		t.Fatalf("inverse application audit does not identify source ChangeSet: %+v", events)
+	}
+}
+
+func TestReassessChangeSetReturnsSatisfiedWhenAllTargetsAreCurrent(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-satisfied.db"))
+	actor := Actor{TenantID: 318, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+	create := func(key string) ChangeSet {
+		t.Helper()
+		raw, status, replay, err := svc.CreateChangeSet(context.Background(), actor, project.ID, key, CreateChangeSetInput{
+			ExpectedContextRevision: project.CurrentContextRevision,
+			Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: "新目标"}},
+			AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "目标已更新",
+		})
+		if err != nil || status != 201 || replay {
+			t.Fatalf("create %s: status=%d replay=%v err=%v", key, status, replay, err)
+		}
+		var change ChangeSet
+		if err := json.Unmarshal(raw, &change); err != nil {
+			t.Fatalf("decode %s: %v", key, err)
+		}
+		return change
+	}
+	first := create("g3-satisfied-first")
+	stale := create("g3-satisfied-stale")
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, first.ID, "g3-satisfied-first-apply"); err != nil || status != 200 {
+		t.Fatalf("apply first: status=%d err=%v", status, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-satisfied-stale-apply"); err != nil || status != 409 {
+		t.Fatalf("mark stale proposal: status=%d err=%v", status, err)
+	}
+	before, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, status, replay, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-satisfied-reassess")
+	if err != nil || status != 201 || replay {
+		t.Fatalf("reassess satisfied proposal: status=%d replay=%v err=%v", status, replay, err)
+	}
+	var satisfied ChangeSet
+	if err := json.Unmarshal(raw, &satisfied); err != nil {
+		t.Fatal(err)
+	}
+	if satisfied.Status != "satisfied" || satisfied.ReassessedFromID != stale.ID || len(satisfied.Fields) != 0 || len(satisfied.Impacts) != 0 ||
+		satisfied.TargetContextRevision == nil || *satisfied.TargetContextRevision != before.CurrentContextRevision ||
+		satisfied.TargetSpecRevision == nil || *satisfied.TargetSpecRevision != before.SpecRevision {
+		t.Fatalf("unexpected satisfied result: %+v", satisfied)
+	}
+	satisfiedAfter, err := svc.GetChangeSet(context.Background(), actor, project.ID, satisfied.ID)
+	if err != nil || satisfiedAfter.Status != "satisfied" || satisfiedAfter.ReassessedFromID != stale.ID ||
+		satisfiedAfter.TargetContextRevision == nil || *satisfiedAfter.TargetContextRevision != before.CurrentContextRevision ||
+		satisfiedAfter.TargetSpecRevision == nil || *satisfiedAfter.TargetSpecRevision != before.SpecRevision {
+		t.Fatalf("satisfied ChangeSet read-back: %+v err=%v", satisfiedAfter, err)
+	}
+	after, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || after.ProjectVersion != before.ProjectVersion || after.CurrentContextRevision != before.CurrentContextRevision ||
+		after.SpecRevision != before.SpecRevision || after.Spec["research_goal"] != "新目标" {
+		t.Fatalf("no-op reassessment mutated project: before=%+v after=%+v err=%v", before, after, err)
+	}
+	staleAfter, err := svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || staleAfter.Status != "stale" || staleAfter.StaleReason == "" {
+		t.Fatalf("satisfied reassessment rewrote stale history: %+v err=%v", staleAfter, err)
+	}
+	if !projectOwner(after, actor.UserID) {
+		t.Fatal("satisfied-state error must be exercised by the current Owner")
+	}
+	if _, _, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, satisfied.ID, "g3-satisfied-apply"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("applying satisfied result error = %v, want ErrInvalidState", err)
+	}
+	events, err := svc.ListAuditEvents(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundAudit := false
+	for _, event := range events {
+		if event.Target == satisfied.ID && event.Action == "project.change_set.reassess" && event.Details["outcome"] == "already_satisfied" {
+			foundAudit = true
+		}
+	}
+	if !foundAudit {
+		t.Fatalf("missing satisfied reassessment audit for %s", satisfied.ID)
+	}
+	replayBody, replayStatus, replayed, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-satisfied-reassess")
+	if err != nil || replayStatus != 201 || !replayed || string(replayBody) != string(raw) {
+		t.Fatalf("satisfied replay: status=%d replay=%v identical=%v err=%v", replayStatus, replayed, string(replayBody) == string(raw), err)
+	}
+}
+
+func TestReassessRejectsDeltaIncompatibleWithCurrentTemplate(t *testing.T) {
+	svc := testStore(t, filepath.Join(t.TempDir(), "g3-reassess-template-type.db"))
+	actor := Actor{TenantID: 316, UserID: "owner"}
+	project := seedActiveG3Project(t, svc, actor)
+	chapters, err := svc.ListChapters(context.Background(), actor, project.ID)
+	if err != nil || len(chapters) == 0 {
+		t.Fatalf("chapters: %v %+v", err, chapters)
+	}
+
+	// Establish a numeric string under the original string field definition.
+	baselineRaw, baselineStatus, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-type-baseline", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "旧目标", NewValue: "123"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "设置兼容的数值文本",
+	})
+	if err != nil || baselineStatus != 201 {
+		t.Fatalf("create baseline ChangeSet: status=%d err=%v", baselineStatus, err)
+	}
+	var baseline ChangeSet
+	if err := json.Unmarshal(baselineRaw, &baseline); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, baseline.ID, "g3-reassess-type-baseline-apply"); err != nil || status != 200 {
+		t.Fatalf("apply baseline ChangeSet: status=%d err=%v", status, err)
+	}
+	project, err = svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// This proposal is valid while research_goal is a string. The template is
+	// then upgraded to number, making the same proposal incompatible.
+	staleRaw, staleStatus, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-type-stale", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision,
+		Fields:                  map[string]ChangeFieldInput{"research_goal": {OldValue: "123", NewValue: "not-a-number"}},
+		AffectedChapterIDs:      []string{chapters[0].ID}, Reason: "验证当前模板类型约束",
+	})
+	if err != nil || staleStatus != 201 {
+		t.Fatalf("create stale proposal: status=%d err=%v", staleStatus, err)
+	}
+	var stale ChangeSet
+	if err := json.Unmarshal(staleRaw, &stale); err != nil {
+		t.Fatal(err)
+	}
+
+	fields := append([]lingdoctemplate.Field{}, project.TemplateCopy.Definition.Fields...)
+	foundGoal := false
+	for i := range fields {
+		if fields[i].ID == "research_goal" {
+			fields[i].Type = "number"
+			foundGoal = true
+		}
+	}
+	if !foundGoal {
+		t.Fatal("research_goal field is missing from current TemplateCopy")
+	}
+	upgradeRaw, upgradeStatus, _, err := svc.CreateChangeSet(context.Background(), actor, project.ID, "g3-reassess-type-upgrade", CreateChangeSetInput{
+		ExpectedContextRevision: project.CurrentContextRevision, Reason: "将研究目标字段类型升级为 number",
+		TemplateUpgrade: &TemplateUpgradeInput{
+			ExpectedProjectVersion: project.ProjectVersion, ExpectedTemplateCopyVersion: project.TemplateCopyVersion,
+			Fields: fields, Sections: append([]lingdoctemplate.Section{}, project.TemplateCopy.Definition.Sections...),
+			Terms:          append([]lingdoctemplate.Term{}, project.TemplateCopy.Definition.Terms...),
+			RequiredFields: append([]string{}, project.TemplateCopy.Definition.RequiredFields...),
+			Rules:          append([]lingdoctemplate.Rule{}, project.TemplateCopy.Definition.Rules...),
+		},
+	})
+	if err != nil || upgradeStatus != 201 {
+		t.Fatalf("create number-type template upgrade: status=%d err=%v", upgradeStatus, err)
+	}
+	var upgrade ChangeSet
+	if err := json.Unmarshal(upgradeRaw, &upgrade); err != nil {
+		t.Fatal(err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, upgrade.ID, "g3-reassess-type-upgrade-apply"); err != nil || status != 200 {
+		t.Fatalf("apply number-type template upgrade: status=%d err=%v", status, err)
+	}
+	if _, status, _, err := svc.ApplyChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-type-mark-stale"); err != nil || status != 409 {
+		t.Fatalf("mark proposal stale after template upgrade: status=%d err=%v", status, err)
+	}
+	stale, err = svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || stale.Status != "stale" || stale.Fields[0].NewValue != "not-a-number" {
+		t.Fatalf("stale proposal history: %+v err=%v", stale, err)
+	}
+	before, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, _, _, err := svc.ReassessChangeSet(context.Background(), actor, project.ID, stale.ID, "g3-reassess-type-reject"); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("reassess incompatible string→number delta error = %v, want ErrInvalidState", err)
+	}
+	after, err := svc.GetProject(context.Background(), actor, project.ID)
+	if err != nil || after.ProjectVersion != before.ProjectVersion || after.CurrentContextRevision != before.CurrentContextRevision ||
+		after.SpecRevision != before.SpecRevision || after.TemplateCopyVersion != before.TemplateCopyVersion ||
+		after.Spec["research_goal"] != "123" || templateFieldDefinitions(after.TemplateCopy.Definition)["research_goal"].Type != "number" {
+		t.Fatalf("rejected reassessment mutated the formal project: before=%+v after=%+v err=%v", before, after, err)
+	}
+	staleAfter, err := svc.GetChangeSet(context.Background(), actor, project.ID, stale.ID)
+	if err != nil || staleAfter.Status != "stale" || staleAfter.StaleReason != stale.StaleReason || staleAfter.Fields[0].NewValue != "not-a-number" {
+		t.Fatalf("rejected reassessment rewrote stale history: %+v err=%v", staleAfter, err)
 	}
 }

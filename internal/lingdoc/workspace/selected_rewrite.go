@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"regexp"
 	"slices"
 	"sort"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
+	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -39,12 +41,13 @@ type RewriteSelection struct {
 }
 
 type SelectedRewriteRequest struct {
-	BaseChapterVersionID        *string          `json:"base_chapter_version_id"`
-	ExpectedSpecRevision        int64            `json:"expected_spec_revision"`
-	ExpectedWorkingCopyRevision int64            `json:"expected_working_copy_revision"`
-	Selection                   RewriteSelection `json:"selection"`
-	Instruction                 string           `json:"instruction"`
-	SourceIDs                   []string         `json:"source_ids"`
+	EvidenceCardRefs            []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
+	BaseChapterVersionID        *string                      `json:"base_chapter_version_id"`
+	ExpectedSpecRevision        int64                        `json:"expected_spec_revision"`
+	ExpectedWorkingCopyRevision int64                        `json:"expected_working_copy_revision"`
+	Selection                   RewriteSelection             `json:"selection"`
+	Instruction                 string                       `json:"instruction"`
+	SourceIDs                   []string                     `json:"source_ids"`
 }
 
 type RewriteSourceSnapshot struct {
@@ -57,29 +60,33 @@ type RewriteSourceSnapshot struct {
 }
 
 type SelectedRewriteCandidate struct {
-	CandidateID          string                  `json:"candidate_id"`
-	ProjectID            string                  `json:"project_id"`
-	ChapterID            string                  `json:"chapter_id"`
-	Status               string                  `json:"status"`
-	RunMode              string                  `json:"run_mode"`
-	BaseChapterVersionID *string                 `json:"base_chapter_version_id"`
-	SpecRevision         int64                   `json:"spec_revision"`
-	WorkingCopyRevision  int64                   `json:"working_copy_revision"`
-	Selection            RewriteSelection        `json:"selection"`
-	ReplacementMarkdown  string                  `json:"replacement_markdown"`
-	SourceIDs            []string                `json:"source_ids"`
-	AuthorizedSources    []RewriteSourceSnapshot `json:"authorized_sources"`
-	ReviewItems          []core.ReviewItem       `json:"review_items"`
-	ErrorCode            string                  `json:"error_code"`
-	CreatedAt            time.Time               `json:"created_at"`
+	EvidenceCardRefs     []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
+	CandidateID          string                       `json:"candidate_id"`
+	ProjectID            string                       `json:"project_id"`
+	ChapterID            string                       `json:"chapter_id"`
+	Status               string                       `json:"status"`
+	RunMode              string                       `json:"run_mode"`
+	BaseChapterVersionID *string                      `json:"base_chapter_version_id"`
+	SpecRevision         int64                        `json:"spec_revision"`
+	WorkingCopyRevision  int64                        `json:"working_copy_revision"`
+	Selection            RewriteSelection             `json:"selection"`
+	ReplacementMarkdown  string                       `json:"replacement_markdown"`
+	SourceIDs            []string                     `json:"source_ids"`
+	AuthorizedSources    []RewriteSourceSnapshot      `json:"authorized_sources"`
+	ReviewItems          []core.ReviewItem            `json:"review_items"`
+	ErrorCode            string                       `json:"error_code"`
+	CreatedAt            time.Time                    `json:"created_at"`
 }
 
 type SelectedRewritePrompt struct {
-	Selection     RewriteSelection
-	Instruction   string
-	ContextBefore string
-	ContextAfter  string
-	Sources       []evidence.Source
+	TemplateBasis       g2RewriteTemplateBasis
+	EvidenceCardRefs    []generation.EvidenceCardRef
+	EvidenceConstraints []generation.EvidenceConstraint
+	Selection           RewriteSelection
+	Instruction         string
+	ContextBefore       string
+	ContextAfter        string
+	Sources             []evidence.Source
 }
 
 type SelectedRewriteOutput struct {
@@ -107,33 +114,36 @@ type ApplySelectedRewriteInput struct {
 }
 
 type selectedRewriteRow struct {
-	ID                    string  `gorm:"primaryKey;size:36"`
-	TenantID              uint64  `gorm:"not null;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:1"`
-	ActorID               string  `gorm:"not null;size:64;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:2"`
-	ProjectID             string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:3"`
-	ChapterID             string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:4"`
-	IdempotencyKey        string  `gorm:"not null;size:128;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:5"`
-	RequestHash           string  `gorm:"not null;size:64"`
-	Status                string  `gorm:"not null;size:16;index"`
-	RunMode               string  `gorm:"not null;size:32"`
-	BaseChapterVersionID  *string `gorm:"size:36"`
-	SpecRevision          int64   `gorm:"not null"`
-	WorkingCopyRevision   int64   `gorm:"not null"`
-	StartUTF16            int     `gorm:"not null"`
-	EndUTF16              int     `gorm:"not null"`
-	SelectedText          string  `gorm:"not null;type:text"`
-	Instruction           string  `gorm:"not null;size:2000"`
-	ReplacementMarkdown   string  `gorm:"not null;type:text"`
-	SourceIDsJSON         string  `gorm:"not null;type:text"`
-	AuthorizedSourcesJSON string  `gorm:"not null;type:text"`
-	ReviewItemsJSON       string  `gorm:"not null;type:text"`
-	ErrorCode             string  `gorm:"not null;size:64;default:''"`
-	AppliedKey            string  `gorm:"not null;size:128;default:''"`
-	AppliedResponseJSON   string  `gorm:"not null;type:text;default:''"`
-	ApplyPendingKey       string  `gorm:"not null;size:128;default:''"`
-	ApplyPendingInputJSON string  `gorm:"not null;type:text;default:''"`
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	EvidenceConstraintsJSON string  `gorm:"column:evidence_constraints_json;not null;type:text;default:'[]'"`
+	TemplateBasisJSON       string  `gorm:"column:template_basis_json;not null;type:text;default:'{}'"`
+	EvidenceCardRefsJSON    string  `gorm:"column:evidence_card_refs_json;not null;type:text;default:'[]'"`
+	ID                      string  `gorm:"primaryKey;size:36"`
+	TenantID                uint64  `gorm:"not null;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:1"`
+	ActorID                 string  `gorm:"not null;size:64;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:2"`
+	ProjectID               string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:3"`
+	ChapterID               string  `gorm:"not null;size:36;index;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:4"`
+	IdempotencyKey          string  `gorm:"not null;size:128;uniqueIndex:idx_lingdoc_rewrite_idempotency,priority:5"`
+	RequestHash             string  `gorm:"not null;size:64"`
+	Status                  string  `gorm:"not null;size:16;index"`
+	RunMode                 string  `gorm:"not null;size:32"`
+	BaseChapterVersionID    *string `gorm:"size:36"`
+	SpecRevision            int64   `gorm:"not null"`
+	WorkingCopyRevision     int64   `gorm:"not null"`
+	StartUTF16              int     `gorm:"not null"`
+	EndUTF16                int     `gorm:"not null"`
+	SelectedText            string  `gorm:"not null;type:text"`
+	Instruction             string  `gorm:"not null;size:2000"`
+	ReplacementMarkdown     string  `gorm:"not null;type:text"`
+	SourceIDsJSON           string  `gorm:"not null;type:text"`
+	AuthorizedSourcesJSON   string  `gorm:"not null;type:text"`
+	ReviewItemsJSON         string  `gorm:"not null;type:text"`
+	ErrorCode               string  `gorm:"not null;size:64;default:''"`
+	AppliedKey              string  `gorm:"not null;size:128;default:''"`
+	AppliedResponseJSON     string  `gorm:"not null;type:text;default:''"`
+	ApplyPendingKey         string  `gorm:"not null;size:128;default:''"`
+	ApplyPendingInputJSON   string  `gorm:"not null;type:text;default:''"`
+	CreatedAt               time.Time
+	UpdatedAt               time.Time
 }
 
 func (selectedRewriteRow) TableName() string { return "lingdoc_selected_rewrites" }
@@ -207,6 +217,16 @@ func (s *GORMSelectedRewriteStore) update(ctx context.Context, row selectedRewri
 	}).Error
 }
 
+// Only observation fields may be changed by a stale reader. A concurrently
+// claimed/applied operation owns its receipt and cannot be overwritten here.
+func (s *GORMSelectedRewriteStore) markStale(ctx context.Context, row selectedRewriteRow, now time.Time) (selectedRewriteRow, error) {
+	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).Where("id = ? AND tenant_id = ? AND applied_key = '' AND apply_pending_key = '' AND status = ? AND updated_at = ?", row.ID, row.TenantID, row.Status, row.UpdatedAt).Updates(map[string]any{"status": "stale", "replacement_markdown": "", "error_code": "stale_input", "updated_at": now})
+	if result.Error != nil {
+		return selectedRewriteRow{}, result.Error
+	}
+	return s.byID(ctx, row.TenantID, row.ProjectID, row.ChapterID, row.ID)
+}
+
 func (s *GORMSelectedRewriteStore) claimApply(ctx context.Context, row selectedRewriteRow, key, inputJSON string, now time.Time) (selectedRewriteRow, error) {
 	result := s.db.WithContext(ctx).Model(&selectedRewriteRow{}).
 		Where("id = ? AND applied_key = '' AND apply_pending_key = '' AND status = 'ready'", row.ID).
@@ -261,6 +281,9 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", ErrRewriteUnavailable.Error()
 		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
 	}
+	if err := core.RequireHumanDecision(ctx); err != nil {
+		return SelectedRewriteCandidate{}, err
+	}
 	key = strings.TrimSpace(key)
 	if err := validateSelectedRewriteInput(key, input); err != nil {
 		auditDecision, auditReason = "deny", err.Error()
@@ -268,7 +291,28 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	}
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.SourceIDs = slices.Clone(input.SourceIDs)
-	if err := s.workspace.Authorize(ctx, actor, projectID, "write"); err != nil {
+	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
+	var evidenceConstraints []generation.EvidenceConstraint
+	if len(input.EvidenceCardRefs) > 0 {
+		selected, selectErr := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
+		if selectErr != nil {
+			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		}
+		evidenceConstraints, selectErr = g2EvidenceConstraints(selected, input.EvidenceCardRefs)
+		if selectErr != nil {
+			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		}
+		ids := []string{}
+		for _, source := range selected.Sources {
+			ids = append(ids, source.SourceID)
+		}
+		ids = stringSet(ids)
+		if len(input.SourceIDs) > 0 && !slices.Equal(stringSet(input.SourceIDs), ids) {
+			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		}
+		input.SourceIDs = ids
+	}
+	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
@@ -303,12 +347,21 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
+		if len(input.EvidenceCardRefs) > 0 && !slices.Contains(input.SourceIDs, marker[1]) {
+			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		}
 		input.SourceIDs = append(input.SourceIDs, marker[1])
 	}
 	input.SourceIDs = stringSet(input.SourceIDs)
 	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
+		return SelectedRewriteCandidate{}, err
+	}
+	if err := g2RewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+		return SelectedRewriteCandidate{}, err
+	}
+	if err := s.checkEvidenceRefs(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, snapshots); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
 	mode := s.model.RunMode()
@@ -326,12 +379,29 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
+	templateBasis, basisErr := g2RewriteProjectBasis(project)
+	if basisErr != nil {
+		return SelectedRewriteCandidate{}, basisErr
+	}
+	templateJSON, jsonErr := json.Marshal(templateBasis)
+	if jsonErr != nil {
+		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
+	}
+	constraintsJSON, jsonErr := json.Marshal(evidenceConstraints)
+	if jsonErr != nil {
+		return SelectedRewriteCandidate{}, ErrRewriteUnavailable
+	}
+	seed.EvidenceConstraintsJSON = string(constraintsJSON)
+	seed.TemplateBasisJSON = string(templateJSON)
 	seed.RunMode = mode
 	row, created, err := s.store.createOrReplay(ctx, seed)
 	if err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
 	if !created {
+		if err := s.checkRowEvidence(ctx, actor, projectID, row); err != nil {
+			return SelectedRewriteCandidate{}, err
+		}
 		row, err = s.staleIfNeeded(ctx, actor, projectID, chapterID, row)
 		if err != nil {
 			auditDecision, auditReason = "deny", err.Error()
@@ -350,7 +420,13 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	}
 	auditDetails["candidate_id"] = row.ID
 	auditDetails["run_mode"] = row.RunMode
+	if len(input.EvidenceCardRefs) > 0 {
+		before = ""
+		after = ""
+	}
 	output, modelErr := s.model.RewriteSelected(ctx, actor, SelectedRewritePrompt{
+		TemplateBasis:    templateBasis,
+		EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: evidenceConstraints,
 		Selection: input.Selection, Instruction: input.Instruction, ContextBefore: before, ContextAfter: after, Sources: sources,
 	})
 	if modelErr != nil {
@@ -380,7 +456,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
-	if err := s.workspace.Authorize(ctx, actor, projectID, "write"); err != nil {
+	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "authorization_changed", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
 		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
@@ -391,6 +467,12 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "stale", "stale_input", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
 		auditDetails["status"], auditDetails["run_mode"] = row.Status, row.RunMode
+		return s.updateCandidate(context.WithoutCancel(ctx), row)
+	}
+	if err := s.checkRowEvidence(ctx, actor, projectID, row); err != nil {
+		row.Status = "stale"
+		row.ErrorCode = "evidence_changed"
+		row.ReplacementMarkdown = ""
 		return s.updateCandidate(context.WithoutCancel(ctx), row)
 	}
 	if err := writeRewriteResult(&row, output); err != nil {
@@ -422,6 +504,9 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 	if err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
+	if evidenceErr := s.checkRowEvidence(ctx, actor, projectID, row); evidenceErr != nil {
+		return SelectedRewriteCandidate{}, evidenceErr
+	}
 	details["run_mode"], details["status"] = row.RunMode, row.Status
 	details["spec_revision"], details["working_copy_revision"] = row.SpecRevision, row.WorkingCopyRevision
 	if row.ApplyPendingKey == "" {
@@ -440,6 +525,9 @@ func (s *SelectedRewriteService) Get(ctx context.Context, actor Actor, projectID
 }
 
 func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, projectID, chapterID, candidateID, key string, input ApplySelectedRewriteInput) (result core.WorkingCopy, replayed bool, err error) {
+	if err := core.RequireHumanDecision(ctx); err != nil {
+		return core.WorkingCopy{}, false, err
+	}
 	details := map[string]any{"chapter_id": chapterID, "candidate_id": candidateID, "idempotency_key": key,
 		"spec_revision": input.ExpectedSpecRevision, "working_copy_revision": input.ExpectedWorkingCopyRevision}
 	defer func() {
@@ -452,12 +540,15 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	if s == nil || s.store == nil || s.workspace == nil || s.sources == nil || actor.TenantID == 0 || len(key) < 8 || len(key) > 128 {
 		return core.WorkingCopy{}, false, ErrRewriteInvalidRequest
 	}
-	if err := s.workspace.Authorize(ctx, actor, projectID, "write"); err != nil {
+	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
 		return core.WorkingCopy{}, false, err
 	}
 	row, err := s.store.byID(ctx, actor.TenantID, projectID, chapterID, candidateID)
 	if err != nil {
 		return core.WorkingCopy{}, false, err
+	}
+	if evidenceErr := s.checkRowEvidence(ctx, actor, projectID, row); evidenceErr != nil {
+		return core.WorkingCopy{}, false, evidenceErr
 	}
 	details["run_mode"], details["status"] = row.RunMode, row.Status
 	details["base_chapter_version_id"] = row.BaseChapterVersionID
@@ -517,6 +608,9 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 		return core.WorkingCopy{}, false, ErrRewriteInvalidRequest
 	}
 	reviewItems := mustDecodeReviewItems(row.ReviewItemsJSON)
+	for i := range reviewItems {
+		reviewItems[i].Anchor = &reviewanchor.Anchor{StartUTF16: row.StartUTF16, EndUTF16: row.StartUTF16 + len(utf16.Encode([]rune(row.ReplacementMarkdown))), QuoteMarkdown: row.ReplacementMarkdown, Status: "located"}
+	}
 	writeInput := core.SaveWorkingCopyInput{BaseChapterVersionID: row.BaseChapterVersionID,
 		ExpectedSpecRevision: project.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision,
 		BodyMarkdown: body, SourceIDs: stringSet(refs)}
@@ -597,11 +691,15 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 	if reviewItems == nil {
 		reviewItems = []core.ReviewItem{}
 	}
+	evidenceRefs, refErr := decodeRewriteEvidenceRefs(row.EvidenceCardRefsJSON)
+	if refErr != nil {
+		return SelectedRewriteCandidate{}, refErr
+	}
 	status := row.Status
 	if row.ApplyPendingKey != "" && row.AppliedKey == "" {
 		status = "applying"
 	}
-	return SelectedRewriteCandidate{CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
+	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
 		Status: status, RunMode: row.RunMode, BaseChapterVersionID: row.BaseChapterVersionID,
 		SpecRevision: row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
@@ -756,24 +854,21 @@ func (s *SelectedRewriteService) staleIfNeeded(ctx context.Context, actor Actor,
 		return selectedRewriteRow{}, err
 	}
 	if !workingCopyIsCandidateBasis(copy, row) || project.SpecRevision != row.SpecRevision {
-		row.Status, row.ReplacementMarkdown = "stale", ""
-		row.ErrorCode, row.UpdatedAt = "stale_input", s.now()
-		if err := s.store.update(ctx, row); err != nil {
-			return selectedRewriteRow{}, err
-		}
+		return s.store.markStale(ctx, row, s.now())
 	}
 	return row, nil
 }
 
 func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest, hash string, sources []RewriteSourceSnapshot) (selectedRewriteRow, error) {
 	sourceJSON, _ := json.Marshal(input.SourceIDs)
+	evidenceJSON, _ := json.Marshal(input.EvidenceCardRefs)
 	snapshotJSON, _ := json.Marshal(sources)
 	row := selectedRewriteRow{ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID,
 		ProjectID: projectID, ChapterID: chapterID, IdempotencyKey: key, RequestHash: hash,
 		Status: "queued", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
 		SpecRevision: input.ExpectedSpecRevision, WorkingCopyRevision: input.ExpectedWorkingCopyRevision,
 		StartUTF16: input.Selection.StartUTF16, EndUTF16: input.Selection.EndUTF16, SelectedText: input.Selection.SelectedText,
-		Instruction: input.Instruction, SourceIDsJSON: string(sourceJSON), AuthorizedSourcesJSON: string(snapshotJSON),
+		EvidenceCardRefsJSON: string(evidenceJSON), Instruction: input.Instruction, SourceIDsJSON: string(sourceJSON), AuthorizedSourcesJSON: string(snapshotJSON),
 		ReviewItemsJSON: "[]", CreatedAt: s.now(), UpdatedAt: s.now()}
 	return row, nil
 }
@@ -880,7 +975,7 @@ func selectedRewriteContextError(err error) error {
 
 func validateSelectedRewriteInput(key string, in SelectedRewriteRequest) error {
 	if len(key) < 8 || len(key) > 128 || in.ExpectedSpecRevision < 0 || in.ExpectedWorkingCopyRevision < 1 ||
-		strings.TrimSpace(in.Instruction) == "" || len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 ||
+		strings.TrimSpace(in.Instruction) == "" || len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 || !validRewriteEvidenceRefs(in.EvidenceCardRefs) ||
 		in.Selection.EndUTF16 <= in.Selection.StartUTF16 || in.Selection.StartUTF16 < 0 || in.Selection.SelectedText == "" {
 		return ErrRewriteInvalidRequest
 	}

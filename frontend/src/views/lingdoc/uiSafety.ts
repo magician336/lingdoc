@@ -1,6 +1,8 @@
 export interface ReviewDraft {
   disposition: 'resolved' | 'retained_warning'
   reason: string
+  // 显式点选过处理方式才算数（R1 退修）：只填理由或只改默认值都不视为已处理。
+  explicitlyChosen?: boolean
 }
 
 export function reviewDraftsAreDirty(drafts: Record<string, ReviewDraft>, saved: Record<string, ReviewDraft>): boolean {
@@ -32,7 +34,8 @@ export interface UnsavedInputState {
   templateChanged: boolean
   saving: boolean
   reviewChanged: boolean
-  conditionsChanged: boolean
+  conditionsChanged?: boolean
+  editorUnsaved?: boolean
 }
 
 export interface UnsavedInputOptions {
@@ -40,10 +43,13 @@ export interface UnsavedInputOptions {
 }
 
 export function unsavedInputsAreDirty(state: UnsavedInputState, options: UnsavedInputOptions = {}): boolean {
-  // A successful conditions apply/reject has durably handled both the spec
-  // fields and its auxiliary reason/chapter inputs. Other drafts remain dirty.
   return state.chapterChanged || (!options.conditionsHandled && state.specChanged) || state.templateChanged || state.saving || state.reviewChanged ||
-    (!options.conditionsHandled && state.conditionsChanged)
+    state.editorUnsaved === true || (!options.conditionsHandled && state.conditionsChanged === true)
+}
+
+// Compatibility entry delegates to the same dirty-state policy.
+export function hasUnsavedInputs(state: UnsavedInputState): boolean {
+  return unsavedInputsAreDirty(state)
 }
 
 export function canLeaveWorkspace(dirty: boolean, confirm: (message: string) => boolean): boolean {
@@ -69,6 +75,6 @@ export function confirmationBlockReasons(state: {
   else if (state.busy) reasons.push('当前操作尚未完成，请稍候')
   if (state.unsaved) reasons.push('请先保存当前修改')
   if (state.needsCommit) reasons.push('请先将工作副本提交为正式版本')
-  if (state.missingReasons > 0) reasons.push(`还有 ${state.missingReasons} 条待核事项未填写处理理由`)
+  if (state.missingReasons > 0) reasons.push(`还有 ${state.missingReasons} 条待核事项未完成处理（需选择处理方式并填写理由）`)
   return reasons
 }

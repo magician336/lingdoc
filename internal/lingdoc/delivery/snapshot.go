@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"slices"
 	"sort"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
+	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 )
 
 var (
@@ -30,15 +33,23 @@ var (
 
 // DeliveryInput is the immutable value captured for checking and export.
 type DeliveryInput struct {
-	ProjectID      string            `json:"project_id"`
-	ProjectName    string            `json:"project_name"`
-	ProjectVersion int               `json:"project_version"`
-	SpecRevision   int               `json:"spec_revision"`
-	Spec           map[string]string `json:"spec"`
-	Template       Template          `json:"template"`
-	// RuleSetBinding is application-owned verified evidence. It is deliberately
-	// excluded from the persisted wire shape because the template snapshot and
-	// hashes are the durable record; readback reconstructs the same value.
+	RuleSetSnapshot         *lingdoctemplate.RuleSet   `json:"rule_set_snapshot,omitempty"`
+	TemplateCopyRulesetHash string                     `json:"template_copy_ruleset_hash,omitempty"`
+	SourceRuleSetID         string                     `json:"source_ruleset_id,omitempty"`
+	SourceRuleSetVersion    string                     `json:"source_ruleset_version,omitempty"`
+	SourceRuleSetHash       string                     `json:"source_ruleset_hash,omitempty"`
+	BindingPolicies         []governance.BindingPolicy `json:"binding_policies,omitempty"`
+	SourcePolicyHash        string                     `json:"source_policy_hash,omitempty"`
+
+	ProjectID       string                          `json:"project_id"`
+	ProjectName     string                          `json:"project_name"`
+	ProjectVersion  int                             `json:"project_version"`
+	SpecRevision    int                             `json:"spec_revision"`
+	ContextRevision int64                           `json:"context_revision,omitempty"`
+	Spec            map[string]string               `json:"spec"`
+	SpecProvenance  *core.ProjectProvenanceSnapshot `json:"spec_provenance,omitempty"`
+	Template        Template                        `json:"template"`
+	// RuleSetBinding is verified application evidence; durable template data reconstructs it on readback.
 	RuleSetBinding          *lingdoctemplate.VerifiedRuleSetBinding `json:"-"`
 	TemplateCopyID          string                                  `json:"template_copy_id,omitempty"`
 	TemplateCopyVersion     int64                                   `json:"template_copy_version,omitempty"`
@@ -61,9 +72,10 @@ type SnapshotChapter struct {
 	Confirmation     *Confirmation   `json:"confirmation,omitempty"`
 }
 type ReviewItem struct {
-	ID                string `json:"id"`
-	Statement         string `json:"statement"`
-	OriginCandidateID string `json:"origin_candidate_id"`
+	ID                string               `json:"id"`
+	Statement         string               `json:"statement"`
+	OriginCandidateID string               `json:"origin_candidate_id"`
+	Anchor            *reviewanchor.Anchor `json:"anchor,omitempty"`
 }
 type CitationUsage struct {
 	SourceID   string `json:"source_id"`
@@ -121,6 +133,7 @@ const DeliveryKindInternalDemo = "internal_demo"
 const unattributedTarget = "unresolved-project"
 
 type CheckResult struct {
+	ReceiptID      string                            `json:"receipt_id,omitempty"`
 	ProjectVersion int                               `json:"project_version"`
 	RulesetHash    string                            `json:"ruleset_hash"`
 	RuleSetRef     *lingdoctemplate.RuleSetReference `json:"ruleset_ref,omitempty"`
@@ -367,6 +380,9 @@ func NewReleaseService(store SnapshotStore, checkers ...CurrentnessChecker) *Rel
 // 「快照在、动作不在」的窗口，重试正好落在那里就会再冻一份。
 func (s *ReleaseService) Freeze(input DeliveryInput) (ReleaseSnapshot, error) {
 	frozen := cloneInput(input)
+	if err := ValidateFrozenRuleSnapshot(frozen); err != nil {
+		return ReleaseSnapshot{}, err
+	}
 	current, err := s.currentness.IsCurrent(frozen)
 	if err != nil {
 		return ReleaseSnapshot{}, err
@@ -417,7 +433,7 @@ type issueFunc func(ruleID, code, chapterID, message string)
 
 func Evaluate(input DeliveryInput) CheckResult {
 	binding, bindingErr := verifiedRuleSetBinding(input)
-	rulesetHash := input.Template.RulesetHash
+	rulesetHash := FrozenRuleSetHash(input)
 	var ruleSetRef *lingdoctemplate.RuleSetReference
 	if binding != nil {
 		rulesetHash = binding.EffectiveHash
@@ -438,7 +454,7 @@ func Evaluate(input DeliveryInput) CheckResult {
 		return result
 	}
 	severities := ruleSeverities(input.Template.Rules)
-	if !hasRulesForScene(input.Template, "preflight") {
+	if !hasRulesForScene(input.Template, "preflight") && !legacyIndependentRuleSnapshot(input) {
 		result.Status = CheckNotEvaluated
 		return result
 	}
@@ -498,9 +514,9 @@ func Evaluate(input DeliveryInput) CheckResult {
 		issue(RuleRequiredFields, "template_rules_invalid", "", "模板规则结构无效，无法安全执行检查")
 	} else {
 		for _, evaluation := range evaluated.Evaluations {
-			if isLegacyTemplateRule(evaluation.RuleID) ||
+			if (!legacyIndependentRuleSnapshot(input) && isLegacyTemplateRule(evaluation.RuleID)) ||
 				(evaluation.Status != lingdoctemplate.EvaluationIssue &&
-					!(evaluation.Status == lingdoctemplate.EvaluationUnknown && evaluation.Severity == SeverityBlocking)) {
+					(evaluation.Status != lingdoctemplate.EvaluationUnknown || (evaluation.Severity != SeverityBlocking && !legacyIndependentRuleSnapshot(input)))) {
 				continue
 			}
 			kind, id, _ := strings.Cut(evaluation.TargetRef, "/")
@@ -530,10 +546,15 @@ func Evaluate(input DeliveryInput) CheckResult {
 			}
 			version := evaluation.TargetVersion
 			code := "template_rule_issue"
+			severity := evaluation.Severity
 			if evaluation.Status == lingdoctemplate.EvaluationUnknown {
 				code = "template_rule_unavailable"
+				if legacyIndependentRuleSnapshot(input) {
+					// Preserve historical independent-copy UNKNOWN blocking semantics.
+					severity, code = SeverityBlocking, "template_rule_issue"
+				}
 			}
-			addTarget(evaluation.Severity, evaluation.RuleID, code, target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
+			addTarget(severity, evaluation.RuleID, code, target, chapterID, &version, evaluation.Message, evaluation.Evidence, evaluation.ID)
 		}
 	}
 
@@ -775,7 +796,14 @@ func cloneInput(input DeliveryInput) DeliveryInput {
 	for key, value := range input.Spec {
 		copy.Spec[key] = value
 	}
+	if input.SpecProvenance != nil {
+		provenance := *input.SpecProvenance
+		provenance.Fields = slices.Clone(input.SpecProvenance.Fields)
+		copy.SpecProvenance = &provenance
+	}
 	copy.Template = lingdoctemplate.Clone(input.Template)
+	copy.RuleSetSnapshot = cloneRuleSnapshot(input.RuleSetSnapshot)
+	copy.BindingPolicies = cloneFrozenPolicies(input.BindingPolicies)
 	if input.RuleSetBinding != nil {
 		binding := input.RuleSetBinding.Clone()
 		copy.RuleSetBinding = &binding
@@ -822,6 +850,10 @@ func cloneSnapshot(snapshot ReleaseSnapshot) ReleaseSnapshot {
 		snapshot.RuleSetRef = &ref
 	}
 	snapshot.FrozenInput = cloneInput(snapshot.FrozenInput)
+	if snapshot.Check.RuleSetRef != nil {
+		ref := *snapshot.Check.RuleSetRef
+		snapshot.Check.RuleSetRef = &ref
+	}
 	snapshot.Check.Issues = cloneIssues(snapshot.Check.Issues)
 	return snapshot
 }

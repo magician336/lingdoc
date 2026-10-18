@@ -1,0 +1,226 @@
+{
+  "checkedAt": "2026-10-15T07:34:11.335014+00:00",
+  "scope": "PR alignment and local real-writing entry preparation, not a real trial",
+  "integrationTestSha": "c5911d340486fd7195676c83a912457a585c0443",
+  "productSourceSha": "950e0e175124148608c86f68c8472ebb6b07d397",
+  "g3Tests": [
+    {
+      "Test": "TestStaleChangeSetCanBeReassessedAgainstCurrentBaseline",
+      "Action": "pass"
+    },
+    {
+      "Test": "TestReassessChangeSetRejectsChangedTargetField",
+      "Action": "pass"
+    },
+    {
+      "Test": "TestReviewReassessRejectsDeltaIncompatibleWithCurrentTemplate",
+      "Action": "pass"
+    }
+  ],
+  "g3CommandExit": 0,
+  "membersExistingTests": {
+    "pass": 29,
+    "fail": 0,
+    "exit": 0,
+    "mode": "helper and actual Vue SFC with synthetic HTTP"
+  },
+  "pr151": {
+    "checkedAt": "2026-10-15T07:17:19.285Z",
+    "pr": 151,
+    "sha": "6dadab2ab4dfdfc93a263a976eee422110c62f19",
+    "ci": [
+      {
+        "id": 38693324009,
+        "name": "Go Lint",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693324009"
+      },
+      {
+        "id": 38693324008,
+        "name": "LingDoc F01 Runner",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693324008"
+      },
+      {
+        "id": 38693323915,
+        "name": "App",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693323915"
+      },
+      {
+        "id": 38693323918,
+        "name": "LingDoc Interface Integration",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693323918"
+      },
+      {
+        "id": 38693323903,
+        "name": "LingDoc Mock",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693323903"
+      },
+      {
+        "id": 38693323914,
+        "name": "LingDoc Workspace Concurrency",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693323914"
+      },
+      {
+        "id": 38693323971,
+        "name": "LingDoc Review",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/magician336/lingdoc/actions/runs/38693323971"
+      }
+    ],
+    "integrationJobs": [
+      {
+        "id": 116284456988,
+        "name": "frontend",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-node@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Frontend consumers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-node@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      },
+      {
+        "id": 116284457234,
+        "name": "integration",
+        "conclusion": "success",
+        "steps": [
+          {
+            "name": "Set up job",
+            "conclusion": "success"
+          },
+          {
+            "name": "Initialize containers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/checkout@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Run actions/setup-go@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Real API and database contracts",
+            "conclusion": "success"
+          },
+          {
+            "name": "Repeat sequential API contract without race instrumentation",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/setup-go@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Post Run actions/checkout@v6",
+            "conclusion": "success"
+          },
+          {
+            "name": "Stop containers",
+            "conclusion": "success"
+          },
+          {
+            "name": "Complete job",
+            "conclusion": "success"
+          }
+        ]
+      }
+    ],
+    "individualJobLogs": "Unavailable: connector transport error; no independent per-test PG claim",
+    "notMerged": true
+  },
+  "entry": {
+    "result": "ready",
+    "mode": "verification",
+    "modelCalls": 0,
+    "projectListStatus": 200,
+    "initialProjectCount": 0,
+    "repeatInputRetained": true,
+    "expiredSessionInputRetained": true,
+    "sessionRenewedInNewTab": true,
+    "expectedInvalidSessionProbe": 1
+  },
+  "firstRegistrationHTTP": 201,
+  "newModelCalls": 0,
+  "sharedRequestCountBefore": 28,
+  "sharedRequestCountAfter": 28,
+  "unknownRequests": 0,
+  "realMaterialsUsed": false,
+  "realWritingTrial": "NOT STARTED",
+  "gongAcceptance": "NOT GRANTED",
+  "earlierEntryFailuresRetained": true,
+  "ownerScriptFailureFixes": [
+    "password length within product 8-32",
+    "idempotent protected DACL",
+    "observe selector before toggle",
+    "wait for target origin before reading localStorage",
+    "cold stored-session startup uses normal login; existing writing pages reused"
+  ],
+  "sourceEvidence": [
+    {
+      "path": "pr-alignment-20261015/targeted-checks.json",
+      "sha256": "ecd85324a855b8f0c8239f0591c5b1bf6b9121b73213fdca1581806d4968900a"
+    },
+    {
+      "path": "pr-alignment-20261015/members-check.log",
+      "sha256": "091d77f5f436e79a617b969ec4c83265231621302d45dcf43c538dc5c50c7964"
+    },
+    {
+      "path": "real-writing-ready-20261015/verification/entry-verify-1792049591355.json",
+      "sha256": "e4a90202596d828c64e62065dfd120de161ec57cdd3b57ac2c33ad5ec322b704"
+    },
+    {
+      "path": "real-writing-ready-20261015/verification/entry-open-1792049607552.json",
+      "sha256": "72b558d86dbb99f168fe618380bdd561111a17abc764ed292f8d48be58847911"
+    }
+  ],
+  "noCredentialsInThisProjection": true,
+  "notMerged": true,
+  "notDeployed": true,
+  "normalCMD": {
+    "result": "ready",
+    "mode": "open",
+    "modelCalls": 0,
+    "projectListStatus": 200,
+    "initialProjectCount": 0,
+    "url": "http://127.0.0.1:5220/platform/lingdoc",
+    "processExit": 0
+  }
+}

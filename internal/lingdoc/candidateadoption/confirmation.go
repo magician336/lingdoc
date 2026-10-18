@@ -83,7 +83,7 @@ func (s *ConfirmationService) ConfirmChapter(ctx context.Context, in ConfirmChap
 	if s.Authorizer == nil {
 		return Confirmation{}, false, ErrInvalidState
 	}
-	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, "write"); err != nil {
+	if err := s.Authorizer.Authorize(ctx, in.ActorID, in.ProjectID, "confirm:"+in.ChapterID); err != nil {
 		return Confirmation{}, false, err
 	}
 	// Check replay after current authorization but before reading mutable state,
@@ -166,7 +166,7 @@ func validateReviewDecisions(items []ReviewItem, decisions []ReviewDecision) err
 }
 
 func confirmationRequestHash(in ConfirmChapterInput) string {
-	decisions := append([]ReviewDecision(nil), in.Decisions...)
+	decisions := append([]ReviewDecision{}, in.Decisions...)
 	sort.Slice(decisions, func(i, j int) bool { return decisions[i].ReviewItemID < decisions[j].ReviewItemID })
 	b, _ := json.Marshal(struct {
 		Project, Chapter, Version string
@@ -180,7 +180,7 @@ func confirmationRequestHash(in ConfirmChapterInput) string {
 }
 
 func newConfirmation(in ConfirmChapterInput, workspace GenerationContext) Confirmation {
-	decisions := append([]ReviewDecision(nil), in.Decisions...)
+	decisions := append([]ReviewDecision{}, in.Decisions...)
 	sort.Slice(decisions, func(i, j int) bool { return decisions[i].ReviewItemID < decisions[j].ReviewItemID })
 	return Confirmation{ID: uuid.NewString(), ChapterID: in.ChapterID,
 		ChapterVersionID: in.ExpectedChapterVersionID, SpecRevision: in.ExpectedSpecRevision,

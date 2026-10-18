@@ -97,7 +97,7 @@ func TestEvaluateRejectsCitationAndSourceDrift(t *testing.T) {
 
 func TestEvaluateSurfacesUnsupportedMarkdownBeforeExport(t *testing.T) {
 	input := validDeliveryInput()
-	input.Chapters[0].BodyMarkdown = "- 列表项 [[source:source-1]]"
+	input.Chapters[0].BodyMarkdown = "> 引用块 [[source:source-1]]"
 
 	result := Evaluate(input)
 	if result.Status != CheckPassed {
