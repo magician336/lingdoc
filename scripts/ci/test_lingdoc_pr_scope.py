@@ -121,5 +121,50 @@ class ScopeTests(unittest.TestCase):
             self.assertIn("provider_tests=false", output.read_text())
 
 
+    def test_budget_and_reconciliation_changes_select_backend(self):
+        for path in ("internal/models/acceptancebudget/reconcile.go",
+                     "cmd/acceptance-budget-reconcile/main.go"):
+            with self.subTest(path=path):
+                self.assertEqual(gate.classify([path]),
+                                 dict(contracts=True, backend=True, frontend=False))
+
+    def test_budget_package_is_selected_without_other_provider_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "internal/models/acceptancebudget/reconcile_test.go"
+            path.parent.mkdir(parents=True)
+            path.touch()
+            self.assertEqual(gate.provider_packages(root),
+                             ["./internal/models/acceptancebudget/..."])
+
+    def test_reconciliation_command_is_selected_without_other_provider_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "cmd/acceptance-budget-reconcile/main_test.go"
+            path.parent.mkdir(parents=True)
+            path.touch()
+            self.assertEqual(gate.provider_packages(root),
+                             ["./cmd/acceptance-budget-reconcile/..."])
+
+    def test_all_provider_roots_reach_cli_targets_and_output(self):
+        roots = ("internal/lingdoc", "internal/evidence",
+                 "internal/models/acceptancebudget", "cmd/acceptance-budget-reconcile")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in roots:
+                path = root / name / "package_test.go"
+                path.parent.mkdir(parents=True)
+                path.touch()
+            output = root / "outputs.txt"
+            env = {**os.environ, "GITHUB_OUTPUT": str(output)}
+            result = subprocess.run([sys.executable, str(Path(gate.__file__).resolve()),
+                                     "--all", "--root", str(root)],
+                                    env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["provider_packages"],
+                             [f"./{name}/..." for name in roots])
+            self.assertIn("provider_tests=true", output.read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

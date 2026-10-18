@@ -665,9 +665,36 @@
           "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-save-spec-0001"},
                        "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}",
                                 "fields": {"research_subject": "公开的合成调查样本", "research_goal": "草稿状态下验证条件版本递增与立项"}}},
-          "capture": {"f12.saved_spec_revision": "/data/spec_revision"},
+          "capture": {"f12.saved_spec_revision": "/data/spec_revision", "f12.saved_project_version": "/data/project_version"},
           "assertion": "草稿状态保存成功，并返回递增后的 spec_revision。",
           "response_example": "success"
+        },
+        {
+          "id": "F12-02-read",
+          "operation_id": "recordActivationRead",
+          "actor": "u-owner",
+          "expected_http": 201,
+          "request": {
+            "path_params": {
+              "projectId": "{{project.id}}"
+            },
+            "headers": {},
+            "json": {
+              "expected_project_version": "{{f12.saved_project_version}}"
+            }
+          },
+          "capture": {
+            "f12.activation_read_id": "/data/id"
+          },
+          "response_example": "synthetic_success",
+          "assertion": "Owner保存后记录真实activation-read；两个立项请求共用仍然当前的回执，仅Spec输入版本不同。",
+          "checks": [
+            {
+              "path": "/data/project_version",
+              "equals": "{{f12.saved_project_version}}",
+              "intent": "回执绑定刚保存的当前项目版本"
+            }
+          ]
         },
         {
           "id": "F12-03",
@@ -675,7 +702,7 @@
           "actor": "u-owner",
           "expected_http": 409,
           "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-activate-stale-0001"},
-                       "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}"}},
+                       "json": {"expected_spec_revision": "{{f12.initial_spec_revision}}", "activation_read_id": "{{f12.activation_read_id}}", "expected_project_version": "{{f12.saved_project_version}}", "reviewed_project_version": "{{f12.saved_project_version}}"}},
           "assertion": "立项请求仍用保存前的旧 spec_revision，必须明确冲突，不得因处于草稿状态而跳过版本比较。",
           "response_example": "version_conflict",
           "checks": [{"path": "/error/code", "equals": "version_conflict", "intent": "草稿立项明确报告条件版本冲突"}]
@@ -686,7 +713,7 @@
           "actor": "u-owner",
           "expected_http": 200,
           "request": {"path_params": {"projectId": "{{project.id}}"}, "headers": {"Idempotency-Key": "f12-activate-fresh-0001"},
-                       "json": {"expected_spec_revision": "{{f12.saved_spec_revision}}"}},
+                       "json": {"expected_spec_revision": "{{f12.saved_spec_revision}}", "activation_read_id": "{{f12.activation_read_id}}", "expected_project_version": "{{f12.saved_project_version}}", "reviewed_project_version": "{{f12.saved_project_version}}"}},
           "assertion": "刷新为刚保存的 spec_revision 后，草稿项目可以正常立项。",
           "response_example": "success",
           "checks": [

@@ -2089,7 +2089,7 @@
           "workspace"
         ],
         "summary": "确认立项并生成章节骨架",
-        "description": "草案；必须同时满足配套文档的当前权限、版本、幂等及失败恢复约束。",
+        "description": "草案；必须同时满足配套文档的当前权限、版本、幂等及失败恢复约束。 当前 full-workflow profile 必须先读取activation-diff并调用activation-read，再提交回执；回执在条件/项目版本变化后失效。",
         "parameters": [
           {
             "name": "projectId",
@@ -2420,13 +2420,17 @@
                 "$ref": "#/components/schemas/ActivateProject"
               },
               "example": {
-                "expected_spec_revision": 1
+                "expected_spec_revision": 1,
+                "activation_read_id": "activation-read-demo",
+                "expected_project_version": 2,
+                "reviewed_project_version": 2
               }
             }
           }
         },
         "x-delivery-phase": "core",
-        "x-domain": "workspace"
+        "x-domain": "workspace",
+        "x-lingdoc-route-source": "http.go"
       }
     },
     "/projects/{projectId}/chapters": {
@@ -31972,6 +31976,1254 @@
         },
         "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
       }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/working-copy": {
+      "get": {
+        "operationId": "getWorkingCopy",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取当前章节工作副本",
+        "description": "读取真实可变工作副本；可能对未独立编辑的旧base或旧Spec做受保护的兼容同步，保留独立人工草稿；冲突返回409。正常读取meta.replayed=false、refresh_required=false。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "读取当前章节工作副本；重放保持该HTTP状态。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingCopyResponse"
+                },
+                "examples": {
+                  "current": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 6,
+                        "body_markdown": "人工正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "workspace",
+        "x-lingdoc-route-source": "http.go"
+      },
+      "put": {
+        "operationId": "saveWorkingCopy",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "按版本保存工作副本",
+        "description": "按版本保存工作副本。当前权限和来源每次复核；写请求以Idempotency-Key重放同一回执，原HTTP状态不变，meta.replayed与meta.refresh_required同时为true；客户端需要重新读取当前工作副本。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "按版本保存工作副本；重放保持该HTTP状态。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingCopyResponse"
+                },
+                "examples": {
+                  "current": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 7,
+                        "body_markdown": "修改后的人工正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "replayed": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 7,
+                        "body_markdown": "修改后的人工正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": true,
+                        "refresh_required": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "运行范围暂停，未执行本次业务变更。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "runtime_paused": {
+                    "value": {
+                      "error": {
+                        "code": "runtime_paused",
+                        "message": "当前范围已暂停，请由负责人核对并恢复。",
+                        "retryable": false
+                      },
+                      "request_id": "req-runtime-paused"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "workspace",
+        "x-lingdoc-route-source": "http.go",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWorkingCopyRequest"
+              },
+              "example": {
+                "base_chapter_version_id": "cv-question-2",
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 6,
+                "body_markdown": "修改后的人工正文",
+                "source_ids": []
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/working-copy/commit": {
+      "post": {
+        "operationId": "commitWorkingCopy",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "提交工作副本为新的正式章节版本",
+        "description": "提交工作副本为新的正式章节版本。当前权限和来源每次复核；写请求以Idempotency-Key重放同一回执，原HTTP状态不变，meta.replayed与meta.refresh_required同时为true；客户端需要重新读取当前工作副本。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "提交工作副本为新的正式章节版本；重放保持该HTTP状态。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommittedChapterVersionResponse"
+                },
+                "examples": {
+                  "current": {
+                    "value": {
+                      "data": {
+                        "chapter_version_id": "cv-question-3",
+                        "parent_chapter_version_id": "cv-question-2",
+                        "committed_working_copy_revision": 6,
+                        "next_working_copy_revision": 7,
+                        "spec_revision": 1,
+                        "body_markdown": "人工正文",
+                        "source_ids": [],
+                        "review_items": []
+                      },
+                      "request_id": "req-working-copy-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "replayed": {
+                    "value": {
+                      "data": {
+                        "chapter_version_id": "cv-question-3",
+                        "parent_chapter_version_id": "cv-question-2",
+                        "committed_working_copy_revision": 6,
+                        "next_working_copy_revision": 7,
+                        "spec_revision": 1,
+                        "body_markdown": "人工正文",
+                        "source_ids": [],
+                        "review_items": []
+                      },
+                      "request_id": "req-working-copy-example",
+                      "meta": {
+                        "replayed": true,
+                        "refresh_required": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "运行范围暂停，未执行本次业务变更。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "runtime_paused": {
+                    "value": {
+                      "error": {
+                        "code": "runtime_paused",
+                        "message": "当前范围已暂停，请由负责人核对并恢复。",
+                        "retryable": false
+                      },
+                      "request_id": "req-runtime-paused"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "workspace",
+        "x-lingdoc-route-source": "http.go",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommitWorkingCopyRequest"
+              },
+              "example": {
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 6,
+                "expected_chapter_version_id": "cv-question-2"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{projectId}/chapters/{chapterId}/working-copy/restore": {
+      "post": {
+        "operationId": "restoreWorkingCopy",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "将已有历史版本恢复到工作副本",
+        "description": "将已有历史版本恢复到工作副本。当前权限和来源每次复核；写请求以Idempotency-Key重放同一回执，原HTTP状态不变，meta.replayed与meta.refresh_required同时为true；客户端需要重新读取当前工作副本。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "chapterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "同一用户动作及超时重试复用同一键；不同请求不得重用。"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "将已有历史版本恢复到工作副本；重放保持该HTTP状态。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkingCopyResponse"
+                },
+                "examples": {
+                  "current": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 7,
+                        "body_markdown": "历史人工正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  },
+                  "replayed": {
+                    "value": {
+                      "data": {
+                        "project_id": "p-demo",
+                        "chapter_id": "ch-question",
+                        "base_chapter_version_id": "cv-question-2",
+                        "spec_revision": 1,
+                        "working_copy_revision": 7,
+                        "body_markdown": "历史人工正文",
+                        "source_ids": [],
+                        "citation_usages": [],
+                        "review_items": [],
+                        "updated_at": "2026-10-14T01:00:00Z"
+                      },
+                      "request_id": "req-editor-example",
+                      "meta": {
+                        "replayed": true,
+                        "refresh_required": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_request": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "请求字段不符合约定。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "unauthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "unauthenticated",
+                        "message": "请登录后重试。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "forbidden": {
+                    "value": {
+                      "error": {
+                        "code": "forbidden",
+                        "message": "无权执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "source_access_denied": {
+                    "value": {
+                      "error": {
+                        "code": "source_access_denied",
+                        "message": "资料授权已不可用。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "资源不存在或不可访问。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "version_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "version_conflict",
+                        "message": "内容已变化，请先读取当前版本。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "同一幂等键对应不同请求。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  },
+                  "request_in_progress": {
+                    "value": {
+                      "error": {
+                        "code": "request_in_progress",
+                        "message": "同键请求正在提交，稍后用原键重试。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "description": "仅request_in_progress建议携带。"
+              }
+            }
+          },
+          "422": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "invalid_state": {
+                    "value": {
+                      "error": {
+                        "code": "invalid_state",
+                        "message": "当前阶段不能执行该动作。",
+                        "retryable": false
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "423": {
+            "description": "运行范围暂停，未执行本次业务变更。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "runtime_paused": {
+                    "value": {
+                      "error": {
+                        "code": "runtime_paused",
+                        "message": "当前范围已暂停，请由负责人核对并恢复。",
+                        "retryable": false
+                      },
+                      "request_id": "req-runtime-paused"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "公共错误；具体语义见接口草案。",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "dependency_unavailable": {
+                    "value": {
+                      "error": {
+                        "code": "dependency_unavailable",
+                        "message": "依赖暂时不可用。",
+                        "retryable": true
+                      },
+                      "request_id": "req-demo"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-delivery-phase": "core",
+        "x-domain": "workspace",
+        "x-lingdoc-route-source": "http.go",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RestoreWorkingCopyRequest"
+              },
+              "example": {
+                "chapter_version_id": "cv-question-1",
+                "expected_spec_revision": 1,
+                "expected_working_copy_revision": 6,
+                "expected_chapter_version_id": "cv-question-2"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -34042,12 +35294,29 @@
           "expected_spec_revision": {
             "type": "integer",
             "minimum": 0
+          },
+          "activation_read_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "POST activation-read 返回的真实回执ID；绑定当前actor、project_version和spec_revision，过期返回409。"
+          },
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "建议显式传当前正版本；省略或0保留旧调用者按当前版本处理的兼容语义。"
+          },
+          "reviewed_project_version": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "建议显式传刚审阅的正版本；省略或0兼容按当前版本处理。"
           }
         },
         "required": [
-          "expected_spec_revision"
+          "expected_spec_revision",
+          "activation_read_id"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "本合同发布的当前 full-workflow profile（RequireActivationRead(true)）要求当前 Owner 的 activation_read_id。未启用此配置的独立/旧 Service 兼容入口不属于本合同 profile。"
       },
       "SaveChapter": {
         "type": "object",
@@ -44404,6 +45673,131 @@
           "request_id",
           "meta"
         ]
+      },
+      "SaveWorkingCopyRequest": {
+        "type": "object",
+        "description": "保存人工工作副本，不新增正式章节版本。body_markdown省略时按空字符串处理；引用标记必须与非null且去重的source_ids完全一致。",
+        "properties": {
+          "base_chapter_version_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "可为null；省略按Go指针零值null解释。必须与当前正式版本/工作副本base一致，否则409。"
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "body_markdown": {
+            "type": "string",
+            "maxLength": 200000,
+            "default": ""
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "citation_usages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CitationUsage"
+            },
+            "nullable": true,
+            "description": "省略或null保留仍被正文引用的既有用途并补全默认用途；显式数组交由服务端校验。"
+          }
+        },
+        "required": [
+          "expected_spec_revision",
+          "expected_working_copy_revision",
+          "source_ids"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.SaveWorkingCopyInput",
+        "x-go-source": "internal/lingdoc/workspacecore/service_facade.go"
+      },
+      "CommitWorkingCopyRequest": {
+        "type": "object",
+        "description": "按当前base、Spec和工作副本revision CAS追加正式版本，并使旧确认失效；首次正式版本允许expected_chapter_version_id为null或省略。",
+        "properties": {
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_chapter_version_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "可为null；省略按Go指针零值null解释。必须与当前正式版本/工作副本base一致，否则409。"
+          }
+        },
+        "required": [
+          "expected_spec_revision",
+          "expected_working_copy_revision"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.CommitWorkingCopyInput",
+        "x-go-source": "internal/lingdoc/workspacecore/service_facade.go"
+      },
+      "RestoreWorkingCopyRequest": {
+        "type": "object",
+        "description": "将本章已有历史版本内容恢复到当前工作副本；CAS核对当前base和revision，不新增正式版本，不改写历史/确认。",
+        "properties": {
+          "chapter_version_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_spec_revision": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expected_working_copy_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "expected_chapter_version_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "可为null；省略按Go指针零值null解释。必须与当前正式版本/工作副本base一致，否则409。"
+          }
+        },
+        "required": [
+          "chapter_version_id",
+          "expected_spec_revision",
+          "expected_working_copy_revision"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RestoreWorkingCopyInput",
+        "x-go-source": "internal/lingdoc/workspacecore/service_facade.go"
+      },
+      "CommittedChapterVersionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CommittedChapterVersion"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
       }
     }
   },

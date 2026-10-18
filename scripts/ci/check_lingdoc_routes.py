@@ -331,7 +331,89 @@ def read_clients(sources, api_prefix):
     return calls
 
 
+
+FOCUSED_WORKSPACE_FILE = "internal/lingdoc/workspace/http.go"
+FULL_PROFILE_FILE = "internal/container/lingdoc.go"
+FOCUSED_WORKSPACE_DATA = {
+    "activateProject": "Project", "getWorkingCopy": "WorkingCopy",
+    "saveWorkingCopy": "WorkingCopy", "commitWorkingCopy": "CommittedChapterVersion",
+    "restoreWorkingCopy": "WorkingCopy",
+}
+
+
+def check_focused_workspace_seams(spec, sources):
+    """Five reviewed legacy handlers only; derive routes/DTO/status from real source."""
+    require(FOCUSED_WORKSPACE_FILE in sources, "focused workspace source is missing")
+    text = mask_comments(sources[FOCUSED_WORKSPACE_FILE])
+    fields = go_struct_fields(sources)
+    found = {}
+    for match in re.finditer(r'routes\.(?:Read|Write)\.(GET|PUT|POST)\("([^"]+)",\s*h\.(\w+)\)', text):
+        method, path, handler = match.groups()
+        if handler not in FOCUSED_WORKSPACE_DATA:
+            continue
+        require(handler not in found, "duplicate focused workspace handler " + handler)
+        found[handler] = (method, path)
+    require(set(found) == set(FOCUSED_WORKSPACE_DATA), "focused workspace registrations changed or disappeared")
+    for handler, (method, path) in found.items():
+        key = signature(method, path)
+        operation = next((item.get(method.lower()) for contract_path, item in spec.get("paths", {}).items()
+                          if signature(method, contract_path) == key and method.lower() in item), None)
+        require(operation is not None, "focused workspace operation absent: " + key)
+        match = re.search(r'func \(h \*Handler\) ' + handler + r'\([^\n]*\)\s*\{', text)
+        require(match is not None, "focused workspace handler body missing: " + handler)
+        start = match.end() - 1
+        block = text[start + 1:close_at(text, start, "{", "}")]
+        request = re.search(r'var input (\w+)', block)
+        body = operation.get("requestBody")
+        if request:
+            require(body and body.get("required"), key + ": focused write needs its JSON body")
+            schema = concrete(spec, body.get("content", {}).get("application/json", {}).get("schema", {}), key + " request")
+            expected = fields(request.group(1))
+            require(set(expected) <= set(schema.get("properties", {})), key + ": focused request omits Go JSON fields")
+            require(schema.get("additionalProperties") is False, key + ": strict decoder requires a closed request")
+            for name, go_type in expected.items():
+                prop = schema["properties"][name]
+                primitive = {"string": "string", "int64": "integer"}.get(go_type.lstrip("*"))
+                if primitive:
+                    require(resolve(spec, prop).get("type") == primitive, key + ": focused field type differs: " + name)
+                if go_type.startswith("*"):
+                    require(prop.get("nullable") is True, key + ": pointer must allow null: " + name)
+            if "expected_working_copy_revision" in expected:
+                require({"expected_spec_revision", "expected_working_copy_revision"} <= set(schema.get("required", [])), key + ": missing working-copy CAS requirements")
+                require(schema["properties"]["expected_working_copy_revision"].get("minimum", 0) >= 1, key + ": working-copy revision must be positive")
+            if handler == "saveWorkingCopy":
+                source_ids = schema["properties"]["source_ids"]
+                require("source_ids" in schema.get("required", []) and source_ids.get("type") == "array" and not source_ids.get("nullable"), key + ": source_ids must be a present nonnull array")
+            if handler == "activateProject":
+                require(FULL_PROFILE_FILE in sources, "full workflow assembly source is missing")
+                full = mask_comments(sources[FULL_PROFILE_FILE])
+                require(re.search(r'\.RequireActivationRead\(true\)', full), "full profile activation-read assembly changed; review contract requirements")
+                require("activation_read_id" in schema.get("required", []) and schema["properties"]["activation_read_id"].get("minLength", 0) >= 1,
+                        key + ": full profile needs required activation_read_id")
+                require(not {"expected_project_version", "reviewed_project_version"}.intersection(schema.get("required", [])),
+                        key + ": compatibility project versions must stay optional")
+            require(any(p.get("in") == "header" and p.get("name", "").lower() == "idempotency-key" and p.get("required") for p in operation.get("parameters", [])), key + ": missing focused Idempotency-Key")
+        else:
+            require(body is None, key + ": focused read must be bodyless")
+        status_match = re.search(r'sendOK\(c,\s*http\.Status(OK|Created)', block)
+        require(status_match is not None, "focused success status changed: " + handler)
+        status = {"OK": "200", "Created": "201"}[status_match.group(1)]
+        response = operation.get("responses", {}).get(status)
+        require(response is not None, key + ": focused handler success status missing")
+        envelope = concrete(spec, response.get("content", {}).get("application/json", {}).get("schema", {}), key + " response")
+        require({"data", "request_id", "meta"} <= set(envelope.get("required", [])), key + ": success envelope incomplete")
+        data = concrete(spec, envelope["properties"].get("data", {}), key + " response data")
+        require(set(fields(FOCUSED_WORKSPACE_DATA[handler])) <= set(data.get("properties", {})), key + ": focused success data omits actual DTO fields")
+        for name, go_type in fields(FOCUSED_WORKSPACE_DATA[handler]).items():
+            if go_type.startswith("*"):
+                require(data["properties"][name].get("nullable") is True, key + ": response pointer must allow null: " + name)
+        meta = concrete(spec, envelope["properties"]["meta"], key + " meta")
+        require({"replayed", "refresh_required"} <= set(meta.get("required", [])), key + ": replay metadata incomplete")
+    return len(found)
+
+
 def check_document(spec, route_sources, client_sources, type_sources):
+    focused_count = check_focused_workspace_seams(spec, type_sources)
     routes = read_routes(route_sources)
     fields = go_struct_fields(type_sources)
     read_types = {}
@@ -414,13 +496,14 @@ def check_document(spec, route_sources, client_sources, type_sources):
         operation = operations[call["signature"]]
         require((operation.get("requestBody") is not None) == (call["body_mode"] == "json"),
                 call["function"] + ": frontend JSON/bodyless mode disagrees with contract " + call["signature"])
-    return {"result": "PASS", "scope": "three_full_workflow_registrars_and_four_api_consumers",
+    return {"result": "PASS", "scope": "three_full_workflow_registrars_four_api_consumers_and_five_focused_workspace_handlers",
+            "focused_workspace_operations": focused_count,
             "registered_operations": len(routes), "frontend_calls": len(clients),
             "frontend_calls_to_scoped_registrars": sum(c["signature"] in routes for c in clients),
             "routes": [{"signature": key, **value} for key, value in sorted(routes.items())],
             "consumers": clients,
             "limits": ["Static source parity, not Go compilation or live HTTP execution",
-                       "Delegated G4 and other API modules are outside this bounded inventory",
+                       "Only activate and four working-copy operations from legacy http.go are added; delegated G4 and other handlers remain outside this bounded inventory",
                        "Concrete schema plus Go request fields and typed/read-service response root fields; opaque write-result DTO semantic equivalence remains review/runtime work"]}
 
 
@@ -430,6 +513,7 @@ def load_inputs(root):
     routes = {rel: read(rel) for rel in ROUTE_FILES}
     clients = {rel: read(rel) for rel in CLIENT_FILES}
     types = dict(routes)
+    types.update({rel: read(rel) for rel in (FOCUSED_WORKSPACE_FILE, FULL_PROFILE_FILE)})
     types.update({str(p.relative_to(root)): p.read_text(encoding="utf-8-sig")
                   for p in sorted((root / "internal/lingdoc/workspacecore").glob("*.go"))
                   if not p.name.endswith("_test.go")})

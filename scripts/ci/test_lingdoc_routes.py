@@ -205,5 +205,75 @@ class LingDocRouteParity(unittest.TestCase):
             self.check(routes=bad)
 
 
+    def validator_for_request(self, document, path, method):
+        normalized = parity.normalize_openapi_schema(document)
+        body = normalized["paths"][path][method]["requestBody"]["content"]["application/json"]["schema"]
+        return Draft7Validator(body, resolver=RefResolver.from_schema(normalized))
+
+    def test_full_activation_accepts_current_payload_and_rejects_missing_receipt(self):
+        path = "/projects/{projectId}/activate"
+        validator = self.validator_for_request(self.document, path, "post")
+        current = {"expected_spec_revision": 1, "activation_read_id": "actual-activation-read", "expected_project_version": 2, "reviewed_project_version": 2}
+        self.assertFalse(list(validator.iter_errors(current)), "real full-profile request must be expressible")
+        for name in ["expected_project_version", "reviewed_project_version"]:
+            current.pop(name)
+        self.assertFalse(list(validator.iter_errors(current)), "compatibility version omissions remain valid")
+        current.pop("activation_read_id")
+        self.assertTrue(list(validator.iter_errors(current)), "full assembly rejects a missing receipt")
+
+    def test_removed_activation_receipt_requirement_is_detected(self):
+        bad = copy.deepcopy(self.document)
+        schema = bad["components"]["schemas"]["ActivateProject"]
+        schema["required"].remove("activation_read_id")
+        with self.assertRaisesRegex(parity.ContractParityError, "full profile needs required activation_read_id"):
+            self.check(document=bad)
+
+    def test_each_focused_working_copy_operation_cannot_disappear(self):
+        base = "/projects/{projectId}/chapters/{chapterId}/working-copy"
+        for path, method in [(base, "get"), (base, "put"), (base + "/commit", "post"), (base + "/restore", "post")]:
+            with self.subTest(path=path, method=method):
+                bad = copy.deepcopy(self.document)
+                self.assertIn(method, bad["paths"].get(path, {}), "production route must be published")
+                del bad["paths"][path][method]
+                with self.assertRaisesRegex(parity.ContractParityError, "focused workspace operation absent"):
+                    self.check(document=bad)
+
+    def test_working_copy_write_shapes_preserve_nullable_bases_and_nonnull_sources(self):
+        base = "/projects/{projectId}/chapters/{chapterId}/working-copy"
+        valid = {"expected_spec_revision": 1, "expected_working_copy_revision": 1, "source_ids": [], "base_chapter_version_id": None, "citation_usages": None}
+        validator = self.validator_for_request(self.document, base, "put")
+        self.assertFalse(list(validator.iter_errors(valid)), "first-version nullable base and omitted empty body are real valid input")
+        for name, wrong in [("source_ids", None), ("expected_working_copy_revision", 0), ("expected_working_copy_revision", "1")]:
+            self.assertTrue(list(validator.iter_errors({**valid, name: wrong})))
+        wrong = copy.deepcopy(valid)
+        wrong.pop("source_ids")
+        self.assertTrue(list(validator.iter_errors(wrong)))
+        for suffix in ["commit", "restore"]:
+            body = {"expected_spec_revision": 1, "expected_working_copy_revision": 1, "expected_chapter_version_id": None}
+            if suffix == "restore":
+                body["chapter_version_id"] = "real-old-version"
+            validator = self.validator_for_request(self.document, base + "/" + suffix, "post")
+            self.assertFalse(list(validator.iter_errors(body)))
+            self.assertTrue(list(validator.iter_errors({**body, "expected_chapter_version_id": 7})))
+            if suffix == "restore":
+                body.pop("chapter_version_id")
+                self.assertTrue(list(validator.iter_errors(body)))
+
+    def test_commit_receipt_cannot_be_replaced_by_a_full_chapter_version(self):
+        bad = copy.deepcopy(self.document)
+        response = bad["paths"]["/projects/{projectId}/chapters/{chapterId}/working-copy/commit"]["post"]["responses"]["201"]
+        envelope = copy.deepcopy(parity.resolve(bad, response["content"]["application/json"]["schema"]))
+        envelope["properties"]["data"] = {"$ref": "#/components/schemas/ChapterVersion"}
+        response["content"]["application/json"]["schema"] = envelope
+        with self.assertRaisesRegex(parity.ContractParityError, "focused success data omits actual DTO fields"):
+            self.check(document=bad)
+
+    def test_working_copy_base_cannot_become_nonnullable(self):
+        bad = copy.deepcopy(self.document)
+        bad["components"]["schemas"]["SaveWorkingCopyRequest"]["properties"]["base_chapter_version_id"].pop("nullable")
+        with self.assertRaisesRegex(parity.ContractParityError, "pointer must allow null"):
+            self.check(document=bad)
+
+
 if __name__ == "__main__":
     unittest.main()

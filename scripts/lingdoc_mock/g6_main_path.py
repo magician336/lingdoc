@@ -47,7 +47,7 @@ SAFE_FAILURE_CASE = re.compile(r"[a-z][a-z0-9_.-]{1,63}")
 
 def _step_id(step: dict[str, Any]) -> str | None:
     value = step.get("id", step.get("step_id"))
-    return value if isinstance(value, str) and SAFE_STEP_ID.fullmatch(value) else None
+    return value if isinstance(value, str) and (value in EXPECTED_STEP_HTTP or SAFE_STEP_ID.fullmatch(value)) else None
 
 
 def _step_http(step: dict[str, Any]) -> int | None:

@@ -329,7 +329,7 @@ def check_acceptance(previous,candidate,request,result):
     assert result['confirmation_valid'] is False
 
 def check_trace(steps):
-    project_version=None;spec_revision=None;chapters={};candidate=None;seen={};confirmations={}
+    project_version=None;spec_revision=None;chapters={};candidate=None;seen={};confirmations={};activation_reads={}
     for step in steps:
         oid=step['operation_id'];req=step['request'];body=req['json']
         response=step.get('reference_response');data=response['data'] if response else None
@@ -349,7 +349,14 @@ def check_trace(steps):
             assert body['expected_spec_revision']==spec_revision
             spec_revision+=1;project_version+=1
             assert data['spec_revision']==spec_revision and data['project_version']==project_version
+        elif oid=='recordActivationRead':
+            assert body['expected_project_version']==project_version
+            assert data['actor_id']==step['actor'] and data['project_id']==req['path_params']['projectId']
+            assert data['project_version']==project_version and data['spec_revision']==spec_revision
+            activation_reads[data['id']]=(data['actor_id'],data['project_id'],data['project_version'],data['spec_revision'])
         elif oid=='activateProject':
+            assert activation_reads[body['activation_read_id']]==(step['actor'],req['path_params']['projectId'],project_version,spec_revision)
+            assert body['expected_project_version']==project_version and body['reviewed_project_version']==project_version
             assert body['expected_spec_revision']==spec_revision
             project_version+=1
             assert data['project_version']==project_version and data['status']=='active'
@@ -397,12 +404,15 @@ assert canonical==canon(cases['canonical_fixture']['release']['frozen_input'])
 assert hashlib.sha256(canonical).hexdigest()==(ROOT/'frozen-input.sha256').read_text().strip()
 
 negative_results=[]
-for label,index,mutate in [
- ('reject_lost_review_item',12,lambda s:s['reference_response']['data'].update(review_items=[])),
- ('reject_wrong_expected_version',12,lambda s:s['request']['json'].update(expected_chapter_version_id='wrong')),
- ('reject_frozen_content_changed_without_digest',18,lambda s:s['reference_response']['data']['frozen_input']['spec'].update(research_goal='changed')),
+for label,step_id,mutate in [
+ ('reject_lost_review_item','F01-13',lambda s:s['reference_response']['data'].update(review_items=[])),
+ ('reject_wrong_expected_version','F01-13',lambda s:s['request']['json'].update(expected_chapter_version_id='wrong')),
+ ('reject_frozen_content_changed_without_digest','F01-19',lambda s:s['reference_response']['data']['frozen_input']['spec'].update(research_goal='changed')),
+ ('reject_activation_without_observed_receipt','F01-04',lambda s:s['request']['json'].update(activation_read_id='unobserved-receipt')),
+ ('reject_activation_receipt_actor_pin','F01-03-read',lambda s:s['reference_response']['data'].update(actor_id='other-actor')),
 ]:
-    bad=copy.deepcopy(resolved);mutate(bad[index])
+    bad=copy.deepcopy(resolved)
+    mutate(next(step for step in bad if step['id']==step_id))
     try: check_trace(bad)
     except (AssertionError,KeyError): negative_results.append(label)
     else: raise AssertionError('negative case unexpectedly passed: '+label)

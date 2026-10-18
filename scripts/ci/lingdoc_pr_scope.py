@@ -9,7 +9,8 @@ import re
 import subprocess
 import sys
 
-PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence")
+PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence",
+                  "internal/models/acceptancebudget", "cmd/acceptance-budget-reconcile")
 GOVERNANCE = (".github/workflows/lingdoc-review.yml", ".github/pull_request_template.md")
 
 

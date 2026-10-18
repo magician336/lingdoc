@@ -202,9 +202,46 @@
         }
       },
       "capture": {
-        "spec_revision": "/data/spec_revision"
+        "spec_revision": "/data/spec_revision",
+        "project_version": "/data/project_version"
       },
       "assertions": []
+    },
+    {
+      "id": "F01-03-read",
+      "operation_id": "recordActivationRead",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}"
+        },
+        "headers": {},
+        "json": {
+          "expected_project_version": "{{project_version}}"
+        }
+      },
+      "expected_http": 201,
+      "reference_response": {
+        "data": {
+          "id": "activation-read-demo",
+          "actor_id": "u-owner",
+          "project_id": "p-demo",
+          "project_version": 2,
+          "spec_revision": 1,
+          "read_at": "2026-10-18T00:00:00Z"
+        },
+        "request_id": "synthetic-contract-example",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {
+        "activation_read_id": "/data/id"
+      },
+      "assertions": [
+        "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。"
+      ]
     },
     {
       "id": "F01-04",
@@ -218,7 +255,10 @@
           "Idempotency-Key": "f01-activate-0001"
         },
         "json": {
-          "expected_spec_revision": "{{spec_revision}}"
+          "expected_spec_revision": "{{spec_revision}}",
+          "activation_read_id": "{{activation_read_id}}",
+          "expected_project_version": "{{project_version}}",
+          "reviewed_project_version": "{{project_version}}"
         }
       },
       "expected_http": 200,

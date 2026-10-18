@@ -70,19 +70,20 @@ type Ledger struct {
 }
 
 type Request struct {
-	Number          int       `json:"number"`
-	Model           string    `json:"model"`
-	Status          string    `json:"status"`
-	InputUpperBound int       `json:"input_upper_bound_tokens"`
-	OutputLimit     int       `json:"output_limit_tokens"`
-	InputTokens     int       `json:"input_tokens,omitempty"`
-	OutputTokens    int       `json:"output_tokens,omitempty"`
-	ReservedNanoCNY int64     `json:"reserved_nano_cny"`
-	ActualNanoCNY   int64     `json:"actual_nano_cny,omitempty"`
-	ReservedNanoUSD int64     `json:"reserved_nano_usd,omitempty"`
-	ActualNanoUSD   int64     `json:"actual_nano_usd,omitempty"`
-	FinishReason    string    `json:"finish_reason,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	Number          int                               `json:"number"`
+	Model           string                            `json:"model"`
+	Status          string                            `json:"status"`
+	InputUpperBound int                               `json:"input_upper_bound_tokens"`
+	OutputLimit     int                               `json:"output_limit_tokens"`
+	InputTokens     int                               `json:"input_tokens,omitempty"`
+	OutputTokens    int                               `json:"output_tokens,omitempty"`
+	ReservedNanoCNY int64                             `json:"reserved_nano_cny"`
+	ActualNanoCNY   int64                             `json:"actual_nano_cny,omitempty"`
+	ReservedNanoUSD int64                             `json:"reserved_nano_usd,omitempty"`
+	ActualNanoUSD   int64                             `json:"actual_nano_usd,omitempty"`
+	FinishReason    string                            `json:"finish_reason,omitempty"`
+	CreatedAt       time.Time                         `json:"created_at"`
+	Reconciliation  *EmbeddingHTTPErrorReconciliation `json:"reconciliation,omitempty"`
 }
 
 type Reservation struct {
@@ -340,11 +341,7 @@ func readLedger(path string, profiles ...string) (Ledger, error) {
 	if err != nil {
 		return Ledger{}, err
 	}
-	var ledger Ledger
-	if err := json.Unmarshal(data, &ledger); err != nil || ledger.SchemaVersion != ledgerVersion {
-		return Ledger{}, ErrUnavailable
-	}
-	return ledger, nil
+	return decodeLedger(data)
 }
 
 // migrateLedgerProfile upgrades only a fully validated, settled legacy ledger.
@@ -376,6 +373,9 @@ func validLedger(ledger Ledger, profile string) bool {
 	}
 	var reserveCNY, actualCNY, reserveUSD, actualUSD int64
 	for index, request := range ledger.Requests {
+		if request.Reconciliation != nil && (profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
+			return false
+		}
 		if request.Number != index+1 || request.InputUpperBound < 0 || request.InputUpperBound > InputMax ||
 			request.OutputLimit < 0 || request.OutputLimit > OutputMax || request.InputTokens < 0 || request.OutputTokens < 0 {
 			return false
@@ -389,8 +389,7 @@ func validLedger(ledger Ledger, profile string) bool {
 		default:
 			return false
 		}
-		if request.Status == "in_flight" || request.Status == "outcome_unknown" || request.Status == "usage_unknown" ||
-			request.Status == "http_error" || request.Status == "limit_violation" || request.Status == "cancel_reconciliation_required" {
+		if requestUnresolved(request) {
 			if !ledger.Blocked {
 				return false
 			}
@@ -405,8 +404,10 @@ func validLedger(ledger Ledger, profile string) bool {
 
 func hasUnresolved(ledger Ledger) bool {
 	for _, request := range ledger.Requests {
-		if request.Status == "in_flight" || request.Status == "outcome_unknown" || request.Status == "usage_unknown" ||
-			request.Status == "http_error" || request.Status == "limit_violation" || request.Status == "cancel_reconciliation_required" {
+		if request.Reconciliation != nil && ledger.Profile != CostOnlyProfile {
+			return true
+		}
+		if requestUnresolved(request) {
 			return true
 		}
 	}
