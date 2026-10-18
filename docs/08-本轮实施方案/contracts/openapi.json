@@ -15944,6 +15944,233 @@
         "x-delivery-phase": "core"
       }
     },
+    "/projects/{projectId}/change-sets/{changeSetId}/stabilize": {
+      "post": {
+        "operationId": "stabilizeRevision",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "Owner 对当前基线执行稳定化判定，返回服务端实际阻断清单",
+        "description": "稳定化是与 applied 相互独立的第三种基线状态。只有本接口返回 STABILIZED，当前 revision 才允许进入冻结、Preflight 确认与导出。返回 BLOCKED 时随附全部 blockers，客户端不得在本端推断稳定化或导出资格。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "服务端实际稳定化判定；STABILIZED 与 BLOCKED 均为成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StabilizationResultResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误"
+          },
+          "403": {
+            "description": "非 Owner 或机器主体不得代替真人作出稳定化决定"
+          },
+          "404": {
+            "description": "项目或 ChangeSet 不存在或不可访问"
+          },
+          "409": {
+            "description": "版本或幂等冲突；已有的 Preflight 回执已不适用于当前基线"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/change-sets/{changeSetId}/preflight": {
+      "post": {
+        "operationId": "acknowledgeImpactPreflight",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "以**当前**交付检查回执关闭该 ChangeSet 的 BLOCK_RELEASE 任务",
+        "description": "proof_id 必须是当前基线下的实际检查回执；历史快照或已过期的回执会被服务端拒绝，不得据此判定交付就绪。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "proof_id"
+                ],
+                "properties": {
+                  "proof_id": {
+                    "type": "string",
+                    "description": "当前基线下实际产生的交付检查回执 ID；不接受冻结快照 ID 或幂等键"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已关闭的 BLOCK_RELEASE 任务 ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "closed_task_ids"
+                  ],
+                  "properties": {
+                    "closed_task_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误或缺少幂等键"
+          },
+          "403": {
+            "description": "机器主体不得代替真人关闭发布阻断"
+          },
+          "404": {
+            "description": "项目或 ChangeSet 不存在或不可访问"
+          },
+          "409": {
+            "description": "回执不属于当前基线，或已被更新的基线取代"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/check-receipts/{receiptId}": {
+      "get": {
+        "operationId": "getImpactComputationReceipt",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取一次交付检查回执，并复验它是否仍适用于当前基线",
+        "description": "回执与冻结快照、READY、导出是彼此独立的四类事实。回执一旦落后于当前项目版本、基线 revision、模板副本版本或规则哈希即视为过期。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "receiptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前仍然适用的检查回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ImpactComputationReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前租户成员无权读取"
+          },
+          "404": {
+            "description": "回执不存在或不可访问"
+          },
+          "409": {
+            "description": "回执已不适用于当前基线"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
     "/projects/{projectId}/change-sets/{changeSetId}/draft": {
       "put": {
         "operationId": "editChangeDraft",
@@ -20682,6 +20909,157 @@
           }
         },
         "description": "创建或编辑草稿不改正式对象。需服务端当前版本、权限和全部旧/拟议来源核对；评估后由当前 Owner 独立 Apply。 同一批次不能修改相互关联的 ResearchClaim 与 EvidenceCard（包括卡原关联与拟议关联），请分两次正式变更，并对新主张版本重新复核证据卡。"
+      },
+      "ImpactBlocker": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "reason"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "机器可读的阻断分类，例如 impact_task_open、closure_stale、result_receipt_stale、required_route_not_current"
+          },
+          "target_id": {
+            "type": "string",
+            "description": "被阻断的具体对象或任务 ID；省略表示阻断不针对单一对象"
+          },
+          "reason": {
+            "type": "string",
+            "description": "服务端实际给出的阻断原因"
+          }
+        }
+      },
+      "StabilizationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "change_set_id",
+          "context_revision",
+          "status",
+          "blockers",
+          "checked_at"
+        ],
+        "properties": {
+          "change_set_id": {
+            "type": "string"
+          },
+          "context_revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "BLOCKED",
+              "STABILIZED"
+            ],
+            "description": "服务端对当前基线的实际判定。BLOCKED 与 STABILIZED 都是成功响应，客户端不得由其他状态推断。"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactBlocker"
+            },
+            "description": "STABILIZED 时必须为空；BLOCKED 时承载全部实际阻断原因"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StabilizationResultResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StabilizationResult"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "ImpactComputationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "project_id",
+          "status",
+          "project_version",
+          "context_revision",
+          "template_copy_version",
+          "ruleset_hash",
+          "input_hash",
+          "computation_basis_hash",
+          "source_basis_hash",
+          "source_ids",
+          "checked_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "blocked"
+            ],
+            "description": "该次交付检查自身的结论，与基线是否已稳定化相互独立"
+          },
+          "project_version": {
+            "type": "integer"
+          },
+          "context_revision": {
+            "type": "integer"
+          },
+          "template_copy_version": {
+            "type": "integer"
+          },
+          "ruleset_hash": {
+            "type": "string"
+          },
+          "input_hash": {
+            "type": "string"
+          },
+          "computation_basis_hash": {
+            "type": "string"
+          },
+          "source_basis_hash": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evaluations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "一次真实交付检查回执。任一版本或哈希落后于当前基线时服务端判定其过期，历史回执不能满足当前交付门禁。"
       }
     }
   },

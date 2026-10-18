@@ -228,7 +228,9 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 		for _, change := range history {
 			if change.TargetContextRevision != nil && *change.TargetContextRevision == p.CurrentContextRevision && slices.Contains([]string{"applied", "stabilized"}, change.Status) {
 				if change.Status != "stabilized" {
-					return fmt.Errorf("%w: current applied ChangeSet has not been stabilized by Owner", ErrRevisionNotStable)
+					// Name the exact ChangeSet so the client can drive the
+					// Owner stabilization step instead of inferring it.
+					return fmt.Errorf("%w: current applied ChangeSet %s has not been stabilized by Owner", ErrRevisionNotStable, change.ID)
 				}
 				found = true
 			}
