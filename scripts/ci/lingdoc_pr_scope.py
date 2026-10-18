@@ -43,6 +43,24 @@ def git_range(event: dict) -> str:
     return "...".join(shas)
 
 
+def latest_git_range(root: Path, event: dict) -> str:
+    """Scope a synchronize event to the ref update ending at the PR head."""
+    pr = event.get("pull_request")
+    if not isinstance(pr, dict) or event.get("action") != "synchronize":
+        return git_range(event)
+    head = pr.get("head", {}).get("sha", "")
+    if not isinstance(head, str) or not re.fullmatch(r"[0-9a-fA-F]{40}", head):
+        raise ValueError("Event is missing a valid pull request head SHA")
+    before = event.get("before")
+    after = event.get("after")
+    if (isinstance(before, str) and isinstance(after, str)
+            and re.fullmatch(r"[0-9a-fA-F]{40}", before)
+            and after == head):
+        return f"{before}...{after}"
+    parent = subprocess.check_output(["git", "rev-parse", f"{head}^"], cwd=root, text=True).strip()
+    return f"{parent}...{head}"
+
+
 def changed_paths(root: Path, diff_range: str) -> list[str]:
     # --no-renames includes BOTH sides of a move across a gate boundary.
     raw = subprocess.check_output(
@@ -58,6 +76,8 @@ def provider_packages(root: Path) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--all", action="store_true", help="Run all applicable checks")
+    parser.add_argument("--latest", action="store_true",
+                        help="On synchronize, scope checks to the latest ref update")
     parser.add_argument("--event", type=Path, default=os.environ.get("GITHUB_EVENT_PATH"))
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
@@ -68,7 +88,8 @@ def main() -> None:
     else:
         if args.event is None:
             parser.error("--event or GITHUB_EVENT_PATH is required")
-        diff_range = git_range(json.loads(args.event.read_text(encoding="utf-8")))
+        event = json.loads(args.event.read_text(encoding="utf-8"))
+        diff_range = latest_git_range(root, event) if args.latest else git_range(event)
         paths = changed_paths(root, diff_range)
         scope = classify(paths)
     packages = provider_packages(root) if scope["backend"] else []

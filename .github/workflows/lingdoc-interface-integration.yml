@@ -16,7 +16,31 @@ concurrency:
   group: lingdoc-interface-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    name: Scope latest PR update
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select integration paths changed by this update
+        id: scope
+        env:
+          LINGDOC_SCOPE_PATHS: |
+            internal/lingdoc/**
+            internal/evidence/**
+            scripts/acceptance/**
+            internal/container/lingdoc*
+            internal/router/lingdoc*
+            .github/workflows/lingdoc-interface-integration.yml
+        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+
   integration:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -65,6 +89,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
   frontend:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

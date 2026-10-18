@@ -66,8 +66,46 @@ env:
   BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
 
 jobs:
+  scope:
+    name: Scope latest PR update
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select application paths changed by this update
+        id: scope
+        env:
+          LINGDOC_SCOPE_PATHS: |
+            **/*.go
+            !cli/**
+            !client/**
+            !docreader/**
+            !third_party/anydoc-go/**
+            go.mod
+            go.sum
+            Makefile
+            config/**
+            migrations/**
+            skills/preloaded/**
+            testdata/**
+            docker/Dockerfile.app
+            LICENSE
+            THIRD_PARTY_NOTICES.md
+            licenses/**
+            internal/textconv/data/**
+            scripts/*license*.sh
+            cmd/desktop/build/windows/installer/project.nsi
+            .github/workflows/app.yml
+        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+
   verify:
     name: Format, vet, test, and build
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

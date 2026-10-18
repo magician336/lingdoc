@@ -18,8 +18,35 @@ concurrency:
   group: lingdoc-mock-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
+  scope:
+    name: Scope latest PR update
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select mock paths changed by this update
+        id: scope
+        env:
+          LINGDOC_SCOPE_PATHS: |
+            scripts/lingdoc_mock/**
+            scripts/ci/requirements-lingdoc.txt
+            docs/08-本轮实施方案/contracts/**
+            frontend/src/dev/lingdoc-mock/**
+            frontend/lingdoc-mock.html
+            frontend/src/utils/request.ts
+            frontend/package*.json
+            frontend/vite.config.ts
+            .github/workflows/lingdoc-mock.yml
+        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+
   mock:
     name: T06 fixed mock and request consumer
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
