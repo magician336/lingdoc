@@ -11,6 +11,12 @@
 
 纯文字、换行、单文件机械重命名可以跳过完整矩阵，但仍必须说明影响范围并通过现有 CI。
 
+### 文档提交的 CI 边界
+
+GitHub PR 的顶层 `paths` 按整个 PR 相对 `main` 的变更集合匹配；一个已经包含代码的 PR 后续追加 Markdown 时，单靠 `paths` 仍会重新排队代码测试。项目工作流因此在 `synchronize` 事件上按本次 ref 更新重新判断路径：纯文档/证据提交保留快速门禁和文档契约校验，跳过 Go、前端、lint、mock、并发和真实接口集成矩阵；本次更新包含代码、迁移、契约或工作流变更时照常运行相关检查。首次打开、重新打开或手动 dispatch 仍按完整范围运行。
+
+被跳过的 job 必须通过 job-level `if` 产生成功的 skipped 状态，不能用顶层路径过滤制造必需检查的 Pending 状态。修改公共契约、迁移、事务边界或 base 后，应手动 dispatch 或提交代码变更重新跑完整门禁。
+
 ## 默认运行模式：Agent 先完成，人审结果
 
 这套规则默认把执行工作交给 Agent，把人的参与收敛到不可推断的信息、明确授权和最终审查。Agent 不得因为缺少偏好就暂停；先从 Issue、Spec、代码、CI 和环境推导事实，缺少事实时使用可复现的本地或 staging 替代，并在证据中标明边界。
@@ -19,10 +25,10 @@
 
 - 自动读取任务地图、Issue、Spec、迁移、OpenAPI、CI 和当前工作区，生成范围、依赖、真实消费者和验收矩阵；
 - 自动创建测试账号、合成数据、临时数据库、浏览器运行时和失败注入夹具；
-- 自动执行定向测试、application/HTTP 验收、浏览器 E2E、真实适配器、迁移、重启读回、并发和恢复验证；
+- 自动执行定向测试、application/HTTP 验收、浏览器 E2E、真实适配器、迁移、重启读回、并发和恢复验证；真实服务链路若不属于当前 PR，转为独立验收 Issue 并在当前矩阵跟踪。
 - 在用户提供了授权的供应商/API Key 后，自行完成受控的真实模型调用、限流和用量记录；
 - 自动更新验收证据、健康评分、PR body、Issue 状态和 Draft/Ready 建议；
-- 对不能执行的项目记录 `NOT RUN` 或 `BLOCKED`，给出事实、影响和解除条件，不用猜测填成 `PASS`。
+- 对不能执行的项目记录 `NOT RUN`、`N/A` 或 `WARNING`，给出事实、影响和解除条件，不用猜测填成已实测 `PASS`。
 
 ### 人只需提供的输入
 
@@ -33,7 +39,15 @@
 - 未定义的业务阈值、用户可见取舍和不可逆决策；
 - 付费调用、生产写入、发布、转 Ready 或合并的明确授权。
 
-API Key 只能放在环境变量、Secret store 或 CI Secret，不能粘贴到聊天、Issue、PR 或提交中。没有生产数据库时，Agent 自动创建生产同构的 SQLite/PostgreSQL staging 演练；验收报告必须明确这是 staging 证据，不能改写成真实生产迁移。
+API Key 只能放在环境变量、Secret store 或 CI Secret，不能粘贴到聊天、Issue、PR 或提交中。没有生产数据库时，Agent 自动创建生产同构的 SQLite/PostgreSQL staging 演练；验收报告必须明确这是 staging 证据，并将真实生产迁移/回滚标为 `N/A`，因为当前没有生产验收目标。
+
+### 门禁状态和例外语义
+
+- `PASS`：当前 head 有可复核证据，满足本次交付要求。
+- `PASS (follow-up)`：当前 PR 接受该项不阻塞；真实服务验收事项必须链接到独立 GitHub Issue，不能把未运行写成已实测。
+- `N/A`：验收前提在当前目标中不存在，例如没有真实生产数据库；该项不计入当前 PR 的必需矩阵。
+- `WARNING`：宿主环境有局部限制，但等价的 WSL2、CI 或 staging 路径已通过；警告保留在报告中，不阻塞放行。
+- `NOT RUN`/`BLOCKED`：仅对当前 PR 必需范围内的项目阻塞 Ready。外部真实服务链路可以转移到独立 Issue，当前矩阵使用 `PASS (follow-up)`。
 
 ### 最小输入门
 
@@ -65,9 +79,9 @@ Agent 开工后先把依赖分类为：
 
 | 验收项 | 用户可见入口 | 领域不变量/事务边界 | 成功 | 失败/权限/恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 每个 User Story、失败场景和恢复场景一行 | API、application seam、UI 或导出 | 身份、版本、哈希、幂等、锁和审计要求 | 预期结果 | 拒绝、回滚、重试和隔离 | 迁移、重启读回、竞态和无部分写入 | 命令、CI、运行报告或人工验收 | TODO/PASS/NOT RUN/BLOCKED |
+| 每个 User Story、失败场景和恢复场景一行 | API、application seam、UI 或导出 | 身份、版本、哈希、幂等、锁和审计要求 | 预期结果 | 拒绝、回滚、重试和隔离 | 迁移、重启读回、竞态和无部分写入 | 命令、CI、运行报告或人工验收 | TODO/PASS/PASS (follow-up)/N/A/WARNING/NOT RUN/BLOCKED |
 
-矩阵中出现 `TODO`、`NOT RUN` 或 `BLOCKED` 时，PR 不能声称该项完成；环境限制必须和产品断言分开记录。
+当前交付范围内的矩阵出现 `TODO`、`NOT RUN` 或 `BLOCKED` 时，PR 不能放行；`N/A`、`WARNING` 和已链接验收 Issue 的 `PASS (follow-up)` 不阻塞，但必须说明边界，环境限制必须和产品断言分开记录。
 
 ### 3. 先写不可变契约
 
@@ -99,14 +113,14 @@ Agent 在请求人工审查前完成以下清单：
 
 - [ ] PR 关联一个 Issue 和一个 Spec，范围和 out-of-scope 与代码一致；
 - [ ] 验收矩阵每一行都有当前 head 的实现位置和证据；
-- [ ] 定向测试、构建、lint 和相关集成测试已运行，命令和 PASS/FAIL/NOT RUN 已记录；
+- [ ] 定向测试、构建、lint 和相关集成测试已运行，命令和 PASS/FAIL/PASS (follow-up)/N/A/WARNING/NOT RUN 已记录；
 - [ ] 数据库变化覆盖 SQLite/PostgreSQL（适用时），并验证迁移、重启读回和失败回滚；
-- [ ] 关键行为经过 application/HTTP 或真实交付 seam；
+- [ ] 关键行为经过 application/HTTP 或真实交付 seam；若真实服务链路移交独立验收 Issue，矩阵须有链接和 `PASS (follow-up)` 记录；
 - [ ] 并发、幂等、权限、审计和恢复场景已逐项检查；
 - [ ] PR body 的 SHA、CI 链接和结论都指向当前 head，没有沿用历史提交的证据；
 - [ ] `lingdoc-health-scoring` 已完成合并前复评，低分项有风险和处理计划。
 
-只要必需项未完成，PR 保持 Draft。转为 Ready 的条件是“矩阵已闭环”，不是“代码暂时能编译”或“通用 CI 已变绿”。
+只要当前交付范围内的必需项未完成，PR 保持 Draft。`N/A`、`WARNING` 和已链接的 `PASS (follow-up)` 不算未完成。转为 Ready 的条件是“当前范围矩阵已闭环”，不是“代码暂时能编译”或“通用 CI 已变绿”。
 
 Agent 不应把常规测试、日志整理、证据汇总、本地依赖准备或 staging 演练交给用户。只有环境不可访问、外部凭据缺失或需要业务决策时，才向用户提出一项精确请求。
 
@@ -149,7 +163,7 @@ Issue / Spec：
 
 ```text
 当前 head：
-验收矩阵：全部 PASS / 仍有 TODO（保持 Draft）
+验收矩阵：当前范围全部 PASS / 存在 TODO（保持 Draft）/ 存在已链接 PASS (follow-up)
 定向验证：命令 + 结果
 集成验证：命令或 CI 链接 + 结果
 环境限制：

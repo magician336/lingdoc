@@ -6,6 +6,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/gin-gonic/gin"
@@ -24,6 +27,19 @@ type Application interface {
 	Publish(context.Context, Actor, string, string) (template.RuleSet, error)
 	Withdraw(context.Context, Actor, string, string) (template.RuleSet, error)
 	Recall(context.Context, Actor, string, string) (template.RuleSet, error)
+}
+
+// AuditPageApplication is the paginated extension of Application. Keeping the
+// legacy list method on Application lets small adapters remain source
+// compatible while production stores expose the bounded history contract.
+type AuditPageApplication interface {
+	ListRuleSetUseAuditsPage(context.Context, Actor, string, RuleSetUseAuditQuery) (RuleSetUseAuditPage, error)
+}
+
+// MetricsApplication exposes persisted audit and composition evidence through
+// the same authorized application seam as the audit history endpoint.
+type MetricsApplication interface {
+	ReadRuleSetMetrics(context.Context, Actor, string, RuleSetMetricsQuery) (RuleSetMetricsSnapshot, error)
 }
 
 // RequestInfo extracts identity established by the application's auth
@@ -50,6 +66,7 @@ func (h *HTTPHandler) Register(read, write RouteRegistrar) {
 	read.GET("/rule-sets/:ruleSetID/versions", h.listVersions)
 	read.GET("/rule-sets/:ruleSetID/versions/:version", h.getVersion)
 	read.GET("/projects/:projectId/rule-set-use-audits", h.listRuleSetUseAudits)
+	read.GET("/projects/:projectId/rule-set-use-audit-metrics", h.readRuleSetMetrics)
 	write.POST("/rule-sets", h.createDraft)
 	write.POST("/rule-sets/:ruleSetID/versions/:version/publish", h.publish)
 	write.POST("/rule-sets/:ruleSetID/versions/:version/withdraw", h.withdraw)
@@ -106,12 +123,120 @@ func (h *HTTPHandler) listRuleSetUseAudits(c *gin.Context) {
 		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
 		return
 	}
+	query, err := parseRuleSetUseAuditQuery(c)
+	if err != nil {
+		writeApplicationError(c, err, requestID)
+		return
+	}
+	if paged, ok := h.application.(AuditPageApplication); ok {
+		page, err := paged.ListRuleSetUseAuditsPage(c.Request.Context(), actor, c.Param("projectId"), query)
+		if err != nil {
+			writeApplicationError(c, err, requestID)
+			return
+		}
+		nextCursor := any(nil)
+		if page.NextCursor != "" {
+			nextCursor = page.NextCursor
+		}
+		writeSuccess(c, http.StatusOK, gin.H{"items": page.Items, "next_cursor": nextCursor}, requestID)
+		return
+	}
+	if query.Cursor != "" || query.Action != "" || query.From != nil || query.To != nil || query.Limit != RuleSetUseAuditDefaultLimit {
+		writeApplicationError(c, ErrInvalidRuleSetUseAudit, requestID)
+		return
+	}
 	events, err := h.application.ListRuleSetUseAudits(c.Request.Context(), actor, c.Param("projectId"))
 	if err != nil {
 		writeApplicationError(c, err, requestID)
 		return
 	}
-	writeSuccess(c, http.StatusOK, gin.H{"items": events}, requestID)
+	writeSuccess(c, http.StatusOK, gin.H{"items": events, "next_cursor": nil}, requestID)
+}
+
+func (h *HTTPHandler) readRuleSetMetrics(c *gin.Context) {
+	actor, requestID, ok := h.identity(c)
+	if !ok {
+		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		return
+	}
+	metrics, ok := h.application.(MetricsApplication)
+	if !ok {
+		writeApplicationError(c, ErrRuleSetMetricsUnavailable, requestID)
+		return
+	}
+	query, err := parseRuleSetMetricsQuery(c)
+	if err != nil {
+		writeApplicationError(c, err, requestID)
+		return
+	}
+	snapshot, err := metrics.ReadRuleSetMetrics(c.Request.Context(), actor, c.Param("projectId"), query)
+	if err != nil {
+		writeApplicationError(c, err, requestID)
+		return
+	}
+	writeSuccess(c, http.StatusOK, snapshot, requestID)
+}
+
+func parseRuleSetMetricsQuery(c *gin.Context) (RuleSetMetricsQuery, error) {
+	if strings.TrimSpace(c.Query("cursor")) != "" || strings.TrimSpace(c.Query("action")) != "" || strings.TrimSpace(c.Query("limit")) != "" {
+		return RuleSetMetricsQuery{}, ErrInvalidRuleSetUseAudit
+	}
+	parseTime := func(raw string) (*time.Time, error) {
+		if strings.TrimSpace(raw) == "" {
+			return nil, nil
+		}
+		value, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return nil, ErrInvalidRuleSetUseAudit
+		}
+		value = value.UTC()
+		return &value, nil
+	}
+	from, err := parseTime(c.Query("from"))
+	if err != nil {
+		return RuleSetMetricsQuery{}, err
+	}
+	to, err := parseTime(c.Query("to"))
+	if err != nil {
+		return RuleSetMetricsQuery{}, err
+	}
+	if from != nil && to != nil && from.After(*to) {
+		return RuleSetMetricsQuery{}, ErrInvalidRuleSetUseAudit
+	}
+	return RuleSetMetricsQuery{From: from, To: to}, nil
+}
+
+func parseRuleSetUseAuditQuery(c *gin.Context) (RuleSetUseAuditQuery, error) {
+	query := RuleSetUseAuditQuery{Cursor: strings.TrimSpace(c.Query("cursor")), Limit: RuleSetUseAuditDefaultLimit, Action: strings.TrimSpace(c.Query("action"))}
+	if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil {
+			return RuleSetUseAuditQuery{}, ErrInvalidRuleSetUseAudit
+		}
+		if limit == 0 {
+			return RuleSetUseAuditQuery{}, ErrInvalidRuleSetUseAudit
+		}
+		query.Limit = limit
+	}
+	parseTime := func(raw string) (*time.Time, error) {
+		if strings.TrimSpace(raw) == "" {
+			return nil, nil
+		}
+		value, err := time.Parse(time.RFC3339Nano, raw)
+		if err != nil {
+			return nil, ErrInvalidRuleSetUseAudit
+		}
+		value = value.UTC()
+		return &value, nil
+	}
+	var err error
+	if query.From, err = parseTime(c.Query("from")); err != nil {
+		return RuleSetUseAuditQuery{}, err
+	}
+	if query.To, err = parseTime(c.Query("to")); err != nil {
+		return RuleSetUseAuditQuery{}, err
+	}
+	return query, nil
 }
 
 func (h *HTTPHandler) createDraft(c *gin.Context) {
@@ -198,6 +323,8 @@ func writeApplicationError(c *gin.Context, err error, requestID string) {
 		writeError(c, http.StatusBadRequest, "invalid_request", "规则集不符合安全约束。", requestID)
 	case errors.Is(err, ErrInvalidRuleSetUseAudit):
 		writeError(c, http.StatusBadRequest, "invalid_request", "规则集使用审计查询范围无效。", requestID)
+	case errors.Is(err, ErrRuleSetMetricsUnavailable):
+		writeError(c, http.StatusServiceUnavailable, "metrics_unavailable", "规则集运行指标暂不可用，请稍后再试。", requestID)
 	default:
 		writeError(c, http.StatusInternalServerError, "internal_error", "操作失败，请稍后再试。", requestID)
 	}

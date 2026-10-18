@@ -17,7 +17,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Scope latest PR update
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select workspace paths changed by this update
+        id: scope
+        env:
+          LINGDOC_SCOPE_PATHS: |
+            internal/lingdoc/workspacecore/**
+            migrations/sqlite/000018_lingdoc_workspace.*.sql
+            go.mod
+            go.sum
+            .github/workflows/lingdoc-workspace-concurrency.yml
+        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+
   workspace-concurrency:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

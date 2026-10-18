@@ -99,14 +99,32 @@ func EvaluateTemplate(input DeliveryInput) (TemplateCheckResult, error) {
 		projection.Sources = append(projection.Sources, lingdoctemplate.SourceInput{ID: id, Version: version, Available: available})
 	}
 
-	evaluations, err := lingdoctemplate.EvaluateScene(input.Template, "preflight", projection)
+	binding, err := verifiedRuleSetBinding(input)
 	if err != nil {
 		return TemplateCheckResult{}, err
+	}
+	var evaluations []lingdoctemplate.Evaluation
+	if binding != nil {
+		evaluations, err = lingdoctemplate.EvaluateSceneWithBinding(input.Template, *binding, "preflight", projection)
+	} else {
+		evaluations, err = lingdoctemplate.EvaluateScene(input.Template, "preflight", projection)
+	}
+	if err != nil {
+		return TemplateCheckResult{}, err
+	}
+	rulesetHash := input.Template.RulesetHash
+	var ruleSetRef *lingdoctemplate.RuleSetReference
+	if binding != nil {
+		rulesetHash = binding.EffectiveHash
+		ref := binding.Reference
+		ruleSetRef = &ref
+	} else {
+		ruleSetRef = lingdoctemplate.RuleSetReferenceFor(input.Template)
 	}
 	result := TemplateCheckResult{
 		ProjectVersion: input.ProjectVersion, TemplateCopyID: input.TemplateCopyID,
 		TemplateCopyVersion: input.TemplateCopyVersion, ContentHash: input.TemplateCopyContentHash,
-		RulesetHash: input.Template.RulesetHash, RuleSetRef: lingdoctemplate.RuleSetReferenceFor(input.Template), Status: TemplateCheckPassed,
+		RulesetHash: rulesetHash, RuleSetRef: ruleSetRef, Status: TemplateCheckPassed,
 		Evaluations: evaluations,
 	}
 	if !hasRulesForScene(input.Template, "preflight") {

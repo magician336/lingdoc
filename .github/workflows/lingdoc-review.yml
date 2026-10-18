@@ -52,7 +52,7 @@ jobs:
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             python scripts/ci/lingdoc_pr_scope.py --all > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           else
-            python scripts/ci/lingdoc_pr_scope.py > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+            python scripts/ci/lingdoc_pr_scope.py --latest > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           fi
           cat "$RUNNER_TEMP/lingdoc-checks/scope.json"
 

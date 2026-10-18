@@ -378,10 +378,24 @@ func Evaluate(t Template, input EvaluationInput) ([]Evaluation, error) {
 // supported checks. Legacy template rules are retained and evaluated with the
 // same immutable combined hash as the bound RuleSet.
 func EvaluateScene(t Template, scene string, input EvaluationInput) ([]Evaluation, error) {
-	if t.RuleSetSnapshot != nil {
-		return EvaluateBoundRuleSet(t, *t.RuleSetSnapshot, scene, input)
+	if t.RuleSetSnapshot != nil || t.RuleSetRef != nil {
+		binding, err := VerifyRuleSetBinding(t)
+		if err != nil {
+			return nil, err
+		}
+		return EvaluateBoundRuleSet(t, binding.Snapshot, scene, input)
 	}
 	return evaluateTemplate(t, input, "")
+}
+
+// EvaluateSceneWithBinding consumes evidence produced by the application
+// binding boundary. It never resolves a RuleSet or recomputes the source or
+// effective identity; a mismatch fails closed before any rule executes.
+func EvaluateSceneWithBinding(t Template, binding VerifiedRuleSetBinding, scene string, input EvaluationInput) ([]Evaluation, error) {
+	if err := ValidateVerifiedRuleSetBinding(t, binding); err != nil {
+		return nil, err
+	}
+	return evaluateVerifiedRuleSet(t, binding, scene, input)
 }
 
 // evaluateTemplate applies validated rules with the supplied version hash.
@@ -393,12 +407,14 @@ func evaluateTemplate(t Template, input EvaluationInput, rulesetHash string) ([]
 	if input.ProjectID == "" || input.TargetVersion == "" {
 		return nil, fmt.Errorf("%w: project and target version are required", ErrInvalidDefinition)
 	}
-	_, templateRulesetHash, err := Hashes(t)
-	if err != nil {
-		return nil, err
-	}
 	pinnedRuleSetHash := rulesetHash != ""
+	var templateRulesetHash string
 	if !pinnedRuleSetHash {
+		var err error
+		_, templateRulesetHash, err = Hashes(t)
+		if err != nil {
+			return nil, err
+		}
 		rulesetHash = templateRulesetHash
 	}
 	// T02's public fixed demo hash is part of the already-published T13 wire
