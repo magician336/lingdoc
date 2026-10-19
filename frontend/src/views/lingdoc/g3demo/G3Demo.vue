@@ -854,6 +854,117 @@
       </template>
     </section>
 
+    <section class="lifecycle-card" aria-labelledby="model-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">非确定性结论 · 与确定性结论分列</p>
+          <h2 id="model-title">旧异步结果 · 影响助手草稿 · 模型批量候选依赖</h2>
+        </div>
+        <span class="section-note">依赖真实模型 · 同样输入不保证同样输出</span>
+      </div>
+
+      <p class="card-intro">
+        这一段跑的是**依赖真实模型**的三条验收项，结论是**非确定性**的，所以
+        <strong>不与确定性结论混在一张表里</strong>：单独成列、状态一律
+        <code>WARNING</code>，并附<strong>模型运行标识</strong>与<strong>耗时</strong>。
+        模型不可用或缺外部凭据时，这三行记 <code>NOT RUN</code> 并写明原因，
+        <strong>其余行照常判定</strong>。
+      </p>
+
+      <div class="live-actions">
+        <button
+          class="btn btn--primary"
+          type="button"
+          :disabled="modelRunning || running"
+          @click="startModel"
+        >
+          {{ modelRunning ? '运行中…' : '跑通真实模型验收项' }}
+        </button>
+        <button
+          class="btn"
+          type="button"
+          :disabled="!runSummary"
+          @click="exportEvidence"
+        >
+          导出本轮证据 JSON
+        </button>
+      </div>
+
+      <p v-if="modelError" class="live-error" role="alert">
+        <strong>运行失败：</strong>{{ modelError }}
+      </p>
+
+      <template v-if="model">
+        <p v-if="!model.modelAvailable" class="live-warn" role="status">
+          <strong>模型不可用：</strong>{{ model.unavailableReason }}
+          —— 这三行按 <code>NOT RUN</code> 记，其余行照常判定。
+        </p>
+
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>验收项</th><th>状态</th><th>模型运行标识</th><th>模型 / 耗时</th><th>结论</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in modelRows" :key="row.id">
+                <th scope="row">
+                  <strong>{{ row.name }}</strong>
+                  <small>
+                    {{ row.id }}
+                    <span class="status-badge status-badge--warning">非确定性</span>
+                  </small>
+                </th>
+                <td>
+                  <span class="status-badge" :class="`status-badge--${statusTone(row.status)}`">
+                    {{ row.status }}
+                  </span>
+                  <small>{{ row.holds ? '判定成立' : '判定不成立' }}</small>
+                </td>
+                <td><code>{{ row.runId }}</code></td>
+                <td>
+                  {{ row.modelId }}
+                  <small>模式 {{ row.runMode }} · 耗时 {{ row.durationMs }} ms</small>
+                </td>
+                <td class="evidence">
+                  <span>{{ row.detail }}</span>
+                  <small v-for="line in row.evidence" :key="line">{{ line }}</small>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="matrix-group-title">模型调用记录（非确定性来源）</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>运行标识</th><th>模型</th><th>模式</th><th>状态</th><th>耗时</th><th>tokens</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="run in model.runs" :key="run.runId">
+                <th scope="row"><code>{{ run.runId }}</code></th>
+                <td>{{ run.modelId || '（未登记）' }}</td>
+                <td>{{ run.runMode || '（未登记）' }}</td>
+                <td>
+                  <span class="status-badge" :class="run.status === 'completed' ? 'status-badge--pass' : 'status-badge--warning'">
+                    {{ run.status }}
+                  </span>
+                  <small v-if="run.failureCode">失败码 {{ run.failureCode }}</small>
+                </td>
+                <td>{{ run.durationMs }} ms</td>
+                <td>{{ run.inputTokens }} / {{ run.outputTokens }}</td>
+              </tr>
+              <tr v-if="!model.runs.length"><td colspan="6">本轮没有成功的模型调用。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          这些调用记录会一起进入<strong>导出的证据</strong>，并标注为「依赖真实模型的非确定性来源」——
+          少了这个标注，读者会把非确定性结论当成确定性结论。
+        </p>
+      </template>
+    </section>
+
     <section class="lifecycle-card" aria-labelledby="blocked-title">
       <div class="section-heading">
         <div>
@@ -1559,6 +1670,12 @@ import {
   type G3StabilizationSnapshot,
 } from './runner/stabilization'
 import {
+  runModelChain,
+  toModelSnapshot,
+  type G3ModelRunFact,
+  type G3ModelSnapshot,
+} from './runner/model'
+import {
   runBlockedChain,
   toBlockedSnapshot,
   type G3BlockedSnapshot,
@@ -1596,6 +1713,9 @@ const dependencyRunning = ref(false)
 const stabilization = ref<G3StabilizationSnapshot | null>(null)
 const stabilizationError = ref('')
 const stabilizationRunning = ref(false)
+const model = ref<G3ModelSnapshot | null>(null)
+const modelError = ref('')
+const modelRunning = ref(false)
 const blocked = ref<G3BlockedSnapshot | null>(null)
 const blockedError = ref('')
 const blockedRunning = ref(false)
@@ -1827,6 +1947,43 @@ const dependencyFinalTasks = computed(() => {
 })
 
 /**
+ * 非确定性结论表：三条依赖真实模型的验收项**单独成列**。
+ *
+ * 状态、模型运行标识与耗时都来自本轮真实运行；模型不可用时状态是 NOT RUN，
+ * 并写明缺外部凭据——其余行（确定性结论）不受影响，照常判定。
+ */
+const modelRows = computed(() => {
+  const snapshot = model.value
+  if (!snapshot) return []
+  const verdicts = new Map(snapshot.verdicts.map((item) => [item.id, item]))
+  const build = (
+    id: string,
+    name: string,
+    run: G3ModelRunFact | null,
+    detail: string,
+  ) => {
+    const verdict = verdicts.get(id)
+    return {
+      id,
+      name,
+      status: verdict?.status ?? 'NOT RUN',
+      runId: run?.runId ?? '（无）',
+      modelId: run?.modelId || '（未登记）',
+      runMode: run?.runMode || '（未登记）',
+      durationMs: run?.durationMs ?? 0,
+      holds: verdict?.holds ?? false,
+      detail: verdict?.detail ?? detail,
+      evidence: verdict?.evidence ?? [],
+    }
+  }
+  return [
+    build('AC-G3-06', '旧异步结果（历史候选）', snapshot.ac06.run, snapshot.ac06.detail),
+    build('AC-G3-14', '影响助手：自然语言 → 变更草稿（模型侧）', snapshot.ac14.run, snapshot.ac14.detail),
+    build('AC-G3-15', '模型批量候选依赖 → 确认 / 修改 / 拒绝（模型侧）', snapshot.ac15.run, snapshot.ac15.detail),
+  ]
+})
+
+/**
  * 稳定化阻断与恢复链的五次结果。
  *
  * 顺序就是这条链的状态机：阻断 → 规则问题处置后 → 阻断项闭环后 →
@@ -1941,6 +2098,7 @@ function restoreLocalState(): void {
       lifecycle.value = runSummary.value.lifecycle ?? null
       dependency.value = runSummary.value.dependency ?? null
       stabilization.value = runSummary.value.stabilization ?? null
+      model.value = runSummary.value.model ?? null
       blocked.value = runSummary.value.blocked ?? null
     }
   } catch {
@@ -1964,6 +2122,7 @@ function commitRun(
   snapshot?: G3LifecycleSnapshot,
   dependencySnapshot?: G3DependencySnapshot,
   stabilizationSnapshot?: G3StabilizationSnapshot,
+  modelSnapshot?: G3ModelSnapshot,
   blockedSnapshot?: G3BlockedSnapshot,
 ): void {
   if (registerFirst) {
@@ -1985,6 +2144,7 @@ function commitRun(
     lifecycle: snapshot,
     dependency: dependencySnapshot,
     stabilization: stabilizationSnapshot,
+    model: modelSnapshot,
     blocked: blockedSnapshot,
   })
   runSummary.value = summary
@@ -2001,6 +2161,7 @@ function commitRun(
   lifecycle.value = snapshot ?? null
   dependency.value = dependencySnapshot ?? null
   stabilization.value = stabilizationSnapshot ?? null
+  model.value = modelSnapshot ?? null
   blocked.value = blockedSnapshot ?? null
 }
 
@@ -2271,6 +2432,71 @@ async function startStabilization(): Promise<void> {
 }
 
 /**
+ * 跑一次「真实模型」验收链。
+ *
+ * 复用同一份执行器（`runner/model.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startModel(): Promise<void> {
+  if (modelRunning.value || running.value) return
+  modelRunning.value = true
+  modelError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const modelResult = await runModelChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+      chapters: result.chapters.map((chapter) => ({
+        id: chapter.id,
+        sectionId: chapter.sectionId,
+        title: chapter.title,
+      })),
+      operatorId: result.identity.userId,
+    })
+
+    const snapshot = toModelSnapshot(modelResult)
+    model.value = snapshot
+    commitRun(result, account, registerFirst, undefined, undefined, undefined, snapshot)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    modelError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    modelRunning.value = false
+  }
+}
+
+/**
  * 跑一次「稳定化阻断 → 处置 → 闭环 → 版本不匹配 → 重投 → 再次已稳定」链。
  *
  * 复用同一份执行器（`runner/blocked.ts`）：页面与 node 脚本跑的是同一套代码，
@@ -2322,7 +2548,7 @@ async function startBlocked(): Promise<void> {
 
     const snapshot = toBlockedSnapshot(blockedResult)
     blocked.value = snapshot
-    commitRun(result, account, registerFirst, undefined, undefined, undefined, snapshot)
+    commitRun(result, account, registerFirst, undefined, undefined, undefined, undefined, snapshot)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     blockedError.value = message
@@ -2335,6 +2561,44 @@ async function startBlocked(): Promise<void> {
   } finally {
     blockedRunning.value = false
   }
+}
+
+/**
+ * 导出的证据：把本轮摘要（含真实模型调用记录）落成一个 JSON 文件。
+ *
+ * 模型调用记录**必须**进这份导出的证据，并标注为「依赖真实模型的非确定性来源」——
+ * 少了这个标注，读者会把非确定性结论当成确定性结论。
+ */
+function exportEvidence(): void {
+  if (!runSummary.value) return
+  const payload = {
+    generated_at: new Date().toISOString(),
+    ticket: 'G3 验收台-7：依赖真实模型的验收项',
+    run: runSummary.value,
+    evidence_sources: [
+      {
+        kind: 'deterministic',
+        non_deterministic: false,
+        note: '确定性结论：状态由本轮真实调用与响应事实推出。',
+      },
+      {
+        kind: 'model_dependent',
+        non_deterministic: true,
+        depends_on: 'real_model',
+        note:
+          '非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；' +
+          '矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。',
+        runs: (model.value?.runs ?? []) as G3ModelRunFact[],
+      },
+    ],
+  }
+  const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `g3-验收台-7-模型验收证据-${runSummary.value.runId}.json`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 /** 把浏览器会话还给用户。 */

@@ -18,6 +18,7 @@ import type { G3Status } from './g3Status'
 import type { G3BlockedSnapshot } from './runner/blocked'
 import type { G3LifecycleSnapshot } from './runner/changeset'
 import type { G3DependencySnapshot } from './runner/dependencies'
+import type { G3ModelSnapshot } from './runner/model'
 import type { G3StabilizationSnapshot } from './runner/stabilization'
 import type {
   G3BackendHead,
@@ -48,6 +49,28 @@ export interface G3RowEvidenceRule {
    * 部分覆盖的判据用它指向缺口清单（例如 #246）；给了它，页面上这一行就保留
    * 这个跟进 Issue，而不是像完全判定那样清空。
    */
+  followUpIssue?: number
+  /**
+   * **另一条同样能判定这一行的路径**。
+   *
+   * 同一行可能有多条独立证据路径：例如 AC-G3-14 既可以由「确定性链」判定
+   * （三态裁决那半段），也可以由「真实模型链」判定（模型侧那半段）。
+   * 哪条路径本轮跑到了、且它的判定卡成立，这一行就按哪条路径的状态与说明落。
+   */
+  alternatives?: readonly G3RowEvidenceAlternative[]
+}
+
+/** 另一条判定路径。 */
+export interface G3RowEvidenceAlternative {
+  /** 该路径成立所必需、且本轮必须成功执行的流程步骤名。 */
+  requires: readonly string[]
+  /** 该路径成立时该行应取的状态。 */
+  status: G3Status
+  /** 该路径的证据说明。 */
+  note: string
+  /** 该路径的判定卡编号。 */
+  verdictId?: string
+  /** 该路径承接未实现那半段的独立 GitHub Issue。 */
   followUpIssue?: number
 }
 
@@ -123,6 +146,16 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '没有为它的目标章节产生影响任务，该章节的版本级确认标记仍为 true——' +
       '建议边不单独使章节失效，也不构成导出阻断项。',
   },
+  'AC-G3-06': {
+    requires: ['模型-旧异步-结论'],
+    verdictId: 'AC-G3-06',
+    status: 'WARNING',
+    note:
+      '本轮由**真实模型**驱动（非确定性，结论不保证逐字复现）：revision 4 的生成运行在途时，' +
+      '变更集把项目推进到 revision 5；旧运行返回后只能落成**历史候选**，' +
+      '新修订的章节、确认与交付快照在返回前后一致。模型运行标识与耗时见判定卡；' +
+      '结论依赖真实模型，因此状态记为 WARNING，与确定性结论分列展示。',
+  },
   'AC-G3-14': {
     requires: ['创建变更草稿'],
     verdictId: 'AC-G3-14',
@@ -133,6 +166,20 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现' +
       '（工作台那个分组是影响解析结果，不可互替），缺口清单见 #246；' +
       '因此本行不是完全判定，状态记为 PASS (follow-up)。',
+    alternatives: [
+      {
+        requires: ['模型-助手草稿-结论'],
+        verdictId: 'AC-G3-14',
+        status: 'WARNING',
+        followUpIssue: 246,
+        note:
+          '本轮由**真实模型**判定（模型侧，非确定性）：助手把自然语言整理成变更草稿（status=draft），' +
+          '并且有**否定性证据**——没有直接应用变更、没有关闭人工任务、没有放行导出。' +
+          '**未实现那半段**：助手草稿里的「确定受影响 / 可能受影响」解释分组仍然没有实现，' +
+          '缺口清单见 #246。结论依赖真实模型，状态记为 WARNING，与确定性结论分列展示；' +
+          '模型运行标识与耗时见判定卡。',
+      },
+    ],
   },
   'AC-G3-15': {
     requires: ['裁决依赖边-确认', '裁决依赖边-修改', '裁决依赖边-拒绝', '重投被拒绝的候选边'],
@@ -143,6 +190,20 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '本轮实跑的是**三态裁决那半段**：确认 / 修改 / 拒绝都跑通，被拒绝的候选在同一版本里' +
       '再投一次不会新建边。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246；' +
       '因此本行不是完全判定，状态记为 PASS (follow-up)。',
+    alternatives: [
+      {
+        requires: ['模型-候选依赖-结论'],
+        verdictId: 'AC-G3-15',
+        status: 'WARNING',
+        followUpIssue: 246,
+        note:
+          '本轮由**真实模型**判定（模型侧，非确定性）：候选依赖由真实模型**批量提出**，' +
+          '页面对其确认 / 修改 / 拒绝三态分别落证，被拒候选在同一版本里再投不会新建边。' +
+          '**未实现那半段**：候选的「对象版本 / 依据片段 / 建议理由」没有独立的结构化展示位，' +
+          '缺口清单见 #246。结论依赖真实模型，状态记为 WARNING，与确定性结论分列展示；' +
+          '模型运行标识与耗时见判定卡。',
+      },
+    ],
   },
   'AC-G3-09': {
     requires: [
@@ -252,6 +313,55 @@ export interface G3MatrixWithRun {
   evidence: G3RowEvidence[]
 }
 
+/** 一行判据的各条判定路径的评估结果。 */
+interface G3GroupEvaluation {
+  group: G3RowEvidenceAlternative
+  missingSteps: string[]
+  covered: boolean
+  verdict: G3RunVerdict | undefined
+  verdictMissing: boolean
+  verdictFailed: boolean
+  decided: boolean
+}
+
+/** 评估一行判据的全部判定路径。 */
+function evaluateGroups(
+  ctx: G3RunContext,
+  rule: G3RowEvidenceRule,
+  observedSteps: readonly string[],
+): G3GroupEvaluation[] {
+  const groups: G3RowEvidenceAlternative[] = [
+    {
+      requires: rule.requires,
+      status: rule.status,
+      note: rule.note,
+      verdictId: rule.verdictId,
+      followUpIssue: rule.followUpIssue,
+    },
+    ...(rule.alternatives ?? []),
+  ]
+
+  return groups.map((group) => {
+    const missingSteps = group.requires.filter((name) => !observedSteps.includes(name))
+    const covered = missingSteps.length === 0
+    // 判定结论优先：规则给了 verdictId 时，**步骤跑到了也不等于判定成立**。
+    const verdict = group.verdictId
+      ? (ctx.verdicts ?? []).find((item) => item.id === group.verdictId)
+      : undefined
+    const verdictMissing = Boolean(group.verdictId) && !verdict
+    const verdictFailed = Boolean(group.verdictId) && verdict !== undefined && !verdict.holds
+    // 判定卡自带状态时（例如模型不可用记 NOT RUN），以判定卡为准。
+    const verdictStatus = verdict?.status
+    const decided =
+      covered &&
+      !ctx.stale &&
+      ctx.head !== null &&
+      !verdictMissing &&
+      (!verdictFailed || verdictStatus !== undefined)
+    return { group, missingSteps, covered, verdict, verdictMissing, verdictFailed, decided }
+  })
+}
+
 /** 计算一行在本轮里的覆盖情况。 */
 export function rowEvidence(ctx: G3RunContext, row: G3MatrixRow): G3RowEvidence {
   const rule = G3_ROW_EVIDENCE_RULES[row.id]
@@ -272,33 +382,28 @@ export function rowEvidence(ctx: G3RunContext, row: G3MatrixRow): G3RowEvidence 
     }
   }
 
-  const missingSteps = rule.requires.filter((name) => !observedSteps.includes(name))
-  const covered = missingSteps.length === 0
-  // 判定结论优先：规则给了 verdictId 时，**步骤跑到了也不等于判定成立**。
-  const verdict = rule.verdictId
-    ? (ctx.verdicts ?? []).find((item) => item.id === rule.verdictId)
-    : undefined
-  const verdictMissing = Boolean(rule.verdictId) && !verdict
-  const verdictFailed = Boolean(rule.verdictId) && verdict !== undefined && !verdict.holds
-  const decided = covered && !stale && ctx.head !== null && !verdictMissing && !verdictFailed
+  const evaluations = evaluateGroups(ctx, rule, observedSteps)
+  const hit = evaluations.find((item) => item.decided) ?? evaluations.find((item) => item.covered) ?? evaluations[0]!
 
   return {
     rowId: row.id,
-    covered,
-    decided,
-    observedSteps: rule.requires.filter((name) => observedSteps.includes(name)),
-    missingSteps,
+    covered: hit.covered,
+    decided: hit.decided,
+    observedSteps: hit.group.requires.filter((name) => observedSteps.includes(name)),
+    missingSteps: hit.missingSteps,
     stale,
-    note: decided
-      ? rule.note
+    note: hit.decided
+      ? hit.verdict?.detail
+        ? `${hit.group.note}｜${hit.verdict.detail}`
+        : hit.group.note
       : stale
         ? `本轮已跑到该行所需步骤，但 head 已变化（${ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
-        : missingSteps.length > 0
-          ? `本轮未覆盖该行，还缺步骤：${missingSteps.join('、')}，状态保持原样。`
-          : verdictFailed
-            ? `本轮已跑到该行所需步骤，但判定卡「${rule.verdictId}」不成立，状态保持原样。`
-            : verdictMissing
-              ? `本轮已跑到该行所需步骤，但本轮没有「${rule.verdictId}」的判定结论，状态保持原样。`
+        : hit.missingSteps.length > 0
+          ? `本轮未覆盖该行，还缺步骤：${hit.missingSteps.join('、')}，状态保持原样。`
+          : hit.verdictFailed
+            ? `本轮已跑到该行所需步骤，但判定卡「${hit.group.verdictId}」不成立，状态保持原样。`
+            : hit.verdictMissing
+              ? `本轮已跑到该行所需步骤，但本轮没有「${hit.group.verdictId}」的判定结论，状态保持原样。`
               : '本轮未覆盖该行，状态保持原样。',
   }
 }
@@ -317,14 +422,19 @@ export function applyRunEvidence(rows: readonly G3MatrixRow[], ctx: G3RunContext
     if (!item || !item.decided || !rule) {
       return row
     }
+    const observedSteps = ctx.steps.filter((step) => step.ok).map((step) => step.name)
+    const evaluations = evaluateGroups(ctx, rule, observedSteps)
+    const hit = evaluations.find((entry) => entry.decided) ?? evaluations[0]!
+    // 状态：判定卡自带状态时以判定卡为准，否则取命中路径的状态。
+    const status = hit.verdict?.status ?? hit.group.status
     return {
       ...row,
-      status: rule.status,
-      evidence: rule.note,
+      status,
+      evidence: hit.group.note,
       note: item.note,
       // 完全判定的行：接它的「跟进 Issue」不再是待办，保留会让人以为还有未完成的事；
       // 部分覆盖的行：跟进 Issue 指向缺口清单（例如 #246），必须留着。
-      followUpIssue: rule.followUpIssue,
+      followUpIssue: hit.group.followUpIssue,
     }
   })
   return { rows: nextRows, evidence }
@@ -351,6 +461,8 @@ export interface G3RunSummary {
   stabilization?: G3StabilizationSnapshot
   /** 稳定化阻断与恢复链的页面快照（没有跑过就没有这一项）。 */
   blocked?: G3BlockedSnapshot
+  /** 真实模型链的页面快照（没有跑过就没有这一项）。 */
+  model?: G3ModelSnapshot
   /** 本轮跑出来的判据判定（矩阵规则表按 verdictId 取结论）。 */
   verdicts?: G3RunVerdict[]
 }
@@ -373,6 +485,7 @@ export function summarizeRun(
     dependency?: G3DependencySnapshot
     stabilization?: G3StabilizationSnapshot
     blocked?: G3BlockedSnapshot
+    model?: G3ModelSnapshot
   },
 ): G3RunSummary {
   return {
@@ -391,6 +504,7 @@ export function summarizeRun(
     dependency: extra.dependency,
     stabilization: extra.stabilization,
     blocked: extra.blocked,
+    model: extra.model,
     verdicts: ctx.verdicts,
   }
 }
