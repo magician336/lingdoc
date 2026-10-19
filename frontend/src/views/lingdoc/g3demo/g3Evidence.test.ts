@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  G3_ROW_EVIDENCE_RULES,
   G3_RUN_SUMMARY_STORAGE_KEY,
   applyRunEvidence,
   headChangedSince,
@@ -11,6 +12,7 @@ import {
   type G3RunStorage,
 } from './g3Evidence'
 import { G3_MATRIX_ROWS } from './g3Matrix'
+import { G3_CS_STEPS } from './runner/changeset'
 import { createRunContext, markRunStale, recordStep, type G3BackendHead } from './runner/runContext'
 
 function memoryStorage(): G3RunStorage & { map: Map<string, string> } {
@@ -120,4 +122,70 @@ test('单行覆盖计算不依赖规则表', () => {
   assert.equal(item.rowId, 'G3.1')
   assert.equal(item.covered, false)
   assert.equal(item.stale, false)
+})
+
+test('规则表只覆盖本票判定的四行，且状态取门禁词表内的 PASS', () => {
+  assert.deepEqual(
+    Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
+    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11'],
+  )
+  for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
+    assert.equal(rule.status, 'PASS', `${id} 的判定状态必须是 PASS`)
+    assert.ok(rule.requires.length > 0, `${id} 没有声明必需步骤`)
+    assert.ok(rule.note.length > 0, `${id} 没有给读者看的说明`)
+  }
+})
+
+test('规则表引用的步骤名都真实存在（防止证据链断在名字上）', () => {
+  const known = new Set<string>(Object.values(G3_CS_STEPS))
+  for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
+    for (const name of rule.requires) {
+      assert.ok(known.has(name), `${id} 引用了不存在的步骤名：${name}`)
+    }
+  }
+})
+
+test('跑完本票步骤后，四行被本轮证据驱动为 PASS', () => {
+  const ctx = prerequisiteRun()
+  const allSteps = Object.values(G3_CS_STEPS)
+  for (const name of allSteps) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11']) {
+    assert.equal(byId.get(id)?.status, 'PASS', `${id} 没有被本轮证据驱动`)
+    assert.equal(byId.get(id)?.followUpIssue, undefined, `${id} 被判定后不应再挂「跟进 Issue」`)
+  }
+  // 规则表之外的行状态原样保留。
+  assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
+  assert.equal(byId.get('G3.1')?.status, 'TODO')
+  assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
+})
+
+test('步骤没跑齐时，那一行不被判定，状态原样保留', () => {
+  const ctx = prerequisiteRun()
+  recordStep(ctx, {
+    name: G3_CS_STEPS.create,
+    method: 'POST',
+    path: '/api/v1/lingdoc/projects/p1/change-sets',
+    status: 201,
+    ok: true,
+    durationMs: 5,
+    conclusion: '创建变更集',
+  })
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)', '步骤没跑齐不得判成 PASS')
+  const item = evidence.find((entry) => entry.rowId === 'AC-G3-01')
+  assert.equal(item?.decided, false)
+  assert.ok(item?.missingSteps.length)
 })

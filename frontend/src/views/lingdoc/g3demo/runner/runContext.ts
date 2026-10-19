@@ -161,10 +161,25 @@ export interface G3StepSpec {
   idempotencyKey?: string
   /** 明确不带凭据（只给存活探针用）。 */
   anonymous?: boolean
+  /**
+   * 附加请求头。
+   *
+   * 例如以另一个成员的身份在**同一租户**里发请求时，要带 `X-Tenant-ID`：
+   * 租户由 JWT 内的租户或这个头解析（`internal/middleware/auth.go`）。
+   */
+  headers?: Record<string, string>
   /** 成功结论模板，可用 `{status}` 占位。 */
   conclusion?: string
   /** 允许失败：失败也记录，但不抛（例如存活探针的 401 是预期信号）。 */
   allowFailure?: boolean
+  /**
+   * 期望的状态码（可给多个）。
+   *
+   * 有些「失败」本身就是本轮要证明的事实：陈旧的变更集应用返回 409、
+   * 非 Owner 决定返回 404。命中期望状态码时，这一步记为**成功**
+   * （`ok=true`），因为它证明了预期的事实；没命中则按普通失败处理。
+   */
+  expectedStatus?: number | readonly number[]
   /** 从响应体里提取关键字段。 */
   detail?: (body: unknown) => Record<string, unknown> | undefined
 }
@@ -214,6 +229,7 @@ export async function runStep(
       token: spec.token,
       idempotencyKey: outgoingKey,
       anonymous: spec.anonymous,
+      headers: spec.headers,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
@@ -232,10 +248,15 @@ export async function runStep(
   }
 
   const failure = response.ok ? '' : describeHttpFailure(response.status, response.body)
+  // 期望状态码：命中即视为这一步「成功」——它证明的正是本轮要证明的事实。
+  const expectedStatuses = spec.expectedStatus === undefined
+    ? []
+    : (Array.isArray(spec.expectedStatus) ? [...spec.expectedStatus] : [spec.expectedStatus as number])
+  const hitExpectation = expectedStatuses.includes(response.status)
   // 允许失败的步骤（例如存活探针的 401）用自己写的结论说明，
   // 别把「未带凭据的 401」写成「认证失败」——那会误导人。
-  const usesOwnConclusion = !response.ok && Boolean(spec.allowFailure && spec.conclusion)
-  const conclusion = response.ok
+  const usesOwnConclusion = !response.ok && Boolean((spec.allowFailure || hitExpectation) && spec.conclusion)
+  const conclusion = response.ok || hitExpectation
     ? (spec.conclusion ?? `成功（HTTP ${response.status}）`).replace('{status}', String(response.status))
     : usesOwnConclusion
       ? (spec.conclusion as string).replace('{status}', String(response.status))
@@ -246,7 +267,7 @@ export async function runStep(
     method: spec.method,
     path: spec.path,
     status: response.status,
-    ok: response.ok,
+    ok: response.ok || hitExpectation,
     idempotencyKey: outgoingKey,
     durationMs: response.durationMs,
     conclusion,
@@ -254,7 +275,7 @@ export async function runStep(
     error: response.ok || usesOwnConclusion ? undefined : failure,
   })
 
-  if (!response.ok && !spec.allowFailure) {
+  if (!response.ok && !spec.allowFailure && !hitExpectation) {
     throw new G3ChainError(
       spec.name,
       spec.path,

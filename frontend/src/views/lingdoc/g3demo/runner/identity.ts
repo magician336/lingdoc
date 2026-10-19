@@ -86,9 +86,10 @@ export async function registerAccount(
   ctx: G3RunContext,
   client: G3HttpClient,
   account: G3DemoAccount,
+  options: { stepName?: string } = {},
 ): Promise<G3RegisteredIdentity> {
   const { data } = await runStep(ctx, client, {
-    name: '注册演示账号',
+    name: options.stepName ?? '注册演示账号',
     method: 'POST',
     path: '/api/v1/auth/register',
     body: {
@@ -124,9 +125,10 @@ export async function loginAccount(
   ctx: G3RunContext,
   client: G3HttpClient,
   account: G3DemoAccount,
+  options: { stepName?: string } = {},
 ): Promise<string> {
   const { data } = await runStep(ctx, client, {
-    name: '登录',
+    name: options.stepName ?? '登录',
     method: 'POST',
     path: '/api/v1/auth/login',
     body: { email: account.email, password: account.password },

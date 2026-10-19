@@ -10,7 +10,7 @@
  * 它本来就不该带凭据，这不是另一套鉴权。
  */
 
-import { del, get, post, put } from '@/utils/request'
+import { del, get, post, postNoBody, put } from '@/utils/request'
 import type { G3HttpClient, G3HttpResponse } from './runner/httpClient'
 
 /** 从响应体里读出状态码。axios 响应拦截器把它挂在非枚举属性 `$httpStatus` 上。 */
@@ -55,9 +55,11 @@ export function createRequestClient(): G3HttpClient {
       }
     }
 
-    const config = request.idempotencyKey
-      ? { headers: { 'Idempotency-Key': request.idempotencyKey } }
-      : undefined
+    const headers: Record<string, string> = { ...(request.headers ?? {}) }
+    if (request.idempotencyKey) {
+      headers['Idempotency-Key'] = request.idempotencyKey
+    }
+    const config = Object.keys(headers).length > 0 ? { headers } : undefined
     const method = request.method.toUpperCase()
 
     try {
@@ -65,7 +67,11 @@ export function createRequestClient(): G3HttpClient {
       if (method === 'GET') {
         payload = await get(request.path, config)
       } else if (method === 'POST') {
-        payload = await post(request.path, request.body ?? {}, config)
+        // 请求体为 `undefined` 时**不发体**：`POST /change-sets/{id}/reassess`
+        // 要求完全空体（服务端只读 1 字节，多 1 字节即 400）。
+        payload = request.body === undefined
+          ? await postNoBody(request.path, config)
+          : await post(request.path, request.body as Record<string, unknown>, config)
       } else if (method === 'PUT') {
         payload = await put(request.path, request.body ?? {}, config)
       } else {
