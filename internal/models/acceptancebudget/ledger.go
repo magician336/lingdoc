@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -422,8 +423,8 @@ func hasUnresolved(ledger Ledger) bool {
 	return false
 }
 
-// LockLeaseTTL bounds how long a crashed process can keep a ledger blocked.
-// Live owners renew the file lease while a provider call is in flight.
+// LockLeaseTTL is diagnostic only for old/incomplete markers. A live v2 owner
+// holds an OS guard throughout Reserve/Complete, even after its mtime expires.
 const LockLeaseTTL = 10 * time.Minute
 
 var (
@@ -432,41 +433,58 @@ var (
 )
 
 type lockLease struct {
-	stop chan struct{}
-	done chan struct{}
+	stop  chan struct{}
+	done  chan struct{}
+	guard *os.File
 }
 
-// AcquireLock creates a process-independent lock file and reclaims a lock
-// whose lease has expired. The metadata is diagnostic; the mtime is the lease
-// clock so a partially written lock file is still recoverable after a crash.
+// AcquireLock serializes the complete reservation with an OS-owned guard. It
+// never reclaims a live descriptor on the strength of a timestamp. Old binary
+// callers must be quiesced before switching this ledger to the v2 protocol.
 func AcquireLock(ctx context.Context, path string) (*os.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
+	guard, err := acquireProcessGuard(ctx, path+".guard")
+	if err != nil {
+		return nil, err
+	}
+	keepGuard := false
+	defer func() {
+		if !keepGuard {
+			_ = releaseProcessGuard(guard)
+		}
+	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		lock, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
-			if _, writeErr := fmt.Fprintf(lock, "pid=%d acquired_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)); writeErr != nil {
+			if _, writeErr := fmt.Fprintf(lock, "%spid=%d acquired_at=%s\n", guardedLockProtocol, os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)); writeErr != nil {
 				_ = lock.Close()
 				_ = os.Remove(path)
 				return nil, writeErr
 			}
-			startLockLease(lock)
+			startLockLease(lock, guard)
+			keepGuard = true
 			return lock, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if reclaimExpiredLock(path) {
+		recovered, err := recoverGuardedMarker(path)
+		if err != nil {
+			return nil, err
+		}
+		if recovered {
 			continue
 		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
+		if err := waitForLock(ctx); err != nil {
+			return nil, err
 		}
 	}
 }
@@ -475,50 +493,45 @@ func lockLeaseExpiredInfo(info os.FileInfo) bool {
 	return info != nil && time.Now().UTC().After(info.ModTime().Add(LockLeaseTTL))
 }
 
-// reclaimExpiredLock moves the exact stale inode out of the lock path before
-// deleting it. A plain Stat followed by Remove could delete a replacement lock
-// created by another waiter in between those calls.
-func reclaimExpiredLock(path string) bool {
-	info, err := os.Stat(path)
+// Only call while holding path+".guard". Since all v2 owners hold that guard
+// until their final ledger write, a complete v2 marker here belongs to an exited
+// owner. Unknown/old/partial markers are never deleted by age.
+func recoverGuardedMarker(path string) (bool, error) {
+	marker, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return true
+		return true, nil
 	}
-	if err != nil || !lockLeaseExpiredInfo(info) {
-		return false
+	if err != nil {
+		return false, err
 	}
-	quarantine := fmt.Sprintf("%s.reclaim.%d.%d", path, os.Getpid(), time.Now().UnixNano())
-	if err := os.Rename(path, quarantine); err != nil {
-		return false
+	header := make([]byte, len(guardedLockProtocol))
+	_, readErr := io.ReadFull(marker, header)
+	info, statErr := marker.Stat()
+	closeErr := marker.Close()
+	if statErr != nil || closeErr != nil {
+		return false, errors.Join(statErr, closeErr)
 	}
-	moved, statErr := os.Stat(quarantine)
-	// Rename is atomic: the file now in quarantine is the exact object that
-	// occupied path at the rename point. Re-check its mtime after the move so a
-	// live owner that renewed during the handoff is restored instead of deleted.
-	if statErr == nil && lockLeaseExpiredInfo(moved) {
-		if err := os.Remove(quarantine); err == nil || errors.Is(err, os.ErrNotExist) {
-			return true
+	if readErr != nil || string(header) != guardedLockProtocol {
+		if lockLeaseExpiredInfo(info) {
+			return false, ErrLegacyLock
 		}
+		return false, nil
 	}
-	// The owner renewed between the first stat and the rename, or the path was
-	// not the same inode we observed. Restore it only when no replacement has
-	// appeared; never overwrite a newer owner's lock.
-	if _, pathErr := os.Stat(path); errors.Is(pathErr, os.ErrNotExist) {
-		_ = os.Rename(quarantine, path)
-	} else {
-		_ = os.Remove(quarantine)
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
 	}
-	return false
+	return true, nil
 }
 
-func startLockLease(lock *os.File) {
-	lease := &lockLease{stop: make(chan struct{}), done: make(chan struct{})}
+func startLockLease(lock, guard *os.File) {
+	lease := &lockLease{stop: make(chan struct{}), done: make(chan struct{}), guard: guard}
+	interval := lockLeaseHeartbeatInterval
+	if interval <= 0 {
+		interval = time.Second
+	}
 	activeLockLeases.Store(lock, lease)
 	go func() {
 		defer close(lease.done)
-		interval := lockLeaseHeartbeatInterval
-		if interval <= 0 {
-			interval = time.Second
-		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -526,8 +539,6 @@ func startLockLease(lock *os.File) {
 			case <-lease.stop:
 				return
 			case <-ticker.C:
-				// Writing through the owner descriptor updates the original
-				// inode even if a stale reclaim has moved the path elsewhere.
 				if _, err := fmt.Fprintf(lock, "heartbeat=%s\n", time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 					return
 				}
@@ -537,35 +548,39 @@ func startLockLease(lock *os.File) {
 	}()
 }
 
-func stopLockLease(lock *os.File) {
-	if lock == nil {
-		return
-	}
+func stopLockLease(lock *os.File) *lockLease {
 	value, ok := activeLockLeases.LoadAndDelete(lock)
 	if !ok {
-		return
+		return nil
 	}
 	lease := value.(*lockLease)
 	close(lease.stop)
 	<-lease.done
+	return lease
 }
 
-// ReleaseLock closes and removes a ledger lock. Removal tolerates a prior
-// stale-lock recovery so a completed owner cannot turn that recovery into an
-// error path.
-func ReleaseLock(lock *os.File, path string) error {
-	var owned os.FileInfo
-	if lock != nil {
-		stopLockLease(lock)
-		var err error
-		owned, err = lock.Stat()
-		if err != nil {
-			_ = lock.Close()
-			return err
-		}
-		if err := lock.Close(); err != nil {
-			return err
-		}
+// ReleaseLock removes only this owner marker, while still holding the stable
+// guard. Closing/unlocking the guard happens after the final write and cleanup.
+// A nil/foreign/repeated release cannot delete another owner's marker.
+func ReleaseLock(lock *os.File, path string) (result error) {
+	if lock == nil {
+		return nil
+	}
+	if filepath.Clean(path) != filepath.Clean(lock.Name()) {
+		return ErrUnavailable
+	}
+	lease := stopLockLease(lock)
+	if lease == nil {
+		return ErrUnavailable
+	}
+	defer func() { result = errors.Join(result, releaseProcessGuard(lease.guard)) }()
+	owned, err := lock.Stat()
+	if err != nil {
+		_ = lock.Close()
+		return err
+	}
+	if err := lock.Close(); err != nil {
+		return err
 	}
 	current, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -574,9 +589,7 @@ func ReleaseLock(lock *os.File, path string) error {
 	if err != nil {
 		return err
 	}
-	// A stale-lock recovery may have replaced this path while the original
-	// owner was finishing. Never remove the replacement owner's lock.
-	if owned != nil && !os.SameFile(owned, current) {
+	if !os.SameFile(owned, current) {
 		return nil
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
