@@ -16,6 +16,10 @@ import (
 
 var ErrImpactObjectUnavailable = errors.New("current impact object adapter is unavailable")
 
+// ImpactActionNoAction is a dependency result that remains visible in the
+// impact assessment without becoming a work item.
+const ImpactActionNoAction = "NO_ACTION"
+
 // ErrDependencyDecided reports that a human already decided this dependency
 // pair, so an automated run may not silently re-propose or overwrite it.
 var ErrDependencyDecided = errors.New("dependency edge already decided")
@@ -25,7 +29,7 @@ func validObjectRef(ref ObjectVersionRef) bool {
 	return ref.ID != "" && ref.Version != "" && len(ref.ID) <= 128 && len(ref.Version) <= 128 && slices.Contains([]string{"ProjectSpec", "ProjectAsset", "SourceAnchor", "EvidenceCard", "ResearchClaim", "ChapterVersion", "TemplateCopy", "RuleSet", "RuleBinding", "RouteNode", "ResearchRun", "ComputationReceipt"}, ref.Kind)
 }
 func validImpactAction(action string) bool {
-	return slices.Contains([]string{"REVALIDATE_EVIDENCE", "RETRIEVE_CANDIDATES", "REVIEW_REQUIRED", "REGENERATE", "RECOMPUTE", "INVALIDATE_CONFIRMATION", "BLOCK_RELEASE"}, action)
+	return slices.Contains([]string{"REVALIDATE_EVIDENCE", "RETRIEVE_CANDIDATES", "REVIEW_REQUIRED", "REGENERATE", "RECOMPUTE", "INVALIDATE_CONFIRMATION", "BLOCK_RELEASE", ImpactActionNoAction}, action)
 }
 func refIdentity(ref ObjectVersionRef) string { return ref.Kind + "/" + ref.ID + "/" + ref.Version }
 func currentImpactObject(tx Transaction, p Project, ref ObjectVersionRef) (ImpactObjectState, error) {
@@ -267,7 +271,7 @@ func (s *Service) CreateDependencyEdge(ctx context.Context, actor Actor, project
 		if err := store.PutDependencyEdge(edge); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
-		if err := recordAuditEvent(tx, actor, projectID, "dependency.create", edge.ID, map[string]any{"status": status, "source": edge.Source, "target": edge.Target}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "dependency.create", edge.ID, map[string]any{"status": status, "source": edge.Source, "target": edge.Target, "action": edge.Action, "reason": edge.Reason}); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
 		return operationResult[DependencyEdge]{Value: edge, Status: operationStatusCreated}, nil
@@ -345,9 +349,9 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 		if err := store.UpdateDependencyEdge(old, next); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
-		details := map[string]any{"version": next.Version}
+		details := map[string]any{"version": next.Version, "action": next.Action, "reason": next.Reason}
 		if input.Decision == "modify" {
-			details["relation"], details["action"], details["confidence"] = next.Relation, next.Action, next.Confidence
+			details["relation"], details["confidence"] = next.Relation, next.Confidence
 		}
 		if err := recordAuditEvent(tx, actor, projectID, "dependency."+input.Decision, edgeID, details); err != nil {
 			return operationResult[DependencyEdge]{}, err
@@ -528,7 +532,7 @@ func buildImpactAssessment(tx Transaction, p Project, change ChangeSet) (ImpactA
 				certainty = "possible"
 			}
 			add(edge.Target, edge.Action, certainty, ImpactCause{EdgeID: edge.ID, Source: edge.Source, Reason: edge.Reason})
-			if certainty == "definite" {
+			if certainty == "definite" && edge.Action != ImpactActionNoAction {
 				requiredObjects[refIdentity(edge.Target)] = true
 				requiredObjects[refIdentity(edge.Source)] = true
 				queue = append(queue, edge.Target)
@@ -619,7 +623,7 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 	// versions are never silently selected by an old proposal.
 	chapterIDs := []string{}
 	for _, impact := range assessment.Impacts {
-		if impact.Certainty != "definite" || impact.Target.Kind != "ChapterVersion" {
+		if impact.Certainty != "definite" || impact.Action == ImpactActionNoAction || impact.Target.Kind != "ChapterVersion" {
 			continue
 		}
 		chapter, e := tx.Chapter(p.ID, impact.Target.ID)
@@ -640,7 +644,9 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 		}
 	}
 	for _, impact := range assessment.Impacts {
-		if impact.Certainty != "definite" {
+		if impact.Certainty != "definite" || impact.Action == ImpactActionNoAction {
+			// NO_ACTION is an auditable resolution in the preview, not a
+			// human obligation. Do not create a task or handoff for it.
 			continue
 		}
 		domain := "B"

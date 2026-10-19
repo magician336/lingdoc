@@ -16885,7 +16885,8 @@
               "REGENERATE",
               "RECOMPUTE",
               "INVALIDATE_CONFIRMATION",
-              "BLOCK_RELEASE"
+              "BLOCK_RELEASE",
+              "NO_ACTION"
             ]
           },
           "severity": {
@@ -21959,7 +21960,8 @@
               "REGENERATE",
               "RECOMPUTE",
               "INVALIDATE_CONFIRMATION",
-              "BLOCK_RELEASE"
+              "BLOCK_RELEASE",
+              "NO_ACTION"
             ]
           },
           "origin": {
@@ -22050,7 +22052,8 @@
               "REGENERATE",
               "RECOMPUTE",
               "INVALIDATE_CONFIRMATION",
-              "BLOCK_RELEASE"
+              "BLOCK_RELEASE",
+              "NO_ACTION"
             ]
           },
           "origin": {
@@ -22110,7 +22113,8 @@
               "REGENERATE",
               "RECOMPUTE",
               "INVALIDATE_CONFIRMATION",
-              "BLOCK_RELEASE"
+              "BLOCK_RELEASE",
+              "NO_ACTION"
             ],
             "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
           },

@@ -39,7 +39,7 @@
           <button v-if="changeActionAllowed(change, 'reverse')" :disabled="busy || loading" @click="changeAction(change, 'reverse')">起草逆向变更</button>
         </div>
       </article>
-      <article v-if="assessment"><h3>影响预览 · 基线 {{ assessment.context_revision }}</h3><p>评估指纹 {{ assessment.input_hash }}</p><ul><li v-for="(impact, index) in assessment.impacts" :key="index"><strong>{{ impact.certainty === 'definite' ? '确定影响' : '可能影响，等待人工判断' }}</strong>：{{ kindLabel(impact.target.kind) }}/{{ impact.target.id }} @ {{ impact.target.version }} · {{ actionLabel(impact.action) }}<ul><li v-for="cause in impact.causes" :key="cause.edge_id">{{ cause.reason }} · {{ cause.edge_id }}</li></ul></li></ul></article>
+      <article v-if="assessment"><h3>影响预览 · 基线 {{ assessment.context_revision }}</h3><p>评估指纹 {{ assessment.input_hash }}</p><ul><li v-for="(impact, index) in assessment.impacts" :key="index"><strong>{{ impact.certainty === 'definite' ? '确定影响' : '可能影响，等待人工判断' }}</strong>：{{ kindLabel(impact.target.kind) }}/{{ impact.target.id }} @ {{ impact.target.version }} · {{ actionLabel(impact.action) }}<span v-if="impact.action === 'NO_ACTION'">（不创建影响任务）</span><ul><li v-for="cause in impact.causes" :key="cause.edge_id">{{ cause.reason }} · {{ cause.edge_id }}</li></ul></li></ul></article>
       <article v-if="stabilization"><h3>{{ stabilization.status === 'STABILIZED' ? '当前变更已稳定' : '仍有稳定化阻断' }}</h3><p>稳定后仍需冻结快照与交付 Preflight。</p><p>判定时间 {{ stabilization.checked_at }}</p><ul><li v-for="(blocker, index) in stabilization.blockers" :key="index">{{ blocker.reason }} · {{ blocker.target_id }}</li></ul><p v-if="stabilization.stale_task_ids.length">已失效任务 {{ stabilization.stale_task_ids.join('、') }}：依据已消失，既不算闭环也不算阻断。</p></article>
       <details><summary>正式基线历史</summary><p v-for="revision in revisions" :key="revision.revision">基线 {{ revision.revision }} · 条件 {{ revision.spec_revision }} · 模板副本 {{ revision.template_copy_version }} · {{ revision.created_at }}</p></details>
     </template>
@@ -143,7 +143,7 @@ function addSemanticDelta() {
 function semanticText(delta:api.SemanticDelta,before=false) { const value=before?delta.before:delta.proposed_card||delta.proposed_claim||delta.proposed_asset_policy||delta.proposed_binding||delta.proposed_route;return JSON.stringify(value||{},null,2) }
 
 const objectKinds = ['ProjectSpec', 'ProjectAsset', 'SourceAnchor', 'EvidenceCard', 'ResearchClaim', 'ChapterVersion', 'TemplateCopy', 'RuleSet', 'RuleBinding', 'RouteNode']
-const impactActions = ['REVALIDATE_EVIDENCE', 'RETRIEVE_CANDIDATES', 'REVIEW_REQUIRED', 'REGENERATE', 'RECOMPUTE', 'INVALIDATE_CONFIRMATION', 'BLOCK_RELEASE']
+const impactActions = ['REVALIDATE_EVIDENCE', 'RETRIEVE_CANDIDATES', 'REVIEW_REQUIRED', 'REGENERATE', 'RECOMPUTE', 'INVALIDATE_CONFIRMATION', 'BLOCK_RELEASE', 'NO_ACTION']
 const sourceRef = ref<api.ObjectVersionRef>({ kind: 'ProjectSpec', id: props.project.id, version: String(props.project.spec_revision) })
 const targetRef = ref<api.ObjectVersionRef>({ kind: 'ChapterVersion', id: '', version: '' }), edgeAction = ref('REVIEW_REQUIRED')
 const receiptLoading=ref(false), computationReceipt=ref<api.ImpactComputationReceipt|null>(null)
@@ -193,7 +193,7 @@ function label(state: string) { return ({ draft: '草稿', assessed: '已评估'
 function severityLabel(severity: string) { return ({ blocking: '阻断交付', warning: '需要处理', info: '知会' } as Record<string, string>)[severity] || severity }
 function staleReasonLabel(reason?: string) { return ({ target_version_replaced: '任务所针对的版本已被替换', assignee_revoked: '责任人已失去处理该任务的权限' } as Record<string, string>)[reason || ''] || reason || '' }
 function kindLabel(kind: string) { return ({ ProjectSpec: '研究条件', ProjectAsset: '项目资料', SourceAnchor: '资料锚点', EvidenceCard: '证据卡', ResearchClaim: '研究主张', ChapterVersion: '章节版本', TemplateCopy: '模板副本', RuleSet: '规则版本', RuleBinding: '独立规则绑定', ProjectAssetScope: '资料使用范围', ResearchRun: '完整调研回执', ComputationReceipt: '实际重算回执', RouteNode: '技术路线节点' } as Record<string, string>)[kind] || kind }
-function actionLabel(action: string) { return ({ REVALIDATE_EVIDENCE: '重新核验证据', RETRIEVE_CANDIDATES: '重新调研候选', REVIEW_REQUIRED: '人工复核', REGENERATE: '重新生成', RECOMPUTE: '重新计算', INVALIDATE_CONFIRMATION: '重新确认', BLOCK_RELEASE: '阻止发布' } as Record<string, string>)[action] || action }
+function actionLabel(action: string) { return ({ REVALIDATE_EVIDENCE: '重新核验证据', RETRIEVE_CANDIDATES: '重新调研候选', REVIEW_REQUIRED: '人工复核', REGENERATE: '重新生成', RECOMPUTE: '重新计算', INVALIDATE_CONFIRMATION: '重新确认', BLOCK_RELEASE: '阻止发布', NO_ACTION: '本次不产生影响' } as Record<string, string>)[action] || action }
 function roleLabel(role: typeof decisionRoles[number]) { return { product: '产品', qa: 'QA', safety: '安全' }[role] }
 function errorText(err: unknown) { const item = err as { message?: string; error?: { message?: string } }; return item.error?.message || item.message || '读取或提交失败，请检查当前权限和版本后重试。' }
 async function mutate<T>(slot: string, payload: unknown, call: (key: string) => Promise<T>, success: string, preserveReason = false): Promise<T | undefined> {

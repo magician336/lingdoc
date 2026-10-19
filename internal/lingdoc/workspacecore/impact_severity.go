@@ -86,6 +86,11 @@ func DeriveImpactSeverity(action string) string {
 		// about content truth. Its result is a receipt the gate can re-check,
 		// not an assertion a human has to stand behind.
 		return ImpactSeverityInfo
+	case action == ImpactActionNoAction:
+		// NO_ACTION never creates a task, but keeping it in the closed
+		// action-to-severity mapping makes direct callers describe it as
+		// informational if they inspect the assessment result.
+		return ImpactSeverityInfo
 	default:
 		// REVALIDATE_EVIDENCE, RETRIEVE_CANDIDATES, REGENERATE: these weaken
 		// the basis behind a claim or refresh a candidate, and each can be
