@@ -1,0 +1,203 @@
+{
+  "generated_at": "2026-10-19T18:57:10.946Z",
+  "backend_base_url": "http://127.0.0.1:8080",
+  "run_id": "g3r-mvfm935r-7e355e53",
+  "started_at": "2026-10-19T18:57:10.719Z",
+  "demo_account": {
+    "username": "g3demo-b0ebb64275",
+    "email": "g3demo-b0ebb64275@example.com"
+  },
+  "account_reused": false,
+  "backend_head": {
+    "commitId": "7f5fd8c",
+    "buildTime": "2026-10-19 17:42:56 UTC",
+    "version": "unknown",
+    "probedAt": "2026-10-19T18:57:10.854Z",
+    "probePath": "/api/v1/version",
+    "probeStatus": 401
+  },
+  "identity": {
+    "userId": "d46b09af-cb72-42f2-b518-a3bf6643198f",
+    "username": "g3demo-b0ebb64275",
+    "email": "g3demo-b0ebb64275@example.com",
+    "tenantId": "10059"
+  },
+  "project": {
+    "id": "89dd443b-39c8-47dd-bfdb-99909e645a61",
+    "name": "G3 验收台演示项目（运行 g3r-mvfm935r-7e355e53）",
+    "status": "active",
+    "projectVersion": 3,
+    "specRevision": 1,
+    "currentContextRevision": 1,
+    "templateId": "template-demo",
+    "templateVersion": "1"
+  },
+  "chapters": [
+    {
+      "id": "e990aec4-d10f-43cf-bc95-2f2e2367e3d6",
+      "sectionId": "question",
+      "title": "研究问题",
+      "currentVersionId": null,
+      "bodyEmpty": true
+    },
+    {
+      "id": "17898fb1-ef94-472d-ac08-ab94421d3051",
+      "sectionId": "method",
+      "title": "研究方案",
+      "currentVersionId": null,
+      "bodyEmpty": true
+    }
+  ],
+  "missing_sections": [],
+  "steps": [
+    {
+      "name": "后端存活探针",
+      "method": "GET",
+      "path": "/api/v1/version",
+      "status": 401,
+      "ok": false,
+      "durationMs": 21,
+      "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
+      "index": 1
+    },
+    {
+      "name": "注册演示账号",
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "status": 201,
+      "ok": true,
+      "durationMs": 56,
+      "conclusion": "注册成功（HTTP 201）：g3demo-b0ebb64275@example.com",
+      "details": {
+        "user_id": "d46b09af-cb72-42f2-b518-a3bf6643198f",
+        "username": "g3demo-b0ebb64275",
+        "email": "g3demo-b0ebb64275@example.com",
+        "tenant_id": 10059
+      },
+      "index": 2
+    },
+    {
+      "name": "登录",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "ok": true,
+      "durationMs": 49,
+      "conclusion": "登录成功（HTTP 200）：g3demo-b0ebb64275@example.com",
+      "details": {
+        "user_id": "d46b09af-cb72-42f2-b518-a3bf6643198f",
+        "email": "g3demo-b0ebb64275@example.com",
+        "tenant_id": 10059
+      },
+      "index": 3
+    },
+    {
+      "name": "读取当前身份",
+      "method": "GET",
+      "path": "/api/v1/auth/validate",
+      "status": 200,
+      "ok": true,
+      "durationMs": 5,
+      "conclusion": "令牌有效（HTTP 200）",
+      "index": 4
+    },
+    {
+      "name": "读取后端 head",
+      "method": "GET",
+      "path": "/api/v1/system/info",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "读取后端 head 成功（HTTP 200）",
+      "index": 5
+    },
+    {
+      "name": "建项",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfm935r-7e355e53-create-project",
+      "durationMs": 16,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvfm935r-7e355e53）",
+      "details": {
+        "project_id": "89dd443b-39c8-47dd-bfdb-99909e645a61",
+        "status": "draft",
+        "project_version": 1,
+        "spec_revision": 0,
+        "template_id": "template-demo",
+        "template_version": "1"
+      },
+      "index": 6
+    },
+    {
+      "name": "写规格",
+      "method": "PUT",
+      "path": "/api/v1/lingdoc/projects/89dd443b-39c8-47dd-bfdb-99909e645a61/spec",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfm935r-7e355e53-save-spec",
+      "durationMs": 25,
+      "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
+      "details": {
+        "spec_revision": 1,
+        "project_version": 2,
+        "spec_fields": [
+          "research_goal",
+          "research_subject"
+        ]
+      },
+      "index": 7
+    },
+    {
+      "name": "登记立项阅读",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/89dd443b-39c8-47dd-bfdb-99909e645a61/activation-read",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfm935r-7e355e53-activation-read",
+      "durationMs": 9,
+      "conclusion": "立项阅读已登记（HTTP 201）",
+      "details": {
+        "activation_read_id": "54cee59c-1607-4a13-afc6-91824701ea2d",
+        "project_version": 2,
+        "spec_revision": 1
+      },
+      "index": 8
+    },
+    {
+      "name": "激活",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/89dd443b-39c8-47dd-bfdb-99909e645a61/activate",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfm935r-7e355e53-activate",
+      "durationMs": 33,
+      "conclusion": "项目已激活（HTTP 200）",
+      "details": {
+        "status": "active",
+        "project_version": 3,
+        "current_context_revision": 1,
+        "baseline_confirmation_id": "cf9bd4da-83fb-47d2-a083-7ad90b789d97"
+      },
+      "index": 9
+    },
+    {
+      "name": "读章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/89dd443b-39c8-47dd-bfdb-99909e645a61/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 7,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "section_ids": [
+          "question",
+          "method"
+        ]
+      },
+      "index": 10
+    }
+  ]
+}

@@ -189,7 +189,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     group: 'ac',
     name: '基线上的研究条件修改',
     criterion:
-      '用户将研究对象从"普通本科生"改为"接受过创业教育的本科生"。系统创建 ChangeSet，预览受影响的 EvidenceCard、ResearchClaim、方法章节和 RouteNode；Owner 应用后生成新 revision，旧确认保留历史并进入待复核。',
+      '用户将研究对象从“普通本科生”改为“接受过创业教育的本科生”。系统创建 ChangeSet，预览受影响的 EvidenceCard、ResearchClaim、方法章节和 RouteNode；Owner 应用后生成新 revision，旧确认保留历史并进入待复核。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 350, end: 352 },
     status: 'PASS (follow-up)',
     evidence: '历史快照 b3（变更→应用→新修订，部分覆盖）',
@@ -304,7 +304,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     group: 'ac',
     name: '模板升级',
     criterion:
-      'active 项目尝试直接改模板字段或章节，普通保存被拒。通过 template_upgrade ChangeSet 评估字段迁移、规则、章节、RouteNode、确认和快照影响；应用后旧快照仍绑定旧模板版本。',
+      'active 项目尝试直接改模板字段或章节，普通保存被拒。通过 `template_upgrade` ChangeSet 评估字段迁移、规则、章节、RouteNode、确认和快照影响；应用后旧快照仍绑定旧模板版本。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 386, end: 388 },
     status: 'PASS (follow-up)',
     evidence: '历史快照 b3（普通字段变更，未覆盖模板升级）',
@@ -342,7 +342,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     group: 'ac',
     name: '建议依赖边',
     criterion:
-      '模型提出某章节可能依赖某证据，但用户未确认该关系。系统可以在预览中提示"待确认关系"，不能单独使章节失效或阻断导出。',
+      '模型提出某章节可能依赖某证据，但用户未确认该关系。系统可以在预览中提示“待确认关系”，不能单独使章节失效或阻断导出。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 398, end: 400 },
     status: 'PASS (follow-up)',
     evidence: '历史快照 b3（未覆盖建议依赖边）',
@@ -354,7 +354,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     group: 'ac',
     name: 'G3 影响助手',
     criterion:
-      '用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用"确定受影响"和"可能受影响"两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。',
+      '用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用“确定受影响”和“可能受影响”两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 402, end: 404 },
     status: 'BLOCKED',
     evidence: '实现缺口 · 跟进 #237',
@@ -366,7 +366,7 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     group: 'ac',
     name: 'AI 批量导入依赖',
     criterion:
-      '用户选择"研究条件、证据卡和第 2–4 章"作为范围。AI 提出若干候选依赖，并显示对象版本、依据片段和建议理由；用户确认其中一部分、修改一部分、拒绝一部分。只有确认的关系进入正式依赖图，拒绝记录不会在同一版本中反复推荐。',
+      '用户选择“研究条件、证据卡和第 2–4 章”作为范围。AI 提出若干候选依赖，并显示对象版本、依据片段和建议理由；用户确认其中一部分、修改一部分、拒绝一部分。只有确认的关系进入正式依赖图，拒绝记录不会在同一版本中反复推荐。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 406, end: 408 },
     status: 'BLOCKED',
     evidence: '实现缺口 · 跟进 #237',

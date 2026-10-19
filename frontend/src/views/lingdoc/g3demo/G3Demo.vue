@@ -6,11 +6,14 @@
         <h1>G3 验收台</h1>
         <p class="hero-lede">
           把 G3 的验收判据、Spec 锚点、状态徽标与证据位放在同一张台面上。
-          左栏是主流程的分步骨架，右栏是判据矩阵——本票只建立基准与形态，不发起真实调用。
+          左栏是主流程的分步骨架，右栏是判据矩阵——判据原文照录主基准，状态只用仓库门禁词表。
+          真实模式会自建账号与隔离项目，把每一步真实调用（方法、路径、状态码、幂等键、耗时）留在左栏。
         </p>
       </div>
       <div class="hero-actions">
-        <span class="demo-chip">无需登录 · 免登录快照模式</span>
+        <span class="demo-chip" :class="{ 'demo-chip--live': liveMode }">
+          {{ liveMode ? '真实模式 · 本次运行' : '无需登录 · 免登录快照模式' }}
+        </span>
         <span class="snapshot-chip">
           <i aria-hidden="true"></i>{{ snapshotNotice(snapshot) }}
         </span>
@@ -22,41 +25,171 @@
         <div class="identity-mark" aria-hidden="true">G3</div>
         <div>
           <p class="section-kicker">当前请求身份</p>
-          <h2 id="identity-title">匿名访客（未登录）</h2>
+          <h2 id="identity-title">
+            {{ liveMode ? liveIdentityTitle : '匿名访客（未登录）' }}
+          </h2>
           <p class="identity-meta">
-            免登录快照模式：页面不发起任何真实请求，也不读取当前会话的令牌。
+            {{
+              liveMode
+                ? '真实模式：令牌写入前端既有认证存储（weknora_token），请求拦截器统一附加 Authorization 与 X-Tenant-ID。'
+                : '免登录快照模式：页面不发起任何真实请求，也不读取当前会话的令牌。'
+            }}
           </p>
         </div>
       </div>
       <div class="identity-facts">
-        <div>
+        <div v-if="liveMode">
+          <span>演示账号</span>
+          <strong>{{ liveAccountEmail || '—' }}</strong>
+          <small>运行时自建：随机用户名与随机口令，不依赖预置账号</small>
+        </div>
+        <div v-else>
           <span>租户</span>
           <strong>{{ snapshot.identity.tenantId }} · {{ snapshot.identity.tenantName }}</strong>
           <small>历史快照里的租户，不是当前会话的租户</small>
         </div>
-        <div>
+        <div v-if="liveMode">
+          <span>本次运行</span>
+          <strong>{{ liveRunId || '—' }}</strong>
+          <small>运行标识：幂等键由它派生，两次运行不会撞键</small>
+        </div>
+        <div v-else>
           <span>数据模式</span>
           <strong>{{ snapshot.mode }}</strong>
           <small>只读快照，不写入、不重放</small>
         </div>
         <div>
-          <span>快照 head</span>
-          <strong>{{ snapshot.head }}</strong>
-          <small>后端进程 commit {{ snapshot.runtimeCommit }}</small>
+          <span>{{ liveMode ? '本次后端 head' : '快照 head' }}</span>
+          <strong>{{ liveHead?.commitId || snapshot.head }}</strong>
+          <small>
+            {{
+              liveMode
+                ? `编译期注入的 CommitID${liveHead?.buildTime ? ' · ' + liveHead.buildTime : ''}`
+                : '后端进程 commit ' + snapshot.runtimeCommit
+            }}
+          </small>
         </div>
       </div>
+    </section>
+
+    <section class="live-card" aria-labelledby="live-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">真实模式</p>
+          <h2 id="live-title">自建账号 · 自建隔离项目 · 真实调用留痕</h2>
+        </div>
+        <span class="section-note">复用既有认证存储与请求拦截器，不新增平行鉴权</span>
+      </div>
+
+      <p class="live-lede">
+        真实模式在运行时**自建**演示账号（随机用户名 + 随机口令，不依赖预置账号、不接受手工填入的固定口令），
+        用演示模板 <code>template-demo</code> 新建一个只属于本次运行的隔离项目，
+        走到「登记立项阅读 → 激活 → 两个章节就绪」。
+        每一次运行都新建项目；演示账号本身会存到本地，可以跨运行复用。
+      </p>
+
+      <div class="live-actions">
+        <button class="live-button live-button--primary" :disabled="running" @click="startRun(true)">
+          {{ running ? '运行中…' : '创建演示账号并运行' }}
+        </button>
+        <button
+          class="live-button"
+          :disabled="running || !savedAccount"
+          :title="savedAccount ? `登录入口：${savedAccount.email}` : '本地还没有保存过演示账号'"
+          @click="startRun(false)"
+        >
+          用已保存的账号登录并运行
+        </button>
+        <button v-if="sessionTakenOver" class="live-button live-button--ghost" @click="releaseSession">
+          退出演示账号
+        </button>
+      </div>
+
+      <dl class="fact-list live-facts">
+        <div>
+          <dt>本轮运行标识</dt>
+          <dd>{{ liveRunId || '尚未运行' }}</dd>
+        </div>
+        <div>
+          <dt>演示账号</dt>
+          <dd>{{ liveAccountEmail || '尚未创建' }}</dd>
+        </div>
+        <div>
+          <dt>隔离项目</dt>
+          <dd>{{ liveProjectId ? `${liveProjectName} · ${liveProjectId}` : '尚未创建' }}</dd>
+        </div>
+        <div>
+          <dt>激活后的章节</dt>
+          <dd>
+            {{
+              liveChapters.length
+                ? liveChapters.map((chapter) => `${chapter.sectionId}（${chapter.title}）`).join('、')
+                : '尚未就绪'
+            }}
+          </dd>
+        </div>
+        <div>
+          <dt>本次后端 head</dt>
+          <dd>{{ liveHead?.commitId || '未读到' }}</dd>
+        </div>
+        <div>
+          <dt>上一次运行 head</dt>
+          <dd>{{ previousHead?.commitId || '无上一次运行' }}</dd>
+        </div>
+      </dl>
+
+      <p v-if="runError" class="live-error" role="alert">
+        <strong>运行失败：</strong>{{ runError }}
+      </p>
+      <p v-if="staleNotice" class="live-warn" role="status">{{ staleNotice }}</p>
+      <p v-if="missingSections.length" class="live-warn" role="status">
+        模板必需章节还没就位：{{ missingSections.join('、') }}。
+      </p>
+      <p v-if="sessionTakenOver" class="card-footnote">
+        真实模式会接管当前浏览器的登录令牌（复用既有认证存储 <code>weknora_token</code>），
+        跑完可以点「退出演示账号」把原来的会话还回去。
+      </p>
     </section>
 
     <div class="console-columns">
       <section class="flow-card" aria-labelledby="flow-title">
         <div class="section-heading">
           <div>
-            <p class="section-kicker">左栏 · 主流程骨架</p>
-            <h2 id="flow-title">从建项到下载的十五步</h2>
+            <p class="section-kicker">左栏 · 主流程</p>
+            <h2 id="flow-title">
+              {{ liveSteps.length ? '本次运行的真实调用' : '从建项到下载的十五步' }}
+            </h2>
           </div>
-          <span class="section-note">形态预览 · 未执行</span>
+          <span class="section-note">
+            {{ liveSteps.length ? '真实证据 · 逐步留痕' : '形态预览 · 未执行' }}
+          </span>
         </div>
-        <ol class="flow-list">
+        <ol v-if="liveSteps.length" class="flow-list">
+          <li v-for="step in liveSteps" :key="`${step.index}-${step.name}`" class="flow-step">
+            <span class="flow-number">{{ String(step.index).padStart(2, '0') }}</span>
+            <div class="flow-body">
+              <h3>{{ step.name }}</h3>
+              <p class="flow-endpoint">
+                <span class="method" :class="`method--${step.method.toLowerCase()}`">{{ step.method }}</span>
+                <code>{{ step.path }}</code>
+                <span class="flow-status" :class="step.ok ? 'flow-status--ok' : 'flow-status--bad'">
+                  HTTP {{ step.status }}
+                </span>
+              </p>
+              <p class="flow-precondition">{{ step.conclusion }}</p>
+              <p class="flow-meta">
+                <span v-if="step.idempotencyKey">
+                  幂等键 <code>{{ step.idempotencyKey }}</code>
+                </span>
+                <span>耗时 {{ step.durationMs }} ms</span>
+                <span v-if="step.details" class="flow-details">
+                  {{ Object.entries(step.details).map(([k, v]) => `${k}=${v}`).join(' · ') }}
+                </span>
+              </p>
+            </div>
+          </li>
+        </ol>
+        <ol v-else class="flow-list">
           <li v-for="step in G3_FLOW_STEPS" :key="step.index" class="flow-step">
             <span class="flow-number">{{ String(step.index).padStart(2, '0') }}</span>
             <div class="flow-body">
@@ -71,7 +204,11 @@
           </li>
         </ol>
         <p class="card-footnote">
-          本票不发起真实调用：每一步都标注「未执行」。左栏只固定形态与顺序，后面的真实链路票往这套结构里填证据。
+          {{
+            liveSteps.length
+              ? '以上是本次运行打出的真实调用：方法、路径、状态码、幂等键、耗时都在。GET 一律不带幂等键；契约未标幂等键的写路由（POST /checks、POST /template-checks）也不带。'
+              : '本票的真实模式跑通后，这里会换成真实调用记录；未运行时只固定形态与顺序。'
+          }}
         </p>
       </section>
 
@@ -112,10 +249,11 @@
                 <th>Spec 锚点</th>
                 <th>状态</th>
                 <th>证据位</th>
+                <th>本轮覆盖</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in G3_SLICE_ROWS" :key="row.id">
+              <tr v-for="row in sliceRows" :key="row.id">
                 <th scope="row">
                   <strong>{{ row.name }}</strong>
                   <small>{{ row.id }} · {{ row.deliverable }}</small>
@@ -134,6 +272,12 @@
                   <span>{{ row.evidence }}</span>
                   <small v-if="row.note">{{ row.note }}</small>
                 </td>
+                <td class="coverage">
+                  <span class="coverage-chip" :class="coverageTone(coverageById.get(row.id))">
+                    {{ coverageLabel(coverageById.get(row.id)) }}
+                  </span>
+                  <small>{{ coverageById.get(row.id)?.note }}</small>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -149,10 +293,11 @@
                 <th>Spec 锚点</th>
                 <th>状态</th>
                 <th>证据位</th>
+                <th>本轮覆盖</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in G3_AC_ROWS" :key="row.id">
+              <tr v-for="row in acRows" :key="row.id">
                 <th scope="row">
                   <strong>{{ row.name }}</strong>
                   <small>
@@ -178,6 +323,12 @@
                     跟进 Issue #{{ row.followUpIssue }}
                   </small>
                 </td>
+                <td class="coverage">
+                  <span class="coverage-chip" :class="coverageTone(coverageById.get(row.id))">
+                    {{ coverageLabel(coverageById.get(row.id)) }}
+                  </span>
+                  <small>{{ coverageById.get(row.id)?.note }}</small>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -187,7 +338,8 @@
           状态分布：PASS {{ counts['PASS'] }} · PASS (follow-up) {{ counts['PASS (follow-up)'] }} ·
           N/A {{ counts['N/A'] }} · WARNING {{ counts['WARNING'] }} · NOT RUN {{ counts['NOT RUN'] }} ·
           BLOCKED {{ counts['BLOCKED'] }} · TODO {{ counts['TODO'] }}。
-          本矩阵覆盖整个 G3 计划，不是本 PR 的放行矩阵；本票自身的验收矩阵在 PR 描述里。
+          「本轮覆盖」是**本票真实运行**与每一行的关系：前置链跑通**不构成**任何一条判据的证据，
+          所以没被覆盖的行状态原样保留，绝不会被判成 <code>PASS</code>。
         </p>
       </section>
     </div>
@@ -373,12 +525,12 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import {
-  G3_AC_ROWS,
   G3_LIFECYCLE_READINGS,
   G3_MATRIX_ROWS,
   G3_SATISFIED_READING,
-  G3_SLICE_ROWS,
   formatAnchor,
   statusCounts,
   type SpecAnchor,
@@ -395,13 +547,213 @@ import {
   statusTone,
 } from './g3Status'
 import { G3_SNAPSHOT_RAW, loadG3Snapshot, snapshotNotice } from './g3Snapshot'
+import { createRequestClient } from './g3HttpAdapter'
+import {
+  applyRunEvidence,
+  contextFromSummary,
+  headChangedSince,
+  loadRunSummary,
+  saveRunSummary,
+  summarizeRun,
+  type G3RowEvidence,
+  type G3RunSummary,
+} from './g3Evidence'
+import { runChain } from './runner/chain'
+import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
+import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3StepRecord } from './runner/runContext'
 
 // 快照在装载期就校验：数据坏了就抛错，不让页面渲染半份证据。
 const snapshot = loadG3Snapshot(G3_SNAPSHOT_RAW)
-const counts = statusCounts(G3_MATRIX_ROWS)
+
+const auth = useAuthStore()
+const client = createRequestClient()
+
+const running = ref(false)
+const runError = ref('')
+const staleNotice = ref('')
+const sessionTakenOver = ref(false)
+const savedAccount = ref<G3DemoAccount | null>(null)
+const runSummary = ref<G3RunSummary | null>(null)
+const previousSummary = ref<G3RunSummary | null>(null)
+const liveRunId = ref('')
+const liveAccountEmail = ref('')
+const liveProjectId = ref('')
+const liveProjectName = ref('')
+const liveChapters = ref<G3ChapterFact[]>([])
+const liveHead = ref<G3BackendHead | null>(null)
+const liveSteps = ref<G3StepRecord[]>([])
+const missingSections = ref<string[]>([])
+
+/** 接管会话之前先把用户原来的令牌记住，好还回去。 */
+let originalToken: string | null = null
+let originalTenantId: string | null = null
+
+const liveMode = computed(() => liveSteps.value.length > 0)
+const liveIdentityTitle = computed(() =>
+  liveAccountEmail.value ? `演示账号 ${liveAccountEmail.value}` : '真实模式',
+)
+const previousHead = computed(() => previousSummary.value?.head ?? null)
+
+const liveContext = computed(() =>
+  runSummary.value ? contextFromSummary(runSummary.value) : null,
+)
+const matrixView = computed(() =>
+  applyRunEvidence(G3_MATRIX_ROWS, liveContext.value ?? {
+    runId: '',
+    startedAt: '',
+    accountEmail: '',
+    steps: [],
+    head: null,
+    chapters: [],
+    stale: false,
+  }),
+)
+const sliceRows = computed(() => matrixView.value.rows.filter((row) => row.group === 'slice'))
+const acRows = computed(() => matrixView.value.rows.filter((row) => row.group === 'ac'))
+const counts = computed(() => statusCounts(matrixView.value.rows))
+const coverageById = computed(() => {
+  const map = new Map<string, G3RowEvidence>()
+  for (const item of matrixView.value.evidence) {
+    map.set(item.rowId, item)
+  }
+  return map
+})
+
+/** 覆盖徽标：只有被本轮**判定**的行才算覆盖，其余一律「未被本轮覆盖」。 */
+const coverageLabel = (item?: G3RowEvidence) => {
+  if (!item) return '未被本轮覆盖'
+  if (item.decided) return '本轮已判定'
+  if (item.covered) return '本轮已跑到'
+  return '未被本轮覆盖'
+}
+const coverageTone = (item?: G3RowEvidence) => {
+  if (!item) return 'coverage-chip--none'
+  if (item.decided) return 'coverage-chip--covered'
+  if (item.covered) return 'coverage-chip--partial'
+  return 'coverage-chip--none'
+}
 
 const anchorLabel = (anchor: SpecAnchor) => formatAnchor(anchor)
 const anchorPath = (anchor: SpecAnchor) => anchor.path
+
+/** 读一次本地状态：演示账号与上一次运行。 */
+function restoreLocalState(): void {
+  try {
+    savedAccount.value = loadDemoAccount(localStorage)
+    runSummary.value = loadRunSummary(localStorage)
+    if (runSummary.value) {
+      liveSteps.value = runSummary.value.steps
+      liveHead.value = runSummary.value.head
+      liveRunId.value = runSummary.value.runId
+      liveAccountEmail.value = runSummary.value.accountEmail
+      liveProjectId.value = runSummary.value.projectId ?? ''
+      liveProjectName.value = runSummary.value.projectName ?? ''
+      liveChapters.value = runSummary.value.chapters
+      missingSections.value = runSummary.value.missingSections
+    }
+  } catch {
+    // 本地存储不可用时如实当作「没有历史」，不假装有。
+    savedAccount.value = null
+    runSummary.value = null
+  }
+}
+restoreLocalState()
+
+/**
+ * 跑一次真实链。
+ *
+ * @param registerFirst true = 运行时自建新账号；false = 复用本地已存的账号。
+ */
+async function startRun(registerFirst: boolean): Promise<void> {
+  if (running.value) return
+  running.value = true
+  runError.value = ''
+  staleNotice.value = ''
+
+  const account = registerFirst ? createDemoAccount() : (savedAccount.value ?? createDemoAccount())
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    // 演示账号是另一个租户；先把激活空间摘掉，避免把别的空间的 X-Tenant-ID 带过去。
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        // 令牌写进既有认证存储，请求拦截器随后自动带上 Authorization。
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    if (registerFirst) {
+      saveDemoAccount(localStorage, account)
+      savedAccount.value = account
+    }
+
+    const previous = runSummary.value
+    const change = headChangedSince(previous, result.ctx.head)
+    if (change.changed && previous) {
+      previousSummary.value = { ...previous, stale: true, staleReason: change.reason }
+      staleNotice.value = change.reason
+    } else {
+      previousSummary.value = previous
+    }
+
+    const summary = summarizeRun(result.ctx, { missingSections: result.missingSections })
+    runSummary.value = summary
+    saveRunSummary(localStorage, summary)
+
+    liveSteps.value = result.ctx.steps
+    liveHead.value = result.ctx.head
+    liveRunId.value = result.ctx.runId
+    liveAccountEmail.value = account.email
+    liveProjectId.value = result.project.id
+    liveProjectName.value = result.project.name
+    liveChapters.value = result.chapters
+    missingSections.value = result.missingSections
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    runError.value = message
+    // 失败也要留下已经跑过的那几步，不能让人以为什么都没发生。
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+      liveAccountEmail.value = account.email
+    }
+  } finally {
+    running.value = false
+  }
+}
+
+/** 把浏览器会话还给用户。 */
+function releaseSession(): void {
+  if (originalToken) {
+    auth.setToken(originalToken)
+  } else {
+    localStorage.removeItem('weknora_token')
+  }
+  if (originalTenantId) {
+    auth.setSelectedTenant(Number(originalTenantId))
+  }
+  originalToken = null
+  originalTenantId = null
+  sessionTakenOver.value = false
+}
 </script>
 
 <style scoped>
@@ -418,7 +770,7 @@ const anchorPath = (anchor: SpecAnchor) => anchor.path
 .snapshot-chip i { width: 8px; height: 8px; border-radius: 50%; background: #f1c36a; box-shadow: 0 0 0 5px rgba(241, 195, 106, .16); }
 .snapshot-chip--inline { color: #7c5a12; background: #fff0c9; }
 .snapshot-chip--inline i { background: #d18a32; box-shadow: 0 0 0 5px rgba(209, 138, 50, .16); }
-.identity-card, .flow-card, .matrix-card, .scope-card, .glossary-card, .snapshot-card { margin-top: 18px; border: 1px solid var(--line); border-radius: 18px; background: rgba(249, 252, 250, .88); box-shadow: 0 10px 30px rgba(26, 66, 61, .05); }
+.identity-card, .flow-card, .matrix-card, .scope-card, .glossary-card, .snapshot-card, .live-card { margin-top: 18px; border: 1px solid var(--line); border-radius: 18px; background: rgba(249, 252, 250, .88); box-shadow: 0 10px 30px rgba(26, 66, 61, .05); }
 .identity-card { display: flex; justify-content: space-between; gap: 24px; align-items: center; padding: 24px 26px; }
 .identity-main { display: flex; gap: 15px; align-items: center; }
 .identity-mark { display: grid; width: 54px; height: 54px; place-items: center; border-radius: 16px 16px 16px 4px; color: #f8ffff; background: var(--cyan); font-size: 18px; font-weight: 800; }
@@ -432,7 +784,7 @@ const anchorPath = (anchor: SpecAnchor) => anchor.path
 .identity-facts strong { display: block; margin-top: 7px; color: var(--ink); font-size: 15px; }
 .identity-facts small { display: block; margin-top: 5px; color: #88a09b; font-size: 11px; }
 .console-columns { display: grid; grid-template-columns: minmax(300px, .62fr) minmax(0, 1.38fr); gap: 18px; align-items: start; }
-.flow-card, .matrix-card, .scope-card, .glossary-card, .snapshot-card { padding: 24px 26px; }
+.flow-card, .matrix-card, .scope-card, .glossary-card, .snapshot-card, .live-card { padding: 24px 26px; }
 .section-heading { display: flex; justify-content: space-between; gap: 18px; align-items: flex-end; margin-bottom: 20px; }
 .section-heading h2 { font-size: 21px; }
 .section-note { color: #6f8681; font-size: 12px; }
@@ -453,17 +805,17 @@ const anchorPath = (anchor: SpecAnchor) => anchor.path
 .legend-note code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 .matrix-group-title { margin: 22px 0 10px; font-size: 15px; letter-spacing: -.02em; }
 .matrix-scroll, .table-scroll { overflow-x: auto; }
-.g3-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 12px; }
+.g3-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 12px; }
 .g3-table th, .g3-table td { padding: 12px 10px; border-top: 1px solid var(--line); text-align: left; vertical-align: top; }
 .g3-table thead th { border-top: 0; color: #6f8681; font-size: 11px; font-weight: 700; }
-.g3-table tbody th { width: 20%; }
+.g3-table tbody th { width: 18%; }
 .g3-table tbody th strong, .g3-table tbody th small { display: block; }
 .g3-table tbody th small { margin-top: 4px; color: #88a09b; font-size: 10px; font-weight: 400; }
-.criterion { width: 34%; color: #2c4a45; line-height: 1.6; }
-.anchor { width: 16%; }
+.criterion { width: 30%; color: #2c4a45; line-height: 1.6; }
+.anchor { width: 14%; }
 .anchor code, .g3-table--compact code { color: #4a6b65; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10.5px; word-break: break-all; }
 .anchor small { display: block; margin-top: 4px; color: #88a09b; font-size: 10px; word-break: break-all; }
-.evidence { width: 22%; }
+.evidence { width: 20%; }
 .evidence span { display: block; }
 .evidence small { display: block; margin-top: 5px; color: #6f8681; font-size: 11px; line-height: 1.5; }
 .evidence small.issue-link { color: #0b6e71; font-weight: 700; }
@@ -507,6 +859,30 @@ const anchorPath = (anchor: SpecAnchor) => anchor.path
 .chain-step strong { font-size: 13.5px; }
 .chain-result { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
 .console-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 22px; padding: 14px 4px 0; border-top: 1px solid #c8dbd5; color: #708983; font-size: 11px; letter-spacing: .03em; }
+.demo-chip--live { border-color: rgba(140, 235, 220, .55); color: #b6f4ea; background: rgba(11, 140, 145, .28); }
+.live-lede { max-width: 900px; margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.75; }
+.live-lede code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.live-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+.live-button { padding: 9px 16px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink); background: #fff; font-size: 13px; font-weight: 700; cursor: pointer; }
+.live-button:hover:not(:disabled) { border-color: #83bcb0; }
+.live-button:disabled { opacity: .5; cursor: not-allowed; }
+.live-button--primary { border-color: var(--cyan); color: #fff; background: var(--cyan); }
+.live-button--ghost { color: #a14637; background: #ffe1d9; border-color: #f0c2b6; }
+.live-facts { margin-top: 18px; }
+.live-error { margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid #c85d4b; border-radius: 0 10px 10px 0; color: #8a3b2c; background: #ffe9e3; font-size: 13px; line-height: 1.6; }
+.live-warn { margin: 12px 0 0; padding: 12px 14px; border-left: 3px solid #d18a32; border-radius: 0 10px 10px 0; color: #7c5a12; background: #fff5dd; font-size: 12.5px; line-height: 1.6; }
+.flow-status { padding: 2px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
+.flow-status--ok { color: #087467; background: #d8f5e9; }
+.flow-status--bad { color: #a14637; background: #ffe1d9; }
+.flow-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0; color: #6f8681; font-size: 11px; }
+.flow-meta code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10.5px; word-break: break-all; }
+.flow-details { color: #88a09b; }
+.coverage { width: 18%; }
+.coverage-chip { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 750; white-space: nowrap; }
+.coverage-chip--none { color: #5b6670; background: #eceff1; }
+.coverage-chip--partial { color: #86621f; background: #fff0c9; }
+.coverage-chip--covered { color: #087467; background: #d8f5e9; }
+.coverage small { display: block; margin-top: 5px; color: #6f8681; font-size: 11px; line-height: 1.5; }
 @media (max-width: 1100px) { .console-columns { grid-template-columns: 1fr; }.scope-grid, .glossary-grid { grid-template-columns: 1fr; } }
 @media (max-width: 960px) { .identity-card, .console-hero { align-items: flex-start; flex-direction: column; }.hero-actions { align-items: flex-start; }.identity-facts { flex-wrap: wrap; }.fact-list { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .g3-console { padding: 16px 12px 32px; }.console-hero, .identity-card, .flow-card, .matrix-card, .scope-card, .glossary-card, .snapshot-card { padding: 18px; }.console-footer { flex-direction: column; gap: 6px; } }
