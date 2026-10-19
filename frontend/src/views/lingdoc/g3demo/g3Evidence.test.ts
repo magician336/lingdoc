@@ -15,8 +15,9 @@ import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
 import { G3_CS_STEPS } from './runner/changeset'
 import { G3_DEP_STEPS } from './runner/dependencies'
+import { G3_MODEL_STEPS } from './runner/model'
 import { G3_STAB_STEPS } from './runner/stabilization'
-import { createRunContext, markRunStale, recordStep, type G3BackendHead } from './runner/runContext'
+import { createRunContext, markRunStale, recordStep, type G3BackendHead, type G3RunVerdict } from './runner/runContext'
 
 function memoryStorage(): G3RunStorage & { map: Map<string, string> } {
   const map = new Map<string, string>()
@@ -130,12 +131,17 @@ test('单行覆盖计算不依赖规则表', () => {
 test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的值', () => {
   assert.deepEqual(
     Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
-    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-05', 'AC-G3-11', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'G3.1', 'G3.6'],
+    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-05', 'AC-G3-06', 'AC-G3-11', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'G3.1', 'G3.6'],
   )
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     assert.ok(G3_STATUS_VALUES.includes(rule.status), `${id} 的判定状态不在门禁词表内`)
     assert.ok(rule.requires.length > 0, `${id} 没有声明必需步骤`)
     assert.ok(rule.note.length > 0, `${id} 没有给读者看的说明`)
+    for (const alternative of rule.alternatives ?? []) {
+      assert.ok(G3_STATUS_VALUES.includes(alternative.status), `${id} 的备选路径状态不在门禁词表内`)
+      assert.ok(alternative.requires.length > 0, `${id} 的备选路径没有声明必需步骤`)
+      assert.ok(alternative.note.length > 0, `${id} 的备选路径没有给读者看的说明`)
+    }
   }
   // 完全判定的行是 PASS；部分覆盖的行是 PASS (follow-up) 并指向缺口清单 #246。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-05'].status, 'PASS')
@@ -144,6 +150,13 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'PASS (follow-up)')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
+  // 真实模型路径的结论是非确定性的：状态一律 WARNING，并保留缺口清单 #246。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-06'].status, 'WARNING')
+  for (const id of ['AC-G3-14', 'AC-G3-15']) {
+    const alternative = G3_ROW_EVIDENCE_RULES[id].alternatives?.[0]
+    assert.equal(alternative?.status, 'WARNING')
+    assert.equal(alternative?.followUpIssue, 246)
+  }
   // 本票新增的两条切片判据：G3.1（ChangeSet 切片）与 G3.6（稳定化切片）都是完全判定。
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.1'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'PASS')
@@ -154,10 +167,16 @@ test('规则表引用的步骤名都真实存在（防止证据链断在名字�
     ...Object.values(G3_CS_STEPS),
     ...Object.values(G3_DEP_STEPS),
     ...Object.values(G3_STAB_STEPS),
+    ...Object.values(G3_MODEL_STEPS),
   ])
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     for (const name of rule.requires) {
       assert.ok(known.has(name), `${id} 引用了不存在的步骤名：${name}`)
+    }
+    for (const alternative of rule.alternatives ?? []) {
+      for (const name of alternative.requires) {
+        assert.ok(known.has(name), `${id} 的备选路径引用了不存在的步骤名：${name}`)
+      }
     }
   }
 })
@@ -295,4 +314,64 @@ test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
   const byId = new Map(rows.map((row) => [row.id, row]))
   assert.equal(byId.get('G3.1')?.status, 'TODO', '判定不成立不得判成 PASS')
   assert.equal(byId.get('G3.6')?.status, 'TODO', '判定不成立不得判成 PASS')
+})
+
+/** 造一个跑完真实模型链的上下文。 */
+function modelRun(verdicts: G3RunVerdict[]) {
+  const ctx = prerequisiteRun()
+  for (const name of [
+    G3_MODEL_STEPS.ac06Conclusion,
+    G3_MODEL_STEPS.ac14Conclusion,
+    G3_MODEL_STEPS.ac15Conclusion,
+  ]) {
+    recordStep(ctx, {
+      name,
+      method: 'NOTE',
+      path: '/api/v1/lingdoc/projects/p1（场景结论）',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '场景结论',
+    })
+  }
+  ctx.verdicts = verdicts
+  return ctx
+}
+
+test('真实模型链跑完后，三条非确定性结论标 WARNING 并与确定性结论分列', () => {
+  const ctx = modelRun([
+    { id: 'AC-G3-06', title: '旧异步结果', holds: true, detail: '模型运行标识 turn-1 · 耗时 4200ms', evidence: [], status: 'WARNING' },
+    { id: 'AC-G3-14', title: '影响助手', holds: true, detail: '模型运行标识 turn-2 · 耗时 3800ms', evidence: [], status: 'WARNING' },
+    { id: 'AC-G3-15', title: '依赖候选', holds: true, detail: '模型运行标识 turn-3 · 耗时 5100ms', evidence: [], status: 'WARNING' },
+  ])
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const id of ['AC-G3-06', 'AC-G3-14', 'AC-G3-15']) {
+    assert.equal(byId.get(id)?.status, 'WARNING', `${id} 没有按非确定性结论标 WARNING`)
+  }
+  // 部分覆盖的两行仍然指向缺口清单 #246。
+  assert.equal(byId.get('AC-G3-14')?.followUpIssue, 246)
+  assert.equal(byId.get('AC-G3-15')?.followUpIssue, 246)
+  // 其余行状态原样保留。
+  assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)')
+  assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
+  // 判定卡的说明里带模型运行标识与耗时。
+  assert.match(byId.get('AC-G3-06')?.note ?? '', /turn-1/)
+  assert.match(byId.get('AC-G3-14')?.note ?? '', /4200|3800/)
+})
+
+test('模型不可用时，这三行标 NOT RUN，其余行照常判定', () => {
+  const ctx = modelRun([
+    { id: 'AC-G3-06', title: '旧异步结果', holds: false, detail: '缺外部凭据，模型不可用', evidence: [], status: 'NOT RUN' },
+    { id: 'AC-G3-14', title: '影响助手', holds: false, detail: '缺外部凭据，模型不可用', evidence: [], status: 'NOT RUN' },
+    { id: 'AC-G3-15', title: '依赖候选', holds: false, detail: '缺外部凭据，模型不可用', evidence: [], status: 'NOT RUN' },
+  ])
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const id of ['AC-G3-06', 'AC-G3-14', 'AC-G3-15']) {
+    assert.equal(byId.get(id)?.status, 'NOT RUN', `${id} 没有标 NOT RUN`)
+  }
+  // 其余行照常判定：确定性路径的规则不在这三条里，状态原样保留。
+  assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)')
+  assert.equal(byId.get('AC-G3-05')?.status, 'PASS (follow-up)')
 })
