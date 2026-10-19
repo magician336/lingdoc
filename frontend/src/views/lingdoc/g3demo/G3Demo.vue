@@ -343,6 +343,234 @@
       </template>
     </section>
 
+    <section class="lifecycle-card" aria-labelledby="dependency-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">依赖图与影响任务</p>
+          <h2 id="dependency-title">建边 → 裁决 → 三组呈现 → 指派 → 闭环</h2>
+        </div>
+        <span class="section-note">页面与 node 脚本跑同一份执行器</span>
+      </div>
+
+      <p class="live-lede">
+        这一段在真实模式里把依赖图与影响任务跑完：先建立**已确认**与**建议**两类依赖边，
+        对建议边做确认 / 修改 / 拒绝裁决；再读影响评估，按**服务端返回的确定性**分成
+        「确定受影响 / 可能受影响 / 当前未发现影响」三组（页面不自行重算）；
+        最后处置影响任务——未指派不能直接完成（服务端回 404），指派给当前操作者后
+        以真实闭环证据完成，非阻断任务可「接受本次不处理」，
+        依据版本被替换的任务落为失效（终态，但不算闭环）。
+      </p>
+
+      <div class="live-actions">
+        <button
+          class="live-button live-button--primary"
+          :disabled="dependencyRunning || running"
+          @click="startDependency"
+        >
+          {{ dependencyRunning ? '运行中…' : '跑通依赖图与影响任务' }}
+        </button>
+        <span class="section-note">
+          {{
+            dependency
+              ? '本轮已跑完：三组呈现 + 依赖边 + 任务状态迁移（含已接受不处理与失效任务）'
+              : '尚未运行；未运行时下面不显示任何证据位'
+          }}
+        </span>
+      </div>
+
+      <p v-if="dependencyError" class="live-error" role="alert">
+        <strong>运行失败：</strong>{{ dependencyError }}
+      </p>
+
+      <template v-if="dependency">
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in dependency.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+              >
+                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 class="matrix-group-title">影响预览分组（确定性完全来自服务端 certainty）</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>分组</th><th>对象 / 目标</th><th>动作</th><th>来源对象与原因</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="entry in dependency.grouping.definite" :key="`definite-${entry.target.id}-${entry.action}`">
+                <th scope="row">
+                  <span class="status-badge status-badge--pass">确定受影响</span>
+                </th>
+                <td>
+                  <code>{{ entry.target.kind }}/{{ entry.target.id }}</code>
+                  <small>版本 {{ entry.target.version }} · certainty={{ entry.certainty }}</small>
+                </td>
+                <td>{{ entry.action }}</td>
+                <td>
+                  <span v-for="(cause, causeIndex) in entry.causes" :key="causeIndex" class="fact-line">
+                    <code>{{ cause.source.kind }}/{{ cause.source.id }}</code> · {{ cause.reason }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-for="entry in dependency.grouping.possible" :key="`possible-${entry.target.id}-${entry.action}`">
+                <th scope="row">
+                  <span class="status-badge status-badge--warning">可能受影响</span>
+                </th>
+                <td>
+                  <code>{{ entry.target.kind }}/{{ entry.target.id }}</code>
+                  <small>版本 {{ entry.target.version }} · certainty={{ entry.certainty }}</small>
+                </td>
+                <td>{{ entry.action }}</td>
+                <td>
+                  <span v-for="(cause, causeIndex) in entry.causes" :key="causeIndex" class="fact-line">
+                    <code>{{ cause.source.kind }}/{{ cause.source.id }}</code> · {{ cause.reason }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-for="object in dependency.grouping.unaffected" :key="`unaffected-${object.id}`">
+                <th scope="row">
+                  <span class="status-badge status-badge--not-run">当前未发现影响</span>
+                </th>
+                <td>
+                  <code>{{ object.kind }}/{{ object.id }}</code>
+                  <small>版本 {{ object.version }}</small>
+                </td>
+                <td>—</td>
+                <td>既不在 assessment.objects，也不在 impacts 里</td>
+              </tr>
+              <tr v-if="!dependency.grouping.definite.length && !dependency.grouping.possible.length && !dependency.grouping.unaffected.length">
+                <td colspan="4">本轮评估里没有可分组的对象。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          <strong>确定影响对应的必需对象集合</strong>（服务端 <code>assessment.objects</code>）：
+          <code v-for="object in dependency.grouping.requiredObjects" :key="object.id">
+            {{ object.kind }}/{{ object.id }} · {{ object.state }} · confirmed={{ object.confirmed }}
+          </code>
+        </p>
+        <p class="card-footnote">
+          分组口径：确定性与可能性**完全采用服务端返回的 <code>impacts[].certainty</code>**，
+          页面不自行重算；来源对象取自 <code>impacts[].causes[].source</code>。
+          这里的分组由验收台自己读原始响应渲染，**没有改动**工作台影响面板的既有渲染。
+        </p>
+
+        <h3 class="matrix-group-title">依赖边</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>边</th><th>状态 / 来源</th><th>来源对象</th><th>目标对象</th><th>动作</th><th>理由</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in dependencyEdgeRows" :key="row.id">
+                <th scope="row">
+                  <code>{{ row.relation }}</code>
+                  <small>{{ row.id }} · v{{ row.version }}</small>
+                </th>
+                <td>
+                  <span class="status-badge" :class="row.status === 'confirmed' ? 'status-badge--pass' : (row.status === 'suggested' ? 'status-badge--warning' : 'status-badge--not-run')">
+                    {{ row.status }}
+                  </span>
+                  <small>origin={{ row.origin }}</small>
+                  <small v-if="row.superseded">修改自 {{ row.superseded }}</small>
+                </td>
+                <td><code>{{ row.source }}</code></td>
+                <td><code>{{ row.target }}</code></td>
+                <td>{{ row.action }}</td>
+                <td>{{ row.reason }}</td>
+              </tr>
+              <tr v-if="!dependencyEdgeRows.length"><td colspan="6">本轮没有读到依赖边。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          已确认边（<code>origin=user</code>）进入影响解析；建议边（<code>origin=ai</code>，
+          <code>status=suggested</code>）只产生「可能受影响」；被拒绝的候选在同一版本里再投一次
+          服务端不会新建边（<code>edge_id={{ dependency.decisions.reproposed.id }}</code>）。
+        </p>
+
+        <h3 class="matrix-group-title">影响任务：状态迁移</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>任务</th><th>处置</th><th>状态迁移</th><th>闭环证据</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in dependencyTaskRows" :key="`${row.id}-${row.action}-${row.status}`">
+                <th scope="row">
+                  <code>{{ row.id }}</code>
+                  <small>severity={{ row.severity }}</small>
+                </th>
+                <td>{{ row.action }}</td>
+                <td>
+                  <span class="status-badge" :class="row.to === 'DONE' ? 'status-badge--pass' : (row.to === 'DISMISSED' ? 'status-badge--warning' : (row.to === 'STALE' ? 'status-badge--not-run' : 'status-badge--todo'))">
+                    {{ row.from }} → {{ row.to }}
+                  </span>
+                  <small>HTTP {{ row.status }}<template v-if="row.code"> · {{ row.code }}</template></small>
+                </td>
+                <td><code v-if="row.evidence">{{ row.evidence }}</code><span v-else>—</span></td>
+                <td>{{ row.note }}</td>
+              </tr>
+              <tr v-if="!dependencyTaskRows.length"><td colspan="5">本轮没有任务处置记录。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          未指派就完成被服务端按
+          <strong>HTTP {{ dependency.unassignedCompletion.status }}</strong>
+          （错误码 <code>{{ dependency.unassignedCompletion.code || '（无）' }}</code>）拒掉——
+          服务端对「任务没有指派给你」回 404，不回 403。
+          闭环只有 <code>DONE</code> 与 <code>DISMISSED</code>；<code>STALE</code> 是终态但**不算闭环**。
+        </p>
+
+        <h3 class="matrix-group-title">影响任务终态</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>任务</th><th>目标</th><th>动作 / 严重度 / 责任域</th><th>状态</th><th>上游原因</th><th>处置说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in dependencyFinalTasks" :key="row.id">
+                <th scope="row"><code>{{ row.id }}</code></th>
+                <td><code>{{ row.target }}</code></td>
+                <td>{{ row.action }} · {{ row.severity }} · {{ row.domain }}</td>
+                <td>
+                  <span class="status-badge" :class="row.status === 'DONE' ? 'status-badge--pass' : (row.status === 'DISMISSED' ? 'status-badge--warning' : (row.status === 'STALE' ? 'status-badge--not-run' : 'status-badge--todo'))">
+                    {{ row.status }}
+                  </span>
+                  <small v-if="row.staleReason">stale_reason={{ row.staleReason }}</small>
+                </td>
+                <td>{{ row.causes }} 条</td>
+                <td>{{ row.disposition || '—' }}</td>
+              </tr>
+              <tr v-if="!dependencyFinalTasks.length"><td colspan="6">本轮没有影响任务。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          这张表是**应用之后**读回的任务快照（<code>GET /impact-tasks</code>），
+          状态迁移过程见上一张表。严重度由服务端按动作推导，页面不自行指定。
+        </p>
+      </template>
+    </section>
+
     <div class="console-columns">
       <section class="flow-card" aria-labelledby="flow-title">
         <div class="section-heading">
@@ -752,6 +980,11 @@ import {
 } from './g3Evidence'
 import { runChain } from './runner/chain'
 import { runChangeSetChain, toLifecycleSnapshot, type G3LifecycleSnapshot } from './runner/changeset'
+import {
+  runDependencyChain,
+  toDependencySnapshot,
+  type G3DependencySnapshot,
+} from './runner/dependencies'
 import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
 import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3StepRecord } from './runner/runContext'
 
@@ -779,6 +1012,9 @@ const missingSections = ref<string[]>([])
 const lifecycle = ref<G3LifecycleSnapshot | null>(null)
 const lifecycleError = ref('')
 const lifecycleRunning = ref(false)
+const dependency = ref<G3DependencySnapshot | null>(null)
+const dependencyError = ref('')
+const dependencyRunning = ref(false)
 
 /** 接管会话之前先把用户原来的令牌记住，好还回去。 */
 let originalToken: string | null = null
@@ -952,6 +1188,60 @@ const permissionRows = computed(() => {
   ]
 })
 
+/** 依赖边表：已确认 / 建议 / 拒绝三种语义各自成行。 */
+const dependencyEdgeRows = computed(() => {
+  const snapshot = dependency.value
+  if (!snapshot) return []
+  return snapshot.edges.map((edge) => ({
+    id: edge.id,
+    relation: edge.relation,
+    action: edge.action,
+    origin: edge.origin,
+    status: edge.status,
+    source: `${edge.source.kind}/${edge.source.id}`,
+    target: `${edge.target.kind}/${edge.target.id}`,
+    version: edge.version,
+    reason: edge.reason,
+    superseded: edge.supersededRelation ? `${edge.supersededRelation} → ${edge.relation}` : '',
+  }))
+})
+
+/** 影响任务表：状态迁移按服务端回应如实呈现。 */
+const dependencyTaskRows = computed(() => {
+  const snapshot = dependency.value
+  if (!snapshot) return []
+  return snapshot.transitions.map((item) => ({
+    id: item.taskId,
+    action: item.action,
+    severity: item.severity,
+    from: item.from,
+    to: item.to,
+    status: item.status,
+    code: item.code,
+    note: item.note,
+    evidence: item.closureEvidence
+      .map((ref) => `${ref.kind}/${ref.id}@${ref.version}`)
+      .join('、'),
+  }))
+})
+
+/** 依赖链的最终任务状态。 */
+const dependencyFinalTasks = computed(() => {
+  const snapshot = dependency.value
+  if (!snapshot) return []
+  return snapshot.tasks.map((task) => ({
+    id: task.id,
+    action: task.action,
+    severity: task.severity,
+    status: task.status,
+    domain: task.responsibilityDomain,
+    causes: task.causes.length,
+    target: `${task.target.kind}/${task.target.id}`,
+    staleReason: task.staleReason,
+    disposition: task.disposition,
+  }))
+})
+
 /** 读一次本地状态：演示账号与上一次运行。 */
 function restoreLocalState(): void {
   try {
@@ -967,6 +1257,7 @@ function restoreLocalState(): void {
       liveChapters.value = runSummary.value.chapters
       missingSections.value = runSummary.value.missingSections
       lifecycle.value = runSummary.value.lifecycle ?? null
+      dependency.value = runSummary.value.dependency ?? null
     }
   } catch {
     // 本地存储不可用时如实当作「没有历史」，不假装有。
@@ -987,6 +1278,7 @@ function commitRun(
   account: G3DemoAccount,
   registerFirst: boolean,
   snapshot?: G3LifecycleSnapshot,
+  dependencySnapshot?: G3DependencySnapshot,
 ): void {
   if (registerFirst) {
     saveDemoAccount(localStorage, account)
@@ -1002,7 +1294,11 @@ function commitRun(
     previousSummary.value = previous
   }
 
-  const summary = summarizeRun(result.ctx, { missingSections: result.missingSections, lifecycle: snapshot })
+  const summary = summarizeRun(result.ctx, {
+    missingSections: result.missingSections,
+    lifecycle: snapshot,
+    dependency: dependencySnapshot,
+  })
   runSummary.value = summary
   saveRunSummary(localStorage, summary)
 
@@ -1015,6 +1311,7 @@ function commitRun(
   liveChapters.value = result.chapters
   missingSections.value = result.missingSections
   lifecycle.value = snapshot ?? null
+  dependency.value = dependencySnapshot ?? null
 }
 
 /**
@@ -1150,6 +1447,71 @@ async function startLifecycle(): Promise<void> {
     }
   } finally {
     lifecycleRunning.value = false
+  }
+}
+
+/**
+ * 跑一次「依赖图 → 影响评估 → 影响任务」链。
+ *
+ * 复用同一份执行器（`runner/dependencies.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startDependency(): Promise<void> {
+  if (dependencyRunning.value || running.value) return
+  dependencyRunning.value = true
+  dependencyError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const dependencyResult = await runDependencyChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+      chapters: result.chapters.map((chapter) => ({
+        id: chapter.id,
+        sectionId: chapter.sectionId,
+        title: chapter.title,
+      })),
+      operatorId: result.identity.userId,
+    })
+
+    const snapshot = toDependencySnapshot(dependencyResult)
+    dependency.value = snapshot
+    commitRun(result, account, registerFirst, undefined, snapshot)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    dependencyError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    dependencyRunning.value = false
   }
 }
 
