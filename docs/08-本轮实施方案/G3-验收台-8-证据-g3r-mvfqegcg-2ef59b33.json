@@ -1,0 +1,1745 @@
+{
+  "generated_at": "2026-10-19T20:53:21.289Z",
+  "ticket": "G3 验收台-8：证据导出与实现缺口标注",
+  "run_id": "g3r-mvfqegcg-2ef59b33",
+  "started_at": "2026-10-19T20:53:19.552Z",
+  "head": {
+    "commitId": "7f5fd8c",
+    "buildTime": "2026-10-19 17:42:56 UTC",
+    "version": "unknown",
+    "probedAt": "2026-10-19T20:53:19.699Z",
+    "probePath": "/api/v1/version",
+    "probeStatus": 401
+  },
+  "head_stale": false,
+  "head_stale_reason": "",
+  "conclusion_source": "this_run",
+  "sources": [
+    {
+      "kind": "this_run",
+      "label": "本次运行得出",
+      "note": "本次运行真实调用得出的结论：绑定本次运行标识与后端 head。",
+      "run_id": "g3r-mvfqegcg-2ef59b33",
+      "head": "7f5fd8c",
+      "steps": 62
+    },
+    {
+      "kind": "historical_snapshot",
+      "label": "历史快照 · 非本次运行",
+      "note": "历史快照的结论：跑在另一个 head 上，**不是本次运行的结果**；两者在页面与本导出体里分开列示，不得混读。",
+      "head": null
+    }
+  ],
+  "evidence_sources": [
+    {
+      "kind": "deterministic",
+      "non_deterministic": false,
+      "note": "确定性结论：状态由本轮真实调用与响应事实推出。"
+    },
+    {
+      "kind": "model_dependent",
+      "non_deterministic": true,
+      "depends_on": "real_model",
+      "note": "非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。",
+      "runs": []
+    }
+  ],
+  "steps": [
+    {
+      "name": "后端存活探针",
+      "method": "GET",
+      "path": "/api/v1/version",
+      "status": 401,
+      "ok": false,
+      "durationMs": 26,
+      "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
+      "index": 1
+    },
+    {
+      "name": "注册演示账号",
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "status": 201,
+      "ok": true,
+      "durationMs": 61,
+      "conclusion": "注册成功（HTTP 201）：g3demo-51fa9ca5ac@example.com",
+      "details": {
+        "user_id": "36cd633f-15bc-4cc3-b3c4-89bfb74a8ed7",
+        "username": "g3demo-51fa9ca5ac",
+        "email": "g3demo-51fa9ca5ac@example.com",
+        "tenant_id": 10111
+      },
+      "index": 2
+    },
+    {
+      "name": "登录",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "ok": true,
+      "durationMs": 52,
+      "conclusion": "登录成功（HTTP 200）：g3demo-51fa9ca5ac@example.com",
+      "details": {
+        "user_id": "36cd633f-15bc-4cc3-b3c4-89bfb74a8ed7",
+        "email": "g3demo-51fa9ca5ac@example.com",
+        "tenant_id": 10111
+      },
+      "index": 3
+    },
+    {
+      "name": "读取当前身份",
+      "method": "GET",
+      "path": "/api/v1/auth/validate",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "令牌有效（HTTP 200）",
+      "index": 4
+    },
+    {
+      "name": "读取后端 head",
+      "method": "GET",
+      "path": "/api/v1/system/info",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "读取后端 head 成功（HTTP 200）",
+      "index": 5
+    },
+    {
+      "name": "建项",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-create-project",
+      "durationMs": 21,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvfqegcg-2ef59b33）",
+      "details": {
+        "project_id": "9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+        "status": "draft",
+        "project_version": 1,
+        "spec_revision": 0,
+        "template_id": "template-demo",
+        "template_version": "1"
+      },
+      "index": 6
+    },
+    {
+      "name": "写规格",
+      "method": "PUT",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/spec",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-save-spec",
+      "durationMs": 28,
+      "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
+      "details": {
+        "spec_revision": 1,
+        "project_version": 2,
+        "spec_fields": [
+          "research_goal",
+          "research_subject"
+        ]
+      },
+      "index": 7
+    },
+    {
+      "name": "登记立项阅读",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/activation-read",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-activation-read",
+      "durationMs": 8,
+      "conclusion": "立项阅读已登记（HTTP 201）",
+      "details": {
+        "activation_read_id": "b0e88917-0ae7-49fe-8e0d-f9d5a46ea870",
+        "project_version": 2,
+        "spec_revision": 1
+      },
+      "index": 8
+    },
+    {
+      "name": "激活",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/activate",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-activate",
+      "durationMs": 34,
+      "conclusion": "项目已激活（HTTP 200）",
+      "details": {
+        "status": "active",
+        "project_version": 3,
+        "current_context_revision": 1,
+        "baseline_confirmation_id": "afed307c-e559-412e-9dcf-9b88494da603"
+      },
+      "index": 9
+    },
+    {
+      "name": "读章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 7,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "section_ids": [
+          "question",
+          "method"
+        ]
+      },
+      "index": 10
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+      "status": 200,
+      "ok": true,
+      "durationMs": 14,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+        "status": "active",
+        "project_version": 3,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 11
+    },
+    {
+      "name": "写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/88cae5ea-4d85-43f6-97e6-4145b8a12f82/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-chapter-body-question",
+      "durationMs": 26,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
+      "details": {
+        "chapter_id": "88cae5ea-4d85-43f6-97e6-4145b8a12f82",
+        "current_version_id": "3f8c6900-9b4b-486a-a69a-dce563b6de09",
+        "confirmation_valid": false
+      },
+      "index": 12
+    },
+    {
+      "name": "确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/88cae5ea-4d85-43f6-97e6-4145b8a12f82/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-confirm-question",
+      "durationMs": 22,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 3f8c6900-9b4b-486a-a69a-dce563b6de09 · 规格修订 1",
+      "details": {
+        "confirmation_id": "febf5da2-9a9b-4645-ad27-e64ee343b3cd",
+        "chapter_version_id": "3f8c6900-9b4b-486a-a69a-dce563b6de09",
+        "spec_revision": 1
+      },
+      "index": 13
+    },
+    {
+      "name": "写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-chapter-body-method",
+      "durationMs": 23,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
+      "details": {
+        "chapter_id": "5dd73000-2e16-469f-b8de-9082cbe7c94c",
+        "current_version_id": "e732c598-1858-463d-afda-beea7ce198d2",
+        "confirmation_valid": false
+      },
+      "index": 14
+    },
+    {
+      "name": "确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-confirm-method",
+      "durationMs": 17,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 e732c598-1858-463d-afda-beea7ce198d2 · 规格修订 1",
+      "details": {
+        "confirmation_id": "9642e24d-5cb3-4c11-8d59-d857f3f522f3",
+        "chapter_version_id": "e732c598-1858-463d-afda-beea7ce198d2",
+        "spec_revision": 1
+      },
+      "index": 15
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 16
+    },
+    {
+      "name": "读章节版本列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "e732c598-1858-463d-afda-beea7ce198d2:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 17
+    },
+    {
+      "name": "读当前确认",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "9642e24d-5cb3-4c11-8d59-d857f3f522f3",
+        "chapter_version_id": "e732c598-1858-463d-afda-beea7ce198d2",
+        "spec_revision": 1
+      },
+      "index": 18
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=true",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 19
+    },
+    {
+      "name": "读章节版本列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/88cae5ea-4d85-43f6-97e6-4145b8a12f82/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "3f8c6900-9b4b-486a-a69a-dce563b6de09:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 20
+    },
+    {
+      "name": "读当前确认",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/88cae5ea-4d85-43f6-97e6-4145b8a12f82/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "febf5da2-9a9b-4645-ad27-e64ee343b3cd",
+        "chapter_version_id": "3f8c6900-9b4b-486a-a69a-dce563b6de09",
+        "spec_revision": 1
+      },
+      "index": 21
+    },
+    {
+      "name": "读上下文修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/context-revisions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 7,
+      "conclusion": "上下文修订已读回（HTTP 200）",
+      "details": {
+        "revision_count": 0,
+        "revisions": []
+      },
+      "index": 22
+    },
+    {
+      "name": "读影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 0,
+        "tasks": []
+      },
+      "index": 23
+    },
+    {
+      "name": "创建变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-change-set-scoped",
+      "durationMs": 66,
+      "conclusion": "变更集已创建（HTTP 201）：研究目标局部调整：变更只依赖方法章节",
+      "details": {
+        "change_set_id": "032fee6d-0c87-4bf8-851b-aab85def72f8",
+        "status": "assessed",
+        "base_context_revision": 1,
+        "base_spec_revision": 1,
+        "affected_chapter_ids": [
+          "5dd73000-2e16-469f-b8de-9082cbe7c94c"
+        ]
+      },
+      "index": 24
+    },
+    {
+      "name": "评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/assess",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-assess-032fee6d-0c87-4bf8-851b-aab85def72f8",
+      "durationMs": 78,
+      "conclusion": "变更集已评估（HTTP 200）",
+      "details": {
+        "change_set_id": "032fee6d-0c87-4bf8-851b-aab85def72f8",
+        "status": "assessed"
+      },
+      "index": 25
+    },
+    {
+      "name": "读影响评估",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "032fee6d-0c87-4bf8-851b-aab85def72f8",
+        "context_revision": 1,
+        "object_count": 2,
+        "impact_count": 1
+      },
+      "index": 26
+    },
+    {
+      "name": "创建并发变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-change-set-concurrent",
+      "durationMs": 60,
+      "conclusion": "变更集已创建（HTTP 201）：同一基线上的并发变更集：研究对象调整",
+      "details": {
+        "change_set_id": "ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d",
+        "status": "assessed",
+        "base_context_revision": 1,
+        "base_spec_revision": 1,
+        "affected_chapter_ids": [
+          "5dd73000-2e16-469f-b8de-9082cbe7c94c"
+        ]
+      },
+      "index": 27
+    },
+    {
+      "name": "应用变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-apply-032fee6d-0c87-4bf8-851b-aab85def72f8",
+      "durationMs": 100,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "032fee6d-0c87-4bf8-851b-aab85def72f8",
+        "status": "applied",
+        "target_context_revision": 2,
+        "target_spec_revision": 2,
+        "error_code": ""
+      },
+      "index": 28
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+      "status": 200,
+      "ok": true,
+      "durationMs": 34,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+        "status": "active",
+        "project_version": 8,
+        "spec_revision": 2,
+        "current_context_revision": 2
+      },
+      "index": 29
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=false",
+          "method:confirmation_valid=false"
+        ]
+      },
+      "index": 30
+    },
+    {
+      "name": "读章节版本列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "e732c598-1858-463d-afda-beea7ce198d2:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 31
+    },
+    {
+      "name": "读当前确认",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 32
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=false",
+          "method:confirmation_valid=false"
+        ]
+      },
+      "index": 33
+    },
+    {
+      "name": "读章节版本列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/88cae5ea-4d85-43f6-97e6-4145b8a12f82/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 9,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "3f8c6900-9b4b-486a-a69a-dce563b6de09:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 34
+    },
+    {
+      "name": "读当前确认",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/88cae5ea-4d85-43f6-97e6-4145b8a12f82/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 35
+    },
+    {
+      "name": "读上下文修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/context-revisions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 29,
+      "conclusion": "上下文修订已读回（HTTP 200）",
+      "details": {
+        "revision_count": 2,
+        "revisions": [
+          1,
+          2
+        ]
+      },
+      "index": 36
+    },
+    {
+      "name": "读影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 12,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 1,
+        "tasks": [
+          "032fee6d:REVIEW_REQUIRED:OPEN"
+        ]
+      },
+      "index": 37
+    },
+    {
+      "name": "应用并发变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d/apply",
+      "status": 409,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-apply-concurrent",
+      "durationMs": 68,
+      "conclusion": "应用按预期被拒（HTTP 409）：基线已推进，变更集落为陈旧",
+      "details": {
+        "error_code": "version_conflict"
+      },
+      "index": 38
+    },
+    {
+      "name": "读回陈旧变更集",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d",
+      "status": 200,
+      "ok": true,
+      "durationMs": 22,
+      "conclusion": "变更集已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d",
+        "status": "stale",
+        "stale_reason": "spec_revision_changed",
+        "reassessed_from_id": "",
+        "reverses_change_set_id": ""
+      },
+      "index": 39
+    },
+    {
+      "name": "读上下文修订",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/context-revisions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 28,
+      "conclusion": "上下文修订已读回（HTTP 200）",
+      "details": {
+        "revision_count": 2,
+        "revisions": [
+          1,
+          2
+        ]
+      },
+      "index": 40
+    },
+    {
+      "name": "读影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 11,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 1,
+        "tasks": [
+          "032fee6d:REVIEW_REQUIRED:OPEN"
+        ]
+      },
+      "index": 41
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+      "status": 200,
+      "ok": true,
+      "durationMs": 15,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+        "status": "active",
+        "project_version": 8,
+        "spec_revision": 2,
+        "current_context_revision": 2
+      },
+      "index": 42
+    },
+    {
+      "name": "重评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d/reassess",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-reassess-ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d",
+      "durationMs": 87,
+      "conclusion": "变更集已重评估（HTTP 201）",
+      "details": {
+        "change_set_id": "301b4806-a966-4e28-b35e-f0e044787c88",
+        "status": "assessed",
+        "reassessed_from_id": "ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d",
+        "base_context_revision": 2
+      },
+      "index": 43
+    },
+    {
+      "name": "复写章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-chapter-body-rewrite",
+      "durationMs": 27,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 2",
+      "details": {
+        "chapter_id": "5dd73000-2e16-469f-b8de-9082cbe7c94c",
+        "current_version_id": "e27bc686-0b70-4e4d-9508-b77f6858a769",
+        "confirmation_valid": false
+      },
+      "index": 44
+    },
+    {
+      "name": "重新确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-reconfirm",
+      "durationMs": 20,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 e27bc686-0b70-4e4d-9508-b77f6858a769 · 规格修订 2",
+      "details": {
+        "confirmation_id": "82f1e378-71e5-4897-9a76-0c8784b8b3ad",
+        "chapter_version_id": "e27bc686-0b70-4e4d-9508-b77f6858a769",
+        "spec_revision": 2
+      },
+      "index": 45
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=false",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 46
+    },
+    {
+      "name": "读章节版本列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 2,
+        "versions": [
+          "e27bc686-0b70-4e4d-9508-b77f6858a769:spec=2:confirmation_valid=true",
+          "e732c598-1858-463d-afda-beea7ce198d2:spec=1:confirmation_valid=false"
+        ]
+      },
+      "index": 47
+    },
+    {
+      "name": "读当前确认",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/chapters/5dd73000-2e16-469f-b8de-9082cbe7c94c/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "82f1e378-71e5-4897-9a76-0c8784b8b3ad",
+        "chapter_version_id": "e27bc686-0b70-4e4d-9508-b77f6858a769",
+        "spec_revision": 2
+      },
+      "index": 48
+    },
+    {
+      "name": "创建逆向变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/reverse",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-reverse-032fee6d-0c87-4bf8-851b-aab85def72f8",
+      "durationMs": 104,
+      "conclusion": "逆向变更集已创建（HTTP 201）",
+      "details": {
+        "change_set_id": "460513bc-130a-49f4-8721-62435510d9aa",
+        "status": "assessed",
+        "reverses_change_set_id": "032fee6d-0c87-4bf8-851b-aab85def72f8",
+        "base_context_revision": 2,
+        "fields": [
+          "research_goal: 用演示模板自建隔离项目，走到两个章节就绪（G3 局部影响） → 用演示模板自建隔离项目，走到两个章节就绪"
+        ]
+      },
+      "index": 49
+    },
+    {
+      "name": "读回原变更集",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8",
+      "status": 200,
+      "ok": true,
+      "durationMs": 27,
+      "conclusion": "变更集已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "032fee6d-0c87-4bf8-851b-aab85def72f8",
+        "status": "applied",
+        "stale_reason": "",
+        "reassessed_from_id": "",
+        "reverses_change_set_id": ""
+      },
+      "index": 50
+    },
+    {
+      "name": "读逆向影响评估",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/460513bc-130a-49f4-8721-62435510d9aa/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 8,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "460513bc-130a-49f4-8721-62435510d9aa",
+        "context_revision": 2,
+        "object_count": 2,
+        "impact_count": 1
+      },
+      "index": 51
+    },
+    {
+      "name": "应用逆向变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/460513bc-130a-49f4-8721-62435510d9aa/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-apply-reverse",
+      "durationMs": 114,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "460513bc-130a-49f4-8721-62435510d9aa",
+        "status": "applied",
+        "target_context_revision": 3,
+        "target_spec_revision": 3,
+        "error_code": ""
+      },
+      "index": 52
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+      "status": 200,
+      "ok": true,
+      "durationMs": 14,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+        "status": "active",
+        "project_version": 11,
+        "spec_revision": 3,
+        "current_context_revision": 3
+      },
+      "index": 53
+    },
+    {
+      "name": "注册非 Owner 账号",
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "status": 201,
+      "ok": true,
+      "durationMs": 65,
+      "conclusion": "注册成功（HTTP 201）：g3demo-4cd46b7d0e@example.com",
+      "details": {
+        "user_id": "ca589a70-3802-4403-a0d8-8f87a70ce8ef",
+        "username": "g3demo-4cd46b7d0e",
+        "email": "g3demo-4cd46b7d0e@example.com",
+        "tenant_id": 10112
+      },
+      "index": 54
+    },
+    {
+      "name": "非 Owner 登录",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "ok": true,
+      "durationMs": 57,
+      "conclusion": "登录成功（HTTP 200）：g3demo-4cd46b7d0e@example.com",
+      "details": {
+        "user_id": "ca589a70-3802-4403-a0d8-8f87a70ce8ef",
+        "email": "g3demo-4cd46b7d0e@example.com",
+        "tenant_id": 10112
+      },
+      "index": 55
+    },
+    {
+      "name": "添加租户成员",
+      "method": "POST",
+      "path": "/api/v1/tenants/10111/members",
+      "status": 201,
+      "ok": true,
+      "durationMs": 10,
+      "conclusion": "非 Owner 已加入同一租户（HTTP 201）",
+      "details": {
+        "user_id": "ca589a70-3802-4403-a0d8-8f87a70ce8ef",
+        "role": "admin",
+        "status": "active"
+      },
+      "index": 56
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+      "status": 200,
+      "ok": true,
+      "durationMs": 15,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9",
+        "status": "active",
+        "project_version": 11,
+        "spec_revision": 3,
+        "current_context_revision": 3
+      },
+      "index": 57
+    },
+    {
+      "name": "邀请项目成员",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/invitations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-invite-non-owner",
+      "durationMs": 24,
+      "conclusion": "非 Owner 已受邀进入项目（HTTP 201）",
+      "details": {
+        "invitation_id": "a5d8cb58-8fbb-435d-be75-52d5fe2bd38a",
+        "version": 1,
+        "assignment": {
+          "governance_role": "admin",
+          "role": "collaborator",
+          "status": "invited",
+          "user_id": "ca589a70-3802-4403-a0d8-8f87a70ce8ef"
+        }
+      },
+      "index": 58
+    },
+    {
+      "name": "接受项目邀请",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/invitations/a5d8cb58-8fbb-435d-be75-52d5fe2bd38a/accept",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-accept-non-owner",
+      "durationMs": 22,
+      "conclusion": "非 Owner 已接受项目邀请（HTTP 200）",
+      "details": {
+        "invitation_id": "a5d8cb58-8fbb-435d-be75-52d5fe2bd38a",
+        "accepted_at": "2026-10-19T20:53:21.1746811Z"
+      },
+      "index": 59
+    },
+    {
+      "name": "非 Owner 读变更集",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/460513bc-130a-49f4-8721-62435510d9aa",
+      "status": 200,
+      "ok": true,
+      "durationMs": 40,
+      "conclusion": "非 Owner 读取变更集（HTTP 200）",
+      "details": {
+        "change_set_id": "460513bc-130a-49f4-8721-62435510d9aa",
+        "status": "applied"
+      },
+      "index": 60
+    },
+    {
+      "name": "非 Owner 应用变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/460513bc-130a-49f4-8721-62435510d9aa/apply",
+      "status": 404,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-non-owner-apply",
+      "durationMs": 50,
+      "conclusion": "非 Owner 应用被拒（HTTP 404）：按仓库错误码呈现",
+      "details": {
+        "error_code": "not_found"
+      },
+      "index": 61
+    },
+    {
+      "name": "非 Owner 拒绝变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9/change-sets/460513bc-130a-49f4-8721-62435510d9aa/reject",
+      "status": 404,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvfqegcg-2ef59b33-non-owner-reject",
+      "durationMs": 15,
+      "conclusion": "非 Owner 拒绝被拒（HTTP 404）：按仓库错误码呈现",
+      "details": {
+        "error_code": "not_found"
+      },
+      "index": 62
+    }
+  ],
+  "ac_rows": [
+    {
+      "id": "G3.1",
+      "name": "G3.1 ChangeSet",
+      "criterion": "旧基线不能应用；应用无半完成写入",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：稳定化-创建变更集、稳定化-应用变更集、稳定化-应用过期基线变更集、稳定化-读回过期变更集、稳定化-读上下文修订、稳定化-读影响任务，状态保持原样。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "G3.2",
+      "name": "G3.2 依赖图",
+      "criterion": "每条影响可追溯到来源边；重复边、建议边和人工确认边有明确语义",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "G3.3",
+      "name": "G3.3 影响解析",
+      "criterion": "只生成受影响任务；无关对象保持原状态",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "G3.4",
+      "name": "G3.4 任务协调",
+      "criterion": "旧任务不能关闭新版本；异步成功不等于人工关闭",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "G3.5",
+      "name": "G3.5 RouteNode",
+      "criterion": "路线图可比较、可恢复；必需项缺失可阻断",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "G3.6",
+      "name": "G3.6 稳定化",
+      "criterion": "未关闭阻断项不能 STABILIZED 或导出",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：稳定化-稳定化（阻断态）、稳定化-稳定化、稳定化-交付检查、稳定化-冻结交付快照、稳定化-发起导出、稳定化-轮询导出产物、稳定化-下载导出产物，状态保持原样。",
+      "gap_ids": [],
+      "limiting_gap_ids": [
+        "G3-GAP-08"
+      ],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "G3.7",
+      "name": "G3.7 影响中心",
+      "criterion": "用户能看见影响理由、责任人和下一步动作",
+      "status": "TODO",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "gap_ids": [
+        "G3-GAP-06",
+        "G3-GAP-07"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-01",
+      "name": "基线上的研究条件修改",
+      "criterion": "用户将研究对象从“普通本科生”改为“接受过创业教育的本科生”。系统创建 ChangeSet，预览受影响的 EvidenceCard、ResearchClaim、方法章节和 RouteNode；Owner 应用后生成新 revision，旧确认保留历史并进入待复核。",
+      "status": "PASS",
+      "source": "this_run",
+      "source_label": "本次运行得出",
+      "decided": true,
+      "note": "本轮实跑判定成立：Owner 应用后推进上下文修订，受影响章节的确认失效并进入待复核，复写后按当前规格修订与当前章节版本重新确认（证据见左栏与「变更集生命周期」判定卡）。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [
+        {
+          "id": "AC-G3-01",
+          "title": "基线上的研究条件修改",
+          "holds": true,
+          "detail": "Owner 应用后上下文修订 1 → 2，受影响章节的当前确认失效并进入待复核，复写后按新规格修订（2）与当前章节版本重新确认。",
+          "evidence": [
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets → HTTP 201 · change_set_id=032fee6d-0c87-4bf8-851b-aab85def72f8 · status=assessed · base_context_revision=1",
+            "GET /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/impact-assessment → HTTP 200 · objects=2 · impacts=1 · context_revision=1",
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/apply → HTTP 200 · status=applied · target_context_revision=2 · target_spec_revision=2",
+            "GET /api/v1/lingdoc/projects/{projectId}/context-revisions → HTTP 200 · revisions=[] → [1,2]",
+            "GET /api/v1/lingdoc/projects/{projectId}/chapters/{methodId}/versions → HTTP 200 · confirmation_valid true → false",
+            "POST /api/v1/lingdoc/projects/{projectId}/chapters/{methodId}/confirmations → HTTP 201 · confirmation_id=82f1e378-71e5-4897-9a76-0c8784b8b3ad · chapter_version_id=e27bc686-0b70-4e4d-9508-b77f6858a769 · spec_revision=2"
+          ],
+          "model_dependent": false,
+          "run_id": "g3r-mvfqegcg-2ef59b33"
+        }
+      ],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-02",
+      "name": "旧基线拒绝应用",
+      "criterion": "CS-01 和 CS-02 都基于 revision 3。CS-01 先应用到 revision 4；CS-02 应用失败并标记 STALE，不产生新 revision、任务或模板写入。",
+      "status": "PASS",
+      "source": "this_run",
+      "source_label": "本次运行得出",
+      "decided": true,
+      "note": "本轮实跑判定成立：两个变更集同基于一个上下文修订，先应用的推进修订，后应用的返回 409 并落为 STALE，未产生新上下文修订、也未产生影响任务。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [
+        {
+          "id": "AC-G3-02",
+          "title": "旧基线拒绝应用",
+          "holds": true,
+          "detail": "两个变更集同基于上下文修订 1；先应用的推进到 2，后应用的返回 409 并落为 STALE（stale_reason=spec_revision_changed），未产生新上下文修订，也未产生影响任务。",
+          "evidence": [
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets → HTTP 201 · change_set_id=ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d · base_context_revision=1",
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d/apply → HTTP 409 · error_code=version_conflict",
+            "GET /api/v1/lingdoc/projects/{projectId}/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d → HTTP 200 · status=stale · stale_reason=spec_revision_changed",
+            "GET /api/v1/lingdoc/projects/{projectId}/context-revisions → HTTP 200 · revisions=[1,2] → [1,2]",
+            "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · task_count=1 → 1",
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d/reassess → HTTP 201 · change_set_id=301b4806-a966-4e28-b35e-f0e044787c88 · reassessed_from_id=ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d（原记录留历史）"
+          ],
+          "model_dependent": false,
+          "run_id": "g3r-mvfqegcg-2ef59b33"
+        }
+      ],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-03",
+      "name": "应用原子性",
+      "criterion": "应用过程中任务写入失败或权限失效。项目仍保持原 revision 和旧模板引用，不能出现新 revision 已存在但 ImpactTask 不完整的状态。",
+      "status": "BLOCKED",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "follow_up_issue": 246,
+      "gap_ids": [
+        "G3-GAP-01"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-04",
+      "name": "局部影响",
+      "criterion": "变更只依赖 Ch2 和 RouteNode.R7。Ch1、无关 EvidenceCard 和无关路线节点不产生失效或复核任务，并能在预览中显示未受影响理由。",
+      "status": "PASS",
+      "source": "this_run",
+      "source_label": "本次运行得出",
+      "decided": true,
+      "note": "本轮实跑判定成立：未列入受影响范围的章节不在影响评估的对象与影响里，没有为它产生影响任务，其章节版本的确认标记未被本次变更集置为失效；未受影响理由按响应如实呈现（服务端未给出理由时标注「服务端未提供未受影响理由」）。",
+      "gap_ids": [],
+      "limiting_gap_ids": [
+        "G3-GAP-06",
+        "G3-GAP-07"
+      ],
+      "verdicts": [
+        {
+          "id": "AC-G3-04",
+          "title": "局部影响",
+          "holds": true,
+          "detail": "未列入受影响范围的 question 章节：影响评估的 objects / impacts 与变更集 impacts 都不含它，也没有为它产生影响任务，其章节版本的确认标记仍为 true（本次变更集未使其失效）。未受影响理由：服务端未提供未受影响理由；影响评估的 objects / impacts 与变更集 impacts 都没有 question 章节；没有为它产生影响任务；其章节版本的确认标记仍为 true（本次变更集未使其失效）",
+          "evidence": [
+            "GET /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/impact-assessment → HTTP 200 · objects=[ChapterVersion/5dd73000-2e16-469f-b8de-9082cbe7c94c ProjectSpec/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9] · impacts=[REVIEW_REQUIRED/definite]",
+            "GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/versions → HTTP 200 · confirmation_valid true → true · spec_revision=1",
+            "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · task_count=1 · targets=[5dd73000-2e16-469f-b8de-9082cbe7c94c]",
+            "GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/confirmations/current → HTTP 200 · 无当前确认（规格修订已推进，章节读视图口径）"
+          ],
+          "model_dependent": false,
+          "run_id": "g3r-mvfqegcg-2ef59b33"
+        }
+      ],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-05",
+      "name": "多上游任务合并",
+      "criterion": "同一个章节同时受研究条件和证据版本变化影响。系统生成一条逻辑 ImpactTask，保留两个来源和动作原因；重复重投不产生第二条任务。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：建立已确认依赖边、重复应用变更集，状态保持原样。",
+      "follow_up_issue": 240,
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-06",
+      "name": "旧异步结果",
+      "criterion": "revision 4 的章节生成运行期间，ChangeSet 产生 revision 5。revision 4 的结果可以保存为历史候选，但不能覆盖 revision 5 的章节、确认或 ReleaseSnapshot。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：模型-旧异步-结论，状态保持原样。",
+      "follow_up_issue": 241,
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-07",
+      "name": "证据复核不能自动确认",
+      "criterion": "A 完成证据重检并返回新候选。任务仍需责任人查看和确认；模型或异步作业成功不能直接把 ResearchClaim 标为 confirmed 或关闭人工复核任务。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：阻断-人工复核探针-应用变更集、阻断-人工复核探针-缺少人工复核完成、阻断-人工复核探针-带人工复核完成，状态保持原样。",
+      "follow_up_issue": 243,
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-08",
+      "name": "RouteNode 必需项",
+      "criterion": "模板声明 RouteNode.R7 为必需。R7 缺失、待复核或版本落后时，C 产生 blocking ValidationIssue；即使其他任务已完成，revision 也不能 STABILIZED 或 READY。",
+      "status": "BLOCKED",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "follow_up_issue": 246,
+      "gap_ids": [
+        "G3-GAP-02"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-09",
+      "name": "规则问题与任务分离",
+      "criterion": "Owner dismiss 当前规则问题后，ValidationIssue 不再阻断该次求值，但对应 ImpactTask 仍为 OPEN，项目不能稳定；新目标 revision 重新求值后问题可以再次出现。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：阻断-交付检查、阻断-接受不处理规则问题、阻断-处置规则问题、阻断-重检交付检查、阻断-读影响任务、阻断-稳定化（规则问题处置后），状态保持原样。",
+      "follow_up_issue": 242,
+      "gap_ids": [
+        "G3-GAP-09",
+        "G3-GAP-10"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-10",
+      "name": "模板升级",
+      "criterion": "active 项目尝试直接改模板字段或章节，普通保存被拒。通过 `template_upgrade` ChangeSet 评估字段迁移、规则、章节、RouteNode、确认和快照影响；应用后旧快照仍绑定旧模板版本。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "follow_up_issue": 239,
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-11",
+      "name": "撤销变化",
+      "criterion": "用户想恢复旧研究对象。系统不把项目指针静默改回 revision 3，而是要求基于当前 revision 创建逆向 ChangeSet，并重新进行影响评估和确认。",
+      "status": "PASS",
+      "source": "this_run",
+      "source_label": "本次运行得出",
+      "decided": true,
+      "note": "本轮实跑判定成立：撤销经由新建的逆向变更集完成（原变更集历史仍可读），逆向变更集重新评估后应用，项目指针没有静默回退。",
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [
+        {
+          "id": "AC-G3-11",
+          "title": "撤销变化",
+          "holds": true,
+          "detail": "撤销经由新建逆向变更集 460513bc-130a-49f4-8721-62435510d9aa 完成（reverses_change_set_id=032fee6d-0c87-4bf8-851b-aab85def72f8，基于当前修订 2），原变更集 032fee6d-0c87-4bf8-851b-aab85def72f8 仍可读（status=applied），逆向变更集重新评估后应用，项目指针没有静默回退。",
+          "evidence": [
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/reverse → HTTP 201 · change_set_id=460513bc-130a-49f4-8721-62435510d9aa · status=assessed · reverses_change_set_id=032fee6d-0c87-4bf8-851b-aab85def72f8 · base_context_revision=2",
+            "GET /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8 → HTTP 200 · status=applied · decision_by=36cd633f-15bc-4cc3-b3c4-89bfb74a8ed7 · base_context_revision=1 · target_context_revision=2（原变更集历史仍可读）",
+            "GET /api/v1/lingdoc/projects/{projectId}/change-sets/460513bc-130a-49f4-8721-62435510d9aa/impact-assessment → HTTP 200 · impacts=1 · context_revision=2",
+            "POST /api/v1/lingdoc/projects/{projectId}/change-sets/460513bc-130a-49f4-8721-62435510d9aa/apply → HTTP 200 · status=applied · target_context_revision=3"
+          ],
+          "model_dependent": false,
+          "run_id": "g3r-mvfqegcg-2ef59b33"
+        }
+      ],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-12",
+      "name": "稳定化重新读取",
+      "criterion": "所有任务页面显示已完成，但其中一个目标对象后来被新版本替换。稳定化聚合器重新读取后发现版本不匹配，保持 BLOCKED 并创建/重投对应任务。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：阻断-替换目标对象版本、阻断-稳定化（版本不匹配）、阻断-重投变更集、阻断-重投-应用变更集、阻断-稳定化（重投闭环后），状态保持原样。",
+      "follow_up_issue": 242,
+      "gap_ids": [],
+      "limiting_gap_ids": [
+        "G3-GAP-11"
+      ],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-13",
+      "name": "建议依赖边",
+      "criterion": "模型提出某章节可能依赖某证据，但用户未确认该关系。系统可以在预览中提示“待确认关系”，不能单独使章节失效或阻断导出。",
+      "status": "PASS (follow-up)",
+      "source": "historical_snapshot",
+      "source_label": "历史快照 · 非本次运行",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：建立建议依赖边，状态保持原样。",
+      "follow_up_issue": 240,
+      "gap_ids": [],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-14",
+      "name": "G3 影响助手",
+      "criterion": "用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用“确定受影响”和“可能受影响”两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。",
+      "status": "BLOCKED",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：创建变更草稿，状态保持原样。",
+      "follow_up_issue": 246,
+      "gap_ids": [
+        "G3-GAP-04"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-15",
+      "name": "AI 批量导入依赖",
+      "criterion": "用户选择“研究条件、证据卡和第 2–4 章”作为范围。AI 提出若干候选依赖，并显示对象版本、依据片段和建议理由；用户确认其中一部分、修改一部分、拒绝一部分。只有确认的关系进入正式依赖图，拒绝记录不会在同一版本中反复推荐。",
+      "status": "BLOCKED",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行，还缺步骤：裁决依赖边-确认、裁决依赖边-修改、裁决依赖边-拒绝、重投被拒绝的候选边，状态保持原样。",
+      "follow_up_issue": 246,
+      "gap_ids": [
+        "G3-GAP-05"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    },
+    {
+      "id": "AC-G3-16",
+      "name": "路线图版本恢复",
+      "criterion": "用户编辑未冻结路线图后取消编辑。系统恢复到上一个 RouteNode/RouteEdge 版本，关联任务和章节引用不指向被取消的临时版本。",
+      "status": "BLOCKED",
+      "source": "not_judged",
+      "source_label": "尚未判定",
+      "decided": false,
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
+      "follow_up_issue": 246,
+      "gap_ids": [
+        "G3-GAP-03"
+      ],
+      "limiting_gap_ids": [],
+      "verdicts": [],
+      "stale": false
+    }
+  ],
+  "verdicts": [
+    {
+      "id": "AC-G3-01",
+      "title": "基线上的研究条件修改",
+      "holds": true,
+      "detail": "Owner 应用后上下文修订 1 → 2，受影响章节的当前确认失效并进入待复核，复写后按新规格修订（2）与当前章节版本重新确认。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets → HTTP 201 · change_set_id=032fee6d-0c87-4bf8-851b-aab85def72f8 · status=assessed · base_context_revision=1",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/impact-assessment → HTTP 200 · objects=2 · impacts=1 · context_revision=1",
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/apply → HTTP 200 · status=applied · target_context_revision=2 · target_spec_revision=2",
+        "GET /api/v1/lingdoc/projects/{projectId}/context-revisions → HTTP 200 · revisions=[] → [1,2]",
+        "GET /api/v1/lingdoc/projects/{projectId}/chapters/{methodId}/versions → HTTP 200 · confirmation_valid true → false",
+        "POST /api/v1/lingdoc/projects/{projectId}/chapters/{methodId}/confirmations → HTTP 201 · confirmation_id=82f1e378-71e5-4897-9a76-0c8784b8b3ad · chapter_version_id=e27bc686-0b70-4e4d-9508-b77f6858a769 · spec_revision=2"
+      ],
+      "model_dependent": false,
+      "run_id": "g3r-mvfqegcg-2ef59b33"
+    },
+    {
+      "id": "AC-G3-02",
+      "title": "旧基线拒绝应用",
+      "holds": true,
+      "detail": "两个变更集同基于上下文修订 1；先应用的推进到 2，后应用的返回 409 并落为 STALE（stale_reason=spec_revision_changed），未产生新上下文修订，也未产生影响任务。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets → HTTP 201 · change_set_id=ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d · base_context_revision=1",
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d/apply → HTTP 409 · error_code=version_conflict",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d → HTTP 200 · status=stale · stale_reason=spec_revision_changed",
+        "GET /api/v1/lingdoc/projects/{projectId}/context-revisions → HTTP 200 · revisions=[1,2] → [1,2]",
+        "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · task_count=1 → 1",
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d/reassess → HTTP 201 · change_set_id=301b4806-a966-4e28-b35e-f0e044787c88 · reassessed_from_id=ae3d8f08-8fcd-42d1-bd4f-48a3ff7d7a4d（原记录留历史）"
+      ],
+      "model_dependent": false,
+      "run_id": "g3r-mvfqegcg-2ef59b33"
+    },
+    {
+      "id": "AC-G3-04",
+      "title": "局部影响",
+      "holds": true,
+      "detail": "未列入受影响范围的 question 章节：影响评估的 objects / impacts 与变更集 impacts 都不含它，也没有为它产生影响任务，其章节版本的确认标记仍为 true（本次变更集未使其失效）。未受影响理由：服务端未提供未受影响理由；影响评估的 objects / impacts 与变更集 impacts 都没有 question 章节；没有为它产生影响任务；其章节版本的确认标记仍为 true（本次变更集未使其失效）",
+      "evidence": [
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/impact-assessment → HTTP 200 · objects=[ChapterVersion/5dd73000-2e16-469f-b8de-9082cbe7c94c ProjectSpec/9eb9fc95-fbfb-4f75-a14a-7abbb2d6dac9] · impacts=[REVIEW_REQUIRED/definite]",
+        "GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/versions → HTTP 200 · confirmation_valid true → true · spec_revision=1",
+        "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · task_count=1 · targets=[5dd73000-2e16-469f-b8de-9082cbe7c94c]",
+        "GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/confirmations/current → HTTP 200 · 无当前确认（规格修订已推进，章节读视图口径）"
+      ],
+      "model_dependent": false,
+      "run_id": "g3r-mvfqegcg-2ef59b33"
+    },
+    {
+      "id": "AC-G3-11",
+      "title": "撤销变化",
+      "holds": true,
+      "detail": "撤销经由新建逆向变更集 460513bc-130a-49f4-8721-62435510d9aa 完成（reverses_change_set_id=032fee6d-0c87-4bf8-851b-aab85def72f8，基于当前修订 2），原变更集 032fee6d-0c87-4bf8-851b-aab85def72f8 仍可读（status=applied），逆向变更集重新评估后应用，项目指针没有静默回退。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8/reverse → HTTP 201 · change_set_id=460513bc-130a-49f4-8721-62435510d9aa · status=assessed · reverses_change_set_id=032fee6d-0c87-4bf8-851b-aab85def72f8 · base_context_revision=2",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/032fee6d-0c87-4bf8-851b-aab85def72f8 → HTTP 200 · status=applied · decision_by=36cd633f-15bc-4cc3-b3c4-89bfb74a8ed7 · base_context_revision=1 · target_context_revision=2（原变更集历史仍可读）",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/460513bc-130a-49f4-8721-62435510d9aa/impact-assessment → HTTP 200 · impacts=1 · context_revision=2",
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/460513bc-130a-49f4-8721-62435510d9aa/apply → HTTP 200 · status=applied · target_context_revision=3"
+      ],
+      "model_dependent": false,
+      "run_id": "g3r-mvfqegcg-2ef59b33"
+    }
+  ],
+  "gaps": [
+    {
+      "id": "G3-GAP-01",
+      "title": "应用原子性缺故障注入能力",
+      "rows": [
+        "AC-G3-03"
+      ],
+      "limits": [],
+      "missing": "产品 API 缺「任务 / 审计写入失败」的**故障注入**能力：无法在 `apply` 过程中强制制造下游 ImpactTask 写入失败或权限失效，因而无法从 HTTP 面观测「整体回滚」。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 358,
+        "end": 360
+      },
+      "unblockCondition": "提供一个受控且默认关闭的故障注入开关（只对测试 / 演示租户开放），能在 `apply` 事务中令任务写入或审计写入失败，并读回证明项目 revision 未变、模板引用未变、ImpactTask 集合完整；补齐后由验收台实跑落证。",
+      "issue": 246,
+      "rowStatus": "BLOCKED",
+      "fact": "写路由 `POST /projects/{projectId}/change-sets/{changeSetId}/apply` 存在，但请求体不受控于任何失败开关；该原子性边界当前仅由后端 Go 集成测试覆盖，**不能**冒充页面实跑。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:358-360"
+    },
+    {
+      "id": "G3-GAP-02",
+      "title": "RouteNode 只有只读接口，造不出「必需项缺失」与「版本落后」",
+      "rows": [
+        "AC-G3-08"
+      ],
+      "limits": [],
+      "missing": "技术路线节点**没有写入端点**（只有 `GET /projects/{projectId}/route-nodes`），无法构造模板声明的必需 RouteNode（R7）处于「缺失 / 待复核 / 版本落后」三种前置。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 378,
+        "end": 380
+      },
+      "unblockCondition": "补 RouteNode 写入端点（覆盖「写入 / 更新节点版本」与「把节点置于待复核或缺失状态」），使页面能搭出 R7 缺失与 R7 版本落后两种前置，并观测到 blocking ValidationIssue 与稳定化 / 导出被阻断。",
+      "issue": 246,
+      "rowStatus": "BLOCKED",
+      "fact": "路线图侧当前只暴露只读端点，既不能制造缺失节点，也不能把节点版本落后到基线以下。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:378-380"
+    },
+    {
+      "id": "G3-GAP-03",
+      "title": "缺 RouteNode 写入与「取消未冻结编辑」端点",
+      "rows": [
+        "AC-G3-16"
+      ],
+      "limits": [],
+      "missing": "缺技术路线节点的**写入**端点，也缺「取消未冻结路线图编辑」端点：既造不出临时版本，也无法验证恢复到上一个 RouteNode / RouteEdge 版本。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 410,
+        "end": 412
+      },
+      "unblockCondition": "补 RouteNode 写入端点与取消未冻结编辑端点（并保证取消后关联 ImpactTask 与章节引用不指向被取消的临时版本），补齐后由 AC-G3-16 场景在验收台实跑落证。",
+      "issue": 246,
+      "rowStatus": "BLOCKED",
+      "fact": "也没有任何返回 RouteNode 版本序列的读端点，无法断言「恢复到上一版本」。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:410-412"
+    },
+    {
+      "id": "G3-GAP-04",
+      "title": "助手输出缺「确定受影响 / 可能受影响」解释分组",
+      "rows": [
+        "AC-G3-14"
+      ],
+      "limits": [],
+      "missing": "**变更草稿生成有端点**，但助手产出里的「确定受影响」与「可能受影响」两组说明（含各自的解释原因）**无实现**。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 402,
+        "end": 404
+      },
+      "unblockCondition": "让助手草稿产出携带「确定受影响 / 可能受影响」两组对象与各自理由（与 `impacts[].certainty` 显式区分），并保证助手不直接应用变更 / 关闭任务 / 放行导出。",
+      "issue": 246,
+      "rowStatus": "PASS (follow-up)",
+      "fact": "工作台 `ImpactOpsPanel.vue:101-102` 的分组是**影响解析结果**的分组（`impacts[].certainty`），**不是** AC-G3-14 要求的**助手草稿解释分组**，两者不可互替。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:402-404"
+    },
+    {
+      "id": "G3-GAP-05",
+      "title": "依赖候选无批量提出端点",
+      "rows": [
+        "AC-G3-15"
+      ],
+      "limits": [],
+      "missing": "依赖边的**确认 / 修改 / 拒绝三态有端点**，但「AI 批量提出候选依赖」**无端点** —— 没有能一次提出若干候选依赖、并带对象版本 / 依据片段 / 建议理由的接口。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 406,
+        "end": 408
+      },
+      "unblockCondition": "补一个批量提出候选依赖的端点（返回候选集合 + 对象版本 + 依据片段 + 建议理由，可与既有 `decision` 三态对接），补齐后由 AC-G3-15 场景在验收台实跑落证。",
+      "issue": 246,
+      "rowStatus": "PASS (follow-up)",
+      "fact": "当前只能人工构造建议边，无法实跑「AI 批量提出」那一段。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:406-408"
+    },
+    {
+      "id": "G3-GAP-06",
+      "title": "影响中心：工作台已补齐，验收台页面的实跑证据待落",
+      "rows": [
+        "G3.7"
+      ],
+      "limits": [
+        "AC-G3-04"
+      ],
+      "missing": "「本次必须处理的对象」集合（`assessment.objects`）在**验收台页面**尚未落证：工作台面板已由 `2786bcc` 补齐渲染，缺的是验收台页面自己读原始响应的实跑证据。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 346,
+        "end": 346
+      },
+      "unblockCondition": "由验收台页面直接读 `assessment.objects` 渲染并落证（页面自己读 API 返回，不改工作台面板的 props 与行为）；若按对象 `state` / `confirmed` / `context_revision` 逐字段核对后仍有未渲染的子集，则回到本条继续跟踪。",
+      "issue": 246,
+      "rowStatus": "NOT RUN",
+      "fact": "工作台面板 `ImpactOpsPanel.vue:42` 已渲染「本次必须处理的对象」区块（`2786bcc` 是当前 head 的祖先）；**未落证的是验收台页面**，不是工作台。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:346"
+    },
+    {
+      "id": "G3-GAP-07",
+      "title": "影响中心：工作台已补齐，来源对象与确定 / 可能影响分组的验收台实跑证据待落",
+      "rows": [
+        "G3.7"
+      ],
+      "limits": [
+        "AC-G3-04"
+      ],
+      "missing": "「来源对象」（`impacts[].causes[].source`）与「确定影响 / 可能影响」分组在**验收台页面**尚未落证：工作台面板已由 `2786bcc` 补齐渲染，缺的是验收台页面的实跑证据。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 346,
+        "end": 346
+      },
+      "unblockCondition": "由验收台页面按 `certainty` 分两组渲染 `impacts[]` 并逐条渲染 `causes[].source`（含对象 kind / id / version），落证后方可判定。",
+      "issue": 246,
+      "rowStatus": "NOT RUN",
+      "fact": "工作台面板 `ImpactOpsPanel.vue:42` 已渲染来源对象、`:101-102` 已按 `certainty` 分「确定影响 / 可能影响」两段；**未落证的是验收台页面**，不是工作台。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:346"
+    },
+    {
+      "id": "G3-GAP-08",
+      "title": "本机未配检索渠道，调研类闭环证据不可实跑",
+      "rows": [],
+      "limits": [
+        "G3.6"
+      ],
+      "missing": "本机 `web_search_providers` 表为空（父会话复核 `select count(*)` = 0），`POST /projects/{id}/research-tasks` 在没有 asset 且不传 `provider_id` 时返回 400 `invalid_request`，补 `provider_id` 后返回 500 `internal_error` —— `RETRIEVE_CANDIDATES` 类影响任务要求的真实 `ResearchRun` 回执**不可实跑**。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 345,
+        "end": 345
+      },
+      "unblockCondition": "先在租户里配好检索渠道凭据（或给一个真实 `asset`），再重跑调研链；在解除之前这一项只能记环境限制（`WARNING` / `NOT RUN`）并写明缺什么，**不得**用其他回执冒充。",
+      "issue": 246,
+      "rowStatus": "WARNING",
+      "fact": "因此 G3.6 的闭环证据只覆盖 INVALIDATE_CONFIRMATION / REVIEW_REQUIRED / RECOMPUTE 三类动作。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:345"
+    },
+    {
+      "id": "G3-GAP-09",
+      "title": "阻断级规则问题「接受不处理」（dismiss）返回 500",
+      "rows": [
+        "AC-G3-09"
+      ],
+      "limits": [],
+      "missing": "对**阻断级**规则问题调用 disposition 的 `action=dismiss` 时，服务端返回 500 `internal_error`（`resolve` 返回 201、`waive` 返回 400），「接受不处理」这条路径在阻断级上不可用。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 382,
+        "end": 384
+      },
+      "unblockCondition": "修掉阻断级规则问题 dismiss 的 500（让「接受不处理」要么按语义被拒（4xx）并给出可读原因，要么对规则问题开放），并由 AC-G3-09 场景实跑落证。",
+      "issue": 246,
+      "rowStatus": "PASS (follow-up)",
+      "fact": "实测：dismiss → HTTP 500 code=internal_error；resolve → HTTP 201；waive → HTTP 400。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:382-384"
+    },
+    {
+      "id": "G3-GAP-10",
+      "title": "求值不读 disposition：「问题不再阻断当次求值」那半段不成立",
+      "rows": [
+        "AC-G3-09"
+      ],
+      "limits": [],
+      "missing": "`delivery.Evaluate` 与 `TemplateGovernanceRuntime.Check` **都不读 disposition**：人工处置只是工作流元数据，处置后重检的求值结论不变（blocked → blocked），因此 AC-G3-09 的「问题不再阻断当次求值」那半段在当前后端上不成立。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 382,
+        "end": 384
+      },
+      "unblockCondition": "让求值在读规则问题时考虑该问题的 disposition（被 dismiss 的规则问题不再阻断当次求值，但对应 ImpactTask 仍为 OPEN、项目仍不能稳定），并由 AC-G3-09 场景实跑落证。",
+      "issue": 246,
+      "rowStatus": "PASS (follow-up)",
+      "fact": "实测：处置（HTTP 201，问题带上处置）之后重检 `POST /projects/{id}/checks` 仍为 status=blocked；稳定化仍为 BLOCKED（阻断原因 5 条），对应 ImpactTask 仍为 OPEN —— 「规则问题与任务分离」那半段成立。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:382-384"
+    },
+    {
+      "id": "G3-GAP-11",
+      "title": "目标对象版本被替换后稳定化直接 409，closure_stale 分支不可达",
+      "rows": [],
+      "limits": [
+        "AC-G3-12"
+      ],
+      "missing": "目标对象在任务「已完成」之后被新版本替换时，稳定化在**预读闭环证据**阶段就直接返回 409 `version_conflict`，`closure_stale` 分支实际不可达 —— AC-G3-12 要求的「保持 BLOCKED 并创建 / 重投对应任务」这半段没有可观测的落点。",
+      "specAnchor": {
+        "path": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md",
+        "start": 394,
+        "end": 396
+      },
+      "unblockCondition": "让稳定化在版本不匹配时落到 `closure_stale` 分支（保持 BLOCKED 并创建 / 重投任务），而不是在预读闭环证据时直接 409；补齐后由 AC-G3-12 场景实跑落证。",
+      "issue": 246,
+      "rowStatus": "PASS (follow-up)",
+      "fact": "实测：复写章节版本替换目标对象后 `POST .../stabilize` → HTTP 409 code=version_conflict（阻断原因 0 条、失效任务 0 条）；本轮改走「按新基线重投变更集 → 重投任务闭环 → 再次稳定化」才回到 STABILIZED。",
+      "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:394-396"
+    }
+  ],
+  "evidence_dir": "docs/08-本轮实施方案",
+  "evidence_file": "G3-验收台-8-证据-g3r-mvfqegcg-2ef59b33.json",
+  "evidence_file_note": "证据落 docs/08-本轮实施方案/ 目录，**不写进 Issue**（docs/agents/issue-tracker.md:54-56）。"
+}
