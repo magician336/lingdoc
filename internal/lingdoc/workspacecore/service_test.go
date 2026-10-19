@@ -13,9 +13,7 @@ import (
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 	_ "modernc.org/sqlite" // Pure Go test driver; production retains the existing SQLite driver.
 )
 
@@ -60,10 +58,16 @@ func testStore(t *testing.T, path string) *Service {
 
 // testStoreWithPolicy 与 testStore 走同一条建库路径，只是换一台来源复核。
 // policy 传 nil 也是合法输入（装配漏项），后果由用例自己断言。
+//
+// 建库走包级迁移快照：本文件所在包有 295 个用例，每个都重放 25 个生产迁移
+// 会让 -race 下的整包运行超时。快照只建一次，每个用例拿自己的独立副本，
+// 隔离性与逐例重放完全一致。详见 sqlite_fixture_snapshot_test.go 的理由。
 func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Service {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"},
-		&gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err := seedSQLiteFromSnapshot(t, path); err != nil {
+		t.Fatal(err)
+	}
+	db, err := openSilentSQLite(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,6 +76,9 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
+	// The snapshot already carries the chain. The replay below is a safety net
+	// for a caller that pointed testStore at a database of its own that never
+	// went through the snapshot; it should not fire in normal use.
 	if !db.Migrator().HasTable(&projectRow{}) {
 		for _, name := range productionLingDocMigrationNames(t, "sqlite") {
 			migration, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
@@ -83,7 +90,7 @@ func testStoreWithPolicy(t *testing.T, path string, policy SourcePolicy) *Servic
 			}
 		}
 	}
-	if err := db.Exec("CREATE TABLE IF NOT EXISTS tenant_members ( role TEXT NOT NULL DEFAULT 'owner',tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, status TEXT NOT NULL, deleted_at DATETIME, PRIMARY KEY (tenant_id, user_id))").Error; err != nil {
+	if err := db.Exec(tenantMembersFixtureDDL).Error; err != nil {
 		t.Fatal(err)
 	}
 	svc := NewServiceWithSources(NewGORMRepository(db), ContractDemoTemplate{}, policy)
