@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,9 +225,15 @@ func chapterRefVersion(chapter Chapter) ObjectVersionRef {
 	return ObjectVersionRef{Kind: "ChapterVersion", ID: chapter.ID, Version: version}
 }
 
-// AC2: every one of the seven states is reachable, and each task records its
+// AC2: every one of the six states is reachable, and each task records its
 // target revision, severity, responsibility domain, causes and closure evidence.
-func TestImpactTaskAllSevenStatesAreReachable(t *testing.T) {
+//
+// The states are walked over the real service seam. Severity is NOT asserted
+// against a literal here: this fixture's change produces a REVIEW_REQUIRED
+// impact, which is blocking, and pinning that literal would only re-assert the
+// mapping that TestImpactTaskSeverityFollowsTheProductRules owns. What this
+// test owns is that an OPEN task carries a severity at all.
+func TestImpactTaskEveryStateIsReachableOverTheRealSeam(t *testing.T) {
 	svc := impactTaskStore(t, filepath.Join(t.TempDir(), "impact-states.db"))
 	actor := Actor{TenantID: 3202, UserID: "owner"}
 	worker := Actor{TenantID: 3202, UserID: "worker"}
@@ -239,7 +246,7 @@ func TestImpactTaskAllSevenStatesAreReachable(t *testing.T) {
 	reached := map[string]bool{task.Status: true}
 
 	// OPEN is the creation state and must already carry the full record.
-	if task.Status != "OPEN" || task.TargetRevision != p.CurrentContextRevision || task.Severity != "blocking" || task.ResponsibilityDomain == "" || len(task.Causes) == 0 || task.ClosureEvidence == nil {
+	if task.Status != "OPEN" || task.TargetRevision != p.CurrentContextRevision || task.Severity == "" || task.ResponsibilityDomain == "" || len(task.Causes) == 0 || task.ClosureEvidence == nil {
 		t.Fatalf("OPEN task did not record its full basis: %+v", task)
 	}
 
@@ -295,16 +302,15 @@ func TestImpactTaskAllSevenStatesAreReachable(t *testing.T) {
 		t.Fatalf("complete did not record closure evidence: %+v", done)
 	}
 
-	// A second impact task on the same ChangeSet reaches DISMISSED and CANCELLED.
+	// DISMISSED is a reasoned acceptance and is only open to a non-blocking
+	// impact, so this leg needs its own task identity.
 	dismissedSource := secondTaskFixture(t, svc, actor, p, change, "RECOMPUTE")
 	dismissed := actOn("impact-dismiss", dismissedSource, "dismiss", actor, nil)
 	if dismissed.Status != "DISMISSED" {
 		t.Fatalf("dismiss: %+v", dismissed)
 	}
-	cancelledSource := secondTaskFixture(t, svc, actor, p, change, "REGENERATE")
-	cancelled := actOn("impact-cancel", cancelledSource, "cancel", actor, nil)
-	if cancelled.Status != "CANCELLED" {
-		t.Fatalf("cancel: %+v", cancelled)
+	if dismissed.Disposition == "" {
+		t.Fatalf("accepted impact did not record the reason it was accepted: %+v", dismissed)
 	}
 
 	// STALE is reached on this ChangeSet too: replacing the version this task
@@ -325,13 +331,22 @@ func TestImpactTaskAllSevenStatesAreReachable(t *testing.T) {
 	_ = fresh
 }
 
-// secondTaskFixture raises one extra task for the same ChangeSet with
-// the given action, so dismiss/cancel can be exercised on distinct identities.
+// secondTaskFixture raises one extra task for the same ChangeSet with the given
+// action, so a transition can be exercised on a distinct task identity.
+//
+// It bypasses the commit path on purpose and is therefore NOT reachability
+// evidence: see TestImpactTaskAcceptanceIsReachableOnTheProductionPath for
+// that. What it must not do is invent a severity - so it derives one through
+// the same production rule the commit path uses, rather than hardcoding a
+// value that the production path could never produce. Before #214 this fixture
+// wrote a literal "advisory" that existed nowhere in the model, the contract
+// or the service, which is what let the dismiss/cancel branches look covered
+// while being unreachable.
 func secondTaskFixture(t *testing.T, svc *Service, actor Actor, p Project, change ChangeSet, action string) ImpactTask {
 	t.Helper()
 	task := ImpactTask{ID: ImpactTaskID(p.ID, change.ID, currentChapterVersionRef(t, svc, actor, p.ID), p.CurrentContextRevision, action),
 		ProjectID: p.ID, ChangeSetID: change.ID, Target: currentChapterVersionRef(t, svc, actor, p.ID),
-		TargetRevision: p.CurrentContextRevision, Action: action, Severity: "advisory",
+		TargetRevision: p.CurrentContextRevision, Action: action, Severity: DeriveImpactSeverity(action),
 		ResponsibilityDomain: "B", Status: "OPEN", Causes: []ImpactCause{}, Version: 1,
 		ClosureEvidence: []ObjectVersionRef{}, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 	store := gormTransaction{svc.testDB()}
@@ -348,6 +363,106 @@ func currentChapterVersionRef(t *testing.T, svc *Service, actor Actor, projectID
 		t.Fatalf("no current chapter version: %+v", chapters)
 	}
 	return ObjectVersionRef{Kind: "ChapterVersion", ID: chapters[0].ID, Version: *chapters[0].CurrentVersionID}
+}
+
+// TestImpactTaskAcceptanceIsReachableOnTheProductionPath proves the thing #205
+// was filed about: on the real commit path - a confirmed dependency edge, then
+// a real ChangeSet applied - a non-blocking impact really is produced and can
+// really be accepted. No fixture writes a severity here.
+//
+// The propagation edge is what makes this possible. A change to the research
+// subject reaches the ProjectSpec, travels down a confirmed edge to the
+// chapter, and arrives carrying the edge's own action. Choosing an evidence
+// revalidation therefore yields a warning-severity impact even though the
+// chapter is also affected as a review-required one, which is blocking.
+func TestImpactTaskAcceptanceIsReachableOnTheProductionPath(t *testing.T) {
+	svc := impactTaskStore(t, filepath.Join(t.TempDir(), "impact-acceptance.db"))
+	actor := Actor{TenantID: 3202, UserID: "owner"}
+
+	p := seedActiveImpactProject(t, svc, actor)
+	chapters := materializeChapterVersions(t, svc, actor, p, map[string]string{})
+	p = reloadProject(t, svc, actor, p.ID)
+
+	spec := ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)}
+	chapter := ObjectVersionRef{Kind: "ChapterVersion", ID: chapters[0].ID, Version: *chapters[0].CurrentVersionID}
+	if _, _, _, err := svc.CreateDependencyEdge(context.Background(), actor, p.ID, "impact-acceptance-edge",
+		DependencyEdgeInput{ExpectedContextRevision: p.CurrentContextRevision, Source: spec, Target: chapter,
+			Action: "REVALIDATE_EVIDENCE", Relation: "actual_claim_reference", Origin: "user",
+			Reason: "研究对象变化后章节引用需重新校验"}); err != nil {
+		t.Fatalf("register propagation edge: %v", err)
+	}
+
+	input := CreateChangeSetInput{ExpectedContextRevision: p.CurrentContextRevision,
+		Fields:             map[string]ChangeFieldInput{"research_subject": {OldValue: p.Spec["research_subject"], NewValue: "接受可达性 新主题"}},
+		AffectedChapterIDs: []string{chapter.ID}, Reason: "研究对象变更"}
+	raw, _, _, err := svc.CreateChangeSet(context.Background(), actor, p.ID, "impact-acceptance-change", input)
+	if err != nil {
+		t.Fatalf("create changeset: %v", err)
+	}
+	var change ChangeSet
+	if err := json.Unmarshal(raw, &change); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := svc.ApplyChangeSet(context.Background(), actor, p.ID, change.ID, "impact-acceptance-apply"); err != nil {
+		t.Fatalf("apply changeset: %v", err)
+	}
+
+	tasks := tasksInProject(t, svc, actor, p.ID)
+	var accepted *ImpactTask
+	for i := range tasks {
+		if tasks[i].Action == "REVALIDATE_EVIDENCE" {
+			accepted = &tasks[i]
+		}
+	}
+	if accepted == nil {
+		t.Fatalf("the commit path produced no revalidation impact to accept: %+v", tasks)
+	}
+	if accepted.Status != "OPEN" || accepted.Severity != ImpactSeverityWarning {
+		t.Fatalf("revalidation impact is not an acceptable warning: %+v", accepted)
+	}
+
+	act := ImpactTaskActionInput{ExpectedVersion: accepted.Version, TargetRevision: accepted.TargetRevision,
+		Action: "dismiss", Reason: "本次变更不影响已引用证据，接受不处理", ClosureEvidence: []ObjectVersionRef{}}
+	out, _, _, err := svc.ActOnImpactTask(context.Background(), actor, p.ID, accepted.ID, "impact-acceptance-dismiss", act)
+	if err != nil {
+		t.Fatalf("accept a warning impact on the real seam: %v", err)
+	}
+	var got ImpactTask
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "DISMISSED" || got.Disposition != act.Reason {
+		t.Fatalf("accepted impact did not record the acceptance: %+v", got)
+	}
+}
+
+// TestImpactTaskBlockingImpactCannotBeAccepted is the other half of the same
+// contract, and the guard that keeps acceptance from becoming a back door.
+// The review-required impact the same commit produces is blocking, so the
+// service must refuse the identical action rather than silently accepting it.
+func TestImpactTaskBlockingImpactCannotBeAccepted(t *testing.T) {
+	svc := impactTaskStore(t, filepath.Join(t.TempDir(), "impact-blocking.db"))
+	actor := Actor{TenantID: 3202, UserID: "owner"}
+	p, _, _ := appliedChangeFixture(t, svc, actor)
+	tasks := tasksInProject(t, svc, actor, p.ID)
+	var blocking *ImpactTask
+	for i := range tasks {
+		if tasks[i].Action == "REVIEW_REQUIRED" {
+			blocking = &tasks[i]
+		}
+	}
+	if blocking == nil {
+		t.Fatalf("the commit path produced no review-required impact: %+v", tasks)
+	}
+	if blocking.Severity != ImpactSeverityBlocking {
+		t.Fatalf("review-required impact should be blocking: %+v", blocking)
+	}
+
+	act := ImpactTaskActionInput{ExpectedVersion: blocking.Version, TargetRevision: p.CurrentContextRevision,
+		Action: "dismiss", Reason: "想直接跳过复核", ClosureEvidence: []ObjectVersionRef{}}
+	if _, _, _, err := svc.ActOnImpactTask(context.Background(), actor, p.ID, blocking.ID, "impact-blocking-dismiss", act); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("a blocking impact must not be acceptable, got %v", err)
+	}
 }
 
 // confirmChapterAtSpecRevision writes a real confirmation row for the chapter's

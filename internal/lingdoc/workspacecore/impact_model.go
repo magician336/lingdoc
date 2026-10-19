@@ -109,28 +109,43 @@ type ImpactTask struct {
 }
 
 // Stale reason codes. They are part of the task contract: a consumer must be
-// able to tell a replaced target version from a revoked source or a revoked
-// responsible actor without re-deriving it from timing.
+// able to tell a replaced target version from a revoked responsible actor
+// without re-deriving it from timing.
+//
+// A revoked source is deliberately absent. It is not an unreachable code left
+// behind by an unfinished implementation - it is a decision (#214). The
+// operation-level source recheck runs before the write transaction and its
+// reference set is a strict superset of the task target's, so a revoked source
+// always fails the operation outright and never reaches the stale transition.
+// The alternative - reading the task anyway to mark it stale - would mean
+// widening a fail-closed check to permit a read, which trades a refusal that
+// says nothing for a state change that asserts the obligation is gone when it
+// is not. A task whose sources were withdrawn stays unhandled and keeps
+// failing; it does not get to quietly become obsolete.
 const (
 	// ImpactTaskStaleTargetReplaced means the exact target version the task was
 	// raised against is no longer the current version of that object.
 	ImpactTaskStaleTargetReplaced = "target_version_replaced"
-	// ImpactTaskStaleSourceRevoked means a source backing the task's target is
-	// no longer readable by the responsible actor.
-	ImpactTaskStaleSourceRevoked = "source_revoked"
 	// ImpactTaskStaleAssigneeRevoked means the assignee lost the capability or
 	// project scope required to act on the task.
 	ImpactTaskStaleAssigneeRevoked = "assignee_revoked"
 )
 
-// ImpactTaskStatuses lists every reachable task state. STALE is terminal and
-// explicitly excluded from the closed set: it records that the basis is gone,
-// not that the impact was handled.
-var ImpactTaskStatuses = []string{"OPEN", "IN_PROGRESS", "WAITING_USER", "DONE", "DISMISSED", "STALE", "CANCELLED"}
+// ImpactTaskStatuses lists every reachable task state.
+//
+// DISMISSED is a responsible manager's reasoned acceptance that this impact
+// needs no work this time - it is the impact-side counterpart of a waiver, and
+// it is only reachable for a non-blocking impact. CANCELLED is deliberately
+// absent: it used to sit next to DISMISSED with the same practical meaning
+// ("not doing it"), which left two words for one decision in the audit trail.
+//
+// STALE is terminal and explicitly excluded from the closed set: it records
+// that the basis is gone, not that the impact was handled.
+var ImpactTaskStatuses = []string{"OPEN", "IN_PROGRESS", "WAITING_USER", "DONE", "DISMISSED", "STALE"}
 
 // ImpactTaskClosedStatuses are the states that count as a closed loop for the
 // impact. STALE is intentionally absent: an invalidated task is never closure.
-var ImpactTaskClosedStatuses = []string{"DONE", "DISMISSED", "CANCELLED"}
+var ImpactTaskClosedStatuses = []string{"DONE", "DISMISSED"}
 
 type ImpactTaskActionInput struct {
 	HumanDecision   string             `json:"human_decision,omitempty"`

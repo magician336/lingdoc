@@ -227,7 +227,7 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 			}
 			continue
 		}
-		if task.Severity == "blocking" && task.Status != "DONE" {
+		if impactSeverityBlocks(task.Severity) && task.Status != "DONE" {
 			// ADJUDICATION (not one of the four single-sided conditions, but the
 			// same shape): the Owner path reports this as a blocker in a 200
 			// response, the gate rejects with an error naming the task. Both
