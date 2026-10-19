@@ -178,6 +178,22 @@ def identify(value: Any) -> dict[str, Any]:
     return result
 
 
+def validation_issue_summary(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, dict) or not isinstance(value.get("issues"), list):
+        return []
+    summary = []
+    for issue in value["issues"]:
+        if not isinstance(issue, dict):
+            continue
+        row = {name: issue.get(name) for name in ("id", "rule_id", "severity", "status", "target_id", "target_version")
+               if name in issue}
+        ref = issue.get("ruleset_ref")
+        if isinstance(ref, dict):
+            row["ruleset_ref"] = {name: ref.get(name) for name in ("ruleset_id", "version", "hash") if name in ref}
+        summary.append(row)
+    return summary
+
+
 def register_login(base_url: str) -> str:
     suffix = uuid.uuid4().hex[:12]
     email = f"issue196-{suffix}@example.com"
@@ -324,6 +340,7 @@ def run_flow(base_url: str, token: str, *, canonical: bool) -> dict[str, Any]:
         "setup": setup,
         "template_check": identify(data(template_check)),
         "check": identify(check_data),
+        "validation_issues": validation_issue_summary(check_data),
         "snapshot": identify(data(snapshot_response)),
         "snapshot_readback": identify(data(snapshot_read)),
         "export": identify(export),
