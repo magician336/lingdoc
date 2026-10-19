@@ -886,9 +886,16 @@
           :disabled="!runSummary"
           @click="exportEvidence"
         >
-          导出本轮证据 JSON
+          导出整链证据 JSON
         </button>
       </div>
+
+      <p class="card-footnote">
+        导出的证据按仓库既有命名落到 <code>docs/08-本轮实施方案/G3-验收台-8-*.json</code>，
+        <strong>不写进 Issue</strong>（<code>docs/agents/issue-tracker.md:54-56</code>）。
+        导出体含运行标识、后端 head、每一步的请求与响应、每条验收行的判定与状态、
+        证据来源（确定性 / 依赖真实模型）与实现缺口清单；换 head 后旧结论整体标为过期。
+      </p>
 
       <p v-if="modelError" class="live-error" role="alert">
         <strong>运行失败：</strong>{{ modelError }}
@@ -1355,6 +1362,11 @@
                 <th scope="row">
                   <strong>{{ row.name }}</strong>
                   <small>{{ row.id }} · {{ row.deliverable }}</small>
+                  <small>
+                    <span class="source-chip" :class="sourceTone(sourceOf(row.id))">
+                      {{ sourceLabel(sourceOf(row.id)) }}
+                    </span>
+                  </small>
                 </th>
                 <td class="criterion">{{ row.criterion }}</td>
                 <td class="anchor">
@@ -1403,6 +1415,17 @@
                     <template v-if="row.domain"> · 责任域 {{ row.domain }}</template>
                     <template v-if="row.severity"> · 严重度 {{ row.severity }}</template>
                   </small>
+                  <small>
+                    <span class="source-chip" :class="sourceTone(sourceOf(row.id))">
+                      {{ sourceLabel(sourceOf(row.id)) }}
+                    </span>
+                    <span v-if="gapIdsOf(row.id).length" class="source-chip source-chip--gap">
+                      实现缺口 {{ gapIdsOf(row.id).join(' / ') }}
+                    </span>
+                    <span v-else-if="limitingGapIdsOf(row.id).length" class="source-chip source-chip--limited">
+                      覆盖受限 {{ limitingGapIdsOf(row.id).join(' / ') }}
+                    </span>
+                  </small>
                 </th>
                 <td class="criterion">{{ row.criterion }}</td>
                 <td class="anchor">
@@ -1439,6 +1462,37 @@
           「本轮覆盖」是**本票真实运行**与每一行的关系：前置链跑通**不构成**任何一条判据的证据，
           所以没被覆盖的行状态原样保留，绝不会被判成 <code>PASS</code>。
         </p>
+
+        <h3 class="matrix-group-title">实现缺口（无法实跑的验收行与渲染缺口）</h3>
+        <p class="legend-note">
+          每条缺口写清三件事：<strong>缺什么</strong>、<strong>对应 Spec 位置</strong>、
+          <strong>解除条件</strong>，并链接缺口清单 Issue
+          <a class="issue-link" :href="`https://github.com/magician336/lingdoc/issues/${G3_GAP_LIST_ISSUE}`" target="_blank" rel="noreferrer">#{{ G3_GAP_LIST_ISSUE }}</a>。
+          缺口对应的行**不写 <code>PASS</code>**：缺能力记 <code>BLOCKED</code>，
+          部分覆盖记 <code>PASS (follow-up)</code>，宿主环境限制记 <code>WARNING</code>，
+          页面实跑证据待落记 <code>NOT RUN</code>。
+        </p>
+        <div class="gap-list">
+          <article v-for="gap in gapList" :key="gap.id" class="gap-item">
+            <header class="gap-head">
+              <strong>{{ gap.id }} · {{ gap.title }}</strong>
+              <span class="status-badge" :class="`status-badge--${statusTone(gap.rowStatus)}`">
+                {{ gap.rowStatus }}
+              </span>
+            </header>
+            <p class="gap-meta">
+              <span>对应行：{{ [...gap.rows, ...gap.limits].join(' / ') || '—' }}</span>
+              <span>Spec 锚点：<code>{{ formatAnchor(gap.specAnchor) }}</code></span>
+              <span>
+                缺口清单：
+                <a class="issue-link" :href="`https://github.com/magician336/lingdoc/issues/${gap.issue}`" target="_blank" rel="noreferrer">#{{ gap.issue }}</a>
+              </span>
+            </p>
+            <p class="gap-text"><strong>缺什么：</strong>{{ gap.missing }}</p>
+            <p class="gap-text"><strong>解除条件：</strong>{{ gap.unblockCondition }}</p>
+            <p v-if="gap.fact" class="gap-text gap-text--fact"><strong>实测事实：</strong>{{ gap.fact }}</p>
+          </article>
+        </div>
       </section>
     </div>
 
@@ -1656,6 +1710,19 @@ import {
   type G3RowEvidence,
   type G3RunSummary,
 } from './g3Evidence'
+import {
+  G3_CONCLUSION_SOURCE_LABELS,
+  buildRunEvidenceExport,
+  conclusionSourceOf,
+  exportFileName,
+  type G3ConclusionSource,
+} from './g3Export'
+import {
+  G3_GAP_LIST_ISSUE,
+  G3_IMPLEMENTATION_GAPS,
+  gapIdsForRow,
+  limitingGapIdsForRow,
+} from './g3Gaps'
 import { runChain } from './runner/chain'
 import { runChangeSetChain, toLifecycleSnapshot, type G3LifecycleSnapshot } from './runner/changeset'
 import {
@@ -1771,6 +1838,43 @@ const coverageTone = (item?: G3RowEvidence) => {
 
 const anchorLabel = (anchor: SpecAnchor) => formatAnchor(anchor)
 const anchorPath = (anchor: SpecAnchor) => anchor.path
+
+/** 实现缺口清单（权威副本是缺口清单 Issue #246）。 */
+const gapList = G3_IMPLEMENTATION_GAPS
+
+/** 某一行涉及的直接缺口编号。 */
+const gapIdsOf = (rowId: string) => gapIdsForRow(rowId)
+
+/** 某一行涉及的「覆盖受限」缺口编号。 */
+const limitingGapIdsOf = (rowId: string) => limitingGapIdsForRow(rowId)
+
+/**
+ * 一行的结论来源：本次运行得出 / 历史快照 · 非本次运行 / 尚未判定。
+ *
+ * 两者在页面上**视觉与文案互斥**：本次运行用青色实心标记，历史快照用琥珀色
+ * 「历史快照 · 非本次运行」标记（与页头、证据块的既有标识一致）。
+ */
+const sourceOf = (rowId: string): G3ConclusionSource => {
+  const row = matrixView.value.rows.find((item) => item.id === rowId)
+  if (!row) return 'not_judged'
+  const decided = coverageById.value.get(rowId)?.decided === true
+  return conclusionSourceOf(row, decided)
+}
+
+const sourceLabel = (source: G3ConclusionSource) => G3_CONCLUSION_SOURCE_LABELS[source]
+
+const sourceTone = (source: G3ConclusionSource) => {
+  if (source === 'this_run') return 'source-chip--live'
+  if (source === 'historical_snapshot') return 'source-chip--snapshot'
+  return 'source-chip--none'
+}
+
+/** 导出文件名的日期戳（沿用 08 实施文档目录的族命名）。 */
+function dateStamp(): string {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+}
 
 /** 变更集状态的显示色调（域内状态，不是门禁词表）。 */
 const changeSetTone = (status: string) => {
@@ -2564,39 +2668,43 @@ async function startBlocked(): Promise<void> {
 }
 
 /**
- * 导出的证据：把本轮摘要（含真实模型调用记录）落成一个 JSON 文件。
+ * 导出的证据：把本轮整链结论落成一个 JSON 文件。
  *
- * 模型调用记录**必须**进这份导出的证据，并标注为「依赖真实模型的非确定性来源」——
- * 少了这个标注，读者会把非确定性结论当成确定性结论。
+ * 这一份导出体是 **#244 的结构化证据**：运行标识、head、每一步的请求与响应、
+ * 每条验收行的判定与状态、证据来源（确定性 / 依赖真实模型）、实现缺口清单。
+ *
+ * 三条约束写死在 `g3Export.ts` 里：
+ * 1. 模型调用记录**必须**进这份导出的证据，并标注为「依赖真实模型的非确定性来源」——
+ *    少了这个标注，读者会把非确定性结论当成确定性结论。
+ * 2. 「本次运行得出」与「历史快照 · 非本次运行」在导出体里分开列示，不混读。
+ * 3. 文件名沿用 08 实施文档目录的既有族命名（`G3-验收台-8-*.json`）；
+ *    证据**不写进 Issue**（`docs/agents/issue-tracker.md:54-56`）。
  */
 function exportEvidence(): void {
   if (!runSummary.value) return
-  const payload = {
-    generated_at: new Date().toISOString(),
-    ticket: 'G3 验收台-7：依赖真实模型的验收项',
-    run: runSummary.value,
-    evidence_sources: [
-      {
-        kind: 'deterministic',
-        non_deterministic: false,
-        note: '确定性结论：状态由本轮真实调用与响应事实推出。',
-      },
-      {
-        kind: 'model_dependent',
-        non_deterministic: true,
-        depends_on: 'real_model',
-        note:
-          '非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；' +
-          '矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。',
-        runs: (model.value?.runs ?? []) as G3ModelRunFact[],
-      },
-    ],
-  }
+  const summary = runSummary.value
+  const payload = buildRunEvidenceExport({
+    runId: summary.runId,
+    startedAt: summary.startedAt,
+    head: summary.head,
+    steps: summary.steps,
+    rows: matrixView.value.rows,
+    evidence: matrixView.value.evidence,
+    verdicts: summary.verdicts ?? [],
+    modelRuns: (model.value?.runs ?? []) as G3ModelRunFact[],
+    stale: summary.stale,
+    staleReason: summary.staleReason,
+    snapshot: {
+      sourceDir: snapshot.sourceDir,
+      head: snapshot.head ?? null,
+      notice: snapshotNotice(snapshot),
+    },
+  })
   const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = `g3-验收台-7-模型验收证据-${runSummary.value.runId}.json`
+  link.download = exportFileName(dateStamp(), summary.runId)
   link.click()
   URL.revokeObjectURL(url)
 }
@@ -2763,6 +2871,22 @@ function releaseSession(): void {
 .coverage-chip--partial { color: #86621f; background: #fff0c9; }
 .coverage-chip--covered { color: #087467; background: #d8f5e9; }
 .coverage small { display: block; margin-top: 5px; color: #6f8681; font-size: 11px; line-height: 1.5; }
+/* 结论来源：本次运行与历史快照**视觉与文案互斥**。 */
+.source-chip { display: inline-block; margin-top: 5px; margin-right: 6px; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 750; white-space: nowrap; }
+.source-chip--live { color: #fff; background: var(--cyan); }
+.source-chip--snapshot { color: #7c5a12; background: #fff0c9; }
+.source-chip--none { color: #5b6670; background: #eceff1; }
+.source-chip--gap { color: #8a3b2c; background: #ffe1d9; }
+.source-chip--limited { color: #5b4c9d; background: #eeebff; }
+.gap-list { display: grid; gap: 10px; margin-top: 12px; }
+.gap-item { padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--coral); border-radius: 12px; background: #fffdfa; }
+.gap-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.gap-head strong { font-size: 13px; letter-spacing: -.01em; }
+.gap-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; color: #6f8681; font-size: 11px; }
+.gap-meta code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10.5px; }
+.gap-text { margin: 8px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.65; }
+.gap-text--fact { color: #6f8681; font-size: 11.5px; }
+.issue-link { color: #0b6e71; text-decoration: underline; }
 @media (max-width: 1100px) { .console-columns { grid-template-columns: 1fr; }.scope-grid, .glossary-grid { grid-template-columns: 1fr; } }
 @media (max-width: 960px) { .identity-card, .console-hero { align-items: flex-start; flex-direction: column; }.hero-actions { align-items: flex-start; }.identity-facts { flex-wrap: wrap; }.fact-list { grid-template-columns: 1fr; } }
 @media (max-width: 600px) { .g3-console { padding: 16px 12px 32px; }.console-hero, .identity-card, .flow-card, .matrix-card, .scope-card, .glossary-card, .snapshot-card { padding: 18px; }.console-footer { flex-direction: column; gap: 6px; } }

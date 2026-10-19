@@ -94,6 +94,13 @@ export interface G3RunVerdict {
    * 模型不可用时记 `NOT RUN`）。
    */
   status?: G3Status
+  /**
+   * 该判定是否**依赖真实模型**（非确定性）。
+   *
+   * 给了它，导出体就把这条判定标成 `model_dependent`：
+   * 依赖真实模型的结论一律不写 `PASS`，也不与确定性结论混读。
+   */
+  modelDependent?: boolean
 }
 
 /** 章节事实：激活后模板自动创建的两个章节。 */

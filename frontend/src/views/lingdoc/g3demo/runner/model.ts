@@ -1328,6 +1328,7 @@ export async function runModelChain(
         `助手登记的动作 ${ac14.proposalActions.join('、') || '（无）'} · 交付检查 ${ac14.checkStatus || '（未取到）'}`,
     ],
     status: ac14Holds ? 'WARNING' : 'NOT RUN',
+    modelDependent: true,
   })
 
   // ============================================================
@@ -1558,6 +1559,7 @@ export async function runModelChain(
       `GET /api/v1/lingdoc/projects/{projectId}/chapters · /confirmations · /releases → 返回前后一致=${ac06.releaseSnapshotUnchanged}`,
     ],
     status: ac06Holds ? 'WARNING' : 'NOT RUN',
+    modelDependent: true,
   })
 
   // ============================================================
@@ -1766,6 +1768,7 @@ export async function runModelChain(
       `POST /api/v1/lingdoc/projects/{projectId}/dependencies → 重投被拒候选 → 边 ${ac15.reproposedEdgeId || '（无）'} · 新建=${ac15.reproposedNewEdge}`,
     ],
     status: ac15Holds ? 'WARNING' : 'NOT RUN',
+    modelDependent: true,
   })
 
   ctx.verdicts = verdicts
