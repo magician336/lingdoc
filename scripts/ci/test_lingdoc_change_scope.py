@@ -41,7 +41,22 @@ class ChangeScopeTests(unittest.TestCase):
             "after": "head",
             "pull_request": {"base": {"sha": "base"}, "head": {"sha": "head"}},
         }
-        self.assertEqual(scope.event_range(event, Path.cwd()), ("before...head", False))
+        with patch.object(scope, "_run_git", return_value="merge-base"):
+            self.assertEqual(scope.event_range(event, Path.cwd()), ("before...head", False))
+
+    def test_synchronize_unresolvable_before_falls_back_to_head_parent(self):
+        event = {
+            "action": "synchronize",
+            "before": "old-before",
+            "after": "head",
+            "pull_request": {"base": {"sha": "base"}, "head": {"sha": "head"}},
+        }
+        with patch.object(
+            scope,
+            "_run_git",
+            side_effect=[subprocess.CalledProcessError(128, "git merge-base"), "parent"],
+        ):
+            self.assertEqual(scope.event_range(event, Path.cwd()), ("parent...head", False))
 
     def test_opened_uses_complete_pr(self):
         event = {
@@ -54,6 +69,20 @@ class ChangeScopeTests(unittest.TestCase):
         event = {"action": "workflow_dispatch"}
         with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "workflow_dispatch"}):
             self.assertEqual(scope.event_range(event, Path.cwd()), (None, True))
+
+    def test_scope_diff_failure_falls_back_to_complete_pr(self):
+        event = {
+            "action": "synchronize",
+            "pull_request": {"base": {"sha": "base"}, "head": {"sha": "head"}},
+        }
+        with patch.object(scope, "event_range", return_value=("before...head", False)), \
+             patch.object(scope, "changed_paths", side_effect=[
+                 subprocess.CalledProcessError(128, "git diff"), ["internal/main.go"]
+             ]):
+            self.assertEqual(
+                scope.select_paths(Path.cwd(), event),
+                ("base...head", False, ["internal/main.go"]),
+            )
 
 
 if __name__ == "__main__":
