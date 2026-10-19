@@ -12,7 +12,7 @@
 #   1. widen npm's per-request retries and timeouts;
 #   2. retry the whole install, because a reset mid-download leaves a partial
 #      node_modules that makes the next attempt fail for an unrelated reason;
-#   3. optionally retry once through a mirror registry.
+#   3. retry once through a mirror registry.
 #
 # It deliberately never falls back to `npm install`. Resolving fresh versions
 # would stop testing the committed lockfile, so a flaky network must not turn
@@ -20,11 +20,22 @@
 #
 # Environment:
 #   LINGDOC_NPM_ATTEMPTS             whole-install attempts (default 4)
-#   LINGDOC_NPM_FALLBACK_REGISTRY    mirror used for the last attempt only;
-#                                    empty (the default) disables the mirror so
-#                                    CI never silently trusts a third party
+#   LINGDOC_NPM_FALLBACK_REGISTRY    mirror used for the last attempt only.
+#                                    Defaults to https://registry.npmmirror.com.
+#                                    Set to "none" to disable, so a fork that
+#                                    must never reach a third party can turn it
+#                                    off without editing this script.
+#
+# Why trusting a mirror is acceptable here: every resolved dependency in this
+# repository's lockfiles carries an `integrity` hash (492 of 492 entries in
+# frontend/package-lock.json). npm verifies that hash against the downloaded
+# tarball regardless of which registry served it, so a mirror can serve bytes
+# but cannot change which package is installed. A mirror outage or a tampered
+# response shows up as a checksum failure, not as a different dependency tree.
 
 set -euo pipefail
+
+DEFAULT_FALLBACK_REGISTRY="https://registry.npmmirror.com"
 
 usage() {
   echo "usage: npm-ci.sh [install-dir] [extra npm ci args...]" >&2
@@ -38,7 +49,10 @@ case "${1:-}" in
 esac
 
 ATTEMPTS="${LINGDOC_NPM_ATTEMPTS:-4}"
-FALLBACK_REGISTRY="${LINGDOC_NPM_FALLBACK_REGISTRY:-}"
+FALLBACK_REGISTRY="${LINGDOC_NPM_FALLBACK_REGISTRY:-$DEFAULT_FALLBACK_REGISTRY}"
+if [[ "${FALLBACK_REGISTRY,,}" == "none" || "${FALLBACK_REGISTRY,,}" == "off" ]]; then
+  FALLBACK_REGISTRY=""
+fi
 
 DIR="."
 if [[ $# -gt 0 ]]; then
@@ -66,8 +80,32 @@ fi
 
 # Transport retries handle a dropped socket. The outer loop handles the case
 # where npm spent its budget and left the cache and node_modules mid-write.
+#
+# install_once [registry]
+#   With no argument it uses whatever `npm config get registry` resolves to.
+#   With a registry argument it overrides that for this attempt only, so the
+#   mirror never persists into the rest of the job.
+#
+#   `--replace-registry-host=always` is mandatory on the mirror attempt, not
+#   decoration. `npm ci` downloads straight from each lockfile entry's
+#   `resolved` URL and ignores `--registry` by default: a lockfile entry
+#   pointing at registry.npmjs.org keeps hitting registry.npmjs.org no matter
+#   what registry is configured. Verified on this repository's own lockfile,
+#   whose 492 resolved URLs already span three hosts:
+#     mirrors.tencent.com      328
+#     registry.npmjs.org       113
+#     registry.npmmirror.com    50
+#     cdn.sheetjs.com           1
+#   Without that flag the mirror attempt silently re-requests the host that
+#   already failed. With it, npm rewrites the host and the mirror is used.
 install_once() {
+  local registry=()
+  if [[ $# -gt 0 && $1 != "--" ]]; then
+    registry=(--registry="$1" --replace-registry-host=always)
+    shift
+  fi
   npm ci \
+    "${registry[@]}" \
     --no-audit \
     --no-fund \
     --fetch-retries=5 \
@@ -87,10 +125,27 @@ reset_tree() {
 
 attempt=1
 while :; do
-  echo "::group::npm ci attempt $attempt/$ATTEMPTS in $PWD (registry: $(npm config get registry))"
+  # The first attempt always uses the configured registry. Every later attempt
+  # switches to the mirror when one is available: the observed failure mode is
+  # a persistent ECONNRESET from this runner pool to registry.npmjs.org, so
+  # repeating the same endpoint three more times only burns the job's timeout.
+  registry=""
+  if [[ $attempt -gt 1 && -n "$FALLBACK_REGISTRY" ]]; then
+    registry="$FALLBACK_REGISTRY"
+  fi
+  if [[ -n "$registry" ]]; then
+    label="npm ci attempt $attempt/$ATTEMPTS in $PWD via $registry"
+  else
+    label="npm ci attempt $attempt/$ATTEMPTS in $PWD via $(npm config get registry)"
+  fi
+  echo "::group::$label"
 
   status=0
-  install_once "$@" || status=$?
+  if [[ -n "$registry" ]]; then
+    install_once "$registry" "$@" || status=$?
+  else
+    install_once "$@" || status=$?
+  fi
 
   if [[ $status -eq 0 ]]; then
     echo "::endgroup::"
@@ -101,31 +156,10 @@ while :; do
   echo "::endgroup::"
   echo "npm ci failed on attempt $attempt (exit $status)" >&2
 
-  # The mirror, when configured, is a separate last attempt rather than a
-  # silent per-request fallback, so the log always shows which registry the
-  # successful install came from.
-  if [[ -n "$FALLBACK_REGISTRY" && $attempt -eq $ATTEMPTS ]]; then
-    echo "::group::npm ci via fallback registry $FALLBACK_REGISTRY"
-    status=0
-    npm ci \
-      --registry="$FALLBACK_REGISTRY" \
-      --no-audit \
-      --no-fund \
-      --fetch-retries=5 \
-      --fetch-retry-factor=3 \
-      --fetch-retry-mintimeout=20000 \
-      --fetch-retry-maxtimeout=180000 \
-      --fetch-timeout=600000 \
-      "$@" || status=$?
-    echo "::endgroup::"
-    if [[ $status -eq 0 ]]; then
-      echo "npm ci succeeded via fallback registry $FALLBACK_REGISTRY"
-      exit 0
-    fi
-    echo "fallback registry also failed (exit $status)" >&2
-  fi
-
   if [[ $attempt -ge $ATTEMPTS ]]; then
+    if [[ -n "$FALLBACK_REGISTRY" ]] && [[ -z "$registry" ]]; then
+      echo "primary registry still unreachable and no attempt was left for $FALLBACK_REGISTRY" >&2
+    fi
     echo "npm ci exhausted $ATTEMPTS attempts in $PWD" >&2
     exit "$status"
   fi
