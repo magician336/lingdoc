@@ -314,19 +314,20 @@
   },
   "status_count_note": "本矩阵（验收台自身）内没有 TODO / NOT RUN / BLOCKED，符合 docs/agents/development-rules.md:84 的放行条件。产品矩阵（页面右栏 23 行）另有 TODO / BLOCKED / NOT RUN 行，见 product_matrix_status 段。",
   "product_matrix_status": {
-    "source": "G3-验收台-8-整链证据-20261020.json 的 ac_rows 段（aggregate-20261020，384 步，head 7f5fd8c）",
+    "source": "G3-验收台-8-整链证据-20261020.json 的 ac_rows 段（整链口径 --chain 重新落盘：7 段真实运行逐段记账，head 7f5fd8c）",
+    "updated_at_head": "b928a1a",
     "rows": [
       { "id": "G3.1", "status": "PASS", "source": "this_run" },
       { "id": "G3.2", "status": "TODO", "source": "not_judged" },
       { "id": "G3.3", "status": "TODO", "source": "not_judged" },
       { "id": "G3.4", "status": "TODO", "source": "not_judged" },
       { "id": "G3.5", "status": "TODO", "source": "not_judged" },
-      { "id": "G3.6", "status": "PASS", "source": "this_run", "limiting_gap_ids": ["G3-GAP-08"] },
-      { "id": "G3.7", "status": "TODO", "source": "not_judged", "gap_ids": ["G3-GAP-06", "G3-GAP-07"] },
+      { "id": "G3.6", "status": "WARNING", "source": "this_run", "limiting_gap_ids": ["G3-GAP-08"] },
+      { "id": "G3.7", "status": "NOT RUN", "source": "not_judged", "gap_ids": ["G3-GAP-06", "G3-GAP-07"] },
       { "id": "AC-G3-01", "status": "PASS", "source": "this_run" },
       { "id": "AC-G3-02", "status": "PASS", "source": "this_run" },
       { "id": "AC-G3-03", "status": "BLOCKED", "source": "not_judged", "gap_ids": ["G3-GAP-01"] },
-      { "id": "AC-G3-04", "status": "PASS", "source": "this_run", "limiting_gap_ids": ["G3-GAP-06", "G3-GAP-07"] },
+      { "id": "AC-G3-04", "status": "PASS (follow-up)", "source": "this_run", "limiting_gap_ids": ["G3-GAP-06", "G3-GAP-07"] },
       { "id": "AC-G3-05", "status": "PASS", "source": "this_run" },
       { "id": "AC-G3-06", "status": "WARNING", "source": "this_run" },
       { "id": "AC-G3-07", "status": "PASS (follow-up)", "source": "this_run" },
@@ -334,7 +335,7 @@
       { "id": "AC-G3-09", "status": "PASS (follow-up)", "source": "this_run", "gap_ids": ["G3-GAP-09", "G3-GAP-10"] },
       { "id": "AC-G3-10", "status": "PASS (follow-up)", "source": "historical_snapshot" },
       { "id": "AC-G3-11", "status": "PASS", "source": "this_run" },
-      { "id": "AC-G3-12", "status": "PASS", "source": "this_run", "limiting_gap_ids": ["G3-GAP-11"] },
+      { "id": "AC-G3-12", "status": "PASS (follow-up)", "source": "this_run", "limiting_gap_ids": ["G3-GAP-11"] },
       { "id": "AC-G3-13", "status": "PASS", "source": "this_run" },
       { "id": "AC-G3-14", "status": "PASS (follow-up)", "source": "this_run", "gap_ids": ["G3-GAP-04"] },
       { "id": "AC-G3-15", "status": "PASS (follow-up)", "source": "this_run", "gap_ids": ["G3-GAP-05"] },
@@ -469,8 +470,73 @@
       "exit_code": 0,
       "result": "tests 1451 / pass 1450 / fail 0 / skipped 1；vue-tsc --build 无报错；built in 32.02s（仅既有 chunk 告警）",
       "head": "643a3fc + 5e6e82f"
+    },
+    {
+      "seq": 17,
+      "command": "npm test（审查后修复后重跑）",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tests 1460 / pass 1459 / fail 0 / skipped 1 / todo 0（新增 9 例：跨段累计 5 例 + 整链导出 3 例 + 判定卡状态 1 例）",
+      "head": "b928a1a"
+    },
+    {
+      "seq": 18,
+      "command": "npm run type-check（审查后修复后重跑）",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "vue-tsc --build 无输出、无报错",
+      "head": "b928a1a"
+    },
+    {
+      "seq": 19,
+      "command": "node C:\\Users\\ASUS\\.minimax\\g3-demo-spec\\verify-criteria.mjs（审查后修复后重跑）",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "判据条目总数：23 / 逐字命中：23 / 未命中：0",
+      "head": "b928a1a"
+    },
+    {
+      "seq": 20,
+      "command": "npx tsx scripts/g3demo/run-evidence.ts --chain（新增：整链口径落盘）",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "整链证据按页面的同一个构造函数落盘：7 段真实运行逐段记账（g3r-mvfm9d8x 9 步 / g3r-mvfqelp2 10 步 / g3r-mvfqemgp 62 步 4 判定 / g3r-mvfqeok7 49 步 5 判定 / g3r-mvfqeqhn 61 步 3 判定 / g3r-mvfqetqa 82 步 6 判定 / g3r-mvfqewnl 111 步 3 判定含模型依赖）；验收行 23 条；实现缺口 11 条（#246）；后端 head 7f5fd8c；落盘 G3-验收台-8-整链证据-20261020.json",
+      "head": "b928a1a（前端）/ 7f5fd8c（后端）"
+    },
+    {
+      "seq": 21,
+      "command": "浏览器实跑复验：刷新 /demo/g3 → 读累计清单 → 「跑通变更集生命周期」→「跑通稳定化与交付闭环」",
+      "cwd": "D:\\code_warehouse\\Projects\\lingdoc\\frontend（vite dev server 5173）",
+      "exit_code": 0,
+      "result": "累计清单从 localStorage 恢复生效（AC-G3-06 徽标显示「已判定 · 来自运行 g3r-mvfqrd4i-4025a47a」）；变更集段新运行标识 g3r-mvft6a2i-e45612cb、隔离项目 82d2bd9c-c323-4336-bcaf-d1c97022146b、head 7f5fd8c，AC-G3-01 / AC-G3-02 判 PASS，左栏 62 步留痕；稳定化段「本轮已跑完：阻断态判定 + 已稳定 + 交付检查 + 快照 + 产物 + 下载核对」，G3.1 判 PASS",
+      "head": "b928a1a（前端）/ 7f5fd8c（后端）"
+    },
+    {
+      "seq": 22,
+      "command": "浏览器实跑复验：AC-G3-04 判定卡徽标",
+      "cwd": "D:\\code_warehouse\\Projects\\lingdoc\\frontend（vite dev server 5173）",
+      "exit_code": 0,
+      "result": "修复前徽标显示 NOT RUN（把「已判定但有缺口」说成「没跑」）；修复后显示 PASS (follow-up)，与矩阵右栏同源",
+      "head": "b928a1a（前端）/ 7f5fd8c（后端）"
     }
   ],
+  "post_review_fixes": {
+    "head": "b928a1a",
+    "review_verdict": "FAIL（修复前）→ 修复后复验通过",
+    "note": "本段记录审查（VERDICT=FAIL）后修掉的阻断项；逐条说明见 G3-演示验收台-20261020.md 第 9 节。",
+    "fixes": [
+      { "id": 1, "issue": "规则表里 AC-G3-01/02/04/11 能判 PASS 却没有 verdictId，判定卡与规则表不同源", "fix": "补齐 verdictId + 结构性守护断言" },
+      { "id": 2, "issue": "判定卡自带 status 时汇总体仍按规则表状态写", "fix": "以判定卡状态为准，判定不成立一律不升格" },
+      { "id": 3, "issue": "AC-G3-04 判据是合取式，判定卡只判了前半段就写成立", "fix": "判定卡补「服务端给出未受影响理由」合取项；未给出时 holds=false + PASS (follow-up) + #246" },
+      { "id": 4, "issue": "判定卡徽标写死 holds ? PASS : NOT RUN，把「已判定但有缺口」显示成「没跑」", "fix": "verdictStatus / verdictCardClass：判定卡自带状态时以它为准" },
+      { "id": 5, "issue": "G3.6 记 PASS，但 RETRIEVE_CANDIDATES 类闭环证据本机不可实跑", "fix": "G3.6 → WARNING + #246" },
+      { "id": 6, "issue": "G3.7 基线是 TODO（尚未判定），但这一行本轮不打算判定", "fix": "G3.7 基线 → NOT RUN" },
+      { "id": 7, "issue": "「导出整链证据 JSON」实际只导出最后一次运行", "fix": "会话累计清单 g3demo_run_history（上限 12 段，同 runId 去重，坏数据读成空数组）；矩阵投影支持多次运行" },
+      { "id": 8, "issue": "跨段累计若把不同项目的步骤揉在一起会串味", "fix": "判定仍在单次运行内评估，只在汇总层合并；每行标注「来自运行 <runId>」" },
+      { "id": 9, "issue": "导出体没有整链形态", "fix": "buildChainEvidenceExport：runs[] 逐段记账、verdicts 带 run_id、head 不一致或任一段 stale 则整体标过期、判定不成立却写 PASS 时退回矩阵原状态" },
+      { "id": 10, "issue": "node 侧与页面侧可能走样", "fix": "run-evidence.ts 新增 --chain：同一个构造函数 + 同一个投影纯函数" }
+    ]
+  },
   "real_runs": [
     {
       "file": "G3-验收台-2-真实链路证据-20261020.json",
