@@ -31,6 +31,15 @@
 > 证据落 `docs/08-本轮实施方案/`，**不写进 Issue**（`docs/agents/issue-tracker.md:54-56`）。
 > 结论绑定上表的 head；head 变化后这些结论整体失效。
 
+## 本票提交
+
+- `0c00d85` — `docs(#245)`：实施文档、PR body 片段、本票证据 JSON（验收台自身 23 行矩阵）
+- `438dc0b` — `chore(#245)`：重跑整条真实链路，刷新 G3 验收台 2-8 的证据 JSON
+
+> 两个提交只动 `docs/08-本轮实施方案/` 下的文档与证据 JSON；`frontend/src/**` 与
+> `frontend/scripts/**` 与证据执行时的 `643a3fc` 完全一致。
+> 写入 body 时请把上表的 SHA 换成 **PR #247 合并后那一刻的 head**。
+
 ## 本票的验证命令与结果
 
 | 命令 | 结果 |
