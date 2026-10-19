@@ -117,6 +117,9 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	if inputUpperBound < 0 || inputUpperBound > InputMax || outputLimit < 0 || outputLimit > OutputMax {
 		return nil, ErrInputTooLarge
 	}
+	if model == QwenEmbeddingFlash && b.profile != CostOnlyProfile {
+		return nil, ErrWrongModel
+	}
 	reserveNanoCNY, reserveNanoUSD, err := reserveAmounts(model, inputUpperBound, outputLimit)
 	if err != nil {
 		return nil, err
@@ -275,11 +278,12 @@ func reserveAmounts(model string, inputUpperBound, outputLimit int) (int64, int6
 	case DeepSeekModel:
 		usd := int64(inputUpperBound)*DeepSeekInputNanoUSDPerToken + int64(outputLimit)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
-	case QwenEmbedding:
+	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputLimit != 0 {
 			return 0, 0, ErrWrongModel
 		}
-		return int64(inputUpperBound) * QwenNanoCNYPerToken, 0, nil
+		price, _ := EmbeddingInputNanoCNYPerToken(model)
+		return int64(inputUpperBound) * price, 0, nil
 	default:
 		return 0, 0, ErrWrongModel
 	}
@@ -293,11 +297,12 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	case DeepSeekModel:
 		usd := int64(inputTokens)*DeepSeekInputNanoUSDPerToken + int64(outputTokens)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
-	case QwenEmbedding:
+	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputTokens != 0 {
 			return 0, 0, ErrWrongModel
 		}
-		return int64(inputTokens) * QwenNanoCNYPerToken, 0, nil
+		price, _ := EmbeddingInputNanoCNYPerToken(model)
+		return int64(inputTokens) * price, 0, nil
 	default:
 		return 0, 0, ErrWrongModel
 	}
@@ -373,6 +378,9 @@ func validLedger(ledger Ledger, profile string) bool {
 	}
 	var reserveCNY, actualCNY, reserveUSD, actualUSD int64
 	for index, request := range ledger.Requests {
+		if request.Model == QwenEmbeddingFlash && profile != CostOnlyProfile {
+			return false
+		}
 		if request.Reconciliation != nil && (profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
 			return false
 		}
@@ -399,7 +407,7 @@ func validLedger(ledger Ledger, profile string) bool {
 		reserveUSD += request.ReservedNanoUSD
 		actualUSD += request.ActualNanoUSD
 	}
-	return reserveCNY == ledger.ReservedNanoCNY && actualCNY == ledger.ActualNanoCNY && reserveUSD == ledger.ReservedNanoUSD && actualUSD == ledger.ActualNanoUSD
+	return reserveCNY == ledger.ReservedNanoCNY && actualCNY == ledger.ActualNanoCNY && reserveUSD == ledger.ReservedNanoUSD && actualUSD == ledger.ActualNanoUSD && consistentRecordedCosts(ledger)
 }
 
 func hasUnresolved(ledger Ledger) bool {

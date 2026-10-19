@@ -111,11 +111,12 @@ func (b *Budget) ReconcileEmbeddingHTTPError(ctx context.Context, input Reconcil
 }
 
 func fullReserveEmbeddingHTTPError(request Request) bool {
-	return request.Model == QwenEmbedding && request.Status == "http_error" && request.OutputLimit == 0 &&
+	price, allowed := EmbeddingInputNanoCNYPerToken(request.Model)
+	return allowed && request.Status == "http_error" && request.OutputLimit == 0 &&
 		request.InputUpperBound > 0 && request.InputUpperBound <= InputMax &&
 		request.InputTokens == request.InputUpperBound && request.OutputTokens == 0 && request.FinishReason == "" &&
 		!request.CreatedAt.IsZero() && request.ActualNanoCNY == request.ReservedNanoCNY &&
-		request.ReservedNanoCNY == int64(request.InputUpperBound)*QwenNanoCNYPerToken &&
+		request.ReservedNanoCNY == int64(request.InputUpperBound)*price &&
 		request.ActualNanoUSD == request.ReservedNanoUSD && request.ReservedNanoUSD == 0
 }
 
