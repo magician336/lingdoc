@@ -304,6 +304,54 @@
         "x-delivery-phase": "core"
       }
     },
+"/projects/{projectId}/change-sets/{changeSetId}/impact-assessment": {
+      "get": {
+        "operationId": "getImpactAssessment",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取某个 ChangeSet 的影响评估结果",
+        "description": "影响评估是确定影响与可能影响的分离：certainty=definite 的影响对应 required 对象，会阻断稳定化；certainty=possible 来自 suggested 边，不进入 required 集合，不能独立阻断或放行交付。客户端不得在本端重算 certainty，也不得用 input_hash 自行判断结论新鲜度。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "该 ChangeSet 的影响评估快照",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactAssessmentResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前租户成员无权读取；或响应所引用的任一对象版本不可见"
+          },
+          "404": {
+            "description": "项目或 ChangeSet 不存在或不可访问"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
 "/projects/{projectId}/check-receipts/{receiptId}": {
       "get": {
         "operationId": "getImpactComputationReceipt",
@@ -16606,6 +16654,190 @@
           "reason": {
             "type": "string",
             "description": "服务端实际给出的阻断原因"
+          }
+        }
+      },
+"ImpactCause": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "edge_id",
+          "source",
+          "reason"
+        ],
+        "properties": {
+          "edge_id": {
+            "type": "string",
+            "description": "造成该影响的那条依赖边；同一目标的多个成因在此合并，而不是追加第二条影响"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef",
+            "description": "沿该边传播到目标的源头对象版本"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ResolvedImpact": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "target",
+          "action",
+          "certainty",
+          "causes"
+        ],
+        "properties": {
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ]
+          },
+          "certainty": {
+            "type": "string",
+            "enum": [
+              "definite",
+              "possible"
+            ],
+            "description": "由服务端按边状态推导。definite 来自 confirmed 边，进入 required 对象集合并可阻断稳定化；possible 来自 suggested 边，不进入 required 集合。客户端不得本地推断。"
+          },
+          "causes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactCause"
+            }
+          }
+        }
+      },
+      "ImpactObjectState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ref",
+          "state",
+          "source_ids",
+          "confirmed",
+          "context_revision"
+        ],
+        "properties": {
+          "ref": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "state": {
+            "type": "string",
+            "description": "对象在本次评估中的状态快照，例如 confirmed、invalidated、regenerated"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "支撑该状态的资料版本 ID 列表"
+          },
+          "confirmed": {
+            "type": "boolean",
+            "description": "确认是否仍然成立。仅失效确认真正需要人工动作，其余为服务端记账字段"
+          },
+          "context_revision": {
+            "type": "integer",
+            "description": "该对象状态被记录时的基线修订；与本次 context_revision 不一致表示结论已落后"
+          }
+        }
+      },
+      "ImpactAssessment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "change_set_id",
+          "project_id",
+          "context_revision",
+          "template_copy_version",
+          "ruleset_hash",
+          "input_hash",
+          "objects",
+          "edges",
+          "impacts",
+          "assessed_at"
+        ],
+        "properties": {
+          "change_set_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "context_revision": {
+            "type": "integer",
+            "description": "本次评估所依据的基线修订"
+          },
+          "template_copy_version": {
+            "type": "integer",
+            "description": "评估时使用的模板副本版本"
+          },
+          "ruleset_hash": {
+            "type": "string"
+          },
+          "input_hash": {
+            "type": "string",
+            "description": "评估输入的指纹。客户端凭它判断本地缓存的结论是否仍然新鲜，不得自行重算"
+          },
+          "objects": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactObjectState"
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyEdge"
+            },
+            "description": "本次评估所依据的依赖边全量快照，含 suggested 与 rejected；suggested 边只产生 possible 影响"
+          },
+          "impacts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedImpact"
+            }
+          },
+          "semantic_hash": {
+            "type": "string",
+            "description": "影响结论本身的语义指纹。省略表示本次评估未产生语义指纹，客户端不得当作空串比较"
+          },
+          "assessed_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ImpactAssessmentResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ImpactAssessment"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
           }
         }
       },

@@ -38,7 +38,21 @@ export type ImpactTaskStaleReason = 'target_version_replaced' | 'assignee_revoke
 // client can decide the accept affordance from this value alone.
 export type ImpactTaskSeverity = 'blocking' | 'warning' | 'info'
 export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: ImpactTaskSeverity; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
-export interface ImpactAssessment { change_set_id: string; context_revision: number; input_hash: string; ruleset_hash: string; impacts: Array<{ target: ObjectVersionRef; action: string; certainty: 'definite' | 'possible'; causes: Array<{ edge_id: string; reason: string }> }> }
+// An object state records what the assessment concluded about one object
+// version: whether its confirmation survived, which source versions back it,
+// and the baseline revision that verdict was recorded at. `objects` is the
+// required set - the definite half of definite-vs-possible.
+export interface ImpactObjectState { ref: ObjectVersionRef; state: string; source_ids: string[]; confirmed: boolean; context_revision: number }
+// The cause's `source` is the origin the impact propagated FROM along `edge_id`;
+// without it a client can name the edge but not what fed it.
+export interface ImpactCause { edge_id: string; source: ObjectVersionRef; reason: string }
+export interface ResolvedImpact { target: ObjectVersionRef; action: string; certainty: 'definite' | 'possible'; causes: ImpactCause[] }
+// `edges` is the full edge snapshot the assessment was derived from, including
+// suggested and rejected edges: a `possible` impact is a suggested edge's doing,
+// so rendering certainty without the edge set hides its own evidence.
+// `semantic_hash` is absent (not empty) when the run produced no semantic hash;
+// comparing it as '' would report a stale mismatch for a fresh assessment.
+export interface ImpactAssessment { change_set_id: string; project_id: string; context_revision: number; template_copy_version: number; ruleset_hash: string; input_hash: string; objects: ImpactObjectState[]; edges: DependencyEdge[]; impacts: ResolvedImpact[]; semantic_hash?: string; assessed_at: string }
 // A 'complete' whose recorded target version was replaced becomes STALE, not
 // DONE, so clients must render the reason rather than treating it as closed.
 export interface StabilizationResult { change_set_id: string; context_revision: number; status: 'BLOCKED' | 'STABILIZED'; blockers: Array<{ code: string; target_id?: string; reason: string }>; stale_task_ids: string[]; checked_at: string }
