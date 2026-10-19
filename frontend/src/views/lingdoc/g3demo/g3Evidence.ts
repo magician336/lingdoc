@@ -15,6 +15,7 @@
 
 import type { G3MatrixRow } from './g3Matrix'
 import type { G3Status } from './g3Status'
+import type { G3LifecycleSnapshot } from './runner/changeset'
 import type { G3BackendHead, G3ChapterFact, G3RunContext, G3StepRecord } from './runner/runContext'
 
 /** 一行判据要成为「本轮已判定」所必需的条件。 */
@@ -30,11 +31,58 @@ export interface G3RowEvidenceRule {
 /**
  * 规则表。
  *
- * 当前**故意为空**：本票跑的是前置链，它不判定任何一条 G3 判据。
- * 后续票在真正跑到自己的步骤时再往这里补规则——补进来的那一刻，
- * 该行才会被本轮证据驱动。
+ * 每一行写清「这条判据要成立，本轮必须**成功执行**哪些步骤」。
+ * 补进来的那一刻，对应行才会被本轮证据驱动；规则表之外的行状态**原样保留**。
+ *
+ * 步骤名取自 `runner/changeset.ts` 的 `G3_CS_STEPS`——两边共用同一份常量，
+ * 名字对不上时矩阵那几行会退回「未被本轮覆盖」，而不是给出假的 `PASS`。
  */
-export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> = Object.freeze({})
+export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> = Object.freeze({
+  'AC-G3-01': {
+    requires: [
+      '创建变更集',
+      '评估变更集',
+      '读影响评估',
+      '应用变更集',
+      '读上下文修订',
+      '读章节版本列表',
+      '复写章节正文',
+      '重新确认章节',
+    ],
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：Owner 应用后推进上下文修订，受影响章节的确认失效并进入待复核，' +
+      '复写后按当前规格修订与当前章节版本重新确认（证据见左栏与「变更集生命周期」判定卡）。',
+  },
+  'AC-G3-02': {
+    requires: [
+      '创建并发变更集',
+      '应用并发变更集',
+      '读回陈旧变更集',
+      '读上下文修订',
+      '读影响任务',
+    ],
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：两个变更集同基于一个上下文修订，先应用的推进修订，' +
+      '后应用的返回 409 并落为 STALE，未产生新上下文修订、也未产生影响任务。',
+  },
+  'AC-G3-04': {
+    requires: ['创建变更集', '读影响评估', '应用变更集', '读章节版本列表', '读影响任务'],
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：未列入受影响范围的章节不在影响评估的对象与影响里，' +
+      '没有为它产生影响任务，其章节版本的确认标记未被本次变更集置为失效；' +
+      '未受影响理由按响应如实呈现（服务端未给出理由时标注「服务端未提供未受影响理由」）。',
+  },
+  'AC-G3-11': {
+    requires: ['创建逆向变更集', '读回原变更集', '读逆向影响评估', '应用逆向变更集'],
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：撤销经由新建的逆向变更集完成（原变更集历史仍可读），' +
+      '逆向变更集重新评估后应用，项目指针没有静默回退。',
+  },
+})
 
 /** 本轮对某一行的覆盖情况。 */
 export interface G3RowEvidence {
@@ -117,6 +165,9 @@ export function applyRunEvidence(rows: readonly G3MatrixRow[], ctx: G3RunContext
       status: rule.status,
       evidence: rule.note,
       note: item.note,
+      // 这一行既然已被本轮实跑判定，接它的「跟进 Issue」就不再是待办：
+      // 保留它会让人以为还有未完成的事。
+      followUpIssue: undefined,
     }
   })
   return { rows: nextRows, evidence }
@@ -135,6 +186,8 @@ export interface G3RunSummary {
   stale: boolean
   staleReason?: string
   missingSections: string[]
+  /** 变更集生命周期链的页面快照（没有跑过就没有这一项）。 */
+  lifecycle?: G3LifecycleSnapshot
 }
 
 /** 运行摘要的本地存储键。 */
@@ -149,7 +202,7 @@ export interface G3RunStorage {
 /** 把运行上下文压成摘要。 */
 export function summarizeRun(
   ctx: G3RunContext,
-  extra: { missingSections: string[] },
+  extra: { missingSections: string[]; lifecycle?: G3LifecycleSnapshot },
 ): G3RunSummary {
   return {
     runId: ctx.runId,
@@ -163,6 +216,7 @@ export function summarizeRun(
     stale: ctx.stale,
     staleReason: ctx.staleReason,
     missingSections: extra.missingSections,
+    lifecycle: extra.lifecycle,
   }
 }
 

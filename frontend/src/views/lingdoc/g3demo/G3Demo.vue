@@ -151,6 +151,198 @@
       </p>
     </section>
 
+    <section class="lifecycle-card" aria-labelledby="lifecycle-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">变更集生命周期</p>
+          <h2 id="lifecycle-title">创建 → 读影响评估 → Owner 应用 → 受影响章节重新确认</h2>
+        </div>
+        <span class="section-note">页面与 node 脚本跑同一份执行器</span>
+      </div>
+
+      <p class="live-lede">
+        这一段在真实模式里把变更集生命周期跑完：先建两个**同一基线**的变更集，
+        应用其中一个（另一个会因基线推进落为陈旧），再复写受影响章节并按新规格修订重新确认，
+        最后用**新建的逆向变更集**完成撤销。非 Owner 探测会另起一个同租户成员，
+        让它调用应用与拒绝，按仓库错误码原样呈现。
+      </p>
+
+      <div class="live-actions">
+        <button
+          class="live-button live-button--primary"
+          :disabled="lifecycleRunning || running"
+          @click="startLifecycle"
+        >
+          {{ lifecycleRunning ? '运行中…' : '跑通变更集生命周期' }}
+        </button>
+        <span class="section-note">
+          {{
+            lifecycle
+              ? '本轮已跑完：四张判定卡 + 变更集、章节确认、影响评估与权限探测'
+              : '尚未运行；未运行时下面不显示任何证据位'
+          }}
+        </span>
+      </div>
+
+      <p v-if="lifecycleError" class="live-error" role="alert">
+        <strong>运行失败：</strong>{{ lifecycleError }}
+      </p>
+
+      <template v-if="lifecycle">
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in lifecycle.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+              >
+                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 class="matrix-group-title">变更集</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>变更集</th><th>状态</th><th>基线 → 目标修订</th><th>受影响章节</th><th>血缘</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in changeSetRows" :key="row.id">
+                <th scope="row">
+                  <code>{{ row.id }}</code>
+                  <small>{{ row.label }}</small>
+                </th>
+                <td>
+                  <span class="status-badge" :class="changeSetTone(row.status)">{{ row.status }}</span>
+                  <small v-if="row.staleReason">stale_reason={{ row.staleReason }}</small>
+                </td>
+                <td>{{ row.revisions }}</td>
+                <td>{{ row.affected }}</td>
+                <td>{{ row.lineage }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="matrix-group-title">章节确认：失效 → 重新确认</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>章节</th><th>应用前</th><th>应用后</th><th>步骤</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in chapterRows" :key="row.id">
+                <th scope="row">
+                  <strong>{{ row.title }}</strong>
+                  <small>{{ row.sectionId }} · {{ row.id }}</small>
+                </th>
+                <td>
+                  <span class="fact-line">版本级确认标记 {{ row.beforeVersion }}</span>
+                  <span class="fact-line">当前确认 {{ row.beforeConfirmation }}</span>
+                </td>
+                <td>
+                  <span class="fact-line">版本级确认标记 {{ row.afterVersion }}</span>
+                  <span class="fact-line">当前确认 {{ row.afterConfirmation }}</span>
+                </td>
+                <td>
+                  <ol class="mini-steps">
+                    <li v-for="step in row.steps" :key="step.title" :class="step.tone">
+                      <strong>{{ step.title }}</strong>
+                      <span>{{ step.text }}</span>
+                    </li>
+                  </ol>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          「版本级确认标记」取自 <code>GET /chapters/{id}/versions</code> 的 <code>confirmation_valid</code>：
+          只有被本次变更集列入失效范围的章节才会变 false。
+          「当前确认」取自 <code>GET /chapters/{id}/confirmations/current</code>：
+          服务端在规格修订推进后，对**所有**章节的当前确认都判为失效（确认绑定的规格修订落后），
+          页面如实呈现这个口径差异。
+        </p>
+
+        <h3 class="matrix-group-title">影响评估预览</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>影响对象</th><th>动作</th><th>确定性</th><th>来源与理由</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="(impact, index) in lifecycle.assessment.impacts" :key="index">
+                <th scope="row">
+                  <code>{{ impact.target.kind }}/{{ impact.target.id }}</code>
+                  <small>版本 {{ impact.target.version }}</small>
+                </th>
+                <td>{{ impact.action }}</td>
+                <td>
+                  <span class="status-badge" :class="impact.certainty === 'definite' ? 'status-badge--pass' : 'status-badge--warning'">
+                    {{ impact.certainty === 'definite' ? '确定影响' : '可能影响，等待人工判断' }}
+                  </span>
+                </td>
+                <td>
+                  <span v-for="(cause, causeIndex) in impact.causes" :key="causeIndex" class="fact-line">
+                    <code>{{ cause.source.kind }}/{{ cause.source.id }}</code> · {{ cause.reason }}
+                  </span>
+                </td>
+              </tr>
+              <tr v-if="!lifecycle.assessment.impacts.length">
+                <td colspan="4">影响评估里没有影响条目。</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          受影响对象（服务端 <code>assessment.objects</code>）：
+          <code v-for="object in lifecycle.assessment.objects" :key="object.id">
+            {{ object.kind }}/{{ object.id }} · {{ object.state }} · confirmed={{ object.confirmed }}
+          </code>
+        </p>
+        <p class="card-footnote">
+          <strong>未受影响理由：</strong>{{ lifecycle.unaffected.text }}
+          <template v-if="!lifecycle.unaffected.serverReason">
+            （服务端没有给出未受影响理由，这里只陈述从响应读到的观察事实。）
+          </template>
+        </p>
+
+        <h3 class="matrix-group-title">非 Owner 权限探测</h3>
+        <div v-if="lifecycle.permissionProbe" class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>调用</th><th>状态码</th><th>错误码</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in permissionRows" :key="row.label">
+                <th scope="row">{{ row.label }}</th>
+                <td>HTTP {{ row.status }}</td>
+                <td><code>{{ row.code || '（成功，无错误码）' }}</code></td>
+              </tr>
+            </tbody>
+          </table>
+          <p class="card-footnote">
+            非 Owner 是同租户、同项目的成员（治理角色 admin）：它**能读到**变更集，
+            但调用应用与拒绝都被服务端按仓库错误码拒掉——服务端对「不是 Owner」统一回 404，
+            不泄露资源存在性。
+          </p>
+        </div>
+        <p v-else class="card-footnote">本轮没有跑非 Owner 探测。</p>
+      </template>
+    </section>
+
     <div class="console-columns">
       <section class="flow-card" aria-labelledby="flow-title">
         <div class="section-heading">
@@ -559,6 +751,7 @@ import {
   type G3RunSummary,
 } from './g3Evidence'
 import { runChain } from './runner/chain'
+import { runChangeSetChain, toLifecycleSnapshot, type G3LifecycleSnapshot } from './runner/changeset'
 import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
 import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3StepRecord } from './runner/runContext'
 
@@ -583,6 +776,9 @@ const liveChapters = ref<G3ChapterFact[]>([])
 const liveHead = ref<G3BackendHead | null>(null)
 const liveSteps = ref<G3StepRecord[]>([])
 const missingSections = ref<string[]>([])
+const lifecycle = ref<G3LifecycleSnapshot | null>(null)
+const lifecycleError = ref('')
+const lifecycleRunning = ref(false)
 
 /** 接管会话之前先把用户原来的令牌记住，好还回去。 */
 let originalToken: string | null = null
@@ -636,6 +832,126 @@ const coverageTone = (item?: G3RowEvidence) => {
 const anchorLabel = (anchor: SpecAnchor) => formatAnchor(anchor)
 const anchorPath = (anchor: SpecAnchor) => anchor.path
 
+/** 变更集状态的显示色调（域内状态，不是门禁词表）。 */
+const changeSetTone = (status: string) => {
+  if (status === 'applied') return 'status-badge--pass'
+  if (status === 'stale') return 'status-badge--not-run'
+  if (status === 'rejected') return 'status-badge--warning'
+  if (status === 'assessed') return 'status-badge--follow-up'
+  return 'status-badge--todo'
+}
+
+/** 变更集表：四条记录（局部影响、并发、重评估、逆向）。 */
+const changeSetRows = computed(() => {
+  const snapshot = lifecycle.value
+  if (!snapshot) return []
+  const rows = [
+    { label: '局部影响（研究目标）', fact: snapshot.changeSets.scoped },
+    { label: '并发（同一基线）', fact: snapshot.changeSets.concurrent },
+    { label: '重评估记录（原记录留历史）', fact: snapshot.changeSets.reassessed },
+    { label: '逆向撤销', fact: snapshot.changeSets.reversed },
+  ]
+  return rows.map((row) => ({
+    id: row.fact.id,
+    label: row.label,
+    status: row.fact.status,
+    staleReason: row.fact.staleReason,
+    revisions:
+      `上下文 ${row.fact.baseContextRevision} → ${row.fact.targetContextRevision ?? '—'}` +
+      ` · 规格 ${row.fact.baseSpecRevision} → ${row.fact.targetSpecRevision ?? '—'}`,
+    affected: row.fact.impacts.length
+      ? row.fact.impacts.map((impact) => impact.title || impact.chapter_id).join('、')
+      : '（无受影响章节）',
+    lineage:
+      [
+        row.fact.reversesChangeSetId ? `reverses=${row.fact.reversesChangeSetId}` : '',
+        row.fact.reassessedFromId ? `reassessed_from=${row.fact.reassessedFromId}` : '',
+        row.fact.staleReason ? `stale_reason=${row.fact.staleReason}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · ') || '—',
+  }))
+})
+
+/** 章节确认表：受影响章节展示「失效 → 重新确认」两步。 */
+const chapterRows = computed(() => {
+  const snapshot = lifecycle.value
+  if (!snapshot) return []
+  const affected = snapshot.chapters
+  return [
+    {
+      id: affected.affectedBefore.chapterId,
+      sectionId: affected.affectedBefore.sectionId,
+      title: affected.affectedBefore.title,
+      beforeVersion: affected.affectedBefore.versionConfirmationValid,
+      beforeConfirmation: affected.affectedBefore.currentConfirmation
+        ? `id=${affected.affectedBefore.currentConfirmation.id} · 规格修订 ${affected.affectedBefore.currentConfirmation.specRevision}`
+        : '（无）',
+      afterVersion: affected.affectedAfter.versionConfirmationValid,
+      afterConfirmation: affected.affectedAfter.currentConfirmation
+        ? `id=${affected.affectedAfter.currentConfirmation.id} · 规格修订 ${affected.affectedAfter.currentConfirmation.specRevision}`
+        : '（无）',
+      steps: [
+        {
+          title: '失效',
+          tone: 'mini-step--bad',
+          text:
+            `应用后章节版本的确认标记 ${affected.affectedBefore.versionConfirmationValid} → ` +
+            `${affected.affectedAfter.versionConfirmationValid}；当前确认：${affected.affectedAfter.currentConfirmation ? '仍在' : '已失效（待复核）'}`,
+        },
+        {
+          title: '重新确认',
+          tone: affected.affectedReconfirmed.currentConfirmation ? 'mini-step--ok' : 'mini-step--idle',
+          text: affected.affectedReconfirmed.currentConfirmation
+            ? `复写后按规格修订 ${affected.affectedReconfirmed.currentConfirmation.specRevision} 与章节版本 ` +
+              `${affected.affectedReconfirmed.currentConfirmation.chapterVersionId} 确认 → id=${affected.affectedReconfirmed.currentConfirmation.id}`
+            : '尚未重新确认',
+        },
+      ],
+    },
+    {
+      id: affected.unaffectedBefore.chapterId,
+      sectionId: affected.unaffectedBefore.sectionId,
+      title: affected.unaffectedBefore.title,
+      beforeVersion: affected.unaffectedBefore.versionConfirmationValid,
+      beforeConfirmation: affected.unaffectedBefore.currentConfirmation
+        ? `id=${affected.unaffectedBefore.currentConfirmation.id} · 规格修订 ${affected.unaffectedBefore.currentConfirmation.specRevision}`
+        : '（无）',
+      afterVersion: affected.unaffectedAfter.versionConfirmationValid,
+      afterConfirmation: affected.unaffectedAfter.currentConfirmation
+        ? `id=${affected.unaffectedAfter.currentConfirmation.id} · 规格修订 ${affected.unaffectedAfter.currentConfirmation.specRevision}`
+        : '（无）',
+      steps: [
+        {
+          title: '未被本次变更集失效',
+          tone: 'mini-step--ok',
+          text:
+            `未列入受影响范围：章节版本确认标记 ${affected.unaffectedBefore.versionConfirmationValid} → ` +
+            `${affected.unaffectedAfter.versionConfirmationValid}，没有为它产生影响任务`,
+        },
+        {
+          title: '口径差异（如实标注）',
+          tone: 'mini-step--idle',
+          text: affected.unaffectedAfter.currentConfirmation
+            ? '当前确认仍在'
+            : '服务端在规格修订推进后，对所有章节的当前确认都判为失效（确认绑定的规格修订落后）',
+        },
+      ],
+    },
+  ]
+})
+
+/** 非 Owner 权限探测表。 */
+const permissionRows = computed(() => {
+  const probe = lifecycle.value?.permissionProbe
+  if (!probe) return []
+  return [
+    { label: '读变更集', status: probe.read.status, code: probe.read.code },
+    { label: '应用变更集', status: probe.apply.status, code: probe.apply.code },
+    { label: '拒绝变更集', status: probe.reject.status, code: probe.reject.code },
+  ]
+})
+
 /** 读一次本地状态：演示账号与上一次运行。 */
 function restoreLocalState(): void {
   try {
@@ -650,6 +966,7 @@ function restoreLocalState(): void {
       liveProjectName.value = runSummary.value.projectName ?? ''
       liveChapters.value = runSummary.value.chapters
       missingSections.value = runSummary.value.missingSections
+      lifecycle.value = runSummary.value.lifecycle ?? null
     }
   } catch {
     // 本地存储不可用时如实当作「没有历史」，不假装有。
@@ -658,6 +975,47 @@ function restoreLocalState(): void {
   }
 }
 restoreLocalState()
+
+/**
+ * 提交一次运行的结果：摘要落盘 + 左栏实时状态。
+ *
+ * 前置链与变更集生命周期链共用这一段，所以两条链留下的证据进同一份摘要，
+ * 矩阵的「本轮覆盖」也读同一份步骤表。
+ */
+function commitRun(
+  result: Awaited<ReturnType<typeof runChain>>,
+  account: G3DemoAccount,
+  registerFirst: boolean,
+  snapshot?: G3LifecycleSnapshot,
+): void {
+  if (registerFirst) {
+    saveDemoAccount(localStorage, account)
+    savedAccount.value = account
+  }
+
+  const previous = runSummary.value
+  const change = headChangedSince(previous, result.ctx.head)
+  if (change.changed && previous) {
+    previousSummary.value = { ...previous, stale: true, staleReason: change.reason }
+    staleNotice.value = change.reason
+  } else {
+    previousSummary.value = previous
+  }
+
+  const summary = summarizeRun(result.ctx, { missingSections: result.missingSections, lifecycle: snapshot })
+  runSummary.value = summary
+  saveRunSummary(localStorage, summary)
+
+  liveSteps.value = result.ctx.steps
+  liveHead.value = result.ctx.head
+  liveRunId.value = result.ctx.runId
+  liveAccountEmail.value = account.email
+  liveProjectId.value = result.project.id
+  liveProjectName.value = result.project.name
+  liveChapters.value = result.chapters
+  missingSections.value = result.missingSections
+  lifecycle.value = snapshot ?? null
+}
 
 /**
  * 跑一次真实链。
@@ -698,32 +1056,7 @@ async function startRun(registerFirst: boolean): Promise<void> {
       },
     })
 
-    if (registerFirst) {
-      saveDemoAccount(localStorage, account)
-      savedAccount.value = account
-    }
-
-    const previous = runSummary.value
-    const change = headChangedSince(previous, result.ctx.head)
-    if (change.changed && previous) {
-      previousSummary.value = { ...previous, stale: true, staleReason: change.reason }
-      staleNotice.value = change.reason
-    } else {
-      previousSummary.value = previous
-    }
-
-    const summary = summarizeRun(result.ctx, { missingSections: result.missingSections })
-    runSummary.value = summary
-    saveRunSummary(localStorage, summary)
-
-    liveSteps.value = result.ctx.steps
-    liveHead.value = result.ctx.head
-    liveRunId.value = result.ctx.runId
-    liveAccountEmail.value = account.email
-    liveProjectId.value = result.project.id
-    liveProjectName.value = result.project.name
-    liveChapters.value = result.chapters
-    missingSections.value = result.missingSections
+    commitRun(result, account, registerFirst)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     runError.value = message
@@ -737,6 +1070,86 @@ async function startRun(registerFirst: boolean): Promise<void> {
     }
   } finally {
     running.value = false
+  }
+}
+
+/**
+ * 跑一次变更集生命周期链。
+ *
+ * 复用同一份执行器（`runner/changeset.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startLifecycle(): Promise<void> {
+  if (lifecycleRunning.value || running.value) return
+  lifecycleRunning.value = true
+  lifecycleError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const lifecycleResult = await runChangeSetChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+      chapters: result.chapters.map((chapter) => ({
+        id: chapter.id,
+        sectionId: chapter.sectionId,
+        title: chapter.title,
+      })),
+      tenantId: result.identity.tenantId,
+      withNonOwnerToken: async (token, run) => {
+        // 浏览器侧的请求拦截器会用存储里的令牌覆盖 Authorization，
+        // 所以要以非 Owner 身份发请求，必须把令牌临时换过去，再换回来。
+        const previous = localStorage.getItem('weknora_token')
+        auth.setToken(token)
+        try {
+          return await run()
+        } finally {
+          if (previous) {
+            auth.setToken(previous)
+          } else {
+            localStorage.removeItem('weknora_token')
+          }
+        }
+      },
+    })
+
+    const snapshot = toLifecycleSnapshot(lifecycleResult)
+    lifecycle.value = snapshot
+    commitRun(result, account, registerFirst, snapshot)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    lifecycleError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    lifecycleRunning.value = false
   }
 }
 
@@ -860,6 +1273,25 @@ function releaseSession(): void {
 .chain-result { margin: 6px 0 0; color: var(--ink-soft); font-size: 12px; line-height: 1.55; }
 .console-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 22px; padding: 14px 4px 0; border-top: 1px solid #c8dbd5; color: #708983; font-size: 11px; letter-spacing: .03em; }
 .demo-chip--live { border-color: rgba(140, 235, 220, .55); color: #b6f4ea; background: rgba(11, 140, 145, .28); }
+.lifecycle-card { margin-top: 18px; padding: 24px 26px; border: 1px solid var(--line); border-radius: 18px; background: rgba(249, 252, 250, .88); box-shadow: 0 10px 30px rgba(26, 66, 61, .05); }
+.verdict-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.verdict-card { padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.verdict-card--ok { border-color: #9ed3c6; background: #f4fbf8; }
+.verdict-card--bad { border-color: #e6b6a8; background: #fff7f4; }
+.verdict-card header { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.verdict-card header strong { font-size: 13.5px; }
+.verdict-detail { margin: 8px 0 0; color: #2c4a45; font-size: 12.5px; line-height: 1.65; }
+.verdict-evidence { margin: 10px 0 0; padding-left: 18px; }
+.verdict-evidence li { margin: 4px 0; color: #46635f; font-size: 11.5px; line-height: 1.55; word-break: break-all; }
+.verdict-evidence code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.fact-line { display: block; color: #46635f; font-size: 11.5px; line-height: 1.6; word-break: break-all; }
+.mini-steps { margin: 0; padding-left: 16px; }
+.mini-steps li { margin: 4px 0; font-size: 11.5px; line-height: 1.55; }
+.mini-steps strong { display: inline-block; margin-right: 6px; }
+.mini-steps span { color: #46635f; word-break: break-all; }
+.mini-step--ok strong { color: #087467; }
+.mini-step--bad strong { color: #a14637; }
+.mini-step--idle strong { color: #86621f; }
 .live-lede { max-width: 900px; margin: 0; color: var(--ink-soft); font-size: 13px; line-height: 1.75; }
 .live-lede code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
 .live-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
