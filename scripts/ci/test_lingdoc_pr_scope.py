@@ -65,6 +65,35 @@ class ScopeTests(unittest.TestCase):
         event["action"] = "opened"
         self.assertEqual(gate.latest_git_range(Path.cwd(), event), "a" * 40 + "..." + "b" * 40)
 
+    def test_unresolvable_synchronize_before_falls_back_to_head_parent(self):
+        event = {
+            "action": "synchronize",
+            "before": "a" * 40,
+            "after": "b" * 40,
+            "pull_request": {"base": {"sha": "c" * 40}, "head": {"sha": "b" * 40}},
+        }
+        with patch.object(
+            gate,
+            "_run_git",
+            side_effect=[subprocess.CalledProcessError(128, "git merge-base"), "d" * 40],
+        ):
+            self.assertEqual(gate.latest_git_range(Path.cwd(), event), "d" * 40 + "..." + "b" * 40)
+
+    def test_scope_diff_failure_falls_back_to_complete_pr(self):
+        event = {
+            "action": "synchronize",
+            "pull_request": {"base": {"sha": "a" * 40}, "head": {"sha": "b" * 40}},
+        }
+        with patch.object(gate, "latest_git_range", return_value="before...head"), \
+             patch.object(gate, "changed_paths", side_effect=[
+                 subprocess.CalledProcessError(128, "git diff"), ["internal/main.go"]
+             ]):
+            self.assertEqual(
+                gate.select_paths(Path.cwd(), event, latest=True),
+                ("a" * 40 + "..." + "b" * 40, ["internal/main.go"],
+                 {"contracts": True, "backend": True, "frontend": False}),
+            )
+
     def test_missing_event_is_an_error_not_an_empty_diff(self):
         with self.assertRaises(ValueError):
             gate.git_range({})

@@ -13,6 +13,21 @@ PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence")
 GOVERNANCE = (".github/workflows/lingdoc-review.yml", ".github/pull_request_template.md")
 
 
+def _run_git(root: Path, *args: str) -> str:
+    return subprocess.check_output(
+        ["git", *args], cwd=root, text=True, stderr=subprocess.PIPE
+    ).strip()
+
+
+def _range_is_resolvable(root: Path, before: str, after: str) -> bool:
+    """Check that a three-dot diff has both commits and a merge base."""
+    try:
+        _run_git(root, "merge-base", before, after)
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
+
 def classify(paths: list[str]) -> dict[str, bool]:
     """Conservative shared-code coverage; unrelated CLI changes stay cheap."""
     governance = any(p in GOVERNANCE or p.startswith("scripts/ci/") for p in paths)
@@ -55,9 +70,11 @@ def latest_git_range(root: Path, event: dict) -> str:
     after = event.get("after")
     if (isinstance(before, str) and isinstance(after, str)
             and re.fullmatch(r"[0-9a-fA-F]{40}", before)
-            and after == head):
+            and re.fullmatch(r"[0-9a-fA-F]{40}", after)
+            and after == head
+            and _range_is_resolvable(root, before, after)):
         return f"{before}...{after}"
-    parent = subprocess.check_output(["git", "rev-parse", f"{head}^"], cwd=root, text=True).strip()
+    parent = _run_git(root, "rev-parse", f"{head}^")
     return f"{parent}...{head}"
 
 
@@ -71,6 +88,32 @@ def changed_paths(root: Path, diff_range: str) -> list[str]:
 def provider_packages(root: Path) -> list[str]:
     # Main can legitimately have only design artifacts before feature PRs merge.
     return [f"./{p}/..." for p in PROVIDER_ROOTS if any((root / p).rglob("*.go"))]
+
+
+def select_paths(root: Path, event: dict, latest: bool) -> tuple[str | None, list[str], dict[str, bool]]:
+    """Select a scope conservatively, never failing a gate on diff discovery."""
+    try:
+        diff_range = latest_git_range(root, event) if latest else git_range(event)
+        paths = changed_paths(root, diff_range)
+        return diff_range, paths, classify(paths)
+    except subprocess.CalledProcessError as error:
+        print(
+            f"warning: unable to resolve the scoped PR diff ({error}); "
+            "falling back to the complete PR range",
+            file=sys.stderr,
+        )
+
+    try:
+        diff_range = git_range(event)
+        paths = changed_paths(root, diff_range)
+        return diff_range, paths, classify(paths)
+    except subprocess.CalledProcessError as error:
+        print(
+            f"warning: unable to resolve the complete PR diff ({error}); "
+            "running all applicable LingDoc checks",
+            file=sys.stderr,
+        )
+        return None, [], dict.fromkeys(("contracts", "backend", "frontend"), True)
 
 
 def main() -> None:
@@ -89,9 +132,7 @@ def main() -> None:
         if args.event is None:
             parser.error("--event or GITHUB_EVENT_PATH is required")
         event = json.loads(args.event.read_text(encoding="utf-8"))
-        diff_range = latest_git_range(root, event) if args.latest else git_range(event)
-        paths = changed_paths(root, diff_range)
-        scope = classify(paths)
+        diff_range, paths, scope = select_paths(root, event, args.latest)
     packages = provider_packages(root) if scope["backend"] else []
     report = {"scope": scope, "diff_range": diff_range, "changed_paths": paths,
               "provider_packages": packages,
