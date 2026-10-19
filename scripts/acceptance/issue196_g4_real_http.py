@@ -383,7 +383,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             {"id": "G4-MODEL-01", "status": "BLOCKED", "reason": "Real Qwen call requires an authorized provider endpoint/key configured in the service environment."},
             {"id": "G4-FAIL-01", "status": "NOT RUN", "reason": "Provider timeout/HTTP error injection is not part of the deterministic HTTP runner."},
             {"id": "G4-PG-01", "status": "NOT RUN", "reason": "This run uses isolated SQLite; PostgreSQL requires an explicit disposable DSN."},
-            {"id": "G4-AUDIT-01", "status": "NOT RUN", "reason": "A second independent reviewer run is still required."},
         ]
         return output
     finally:

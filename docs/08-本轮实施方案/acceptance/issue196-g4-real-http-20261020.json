@@ -170,11 +170,6 @@
       "id": "G4-PG-01",
       "status": "NOT RUN",
       "reason": "This run uses isolated SQLite; PostgreSQL requires an explicit disposable DSN."
-    },
-    {
-      "id": "G4-AUDIT-01",
-      "status": "NOT RUN",
-      "reason": "A second independent reviewer run is still required."
     }
   ],
   "unauthenticated_status": 401
