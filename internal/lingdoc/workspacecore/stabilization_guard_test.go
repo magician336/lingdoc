@@ -3,6 +3,8 @@ package workspacecore
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -98,13 +100,21 @@ func requireGateError(t *testing.T, err error, want error, contains string) {
 // satisfied its RECOMPUTE task at the moment it was written.
 func genuineReceipt(t *testing.T, svc *Service, actor Actor, p Project) ImpactComputationReceipt {
 	t.Helper()
+	return receiptWithSources(t, svc, actor, p, []string{})
+}
+
+// receiptWithSources is genuineReceipt with a named source set. The source set
+// is hashed the same way the verifier hashes it, so a receipt that names REAL
+// sources verifies, and one that names an id nobody can resolve cannot.
+func receiptWithSources(t *testing.T, svc *Service, actor Actor, p Project, sourceIDs []string) ImpactComputationReceipt {
+	t.Helper()
 	var receipt ImpactComputationReceipt
 	require.NoError(t, svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
 		basis, err := ImpactComputationBasisHash(tx, p)
 		if err != nil {
 			return err
 		}
-		sourceHash, err := tx.(impactComputationSourceTransaction).ImpactSourceDigest(p.ID, nil)
+		sourceHash, err := tx.(impactComputationSourceTransaction).ImpactSourceDigest(p.ID, sourceIDs)
 		if err != nil {
 			return err
 		}
@@ -112,12 +122,82 @@ func genuineReceipt(t *testing.T, svc *Service, actor Actor, p Project) ImpactCo
 			ProjectVersion: p.ProjectVersion, ContextRevision: p.CurrentContextRevision,
 			TemplateCopyVersion: p.TemplateCopyVersion, RulesetHash: p.TemplateCopy.RulesetHash,
 			InputHash: "guard-evaluator-input", ComputationBasisHash: basis, SourceBasisHash: sourceHash,
-			SourceIDs: []string{}, CheckedAt: time.Now().UTC(),
+			SourceIDs: sourceIDs, CheckedAt: time.Now().UTC(),
 			Evaluations: []template.Evaluation{{RuleID: "required-fields", TargetRef: p.ID, TargetVersion: "1",
 				RulesetHash: p.TemplateCopy.RulesetHash, EvaluatorVersion: template.EvaluatorVersion, Status: template.EvaluationIssue}}}
 		return tx.(runtimeTransaction).G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
 	}))
 	return receipt
+}
+
+// unresolvableReceipt is the receipt the verifier MUST reject: it names a
+// source id nobody can resolve. Its source hash was never computed, so the
+// verification has to fail on the lookup itself, not on a hash mismatch.
+func unresolvableReceipt(t *testing.T, svc *Service, actor Actor, p Project, sourceIDs []string) ImpactComputationReceipt {
+	t.Helper()
+	var receipt ImpactComputationReceipt
+	require.NoError(t, svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
+		basis, err := ImpactComputationBasisHash(tx, p)
+		if err != nil {
+			return err
+		}
+		receipt = ImpactComputationReceipt{ID: "guard-receipt", Version: 1, ProjectID: p.ID, Status: "blocked",
+			ProjectVersion: p.ProjectVersion, ContextRevision: p.CurrentContextRevision,
+			TemplateCopyVersion: p.TemplateCopyVersion, RulesetHash: p.TemplateCopy.RulesetHash,
+			InputHash: "guard-evaluator-input", ComputationBasisHash: basis, SourceBasisHash: "guard-unresolvable-hash",
+			SourceIDs: sourceIDs, CheckedAt: time.Now().UTC(),
+			Evaluations: []template.Evaluation{{RuleID: "required-fields", TargetRef: p.ID, TargetVersion: "1",
+				RulesetHash: p.TemplateCopy.RulesetHash, EvaluatorVersion: template.EvaluatorVersion, Status: template.EvaluationIssue}}}
+		return tx.(runtimeTransaction).G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt)
+	}))
+	return receipt
+}
+
+// guardSourceSchema creates the two application-side tables the source digest
+// reads (knowledges and chunks) with the PRODUCTION DDL, taken from the
+// migration that defines them.
+//
+// The LingDoc test fixture applies only the *_lingdoc_* migrations, so those
+// application tables are absent from it. Hand-writing a copy of the DDL would
+// let the fixture drift away from the schema the digest actually runs against,
+// so the DDL is read from the migration file itself.
+func guardSourceSchema(t *testing.T, svc *Service) {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", "000000_init.up.sql"))
+	require.NoError(t, err, "read the production migration that defines knowledges and chunks")
+	applied := 0
+	for _, statement := range strings.Split(stripSQLLineComments(string(raw)), ";") {
+		trimmed := strings.TrimSpace(statement)
+		if !strings.HasPrefix(trimmed, "CREATE TABLE IF NOT EXISTS knowledges (") &&
+			!strings.HasPrefix(trimmed, "CREATE TABLE IF NOT EXISTS chunks (") {
+			continue
+		}
+		require.NoError(t, svc.testDB().Exec(trimmed).Error, "apply the production DDL")
+		applied++
+	}
+	require.Equal(t, 2, applied, "both production tables must have been applied")
+}
+
+// guardSource seeds one REAL resolvable source for the project: the chunk, the
+// knowledge it belongs to, and the project's own binding of that knowledge as
+// an asset. ImpactSourceDigest resolves exactly these three rows per id, so a
+// receipt that names this chunk carries a non-empty AND verifiable source set.
+//
+// A faked id cannot stand in for this: the digest lookup fails first, so the
+// receipt check itself fails and the fall-through never becomes observable.
+func guardSource(t *testing.T, svc *Service, actor Actor, p Project, chunkID, knowledgeID string) {
+	t.Helper()
+	guardSourceSchema(t, svc)
+	db := svc.testDB()
+	require.NoError(t, db.Exec("INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,source,parse_status,enable_status,file_hash,file_size,processed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+		knowledgeID, actor.TenantID, "guard-kb", "file", "守护 合成来源", "guard://source", "completed", "enabled",
+		"guard-file-hash", 42, time.Now().UTC()).Error, "seed knowledge %s", knowledgeID)
+	require.NoError(t, db.Exec("INSERT INTO chunks(id,tenant_id,knowledge_base_id,knowledge_id,content,source_content,content_revision,index_status,chunk_index,is_enabled,start_at,end_at,seq_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+		chunkID, actor.TenantID, "guard-kb", knowledgeID, "守护 合成来源正文", "守护 合成来源正文", 1, "ready",
+		0, true, 0, 12, 990001).Error, "seed chunk %s", chunkID)
+	require.NoError(t, db.Exec("INSERT INTO lingdoc_project_assets(id,tenant_id,project_id,knowledge_id,asset_revision,processing_state,created_by) VALUES(?,?,?,?,?,?,?)",
+		"guard-asset-"+chunkID, actor.TenantID, p.ID, knowledgeID, 1, "ready", actor.UserID).Error,
+		"seed project asset for knowledge %s", knowledgeID)
 }
 
 // recomputeReceiptRef is the closure evidence a DONE RECOMPUTE task carries for
@@ -359,20 +439,73 @@ func TestStabilizationConditionsGateFailFastStopsAtFirstFailingTask(t *testing.T
 	require.Equal(t, node.ID, blockerFor(t, StabilizationResult{Blockers: full.OwnerBlockers()}, "required_route_not_current").TargetID)
 }
 
-// NOT BUILT (recorded on purpose): the gate's fall-through for result tasks is
-// observable only through the source set it re-authorizes, and a computation
-// receipt can only carry a NON-EMPTY source set if those sources are real chunks
-// (ImpactSourceDigest resolves every id). No such fixture exists in this package,
-// and faking ids makes the receipt check itself fail first, which is
-// indistinguishable from the fall-through at this seam. Building it needs a
-// source-backed chapter plus a matching receipt; #209 already recorded the same
-// cost for the neighbouring RETRIEVE_CANDIDATES case. Release condition: seed a
-// real source, then assert
-// `guardConditions(gate).ClosureSourceIDs` contains `receipt.SourceIDs` while the
-// Owner-shaped scope does not. The production behaviour is pinned by
-// stabilizationScope.ClosureSourcesOfResultTasks instead, which is where the next
-// reader will look.
+// The gate's fall-through for result tasks is observable only through the
+// source set it re-authorizes. A computation receipt can only carry a
+// NON-EMPTY source set if those sources are real chunks (ImpactSourceDigest
+// resolves every id), so the guard needs a source-backed receipt.
 //
+// The two tests below build exactly that, and they are the pair that makes the
+// fall-through observable at all:
+//
+//   - with a REAL source, the receipt verifies, the gate falls through into the
+//     closure-evidence loop and the receipt's own SourceIDs join the set the
+//     gate re-authorizes, while the Owner-shaped scope stops at the receipt
+//     check and contributes nothing;
+//   - with an UNRESOLVABLE source, the receipt check fails first, so the same
+//     fall-through contributes nothing. That is why a faked id could never
+//     stand in for a real source here.
+//
+// The RETRIEVE_CANDIDATES half of the same fall-through is still NOT BUILT: it
+// needs a source-backed research run, which #209 already recorded the cost of.
+func TestStabilizationGateFallThroughAddsResultTaskSources(t *testing.T) {
+	svc, actor, p, _, change := guardFixture(t, "guard-fallthrough")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+
+	const chunkID = "guard-fallthrough-chunk"
+	const knowledgeID = "guard-fallthrough-knowledge"
+	guardSource(t, svc, actor, p, chunkID, knowledgeID)
+
+	receipt := receiptWithSources(t, svc, actor, p, []string{chunkID})
+	guardTask(t, svc, ImpactTask{ID: "guard-fallthrough-task", ProjectID: p.ID, ChangeSetID: change.ID,
+		Target:         ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)},
+		TargetRevision: p.CurrentContextRevision, Action: "RECOMPUTE", Status: "DONE", Disposition: "completed",
+		ClosureEvidence: []ObjectVersionRef{recomputeReceiptRef(receipt)}})
+
+	gate := guardConditions(t, svc, p, stabilizationScope{GateFailFast: true, ClosureSourcesOfResultTasks: true})
+	require.Empty(t, gate.Failures, "the gate scope must reach the result task: %+v", gate.Failures)
+	require.Contains(t, gate.ClosureSourceIDs, chunkID,
+		"a verified result task must add its own sources to the set the gate re-authorizes: %+v", gate.ClosureSourceIDs)
+
+	owner := guardConditions(t, svc, p, stabilizationScope{})
+	require.NotContains(t, owner.ClosureSourceIDs, chunkID,
+		"the Owner-shaped scope stops at the receipt check and must not collect the sources: %+v", owner.ClosureSourceIDs)
+}
+
+// The counterpart: a result task whose receipt names a source nobody can
+// resolve is stopped by the receipt check itself, so it contributes no source
+// to the set the gate re-authorizes. Without this case the fall-through guard
+// above could be satisfied by a receipt that never verified.
+func TestStabilizationGateFallThroughNeedsResolvableResultSources(t *testing.T) {
+	svc, actor, p, _, change := guardFixture(t, "guard-fallthrough-unresolvable")
+	svc.SetImpactRuleChecker(cleanRuleChecker{})
+	closeBlockingTasks(t, svc, actor, p.ID)
+
+	const fakeChunkID = "guard-fallthrough-fake-chunk"
+	receipt := unresolvableReceipt(t, svc, actor, p, []string{fakeChunkID})
+	guardTask(t, svc, ImpactTask{ID: "guard-fallthrough-unresolvable-task", ProjectID: p.ID, ChangeSetID: change.ID,
+		Target:         ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)},
+		TargetRevision: p.CurrentContextRevision, Action: "RECOMPUTE", Status: "DONE", Disposition: "completed",
+		ClosureEvidence: []ObjectVersionRef{recomputeReceiptRef(receipt)}})
+
+	gate := guardConditions(t, svc, p, stabilizationScope{GateFailFast: true, ClosureSourcesOfResultTasks: true})
+	require.NotContains(t, gate.ClosureSourceIDs, fakeChunkID,
+		"an unverifiable receipt must contribute no source: %+v", gate.ClosureSourceIDs)
+	require.Len(t, gate.Failures, 1, "the receipt check must be the one thing that failed: %+v", gate.Failures)
+	require.Equal(t, "result_receipt_stale", gate.Failures[0].Code)
+	require.Equal(t, "guard-fallthrough-unresolvable-task", gate.Failures[0].TargetID)
+}
+
 // Owner path: a required route that is not current must produce the literal
 // code required_route_not_current.
 func TestStabilizationBlocksNotCurrentRequiredRoute(t *testing.T) {
