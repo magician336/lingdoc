@@ -248,9 +248,11 @@ func TestReassessSameKeyOnAnotherStaleProposalIsRefused(t *testing.T) {
 	if _, status, _, err := svc.ApplyChangeSet(ctx, actor, project.ID, fourth.ID, "idem-reassess-fourth-apply"); err != nil || status != 409 {
 		t.Fatalf("mark fourth stale: status=%d err=%v", status, err)
 	}
+	// The spent key must not even be reported as a replay here: this is a
+	// different request that has to do its own work.
 	other, status, replay, err := svc.ReassessChangeSet(ctx, actor, project.ID, fourth.ID, "idem-reassess-shared")
-	if err != nil || status != 201 {
-		t.Fatalf("reassess fourth: status=%d err=%v", status, err)
+	if err != nil || status != 201 || replay {
+		t.Fatalf("reassess fourth: status=%d replay=%v err=%v", status, replay, err)
 	}
 	var otherChange ChangeSet
 	if err := json.Unmarshal(other, &otherChange); err != nil {
