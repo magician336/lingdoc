@@ -505,7 +505,7 @@ func TestStabilizationGateFallThroughNeedsResolvableResultSources(t *testing.T) 
 	require.Equal(t, "result_receipt_stale", gate.Failures[0].Code)
 	require.Equal(t, "guard-fallthrough-unresolvable-task", gate.Failures[0].TargetID)
 }
-//
+
 // Owner path: a required route that is not current must produce the literal
 // code required_route_not_current.
 func TestStabilizationBlocksNotCurrentRequiredRoute(t *testing.T) {
