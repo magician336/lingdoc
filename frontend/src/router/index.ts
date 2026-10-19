@@ -75,6 +75,12 @@ const router = createRouter({
       meta: { requiresAuth: false, requiresInit: false, publicDemo: true }
     },
     {
+      path: "/demo/g3",
+      name: "lingdocG3AcceptanceDemo",
+      component: () => import("../views/lingdoc/g3demo/G3Demo.vue"),
+      meta: { requiresAuth: false, requiresInit: false, publicDemo: true }
+    },
+    {
       path: "/onboarding/workspace",
       name: "workspaceOnboarding",
       component: () => import("../views/auth/WorkspaceOnboarding.vue"),
