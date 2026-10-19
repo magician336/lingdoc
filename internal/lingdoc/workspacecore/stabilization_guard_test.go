@@ -44,7 +44,11 @@ func guardTask(t *testing.T, svc *Service, task ImpactTask) ImpactTask {
 		t.Fatal("guard task needs an id")
 	}
 	if task.Severity == "" {
-		task.Severity = "advisory"
+		// The severity is derived from the action, exactly as the production
+		// path derives it. The fixture used to write "advisory", which is not
+		// even inside the closed severity vocabulary and only looked like a
+		// blocker because impactSeverityBlocks fails closed on it.
+		task.Severity = DeriveImpactSeverity(task.Action)
 	}
 	if task.Causes == nil {
 		task.Causes = []ImpactCause{}
@@ -166,7 +170,7 @@ func blockReleaseTask(t *testing.T, svc *Service, p Project, changeID, id, snaps
 	t.Helper()
 	return guardTask(t, svc, ImpactTask{ID: id, ProjectID: p.ID, ChangeSetID: changeID,
 		Target:         ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)},
-		TargetRevision: p.CurrentContextRevision, Action: "BLOCK_RELEASE", Severity: "blocking", Status: "DONE",
+		TargetRevision: p.CurrentContextRevision, Action: "BLOCK_RELEASE", Severity: DeriveImpactSeverity("BLOCK_RELEASE"), Status: "DONE",
 		Disposition: "completed", ClosureEvidence: []ObjectVersionRef{{Kind: "ProjectSpec", ID: p.ID, Version: snapshotID}}})
 }
 
@@ -325,9 +329,13 @@ func TestStabilizationConditionsGateFailFastStopsAtFirstFailingTask(t *testing.T
 	svc.SetImpactRuleChecker(cleanRuleChecker{})
 	closeBlockingTasks(t, svc, actor, p.ID)
 	// One open blocking task: the very first condition of the loop rejects.
+	// REVIEW_REQUIRED derives as blocking, so this is a state the production
+	// path can actually produce. (RECOMPUTE derives as info, and pinning
+	// "RECOMPUTE + blocking" in a fixture would keep asserting a scenario the
+	// production path can no longer produce.)
 	guardTask(t, svc, ImpactTask{ID: "guard-failfast-task", ProjectID: p.ID, ChangeSetID: change.ID,
 		Target: ObjectVersionRef{Kind: "Chapter", ID: chapter.ID, Version: "1"}, TargetRevision: p.CurrentContextRevision,
-		Action: "RECOMPUTE", Status: "open", Severity: "blocking"})
+		Action: "REVIEW_REQUIRED", Status: "open", Severity: DeriveImpactSeverity("REVIEW_REQUIRED")})
 	// One required route that is not current: the condition evaluated right after.
 	node := appendRouteNode(t, svc, p, "guard-failfast-route", true, "planned")
 

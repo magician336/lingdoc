@@ -56,7 +56,10 @@ func TestDeliveryChainRunsFromApplyToExport(t *testing.T) {
 	require.NotEmpty(t, tasks, "applying a ChangeSet must raise impact obligations")
 	task := tasksForChangeSet(t, f, change.ID)
 	require.Equal(t, "OPEN", task.Status)
-	require.Equal(t, "blocking", task.Severity)
+	require.Equal(t, core.DeriveImpactSeverity(task.Action), task.Severity,
+		"the severity must be derived from the action, not written independently of it")
+	require.Equal(t, core.ImpactSeverityBlocking, core.DeriveImpactSeverity(task.Action),
+		"this obligation must derive as blocking, otherwise it would not hold the gate closed")
 	require.Equal(t, change.ID, task.ChangeSetID)
 
 	// Stage 2: the gate is closed while the revision is unstabilized, and the

@@ -132,7 +132,7 @@ func TestDismissedTaskIsNotClosureForGate(t *testing.T) {
 		ID: "gate-dismissed-block-release", ProjectID: p.ID, ChangeSetID: "gate-synthetic",
 		Target:         ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: "1"},
 		TargetRevision: p.CurrentContextRevision, Action: "BLOCK_RELEASE",
-		Severity: "blocking", Status: "DISMISSED", Version: 1,
+		Severity: DeriveImpactSeverity("BLOCK_RELEASE"), Status: "DISMISSED", Version: 1,
 	}
 	if err := s.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
 		return tx.(impactTransaction).InsertImpactTask(task)
