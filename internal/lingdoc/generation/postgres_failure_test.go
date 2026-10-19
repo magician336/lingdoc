@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -60,8 +61,14 @@ func TestPostgresGenerationFailureBoundaries(t *testing.T) {
 			input.Workspace.ChapterID = input.Request.ChapterID
 			input.Workspace.ProjectID = "11111111-1111-4111-8111-111111111111"
 			input.Sources[0].ProjectID = input.Workspace.ProjectID
-			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(scenario)))
-			run, err := repo.CreateOrReplay(context.Background(), input.Actor, input.Workspace.ProjectID, scenario, hash, input)
+			// The idempotency key must be unique per run. This database is
+			// shared and deliberately not wiped between runs, so a stable key
+			// would replay the previous run's terminal row: Claim refuses a row
+			// that is no longer queued, Execute returns before the model, and the
+			// test then fails on a stale state rather than on what it measures.
+			key := scenario + "-" + uuid.NewString()
+			hash := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
+			run, err := repo.CreateOrReplay(context.Background(), input.Actor, input.Workspace.ProjectID, key, hash, input)
 			require.NoError(t, err)
 			current := &faultCurrentness{}
 			current.current.Store(true)
@@ -96,6 +103,8 @@ func TestPostgresGenerationFailureBoundaries(t *testing.T) {
 			go func() { r, e := svc.Execute(ctx, run.ID); done <- outcome{r, e} }()
 			select {
 			case <-entered:
+			case result := <-done:
+				t.Fatalf("worker returned before entering the model: status=%s err=%v", result.run.Status, result.err)
 			case <-ctx.Done():
 				t.Fatal("worker did not enter controlled model")
 			}
@@ -126,7 +135,7 @@ func TestPostgresGenerationFailureBoundaries(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, listed)
 			// A new repository instance reads the terminal state from PostgreSQL.
-			replay, found, err := NewSQLiteRepository(db).FindReplay(context.Background(), input.Actor, input.Workspace.ProjectID, scenario, hash)
+			replay, found, err := NewSQLiteRepository(db).FindReplay(context.Background(), input.Actor, input.Workspace.ProjectID, key, hash)
 			require.NoError(t, err)
 			require.True(t, found)
 			require.Equal(t, StatusInterrupted, replay.Status)
@@ -171,8 +180,12 @@ func TestPostgresWorkerCrashLeasePersistence(t *testing.T) {
 	input.Workspace.ChapterID = input.Request.ChapterID
 	input.Workspace.ProjectID = "11111111-1111-4111-8111-111111111113"
 	input.Sources[0].ProjectID = input.Workspace.ProjectID
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte("worker-crash")))
-	run, err := repo.CreateOrReplay(context.Background(), input.Actor, input.Workspace.ProjectID, "worker-crash", hash, input)
+	// Unique per run for the same reason as TestPostgresGenerationFailureBoundaries:
+	// the fixture database is shared and not wiped, so a stable key replays the
+	// previous run's terminal row and the lease is never claimable again.
+	key := "worker-crash-" + uuid.NewString()
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(key)))
+	run, err := repo.CreateOrReplay(context.Background(), input.Actor, input.Workspace.ProjectID, key, hash, input)
 	require.NoError(t, err)
 	ready := filepath.Join(t.TempDir(), "worker-entered")
 	child := exec.Command(os.Args[0], "-test.run=^TestPostgresWorkerCrashLeasePersistence$")
