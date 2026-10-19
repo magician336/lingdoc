@@ -13,6 +13,7 @@ import {
 } from './g3Evidence'
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
+import { G3_BLOCKED_STEPS } from './runner/blocked'
 import { G3_CS_STEPS } from './runner/changeset'
 import { G3_DEP_STEPS } from './runner/dependencies'
 import { G3_STAB_STEPS } from './runner/stabilization'
@@ -130,7 +131,14 @@ test('单行覆盖计算不依赖规则表', () => {
 test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的值', () => {
   assert.deepEqual(
     Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
-    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-05', 'AC-G3-11', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'G3.1', 'G3.6'],
+    [
+      'AC-G3-01', 'AC-G3-02',
+      'AC-G3-04', 'AC-G3-05',
+      'AC-G3-07', 'AC-G3-09',
+      'AC-G3-11', 'AC-G3-12',
+      'AC-G3-13', 'AC-G3-14', 'AC-G3-15',
+      'G3.1',     'G3.6'
+    ],
   )
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     assert.ok(G3_STATUS_VALUES.includes(rule.status), `${id} 的判定状态不在门禁词表内`)
@@ -147,6 +155,12 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   // 本票新增的两条切片判据：G3.1（ChangeSet 切片）与 G3.6（稳定化切片）都是完全判定。
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.1'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'PASS')
+  // 本票新增的三条领域判据：AC-G3-12 完全判定；AC-G3-09 与 AC-G3-07 只覆盖了实跑得出的那半段。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-09'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-09'].followUpIssue, 246)
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-07'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-07'].followUpIssue, 243)
 })
 
 test('规则表引用的步骤名都真实存在（防止证据链断在名字上）', () => {
@@ -154,6 +168,7 @@ test('规则表引用的步骤名都真实存在（防止证据链断在名字�
     ...Object.values(G3_CS_STEPS),
     ...Object.values(G3_DEP_STEPS),
     ...Object.values(G3_STAB_STEPS),
+    ...Object.values(G3_BLOCKED_STEPS),
   ])
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     for (const name of rule.requires) {
@@ -295,4 +310,62 @@ test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
   const byId = new Map(rows.map((row) => [row.id, row]))
   assert.equal(byId.get('G3.1')?.status, 'TODO', '判定不成立不得判成 PASS')
   assert.equal(byId.get('G3.6')?.status, 'TODO', '判定不成立不得判成 PASS')
+})
+
+test('阻断与恢复链跑完后，AC-G3-09 / AC-G3-12 / AC-G3-07 由本轮证据驱动', () => {
+  const ctx = prerequisiteRun()
+  for (const name of Object.values(G3_BLOCKED_STEPS)) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1/stabilize',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = ['AC-G3-09', 'AC-G3-12', 'AC-G3-07'].map((id) => ({
+    id,
+    title: id,
+    holds: true,
+    detail: '成立',
+    evidence: [],
+  }))
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  assert.equal(byId.get('AC-G3-12')?.status, 'PASS')
+  assert.equal(byId.get('AC-G3-12')?.followUpIssue, undefined)
+  // 部分覆盖的两行：状态是 PASS (follow-up)，并保留指向缺口清单的跟进 Issue。
+  assert.equal(byId.get('AC-G3-09')?.status, 'PASS (follow-up)')
+  assert.equal(byId.get('AC-G3-09')?.followUpIssue, 246)
+  assert.equal(byId.get('AC-G3-07')?.status, 'PASS (follow-up)')
+  assert.equal(byId.get('AC-G3-07')?.followUpIssue, 243)
+})
+
+test('阻断与恢复链的判定不成立时，那三行保持原样', () => {
+  const ctx = prerequisiteRun()
+  for (const name of Object.values(G3_BLOCKED_STEPS)) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1/stabilize',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = ['AC-G3-09', 'AC-G3-12', 'AC-G3-07'].map((id) => ({
+    id,
+    title: id,
+    holds: false,
+    detail: '不成立',
+    evidence: [],
+  }))
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const id of ['AC-G3-09', 'AC-G3-12', 'AC-G3-07']) {
+    assert.notEqual(byId.get(id)?.status, 'PASS', `${id} 判定不成立不得判成 PASS`)
+  }
 })

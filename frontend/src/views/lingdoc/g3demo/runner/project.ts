@@ -53,7 +53,7 @@ export async function createProject(
   ctx: G3RunContext,
   client: G3HttpClient,
   token: string,
-  options: { name: string; templateId?: string; templateVersion?: string },
+  options: { name: string; templateId?: string; templateVersion?: string; idemPrefix?: string },
 ): Promise<G3ProjectFact> {
   const templateId = options.templateId ?? G3_DEMO_TEMPLATE_ID
   const templateVersion = options.templateVersion ?? G3_DEMO_TEMPLATE_VERSION
@@ -62,7 +62,7 @@ export async function createProject(
     method: 'POST',
     path: '/api/v1/lingdoc/projects',
     token,
-    idempotencyKey: makeIdempotencyKey(ctx.runId, 'create-project'),
+    idempotencyKey: makeIdempotencyKey(ctx.runId, `${options.idemPrefix ?? ''}create-project`),
     body: { name: options.name, template_id: templateId, template_version: templateVersion },
     conclusion: `项目已建立（HTTP {status}）：${options.name}`,
     detail: (body) => {
@@ -91,14 +91,14 @@ export async function saveProjectSpec(
   client: G3HttpClient,
   token: string,
   projectId: string,
-  options: { expectedSpecRevision: number; fields: Record<string, string> },
+  options: { expectedSpecRevision: number; fields: Record<string, string>; idemPrefix?: string },
 ): Promise<G3ProjectFact> {
   const { data } = await runStep(ctx, client, {
     name: '写规格',
     method: 'PUT',
     path: `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}/spec`,
     token,
-    idempotencyKey: makeIdempotencyKey(ctx.runId, 'save-spec'),
+    idempotencyKey: makeIdempotencyKey(ctx.runId, `${options.idemPrefix ?? ''}save-spec`),
     body: {
       expected_spec_revision: options.expectedSpecRevision,
       fields: options.fields,
@@ -124,14 +124,14 @@ export async function recordActivationRead(
   client: G3HttpClient,
   token: string,
   projectId: string,
-  options: { expectedProjectVersion: number },
+  options: { expectedProjectVersion: number; idemPrefix?: string },
 ): Promise<string> {
   const { data } = await runStep(ctx, client, {
     name: '登记立项阅读',
     method: 'POST',
     path: `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}/activation-read`,
     token,
-    idempotencyKey: makeIdempotencyKey(ctx.runId, 'activation-read'),
+    idempotencyKey: makeIdempotencyKey(ctx.runId, `${options.idemPrefix ?? ''}activation-read`),
     body: { expected_project_version: options.expectedProjectVersion },
     conclusion: '立项阅读已登记（HTTP {status}）',
     detail: (body) => {
@@ -159,6 +159,7 @@ export async function activateProject(
     activationReadId: string
     expectedSpecRevision: number
     expectedProjectVersion: number
+    idemPrefix?: string
   },
 ): Promise<G3ProjectFact> {
   const { data } = await runStep(ctx, client, {
@@ -166,7 +167,7 @@ export async function activateProject(
     method: 'POST',
     path: `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}/activate`,
     token,
-    idempotencyKey: makeIdempotencyKey(ctx.runId, 'activate'),
+    idempotencyKey: makeIdempotencyKey(ctx.runId, `${options.idemPrefix ?? ''}activate`),
     body: {
       activation_read_id: options.activationReadId,
       expected_spec_revision: options.expectedSpecRevision,
@@ -236,6 +237,13 @@ export interface G3ProjectChainOptions {
   projectName: string
   /** 规格字段。 */
   fields?: Record<string, string>
+  /**
+   * 幂等键前缀。
+   *
+   * 同一次运行里建**两个**项目时必须给不同的前缀：幂等键相同而请求不同，
+   * 服务端会按 409 `idempotency_conflict` 拒掉。
+   */
+  idemPrefix?: string
 }
 
 /** 跑完「建项 → 写规格 → 登记立项阅读 → 激活 → 章节就绪」整条链。 */
@@ -250,18 +258,24 @@ export async function runProjectChain(
     research_goal: '用演示模板自建隔离项目，走到两个章节就绪',
   }
 
-  const created = await createProject(ctx, client, token, { name: options.projectName })
+  const created = await createProject(ctx, client, token, {
+    name: options.projectName,
+    idemPrefix: options.idemPrefix,
+  })
   const speced = await saveProjectSpec(ctx, client, token, created.id, {
     expectedSpecRevision: created.specRevision,
     fields,
+    idemPrefix: options.idemPrefix,
   })
   const receiptId = await recordActivationRead(ctx, client, token, created.id, {
     expectedProjectVersion: speced.projectVersion,
+    idemPrefix: options.idemPrefix,
   })
   const activated = await activateProject(ctx, client, token, created.id, {
     activationReadId: receiptId,
     expectedSpecRevision: speced.specRevision,
     expectedProjectVersion: speced.projectVersion,
+    idemPrefix: options.idemPrefix,
   })
   const chapters = await listChapters(ctx, client, token, created.id)
 

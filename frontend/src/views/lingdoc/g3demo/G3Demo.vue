@@ -854,6 +854,290 @@
       </template>
     </section>
 
+    <section class="lifecycle-card" aria-labelledby="blocked-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">稳定化阻断与恢复路径</p>
+          <h2 id="blocked-title">阻断 → 处置 → 闭环 → 版本不匹配 → 重投 → 再次已稳定</h2>
+        </div>
+        <span class="section-note">页面与 node 脚本跑同一份执行器</span>
+      </div>
+
+      <p class="live-lede">
+        这一段在真实模式里把**阻断与恢复**跑完：先制造一个未闭环的阻断影响，
+        稳定化以 <strong>200 成功响应</strong>返回 <code>BLOCKED</code>，并**逐条**带出阻断原因
+        （不是一句失败）；随后处置规则问题、把阻断影响按
+        「指派 → 开始 → 复写章节并按新规格修订重新确认 → 完成」闭环，再次稳定化转为<strong>已稳定</strong>；
+        再让目标对象被新版本替换——这一次稳定化**没有被放行**；
+        按新基线重投对应影响任务并闭环之后，稳定化再次转为已稳定。
+      </p>
+
+      <div class="live-actions">
+        <button
+          class="live-button live-button--primary"
+          :disabled="blockedRunning || running"
+          @click="startBlocked"
+        >
+          {{ blockedRunning ? '运行中…' : '跑通稳定化阻断与恢复路径' }}
+        </button>
+        <span class="section-note">
+          {{
+            blocked
+              ? '本轮已跑完：阻断原因逐条 + 恢复动作 + 前后两次结果'
+              : '尚未运行；未运行时下面不显示任何证据位'
+          }}
+        </span>
+      </div>
+
+      <p v-if="blockedError" class="live-error" role="alert">
+        <strong>运行失败：</strong>{{ blockedError }}
+      </p>
+
+      <template v-if="blocked">
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in blocked.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+              >
+                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 class="matrix-group-title">五次稳定化：恢复动作前后的结果</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>阶段</th><th>状态</th><th>HTTP</th><th>阻断原因（逐条）</th><th>失效任务</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in blockedStabilizeRows" :key="row.key">
+                <th scope="row">
+                  <strong>{{ row.title }}</strong>
+                  <small>{{ row.note }}</small>
+                </th>
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="row.fact.status === 'STABILIZED' ? 'status-badge--pass' : 'status-badge--warning'"
+                  >
+                    {{ row.fact.status || '（被拒，未放行）' }}
+                  </span>
+                  <small>上下文修订 {{ row.fact.contextRevision }}</small>
+                </td>
+                <td>
+                  HTTP {{ row.http }}
+                  <small v-if="row.code">错误码 <code>{{ row.code }}</code></small>
+                </td>
+                <td>
+                  <span v-if="!row.fact.blockers.length">（无阻断原因）</span>
+                  <span v-for="(blocker, index) in row.fact.blockers" :key="index" class="fact-line">
+                    {{ blocker.code }}｜对象 {{ blocker.targetId }}｜原因 {{ blocker.reason }}
+                  </span>
+                </td>
+                <td>
+                  <code v-for="id in row.fact.staleTaskIds" :key="id">{{ id }}</code>
+                  <span v-if="!row.fact.staleTaskIds.length">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          首次稳定化是 <strong>200 成功响应</strong>，服务端把
+          {{ blocked.blockedLines.length }} 条阻断原因逐条带出（不折叠）；
+          目标对象被新版本替换之后那一次稳定化
+          <strong>HTTP {{ blocked.mismatchStatus }}</strong>
+          （错误码 <code>{{ blocked.mismatchCode || '（无）' }}</code>）——
+          这一版修订**没有被放行**；重投闭环之后才回到
+          <code>{{ blocked.finalStabilized.status }}</code>。
+        </p>
+
+        <h3 class="matrix-group-title">规则问题：处置前 → 处置后</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>问题</th><th>规则</th><th>严重度</th><th>目标</th><th>说明</th><th>处置</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in blockedIssueRows" :key="row.id">
+                <th scope="row"><code>{{ row.id }}</code></th>
+                <td><code>{{ row.ruleId }}</code></td>
+                <td>{{ row.severity }}</td>
+                <td><code>{{ row.targetId }}</code></td>
+                <td>
+                  <span class="fact-line">{{ row.message }}</span>
+                  <span class="fact-line">{{ row.afterNote }}</span>
+                </td>
+                <td>
+                  <span v-if="row.dispositionAction">
+                    <code>{{ row.dispositionAction }}</code>
+                  </span>
+                  <span v-else>（未处置）</span>
+                  <span v-if="row.dispositionReason" class="fact-line">{{ row.dispositionReason }}</span>
+                </td>
+              </tr>
+              <tr v-if="!blockedIssueRows.length"><td colspan="6">本轮交付检查没有给出规则问题。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="blocked.disposition" class="card-footnote">
+          处置动作实测：<code>dismiss</code> → HTTP {{ blocked.disposition.dismissStatus }}
+          （错误码 <code>{{ blocked.disposition.dismissCode || '（无）' }}</code>）；
+          <code>resolve</code> → HTTP {{ blocked.disposition.resolveStatus }}
+          （错误码 <code>{{ blocked.disposition.resolveCode || '（无）' }}</code>）；
+          重检时问题是否带上处置：{{ blocked.disposition.carriesDisposition ? '带上了' : '没有带上' }}。
+        </p>
+
+        <h3 class="matrix-group-title">「接受本次不处理」的边界</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>尝试</th><th>任务</th><th>严重度</th><th>HTTP</th><th>错误码</th><th>结果状态</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in blockedDismissRows" :key="row.label">
+                <th scope="row">{{ row.label }}</th>
+                <td><code>{{ row.taskId }}</code></td>
+                <td>{{ row.severity }}</td>
+                <td>HTTP {{ row.status }}</td>
+                <td><code>{{ row.code || '（无）' }}</code></td>
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="row.finalStatus === 'DISMISSED' ? 'status-badge--warning' : 'status-badge--not-run'"
+                  >
+                    {{ row.finalStatus }}
+                  </span>
+                </td>
+                <td>
+                  {{ row.explanation || '（服务端接受：非阻断级影响可以接受本次不处理）' }}
+                </td>
+              </tr>
+              <tr v-if="!blockedDismissRows.length"><td colspan="7">本轮没有「接受本次不处理」的尝试记录。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="matrix-group-title">阻断项闭环：任务状态迁移</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>任务</th><th>动作</th><th>状态迁移</th><th>闭环证据</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in blockedTransitionRows" :key="`${row.taskId}-${row.action}-${row.to}`">
+                <th scope="row">
+                  <code>{{ row.taskId }}</code>
+                  <small>severity={{ row.severity }}</small>
+                </th>
+                <td>{{ row.action }}</td>
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="row.to === 'DONE' ? 'status-badge--pass' : (row.to === 'STALE' ? 'status-badge--not-run' : 'status-badge--warning')"
+                  >
+                    {{ row.from }} → {{ row.to }}
+                  </span>
+                  <small>HTTP {{ row.status }}<template v-if="row.code"> · {{ row.code }}</template></small>
+                </td>
+                <td><code v-if="row.evidence">{{ row.evidence }}</code><span v-else>—</span></td>
+                <td>{{ row.note }}</td>
+              </tr>
+              <tr v-if="!blockedTransitionRows.length"><td colspan="5">本轮没有任务处置记录。</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="matrix-group-title">被新版本替换掉的任务</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>任务</th><th>动作</th><th>严重度</th><th>失效原因</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in blockedStaleRows" :key="row.id">
+                <th scope="row"><code>{{ row.id }}</code></th>
+                <td>{{ row.action }}</td>
+                <td>{{ row.severity }}</td>
+                <td><code>{{ row.staleReason || '（服务端未给）' }}</code></td>
+              </tr>
+              <tr v-if="!blockedStaleRows.length"><td colspan="4">本轮没有被判为失效的任务。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          重投出来的任务：
+          <code v-for="id in blocked.reissuedTaskIds" :key="id">{{ id }}</code>
+          <span v-if="!blocked.reissuedTaskIds.length">—</span>。
+          <code>STALE</code> 是终态，但**不算闭环**——所以稳定化不会因为它而放行。
+        </p>
+
+        <h3 class="matrix-group-title">人工复核探针（另起一个隔离项目）</h3>
+        <div v-if="blocked.reviewProbe" class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>项</th><th>结果</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">复核任务</th>
+                <td>
+                  <code>{{ blocked.reviewProbe.taskId }}</code>
+                  <small>{{ blocked.reviewProbe.taskAction }} · 目标 {{ blocked.reviewProbe.targetKind }}</small>
+                </td>
+                <td>研究主张 <code>{{ blocked.reviewProbe.claimId }}</code></td>
+              </tr>
+              <tr>
+                <th scope="row">缺人工复核决策</th>
+                <td>
+                  HTTP {{ blocked.reviewProbe.completeWithoutReviewStatus }}
+                  <code>{{ blocked.reviewProbe.completeWithoutReviewCode || '（无）' }}</code>
+                </td>
+                <td>异步作业成功关不掉人工复核任务</td>
+              </tr>
+              <tr>
+                <th scope="row">带人工复核决策</th>
+                <td>
+                  HTTP {{ blocked.reviewProbe.completeWithReviewStatus }}
+                  <code>{{ blocked.reviewProbe.completeWithReviewCode || '（无）' }}</code>
+                </td>
+                <td>
+                  是否被服务端接受：
+                  <span class="status-badge" :class="blocked.reviewProbe.completeWithReviewAccepted ? 'status-badge--pass' : 'status-badge--not-run'">
+                    {{ blocked.reviewProbe.completeWithReviewAccepted ? '接受' : '未接受' }}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">真实模型那半段</th>
+                <td>
+                  <span class="status-badge" :class="blocked.reviewProbe.modelSideCovered ? 'status-badge--pass' : 'status-badge--not-run'">
+                    {{ blocked.reviewProbe.modelSideCovered ? '本轮覆盖' : '本轮未覆盖' }}
+                  </span>
+                </td>
+                <td>「证据重检返回新候选」需要真实模型，造证据卡要走模型侧</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="card-footnote">本轮没有跑人工复核探针。</p>
+      </template>
+    </section>
+
     <div class="console-columns">
       <section class="flow-card" aria-labelledby="flow-title">
         <div class="section-heading">
@@ -1274,6 +1558,11 @@ import {
   toStabilizationSnapshot,
   type G3StabilizationSnapshot,
 } from './runner/stabilization'
+import {
+  runBlockedChain,
+  toBlockedSnapshot,
+  type G3BlockedSnapshot,
+} from './runner/blocked'
 import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
 import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3StepRecord } from './runner/runContext'
 
@@ -1307,6 +1596,9 @@ const dependencyRunning = ref(false)
 const stabilization = ref<G3StabilizationSnapshot | null>(null)
 const stabilizationError = ref('')
 const stabilizationRunning = ref(false)
+const blocked = ref<G3BlockedSnapshot | null>(null)
+const blockedError = ref('')
+const blockedRunning = ref(false)
 
 /** 接管会话之前先把用户原来的令牌记住，好还回去。 */
 let originalToken: string | null = null
@@ -1534,6 +1826,104 @@ const dependencyFinalTasks = computed(() => {
   }))
 })
 
+/**
+ * 稳定化阻断与恢复链的五次结果。
+ *
+ * 顺序就是这条链的状态机：阻断 → 规则问题处置后 → 阻断项闭环后 →
+ * 目标对象版本被替换后（不放行） → 重投闭环后。
+ */
+const blockedStabilizeRows = computed(() => {
+  const snapshot = blocked.value
+  if (!snapshot) return []
+  return [
+    {
+      key: 'blocked',
+      title: '阻断态（首次稳定化）',
+      note: '200 成功响应；阻断原因逐条带出，不折叠成一句失败',
+      http: 200,
+      code: '',
+      fact: snapshot.blocked,
+    },
+    {
+      key: 'after-disposition',
+      title: '规则问题处置后',
+      note: '人工处置只是工作流元数据，求值结论不变',
+      http: 200,
+      code: '',
+      fact: snapshot.afterDisposition,
+    },
+    {
+      key: 'stabilized',
+      title: '阻断项闭环后',
+      note: '按真实闭环证据完成之后再次稳定化',
+      http: 200,
+      code: '',
+      fact: snapshot.stabilized,
+    },
+    {
+      key: 'version-mismatch',
+      title: '目标对象版本被替换后',
+      note: '这一版修订没有被放行：服务端重读闭环证据时发现版本不匹配',
+      http: snapshot.mismatchStatus,
+      code: snapshot.mismatchCode,
+      fact: snapshot.versionMismatch,
+    },
+    {
+      key: 'final',
+      title: '重投闭环后',
+      note: '按新基线重投对应影响任务并闭环之后',
+      http: 200,
+      code: '',
+      fact: snapshot.finalStabilized,
+    },
+  ]
+})
+
+/** 规则问题：处置前 → 处置后（问题逐条列出，不折叠）。 */
+const blockedIssueRows = computed(() => {
+  const snapshot = blocked.value
+  if (!snapshot) return []
+  const after = new Map(snapshot.checkAfter.issues.map((issue) => [issue.id, issue]))
+  return snapshot.checkBefore.issues.map((issue) => {
+    const later = after.get(issue.id)
+    return {
+      id: issue.id,
+      ruleId: issue.ruleId,
+      severity: issue.severity,
+      targetId: issue.targetId,
+      message: issue.message,
+      dispositionAction: later?.dispositionAction || issue.dispositionAction,
+      dispositionReason: later?.dispositionReason || issue.dispositionReason,
+      afterNote: later
+        ? '处置后仍在问题列表里（带上了处置）'
+        : '处置后已不在问题列表里',
+    }
+  })
+})
+
+/** 「接受本次不处理」的边界：阻断级不可接受，非阻断级可接受。 */
+const blockedDismissRows = computed(() => blocked.value?.dismissAttempts ?? [])
+
+/** 阻断项闭环过程：任务状态迁移。 */
+const blockedTransitionRows = computed(() => {
+  const snapshot = blocked.value
+  if (!snapshot) return []
+  return snapshot.transitions.map((item) => ({
+    taskId: item.taskId,
+    action: item.action,
+    severity: item.severity,
+    from: item.from,
+    to: item.to,
+    status: item.status,
+    code: item.code,
+    note: item.note,
+    evidence: item.closureEvidence.map((ref) => `${ref.kind}/${ref.id}@${ref.version}`).join('、'),
+  }))
+})
+
+/** 被新版本替换掉的任务。 */
+const blockedStaleRows = computed(() => blocked.value?.staleTasks ?? [])
+
 /** 读一次本地状态：演示账号与上一次运行。 */
 function restoreLocalState(): void {
   try {
@@ -1551,6 +1941,7 @@ function restoreLocalState(): void {
       lifecycle.value = runSummary.value.lifecycle ?? null
       dependency.value = runSummary.value.dependency ?? null
       stabilization.value = runSummary.value.stabilization ?? null
+      blocked.value = runSummary.value.blocked ?? null
     }
   } catch {
     // 本地存储不可用时如实当作「没有历史」，不假装有。
@@ -1573,6 +1964,7 @@ function commitRun(
   snapshot?: G3LifecycleSnapshot,
   dependencySnapshot?: G3DependencySnapshot,
   stabilizationSnapshot?: G3StabilizationSnapshot,
+  blockedSnapshot?: G3BlockedSnapshot,
 ): void {
   if (registerFirst) {
     saveDemoAccount(localStorage, account)
@@ -1593,6 +1985,7 @@ function commitRun(
     lifecycle: snapshot,
     dependency: dependencySnapshot,
     stabilization: stabilizationSnapshot,
+    blocked: blockedSnapshot,
   })
   runSummary.value = summary
   saveRunSummary(localStorage, summary)
@@ -1608,6 +2001,7 @@ function commitRun(
   lifecycle.value = snapshot ?? null
   dependency.value = dependencySnapshot ?? null
   stabilization.value = stabilizationSnapshot ?? null
+  blocked.value = blockedSnapshot ?? null
 }
 
 /**
@@ -1873,6 +2267,73 @@ async function startStabilization(): Promise<void> {
     }
   } finally {
     stabilizationRunning.value = false
+  }
+}
+
+/**
+ * 跑一次「稳定化阻断 → 处置 → 闭环 → 版本不匹配 → 重投 → 再次已稳定」链。
+ *
+ * 复用同一份执行器（`runner/blocked.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startBlocked(): Promise<void> {
+  if (blockedRunning.value || running.value) return
+  blockedRunning.value = true
+  blockedError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const blockedResult = await runBlockedChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+      chapters: result.chapters.map((chapter) => ({
+        id: chapter.id,
+        sectionId: chapter.sectionId,
+        title: chapter.title,
+      })),
+      operatorId: result.identity.userId,
+      // 人工复核那半段另起一个隔离项目跑，避免复核类任务让主链到不了「已稳定」。
+      runReviewProbe: true,
+    })
+
+    const snapshot = toBlockedSnapshot(blockedResult)
+    blocked.value = snapshot
+    commitRun(result, account, registerFirst, undefined, undefined, undefined, snapshot)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    blockedError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    blockedRunning.value = false
   }
 }
 
