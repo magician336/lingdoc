@@ -181,7 +181,7 @@ def identify(value: Any) -> dict[str, Any]:
 def register_login(base_url: str) -> str:
     suffix = uuid.uuid4().hex[:12]
     email = f"issue196-{suffix}@example.com"
-    password = "Synthetic-" + secrets.token_hex(12)
+    password = "Synthetic-" + secrets.token_hex(8)
     status, registration, _ = request(base_url, "POST", "/api/v1/auth/register", payload={
         "username": "issue196-" + suffix, "email": email, "password": password,
     }, expected=201)
