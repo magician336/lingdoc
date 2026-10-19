@@ -65,6 +65,49 @@ class ChangeScopeTests(unittest.TestCase):
         }
         self.assertEqual(scope.event_range(event, Path.cwd()), ("base...head", False))
 
+    def test_push_uses_the_range_it_reports(self):
+        event = {"ref": "refs/heads/main", "before": "before", "after": "after"}
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "push"}):
+            self.assertEqual(scope.event_range(event, Path.cwd()), ("before...after", False))
+
+    def test_push_creating_a_branch_falls_back_to_head_parent(self):
+        # GitHub reports an all-zero `before` when it creates a ref; that names
+        # no commit, so the parent of the new head is the only usable boundary.
+        event = {"ref": "refs/heads/main", "before": "0" * 40, "after": "head"}
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "push"}), \
+             patch.object(scope, "_run_git", return_value="parent"):
+            self.assertEqual(scope.event_range(event, Path.cwd()), ("parent...head", False))
+
+    def test_push_without_an_after_sha_is_refused(self):
+        event = {"ref": "refs/heads/main", "before": "before"}
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "push"}):
+            with self.assertRaises(ValueError):
+                scope.event_range(event, Path.cwd())
+
+    def test_push_documentation_only_change_does_not_trigger_code_jobs(self):
+        event = {"ref": "refs/heads/main", "before": "before", "after": "after"}
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "push"}), \
+             patch.object(scope, "changed_paths", return_value=["docs/report.md"]):
+            diff_range, forced, paths = scope.select_paths(Path.cwd(), event)
+        self.assertFalse(forced or scope.matches(paths, ["**/*.go"]))
+        self.assertEqual(diff_range, "before...after")
+
+    def test_push_code_change_triggers_code_jobs(self):
+        event = {"ref": "refs/heads/main", "before": "before", "after": "after"}
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "push"}), \
+             patch.object(scope, "changed_paths", return_value=["internal/main.go"]):
+            _, forced, paths = scope.select_paths(Path.cwd(), event)
+        self.assertTrue(forced or scope.matches(paths, ["**/*.go"]))
+
+    def test_unresolvable_scope_forces_the_workflow_to_run(self):
+        # A scope-discovery failure must cost compute, never correctness: when
+        # no range can be resolved the job runs rather than silently skipping.
+        event = {"ref": "refs/heads/main", "before": "before", "after": "after"}
+        with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "push"}), \
+             patch.object(scope, "event_range", side_effect=ValueError("no range")), \
+             patch.object(scope, "_full_pr_range", side_effect=ValueError("no PR")):
+            self.assertEqual(scope.select_paths(Path.cwd(), event), (None, True, []))
+
     def test_workflow_dispatch_is_forced(self):
         event = {"action": "workflow_dispatch"}
         with patch.dict("os.environ", {"GITHUB_EVENT_NAME": "workflow_dispatch"}):
