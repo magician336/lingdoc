@@ -37,6 +37,14 @@ export interface G3HttpRequest {
    * 而探针要的就是「不带凭据时的 401 = 服务存活」这个信号。
    */
   anonymous?: boolean
+  /**
+   * 要**原始字节**，不要 JSON。
+   *
+   * 只给下载产物用：`GET /projects/{id}/exports/{exportId}/file` 是这一组里
+   * 唯一一条不返回 JSON 信封的接口（二进制 + `Content-Disposition`），
+   * 解析成 JSON 会把字节弄坏，产物哈希就核对不了了。
+   */
+  raw?: boolean
 }
 
 /** 一次真实调用的结果。 */
@@ -46,6 +54,12 @@ export interface G3HttpResponse {
   ok: boolean
   /** 解析后的响应体（JSON）或原始文本。 */
   body: unknown
+  /**
+   * 原始字节。
+   *
+   * 只有 `raw: true` 的请求（下载产物）才有；其余响应为 `undefined`。
+   */
+  bytes?: Uint8Array
   /** 端到端耗时（毫秒）。 */
   durationMs: number
 }

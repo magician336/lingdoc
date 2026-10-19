@@ -22,6 +22,15 @@ function statusOf(payload: unknown): number {
   return 200
 }
 
+/** 把 axios 的二进制响应体读成字节。 */
+function toBytes(payload: unknown): Uint8Array | undefined {
+  if (payload instanceof ArrayBuffer) return new Uint8Array(payload)
+  if (ArrayBuffer.isView(payload)) {
+    return new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength)
+  }
+  return undefined
+}
+
 /** 从异常里读出状态码。 */
 function statusOfError(error: unknown): number {
   if (error && typeof error === 'object') {
@@ -65,7 +74,11 @@ export function createRequestClient(): G3HttpClient {
     try {
       let payload: unknown
       if (method === 'GET') {
-        payload = await get(request.path, config)
+        // 下载产物：这条接口返回二进制（docx），必须按字节读，
+        // 让 axios 解析成 JSON 会把字节弄坏，产物哈希就核对不了。
+        payload = request.raw
+          ? await get(request.path, { responseType: 'arraybuffer' })
+          : await get(request.path, config)
       } else if (method === 'POST') {
         // 请求体为 `undefined` 时**不发体**：`POST /change-sets/{id}/reassess`
         // 要求完全空体（服务端只读 1 字节，多 1 字节即 400）。
@@ -82,6 +95,7 @@ export function createRequestClient(): G3HttpClient {
         status,
         ok: status >= 200 && status < 300,
         body: payload,
+        bytes: request.raw ? toBytes(payload) : undefined,
         durationMs: performance.now() - started,
       }
     } catch (error) {

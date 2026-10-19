@@ -21,6 +21,8 @@ import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from './httpClient'
 export interface G3FakeReply {
   status: number
   body?: unknown
+  /** 原始字节（给下载产物用）。 */
+  bytes?: Uint8Array
 }
 
 /** 假客户端。 */
@@ -83,6 +85,7 @@ export function createFakeClient(): G3FakeClient {
       status: settled.status,
       ok: settled.status >= 200 && settled.status < 300,
       body: settled.body ?? {},
+      bytes: settled.bytes,
       durationMs: 1,
     }
   }

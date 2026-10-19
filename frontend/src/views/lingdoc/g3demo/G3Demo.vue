@@ -571,6 +571,289 @@
       </template>
     </section>
 
+    <section class="lifecycle-card" aria-labelledby="stabilization-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">稳定化与交付闭环</p>
+          <h2 id="stabilization-title">阻断影响闭环 → 稳定化 → 交付检查 → 冻结 → 导出 → 下载核对</h2>
+        </div>
+        <span class="section-note">页面与 node 脚本跑同一份执行器</span>
+      </div>
+
+      <p class="live-lede">
+        这一段在真实模式里把交付侧走完：先制造一次**未闭环的阻断影响**，
+        稳定化此时以 <strong>200 成功响应</strong>返回 <code>BLOCKED</code> 并带出**完整阻断原因**
+        （不是一句失败）；此时冻结交付快照也会被服务端拒掉。
+        随后把全部阻断影响按「指派 → 开始 → 以闭环证据完成」闭环，
+        再次稳定化转为<strong>已稳定</strong>，再走交付检查 → 冻结快照 → 发起导出 → 轮询产物 → 下载核对。
+        判定导出成功只看<strong>产物的最终状态与文件哈希</strong>，不看受理接口的 202。
+      </p>
+
+      <div class="live-actions">
+        <button
+          class="live-button live-button--primary"
+          :disabled="stabilizationRunning || running"
+          @click="startStabilization"
+        >
+          {{ stabilizationRunning ? '运行中…' : '跑通稳定化与交付闭环' }}
+        </button>
+        <span class="section-note">
+          {{
+            stabilization
+              ? '本轮已跑完：阻断态判定 + 已稳定 + 交付检查 + 快照 + 产物 + 下载核对'
+              : '尚未运行；未运行时下面不显示任何证据位'
+          }}
+        </span>
+      </div>
+
+      <p class="live-warn" role="status">
+        <strong>导出前请先确认：</strong>{{ DOCX_BODY_HEADING_HINT }}
+      </p>
+
+      <p v-if="stabilizationError" class="live-error" role="alert">
+        <strong>运行失败：</strong>{{ stabilizationError }}
+      </p>
+
+      <template v-if="stabilization">
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in stabilization.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+              >
+                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <h3 class="matrix-group-title">稳定化判定：阻断态 → 已稳定</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>阶段</th><th>状态</th><th>检查时刻</th><th>阻断原因</th><th>失效任务</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">
+                  <strong>阻断影响未闭环</strong>
+                  <small>稳定化是判定，不是错误</small>
+                </th>
+                <td>
+                  <span class="status-badge status-badge--warning">{{ stabilization.blocked.status }}</span>
+                  <small>上下文修订 {{ stabilization.blocked.contextRevision }}</small>
+                </td>
+                <td>{{ stabilization.blocked.checkedAt || '（服务端未给）' }}</td>
+                <td>
+                  <span v-for="(line, index) in stabilization.blockedLines" :key="index" class="fact-line">
+                    {{ line }}
+                  </span>
+                  <span v-if="!stabilization.blockedLines.length">（服务端没有给出阻断原因）</span>
+                </td>
+                <td>
+                  <code v-for="id in stabilization.blocked.staleTaskIds" :key="id">{{ id }}</code>
+                  <span v-if="!stabilization.blocked.staleTaskIds.length">—</span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">
+                  <strong>全部阻断影响闭环后</strong>
+                  <small>再次调用稳定化</small>
+                </th>
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="stabilization.stabilized.status === 'STABILIZED' ? 'status-badge--pass' : 'status-badge--warning'"
+                  >
+                    {{ stabilization.stabilized.status }}
+                  </span>
+                  <small>上下文修订 {{ stabilization.stabilized.contextRevision }}</small>
+                </td>
+                <td>{{ stabilization.stabilized.checkedAt || '（服务端未给）' }}</td>
+                <td>
+                  <span v-if="!stabilization.stabilized.blockers.length">（无阻断原因）</span>
+                  <span v-for="(blocker, index) in stabilization.stabilized.blockers" :key="index" class="fact-line">
+                    {{ blocker.code }}｜{{ blocker.targetId }}｜{{ blocker.reason }}
+                  </span>
+                </td>
+                <td>
+                  <code v-for="id in stabilization.stabilized.staleTaskIds" :key="id">{{ id }}</code>
+                  <span v-if="!stabilization.stabilized.staleTaskIds.length">—</span>
+                </td>
+              </tr>
+              <tr v-if="stabilization.stabilizedAfterReceipt">
+                <th scope="row">
+                  <strong>交付回执闭环后</strong>
+                  <small>重算影响以交付检查回执闭环</small>
+                </th>
+                <td>
+                  <span
+                    class="status-badge"
+                    :class="stabilization.stabilizedAfterReceipt.status === 'STABILIZED' ? 'status-badge--pass' : 'status-badge--warning'"
+                  >
+                    {{ stabilization.stabilizedAfterReceipt.status }}
+                  </span>
+                </td>
+                <td>{{ stabilization.stabilizedAfterReceipt.checkedAt || '（服务端未给）' }}</td>
+                <td>
+                  <span v-if="!stabilization.stabilizedAfterReceipt.blockers.length">（无阻断原因）</span>
+                  <span v-for="(blocker, index) in stabilization.stabilizedAfterReceipt.blockers" :key="index" class="fact-line">
+                    {{ blocker.code }}｜{{ blocker.targetId }}｜{{ blocker.reason }}
+                  </span>
+                </td>
+                <td>—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          稳定化之前的冻结尝试被服务端按
+          <strong>HTTP {{ stabilization.freezeBeforeStable.status }}</strong>
+          （错误码 <code>{{ stabilization.freezeBeforeStable.code || '（无）' }}</code>）拒掉——
+          未关闭阻断项时既不能 STABILIZED，也不能导出。
+          过期基线的变更集应用被拒
+          <strong>HTTP {{ stabilization.staleApply.status }}</strong>；
+          被拒之后上下文修订条数 {{ stabilization.contextRevisionsBefore }} → {{ stabilization.contextRevisionsAfter }}、
+          影响任务条数 {{ stabilization.tasksBeforeStaleApply }} → {{ stabilization.tasksAfterStaleApply }}，没有半完成写入。
+        </p>
+
+        <h3 class="matrix-group-title">交付检查与冻结快照</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>项</th><th>结论</th><th>回执 / 编号</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">交付检查</th>
+                <td>
+                  <span class="status-badge" :class="stabilization.check.status === 'passed' ? 'status-badge--pass' : 'status-badge--warning'">
+                    {{ stabilization.check.status || '（无）' }}
+                  </span>
+                </td>
+                <td><code>{{ stabilization.check.receiptId || '（无回执）' }}</code></td>
+                <td>检查问题 {{ stabilization.check.issues.length }} 条 · 模板检查评估 {{ stabilization.templateCheck.evaluationCount }} 条</td>
+              </tr>
+              <tr>
+                <th scope="row">检查回执</th>
+                <td>{{ stabilization.receipt.status || '（未读）' }}</td>
+                <td><code>{{ stabilization.receipt.id || '（无）' }}</code> · v{{ stabilization.receipt.version }}</td>
+                <td>重算类影响用这份回执闭环</td>
+              </tr>
+              <tr>
+                <th scope="row">交付快照</th>
+                <td>
+                  <span class="status-badge" :class="stabilization.snapshot.checkStatus === 'passed' ? 'status-badge--pass' : 'status-badge--warning'">
+                    check.status={{ stabilization.snapshot.checkStatus || '（无）' }}
+                  </span>
+                </td>
+                <td><code>{{ stabilization.snapshot.id || '（无）' }}</code></td>
+                <td>is_current={{ stabilization.snapshot.isCurrent }} · 列表条目 {{ stabilization.releaseList.count }} 条 · truncated={{ stabilization.releaseList.truncated }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="matrix-group-title">导出产物与下载核对</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>项</th><th>值</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">受理接口</th>
+                <td>HTTP {{ stabilization.exportAccepted.status }}</td>
+                <td>202 只表示<strong>已受理</strong>，不表示导出成功</td>
+              </tr>
+              <tr>
+                <th scope="row">产物最终状态</th>
+                <td>
+                  <span class="status-badge" :class="stabilization.exportArtifact.status === 'verified' ? 'status-badge--pass' : 'status-badge--not-run'">
+                    {{ stabilization.exportArtifact.status || '（无）' }}
+                  </span>
+                </td>
+                <td>状态序列 {{ stabilization.pollStatuses.join(' → ') }}</td>
+              </tr>
+              <tr>
+                <th scope="row">产物哈希</th>
+                <td><code>{{ stabilization.exportArtifact.fileSha256 || '（无）' }}</code></td>
+                <td>
+                  下载地址 <code>{{ stabilization.exportArtifact.downloadPath || '（无）' }}</code>
+                  <template v-if="stabilization.exportArtifact.errorCode">
+                    · 失败码 <code>{{ stabilization.exportArtifact.errorCode }}</code>
+                    {{ stabilization.exportArtifact.errorMessage }}
+                  </template>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">下载核对</th>
+                <td>
+                  {{ stabilization.download.size }} 字节 ·
+                  <code>{{ stabilization.download.sha256 }}</code>
+                </td>
+                <td>
+                  与产物哈希一致：
+                  <span class="status-badge" :class="stabilization.download.matches ? 'status-badge--pass' : 'status-badge--not-run'">
+                    {{ stabilization.download.matches ? '一致' : '不一致' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="matrix-group-title">影响任务闭环</h3>
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>任务</th><th>动作</th><th>状态迁移</th><th>闭环证据</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in stabilization.transitions" :key="`${row.taskId}-${row.action}`">
+                <th scope="row">
+                  <code>{{ row.taskId }}</code>
+                  <small>severity={{ row.severity }}</small>
+                </th>
+                <td>{{ row.action }}</td>
+                <td>
+                  <span class="status-badge" :class="row.to === 'DONE' ? 'status-badge--pass' : 'status-badge--warning'">
+                    {{ row.from }} → {{ row.to }}
+                  </span>
+                  <small>HTTP {{ row.status }}<template v-if="row.code"> · {{ row.code }}</template></small>
+                </td>
+                <td>
+                  <code v-for="ref in row.closureEvidence" :key="`${ref.kind}-${ref.id}`">
+                    {{ ref.kind }}/{{ ref.id }}@{{ ref.version }}
+                  </code>
+                  <span v-if="!row.closureEvidence.length">—</span>
+                </td>
+                <td>{{ row.note }}</td>
+              </tr>
+              <tr v-if="!stabilization.transitions.length"><td colspan="5">本轮没有任务处置记录。</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          闭环证据按动作类型不同：<code>RECOMPUTE</code> 用当前交付检查的真实回执编号
+          （<code>ComputationReceipt</code>），<code>RETRIEVE_CANDIDATES</code> 需要真实调研回执
+          （<code>ResearchRun</code>，服务端要求至少两轮检索），其余动作用当前章节版本
+          （<code>ChapterVersion</code>）。
+        </p>
+      </template>
+    </section>
+
     <div class="console-columns">
       <section class="flow-card" aria-labelledby="flow-title">
         <div class="section-heading">
@@ -985,6 +1268,12 @@ import {
   toDependencySnapshot,
   type G3DependencySnapshot,
 } from './runner/dependencies'
+import {
+  DOCX_BODY_HEADING_HINT,
+  runStabilizationChain,
+  toStabilizationSnapshot,
+  type G3StabilizationSnapshot,
+} from './runner/stabilization'
 import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
 import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3StepRecord } from './runner/runContext'
 
@@ -1015,6 +1304,9 @@ const lifecycleRunning = ref(false)
 const dependency = ref<G3DependencySnapshot | null>(null)
 const dependencyError = ref('')
 const dependencyRunning = ref(false)
+const stabilization = ref<G3StabilizationSnapshot | null>(null)
+const stabilizationError = ref('')
+const stabilizationRunning = ref(false)
 
 /** 接管会话之前先把用户原来的令牌记住，好还回去。 */
 let originalToken: string | null = null
@@ -1258,6 +1550,7 @@ function restoreLocalState(): void {
       missingSections.value = runSummary.value.missingSections
       lifecycle.value = runSummary.value.lifecycle ?? null
       dependency.value = runSummary.value.dependency ?? null
+      stabilization.value = runSummary.value.stabilization ?? null
     }
   } catch {
     // 本地存储不可用时如实当作「没有历史」，不假装有。
@@ -1279,6 +1572,7 @@ function commitRun(
   registerFirst: boolean,
   snapshot?: G3LifecycleSnapshot,
   dependencySnapshot?: G3DependencySnapshot,
+  stabilizationSnapshot?: G3StabilizationSnapshot,
 ): void {
   if (registerFirst) {
     saveDemoAccount(localStorage, account)
@@ -1298,6 +1592,7 @@ function commitRun(
     missingSections: result.missingSections,
     lifecycle: snapshot,
     dependency: dependencySnapshot,
+    stabilization: stabilizationSnapshot,
   })
   runSummary.value = summary
   saveRunSummary(localStorage, summary)
@@ -1312,6 +1607,7 @@ function commitRun(
   missingSections.value = result.missingSections
   lifecycle.value = snapshot ?? null
   dependency.value = dependencySnapshot ?? null
+  stabilization.value = stabilizationSnapshot ?? null
 }
 
 /**
@@ -1512,6 +1808,71 @@ async function startDependency(): Promise<void> {
     }
   } finally {
     dependencyRunning.value = false
+  }
+}
+
+/**
+ * 跑一次「稳定化 → 交付闭环」链。
+ *
+ * 复用同一份执行器（`runner/stabilization.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startStabilization(): Promise<void> {
+  if (stabilizationRunning.value || running.value) return
+  stabilizationRunning.value = true
+  stabilizationError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const stabilizationResult = await runStabilizationChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+      chapters: result.chapters.map((chapter) => ({
+        id: chapter.id,
+        sectionId: chapter.sectionId,
+        title: chapter.title,
+      })),
+      operatorId: result.identity.userId,
+    })
+
+    const snapshot = toStabilizationSnapshot(stabilizationResult)
+    stabilization.value = snapshot
+    commitRun(result, account, registerFirst, undefined, undefined, snapshot)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    stabilizationError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    stabilizationRunning.value = false
   }
 }
 
