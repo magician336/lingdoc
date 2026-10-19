@@ -16,7 +16,14 @@
 import type { G3MatrixRow } from './g3Matrix'
 import type { G3Status } from './g3Status'
 import type { G3LifecycleSnapshot } from './runner/changeset'
-import type { G3BackendHead, G3ChapterFact, G3RunContext, G3StepRecord } from './runner/runContext'
+import type { G3DependencySnapshot } from './runner/dependencies'
+import type {
+  G3BackendHead,
+  G3ChapterFact,
+  G3RunContext,
+  G3RunVerdict,
+  G3StepRecord,
+} from './runner/runContext'
 
 /** 一行判据要成为「本轮已判定」所必需的条件。 */
 export interface G3RowEvidenceRule {
@@ -26,6 +33,20 @@ export interface G3RowEvidenceRule {
   status: G3Status
   /** 证据说明。 */
   note: string
+  /**
+   * 本轮判定卡里对应的判据编号。
+   *
+   * 给了它，就**以判定结论为准**：步骤跑到了但判定不成立时，这一行仍然不算判定，
+   * 状态保持原样——「步骤跑到了」不等于「判据成立」。
+   */
+  verdictId?: string
+  /**
+   * 承接未实现那半段的独立 GitHub Issue。
+   *
+   * 部分覆盖的判据用它指向缺口清单（例如 #246）；给了它，页面上这一行就保留
+   * 这个跟进 Issue，而不是像完全判定那样清空。
+   */
+  followUpIssue?: number
 }
 
 /**
@@ -82,6 +103,45 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '本轮实跑判定成立：撤销经由新建的逆向变更集完成（原变更集历史仍可读），' +
       '逆向变更集重新评估后应用，项目指针没有静默回退。',
   },
+  'AC-G3-05': {
+    requires: ['建立已确认依赖边', '读影响评估', '应用变更集', '读影响任务', '重复应用变更集'],
+    verdictId: 'AC-G3-05',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：同一变更集里两条来源边指向同一目标、动作相同，' +
+      '服务端把它们合并成一条逻辑 ImpactTask，causes 保留两条上游原因；' +
+      '重复应用同一变更集后影响任务数量不变，没有产生第二条任务。',
+  },
+  'AC-G3-13': {
+    requires: ['建立建议依赖边', '读影响评估', '应用变更集', '读章节版本列表', '读影响任务'],
+    verdictId: 'AC-G3-13',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：建议边（status=suggested）只产生「可能受影响」的影响，' +
+      '没有为它的目标章节产生影响任务，该章节的版本级确认标记仍为 true——' +
+      '建议边不单独使章节失效，也不构成导出阻断项。',
+  },
+  'AC-G3-14': {
+    requires: ['创建变更草稿'],
+    verdictId: 'AC-G3-14',
+    status: 'PASS (follow-up)',
+    followUpIssue: 246,
+    note:
+      '本轮实跑的是**生成那半段**：助手变更草稿已生成（status=draft）。' +
+      '**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现' +
+      '（工作台那个分组是影响解析结果，不可互替），缺口清单见 #246；' +
+      '因此本行不是完全判定，状态记为 PASS (follow-up)。',
+  },
+  'AC-G3-15': {
+    requires: ['裁决依赖边-确认', '裁决依赖边-修改', '裁决依赖边-拒绝', '重投被拒绝的候选边'],
+    verdictId: 'AC-G3-15',
+    status: 'PASS (follow-up)',
+    followUpIssue: 246,
+    note:
+      '本轮实跑的是**三态裁决那半段**：确认 / 修改 / 拒绝都跑通，被拒绝的候选在同一版本里' +
+      '再投一次不会新建边。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246；' +
+      '因此本行不是完全判定，状态记为 PASS (follow-up)。',
+  },
 })
 
 /** 本轮对某一行的覆盖情况。 */
@@ -129,7 +189,13 @@ export function rowEvidence(ctx: G3RunContext, row: G3MatrixRow): G3RowEvidence 
 
   const missingSteps = rule.requires.filter((name) => !observedSteps.includes(name))
   const covered = missingSteps.length === 0
-  const decided = covered && !stale && ctx.head !== null
+  // 判定结论优先：规则给了 verdictId 时，**步骤跑到了也不等于判定成立**。
+  const verdict = rule.verdictId
+    ? (ctx.verdicts ?? []).find((item) => item.id === rule.verdictId)
+    : undefined
+  const verdictMissing = Boolean(rule.verdictId) && !verdict
+  const verdictFailed = Boolean(rule.verdictId) && verdict !== undefined && !verdict.holds
+  const decided = covered && !stale && ctx.head !== null && !verdictMissing && !verdictFailed
 
   return {
     rowId: row.id,
@@ -142,7 +208,13 @@ export function rowEvidence(ctx: G3RunContext, row: G3MatrixRow): G3RowEvidence 
       ? rule.note
       : stale
         ? `本轮已跑到该行所需步骤，但 head 已变化（${ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
-        : `本轮未覆盖该行，还缺步骤：${missingSteps.join('、')}，状态保持原样。`,
+        : missingSteps.length > 0
+          ? `本轮未覆盖该行，还缺步骤：${missingSteps.join('、')}，状态保持原样。`
+          : verdictFailed
+            ? `本轮已跑到该行所需步骤，但判定卡「${rule.verdictId}」不成立，状态保持原样。`
+            : verdictMissing
+              ? `本轮已跑到该行所需步骤，但本轮没有「${rule.verdictId}」的判定结论，状态保持原样。`
+              : '本轮未覆盖该行，状态保持原样。',
   }
 }
 
@@ -165,9 +237,9 @@ export function applyRunEvidence(rows: readonly G3MatrixRow[], ctx: G3RunContext
       status: rule.status,
       evidence: rule.note,
       note: item.note,
-      // 这一行既然已被本轮实跑判定，接它的「跟进 Issue」就不再是待办：
-      // 保留它会让人以为还有未完成的事。
-      followUpIssue: undefined,
+      // 完全判定的行：接它的「跟进 Issue」不再是待办，保留会让人以为还有未完成的事；
+      // 部分覆盖的行：跟进 Issue 指向缺口清单（例如 #246），必须留着。
+      followUpIssue: rule.followUpIssue,
     }
   })
   return { rows: nextRows, evidence }
@@ -188,6 +260,10 @@ export interface G3RunSummary {
   missingSections: string[]
   /** 变更集生命周期链的页面快照（没有跑过就没有这一项）。 */
   lifecycle?: G3LifecycleSnapshot
+  /** 依赖图与影响任务链的页面快照（没有跑过就没有这一项）。 */
+  dependency?: G3DependencySnapshot
+  /** 本轮跑出来的判据判定（矩阵规则表按 verdictId 取结论）。 */
+  verdicts?: G3RunVerdict[]
 }
 
 /** 运行摘要的本地存储键。 */
@@ -202,7 +278,11 @@ export interface G3RunStorage {
 /** 把运行上下文压成摘要。 */
 export function summarizeRun(
   ctx: G3RunContext,
-  extra: { missingSections: string[]; lifecycle?: G3LifecycleSnapshot },
+  extra: {
+    missingSections: string[]
+    lifecycle?: G3LifecycleSnapshot
+    dependency?: G3DependencySnapshot
+  },
 ): G3RunSummary {
   return {
     runId: ctx.runId,
@@ -217,6 +297,8 @@ export function summarizeRun(
     staleReason: ctx.staleReason,
     missingSections: extra.missingSections,
     lifecycle: extra.lifecycle,
+    dependency: extra.dependency,
+    verdicts: ctx.verdicts,
   }
 }
 
@@ -251,6 +333,7 @@ export function contextFromSummary(summary: G3RunSummary): G3RunContext {
     chapters: summary.chapters,
     stale: summary.stale,
     staleReason: summary.staleReason,
+    verdicts: summary.verdicts,
   }
 }
 

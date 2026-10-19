@@ -12,7 +12,9 @@ import {
   type G3RunStorage,
 } from './g3Evidence'
 import { G3_MATRIX_ROWS } from './g3Matrix'
+import { G3_STATUS_VALUES } from './g3Status'
 import { G3_CS_STEPS } from './runner/changeset'
+import { G3_DEP_STEPS } from './runner/dependencies'
 import { createRunContext, markRunStale, recordStep, type G3BackendHead } from './runner/runContext'
 
 function memoryStorage(): G3RunStorage & { map: Map<string, string> } {
@@ -124,20 +126,27 @@ test('单行覆盖计算不依赖规则表', () => {
   assert.equal(item.stale, false)
 })
 
-test('规则表只覆盖本票判定的四行，且状态取门禁词表内的 PASS', () => {
+test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的值', () => {
   assert.deepEqual(
     Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
-    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11'],
+    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-05', 'AC-G3-11', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15'],
   )
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
-    assert.equal(rule.status, 'PASS', `${id} 的判定状态必须是 PASS`)
+    assert.ok(G3_STATUS_VALUES.includes(rule.status), `${id} 的判定状态不在门禁词表内`)
     assert.ok(rule.requires.length > 0, `${id} 没有声明必需步骤`)
     assert.ok(rule.note.length > 0, `${id} 没有给读者看的说明`)
   }
+  // 完全判定的行是 PASS；部分覆盖的行是 PASS (follow-up) 并指向缺口清单 #246。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-05'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-13'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
 })
 
 test('规则表引用的步骤名都真实存在（防止证据链断在名字上）', () => {
-  const known = new Set<string>(Object.values(G3_CS_STEPS))
+  const known = new Set<string>([...Object.values(G3_CS_STEPS), ...Object.values(G3_DEP_STEPS)])
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     for (const name of rule.requires) {
       assert.ok(known.has(name), `${id} 引用了不存在的步骤名：${name}`)
@@ -145,9 +154,9 @@ test('规则表引用的步骤名都真实存在（防止证据链断在名字�
   }
 })
 
-test('跑完本票步骤后，四行被本轮证据驱动为 PASS', () => {
+test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
   const ctx = prerequisiteRun()
-  const allSteps = Object.values(G3_CS_STEPS)
+  const allSteps = [...Object.values(G3_CS_STEPS), ...Object.values(G3_DEP_STEPS)]
   for (const name of allSteps) {
     recordStep(ctx, {
       name,
@@ -159,16 +168,57 @@ test('跑完本票步骤后，四行被本轮证据驱动为 PASS', () => {
       conclusion: '成功',
     })
   }
+  // 带 verdictId 的规则以**判定结论**为准：判定不成立就不许判 PASS。
+  ctx.verdicts = ['AC-G3-05', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15'].map((id) => ({
+    id,
+    title: id,
+    holds: true,
+    detail: '成立',
+    evidence: [],
+  }))
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   const byId = new Map(rows.map((row) => [row.id, row]))
-  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11']) {
+  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11', 'AC-G3-05', 'AC-G3-13']) {
     assert.equal(byId.get(id)?.status, 'PASS', `${id} 没有被本轮证据驱动`)
     assert.equal(byId.get(id)?.followUpIssue, undefined, `${id} 被判定后不应再挂「跟进 Issue」`)
+  }
+  // 部分覆盖的两行：状态是 PASS (follow-up)，并保留指向缺口清单的跟进 Issue。
+  for (const id of ['AC-G3-14', 'AC-G3-15']) {
+    assert.equal(byId.get(id)?.status, 'PASS (follow-up)')
+    assert.equal(byId.get(id)?.followUpIssue, 246)
   }
   // 规则表之外的行状态原样保留。
   assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
   assert.equal(byId.get('G3.1')?.status, 'TODO')
   assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
+})
+
+test('步骤跑齐但判定不成立时，那一行仍然不被判定', () => {
+  const ctx = prerequisiteRun()
+  for (const name of [
+    G3_DEP_STEPS.createEdge,
+    G3_CS_STEPS.readAssessment,
+    G3_CS_STEPS.apply,
+    G3_DEP_STEPS.readTasks,
+    G3_DEP_STEPS.replayApply,
+  ]) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = [{ id: 'AC-G3-05', title: '多上游任务合并', holds: false, detail: '不成立', evidence: [] }]
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  assert.equal(byId.get('AC-G3-05')?.status, 'PASS (follow-up)', '判定不成立不得判成 PASS')
+  const item = evidence.find((entry) => entry.rowId === 'AC-G3-05')
+  assert.equal(item?.decided, false)
+  assert.match(item?.note ?? '', /判定卡/)
 })
 
 test('步骤没跑齐时，那一行不被判定，状态原样保留', () => {

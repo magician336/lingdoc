@@ -21,7 +21,7 @@
 
 import { envelopeData, errorCodeOf, type G3HttpClient } from './httpClient'
 import { createDemoAccount, loginAccount, registerAccount, type G3DemoAccount } from './identity'
-import { makeIdempotencyKey, runStep, type G3RunContext } from './runContext'
+import { makeIdempotencyKey, runStep, type G3RunContext, type G3RunVerdict } from './runContext'
 
 /**
  * 本链的步骤名。
@@ -200,17 +200,13 @@ export interface G3PermissionProbe {
   reject: G3FailureFact
 }
 
-/** 一条判据判定。 */
-export interface G3Verdict {
-  id: string
-  title: string
-  /** 判定是否成立。 */
-  holds: boolean
-  /** 给读者看的一句话。 */
-  detail: string
-  /** 可点击证据：方法、路径、状态码与关键响应字段。 */
-  evidence: string[]
-}
+/**
+ * 一条判据判定。
+ *
+ * 形状取自 `runner/runContext.ts` 的 `G3RunVerdict`（矩阵规则表按 id 取结论），
+ * 这里保留别名，链内代码照旧引用 `G3Verdict`。
+ */
+export type G3Verdict = G3RunVerdict
 
 function projectPath(projectId: string, suffix: string): string {
   return `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}${suffix}`
@@ -659,6 +655,12 @@ export interface G3ProjectState {
   specRevision: number
   currentContextRevision: number
   spec: Record<string, string>
+  /** 模板 id（依赖边的 `TemplateCopy` / `RuleSet` 对象用它）。 */
+  templateId?: string
+  /** 项目自有模板副本版本（`TemplateCopy` 对象的版本）。 */
+  templateCopyVersion?: number
+  /** 模板规则集哈希（`RuleSet` 对象的版本）。 */
+  rulesetHash?: string
 }
 
 /** 读项目状态。 */
@@ -691,6 +693,7 @@ export async function readProjectState(
   for (const [key, value] of Object.entries(objectOf(raw.spec))) {
     spec[key] = String(value)
   }
+  const templateCopy = objectOf(raw.template_copy)
   return {
     id: str(raw.id),
     status: str(raw.status),
@@ -698,6 +701,9 @@ export async function readProjectState(
     specRevision: num(raw.spec_revision),
     currentContextRevision: num(raw.current_context_revision),
     spec,
+    templateId: str(raw.template_id),
+    templateCopyVersion: num(raw.template_copy_version),
+    rulesetHash: str(templateCopy.ruleset_hash),
   }
 }
 
@@ -1281,6 +1287,9 @@ export async function runChangeSetChain(
       withNonOwnerToken: options.withNonOwnerToken,
     })
   }
+
+  // 判定挂到运行上下文上：矩阵规则表按判定 id 取结论，判定不成立就不许写 PASS。
+  ctx.verdicts = [...(ctx.verdicts ?? []), ...verdicts]
 
   return result
 }

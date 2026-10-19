@@ -68,6 +68,25 @@ export interface G3BackendHead {
   probeStatus: number
 }
 
+/**
+ * 一条判据判定。
+ *
+ * 定义放在**运行上下文**这一层，是为了让 `g3Evidence.ts` 的规则表能直接按判定 id
+ * 取结论，而不必反向依赖具体的链模块（避免模块间循环依赖）。
+ */
+export interface G3RunVerdict {
+  /** 判据编号（`AC-G3-xx` 或本票自定义的交付面编号）。 */
+  id: string
+  /** 判据名称。 */
+  title: string
+  /** 判定是否成立。 */
+  holds: boolean
+  /** 给读者看的一句话。 */
+  detail: string
+  /** 可点击证据：方法、路径、状态码与关键响应字段。 */
+  evidence: string[]
+}
+
 /** 章节事实：激活后模板自动创建的两个章节。 */
 export interface G3ChapterFact {
   id: string
@@ -100,6 +119,13 @@ export interface G3RunContext {
   stale: boolean
   /** 过期原因。 */
   staleReason?: string
+  /**
+   * 本轮跑出来的判据判定。
+   *
+   * 矩阵规则表按 `verdictId` 取这里的结论：**步骤跑到了不等于判定成立**，
+   * 判定不成立时那一行就不许被写成 `PASS`。
+   */
+  verdicts?: G3RunVerdict[]
 }
 
 /** 生成运行标识。 */
