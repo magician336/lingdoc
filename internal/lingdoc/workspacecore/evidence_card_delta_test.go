@@ -50,7 +50,7 @@ func r25ConfirmedEvidenceFixture(t *testing.T) (g2Fixture, ResearchClaim, Eviden
 	return f, claim, g2Decode[EvidenceCard](t, raw, err), b
 }
 
-func TestG3FormalGuardKeepsUnconfirmedCollectionEditable(t *testing.T) {
+func TestFormalGuardKeepsUnconfirmedCollectionEditable(t *testing.T) {
 	f := newG2Fixture(t, false)
 	a := f.anchor(t, "source-1", "r25-candidate-anchor")
 	claim := f.claim(t)
@@ -71,11 +71,11 @@ func TestG3FormalGuardKeepsUnconfirmedCollectionEditable(t *testing.T) {
 	}
 }
 
-func TestG3FormalClaimAndCardRejectDirectReplacementWithoutAnyWrite(t *testing.T) {
+func TestFormalClaimAndCardRejectDirectReplacement(t *testing.T) {
 	f, claim, card, anchor := r25ConfirmedEvidenceFixture(t)
 	before := r25SemanticCounts(t, f)
 	_, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-reject-formal-claim", SaveResearchClaimInput{G2Expectation: f.expectation(claim.Version), ClaimID: claim.ID, Text: "禁止绕过正式基线的主张替换", Scope: claim.Scope, Status: "active", Reason: "反例", Confirmed: true})
-	if !errors.Is(err, ErrInvalidState) || !strings.Contains(err.Error(), "G3 ChangeSet") {
+	if !errors.Is(err, ErrInvalidState) || !strings.Contains(err.Error(), "ChangeSet") {
 		t.Fatalf("formal claim bypass: %v", err)
 	}
 	_, _, _, err = f.svc.SaveEvidenceCard(context.Background(), f.owner, f.project.ID, "r25-reject-formal-card", SaveEvidenceCardInput{G2Expectation: f.expectation(card.Version), CardID: card.ID, ClaimRef: card.ClaimRef, AnchorRefs: []G2VersionRef{{ID: anchor.ID, Version: anchor.Version}}, SupportType: "refutes", Scope: card.Scope, ScopeChapterIDs: card.ScopeChapterIDs, Confirmed: true})
@@ -103,7 +103,7 @@ func TestG3FormalClaimAndCardRejectDirectReplacementWithoutAnyWrite(t *testing.T
 	}
 }
 
-func TestG3FormalClaimGuardRecognizesActualRouteAndConfirmedChapter(t *testing.T) {
+func TestFormalClaimGuardRecognizesRouteAndConfirmedChapter(t *testing.T) {
 	for _, consumer := range []string{"ready_route", "draft_route", "confirmed_chapter"} {
 		t.Run(consumer, func(t *testing.T) {
 			f := newG2Fixture(t, false)
@@ -208,7 +208,7 @@ func r25CardDelta(card EvidenceCard, anchor SourceAnchor) SemanticDelta {
 	return SemanticDelta{Kind: "EvidenceCard", TargetID: card.ID, ExpectedVersion: card.Version, BeforeHash: "forged", SourceIDs: []string{"forged-source"}, ProposedCard: &input}
 }
 
-func TestG3EvidenceCardDraftApplyAndInverseUseRealStoreAndInvalidateChapter(t *testing.T) {
+func TestEvidenceCardDraftApplyAndInverseInvalidateChapter(t *testing.T) {
 	f, _, card, replacement := r25ConfirmedEvidenceFixture(t)
 	chapter := extendedChapter(t, f.svc, f.owner, f.project)
 	if err := f.svc.testDB().Exec("UPDATE lingdoc_chapter_versions SET confirmation_valid = ? WHERE project_id = ? AND id = ?", true, f.project.ID, *chapter.CurrentVersionID).Error; err != nil {
@@ -277,7 +277,7 @@ func TestG3EvidenceCardDraftApplyAndInverseUseRealStoreAndInvalidateChapter(t *t
 	counts := r25SemanticCounts(t, f)
 	_, _, _, directErr := f.svc.SaveEvidenceCard(context.Background(), f.owner, p.ID, "r25-no-post-apply-bypass", SaveEvidenceCardInput{G2Expectation: f.expectation(got.Version), CardID: got.ID, ClaimRef: got.ClaimRef, AnchorRefs: got.AnchorRefs, SupportType: "supports", Scope: got.Scope, ScopeChapterIDs: got.ScopeChapterIDs, Confirmed: true})
 	if !errors.Is(directErr, ErrInvalidState) || !reflect.DeepEqual(counts, r25SemanticCounts(t, f)) {
-		t.Fatalf("applied CANDIDATE semantic identity lost its G3 guard: %v", directErr)
+		t.Fatalf("applied CANDIDATE semantic identity lost its formal-change guard: %v", directErr)
 	}
 	chapters, err := f.svc.ListChapters(context.Background(), f.owner, f.project.ID)
 	if err != nil {
@@ -324,7 +324,7 @@ func TestG3EvidenceCardDraftApplyAndInverseUseRealStoreAndInvalidateChapter(t *t
 	}
 }
 
-func TestG3EvidenceCardApplyRechecksSourcesAndRollsBackActualFailures(t *testing.T) {
+func TestEvidenceCardApplyRechecksSourcesAndRollsBack(t *testing.T) {
 	for _, failure := range []string{"source_revoked", "permission_revoked", "original_changed", "audit", "task"} {
 		t.Run(failure, func(t *testing.T) {
 			f, _, card, replacement := r25ConfirmedEvidenceFixture(t)
@@ -388,7 +388,7 @@ func TestG3EvidenceCardApplyRechecksSourcesAndRollsBackActualFailures(t *testing
 	}
 }
 
-func TestG3EvidenceCardProposalRequiresConsentAndRejectsMixedPayloadWithoutWrite(t *testing.T) {
+func TestEvidenceCardProposalRequiresConsent(t *testing.T) {
 	f, _, card, replacement := r25ConfirmedEvidenceFixture(t)
 	delta := r25CardDelta(card, replacement)
 	delta.ProposedCard.Confirmed = false
@@ -408,7 +408,7 @@ func TestG3EvidenceCardProposalRequiresConsentAndRejectsMixedPayloadWithoutWrite
 	}
 }
 
-func TestG3EvidenceCardInverseRejectsSubsequentRealSemanticChange(t *testing.T) {
+func TestEvidenceCardInverseRejectsLaterChange(t *testing.T) {
 	f, _, card, replacement := r25ConfirmedEvidenceFixture(t)
 	original := semanticDraft(t, f.svc, f.owner, f.project, "r25-original-before-confirm", r25CardDelta(card, replacement))
 	semanticApply(t, f.svc, f.owner, f.project, original, "r25-original-before-confirm")
@@ -434,7 +434,7 @@ func TestG3EvidenceCardInverseRejectsSubsequentRealSemanticChange(t *testing.T) 
 	}
 }
 
-func TestG3AssociatedClaimAndCardMustBeStagedBeforeDraftOrAssessment(t *testing.T) {
+func TestAssociatedClaimAndCardMustBeStaged(t *testing.T) {
 	f, claim, card, replacement := r25ConfirmedEvidenceFixture(t)
 	raw, _, _, err := f.svc.SaveResearchClaim(context.Background(), f.owner, f.project.ID, "r25-independent-new-claim", SaveResearchClaimInput{G2Expectation: f.expectation(0), Text: "另一个未确认的合成主张", Scope: "合成范围", Status: "active", Reason: "普通收集", Confirmed: true})
 	other := g2Decode[ResearchClaim](t, raw, err)

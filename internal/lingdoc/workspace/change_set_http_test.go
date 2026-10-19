@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func ensureG3ExtensionTables(t *testing.T, db *gorm.DB) {
+func ensureImpactExtensionTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	for _, ddl := range []string{
 		`CREATE TABLE IF NOT EXISTS lingdoc_g5_records(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,
@@ -21,13 +21,13 @@ func ensureG3ExtensionTables(t *testing.T, db *gorm.DB) {
 		`CREATE TABLE IF NOT EXISTS lingdoc_g6_records (id TEXT PRIMARY KEY,tenant_id BIGINT NOT NULL,project_id TEXT NOT NULL,kind TEXT NOT NULL,record_key TEXT NOT NULL,version BIGINT NOT NULL,body_json TEXT NOT NULL,created_at DATETIME NOT NULL,updated_at DATETIME NOT NULL,UNIQUE(tenant_id,project_id,kind,record_key))`,
 	} {
 		if err := db.Exec(ddl).Error; err != nil {
-			t.Fatalf("production G3/G6 fixture extension: %v", err)
+			t.Fatalf("production impact/trial fixture extension: %v", err)
 		}
 	}
 }
-func ensureG3HTTPTables(t *testing.T, db *gorm.DB) {
+func ensureImpactRouteTables(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	ensureG3ExtensionTables(t, db)
+	ensureImpactExtensionTables(t, db)
 	for _, statement := range []string{
 		`CREATE TABLE IF NOT EXISTS lingdoc_operations (
 			tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, operation TEXT NOT NULL,
@@ -51,30 +51,30 @@ func ensureG3HTTPTables(t *testing.T, db *gorm.DB) {
 		)`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("seed G3 HTTP table: %v", err)
+			t.Fatalf("seed impact HTTP table: %v", err)
 		}
 	}
 }
 
-func g3HTTPContext(userID string) context.Context {
+func actorContext(userID string) context.Context {
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, userID)
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(7))
 	return context.WithValue(ctx, types.TenantRoleContextKey, types.TenantRoleAdmin)
 }
 
-func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
+func TestChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db,
 		deliveryQuestionChapter(assetID, currentAssetRevision(t, handler, assetID), deliveryBody, []string{deliverySourceID}),
 		deliveryMethodChapter(),
 	)
-	ensureG3HTTPTables(t, db)
+	ensureImpactRouteTables(t, db)
 	if err := db.Exec("UPDATE lingdoc_projects SET current_context_revision = ? WHERE id = ?", 1, "project-1").Error; err != nil {
 		t.Fatalf("seed context revision: %v", err)
 	}
 
-	seedDeliveryBoundTemplateCopy(t, db, "g3-http-copy")
+	seedDeliveryBoundTemplateCopy(t, db, "change-http-copy")
 	service, ok := testRuntime(handler).service.(*Service)
 	if !ok {
 		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
@@ -82,15 +82,15 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 	actor := Actor{TenantID: 7, UserID: deliveryActorID}
 	project, err := service.GetProject(policyContext(), actor, "project-1")
 	if err != nil {
-		t.Fatalf("read modern G3 HTTP fixture: %v", err)
+		t.Fatalf("read modern formal-change HTTP fixture: %v", err)
 	}
 	assertDeliveryBoundTemplatePrerequisites(t, service, policyContext(), actor, project)
 
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	body := `{"expected_context_revision":1,"fields":{"research_subject":{"old_value":"公开的合成调查样本","new_value":"新的研究对象"}},"affected_chapter_ids":["chapter-1","chapter-2"],"reason":"研究对象发生变化"}`
-	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets", strings.NewReader(body)).WithContext(g3HTTPContext("reader"))
-	request.Header.Set("Idempotency-Key", "g3-http-create-1")
+	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets", strings.NewReader(body)).WithContext(actorContext("reader"))
+	request.Header.Set("Idempotency-Key", "change-http-create-1")
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
@@ -109,8 +109,8 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("create response = %+v", created)
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets", strings.NewReader(body)).WithContext(g3HTTPContext("reader"))
-	request.Header.Set("Idempotency-Key", "g3-http-create-1")
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets", strings.NewReader(body)).WithContext(actorContext("reader"))
+	request.Header.Set("Idempotency-Key", "change-http-create-1")
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusCreated {
@@ -129,7 +129,7 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("replay response = %+v, first=%+v", replayed, created)
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/api/projects/project-1/change-sets", nil).WithContext(g3HTTPContext("reader"))
+	request = httptest.NewRequest(http.MethodGet, "/api/projects/project-1/change-sets", nil).WithContext(actorContext("reader"))
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -145,7 +145,7 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("list response = %+v", listed)
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/api/projects/project-1/change-sets/"+created.Data.ID, nil).WithContext(g3HTTPContext("reader"))
+	request = httptest.NewRequest(http.MethodGet, "/api/projects/project-1/change-sets/"+created.Data.ID, nil).WithContext(actorContext("reader"))
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -161,8 +161,8 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("get response = %+v", fetched)
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", strings.NewReader(`{}`)).WithContext(g3HTTPContext("reader"))
-	request.Header.Set("Idempotency-Key", "g3-http-apply-1")
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", strings.NewReader(`{}`)).WithContext(actorContext("reader"))
+	request.Header.Set("Idempotency-Key", "change-http-apply-1")
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -178,8 +178,8 @@ func TestG3ChangeSetRoutesUseRealWorkspaceService(t *testing.T) {
 		t.Fatalf("apply response = %+v", applied)
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", strings.NewReader(`{}`)).WithContext(g3HTTPContext("reader"))
-	request.Header.Set("Idempotency-Key", "g3-http-apply-1")
+	request = httptest.NewRequest(http.MethodPost, "/api/projects/project-1/change-sets/"+created.Data.ID+"/apply", strings.NewReader(`{}`)).WithContext(actorContext("reader"))
+	request.Header.Set("Idempotency-Key", "change-http-apply-1")
 	response = httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {

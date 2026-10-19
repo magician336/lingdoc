@@ -5,11 +5,11 @@ import vm from 'node:vm'
 import { createRequire } from 'node:module'
 const require = createRequire(import.meta.url)
 const ts = require('typescript'), sfc = require('@vue/compiler-sfc')
-const filename = new URL('./G3OpsPanel.vue', import.meta.url)
+const filename = new URL('./ImpactOpsPanel.vue', import.meta.url)
 const parsed = sfc.parse(fs.readFileSync(filename, 'utf8'), { filename: filename.pathname })
-const compiled = sfc.compileScript(parsed.descriptor, { id: 'test-g3-ops' })
+const compiled = sfc.compileScript(parsed.descriptor, { id: 'test-impact-ops' })
 test('actual operator template compiles with the component binding metadata',()=>{
- const result=sfc.compileTemplate({id:'test-g3-ops',filename:filename.pathname,source:parsed.descriptor.template.content,compilerOptions:{bindingMetadata:compiled.bindings}})
+ const result=sfc.compileTemplate({id:'test-impact-ops',filename:filename.pathname,source:parsed.descriptor.template.content,compilerOptions:{bindingMetadata:compiled.bindings}})
  assert.equal(result.errors.length,0)
 })
 function setup(readonly, options = {}) {
@@ -182,7 +182,7 @@ function mainlineChange(status, extra = {}) {
   return { id: 'change-current', project_id: 'synthetic.project', created_by: 'owner', reason: 'Actual historical proposal', status, base_context_revision: 1, base_spec_revision: 1, fields: [{ key: 'research_goal', old_value: 'old goal', new_value: 'new goal' }], impacts: [], created_at: '2026-10-17T10:00:00Z', ...extra }
 }
 function renderChanges(state, props) {
-  const template = sfc.compileTemplate({ id: 'test-g3-render', filename: filename.pathname, source: parsed.descriptor.template.content, compilerOptions: { bindingMetadata: compiled.bindings } })
+  const template = sfc.compileTemplate({ id: 'test-impact-render', filename: filename.pathname, source: parsed.descriptor.template.content, compilerOptions: { bindingMetadata: compiled.bindings } })
   assert.equal(template.errors.length, 0)
   const output = ts.transpileModule(template.code, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
   const exports = {}

@@ -24,7 +24,7 @@ func semanticApply(t *testing.T, s *Service, a Actor, p Project, c ChangeSet, ke
 	raw, _, _, err := s.ApplyChangeSet(context.Background(), a, p.ID, c.ID, key+"-apply")
 	return g2Decode[ChangeSet](t, raw, err)
 }
-func TestG3SemanticClaimUsesActualVersionsExplicitConsentAndInverse(t *testing.T) {
+func TestSemanticClaimUsesVersionsConsentAndInverse(t *testing.T) {
 	f := newG2Fixture(t, false)
 	claim := f.claim(t)
 	delta := SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, BeforeHash: "forged", ProposedClaim: &SaveResearchClaimInput{Text: "用户修改的合成主张", Scope: "新的明确范围", Status: "active", Confirmed: false}}
@@ -90,7 +90,7 @@ func TestG3SemanticClaimUsesActualVersionsExplicitConsentAndInverse(t *testing.T
 		t.Fatal(err)
 	}
 }
-func TestG3SemanticApplyRollsBackClaimProjectAuditAndTasksTogether(t *testing.T) {
+func TestSemanticApplyRollsBackEverythingTogether(t *testing.T) {
 	f := newG2Fixture(t, false)
 	claim := f.claim(t)
 	c := semanticDraft(t, f.svc, f.owner, f.project, "atomic-semantic-draft", SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, ProposedClaim: &SaveResearchClaimInput{Text: "需要原子写入的主张", Scope: "合成范围", Status: "active", Confirmed: true}})
@@ -132,7 +132,7 @@ func TestG3SemanticApplyRollsBackClaimProjectAuditAndTasksTogether(t *testing.T)
 		t.Fatal("partial semantic audit")
 	}
 }
-func TestG3AssetScopeRechecksSourcePolicyAndAppendsNativeRevision(t *testing.T) {
+func TestAssetScopeRechecksSourcePolicy(t *testing.T) {
 	f := newG2Fixture(t, false)
 	g2SeedNativeEvidence(t, f)
 	if err := f.svc.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
@@ -178,7 +178,7 @@ func TestG3AssetScopeRechecksSourcePolicyAndAppendsNativeRevision(t *testing.T) 
 		t.Fatal(err)
 	}
 }
-func TestG3RouteUsesRealCurrentDependenciesAndRequiredGate(t *testing.T) {
+func TestRouteUsesCurrentDependenciesAndRequiredGate(t *testing.T) {
 	f := newG2Fixture(t, false)
 	claim := f.claim(t)
 	c := semanticDraft(t, f.svc, f.owner, f.project, "route-draft", SemanticDelta{Kind: "RouteNode", TargetID: "analysis-route", ExpectedVersion: 0, ProposedRoute: &RouteNode{Name: "合成技术路线", Required: true, Status: "ready", Inputs: []ObjectVersionRef{{Kind: "ResearchClaim", ID: claim.ID, Version: "1"}}}})
@@ -217,8 +217,8 @@ func TestG3RouteUsesRealCurrentDependenciesAndRequiredGate(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-func TestG3RecomputeRejectsOldRefUnknownAndStaleReceipt(t *testing.T) {
-	s, a, p := extendedG3G6Store(t)
+func TestRecomputeRejectsOldUnknownAndStaleReceipt(t *testing.T) {
+	s, a, p := extendedImpactStore(t)
 	task := ImpactTask{ID: "recompute-task", ProjectID: p.ID, Target: ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: strconv.FormatInt(p.SpecRevision, 10)}, TargetRevision: p.CurrentContextRevision, Action: "RECOMPUTE"}
 	if err := s.repository.Transaction(context.Background(), TransactionOptions{}, func(tx Transaction) error {
 		if err := verifyImpactActionResult(tx, p, task, []ObjectVersionRef{task.Target}); !errors.Is(err, ErrInvalidState) {
@@ -266,8 +266,8 @@ type semanticCatalogFixture struct{ value CatalogTemplateDefinition }
 func (f semanticCatalogFixture) Resolve(context.Context, Transaction, Actor, string, string) (CatalogTemplateDefinition, error) {
 	return f.value, nil
 }
-func TestG3BindingDerivesImmutableCopyAndInverseWithinReviewedPolicies(t *testing.T) {
-	s, a, p := extendedG3G6Store(t)
+func TestBindingDerivesImmutableCopyAndInverse(t *testing.T) {
+	s, a, p := extendedImpactStore(t)
 	set, err := template.PublishRuleSet(template.RuleSet{ID: "semantic-rules", Version: "1", State: template.RuleSetDraft, Bindings: []template.RuleBinding{
 		{RuleID: "mandatory-presence", DefinitionID: "presence", DefinitionVersion: "1", Origin: "builtin", TargetKind: "field", TargetID: "research_goal", Severity: "blocking", TriggerScenes: []string{"write_check", "preflight"}, Enabled: true, Owner: "synthetic-template-owner"},
 		{RuleID: "optional-pattern", DefinitionID: "pattern", DefinitionVersion: "1", Origin: "project", TargetKind: "field", TargetID: "research_goal", Parameters: map[string]any{"pattern": "."}, Severity: "warning", TriggerScenes: []string{"write_check", "preflight"}, Enabled: true, Owner: "synthetic-template-owner"},
@@ -335,7 +335,7 @@ func TestG3BindingDerivesImmutableCopyAndInverseWithinReviewedPolicies(t *testin
 		t.Fatal("binding inverse did not append reviewed source severity")
 	}
 }
-func TestG3RetrieveRequiresActualApprovedRunScopeAndCurrentAssets(t *testing.T) {
+func TestRetrieveRequiresApprovedRunScope(t *testing.T) {
 	f := newG2Fixture(t, false)
 	g2SeedNativeEvidence(t, f)
 	task := ImpactTask{ID: "retrieve-task", ProjectID: f.project.ID, TargetRevision: f.project.CurrentContextRevision, Action: "RETRIEVE_CANDIDATES", Target: ObjectVersionRef{Kind: "ProjectSpec", ID: f.project.ID, Version: "1"}}

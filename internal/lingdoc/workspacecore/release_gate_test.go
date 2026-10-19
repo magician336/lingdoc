@@ -10,8 +10,8 @@ import (
 	"time"
 )
 
-func TestG3ReceiptPinsActualBeforeAfterBasisAndMetadataDoesNotInvalidateIt(t *testing.T) {
-	s, a, p := extendedG3G6Store(t)
+func TestReceiptPinsBasisAndMetadata(t *testing.T) {
+	s, a, p := extendedImpactStore(t)
 	basis, err := s.ReadPreflightBasis(context.Background(), a, p.ID, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestG3ReceiptPinsActualBeforeAfterBasisAndMetadataDoesNotInvalidateIt(t *te
 		t.Fatalf("old receipt falsely current: %v", err)
 	}
 }
-func TestG3SemanticReassessmentPreservesIntentButRejectsRealMeaningConflict(t *testing.T) {
+func TestSemanticReassessmentRejectsMeaningConflict(t *testing.T) {
 	f := newG2Fixture(t, false)
 	claim := f.claim(t)
 	original := semanticDraft(t, f.svc, f.owner, f.project, "reassess-original", SemanticDelta{Kind: "ResearchClaim", TargetID: claim.ID, ExpectedVersion: claim.Version, ProposedClaim: &SaveResearchClaimInput{Text: "拟议语义", Scope: claim.Scope, Status: "active", Confirmed: true}})
@@ -95,7 +95,7 @@ func TestG3SemanticReassessmentPreservesIntentButRejectsRealMeaningConflict(t *t
 	}
 }
 
-func TestG3SemanticGraphActuallyInvalidatesOnlyReferencedChapterConfirmation(t *testing.T) {
+func TestSemanticGraphInvalidatesOnlyReferencedChapter(t *testing.T) {
 	f := newG2Fixture(t, false)
 	claim := f.claim(t)
 	chapter := extendedChapter(t, f.svc, f.owner, f.project)
@@ -138,8 +138,8 @@ func TestG3SemanticGraphActuallyInvalidatesOnlyReferencedChapterConfirmation(t *
 		t.Fatal("test invalidated by unrelated global SpecRevision instead of exact graph target")
 	}
 }
-func TestG3G6DomainHumanDecisionsCannotBeBypassedOutsideHTTP(t *testing.T) {
-	s, a, p := extendedG3G6Store(t)
+func TestHumanDecisionsCannotBeBypassedOutsideHTTP(t *testing.T) {
+	s, a, p := extendedImpactStore(t)
 	ctx := types.WithPrincipal(context.Background(), types.Principal{Type: types.PrincipalAPITenant, ID: "synthetic-api-principal"})
 	if _, _, _, err := s.StabilizeRevision(ctx, a, p.ID, "any-change", "human-stabilize"); !errors.Is(err, ErrHumanDecisionRequired) {
 		t.Fatalf("machine stabilized through non HTTP entry: %v", err)

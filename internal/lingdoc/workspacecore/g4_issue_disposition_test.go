@@ -19,7 +19,7 @@ func issueBinding(projectVersion int64, severity string) ValidationIssueBinding 
 func TestValidationIssueDispositionPersistsBindingAndRejectsStaleOrDuplicateActions(t *testing.T) {
 	service := testStore(t, filepath.Join(t.TempDir(), "issue-disposition.db"))
 	owner := Actor{TenantID: 401, UserID: "owner"}
-	project := seedActiveG3Project(t, service, owner)
+	project := seedActiveImpactProject(t, service, owner)
 	binding := issueBinding(project.ProjectVersion, "warning")
 	input := ValidationIssueDispositionInput{ExpectedProjectVersion: project.ProjectVersion,
 		ValidationIssueBinding: binding, Action: "dismiss", Reason: "该章节不适用于本项目"}
@@ -82,7 +82,7 @@ func TestValidationIssueDispositionPersistsBindingAndRejectsStaleOrDuplicateActi
 func TestReviewerMayOnlyDismissBlockingIssueInAssignedScope(t *testing.T) {
 	service := testStore(t, filepath.Join(t.TempDir(), "issue-reviewer.db"))
 	owner := Actor{TenantID: 402, UserID: "owner", Role: types.TenantRoleOwner}
-	project := seedActiveG3Project(t, service, owner)
+	project := seedActiveImpactProject(t, service, owner)
 	chapters, err := service.ListChapters(context.Background(), owner, project.ID)
 	if err != nil || len(chapters) == 0 {
 		t.Fatalf("chapters: %+v err=%v", chapters, err)
@@ -128,7 +128,7 @@ func TestReviewerMayOnlyDismissBlockingIssueInAssignedScope(t *testing.T) {
 func TestDispositionRejectsRevokedMembershipWithoutAuditSideEffect(t *testing.T) {
 	service := testStore(t, filepath.Join(t.TempDir(), "issue-disposition-revoked.db"))
 	owner := Actor{TenantID: 403, UserID: "owner"}
-	project := seedActiveG3Project(t, service, owner)
+	project := seedActiveImpactProject(t, service, owner)
 	if err := service.testDB().Exec("UPDATE lingdoc_member_permissions SET status = 'suspended' WHERE project_id = ? AND user_id = ?", project.ID, owner.UserID).Error; err != nil {
 		t.Fatal(err)
 	}

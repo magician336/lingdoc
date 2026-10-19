@@ -17,6 +17,339 @@
     }
   ],
   "paths": {
+"/projects/{projectId}/change-sets/{changeSetId}/preflight": {
+      "post": {
+        "operationId": "acknowledgeImpactPreflight",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "以**当前**交付检查回执关闭该 ChangeSet 的 BLOCK_RELEASE 任务",
+        "description": "proof_id 必须是当前基线下的实际检查回执；历史快照或已过期的回执会被服务端拒绝，不得据此判定交付就绪。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "proof_id"
+                ],
+                "properties": {
+                  "proof_id": {
+                    "type": "string",
+                    "description": "当前基线下实际产生的交付检查回执 ID；不接受冻结快照 ID 或幂等键"
+                  }
+                }
+              },
+              "example": {
+                "proof_id": "preflight-check-合成回执-1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已关闭的 BLOCK_RELEASE 任务 ID",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "closed_task_ids"
+                  ],
+                  "properties": {
+                    "closed_task_ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误或缺少幂等键"
+          },
+          "403": {
+            "description": "机器主体不得代替真人关闭发布阻断"
+          },
+          "404": {
+            "description": "项目或 ChangeSet 不存在或不可访问"
+          },
+          "409": {
+            "description": "回执不属于当前基线，或已被更新的基线取代"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+"/projects/{projectId}/impact-tasks": {
+      "get": {
+        "operationId": "listImpactTasks",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "列出当前项目的全部影响任务",
+        "description": "影响任务身份由 change_set_id + target_ref + target_revision + action_type 推导，因此重复投递只合并到同一任务。STALE 是终态但不算闭环：其依据已消失，无人能够再履行。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "影响任务列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactTaskListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目不存在"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+"/projects/{projectId}/impact-tasks/{taskId}/actions": {
+      "post": {
+        "operationId": "actOnImpactTask",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "对影响任务执行流转动作",
+        "description": "动作一律以当前域真相判定：目标版本已被替换时任务转为 STALE 并记录原因，而不是假装可推进。complete 必须携带对当前版本有效的闭环证据。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "taskId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "任务流转后的当前状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImpactTaskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入不合法"
+          },
+          "403": {
+            "description": "缺少项目写权限或责任人已撤权"
+          },
+          "404": {
+            "description": "项目或任务不存在"
+          },
+          "409": {
+            "description": "任务版本落后于服务端当前版本"
+          },
+          "422": {
+            "description": "当前任务状态不允许该动作，或闭环证据不是当前版本"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+"/projects/{projectId}/change-sets/{changeSetId}/stabilize": {
+      "post": {
+        "operationId": "stabilizeRevision",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "Owner 对当前基线执行稳定化判定，返回服务端实际阻断清单",
+        "description": "稳定化是与 applied 相互独立的第三种基线状态。只有本接口返回 STABILIZED，当前 revision 才允许进入冻结、Preflight 确认与导出。返回 BLOCKED 时随附全部 blockers，客户端不得在本端推断稳定化或导出资格。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "服务端实际稳定化判定；STABILIZED 与 BLOCKED 均为成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StabilizationResultResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误"
+          },
+          "403": {
+            "description": "非 Owner 或机器主体不得代替真人作出稳定化决定"
+          },
+          "404": {
+            "description": "项目或 ChangeSet 不存在或不可访问"
+          },
+          "409": {
+            "description": "版本或幂等冲突；已有的 Preflight 回执已不适用于当前基线"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+"/projects/{projectId}/check-receipts/{receiptId}": {
+      "get": {
+        "operationId": "getImpactComputationReceipt",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取一次交付检查回执，并复验它是否仍适用于当前基线",
+        "description": "回执与冻结快照、READY、导出是彼此独立的四类事实。回执一旦落后于当前项目版本、基线 revision、模板副本版本或规则哈希即视为过期。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "receiptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "当前仍然适用的检查回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ImpactComputationReceipt"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/ResponseMeta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前租户成员无权读取"
+          },
+          "404": {
+            "description": "回执不存在或不可访问"
+          },
+          "409": {
+            "description": "回执已不适用于当前基线"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
     "/templates/{templateId}": {
       "get": {
         "operationId": "getTemplate",
@@ -16028,6 +16361,199 @@
         "x-domain": "workspace",
         "x-delivery-phase": "core"
       }
+    },
+    "/projects/{projectId}/dependencies": {
+      "get": {
+        "operationId": "listDependencyEdges",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取依赖边；逐边按来源授权过滤，不可访问对象的边不返回",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "依赖边列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyEdgeListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      },
+      "post": {
+        "operationId": "createDependencyEdge",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "登记依赖边；origin=ai 时状态为 suggested，user/rule 时为 confirmed",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyEdgeInput"
+              },
+              "example": {
+                "expected_context_revision": 1,
+                "source": {
+                  "kind": "ChapterVersion",
+                  "id": "chapter-method",
+                  "version": "v1"
+                },
+                "target": {
+                  "kind": "ChapterVersion",
+                  "id": "chapter-result",
+                  "version": "v1"
+                },
+                "relation": "method_supports_result",
+                "action": "REVALIDATE_EVIDENCE",
+                "origin": "user",
+                "reason": "合成示例：方法章节的结论需复核后才可用于结果章节",
+                "confidence": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已登记；同一 (source,target,relation,action) 复用既有边",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyEdgeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "该依赖已被人工定论，自动运行不得覆盖（dependency_decided）"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/dependencies/{edgeId}/decision": {
+      "post": {
+        "operationId": "decideDependencyEdge",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "人工确认、修改或拒绝候选依赖；决定绑定 expected_version",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "edgeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyDecisionInput"
+              },
+              "example": {
+                "expected_version": 1,
+                "decision": "modify",
+                "reason": "人工修正为强制重算",
+                "relation": "constrains",
+                "action": "REGENERATE",
+                "confidence": 0.9
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "决定已记录；modify 后仍为 confirmed 且 version+1",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyEdgeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法；modify 至少要改一个字段"
+          },
+          "403": {
+            "description": "该操作需要实际成员作出决定"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "边版本已变化，或该边已有结论（version_conflict / 当前状态不允许）"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
     }
   },
   "components": {
@@ -16044,6 +16570,369 @@
       }
     },
     "schemas": {
+"ImpactBlocker": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "code",
+          "reason"
+        ],
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "机器可读的阻断分类，例如 impact_task_open、closure_stale、result_receipt_stale、required_route_not_current"
+          },
+          "target_id": {
+            "type": "string",
+            "description": "被阻断的具体对象或任务 ID；省略表示阻断不针对单一对象"
+          },
+          "reason": {
+            "type": "string",
+            "description": "服务端实际给出的阻断原因"
+          }
+        }
+      },
+"ImpactTask": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "project_id",
+          "change_set_id",
+          "target",
+          "target_revision",
+          "action",
+          "severity",
+          "responsibility_domain",
+          "status",
+          "causes",
+          "version",
+          "closure_evidence"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "由 change_set_id + target_ref + target_revision + action_type 推导的稳定身份，重复投递不会产生第二个任务"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "change_set_id": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target_revision": {
+            "type": "integer",
+            "description": "任务所针对的上下文修订；已不是当前修订的任务不再参与当前门禁"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ]
+          },
+          "severity": {
+            "type": "string"
+          },
+          "responsibility_domain": {
+            "type": "string"
+          },
+          "assignee_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "IN_PROGRESS",
+              "WAITING_USER",
+              "DONE",
+              "DISMISSED",
+              "STALE",
+              "CANCELLED"
+            ],
+            "description": "STALE 是终态但不算闭环：它记录的是任务依据已消失，而不是影响已被处理。"
+          },
+          "causes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "version": {
+            "type": "integer"
+          },
+          "disposition": {
+            "type": "string"
+          },
+          "human_decision": {
+            "type": "string"
+          },
+          "closure_evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            }
+          },
+          "stale_reason": {
+            "type": "string",
+            "enum": [
+              "target_version_replaced",
+              "source_revoked",
+              "assignee_revoked"
+            ],
+            "description": "任务被判为 STALE 的具体原因，客户端必须据此解释失效，而不是当作已闭环"
+          },
+          "stale_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+"ImpactTaskListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactTask"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+"ImpactTaskResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ImpactTask"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+"DependencyEdgeListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyEdge"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+"DependencyEdgeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DependencyEdge"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+"ImpactComputationReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "version",
+          "project_id",
+          "status",
+          "project_version",
+          "context_revision",
+          "template_copy_version",
+          "ruleset_hash",
+          "input_hash",
+          "computation_basis_hash",
+          "source_basis_hash",
+          "source_ids",
+          "checked_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "blocked"
+            ],
+            "description": "该次交付检查自身的结论，与基线是否已稳定化相互独立"
+          },
+          "project_version": {
+            "type": "integer"
+          },
+          "context_revision": {
+            "type": "integer"
+          },
+          "template_copy_version": {
+            "type": "integer"
+          },
+          "ruleset_hash": {
+            "type": "string"
+          },
+          "input_hash": {
+            "type": "string"
+          },
+          "computation_basis_hash": {
+            "type": "string"
+          },
+          "source_basis_hash": {
+            "type": "string"
+          },
+          "source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evaluations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "description": "一次真实交付检查回执。任一版本或哈希落后于当前基线时服务端判定其过期，历史回执不能满足当前交付门禁。"
+      },
+"StabilizationResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "change_set_id",
+          "context_revision",
+          "status",
+          "blockers",
+          "stale_task_ids",
+          "checked_at"
+        ],
+        "properties": {
+          "change_set_id": {
+            "type": "string"
+          },
+          "context_revision": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "BLOCKED",
+              "STABILIZED"
+            ],
+            "description": "服务端对当前基线的实际判定。BLOCKED 与 STABILIZED 都是成功响应，客户端不得由其他状态推断。"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactBlocker"
+            },
+            "description": "STABILIZED 时必须为空；BLOCKED 时承载全部实际阻断原因"
+          },
+          "stale_task_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "稳定化前已被判定失效的任务。这些任务既不是阻断原因（其依据已消失，无人能够再履行），也不算闭环（并未被处理），因此单独报告而不是丢弃。"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+"StabilizationResultResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StabilizationResult"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -20682,6 +21571,250 @@
           }
         },
         "description": "创建或编辑草稿不改正式对象。需服务端当前版本、权限和全部旧/拟议来源核对；评估后由当前 Owner 独立 Apply。 同一批次不能修改相互关联的 ResearchClaim 与 EvidenceCard（包括卡原关联与拟议关联），请分两次正式变更，并对新主张版本重新复核证据卡。"
+      },
+      "ObjectVersionRef": {
+        "type": "object",
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ProjectSpec",
+              "ProjectAsset",
+              "SourceAnchor",
+              "EvidenceCard",
+              "ResearchClaim",
+              "ChapterVersion",
+              "TemplateCopy",
+              "RuleSet",
+              "RuleBinding",
+              "RouteNode",
+              "ResearchRun",
+              "ComputationReceipt"
+            ]
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "对象版本坐标；决定与影响解析都绑定在此版本上。"
+          }
+        }
+      },
+      "DependencyEdge": {
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "source",
+          "target",
+          "relation",
+          "action",
+          "origin",
+          "reason",
+          "status",
+          "confidence",
+          "actor_id",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "user",
+              "rule",
+              "ai"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "confirmed",
+              "rejected"
+            ],
+            "description": "由服务端决定。suggested 边在影响评估中只产生 certainty=possible，不进入 required objects，不能独立阻断或放行交付；客户端不得本地推断。"
+          },
+          "superseded_relation": {
+            "type": "string",
+            "description": "decision=modify 时被替换掉的原 relation；自动运行再提出该元组会被拒绝（dependency_decided）。"
+          },
+          "superseded_action": {
+            "type": "string",
+            "description": "decision=modify 时被替换掉的原 action。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DependencyEdgeInput": {
+        "type": "object",
+        "required": [
+          "expected_context_revision",
+          "source",
+          "target",
+          "relation",
+          "action",
+          "origin",
+          "reason",
+          "confidence"
+        ],
+        "properties": {
+          "expected_context_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ]
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "user",
+              "rule",
+              "ai"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "DependencyDecisionInput": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "decision",
+          "reason"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "决定所针对的边版本；不匹配返回 409，避免静默覆盖后续改动。"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "reject",
+              "modify"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE"
+            ],
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          }
+        },
+        "description": "confirm/reject 不得携带 relation/action/confidence；modify 至少要携带其中之一。"
       }
     }
   },

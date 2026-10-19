@@ -16,6 +16,10 @@ import (
 
 var ErrImpactObjectUnavailable = errors.New("current impact object adapter is unavailable")
 
+// ErrDependencyDecided reports that a human already decided this dependency
+// pair, so an automated run may not silently re-propose or overwrite it.
+var ErrDependencyDecided = errors.New("dependency edge already decided")
+
 func (s *Service) SetImpactRuleChecker(checker ImpactRuleChecker) { s.impactRules = checker }
 func validObjectRef(ref ObjectVersionRef) bool {
 	return ref.ID != "" && ref.Version != "" && len(ref.ID) <= 128 && len(ref.Version) <= 128 && slices.Contains([]string{"ProjectSpec", "ProjectAsset", "SourceAnchor", "EvidenceCard", "ResearchClaim", "ChapterVersion", "TemplateCopy", "RuleSet", "RuleBinding", "RouteNode", "ResearchRun", "ComputationReceipt"}, ref.Kind)
@@ -151,7 +155,7 @@ func checkedImpactWrite[I any, R any](s *Service, ctx context.Context, actor Act
 		return write(tx, p)
 	})
 }
-func g3Audit(tx Transaction, actor Actor, project, action, target string, details map[string]any) error {
+func recordAuditEvent(tx Transaction, actor Actor, project, action, target string, details map[string]any) error {
 	audit, ok := tx.(auditTransaction)
 	if !ok {
 		return ErrInvalidState
@@ -185,6 +189,19 @@ func (s *Service) CreateDependencyEdge(ctx context.Context, actor Actor, project
 				return operationResult[DependencyEdge]{Value: edge, Status: operationStatusOK}, nil
 			}
 		}
+		if input.Origin == "ai" {
+			// An automated run may add a candidate, but it may not resurrect the
+			// exact tuple a human replaced with decision="modify": that is the one
+			// case where re-proposing would undo a recorded human decision.
+			for _, edge := range edges {
+				if edge.Source != input.Source || edge.Target != input.Target {
+					continue
+				}
+				if edge.SupersededRelation == input.Relation && edge.SupersededAction == input.Action {
+					return operationResult[DependencyEdge]{}, ErrDependencyDecided
+				}
+			}
+		}
 		now := time.Now().UTC()
 		status := "confirmed"
 		if input.Origin == "ai" {
@@ -194,7 +211,7 @@ func (s *Service) CreateDependencyEdge(ctx context.Context, actor Actor, project
 		if err := store.PutDependencyEdge(edge); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "dependency.create", edge.ID, map[string]any{"status": status, "source": edge.Source, "target": edge.Target}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "dependency.create", edge.ID, map[string]any{"status": status, "source": edge.Source, "target": edge.Target}); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
 		return operationResult[DependencyEdge]{Value: edge, Status: operationStatusCreated}, nil
@@ -204,7 +221,17 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
-	if input.ExpectedVersion < 1 || !slices.Contains([]string{"confirm", "reject"}, input.Decision) || strings.TrimSpace(input.Reason) == "" {
+	if input.ExpectedVersion < 1 || !slices.Contains([]string{"confirm", "reject", "modify"}, input.Decision) || strings.TrimSpace(input.Reason) == "" {
+		return nil, 0, false, ErrInvalidRequest
+	}
+	if input.Decision == "modify" {
+		if (input.Relation == nil && input.Action == nil && input.Confidence == nil) ||
+			(input.Relation != nil && (strings.TrimSpace(*input.Relation) == "" || len(*input.Relation) > 128)) ||
+			(input.Action != nil && !validImpactAction(*input.Action)) ||
+			(input.Confidence != nil && (math.IsNaN(*input.Confidence) || *input.Confidence < 0 || *input.Confidence > 1)) {
+			return nil, 0, false, ErrInvalidRequest
+		}
+	} else if input.Relation != nil || input.Action != nil || input.Confidence != nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	var edge DependencyEdge
@@ -240,6 +267,21 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 		if input.Decision == "confirm" {
 			next.Status = "confirmed"
 		}
+		if input.Decision == "modify" {
+			// A modification is a confirmation of the corrected candidate, not a
+			// new candidate: it stays confirmed and becomes binding.
+			next.Status = "confirmed"
+			next.SupersededRelation, next.SupersededAction = old.Relation, old.Action
+			if input.Relation != nil {
+				next.Relation = *input.Relation
+			}
+			if input.Action != nil {
+				next.Action = *input.Action
+			}
+			if input.Confidence != nil {
+				next.Confidence = *input.Confidence
+			}
+		}
 		next.Version++
 		next.ActorID = actor.UserID
 		next.Reason = input.Reason
@@ -247,7 +289,11 @@ func (s *Service) DecideDependencyEdge(ctx context.Context, actor Actor, project
 		if err := store.UpdateDependencyEdge(old, next); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "dependency."+input.Decision, edgeID, map[string]any{"version": next.Version}); err != nil {
+		details := map[string]any{"version": next.Version}
+		if input.Decision == "modify" {
+			details["relation"], details["action"], details["confidence"] = next.Relation, next.Action, next.Confidence
+		}
+		if err := recordAuditEvent(tx, actor, projectID, "dependency."+input.Decision, edgeID, details); err != nil {
 			return operationResult[DependencyEdge]{}, err
 		}
 		return operationResult[DependencyEdge]{Value: next, Status: operationStatusOK}, nil
@@ -558,36 +604,128 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 			}
 		}
 		now := time.Now().UTC()
-		task := ImpactTask{ID: uuid.NewString(), ProjectID: p.ID, ChangeSetID: change.ID, Target: impact.Target, TargetRevision: p.CurrentContextRevision, Action: impact.Action, Severity: "blocking", ResponsibilityDomain: domain, Status: "OPEN", Causes: impact.Causes, Version: 1, ClosureEvidence: []ObjectVersionRef{}, CreatedAt: now, UpdatedAt: now}
+		// Identity is change_set_id + target_ref + target_revision + action_type.
+		// Deriving the ID from that identity makes a duplicated, replayed or
+		// out-of-order event address the same task instead of minting a second
+		// one, and it survives a service restart because the ID is recomputed
+		// rather than remembered.
+		task := ImpactTask{ID: ImpactTaskID(p.ID, change.ID, impact.Target, p.CurrentContextRevision, impact.Action), ProjectID: p.ID, ChangeSetID: change.ID, Target: impact.Target, TargetRevision: p.CurrentContextRevision, Action: impact.Action, Severity: "blocking", ResponsibilityDomain: domain, Status: "OPEN", Causes: impact.Causes, Version: 1, ClosureEvidence: []ObjectVersionRef{}, CreatedAt: now, UpdatedAt: now}
+		// A delayed or out-of-order redelivery must be judged against the
+		// current domain truth, not against the stored event payload. If the
+		// target version was already replaced, the task is born STALE with an
+		// explicit reason instead of an actionable-looking OPEN task.
+		if reason := staleTargetReason(tx, p, impact.Target); reason != "" {
+			task.Status = "STALE"
+			task.StaleReason = reason
+			task.StaleAt = now
+		}
 		if err := store.InsertImpactTask(task); err != nil {
 			return err
 		}
+		// The handoff record is keyed by the same identity, so a redelivery
+		// re-issues no second handoff.
 		if err := store.InsertImpactHandoff(task); err != nil {
 			return err
 		}
 	}
 	return store.RecordContextRevision(p, change)
 }
+
+// markImpactTaskStale performs the STALE transition, its version bump and its
+// audit entry together, so a caller never leaves a half-applied invalidation.
+//
+// Idempotency: a task that is already STALE is returned untouched, so repeated
+// triggers produce no second write, no second version bump and no second audit
+// entry.
+func (s *Service) markImpactTaskStale(tx Transaction, actor Actor, p Project, store impactTransaction, task ImpactTask, reason string) (ImpactTask, error) {
+	if task.Status == "STALE" {
+		return task, nil
+	}
+	stale := task
+	now := time.Now().UTC()
+	stale.Status = "STALE"
+	stale.StaleReason = reason
+	stale.StaleAt = now
+	stale.UpdatedAt = now
+	stale.Version++
+	if err := store.UpdateImpactTask(task, stale); err != nil {
+		return ImpactTask{}, err
+	}
+	if err := recordAuditEvent(tx, actor, p.ID, "impact_task.stale", task.ID, map[string]any{
+		"status": stale.Status, "stale_reason": reason, "target_revision": stale.TargetRevision, "target": stale.Target}); err != nil {
+		return ImpactTask{}, err
+	}
+	return stale, nil
+}
+
+// staleTargetReason reports why an impact target no longer supports work on
+// the version a task was raised against. It re-reads the current domain truth
+// instead of trusting a stored payload, so a redelivered or delayed event is
+// classified the same way a fresh one would be.
+func staleTargetReason(tx Transaction, p Project, target ObjectVersionRef) string {
+	if !validObjectRef(target) {
+		return ImpactTaskStaleTargetReplaced
+	}
+	if _, err := currentImpactObject(tx, p, target); err != nil {
+		// The object is gone or no longer valid at the exact version the task
+		// names: the obligation was raised against a version that has been
+		// replaced. An adapter or infrastructure failure is deliberately not
+		// treated as staleness, because it is not evidence about the version.
+		if errors.Is(err, ErrVersionConflict) || errors.Is(err, ErrNotFound) || errors.Is(err, ErrInvalidState) {
+			return ImpactTaskStaleTargetReplaced
+		}
+	}
+	return ""
+}
 func (s *Service) GetImpactAssessment(ctx context.Context, actor Actor, projectID, changeID string) (ImpactAssessment, error) {
 	var result ImpactAssessment
+	var project Project
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
+		var err error
+		project, err = s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
+		if err != nil {
 			return err
 		}
 		store, ok := tx.(impactTransaction)
 		if !ok {
 			return ErrInvalidState
 		}
-		var err error
 		result, err = store.ImpactAssessment(projectID, changeID)
 		return err
 	})
 	if err != nil {
 		return result, err
 	}
-	var sources []string
+	// Edges and impacts name objects that may sit outside Objects (a suggested
+	// edge target is deliberately not a required object), so authorization has to
+	// cover every ref the response exposes, not just the required set.
+	refs := map[string]ObjectVersionRef{}
 	for _, state := range result.Objects {
-		sources = append(sources, state.SourceIDs...)
+		refs[refIdentity(state.Ref)] = state.Ref
+	}
+	for _, edge := range result.Edges {
+		refs[refIdentity(edge.Source)] = edge.Source
+		refs[refIdentity(edge.Target)] = edge.Target
+	}
+	for _, impact := range result.Impacts {
+		refs[refIdentity(impact.Target)] = impact.Target
+		for _, cause := range impact.Causes {
+			refs[refIdentity(cause.Source)] = cause.Source
+		}
+	}
+	var sources []string
+	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		for _, ref := range refs {
+			state, err := currentImpactObject(tx, project, ref)
+			if err != nil {
+				return err
+			}
+			sources = append(sources, state.SourceIDs...)
+		}
+		return nil
+	})
+	if err != nil {
+		return ImpactAssessment{}, err
 	}
 	if err := s.checkSources(ctx, actor, projectID, sources); err != nil {
 		return ImpactAssessment{}, err
@@ -634,10 +772,23 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 		if task.Version != input.ExpectedVersion {
 			return operationResult[ImpactTask]{}, ErrVersionConflict
 		}
+		// Re-check the task's basis before doing anything with it. When the
+		// basis is gone the task becomes STALE with an explicit reason rather
+		// than silently failing the action, so the obligation stays visible and
+		// auditable instead of vanishing or being mistaken for success.
+		if task.Status != "STALE" {
+			if reason := s.impactTaskStaleReason(ctx, tx, actor, p, task, input.Action); reason != "" {
+				stale, err := s.markImpactTaskStale(tx, actor, p, store, task, reason)
+				if err != nil {
+					return operationResult[ImpactTask]{}, err
+				}
+				return operationResult[ImpactTask]{Value: stale, Status: operationStatusOK}, nil
+			}
+		}
 		if task.TargetRevision != p.CurrentContextRevision || input.TargetRevision != p.CurrentContextRevision {
 			return operationResult[ImpactTask]{}, ErrVersionConflict
 		}
-		if slices.Contains([]string{"DONE", "DISMISSED", "CANCELLED", "STALE"}, task.Status) {
+		if slices.Contains(ImpactTaskClosedStatuses, task.Status) || task.Status == "STALE" {
 			return operationResult[ImpactTask]{}, ErrInvalidState
 		}
 		old := task
@@ -717,12 +868,191 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 		if err := store.UpdateImpactTask(old, task); err != nil {
 			return operationResult[ImpactTask]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "impact_task."+input.Action, taskID, map[string]any{"status": task.Status, "target_revision": task.TargetRevision, "closure_evidence": task.ClosureEvidence}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "impact_task."+input.Action, taskID, map[string]any{"status": task.Status, "target_revision": task.TargetRevision, "closure_evidence": task.ClosureEvidence}); err != nil {
 			return operationResult[ImpactTask]{}, err
 		}
 		return operationResult[ImpactTask]{Value: task, Status: operationStatusOK}, nil
 	})
 }
+
+// impactTaskVersionNeutralActions are the actions that do not work a task
+// against the version it was raised against.
+//
+// "complete" is the re-targeting action: it validates and records caller-supplied
+// closure evidence for the current version, so a replaced version is expected
+// there. "assign" only names a responsible person and "wait" only parks the task
+// while a human decision is outstanding; neither engages the recorded version, so
+// staling them would let a non-committal action destroy work that is still
+// perfectly dischargeable. "start" is deliberately NOT here: starting work
+// against a version that no longer exists is meaningless, so it must stale.
+var impactTaskVersionNeutralActions = []string{"complete", "assign", "wait"}
+
+// impactTaskStaleReason decides, against current domain truth, whether the
+// basis an impact task was raised against still holds. It returns "" when the
+// task can still be worked, otherwise a stable reason code.
+//
+// The triggers are deliberately distinct so a consumer can tell them apart
+// without re-deriving them:
+//   - the task belongs to a superseded context revision,
+//   - a source backing the target is no longer readable by the responsible actor,
+//   - the assignee lost the capability or scope needed to act,
+//   - the version the task names was replaced.
+//
+// Target-version replacement is deliberately not a trigger for "complete":
+// completion is exactly the action that re-targets a task, because it validates
+// and records caller-supplied closure evidence for the current version. Applying
+// the rule there would destroy valid work.
+//
+// "assign" is excluded for the same reason from the other side: naming a
+// responsible person does not work the task against its recorded version at all,
+// so a replaced version says nothing about whether the delegation is still
+// meaningful. Without this carve-out the ordinary owner flow (assign, then
+// complete against the current version) marked the task STALE on the assign and
+// could never close it, which left a change that invalidates chapter
+// confirmations unable to reach STABILIZED at all.
+func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, actor Actor, p Project, task ImpactTask, action string) string {
+	if task.TargetRevision != p.CurrentContextRevision {
+		// The task belongs to a superseded context revision; every fact it was
+		// assessed against has moved on.
+		return ImpactTaskStaleTargetReplaced
+	}
+	// A responsible actor whose access to the target's sources was revoked can
+	// no longer produce a trustworthy result for this task.
+	ids, err := impactSourceIDsForRefs(tx, p, []ObjectVersionRef{task.Target})
+	if err == nil && s.checkSources(ctx, actor, p.ID, ids) != nil {
+		return ImpactTaskStaleSourceRevoked
+	}
+	// An assignee that lost project write scope cannot discharge the task.
+	if task.AssigneeID != "" && task.AssigneeID != actor.UserID {
+		recipient := actor
+		recipient.UserID = task.AssigneeID
+		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(recipient, p.ID, AuthorizationWrite, "")); err != nil {
+			return ImpactTaskStaleAssigneeRevoked
+		}
+	}
+	// "assign" and "wait" are exempt for the same reason from the other side:
+	// neither names a responsible person nor parks a task "working" against its
+	// recorded version, so a replaced version says nothing about whether they are
+	// still meaningful. Without these carve-outs the ordinary owner flows
+	// (assign then complete, suspend then resume then complete) marked the task
+	// STALE on a non-committal action and could never close it, which left a
+	// change that invalidates chapter confirmations unable to reach STABILIZED at
+	// all.
+	if reason := staleTargetReason(tx, p, task.Target); reason != "" && !slices.Contains(impactTaskVersionNeutralActions, action) {
+		// A version replacement means the task can no longer be worked as
+		// recorded, so it is invalidated with an explicit reason.
+		return reason
+	}
+	return ""
+}
+
+// impactConfirmationBlockers re-reads the CURRENT confirmation of every object
+// the change set's persisted impact assessment recorded as impacted, and reports
+// each one that is no longer confirmed at its current version.
+//
+// Why this exists: the task loop above only re-reads closure evidence attached to
+// DONE tasks. A task that went STALE is deliberately neither a blocker nor
+// closure (#200) - its basis is gone, so no actor can ever discharge it - which
+// left its impacted object with no obligation at all. Nothing blocked on it and
+// nothing checked it, so an impacted chapter could be left unconfirmed while
+// stabilization still reported STABILIZED. Reading the assessment closes that
+// gap without making STALE blocking again, which would be an unresolvable
+// deadlock.
+//
+// The re-read is deliberately scoped to the assessment's own objects and skipped
+// for any object a DONE task re-targeted: completing a task legitimately moves
+// it onto a newer version, so the assessed version is expected to be stale there
+// and the task's own closure check already covers the current one.
+//
+// invalidated carries the ids of tasks whose closure evidence was found
+// unreadable during THIS evaluation and which the Owner path has therefore
+// turned into STALE transitions. Their record no longer says DONE by the time
+// this runs, so they must not be counted as closure here either. The gate passes
+// nil: it does not perform this re-read at all (see stabilizationScope).
+func impactConfirmationBlockers(tx Transaction, p Project, store impactTransaction, changeID string, invalidated map[string]bool) []ImpactBlocker {
+	assessment, err := store.ImpactAssessment(p.ID, changeID)
+	if err != nil {
+		// A change set with no stored assessment has no impacted object set to
+		// re-read; the task, route, template and rule checks still apply.
+		return nil
+	}
+	tasks, err := store.ImpactTasks(p.ID)
+	if err != nil {
+		return nil
+	}
+	// An object is accounted for when a DONE task of this change set carries it
+	// as closure evidence: that task already verified the current confirmation.
+	accountedFor := map[string]bool{}
+	for _, task := range tasks {
+		if task.ChangeSetID != changeID || task.Status != "DONE" {
+			continue
+		}
+		if invalidated[task.ID] {
+			continue
+		}
+		for _, ref := range task.ClosureEvidence {
+			accountedFor[ref.Kind+"/"+ref.ID] = true
+		}
+	}
+	blockers := []ImpactBlocker{}
+	for _, object := range assessment.Objects {
+		identity := object.Ref.Kind + "/" + object.Ref.ID
+		if accountedFor[identity] {
+			continue
+		}
+		// The spec revision recorded by the assessment is the revision the change
+		// set was assessed against, and applying that very change set advances the
+		// spec. Treating that expected step as drift would block every stabilization,
+		// so the spec root is judged on its CURRENT confirmation instead of its
+		// assessed version.
+		if object.Ref.Kind == "ProjectSpec" {
+			if _, err := currentImpactObject(tx, p, ObjectVersionRef{Kind: "ProjectSpec", ID: object.Ref.ID,
+				Version: strconv.FormatInt(p.SpecRevision, 10)}); err != nil {
+				blockers = append(blockers, ImpactBlocker{Code: "impact_object_stale", TargetID: object.Ref.ID,
+					Reason: "受影响对象的版本已被替换，需重新评估影响"})
+			}
+			continue
+		}
+		// Re-read against current domain truth rather than the stored snapshot:
+		// only the CURRENT version of the object decides, so a re-targeted object
+		// is judged on the version that is live now.
+		state, err := currentImpactObject(tx, p, assessmentObjectsCurrent(tx, p, object.Ref))
+		if err != nil {
+			// The object is unreadable at any current version. A task that
+			// legitimately moved the object on would have accounted for it above,
+			// so this is real drift worth reporting rather than a silent pass.
+			blockers = append(blockers, ImpactBlocker{Code: "impact_object_stale", TargetID: object.Ref.ID,
+				Reason: "受影响对象的版本已被替换，需重新评估影响"})
+			continue
+		}
+		if !state.Confirmed {
+			blockers = append(blockers, ImpactBlocker{Code: "impact_object_unconfirmed", TargetID: object.Ref.ID,
+				Reason: "受影响对象的当前确认已失效，需重新确认"})
+		}
+	}
+	return blockers
+}
+
+// assessmentObjectsCurrent resolves the version an impacted object should be
+// judged at. The assessed version is used when it is still current. When the
+// object has since been re-targeted, the chapter's live current version is
+// resolved from domain truth, because an impacted object that was repaired and
+// re-confirmed must be judged on the version that exists now rather than on the
+// replaced one it was originally assessed against.
+func assessmentObjectsCurrent(tx Transaction, p Project, ref ObjectVersionRef) ObjectVersionRef {
+	if ref.Kind != "ChapterVersion" {
+		// For every other kind the recorded version is the identity; a semantic
+		// object is replaced by writing a new version, never by silently
+		// re-pointing the old one.
+		return ref
+	}
+	chapter, err := tx.Chapter(p.ID, ref.ID)
+	if err != nil || chapter.CurrentVersionID == nil {
+		return ref
+	}
+	return ObjectVersionRef{Kind: "ChapterVersion", ID: ref.ID, Version: *chapter.CurrentVersionID}
+}
+
 func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID, changeID, key string) (json.RawMessage, int, bool, error) {
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
@@ -744,6 +1074,9 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 			return err
 		}
 		for _, task := range tasks {
+			// Only closed tasks contribute closure evidence. A STALE task
+			// contributed nothing, so feeding its evidence into the write guard
+			// would only reintroduce the invalidation the task already records.
 			if task.ChangeSetID == changeID && task.TargetRevision == p.CurrentContextRevision && task.Status == "DONE" {
 				if task.Action == "BLOCK_RELEASE" {
 					for _, ref := range task.ClosureEvidence {
@@ -786,52 +1119,24 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains([]string{"applied", "stabilized"}, change.Status) {
 			return operationResult[StabilizationResult]{}, ErrVersionConflict
 		}
-		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, CheckedAt: time.Now().UTC()}
+		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, StaleTaskIDs: []string{}, CheckedAt: time.Now().UTC()}
 		store := tx.(impactTransaction)
-		tasks, err := store.ImpactTasks(projectID)
+		// Every "what counts as not stabilized" condition is decided by the one
+		// evaluation in stabilizationConditions. This entry owns only what is
+		// deliberately Owner-shaped: executing the STALE transitions the
+		// evaluation returned, reporting the result structurally, advancing the
+		// ChangeSet status and writing the audit event.
+		conditions, err := s.stabilizationConditions(tx, p, store, stabilizationScope{ChangeID: changeID, RecheckImpactedObjects: true})
 		if err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
-		for _, task := range tasks {
-			if task.ChangeSetID != changeID || task.TargetRevision != p.CurrentContextRevision {
-				continue
-			}
-			if task.Severity == "blocking" && task.Status != "DONE" {
-				result.Blockers = append(result.Blockers, ImpactBlocker{Code: "impact_task_open", TargetID: task.ID, Reason: task.Action})
-				continue
-			}
-			if task.Status == "DONE" && (task.Action == "RECOMPUTE" || task.Action == "RETRIEVE_CANDIDATES") {
-				if err := verifyImpactActionResult(tx, p, task, task.ClosureEvidence); err != nil {
-					result.Blockers = append(result.Blockers, ImpactBlocker{Code: "result_receipt_stale", TargetID: task.ID, Reason: "服务端结果回执未完成或已经过期"})
-				}
-				continue
-			}
-			if task.Status == "DONE" && task.Action != "BLOCK_RELEASE" {
-				for _, ref := range task.ClosureEvidence {
-					state, err := currentImpactObject(tx, p, ref)
-					if err != nil || ((task.Action == "REVIEW_REQUIRED" || task.Action == "INVALIDATE_CONFIRMATION" || task.Action == "REVALIDATE_EVIDENCE") && (!state.Confirmed && (task.Action != "REVIEW_REQUIRED" || task.Target.Kind != "ResearchClaim" || task.HumanDecision != "reviewed" || !researchClaimReviewCurrent(tx, p, ref)))) {
-						result.Blockers = append(result.Blockers, ImpactBlocker{Code: "closure_stale", TargetID: task.ID, Reason: "闭环证据已变化，需重新处理"})
-					}
-				}
+		for _, task := range conditions.StaleTransitions {
+			if _, markErr := s.markImpactTaskStale(tx, actor, p, store, task, ImpactTaskStaleTargetReplaced); markErr != nil {
+				return operationResult[StabilizationResult]{}, markErr
 			}
 		}
-		routeBlockers, err := RouteStabilizationBlockers(tx, p)
-		if err != nil {
-			return operationResult[StabilizationResult]{}, err
-		}
-		result.Blockers = append(result.Blockers, routeBlockers...)
-		if p.TemplateCopy == nil || p.TemplateCopy.Status != TemplateCopyBound {
-			result.Blockers = append(result.Blockers, ImpactBlocker{Code: "template_unbound", Reason: "当前模板未绑定"})
-		}
-		if s.impactRules == nil {
-			result.Blockers = append(result.Blockers, ImpactBlocker{Code: "rules_checker_unavailable", Reason: "缺少当前规则检查器"})
-		} else {
-			blockers, err := s.impactRules.Check(tx, p)
-			if err != nil {
-				return operationResult[StabilizationResult]{}, err
-			}
-			result.Blockers = append(result.Blockers, blockers...)
-		}
+		result.Blockers = append(result.Blockers, conditions.OwnerBlockers()...)
+		result.StaleTaskIDs = append(result.StaleTaskIDs, conditions.OwnerStaleTaskIDs()...)
 		if len(result.Blockers) == 0 {
 			result.Status = "STABILIZED"
 			if change.Status != "stabilized" {
@@ -842,7 +1147,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				}
 			}
 		}
-		if err := g3Audit(tx, actor, projectID, "revision.stabilize", changeID, map[string]any{"status": result.Status, "blockers": result.Blockers}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "revision.stabilize", changeID, map[string]any{"status": result.Status, "blockers": result.Blockers}); err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
 		return operationResult[StabilizationResult]{Value: result, Status: operationStatusOK}, nil
@@ -882,7 +1187,7 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 		if err := store.UpdateChangeSet(change, next); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "change_set.assess", changeID, nil); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "change_set.assess", changeID, nil); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		return operationResult[ChangeSet]{Value: next, Status: operationStatusOK}, nil

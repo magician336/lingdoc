@@ -198,7 +198,7 @@ func (s *Service) CreateTrialWindow(ctx context.Context, actor Actor, projectID,
 		if err := store.G6Insert(actor.TenantID, projectID, "trial_window", input.ID, 1, input); err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "trial.window.create", input.ID, map[string]any{"version": 1, "status": "DRAFT"}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "trial.window.create", input.ID, map[string]any{"version": 1, "status": "DRAFT"}); err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
 		return operationResult[TrialWindow]{Value: input, Status: operationStatusCreated}, nil
@@ -246,7 +246,7 @@ func (s *Service) ActOnTrialWindow(ctx context.Context, actor Actor, projectID, 
 		if err := store.G6CAS(actor.TenantID, projectID, "trial_window", windowID, version, next); err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "trial.window."+input.Action, windowID, map[string]any{"version": next.Version, "reason": input.Reason}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "trial.window."+input.Action, windowID, map[string]any{"version": next.Version, "reason": input.Reason}); err != nil {
 			return operationResult[TrialWindow]{}, err
 		}
 		return operationResult[TrialWindow]{Value: next, Status: operationStatusOK}, nil
@@ -359,7 +359,7 @@ func (s *Service) RecordTrialSample(ctx context.Context, actor Actor, projectID,
 		if err := store.G6Insert(actor.TenantID, projectID, "trial_sample", sampleKey, 1, input); err != nil {
 			return operationResult[TrialSample]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "trial.sample.record", input.ID, map[string]any{"sample_version": input.SampleVersion, "quality_result": "NOT RUN"}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "trial.sample.record", input.ID, map[string]any{"sample_version": input.SampleVersion, "quality_result": "NOT RUN"}); err != nil {
 			return operationResult[TrialSample]{}, err
 		}
 		return operationResult[TrialSample]{Value: input, Status: operationStatusCreated}, nil
@@ -439,7 +439,7 @@ func (s *Service) ReviewTrialSample(ctx context.Context, actor Actor, projectID,
 			if err := store.G6CAS(actor.TenantID, projectID, "trial_sample", windowID+"/"+old.FixtureDigest+"/"+old.SampleVersion, old.Version, next); err != nil {
 				return operationResult[TrialSample]{}, err
 			}
-			if err := g3Audit(tx, actor, projectID, "trial.sample.review", sampleID, map[string]any{"quality_result": next.QualityResult, "human_decision": next.HumanDecision, "reviewer": actor.UserID, "word_evidence": next.WordRoundtripEvidence}); err != nil {
+			if err := recordAuditEvent(tx, actor, projectID, "trial.sample.review", sampleID, map[string]any{"quality_result": next.QualityResult, "human_decision": next.HumanDecision, "reviewer": actor.UserID, "word_evidence": next.WordRoundtripEvidence}); err != nil {
 				return operationResult[TrialSample]{}, err
 			}
 			return operationResult[TrialSample]{Value: next, Status: operationStatusOK}, nil
@@ -606,7 +606,7 @@ func (s *Service) CreateTrialDecision(ctx context.Context, actor Actor, projectI
 		if err := tx.(runtimeTransaction).G6Insert(actor.TenantID, projectID, "trial_decision", record.ID, 1, record); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "trial.decision.propose", record.ID, map[string]any{"decision": input.Decision, "report_hash": report.InputHash}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "trial.decision.propose", record.ID, map[string]any{"decision": input.Decision, "report_hash": report.InputHash}); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
 		return operationResult[TrialDecisionRecord]{Value: record, Status: operationStatusCreated}, nil
@@ -676,7 +676,7 @@ func (s *Service) SignTrialDecision(ctx context.Context, actor Actor, projectID,
 		if err := store.G6CAS(actor.TenantID, projectID, "trial_decision", decisionID, version, next); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "trial.decision.sign", decisionID, map[string]any{"responsibility": input.Responsibility, "actor": actor.UserID, "status": next.Status, "reason": input.Reason}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "trial.decision.sign", decisionID, map[string]any{"responsibility": input.Responsibility, "actor": actor.UserID, "status": next.Status, "reason": input.Reason}); err != nil {
 			return operationResult[TrialDecisionRecord]{}, err
 		}
 		return operationResult[TrialDecisionRecord]{Value: next, Status: operationStatusOK}, nil

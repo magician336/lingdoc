@@ -7,7 +7,7 @@ const assessment={change_set_id:'c1',project_id:'p',context_revision:4,input_has
 function fixture(options={}){
  let server=change(options.assessed?'assessed':'draft')
  const pending=options.pendingAssess?deferred():null,preview=options.pendingPreview?deferred():null
- const f=mountPanel('G3OpsPanel',{props:{project:project()},transport(call){
+ const f=mountPanel('ImpactOpsPanel',{props:{project:project()},transport(call){
   if(call.method==='GET'&&call.url.endsWith('/change-sets'))return response(call.url.includes('/projects/p/')?[clone(server)]:[])
   if(call.method==='POST'&&call.url.endsWith('/c1/assess')){server=change('assessed');return pending?pending.promise:response(clone(server))}
   if(call.method==='GET'&&call.url.endsWith('/c1/impact-assessment'))return preview?preview.promise:response(assessment)

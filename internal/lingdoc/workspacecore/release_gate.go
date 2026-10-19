@@ -161,7 +161,7 @@ func (s *Service) StoreImpactComputationReceipt(ctx context.Context, actor Actor
 		if err := store.G6Insert(actor.TenantID, p.ID, "preflight_check", receipt.ID, 1, receipt); err != nil {
 			return err
 		}
-		if err := g3Audit(tx, actor, p.ID, "preflight.compute", receipt.ID, map[string]any{"status": status, "input_hash": inputHash, "basis_hash": actual.InputBasisHash, "ruleset_hash": receipt.RulesetHash}); err != nil {
+		if err := recordAuditEvent(tx, actor, p.ID, "preflight.compute", receipt.ID, map[string]any{"status": status, "input_hash": inputHash, "basis_hash": actual.InputBasisHash, "ruleset_hash": receipt.RulesetHash}); err != nil {
 			return err
 		}
 		after, e := preflightBasisInTransaction(tx, p, sourceIDs)
@@ -228,7 +228,9 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 		for _, change := range history {
 			if change.TargetContextRevision != nil && *change.TargetContextRevision == p.CurrentContextRevision && slices.Contains([]string{"applied", "stabilized"}, change.Status) {
 				if change.Status != "stabilized" {
-					return fmt.Errorf("%w: current applied ChangeSet has not been stabilized by Owner", ErrRevisionNotStable)
+					// Name the exact ChangeSet so the client can drive the
+					// Owner stabilization step instead of inferring it.
+					return fmt.Errorf("%w: current applied ChangeSet %s has not been stabilized by Owner", ErrRevisionNotStable, change.ID)
 				}
 				found = true
 			}
@@ -240,61 +242,19 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 		if !ok {
 			return ErrInvalidState
 		}
-		tasks, e := store.ImpactTasks(p.ID)
+		// Every "what counts as not stabilized" condition is decided by the one
+		// evaluation in stabilizationConditions, the same one the Owner
+		// stabilization path consumes. This entry adds only what is deliberately
+		// gate-shaped: it writes nothing, it fails fast on the first unsatisfied
+		// condition, and it re-authorizes sources afterwards.
+		conditions, e := s.stabilizationConditions(tx, p, store, stabilizationScope{GateFailFast: true, ClosureSourcesOfResultTasks: true})
 		if e != nil {
 			return e
 		}
-		for _, task := range tasks {
-			if task.TargetRevision != p.CurrentContextRevision {
-				continue
-			}
-			if task.Severity == "blocking" && task.Status != "DONE" {
-				return fmt.Errorf("%w: current impact task %s remains %s", ErrInvalidState, task.ID, task.Status)
-			}
-			if task.Status != "DONE" {
-				continue
-			}
-			if len(task.ClosureEvidence) == 0 {
-				return ErrInvalidState
-			}
-			if task.Action == "BLOCK_RELEASE" {
-				for _, proof := range task.ClosureEvidence {
-					preflightIDs = append(preflightIDs, proof.ID)
-				}
-				continue
-			}
-			if task.Action == "RECOMPUTE" || task.Action == "RETRIEVE_CANDIDATES" {
-				if e := verifyImpactActionResult(tx, p, task, task.ClosureEvidence); e != nil {
-					return e
-				}
-			}
-			for _, ref := range task.ClosureEvidence {
-				state, e := currentImpactObject(tx, p, ref)
-				if e != nil {
-					return e
-				}
-				sourceIDs = append(sourceIDs, state.SourceIDs...)
-				if slices.Contains([]string{"REVIEW_REQUIRED", "INVALIDATE_CONFIRMATION", "REVALIDATE_EVIDENCE"}, task.Action) && !state.Confirmed && (task.Action != "REVIEW_REQUIRED" || task.Target.Kind != "ResearchClaim" || task.HumanDecision != "reviewed" || !researchClaimReviewCurrent(tx, p, ref)) {
-					return ErrInvalidState
-				}
-			}
-		}
-		blockers, e := RouteStabilizationBlockers(tx, p)
-		if e != nil {
+		preflightIDs = conditions.PreflightIDs
+		sourceIDs = conditions.ClosureSourceIDs
+		if e := conditions.GateError(); e != nil {
 			return e
-		}
-		if len(blockers) > 0 {
-			return ErrInvalidState
-		}
-		if s.impactRules == nil {
-			return ErrImpactObjectUnavailable
-		}
-		blockers, e = s.impactRules.Check(tx, p)
-		if e != nil {
-			return e
-		}
-		if len(blockers) > 0 {
-			return fmt.Errorf("%w: current rules block release", ErrInvalidState)
 		}
 		return nil
 	})
@@ -302,6 +262,13 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 		return err
 	}
 	sourceIDs = append(sourceIDs, basis.SourceIDs...)
+	// ADJUDICATION #4 (deliberate difference, not merged). The gate re-authorizes
+	// the full current basis source set (chapters, routes, rule bindings) in
+	// addition to the closure evidence sources; the Owner stabilization path
+	// only re-authorizes its closure evidence refs. Making the Owner path equally
+	// strict would make stabilization stricter and would interact with #206,
+	// whose `source_revoked` -> STALE path is still dead code pending a decision.
+	// That decision is not taken here.
 	if err := s.checkSources(ctx, actor, projectID, sortedImpactSourceIDs(sourceIDs)); err != nil {
 		return err
 	}

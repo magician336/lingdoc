@@ -57,7 +57,7 @@ type candidateOneConnFixture struct {
 
 // The old delivery fixture starts with a hand-written active project, so it
 // intentionally skips CreateProject/ActivateProject. Reuse the server-hashed
-// bound-copy seed here whenever that fixture exercises modern G3 mutations.
+// bound-copy seed here whenever that fixture exercises modern formal changes.
 // This is the existing one-connection fixture's copy seed, not a product repair.
 func seedDeliveryBoundTemplateCopy(t *testing.T, db *gorm.DB, copyID string) {
 	t.Helper()
@@ -75,7 +75,7 @@ func seedDeliveryBoundTemplateCopy(t *testing.T, db *gorm.DB, copyID string) {
 func assertDeliveryBoundTemplatePrerequisites(t *testing.T, service *core.Service, ctx context.Context, actor core.Actor, project core.Project) {
 	t.Helper()
 	require.Equal(t, "active", project.Status)
-	require.NotNil(t, project.TemplateCopy, "modern G3 fixture must load its real server-owned template copy")
+	require.NotNil(t, project.TemplateCopy, "modern workspace fixture must load its real server-owned template copy")
 	require.Positive(t, project.TemplateCopyVersion)
 	copy, err := service.GetTemplateCopy(ctx, actor, project.ID, project.TemplateCopyVersion)
 	require.NoError(t, err)
@@ -107,7 +107,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	t.Helper()
 	_, db, assetID := seedBoundSource(t)
 	seedDeliveryWorkspace(t, db, deliveryMethodChapter())
-	ensureG3HTTPTables(t, db)
+	ensureImpactRouteTables(t, db)
 	for _, ddl := range []string{
 		`CREATE TABLE knowledge_bases(id TEXT PRIMARY KEY,tenant_id INTEGER NOT NULL,chunking_config TEXT,deleted_at DATETIME)`,
 		`CREATE TABLE lingdoc_g2_objects(project_id TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,version INTEGER NOT NULL,payload_json TEXT NOT NULL,PRIMARY KEY(project_id,kind,id))`,

@@ -58,7 +58,7 @@ type semanticTransaction interface {
 
 func (t gormTransaction) SemanticPlan(project, id string) ([]SemanticDelta, error) {
 	var plan []SemanticDelta
-	_, err := t.g3Read(project, "semantic_plan", id, &plan)
+	_, err := t.readVersionedRecord(project, "semantic_plan", id, &plan)
 	if err == ErrNotFound {
 		return []SemanticDelta{}, nil
 	}
@@ -66,22 +66,22 @@ func (t gormTransaction) SemanticPlan(project, id string) ([]SemanticDelta, erro
 }
 func (t gormTransaction) SaveSemanticPlan(project, id string, plan []SemanticDelta) error {
 	var old []SemanticDelta
-	version, err := t.g3Read(project, "semantic_plan", id, &old)
+	version, err := t.readVersionedRecord(project, "semantic_plan", id, &old)
 	if err == ErrNotFound {
-		return t.g3Insert(project, "semantic_plan", id, 1, plan)
+		return t.insertVersionedRecord(project, "semantic_plan", id, 1, plan)
 	}
 	if err != nil {
 		return err
 	}
-	return t.g3CAS(project, "semantic_plan", id, version, plan)
+	return t.compareAndSwapVersionedRecord(project, "semantic_plan", id, version, plan)
 }
 func (t gormTransaction) RouteNode(project, id string) (RouteNode, error) {
 	var value RouteNode
-	_, err := t.g3Read(project, "route_node", id, &value)
+	_, err := t.readVersionedRecord(project, "route_node", id, &value)
 	return value, err
 }
 func (t gormTransaction) RouteNodes(project string) ([]RouteNode, error) {
-	rows, err := t.g3List(project, "route_node")
+	rows, err := t.listVersionedRecords(project, "route_node")
 	if err != nil {
 		return nil, err
 	}
@@ -99,13 +99,13 @@ func (t gormTransaction) AppendRouteNode(old, next RouteNode) error {
 	if next.ID == "" || next.ProjectID == "" || next.Version != old.Version+1 {
 		return ErrInvalidRequest
 	}
-	if err := t.g3Insert(next.ProjectID, "route_node_version", next.ID+"/"+strconv.FormatInt(next.Version, 10), 1, next); err != nil {
+	if err := t.insertVersionedRecord(next.ProjectID, "route_node_version", next.ID+"/"+strconv.FormatInt(next.Version, 10), 1, next); err != nil {
 		return err
 	}
 	if old.Version == 0 {
-		return t.g3Insert(next.ProjectID, "route_node", next.ID, 1, next)
+		return t.insertVersionedRecord(next.ProjectID, "route_node", next.ID, 1, next)
 	}
-	return t.g3CAS(old.ProjectID, "route_node", old.ID, old.Version, next)
+	return t.compareAndSwapVersionedRecord(old.ProjectID, "route_node", old.ID, old.Version, next)
 }
 func (t gormTransaction) ProjectBindingPolicies(p Project) ([]governance.BindingPolicy, error) {
 	if p.TemplateCopy == nil {
@@ -499,7 +499,7 @@ func (s *Service) ApplySemanticDeltas(ctx context.Context, tx Transaction, actor
 				}
 			}
 		}
-		if err := g3Audit(tx, actor, before.ID, "semantic.apply", delta.TargetID, map[string]any{"kind": delta.Kind, "before_hash": delta.BeforeHash, "target_context_revision": next.CurrentContextRevision}); err != nil {
+		if err := recordAuditEvent(tx, actor, before.ID, "semantic.apply", delta.TargetID, map[string]any{"kind": delta.Kind, "before_hash": delta.BeforeHash, "target_context_revision": next.CurrentContextRevision}); err != nil {
 			return err
 		}
 	}

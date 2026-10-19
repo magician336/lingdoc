@@ -193,7 +193,7 @@ func TestPR150BoundTemplateFieldsLifecycleAndReverse(t *testing.T) {
 	}
 }
 
-// Public formal projections and durable G3 sidecars catch partial assessment,
+// Public formal projections and durable impact sidecars catch partial assessment,
 // revision, confirmation or impact writes. Authorization observations are
 // excluded by the shared recovery helper; business audits are retained.
 func pr150TemplateState(t *testing.T, f *pr150TemplateFixture, changeID string) string {
@@ -208,7 +208,7 @@ func pr150TemplateState(t *testing.T, f *pr150TemplateFixture, changeID string) 
 		t.Fatal(err)
 	}
 	sort.Slice(changes, func(i, j int) bool { return changes[i].ID < changes[j].ID })
-	var records []g3RecordRow
+	var records []versionedRecordRow
 	if err := f.s.testDB().Where("project_id = ?", f.project.ID).Order("id").Find(&records).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func pr150TemplateState(t *testing.T, f *pr150TemplateFixture, changeID string) 
 		Formal     string
 		Project    Project
 		Changes    []ChangeSet
-		Records    []g3RecordRow
+		Records    []versionedRecordRow
 		Provenance []g5RecordRow
 	}{formal, p, changes, records, provenance})
 }

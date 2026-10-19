@@ -112,7 +112,7 @@ func (s *Service) AcknowledgeImpactPreflight(ctx context.Context, actor Actor, p
 			}
 			closed = append(closed, task.ID)
 		}
-		if err := g3Audit(tx, actor, projectID, "impact_task.preflight", changeID, map[string]any{"proof_id": snapshotID, "snapshot_digest": proof.SnapshotDigest, "closed_task_ids": closed}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "impact_task.preflight", changeID, map[string]any{"proof_id": snapshotID, "snapshot_digest": proof.SnapshotDigest, "closed_task_ids": closed}); err != nil {
 			return operationResult[ImpactPreflightAcknowledgement]{}, err
 		}
 		return operationResult[ImpactPreflightAcknowledgement]{Value: ImpactPreflightAcknowledgement{ClosedTaskIDs: closed, ProofID: snapshotID, ContextRevision: p.CurrentContextRevision}, Status: operationStatusOK}, nil

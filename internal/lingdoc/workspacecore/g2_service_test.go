@@ -133,7 +133,7 @@ func newG2Fixture(t *testing.T, draft bool) g2Fixture {
 		}
 		p = asProject(t, raw)
 	} else {
-		p = seedActiveG3Project(t, svc, owner)
+		p = seedActiveImpactProject(t, svc, owner)
 	}
 	var chapter Chapter
 	if !draft {

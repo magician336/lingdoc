@@ -13,7 +13,7 @@ import (
 )
 
 // Reuse the production SQLite/full-workflow fixture, real AgentTurn parser,
-// explicit human confirmation and native G3 lifecycle. The only model is the
+// explicit human confirmation and native formal-change lifecycle. The only model is the
 // existing in-process synthetic stub; no external model or HTTP server runs.
 func r27StaleAgentDraft(t *testing.T, f deliveryGuardFixture) (core.AgentChangeDraftInput, core.ChangeSet) {
 	t.Helper()

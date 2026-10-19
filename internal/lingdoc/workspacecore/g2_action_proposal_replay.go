@@ -34,7 +34,7 @@ func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Acto
 		}
 		// Typed turn/session identity, version and per-key suggestion remain
 		// checked. Only equality with today's project basis is a cache-miss rule.
-		current, err := G3OperationSourceIDs(tx, string(operationCreateChangeDraft), projectID, projectID, request.ExtendedChangeSetInput)
+		current, err := OperationSourceIDs(tx, string(operationCreateChangeDraft), projectID, projectID, request.ExtendedChangeSetInput)
 		if err != nil {
 			return err
 		}

@@ -23,13 +23,13 @@ func (p *preflightHTTPBindingProbe) Recheck(_ context.Context, _ core.Actor, _, 
 	// No invented PASS proof and no mutation of tasks or publication state.
 	return core.ImpactPreflightEvidence{}, core.ErrVersionConflict
 }
-func TestG3PreflightHTTPUsesBodyProofIDRatherThanIdempotencyKey(t *testing.T) {
+func TestPreflightUsesBodyProofID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fixture := newDeliveryGuardFixture(t, false)
 	probe := &preflightHTTPBindingProbe{}
 	fixture.projects.SetImpactPreflightChecker(probe)
 	engine := gin.New()
-	RegisterG3G6FullRoutes(engine.Group("/api"), fixture.projects)
+	RegisterImpactRoutes(engine.Group("/api"), fixture.projects)
 	request := httptest.NewRequest(http.MethodPost, "/api/projects/"+fixture.project.ID+"/change-sets/actual-change/preflight", strings.NewReader(`{"proof_id":"current-check-receipt"}`)).WithContext(fixture.ctx)
 	request.Header.Set("Idempotency-Key", "separate-http-retry-key")
 	response := httptest.NewRecorder()
@@ -52,7 +52,7 @@ func TestG3PreflightHTTPUsesBodyProofIDRatherThanIdempotencyKey(t *testing.T) {
 	require.Len(t, probe.ids, 1, "machine callers cannot perform the Owner's preflight decision")
 }
 
-func TestG3UnstableDeliveryExplainsTheExistingOwnerGate(t *testing.T) {
+func TestUnstableDeliveryExplainsOwnerGate(t *testing.T) {
 	require.ErrorIs(t, core.ErrRevisionNotStable, core.ErrInvalidState)
 	response := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(response)

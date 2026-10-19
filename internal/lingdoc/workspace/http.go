@@ -404,6 +404,8 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 404, "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrVersionConflict):
 		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
+	case errors.Is(err, ErrDependencyDecided):
+		status, code, message = 409, "dependency_decided", "该依赖已有人工结论，自动运行不得覆盖。"
 	case errors.Is(err, ErrIdempotencyConflict):
 		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
 	case errors.Is(err, ErrRequestInProgress):

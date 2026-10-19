@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-func TestG3CandidateFormalSelectorReadsUncommittedClaimChangeInAdoptionTransaction(t *testing.T) {
+func TestCandidateSelectorReadsUncommittedClaimChange(t *testing.T) {
 	f := newG2Fixture(t, false)
 	g2SeedNativeEvidence(t, f)
-	g3SeedCandidateProofFoundation(t, f)
+	seedCandidateProofFoundation(t, f)
 	anchor := f.anchor(t, "source-1", "candidate-tx-anchor")
 	claim := f.claim(t)
 	card := f.card(t, []SourceAnchor{anchor}, &claim, "candidate-tx-card", "supports")
@@ -69,7 +69,7 @@ func TestG3CandidateFormalSelectorReadsUncommittedClaimChangeInAdoptionTransacti
 
 }
 
-func TestG3ExplicitClaimReviewCanRecordDisputeOrRetirementWithoutScientificConfirmation(t *testing.T) {
+func TestClaimReviewRecordsDisputeOrRetirement(t *testing.T) {
 	for _, status := range []string{"disputed", "superseded"} {
 		t.Run(status, func(t *testing.T) {
 			f := newG2Fixture(t, false)
@@ -117,7 +117,7 @@ func TestG3ExplicitClaimReviewCanRecordDisputeOrRetirementWithoutScientificConfi
 	}
 }
 
-func g3SeedCandidateProofFoundation(t *testing.T, f g2Fixture) {
+func seedCandidateProofFoundation(t *testing.T, f g2Fixture) {
 	t.Helper()
 	db := f.svc.testDB()
 	for _, table := range []string{"knowledges", "chunks"} {

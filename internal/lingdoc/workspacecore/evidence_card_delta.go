@@ -13,7 +13,7 @@ import (
 
 var ErrSemanticBatchStagingRequired = fmt.Errorf("%w: change the associated claim and evidence card in separate ChangeSets; revalidate the card against the new claim version", ErrInvalidRequest)
 
-var ErrFormalChangeRequired = fmt.Errorf("%w: confirmed or formally used object requires a G3 ChangeSet", ErrInvalidState)
+var ErrFormalChangeRequired = fmt.Errorf("%w: confirmed or formally used object requires a formal ChangeSet", ErrInvalidState)
 
 // This is a mutation-only guard. Cached operations still reauthorize through
 // g2Operation, but do not repeat a mutation against a later formal state.

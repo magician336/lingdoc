@@ -21,7 +21,7 @@ type ContextRevisionRecord struct {
 }
 
 func (t gormTransaction) ContextRevisions(projectID string) ([]ContextRevisionRecord, error) {
-	rows, err := t.g3List(projectID, "revision")
+	rows, err := t.listVersionedRecords(projectID, "revision")
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		if err := storeAgentChangeDraftEditFields(ctx, tx, p, old, next, input); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if err := g3Audit(tx, actor, projectID, "change_set.edit", changeID, map[string]any{"status": "draft"}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "change_set.edit", changeID, map[string]any{"status": "draft"}); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		return operationResult[ChangeSet]{Value: next, Status: operationStatusOK}, nil
@@ -161,7 +161,7 @@ func (s *Service) ReverseChangeSet(ctx context.Context, actor Actor, projectID, 
 }
 func recordContextRevisionSnapshot(t gormTransaction, p Project, change ChangeSet) error {
 	var old ContextRevisionRecord
-	_, err := t.g3Read(p.ID, "revision", strconv.FormatInt(p.CurrentContextRevision, 10), &old)
+	_, err := t.readVersionedRecord(p.ID, "revision", strconv.FormatInt(p.CurrentContextRevision, 10), &old)
 	if err == nil {
 		if old.SpecRevision != p.SpecRevision || old.TemplateCopyVersion != p.TemplateCopyVersion || !maps.Equal(old.Spec, p.Spec) {
 			return ErrVersionConflict
@@ -176,5 +176,5 @@ func recordContextRevisionSnapshot(t gormTransaction, p Project, change ChangeSe
 		return err
 	}
 	record := ContextRevisionRecord{ProjectID: p.ID, Revision: p.CurrentContextRevision, ChangeSetID: change.ID, SpecRevision: p.SpecRevision, TemplateCopyVersion: p.TemplateCopyVersion, Spec: maps.Clone(p.Spec), SpecProvenance: snapshot, CreatedAt: time.Now().UTC()}
-	return t.g3Insert(p.ID, "revision", strconv.FormatInt(p.CurrentContextRevision, 10), 1, record)
+	return t.insertVersionedRecord(p.ID, "revision", strconv.FormatInt(p.CurrentContextRevision, 10), 1, record)
 }

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func extendedG3G6Store(t *testing.T) (*Service, Actor, Project) {
+func extendedImpactStore(t *testing.T) (*Service, Actor, Project) {
 	t.Helper()
 	svc := testStore(t, filepath.Join(t.TempDir(), "extended.db"))
 	for _, sql := range []string{
@@ -22,7 +22,7 @@ func extendedG3G6Store(t *testing.T) (*Service, Actor, Project) {
 		}
 	}
 	actor := Actor{TenantID: 8301, UserID: "owner"}
-	p := seedActiveG3Project(t, svc, actor)
+	p := seedActiveImpactProject(t, svc, actor)
 	return svc, actor, p
 }
 func extendedChapter(t *testing.T, svc *Service, actor Actor, p Project) Chapter {
@@ -56,8 +56,8 @@ func extendedChange(t *testing.T, svc *Service, actor Actor, p Project, chapter 
 	}
 	return change
 }
-func TestG3DependencyResolverSeparatesSuggestionsCyclesAndActions(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+func TestDependencyResolverSeparatesSuggestionsAndCycles(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
 	chapter := extendedChapter(t, svc, actor, p)
 	source := ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: "1"}
 	target := ObjectVersionRef{Kind: "ChapterVersion", ID: chapter.ID, Version: *chapter.CurrentVersionID}
@@ -118,8 +118,8 @@ func TestG3DependencyResolverSeparatesSuggestionsCyclesAndActions(t *testing.T) 
 		t.Fatalf("duplicate tasks: %d -> %d %v", count, len(tasks), err)
 	}
 }
-func TestG3AssessmentRejectsNewGraphAndTaskPersistenceRollsBack(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+func TestAssessmentRejectsNewGraphAndRollsBack(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
 	chapter := extendedChapter(t, svc, actor, p)
 	change := extendedChange(t, svc, actor, p, chapter)
 	_, _, _, err := svc.CreateDependencyEdge(context.Background(), actor, p.ID, "edge-after-assessment", DependencyEdgeInput{ExpectedContextRevision: p.CurrentContextRevision, Source: ObjectVersionRef{Kind: "ProjectSpec", ID: p.ID, Version: "1"}, Target: ObjectVersionRef{Kind: "ChapterVersion", ID: chapter.ID, Version: *chapter.CurrentVersionID}, Relation: "uses", Action: "REGENERATE", Origin: "user", Reason: "评估后新增依赖"})
@@ -159,8 +159,8 @@ func TestG3AssessmentRejectsNewGraphAndTaskPersistenceRollsBack(t *testing.T) {
 	}
 }
 
-func TestG3StabilizationFailsClosedOnMissingRuleAdapter(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+func TestStabilizationFailsClosedOnMissingRuleAdapter(t *testing.T) {
+	svc, actor, p := extendedImpactStore(t)
 	chapter := extendedChapter(t, svc, actor, p)
 	change := extendedChange(t, svc, actor, p, chapter)
 	raw, _, _, err := svc.ApplyChangeSet(context.Background(), actor, p.ID, change.ID, "extended-apply")
@@ -188,7 +188,7 @@ func TestG3StabilizationFailsClosedOnMissingRuleAdapter(t *testing.T) {
 	}
 }
 func TestG6RuntimePauseBlocksServerWriteAndPreservesRead(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+	svc, actor, p := extendedImpactStore(t)
 	input := RuntimeControlInput{Scope: RuntimeScope{Kind: "project", Value: p.ID}, Action: "pause", Reason: "故障隔离"}
 	raw, _, replay, err := svc.ControlRuntime(context.Background(), actor, p.ID, "extended-pause", input)
 	if err != nil || replay {
@@ -216,7 +216,7 @@ func TestG6RuntimePauseBlocksServerWriteAndPreservesRead(t *testing.T) {
 	}
 }
 func TestG6ReportedEventsCannotTriggerAutomaticRuntimePause(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+	svc, actor, p := extendedImpactStore(t)
 	_, _, _, err := svc.SaveRuntimeAlertRule(context.Background(), actor, p.ID, "extended-alert-rule", RuntimeAlertRule{Signal: "failed", Severity: "P1", Action: "pause", ResponsibleID: actor.UserID})
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +257,7 @@ func extendedTrialWindow(t *testing.T, svc *Service, actor Actor, p Project) Tri
 	return window
 }
 func TestG6TrialNeverPromotesUnreviewedOrNonRealSamples(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+	svc, actor, p := extendedImpactStore(t)
 	window := extendedTrialWindow(t, svc, actor, p)
 	sample := TrialSample{SampleVersion: "sample.v1", FixtureDigest: "fixture.digest", ProjectID: p.ID, TemplateVersion: p.TemplateVersion, RulesetHash: p.TemplateCopy.RulesetHash, ContextRevision: p.CurrentContextRevision, RuntimeMode: "real", PermissionSnapshot: "permission.snapshot", InputHash: "input.hash", OutputHash: "output.hash", ExecutedAt: time.Now().UTC(), CorrelationID: "synthetic.trial", QualityResult: "PASS"}
 	if _, _, _, err := svc.RecordTrialSample(context.Background(), actor, p.ID, window.ID, "extended-auto-pass", sample); !errors.Is(err, ErrInvalidRequest) {
@@ -296,7 +296,7 @@ func TestG6TrialNeverPromotesUnreviewedOrNonRealSamples(t *testing.T) {
 	}
 }
 func TestG6TrialPauseRequiresAllHumanSignaturesAndPreservesHistory(t *testing.T) {
-	svc, actor, p := extendedG3G6Store(t)
+	svc, actor, p := extendedImpactStore(t)
 	window := extendedTrialWindow(t, svc, actor, p)
 	report, err := svc.GetTrialReport(context.Background(), actor, p.ID, window.ID)
 	if err != nil {

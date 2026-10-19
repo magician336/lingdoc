@@ -141,7 +141,7 @@ func g2Store(tx Transaction, previous G2StoredObject, projectID, kind, id string
 	return port.AppendG2Object(previous, object)
 }
 
-// CurrentEvidenceObject lets the shared G3 impact coordinator read current
+// CurrentEvidenceObject lets the shared impact coordinator read current
 // domain facts. SourceIDs still require the caller's current SourcePolicy check.
 func (t gormTransaction) CurrentEvidenceObject(projectID, kind, id string) (ImpactObjectState, error) {
 	result := ImpactObjectState{Ref: ObjectVersionRef{Kind: kind, ID: id}}
