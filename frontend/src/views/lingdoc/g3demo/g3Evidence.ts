@@ -15,6 +15,7 @@
 
 import type { G3MatrixRow } from './g3Matrix'
 import type { G3Status } from './g3Status'
+import type { G3BlockedSnapshot } from './runner/blocked'
 import type { G3LifecycleSnapshot } from './runner/changeset'
 import type { G3DependencySnapshot } from './runner/dependencies'
 import type { G3ModelSnapshot } from './runner/model'
@@ -203,6 +204,55 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
           '模型运行标识与耗时见判定卡。',
       },
     ],
+  },
+  'AC-G3-09': {
+    requires: [
+      '阻断-交付检查',
+      '阻断-接受不处理规则问题',
+      '阻断-处置规则问题',
+      '阻断-重检交付检查',
+      '阻断-读影响任务',
+      '阻断-稳定化（规则问题处置后）',
+    ],
+    verdictId: 'AC-G3-09',
+    status: 'PASS (follow-up)',
+    followUpIssue: 246,
+    note:
+      '本轮实跑判定成立（部分覆盖）：规则问题被人工处置之后，**对应的 ImpactTask 仍为 OPEN**、' +
+      '稳定化仍为 BLOCKED，项目仍然不能稳定——「规则问题与任务分离」这半段成立。' +
+      '**未实现那半段**：「问题不再阻断当次求值」在当前后端上不成立（人工处置只是工作流元数据，' +
+      '求值结论不变）；且对阻断级规则问题调用「接受不处理」（dismiss）当前返回 500，' +
+      '缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。',
+  },
+  'AC-G3-12': {
+    requires: [
+      '阻断-替换目标对象版本',
+      '阻断-稳定化（版本不匹配）',
+      '阻断-重投变更集',
+      '阻断-重投-应用变更集',
+      '阻断-稳定化（重投闭环后）',
+    ],
+    verdictId: 'AC-G3-12',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现版本不匹配，' +
+      '这一版修订**没有被放行**（服务端在重新读取闭环证据时按 409 version_conflict 拒掉这一次稳定化）；' +
+      '随后按新基线重投了对应影响任务，重投任务闭环之后稳定化转为已稳定。',
+  },
+  'AC-G3-07': {
+    requires: [
+      '阻断-人工复核探针-应用变更集',
+      '阻断-人工复核探针-缺少人工复核完成',
+      '阻断-人工复核探针-带人工复核完成',
+    ],
+    verdictId: 'AC-G3-07',
+    status: 'PASS (follow-up)',
+    followUpIssue: 243,
+    note:
+      '本轮实跑的是**人工复核那半段**：研究主张上的复核任务缺少 human_decision 时被服务端拒掉' +
+      '（422 invalid_state），带上人工复核决策之后才允许闭环——异步作业成功关不掉人工复核任务。' +
+      '**未覆盖那半段**：「证据重检返回新候选」需要真实模型，造证据卡要走模型侧（见 #243）；' +
+      '因此本行不是完全判定，状态记为 PASS (follow-up)。',
   },
   'G3.1': {
     requires: [
@@ -409,6 +459,8 @@ export interface G3RunSummary {
   dependency?: G3DependencySnapshot
   /** 稳定化与交付闭环链的页面快照（没有跑过就没有这一项）。 */
   stabilization?: G3StabilizationSnapshot
+  /** 稳定化阻断与恢复链的页面快照（没有跑过就没有这一项）。 */
+  blocked?: G3BlockedSnapshot
   /** 真实模型链的页面快照（没有跑过就没有这一项）。 */
   model?: G3ModelSnapshot
   /** 本轮跑出来的判据判定（矩阵规则表按 verdictId 取结论）。 */
@@ -432,6 +484,7 @@ export function summarizeRun(
     lifecycle?: G3LifecycleSnapshot
     dependency?: G3DependencySnapshot
     stabilization?: G3StabilizationSnapshot
+    blocked?: G3BlockedSnapshot
     model?: G3ModelSnapshot
   },
 ): G3RunSummary {
@@ -450,6 +503,7 @@ export function summarizeRun(
     lifecycle: extra.lifecycle,
     dependency: extra.dependency,
     stabilization: extra.stabilization,
+    blocked: extra.blocked,
     model: extra.model,
     verdicts: ctx.verdicts,
   }
