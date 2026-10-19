@@ -106,7 +106,7 @@ jobs:
       - name: Frontend consumers
         working-directory: frontend
         run: |
-          npm ci --no-audit --no-fund
+          bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" "$GITHUB_WORKSPACE/frontend"
           npm test
           npm run type-check
           npm run build
