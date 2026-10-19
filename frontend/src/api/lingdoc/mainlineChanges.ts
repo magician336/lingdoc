@@ -22,12 +22,22 @@ export interface DependencyDecisionInput { expected_version: number; decision: D
 // action_type, and `id` is derived from that identity, so a redelivered event
 // addresses the same task rather than forking a second one. Duplicate causes
 // merge into `causes` instead of appending a second task.
-// 'STALE' is terminal but is NOT closure: the basis the task was raised against
-// no longer exists, so it satisfies no gate. `stale_reason` explains which of
-// target_version_replaced | source_revoked | assignee_revoked applied.
-export type ImpactTaskStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_USER' | 'DONE' | 'DISMISSED' | 'STALE' | 'CANCELLED'
-export type ImpactTaskStaleReason = 'target_version_replaced' | 'source_revoked' | 'assignee_revoked'
-export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: string; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
+// ImpactTaskStatus: 'STALE' is terminal but is NOT closure: the basis the task
+// was raised against no longer exists, so it satisfies no gate. 'DISMISSED' is
+// a responsible manager's reasoned acceptance that this impact needs no work
+// this time - the impact-side counterpart of a waiver - and is therefore only
+// reachable for a non-blocking impact. There is no CANCELLED: accepting and
+// cancelling both meant "not doing it", and one word per decision is enough.
+// `stale_reason` explains which of target_version_replaced | assignee_revoked
+// applied. A revoked source is deliberately NOT here: the whole operation is
+// refused instead, leaving the task unhandled rather than quietly obsolete.
+export type ImpactTaskStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_USER' | 'DONE' | 'DISMISSED' | 'STALE'
+export type ImpactTaskStaleReason = 'target_version_replaced' | 'assignee_revoked'
+// ImpactTaskSeverity is shared with validation-issue severity. Only 'blocking'
+// prevents stabilization, and only a non-blocking impact may be accepted, so a
+// client can decide the accept affordance from this value alone.
+export type ImpactTaskSeverity = 'blocking' | 'warning' | 'info'
+export interface ImpactTask { id: string; project_id: string; change_set_id: string; target: ObjectVersionRef; target_revision: number; action: string; severity: ImpactTaskSeverity; responsibility_domain: string; assignee_id?: string; status: ImpactTaskStatus; causes: Array<{ edge_id: string; source: ObjectVersionRef; reason: string }>; version: number; disposition?: string; human_decision?: string; closure_evidence: ObjectVersionRef[]; stale_reason?: ImpactTaskStaleReason; stale_at?: string; created_at: string; updated_at: string }
 export interface ImpactAssessment { change_set_id: string; context_revision: number; input_hash: string; ruleset_hash: string; impacts: Array<{ target: ObjectVersionRef; action: string; certainty: 'definite' | 'possible'; causes: Array<{ edge_id: string; reason: string }> }> }
 // A 'complete' whose recorded target version was replaced becomes STALE, not
 // DONE, so clients must render the reason rather than treating it as closed.
@@ -40,7 +50,7 @@ export interface EvidenceCardSemanticInput { claim_ref: G2VersionRef; anchor_ref
 export interface SemanticDelta { kind: 'EvidenceCard' | 'ResearchClaim' | 'ProjectAssetScope' | 'RuleBinding' | 'RouteNode'; target_id: string; expected_version: number; before_hash?: string; before?: Record<string, unknown>; source_ids?: string[]; proposed_card?: EvidenceCardSemanticInput; proposed_claim?: { text: string; scope: string; status: 'active' | 'disputed' | 'superseded'; explanation?: string; confirmed: boolean; reason?: string }; proposed_asset_policy?: { asset_id?: string; scope: 'personal' | 'project' | 'team'; purpose: string; allowed_user_ids: string[]; model_use_allowed: boolean }; proposed_binding?: RuleBindingOverride; proposed_route?: Pick<RouteNode, 'name' | 'inputs' | 'required' | 'status'> }
 export interface ProjectBindingView { rule_set_snapshot?: { bindings: Array<{ rule_id: string; target_kind: string; target_id: string; severity: string; enabled: boolean; parameters?: Record<string, unknown> }> }; binding_policies?: Array<{ rule_id: string; may_disable: boolean; allowed_severities?: string[]; allowed_parameter_keys?: string[] }>; source_policy_hash?: string }
 export interface ChangeDraftInput { semantic_deltas?: SemanticDelta[]; expected_context_revision: number; reason: string; fields: Record<string, { old_value: string; new_value: string }>; affected_chapter_ids: string[] }
-export interface ImpactTaskActionInput { expected_version: number; target_revision: number; action: 'assign' | 'start' | 'wait' | 'complete' | 'dismiss' | 'cancel'; assignee_id?: string; human_decision?: string; reason: string; closure_evidence: ObjectVersionRef[] }
+export interface ImpactTaskActionInput { expected_version: number; target_revision: number; action: 'assign' | 'start' | 'wait' | 'complete' | 'dismiss'; assignee_id?: string; human_decision?: string; reason: string; closure_evidence: ObjectVersionRef[] }
 export interface RuntimeScope { kind: 'tenant' | 'project' | 'template_version' | 'ruleset_hash' | 'runtime_mode'; value: string }
 export interface RuntimeControl { id: string; project_id: string; scope: RuntimeScope; version: number; status: 'PAUSED' | 'ACTIVE'; actor_id: string; reason: string; recovery_verified: boolean; snapshot_id?: string; export_id?: string; updated_at: string }
 export interface RuntimeControlInput { expected_version: number; scope: RuntimeScope; action: 'pause' | 'resume'; reason: string; snapshot_id?: string; export_id?: string }

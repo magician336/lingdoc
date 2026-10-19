@@ -370,6 +370,15 @@ func sendError(c *gin.Context, err error) {
 		sendErrorDetails(c, status, code, message, details)
 		return
 	}
+	// An error that states its own client presentation wins over the table
+	// below. This keeps the table from growing a branch per business failure:
+	// a domain error that knows the caller's situation says so where that fact
+	// is known, and this mapper stays a backstop for the rest.
+	var facing core.ClientFacingError
+	if errors.As(err, &facing) {
+		sendErrorDetails(c, facing.ClientStatus(), facing.ClientCode(), facing.ClientMessage(), nil)
+		return
+	}
 	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
 	switch {
 	case errors.Is(err, core.ErrHumanDecisionRequired):

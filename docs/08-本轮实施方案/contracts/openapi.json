@@ -162,7 +162,24 @@
           "workspace"
         ],
         "summary": "对影响任务执行流转动作",
-        "description": "动作一律以当前域真相判定：目标版本已被替换时任务转为 STALE 并记录原因，而不是假装可推进。complete 必须携带对当前版本有效的闭环证据。",
+        "description": "动作一律以当前域真相判定：目标版本已被替换时任务转为 STALE 并记录原因，而不是假装可推进。complete 必须携带对当前版本有效的闭环证据。dismiss 是责任人说明理由后接受本次不处理，仅对非 blocking 影响可达；blocking 影响只能通过 complete 闭环。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImpactTaskActionInput"
+              },
+              "example": {
+                "expected_version": 3,
+                "target_revision": 118,
+                "action": "dismiss",
+                "reason": "本次变更不影响该章节已引用的证据，接受不处理。",
+                "closure_evidence": []
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "name": "projectId",
@@ -205,7 +222,7 @@
             "description": "输入不合法"
           },
           "403": {
-            "description": "缺少项目写权限或责任人已撤权"
+            "description": "缺少项目写权限、需要人工确认，或该任务依据的资料授权已不可用（错误码 impact_task_source_unavailable）。资料授权失效时任务状态保持不变，不会被转成 STALE——见 stale_reason 说明。"
           },
           "404": {
             "description": "项目或任务不存在"
@@ -16640,10 +16657,17 @@
             ]
           },
           "severity": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "blocking",
+              "warning",
+              "info"
+            ],
+            "description": "放着不处理的后果严重度，由影响动作推导，不接受调用方指定。只有 blocking 会阻断稳定化，也因此只有非 blocking 才允许责任人接受（DISMISSED）。"
           },
           "responsibility_domain": {
-            "type": "string"
+            "type": "string",
+            "description": "责任域 A（资料/证据状态）、B（确认/项目/任务状态）或 C（规则与交付）。它描述归属，不描述后果，与 severity 正交。"
           },
           "assignee_id": {
             "type": "string"
@@ -16656,10 +16680,9 @@
               "WAITING_USER",
               "DONE",
               "DISMISSED",
-              "STALE",
-              "CANCELLED"
+              "STALE"
             ],
-            "description": "STALE 是终态但不算闭环：它记录的是任务依据已消失，而不是影响已被处理。"
+            "description": "STALE 是终态但不算闭环：它记录的是任务依据已消失，而不是影响已被处理。DISMISSED 是责任人说明理由后接受本次不处理，仅对非 blocking 影响可达。"
           },
           "causes": {
             "type": "array",
@@ -16671,7 +16694,8 @@
             "type": "integer"
           },
           "disposition": {
-            "type": "string"
+            "type": "string",
+            "description": "责任人处置说明。DISMISSED 时记录接受本次不处理的理由。"
           },
           "human_decision": {
             "type": "string"
@@ -16686,10 +16710,9 @@
             "type": "string",
             "enum": [
               "target_version_replaced",
-              "source_revoked",
               "assignee_revoked"
             ],
-            "description": "任务被判为 STALE 的具体原因，客户端必须据此解释失效，而不是当作已闭环"
+            "description": "任务被判为 STALE 的具体原因，客户端必须据此解释失效，而不是当作已闭环。资料授权被撤销不在此列：该情形下操作整体被拒绝（403 impact_task_source_unavailable），任务保持原状不变，这是刻意的安全取舍，见 #214。"
           },
           "stale_at": {
             "type": "string",
@@ -16702,6 +16725,58 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+"ImpactTaskActionInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "expected_version",
+          "target_revision",
+          "action",
+          "reason",
+          "closure_evidence"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "description": "客户端读到的任务版本；与服务端不一致时返回 409"
+          },
+          "target_revision": {
+            "type": "integer",
+            "description": "客户端认为该任务所针对的上下文修订"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "assign",
+              "start",
+              "wait",
+              "complete",
+              "dismiss"
+            ],
+            "description": "assign 改派责任人；start 开始处理；wait 挂起等待本人；complete 携闭环证据完成；dismiss 说明理由后接受本次不处理（仅非 blocking 影响）。"
+          },
+          "assignee_id": {
+            "type": "string",
+            "description": "仅 assign 需要：该动作的执行者"
+          },
+          "human_decision": {
+            "type": "string",
+            "description": "仅 complete 需要：研究主张的人工复核结论须为 reviewed"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "description": "必填。记录在任务的处置说明中，dismiss 时它就是接受本次不处理的依据。"
+          },
+          "closure_evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "description": "仅 complete 需要：证明影响已被处理的当前版本证据"
           }
         }
       },
