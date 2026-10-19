@@ -169,16 +169,23 @@ func newRouteContractFixture(t *testing.T) routeContractFixture {
 	return routeContractFixture{engine: engine, service: service, project: project, chapters: chapters}
 }
 
-// applyChangeForAcceptance drives the real create+apply path so the published task
-// payload comes from production commits, not from a hand-seeded row.
-func applyChangeForAcceptance(t *testing.T, f routeContractFixture, chapterID string) string {
+// createChangeForAssessment creates a real ChangeSet without applying it and
+// returns its ID. CreateChangeSet assesses the change as part of the same
+// transaction, so the stored assessment is genuine production output.
+//
+// The caller must read the assessment before applying: ApplyChangeSet advances
+// the context revision, after which the server answers GET impact-assessment
+// with 409 version_conflict because the stored input_hash no longer describes
+// the current baseline. That refusal is the designed behaviour, so the read
+// below sits ahead of the apply rather than working around it.
+func createChangeForAssessment(t *testing.T, f routeContractFixture, chapterID, key string) string {
 	t.Helper()
 	actor := Actor{TenantID: 7, UserID: deliveryActorID}
 	p, err := f.service.GetProject(policyContext(), actor, f.project.ID)
 	if err != nil {
 		t.Fatalf("read project: %v", err)
 	}
-	raw, _, _, err := f.service.CreateChangeSet(policyContext(), actor, p.ID, "accept-change", core.CreateChangeSetInput{
+	raw, _, _, err := f.service.CreateChangeSet(policyContext(), actor, p.ID, key, core.CreateChangeSetInput{
 		ExpectedContextRevision: p.CurrentContextRevision,
 		Fields:                  map[string]core.ChangeFieldInput{"research_subject": {OldValue: p.Spec["research_subject"], NewValue: "验收 合同校验主题"}},
 		AffectedChapterIDs:      []string{chapterID},
@@ -191,10 +198,18 @@ func applyChangeForAcceptance(t *testing.T, f routeContractFixture, chapterID st
 	if err := json.Unmarshal(raw, &change); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := f.service.ApplyChangeSet(policyContext(), actor, p.ID, change.ID, "accept-apply"); err != nil {
+	return change.ID
+}
+
+// applyChangeForAcceptance drives the real create+apply path so the published task
+// payload comes from production commits, not from a hand-seeded row.
+func applyChangeForAcceptance(t *testing.T, f routeContractFixture, chapterID string) string {
+	t.Helper()
+	change := createChangeForAssessment(t, f, chapterID, "accept-change")
+	if _, _, _, err := f.service.ApplyChangeSet(policyContext(), Actor{TenantID: 7, UserID: deliveryActorID}, f.project.ID, change, "accept-apply"); err != nil {
 		t.Fatalf("apply changeset: %v", err)
 	}
-	return change.ID
+	return change
 }
 
 func acceptanceTasks(t *testing.T, f routeContractFixture) []core.ImpactTask {
@@ -206,18 +221,17 @@ func acceptanceTasks(t *testing.T, f routeContractFixture) []core.ImpactTask {
 	return tasks
 }
 
-// impactOwnedPathSuffixes is the impact acceptance surface named by Spec #198. The
-// G6 runtime/trial/route families are registered by the same helper but belong
-// to the G6 track and are deliberately out of scope here; the residual gap
-// between the G6 router and the contract is tracked as G6 debt, not asserted
-// as a impact failure.
-//
-// KNOWN GAP (reported by #203, deliberately not asserted here because closing
-// it means authoring a new published operation, not correcting a drifted one):
-// `GET /projects/{projectId}/change-sets/{changeSetId}/impact-assessment` is
-// registered by RegisterImpactRoutes (impact_routes.go:93) but has no
-// entry in the contract. The same holds for the G6 runtime/trial families.
-var impactOwnedPathSuffixes = []string{"/impact-tasks", "/dependencies", "/stabilize", "/preflight", "/check-receipts"}
+// impactOwnedPathSuffixes is the impact acceptance surface named by Spec #198,
+// and it is the complete G3 published surface of RegisterImpactRoutes. The G6
+// runtime/trial/route families are registered by the same helper but belong to
+// the G6 track and are deliberately out of scope here; the residual gap between
+// the G6 router and the contract is tracked as G6 debt, not asserted as an
+// impact failure. Within this list the coverage is bidirectional and total:
+// every registered path must be published, every published path must be
+// served, and every response body must satisfy the schema (see the three tests
+// below). `impact-assessment` joined this list in #207, which closed the gap
+// #203 recorded here.
+var impactOwnedPathSuffixes = []string{"/impact-tasks", "/impact-assessment", "/dependencies", "/stabilize", "/preflight", "/check-receipts"}
 
 func isImpactOwnedPath(path string, owned []string) bool {
 	for _, suffix := range owned {
@@ -365,10 +379,23 @@ func TestRuntimeResponsesSatisfyPublishedSchemas(t *testing.T) {
 	}
 	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/dependencies/{edgeId}/decision", "200", response.Body.Bytes())
 
+	// #207: the assessment route is published, so what the running server
+	// returns for it must satisfy the published ImpactAssessment schema. Path
+	// existence alone would not catch a field the server emits but the contract
+	// omits (exactly the drift the TS type hid), nor a required field the
+	// contract promises but no real run ever produces.
+	assessed := createChangeForAssessment(t, f, chapter.ID, "accept-assess")
+	response = send(http.MethodGet, base+"/change-sets/"+assessed+"/impact-assessment", "reader", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("impact assessment status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationResponse(t, doc, compiler, http.MethodGet, contractBase+"/change-sets/{changeSetId}/impact-assessment", "200", response.Body.Bytes())
+
 	// The ImpactTask payload #200 extended with STALE/reason must be
 	// representable against the published schema, so the task list is
 	// revalidated after a real commit produced it.
 	change := applyChangeForAcceptance(t, f, chapter.ID)
+
 	tasks := acceptanceTasks(t, f)
 	if len(tasks) == 0 {
 		t.Fatalf("the applied change raised no impact task to publish: %s", change)
