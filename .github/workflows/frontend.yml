@@ -64,7 +64,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
-        run: bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" frontend
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" "$GITHUB_WORKSPACE/frontend"
 
       - name: Run tests
         run: npm test

@@ -124,7 +124,7 @@ jobs:
         id: frontend
         working-directory: frontend
         run: |
-          bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" frontend
+          bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" "$GITHUB_WORKSPACE/frontend"
           npm test 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-tests.log"
           npm run type-check 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-types.log"
           npm run build 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/frontend-build.log"
