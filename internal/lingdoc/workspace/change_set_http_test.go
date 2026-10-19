@@ -43,7 +43,7 @@ func ensureImpactRouteTables(t *testing.T, db *gorm.DB) {
 		)`,
 		`CREATE TABLE IF NOT EXISTS lingdoc_change_sets (
 			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, created_by TEXT NOT NULL,
-			reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','assessed','applied','rejected','stale','stabilized')), base_context_revision INTEGER NOT NULL,
+			reason TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('draft','assessed','applied','rejected','stale','stabilized','satisfied')), base_context_revision INTEGER NOT NULL,
 			target_context_revision INTEGER, base_spec_revision INTEGER NOT NULL,
 			target_spec_revision INTEGER, fields_json TEXT NOT NULL DEFAULT '[]',
 			impacts_json TEXT NOT NULL DEFAULT '[]', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -78,11 +79,20 @@ func TestPostgresRendererFailureUsesRealDOCXValidator(t *testing.T) {
 	require.NoError(t, err)
 	defer sqlDB.Close()
 	input := renderableInput()
-	input.ProjectID = "project-renderer-fault"
+	// The project id must be unique per run. The failure-test database is not
+	// cleaned between runs, so a fixed id makes the second run fail on the
+	// primary key. Left as a constant, it also lets the action index
+	// (project_id, action_actor_id, action_key) replay the *previous* run's
+	// action — which reports success while testing nothing.
+	//
+	// Bare UUID: project_id is varchar(36), so a prefix would overflow the
+	// column. The action keys below stay fixed on purpose — they are replay and
+	// recovery steps within one run, not cross-run state.
+	input.ProjectID = uuid.NewString()
 	require.NoError(t, db.Exec("INSERT INTO lingdoc_projects (id,tenant_id,name,status,project_version,spec_revision,template_id,template_version) VALUES (?,1,'Isolated renderer fixture','active',1,1,'template-demo','1')", input.ProjectID).Error)
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
 	exports := delivery.NewSQLiteExportStore(db)
-	snapshot := delivery.ReleaseSnapshot{ID: "snapshot-renderer-fault", ProjectID: input.ProjectID, FrozenInput: input,
+	snapshot := delivery.ReleaseSnapshot{ID: "snapshot-" + input.ProjectID, ProjectID: input.ProjectID, FrozenInput: input,
 		Check: delivery.CheckResult{Status: delivery.CheckPassed}, IsCurrent: true, CreatedAt: time.Now().UTC()}
 	require.NoError(t, snapshots.Save(snapshot))
 	currentness := delivery.CurrentnessFunc(func(delivery.DeliveryInput) (bool, error) { return true, nil })
