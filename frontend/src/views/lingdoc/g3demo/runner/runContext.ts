@@ -25,6 +25,7 @@ import {
   type G3HttpMethod,
   type G3HttpResponse,
 } from './httpClient'
+import type { G3Status } from '../g3Status'
 
 /** 一步真实调用的结构化记录。 */
 export interface G3StepRecord {
@@ -85,6 +86,14 @@ export interface G3RunVerdict {
   detail: string
   /** 可点击证据：方法、路径、状态码与关键响应字段。 */
   evidence: string[]
+  /**
+   * 本条判定建议的矩阵状态（只取仓库门禁七态词表）。
+   *
+   * 给了它，**以判定卡为准**：矩阵那一行取这个状态。
+   * 缺省时由规则表决定（例如依赖真实模型的结论统一记 `WARNING`，
+   * 模型不可用时记 `NOT RUN`）。
+   */
+  status?: G3Status
 }
 
 /** 章节事实：激活后模板自动创建的两个章节。 */
