@@ -15,6 +15,7 @@ import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
 import { G3_CS_STEPS } from './runner/changeset'
 import { G3_DEP_STEPS } from './runner/dependencies'
+import { G3_STAB_STEPS } from './runner/stabilization'
 import { createRunContext, markRunStale, recordStep, type G3BackendHead } from './runner/runContext'
 
 function memoryStorage(): G3RunStorage & { map: Map<string, string> } {
@@ -129,7 +130,7 @@ test('单行覆盖计算不依赖规则表', () => {
 test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的值', () => {
   assert.deepEqual(
     Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
-    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-05', 'AC-G3-11', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15'],
+    ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-05', 'AC-G3-11', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'G3.1', 'G3.6'],
   )
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     assert.ok(G3_STATUS_VALUES.includes(rule.status), `${id} 的判定状态不在门禁词表内`)
@@ -143,10 +144,17 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'PASS (follow-up)')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
+  // 本票新增的两条切片判据：G3.1（ChangeSet 切片）与 G3.6（稳定化切片）都是完全判定。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.1'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'PASS')
 })
 
 test('规则表引用的步骤名都真实存在（防止证据链断在名字上）', () => {
-  const known = new Set<string>([...Object.values(G3_CS_STEPS), ...Object.values(G3_DEP_STEPS)])
+  const known = new Set<string>([
+    ...Object.values(G3_CS_STEPS),
+    ...Object.values(G3_DEP_STEPS),
+    ...Object.values(G3_STAB_STEPS),
+  ])
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     for (const name of rule.requires) {
       assert.ok(known.has(name), `${id} 引用了不存在的步骤名：${name}`)
@@ -238,4 +246,53 @@ test('步骤没跑齐时，那一行不被判定，状态原样保留', () => {
   const item = evidence.find((entry) => entry.rowId === 'AC-G3-01')
   assert.equal(item?.decided, false)
   assert.ok(item?.missingSteps.length)
+})
+
+test('稳定化链跑完后，G3.1 与 G3.6 由本轮证据驱动为 PASS', () => {
+  const ctx = prerequisiteRun()
+  for (const name of Object.values(G3_STAB_STEPS)) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1/stabilize',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = ['G3.1', 'G3.6'].map((id) => ({
+    id,
+    title: id,
+    holds: true,
+    detail: '成立',
+    evidence: [],
+  }))
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  assert.equal(byId.get('G3.1')?.status, 'PASS', 'G3.1 没有被稳定化链的证据驱动')
+  assert.equal(byId.get('G3.6')?.status, 'PASS', 'G3.6 没有被稳定化链的证据驱动')
+})
+
+test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
+  const ctx = prerequisiteRun()
+  for (const name of Object.values(G3_STAB_STEPS)) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1/stabilize',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = [
+    { id: 'G3.1', title: 'G3.1', holds: false, detail: '不成立', evidence: [] },
+    { id: 'G3.6', title: 'G3.6', holds: false, detail: '不成立', evidence: [] },
+  ]
+  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  assert.equal(byId.get('G3.1')?.status, 'TODO', '判定不成立不得判成 PASS')
+  assert.equal(byId.get('G3.6')?.status, 'TODO', '判定不成立不得判成 PASS')
 })

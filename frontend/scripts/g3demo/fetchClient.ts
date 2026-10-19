@@ -27,6 +27,17 @@ export function createFetchClient(baseUrl: string): G3HttpClient {
       headers,
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     })
+    // 下载产物：这条接口不返回 JSON 信封，只能按字节读。
+    if (request.raw) {
+      const buffer = await response.arrayBuffer()
+      return {
+        status: response.status,
+        ok: response.ok,
+        body: new Uint8Array(buffer),
+        bytes: new Uint8Array(buffer),
+        durationMs: Math.round(performance.now() - started),
+      }
+    }
     const text = await response.text()
     let body: unknown = text
     try {

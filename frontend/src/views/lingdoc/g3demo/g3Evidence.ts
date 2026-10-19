@@ -17,6 +17,7 @@ import type { G3MatrixRow } from './g3Matrix'
 import type { G3Status } from './g3Status'
 import type { G3LifecycleSnapshot } from './runner/changeset'
 import type { G3DependencySnapshot } from './runner/dependencies'
+import type { G3StabilizationSnapshot } from './runner/stabilization'
 import type {
   G3BackendHead,
   G3ChapterFact,
@@ -142,6 +143,40 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '再投一次不会新建边。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246；' +
       '因此本行不是完全判定，状态记为 PASS (follow-up)。',
   },
+  'G3.1': {
+    requires: [
+      '稳定化-创建变更集',
+      '稳定化-应用变更集',
+      '稳定化-应用过期基线变更集',
+      '稳定化-读回过期变更集',
+      '稳定化-读上下文修订',
+      '稳定化-读影响任务',
+    ],
+    verdictId: 'G3.1',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：两个变更集基于同一个上下文修订，先应用的推进修订，' +
+      '后应用的被服务端按 409 拒掉并落为 STALE；被拒之后上下文修订条数与影响任务条数都没有变化，' +
+      '没有半完成写入（证据见左栏「稳定化-应用过期基线变更集」等步骤与「G3.1」判定卡）。',
+  },
+  'G3.6': {
+    requires: [
+      '稳定化-稳定化（阻断态）',
+      '稳定化-稳定化',
+      '稳定化-交付检查',
+      '稳定化-冻结交付快照',
+      '稳定化-发起导出',
+      '稳定化-轮询导出产物',
+      '稳定化-下载导出产物',
+    ],
+    verdictId: 'G3.6',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：阻断影响未闭环时稳定化以 200 成功响应返回 BLOCKED 并带完整阻断原因，' +
+      '此时冻结交付快照被服务端拒掉（不能导出）；全部阻断影响闭环后稳定化返回 STABILIZED，' +
+      '交付检查通过、快照冻结、导出产物 verified 并按字节与哈希核对一致' +
+      '（证据见左栏与「G3.6」判定卡）。',
+  },
 })
 
 /** 本轮对某一行的覆盖情况。 */
@@ -262,6 +297,8 @@ export interface G3RunSummary {
   lifecycle?: G3LifecycleSnapshot
   /** 依赖图与影响任务链的页面快照（没有跑过就没有这一项）。 */
   dependency?: G3DependencySnapshot
+  /** 稳定化与交付闭环链的页面快照（没有跑过就没有这一项）。 */
+  stabilization?: G3StabilizationSnapshot
   /** 本轮跑出来的判据判定（矩阵规则表按 verdictId 取结论）。 */
   verdicts?: G3RunVerdict[]
 }
@@ -282,6 +319,7 @@ export function summarizeRun(
     missingSections: string[]
     lifecycle?: G3LifecycleSnapshot
     dependency?: G3DependencySnapshot
+    stabilization?: G3StabilizationSnapshot
   },
 ): G3RunSummary {
   return {
@@ -298,6 +336,7 @@ export function summarizeRun(
     missingSections: extra.missingSections,
     lifecycle: extra.lifecycle,
     dependency: extra.dependency,
+    stabilization: extra.stabilization,
     verdicts: ctx.verdicts,
   }
 }
