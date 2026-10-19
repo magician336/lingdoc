@@ -216,9 +216,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
       '应用过程中任务写入失败或权限失效。项目仍保持原 revision 和旧模板引用，不能出现新 revision 已存在但 ImpactTask 不完整的状态。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 358, end: 360 },
     status: 'BLOCKED',
-    evidence: '实现缺口 · 跟进 #237',
-    note: '需要任务 / 审计写入失败的故障注入能力，产品 API 无此开关；当前仅由后端集成测试覆盖。',
-    followUpIssue: 237,
+    evidence: '实现缺口 · 缺口清单 #246',
+    note:
+      '需要任务 / 审计写入失败的故障注入能力，产品 API 无此开关；当前仅由后端集成测试覆盖。' +
+      '解除条件与 Spec 位置见缺口清单 #246。',
+    followUpIssue: 246,
     domain: 'B',
     severity: 'blocking',
   },
@@ -281,9 +283,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
       '模板声明 RouteNode.R7 为必需。R7 缺失、待复核或版本落后时，C 产生 blocking ValidationIssue；即使其他任务已完成，revision 也不能 STABILIZED 或 READY。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 378, end: 380 },
     status: 'BLOCKED',
-    evidence: '实现缺口 · 跟进 #237',
-    note: '技术路线节点只有 GET /route-nodes，没有写端点，造不出「必需节点缺失」与「版本落后」。',
-    followUpIssue: 237,
+    evidence: '实现缺口 · 缺口清单 #246',
+    note:
+      '技术路线节点只有 GET /route-nodes，没有写端点，造不出「必需节点缺失」与「版本落后」。' +
+      '解除条件与 Spec 位置见缺口清单 #246。',
+    followUpIssue: 246,
     domain: 'C',
     severity: 'blocking',
   },
@@ -357,9 +361,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
       '用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用“确定受影响”和“可能受影响”两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 402, end: 404 },
     status: 'BLOCKED',
-    evidence: '实现缺口 · 跟进 #237',
-    note: '变更草稿生成有端点，但「确定受影响 / 可能受影响」分组无实现。',
-    followUpIssue: 237,
+    evidence: '实现缺口 · 缺口清单 #246',
+    note:
+      '变更草稿生成有端点，但「确定受影响 / 可能受影响」**助手解释分组**无实现' +
+      '（工作台那个分组是影响解析结果，不可互替）。解除条件与 Spec 位置见缺口清单 #246。',
+    followUpIssue: 246,
   },
   {
     id: 'AC-G3-15',
@@ -369,9 +375,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
       '用户选择“研究条件、证据卡和第 2–4 章”作为范围。AI 提出若干候选依赖，并显示对象版本、依据片段和建议理由；用户确认其中一部分、修改一部分、拒绝一部分。只有确认的关系进入正式依赖图，拒绝记录不会在同一版本中反复推荐。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 406, end: 408 },
     status: 'BLOCKED',
-    evidence: '实现缺口 · 跟进 #237',
-    note: '依赖边的确认 / 修改 / 拒绝三态有端点，依赖候选的批量提出无端点。',
-    followUpIssue: 237,
+    evidence: '实现缺口 · 缺口清单 #246',
+    note:
+      '依赖边的确认 / 修改 / 拒绝三态有端点，依赖候选的批量提出无端点。' +
+      '解除条件与 Spec 位置见缺口清单 #246。',
+    followUpIssue: 246,
   },
   {
     id: 'AC-G3-16',
@@ -381,9 +389,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
       '用户编辑未冻结路线图后取消编辑。系统恢复到上一个 RouteNode/RouteEdge 版本，关联任务和章节引用不指向被取消的临时版本。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 410, end: 412 },
     status: 'BLOCKED',
-    evidence: '实现缺口 · 跟进 #237',
-    note: '同样缺技术路线节点的写入与取消未冻结编辑端点。',
-    followUpIssue: 237,
+    evidence: '实现缺口 · 缺口清单 #246',
+    note:
+      '同样缺技术路线节点的写入与取消未冻结编辑端点。' +
+      '解除条件与 Spec 位置见缺口清单 #246。',
+    followUpIssue: 246,
     domain: 'C',
     severity: 'blocking',
   },
