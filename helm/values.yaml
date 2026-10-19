@@ -210,6 +210,10 @@ docreader:
     tag: latest
     # -- Image pull policy
     pullPolicy: IfNotPresent
+    # NOTE: the published docreader image is amd64 only. On an arm64 cluster
+    # the pod cannot schedule unless the node can run amd64 images (or the
+    # image is rebuilt for arm64 locally). Keep the docreader workload on
+    # amd64 nodes, or build an arm64 image for your own registry.
 
   # -- Resource requests and limits
   resources:
