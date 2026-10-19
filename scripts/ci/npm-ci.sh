@@ -86,22 +86,23 @@ fi
 #   With a registry argument it overrides that for this attempt only, so the
 #   mirror never persists into the rest of the job.
 #
-#   `--replace-registry-host=always` is mandatory on the mirror attempt, not
-#   decoration. `npm ci` downloads straight from each lockfile entry's
-#   `resolved` URL and ignores `--registry` by default: a lockfile entry
-#   pointing at registry.npmjs.org keeps hitting registry.npmjs.org no matter
-#   what registry is configured. Verified on this repository's own lockfile,
-#   whose 492 resolved URLs already span three hosts:
+#   `--replace-registry-host=registry.npmjs.org` is mandatory on the mirror
+#   attempt, not decoration. `npm ci` downloads straight from each lockfile
+#   entry's `resolved` URL and ignores `--registry` by default: a lockfile
+#   entry pointing at registry.npmjs.org keeps hitting registry.npmjs.org no
+#   matter what registry is configured. Restricting the replacement to that
+#   host matters because this repository intentionally mixes four sources:
 #     mirrors.tencent.com      328
 #     registry.npmjs.org       113
 #     registry.npmmirror.com    50
 #     cdn.sheetjs.com           1
-#   Without that flag the mirror attempt silently re-requests the host that
-#   already failed. With it, npm rewrites the host and the mirror is used.
+#   Rewriting every host would turn the Tencent `/npm/...` paths into invalid
+#   paths on npmmirror and would break the direct SheetJS tarball. With the
+#   host-specific flag, only the 113 public-registry entries switch source.
 install_once() {
   local registry=()
   if [[ $# -gt 0 && $1 != "--" ]]; then
-    registry=(--registry="$1" --replace-registry-host=always)
+    registry=(--registry="$1" --replace-registry-host=registry.npmjs.org)
     shift
   fi
   npm ci \
