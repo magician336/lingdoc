@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { G3_STATUS_VALUES } from './g3Status'
 import {
@@ -13,6 +16,38 @@ import {
 } from './g3Matrix'
 
 const MAIN_BASELINE = 'docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md'
+
+/**
+ * 主基准文档的绝对路径。
+ *
+ * 判据原文要能被读者**逐字**核对，所以这条守护断言直接读仓库根的基准文档。
+ * 前端目录可能被单独 checkout（只带 `frontend/`），所以读不到时**显式 skip**，
+ * 绝不静默通过——静默通过等于没有这条守护。
+ */
+const BASELINE_ABS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../../../docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md',
+)
+const BASELINE_AVAILABLE = existsSync(BASELINE_ABS)
+
+test('每条判据原文都逐字出现在主基准文档中', (t) => {
+  if (!BASELINE_AVAILABLE) {
+    t.skip(`读不到主基准文档（${BASELINE_ABS}），跳过逐字核对`)
+    return
+  }
+  const baseline = readFileSync(BASELINE_ABS, 'utf8')
+  const mismatched: string[] = []
+  for (const row of G3_AC_ROWS) {
+    if (!baseline.includes(row.criterion)) {
+      mismatched.push(`${row.id}（${row.name}）的判据原文与主基准逐字不一致`)
+    }
+  }
+  assert.deepEqual(
+    mismatched,
+    [],
+    `以下判据原文没有逐字出现在 ${MAIN_BASELINE}：\n${mismatched.join('\n')}`,
+  )
+})
 
 test('切片七行、验收场景十六行', () => {
   assert.equal(G3_SLICE_ROWS.length, 7)
