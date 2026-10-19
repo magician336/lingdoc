@@ -890,6 +890,15 @@
         </button>
       </div>
 
+      <p v-if="lastExport" class="live-ok" role="status">
+        <strong>已导出：</strong><code>{{ lastExport.fileName }}</code>
+        · {{ lastExport.bytes }} 字节 · 运行标识 <code>{{ lastExport.runId }}</code>
+        · 后端 head <code>{{ lastExport.head || '（未知）' }}</code>
+        · 含 {{ lastExport.rowCount }} 条验收行、{{ lastExport.verdictCount }} 条判定、
+        {{ lastExport.gapCount }} 条实现缺口
+        <span v-if="lastExport.downloadNote">· {{ lastExport.downloadNote }}</span>
+      </p>
+
       <p class="card-footnote">
         导出的证据按仓库既有命名落到 <code>docs/08-本轮实施方案/G3-验收台-8-*.json</code>，
         <strong>不写进 Issue</strong>（<code>docs/agents/issue-tracker.md:54-56</code>）。
@@ -1783,6 +1792,17 @@ const stabilizationRunning = ref(false)
 const model = ref<G3ModelSnapshot | null>(null)
 const modelError = ref('')
 const modelRunning = ref(false)
+/** 上一次导出的回执：让「导出点了之后到底产出了什么」在页面上可见、可核对。 */
+const lastExport = ref<{
+  fileName: string
+  bytes: number
+  runId: string
+  head: string | null
+  rowCount: number
+  verdictCount: number
+  gapCount: number
+  downloadNote: string
+} | null>(null)
 const blocked = ref<G3BlockedSnapshot | null>(null)
 const blockedError = ref('')
 const blockedRunning = ref(false)
@@ -2702,11 +2722,40 @@ function exportEvidence(): void {
   })
   const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
+  const fileName = exportFileName(dateStamp(), summary.runId)
   const link = document.createElement('a')
   link.href = url
-  link.download = exportFileName(dateStamp(), summary.runId)
+  link.download = fileName
+  link.rel = 'noopener'
+  // 锚点必须挂到文档里再点：游离元素的 click() 在部分内核里会被忽略。
+  document.body.appendChild(link)
   link.click()
-  URL.revokeObjectURL(url)
+  document.body.removeChild(link)
+  // objectURL 不能同步 revoke：Chromium 里同步撤销会连带取消这次下载。
+  // 延后释放，让下载先把字节流取走。
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  lastExport.value = {
+    fileName,
+    bytes: blob.size,
+    runId: summary.runId,
+    head: summary.head?.commitId ?? null,
+    rowCount: payload.ac_rows.length,
+    verdictCount: payload.verdicts.length,
+    gapCount: payload.gaps.length,
+    downloadNote: downloadNote(),
+  }
+}
+
+/**
+ * 导出后的提示语。
+ *
+ * 这里**不判断**文件是否落盘：宿主是否持久化下载是浏览器环境的事，
+ * 页面没有可靠判据（曾经用 `showDirectoryPicker` 的存在与否推断，
+ * 实测受管宿主并不落盘，属于判据与被测物脱钩）。所以只说已经发生的事：
+ * 导出体已生成、下载已触发；要拿落盘证据请用 node 脚本。
+ */
+function downloadNote(): string {
+  return '下载已触发；需要落盘证据请用 node 脚本（scripts/g3demo/run-evidence.ts）落到 docs/08-本轮实施方案/'
 }
 
 /** 把浏览器会话还给用户。 */
@@ -2859,6 +2908,7 @@ function releaseSession(): void {
 .live-facts { margin-top: 18px; }
 .live-error { margin: 16px 0 0; padding: 12px 14px; border-left: 3px solid #c85d4b; border-radius: 0 10px 10px 0; color: #8a3b2c; background: #ffe9e3; font-size: 13px; line-height: 1.6; }
 .live-warn { margin: 12px 0 0; padding: 12px 14px; border-left: 3px solid #d18a32; border-radius: 0 10px 10px 0; color: #7c5a12; background: #fff5dd; font-size: 12.5px; line-height: 1.6; }
+.live-ok { margin: 12px 0 0; padding: 12px 14px; border-left: 3px solid #0f8a76; border-radius: 0 10px 10px 0; color: #0a5f51; background: #e2f7f0; font-size: 12.5px; line-height: 1.6; }
 .flow-status { padding: 2px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 800; white-space: nowrap; }
 .flow-status--ok { color: #087467; background: #d8f5e9; }
 .flow-status--bad { color: #a14637; background: #ffe1d9; }
