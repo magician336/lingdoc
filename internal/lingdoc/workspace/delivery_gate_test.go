@@ -104,7 +104,7 @@ func stabilizeThroughDeliveryGate(t *testing.T, f deliveryGuardFixture, changeID
 		tasks := f.deliveryGateTasks(t)
 		pending := false
 		for _, task := range tasks {
-			if task.TargetRevision == p.CurrentContextRevision && task.Status != "DONE" && task.Severity == "blocking" && task.Action != "BLOCK_RELEASE" {
+			if task.TargetRevision == p.CurrentContextRevision && task.Status != "DONE" && task.Severity == core.ImpactSeverityBlocking && task.Action != "BLOCK_RELEASE" {
 				pending = true
 			}
 		}
@@ -120,7 +120,7 @@ func stabilizeThroughDeliveryGate(t *testing.T, f deliveryGuardFixture, changeID
 			currentVersion[chapter.ID] = chapter.CurrentVersionID
 		}
 		for _, task := range tasks {
-			if task.TargetRevision != p.CurrentContextRevision || task.Status == "DONE" || task.Severity != "blocking" || task.Action == "BLOCK_RELEASE" {
+			if task.TargetRevision != p.CurrentContextRevision || task.Status == "DONE" || task.Severity != core.ImpactSeverityBlocking || task.Action == "BLOCK_RELEASE" {
 				continue
 			}
 			// completion requires an explicit assignment to the acting Owner.

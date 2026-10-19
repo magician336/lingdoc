@@ -66,6 +66,12 @@ var impactSeverities = []string{ImpactSeverityBlocking, ImpactSeverityWarning, I
 // reach delivery, which is the exact failure stabilization exists to prevent.
 var impactBlockingActions = []string{"BLOCK_RELEASE", "REVIEW_REQUIRED", "INVALIDATE_CONFIRMATION"}
 
+// impactInfoActions derive ImpactSeverityInfo.
+var impactInfoActions = []string{"RECOMPUTE", ImpactActionNoAction}
+
+// impactWarningActions derive ImpactSeverityWarning.
+var impactWarningActions = []string{"REVALIDATE_EVIDENCE", "RETRIEVE_CANDIDATES", "REGENERATE"}
+
 // DeriveImpactSeverity maps an impact action to the severity of leaving it
 // unhandled.
 //
@@ -73,29 +79,45 @@ var impactBlockingActions = []string{"BLOCK_RELEASE", "REVIEW_REQUIRED", "INVALI
 // site: task creation is the only producer, so this is the single place the
 // product's "how bad does an unhandled impact get" judgement is expressed.
 //
+// Every action in the known vocabulary has its own branch:
+//
+//	blocking: BLOCK_RELEASE, REVIEW_REQUIRED, INVALIDATE_CONFIRMATION
+//	info:     RECOMPUTE, NO_ACTION
+//	warning:  REVALIDATE_EVIDENCE, RETRIEVE_CANDIDATES, REGENERATE
+//
 // An action outside the known vocabulary derives as blocking. A future action
 // invented by a caller must be handled rather than silently waved away, and
 // the cost of that choice lands on whoever adds the action instead of on
 // every downstream consumer.
+//
+// Unknown action -> blocking, and not warning, for three reasons. Severity
+// describes the CONSEQUENCE of leaving an impact unhandled, and an action the
+// product has not defined has no known consequence, so it cannot be claimed to
+// be mild. Waiving permission is the negation of "blocks stabilization", so a
+// downgrade to warning would silently hand a caller a task it may accept away
+// without producing any closure evidence. And this is the same fail-closed
+// stance impactSeverityBlocks already takes for an unrecognised severity: an
+// unrecognised value must never be read as permission to skip work.
 func DeriveImpactSeverity(action string) string {
 	switch {
 	case slices.Contains(impactBlockingActions, action):
 		return ImpactSeverityBlocking
-	case action == "RECOMPUTE":
+	case slices.Contains(impactInfoActions, action):
 		// Recomputing a derivative asks for a calculation, not for a new claim
 		// about content truth. Its result is a receipt the gate can re-check,
-		// not an assertion a human has to stand behind.
+		// not an assertion a human has to stand behind. NO_ACTION never creates
+		// a task, but keeping it in the closed action-to-severity mapping makes
+		// direct callers describe it as informational if they inspect the
+		// assessment result.
 		return ImpactSeverityInfo
-	case action == ImpactActionNoAction:
-		// NO_ACTION never creates a task, but keeping it in the closed
-		// action-to-severity mapping makes direct callers describe it as
-		// informational if they inspect the assessment result.
-		return ImpactSeverityInfo
-	default:
+	case slices.Contains(impactWarningActions, action):
 		// REVALIDATE_EVIDENCE, RETRIEVE_CANDIDATES, REGENERATE: these weaken
 		// the basis behind a claim or refresh a candidate, and each can be
 		// discharged by a responsible person's ordinary work.
 		return ImpactSeverityWarning
+	default:
+		// Unknown action: fail closed. It must be handled, not waved away.
+		return ImpactSeverityBlocking
 	}
 }
 

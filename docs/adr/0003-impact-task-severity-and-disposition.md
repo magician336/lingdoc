@@ -81,3 +81,17 @@ G3 交付后，`ImpactTask.Severity` 在生产提交路径被硬编码为 `block
 - 界面新增「接受本次不处理」入口。阻断级任务上不隐藏该入口而是给出说明——隐藏会让用户以为功能不存在。
 - 严重度取值不需要数据库迁移。
 - `NO_ACTION`（有依赖但本次差异不改变该对象）由影响解析层保留为可审计预览结果，不生成任务；后续若需要更复杂的语义判定来源，另开 Spec。
+
+### 八、未知动作按阻断处理（fail closed）
+
+本决策落地时，`DeriveImpactSeverity` 的函数注释声明「词表之外的动作推导为 blocking」，而实现里的兜底分支返回的是 `warning`。这是注释与实现的漂移：注释描述的是设计意图，代码描述的是实际行为，两者不一致时，读注释的人会按 blocking 去推理后果，读代码的人会按 warning 去推理后果。
+
+本次把推导改成显式的闭集映射：blocking 对应 `BLOCK_RELEASE`、`REVIEW_REQUIRED`、`INVALIDATE_CONFIRMATION`；info 对应 `RECOMPUTE`、`NO_ACTION`；warning 对应 `REVALIDATE_EVIDENCE`、`RETRIEVE_CANDIDATES`、`REGENERATE`；其余一律落到 blocking。
+
+选择 blocking 而不是 warning，理由是：
+
+- 严重度描述的是「放着不处理的后果」。一个产品尚未定义的动作没有已知后果，因此不能被断言为「轻微」。
+- 豁免权限是「是否阻断」的否定（见第二节）。把它降级成 warning，等于默认送给调用方一条可以被责任人直接接受掉、且不需要任何闭环证据的任务。这与本模块「无法识别的取值不得被读成可以跳过工作」的原则相反。
+- 这与 `impactSeverityBlocks` 对**未知严重度**的处置是同一条原则：那里已经是 fail closed，词表之外的动作如果落到 warning，两侧就会朝相反方向失败。
+
+影响面：生产路径上只有任务创建一处写入严重度，其动作一定取自 `validImpactAction` 的闭集，因此现有生产行为完全不变，变化只针对闭集之外的动作。推导表本身由 `TestImpactTaskSeverityFollowsTheProductRules` 逐条钉住，另有测试断言推导映射与动作词表一一对应，避免新增动作时再次出现「新增了动作却忘了给严重度分支」的漂移。
