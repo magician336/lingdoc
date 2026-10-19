@@ -30,6 +30,7 @@ Spec [#164：LingDoc 应用层传输解耦与幂等结果边界](https://github.
 | 历史 T01–T16 实现与验收 | [`TEAM_DEVELOPMENT_TASKS.md`](TEAM_DEVELOPMENT_TASKS.md)、[`08-本轮实施方案/T01-T16-全景状态与下一步.md`](08-本轮实施方案/T01-T16-全景状态与下一步.md) |
 | 开发者协作与 Issue 规范 | [`agents/issue-tracker.md`](agents/issue-tracker.md)、[`06-灵档产品开发规划/05-团队分工与代码边界.md`](06-灵档产品开发规划/05-团队分工与代码边界.md) |
 | 技术契约和接口 | [`08-本轮实施方案/02-接口与Mock约定.md`](08-本轮实施方案/02-接口与Mock约定.md)、[`08-本轮实施方案/contracts/`](08-本轮实施方案/contracts/) |
+| 本地构建环境与 CGO 前置条件 | [`本地构建环境.md`](本地构建环境.md) |
 
 ## 文档状态规则
 

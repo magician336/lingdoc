@@ -56,6 +56,9 @@ export EDITION=lite
 eval "$(./scripts/get_version.sh env)"
 LDFLAGS="-w -s $(./scripts/get_version.sh ldflags)"
 export CGO_CFLAGS="-Wno-deprecated-declarations"
+# sqlite-vec's cgo build includes "sqlite3.h"; a toolchain without the SQLite
+# development package fails before the build reaches this binary.
+source "$(dirname "$0")/ensure-sqlite-header.sh"
 if [ "$(uname)" = "Darwin" ]; then
     export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
 fi

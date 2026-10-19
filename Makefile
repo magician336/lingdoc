@@ -87,8 +87,12 @@ else
 endif
 
 # Build the application
+# sqlite-vec's cgo build includes "sqlite3.h"; a toolchain without the SQLite
+# development package fails before the build reaches this binary. The recipe
+# runs through bash explicitly because `make` on Windows would otherwise use
+# cmd.exe, where `source` does not exist.
 build:
-	go build -o $(BINARY_NAME) $(MAIN_PATH)
+	bash -c 'source ./scripts/ensure-sqlite-header.sh && go build -o $(BINARY_NAME) $(MAIN_PATH)'
 
 # Build the anydoc static archive (Rust) that the `anydoc` build tag links.
 # Override the platform with TARGET=<rust-target-triple>.
