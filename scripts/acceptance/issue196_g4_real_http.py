@@ -148,7 +148,8 @@ def request(base_url: str, method: str, path: str, *, token: str = "",
     accepted = expected if isinstance(expected, tuple) else (expected,)
     if status not in accepted:
         error = data.get("error", {}) if isinstance(data, dict) else {}
-        raise RuntimeError(f"{method} {path} returned {status} (code={error.get('code', 'unknown')})")
+        detail = error.get("message", "") if isinstance(error, dict) else ""
+        raise RuntimeError(f"{method} {path} returned {status} (code={error.get('code', 'unknown')}; message={detail})")
     if not isinstance(data, dict):
         raise RuntimeError(f"{method} {path} returned a non-object JSON response")
     return status, data, elapsed
@@ -183,8 +184,8 @@ def register_login(base_url: str) -> str:
     password = "Synthetic-" + secrets.token_hex(12)
     status, registration, _ = request(base_url, "POST", "/api/v1/auth/register", payload={
         "username": "issue196-" + suffix, "email": email, "password": password,
-    })
-    if status != 200 or registration.get("success") is not True:
+    }, expected=201)
+    if status != 201 or registration.get("success") is not True:
         raise RuntimeError("isolated registration did not succeed")
     _, login, _ = request(base_url, "POST", "/api/v1/auth/login", payload={
         "email": email, "password": password,
