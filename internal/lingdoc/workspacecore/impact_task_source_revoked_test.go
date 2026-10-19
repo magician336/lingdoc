@@ -23,16 +23,25 @@ import (
 //   - Gate side: `StabilizeRevision` reads tasks from the raw store, not the
 //     visibility-filtered projection, so a hidden task still blocks the gate.
 //
-// KNOWN DEFECT (reported by #203, deliberately NOT fixed here and NOT encoded
-// as expected behaviour): the `source_revoked` reason constant is unreachable
-// on this seam. `impactTaskStaleReason` returns `ImpactTaskStaleSourceRevoked`
-// at impact_service.go:911, but its only call site (impact_service.go:
-// 780) sits behind `checkedImpactWrite`, whose operation-level source recheck
-// resolves `OperationSourceIDs("actOnImpactTask")` -- a strict superset of
-// the same `impactSourceIDsForRefs([task.Target])` call -- for the same actor
-// (impact_source_operation.go:189). So the operation recheck always fails first
-// and the STALE branch is dead code. Fixing it would mean weakening a
-// fail-closed revalidation, which is a product decision, not a test change.
+// ADJUDICATED (#214). What was previously recorded here as a KNOWN DEFECT is
+// now a decision, and this test encodes it as expected behaviour.
+//
+// The `source_revoked` reason constant was unreachable: `impactTaskStaleReason`
+// returned it, but its only call site sits behind `checkedImpactWrite`, whose
+// operation-level source recheck resolves `OperationSourceIDs(
+// "actOnImpactTask")` - a strict superset of the same target-only source lookup,
+// for the same actor. The operation recheck therefore always fails first.
+//
+// It was not made reachable. Reaching it would require permitting a read of a
+// task whose access the caller has already been refused, i.e. weakening a
+// fail-closed recheck, and marking the task STALE would assert the obligation is
+// gone when in fact it is merely undischargeable - STALE is neither closure nor
+// a blocker, so the task would hang there forever. Instead the constant and its
+// branch were removed and the contract narrowed to the two reachable reasons:
+// target_version_replaced and assignee_revoked.
+//
+// The behaviour asserted below is the deliberate outcome: the operation fails,
+// the task is untouched, and nothing about it pretends to be resolved.
 
 // sourceRevokedFixture seeds a project whose chapters are written with a
 // real citation, so impactSourceIDsForRefs actually resolves a source for the

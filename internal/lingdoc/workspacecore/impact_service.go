@@ -113,6 +113,56 @@ func hashImpactValue(value any) string {
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
+
+// ClientFacingError lets a domain error state its own client presentation, so
+// the shared HTTP mapper does not grow one branch per business failure.
+//
+// The workspace HTTP layer checks for this before falling back to its own
+// translation table. An error that knows what the caller should see says so at
+// the point where that fact is known; the mapper stays a backstop for the
+// errors that have not been migrated yet.
+//
+// Status, code and message must describe the caller's situation, not the
+// internal mechanism that detected it. In particular a message about
+// "snapshots" is wrong for any operation that does not involve a snapshot.
+//
+// ClientStatus returns a raw int rather than http.StatusForbidden on purpose:
+// this package is the domain layer and must not depend on the transport layer
+// just to name a number. The transport owns the mapping; the domain only says
+// "forbidden" in a form the transport already understands.
+type ClientFacingError interface {
+	error
+	ClientStatus() int
+	ClientCode() string
+	ClientMessage() string
+}
+
+// impactTaskSourceUnavailable is what acting on an impact task looks like when
+// the sources backing its target are no longer readable by the caller.
+//
+// The operation-level source recheck refuses the whole operation in this case
+// (#214: a revoked source is deliberately not a stale reason), which is the
+// safe outcome but an unhelpful one on its own: the shared mapper would answer
+// a source authorization failure with copy about a stale snapshot, which has
+// nothing to do with this operation. Wrapping here keeps the underlying cause
+// intact for internal errors.Is checks while giving the caller a message that
+// names the real blocker.
+type impactTaskSourceUnavailable struct{ cause error }
+
+func (e impactTaskSourceUnavailable) Error() string {
+	return "impact_task_source_unavailable: " + e.cause.Error()
+}
+
+// Unwrap keeps the original source error reachable, so callers that need to
+// distinguish denied from merely-unavailable keep working unchanged.
+func (e impactTaskSourceUnavailable) Unwrap() error { return e.cause }
+
+func (e impactTaskSourceUnavailable) ClientStatus() int  { return 403 }
+func (e impactTaskSourceUnavailable) ClientCode() string { return "impact_task_source_unavailable" }
+func (e impactTaskSourceUnavailable) ClientMessage() string {
+	return "该影响任务依据的资料授权已不可用，请先恢复资料访问权限，或改派给仍有权限的责任人。"
+}
+
 func checkedImpactWrite[I any, R any](s *Service, ctx context.Context, actor Actor, projectID string, op operationName, target, key string, input I, refs []ObjectVersionRef, request AuthorizationRequest, write func(Transaction, Project) (operationResult[R], error)) (json.RawMessage, int, bool, error) {
 	var basis Project
 	var states []ImpactObjectState
@@ -137,6 +187,12 @@ func checkedImpactWrite[I any, R any](s *Service, ctx context.Context, actor Act
 		return nil, 0, false, err
 	}
 	if err := s.checkSources(ctx, actor, projectID, sourceIDs); err != nil {
+		// Only the impact-task action has a dedicated message for this. Every
+		// other operation keeps the shared translation, which is still correct
+		// for them.
+		if op == operationActOnImpactTask {
+			return nil, 0, false, impactTaskSourceUnavailable{cause: err}
+		}
 		return nil, 0, false, err
 	}
 	return runOperation(s, ctx, actor, sourceOperationInput(op, target, key, input, request, impactSourceDecoder), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[R], error) {
@@ -609,7 +665,7 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 		// out-of-order event address the same task instead of minting a second
 		// one, and it survives a service restart because the ID is recomputed
 		// rather than remembered.
-		task := ImpactTask{ID: ImpactTaskID(p.ID, change.ID, impact.Target, p.CurrentContextRevision, impact.Action), ProjectID: p.ID, ChangeSetID: change.ID, Target: impact.Target, TargetRevision: p.CurrentContextRevision, Action: impact.Action, Severity: "blocking", ResponsibilityDomain: domain, Status: "OPEN", Causes: impact.Causes, Version: 1, ClosureEvidence: []ObjectVersionRef{}, CreatedAt: now, UpdatedAt: now}
+		task := ImpactTask{ID: ImpactTaskID(p.ID, change.ID, impact.Target, p.CurrentContextRevision, impact.Action), ProjectID: p.ID, ChangeSetID: change.ID, Target: impact.Target, TargetRevision: p.CurrentContextRevision, Action: impact.Action, Severity: DeriveImpactSeverity(impact.Action), ResponsibilityDomain: domain, Status: "OPEN", Causes: impact.Causes, Version: 1, ClosureEvidence: []ObjectVersionRef{}, CreatedAt: now, UpdatedAt: now}
 		// A delayed or out-of-order redelivery must be judged against the
 		// current domain truth, not against the stored event payload. If the
 		// target version was already replaced, the task is born STALE with an
@@ -757,7 +813,7 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
-	if input.ExpectedVersion < 1 || input.TargetRevision < 1 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"assign", "start", "wait", "complete", "dismiss", "cancel"}, input.Action) {
+	if input.ExpectedVersion < 1 || input.TargetRevision < 1 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"assign", "start", "wait", "complete", "dismiss"}, input.Action) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	return checkedImpactWrite(s, ctx, actor, projectID, operationActOnImpactTask, projectID+"/"+taskID, key, input, input.ClosureEvidence, authorizationRequest(actor, projectID, AuthorizationWrite, ""), func(tx Transaction, p Project) (operationResult[ImpactTask], error) {
@@ -792,7 +848,7 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 			return operationResult[ImpactTask]{}, ErrInvalidState
 		}
 		old := task
-		if input.Action == "assign" || input.Action == "dismiss" || input.Action == "cancel" {
+		if input.Action == "assign" || input.Action == "dismiss" {
 			if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, "")); err != nil {
 				return operationResult[ImpactTask]{}, err
 			}
@@ -814,14 +870,16 @@ func (s *Service) ActOnImpactTask(ctx context.Context, actor Actor, projectID, t
 			task.Status = "IN_PROGRESS"
 		case "wait":
 			task.Status = "WAITING_USER"
-		case "cancel", "dismiss":
-			if task.Severity == "blocking" {
+		case "dismiss":
+			// Accepting an impact is a reasoned judgment by a responsible
+			// manager, not an escape hatch. It is exactly the negation of "this
+			// impact blocks stabilization", so a blocking impact can never be
+			// accepted away - see impactSeverityBlocks for why the two are one
+			// rule rather than two.
+			if impactSeverityBlocks(task.Severity) {
 				return operationResult[ImpactTask]{}, ErrInvalidState
 			}
-			task.Status = "CANCELLED"
-			if input.Action == "dismiss" {
-				task.Status = "DISMISSED"
-			}
+			task.Status = "DISMISSED"
 		case "complete":
 			if task.Action == "BLOCK_RELEASE" || len(input.ClosureEvidence) == 0 {
 				return operationResult[ImpactTask]{}, ErrInvalidState
@@ -894,9 +952,16 @@ var impactTaskVersionNeutralActions = []string{"complete", "assign", "wait"}
 // The triggers are deliberately distinct so a consumer can tell them apart
 // without re-deriving them:
 //   - the task belongs to a superseded context revision,
-//   - a source backing the target is no longer readable by the responsible actor,
 //   - the assignee lost the capability or scope needed to act,
 //   - the version the task names was replaced.
+//
+// A revoked source is not one of them, and the reason is a decision rather
+// than an omission: the operation-level source recheck already refuses the
+// whole operation when the target's sources are no longer readable, so this
+// function is never reached in that case. Marking the task stale here would
+// require reading a task the caller has already been refused access to, which
+// would weaken a fail-closed check. See ImpactTaskStaleTargetReplaced's
+// sibling comment in impact_model.go.
 //
 // Target-version replacement is deliberately not a trigger for "complete":
 // completion is exactly the action that re-targets a task, because it validates
@@ -915,12 +980,6 @@ func (s *Service) impactTaskStaleReason(ctx context.Context, tx Transaction, act
 		// The task belongs to a superseded context revision; every fact it was
 		// assessed against has moved on.
 		return ImpactTaskStaleTargetReplaced
-	}
-	// A responsible actor whose access to the target's sources was revoked can
-	// no longer produce a trustworthy result for this task.
-	ids, err := impactSourceIDsForRefs(tx, p, []ObjectVersionRef{task.Target})
-	if err == nil && s.checkSources(ctx, actor, p.ID, ids) != nil {
-		return ImpactTaskStaleSourceRevoked
 	}
 	// An assignee that lost project write scope cannot discharge the task.
 	if task.AssigneeID != "" && task.AssigneeID != actor.UserID {

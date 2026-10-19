@@ -266,9 +266,13 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 	// the full current basis source set (chapters, routes, rule bindings) in
 	// addition to the closure evidence sources; the Owner stabilization path
 	// only re-authorizes its closure evidence refs. Making the Owner path equally
-	// strict would make stabilization stricter and would interact with #206,
-	// whose `source_revoked` -> STALE path is still dead code pending a decision.
-	// That decision is not taken here.
+	// strict would make stabilization stricter. The asymmetry is safe now that
+	// #214 has been decided: a revoked source never reaches either path as a
+	// STALE transition, because the operation-level recheck refuses the whole
+	// operation first and the task stays unhandled. Relaxing the Owner path
+	// would therefore not resurrect any impact task's ability to go stale - it
+	// would only let stabilization report on a task whose sources it can no
+	// longer vouch for.
 	if err := s.checkSources(ctx, actor, projectID, sortedImpactSourceIDs(sourceIDs)); err != nil {
 		return err
 	}
