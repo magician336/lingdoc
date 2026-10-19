@@ -38,7 +38,7 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm ci
+          bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" frontend
           npm run build
 
       - uses: actions/upload-artifact@v7
