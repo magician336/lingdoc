@@ -68,6 +68,9 @@
                     "description": "当前基线下实际产生的交付检查回执 ID；不接受冻结快照 ID 或幂等键"
                   }
                 }
+              },
+              "example": {
+                "proof_id": "preflight-check-合成回执-1"
               }
             }
           }
@@ -16425,6 +16428,24 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/DependencyEdgeInput"
+              },
+              "example": {
+                "expected_context_revision": 1,
+                "source": {
+                  "kind": "ChapterVersion",
+                  "id": "chapter-method",
+                  "version": "v1"
+                },
+                "target": {
+                  "kind": "ChapterVersion",
+                  "id": "chapter-result",
+                  "version": "v1"
+                },
+                "relation": "method_supports_result",
+                "action": "REVALIDATE_EVIDENCE",
+                "origin": "user",
+                "reason": "合成示例：方法章节的结论需复核后才可用于结果章节",
+                "confidence": 1
               }
             }
           }
