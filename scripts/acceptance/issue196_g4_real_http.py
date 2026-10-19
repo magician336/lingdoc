@@ -25,11 +25,28 @@ from typing import Any
 
 
 def git(root: Path, *args: str) -> str:
-    result = subprocess.run(["git", "-C", str(root), *args], capture_output=True,
-                            text=True, encoding="utf-8", check=False, timeout=30)
-    if result.returncode:
-        raise RuntimeError("Git identity lookup failed")
-    return result.stdout.strip()
+    commands = [["git", "-C", str(root), *args]]
+    # A WSL-mounted Windows worktree stores a Windows absolute path in its
+    # .git file.  Linux git cannot resolve that path, while Git for Windows
+    # can.  Use the Windows executable only as an identity lookup fallback;
+    # no credentials or repository contents are sent elsewhere.
+    if os.name == "posix":
+        try:
+            converted = subprocess.run(["wslpath", "-w", str(root)], capture_output=True,
+                                       text=True, encoding="utf-8", check=False, timeout=10)
+            if converted.returncode == 0 and converted.stdout.strip():
+                commands.append(["git.exe", "-C", converted.stdout.strip(), *args])
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    for command in commands:
+        try:
+            result = subprocess.run(command, capture_output=True, text=True,
+                                    encoding="utf-8", check=False, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if result.returncode == 0:
+            return result.stdout.strip()
+    raise RuntimeError("Git identity lookup failed")
 
 
 def source_identity(root: Path) -> dict[str, Any]:
