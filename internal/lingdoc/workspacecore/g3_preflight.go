@@ -92,19 +92,27 @@ func (s *Service) AcknowledgeImpactPreflight(ctx context.Context, actor Actor, p
 		if err != nil {
 			return operationResult[ImpactPreflightAcknowledgement]{}, err
 		}
+		kind := "ReleaseSnapshot"
+		if proof.ProofKind == "check_receipt" {
+			kind = "DeliveryPreflight"
+		}
+		closure := ObjectVersionRef{Kind: kind, ID: snapshotID, Version: proof.SnapshotDigest}
 		closed := []string{}
 		for _, task := range tasks {
-			if task.ChangeSetID != changeID || task.TargetRevision != p.CurrentContextRevision || task.Action != "BLOCK_RELEASE" || task.Status == "DONE" {
+			if task.ChangeSetID != changeID || task.TargetRevision != p.CurrentContextRevision || task.Action != "BLOCK_RELEASE" {
+				continue
+			}
+			// DONE records a disposition, not perpetual freshness of its proof.
+			// Refresh only after the explicit current-proof checks above; old
+			// receipts and their audit events remain intact. The same current
+			// proof is a no-op even when submitted under another operation key.
+			if task.Status == "DONE" && len(task.ClosureEvidence) == 1 && task.ClosureEvidence[0] == closure {
 				continue
 			}
 			old := task
 			task.Status = "DONE"
 			task.Version++
-			kind := "ReleaseSnapshot"
-			if proof.ProofKind == "check_receipt" {
-				kind = "DeliveryPreflight"
-			}
-			task.ClosureEvidence = []ObjectVersionRef{{Kind: kind, ID: snapshotID, Version: proof.SnapshotDigest}}
+			task.ClosureEvidence = []ObjectVersionRef{closure}
 			task.Disposition = "当前领域Preflight通过"
 			task.UpdatedAt = time.Now().UTC()
 			if err := store.UpdateImpactTask(old, task); err != nil {
