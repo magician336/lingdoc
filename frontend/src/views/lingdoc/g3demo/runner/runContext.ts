@@ -33,6 +33,14 @@ export interface G3StepRecord {
   index: number
   /** 步骤名。 */
   name: string
+  /**
+   * 这一步属于哪一次运行。
+   *
+   * 页面上有几段链（变更集 / 依赖 / 稳定化 / 阻断 / 模型），每段跑在自己的
+   * 隔离项目上。整链证据把各段的步骤**平铺**成一份，所以每一步必须带着
+   * 自己的运行标识，否则读者无法判断某一步与某条结论是不是同一次运行。
+   */
+  runId?: string
   /** HTTP 方法。 */
   method: string
   /** 完整路径。 */
@@ -332,7 +340,7 @@ export async function runStep(
 
 /** 追加一条步骤记录。 */
 export function recordStep(ctx: G3RunContext, step: Omit<G3StepRecord, 'index'>): G3StepRecord {
-  const record: G3StepRecord = { ...step, index: ctx.steps.length + 1 }
+  const record: G3StepRecord = { ...step, index: ctx.steps.length + 1, runId: ctx.runId }
   ctx.steps.push(record)
   return record
 }

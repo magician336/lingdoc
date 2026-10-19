@@ -546,10 +546,18 @@ test('四条判据都由响应事实判定', async () => {
   const result = await runChangeSetChain(ctx, fake.client, 'jwt-1', CHAIN_OPTIONS)
 
   const byId = new Map(result.verdicts.map((verdict) => [verdict.id, verdict]))
-  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11']) {
+  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-11']) {
     assert.ok(byId.has(id), `缺少 ${id} 的判定`)
     assert.equal(byId.get(id)?.holds, true, `${id} 判定不成立：${byId.get(id)?.detail}`)
   }
+  // AC-G3-04 的判据是合取式：「无关对象不产生失效或复核任务」**并**「能在预览中显示未受影响理由」。
+  // 本机后端对未受影响的章节**不给出**理由（见下面的「服务端没给就如实标注」用例），
+  // 所以这一条只能判**部分成立**：holds=false，状态由判定卡自己带上 PASS (follow-up)。
+  assert.ok(byId.has('AC-G3-04'), '缺少 AC-G3-04 的判定')
+  const ac04 = byId.get('AC-G3-04')!
+  assert.equal(ac04.holds, false, `AC-G3-04 在服务端未给出未受影响理由时不应判成立：${ac04.detail}`)
+  assert.equal(ac04.status, 'PASS (follow-up)', '部分成立必须记 PASS (follow-up)，不能升格为 PASS')
+  assert.match(ac04.detail, /未受影响理由/)
   // 每条判定都要带方法、路径、状态码与关键响应字段
   for (const verdict of result.verdicts) {
     assert.ok(verdict.evidence.length > 0, `${verdict.id} 没有可点击证据`)

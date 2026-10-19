@@ -159,9 +159,12 @@ test('可实跑但本票未实跑的验收项走 follow-up 且必须挂独立 Is
   }
 })
 
-test('切片行尚未判定，标 TODO 并说明本票只建立判据基准', () => {
+test('切片行尚未判定，标 TODO；G3.7 记 NOT RUN（与缺口清单口径一致）', () => {
   for (const row of G3_SLICE_ROWS) {
-    assert.equal(row.status, 'TODO')
+    // G3.7 的缺口（G3-GAP-06 / G3-GAP-07）记的是「未实跑」，
+    // 状态口径必须是 NOT RUN 而不是 TODO——两者含义不同，不能混用。
+    const expected = row.id === 'G3.7' ? 'NOT RUN' : 'TODO'
+    assert.equal(row.status, expected)
     assert.ok(row.note && row.note.includes('判据基准'), `${row.id} 的说明不完整`)
   }
 })
@@ -173,7 +176,8 @@ test('状态计数覆盖全部七种状态', () => {
   assert.equal(total, 23)
   assert.equal(counts['BLOCKED'], 5)
   assert.equal(counts['PASS (follow-up)'], 11)
-  assert.equal(counts['TODO'], 7)
+  assert.equal(counts['TODO'], 6)
+  assert.equal(counts['NOT RUN'], 1)
 })
 
 test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准为准', () => {

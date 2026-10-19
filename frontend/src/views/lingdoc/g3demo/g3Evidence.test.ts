@@ -2,11 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   G3_ROW_EVIDENCE_RULES,
+  G3_RUN_HISTORY_STORAGE_KEY,
   G3_RUN_SUMMARY_STORAGE_KEY,
+  appendRunHistory,
   applyRunEvidence,
+  contextsFromSummaries,
   headChangedSince,
+  loadRunHistory,
   loadRunSummary,
   rowEvidence,
+  saveRunHistory,
   saveRunSummary,
   summarizeRun,
   type G3RunStorage,
@@ -18,7 +23,7 @@ import { G3_CS_STEPS } from './runner/changeset'
 import { G3_DEP_STEPS } from './runner/dependencies'
 import { G3_MODEL_STEPS } from './runner/model'
 import { G3_STAB_STEPS } from './runner/stabilization'
-import { createRunContext, markRunStale, recordStep, type G3BackendHead, type G3RunVerdict } from './runner/runContext'
+import { createRunContext, markRunStale, recordStep, type G3BackendHead, type G3RunContext, type G3RunVerdict } from './runner/runContext'
 
 function memoryStorage(): G3RunStorage & { map: Map<string, string> } {
   const map = new Map<string, string>()
@@ -66,7 +71,7 @@ test('跑通前置链不会把任何一行判成 PASS', () => {
   const ctx = prerequisiteRun()
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   assert.equal(rows.filter((row) => row.status === 'PASS').length, 0)
-  assert.equal(rows.filter((row) => row.status === 'TODO').length, 7, '切片七行应保持 TODO')
+  assert.equal(rows.filter((row) => row.status === 'TODO').length, 6, '切片六行应保持 TODO（G3.7 记 NOT RUN）')
 })
 
 test('未被本轮覆盖的行明确标出未覆盖', () => {
@@ -165,11 +170,28 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
     assert.equal(alternative?.status, 'WARNING')
     assert.equal(alternative?.followUpIssue, 246)
   }
-  // 本票新增的两条切片判据：G3.1（ChangeSet 切片）与 G3.6（稳定化切片）都是完全判定。
+  // 本票新增的两条切片判据：G3.1（ChangeSet 切片）是完全判定；
+  // G3.6（稳定化切片）受环境限制（G3-GAP-08：调研类闭环证据本机不可实跑），
+  // 按缺口清单的要求只能记环境限制，不得用其他回执冒充。
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.1'].status, 'PASS')
-  assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'PASS')
-  // 本票新增的三条领域判据：AC-G3-12 完全判定；AC-G3-09 与 AC-G3-07 只覆盖了实跑得出的那半段。
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'WARNING')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].followUpIssue, 246)
+  // 本票新增的三条领域判据：AC-G3-12 只覆盖了实跑得出的那半段（#246 G3-GAP-11）；
+  // AC-G3-09 与 AC-G3-07 同样只覆盖实跑得出的那半段。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].followUpIssue, 246)
+  // AC-G3-04 的判据是合取式，后半段（未受影响理由）本机后端给不出，
+  // 因此只能部分判定（#246 G3-GAP-06 / G3-GAP-07）。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-04'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-04'].followUpIssue, 246)
+  // **任何**能判成 PASS 的规则都必须挂判定卡：没有判定卡就只剩「步骤跑到了」，
+  // 而「步骤跑到了」不等于「判据成立」——这是防假 PASS 的结构性守护。
+  for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
+    const canPass = rule.status === 'PASS' || (rule.alternatives ?? []).some((item) => item.status === 'PASS')
+    if (!canPass) continue
+    const hasVerdict = Boolean(rule.verdictId) || (rule.alternatives ?? []).some((item) => Boolean(item.verdictId))
+    assert.ok(hasVerdict, `${id} 能判成 PASS 却没有判定卡：步骤跑到了就会被推成 PASS`)
+  }
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-09'].status, 'PASS (follow-up)')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-09'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-07'].status, 'PASS (follow-up)')
@@ -211,7 +233,7 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
     })
   }
   // 带 verdictId 的规则以**判定结论**为准：判定不成立就不许判 PASS。
-  ctx.verdicts = ['AC-G3-05', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15'].map((id) => ({
+  ctx.verdicts = ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11', 'AC-G3-05', 'AC-G3-13', 'AC-G3-14', 'AC-G3-15'].map((id) => ({
     id,
     title: id,
     holds: true,
@@ -220,10 +242,13 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
   }))
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   const byId = new Map(rows.map((row) => [row.id, row]))
-  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11', 'AC-G3-05', 'AC-G3-13']) {
+  for (const id of ['AC-G3-01', 'AC-G3-02', 'AC-G3-11', 'AC-G3-05', 'AC-G3-13']) {
     assert.equal(byId.get(id)?.status, 'PASS', `${id} 没有被本轮证据驱动`)
     assert.equal(byId.get(id)?.followUpIssue, undefined, `${id} 被判定后不应再挂「跟进 Issue」`)
   }
+  // AC-G3-04 的判据有一半未成立（服务端给不出未受影响理由），只能部分判定。
+  assert.equal(byId.get('AC-G3-04')?.status, 'PASS (follow-up)')
+  assert.equal(byId.get('AC-G3-04')?.followUpIssue, 246)
   // 部分覆盖的两行：状态是 PASS (follow-up)，并保留指向缺口清单的跟进 Issue。
   for (const id of ['AC-G3-14', 'AC-G3-15']) {
     assert.equal(byId.get(id)?.status, 'PASS (follow-up)')
@@ -233,6 +258,37 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
   assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
   assert.equal(byId.get('G3.1')?.status, 'TODO')
   assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
+})
+
+test('判定卡不成立时，即使步骤全部跑齐也不许升格成 PASS', () => {
+  const ctx = prerequisiteRun()
+  for (const name of [...Object.values(G3_CS_STEPS), ...Object.values(G3_DEP_STEPS)]) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  // 步骤都跑到了，但判定卡明确不成立 —— 这一行**不得**被判成 PASS。
+  ctx.verdicts = ['AC-G3-01', 'AC-G3-05'].map((id) => ({
+    id,
+    title: id,
+    holds: false,
+    detail: '不成立',
+    evidence: [],
+  }))
+  const before = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row.status]))
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  for (const id of ['AC-G3-01', 'AC-G3-05']) {
+    assert.equal(byId.get(id)?.status, before.get(id), `${id} 在判定不成立时被升格了`)
+  }
+  const notes = new Map(evidence.map((item) => [item.rowId, item.note]))
+  assert.match(notes.get('AC-G3-01') ?? '', /判定卡/, '判定不成立时说明要写明判定卡')
 })
 
 test('步骤跑齐但判定不成立时，那一行仍然不被判定', () => {
@@ -305,7 +361,9 @@ test('稳定化链跑完后，G3.1 与 G3.6 由本轮证据驱动为 PASS', () =
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   const byId = new Map(rows.map((row) => [row.id, row]))
   assert.equal(byId.get('G3.1')?.status, 'PASS', 'G3.1 没有被稳定化链的证据驱动')
-  assert.equal(byId.get('G3.6')?.status, 'PASS', 'G3.6 没有被稳定化链的证据驱动')
+  // G3.6 受环境限制（G3-GAP-08）：只能记 WARNING，不得用其他回执冒充 PASS。
+  assert.equal(byId.get('G3.6')?.status, 'WARNING', 'G3.6 应当记环境限制 WARNING')
+  assert.equal(byId.get('G3.6')?.followUpIssue, 246)
 })
 
 test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
@@ -353,8 +411,9 @@ test('阻断与恢复链跑完后，AC-G3-09 / AC-G3-12 / AC-G3-07 由本轮证�
   }))
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   const byId = new Map(rows.map((row) => [row.id, row]))
-  assert.equal(byId.get('AC-G3-12')?.status, 'PASS')
-  assert.equal(byId.get('AC-G3-12')?.followUpIssue, undefined)
+  // AC-G3-12 只覆盖了实跑得出的那半段（#246 G3-GAP-11：closure_stale 分支不可达）。
+  assert.equal(byId.get('AC-G3-12')?.status, 'PASS (follow-up)')
+  assert.equal(byId.get('AC-G3-12')?.followUpIssue, 246)
   // 部分覆盖的两行：状态是 PASS (follow-up)，并保留指向缺口清单的跟进 Issue。
   assert.equal(byId.get('AC-G3-09')?.status, 'PASS (follow-up)')
   assert.equal(byId.get('AC-G3-09')?.followUpIssue, 246)
@@ -447,4 +506,108 @@ test('模型不可用时，这三行标 NOT RUN，其余行照常判定', () => 
   // 其余行照常判定：确定性路径的规则不在这三条里，状态原样保留。
   assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)')
   assert.equal(byId.get('AC-G3-05')?.status, 'PASS (follow-up)')
+})
+
+/**
+ * 造一个只跑了某一条链的上下文。
+ *
+ * 页面上有几段链，各跑在自己的隔离项目上。跨段累计时，
+ * **每一段只带自己那几步与自己那几个判定**。
+ */
+function segmentRun(
+  runId: string,
+  stepNames: readonly string[],
+  verdictIds: readonly string[],
+  holds = true,
+): G3RunContext {
+  const ctx = createRunContext({ runId, accountEmail: 'g3demo-x@example.com' })
+  for (const name of stepNames) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.head = head('7f5fd8c')
+  ctx.verdicts = verdictIds.map((id) => ({
+    id,
+    title: id,
+    holds,
+    detail: `${id} 判定`,
+    evidence: [],
+  }))
+  return ctx
+}
+
+test('跨段累计：后一段不抹掉前一段的判定', () => {
+  const changeset = segmentRun('g3r-seg-1', Object.values(G3_CS_STEPS), ['AC-G3-01', 'AC-G3-02', 'AC-G3-04', 'AC-G3-11'])
+  const stabilization = segmentRun('g3r-seg-2', Object.values(G3_STAB_STEPS), ['G3.1', 'G3.6'])
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, [changeset, stabilization])
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  // 变更集链判的行仍判着，不会被后一段的稳定化链覆盖掉。
+  assert.equal(byId.get('AC-G3-01')?.status, 'PASS')
+  assert.equal(byId.get('AC-G3-11')?.status, 'PASS')
+  // 稳定化链判的行同样在。
+  assert.equal(byId.get('G3.1')?.status, 'PASS')
+  assert.equal(byId.get('G3.6')?.status, 'WARNING')
+  // 每行都写清是哪一次运行判的。
+  const byEvidence = new Map(evidence.map((item) => [item.rowId, item]))
+  assert.equal(byEvidence.get('AC-G3-01')?.runId, 'g3r-seg-1')
+  assert.equal(byEvidence.get('G3.1')?.runId, 'g3r-seg-2')
+  assert.match(byEvidence.get('AC-G3-01')?.note ?? '', /g3r-seg-1/)
+})
+
+test('跨段累计不串味：A 段的步骤不能配 B 段的判定', () => {
+  // A 段只跑到步骤、没有判定卡；B 段有判定卡、但没跑到步骤。
+  const stepsOnly = segmentRun('g3r-mix-a', Object.values(G3_CS_STEPS), [])
+  const verdictOnly = segmentRun('g3r-mix-b', [], ['AC-G3-01'])
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, [stepsOnly, verdictOnly])
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  // 步骤与判定分属两次运行 ⇒ 不得判成 PASS。
+  assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)', '跨运行的步骤与判定被拼在了一起')
+  const item = evidence.find((entry) => entry.rowId === 'AC-G3-01')
+  assert.equal(item?.decided, false)
+})
+
+test('跨段累计：确定性判定优先于模型侧判定', () => {
+  const deterministic = segmentRun('g3r-det', ['创建变更草稿'], ['AC-G3-14'])
+  const model = segmentRun('g3r-model', ['模型-助手草稿-结论'], ['AC-G3-14'])
+  model.verdicts = [{ id: 'AC-G3-14', title: 'AC-G3-14', holds: true, detail: '模型侧', evidence: [], status: 'WARNING', modelDependent: true }]
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, [deterministic, model])
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  // 确定性路径判成立：取确定性路径的状态（PASS (follow-up)），不取模型侧的 WARNING。
+  assert.equal(byId.get('AC-G3-14')?.status, 'PASS (follow-up)')
+  const item = evidence.find((entry) => entry.rowId === 'AC-G3-14')
+  assert.equal(item?.runId, 'g3r-det')
+})
+
+test('累计清单：同一运行只留一份，超上限丢最旧的', () => {
+  const storage = memoryStorage()
+  const first = summarizeRun(segmentRun('g3r-h-1', [], []), { missingSections: [] })
+  const second = summarizeRun(segmentRun('g3r-h-2', [], []), { missingSections: [] })
+  let history = appendRunHistory([], first)
+  history = appendRunHistory(history, second)
+  assert.equal(history.length, 2)
+  // 同一运行标识重放：不新增一份。
+  history = appendRunHistory(history, first)
+  assert.equal(history.length, 2, '同一运行标识被并了两份')
+  assert.equal(history[history.length - 1]?.runId, 'g3r-h-1')
+  saveRunHistory(storage, history)
+  const loaded = loadRunHistory(storage)
+  assert.equal(loaded.length, 2)
+  assert.deepEqual(loaded.map((item) => item.runId), ['g3r-h-2', 'g3r-h-1'])
+  // 上下文还原：矩阵投影读的就是这一份清单。
+  assert.equal(contextsFromSummaries(loaded).length, 2)
+})
+
+test('累计清单坏掉时读成空数组，不静默当成有历史', () => {
+  const storage = memoryStorage()
+  storage.setItem(G3_RUN_HISTORY_STORAGE_KEY, '{ broken')
+  assert.deepEqual(loadRunHistory(storage), [])
+  storage.setItem(G3_RUN_HISTORY_STORAGE_KEY, JSON.stringify({ runId: 'x' }))
+  assert.deepEqual(loadRunHistory(storage), [])
 })

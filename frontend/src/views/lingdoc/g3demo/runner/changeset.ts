@@ -1549,15 +1549,22 @@ function verdictAcG304(input: {
   const inChangeSet = input.scoped.impacts.some((impact) => impact.chapter_id === input.unaffectedAfter.chapterId)
   const hasTask = input.tasksAfter.some((task) => task.target.id === input.unaffectedAfter.chapterId)
   const keptConfirmation = input.unaffectedAfter.versionConfirmationValid === true
-  const holds = !inObjects && !inImpacts && !inChangeSet && !hasTask && keptConfirmation
+  // 判据是合取式：「无关对象不产生失效或复核任务」**并**「能在预览中显示未受影响理由」。
+  // 服务端没有给出理由时，判据的后半段就没有成立——不能只判前半段就写成立。
+  const hasReason = Boolean(input.unaffected.serverReason)
+  const holds = !inObjects && !inImpacts && !inChangeSet && !hasTask && keptConfirmation && hasReason
 
   return {
     id: 'AC-G3-04',
     title: '局部影响',
     holds,
+    // 部分成立时状态由判定卡自己带上：判据缺了「未受影响理由」那半段，
+    // 不能升格为完全判定，按仓库词表记 PASS (follow-up)（缺口清单 #246）。
+    status: holds ? undefined : 'PASS (follow-up)',
     detail: holds
       ? `未列入受影响范围的 ${input.unaffectedAfter.sectionId} 章节：影响评估的 objects / impacts 与变更集 impacts 都不含它，也没有为它产生影响任务，其章节版本的确认标记仍为 true（本次变更集未使其失效）。未受影响理由：${input.unaffected.text}`
-      : `不成立：进评估对象=${inObjects}，进评估影响=${inImpacts}，进变更集=${inChangeSet}，有任务=${hasTask}，确认保持=${keptConfirmation}`,
+      : `部分成立：进评估对象=${inObjects}，进评估影响=${inImpacts}，进变更集=${inChangeSet}，有任务=${hasTask}，确认保持=${keptConfirmation}；未受影响理由已给出=${hasReason}` +
+        (hasReason ? '' : `（服务端未给出未受影响理由，判据「能在预览中显示未受影响理由」那半段未成立；缺口清单 #246）`),
     evidence: [
       `GET /api/v1/lingdoc/projects/{projectId}/change-sets/${input.scoped.id}/impact-assessment → HTTP 200 · objects=[${input.assessment.objects.map((object) => `${object.kind}/${object.id}`).join(' ')}] · impacts=[${input.assessment.impacts.map((impact) => `${impact.action}/${impact.certainty}`).join(' ')}]`,
       `GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/versions → HTTP 200 · confirmation_valid ${input.unaffectedBefore.versionConfirmationValid} → ${input.unaffectedAfter.versionConfirmationValid} · spec_revision=${input.unaffectedAfter.versionSpecRevision}`,

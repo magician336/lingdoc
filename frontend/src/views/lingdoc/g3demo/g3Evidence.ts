@@ -95,6 +95,7 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '复写章节正文',
       '重新确认章节',
     ],
+    verdictId: 'AC-G3-01',
     status: 'PASS',
     note:
       '本轮实跑判定成立：Owner 应用后推进上下文修订，受影响章节的确认失效并进入待复核，' +
@@ -108,6 +109,7 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '读上下文修订',
       '读影响任务',
     ],
+    verdictId: 'AC-G3-02',
     status: 'PASS',
     note:
       '本轮实跑判定成立：两个变更集同基于一个上下文修订，先应用的推进修订，' +
@@ -115,14 +117,19 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
   },
   'AC-G3-04': {
     requires: ['创建变更集', '读影响评估', '应用变更集', '读章节版本列表', '读影响任务'],
-    status: 'PASS',
+    verdictId: 'AC-G3-04',
+    status: 'PASS (follow-up)',
+    followUpIssue: 246,
     note:
-      '本轮实跑判定成立：未列入受影响范围的章节不在影响评估的对象与影响里，' +
-      '没有为它产生影响任务，其章节版本的确认标记未被本次变更集置为失效；' +
-      '未受影响理由按响应如实呈现（服务端未给出理由时标注「服务端未提供未受影响理由」）。',
+      '本轮实跑的是**「无关对象不产生失效或复核任务」那半段**：未列入受影响范围的章节' +
+      '不在影响评估的对象与影响里，没有为它产生影响任务，其章节版本的确认标记未被本次变更集置为失效。' +
+      '**未成立那半段**：判据还要求「能在预览中显示未受影响理由」，而本轮服务端**没有给出**' +
+      '未受影响理由（`unaffected_reason.server_reason` 为 null），预览只能如实标注「服务端未提供未受影响理由」——' +
+      '这半段没有可观测的落点（缺口清单 #246）。因此本行不是完全判定，状态记为 PASS (follow-up)。',
   },
   'AC-G3-11': {
     requires: ['创建逆向变更集', '读回原变更集', '读逆向影响评估', '应用逆向变更集'],
+    verdictId: 'AC-G3-11',
     status: 'PASS',
     note:
       '本轮实跑判定成立：撤销经由新建的逆向变更集完成（原变更集历史仍可读），' +
@@ -233,11 +240,15 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '阻断-稳定化（重投闭环后）',
     ],
     verdictId: 'AC-G3-12',
-    status: 'PASS',
+    status: 'PASS (follow-up)',
+    followUpIssue: 246,
     note:
-      '本轮实跑判定成立：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现版本不匹配，' +
-      '这一版修订**没有被放行**（服务端在重新读取闭环证据时按 409 version_conflict 拒掉这一次稳定化）；' +
-      '随后按新基线重投了对应影响任务，重投任务闭环之后稳定化转为已稳定。',
+      '本轮实跑的是**「这一版没有被放行」那半段**：目标对象在任务「已完成」之后被新版本替换，' +
+      '稳定化重新读取时发现版本不匹配，这一次稳定化**没有被放行**（服务端在重新读取闭环证据时按 ' +
+      '409 version_conflict 拒掉）。**未成立那半段**：判据还要求「保持 BLOCKED 并创建 / 重投对应任务」，' +
+      '而当前实现在预读闭环证据阶段就 409，`closure_stale` 分支不可达——这半段没有可观测的落点' +
+      '（缺口清单 #246）。本轮改走「按新基线重投变更集 → 重投任务闭环 → 再次稳定化」才回到 STABILIZED，' +
+      '那是**替代路径**、不是判据要求的那条。因此本行不是完全判定，状态记为 PASS (follow-up)。',
   },
   'AC-G3-07': {
     requires: [
@@ -281,12 +292,17 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '稳定化-下载导出产物',
     ],
     verdictId: 'G3.6',
-    status: 'PASS',
+    status: 'WARNING',
+    followUpIssue: 246,
     note:
-      '本轮实跑判定成立：阻断影响未闭环时稳定化以 200 成功响应返回 BLOCKED 并带完整阻断原因，' +
+      '本轮实跑的是**已覆盖的三类闭环动作**：阻断影响未闭环时稳定化以 200 成功响应返回 BLOCKED 并带完整阻断原因，' +
       '此时冻结交付快照被服务端拒掉（不能导出）；全部阻断影响闭环后稳定化返回 STABILIZED，' +
       '交付检查通过、快照冻结、导出产物 verified 并按字节与哈希核对一致' +
-      '（证据见左栏与「G3.6」判定卡）。',
+      '（证据见左栏与「G3.6」判定卡）。**未覆盖那类**：`RETRIEVE_CANDIDATES` 类影响要求的真实调研回执' +
+      '在本机不可实跑（`web_search_providers` 为空表，见缺口清单 #246），闭环证据只覆盖 ' +
+      'INVALIDATE_CONFIRMATION / REVIEW_REQUIRED / RECOMPUTE 三类动作。按缺口清单的要求，' +
+      '这一项在环境限制解除前只能记环境限制（WARNING）并写明缺什么，不得用其他回执冒充，' +
+      '因此状态记为 WARNING。',
   },
 })
 
@@ -305,6 +321,21 @@ export interface G3RowEvidence {
   stale: boolean
   /** 给读者看的一句话。 */
   note: string
+  /**
+   * 判定这一行的**那一次运行**的标识。
+   *
+   * 页面会把几段链（变更集 / 依赖 / 稳定化 / 阻断 / 模型）各跑一次，
+   * 每一段跑在自己的隔离项目上。结论是**逐段**判的，所以必须说清
+   * 这一行的结论来自哪一次运行——否则读者会以为所有步骤跑在同一个项目上。
+   */
+  runId?: string
+  /**
+   * 支撑这一行结论的判定卡编号。
+   *
+   * 导出体按它把「这一行的判定」与「那一次运行的判定」对上，
+   * 免得把不同运行的同名判定混成一条。
+   */
+  verdictId?: string
 }
 
 /** 本轮证据在矩阵上的投影。 */
@@ -316,6 +347,8 @@ export interface G3MatrixWithRun {
 /** 一行判据的各条判定路径的评估结果。 */
 interface G3GroupEvaluation {
   group: G3RowEvidenceAlternative
+  /** 该路径在规则表里的序号：0 是主路径，其余是备选路径。 */
+  groupIndex: number
   missingSteps: string[]
   covered: boolean
   verdict: G3RunVerdict | undefined
@@ -324,7 +357,18 @@ interface G3GroupEvaluation {
   decided: boolean
 }
 
-/** 评估一行判据的全部判定路径。 */
+/**
+ * 把一次或多次运行展开成上下文列表。
+ *
+ * 多次运行（例如页面上依次点了几个区块）**不能**把步骤揉成一锅：
+ * 每一段跑在各自新建的隔离项目上，揉在一起会让「步骤跑到了」的证据
+ * 跨项目串味。所以这里只做**列表化**，判定仍然在单次运行内评估。
+ */
+function contextList(ctx: G3RunContext | readonly G3RunContext[]): readonly G3RunContext[] {
+  return Array.isArray(ctx) ? ctx : [ctx as G3RunContext]
+}
+
+/** 评估一行判据的全部判定路径（单次运行内）。 */
 function evaluateGroups(
   ctx: G3RunContext,
   rule: G3RowEvidenceRule,
@@ -341,7 +385,7 @@ function evaluateGroups(
     ...(rule.alternatives ?? []),
   ]
 
-  return groups.map((group) => {
+  return groups.map((group, groupIndex) => {
     const missingSteps = group.requires.filter((name) => !observedSteps.includes(name))
     const covered = missingSteps.length === 0
     // 判定结论优先：规则给了 verdictId 时，**步骤跑到了也不等于判定成立**。
@@ -350,7 +394,7 @@ function evaluateGroups(
       : undefined
     const verdictMissing = Boolean(group.verdictId) && !verdict
     const verdictFailed = Boolean(group.verdictId) && verdict !== undefined && !verdict.holds
-    // 判定卡自带状态时（例如模型不可用记 NOT RUN），以判定卡为准。
+    // 判定卡自带状态时（例如模型不可用记 NOT RUN、部分判定记 PASS (follow-up)），以判定卡为准。
     const verdictStatus = verdict?.status
     const decided =
       covered &&
@@ -358,83 +402,183 @@ function evaluateGroups(
       ctx.head !== null &&
       !verdictMissing &&
       (!verdictFailed || verdictStatus !== undefined)
-    return { group, missingSteps, covered, verdict, verdictMissing, verdictFailed, decided }
+    return { group, groupIndex, missingSteps, covered, verdict, verdictMissing, verdictFailed, decided }
   })
 }
 
-/** 计算一行在本轮里的覆盖情况。 */
-export function rowEvidence(ctx: G3RunContext, row: G3MatrixRow): G3RowEvidence {
+/** 一次评估的结果与它所属的运行。 */
+interface G3RowEvaluation {
+  ctx: G3RunContext
+  evaluation: G3GroupEvaluation
+  /** 该次运行在上下文列表里的序号。 */
+  contextIndex: number
+}
+
+/**
+ * 在若干次运行里挑出这一行最好的那次评估。
+ *
+ * 优先级：
+ * 1. **判定成立**（`decided`）优先于「只是跑到步骤」（`covered`）；
+ * 2. 同为判定成立时，**确定性判定优先于依赖真实模型的判定**
+ *    （模型侧结论是非确定性的，不该盖过确定性结论）；
+ * 3. 再按规则表里的**主路径优先**（序号小的），最后按运行先后。
+ *
+ * 注意每条路径的判定与步骤都来自**同一次运行**，
+ * 不会把 A 运行的步骤和 B 运行的判定拼在一起。
+ */
+function evaluateRow(
+  contexts: readonly G3RunContext[],
+  row: G3MatrixRow,
+): { evaluations: G3RowEvaluation[]; hit: G3RowEvaluation } {
   const rule = G3_ROW_EVIDENCE_RULES[row.id]
-  const observedSteps = ctx.steps.filter((step) => step.ok).map((step) => step.name)
-  const stale = ctx.stale
+  const evaluations: G3RowEvaluation[] = []
+  if (rule) {
+    contexts.forEach((ctx, contextIndex) => {
+      const observedSteps = ctx.steps.filter((step) => step.ok).map((step) => step.name)
+      for (const evaluation of evaluateGroups(ctx, rule, observedSteps)) {
+        evaluations.push({ ctx, evaluation, contextIndex })
+      }
+    })
+  }
+  const rank = (item: G3RowEvaluation): number[] => [
+    // 判定成立优先。
+    item.evaluation.decided ? 0 : 1,
+    // 确定性判定优先于模型侧判定。
+    item.evaluation.verdict?.modelDependent ? 1 : 0,
+    // 主路径优先。
+    item.evaluation.groupIndex,
+    // 运行先后。
+    item.contextIndex,
+  ]
+  const compare = (a: G3RowEvaluation, b: G3RowEvaluation): number => {
+    const ra = rank(a)
+    const rb = rank(b)
+    for (let i = 0; i < ra.length; i += 1) {
+      if (ra[i] !== rb[i]) return ra[i] - rb[i]
+    }
+    return 0
+  }
+  const sorted = [...evaluations].sort(compare)
+  const hit = sorted.find((item) => item.evaluation.decided)
+    ?? sorted.find((item) => item.evaluation.covered)
+    ?? sorted[0]
+  if (!hit) {
+    // 没有规则表的行：造一个空的评估，供调用方按「未被覆盖」处理。
+    const fallbackCtx = contexts[0] ?? ({ steps: [], stale: false, head: null } as unknown as G3RunContext)
+    const empty: G3GroupEvaluation = {
+      group: { requires: [], status: 'TODO', note: '' },
+      groupIndex: 0,
+      missingSteps: [],
+      covered: false,
+      verdict: undefined,
+      verdictMissing: false,
+      verdictFailed: false,
+      decided: false,
+    }
+    return { evaluations: [{ ctx: fallbackCtx, evaluation: empty, contextIndex: 0 }], hit: { ctx: fallbackCtx, evaluation: empty, contextIndex: 0 } }
+  }
+  return { evaluations, hit }
+}
+
+/** 计算一行在给定的运行（或多次运行）里的覆盖情况。 */
+export function rowEvidence(ctx: G3RunContext | readonly G3RunContext[], row: G3MatrixRow): G3RowEvidence {
+  return projectRow(contextList(ctx), row).evidence
+}
+
+/** 一行判据的投影结果：证据说明 + 命中的那条路径。 */
+interface G3RowProjection {
+  evidence: G3RowEvidence
+  hit: G3RowEvaluation
+}
+
+/** 把一行判据投影到给定的运行（或多次运行）上。 */
+function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowProjection {
+  const rule = G3_ROW_EVIDENCE_RULES[row.id]
+  const hit = evaluateRow(contexts, row).hit
+  // 过期口径：**每一次**运行都过期时才算过期（单次运行时就是这一次的口径）。
+  const stale = contexts.length > 0 && contexts.every((item) => item.stale)
+  const multi = contexts.length > 1
 
   if (!rule) {
     return {
-      rowId: row.id,
-      covered: false,
-      decided: false,
-      observedSteps,
-      missingSteps: [],
-      stale,
-      note: stale
-        ? '本轮未覆盖该行；且本轮 head 已变化，既有结论过期。'
-        : '本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。',
+      hit,
+      evidence: {
+        rowId: row.id,
+        covered: false,
+        decided: false,
+        observedSteps: [],
+        missingSteps: [],
+        stale,
+        note: stale
+          ? '本轮未覆盖该行；且本轮 head 已变化，既有结论过期。'
+          : '本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。',
+      },
     }
   }
 
-  const evaluations = evaluateGroups(ctx, rule, observedSteps)
-  const hit = evaluations.find((item) => item.decided) ?? evaluations.find((item) => item.covered) ?? evaluations[0]!
+  const observedSteps = hit.ctx.steps.filter((step) => step.ok).map((step) => step.name)
+  const runTag = multi ? `（来自运行 ${hit.ctx.runId}）` : ''
 
   return {
-    rowId: row.id,
-    covered: hit.covered,
-    decided: hit.decided,
-    observedSteps: hit.group.requires.filter((name) => observedSteps.includes(name)),
-    missingSteps: hit.missingSteps,
-    stale,
-    note: hit.decided
-      ? hit.verdict?.detail
-        ? `${hit.group.note}｜${hit.verdict.detail}`
-        : hit.group.note
-      : stale
-        ? `本轮已跑到该行所需步骤，但 head 已变化（${ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
-        : hit.missingSteps.length > 0
-          ? `本轮未覆盖该行，还缺步骤：${hit.missingSteps.join('、')}，状态保持原样。`
-          : hit.verdictFailed
-            ? `本轮已跑到该行所需步骤，但判定卡「${hit.group.verdictId}」不成立，状态保持原样。`
-            : hit.verdictMissing
-              ? `本轮已跑到该行所需步骤，但本轮没有「${hit.group.verdictId}」的判定结论，状态保持原样。`
-              : '本轮未覆盖该行，状态保持原样。',
+    hit,
+    evidence: {
+      rowId: row.id,
+      covered: hit.evaluation.covered,
+      decided: hit.evaluation.decided,
+      observedSteps: hit.evaluation.group.requires.filter((name) => observedSteps.includes(name)),
+      missingSteps: hit.evaluation.missingSteps,
+      stale,
+      runId: hit.ctx.runId,
+      verdictId: hit.evaluation.verdict?.id,
+      note: hit.evaluation.decided
+        ? hit.evaluation.verdict?.detail
+          ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
+          : `${hit.evaluation.group.note}${runTag}`
+        : stale
+          ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
+          : hit.evaluation.missingSteps.length > 0
+            ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
+            : hit.evaluation.verdictFailed
+              ? hit.evaluation.verdict?.status
+                ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**（状态记为 ${hit.evaluation.verdict.status}）：${hit.evaluation.verdict.detail}`
+                : `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」不成立，状态保持原样。`
+              : hit.evaluation.verdictMissing
+                ? `本轮已跑到该行所需步骤，但本轮没有「${hit.evaluation.group.verdictId}」的判定结论，状态保持原样。`
+                : '本轮未覆盖该行，状态保持原样。',
+    },
   }
 }
 
 /**
- * 把本轮证据投到矩阵上。
+ * 把本轮（或本会话累计的多次运行）证据投到矩阵上。
  *
- * 返回的行**状态**：被本轮判定的行取规则指定状态；其余行**原样保留**。
+ * 返回的行**状态**：被证据判定的行取规则指定状态；其余行**原样保留**。
  */
-export function applyRunEvidence(rows: readonly G3MatrixRow[], ctx: G3RunContext): G3MatrixWithRun {
-  const evidence = rows.map((row) => rowEvidence(ctx, row))
-  const byId = new Map(evidence.map((item) => [item.rowId, item]))
+export function applyRunEvidence(
+  rows: readonly G3MatrixRow[],
+  ctx: G3RunContext | readonly G3RunContext[],
+): G3MatrixWithRun {
+  const contexts = contextList(ctx)
+  const projections = rows.map((row) => projectRow(contexts, row))
+  const evidence = projections.map((item) => item.evidence)
+  const byId = new Map(projections.map((item) => [item.evidence.rowId, item]))
   const nextRows = rows.map((row) => {
-    const item = byId.get(row.id)
+    const projection = byId.get(row.id)
     const rule = G3_ROW_EVIDENCE_RULES[row.id]
-    if (!item || !item.decided || !rule) {
+    if (!projection || !projection.evidence.decided || !rule) {
       return row
     }
-    const observedSteps = ctx.steps.filter((step) => step.ok).map((step) => step.name)
-    const evaluations = evaluateGroups(ctx, rule, observedSteps)
-    const hit = evaluations.find((entry) => entry.decided) ?? evaluations[0]!
+    const hit = projection.hit
     // 状态：判定卡自带状态时以判定卡为准，否则取命中路径的状态。
-    const status = hit.verdict?.status ?? hit.group.status
+    const status = hit.evaluation.verdict?.status ?? hit.evaluation.group.status
     return {
       ...row,
       status,
-      evidence: hit.group.note,
-      note: item.note,
+      evidence: hit.evaluation.group.note,
+      note: projection.evidence.note,
       // 完全判定的行：接它的「跟进 Issue」不再是待办，保留会让人以为还有未完成的事；
       // 部分覆盖的行：跟进 Issue 指向缺口清单（例如 #246），必须留着。
-      followUpIssue: hit.group.followUpIssue,
+      followUpIssue: hit.evaluation.group.followUpIssue,
     }
   })
   return { rows: nextRows, evidence }
@@ -469,6 +613,18 @@ export interface G3RunSummary {
 
 /** 运行摘要的本地存储键。 */
 export const G3_RUN_SUMMARY_STORAGE_KEY = 'g3demo_last_run'
+
+/**
+ * 多次运行累计的本地存储键。
+ *
+ * 页面上有几段链（变更集 / 依赖 / 稳定化 / 阻断 / 模型），每段跑在自己的
+ * 隔离项目上。要让「整链证据」名副其实，就得把**每一段**的运行摘要都留住，
+ * 而不是只留最后一次。这一份就是它们的清单。
+ */
+export const G3_RUN_HISTORY_STORAGE_KEY = 'g3demo_run_history'
+
+/** 累计清单最多留多少段运行（再多就把最旧的丢掉）。 */
+export const G3_RUN_HISTORY_LIMIT = 12
 
 /** 浏览器本地存储的最小接口。 */
 export interface G3RunStorage {
@@ -541,6 +697,54 @@ export function contextFromSummary(summary: G3RunSummary): G3RunContext {
     stale: summary.stale,
     staleReason: summary.staleReason,
     verdicts: summary.verdicts,
+  }
+}
+
+/**
+ * 把多次运行的摘要还原成上下文列表。
+ *
+ * 判定仍在**单次运行内**评估（见 `evaluateRow`），这里只负责把清单摊平。
+ */
+export function contextsFromSummaries(
+  summaries: readonly G3RunSummary[],
+): G3RunContext[] {
+  return summaries.map((summary) => contextFromSummary(summary))
+}
+
+/**
+ * 累计清单：把一次新运行并进去。
+ *
+ * 同一运行标识只留一份（重放同一次运行不算新的一段），
+ * 超出上限时丢最旧的，避免本地存储无限增长。
+ */
+export function appendRunHistory(
+  history: readonly G3RunSummary[],
+  summary: G3RunSummary,
+): G3RunSummary[] {
+  const rest = history.filter((item) => item.runId !== summary.runId)
+  return [...rest, summary].slice(-G3_RUN_HISTORY_LIMIT)
+}
+
+/** 保存累计清单。 */
+export function saveRunHistory(storage: G3RunStorage, history: readonly G3RunSummary[]): void {
+  storage.setItem(G3_RUN_HISTORY_STORAGE_KEY, JSON.stringify(history))
+}
+
+/** 读取累计清单；坏掉的清单读成空数组，不静默当成「没跑过」。 */
+export function loadRunHistory(storage: G3RunStorage): G3RunSummary[] {
+  const raw = storage.getItem(G3_RUN_HISTORY_STORAGE_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is G3RunSummary =>
+        Boolean(item)
+        && typeof (item as G3RunSummary).runId === 'string'
+        && Array.isArray((item as G3RunSummary).steps),
+    )
+  } catch {
+    return []
   }
 }
 

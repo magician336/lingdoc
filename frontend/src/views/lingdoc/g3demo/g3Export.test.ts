@@ -5,6 +5,7 @@ import {
   G3_EVIDENCE_DIR,
   G3_EVIDENCE_FILE_PREFIX,
   buildAggregateEvidenceExport,
+  buildChainEvidenceExport,
   buildRunEvidenceExport,
   conclusionSourceOf,
   exportFileName,
@@ -265,4 +266,139 @@ test('本轮完全判定的行不再挂跟进 Issue；没判定的行保留缺�
   assert.equal(exportBody.ac_rows.find((row) => row.id === 'AC-G3-01')?.follow_up_issue, undefined)
   // AC-G3-03 没实跑（缺能力）：保留缺口清单链接。
   assert.equal(exportBody.ac_rows.find((row) => row.id === 'AC-G3-03')?.follow_up_issue, 246)
+})
+
+test('整链导出把多段运行并成一份，并逐段记账', () => {
+  const exportBody = buildChainEvidenceExport({
+    runs: [
+      {
+        runId: 'g3r-seg-1',
+        startedAt: '2026-10-20T00:00:00.000Z',
+        head: head('7f5fd8c'),
+        steps: [step('创建变更集')],
+        verdicts: [verdict('AC-G3-01')],
+        stale: false,
+      },
+      {
+        runId: 'g3r-seg-2',
+        startedAt: '2026-10-20T00:05:00.000Z',
+        head: head('7f5fd8c'),
+        steps: [step('稳定化')],
+        verdicts: [verdict('G3.1')],
+        stale: false,
+      },
+    ],
+    rows: G3_MATRIX_ROWS.map((row) => (
+      row.id === 'AC-G3-01'
+        ? { ...row, status: 'PASS' as const }
+        : row.id === 'G3.1'
+          ? { ...row, status: 'PASS' as const }
+          : row
+    )),
+    evidence: [
+      {
+        rowId: 'AC-G3-01',
+        covered: true,
+        decided: true,
+        observedSteps: ['创建变更集'],
+        missingSteps: [],
+        stale: false,
+        runId: 'g3r-seg-1',
+        note: '本轮实跑判定成立。',
+      },
+      {
+        rowId: 'G3.1',
+        covered: true,
+        decided: true,
+        observedSteps: ['稳定化'],
+        missingSteps: [],
+        stale: false,
+        runId: 'g3r-seg-2',
+        note: '本轮实跑判定成立。',
+      },
+    ],
+    generatedAt: '2026-10-20T00:10:00.000Z',
+    dateStamp: '20261020',
+  })
+
+  assert.equal(exportBody.runs?.length, 2)
+  assert.equal(exportBody.steps.length, 2)
+  assert.equal(exportBody.evidence_file, 'G3-验收台-8-整链证据-20261020.json')
+  assert.equal(exportBody.head_stale, false)
+  // 两段的判定各自绑到自己的运行上，不混读。
+  const ac01 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-01')
+  assert.equal(ac01?.status, 'PASS')
+  assert.equal(ac01?.run_id, 'g3r-seg-1')
+  assert.equal(ac01?.verdicts.length, 1)
+  assert.equal(ac01?.verdicts[0]?.run_id, 'g3r-seg-1')
+  const g31 = exportBody.ac_rows.find((row) => row.id === 'G3.1')
+  assert.equal(g31?.status, 'PASS')
+  assert.equal(g31?.run_id, 'g3r-seg-2')
+  assert.deepEqual(falsePassRows(exportBody.ac_rows), [])
+})
+
+test('整链导出：各段 head 不一致时整体标为过期', () => {
+  const exportBody = buildChainEvidenceExport({
+    runs: [
+      {
+        runId: 'g3r-a',
+        startedAt: '2026-10-20T00:00:00.000Z',
+        head: head('7f5fd8c'),
+        steps: [],
+        verdicts: [],
+        stale: false,
+      },
+      {
+        runId: 'g3r-b',
+        startedAt: '2026-10-20T00:05:00.000Z',
+        head: head('abcdef0'),
+        steps: [],
+        verdicts: [],
+        stale: false,
+      },
+    ],
+    generatedAt: '2026-10-20T00:10:00.000Z',
+    dateStamp: '20261020',
+  })
+  assert.equal(exportBody.head_stale, true)
+  assert.match(exportBody.head_stale_reason, /head 不一致/)
+  assert.equal(exportBody.ac_rows.every((row) => row.stale), true)
+})
+
+test('整链导出：判定不成立的行不会被写成 PASS', () => {
+  const exportBody = buildChainEvidenceExport({
+    runs: [
+      {
+        runId: 'g3r-x',
+        startedAt: '2026-10-20T00:00:00.000Z',
+        head: head('7f5fd8c'),
+        steps: [step('创建变更集')],
+        verdicts: [verdict('AC-G3-01', { holds: false })],
+        stale: false,
+      },
+    ],
+    rows: G3_MATRIX_ROWS.map((row) => (
+      row.id === 'AC-G3-01' ? { ...row, status: 'PASS' as const } : row
+    )),
+    evidence: [
+      {
+        rowId: 'AC-G3-01',
+        covered: true,
+        decided: true,
+        observedSteps: ['创建变更集'],
+        missingSteps: [],
+        stale: false,
+        runId: 'g3r-x',
+        note: '本轮实跑判定成立。',
+      },
+    ],
+    generatedAt: '2026-10-20T00:10:00.000Z',
+    dateStamp: '20261020',
+  })
+  const ac01 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-01')
+  assert.notEqual(ac01?.status, 'PASS', '判定不成立却被写成 PASS')
+  // 兜底把状态退回矩阵原状态，并在说明里写明原因。
+  assert.equal(ac01?.status, 'PASS (follow-up)')
+  assert.match(ac01?.note ?? '', /导出兜底/)
+  assert.deepEqual(falsePassRows(exportBody.ac_rows), [], '导出体里还有不该写 PASS 的行')
 })

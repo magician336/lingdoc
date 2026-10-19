@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-10-19T20:57:39.518Z",
+  "generated_at": "2026-10-19T22:16:58.140Z",
   "ticket": "G3 验收台-8：证据导出与实现缺口标注",
-  "run_id": "aggregate-20261020",
+  "run_id": "chain-20261020",
   "started_at": "2026-10-19T18:57:23.793Z",
   "head": {
     "commitId": "7f5fd8c",
@@ -18,15 +18,16 @@
     {
       "kind": "this_run",
       "label": "本次运行得出",
-      "note": "本次汇总所含的 7 次真实运行的结论：绑定各自运行标识与后端 head。",
-      "run_id": "aggregate-20261020",
+      "note": "本次会话所含的 7 段真实运行的结论：每段各跑在自己的隔离项目上，各带自己的运行标识与后端 head。",
+      "run_id": "chain-20261020",
       "head": "7f5fd8c",
       "steps": 384
     },
     {
       "kind": "historical_snapshot",
       "label": "历史快照 · 非本次运行",
-      "note": "历史快照的结论：跑在另一个 head 上，**不是本次运行的结果**；两者在页面与本导出体里分开列示，不得混读。"
+      "note": "历史快照的结论：跑在另一个 head 上，**不是本次运行的结果**；两者在页面与本导出体里分开列示，不得混读。",
+      "head": null
     }
   ],
   "evidence_sources": [
@@ -39,7 +40,48 @@
       "kind": "model_dependent",
       "non_deterministic": true,
       "depends_on": "real_model",
-      "note": "非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。"
+      "note": "非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。",
+      "runs": [
+        {
+          "runId": "2dbb9e31-bc43-4721-af26-af22a9192d02",
+          "sessionId": "e49c6cb1-425a-4692-9826-57d2aac84f8f",
+          "modelId": "lingdoc-chat-deepseek",
+          "runMode": "real",
+          "status": "completed",
+          "failureCode": "",
+          "durationMs": 2600,
+          "inputTokens": 795,
+          "outputTokens": 405,
+          "startedAt": "2026-10-19T20:53:41.0927087Z",
+          "finishedAt": "2026-10-19T20:53:43.672Z"
+        },
+        {
+          "runId": "83111a4f-2ff8-4c9b-b241-01befa3b88a2",
+          "sessionId": "d8df45e2-9afa-4de2-9f2a-2f6364a2603f",
+          "modelId": "lingdoc-chat-deepseek",
+          "runMode": "real",
+          "status": "stale",
+          "failureCode": "stale_context",
+          "durationMs": 4409,
+          "inputTokens": 579,
+          "outputTokens": 516,
+          "startedAt": "2026-10-19T20:53:45.1418997Z",
+          "finishedAt": "2026-10-19T20:53:49.527Z"
+        },
+        {
+          "runId": "877047bf-3769-43e4-9690-c9527ea96c5c",
+          "sessionId": "e49c6cb1-425a-4692-9826-57d2aac84f8f",
+          "modelId": "lingdoc-chat-deepseek",
+          "runMode": "real",
+          "status": "completed",
+          "failureCode": "",
+          "durationMs": 2831,
+          "inputTokens": 834,
+          "outputTokens": 592,
+          "startedAt": "2026-10-19T20:53:49.707442Z",
+          "finishedAt": "2026-10-19T20:53:52.516Z"
+        }
+      ]
     }
   ],
   "steps": [
@@ -6764,7 +6806,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：两个变更集基于同一个上下文修订，先应用的推进修订，后应用的被服务端按 409 拒掉并落为 STALE；被拒之后上下文修订条数与影响任务条数都没有变化，没有半完成写入（证据见左栏「稳定化-应用过期基线变更集」等步骤与「G3.1」判定卡）。｜同基线的第二个变更集在第一个应用后被服务端按 409 拒掉（code=version_conflict），该变更集落为 stale；被拒之后上下文修订条数仍为 2，影响任务条数仍为 4——没有半完成写入。",
+      "note": "本轮实跑判定成立：两个变更集基于同一个上下文修订，先应用的推进修订，后应用的被服务端按 409 拒掉并落为 STALE；被拒之后上下文修订条数与影响任务条数都没有变化，没有半完成写入（证据见左栏「稳定化-应用过期基线变更集」等步骤与「G3.1」判定卡）。｜同基线的第二个变更集在第一个应用后被服务端按 409 拒掉（code=version_conflict），该变更集落为 stale；被拒之后上下文修订条数仍为 2，影响任务条数仍为 4——没有半完成写入。（来自运行 g3r-mvfqeqhn-ed38a32c）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -6785,7 +6827,8 @@
           "run_id": "g3r-mvfqeqhn-ed38a32c"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqeqhn-ed38a32c"
     },
     {
       "id": "G3.2",
@@ -6795,7 +6838,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "本票只建立判据基准与骨架，该切片的完成判据尚未判定。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [],
@@ -6809,7 +6852,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "本票只建立判据基准与骨架，该切片的完成判据尚未判定。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [],
@@ -6823,7 +6866,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "本票只建立判据基准与骨架，该切片的完成判据尚未判定。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [],
@@ -6837,7 +6880,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "本票只建立判据基准与骨架，该切片的完成判据尚未判定。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [],
@@ -6847,11 +6890,11 @@
       "id": "G3.6",
       "name": "G3.6 稳定化",
       "criterion": "未关闭阻断项不能 STABILIZED 或导出",
-      "status": "PASS",
+      "status": "WARNING",
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：阻断影响未闭环时稳定化以 200 成功响应返回 BLOCKED 并带完整阻断原因，此时冻结交付快照被服务端拒掉（不能导出）；全部阻断影响闭环后稳定化返回 STABILIZED，交付检查通过、快照冻结、导出产物 verified 并按字节与哈希核对一致（证据见左栏与「G3.6」判定卡）。｜阻断影响未闭环时，稳定化以 200 成功响应返回 BLOCKED，并给出 7 条完整阻断原因（impact_task_open｜对象 0aafddd9-4bba-5a9e-854e-c9dada63a73b｜原因 REVIEW_REQUIRED；impact_task_open｜对象 42e55649-c7d6-5b77-84cb-7b134ae664a0｜原因 INVALIDATE_CONFIRMATION；impact_task_open｜对象 6a4dd4d4-32ea-580d-adee-181813d625d8｜原因 REVIEW_REQUIRED；impact_object_unconfirmed｜对象 aa90716c-8aaa-4833-8c10-61f005eef350｜原因 受影响对象的当前确认已失效，需重新确认；impact_object_unconfirmed｜对象 ffd6bafc-c6bd-4323-b1ac-6fd2509364ba｜原因 受影响对象的当前确认已失效，需重新确认；rule:chapter-confirmed｜对象 chapter/method｜原因 required chapter is not confirmed；rule:chapter-confirmed｜对象 chapter/question｜原因 required chapter is not confirmed）；此时冻结交付快照被服务端按 422 （code=context_unstable）拒掉；全部阻断影响闭环后再次稳定化返回 STABILIZED（检查时刻 2026-10-19T20:53:35.1608251Z）；以交付检查回执闭环重算影响之后再次稳定化仍为 STABILIZED。",
+      "note": "本轮实跑的是**已覆盖的三类闭环动作**：阻断影响未闭环时稳定化以 200 成功响应返回 BLOCKED 并带完整阻断原因，此时冻结交付快照被服务端拒掉（不能导出）；全部阻断影响闭环后稳定化返回 STABILIZED，交付检查通过、快照冻结、导出产物 verified 并按字节与哈希核对一致（证据见左栏与「G3.6」判定卡）。**未覆盖那类**：`RETRIEVE_CANDIDATES` 类影响要求的真实调研回执在本机不可实跑（`web_search_providers` 为空表，见缺口清单 #246），闭环证据只覆盖 INVALIDATE_CONFIRMATION / REVIEW_REQUIRED / RECOMPUTE 三类动作。按缺口清单的要求，这一项在环境限制解除前只能记环境限制（WARNING）并写明缺什么，不得用其他回执冒充，因此状态记为 WARNING。｜阻断影响未闭环时，稳定化以 200 成功响应返回 BLOCKED，并给出 7 条完整阻断原因（impact_task_open｜对象 0aafddd9-4bba-5a9e-854e-c9dada63a73b｜原因 REVIEW_REQUIRED；impact_task_open｜对象 42e55649-c7d6-5b77-84cb-7b134ae664a0｜原因 INVALIDATE_CONFIRMATION；impact_task_open｜对象 6a4dd4d4-32ea-580d-adee-181813d625d8｜原因 REVIEW_REQUIRED；impact_object_unconfirmed｜对象 aa90716c-8aaa-4833-8c10-61f005eef350｜原因 受影响对象的当前确认已失效，需重新确认；impact_object_unconfirmed｜对象 ffd6bafc-c6bd-4323-b1ac-6fd2509364ba｜原因 受影响对象的当前确认已失效，需重新确认；rule:chapter-confirmed｜对象 chapter/method｜原因 required chapter is not confirmed；rule:chapter-confirmed｜对象 chapter/question｜原因 required chapter is not confirmed）；此时冻结交付快照被服务端按 422 （code=context_unstable）拒掉；全部阻断影响闭环后再次稳定化返回 STABILIZED（检查时刻 2026-10-19T20:53:35.1608251Z）；以交付检查回执闭环重算影响之后再次稳定化仍为 STABILIZED。（来自运行 g3r-mvfqeqhn-ed38a32c）",
       "gap_ids": [],
       "limiting_gap_ids": [
         "G3-GAP-08"
@@ -6879,17 +6922,18 @@
           "run_id": "g3r-mvfqeqhn-ed38a32c"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqeqhn-ed38a32c"
     },
     {
       "id": "G3.7",
       "name": "G3.7 影响中心",
       "criterion": "用户能看见影响理由、责任人和下一步动作",
-      "status": "TODO",
+      "status": "NOT RUN",
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "本票只建立判据基准与骨架，该切片的完成判据尚未判定。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "gap_ids": [
         "G3-GAP-06",
         "G3-GAP-07"
@@ -6906,7 +6950,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：Owner 应用后推进上下文修订，受影响章节的确认失效并进入待复核，复写后按当前规格修订与当前章节版本重新确认（证据见左栏与「变更集生命周期」判定卡）。｜Owner 应用后上下文修订 1 → 2，受影响章节的当前确认失效并进入待复核，复写后按新规格修订（2）与当前章节版本重新确认。",
+      "note": "本轮实跑判定成立：Owner 应用后推进上下文修订，受影响章节的确认失效并进入待复核，复写后按当前规格修订与当前章节版本重新确认（证据见左栏与「变更集生命周期」判定卡）。｜Owner 应用后上下文修订 1 → 2，受影响章节的当前确认失效并进入待复核，复写后按新规格修订（2）与当前章节版本重新确认。（来自运行 g3r-mvfqemgp-1730b823）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -6927,7 +6971,8 @@
           "run_id": "g3r-mvfqemgp-1730b823"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqemgp-1730b823"
     },
     {
       "id": "AC-G3-02",
@@ -6937,7 +6982,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：两个变更集同基于一个上下文修订，先应用的推进修订，后应用的返回 409 并落为 STALE，未产生新上下文修订、也未产生影响任务。｜两个变更集同基于上下文修订 1；先应用的推进到 2，后应用的返回 409 并落为 STALE（stale_reason=spec_revision_changed），未产生新上下文修订，也未产生影响任务。",
+      "note": "本轮实跑判定成立：两个变更集同基于一个上下文修订，先应用的推进修订，后应用的返回 409 并落为 STALE，未产生新上下文修订、也未产生影响任务。｜两个变更集同基于上下文修订 1；先应用的推进到 2，后应用的返回 409 并落为 STALE（stale_reason=spec_revision_changed），未产生新上下文修订，也未产生影响任务。（来自运行 g3r-mvfqemgp-1730b823）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -6958,7 +7003,8 @@
           "run_id": "g3r-mvfqemgp-1730b823"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqemgp-1730b823"
     },
     {
       "id": "AC-G3-03",
@@ -6968,7 +7014,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "需要任务 / 审计写入失败的故障注入能力，产品 API 无此开关；当前仅由后端集成测试覆盖。解除条件与 Spec 位置见缺口清单 #246。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "follow_up_issue": 246,
       "gap_ids": [
         "G3-GAP-01"
@@ -6981,11 +7027,12 @@
       "id": "AC-G3-04",
       "name": "局部影响",
       "criterion": "变更只依赖 Ch2 和 RouteNode.R7。Ch1、无关 EvidenceCard 和无关路线节点不产生失效或复核任务，并能在预览中显示未受影响理由。",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：未列入受影响范围的章节不在影响评估的对象与影响里，没有为它产生影响任务，其章节版本的确认标记未被本次变更集置为失效；未受影响理由按响应如实呈现（服务端未给出理由时标注「服务端未提供未受影响理由」）。｜未列入受影响范围的 question 章节：影响评估的 objects / impacts 与变更集 impacts 都不含它，也没有为它产生影响任务，其章节版本的确认标记仍为 true（本次变更集未使其失效）。未受影响理由：服务端未提供未受影响理由；影响评估的 objects / impacts 与变更集 impacts 都没有 question 章节；没有为它产生影响任务；其章节版本的确认标记仍为 true（本次变更集未使其失效）",
+      "note": "本轮实跑的是**「无关对象不产生失效或复核任务」那半段**：未列入受影响范围的章节不在影响评估的对象与影响里，没有为它产生影响任务，其章节版本的确认标记未被本次变更集置为失效。**未成立那半段**：判据还要求「能在预览中显示未受影响理由」，而本轮服务端**没有给出**未受影响理由（`unaffected_reason.server_reason` 为 null），预览只能如实标注「服务端未提供未受影响理由」——这半段没有可观测的落点（缺口清单 #246）。因此本行不是完全判定，状态记为 PASS (follow-up)。｜未列入受影响范围的 question 章节：影响评估的 objects / impacts 与变更集 impacts 都不含它，也没有为它产生影响任务，其章节版本的确认标记仍为 true（本次变更集未使其失效）。未受影响理由：服务端未提供未受影响理由；影响评估的 objects / impacts 与变更集 impacts 都没有 question 章节；没有为它产生影响任务；其章节版本的确认标记仍为 true（本次变更集未使其失效）（来自运行 g3r-mvfqemgp-1730b823）",
+      "follow_up_issue": 246,
       "gap_ids": [],
       "limiting_gap_ids": [
         "G3-GAP-06",
@@ -7007,7 +7054,8 @@
           "run_id": "g3r-mvfqemgp-1730b823"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqemgp-1730b823"
     },
     {
       "id": "AC-G3-05",
@@ -7017,7 +7065,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：同一变更集里两条来源边指向同一目标、动作相同，服务端把它们合并成一条逻辑 ImpactTask，causes 保留两条上游原因；重复应用同一变更集后影响任务数量不变，没有产生第二条任务。｜同一目标（ChapterVersion/d64e137b-c350-43d2-97f3-c2e3d64a8aa0）的同一动作被合并成一条逻辑 ImpactTask，causes 保留 2 条上游原因（ProjectSpec/f1813ac4-56fd-4972-b5d2-707925a87620、TemplateCopy/template-demo）；重复应用同一变更集后影响任务数量仍为 3，没有产生第二条任务。",
+      "note": "本轮实跑判定成立：同一变更集里两条来源边指向同一目标、动作相同，服务端把它们合并成一条逻辑 ImpactTask，causes 保留两条上游原因；重复应用同一变更集后影响任务数量不变，没有产生第二条任务。｜同一目标（ChapterVersion/d64e137b-c350-43d2-97f3-c2e3d64a8aa0）的同一动作被合并成一条逻辑 ImpactTask，causes 保留 2 条上游原因（ProjectSpec/f1813ac4-56fd-4972-b5d2-707925a87620、TemplateCopy/template-demo）；重复应用同一变更集后影响任务数量仍为 3，没有产生第二条任务。（来自运行 g3r-mvfqeok7-626ce960）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -7036,7 +7084,8 @@
           "run_id": "g3r-mvfqeok7-626ce960"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqeok7-626ce960"
     },
     {
       "id": "AC-G3-06",
@@ -7046,7 +7095,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮由**真实模型**驱动（非确定性，结论不保证逐字复现）：revision 4 的生成运行在途时，变更集把项目推进到 revision 5；旧运行返回后只能落成**历史候选**，新修订的章节、确认与交付快照在返回前后一致。模型运行标识与耗时见判定卡；结论依赖真实模型，因此状态记为 WARNING，与确定性结论分列展示。｜模型运行标识 83111a4f-2ff8-4c9b-b241-01befa3b88a2（模型 lingdoc-chat-deepseek，耗时 4409ms）：运行在 revision 4 上发起，期间变更集把项目推进到 revision 5；旧运行返回后状态 stale（失败码 stale_context），结果只存成历史候选 2bb7c63d-8a98-493b-8587-3840821d22e3（状态 awaiting_consent）；稳定化 STABILIZED、交付快照 snapshot-824d287aae78c2eb447003de2d6d9dff、人工闭环任务 1 条；新修订的章节版本 question:d26ecec2-78af-44e9-8365-e724390825e2、method:763ed31f-3c08-46ab-a36c-c747db2c456d、当前确认 question:beab24df-e9fe-4b34-8d24-f92ac54ee419、method:396b00e6-29f7-4af8-b9cb-40efac9442ea、交付快照 1 份在返回前后一致。",
+      "note": "本轮由**真实模型**驱动（非确定性，结论不保证逐字复现）：revision 4 的生成运行在途时，变更集把项目推进到 revision 5；旧运行返回后只能落成**历史候选**，新修订的章节、确认与交付快照在返回前后一致。模型运行标识与耗时见判定卡；结论依赖真实模型，因此状态记为 WARNING，与确定性结论分列展示。｜模型运行标识 83111a4f-2ff8-4c9b-b241-01befa3b88a2（模型 lingdoc-chat-deepseek，耗时 4409ms）：运行在 revision 4 上发起，期间变更集把项目推进到 revision 5；旧运行返回后状态 stale（失败码 stale_context），结果只存成历史候选 2bb7c63d-8a98-493b-8587-3840821d22e3（状态 awaiting_consent）；稳定化 STABILIZED、交付快照 snapshot-824d287aae78c2eb447003de2d6d9dff、人工闭环任务 1 条；新修订的章节版本 question:d26ecec2-78af-44e9-8365-e724390825e2、method:763ed31f-3c08-46ab-a36c-c747db2c456d、当前确认 question:beab24df-e9fe-4b34-8d24-f92ac54ee419、method:396b00e6-29f7-4af8-b9cb-40efac9442ea、交付快照 1 份在返回前后一致。（来自运行 g3r-mvfqewnl-8fdef9f6）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -7066,7 +7115,8 @@
           "run_id": "g3r-mvfqewnl-8fdef9f6"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqewnl-8fdef9f6"
     },
     {
       "id": "AC-G3-07",
@@ -7076,7 +7126,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑的是**人工复核那半段**：研究主张上的复核任务缺少 human_decision 时被服务端拒掉（422 invalid_state），带上人工复核决策之后才允许闭环——异步作业成功关不掉人工复核任务。**未覆盖那半段**：「证据重检返回新候选」需要真实模型，造证据卡要走模型侧（见 #243）；因此本行不是完全判定，状态记为 PASS (follow-up)。｜复核任务（REVIEW_REQUIRED / ResearchClaim）缺少人工复核决策时被服务端按 HTTP 422 拒掉（code=invalid_state）；带上 human_decision=reviewed 之后才允许闭环（HTTP 200）——异步作业成功关不掉人工复核任务。**未覆盖那半段**：「证据重检返回新候选」需要真实模型，造证据卡要走模型侧（见 #243）。",
+      "note": "本轮实跑的是**人工复核那半段**：研究主张上的复核任务缺少 human_decision 时被服务端拒掉（422 invalid_state），带上人工复核决策之后才允许闭环——异步作业成功关不掉人工复核任务。**未覆盖那半段**：「证据重检返回新候选」需要真实模型，造证据卡要走模型侧（见 #243）；因此本行不是完全判定，状态记为 PASS (follow-up)。｜复核任务（REVIEW_REQUIRED / ResearchClaim）缺少人工复核决策时被服务端按 HTTP 422 拒掉（code=invalid_state）；带上 human_decision=reviewed 之后才允许闭环（HTTP 200）——异步作业成功关不掉人工复核任务。**未覆盖那半段**：「证据重检返回新候选」需要真实模型，造证据卡要走模型侧（见 #243）。（来自运行 g3r-mvfqetqa-6bcab2dc）",
       "follow_up_issue": 243,
       "gap_ids": [],
       "limiting_gap_ids": [],
@@ -7095,7 +7145,8 @@
           "run_id": "g3r-mvfqetqa-6bcab2dc"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqetqa-6bcab2dc"
     },
     {
       "id": "AC-G3-08",
@@ -7105,7 +7156,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "技术路线节点只有 GET /route-nodes，没有写端点，造不出「必需节点缺失」与「版本落后」。解除条件与 Spec 位置见缺口清单 #246。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "follow_up_issue": 246,
       "gap_ids": [
         "G3-GAP-02"
@@ -7122,7 +7173,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立（部分覆盖）：规则问题被人工处置之后，**对应的 ImpactTask 仍为 OPEN**、稳定化仍为 BLOCKED，项目仍然不能稳定——「规则问题与任务分离」这半段成立。**未实现那半段**：「问题不再阻断当次求值」在当前后端上不成立（人工处置只是工作流元数据，求值结论不变）；且对阻断级规则问题调用「接受不处理」（dismiss）当前返回 500，缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。｜规则问题 vi-bbbdc71929f14f16d33b75de 被人工处置（HTTP 201，问题已带上处置）之后，对应的 ImpactTask 仍为 OPEN，稳定化仍为 BLOCKED（impact_task_open、impact_task_open、impact_object_unconfirmed、rule:chapter-confirmed、rule:chapter-confirmed）——项目仍不能稳定。**未成立那半段**：「问题不再阻断当次求值」在当前后端上不成立：处置后重检的结论仍为 blocked（处置前 blocked），服务端把人工处置当工作流元数据，不改求值结论；且对阻断级规则问题调用「接受不处理」（dismiss）本轮返回 HTTP 500（code=internal_error）。",
+      "note": "本轮实跑判定成立（部分覆盖）：规则问题被人工处置之后，**对应的 ImpactTask 仍为 OPEN**、稳定化仍为 BLOCKED，项目仍然不能稳定——「规则问题与任务分离」这半段成立。**未实现那半段**：「问题不再阻断当次求值」在当前后端上不成立（人工处置只是工作流元数据，求值结论不变）；且对阻断级规则问题调用「接受不处理」（dismiss）当前返回 500，缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。｜规则问题 vi-bbbdc71929f14f16d33b75de 被人工处置（HTTP 201，问题已带上处置）之后，对应的 ImpactTask 仍为 OPEN，稳定化仍为 BLOCKED（impact_task_open、impact_task_open、impact_object_unconfirmed、rule:chapter-confirmed、rule:chapter-confirmed）——项目仍不能稳定。**未成立那半段**：「问题不再阻断当次求值」在当前后端上不成立：处置后重检的结论仍为 blocked（处置前 blocked），服务端把人工处置当工作流元数据，不改求值结论；且对阻断级规则问题调用「接受不处理」（dismiss）本轮返回 HTTP 500（code=internal_error）。（来自运行 g3r-mvfqetqa-6bcab2dc）",
       "follow_up_issue": 246,
       "gap_ids": [
         "G3-GAP-09",
@@ -7148,7 +7199,8 @@
           "run_id": "g3r-mvfqetqa-6bcab2dc"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqetqa-6bcab2dc"
     },
     {
       "id": "AC-G3-10",
@@ -7158,7 +7210,7 @@
       "source": "historical_snapshot",
       "source_label": "历史快照 · 非本次运行",
       "decided": false,
-      "note": "本项在本票未实跑；真实服务验收由独立 GitHub Issue #239 承接，未写成已实测。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "follow_up_issue": 239,
       "gap_ids": [],
       "limiting_gap_ids": [],
@@ -7173,7 +7225,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：撤销经由新建的逆向变更集完成（原变更集历史仍可读），逆向变更集重新评估后应用，项目指针没有静默回退。｜撤销经由新建逆向变更集 7e961e34-91c5-4979-ba97-2e4f8473e57e 完成（reverses_change_set_id=bc7cde9e-d3d0-4df5-bd28-913b9714212b，基于当前修订 2），原变更集 bc7cde9e-d3d0-4df5-bd28-913b9714212b 仍可读（status=applied），逆向变更集重新评估后应用，项目指针没有静默回退。",
+      "note": "本轮实跑判定成立：撤销经由新建的逆向变更集完成（原变更集历史仍可读），逆向变更集重新评估后应用，项目指针没有静默回退。｜撤销经由新建逆向变更集 7e961e34-91c5-4979-ba97-2e4f8473e57e 完成（reverses_change_set_id=bc7cde9e-d3d0-4df5-bd28-913b9714212b，基于当前修订 2），原变更集 bc7cde9e-d3d0-4df5-bd28-913b9714212b 仍可读（status=applied），逆向变更集重新评估后应用，项目指针没有静默回退。（来自运行 g3r-mvfqemgp-1730b823）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -7192,17 +7244,19 @@
           "run_id": "g3r-mvfqemgp-1730b823"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqemgp-1730b823"
     },
     {
       "id": "AC-G3-12",
       "name": "稳定化重新读取",
       "criterion": "所有任务页面显示已完成，但其中一个目标对象后来被新版本替换。稳定化聚合器重新读取后发现版本不匹配，保持 BLOCKED 并创建/重投对应任务。",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现版本不匹配，这一版修订**没有被放行**（服务端在重新读取闭环证据时按 409 version_conflict 拒掉这一次稳定化）；随后按新基线重投了对应影响任务，重投任务闭环之后稳定化转为已稳定。｜目标对象在任务完成之后被新版本替换，稳定化重新读取时发现版本不匹配，被服务端按 HTTP 409 拒掉（code=version_conflict）——这一版修订没有被放行；随后重投了 2 条对应任务（c02139c4-30a8-58a9-91ca-2b6bbae7812e、45b68189-107b-5257-a8b0-cf88afdbde39），闭环之后稳定化转为 STABILIZED。",
+      "note": "本轮实跑的是**「这一版没有被放行」那半段**：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现版本不匹配，这一次稳定化**没有被放行**（服务端在重新读取闭环证据时按 409 version_conflict 拒掉）。**未成立那半段**：判据还要求「保持 BLOCKED 并创建 / 重投对应任务」，而当前实现在预读闭环证据阶段就 409，`closure_stale` 分支不可达——这半段没有可观测的落点（缺口清单 #246）。本轮改走「按新基线重投变更集 → 重投任务闭环 → 再次稳定化」才回到 STABILIZED，那是**替代路径**、不是判据要求的那条。因此本行不是完全判定，状态记为 PASS (follow-up)。｜目标对象在任务完成之后被新版本替换，稳定化重新读取时发现版本不匹配，被服务端按 HTTP 409 拒掉（code=version_conflict）——这一版修订没有被放行；随后重投了 2 条对应任务（c02139c4-30a8-58a9-91ca-2b6bbae7812e、45b68189-107b-5257-a8b0-cf88afdbde39），闭环之后稳定化转为 STABILIZED。（来自运行 g3r-mvfqetqa-6bcab2dc）",
+      "follow_up_issue": 246,
       "gap_ids": [],
       "limiting_gap_ids": [
         "G3-GAP-11"
@@ -7224,7 +7278,8 @@
           "run_id": "g3r-mvfqetqa-6bcab2dc"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqetqa-6bcab2dc"
     },
     {
       "id": "AC-G3-13",
@@ -7234,7 +7289,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑判定成立：建议边（status=suggested）只产生「可能受影响」的影响，没有为它的目标章节产生影响任务，该章节的版本级确认标记仍为 true——建议边不单独使章节失效，也不构成导出阻断项。｜建议边（status=suggested）只产生 1 条「可能受影响」影响，没有为它的目标章节产生任何影响任务（任务数=0）；该章节的版本级确认标记仍为 true，即建议边没有单独使章节失效。没有未闭环的阻断任务，它就不构成导出阻断项。",
+      "note": "本轮实跑判定成立：建议边（status=suggested）只产生「可能受影响」的影响，没有为它的目标章节产生影响任务，该章节的版本级确认标记仍为 true——建议边不单独使章节失效，也不构成导出阻断项。｜建议边（status=suggested）只产生 1 条「可能受影响」影响，没有为它的目标章节产生任何影响任务（任务数=0）；该章节的版本级确认标记仍为 true，即建议边没有单独使章节失效。没有未闭环的阻断任务，它就不构成导出阻断项。（来自运行 g3r-mvfqeok7-626ce960）",
       "gap_ids": [],
       "limiting_gap_ids": [],
       "verdicts": [
@@ -7253,7 +7308,8 @@
           "run_id": "g3r-mvfqeok7-626ce960"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqeok7-626ce960"
     },
     {
       "id": "AC-G3-14",
@@ -7263,7 +7319,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑的是**生成那半段**：助手变更草稿已生成（status=draft）。**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现（工作台那个分组是影响解析结果，不可互替），缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。｜实跑那半段成立：助手草稿已生成（change_set_id=895f02dd-dcc6-410f-b1e6-fe39fd06dcc5 · status=draft）。**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现（工作台那个分组是影响解析结果，不可互替），缺口清单见 #246。 模型运行标识 2dbb9e31-bc43-4721-af26-af22a9192d02（模型 lingdoc-chat-deepseek，耗时 2600ms）：助手把自然语言整理成变更草稿 bd3a954a-32e3-46da-b584-a55ff554a831，状态 draft；上下文修订 1 → 1（没有推进，没有应用变更）；助手触达的应用/导出/任务处置端点 0 个；已关闭的人工任务 0 条；助手登记过的动作 create_change_set:completed（没有 apply_change_set / export）；交付检查 passed（导出闸门没有被助手放行）。 未实现那半段：助手草稿里的「确定受影响 / 可能受影响」**解释分组**没有实现（模型回复里成组出现=true，工作台那个分组是影响解析结果，不可互替），缺口清单见 #246。",
+      "note": "本轮实跑的是**生成那半段**：助手变更草稿已生成（status=draft）。**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现（工作台那个分组是影响解析结果，不可互替），缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。｜实跑那半段成立：助手草稿已生成（change_set_id=895f02dd-dcc6-410f-b1e6-fe39fd06dcc5 · status=draft）。**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现（工作台那个分组是影响解析结果，不可互替），缺口清单见 #246。（来自运行 g3r-mvfqeok7-626ce960）",
       "follow_up_issue": 246,
       "gap_ids": [
         "G3-GAP-04"
@@ -7281,26 +7337,10 @@
           ],
           "model_dependent": false,
           "run_id": "g3r-mvfqeok7-626ce960"
-        },
-        {
-          "id": "AC-G3-14",
-          "title": "AC-G3-14 影响助手（模型侧）",
-          "holds": true,
-          "detail": "模型运行标识 2dbb9e31-bc43-4721-af26-af22a9192d02（模型 lingdoc-chat-deepseek，耗时 2600ms）：助手把自然语言整理成变更草稿 bd3a954a-32e3-46da-b584-a55ff554a831，状态 draft；上下文修订 1 → 1（没有推进，没有应用变更）；助手触达的应用/导出/任务处置端点 0 个；已关闭的人工任务 0 条；助手登记过的动作 create_change_set:completed（没有 apply_change_set / export）；交付检查 passed（导出闸门没有被助手放行）。 未实现那半段：助手草稿里的「确定受影响 / 可能受影响」**解释分组**没有实现（模型回复里成组出现=true，工作台那个分组是影响解析结果，不可互替），缺口清单见 #246。",
-          "evidence": [
-            "POST /api/v1/lingdoc/projects/{projectId}/agents/task_assistant/sessions → 会话 e49c6cb1-425a-4692-9826-57d2aac84f8f",
-            "POST /api/v1/lingdoc/projects/{projectId}/agent-sessions/{sessionId}/turns → 轮次 2dbb9e31-bc43-4721-af26-af22a9192d02 · 模型 lingdoc-chat-deepseek · 耗时 2600ms",
-            "POST /api/v1/lingdoc/projects/{projectId}/action-proposals → 提案 64092504-1f20-4ec2-9e49-19aa2eae415a · 状态 completed",
-            "POST /api/v1/lingdoc/projects/{projectId}/action-proposals/{proposalId}/confirm → 提案状态 completed",
-            "GET /api/v1/lingdoc/projects/{projectId}/change-sets/{draftId} → 草稿状态 draft",
-            "否定性证据：助手触达禁用端点 0 个 · 已关闭任务 0 条 · 助手登记的动作 create_change_set:completed · 交付检查 passed"
-          ],
-          "status": "WARNING",
-          "model_dependent": true,
-          "run_id": "g3r-mvfqewnl-8fdef9f6"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqeok7-626ce960"
     },
     {
       "id": "AC-G3-15",
@@ -7310,7 +7350,7 @@
       "source": "this_run",
       "source_label": "本次运行得出",
       "decided": true,
-      "note": "本轮实跑的是**三态裁决那半段**：确认 / 修改 / 拒绝都跑通，被拒绝的候选在同一版本里再投一次不会新建边。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。｜实跑那半段成立：确认（confirmed）、修改（confirmed，关系 candidate_b_corrected）、拒绝（rejected）三态都跑通；被拒绝的候选在同一版本里再投一次，服务端返回的是同一条边（edge_id=d5b4da5d-ef6a-4c39-ac37-f42cf926d158），没有新建。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246。 模型运行标识 877047bf-3769-43e4-9690-c9527ea96c5c（模型 lingdoc-chat-deepseek，耗时 2831ms）一次性提出 3 条候选依赖；确认 confirmed、修改 confirmed（旧边 template_shapes_chapter）、拒绝 rejected；被拒候选重投返回同一条边 3b044f69-d5a6-434a-8c03-809dc381da5e（新建=false）；依赖图现有边 3 条。 未实现那半段：候选的「依据片段 / 建议理由」只落在依赖边的 reason 字段里，没有独立的结构化展示位，缺口清单见 #246。",
+      "note": "本轮实跑的是**三态裁决那半段**：确认 / 修改 / 拒绝都跑通，被拒绝的候选在同一版本里再投一次不会新建边。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246；因此本行不是完全判定，状态记为 PASS (follow-up)。｜实跑那半段成立：确认（confirmed）、修改（confirmed，关系 candidate_b_corrected）、拒绝（rejected）三态都跑通；被拒绝的候选在同一版本里再投一次，服务端返回的是同一条边（edge_id=d5b4da5d-ef6a-4c39-ac37-f42cf926d158），没有新建。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246。（来自运行 g3r-mvfqeok7-626ce960）",
       "follow_up_issue": 246,
       "gap_ids": [
         "G3-GAP-05"
@@ -7331,24 +7371,10 @@
           ],
           "model_dependent": false,
           "run_id": "g3r-mvfqeok7-626ce960"
-        },
-        {
-          "id": "AC-G3-15",
-          "title": "AC-G3-15 依赖候选（模型侧）",
-          "holds": true,
-          "detail": "模型运行标识 877047bf-3769-43e4-9690-c9527ea96c5c（模型 lingdoc-chat-deepseek，耗时 2831ms）一次性提出 3 条候选依赖；确认 confirmed、修改 confirmed（旧边 template_shapes_chapter）、拒绝 rejected；被拒候选重投返回同一条边 3b044f69-d5a6-434a-8c03-809dc381da5e（新建=false）；依赖图现有边 3 条。 未实现那半段：候选的「依据片段 / 建议理由」只落在依赖边的 reason 字段里，没有独立的结构化展示位，缺口清单见 #246。",
-          "evidence": [
-            "POST /api/v1/lingdoc/projects/{projectId}/agent-sessions/{sessionId}/turns → 轮次 877047bf-3769-43e4-9690-c9527ea96c5c · 模型 lingdoc-chat-deepseek · 耗时 2831ms · 候选 3 条",
-            "POST /api/v1/lingdoc/projects/{projectId}/dependencies → 登记模型候选边",
-            "POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → 确认 confirmed · 修改 confirmed · 拒绝 rejected",
-            "POST /api/v1/lingdoc/projects/{projectId}/dependencies → 重投被拒候选 → 边 3b044f69-d5a6-434a-8c03-809dc381da5e · 新建=false"
-          ],
-          "status": "WARNING",
-          "model_dependent": true,
-          "run_id": "g3r-mvfqewnl-8fdef9f6"
         }
       ],
-      "stale": false
+      "stale": false,
+      "run_id": "g3r-mvfqeok7-626ce960"
     },
     {
       "id": "AC-G3-16",
@@ -7358,7 +7384,7 @@
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
-      "note": "同样缺技术路线节点的写入与取消未冻结编辑端点。解除条件与 Spec 位置见缺口清单 #246。",
+      "note": "本轮未覆盖该行：前置链的证据不构成这一条的判据证据，状态保持原样。",
       "follow_up_issue": 246,
       "gap_ids": [
         "G3-GAP-03"
@@ -7906,8 +7932,8 @@
   ],
   "runs": [
     {
-      "file": "G3-验收台-2-复用账号证据-20261020.json",
-      "ticket": "G3-验收台-2-复用账号证据-20261020.json",
+      "file": "本次运行（g3r-mvfm9d8x-79d11b88）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfm9d8x-79d11b88",
       "started_at": "2026-10-19T18:57:23.793Z",
       "head": {
@@ -7923,8 +7949,8 @@
       "model_dependent": false
     },
     {
-      "file": "G3-验收台-2-真实链路证据-20261020.json",
-      "ticket": "G3-验收台-2-真实链路证据-20261020.json",
+      "file": "本次运行（g3r-mvfqelp2-dab7f17b）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfqelp2-dab7f17b",
       "started_at": "2026-10-19T20:53:26.487Z",
       "head": {
@@ -7940,8 +7966,8 @@
       "model_dependent": false
     },
     {
-      "file": "G3-验收台-3-变更集生命周期证据-20261020.json",
-      "ticket": "G3 验收台-3：变更集生命周期与并发保护",
+      "file": "本次运行（g3r-mvfqemgp-1730b823）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfqemgp-1730b823",
       "started_at": "2026-10-19T20:53:27.481Z",
       "head": {
@@ -7962,8 +7988,8 @@
       "model_dependent": false
     },
     {
-      "file": "G3-验收台-4-依赖图与影响任务证据-20261020.json",
-      "ticket": "G3 验收台-4：依赖图、影响任务与影响预览分组",
+      "file": "本次运行（g3r-mvfqeok7-626ce960）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfqeok7-626ce960",
       "started_at": "2026-10-19T20:53:30.199Z",
       "head": {
@@ -7985,8 +8011,8 @@
       "model_dependent": false
     },
     {
-      "file": "G3-验收台-5-稳定化与交付闭环证据-20261020.json",
-      "ticket": "G3 验收台-5：稳定化与交付闭环",
+      "file": "本次运行（g3r-mvfqeqhn-ed38a32c）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfqeqhn-ed38a32c",
       "started_at": "2026-10-19T20:53:32.699Z",
       "head": {
@@ -8006,8 +8032,8 @@
       "model_dependent": false
     },
     {
-      "file": "G3-验收台-6-阻断与恢复路径证据-20261020.json",
-      "ticket": "G3 验收台-6：稳定化阻断与恢复路径",
+      "file": "本次运行（g3r-mvfqetqa-6bcab2dc）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfqetqa-6bcab2dc",
       "started_at": "2026-10-19T20:53:36.899Z",
       "head": {
@@ -8030,8 +8056,8 @@
       "model_dependent": false
     },
     {
-      "file": "G3-验收台-7-真实模型验收证据-20261020.json",
-      "ticket": "G3 验收台-7：依赖真实模型的验收项",
+      "file": "本次运行（g3r-mvfqewnl-8fdef9f6）",
+      "ticket": "G3 验收台-8：证据导出与实现缺口标注",
       "run_id": "g3r-mvfqewnl-8fdef9f6",
       "started_at": "2026-10-19T20:53:40.690Z",
       "head": {

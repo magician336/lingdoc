@@ -77,6 +77,13 @@ export interface G3ExportRow {
   verdicts: G3ExportVerdict[]
   /** head 变化后该行结论是否过期。 */
   stale: boolean
+  /**
+   * 判定这一行的运行标识。
+   *
+   * 页面上有几段链，各跑在自己的隔离项目上；这一行说清**是哪一次运行**判的，
+   * 读者才不会把不同项目的步骤混成一条链。
+   */
+  run_id?: string
 }
 
 /** 导出体里的一条实现缺口。 */
@@ -137,6 +144,41 @@ export interface G3ExportRun {
   model_dependent: boolean
 }
 
+/**
+ * 整链导出体里的一段运行。
+ *
+ * 页面上有几段链（变更集 / 依赖 / 稳定化 / 阻断 / 模型），**每一段**跑在自己的
+ * 隔离项目上、带着自己的运行标识与 head。整链证据要把这些段**并成一份**，
+ * 所以每一段都得单独记一笔：它有几步、有哪些判定、跑在哪个 head 上。
+ */
+export interface G3ChainRunInput {
+  runId: string
+  startedAt: string
+  head: G3BackendHead | null
+  steps: G3StepRecord[]
+  verdicts: G3RunVerdict[]
+  /** 这一段的 head 已变化，结论过期。 */
+  stale: boolean
+  staleReason?: string
+  /** 这一段是否依赖真实模型（非确定性）。 */
+  modelDependent?: boolean
+}
+
+/** 整链导出体的输入。 */
+export interface G3ChainExportInput {
+  runs: readonly G3ChainRunInput[]
+  /** 投影后的矩阵行（状态与说明已按多次运行判定）。 */
+  rows?: readonly G3MatrixRow[]
+  /** 投影后的逐行证据。 */
+  evidence?: readonly G3RowEvidence[]
+  /** 模型调用记录（必须进这份导出，并标为非确定性来源）。 */
+  modelRuns?: readonly unknown[]
+  /** 历史快照的来源信息（用于互斥标记）。 */
+  snapshot?: { sourceDir: string; head?: string | null; notice: string }
+  generatedAt?: string
+  dateStamp?: string
+}
+
 /** 导出的文件命名：沿用 08 实施文档目录的既有族命名。 */
 export function exportFileName(dateStamp: string, runId?: string): string {
   return runId
@@ -178,10 +220,11 @@ function limitingGapIdsOf(rowId: string): string[] {
  * 判定一行的状态。
  *
  * 规则（顺序不可换）：
- * 1. 判定卡自带状态时以判定卡为准。
- * 2. 否则取规则表的状态；**但如果这一行只有依赖真实模型的判定**，
+ * 1. **判定不成立就不许升格**：没有成立的判定卡时，保留矩阵原状态
+ *    （历史快照 / 缺口标注），绝不按规则表写 `PASS`。
+ * 2. 判定卡自带状态时以判定卡为准（部分判定会写 `PASS (follow-up)` / `WARNING`）。
+ * 3. 成立的确定性判定：取规则表的状态；**但如果这一行只有依赖真实模型的判定**，
  *    规则里的 `PASS` 不得直接用，改记 `WARNING`（非确定性结论不写 `PASS`）。
- * 3. 没有任何判定时保留矩阵原状态。
  */
 export function resolveRowStatus(
   row: G3MatrixRow,
@@ -190,20 +233,30 @@ export function resolveRowStatus(
   if (!verdicts.length) return row.status
   const deterministic = verdicts.filter((verdict) => !verdict.model_dependent)
   const rule = G3_ROW_EVIDENCE_RULES[row.id]
-  // 确定性判定优先：它的状态比模型侧的状态更可信，也更接近矩阵口径。
-  if (deterministic.length) {
-    for (const verdict of deterministic) {
+
+  // 成立的确定性判定优先：它的状态比模型侧的状态更可信，也更接近矩阵口径。
+  const held = deterministic.filter((verdict) => verdict.holds)
+  if (held.length) {
+    for (const verdict of held) {
       if (verdict.status) return verdict.status
     }
     if (rule) return rule.status
     return 'PASS'
   }
-  // 只有依赖真实模型的判定：状态一律不写 PASS。
+
+  // 判定卡不成立：状态由判定卡自己带（部分判定），没有就**不升格**。
   for (const verdict of verdicts) {
     if (verdict.status) return verdict.status
   }
-  if (rule) return rule.status === 'PASS' ? 'WARNING' : rule.status
-  return 'WARNING'
+
+  // 只有模型侧判定：状态一律不写 PASS。
+  const modelHeld = verdicts.filter((verdict) => verdict.model_dependent && verdict.holds)
+  if (modelHeld.length) {
+    if (rule) return rule.status === 'PASS' ? 'WARNING' : rule.status
+    return 'WARNING'
+  }
+
+  return row.status
 }
 
 /**
@@ -418,8 +471,23 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
     // 说明与跟进 Issue 的口径与页面一致：完全判定的行不再挂跟进 Issue，
     // 部分覆盖（PASS (follow-up)）的行保留缺口清单链接。
     const partial = status === 'PASS (follow-up)'
+    // 规则表里的说明写的是「本轮实跑判定成立：……」。只有判定**成立**时才能带这句；
+    // 判定不成立（哪怕只部分成立）时换成如实说明，否则导出行会写着「判定成立」
+    // 却挂着一条不成立的判定卡。
+    const heldVerdicts = rowVerdicts.filter((verdict) => verdict.holds)
     const note = rowVerdicts.length
-      ? [rule?.note, rowVerdicts.map((verdict) => verdict.detail).join(' ')].filter(Boolean).join('｜')
+      ? [
+          heldVerdicts.length ? rule?.note : undefined,
+          rowVerdicts
+            .map((verdict) =>
+              verdict.holds
+                ? verdict.detail
+                : `判定卡「${verdict.id}」不成立：${verdict.detail}`,
+            )
+            .join(' '),
+        ]
+          .filter(Boolean)
+          .join('｜')
       : (row.note ?? '')
     return {
       id: row.id,
@@ -500,9 +568,165 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
 }
 
 /**
+ * 把**多段运行**并成一份整链证据。
+ *
+ * 这是页面上「导出整链证据 JSON」真正落的东西：页面上每段链（变更集 / 依赖 /
+ * 稳定化 / 阻断 / 模型）各跑在自己的隔离项目上，各带自己的运行标识与 head。
+ * 把它并成一份时守住三条：
+ *
+ * 1. **每段运行单独记账**（`runs[]`），每一步都带自己的运行标识——
+ *    读者能判断某一步与某条结论是不是同一次运行。
+ * 2. **验收行的状态取投影结果**（`rows` / `evidence` 由调用方按多次运行投影
+ *    得出），不在这里重新判定：判定只在单次运行内做一次，导出体不再判第二次。
+ * 3. **head 不一致就整体标过期**：不同代码版本上的结论不能混成一份。
+ */
+export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceExport {
+  const rows = input.rows ?? G3_MATRIX_ROWS
+  const evidenceById = new Map((input.evidence ?? []).map((item) => [item.rowId, item]))
+  const verdicts: G3ExportVerdict[] = []
+  const runs: G3ExportRun[] = []
+  const heads = new Set<string>()
+
+  for (const run of input.runs) {
+    if (run.head?.commitId) heads.add(run.head.commitId)
+    const runVerdicts = run.verdicts.map((verdict) =>
+      toExportVerdict(verdict, run.runId, run.modelDependent === true),
+    )
+    verdicts.push(...runVerdicts)
+    runs.push({
+      file: `本次运行（${run.runId}）`,
+      ticket: G3_EVIDENCE_TICKET,
+      run_id: run.runId,
+      started_at: run.startedAt,
+      head: run.head,
+      steps: run.steps.length,
+      verdicts: runVerdicts.map((verdict) => verdict.id),
+      model_dependent: run.modelDependent === true,
+    })
+  }
+
+  const headMismatch = heads.size > 1
+  const anyStale = input.runs.some((run) => run.stale)
+  const stale = headMismatch || anyStale
+  const staleReason = headMismatch
+    ? `各段运行的后端 head 不一致（${[...heads].join(' / ')}），结论整体过期。`
+    : anyStale
+      ? (input.runs.find((run) => run.stale)?.staleReason ?? '存在已过期的运行段，结论整体过期。')
+      : ''
+
+  const acRows: G3ExportRow[] = rows.map((row) => {
+    const evidence = evidenceById.get(row.id)
+    const decided = evidence?.decided === true
+    // 这一行的判定只取**判定它的那一次运行**的判定卡：
+    // 不同运行的同名判定不是一回事，混在一起会让人读不出结论来自哪一段。
+    const rowVerdicts = decided
+      ? verdicts.filter(
+        (verdict) =>
+          verdict.id === row.id
+          && (!evidence?.runId || verdict.run_id === evidence.runId),
+      )
+      : []
+    const source = conclusionSourceOf(row, decided)
+    // 状态以**投影结果**为权威（判定已在单次运行内做完一次，导出体不重判）；
+    // 未判定的行回到矩阵原状态。
+    const base = G3_MATRIX_ROWS.find((item) => item.id === row.id) ?? row
+    let status = decided ? row.status : base.status
+    let note = evidence?.note ?? row.note ?? ''
+    // 兜底：判定卡不成立时**不许**写 PASS —— 退回矩阵原状态并写明原因。
+    if (status === 'PASS' && rowVerdicts.length > 0 && !rowVerdicts.some((verdict) => verdict.holds)) {
+      status = base.status
+      note = `${note}｜导出兜底：本行的判定卡不成立，状态已从 PASS 退回 ${base.status}。`.trim()
+    }
+    const partial = status === 'PASS (follow-up)'
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    return {
+      id: row.id,
+      name: row.name,
+      criterion: row.criterion,
+      status,
+      source,
+      source_label: G3_CONCLUSION_SOURCE_LABELS[source],
+      decided,
+      note,
+      follow_up_issue: partial
+        ? (rule?.followUpIssue ?? row.followUpIssue)
+        : followUpIssueOf(row, status, source),
+      gap_ids: gapIdsOf(row.id),
+      limiting_gap_ids: limitingGapIdsOf(row.id),
+      verdicts: rowVerdicts,
+      stale,
+      run_id: evidence?.runId,
+    }
+  })
+
+  const firstHead = input.runs[0]?.head ?? null
+  const dateStamp = input.dateStamp ?? '00000000'
+  const runId = input.runs.length === 1 ? input.runs[0].runId : `chain-${dateStamp}`
+
+  const evidenceSources: G3ExportEvidenceSource[] = [
+    {
+      kind: 'deterministic',
+      non_deterministic: false,
+      note: '确定性结论：状态由真实调用与响应事实推出。',
+    },
+    {
+      kind: 'model_dependent',
+      non_deterministic: true,
+      depends_on: 'real_model',
+      note:
+        '非确定性来源：以下结论依赖真实模型，同样的输入不保证得到同样的输出，也不保证逐字复现；' +
+        '矩阵状态一律记 WARNING（模型不可用或缺外部凭据时记 NOT RUN）。',
+      runs: (input.modelRuns ?? []) as unknown[],
+    },
+  ]
+
+  return {
+    generated_at: input.generatedAt ?? new Date().toISOString(),
+    ticket: G3_EVIDENCE_TICKET,
+    run_id: runId,
+    started_at: input.runs[0]?.startedAt ?? '',
+    head: firstHead,
+    head_stale: stale,
+    head_stale_reason: staleReason,
+    conclusion_source: 'this_run',
+    sources: [
+      {
+        kind: 'this_run',
+        label: G3_CONCLUSION_SOURCE_LABELS.this_run,
+        note:
+          `本次会话所含的 ${input.runs.length} 段真实运行的结论：` +
+          '每段各跑在自己的隔离项目上，各带自己的运行标识与后端 head。',
+        run_id: runId,
+        head: firstHead?.commitId ?? null,
+        steps: input.runs.reduce((sum, run) => sum + run.steps.length, 0),
+      },
+      {
+        kind: 'historical_snapshot',
+        label: G3_CONCLUSION_SOURCE_LABELS.historical_snapshot,
+        note:
+          '历史快照的结论：跑在另一个 head 上，**不是本次运行的结果**；' +
+          '两者在页面与本导出体里分开列示，不得混读。',
+        head: input.snapshot?.head ?? null,
+      },
+    ],
+    evidence_sources: evidenceSources,
+    steps: input.runs.flatMap((run) => run.steps),
+    ac_rows: acRows,
+    verdicts,
+    gaps: exportGaps(),
+    runs,
+    evidence_dir: G3_EVIDENCE_DIR,
+    evidence_file: exportFileName(dateStamp),
+    evidence_file_note:
+      `证据落 ${G3_EVIDENCE_DIR}/ 目录，**不写进 Issue**（docs/agents/issue-tracker.md:54-56）。`,
+  }
+}
+
+/**
  * 找出导出体里「不诚实」的行：不该写 `PASS` 却写了 `PASS`。
  *
- * 规则：来源不是本次运行、涉及实现缺口、或只有依赖真实模型的判定 —— 三者任一，
+ * 规则：来源不是本次运行、涉及实现缺口、只有依赖真实模型的判定、
+ * **或判定卡本身不成立**（`holds=false` 却仍被写成 `PASS`）—— 四者任一，
  * 都不许是 `PASS`。
  */
 export function falsePassRows(rows: readonly G3ExportRow[]): G3ExportRow[] {
@@ -511,6 +735,8 @@ export function falsePassRows(rows: readonly G3ExportRow[]): G3ExportRow[] {
     if (row.source !== 'this_run') return true
     if (row.gap_ids.length > 0) return true
     if (row.verdicts.length > 0 && row.verdicts.every((verdict) => verdict.model_dependent)) return true
+    // 判定卡不成立就不许升格：这一步是「假 PASS」的最后一道兜底。
+    if (row.verdicts.some((verdict) => !verdict.holds)) return true
     return false
   })
 }

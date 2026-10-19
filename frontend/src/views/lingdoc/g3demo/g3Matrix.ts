@@ -176,8 +176,11 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '变更、影响树、任务、路线图最小 UI',
     criterion: '用户能看见影响理由、责任人和下一步动作',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 346, end: 346 },
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
+    // 状态口径与缺口清单一致：G3-GAP-06 / G3-GAP-07 记的是「未实跑（NOT RUN）」，
+    // 不是「待办（TODO）」——这一行**跑过**相关链路，只是验收台页面自己读原始响应的
+    // 落证没做（工作台面板已由 2786bcc 补齐）。
+    status: 'NOT RUN',
+    evidence: '本轮未实跑（形态预览）',
     note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
   },
 ]

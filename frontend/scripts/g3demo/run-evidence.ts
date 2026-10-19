@@ -11,6 +11,7 @@
  *   npx tsx scripts/g3demo/run-evidence.ts
  *   npx tsx scripts/g3demo/run-evidence.ts --out ../docs/08-本轮实施方案/xxx.json
  *   npx tsx scripts/g3demo/run-evidence.ts --live   # 额外跑一次真实链路并落一份本次运行导出
+ *   npx tsx scripts/g3demo/run-evidence.ts --chain   # 走页面的「整链证据」口径落盘
  *
  * 环境变量：
  *   G3_BASE_URL     后端地址，默认 http://127.0.0.1:8080
@@ -24,8 +25,10 @@ import { fileURLToPath } from 'node:url'
 import {
   G3_EVIDENCE_DIR,
   buildAggregateEvidenceExport,
+  buildChainEvidenceExport,
   buildRunEvidenceExport,
   exportFileName,
+  type G3ChainRunInput,
   type G3EvidenceFileInput,
 } from '../../src/views/lingdoc/g3demo/g3Export'
 import { applyRunEvidence } from '../../src/views/lingdoc/g3demo/g3Evidence'
@@ -84,19 +87,22 @@ function isModelDependent(raw: Record<string, unknown>): boolean {
   )
 }
 
-function readEvidenceFile(file: string): G3EvidenceFileInput | null {
+function readEvidenceFile(file: string): { input: G3EvidenceFileInput; raw: Record<string, unknown> } | null {
   const raw = JSON.parse(readFileSync(resolve(EVIDENCE_DIR, file), 'utf8')) as Record<string, unknown>
   if (!raw.run_id) return null
   return {
-    file,
-    ticket: typeof raw.ticket === 'string' ? raw.ticket : file,
-    runId: String(raw.run_id),
-    startedAt: typeof raw.started_at === 'string' ? raw.started_at : '',
-    generatedAt: typeof raw.generated_at === 'string' ? raw.generated_at : undefined,
-    head: (raw.backend_head ?? null) as G3BackendHead | null,
-    steps: Array.isArray(raw.steps) ? (raw.steps as G3StepRecord[]) : [],
-    verdicts: verdictsOf(raw),
-    modelDependent: isModelDependent(raw),
+    raw,
+    input: {
+      file,
+      ticket: typeof raw.ticket === 'string' ? raw.ticket : file,
+      runId: String(raw.run_id),
+      startedAt: typeof raw.started_at === 'string' ? raw.started_at : '',
+      generatedAt: typeof raw.generated_at === 'string' ? raw.generated_at : undefined,
+      head: (raw.backend_head ?? null) as G3BackendHead | null,
+      steps: Array.isArray(raw.steps) ? (raw.steps as G3StepRecord[]) : [],
+      verdicts: verdictsOf(raw),
+      modelDependent: isModelDependent(raw),
+    },
   }
 }
 
@@ -138,20 +144,97 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   }
 }
 
+/**
+ * 整链口径：把各票已落盘的真实运行并成一份导出体。
+ *
+ * 与页面上「导出整链证据 JSON」走**同一个构造函数**（`buildChainEvidenceExport`），
+ * 矩阵投影也用**同一个纯函数**（`applyRunEvidence`），所以两处不会走样。
+ *
+ * 这里不重跑：#238–#243 各票的真实运行已经落在证据目录里，
+ * 每一份都带着自己的运行标识、head、逐步请求与响应。整链证据的形态就是
+ * 「把这些真实运行并成一份」，保留「哪一条结论来自哪一次运行」这件事。
+ */
+function buildChainExport(
+  files: readonly { input: G3EvidenceFileInput; raw: Record<string, unknown> }[],
+): ReturnType<typeof buildChainEvidenceExport> {
+  const runs: G3ChainRunInput[] = files.map(({ input, raw }) => ({
+    runId: input.runId,
+    startedAt: input.startedAt,
+    head: input.head,
+    steps: input.steps,
+    verdicts: input.verdicts,
+    stale: raw.head_stale === true,
+    staleReason: typeof raw.head_stale_reason === 'string' ? raw.head_stale_reason : undefined,
+    modelDependent: input.modelDependent,
+  }))
+  // 投影用的运行上下文：每段的步骤与判定都来自**同一次运行**，不跨项目串味。
+  const contexts: G3RunContext[] = files.map(({ input, raw }) => ({
+    runId: input.runId,
+    startedAt: input.startedAt,
+    accountEmail: '',
+    steps: input.steps,
+    head: input.head,
+    chapters: [],
+    stale: raw.head_stale === true,
+    staleReason: typeof raw.head_stale_reason === 'string' ? raw.head_stale_reason : undefined,
+    verdicts: input.verdicts,
+  }))
+  const view = applyRunEvidence(G3_MATRIX_ROWS, contexts)
+  const modelRuns = files.flatMap(({ raw }) =>
+    Array.isArray(raw.model_runs) ? (raw.model_runs as unknown[]) : [],
+  )
+  return buildChainEvidenceExport({
+    runs,
+    rows: view.rows,
+    evidence: view.evidence,
+    modelRuns,
+    generatedAt: new Date().toISOString(),
+    dateStamp: dateStamp(),
+  })
+}
+
 async function main(): Promise<void> {
   const live = process.argv.includes('--live')
+  const chain = process.argv.includes('--chain')
   const files = readdirSync(EVIDENCE_DIR)
     .filter((name) => name.startsWith('G3-验收台-') && name.endsWith('.json'))
     .filter((name) => !name.startsWith('G3-验收台-8-'))
     .sort()
 
-  const inputs: G3EvidenceFileInput[] = []
+  const loaded: { input: G3EvidenceFileInput; raw: Record<string, unknown> }[] = []
   for (const file of files) {
-    const input = readEvidenceFile(file)
-    if (input) inputs.push(input)
+    const read = readEvidenceFile(file)
+    if (read) loaded.push(read)
   }
+  const inputs: G3EvidenceFileInput[] = loaded.map((item) => item.input)
   if (!inputs.length) {
     throw new Error(`证据目录里没有可汇总的 G3 验收台证据：${EVIDENCE_DIR}`)
+  }
+
+  if (chain) {
+    const body = buildChainExport(loaded)
+    mkdirSync(dirname(OUT_PATH), { recursive: true })
+    writeFileSync(OUT_PATH, `${JSON.stringify(body, null, 2)}\n`, 'utf8')
+    console.log('[g3demo] 整链证据（逐段记账）：')
+    for (const run of body.runs ?? []) {
+      console.log(
+        `  ${run.run_id} · head ${run.head?.commitId ?? '未读到'} · 步骤 ${run.steps} 条 · ` +
+          `判定 ${run.verdicts.length} 条${run.model_dependent ? '（含依赖真实模型的判定）' : ''}`,
+      )
+    }
+    console.log('')
+    console.log(`[g3demo] 验收行：${body.ac_rows.length} 条`)
+    for (const row of body.ac_rows) {
+      console.log(
+        `  ${row.id.padEnd(10)} ${row.status.padEnd(16)} ${row.source_label}` +
+          `${row.gap_ids.length ? ` · 缺口 ${row.gap_ids.join('/')}` : ''}` +
+          `${row.limiting_gap_ids.length ? ` · 覆盖受限 ${row.limiting_gap_ids.join('/')}` : ''}`,
+      )
+    }
+    console.log('')
+    console.log(`[g3demo] 后端 head：${body.head?.commitId ?? '未读到'}${body.head_stale ? '（已过期）' : ''}`)
+    console.log(`[g3demo] 证据落盘：${OUT_PATH}`)
+    return
   }
 
   if (live) {

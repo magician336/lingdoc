@@ -194,15 +194,15 @@
             v-for="verdict in lifecycle.verdicts"
             :key="verdict.id"
             class="verdict-card"
-            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+            :class="verdictCardClass(verdict)"
           >
             <header>
               <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
               <span
                 class="status-badge"
-                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
               >
-                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+                {{ verdictStatus(verdict) }}
               </span>
             </header>
             <p class="verdict-detail">{{ verdict.detail }}</p>
@@ -388,15 +388,15 @@
             v-for="verdict in dependency.verdicts"
             :key="verdict.id"
             class="verdict-card"
-            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+            :class="verdictCardClass(verdict)"
           >
             <header>
               <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
               <span
                 class="status-badge"
-                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
               >
-                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+                {{ verdictStatus(verdict) }}
               </span>
             </header>
             <p class="verdict-detail">{{ verdict.detail }}</p>
@@ -620,15 +620,15 @@
             v-for="verdict in stabilization.verdicts"
             :key="verdict.id"
             class="verdict-card"
-            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+            :class="verdictCardClass(verdict)"
           >
             <header>
               <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
               <span
                 class="status-badge"
-                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
               >
-                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+                {{ verdictStatus(verdict) }}
               </span>
             </header>
             <p class="verdict-detail">{{ verdict.detail }}</p>
@@ -894,6 +894,7 @@
         <strong>已导出：</strong><code>{{ lastExport.fileName }}</code>
         · {{ lastExport.bytes }} 字节 · 运行标识 <code>{{ lastExport.runId }}</code>
         · 后端 head <code>{{ lastExport.head || '（未知）' }}</code>
+        · 并入 <strong>{{ lastExport.runCount }}</strong> 段运行
         · 含 {{ lastExport.rowCount }} 条验收行、{{ lastExport.verdictCount }} 条判定、
         {{ lastExport.gapCount }} 条实现缺口
         <span v-if="lastExport.downloadNote">· {{ lastExport.downloadNote }}</span>
@@ -1026,15 +1027,15 @@
             v-for="verdict in blocked.verdicts"
             :key="verdict.id"
             class="verdict-card"
-            :class="verdict.holds ? 'verdict-card--ok' : 'verdict-card--bad'"
+            :class="verdictCardClass(verdict)"
           >
             <header>
               <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
               <span
                 class="status-badge"
-                :class="verdict.holds ? 'status-badge--pass' : 'status-badge--not-run'"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
               >
-                {{ verdict.holds ? 'PASS' : 'NOT RUN' }}
+                {{ verdictStatus(verdict) }}
               </span>
             </header>
             <p class="verdict-detail">{{ verdict.detail }}</p>
@@ -1363,7 +1364,7 @@
                 <th>Spec 锚点</th>
                 <th>状态</th>
                 <th>证据位</th>
-                <th>本轮覆盖</th>
+                <th>本次会话覆盖</th>
               </tr>
             </thead>
             <tbody>
@@ -1395,6 +1396,9 @@
                   <span class="coverage-chip" :class="coverageTone(coverageById.get(row.id))">
                     {{ coverageLabel(coverageById.get(row.id)) }}
                   </span>
+                  <small v-if="coverageRunId(row.id)">
+                    来自运行 <code>{{ coverageRunId(row.id) }}</code>
+                  </small>
                   <small>{{ coverageById.get(row.id)?.note }}</small>
                 </td>
               </tr>
@@ -1412,7 +1416,7 @@
                 <th>Spec 锚点</th>
                 <th>状态</th>
                 <th>证据位</th>
-                <th>本轮覆盖</th>
+                <th>本次会话覆盖</th>
               </tr>
             </thead>
             <tbody>
@@ -1457,6 +1461,9 @@
                   <span class="coverage-chip" :class="coverageTone(coverageById.get(row.id))">
                     {{ coverageLabel(coverageById.get(row.id)) }}
                   </span>
+                  <small v-if="coverageRunId(row.id)">
+                    来自运行 <code>{{ coverageRunId(row.id) }}</code>
+                  </small>
                   <small>{{ coverageById.get(row.id)?.note }}</small>
                 </td>
               </tr>
@@ -1468,8 +1475,9 @@
           状态分布：PASS {{ counts['PASS'] }} · PASS (follow-up) {{ counts['PASS (follow-up)'] }} ·
           N/A {{ counts['N/A'] }} · WARNING {{ counts['WARNING'] }} · NOT RUN {{ counts['NOT RUN'] }} ·
           BLOCKED {{ counts['BLOCKED'] }} · TODO {{ counts['TODO'] }}。
-          「本轮覆盖」是**本票真实运行**与每一行的关系：前置链跑通**不构成**任何一条判据的证据，
+          「覆盖」是**本次会话累计的真实运行**与每一行的关系：前置链跑通**不构成**任何一条判据的证据，
           所以没被覆盖的行状态原样保留，绝不会被判成 <code>PASS</code>。
+          页面上每段链各跑在自己的隔离项目上，所以每一行都标出**它由哪一段运行判定**。
         </p>
 
         <h3 class="matrix-group-title">实现缺口（无法实跑的验收行与渲染缺口）</h3>
@@ -1706,14 +1714,19 @@ import {
   IMPACT_TASK_STATUSES,
   statusSummary,
   statusTone,
+  type G3Status,
 } from './g3Status'
 import { G3_SNAPSHOT_RAW, loadG3Snapshot, snapshotNotice } from './g3Snapshot'
 import { createRequestClient } from './g3HttpAdapter'
 import {
   applyRunEvidence,
+  appendRunHistory,
   contextFromSummary,
+  contextsFromSummaries,
   headChangedSince,
+  loadRunHistory,
   loadRunSummary,
+  saveRunHistory,
   saveRunSummary,
   summarizeRun,
   type G3RowEvidence,
@@ -1721,7 +1734,7 @@ import {
 } from './g3Evidence'
 import {
   G3_CONCLUSION_SOURCE_LABELS,
-  buildRunEvidenceExport,
+  buildChainEvidenceExport,
   conclusionSourceOf,
   exportFileName,
   type G3ConclusionSource,
@@ -1757,7 +1770,7 @@ import {
   type G3BlockedSnapshot,
 } from './runner/blocked'
 import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
-import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3StepRecord } from './runner/runContext'
+import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3RunVerdict, type G3StepRecord } from './runner/runContext'
 
 // 快照在装载期就校验：数据坏了就抛错，不让页面渲染半份证据。
 const snapshot = loadG3Snapshot(G3_SNAPSHOT_RAW)
@@ -1772,6 +1785,14 @@ const sessionTakenOver = ref(false)
 const savedAccount = ref<G3DemoAccount | null>(null)
 const runSummary = ref<G3RunSummary | null>(null)
 const previousSummary = ref<G3RunSummary | null>(null)
+/**
+ * 本次会话累计的运行段。
+ *
+ * 页面上有几段链（变更集 / 依赖 / 稳定化 / 阻断 / 模型），每段跑在自己的
+ * 隔离项目上。**结论要累计**：跑完变更集链再跑模型链之后，右栏矩阵仍要
+ * 保留变更集链那一段的判定，而不是被后一段覆盖掉。
+ */
+const runHistory = ref<G3RunSummary[]>([])
 const liveRunId = ref('')
 const liveAccountEmail = ref('')
 const liveProjectId = ref('')
@@ -1801,6 +1822,8 @@ const lastExport = ref<{
   rowCount: number
   verdictCount: number
   gapCount: number
+  /** 这一次导出并进去的运行段数。 */
+  runCount: number
   downloadNote: string
 } | null>(null)
 const blocked = ref<G3BlockedSnapshot | null>(null)
@@ -1820,16 +1843,25 @@ const previousHead = computed(() => previousSummary.value?.head ?? null)
 const liveContext = computed(() =>
   runSummary.value ? contextFromSummary(runSummary.value) : null,
 )
+/**
+ * 本次会话累计的运行上下文。
+ *
+ * 矩阵投影读的是**这一份清单**，不是最后一次运行：
+ * 跑完变更集链再跑模型链之后，变更集链那一段的判定仍然留在矩阵里。
+ */
+const sessionContexts = computed(() => contextsFromSummaries(runHistory.value))
 const matrixView = computed(() =>
-  applyRunEvidence(G3_MATRIX_ROWS, liveContext.value ?? {
-    runId: '',
-    startedAt: '',
-    accountEmail: '',
-    steps: [],
-    head: null,
-    chapters: [],
-    stale: false,
-  }),
+  applyRunEvidence(G3_MATRIX_ROWS, sessionContexts.value.length > 0
+    ? sessionContexts.value
+    : (liveContext.value ?? {
+      runId: '',
+      startedAt: '',
+      accountEmail: '',
+      steps: [],
+      head: null,
+      chapters: [],
+      stale: false,
+    })),
 )
 const sliceRows = computed(() => matrixView.value.rows.filter((row) => row.group === 'slice'))
 const acRows = computed(() => matrixView.value.rows.filter((row) => row.group === 'ac'))
@@ -1842,18 +1874,30 @@ const coverageById = computed(() => {
   return map
 })
 
-/** 覆盖徽标：只有被本轮**判定**的行才算覆盖，其余一律「未被本轮覆盖」。 */
+/**
+ * 覆盖徽标：只有被**判定**的行才算覆盖，其余一律「未被覆盖」。
+ *
+ * 口径是**本次会话累计**：页面上跑过的每一段链（变更集 / 依赖 / 稳定化 /
+ * 阻断 / 模型）留下的判定都算数，后跑的一段不会抹掉前一段的结论。
+ */
 const coverageLabel = (item?: G3RowEvidence) => {
-  if (!item) return '未被本轮覆盖'
-  if (item.decided) return '本轮已判定'
-  if (item.covered) return '本轮已跑到'
-  return '未被本轮覆盖'
+  if (!item) return '未被覆盖'
+  if (item.decided) return '已判定'
+  if (item.covered) return '已跑到'
+  return '未被覆盖'
 }
 const coverageTone = (item?: G3RowEvidence) => {
   if (!item) return 'coverage-chip--none'
   if (item.decided) return 'coverage-chip--covered'
   if (item.covered) return 'coverage-chip--partial'
   return 'coverage-chip--none'
+}
+
+/** 这一行的结论来自哪一段运行（多段累计时要说清，不能让人以为是同一段）。 */
+const coverageRunId = (rowId: string): string => {
+  const item = coverageById.value.get(rowId)
+  if (!item?.decided) return ''
+  return item.runId ?? ''
 }
 
 const anchorLabel = (anchor: SpecAnchor) => formatAnchor(anchor)
@@ -1894,6 +1938,24 @@ function dateStamp(): string {
   const now = new Date()
   const pad = (value: number) => String(value).padStart(2, '0')
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+}
+
+/**
+ * 判定卡徽标上的状态。
+ *
+ * 判定卡**自带**状态时以它为准：例如 AC-G3-04 只部分成立时，
+ * 判定卡带的是 `PASS (follow-up)`，不能因为 `holds=false` 就显示成
+ * `NOT RUN`——那会把「已判定但有缺口」说成「没跑」。
+ */
+const verdictStatus = (verdict: G3RunVerdict): G3Status =>
+  verdict.status ?? (verdict.holds ? 'PASS' : 'NOT RUN')
+
+/** 判定卡外框的色调：完全成立 / 部分成立（有跟进） / 其余。 */
+const verdictCardClass = (verdict: G3RunVerdict): string => {
+  const status = verdictStatus(verdict)
+  if (status === 'PASS') return 'verdict-card--ok'
+  if (status === 'PASS (follow-up)' || status === 'WARNING') return 'verdict-card--warn'
+  return 'verdict-card--bad'
 }
 
 /** 变更集状态的显示色调（域内状态，不是门禁词表）。 */
@@ -2210,6 +2272,8 @@ function restoreLocalState(): void {
   try {
     savedAccount.value = loadDemoAccount(localStorage)
     runSummary.value = loadRunSummary(localStorage)
+    // 累计清单：本次会话跑过的每一段都在里面，刷新后矩阵仍能保留前几段的判定。
+    runHistory.value = loadRunHistory(localStorage)
     if (runSummary.value) {
       liveSteps.value = runSummary.value.steps
       liveHead.value = runSummary.value.head
@@ -2219,25 +2283,37 @@ function restoreLocalState(): void {
       liveProjectName.value = runSummary.value.projectName ?? ''
       liveChapters.value = runSummary.value.chapters
       missingSections.value = runSummary.value.missingSections
-      lifecycle.value = runSummary.value.lifecycle ?? null
-      dependency.value = runSummary.value.dependency ?? null
-      stabilization.value = runSummary.value.stabilization ?? null
-      model.value = runSummary.value.model ?? null
-      blocked.value = runSummary.value.blocked ?? null
     }
+    // 各段快照：取累计清单里**最后一次**带该快照的那一段。
+    const latest = <T extends keyof G3RunSummary>(key: T): G3RunSummary[T] | undefined => {
+      for (let i = runHistory.value.length - 1; i >= 0; i -= 1) {
+        const value = runHistory.value[i][key]
+        if (value !== undefined && value !== null) return value as G3RunSummary[T]
+      }
+      return undefined
+    }
+    lifecycle.value = latest('lifecycle') ?? null
+    dependency.value = latest('dependency') ?? null
+    stabilization.value = latest('stabilization') ?? null
+    model.value = latest('model') ?? null
+    blocked.value = latest('blocked') ?? null
   } catch {
     // 本地存储不可用时如实当作「没有历史」，不假装有。
     savedAccount.value = null
     runSummary.value = null
+    runHistory.value = []
   }
 }
 restoreLocalState()
 
 /**
- * 提交一次运行的结果：摘要落盘 + 左栏实时状态。
+ * 提交一次运行的结果：摘要落盘 + 左栏实时状态 + 并入本次会话的累计清单。
  *
  * 前置链与变更集生命周期链共用这一段，所以两条链留下的证据进同一份摘要，
  * 矩阵的「本轮覆盖」也读同一份步骤表。
+ *
+ * **每一段都并进累计清单**（而不是覆盖上一段）：页面上有几段链，各跑在自己的
+ * 隔离项目上，跑完后一段不能把前一段的判定从矩阵里抹掉。
  */
 function commitRun(
   result: Awaited<ReturnType<typeof runChain>>,
@@ -2273,6 +2349,9 @@ function commitRun(
   })
   runSummary.value = summary
   saveRunSummary(localStorage, summary)
+  // 累计清单：每一段都留一份，矩阵与整链证据都读它。
+  runHistory.value = appendRunHistory(runHistory.value, summary)
+  saveRunHistory(localStorage, runHistory.value)
 
   liveSteps.value = result.ctx.steps
   liveHead.value = result.ctx.head
@@ -2282,11 +2361,12 @@ function commitRun(
   liveProjectName.value = result.project.name
   liveChapters.value = result.chapters
   missingSections.value = result.missingSections
-  lifecycle.value = snapshot ?? null
-  dependency.value = dependencySnapshot ?? null
-  stabilization.value = stabilizationSnapshot ?? null
-  model.value = modelSnapshot ?? null
-  blocked.value = blockedSnapshot ?? null
+  // 各段快照**只更新自己那一段**：跑完模型链不该把变更集链的快照清空。
+  if (snapshot) lifecycle.value = snapshot
+  if (dependencySnapshot) dependency.value = dependencySnapshot
+  if (stabilizationSnapshot) stabilization.value = stabilizationSnapshot
+  if (modelSnapshot) model.value = modelSnapshot
+  if (blockedSnapshot) blocked.value = blockedSnapshot
 }
 
 /**
@@ -2688,10 +2768,14 @@ async function startBlocked(): Promise<void> {
 }
 
 /**
- * 导出的证据：把本轮整链结论落成一个 JSON 文件。
+ * 导出的证据：把**本次会话整链**的结论落成一个 JSON 文件。
  *
  * 这一份导出体是 **#244 的结构化证据**：运行标识、head、每一步的请求与响应、
  * 每条验收行的判定与状态、证据来源（确定性 / 依赖真实模型）、实现缺口清单。
+ *
+ * 导的是**整条链**，不是最后一次运行：页面上每段链各跑在自己的隔离项目上，
+ * 各带自己的运行标识与 head，导出体把它们并成一份，并逐段记账（`runs[]`）。
+ * 只有一段时按整链命名，多段时同样按整链命名——文件里写清楚有几段。
  *
  * 三条约束写死在 `g3Export.ts` 里：
  * 1. 模型调用记录**必须**进这份导出的证据，并标注为「依赖真实模型的非确定性来源」——
@@ -2702,18 +2786,25 @@ async function startBlocked(): Promise<void> {
  */
 function exportEvidence(): void {
   if (!runSummary.value) return
-  const summary = runSummary.value
-  const payload = buildRunEvidenceExport({
-    runId: summary.runId,
-    startedAt: summary.startedAt,
-    head: summary.head,
-    steps: summary.steps,
+  const runs = runHistory.value.length > 0
+    ? runHistory.value
+    : [runSummary.value]
+  const payload = buildChainEvidenceExport({
+    runs: runs.map((item) => ({
+      runId: item.runId,
+      startedAt: item.startedAt,
+      head: item.head,
+      steps: item.steps,
+      verdicts: item.verdicts ?? [],
+      stale: item.stale,
+      staleReason: item.staleReason,
+      // 依赖真实模型的那一段：它带模型判定，导出体据此分列非确定性来源。
+      modelDependent: (item.verdicts ?? []).some((verdict) => verdict.modelDependent === true),
+    })),
     rows: matrixView.value.rows,
     evidence: matrixView.value.evidence,
-    verdicts: summary.verdicts ?? [],
     modelRuns: (model.value?.runs ?? []) as G3ModelRunFact[],
-    stale: summary.stale,
-    staleReason: summary.staleReason,
+    dateStamp: dateStamp(),
     snapshot: {
       sourceDir: snapshot.sourceDir,
       head: snapshot.head ?? null,
@@ -2722,7 +2813,7 @@ function exportEvidence(): void {
   })
   const blob = new Blob([`${JSON.stringify(payload, null, 2)}\n`], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
-  const fileName = exportFileName(dateStamp(), summary.runId)
+  const fileName = exportFileName(dateStamp())
   const link = document.createElement('a')
   link.href = url
   link.download = fileName
@@ -2737,11 +2828,12 @@ function exportEvidence(): void {
   lastExport.value = {
     fileName,
     bytes: blob.size,
-    runId: summary.runId,
-    head: summary.head?.commitId ?? null,
+    runId: payload.run_id,
+    head: payload.head?.commitId ?? null,
     rowCount: payload.ac_rows.length,
     verdictCount: payload.verdicts.length,
     gapCount: payload.gaps.length,
+    runCount: payload.runs?.length ?? runs.length,
     downloadNote: downloadNote(),
   }
 }
@@ -2883,6 +2975,7 @@ function releaseSession(): void {
 .verdict-card { padding: 16px 18px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
 .verdict-card--ok { border-color: #9ed3c6; background: #f4fbf8; }
 .verdict-card--bad { border-color: #e6b6a8; background: #fff7f4; }
+.verdict-card--warn { border-color: #e8cf9a; background: #fffaf0; }
 .verdict-card header { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
 .verdict-card header strong { font-size: 13.5px; }
 .verdict-detail { margin: 8px 0 0; color: #2c4a45; font-size: 12.5px; line-height: 1.65; }
