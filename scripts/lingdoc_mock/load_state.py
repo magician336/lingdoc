@@ -381,9 +381,14 @@ class StateLoader:
                                   {"expected_project_version": project.get("project_version"),
                                    "collaborator_user_ids": sorted(self.member.resolve(name) for name in state.members)}, 200)
         if state.status == "active":
+            # 立项要先读差异：服务端要求带上立项确认回执，没有它直接拒绝立项。
+            step = f"{state.id}-activation-read"
+            receipt = self._write(step, "recordActivationRead", {"projectId": project_id},
+                                  {"expected_project_version": project.get("project_version")}, 201)
             step = f"{state.id}-activate"
             project = self._write(step, "activateProject", {"projectId": project_id},
-                                  {"expected_spec_revision": spec_revision}, 200)
+                                  {"expected_spec_revision": spec_revision,
+                                   "activation_read_id": receipt.get("id")}, 200)
             self._save_chapters(project_id, project.get("spec_revision"))
         # Binding is its own step, not part of activation: the provider accepts a bound asset
         # on a draft project too, and a draft that declares one has to be built and read back

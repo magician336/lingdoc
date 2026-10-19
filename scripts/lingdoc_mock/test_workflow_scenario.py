@@ -378,7 +378,7 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertIn("没有请求定义", entries["F06"]["reason"])
         for scenario_id in ("F03", "F15", "F18", "F20"):
             self.assertTrue(entries[scenario_id]["executable"], scenario_id)
-        # F01 declares its 23 steps and every one of them carries a request, but it never says
+        # F01 declares its 24 steps and every one of them carries a request, but it never says
         # where a run should start — and this driver builds the declared state before it sends
         # anything, so F01 is not something it can drive.
         self.assertFalse(entries["F01"]["executable"])
@@ -578,9 +578,11 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(f05["steps"][3]["checks"][0]["expected"], "version_conflict")
         self.assertEqual([check["status"] for check in f05["steps"][4]["checks"]], ["passed", "passed"])
         f12 = report["executed"][2]
-        self.assertEqual([step["actual_http"] for step in f12["steps"]], [200, 200, 409, 200])
-        self.assertEqual(f12["steps"][2]["checks"][0]["expected"], "version_conflict")
-        self.assertEqual([check["status"] for check in f12["steps"][3]["checks"]], ["passed", "passed"])
+        # F12 now records an activation read before it activates: 201 sits between
+        # the spec save and the two activate calls.
+        self.assertEqual([step["actual_http"] for step in f12["steps"]], [200, 200, 201, 409, 200])
+        self.assertEqual(f12["steps"][3]["checks"][0]["expected"], "version_conflict")
+        self.assertEqual([check["status"] for check in f12["steps"][4]["checks"]], ["passed", "passed"])
 
 
 class ScenarioCommandLineTest(unittest.TestCase):

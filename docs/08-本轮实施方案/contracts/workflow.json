@@ -202,7 +202,42 @@
         }
       },
       "capture": {
-        "spec_revision": "/data/spec_revision"
+        "spec_revision": "/data/spec_revision",
+        "project_version": "/data/project_version"
+      },
+      "assertions": []
+    },
+    {
+      "id": "F01-03b",
+      "operation_id": "recordActivationRead",
+      "actor": "u-owner",
+      "request": {
+        "path_params": {
+          "projectId": "{{project_id}}"
+        },
+        "headers": {},
+        "json": {
+          "expected_project_version": "{{project_version}}"
+        }
+      },
+      "expected_http": 201,
+      "reference_response": {
+        "data": {
+          "id": "read-demo-1",
+          "actor_id": "u-owner",
+          "project_id": "p-demo",
+          "project_version": 2,
+          "spec_revision": 1,
+          "read_at": "2026-10-19T14:30:00Z"
+        },
+        "request_id": "req-demo",
+        "meta": {
+          "replayed": false,
+          "refresh_required": false
+        }
+      },
+      "capture": {
+        "activation_read_id": "/data/id"
       },
       "assertions": []
     },
@@ -218,7 +253,8 @@
           "Idempotency-Key": "f01-activate-0001"
         },
         "json": {
-          "expected_spec_revision": "{{spec_revision}}"
+          "expected_spec_revision": "{{spec_revision}}",
+          "activation_read_id": "{{activation_read_id}}"
         }
       },
       "expected_http": 200,

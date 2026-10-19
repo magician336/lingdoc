@@ -49,7 +49,7 @@ class WorkflowRunnerTest(unittest.TestCase):
             ROOT / "docs/08-本轮实施方案/contracts/workflow.json",
         )
         self.assertEqual(runner.spec.id, "F01")
-        self.assertEqual(len(runner.spec.steps), 23)
+        self.assertEqual(len(runner.spec.steps), 24)
         for step in runner.spec.steps:
             self.assertIn(step["operation_id"], runner.operations, step["id"])
 
@@ -75,9 +75,9 @@ class WorkflowRunnerTest(unittest.TestCase):
 
         runner.client.opener = opener
         result = runner.run()
-        self.assertEqual(result["completed_steps"], 23)
-        self.assertEqual(len(result["steps"]), 23)
-        self.assertEqual(len(requests), 23)
+        self.assertEqual(result["completed_steps"], 24)
+        self.assertEqual(len(result["steps"]), 24)
+        self.assertEqual(len(requests), 24)
         self.assertEqual(requests[1].method, "POST")
         self.assertNotIn("{{", "\n".join(request.full_url for request in requests))
 
