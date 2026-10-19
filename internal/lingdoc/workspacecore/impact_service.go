@@ -113,6 +113,7 @@ func hashImpactValue(value any) string {
 	hash := sha256.Sum256(raw)
 	return hex.EncodeToString(hash[:])
 }
+
 // ClientFacingError lets a domain error state its own client presentation, so
 // the shared HTTP mapper does not grow one branch per business failure.
 //
