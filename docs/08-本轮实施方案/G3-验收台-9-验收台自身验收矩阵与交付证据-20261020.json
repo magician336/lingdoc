@@ -7,7 +7,9 @@
   "heads": {
     "frontend_branch": "feat/g3demo-t9",
     "frontend_head": "643a3fc",
-    "frontend_head_note": "证据执行时的前端 head。本票只新增实施文档与证据文件，未改 frontend/src/** 与 frontend/scripts/**，代码面与 643a3fc 一致。",
+    "frontend_head_note": "证据执行时的前端 head（node 脚本实跑）。本票的文档与证据提交只动 docs/08-本轮实施方案/；唯一的代码改动是提交 5e6e82f（导出可见回执 + 下载触发加固），由浏览器实跑暴露。",
+    "frontend_head_browser_run": "643a3fc + 5e6e82f",
+    "frontend_head_browser_run_note": "浏览器实跑时的前端 head；证据见 G3-验收台-9-浏览器实跑证据-20261020.json。",
     "backend_commit_id": "7f5fd8c",
     "backend_build_time": "2026-10-19 17:42:56 UTC",
     "backend_head_note": "后端 head 取自 GET /api/v1/system/info 的 commit_id（编译期注入的 CommitID）。head 变化后本文件的结论整体失效。",
@@ -205,14 +207,14 @@
     {
       "id": "CON-16",
       "验收项": "页面真实模式在浏览器里的交互",
-      "用户可见入口": "/demo/g3 真实模式的按钮点击与逐步留痕",
-      "领域不变量/事务边界": "仓库无 Playwright / Puppeteer，本轮不新增浏览器 runner —— 这是环境 / 工具边界，不是产品断言",
-      "成功": "执行器本身已由 node 脚本在真实后端上实跑（CON-02…CON-07 全部有实跑证据）",
-      "失败/权限/恢复": "需人工浏览器验收；PR 在父会话与用户完成人工验收前保持 Draft",
-      "持久化与并发": "无",
-      "测试或运行证据": "本轮无自动化浏览器证据；node 脚本实跑不能替代浏览器交互验收",
-      "状态": "WARNING",
-      "note": "环境 / 工具边界：必须与产品断言分开记录。PR #247 保持 Draft，待用户浏览器人工验收。"
+      "用户可见入口": "/demo/g3 真实模式的五个区块按钮与「导出整链证据 JSON」",
+      "领域不变量/事务边界": "页面与 node 脚本共用同一执行器；浏览器实跑必须打到真实后端（127.0.0.1:8080，head 7f5fd8c），不是 mock",
+      "成功": "已在内置浏览器实跑通过：自建账号 g3demo-df77fc9524@example.com + 每次运行新建隔离项目；变更集段 62 步（含非 Owner 探测）、稳定化段 60+ 步、阻断恢复段 82 步（含人工复核探针）、模型段 3 次真实调用；矩阵随之 AC-G3-05 → PASS、G3.1 → PASS、模型三行 → WARNING 判定成立",
+      "失败/权限/恢复": "页面 console 0 error；模型段失败时该三行降级 NOT RUN 并写明原因，其余行状态原样保留",
+      "持久化与并发": "每次点击新建隔离项目，不复用上一次项目状态；运行标识逐次不同；页面刷新后从本地存储恢复上一次运行摘要",
+      "测试或运行证据": "G3-验收台-9-浏览器实跑证据-20261020.json；导出回执实测 G3-验收台-8-证据-g3r-mvfqrd4i-4025a47a.json / 112309 字节 / 23 条验收行 / 3 条判定 / 11 条实现缺口",
+      "状态": "PASS",
+      "note": "浏览器实跑同时暴露两个问题并已修（提交 5e6e82f）：导出的证据在页面上没有任何回执；下载用游离 anchor + 同步 revokeObjectURL 不可靠。修后导出给出可见回执。"
     },
     {
       "id": "CON-17",
@@ -302,10 +304,10 @@
     }
   ],
   "status_counts": {
-    "PASS": 14,
+    "PASS": 15,
     "PASS (follow-up)": 7,
     "N/A": 0,
-    "WARNING": 2,
+    "WARNING": 1,
     "NOT RUN": 0,
     "BLOCKED": 0,
     "TODO": 0
@@ -451,6 +453,22 @@
       "exit_code": 0,
       "result": "无输出（三个既有组件在 G3 验收台工作区间内未被修改）",
       "head": "643a3fc"
+    },
+    {
+      "seq": 15,
+      "command": "浏览器实跑（内置浏览器 / Chromium，真实后端 http://127.0.0.1:8080）：/demo/g3 依次点「创建演示账号并运行」→「跑通变更集生命周期」→「跑通依赖图与影响任务」→「跑通稳定化与交付闭环」→「跑通稳定化阻断与恢复路径」→「跑通真实模型验收项」→「导出整链证据 JSON」",
+      "cwd": "D:\\code_warehouse\\Projects\\lingdoc\\frontend（vite dev server 5173）",
+      "exit_code": 0,
+      "result": "自建账号 g3demo-df77fc9524@example.com；5 次运行各自新建隔离项目；变更集段 62 步（含非 Owner 探测）→ 矩阵 AC-G3-05 判为 PASS；稳定化段 60+ 步 → G3.1 判为 PASS；阻断恢复段 82 步（含人工复核探针、版本不匹配重投）；模型段 3 次真实调用（lingdoc-chat-deepseek 模式 real，耗时 4343.8 / 2324.3 / 3042.3 ms）→ 三行 WARNING 判定成立；导出回执 G3-验收台-8-证据-g3r-mvfqrd4i-4025a47a.json / 112309 字节 / 23 条验收行 / 3 条判定 / 11 条实现缺口；console 0 error。详细证据见 G3-验收台-9-浏览器实跑证据-20261020.json",
+      "head": "643a3fc + 5e6e82f（前端）/ 7f5fd8c（后端）"
+    },
+    {
+      "seq": 16,
+      "command": "npm test / npm run type-check / npm run build（浏览器实跑后重跑）",
+      "cwd": "frontend",
+      "exit_code": 0,
+      "result": "tests 1451 / pass 1450 / fail 0 / skipped 1；vue-tsc --build 无报错；built in 32.02s（仅既有 chunk 告警）",
+      "head": "643a3fc + 5e6e82f"
     }
   ],
   "real_runs": [
@@ -521,12 +539,13 @@
     "缺 RouteNode 写端点与「取消未冻结编辑」端点：AC-G3-08 / AC-G3-16 不可实跑（G3-GAP-02 / G3-GAP-03）。",
     "缺「AI 批量提出候选依赖」端点与「助手草稿解释分组」实现（G3-GAP-04 / G3-GAP-05）。",
     "影响中心渲染的工作台面板已由 2786bcc 补齐，缺的是验收台页面自己读原始响应的实跑证据（G3-GAP-06 / G3-GAP-07）。",
-    "页面真实模式在浏览器里的交互未被自动验证：仓库无 Playwright / Puppeteer，本轮不新增浏览器 runner；需人工浏览器验收，PR 保持 Draft（矩阵 CON-16）。",
+    "页面真实模式在浏览器里的交互已实跑通过（矩阵 CON-16 改判 PASS，证据 G3-验收台-9-浏览器实跑证据-20261020.json）；但受管宿主不落盘浏览器下载（对照实验里普通 <a download> 同样不落盘），属宿主环境限制，页面已改为给出可见导出回执，落盘证据以 node 脚本为准。",
     "产品矩阵仍有未闭合行：G3.2 / G3.3 / G3.4 / G3.5 为 TODO，AC-G3-03 / 08 / 16 为 BLOCKED，G3.7 为 NOT RUN；按 development-rules.md:84，PR 不能放行。"
   ],
-  "pr_state": "PR #247 保持 Draft：待用户浏览器人工验收（矩阵 CON-16），且产品矩阵仍有 TODO / BLOCKED / NOT RUN 行未闭合。缺口清单 #246 保持 open；本票未关闭任何 Issue，未改动 #235 正文 / 标签 / 状态。",
+  "pr_state": "PR #247 保持 Draft：产品矩阵仍有 TODO / BLOCKED / NOT RUN 行未闭合（按 development-rules.md:84 矩阵未闭环即不能放行）；页面浏览器交互已实跑通过（矩阵 CON-16 = PASS）。缺口清单 #246 保持 open；本票未关闭任何 Issue，未改动 #235 正文 / 标签 / 状态。",
   "docs": [
     "docs/08-本轮实施方案/G3-演示验收台-20261020.md",
-    "docs/08-本轮实施方案/G3-演示验收台-PR-body.md"
+    "docs/08-本轮实施方案/G3-演示验收台-PR-body.md",
+    "docs/08-本轮实施方案/G3-验收台-9-浏览器实跑证据-20261020.json"
   ]
 }

@@ -27,6 +27,7 @@
 | 阻断与恢复路径 | `docs/08-本轮实施方案/G3-验收台-6-阻断与恢复路径证据-20261020.json` | 后端 `7f5fd8c` |
 | 真实模型验收项 | `docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-20261020.json` | 后端 `7f5fd8c` |
 | 整链汇总（7 次运行 / 384 步 / 23 行 / 11 条缺口） | `docs/08-本轮实施方案/G3-验收台-8-整链证据-20261020.json` | 后端 `7f5fd8c` |
+| **浏览器实跑**（真实模式逐段点击 + 导出回执） | `docs/08-本轮实施方案/G3-验收台-9-浏览器实跑证据-20261020.json` | 前端 `643a3fc`+`5e6e82f` ／ 后端 `7f5fd8c` |
 
 > 证据落 `docs/08-本轮实施方案/`，**不写进 Issue**（`docs/agents/issue-tracker.md:54-56`）。
 > 结论绑定上表的 head；head 变化后这些结论整体失效。
@@ -36,9 +37,10 @@
 - `0c00d85` — `docs(#245)`：实施文档、PR body 片段、本票证据 JSON（验收台自身 23 行矩阵）
 - `438dc0b` — `chore(#245)`：重跑整条真实链路，刷新 G3 验收台 2-8 的证据 JSON
 - `88ad461` / `dabade4` — `docs(#245)`：补记本票提交记录、修正快照单测的断言计数
+- `5e6e82f` — `feat(#245)`：导出给出**可见回执** + 下载触发加固（本轮唯一一处前端改动，由浏览器实跑暴露）
+- 本票补充提交 — `docs(#245)`：写入浏览器实跑证据（CON-16 改判 `PASS`）、刷新矩阵统计与状态说明
 
-> 两个提交只动 `docs/08-本轮实施方案/` 下的文档与证据 JSON；`frontend/src/**` 与
-> `frontend/scripts/**` 与证据执行时的 `643a3fc` 完全一致。
+> 除 `5e6e82f` 外，本票提交只动 `docs/08-本轮实施方案/` 下的文档与证据 JSON。
 > 写入 body 时请把上表的 SHA 换成 **PR #247 合并后那一刻的 head**。
 
 ## 本票的验证命令与结果
@@ -53,11 +55,12 @@
 | `npx tsx scripts/g3demo/run-evidence.ts --live` | exit 0 —— 实时链路 62 步 / 4 条判定，后端 head `7f5fd8c` |
 | `npx tsx scripts/g3demo/run-{chain,changeset,dependencies,stabilization,blocked,model}.ts` | 六条全部 exit 0，后端 head `7f5fd8c` |
 | `npx tsx scripts/g3demo/run-evidence.ts`（汇总） | exit 0 —— 7 次运行 / 384 步 / 23 行 / 11 条缺口 |
+| **浏览器实跑**（内置浏览器 / 真实后端 `127.0.0.1:8080`） | 逐段点击通过：自建账号 + 5 次隔离项目；变更集 62 步（含非 Owner 探测）→ AC-G3-05 `PASS`；稳定化 60+ 步 → G3.1 `PASS`；阻断恢复 82 步；模型段 3 次真实调用（`lingdoc-chat-deepseek` real，4343.8 / 2324.3 / 3042.3 ms）→ 三行 `WARNING`；导出回执 `G3-验收台-8-证据-g3r-mvfqrd4i-4025a47a.json` / 112309 字节 / 23 行 / 3 判定 / 11 缺口；**console 0 error** |
 
 ## 状态说明
 
 **PR 仍为 Draft。** 理由：
 
-1. **页面真实模式在浏览器里的交互未被自动验证** —— 仓库无 Playwright / Puppeteer，本轮不新增浏览器 runner。node 脚本实跑证明的是**执行器**在真实后端上的行为，不能替代浏览器里的点击与渲染验收。**需人工浏览器验收；PR 在父会话与用户完成人工验收前保持 Draft。**（矩阵 CON-16 记 `WARNING`）
-2. **产品矩阵未闭环** —— G3.2 / G3.3 / G3.4 / G3.5 本轮未判定（`TODO`），AC-G3-03 / 08 / 16 为 `BLOCKED`（缺口 #246），G3.7 为 `NOT RUN`（缺口 #246）。按 `docs/agents/development-rules.md:84`，矩阵出现 `TODO` / `NOT RUN` / `BLOCKED` 时 PR 不能放行。
-3. **依赖真实模型的结论**（AC-G3-06 / 14 / 15 模型侧）状态一律记 `WARNING`，不写 `PASS`。
+1. **产品矩阵未闭环** —— G3.2 / G3.3 / G3.4 / G3.5 本轮未判定（`TODO`），AC-G3-03 / 08 / 16 为 `BLOCKED`（缺口 #246），G3.7 为 `NOT RUN`（缺口 #246）。按 `docs/agents/development-rules.md:84`，矩阵出现 `TODO` / `NOT RUN` / `BLOCKED` 时 PR 不能放行。
+2. **依赖真实模型的结论**（AC-G3-06 / 14 / 15 模型侧）状态一律记 `WARNING`，不写 `PASS`。
+3. **受管宿主不落盘浏览器下载** —— 对照实验里普通 `<a download>` 同样不落盘，属宿主环境限制；页面已改为给出**可见导出回执**，落盘证据以 node 脚本为准。（不影响放行，仅作边界说明。）
