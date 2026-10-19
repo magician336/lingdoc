@@ -10,6 +10,7 @@
 - [协作与代码边界](../06-灵档产品开发规划/05-团队分工与代码边界.md)
 - [接口与 Mock 约定](02-接口与Mock约定.md)
 - [G4 RuleSet 服务切片与未完边界](G4-RuleSet服务切片-20261015.md)
+- [G3 契约生成器可用性（#223 的 G1–G4 修正）](G3-契约生成器可用性-20261019.md)
 
 ## 当前PR复审入口
 
@@ -29,7 +30,7 @@
 |---|---|
 | [openapi.json](contracts/openapi.json) | HTTP契约与G4 RuleSet/精确绑定/模板检查；paths、operations和schemas以当前JSON为准，声明存在不代表全量已验收 |
 | [scenarios.json](contracts/scenarios.json) | 行为场景与合成样例，准确ID以JSON为准；providers表示参与服务；F22带请求定义与可求值检查 |
-| [workflow.json](contracts/workflow.json) | F01 连续规格，共 23 步，动态捕获 ID/版本与幂等重放 |
+| [workflow.json](contracts/workflow.json) | F01 连续规格，共 24 步，动态捕获 ID/版本与幂等重放 |
 | [T15-读回式副作用断言](T15-读回式副作用断言.md) | issue #33 读回契约、报告来源标记与 F11/F21 场景 |
 | [T15-F02 白盒观察](T15-F02-白盒观察.md) | issue #34 的 F02 专属负断言观察点与真实服务结论 |
 | [T15-09 验证报告](T15-09-验证报告.json) | issue #36 的 F10/F16/F19 实跑证据、F13 未运行原因与已登记缺口 |
@@ -98,7 +99,7 @@ G6-01 至 G6-06 的主路径、运行矩阵、安全矩阵、结构化观测、�
 
 ## 提供方联调执行器（按场景驱动）
 
-`scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 与规格文档读取请求定义，对隔离的提供方测试环境逐步发请求。规格有两种给法：默认的 workflow.json 是 F01 的 23 步连续规格；`--scenario` 则按 id 从 scenarios.json 取一条，F01 在契约里指向 workflow.json，所以两种给法等价。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
+`scripts/lingdoc_mock/run_f01.py` 从 OpenAPI 与规格文档读取请求定义，对隔离的提供方测试环境逐步发请求。规格有两种给法：默认的 workflow.json 是 F01 的 24 步连续规格；`--scenario` 则按 id 从 scenarios.json 取一条，F01 在契约里指向 workflow.json，所以两种给法等价。先启动提供方测试环境，并只使用合成资料与短期测试凭证：
 
 ```text
 python scripts/lingdoc_mock/run_f01.py --base-url http://127.0.0.1:8080/api/v1/lingdoc --report artifacts/f01-run.json
@@ -145,7 +146,7 @@ python scripts/lingdoc_mock/build_t15_matrix.py
 
 这是离线证据整理，不会启动服务、发送请求、运行模型或访问数据库。每个场景都给出 `passed`、`failed` 或 `not_run` 及其证据来源；失败项列出责任任务和任务负责人角色。当前任务池不预填个人姓名，矩阵会明确标出尚无个人 assignee。F15 保留修复提交前的历史失败结论，并注明修复后尚待真实场景复测。报告和证据不包含时间戳，构建器会在单次运行中重复渲染并核对字节一致；输入文件 SHA-256 及矩阵摘要见 [T15-11 证据](T15-11-证据.json)。矩阵明确保留未运行原因以及边界：资料上下文使用分块表文本、未从原文件重新解析；UI 尚未通过真实后端浏览器验证；完整 F01 流程由 T16 负责。
 
-当前契约标记为 `specification_not_executed_against_provider`：真实服务已能按 [T15-01 的启动配方](T15-真实服务启动.md) 在本机起来并接受真实请求，但**尚未对着它跑过这条 23 步流程**。执行器不解释契约里的 `mode`（workflow.json 的 `mode` 是这份规格的执行状态，场景条目里的 `mode` 是「真接口 / 假模型」这类运行方式，两个是不同层面的记账，都由契约维护者随进度更新，由人按它决定怎么跑），因此别把这两个字段当成执行器的开关。所以本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
+当前契约标记为 `specification_not_executed_against_provider`：真实服务已能按 [T15-01 的启动配方](T15-真实服务启动.md) 在本机起来并接受真实请求，但**尚未对着它跑过这条 24 步流程**。执行器不解释契约里的 `mode`（workflow.json 的 `mode` 是这份规格的执行状态，场景条目里的 `mode` 是「真接口 / 假模型」这类运行方式，两个是不同层面的记账，都由契约维护者随进度更新，由人按它决定怎么跑），因此别把这两个字段当成执行器的开关。所以本执行器自身的单元测试不等于 F01 已通过；接通提供方后仍须运行整条流程并处理输出中的 MANUAL 语义断言，包括 DOCX 可打开、章节和警示内容正确。
 
 执行器单元测试（包含报告与大小写响应头回归）：
 

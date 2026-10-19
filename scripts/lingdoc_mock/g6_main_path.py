@@ -41,7 +41,10 @@ SAFE_WORKFLOWS = {"F01"}
 SAFE_RUNNER_STATUSES = {"completed", "failed", "not_run", "blocked"}
 SAFE_VERIFICATION_SCOPES = {"contract_fixture_only", "http_smoke_only", "observed", "not_recorded"}
 SAFE_METADATA_STATUSES = {"mock", "not_run", "unknown", "observed", "not_observed"}
-SAFE_STEP_ID = re.compile(r"F01-[0-9]{2}")
+# The trace's step ids are F01-01..F01-23 plus F01-03b: the activation read
+# was inserted in the middle so the existing ids did not have to be
+# renumbered (they are quoted in historical evidence files).
+SAFE_STEP_ID = re.compile(r"F01-[0-9]{2}[a-z]?")
 SAFE_FAILURE_CASE = re.compile(r"[a-z][a-z0-9_.-]{1,63}")
 
 

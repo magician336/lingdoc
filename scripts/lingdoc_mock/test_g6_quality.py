@@ -920,7 +920,7 @@ class G6RunTest(unittest.TestCase):
                              "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23,
+                                               "completed_steps": 24,
                                                "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,
@@ -948,7 +948,7 @@ class G6RunTest(unittest.TestCase):
                              "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23,
+                                               "completed_steps": 24,
                                                "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,
@@ -974,7 +974,7 @@ class G6RunTest(unittest.TestCase):
                              "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23,
+                                               "completed_steps": 24,
                                                "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,

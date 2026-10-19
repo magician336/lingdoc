@@ -391,10 +391,19 @@ assert canonical==canon(cases['canonical_fixture']['release']['frozen_input'])
 assert hashlib.sha256(canonical).hexdigest()==(ROOT/'frozen-input.sha256').read_text().strip()
 
 negative_results=[]
+def flow_index(step_id):
+    """Locate a trace step by its declared id.
+
+    The negative cases below used to point at steps by position, so inserting
+    one step into the trace silently moved the target onto a different step:
+    the check then either crashed on a missing key or stopped testing what it
+    claimed to test. An id does not move when the trace grows.
+    """
+    return next(index for index,step in enumerate(resolved) if step.get('id')==step_id)
 for label,index,mutate in [
- ('reject_lost_review_item',12,lambda s:s['reference_response']['data'].update(review_items=[])),
- ('reject_wrong_expected_version',12,lambda s:s['request']['json'].update(expected_chapter_version_id='wrong')),
- ('reject_frozen_content_changed_without_digest',18,lambda s:s['reference_response']['data']['frozen_input']['spec'].update(research_goal='changed')),
+ ('reject_lost_review_item',flow_index('F01-13'),lambda s:s['reference_response']['data'].update(review_items=[])),
+ ('reject_wrong_expected_version',flow_index('F01-13'),lambda s:s['request']['json'].update(expected_chapter_version_id='wrong')),
+ ('reject_frozen_content_changed_without_digest',flow_index('F01-19'),lambda s:s['reference_response']['data']['frozen_input']['spec'].update(research_goal='changed')),
 ]:
     bad=copy.deepcopy(resolved);mutate(bad[index])
     try: check_trace(bad)
@@ -422,7 +431,7 @@ bad['frozen_input']['chapters'][0]['review_items'].append({**bad['frozen_input']
 bad['snapshot_digest']=sha(bad['frozen_input'])
 must_reject('same_review_item_id_different_statement',lambda:check_frozen(bad))
 badtrace=copy.deepcopy(resolved)
-badtrace[15]['reference_response']['data']['id']='different-confirmation-returned'
+badtrace[flow_index('F01-16')]['reference_response']['data']['id']='different-confirmation-returned'
 must_reject('frozen_confirmation_not_actual_return',lambda:check_trace(badtrace))
 
 f20=next(c for c in cases['scenarios'] if c['id']=='F20')['reference']
@@ -574,7 +583,7 @@ report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_onl
  'scenario_checks_left_to_the_run':scenario_totals['checks_unresolved'],
  'starting_states':len(buildable_states),'starting_state_parts_buildable':sorted(startable),
  'negative_static_cases_rejected':negative_results,
- 'not_run':['complete OpenAPI meta-schema validation','Prism runtime','real provider/database/model tests','actual DOCX export/opening','running a scenario step and evaluating its checks against a real response (scripts/lingdoc_mock/run_scenario.py does that against a real service; this static check ties the expectations to the published examples and stops there)','building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)'],
- 'note':'This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples.'}
+ 'not_run':['real provider/database/model tests','actual DOCX export/opening','running a scenario step and evaluating its checks against a real response (scripts/lingdoc_mock/run_scenario.py does that against a real service; this static check ties the expectations to the published examples and stops there)','building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)'],
+ 'external_validation':[{'item':'complete OpenAPI meta-schema validation','tool':'jsonschema 4.26.0 (Draft4Validator) against https://spec.openapis.org/oas/3.0/schema/2021-09-28','result':'PASS (0 errors)','head':'7341aa8','date':'2026-10-19','note':'plus openapi-spec-validator 0.9.0, also PASS'},{'item':'Prism runtime','tool':'@stoplight/prism-cli 5.16.0 in proxy mode against the live backend','result':'PASS (the impact-assessment response raised 0 violations; a negative control with a deliberately broken body raised 4)','head':'7341aa8','date':'2026-10-19'}],'note':'This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples.'}
 (ROOT/'validation-result.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
 print(json.dumps(report,ensure_ascii=False))

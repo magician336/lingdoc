@@ -113,6 +113,9 @@ class SyntheticProvider:
         match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/members", path)
         if match and method == "PUT":
             return self._save_members(match.group(1), body)
+        match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/activation-read", path)
+        if match and method == "POST":
+            return self._record_activation_read(match.group(1), body)
         match = re.fullmatch(r".*/lingdoc/projects/([^/]+)/activate", path)
         if match and method == "POST":
             return self._activate(match.group(1), body)
@@ -182,6 +185,16 @@ class SyntheticProvider:
                                   for user_id in sorted(body["collaborator_user_ids"]))
         project["project_version"] += 1
         return Response(200, self._envelope(self._view(project_id)))
+
+    def _record_activation_read(self, project_id, body):
+        project = self.projects[project_id]
+        if body["expected_project_version"] != project["project_version"]:
+            return self._version_conflict()
+        return Response(201, self._envelope({"id": self._next_id("read"), "actor_id": OWNER_ID,
+                                             "project_id": project_id,
+                                             "project_version": project["project_version"],
+                                             "spec_revision": project["spec_revision"],
+                                             "read_at": "2026-01-01T00:00:00Z"}))
 
     def _activate(self, project_id, body):
         project = self.projects[project_id]
@@ -363,18 +376,23 @@ class BuildTest(unittest.TestCase):
         provider, loader = built("S2")
         project_id, chapter_id = loader.identifiers["project_id"], loader.identifiers["chapter.question"]
         self.assertEqual(provider.paths(), ["/projects", f"/projects/{project_id}/spec",
-                                            f"/projects/{project_id}/members", f"/projects/{project_id}/activate",
+                                            f"/projects/{project_id}/members",
+                                            f"/projects/{project_id}/activation-read",
+                                            f"/projects/{project_id}/activate",
                                             f"/projects/{project_id}/chapters",
                                             f"/projects/{project_id}/chapters/{chapter_id}/versions"])
-        self.assertEqual([call["method"] for call in provider.calls], ["POST", "PUT", "PUT", "POST", "GET", "POST"])
+        self.assertEqual([call["method"] for call in provider.calls],
+                         ["POST", "PUT", "PUT", "POST", "POST", "GET", "POST"])
         bodies = [call["body"] for call in provider.calls]
         self.assertEqual(bodies[1]["expected_spec_revision"], 0)    # from the create response
         self.assertEqual(bodies[2]["expected_project_version"], 2)   # after the spec save
         self.assertEqual(bodies[2]["collaborator_user_ids"], [MEMBER_ID])
-        self.assertEqual(bodies[3]["expected_spec_revision"], 1)
-        self.assertEqual(bodies[5]["expected_spec_revision"], 1)
-        self.assertIsNone(bodies[5]["expected_chapter_version_id"])  # the chapter has no version yet
-        self.assertEqual(bodies[5]["body_markdown"], "人工编辑：这是合成测试材料，不是真实研究结果。")
+        self.assertEqual(bodies[3]["expected_project_version"], 3)   # the read is bound to the current version
+        self.assertEqual(bodies[4]["expected_spec_revision"], 1)
+        self.assertTrue(bodies[4]["activation_read_id"])             # the receipt the read step returned
+        self.assertEqual(bodies[6]["expected_spec_revision"], 1)
+        self.assertIsNone(bodies[6]["expected_chapter_version_id"])  # the chapter has no version yet
+        self.assertEqual(bodies[6]["body_markdown"], "人工编辑：这是合成测试材料，不是真实研究结果。")
         for call in provider.calls:
             if call["method"] != "GET":
                 self.assertGreaterEqual(len(call["headers"]["idempotency-key"]), 8)
@@ -407,7 +425,8 @@ class BuildTest(unittest.TestCase):
         loader = loader_for("S1", provider)
         with self.assertRaisesRegex(WorkflowError, r"S1-activate activateProject: HTTP 409 \(version_conflict\)"):
             loader.build()
-        self.assertEqual([step["id"] for step in loader.build_steps], ["S1-create", "S1-spec"])
+        self.assertEqual([step["id"] for step in loader.build_steps],
+                         ["S1-create", "S1-spec", "S1-activation-read"])
 
     def test_the_run_target_is_taken_from_the_client_not_read_a_second_time(self):
         # --base-url 只解析一次：客户端解析后装载器跟着走。各解析一次的话，明明是对真实服务
@@ -429,7 +448,7 @@ class BuildTest(unittest.TestCase):
         knowledge, member = bindings_for(state)
         loader = StateLoader(openapi, state, client_for(SyntheticProvider()), knowledge, member)
         with self.assertRaisesRegex(WorkflowError, r"S1-activate activateProject: this build sends body fields "
-                                                    r"\['expected_spec_revision'\]"):
+                                                    r"\['activation_read_id', 'expected_spec_revision'\]"):
             loader.build()
 
 
@@ -636,7 +655,9 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(report["build_steps"], [{"id": "S1-create", "operation_id": "createProject",
                                                   "http_status": 201, "content_type": "application/json"},
                                                  {"id": "S1-spec", "operation_id": "saveSpec",
-                                                  "http_status": 200, "content_type": "application/json"}])
+                                                  "http_status": 200, "content_type": "application/json"},
+                                                 {"id": "S1-activation-read", "operation_id": "recordActivationRead",
+                                                  "http_status": 201, "content_type": "application/json"}])
         self.assertIn("S1 FAILED: S1-activate activateProject: HTTP 409", stderr)
 
 

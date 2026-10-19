@@ -17,6 +17,196 @@
     }
   ],
   "paths": {
+    "/projects/{projectId}/activation-read": {
+      "post": {
+        "operationId": "recordActivationRead",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "登记立项确认回执",
+        "description": "登记「有人读过立项差异」。确认立项时必须带回这里的回执编号。机器身份不能代替人工确认。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivationReadRequest"
+              },
+              "example": {
+                "expected_project_version": 2
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "已签发立项确认回执",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationReadResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "回执绑定当前课题版本与人工读者",
+                    "value": {
+                      "data": {
+                        "id": "read-demo-1",
+                        "actor_id": "u-owner",
+                        "project_id": "p-demo",
+                        "project_version": 2,
+                        "spec_revision": 1,
+                        "read_at": "2026-10-19T14:30:00Z"
+                      },
+                      "request_id": "req-activation-read-1",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "版本冲突"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/change-sets/{changeSetId}/assess": {
+      "post": {
+        "operationId": "assessChangeSet",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "对当前基线评估变更影响",
+        "description": "按当前基线重新评估某个 ChangeSet，并返回评估后的变更预览。评估结果随后可由 GET impact-assessment 读取。",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "changeSetId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已按当前基线完成评估",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeSetResponse"
+                },
+                "examples": {
+                  "success": {
+                    "summary": "评估后的变更预览",
+                    "value": {
+                      "data": {
+                        "id": "cs-demo",
+                        "project_id": "p-demo",
+                        "created_by": "u-owner",
+                        "reason": "研究对象发生变化",
+                        "status": "assessed",
+                        "base_context_revision": 1,
+                        "base_spec_revision": 1,
+                        "fields": [
+                          {
+                            "key": "research_subject",
+                            "old_value": "公开的合成调查样本",
+                            "new_value": "新的合成调查样本"
+                          }
+                        ],
+                        "impacts": [
+                          {
+                            "chapter_id": "ch-demo",
+                            "title": "研究问题",
+                            "reason": "研究条件变化，需要重新复核",
+                            "status": "open"
+                          }
+                        ],
+                        "created_at": "2026-10-19T14:30:00Z"
+                      },
+                      "request_id": "req-assess-1",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求错误"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "基线过期或幂等冲突"
+          },
+          "422": {
+            "description": "当前状态不允许"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
 "/projects/{projectId}/change-sets/{changeSetId}/preflight": {
       "post": {
         "operationId": "acknowledgeImpactPreflight",
@@ -2818,7 +3008,10 @@
                 "$ref": "#/components/schemas/ActivateProject"
               },
               "example": {
-                "expected_spec_revision": 1
+                "expected_spec_revision": 1,
+                "activation_read_id": "read-demo-1",
+                "expected_project_version": 3,
+                "reviewed_project_version": 3
               }
             }
           }
@@ -13645,7 +13838,14 @@
         ],
         "responses": {
           "200": {
-            "description": "成功"
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivationDiffResponse"
+                }
+              }
+            }
           },
           "400": {
             "description": "请求错误"
@@ -16694,6 +16894,7 @@
           },
           "action": {
             "type": "string",
+            "description": "服务端判定的处置动作。NO_ACTION 表示该边不派生影响任务，但结论仍会被返回。",
             "enum": [
               "REVALIDATE_EVIDENCE",
               "RETRIEVE_CANDIDATES",
@@ -16701,7 +16902,8 @@
               "REGENERATE",
               "RECOMPUTE",
               "INVALIDATE_CONFIRMATION",
-              "BLOCK_RELEASE"
+              "BLOCK_RELEASE",
+              "NO_ACTION"
             ]
           },
           "certainty": {
@@ -19199,16 +19401,207 @@
         ],
         "additionalProperties": false
       },
+      "ActivationReadRequest": {
+        "type": "object",
+        "description": "登记「有人读过立项差异」的请求。回执只对同一课题版本有效。",
+        "properties": {
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "expected_project_version"
+        ],
+        "additionalProperties": false
+      },
+      "ActivationReadReceipt": {
+        "type": "object",
+        "description": "立项确认回执。确认立项时必须带回它的编号。",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "project_version": {
+            "type": "integer"
+          },
+          "spec_revision": {
+            "type": "integer"
+          },
+          "read_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "actor_id",
+          "project_id",
+          "project_version",
+          "spec_revision",
+          "read_at"
+        ],
+        "additionalProperties": false
+      },
+      "ActivationDiff": {
+        "type": "object",
+        "description": "立项确认差异：当前课题版本与研究条件相对上次读取发生了哪些变化。",
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "current_project_version": {
+            "type": "integer"
+          },
+          "current_spec_revision": {
+            "type": "integer"
+          },
+          "changed_since_version": {
+            "type": "integer"
+          },
+          "changed_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "origin": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "modified_by": {
+                  "type": "string"
+                },
+                "modified_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value",
+                "origin",
+                "status",
+                "modified_by",
+                "modified_at"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "pending_ai_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "origin": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value",
+                "origin",
+                "status"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "current_project_version",
+          "current_spec_revision",
+          "changed_since_version",
+          "changed_fields",
+          "pending_ai_fields"
+        ],
+        "additionalProperties": false
+      },
+      "ActivationDiffResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ActivationDiff"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "ActivationReadResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ActivationReadReceipt"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
       "ActivateProject": {
         "type": "object",
+        "description": "确认立项并生成章节骨架。activation_read_id 是必填的立项确认回执编号，由 POST /projects/{projectId}/activation-read 签发；没有它服务端拒绝立项。",
         "properties": {
           "expected_spec_revision": {
             "type": "integer",
             "minimum": 0
+          },
+          "activation_read_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "expected_project_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "reviewed_project_version": {
+            "type": "integer",
+            "minimum": 1
           }
         },
         "required": [
-          "expected_spec_revision"
+          "expected_spec_revision",
+          "activation_read_id"
         ],
         "additionalProperties": false
       },

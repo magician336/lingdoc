@@ -1,18 +1,18 @@
 {
   "result": "PASS",
   "scope": "static_design_artifacts_and_reference_trace_only",
-  "paths": 70,
-  "operations": 77,
-  "core_operations": 74,
-  "schemas": 137,
-  "local_refs": 544,
-  "shape_checks": 638,
+  "paths": 72,
+  "operations": 79,
+  "core_operations": 76,
+  "schemas": 142,
+  "local_refs": 552,
+  "shape_checks": 645,
   "scenarios": 26,
-  "scenario_example_references": 131,
-  "continuous_trace_steps": 23,
-  "scenario_steps_with_requests": 105,
+  "scenario_example_references": 132,
+  "continuous_trace_steps": 24,
+  "scenario_steps_with_requests": 106,
   "scenario_checks_tied_to_a_published_example": 50,
-  "scenario_checks_left_to_the_run": 17,
+  "scenario_checks_left_to_the_run": 18,
   "starting_states": 8,
   "starting_state_parts_buildable": [
     "assets",
@@ -66,12 +66,27 @@
     "scenario_capture_points_outside_the_published_response"
   ],
   "not_run": [
-    "complete OpenAPI meta-schema validation",
-    "Prism runtime",
     "real provider/database/model tests",
     "actual DOCX export/opening",
     "running a scenario step and evaluating its checks against a real response (scripts/lingdoc_mock/run_scenario.py does that against a real service; this static check ties the expectations to the published examples and stops there)",
     "building a declared starting state into a provider and reading it back (scripts/lingdoc_mock/load_state.py does that against a real service; this static check does not)"
+  ],
+  "external_validation": [
+    {
+      "item": "complete OpenAPI meta-schema validation",
+      "tool": "jsonschema 4.26.0 (Draft4Validator) against https://spec.openapis.org/oas/3.0/schema/2021-09-28",
+      "result": "PASS (0 errors)",
+      "head": "7341aa8",
+      "date": "2026-10-19",
+      "note": "plus openapi-spec-validator 0.9.0, also PASS"
+    },
+    {
+      "item": "Prism runtime",
+      "tool": "@stoplight/prism-cli 5.16.0 in proxy mode against the live backend",
+      "result": "PASS (the impact-assessment response raised 0 violations; a negative control with a deliberately broken body raised 4)",
+      "head": "7341aa8",
+      "date": "2026-10-19"
+    }
   ],
   "note": "This validates a proposed trace, not implemented server behavior. Export hash remains an explicit placeholder in examples."
 }
