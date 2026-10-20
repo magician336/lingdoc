@@ -1,0 +1,300 @@
+# Spec #47 段二：错误形态跨面归并与共享核心提取 — 开发计划与证据
+
+> 段一（47.01 / 47.02 / 47.04 / 47.05）已合入 `main`（PR #285，merge commit `2ad3bc5`）。
+> 本档是**段二**的开工证据。段二另开 PR，集成分支 `codex/lingdoc-architecture-improvement-20261020-arch-seg2`（基于 `origin/main @ 2ad3bc5`）。
+
+## 开工卡片
+
+```text
+Issue / Spec：#259（父票，段二不关闭它）/ 子票 #262 #263 #271 #273 #264 #265 / Spec #47
+用户可见结果：同一类失败在所有传输面返回相同的状态码、错误码与文案；
+              新增一种业务错误不需要改任何传输层映射表。
+范围内：47.06 错误形态跨面归并（四条剩余平表并入 clienterror）
+        47.07 旧平表 contract + 结构断言（平表删除、兜底语义、结构断言）
+        47.03 章节「已确认」单一谓词（段一剩余，且是 47.08 的硬前置）
+        47.08 共享核心成为独立深模块
+        47.09 调研域并入主管道
+        47.10 组合根缺能力 fail-closed
+范围外：段三 47.11–47.16（上下文切分与端口收窄）
+        数据库 schema、路由、成功信封、重放元数据、持久化幂等记录格式
+前置依赖：#262 ← #272(已闭)；#263 ← #262；#271 ← #260(已闭)；#273 ← #271+#261(已闭)+#262；
+          #264/#265 ← #273
+真实消费者：HTTP 接缝——workspace 主路由、规则治理（g4）、规则集存储（rulesetstore）、
+          候选采纳（candidateadoption）、生成（generation）、G2 全流程（g2_full_http）
+领域不变量与事务边界：本段只动**对外形态的声明位置**与**归并口径**，
+          不动任何事务边界、幂等记录格式、审计写入时序与数据库约束
+成功 / 失败 / 权限 / 恢复场景：每条被迁移的错误都必须有迁移前后的逐条对照断言
+持久化 / 并发 / 审计证据：本段不引入持久化或并发变更；沿用既有事务边界，迁移不得改变零写入与幂等语义
+当前风险与未决决策：见「少数口径变更清单」与「未决决策记录」
+```
+
+## 依赖图与切片
+
+```text
+#272 47.05 已闭 ──> #262 47.06 ──> #263 47.07
+                                  │
+#260 47.02 已闭 ──> #271 47.03 ───┴──> #273 47.08 ──> #264 47.09
+                                                    └──> #265 47.10 ──> 段三 6 张
+```
+
+**前沿（现在可开工）**：`#262`（47.06）与 `#271`（47.03）。两者阻塞边都已解除。
+
+**为什么 47.03 必须并进段二的 PR**：47.08 的原生阻塞边里有 47.03。段一交付的是四张票，
+47.03 是段一剩下的一张；不先做它，47.08 就不开工。为了「段二可独立交付」，47.03 并入段二分支，
+并在 PR body 中明确标注它属于段一的收尾而非段二的新增。
+
+## 取证：迁移前基线（5 张平表）
+
+47.05 已把**工作区主路由**（`internal/lingdoc/workspace/http.go`）迁到 `internal/clienterror`，
+主路由的 42 个分支已归零。剩下 5 处映射点如下，**本段的「迁移前」基线就是它们**。
+
+### 面 1：`internal/lingdoc/rulesetstore/http.go` → `writeApplicationError`
+
+| 匹配的错误 | 状态 | 错误码 | 文案 | retryable |
+| --- | --- | --- | --- | --- |
+| `ErrActorRequired`, `ErrRuleSetTenantRequired` | 401 | `unauthenticated` | 需要有效的租户身份。 | false |
+| `ErrRuleSetAccessDenied` | 403 | `forbidden` | 当前租户成员无权执行此规则集操作。 | false |
+| `ErrRuleSetNotFound` | 404 | `not_found` | 资源不存在或不可访问。 | false |
+| `ErrRuleSetVersionExists`, `ErrRuleSetStateConflict`, `template.ErrRuleSetNotDraft`, `template.ErrRuleSetNotPublished` | 409 | **`state_conflict`** | 规则集版本状态已变化，请重新读取。 | false |
+| `ErrAuthorizerUnavailable` | 503 | `authorization_unavailable` | 授权服务暂不可用，请稍后重试。 | **true** |
+| `ErrDraftHashMustBeEmpty`, `template.ErrInvalidRuleSet` | 400 | `invalid_request` | 规则集不符合安全约束。 | false |
+| `ErrInvalidRuleSetUseAudit` | 400 | `invalid_request` | 规则集使用审计查询范围无效。 | false |
+| `ErrRuleSetMetricsUnavailable` | 503 | `metrics_unavailable` | 规则集运行指标暂不可用，请稍后再试。 | **true** |
+| 兜底 | 500 | `internal_error` | 操作失败，请稍后再试。 | **true** |
+
+信封：`{"error":{"code","message","retryable"},"request_id"}`——**无 `details` 键**。
+`retryable` 由 `writeError` 按 `status >= 500` 推导。
+
+### 面 2：`internal/lingdoc/workspace/g4_full_http.go` → `G4ErrorStatus`（治理面）
+
+| 匹配的错误 | 状态 | 错误码 | 文案 |
+| --- | --- | --- | --- |
+| `ErrG4HumanDecisionRequired` | 403 | `human_decision_required` | 请使用当前人工账号复核并提交。 |
+| `ErrG4CrossTenantSourceUnsupported` | 422 | `cross_tenant_source_unsupported` | 当前目录流程无法在同一事务复核跨租户共享授权。 |
+| `governance.ErrUnauthorized` | 403 | `template_governance_authorization_unavailable` | 目录治理授权不可用。 |
+| `governance.ErrSourceUnavailable` | 403 | `source_access_denied` | 来源已不可用或无当前授权。 |
+| `governance.ErrUnavailable`, `governance.ErrModelUnavailable` | 503 | `template_governance_unavailable` | 目录或规则建议服务尚未配置。 |
+| `governance.ErrNotFound`, `rulesetstore.ErrRuleSetNotFound` | 404 | `not_found` | 资源不存在或不可访问。 |
+| `governance.ErrIdempotencyConflict` | 409 | `idempotency_conflict` | 同一个操作键对应不同请求。 |
+| `governance.ErrVersionConflict`, `governance.ErrStale`, `rulesetstore.ErrRuleSetVersionExists`, `rulesetstore.ErrRuleSetStateConflict` | 409 | **`version_conflict`** | 内容或基线已变化，请先读取当前版本。 |
+| `governance.ErrInvalidState`, `template.ErrRuleSetNotDraft`, `template.ErrRuleSetNotPublished` | 409 | **`invalid_state`** | 当前版本状态不允许此操作。 |
+| `governance.ErrReplayRequired` | 422 | `template_replay_required` | 须用服务器注册且绑定当前版本的正反例完成回放。 |
+| `governance.ErrInvalidOutput` | **502** | `invalid_model_output` | 模型输出不符合当前目标和规则约束。 |
+| `governance.ErrInvalidRequest`, `template.ErrInvalidDefinition`, `template.ErrInvalidRuleSet`, `rulesetstore.ErrDraftHashMustBeEmpty` | 400 | `invalid_request` | 请求字段不符合约定。 |
+
+信封：`sendErrorDetails(..., nil)` → **带 `"details": null` 键**；`retryable` 由
+`sendErrorDetails` 写死为 **false**（连 503 也是 false）。
+
+### 面 3：`internal/lingdoc/generation/http.go` → `generationHTTPStatus` + `writeGenerationError`
+
+| 错误 | 状态 | 错误码 | 文案 | retryable |
+| --- | --- | --- | --- | --- |
+| `ErrInvalidRequest` | 400 | `invalid_request` | 请求字段不符合约定。 | false |
+| `ErrInsufficientEvidence` | 422 | `insufficient_evidence` | 允许资料不足以生成该章节。 | false |
+| `ErrAssetNotReady` | 422 | `asset_not_ready` | 资料尚未处理完成。 | false |
+| `ErrPreflightBlocked` | 422 | `preflight_blocked` | 请先处理交付阻断项。 | false |
+| `ErrInvalidState` | 422 | `invalid_state` | 当前阶段不能执行该动作。 | false |
+| `ErrAssetNotAuthorized` | 422 | `asset_not_authorized` | 请求中存在未获授权的资料，未开始处理。 | false（**带 `details`**） |
+| `ErrNotFound` | 404 | `not_found` | 资源不存在或不可访问。 | false |
+| `ErrForbidden` | 403 | `forbidden` | 无权执行该动作。 | false |
+| `ErrSourceAccessDenied` | 403 | `source_access_denied` | 资料授权已不可用。 | false |
+| `ErrVersionConflict` | 409 | `version_conflict` | 输入版本已变化，请重新读取。 | false |
+| `ErrIdempotencyConflict` | 409 | `idempotency_conflict` | 同一幂等键对应不同请求。 | false |
+| `ErrDependencyUnavailable` | 503 | `dependency_unavailable` | 依赖暂时不可用。 | **true** |
+| 401 兜底 | 401 | `unauthenticated` | 请登录后重试。 | false |
+| 兜底 | 500 | `internal_error` | 服务器暂时无法完成请求。 | **true** |
+
+信封：`details` 只在非空时出现（`AssetNotAuthorizedError` 那条带 `details`）。
+`retryable` 按 `status >= 500` 推导。
+
+**取证中发现的一处不一致**：`ErrStaleInput` 出现在 `generationHTTPStatus`（→ 409），
+但**没有**出现在 `writeGenerationError` 的分支里，因此它现在答 **409 + `internal_error` +
+「服务器暂时无法完成请求。」**。这是收口前就存在的落空，见「未决决策记录 D-47-04」。
+
+### 面 4：`internal/lingdoc/candidateadoption/candidate_adoption_http.go`
+
+| 错误 | 状态 | 错误码 | 文案 | retryable |
+| --- | --- | --- | --- | --- |
+| `ErrInvalidRequest` | 400 | `invalid_request` | 请求字段不符合约定。 | false |
+| `ErrNotFound` | 404 | `not_found` | 资源不存在或不可访问。 | false |
+| `ErrForbidden` | 403 | `forbidden` | 无权执行该动作。 | false |
+| `ErrSourceAccessDenied` | 403 | `source_access_denied` | 资料授权已不可用。 | false |
+| `ErrStaleInput` | 409 | `stale_input` | 候选稿或快照基于旧输入。 | false |
+| `ErrVersionConflict` | 409 | `version_conflict` | 内容已变化，请先读取当前版本。 | false |
+| `ErrInvalidState` | 422 | `invalid_state` | 当前阶段不能执行该动作。 | false |
+| `ErrIdempotencyConflict` | 409 | `idempotency_conflict` | 同一幂等键对应不同请求。 | false |
+| `ErrDependencyUnavailable` | 503 | `dependency_unavailable` | 候选采纳依赖尚未就绪，请稍后重试。 | **true** |
+| 401 兜底 | 401 | `unauthenticated` | 请登录后重试。 | false |
+| 兜底 | 500 | `internal_error` | 服务器暂时无法完成请求。 | false（**注意：500 也不可重试**） |
+
+信封：无 `details` 键。`retryable` 默认 false，只有 `ErrDependencyUnavailable` 显式为 true。
+
+### 面 5：`internal/lingdoc/workspace/g2_full_http.go` → `g2FullError`
+
+5 个分支（`ErrFormalChangeRequired` / `ErrG2ConsentRequired` / `ErrG2EvidenceIncomplete` /
+`ErrG2OutcomeUnknown` / `ErrG2Unavailable`），未命中者落到工作区主路由的 `sendError`。
+
+### 已被 47.05 迁走的工作区主路由
+
+`internal/lingdoc/workspace/http.go` 的 `sendError` 现在只做两件事：渲染 `clienterror` 声明的形态，
+以及给未声明形态的错误兜底 500 `internal_error`。主路由的 45 个错误形态由
+`internal/lingdoc/workspace/client_form_contract_test.go` 逐条钉住。
+
+## 已核实的对外分歧（收口必须消解）
+
+### 规则集状态类错误（DR-47-02 的对象）
+
+| 面 | 错误 | 状态 | 错误码 | 文案 |
+| --- | --- | --- | --- | --- |
+| 治理面 | `template.ErrRuleSetNotDraft`, `template.ErrRuleSetNotPublished` | 409 | `invalid_state` | 当前版本状态不允许此操作。 |
+| 治理面 | `rulesetstore.ErrRuleSetVersionExists`, `rulesetstore.ErrRuleSetStateConflict` | 409 | `version_conflict` | 内容或基线已变化，请先读取当前版本。 |
+| 规则集面 | 上列 4 个错误**合并在一支** | 409 | `state_conflict` | 规则集版本状态已变化，请重新读取。 |
+| 工作区核心 | `lingdoctemplate.ErrRuleSetNotPublished` → 翻译成 `ErrInvalidState` | **422** | `invalid_state` | 当前项目状态或研究条件不满足操作要求。 |
+
+**多数口径**：状态码 409（两处 409 对一处 422）；错误码 `invalid_state`（两处对一处）。
+**DR-47-02 裁定**：归并后只有两类语义——「状态不允许该操作」→ 409 `invalid_state`；
+「版本或基线已变化」→ 409 `version_conflict`。对外错误码 `state_conflict` 退役。
+
+### 5xx 的可重试标记（DR-47-03 的对象）
+
+| 面 | 5xx 的 retryable | 来源 |
+| --- | --- | --- |
+| 规则集面 | **true** | `status >= 500` |
+| 生成面 | **true** | `status >= 500` |
+| 候选采纳面 | **仅 `ErrDependencyUnavailable` 为 true**，其余 5xx 为 false | 逐个分支显式赋值 |
+| 治理面 | **恒为 false** | `sendErrorDetails` 写死 |
+| 工作区主路由 | 随形态声明 | `clienterror.Form.Retryable` |
+
+**DR-47-03 暂定口径**：「4xx 不可重试、5xx 可重试」。按此，治理面的 503 与候选采纳面的其余 5xx
+会从 false 变 true——这两处是**少数口径变更**，必须逐条列出。
+
+### 502 孤例
+
+`governance.ErrInvalidOutput` → **502 `invalid_model_output`**。全套对外形态里唯一的 502。
+Spec 决策 19：保留状态码与错误码，但必须**进入统一语义表**，不再由个别传输面私有。
+
+### 信封字段集（段一 45/45 比对漏掉的第 5 维）
+
+契约 `docs/08-本轮实施方案/contracts/openapi.json` 的 `components.schemas.Error` 声明：
+`properties` = code / message / retryable / **details**；`required` = code / message / retryable；
+`details` 的 type 是 **object**（不是 null）。契约里 444 个错误样例中 **442 个不带 `details`**，
+只有 2 个带（`DeniedAssetsError` 与 `AssetNotAuthorizedError` 那两条合法带 details 的路径）。
+
+现状：
+
+- 工作区主路由（47.05 已迁）：`{"error":{"code","message","retryable"},"request_id"}`——**无 `details`**。
+- 规则集面、候选采纳面、生成面：**无 `details`**。
+- 治理面：**带 `"details": null`**——而 `null` 不符合契约里 `details` 的 `"type": "object"`。
+
+**结论**：段一迁移掉的 45 个错误，原先都发 `"details": null`；新实现不带该键。
+**去掉 `details: null` 是向契约靠拢，不是契约破坏**——契约从未要求 `details`，且 `null` 违反其类型声明。
+47.06/47.07 的对照表必须把**信封字段集**作为第 5 维，逐条记录迁移前后各面的字段集合。
+
+## 统一语义表（收口后的形态目录）
+
+| 形态 | 状态 / 错误码 | 文案 | 使用者 |
+| --- | --- | --- | --- |
+| 资源不存在 | 404 `not_found` | 资源不存在或不可访问。 | 规则集面、治理面、生成面、候选采纳面、工作区主路由 |
+| 请求不合法 | 400 `invalid_request` | 请求字段不符合约定。 | 治理面、生成面、候选采纳面、工作区主路由 |
+| 幂等冲突 | 409 `idempotency_conflict` | 同一个操作键对应不同请求。 | 治理面、工作区主路由 |
+| 版本冲突 | 409 `version_conflict` | 内容已变化，请先读取当前版本。 | 治理面、候选采纳面、工作区主路由 |
+| 状态不满足（项目） | 422 `invalid_state` | 当前项目状态或研究条件不满足操作要求。 | 工作区主路由 |
+| 状态不满足（阶段） | 422 `invalid_state` | 当前阶段不能执行该动作。 | 生成面、候选采纳面 |
+| 状态不满足（规则集） | 409 `invalid_state` | 当前版本状态不允许此操作。 | 治理面、规则集面（收口后） |
+| 快照输入已变 | 409 `stale_input` | 快照基于的输入已变化，请重新准备。 | 工作区主路由 |
+| 候选稿输入已变 | 409 `stale_input` | 候选稿或快照基于旧输入。 | 候选采纳面 |
+| 依赖不可用 | 503 `dependency_unavailable` | 依赖暂时不可用。 | 生成面 |
+| 候选采纳依赖未就绪 | 503 `dependency_unavailable` | 候选采纳依赖尚未就绪，请稍后重试。 | 候选采纳面 |
+
+**「同码不同文」的处理原则**（票 #262 明确要求）：**不得把同码的文案合并成一句**。
+上表中 `invalid_state` 有 3 种文案、`version_conflict` 有 2 种、`stale_input` 有 2 种、
+`dependency_unavailable` 有 2 种——它们**各自是独立形态**，只是共享错误码。
+共享形态目录只收「状态码 + 错误码 + 文案」三者全同的那一簇。
+
+## 两条归属判据（形态由谁决定）
+
+1. **形态由错误本身决定** → 在**错误定义处**声明。做法：sentinel 自带形态
+   （`clienterror.New` / `clienterror.Wrap`）。新增同类错误一行到位，不改任何映射表。
+2. **形态由发生场景决定** → 在**知道调用者处境的地方**包一个具名类型。
+   沿用现役模式：影响任务的资料不可用（`impactTaskSourceUnavailable`）、审计写失败
+   （`auditWriteFailed`）。
+
+**本段必须用判据 2 的地方**：规则集状态错误在工作区核心被翻译成 `ErrInvalidState`（422），
+但收口后它要答 409 `invalid_state`。同一个 sentinel 不能有两种形态，所以核心翻译处
+必须改成一个**具名的场景类型**（例如 `workspacecore.ErrRuleSetStateNotAllowed`），
+由它携带 409 `invalid_state` 的形态。
+
+## 不可变契约（写代码前先定）
+
+1. **真相主人**：对外形态由**错误自己**声明（`internal/clienterror`）。传输层只渲染，不决定。
+2. **共享形态目录只有一个主人**：`internal/clienterror` 是全部域包都已依赖的宿主层叶子包，
+   共享形态目录放在它旁边（新增 `catalog.go`），**不新增任何依赖边**。
+3. **传输层映射器只允许兜底**：任何按业务错误逐个分支的映射表都不得存在。
+4. **兜底语义不变**：未声明形态的错误仍答 500 `internal_error`，且**不泄漏**内部机制
+   （响应里不出现原始数据库错误、SQLSTATE 或包名）。
+5. **信封统一**：所有面答 `{"error":{"code","message","retryable"},"request_id"}`；
+   只有合法携带 details 的两条路径带 `details`。
+6. **事务边界、幂等记录格式、审计时序、数据库 schema 一律不动**。
+7. **收口后对外错误码集合冻结**：`state_conflict` 退役是唯一被授权的删除。
+
+## 少数口径变更清单（必须在 PR body 逐条列出）
+
+| # | 变更 | 影响面 | 理由 |
+| --- | --- | --- | --- |
+| 1 | `state_conflict` 拆入 409 `invalid_state` 与 409 `version_conflict` | 规则集存储路由 | DR-47-02 裁定：多数口径为准 |
+| 2 | 对外错误码 `state_conflict` 退役 | 规则集相关在途票 #187、#193 | DR-47-02 裁定 |
+| 3 | 规则集状态错误在工作区核心从 422 改为 409 `invalid_state` | 工作区核心 3 处翻译点 | DR-47-02 多数口径；需场景类型 |
+| 4 | 治理面 5xx 的 `retryable` 从 false 改为 true | 规则治理路由 | DR-47-03 暂定口径 |
+| 5 | 候选采纳面除依赖不可用外的 5xx 的 `retryable` 从 false 改为 true | 候选采纳路由 | DR-47-03 暂定口径 |
+| 6 | 治理面错误信封去掉 `"details": null` | 规则治理路由 | 向契约靠拢（契约 `details` 的 type 是 object，且非必填） |
+| 7 | `ErrStaleInput` 在生成面从 409 + `internal_error` 改为 409 `stale_input` | 生成路由 | **未决**，见 D-47-04 |
+
+## 未决决策记录
+
+### D-47-04（待产品语义确认）：生成面 `ErrStaleInput` 的落空
+
+现状：生成面 `ErrStaleInput` 答 409 + `internal_error` + 「服务器暂时无法完成请求。」——
+状态码对，错误码与文案是兜底值。收口到统一机制后，它会自然变成 409 `stale_input` + 相应文案。
+
+- 选 A：**修正**为 `stale_input`（与候选采纳面、工作区主路由同语义）。这修掉一个既有落空，
+  但它是收口中**新发现的对外变化**，Spec 要求先登记并经产品语义确认。
+- 选 B：**保持** 409 + `internal_error`（把落空固化进形态）。这会让「同一业务错误在不同面返回不同错误码」
+  继续存在，与 User Story 32 冲突。
+
+**默认推荐 A**（修正）。理由：`internal_error` 在这里不是「这个错误的样子」，是映射表漏了一支；
+保留它等于把缺陷写进新机制。影响面：生成路由的 409 响应错误码与文案。
+
+### D-47-05（暂定待确认）：5xx 可重试口径
+
+DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并逐条列出少数口径变更（清单第 4、5 项）。
+若产品改口径，需在合并前回写本档与 PR body。
+
+## 验收矩阵（段二当前范围）
+
+| 验收项 | 用户可见入口 | 领域不变量 / 事务边界 | 成功 | 失败 / 权限 / 恢复 | 持久化与并发 | 测试或运行证据 | 状态 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 47.06 四条平表并入同一机制 | 规则治理 / 规则集存储 / 候选采纳 / 生成 四个 HTTP 面 | 形态由错误自己声明；传输层只渲染 | 四面都能渲染 `clienterror.Form` | 每面未命中形态仍落兜底 500 | 不涉及 | 迁移前后逐条对照脚本 + 各面 HTTP 测试 | TODO |
+| 47.06 规则集状态类归并（DR-47-02） | 规则集存储路由、规则治理路由、工作区核心 | 状态不允许该操作 → 409 `invalid_state`；版本或基线已变化 → 409 `version_conflict` | `state_conflict` 不再出现 | 三面同一错误答同一状态码与错误码 | 不涉及 | 跨面一致性测试 | TODO |
+| 47.06 502 进入统一语义表 | 规则治理路由 | 状态码与错误码保留 502 `invalid_model_output` | 502 不再是私有一支 | — | 不涉及 | 形态目录断言 | TODO |
+| 47.06 5xx 可重试口径（DR-47-03） | 四个面 | 4xx 不可重试、5xx 可重试 | 逐面 retryable 与状态码一致 | 少数口径变更逐条列出 | 不涉及 | 逐条对照表 | TODO |
+| 47.06 同码不同文不合并 | 四个面 + 工作区主路由 | 同码不同文的形态各自独立 | 资料未授权 3 种、依赖不可用 3 种、输入已变 2 种文案均保留 | — | 不涉及 | 形态目录快照 | TODO |
+| 47.07 旧平表删除，映射器只剩兜底 | 五个面的映射器 | 传输层不按业务错误逐个分支 | 映射器只认兜底 | 未映射错误仍 500 `internal_error` 且不泄漏内部机制 | 不涉及 | 结构断言（负例验证） | TODO |
+| 47.07 兜底不泄漏 | 五个面的兜底 | 响应里无原始数据库错误 / SQLSTATE / 包名 | 兜底只给通用文案 | — | 不涉及 | 兜底契约测试 | TODO |
+| 47.07 迁移前后对外形态对照表 | 全部被迁移的错误 | 状态码 / 错误码 / 文案 / 响应头 / **信封字段集** 五维 | 逐条相同（少数口径变更除外） | — | 不涉及 | 对照表落盘 `docs/08-本轮实施方案/` | TODO |
+| 47.03 章节「已确认」单一谓词 | 交付与工作区 HTTP 面 | 确认事实唯一来源；空章节标识不被接受 | 三处判定答同一结果 | 空标识与非空不符分别判定 | 不涉及 | 谓词断言 + HTTP 测试 | TODO |
+| 47.08 共享核心成为独立深模块 | 工作区核心 | 身份/哈希真相唯一；授权、审计、幂等与业务写入同事务；来源复核在只读事务内 | 上层只声明「做什么操作」 | 失败时零业务写入 | 迁移、重启读回、竞态 | 既有测试全绿 + 结构断言 | TODO |
+| 47.09 调研域并入主管道 | 调研域 HTTP 面 | 不存在第二套幂等/重放/审计实现 | 五处行为逐条等价 | — | 幂等记录格式与写入时序不变 | 等价对照断言 | TODO |
+| 47.10 组合根缺能力 fail-closed | 启动期 | 缺必需端口 → 启动期明确失败 | 正常装配启动成功 | 缺必需端口启动失败 | 不涉及 | 装配测试 | TODO |
+| 全仓编译与静态检查 | — | — | — | — | — | `go vet ./internal/...`、gofmt、golangci-lint（CI 口径） | TODO |
+| 真实服务链路 | 外部模型 / 真实模型调用 | — | — | — | — | 本段不涉及外部服务；标 `N/A` | N/A |
+
+矩阵中的 `TODO` 在当前范围内闭环之前，PR 保持 Draft。
+
+## 遗留与风险
+
+- **`ErrStaleInput` 的生成面落空**是本段取证中新发现的既有缺陷，D-47-04 需要裁决。
+- **CI 的「按 diff 内容分级门禁」只看最后一次推送**（ADR 0005）：合并前必须让最后一次推送含 `.go` 改动，
+  否则 lint job 与 PR gate 的 provider/frontend 步骤会被标成 NOT RUN。
+- **隔离 PostgreSQL 与全量回归并发会被 Windows 资源压垮**（autovacuum worker `0xC0000142` 退出并带走库）。
+  证据必须分两轮：全量轮不设 `LINGDOC_TEST_POSTGRES_DSN`（PG 用例按仓内约定 SKIP，记 NOT RUN），
+  PG 轮单独轻负载跑。
