@@ -90,7 +90,7 @@
     {
       "id": "CI scope 脚本的测试现在真的在 CI 里跑",
       "status": "passed",
-      "evidence": "lingdoc-review.yml 新增「Test CI scope scripts」步骤（setup-go 之后运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'），并把结果纳入 Publish check boundary and results 的 ciscripts 项"
+      "evidence": "lingdoc-review.yml 新增「Install CI scope script dependencies」+「Test CI scope scripts」步骤（setup-go 之后运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'），并把结果纳入 Publish check boundary and results 的 ciscripts 项。第一次推送时该步骤在真机上失败（PyYAML 缺失），补依赖后重跑通过——见 defects_found_and_fixed 第三条"
     }
   ],
   "defects_found_and_fixed": [
@@ -108,6 +108,13 @@
       "root_cause": "PR #287 引入的分类器与守护测试只落地在仓内，没有任何工作流引用它们；门禁自身的回归保护没有接线。",
       "fix": "lingdoc-review.yml 新增 setup-go + 「Test CI scope scripts」步骤，运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'；结果作为 ciscripts 写入 Publish check boundary and results。这一步无条件执行——纯格式提交也必须跑它，否则守护测试就形同虚设。setup-go 从原先的 provider-tests 条件步骤上移到此处并改为无条件。",
       "note": "setup-go 必须在此之前：gofmt 等价判据需要 gofmt 在 PATH 上。"
+    },
+    {
+      "title": "新加的测试步骤在真机上第一次就失败：PyYAML 没装",
+      "phenomenon": "「Test CI scope scripts」步骤第一次推送后在真机上失败：5 个 WorkflowWiringTests 报 ModuleNotFoundError: No module named 'yaml'。",
+      "root_cause": "守护测试用 PyYAML 解析工作流文件，但 CI runner 的 setup-python 不带 PyYAML，而 scripts/ci/requirements-lingdoc.txt 只声明了 jsonschema。本地能过是因为开发机恰好装了 PyYAML。",
+      "fix": "scripts/ci/requirements-lingdoc.txt 增加 PyYAML==6.0.3；工作流在跑测试前新增「Install CI scope script dependencies」步骤安装该清单。",
+      "note": "这条缺陷是新步骤自己抓到的：本地跑 64 个测试全绿，真机上才暴露环境缺件。这正是把测试接进 CI 的理由。"
     }
   ],
   "failed": [],

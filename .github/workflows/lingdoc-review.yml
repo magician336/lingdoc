@@ -49,6 +49,9 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Install CI scope script dependencies
+        run: python -m pip install --disable-pip-version-check -r scripts/ci/requirements-lingdoc.txt
+
       - name: Test CI scope scripts
         id: ciscripts
         run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' -v
