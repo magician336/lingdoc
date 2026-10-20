@@ -357,6 +357,50 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 5. `impact_routes.go` 与 `g5_machine_read_http.go` 仍带 `details: null`（不在五张平表内，未动）。
 6. `ErrAdoptionServiceUnavailable`（503 + `invalid_state`）保留旧形态，以逐字节不变。
 
+## 47.08 的第一片：共享核心模块与两条规则归一（2026-10-20）
+
+### 模块
+
+`internal/lingdoc/operationcore` 拥有操作管道的知识：步骤顺序、授权先于重放、
+幂等键与请求体摘要的唯一计算、来源复核在只读事务内、审计写入与业务写入同事务。
+公开面小（`Identity` / `Authorization` / `Ledger` / `Request` / `Errors` / `Options` /
+`Outcome` / `Run`），聚合侧通过接缝提供领域事实。
+
+管道**不拥有**对外错误呈现：错误由聚合侧通过 `Errors` 交进来，管道原样抛出，
+所以每个失败的对外形态一个字都没变。
+
+### 两条规则归一（11 处副本 → 1 处主人）
+
+| 规则 | 原状 | 现在 |
+| --- | --- | --- |
+| 幂等键长度（8..128） | LingDoc 域内被写死 11 处 | 一律 `operationcore.ValidKey(key)` |
+| 请求体摘要（sha256 over JSON，hex） | 主管道、调研管道、改写面各算一遍 | 一律 `operationcore.RequestHash` / `ValueHash` |
+
+两处替换都**逐字等价**：`len(key) < 8 || len(key) > 128` 与 `!ValidKey(key)` 等价；
+摘要仍是 `json.Marshal` 后 sha256 再 hex，`ValueHash` 在值无法编码时返回空编码的摘要，
+与原先 `raw, _ := json.Marshal(value)` 后哈希 `raw` 的行为一致。
+
+**已知例外**：`internal/evidence/binding.go` 仍有一份键规则。`internal/evidence` 是宿主层，
+不能反向依赖 LingDoc 域包，故该副本保留并在此记录。
+
+### 结构断言
+
+`internal/lingdoc/operationcore/ownership_test.go` 扫 `internal/lingdoc/**`（排除本包与测试文件），
+报出任何残留的键长度规则写死、或就地计算的摘要。
+**已做阴性验证**：注入探针函数写死键规则，断言精确报出
+`internal/lingdoc/workspacecore/zz_negative_probe.go: 幂等键长度规则被写死（应经过 operationcore.ValidKey）`，
+随后删除探针并复跑通过。
+
+### 尚未完成（下一片）
+
+聚合侧还没有改为**组合**这个模块：`internal/lingdoc/workspacecore/service_facade.go` 的
+`runOperation` 仍是自己实现管道。下一片把它改成填充接缝并调用 `operationcore.Run`。
+本片先把模块与规则立住，让接线的每一步都有一处可验证的主人。
+
+**一处修正**：起草中的 `Run` 漏了原管道对 actor 的合法性检查（`validActor`），
+那会让一个无主体的请求穿过前两道门。已补回（`Request.ValidActor` 接缝），
+并且**在接缝缺失时默认不检查**——接线时必须填上。
+
 ## 47.03 的实现结果与数据核查（2026-10-20）
 
 ### 一个谓词，三处消费者
