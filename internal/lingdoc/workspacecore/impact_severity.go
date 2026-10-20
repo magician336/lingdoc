@@ -130,6 +130,11 @@ func DeriveImpactSeverity(action string) string {
 // may waive is an impact that never blocked. See the Waiver entry in the
 // glossary, which makes the same statement for ValidationIssue.
 //
+// Both the gate (stabilization) and the action handler (dismiss) call this
+// one function, so the two can never drift apart. A second copy of the rule
+// would be a place where "can this be waived" and "does this block" could
+// answer differently.
+//
 // An unrecognised severity blocks. Fail closed.
 func impactSeverityBlocks(severity string) bool {
 	if !slices.Contains(impactSeverities, severity) {
