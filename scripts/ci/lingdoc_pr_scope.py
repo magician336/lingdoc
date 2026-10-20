@@ -14,8 +14,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import subprocess
-import sys
 from typing import Any, Mapping
 
 import lingdoc_gate_decision as gate
