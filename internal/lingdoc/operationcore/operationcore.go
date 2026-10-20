@@ -271,7 +271,7 @@ type Request[A any, Tx any, P any] struct {
 	// StoreReverseSources records the reverse lineage of the written value.
 	StoreReverseSources func(ctx context.Context, tx Tx, value any) error
 	// StoreProvenance records the operation's provenance proof.
-	StoreProvenance func(ctx context.Context, tx Identity[A], result Result, value any) error
+	StoreProvenance func(ctx context.Context, tx Tx, id Identity[A], result Result, value any) error
 	// Project renders the stored result for the caller.
 	Project func(ctx context.Context, operation, projectID string, body json.RawMessage) (json.RawMessage, error)
 	// RuntimeGate applies the runtime mode gate inside the write
@@ -484,7 +484,7 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 			return err
 		}
 		result = Result{BodyHash: hash, Body: raw, Status: status, Output: output}
-		if err := request.StoreProvenance(ctx, identity, result, value); err != nil {
+		if err := request.StoreProvenance(ctx, tx, identity, result, value); err != nil {
 			return err
 		}
 		if err := request.AfterWrite(ctx, tx, projectID, operation, target, status, value, time.Since(started)); err != nil {

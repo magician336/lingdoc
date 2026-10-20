@@ -458,6 +458,87 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 这与 DR-47-01 已核实的结论一致（「确认记录表的章节标识在两个数据库上都是非空且带外键」），
 **不需要数据迁移**。
 
+## 47.08 的第二片：聚合体组合共享核心（2026-10-20）
+
+### 管道现在有一个主人
+
+`runOperation` 原来在 `workspacecore/service_facade.go` 里自己实现整条管道：
+键检查 → 逆调用方检查 → 人工决策门 → 请求摘要 → 溯源准备 → 来源复核 →
+授权 → 审计写入 → 幂等记录 → 业务写入 → 投影。
+
+现在它只声明「做什么操作」，管道由 `internal/lingdoc/operationcore` 的 `Run` 执行：
+
+| 原来 | 现在 |
+| --- | --- |
+| `runOperation` 自己实现 15 步 | `runOperation` → `runOperationThroughPipeline` → `operationcore.Run` |
+| 管道步骤散在聚合体里 | 管道步骤在 `operationcore`，聚合体只填接缝 |
+
+接线层是 `internal/lingdoc/workspacecore/operation_pipeline.go`。它**不做任何决定**，
+只提供管道不知道的领域事实：谁是主体、项目是什么、操作记录存在哪、失败对外读作什么。
+
+### 三条规则归一（本片新增）
+
+第一片归一了幂等键长度与请求体摘要两条。本片归一了另外三条：
+
+| 规则 | 原状 | 现在 |
+| --- | --- | --- |
+| 人工决策门 | `workspacecore.requiresHumanOperation` + `workspacecore.RequireHumanDecision` 各一份 | `operationcore.RequiresHumanDecision` + `operationcore.RequireHumanDecision`；工作区改为调用 |
+| 重放载荷解码失败标记 | `workspacecore.replayPayloadDecodeError` 自有类型 | `operationcore.ReplayPayloadDecodeError`；工作区的标记与识别都改为委托 |
+| 写后溯源的事务句柄 | 管道接缝给不出 `tx` | `Request.StoreProvenance` 增加 `tx Tx` 参数（管道内部本就有事务） |
+
+### 三处类型适配（不改行为）
+
+工作区的类型与共享核心的类型不是同一套，适配层做三处无损转换：
+
+1. **身份**：`OperationIdentity`（具体类型）↔ `operationcore.Identity[Actor]`（泛型）。
+   操作名、目标、键三者的字符串形式逐字相同。
+2. **结果**：`OperationResult.Output` 是 `operationOutputKind`，`operationcore.Result.Output` 是 `string`。
+   `operationOutputKind` 底层就是 string，往返逐字相等；且 `Output` **根本不落库**
+   （`operationRow` 只存 `BodyHash`/`ResponseJSON`/`ResponseCode`），持久化路径上无损失。
+3. **授权**：`AuthorizationRequest.Action` 是 `AuthorizationAction`，
+   `operationcore.Authorization.Action` 是 `string`。往返后 `capability()` 的拼法完全一致：
+   资源为空取动作，否则 `动作:资源`——两处实现逐字相同（`typed_contracts.go:142` 与
+   `operationcore.go:154`），审计记录的 capability 不变。
+
+### 不变契约在管道里成立
+
+47.08 的验收标准第 3 条逐项对照 `operationcore.Run`：
+
+| 不变契约 | 管道里的落点 |
+| --- | --- |
+| 身份与哈希真相唯一 | `operationcore.Identity` + `RequestHash`（管道内算一次） |
+| 授权、审计、幂等记录与业务写入同事务 | `Run` 的写事务内依次执行授权 → 审计 → 幂等记录 → 业务写入（`operationcore.go:406-493`） |
+| 来源复核在只读事务内且不跨事务持连接 | 只读事务内复核 + 事务外再查一次（`operationcore.go:366-403`） |
+| 失败时零业务写入（审计是唯一允许的写入） | 业务写入在事务内，失败即回滚；审计是唯一在授权失败时单独写的记录 |
+
+`typed_contracts_regression_test.go:31` 断言「输出不匹配时 `repository.writes == 0`」，
+是「失败时零业务写入」在真实接缝上的守门用例，本片后仍然通过。
+
+### 结构断言
+
+新增 `internal/lingdoc/workspacecore/operation_pipeline_ownership_test.go`：
+扫工作区核心源码，报告任何**在管道接缝之外写入幂等记录**的地方。
+
+断言范围经过收窄：只断言「写入」不断言「读取」。理由是读取有两类：
+管道通过 `Ledger` 接缝读一次（管道自己的），而 `g1_operation_provenance.go:66` 的
+溯源证明校验还要读同一张表来确认「操作记录与已存证明仍然一致」——那是工作区自己的
+一致性规则，不是管道步骤。写入则是管道的独占职责：一条已存记录就是「这个操作发生过」
+的证明，只有管道能创建。
+
+**阴性验证**：注入 `zz_negative_probe.go`（在接缝外调用 `operations.SaveOperation`），
+断言精确报出 `internal/lingdoc/workspacecore/zz_negative_probe.go:11 幂等记录被绕过管道写入
+（应经过 operationcore 的 Ledger 接缝）`；随后删除探针并复跑通过。
+
+### 验证
+
+| 命令 | 结果 |
+| --- | --- |
+| `go build ./internal/...` | PASS |
+| `go vet ./internal/...` | PASS |
+| `gofmt -l internal/` | 无输出 |
+| `git diff --check` | PASS |
+| `go test -p 1 -count=1 ./internal/lingdoc/...` | PASS（13 个包全绿，含 `workspace` 123s、`workspacecore` 37s） |
+
 ## 遗留与风险
 
 - **`ErrStaleInput` 的生成面落空**是本段取证中新发现的既有缺陷，D-47-04 需要裁决。
