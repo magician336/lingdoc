@@ -37,7 +37,7 @@ func TestPostgresDependencyCandidateBatchAndDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rootSQL.Close()
+	defer func() { _ = rootSQL.Close() }()
 	schema := "issue252_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if err := root.Exec("CREATE SCHEMA " + schema).Error; err != nil {
 		t.Fatal(err)
@@ -55,7 +55,7 @@ func TestPostgresDependencyCandidateBatchAndDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 	if err := db.Exec("CREATE TABLE tenants (id BIGINT PRIMARY KEY)").Error; err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestPostgresDependencyCandidateBatchAndDecision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer reopenedSQL.Close()
+	defer func() { _ = reopenedSQL.Close() }()
 	reopenedService := NewService(NewGORMRepository(reopened))
 	edges, err := reopenedService.ListDependencyEdges(ctx, actor, project.ID)
 	if err != nil || len(edges) != 2 {

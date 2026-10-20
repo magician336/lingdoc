@@ -923,7 +923,7 @@ func governanceRuleFindings(p core.Project, chapters []core.Chapter, evaluated [
 	findings := []delivery.CheckIssue{}
 	bindings := []core.ValidationIssueBinding{}
 	for _, result := range evaluated {
-		if result.Status != template.EvaluationUnknown && !(result.Status == template.EvaluationIssue && result.Severity == template.SeverityBlocking) {
+		if result.Status != template.EvaluationUnknown && (result.Status != template.EvaluationIssue || result.Severity != template.SeverityBlocking) {
 			continue
 		}
 		target, version := governanceFindingTarget(result, p, chapters)

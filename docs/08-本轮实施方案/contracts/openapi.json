@@ -42098,6 +42098,13 @@
             },
             "nullable": true
           },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
           "required": {
             "type": "boolean"
           },
@@ -42126,6 +42133,7 @@
           "version",
           "name",
           "inputs",
+          "targets",
           "required",
           "status",
           "context_revision",

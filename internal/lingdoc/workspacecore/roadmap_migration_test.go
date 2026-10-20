@@ -76,7 +76,7 @@ func assertRoadmapSchema(t *testing.T, db *sql.DB, flavor string) {
 			}
 			found[name] = true
 		}
-		rows.Close()
+		_ = rows.Close()
 		for _, column := range columns {
 			if !found[column] {
 				t.Fatalf("%s: table %s is missing the column %s", flavor, table, column)
@@ -93,7 +93,7 @@ func TestRoadmapMigrationGoesUpAndDownOnSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	for _, name := range productionLingDocMigrationNames(t, "sqlite") {
 		raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", name))
 		if err != nil {
@@ -110,7 +110,7 @@ func TestRoadmapMigrationGoesUpAndDownOnSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer restarted.Close()
+	defer func() { _ = restarted.Close() }()
 	assertRoadmapSchema(t, restarted, "sqlite (after restart)")
 
 	_, down := roadmapMigrationFile(t, "sqlite")
@@ -140,17 +140,17 @@ func TestRoadmapMigrationGoesUpAndDownOnPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 	schema := "roadmap_" + filepath.Base(t.TempDir())
 	if _, err := root.ExecContext(context.Background(), "CREATE SCHEMA "+schema); err != nil {
 		t.Fatal(err)
 	}
-	defer root.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
+	defer func() { _, _ = root.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE") }()
 	scoped, err := sql.Open("postgres", dsn+" search_path="+schema)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer scoped.Close()
+	defer func() { _ = scoped.Close() }()
 	if _, err := scoped.ExecContext(context.Background(), up); err != nil {
 		t.Fatalf("roadmap up migration: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRoadmapMigrationGoesUpAndDownOnPostgres(t *testing.T) {
 			}
 			found[name] = true
 		}
-		rows.Close()
+		_ = rows.Close()
 		for _, column := range columns {
 			if !found[column] {
 				t.Fatalf("table %s is missing the column %s", table, column)
