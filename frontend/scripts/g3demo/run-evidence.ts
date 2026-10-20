@@ -163,6 +163,13 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   // 三条链共用一个项目时，后一条链拿着上一条推进前的修订号去写，就会撞
   // 409「基线已漂移」。各用各的项目，这条干扰就不存在了。
   const extra: G3RunVerdict[] = []
+  // 链过滤：默认三条全跑。`G3_ONLY_CHAINS=fault,roadmap,assistant` 可以只跑其中几条
+  // ——例如轮 2 只跑故障注入链（其余链的结论由轮 1 给出，不必重复）。
+  const onlyChains = (process.env.G3_ONLY_CHAINS ?? '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const wants = (name: string): boolean => onlyChains.length === 0 || onlyChains.includes(name)
   const guard = async (
     id: string,
     title: string,
@@ -196,25 +203,30 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   }
 
   const faultProject = await newProject('fault')
-  await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
-    runFaultInjectionChain(chain.ctx, client, chain.token, {
-      projectId: faultProject.projectId,
-      affectedChapterIds: [],
-    }),
-  )
+  if (wants('fault')) {
+    await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
+      runFaultInjectionChain(chain.ctx, client, chain.token, {
+        projectId: faultProject.projectId,
+        affectedChapterIds: [],
+      }),
+    )
+  }
   const roadmapProject = await newProject('roadmap')
-  await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
-    runRoadmapChain(chain.ctx, client, chain.token, {
-      projectId: roadmapProject.projectId,
-      operatorId: chain.identity.userId,
-    }),
-  )
-  await guard('AC-G3-14', 'G3 助手影响说明与依赖候选读回', async () => {
-    // 候选批次的 source 必须是**变更集 roots 里的 ProjectSpec ref**：影响评估从
-    // roots 出发遍历依赖边，边的 source 不是那个 ref 时，action 不会传播。
-    // target 取本轮影响评估里真实存在的章节版本。依据与理由是合成材料，
-    // 不含真实课题信息。
-    const assistantProject = await newProject('assistant')
+  if (wants('roadmap')) {
+    await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
+      runRoadmapChain(chain.ctx, client, chain.token, {
+        projectId: roadmapProject.projectId,
+        operatorId: chain.identity.userId,
+      }),
+    )
+  }
+  if (wants('assistant')) {
+    await guard('AC-G3-14', 'G3 助手影响说明与依赖候选读回', async () => {
+      // 候选批次的 source 必须是**变更集 roots 里的 ProjectSpec ref**：影响评估从
+      // roots 出发遍历依赖边，边的 source 不是那个 ref 时，action 不会传播。
+      // target 取本轮影响评估里真实存在的章节版本。依据与理由是合成材料，
+      // 不含真实课题信息。
+      const assistantProject = await newProject('assistant')
     const projectState = await readProjectState(
       chain.ctx,
       client,
@@ -253,7 +265,8 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       candidates,
       expectedContextRevision: projectState.currentContextRevision,
     })
-  })
+    })
+  }
 
   const verdicts = [...lifecycle.verdicts, ...extra]
   // 账号口令**不落盘**：证据里只留账号标识，不留凭据。
