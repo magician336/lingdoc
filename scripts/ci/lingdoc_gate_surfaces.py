@@ -60,10 +60,9 @@ Terms
     the formatting-only shortcut.
 
 Ownership knowledge (provider roots, contracts directory, governance file
-set, frontend root) is registered here exactly once.  ``lingdoc_risk_surface``
-and ``lingdoc_pr_scope`` still carry their own copies of it; ticket T2 moves
-them over to this manifest, so this file is where those constants come from
-after that change.
+set, frontend root) is registered here exactly once.  The gate decision
+module (``lingdoc_gate_decision``) reads it from here; no other script may
+write it down a second time.
 """
 from __future__ import annotations
 

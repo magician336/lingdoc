@@ -79,42 +79,16 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     root = args.root.resolve()
-    event: Mapping[str, Any] = {}
+
     if args.all:
-        paths, diff_range, whitespace_range = [], None, None
-        decision = gate.decide({"action": "manual",
-                                 "reason": "full scope requested"}, root)
-    else:
-        if args.event is None:
-            parser.error("--event or GITHUB_EVENT_PATH is required")
-        event = json.loads(args.event.read_text(encoding="utf-8"))
-        diff_range, paths, _ = select_paths(root, event, args.latest)
-        # Latest-update scope may include upstream merge commits. Whitespace is
-        # always checked over the complete PR, including earlier topic commits.
-        whitespace_range = git_range(event)
-        decision = gate.decide(event, root)
-    # The area flags describe the pull request's own contribution, not the last
-    # push: a documentation-only push must not shrink the area a later
-    # baseline merge is judged against.
-    scope = {"contracts": decision.contracts, "backend": decision.backend,
-             "frontend": decision.frontend}
-    packages = list(decision.provider_packages) if decision.run_targeted else []
-    outputs = gate.write_outputs(decision)
-    report = {"scope": scope, "diff_range": diff_range,
-              "whitespace_diff_range": whitespace_range, "changed_paths": paths,
-              "provider_packages": packages,
-              "format_only": decision.format_only,
-              "format_reasons": list(decision.format_reasons),
-              "decision": outputs,
-              "note": "Selection only; not a test result or an approval."}
-    print(json.dumps(report, ensure_ascii=True, indent=2))
-    if output := os.environ.get("GITHUB_OUTPUT"):
-        with open(output, "a", encoding="utf-8") as handle:
-            for key, value in outputs.items():
-                handle.write(f"{key}={value}\n")
-    check_range = whitespace_range or diff_range
-    if check_range:
-        subprocess.run(["git", "diff", "--check", check_range, "--"], cwd=root, check=True, stdout=sys.stderr)
+        gate.publish({}, root, all_checks=True)
+        return
+    if args.event is None:
+        parser.error("--event or GITHUB_EVENT_PATH is required")
+    event = json.loads(args.event.read_text(encoding="utf-8"))
+    # The decision module publishes the decision and checks the boundary; the
+    # pull request gate reads the same report.
+    gate.publish(event, root)
 
 
 if __name__ == "__main__":

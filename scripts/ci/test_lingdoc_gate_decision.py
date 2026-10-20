@@ -20,6 +20,7 @@ rule:
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -641,6 +642,101 @@ class PreRefactorGoldenTests(DecisionFixture):
                     outputs = decision.write_outputs(decision.decide(event, root))
                     for field, expected in self.GATE_GOLDEN[name].items():
                         self.assertEqual(outputs[field], expected, field)
+
+
+class OfflineEntryPointTests(DecisionFixture):
+    """The decision can be reproduced offline, from an event and a work tree."""
+
+    def test_the_command_prints_the_decision_without_a_network(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            scratch = Path(tmp) / "scratch"
+            root.mkdir()
+            scratch.mkdir()
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            self._topic(root)
+            before = git(root, "rev-parse", "HEAD")
+            write(root, "internal/lingdoc/workspace/service.go",
+                  "package workspace\n\n// change\n")
+            git(root, "add", "."); git(root, "commit", "-m", "code")
+            after = git(root, "rev-parse", "HEAD")
+            event_path = scratch / "event.json"
+            event_path.write_text(json.dumps(self._event(before, after, base)),
+                                  encoding="utf-8")
+
+            result = subprocess.run(
+                [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
+                 "--event", str(event_path), "--root", str(root)],
+                capture_output=True, text=True)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["decision"]["surface"], "internal/lingdoc/workspace")
+            self.assertEqual(report["decision"]["reason"], "contribution surface changed")
+            self.assertEqual(report["decision"]["base"], base)
+            self.assertTrue(report["jobs"])
+
+    def test_the_command_reaches_no_network(self):
+        source = (CI_DIR / "lingdoc_gate_decision.py").read_text(encoding="utf-8")
+        imported = set()
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        self.assertEqual(imported & {"socket", "http", "urllib", "requests"}, set())
+
+
+class PullRequestGateWiringTests(DecisionFixture):
+    """The pull request gate takes its decision from the decision module."""
+
+    WORKFLOW = CI_DIR.parents[1] / ".github" / "workflows" / "lingdoc-review.yml"
+
+    def test_the_gate_scope_step_asks_the_decision_module(self):
+        workflow = self.WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("scripts/ci/lingdoc_gate_decision.py", workflow)
+        # The transitional script stays, but the gate no longer calls it.
+        self.assertNotIn("scripts/ci/lingdoc_pr_scope.py --latest", workflow)
+
+    def test_the_gate_still_publishes_the_three_artifact_fields(self):
+        workflow = self.WORKFLOW.read_text(encoding="utf-8")
+        for field in ("surface", "reason", "base"):
+            self.assertIn(f"steps.scope.outputs.{field}", workflow)
+        self.assertIn("result['surface']", workflow)
+        self.assertIn("result['reason']", workflow)
+        self.assertIn("result['base']", workflow)
+
+    def test_the_gate_scope_step_publishes_the_three_fields_as_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "repo"
+            scratch = Path(tmp) / "scratch"
+            root.mkdir()
+            scratch.mkdir()
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            self._topic(root)
+            before = git(root, "rev-parse", "HEAD")
+            write(root, "internal/lingdoc/workspace/service.go",
+                  "package workspace\n\n// change\n")
+            git(root, "add", "."); git(root, "commit", "-m", "code")
+            after = git(root, "rev-parse", "HEAD")
+            event_path = scratch / "event.json"
+            event_path.write_text(json.dumps(self._event(before, after, base)),
+                                  encoding="utf-8")
+            output = scratch / "outputs.txt"
+
+            result = subprocess.run(
+                [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
+                 "--event", str(event_path), "--root", str(root)],
+                env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                capture_output=True, text=True)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            written = output.read_text(encoding="utf-8")
+            self.assertIn(f"base={base}", written)
+            self.assertIn("surface=internal/lingdoc/workspace", written)
+            self.assertIn("reason=contribution surface changed", written)
 
 
 if __name__ == "__main__":

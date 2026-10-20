@@ -40,6 +40,7 @@ what surface, and why".
 """
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import fnmatch
 import hashlib
@@ -790,7 +791,7 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
 # --------------------------------------------------------------------------
 # the offline entry point
 # --------------------------------------------------------------------------
-def report(decision: Decision) -> dict[str, Any]:
+def report(decision: Decision, whitespace_range: str | None = None) -> dict[str, Any]:
     """The report the gate publishes: the decision and what it selected."""
     outputs = write_outputs(decision)
     packages = list(decision.provider_packages) if decision.run_targeted else []
@@ -798,6 +799,7 @@ def report(decision: Decision) -> dict[str, Any]:
         "scope": {"contracts": decision.contracts, "backend": decision.backend,
                   "frontend": decision.frontend},
         "diff_range": decision.diff_range,
+        "whitespace_diff_range": whitespace_range,
         "changed_paths": list(decision.changed_paths),
         "provider_packages": packages,
         "format_only": decision.format_only,
@@ -808,9 +810,45 @@ def report(decision: Decision) -> dict[str, Any]:
     }
 
 
+def check_whitespace(root: Path, diff_range: str | None) -> None:
+    """The pull request gate's boundary check: the diff has no whitespace damage.
+
+    The check covers the **complete** pull request range, not the last push:
+    a whitespace defect introduced by an earlier commit is still a defect.
+    """
+    if not diff_range:
+        return
+    subprocess.run(["git", "diff", "--check", diff_range, "--"],
+                   cwd=root, check=True, stdout=sys.stderr)
+
+
+def publish(event: Mapping[str, Any], root: Path, *,
+            all_checks: bool = False) -> dict[str, Any]:
+    """Decide, publish the decision, and check the pull request's boundary.
+
+    This is what the gate's scope step runs: it prints the report, writes the
+    outputs the workflow's conditions read, and fails the step when the diff
+    carries whitespace damage.
+    """
+    if all_checks:
+        event = {"action": "manual", "reason": "full scope requested"}
+    decision = decide(event, root)
+    whitespace_range = None
+    if isinstance(event.get("pull_request"), Mapping):
+        whitespace_range = pr_range(event)
+    published = report(decision, whitespace_range)
+    print(json.dumps(published, ensure_ascii=True, indent=2))
+    if output_path := os.environ.get("GITHUB_OUTPUT"):
+        with open(output_path, "a", encoding="utf-8") as handle:
+            for key, value in write_outputs(decision).items():
+                handle.write(f"{key}={value}\n")
+    check_whitespace(root, whitespace_range or decision.diff_range)
+    return published
+
+
 def main() -> None:
     """Print the decision for one event; the gate's offline entry point."""
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description="Decide what the gates run for one event.")
     parser.add_argument("--all", action="store_true", help="Run all applicable checks")
     parser.add_argument("--event", type=Path, default=os.environ.get("GITHUB_EVENT_PATH"))
     parser.add_argument("--root", type=Path, default=Path.cwd())
@@ -818,19 +856,12 @@ def main() -> None:
     root = args.root.resolve()
 
     if args.all:
-        event: Mapping[str, Any] = {"action": "manual",
-                                     "reason": "full scope requested"}
-    else:
-        if args.event is None:
-            parser.error("--event or GITHUB_EVENT_PATH is required")
-        event = json.loads(args.event.read_text(encoding="utf-8"))
-
-    decision = decide(event, root)
-    print(json.dumps(report(decision), ensure_ascii=True, indent=2))
-    if output_path := os.environ.get("GITHUB_OUTPUT"):
-        with open(output_path, "a", encoding="utf-8") as handle:
-            for key, value in write_outputs(decision).items():
-                handle.write(f"{key}={value}\n")
+        publish({}, root, all_checks=True)
+        return
+    if args.event is None:
+        parser.error("--event or GITHUB_EVENT_PATH is required")
+    event = json.loads(args.event.read_text(encoding="utf-8"))
+    publish(event, root)
 
 
 if __name__ == "__main__":
