@@ -201,6 +201,27 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 | 索引 | `codegraph sync` | 实施改动后重跑 |
 | 全量 | `go test ./...` | NOT RUN（受上述环境限制与仓库既有环境依赖测试影响） |
 
+### 改动后在当前 head 上的同一组命令
+
+> 上表是**改动前**的基线（`origin/main @ 5eab412`）。下表是**改动后**在同一组命令上的结果。
+> 两表逐项对照，差异为零（`internal/container` 的环境阻断在两边相同）。
+> 具体数字见下方「PR 阶段」一节与 PR #285 的 body；本节只给出对照结论。
+
+| 目的 | 命令 | 改动前 | 改动后 |
+| --- | --- | --- | --- |
+| 工作区领域包 | `go test ./internal/lingdoc/workspacecore/...` | PASS 83.5s | PASS |
+| 工作区传输包 | `go test ./internal/lingdoc/workspace/...` | PASS 511.5s | PASS |
+| 规则集存储 | `go test ./internal/lingdoc/rulesetstore/...` | PASS 17.4s | PASS |
+| 候选采纳 | `go test ./internal/lingdoc/candidateadoption/...` | PASS 3.8s | PASS |
+| 生成 | `go test ./internal/lingdoc/generation/...` | PASS 3.7s | PASS |
+| 交付 | `go test ./internal/lingdoc/delivery/...` | PASS 16.2s | PASS |
+| 模板治理 | `go test ./internal/lingdoc/templategovernance/...` | PASS 20.0s | PASS |
+| 路由与集成 | `go test ./internal/router/...` | PASS 3.3s | PASS |
+| 组合根 | `go test ./internal/container/...` | BLOCKED（环境） | BLOCKED（环境），相同原因 |
+| 全仓编译 | `go vet ./...` | 未跑 | 唯一失败是 `sqlite-vec-go-bindings/cgo` 缺 `sqlite3.h`（既有环境限制），**所有测试文件均编译通过** |
+| 格式 | `gofmt -l internal/lingdoc internal/evidence internal/clienterror` | 无输出 | 无输出 |
+| 空白与补丁 | `git diff --check origin/main...HEAD` | 无输出 | 无输出 |
+
 > **环境限制说明**：`internal/container` 的构建失败是本机缺少 `sqlite3.h` 导致的 cgo 阻断，
 > 与本次 LingDoc 断言无关，按既有规则记 `BLOCKED（环境）`，不与业务断言失败混记。
 > 涉及组合根的改动（T10）其行为证据需改由可运行的包与装配测试承担，并在此注明该限制。
@@ -209,8 +230,17 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 
 ## 段一完成情况（2026-10-20）
 
-段一的四个变化炸弹全部落地并关闭。**本 PR 的范围即段一**；段二（提取共享核心）与
-段三（上下文切分与端口收窄）作为后续 PR。
+段一的四个变化炸弹**全部有归属**，但**段一整体尚未完成**：其中「章节已确认判定」这一个炸弹
+分两步走——47.02 把有效性**事实**搬到交付侧（本 PR 交付），47.03 把三处判定收敛到**一个谓词**
+并把失效写入收成一个触发点（**未做，#271 开放**）。
+
+**本 PR 的范围 = 段一里的四张票**（47.01、47.02、47.04、47.05）。段二（提取共享核心）与
+段三（上下文切分与端口收窄）作为后续 PR，已发布为 #259 的子 Issue 并带原生阻塞边。
+
+**跨路由的错误口径归并不在本 PR**：47.05 让**工作区主路由**不再持有业务错误表，并让 45 个错误
+各自声明形态；其余 4 张表（`g4_full_http.go`、`g2_full_http.go`、`rulesetstore/http.go`、
+`candidate_adoption_http.go` + `generation/http.go`）原样保留，它们对 DR-47-02 的收拢
+（`state_conflict` 退役、502 入统一语义表、同码不同文案归一）属 47.06（#262）。
 
 | 票 | 变化炸弹 | Issue | 状态 |
 | --- | --- | --- | --- |
@@ -247,7 +277,7 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 ```text
 评分对象：H_L / F_R
 阶段：PR 合并前
-Git SHA：8228b08（集成分支 codex/lingdoc-architecture-improvement-20261020-arch）
+Git SHA：2a8a248（**本票代码改动的 head**；其后的提交只改文档，不改代码）
 Spec：#47 模块边界收口与知识归属归位
 PR：本 PR（范围 = 段一）
 评分日期：2026-10-20
@@ -303,6 +333,37 @@ F_R = 14.0 + 14.8 + 10.5 + 11.4 + 10.8 + 9.5  = 71.0
 - 本轮**未动**同错误码在不同路由的文案差异（如 409 `stale_input` 的三种说法），按 DR-47-02 留给 47.06。
 
 **验证命令及结果**：见上文「验证命令」节，全部在当前 head `8228b08` 上执行。
+
+## 评审发现与处理（2026-10-20）
+
+PR #285 走了一遍双轴评审（标准轴 / 规格轴），两条轴各自独立。处理结果如下。
+
+### 真实缺陷（已修）
+
+| # | 发现 | 处理 |
+| --- | --- | --- |
+| 1 | **`Retry-After: 1` 响应头被静默删除**：旧映射表对 `request_in_progress` 设了这个头，删表后新映射器不再设；契约里仍声明该头。**这是本次改动引入的唯一对外回退。** | `clienterror.Form` 增加 `RetryAfter`，由错误自己声明；`request_in_progress` 声明 `RetryAfter: 1`；映射器按声明设置响应头。机械核对脚本也扩展到响应头。 |
+| 2 | **「合法迁移集中判定」只做了一半**：迁移表声明了，但生产代码没有调用方，各自仍在拼装迁移条件。 | 声明改为**按状态变更命名**的前置集（`apply` / `reject` / `markStale` / `assess` / `reassess` / `satisfy` / `stabilize` / `editDraft`），生产 8 处守卫改为调用 `ChangeSetStatusCanMove`；另加 `ChangeSetStatusNeeds` 表达「尚未到达目标态」这一**幂等**问题（`!= 已是目标态` 与 `!能移动` 不是同一件事，初版迁移把这两者混同，导致稳定化与闸门用例变红，已修正）。 |
+| 3 | **`core.ErrG2Unavailable` 的对外文案写错**：状态码与错误码相同、文案不同，所以既有测试没有变红。 | 由「把旧表解析成 sentinel→形态、与新声明逐条机械比对」发现并修正（`资料或模型能力暂不可用。`）。**这类错误靠人读表发现不了**——45 条形态里有 44 条当时是对的。 |
+| 4 | 契约快照少 2 条（`evidence.ErrAssetNotFound`、`delivery.ErrSnapshotNotFound`）。 | 补齐为 45 条。 |
+| 5 | 结构断言漏检 `switch change.Status { case "draft": }` 形态。 | 断言补上 `switch` 分支检测，并**做阴性验证**：注入后精确报出该行。 |
+| 6 | 测试里自造了一个 `errorsIs` 助手重实现标准库。 | 改用标准库 `errors.Is`。 |
+
+### 范围边界（不是缺陷，已在文档与 PR body 中写明）
+
+| # | 发现 | 处置 |
+| --- | --- | --- |
+| 7 | DR-47-02 未落地：`rulesetstore/http.go` 仍答 409 `state_conflict`；502 仍私有于 G4 表；同码不同文案仍并存。 | **属 47.06（#262）**，本 PR 未动那 4 张表。已在「段一完成情况」与 PR body 中写明本 PR 的范围是「工作区主路由 + 45 个错误自带形态」。 |
+| 8 | DR-47-01 未落地：规则治理运行时仍允许章节标识为空；单一谓词与单一失效点未实现。 | **属 47.03（#271）**。本 PR 只做 47.02 的事实搬运。已在验收矩阵中把该行标为「不在本 PR 范围」而不是 PASS。 |
+| 9 | D-1/D-2 数据核查未执行。 | 同属 47.03；已在决策记录里标为待 47.03 裁定。 |
+| 10 | 「对外契约零变化」的结论与「引用标记字符集收敛」冲突。 | **结论按精确口径重写**：错误形态 45/45 逐条相同（含响应头）；变更集状态集合不变；**唯一的行为变化是引用标记字符集收敛**（Spec §2.4 决策 23 授权），影响面是「标识含正则字符集之外的字符」的正文——这类正文此前被三条路径接受、被工作区核心拒绝，现在全域一致被拒，交付预检可因此新增阻断项。 |
+
+### 评审未能核实的部分（已记入未覆盖风险）
+
+- 合并前的 GitHub CI 未在本机核验（本机缺 `sqlite3.h`）。
+- 前端 `npm test` 在 worktree 里没有 `node_modules`，用主仓库的 `node_modules` 建 junction 后跑通（1461 项 / 1460 通过 / 1 跳过，既有），但**不是** CI 环境。
+- `internal/container` 仍无法在本机构建。
+
 
 ## 决策记录
 
@@ -392,7 +453,8 @@ F_R = 14.0 + 14.8 + 10.5 + 11.4 + 10.8 + 9.5  = 71.0
 | 实施与证据档 | `docs/08-本轮实施方案/Spec-47-模块边界收口与知识归属归位.md` | 本分支，未提交 |
 | GitHub Issue | [#259](https://github.com/magician336/lingdoc/issues/259) | 已发布，标签 `ready-for-agent` |
 | 前序 Spec | [#164](https://github.com/magician336/lingdoc/issues/164)（应用层传输解耦与幂等结果边界） | 已关闭；本 Spec 接续其边界 |
-| 实施分支 | `codex/lingdoc-architecture-improvement-20261020-arch` | 基于 `origin/main @ 5eab412` |
+| 实施分支 | `codex/lingdoc-architecture-improvement-20261020-arch` | 已推送到 `origin`，基于 `origin/main @ 5eab412` |
+| PR | [#285](https://github.com/magician336/lingdoc/pull/285) | Draft，范围 = 段一的四张票 |
 
 ## 取证与实现脚本
 
