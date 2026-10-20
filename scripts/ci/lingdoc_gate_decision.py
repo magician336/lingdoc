@@ -18,17 +18,26 @@ Every fact the gate needs in order to decide *what runs*:
 The public interface
 --------------------
 
+The interface is registered **once**, in ADR 0007, and the guard test
+``scripts/ci/test_lingdoc_gate_scripts.py`` asserts that the module exposes
+exactly the names that are registered there: a new public name that nobody
+registered makes the guard test fail.
+
 ``decide(event, root)``
     Answers one event with a typed :class:`Decision`.  It never lets an
     undecidable surface escape: it falls back to the full scope and says so
     in the reason.  There is exactly one recovery path, and it lives here.
 
-``write_outputs(decision)``
+``write_outputs(decision, *, patterns=)``
     The one place where a decision becomes strings, for the GitHub Actions
     output boundary and for the gate artifacts.  The per-job verdicts are
     published under flat keys (``job_frontend_verify``): a job output id
     cannot carry a dot, so a job level reference
-    (``needs.scope.outputs.<name>``) can only name such a key.
+    (``needs.scope.outputs.<name>``) can only name such a key.  ``patterns``
+    is the path table of the gate that asks for the decision: the same
+    ``Decision`` answers differently for different workflows, because
+    different workflows watch different paths -- so the path table has to
+    come from the caller.
 
 ``report(decision)``
     The report the gate publishes: the decision and what it selected.
@@ -44,9 +53,20 @@ The public interface
     check that did not run says why.  A skipped check without a reason
     would break "Skipped means NOT RUN, not passed".
 
+``publish_conclusion(decision, workflow)``
+    Writes that conclusion into the job summary and the gate artifact.
+
 ``check_whitespace(root, diff_range)``
     The pull request gate's boundary check: the diff carries no whitespace
     damage.
+
+``output_key(workflow, job)``
+    The output key of one consuming job: ``frontend.yml``'s ``verify`` job is
+    published as ``job_frontend_verify``.
+
+``Decision`` and ``JobDecision``
+    The decision is a value: it crosses no process boundary as a string.
+    ``Decision.as_outputs`` is the string form of a decision.
 
 Everything else in this module is a helper.  None of them decides anything
 on its own; the decision is made once, in :func:`decide`.
@@ -119,20 +139,40 @@ BOUNDARY = ("Automated checks only; not consumer approval, a live-model run, "
 UNDECIDED_NOTE = ("未判定，已回退全量（not decided: the gate did not narrow "
                   "the scope, so the full scope was used）")
 
-# The steps of a *step-level* gate.  The pull request gate's job always runs
-# and its steps are skipped one by one; this table says which boolean output
-# selects each step, whether the formatting-only shortcut skips it, and what
-# the step judges.  The surface names are the manifest's; the mapping from a
-# surface to the step that consumes it lives here, beside the outputs the
-# module publishes.
-STEP_OUTPUTS = {
-    "contracts": ("Contract examples and reference trace", "contracts", False,
-                  "the contract examples and the code they describe"),
-    "pr-gate-provider": ("Provider packages: test and vet", "run_providers",
-                         True, "the provider packages"),
-    "pr-gate-frontend": ("Frontend: test, type-check and build", "run_frontend",
-                         True, "the frontend"),
-}
+
+# --------------------------------------------------------------------------
+# the manifest seam
+# --------------------------------------------------------------------------
+def _manifest_surfaces() -> tuple[manifest.Surface, ...]:
+    """The manifest's surfaces, read strictly.
+
+    The shape of the records is checked first -- that needs no dependency.
+    The consuming jobs are then checked against the workflow files they name;
+    that check needs PyYAML, and a job that installs nothing skips it rather
+    than failing: the gate never depends on the check, only on the data.
+
+    Every failure raises :class:`lingdoc_gate_surfaces.SurfaceManifestError`:
+    the decision has to know that the knowledge it judges by is broken.
+    """
+    surfaces = manifest.load_surfaces()
+    try:
+        manifest.check_consumers(surfaces, manifest.REPO_ROOT)
+    except ImportError:
+        pass
+    return surfaces
+
+
+def _readable_surfaces() -> tuple[manifest.Surface, ...]:
+    """The manifest's surfaces, as far as they can be read.
+
+    This is what the recovery path and the publication use: an invalid
+    manifest must not turn into a traceback, it must turn into the full
+    scope.
+    """
+    try:
+        return _manifest_surfaces()
+    except manifest.SurfaceManifestError:
+        return manifest.load_surfaces_lenient()
 
 
 # --------------------------------------------------------------------------
@@ -221,14 +261,14 @@ class Decision:
 # --------------------------------------------------------------------------
 # git primitives
 # --------------------------------------------------------------------------
-def run_git(root: Path, *args: str) -> str:
+def _run_git(root: Path, *args: str) -> str:
     """Run a git command in ``root`` and return its trimmed output."""
     return subprocess.check_output(
         ["git", *args], cwd=root, text=True, stderr=subprocess.PIPE
     ).strip()
 
 
-def changed_paths(root: Path, diff_range: str) -> list[str]:
+def _changed_paths(root: Path, diff_range: str) -> list[str]:
     """The files a diff range touches.
 
     ``--no-renames`` includes BOTH sides of a move across a gate boundary.
@@ -238,7 +278,7 @@ def changed_paths(root: Path, diff_range: str) -> list[str]:
     return [os.fsdecode(item) for item in raw.split(b"\0") if item]
 
 
-def matches(paths: Sequence[str], patterns: Sequence[str]) -> bool:
+def _matches(paths: Sequence[str], patterns: Sequence[str]) -> bool:
     """Whether any path matches the gitignore-style pattern table.
 
     A negative pattern (``!cli/**``) excludes a path even when a positive
@@ -278,7 +318,7 @@ def _event_shas(event: Mapping[str, Any]) -> tuple[str, str]:
     return base, head
 
 
-def pr_range(event: Mapping[str, Any], *, require_sha: bool = True) -> str:
+def _pr_range(event: Mapping[str, Any], *, require_sha: bool = True) -> str:
     """The complete pull request range: ``base...head``.
 
     ``require_sha`` says whether the two commits must look like commit SHAs.
@@ -298,18 +338,8 @@ def pr_range(event: Mapping[str, Any], *, require_sha: bool = True) -> str:
     return f"{base}...{head}"
 
 
-def range_is_resolvable(root: Path, before: str, after: str,
-                        git: Callable[..., str] = run_git) -> bool:
-    """Whether a three-dot diff has both commits and a merge base."""
-    try:
-        git(root, "merge-base", before, after)
-    except subprocess.CalledProcessError:
-        return False
-    return True
-
-
-def push_range(root: Path, event: Mapping[str, Any],
-               git: Callable[..., str] = run_git) -> str:
+def _push_range(root: Path, event: Mapping[str, Any],
+                git: Callable[..., str] = _run_git) -> str:
     """The range a branch push reports.
 
     A push that creates a branch reports an all-zero ``before``, which names
@@ -325,28 +355,6 @@ def push_range(root: Path, event: Mapping[str, Any],
     return f"{parent}...{after}"
 
 
-def latest_range(root: Path, event: Mapping[str, Any],
-                 git: Callable[..., str] = run_git, *,
-                 require_sha: bool = True) -> str:
-    """Scope a pull request update to the ref update that ended at its head."""
-    action = event.get("action")
-    if action != "synchronize":
-        return pr_range(event, require_sha=require_sha)
-    head = event.get("pull_request", {}).get("head", {}).get("sha", "")
-    if not isinstance(head, str) or not head or (require_sha and not SHA.fullmatch(head)):
-        raise ValueError("Event is missing a valid pull request head SHA")
-    before = event.get("before")
-    after = event.get("after")
-    usable = (isinstance(before, str) and isinstance(after, str)
-              and before and after
-              and (not require_sha or (SHA.fullmatch(before) and SHA.fullmatch(after)))
-              and after == head)
-    if usable and range_is_resolvable(root, before, after, git):
-        return f"{before}...{after}"
-    parent = git(root, "rev-parse", f"{head}^")
-    return f"{parent}...{head}"
-
-
 def _event_kind(event: Mapping[str, Any], event_name: str | None) -> str:
     """Which kind of event this is: pull request, push, or manual."""
     if event_name:
@@ -360,33 +368,31 @@ def _event_kind(event: Mapping[str, Any], event_name: str | None) -> str:
     return "workflow_dispatch"
 
 
-def event_range(root: Path, event: Mapping[str, Any], *, latest: bool = True,
-                event_name: str | None = None,
-                git: Callable[..., str] = run_git,
-                require_sha: bool = False) -> tuple[str | None, bool]:
+def _event_range(root: Path, event: Mapping[str, Any], *,
+                 event_name: str | None = None,
+                 git: Callable[..., str] = _run_git,
+                 require_sha: bool = False) -> tuple[str | None, bool]:
     """Return ``(diff_range, forced)`` for the current event.
 
     A manual run has no range and is forced.  A push reports its own range.
-    A pull request update is scoped to the ref update that was delivered;
-    every other pull request event is scoped to the complete pull request.
+    A pull request is scoped to the complete pull request range ``base...head``
+    -- the contribution surface, never the last push.
     """
     kind = _event_kind(event, event_name)
     if kind == "workflow_dispatch":
         return None, True
     if kind == "push":
-        return push_range(root, event, git), False
-    if latest:
-        return latest_range(root, event, git, require_sha=require_sha), False
-    return pr_range(event, require_sha=require_sha), False
+        return _push_range(root, event, git), False
+    return _pr_range(event, require_sha=require_sha), False
 
 
-def select_paths(root: Path, event: Mapping[str, Any], *, latest: bool = True,
-                 event_name: str | None = None,
-                 git: Callable[..., str] = run_git,
-                 event_range_fn: Callable[..., tuple[str | None, bool]] | None = None,
-                 paths_fn: Callable[[Path, str], list[str]] | None = None,
-                 full_range_fn: Callable[..., str] | None = None
-                 ) -> tuple[str | None, bool, list[str]]:
+def _select_paths(root: Path, event: Mapping[str, Any], *,
+                  event_name: str | None = None,
+                  git: Callable[..., str] = _run_git,
+                  event_range_fn: Callable[..., tuple[str | None, bool]] | None = None,
+                  paths_fn: Callable[[Path, str], list[str]] | None = None,
+                  full_range_fn: Callable[..., str] | None = None
+                  ) -> tuple[str | None, bool, list[str]]:
     """Select the files of the event's range, without ever failing a gate.
 
     When the scoped range cannot be resolved the complete pull request range
@@ -395,12 +401,12 @@ def select_paths(root: Path, event: Mapping[str, Any], *, latest: bool = True,
     """
     if event_range_fn is None:
         def event_range_fn(root: Path, event: Mapping[str, Any]):
-            return event_range(root, event, latest=latest, event_name=event_name, git=git)
+            return _event_range(root, event, event_name=event_name, git=git)
     if paths_fn is None:
-        paths_fn = changed_paths
+        paths_fn = _changed_paths
     if full_range_fn is None:
         def full_range_fn(root: Path, event: Mapping[str, Any]) -> str:
-            return pr_range(event)
+            return _pr_range(event)
 
     try:
         diff_range, forced = event_range_fn(root, event)
@@ -422,7 +428,7 @@ def select_paths(root: Path, event: Mapping[str, Any], *, latest: bool = True,
 # the tested surface
 # --------------------------------------------------------------------------
 @dataclasses.dataclass(frozen=True)
-class Surface:
+class _Surface:
     """The tested surface of one pull request at one commit."""
 
     base: str
@@ -445,13 +451,13 @@ def _tree_spec(sha: str, path: str) -> str:
 
 def _tree_exists(root: Path, sha: str, path: str) -> bool:
     try:
-        run_git(root, "rev-parse", "--verify", _tree_spec(sha, path))
+        _run_git(root, "rev-parse", "--verify", _tree_spec(sha, path))
     except subprocess.CalledProcessError:
         return False
     return True
 
 
-def go_package_dirs(root: Path, sha: str, paths: Sequence[str]) -> list[str]:
+def _go_package_dirs(root: Path, sha: str, paths: Sequence[str]) -> list[str]:
     """The package directories the contribution touches, at the given commit."""
     directories: set[str] = set()
     for path in paths:
@@ -466,7 +472,7 @@ def go_package_dirs(root: Path, sha: str, paths: Sequence[str]) -> list[str]:
     return sorted(directories)
 
 
-def frontend_dirs(paths: Sequence[str]) -> list[str]:
+def _frontend_dirs(paths: Sequence[str]) -> list[str]:
     """The frontend directories the contribution touches."""
     directories: set[str] = set()
     for path in paths:
@@ -483,43 +489,43 @@ def _is_governance(path: str) -> bool:
                                            for prefix in GOVERNANCE_DIRS)
 
 
-def surface_at(root: Path, base: str, sha: str) -> Surface:
+def _surface_at(root: Path, base: str, sha: str) -> _Surface:
     """The tested surface of the pull request as of one commit."""
-    contribution = tuple(changed_paths(root, f"{base}...{sha}"))
-    return Surface(
+    contribution = tuple(_changed_paths(root, f"{base}...{sha}"))
+    return _Surface(
         base=base,
         head=sha,
         contribution=contribution,
-        go_packages=tuple(go_package_dirs(root, sha, list(contribution))),
-        frontend_dirs=tuple(frontend_dirs(list(contribution))),
+        go_packages=tuple(_go_package_dirs(root, sha, list(contribution))),
+        frontend_dirs=tuple(_frontend_dirs(list(contribution))),
         contract_changed=any(path.startswith(CONTRACT_DIR) for path in contribution),
         governance_changed=any(_is_governance(path) for path in contribution),
     )
 
 
-def content_fingerprint(root: Path, sha: str, surface: Surface) -> str:
+def _content_fingerprint(root: Path, sha: str, surface: _Surface) -> str:
     """Hash the content of the surface at one commit."""
     digest = hashlib.sha256()
     for package in surface.go_packages:
         try:
-            tree = run_git(root, "rev-parse", _tree_spec(sha, package))
+            tree = _run_git(root, "rev-parse", _tree_spec(sha, package))
         except subprocess.CalledProcessError:
             tree = "absent"
         digest.update(f"go:{package}:{tree}\n".encode("utf-8"))
     for directory in surface.frontend_dirs:
         try:
-            tree = run_git(root, "rev-parse", _tree_spec(sha, directory))
+            tree = _run_git(root, "rev-parse", _tree_spec(sha, directory))
         except subprocess.CalledProcessError:
             tree = "absent"
         digest.update(f"fe:{directory}:{tree}\n".encode("utf-8"))
     return digest.hexdigest()
 
 
-def base_moved_under(root: Path, base: str, before: str, after: str) -> bool:
+def _base_moved_under(root: Path, base: str, before: str, after: str) -> bool:
     """True when the base changed underneath the branch between two heads."""
     try:
-        old_base = run_git(root, "merge-base", base, before)
-        new_base = run_git(root, "merge-base", base, after)
+        old_base = _run_git(root, "merge-base", base, before)
+        new_base = _run_git(root, "merge-base", base, after)
     except subprocess.CalledProcessError:
         return False
     return old_base != new_base
@@ -528,7 +534,7 @@ def base_moved_under(root: Path, base: str, before: str, after: str) -> bool:
 # --------------------------------------------------------------------------
 # the surfaces the manifest owns
 # --------------------------------------------------------------------------
-def classify(paths: Sequence[str]) -> dict[str, bool]:
+def _classify(paths: Sequence[str]) -> dict[str, bool]:
     """Conservative shared-code coverage; unrelated changes stay cheap."""
     governance = any(_is_governance(path) for path in paths)
     contract_change = any(path.startswith(CONTRACT_DIR) for path in paths)
@@ -549,7 +555,7 @@ def classify(paths: Sequence[str]) -> dict[str, bool]:
             "backend": backend, "frontend": frontend}
 
 
-def existing_provider_roots(root: Path) -> list[str]:
+def _existing_provider_roots(root: Path) -> list[str]:
     """The provider roots that exist in this checkout."""
     return [f"./{path}/..." for path in PROVIDER_ROOTS
             if any((root / path).rglob("*.go"))]
@@ -579,15 +585,15 @@ def _pattern_verdict(forced: bool, run_code: bool,
     when it is forced, or when the contribution changed and the contribution
     touches what the gate watches.
     """
-    return bool(forced) or (bool(run_code) and matches(list(contribution),
-                                                      list(patterns)))
+    return bool(forced) or (bool(run_code) and _matches(list(contribution),
+                                                        list(patterns)))
 
 
 def _touches(paths: Sequence[str], surface_paths: Sequence[str],
              path_kind: str) -> bool:
     """Whether the contribution touches a surface's paths."""
     if path_kind == manifest.PATH_KIND_GLOB:
-        return matches(list(paths), list(surface_paths))
+        return _matches(list(paths), list(surface_paths))
     if path_kind == manifest.PATH_KIND_PREFIX:
         return any(path.startswith(prefix) for path in paths
                    for prefix in surface_paths)
@@ -600,27 +606,31 @@ def _surface_verdict(surface, decision_fields: Mapping[str, Any]) -> bool:
     A workflow-level gate is selected by the contribution touching what it
     watches.  The pull request gate owns several surfaces, and each of them
     is the condition of the step that owns it.
+
+    Which fact selects a surface is the surface's **role**, read from the
+    manifest.  It is never guessed from the path set: a path that happens to
+    look like the provider roots is not the provider surface.
     """
     if surface.path_kind == manifest.PATH_KIND_GLOB:
         return _pattern_verdict(decision_fields["forced"],
                                 decision_fields["run_code"],
                                 decision_fields["contribution"],
                                 surface.paths)
-    paths = tuple(surface.paths)
-    if paths == tuple(PROVIDER_ROOTS):
+    if surface.role == manifest.ROLE_PROVIDER:
         return bool(decision_fields["provider_tests"])
-    if paths == (FRONTEND_ROOT,):
+    if surface.role == manifest.ROLE_FRONTEND:
         return bool(decision_fields["frontend"])
-    if paths == (CONTRACT_DIR,):
+    if surface.role == manifest.ROLE_CONTRACTS:
         return bool(decision_fields["contracts"])
-    if paths in (tuple(GOVERNANCE_FILES), tuple(GOVERNANCE_DIRS)):
+    if surface.role == manifest.ROLE_GOVERNANCE:
         return bool(decision_fields["governance_changed"])
     return (bool(decision_fields["forced"]) or bool(decision_fields["run_code"])
             or bool(decision_fields["base_moved"])) and _touches(
                 decision_fields["contribution"], surface.paths, surface.path_kind)
 
 
-def _jobs(fields: Mapping[str, Any]) -> tuple[JobDecision, ...]:
+def _jobs(fields: Mapping[str, Any],
+          surfaces: Sequence[manifest.Surface]) -> tuple[JobDecision, ...]:
     """One entry per consuming job of every surface the manifest declares.
 
     The verdict of a job already accounts for the formatting-only shortcut:
@@ -629,7 +639,7 @@ def _jobs(fields: Mapping[str, Any]) -> tuple[JobDecision, ...]:
     """
     jobs: list[JobDecision] = []
     format_only = bool(fields.get("format_only"))
-    for surface in manifest.load_surfaces():
+    for surface in surfaces:
         verdict = _surface_verdict(surface, fields)
         if format_only and surface.skipped_on_format_only:
             verdict = False
@@ -895,7 +905,7 @@ def _classify_formatting(root: Path, diff_range: str) -> _FormatVerdict:
         base, right = _resolve_revisions(root, diff_range)
         # The one git primitive for "the files a range touches"; the format
         # classifier reads the same list as everything else.
-        paths = changed_paths(root, diff_range)
+        paths = _changed_paths(root, diff_range)
     except (subprocess.CalledProcessError, ValueError, OSError) as error:
         return _FormatVerdict(False, (
             f"cannot resolve the diff range {diff_range!r}: {error}",))
@@ -918,9 +928,15 @@ def _classify_formatting(root: Path, diff_range: str) -> _FormatVerdict:
 # --------------------------------------------------------------------------
 def _full_fields(root: Path, reason: str, base: str, forced: bool,
                  diff_range: str | None, changed: Sequence[str],
-                 format_reasons: Sequence[str]) -> dict[str, Any]:
-    """The fields of a decision that covers the whole scope."""
-    provider_packages = tuple(existing_provider_roots(root))
+                 format_reasons: Sequence[str],
+                 *, undecided: bool = True) -> dict[str, Any]:
+    """The fields of a decision that covers the whole scope.
+
+    ``undecided`` says whether the full scope is the result of a **failed**
+    judgement.  A full scope that was asked for on purpose is decided, not
+    undecided: it must not be published as "未判定，已回退全量".
+    """
+    provider_packages = tuple(_existing_provider_roots(root))
     return {
         "run_code": True,
         "run_targeted": True,
@@ -936,7 +952,7 @@ def _full_fields(root: Path, reason: str, base: str, forced: bool,
         "surface_changed": True,
         "forced": forced,
         "governance_changed": False,
-        "undecided": True,
+        "undecided": undecided,
         "contribution": (),
         "diff_range": diff_range,
         "changed_paths": tuple(changed),
@@ -959,7 +975,8 @@ def _push_baseline(diff_range: str | None) -> str:
 
 def _decide_push(event: Mapping[str, Any], root: Path,
                  diff_range: str | None, forced: bool,
-                 changed: Sequence[str]) -> Decision:
+                 changed: Sequence[str],
+                 surfaces: Sequence[manifest.Surface]) -> Decision:
     """The decision for a branch push.
 
     A push carries no pull request contribution, but it carries a range of
@@ -979,10 +996,10 @@ def _decide_push(event: Mapping[str, Any], root: Path,
     base = _push_baseline(diff_range)
     paths = list(changed)
 
-    go_packages = go_package_dirs(root, after_sha, paths) if after_sha else []
-    front = frontend_dirs(paths)
+    go_packages = _go_package_dirs(root, after_sha, paths) if after_sha else []
+    front = _frontend_dirs(paths)
     governance = any(_is_governance(path) for path in paths)
-    scope = classify(paths)
+    scope = _classify(paths)
     provider_packages = tuple(_provider_packages_of(go_packages))
     surface = list(go_packages) + list(front)
     run_code = bool(paths)
@@ -990,13 +1007,13 @@ def _decide_push(event: Mapping[str, Any], root: Path,
 
     if governance:
         # The gate judges itself, exactly as it does for a pull request.
-        surface = list(existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
-        provider_packages = tuple(existing_provider_roots(root))
+        surface = list(_existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
+        provider_packages = tuple(_existing_provider_roots(root))
         reason = "governance changed; the whole scope is tested"
     elif forced and not paths:
         # The range could not be resolved: the whole scope is tested.
-        surface = list(existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
-        provider_packages = tuple(existing_provider_roots(root))
+        surface = list(_existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
+        provider_packages = tuple(_existing_provider_roots(root))
         run_code = run_targeted = True
         reason = "the push range is undetermined; the whole scope is tested"
     elif paths:
@@ -1014,10 +1031,10 @@ def _decide_push(event: Mapping[str, Any], root: Path,
         "reason": reason,
         "surface": tuple(surface),
         "base": base,
-        "fingerprint": content_fingerprint(
+        "fingerprint": _content_fingerprint(
             root, after_sha,
-            Surface(base=base, head=after_sha, contribution=tuple(paths),
-                    go_packages=tuple(go_packages), frontend_dirs=tuple(front))),
+            _Surface(base=base, head=after_sha, contribution=tuple(paths),
+                     go_packages=tuple(go_packages), frontend_dirs=tuple(front))),
         "base_moved": False,
         "surface_changed": bool(paths),
         "forced": forced,
@@ -1030,31 +1047,50 @@ def _decide_push(event: Mapping[str, Any], root: Path,
         "format_reasons": ("a push never takes the formatting-only fast "
                            "path; the full matrix runs",),
     }
-    return _build(fields)
+    return _build(fields, surfaces)
 
 
-def _decide(event: Mapping[str, Any], root: Path) -> Decision:
+def _is_full_scope_request(event: Mapping[str, Any]) -> bool:
+    """Whether the event asks for the full scope on purpose.
+
+    A manual run -- ``--all``, a workflow dispatch -- asks for the whole
+    scope.  That is **not** an undetermined surface: it was decided, on
+    purpose, and the conclusion says so.
+    """
+    if event.get("action") in ("manual", "workflow_dispatch"):
+        return True
+    return str(event.get("reason") or "") == "full scope requested"
+
+
+def _decide(event: Mapping[str, Any], root: Path,
+            surfaces: Sequence[manifest.Surface]) -> Decision:
     """The decision for one event, without the recovery path."""
     # The decision is scoped to the pull request's own contribution, never to
     # the last push: a baseline merge changes no contribution, so the
     # repository-wide suites stay away while the contribution is re-tested
     # against the new baseline.
-    diff_range, forced, changed = select_paths(root, event, latest=False)
+    diff_range, forced, changed = _select_paths(root, event)
 
     if not isinstance(event.get("pull_request"), Mapping):
         if _event_kind(event, None) == "push":
             # A push has no contribution, but it has a range of its own: the
             # diff it delivers is the tested surface.
-            return _decide_push(event, root, diff_range, forced, changed)
+            return _decide_push(event, root, diff_range, forced, changed,
+                                surfaces)
         # Not a pull request: the contribution-surface rule does not apply,
-        # so the whole scope is used and the reason says so.
-        reason = str(event.get("reason") or "risk surface undetermined, "
-                                         "fell back to the full scope")
+        # so the whole scope is used and the reason says so.  A manual run
+        # asked for it on purpose; anything else is undetermined.
+        deliberate = _is_full_scope_request(event)
+        if deliberate:
+            reason = str(event.get("reason") or "full scope requested")
+            format_reasons = ["the full scope was requested on purpose"]
+        else:
+            reason = str(event.get("reason") or "risk surface undetermined, "
+                                             "fell back to the full scope")
+            format_reasons = ["the gate is not judging a pull request"]
         fields = _full_fields(root, reason, "", forced, diff_range, changed,
-                              ["the gate is not judging a pull request"])
-        fields["frontend"] = True
-        fields["provider_tests"] = bool(fields["provider_packages"])
-        return _build(fields)
+                              format_reasons, undecided=not deliberate)
+        return _build(fields, surfaces)
 
     base, head = _event_shas(event)
     after = event.get("after")
@@ -1062,18 +1098,18 @@ def _decide(event: Mapping[str, Any], root: Path) -> Decision:
     after_sha = after if isinstance(after, str) and SHA.fullmatch(after) else head
     before_sha = before if isinstance(before, str) and SHA.fullmatch(before) else None
 
-    current = surface_at(root, base, after_sha)
-    previous = surface_at(root, base, before_sha) if before_sha else None
+    current = _surface_at(root, base, after_sha)
+    previous = _surface_at(root, base, before_sha) if before_sha else None
 
     surface_changed = True
     base_moved = False
     if previous is not None:
-        base_moved = base_moved_under(root, base, before_sha, after_sha)
+        base_moved = _base_moved_under(root, base, before_sha, after_sha)
         surface_changed = (
             previous.go_packages != current.go_packages
             or previous.frontend_dirs != current.frontend_dirs
-            or content_fingerprint(root, before_sha, previous)
-            != content_fingerprint(root, after_sha, current)
+            or _content_fingerprint(root, before_sha, previous)
+            != _content_fingerprint(root, after_sha, current)
         )
     elif event.get("action") in ("opened", "reopened", "ready_for_review"):
         surface_changed = True
@@ -1087,8 +1123,8 @@ def _decide(event: Mapping[str, Any], root: Path) -> Decision:
         # decide the scope must be judged by the whole gate, never by a
         # narrowed surface.
         surface_changed = True
-        surface = list(existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
-        provider_packages = tuple(existing_provider_roots(root))
+        surface = list(_existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
+        provider_packages = tuple(_existing_provider_roots(root))
 
     if not surface_changed and not base_moved:
         reason = "tested surface unchanged and base unchanged"
@@ -1099,7 +1135,7 @@ def _decide(event: Mapping[str, Any], root: Path) -> Decision:
     else:
         reason = "the base moved under the branch; the contribution is re-tested against it"
 
-    scope = classify(list(current.contribution))
+    scope = _classify(list(current.contribution))
     run_code = surface_changed
     run_targeted = surface_changed or base_moved
 
@@ -1118,7 +1154,7 @@ def _decide(event: Mapping[str, Any], root: Path) -> Decision:
         "reason": reason,
         "surface": tuple(surface),
         "base": base,
-        "fingerprint": content_fingerprint(root, after_sha, current),
+        "fingerprint": _content_fingerprint(root, after_sha, current),
         "base_moved": base_moved,
         "surface_changed": surface_changed,
         "forced": forced,
@@ -1130,17 +1166,17 @@ def _decide(event: Mapping[str, Any], root: Path) -> Decision:
         "format_only": format_only,
         "format_reasons": tuple(format_reasons),
     }
-    return _build(fields)
+    return _build(fields, surfaces)
 
 
-def _build(fields: Mapping[str, Any]) -> Decision:
+def _build(fields: Mapping[str, Any],
+           surfaces: Sequence[manifest.Surface]) -> Decision:
     """Turn the decision fields into a :class:`Decision`."""
     fields = dict(fields)
-    fields.setdefault("provider_tests", bool(fields["provider_packages"])
-                      and fields["run_targeted"])
-    fields["provider_tests"] = bool(fields["provider_packages"]) and fields["run_targeted"]
+    fields["provider_tests"] = (bool(fields["provider_packages"])
+                                and fields["run_targeted"])
     decision = Decision(
-        jobs=_jobs(fields),
+        jobs=_jobs(fields, surfaces),
         run_code=fields["run_code"],
         run_targeted=fields["run_targeted"],
         provider_packages=tuple(fields["provider_packages"]),
@@ -1165,33 +1201,60 @@ def _build(fields: Mapping[str, Any]) -> Decision:
     return decision
 
 
+def _fallback_decision(event: Mapping[str, Any], root: Path, reason: str,
+                       surfaces: Sequence[manifest.Surface],
+                       *, undecided: bool = True) -> Decision:
+    """The one recovery path: the full scope, and a reason that says why.
+
+    Every failure of the judgement -- an unresolvable range, a commit that
+    does not exist, an unreadable manifest -- lands here.  There is no second
+    path: the gate falls back to the full scope, marks the decision as
+    undecided, and says why in the reason.
+    """
+    base = ""
+    try:
+        base, _ = _event_shas(event)
+    except ValueError:
+        pass
+    diff_range, forced, changed = None, True, []
+    try:
+        diff_range, forced, changed = _select_paths(root, event)
+    except (subprocess.CalledProcessError, ValueError, OSError):
+        pass
+    fields = _full_fields(root, reason, base, True, diff_range, changed,
+                          [reason], undecided=undecided)
+    return _build(fields, surfaces)
+
+
 def decide(event: Mapping[str, Any], root: Path) -> Decision:
     """Decide what the gates run for one event, and why.
 
     A scope-discovery failure must cost compute, never correctness: when the
     surface cannot be resolved every applicable check runs rather than
     silently skipping.  This is the one recovery path of the gate.
+
+    The manifest is part of the judgement: a manifest that cannot be read is
+    a failure of the judgement, not a second kind of gate that runs.  It
+    therefore takes the **same** path -- the full scope, ``undecided``, and a
+    reason that says the manifest was unavailable.
     """
     try:
-        return _decide(event, root)
+        surfaces = _manifest_surfaces()
+    except manifest.SurfaceManifestError as error:
+        print(f"warning: the gate surface manifest is unavailable ({error}); "
+              "falling back to the full scope", file=sys.stderr)
+        return _fallback_decision(
+            event, root,
+            "the gate surface manifest is unavailable; fell back to the full scope",
+            manifest.load_surfaces_lenient())
+    try:
+        return _decide(event, root, surfaces)
     except (subprocess.CalledProcessError, ValueError, OSError) as error:
         print(f"warning: unable to resolve the risk surface ({error}); "
               "falling back to the full scope", file=sys.stderr)
-        base = ""
-        try:
-            base, _ = _event_shas(event)
-        except ValueError:
-            pass
-        diff_range, forced, changed = None, True, []
-        try:
-            diff_range, forced, changed = select_paths(root, event)
-        except (subprocess.CalledProcessError, ValueError, OSError):
-            pass
-        fields = _full_fields(
-            root, "risk surface undetermined, fell back to the full scope",
-            base, True, diff_range, changed,
-            ["risk surface undetermined, fell back to the full scope"])
-        return _build(fields)
+        return _fallback_decision(
+            event, root, "risk surface undetermined, fell back to the full scope",
+            surfaces)
 
 
 # --------------------------------------------------------------------------
@@ -1313,7 +1376,7 @@ def _workflow_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
     skipped.  One job may watch several surfaces; it then runs when any of
     them is selected.
     """
-    surfaces = {surface.name: surface for surface in manifest.load_surfaces()}
+    surfaces = {surface.name: surface for surface in _readable_surfaces()}
     grouped: dict[tuple[str, str], dict[str, Any]] = {}
     for job in decision.jobs:
         if job.workflow != workflow:
@@ -1365,7 +1428,7 @@ def _is_step_level(workflow: str) -> bool:
     jobs it skips.
     """
     counts: dict[str, int] = {}
-    for surface in manifest.load_surfaces():
+    for surface in _readable_surfaces():
         for consumer in surface.consumers:
             if consumer.workflow != workflow:
                 continue
@@ -1381,7 +1444,7 @@ def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
     whether the gate judged itself by the whole scope.
     """
     outputs = write_outputs(decision)
-    surfaces = {surface.name: surface for surface in manifest.load_surfaces()}
+    surfaces = {surface.name: surface for surface in _readable_surfaces()}
     verdicts: dict[str, dict[str, bool]] = {}
     for job in decision.jobs:
         if job.workflow != workflow:
@@ -1393,9 +1456,12 @@ def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
         for surface_name, verdict in surface_verdicts.items():
             surface = surfaces.get(surface_name)
             paths = list(surface.paths) if surface is not None else []
-            step = STEP_OUTPUTS.get(surface_name)
+            step = surface.step if surface is not None else None
             if step is not None:
-                name, output, format_only_skips, subject = step
+                name = step.name
+                output = step.output
+                format_only_skips = step.skipped_on_format_only
+                subject = step.subject
                 run = outputs.get(output, "false") == "true"
                 kind = "step"
                 detail = ""
@@ -1403,8 +1469,8 @@ def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
                     detail = ("the provider packages are: "
                               + ", ".join(decision.provider_packages))
             else:
-                governance = (tuple(paths) in (tuple(GOVERNANCE_FILES),
-                                              tuple(GOVERNANCE_DIRS)))
+                governance = (surface is not None
+                              and surface.role == manifest.ROLE_GOVERNANCE)
                 name = ("Gate judged by the whole scope" if governance
                         else f"Gate scope: {surface_name}")
                 run = verdict
@@ -1573,7 +1639,7 @@ def publish(event: Mapping[str, Any], root: Path, *,
     decision = decide(event, root)
     whitespace_range = None
     if isinstance(event.get("pull_request"), Mapping):
-        whitespace_range = pr_range(event)
+        whitespace_range = _pr_range(event)
     published = report(decision, whitespace_range)
     print(json.dumps(published, ensure_ascii=True, indent=2))
     if output_path := os.environ.get("GITHUB_OUTPUT"):
@@ -1587,7 +1653,7 @@ def publish(event: Mapping[str, Any], root: Path, *,
     return published
 
 
-def main() -> None:
+def _main() -> None:
     """Print the decision for one event; the gate's offline entry point."""
     parser = argparse.ArgumentParser(description="Decide what the gates run for one event.")
     parser.add_argument("--all", action="store_true", help="Run all applicable checks")
@@ -1603,7 +1669,10 @@ def main() -> None:
     args = parser.parse_args()
     root = args.root.resolve()
 
-    if args.all:
+    # A manual dispatch asks for the full scope on purpose.  It is a
+    # deliberate decision, not an undetermined surface.
+    manual = args.all or os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
+    if manual:
         publish({}, root, all_checks=True, whitespace=args.whitespace,
                 gate=args.gate, artifact_dir=args.artifact_dir)
         return
@@ -1615,4 +1684,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    _main()

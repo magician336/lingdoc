@@ -24,6 +24,7 @@ manifest validates its consumers.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import unittest
 
 import yaml
@@ -54,8 +55,18 @@ UNFILTERED_WORKFLOWS = GATED_WORKFLOWS + (PULL_REQUEST_GATE,)
 
 # The explanation the gates have to carry, so the next reader knows why the
 # path filter is gone and what the push mirror owes to the manifest.
-TRIGGER_EXPLANATION = "docs/agents/development-rules.md:25"
+TRIGGER_EXPLANATION = "docs/agents/development-rules.md:26"
 MIRROR_EXPLANATION = "lingdoc_gate_surfaces.py"
+
+# The rules file the gates point at, and the fragment that identifies the
+# rule inside it.  The gates cite the rule by line number, so the citation
+# has to be checked: a rule that moved must not leave the gates pointing at
+# the wrong line.
+RULES = REPO_ROOT / "docs" / "agents" / "development-rules.md"
+RULE_FRAGMENT = "**门禁始终出现**"
+
+# The citation the gates carry: ``<file>:<line>``.
+CITATION = re.compile(r"docs/agents/development-rules\.md:(\d+)")
 
 
 def load(name: str) -> dict:
@@ -162,6 +173,43 @@ class TriggerExplanationTests(unittest.TestCase):
                 self.assertIn(TRIGGER_EXPLANATION, text,
                               f"{name}: the trigger has to point at "
                               f"{TRIGGER_EXPLANATION}")
+
+
+class RuleCitationTests(unittest.TestCase):
+    """A cited line number has to be the line the rule is on.
+
+    The gates cite the rule by line number.  When the rules file grows, the
+    citation drifts and the gate points at the wrong paragraph -- silently.
+    This test locates the rule by its text and compares the line numbers.
+    """
+
+    def _rule_line(self) -> int:
+        """The line the rule is on, found by its text."""
+        for number, line in enumerate(
+                RULES.read_text(encoding="utf-8").splitlines(), 1):
+            if RULE_FRAGMENT in line:
+                return number
+        self.fail(f"{RULES.name} no longer states the rule {RULE_FRAGMENT!r}")
+
+    def test_the_rules_file_states_the_rule(self):
+        self.assertGreater(self._rule_line(), 0)
+
+    def test_every_cited_line_number_is_the_rule(self):
+        rule_line = self._rule_line()
+        for name in GATED_WORKFLOWS:
+            text = (WORKFLOWS / name).read_text(encoding="utf-8")
+            citations = CITATION.findall(text)
+            with self.subTest(workflow=name):
+                self.assertTrue(citations,
+                                f"{name}: the trigger does not cite the rule "
+                                "by line number")
+                for cited in citations:
+                    self.assertEqual(
+                        int(cited), rule_line,
+                        f"{name}: cites development-rules.md:{cited}, but the "
+                        f"rule is on line {rule_line}; a citation that points "
+                        "at the wrong line sends the reader to the wrong "
+                        "paragraph")
 
 
 if __name__ == "__main__":

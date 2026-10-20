@@ -26,6 +26,7 @@ rule:
 from __future__ import annotations
 
 import ast
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -33,6 +34,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import lingdoc_gate_decision as decision
 import lingdoc_gate_surfaces as manifest
@@ -1367,6 +1369,206 @@ class PushEventTests(DecisionFixture):
             self.assertEqual(outputs["frontend"], "true")
             self.assertIn("frontend", outputs["surface"])
             self.assertIn("./internal/lingdoc/...", outputs["provider_packages"])
+
+
+class ManifestUnavailableTests(DecisionFixture):
+    """An unreadable manifest costs compute, never correctness.
+
+    ADR 0007 says it in one sentence: a judgement that fails -- an
+    unresolvable range, a commit that does not exist, **a manifest that
+    cannot be read** -- falls back to the full scope and says so.  There is
+    one recovery path, and the manifest is part of the judgement, so the
+    manifest takes the same path.
+    """
+
+    def _decide_with_manifest(self, root: Path, records, *, repo_root=None):
+        """The decision for a pull request, with a broken manifest in place."""
+        head = git(root, "rev-parse", "HEAD")
+        event = self._event(head, head, head)
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(manifest, "SURFACES", records))
+            if repo_root is not None:
+                stack.enter_context(
+                    mock.patch.object(manifest, "REPO_ROOT", repo_root))
+            return decision.decide(event, root)
+
+    def _record(self, **overrides) -> dict:
+        """A manifest record that names one real workflow job."""
+        record = {
+            "name": "example-surface",
+            "gate_level": manifest.GATE_LEVEL_REPOSITORY,
+            "path_kind": manifest.PATH_KIND_GLOB,
+            "role": manifest.ROLE_PATHS,
+            "paths": ("frontend/**",),
+            "consumers": ({
+                "workflow": ".github/workflows/frontend.yml",
+                "job": "verify",
+                "job_name": "Test, type-check, and build",
+            },),
+            "skipped_on_format_only": True,
+        }
+        record.update(overrides)
+        return record
+
+    def _assert_fell_back_to_the_full_scope(self, result) -> None:
+        self.assertTrue(result.undecided)
+        self.assertTrue(result.forced)
+        self.assertTrue(result.run_code)
+        self.assertTrue(result.run_targeted)
+        self.assertTrue(result.contracts)
+        self.assertTrue(result.backend)
+        self.assertTrue(result.frontend)
+        self.assertIn("manifest", result.reason)
+        self.assertIn("full scope", result.reason)
+
+    def test_a_manifest_with_a_missing_field_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            broken = self._record()
+            del broken["paths"]
+
+            result = self._decide_with_manifest(root, [broken])
+
+            self._assert_fell_back_to_the_full_scope(result)
+
+    def test_a_manifest_with_a_duplicate_surface_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = self._decide_with_manifest(
+                root, [self._record(), self._record()])
+
+            self._assert_fell_back_to_the_full_scope(result)
+
+    def test_a_manifest_naming_an_absent_job_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            broken = self._record(consumers=({
+                "workflow": ".github/workflows/frontend.yml",
+                "job": "absent-job",
+                "job_name": "Test, type-check, and build",
+            },))
+
+            result = self._decide_with_manifest(root, [broken])
+
+            self._assert_fell_back_to_the_full_scope(result)
+
+    def test_a_manifest_naming_a_different_display_name_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            broken = self._record(consumers=({
+                "workflow": ".github/workflows/frontend.yml",
+                "job": "verify",
+                "job_name": "Some other name",
+            },))
+
+            result = self._decide_with_manifest(root, [broken])
+
+            self._assert_fell_back_to_the_full_scope(result)
+
+    def test_a_manifest_naming_an_absent_workflow_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            broken = self._record(consumers=({
+                "workflow": ".github/workflows/absent.yml",
+                "job": "verify",
+                "job_name": "Test, type-check, and build",
+            },))
+
+            result = self._decide_with_manifest(root, [broken])
+
+            self._assert_fell_back_to_the_full_scope(result)
+
+    def test_a_manifest_with_an_unreadable_workflow_does_not_escape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            fake_root = Path(tmp) / "checkout"
+            workflow = fake_root / ".github" / "workflows" / "frontend.yml"
+            workflow.parent.mkdir(parents=True, exist_ok=True)
+            workflow.write_text("name: Frontend\non: [unbalanced\n",
+                                encoding="utf-8")
+
+            result = self._decide_with_manifest(
+                root, [self._record()], repo_root=fake_root)
+
+            self._assert_fell_back_to_the_full_scope(result)
+
+    def test_the_fallback_publishes_the_full_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            broken = self._record()
+            del broken["paths"]
+
+            result = self._decide_with_manifest(root, [broken])
+            outputs = decision.write_outputs(result)
+
+            self.assertEqual(outputs["run_code"], "true")
+            self.assertEqual(outputs["run_targeted"], "true")
+            self.assertEqual(outputs["contracts"], "true")
+            self.assertEqual(outputs["frontend"], "true")
+            self.assertIn("manifest", outputs["reason"])
+
+
+class FullScopeRequestTests(DecisionFixture):
+    """A full scope that was asked for is decided, not undetermined.
+
+    ``undecided`` says that the judgement **failed** and the gate fell back
+    to the full scope.  A manual run asked for the full scope on purpose: it
+    was decided, and the conclusion must not say "未判定，已回退全量".
+    """
+
+    def test_a_manual_run_is_not_undecided(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = decision.decide(
+                {"action": "manual", "reason": "full scope requested"}, root)
+
+            self.assertFalse(result.undecided)
+            self.assertIn("full scope requested", result.reason)
+            self.assertTrue(result.run_code)
+            self.assertTrue(result.forced)
+
+    def test_a_manual_run_publishes_no_undecided_note(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = decision.decide(
+                {"action": "manual", "reason": "full scope requested"}, root)
+            conclusion = decision.gate_conclusion(
+                result, ".github/workflows/frontend.yml")
+            markdown = decision.conclusion_markdown(conclusion)
+
+            self.assertFalse(conclusion["undecided"])
+            self.assertEqual(conclusion["undecided_note"], "")
+            self.assertNotIn("未判定", markdown)
+
+    def test_a_failed_judgement_is_undecided(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            event = self._event(base, base, base)
+            event["pull_request"]["head"]["sha"] = "f" * 40
+            event["after"] = "f" * 40
+
+            result = decision.decide(event, root)
+            conclusion = decision.gate_conclusion(
+                result, ".github/workflows/frontend.yml")
+
+            self.assertTrue(result.undecided)
+            self.assertTrue(conclusion["undecided"])
+            self.assertIn("未判定，已回退全量", conclusion["undecided_note"])
+            self.assertIn("未判定", decision.conclusion_markdown(conclusion))
 
 
 if __name__ == "__main__":

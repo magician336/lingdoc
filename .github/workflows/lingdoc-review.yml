@@ -56,10 +56,6 @@ jobs:
         id: ciscripts
         run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' -v
 
-      - name: Test gate selection
-        id: selftest
-        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_gate_decision.py' -v
-
       # The gate asks the decision module for the decision.  The module reads
       # only Git and the gate surface manifest, publishes the decision as the
       # step outputs the conditions below read, and checks the pull request's
@@ -160,7 +156,6 @@ jobs:
       - name: Publish check boundary and results
         if: always()
         env:
-          SELFTEST: ${{ steps.selftest.outcome }}
           CISCRIPTS: ${{ steps.ciscripts.outcome }}
           SCOPE: ${{ steps.scope.outcome }}
           CONTRACTS: ${{ steps.contracts.outcome }}
@@ -174,7 +169,7 @@ jobs:
           import json, os
           from pathlib import Path
           result = {key.lower(): os.environ[key] for key in
-                    ('SELFTEST', 'CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
+                    ('CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
           result['tested_sha'] = os.environ['GITHUB_SHA']
           # The surface says what was tested, the reason says why that surface
           # was chosen, and the base says which baseline it was judged against.
@@ -187,7 +182,7 @@ jobs:
           (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
-              for key in ('selftest', 'ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
+              for key in ('ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
               handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
               handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')

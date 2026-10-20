@@ -217,10 +217,17 @@ class UndecidedTests(ConclusionFixture):
     """An undecided gate says that it fell back to the full scope."""
 
     def _undecided(self) -> decision.Decision:
-        fields = decision._full_fields(
-            Path("."), "risk surface undetermined, fell back to the full scope",
-            "0" * 40, True, None, [], ["risk surface undetermined"])
-        return decision._build(fields)
+        """A decision the public interface reports as undecided.
+
+        The judgement seam is the module's public interface: an event that
+        carries no pull request cannot be judged, so the gate falls back to
+        the full scope and says so.  Nothing here reaches into a private
+        helper -- the same rule applies to every judgement test.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            return decision.decide({}, root)
 
     def test_the_conclusion_says_it_fell_back_to_the_full_scope(self):
         conclusion = decision.gate_conclusion(

@@ -12,9 +12,12 @@ it is and say nothing about what a particular event decides.
 """
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 import re
 import unittest
+
+import lingdoc_gate_decision as decision
 
 CI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CI_DIR.parents[1]
@@ -22,6 +25,12 @@ WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
 # The module that owns the decision.
 DECISION_MODULE = "lingdoc_gate_decision.py"
+
+# The decision layer's public interface is registered **once**, in ADR 0007.
+# Every entry is a line of the form ``- `name` — one sentence``.
+ADR_0007 = REPO_ROOT / "docs" / "adr" / "0007-gate-decision-deep-module.md"
+REGISTERED_INTERFACE = re.compile(r"^- `([A-Za-z_][A-Za-z0-9_.]*)` — ",
+                                   re.MULTILINE)
 
 # The scripts that used to answer "what runs" and no longer exist.
 RETIRED_SCRIPTS = (
@@ -97,6 +106,73 @@ class JudgementLayerTests(unittest.TestCase):
         source = (CI_DIR / DECISION_MODULE).read_text(encoding="utf-8")
         self.assertIn("def _format_only_update", source)
         self.assertIn("def _format_fast_path_applies", source)
+
+
+class PublicInterfaceTests(unittest.TestCase):
+    """The decision layer exposes exactly the interface ADR 0007 registers.
+
+    The registry is the single source: a public name that nobody registered
+    is an unregistered door into the judgement, and a registered name the
+    module does not have is a promise the documents keep and the code
+    breaks.  Both make this test red.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.module = decision
+        cls.registered = cls._registered_names()
+        cls.exposed = cls._exposed_names(cls.module)
+
+    @staticmethod
+    def _registered_names() -> list[str]:
+        """The names ADR 0007 registers, in the order it registers them."""
+        text = ADR_0007.read_text(encoding="utf-8")
+        return REGISTERED_INTERFACE.findall(text)
+
+    @staticmethod
+    def _exposed_names(module) -> set[str]:
+        """The public functions and classes the module defines itself."""
+        return {
+            name for name, value in vars(module).items()
+            if not name.startswith("_")
+            and (inspect.isfunction(value) or inspect.isclass(value))
+            and getattr(value, "__module__", "") == module.__name__
+        }
+
+    def test_the_adr_registers_the_interface(self):
+        self.assertTrue(self.registered,
+                        f"{ADR_0007.name} registers no public interface; the "
+                        "decision layer has no single source any more")
+
+    def test_the_module_exposes_exactly_the_registered_interface(self):
+        registered = {name for name in self.registered if "." not in name}
+        self.assertEqual(
+            self.exposed, registered,
+            "the decision layer's public interface and ADR 0007's registry "
+            f"disagree: only in the module: {sorted(self.exposed - registered)}; "
+            f"only in the ADR: {sorted(registered - self.exposed)}")
+
+    def test_every_registered_member_exists(self):
+        for name in self.registered:
+            if "." not in name:
+                continue
+            owner, _, member = name.partition(".")
+            with self.subTest(member=name):
+                self.assertTrue(hasattr(self.module, owner),
+                                f"ADR 0007 registers {name!r}, but the module "
+                                f"has no {owner!r}")
+                self.assertTrue(hasattr(getattr(self.module, owner), member),
+                                f"ADR 0007 registers {name!r}, but the module "
+                                f"does not have it")
+
+    def test_no_undocumented_public_name_is_exposed(self):
+        registered = set(self.registered)
+        for name in sorted(self.exposed):
+            with self.subTest(name=name):
+                self.assertIn(
+                    name, registered,
+                    f"the decision module exposes {name!r}, but ADR 0007 does "
+                    "not register it; either register it or make it private")
 
 
 if __name__ == "__main__":
