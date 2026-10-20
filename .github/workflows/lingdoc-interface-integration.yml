@@ -1,14 +1,5 @@
 name: LingDoc Interface Integration
-# Always start on every pull request.  A top-level `paths:` filter would stop
-# the workflow from starting at all, leaving the required check pending
-# forever and the gate with nowhere to publish its conclusion; the rule is in
-# docs/agents/development-rules.md:25, and the header of the pull request gate
-# (.github/workflows/lingdoc-review.yml) says the same.  Which job runs is
-# decided by the job-level `if` below, which reads the decision module.
-#
-# This workflow has no push trigger, so the surface paths in
-# scripts/ci/lingdoc_gate_surfaces.py are the only copy of the path
-# ownership; change them there.
+# Gate trigger rules: docs/agents/development-rules.md:26; path ownership: scripts/ci/lingdoc_gate_surfaces.py.
 on:
   pull_request:
     branches: [main]
