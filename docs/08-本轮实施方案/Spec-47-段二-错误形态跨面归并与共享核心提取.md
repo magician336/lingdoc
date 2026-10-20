@@ -293,6 +293,62 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 
 矩阵中的 `TODO` 在当前范围内闭环之前，PR 保持 Draft。
 
+## 47.06 的实现结果（2026-10-20）
+
+### 五张平表已空
+
+`rulesetstore` / `candidateadoption` / `generation` / `g4_full_http` / `g2_full_http` 五个传输面
+不再持有按业务错误逐个分支的映射表；六个渲染器只剩兜底。工作区主路由早在 47.05 就已空。
+
+### 共享形态目录
+
+`internal/clienterror/catalog.go`：只收**状态码 + 错误码 + 文案三者全同**的形态。
+「同码不同文」的形态各自独立声明，永不并成一句。目录放在 `clienterror` 包内是有意的——
+所有消费方都已经依赖它，这样共享形态**不新增任何依赖边**。
+
+### 两条归属判据都落地了
+
+- **形态由错误本身决定**：sentinel 自带形态（`clienterror.New` / `clienterror.Wrap`）。
+- **形态由发生场景决定**：用具名场景值**包住**原 sentinel（`errors.Is` 仍然成立）。
+  规则集存储面、候选采纳面、G2 面的同码不同文冲突都这样解。
+
+`workspacecore.ErrRuleSetStateNotAllowed` 是第 3 项的落点：工作区核心把「规则集未发布」
+翻译成失败时，改用具名场景类型，答 409 `invalid_state`。
+
+### 迁移前后对照表（机械生成）
+
+`docs/08-本轮实施方案/47.06-错误形态对照表.md`，由脚本从 `2ad3bc5` 解析旧平表、
+与工作树的声明逐条比对，**五维**（状态码 / 错误码 / 文案 / retryable / 信封字段集）。
+
+结果：比对 **67** 条，完全一致 **33** 条，有差异 **34** 条（维度级 42 行），
+**未授权差异 0**——每一处差异都落在「少数口径变更清单」的某一项上。脚本的结论行是
+`all differences are approved`。
+
+### 结构断言与阴性验证
+
+`internal/lingdoc/workspace/client_form_convergence_test.go`：
+
+1. `TestTransportFilesHoldNoBusinessErrorBranch`——五个传输文件内不得有按业务错误分支的
+   switch/条件，不得有按业务错误判断的 `errors.Is/As`（唯一豁免是合法携带 details 的路径）。
+2. `TestTransportMappersOnlyFallBack`——六个渲染器内不得有 switch、不得有业务错误判断。
+
+**阴性验证**：向 `rulesetstore/http.go` 注入 `if errors.Is(err, ErrRuleSetNotFound)` →
+两条断言各报一条，带文件与行号；向 `generation/http.go` 注入 `switch { case errors.Is(err, ErrNotFound) }`
+→ 报出「分支按业务错误选择结果」与「还在按业务错误分支」。两次注入均已撤销并复跑通过。
+
+另有三个包内的兜底测试（`http_fallback_test.go` × 3）钉住兜底语义：未映射错误仍答
+500 `internal_error`，且响应里不出现原始数据库错误、SQLSTATE 或包名。
+
+### 计划未覆盖处所做的决定
+
+1. **G2 面的信封也去掉了 `details: null`**——计划的基线表没记这个面，但不可变契约第 5 条
+   要求所有面答同一字段集，G2 也不是合法携带 details 的两条路径之一，故一并收口（第 6 项延伸）。
+2. 生成面 `ErrStaleInput` 的文案取候选采纳面措辞「候选稿或快照基于旧输入。」。
+3. 治理面与候选采纳面的**兜底 500** 也按第 4/5 项改为 `retryable: true`。
+4. 规则集存储面、候选采纳面、G2 面的同码不同文冲突，一律用具名场景值承载各面自己的措辞。
+5. `impact_routes.go` 与 `g5_machine_read_http.go` 仍带 `details: null`（不在五张平表内，未动）。
+6. `ErrAdoptionServiceUnavailable`（503 + `invalid_state`）保留旧形态，以逐字节不变。
+
 ## 47.03 的实现结果与数据核查（2026-10-20）
 
 ### 一个谓词，三处消费者
