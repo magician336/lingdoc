@@ -239,22 +239,27 @@ class WorkflowWiringTests(unittest.TestCase):
     """The manifest agrees with the workflow files, which are the truth."""
 
     def test_every_gated_surface_is_watched_inside_its_workflow_trigger(self):
-        # The path table of a gate lives in the manifest; the workflow only
-        # says which paths start it.  The gate may watch less than the
-        # trigger starts -- go-lint also starts on its own tooling script --
-        # but it may not watch more, or the gate could ask for work that the
-        # workflow never starts.
+        # The path table of a gate lives in the manifest.  The workflow only
+        # says which paths start it.  Since #309 the pull request trigger
+        # carries no path filter at all -- the gate has to start on every
+        # pull request, and the job-level condition decides what runs -- so a
+        # workflow carries a path list only when it keeps a static mirror of
+        # the manifest for its push trigger.  Where such a mirror exists the
+        # gate may watch less than the trigger starts -- go-lint also starts
+        # on its own tooling script -- but it may not watch more, or the gate
+        # could ask for work that the workflow never starts.
         loaded = manifest.load_and_validate()
         for workflow in GATED_WORKFLOWS:
             with self.subTest(workflow=workflow):
                 trigger = workflow_trigger_paths(workflow)
-                self.assertTrue(trigger, f"{workflow} has no trigger path filter")
                 owners = [surface for surface in loaded.surfaces
                           if surface.path_kind == manifest.PATH_KIND_GLOB
                           and any(consumer.workflow == f".github/workflows/{workflow}"
                                   for consumer in surface.consumers)]
                 self.assertEqual(len(owners), 1,
                                  f"{workflow} must be owned by exactly one surface")
+                if not trigger:
+                    continue
                 self.assertTrue(set(owners[0].paths) <= set(trigger),
                                 f"{workflow}: the gate watches "
                                 f"{sorted(set(owners[0].paths) - set(trigger))}, "
