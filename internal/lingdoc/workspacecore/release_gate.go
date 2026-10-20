@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/google/uuid"
 	"slices"
@@ -12,7 +13,7 @@ import (
 
 // ErrRevisionNotStable preserves the existing invalid-state domain guard while
 // letting clients explain the pending Owner stabilization step.
-var ErrRevisionNotStable = fmt.Errorf("%w: current formal changes require Owner stabilization", ErrInvalidState)
+var ErrRevisionNotStable = clienterror.Wrap(clienterror.Form{Status: 422, Code: "context_unstable", Message: "正式变更尚未完成稳定化。请用当前交付检查回执闭环影响任务，再由 Owner 检查稳定化后冻结。", Retryable: false}, "invalid_state: current formal changes require Owner stabilization", ErrInvalidState)
 
 type PreflightBasis struct {
 	Project              Project
@@ -226,8 +227,8 @@ func (s *Service) AssertRevisionStabilized(ctx context.Context, actor Actor, pro
 		}
 		found := false
 		for _, change := range history {
-			if change.TargetContextRevision != nil && *change.TargetContextRevision == p.CurrentContextRevision && slices.Contains([]string{"applied", "stabilized"}, change.Status) {
-				if change.Status != "stabilized" {
+			if change.TargetContextRevision != nil && *change.TargetContextRevision == p.CurrentContextRevision && slices.Contains(ChangeSetClosedStatuses, change.Status) {
+				if ChangeSetStatusCanMove("stabilize", change.Status) {
 					// Name the exact ChangeSet so the client can drive the
 					// Owner stabilization step instead of inferring it.
 					return fmt.Errorf("%w: current applied ChangeSet %s has not been stabilized by Owner", ErrRevisionNotStable, change.ID)

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"strings"
 	"time"
 
@@ -18,12 +19,12 @@ import (
 //
 // 与 DenyNotFound 是同一件事的两个层次：这里给内部调用方，那里给消费者。
 // 别的项目的资料 ID 与不存在的 ID 都收敛到这里，不泄露存在性。
-var ErrAssetNotFound = errors.New("asset not found")
+var ErrAssetNotFound = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "asset not found")
 
 // ErrInvalidBinding 表示绑定入参不成立（缺项目或资料 ID）。
-var ErrInvalidBinding = errors.New("invalid binding input")
+var ErrInvalidBinding = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "请求字段不符合约定。", Retryable: false}, "invalid binding input")
 
-var ErrIdempotencyConflict = errors.New("idempotency conflict")
+var ErrIdempotencyConflict = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency conflict")
 
 // ErrObservationConflict 表示这次观测读到的资产版本已经被别的观测提交。
 // 调用方可以安全地重读并重试；它不是内容冲突，也不是资料不存在。
