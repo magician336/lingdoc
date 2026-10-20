@@ -19,6 +19,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -383,22 +384,11 @@ func validateSourceReferences(body string, sourceIDs []string) error {
 		want[id] = struct{}{}
 	}
 	got := make(map[string]struct{})
-	for i := 0; i < len(body); {
-		start := strings.Index(body[i:], "[[source:")
-		if start < 0 {
-			break
-		}
-		start += i + len("[[source:")
-		end := strings.Index(body[start:], "]]")
-		if end < 0 {
-			return ErrInvalidRequest
-		}
-		id := strings.TrimSpace(body[start : start+end])
-		if id == "" {
-			return ErrInvalidRequest
-		}
+	if err := sourcemarker.Validate(body); err != nil {
+		return ErrInvalidRequest
+	}
+	for _, id := range sourcemarker.IDs(body) {
 		got[id] = struct{}{}
-		i = start + end + 2
 	}
 	if len(want) != len(got) {
 		return ErrInvalidRequest
