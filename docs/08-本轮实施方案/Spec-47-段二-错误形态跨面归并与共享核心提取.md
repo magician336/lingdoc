@@ -293,6 +293,63 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 
 矩阵中的 `TODO` 在当前范围内闭环之前，PR 保持 Draft。
 
+## 47.03 的实现结果与数据核查（2026-10-20）
+
+### 一个谓词，三处消费者
+
+新增 `internal/lingdoc/workspacecore/chapter_confirmation.go`：
+`ChapterConfirmed(basis, facts)` 与它的变体 `ChapterConfirmationOf`。判据是票里的七条：
+存在有效确认记录，且**章节标识、章节版本标识、研究条件修订、模板版本、确认人、确认时间**
+全部与当前状态一致。
+
+三处消费者现在共用它：
+
+| 消费者 | 位置 | 改动 |
+| --- | --- | --- |
+| 交付预检 | `workspacecore/service.go` 的 `chapterView` | 内联判定换成谓词 |
+| 规则治理的影响阻断判定 | `workspace/template_governance_runtime.go` | 内联判定换成谓词；**「章节标识为空也算」收紧为相等**（DR-47-01） |
+| 稳定化的影响解析 | `workspacecore/impact_service.go` | 去掉额外判断，只用谓词的答案 |
+
+**为什么治理面此前要读 details 里的 `chapter_id`**：行上的 `chapter_id` 列在查询条件里，
+而 details JSON 里另有一份 `chapter_id`。宽松判定「为空也算」针对的就是后者。生产写入路径
+（`candidateadoption/candidate_adoption_store.go:256`）用**同一个** `in.ChapterID` 同时写行外键列
+与 details JSON，两份值恒等。
+
+### 47.03 带来的一处对外行为变化（少数口径变更第 8 项）
+
+稳定化的影响解析此前是 `chapter.ConfirmationValid && version.SpecRevision == p.SpecRevision`。
+后半句用的是**章节版本的创建修订**——它回答的是「这个版本是什么时候创建的」，
+而不是「这次确认是针对哪一版研究条件做的」。一个在新版研究条件下被重新确认过的章节，
+创建修订较旧，于是交付预检说「已确认」、稳定化闸门说「未确认」——正是本票要消除的分歧。
+
+现在由确认记录的修订与当前状态是否一致来判定（谓词），稳定化与另外两处同答。
+**影响面**：被重新确认过的章节（创建修订较旧）在稳定化影响解析里从「未确认」变为「已确认」。
+
+### 确认失效的单一写入点
+
+`markChapterUnconfirmed(chapter *Chapter)` 是唯一写这个标志的地方。
+「章节正文改写」「工作副本提交」两处的内存标志，以及「正式依据变更」那处的持久化失效，
+都收在这一个机制下。持久化那半在 `InvalidateChapterConfirmations`：
+一个不再是当前版本的章节版本，任何确认记录都对不上（谓词要比对章节版本标识），
+所以不需要额外调用。
+
+结构断言（`internal/lingdoc/workspacecore/chapter_confirmation_ownership_test.go`）扫本包源码，
+报出所有**不在** `markChapterUnconfirmed` 与 `chapterView` 里的 `ConfirmationValid` 赋值。
+断言计数也统计被允许的两个写入点，否则代码变干净后断言会变成空转。
+**已做阴性验证**：注入一个探针函数直接写该字段，断言精确报出 `zz_negative_probe.go:7`，随后删除探针。
+
+### 数据核查结论
+
+| 问题 | 结论 | 证据 |
+| --- | --- | --- |
+| 确认记录表的章节标识可能为空吗？ | **不可能** | PostgreSQL `migrations/versioned/000099_lingdoc_candidate_adoption.up.sql:32`：`chapter_id varchar(36) NOT NULL REFERENCES lingdoc_chapters(id)`；SQLite `migrations/sqlite/000020_lingdoc_candidate_adoption.up.sql:30,35`：`chapter_id TEXT NOT NULL` + 外键 |
+| details JSON 里的章节标识可能为空吗？ | **不可能** | 生产写入用同一个 `in.ChapterID` 写行与 details（`candidate_adoption_store.go:251-256`） |
+| 确认人 / 确认时间可能缺失吗？ | **不可能** | `candidateadoption/confirmation.go:185-189` 的 `newConfirmation` 总会写 `ActorUserID` 与 `CreatedAt` |
+| 章节标识可能与章节版本不匹配吗？ | **schema 不禁止，但谓词会拒绝** | 两个外键各自独立；谓词同时比对章节标识与章节版本标识，对不上就不算确认 |
+
+这与 DR-47-01 已核实的结论一致（「确认记录表的章节标识在两个数据库上都是非空且带外键」），
+**不需要数据迁移**。
+
 ## 遗留与风险
 
 - **`ErrStaleInput` 的生成面落空**是本段取证中新发现的既有缺陷，D-47-04 需要裁决。
