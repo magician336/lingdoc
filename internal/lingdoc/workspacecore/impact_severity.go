@@ -39,6 +39,10 @@ const (
 	// ImpactSeverityBlocking marks an impact whose unresolved state must
 	// prevent stabilization. Blocking impacts can only be discharged by
 	// producing real closure evidence; they can never be waived.
+	//
+	// The three severity values are the same vocabulary the rule side uses
+	// (lingdoctemplate.SeverityBlocking and friends), so a rule issue and
+	// an impact task speak about "blocking" in one word rather than two.
 	ImpactSeverityBlocking = "blocking"
 	// ImpactSeverityWarning marks an impact that weakens the evidence or
 	// currency behind a claim without invalidating a confirmation. It does not
