@@ -103,7 +103,7 @@ jobs:
           PY
 
       - name: Test and vet existing LingDoc provider packages
-        if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
+        if: steps.scope.outputs.run_providers == 'true'
         id: providers
         env:
           CGO_ENABLED: "1"
@@ -130,14 +130,14 @@ jobs:
           go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
 
       - uses: actions/setup-node@v6
-        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
+        if: steps.scope.outputs.run_frontend == 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Test, type-check and build frontend
-        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
+        if: steps.scope.outputs.run_frontend == 'true'
         id: frontend
         working-directory: frontend
         run: |

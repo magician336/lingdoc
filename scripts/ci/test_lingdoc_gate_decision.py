@@ -525,6 +525,11 @@ class PreRefactorGoldenTests(DecisionFixture):
     the pull request gate has always read.  The gate's own values are pinned
     by :class:`PreRefactorGoldenTests` below, so the live behaviour is
     unchanged.
+
+    One value changed with ticket #301: the formatting judgement of the
+    ``baseline_merge`` scenario.  The decision no longer looks at the last
+    push but at the pull request's own contribution, and that contribution
+    carries a documentation file, so it is not a formatting-only update.
     """
 
     GOLDEN = {
@@ -547,7 +552,7 @@ class PreRefactorGoldenTests(DecisionFixture):
             "provider_packages": "./internal/lingdoc/workspace/...",
         },
         "baseline_merge": {
-            "run": "false", "format_only": "true",
+            "run": "false", "format_only": "false",
             "surface": "internal/lingdoc/workspace",
             "base_moved": "true", "surface_changed": "false",
             "reason": "the base moved under the branch; the contribution is "

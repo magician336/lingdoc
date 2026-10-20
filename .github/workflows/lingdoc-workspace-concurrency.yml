@@ -18,35 +18,31 @@ concurrency:
 
 jobs:
   scope:
-    name: Scope latest PR update
+    name: Decide what this gate runs
     runs-on: ubuntu-latest
+    # The job outputs are an explicit allow-list.  The decision module
+    # publishes one key per consuming job; only the declared ones reach the
+    # jobs below, and a name that is not declared reads as an empty string.
     outputs:
-      run: ${{ steps.scope.outputs.run }}
-      # The job outputs are an explicit allow-list. Without this line the
-      # formatting-only decision never reaches needs.scope.outputs, and the
-      # gate below silently degrades to 'always run'.
-      format_only: ${{ steps.scope.outputs.format_only }}
+      workspace-concurrency: ${{ steps.scope.outputs.job_lingdoc_workspace_concurrency_workspace_concurrency }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select workspace paths changed by this update
+      - name: Decide what this gate runs
         id: scope
-        env:
-          LINGDOC_SCOPE_PATHS: |
-            internal/lingdoc/workspacecore/**
-            migrations/sqlite/000018_lingdoc_workspace.*.sql
-            go.mod
-            go.sum
-            .github/workflows/lingdoc-workspace-concurrency.yml
-        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+        # The decision module owns the path table of this gate, the tested
+        # surface and the formatting-only shortcut.  The workflow only reads
+        # its answer.  The whitespace boundary belongs to the pull request
+        # gate, so it is not repeated here.
+        run: python scripts/ci/lingdoc_gate_decision.py --no-whitespace
 
   workspace-concurrency:
     needs: scope
-    # A formatting-only update keeps the meaning of the code, so the test
-    # matrix does not have to run again for it.
-    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.workspace-concurrency == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

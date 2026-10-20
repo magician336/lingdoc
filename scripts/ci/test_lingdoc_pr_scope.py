@@ -231,7 +231,12 @@ class ScopeTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             report = json.loads(result.stdout)
             self.assertEqual(report["whitespace_diff_range"], f"{base}...{head}")
-            self.assertIn("upstream.sh", report["changed_paths"])
+            # The report names the pull request's own contribution.  The
+            # upstream merge is not part of it: the baseline already carries
+            # the upstream file, so the merge adds nothing of the pull
+            # request's own.
+            self.assertIn("topic.md", report["changed_paths"])
+            self.assertNotIn("upstream.sh", report["changed_paths"])
 
     def test_older_pr_whitespace_is_still_rejected_on_a_clean_latest_push(self):
         with tempfile.TemporaryDirectory() as tmp:

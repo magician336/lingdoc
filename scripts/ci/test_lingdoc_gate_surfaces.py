@@ -67,6 +67,17 @@ def workflow_scope_paths(name: str) -> list[str]:
     return []
 
 
+def workflow_trigger_paths(name: str) -> list[str]:
+    """The paths that start the workflow, read from YAML."""
+    document = workflow_document(name)
+    triggers = document.get("on") or document.get(True) or {}
+    paths: list[str] = []
+    for event in triggers.values() if isinstance(triggers, dict) else []:
+        if isinstance(event, dict) and isinstance(event.get("paths"), list):
+            paths.extend(event["paths"])
+    return paths
+
+
 def job_display_name(document: dict, job: str) -> str:
     """GitHub shows the job key when the job declares no display name."""
     definition = document["jobs"][job]
@@ -227,28 +238,35 @@ class ManifestValidationTests(unittest.TestCase):
 class WorkflowWiringTests(unittest.TestCase):
     """The manifest agrees with the workflow files, which are the truth."""
 
-    def test_every_gated_workflow_path_table_is_registered_verbatim(self):
+    def test_every_gated_surface_is_watched_inside_its_workflow_trigger(self):
+        # The path table of a gate lives in the manifest; the workflow only
+        # says which paths start it.  The gate may watch less than the
+        # trigger starts -- go-lint also starts on its own tooling script --
+        # but it may not watch more, or the gate could ask for work that the
+        # workflow never starts.
         loaded = manifest.load_and_validate()
         for workflow in GATED_WORKFLOWS:
             with self.subTest(workflow=workflow):
-                expected = workflow_scope_paths(workflow)
-                self.assertTrue(expected, f"{workflow} has no path table")
+                trigger = workflow_trigger_paths(workflow)
+                self.assertTrue(trigger, f"{workflow} has no trigger path filter")
                 owners = [surface for surface in loaded.surfaces
                           if surface.path_kind == manifest.PATH_KIND_GLOB
                           and any(consumer.workflow == f".github/workflows/{workflow}"
                                   for consumer in surface.consumers)]
                 self.assertEqual(len(owners), 1,
                                  f"{workflow} must be owned by exactly one surface")
-                self.assertEqual(list(owners[0].paths), expected)
+                self.assertTrue(set(owners[0].paths) <= set(trigger),
+                                f"{workflow}: the gate watches "
+                                f"{sorted(set(owners[0].paths) - set(trigger))}, "
+                                f"which the workflow does not start on")
 
-    def test_no_workflow_path_table_is_left_unregistered(self):
-        registered = {f".github/workflows/{workflow}"
-                      for workflow in GATED_WORKFLOWS}
+    def test_no_workflow_carries_a_path_table_any_more(self):
+        # The path table of a gate is registered once, in the manifest.  A
+        # workflow that still carried one would be a second registration of
+        # the same knowledge, and the two could drift apart.
         for path in sorted(WORKFLOWS.glob("*.yml")):
-            if not workflow_scope_paths(path.name):
-                continue
             with self.subTest(workflow=path.name):
-                self.assertIn(f".github/workflows/{path.name}", registered)
+                self.assertEqual(workflow_scope_paths(path.name), [])
 
     def test_registered_jobs_exist_with_the_registered_display_name(self):
         for surface in manifest.load_and_validate().surfaces:
@@ -259,14 +277,17 @@ class WorkflowWiringTests(unittest.TestCase):
                     self.assertEqual(job_display_name(document, consumer.job),
                                      consumer.job_name)
 
-    def test_format_only_flag_matches_the_job_condition(self):
+    def test_the_format_only_shortcut_is_not_re_read_by_the_workflows(self):
+        # The shortcut is folded into the decision: the manifest says which
+        # jobs it skips, the decision module applies it, and the workflow
+        # reads the verdict.  A workflow that read the shortcut itself would
+        # decide a second time.
         for surface in manifest.load_and_validate().surfaces:
             for consumer in surface.consumers:
                 with self.subTest(surface=surface.name, job=consumer.job):
                     document = workflow_document(Path(consumer.workflow).name)
                     condition = document["jobs"][consumer.job].get("if") or ""
-                    self.assertEqual(surface.skipped_on_format_only,
-                                     "format_only" in condition)
+                    self.assertNotIn("format_only", condition)
 
 
 class KnowledgeRegistrationTests(unittest.TestCase):

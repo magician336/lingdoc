@@ -24,7 +24,10 @@ The public interface is two functions
 
 ``write_outputs(decision)``
     The one place where a decision becomes strings, for the GitHub Actions
-    output boundary and for the gate artifacts.
+    output boundary and for the gate artifacts.  The per-job verdicts are
+    published under flat keys (``job_frontend_verify``): a job output id
+    cannot carry a dot, so a job level reference
+    (``needs.scope.outputs.<name>``) can only name such a key.
 
 Everything else in this module is a helper that the transitional shells call.
 None of them decides anything on its own; the decision is made once, in
@@ -58,6 +61,22 @@ import lingdoc_gate_surfaces as manifest
 SHA = re.compile(r"[0-9a-fA-F]{40}")
 GO_SUFFIX = ".go"
 
+# A job output id may only carry letters, digits, "-" and "_": GitHub's
+# workflow schema spells it ``^[_a-zA-Z][a-zA-Z0-9_-]*$``.  A dotted key can
+# therefore never be declared as a job output, and a job level reference
+# (``needs.scope.outputs.<name>``) can never name one.
+OUTPUT_ID = re.compile(r"^[_a-zA-Z][a-zA-Z0-9_-]*$")
+OUTPUT_KEY_SEPARATORS = re.compile(r"[^0-9A-Za-z]+")
+
+
+def output_key(workflow: str, job: str) -> str:
+    """The output key of the job that consumes a surface.
+
+    ``frontend.yml``'s ``verify`` job is published as ``job_frontend_verify``:
+    one flat namespace, spelled with the characters a job output id accepts.
+    """
+    return "job_" + OUTPUT_KEY_SEPARATORS.sub("_", f"{Path(workflow).stem}_{job}")
+
 # The ownership knowledge lives in the gate surface manifest.  It is read from
 # there, never written down here.
 PROVIDER_ROOTS = tuple(manifest.PROVIDER_ROOTS)
@@ -90,9 +109,19 @@ class JobDecision:
     skipped_on_format_only: bool
 
     @property
-    def key(self) -> str:
-        """The readable output key of this job, e.g. ``job.frontend.verify``."""
+    def readable_key(self) -> str:
+        """The human-readable key of this job, e.g. ``job.frontend.verify``."""
         return f"job.{Path(self.workflow).stem}.{self.job}"
+
+    @property
+    def key(self) -> str:
+        """The output key of this job, e.g. ``job_frontend_verify``.
+
+        A job level reference has to name a declared output, and a declared
+        output id cannot carry a dot.  The readable form is kept beside it
+        for humans and for the artifacts.
+        """
+        return output_key(self.workflow, self.job)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -538,10 +567,18 @@ def _surface_verdict(surface, decision_fields: Mapping[str, Any]) -> bool:
 
 
 def _jobs(fields: Mapping[str, Any]) -> tuple[JobDecision, ...]:
-    """One entry per consuming job of every surface the manifest declares."""
+    """One entry per consuming job of every surface the manifest declares.
+
+    The verdict of a job already accounts for the formatting-only shortcut:
+    a test job stays away when the update only reformats the code, and a lint
+    job never does -- lint is the judge of formatting.
+    """
     jobs: list[JobDecision] = []
+    format_only = bool(fields.get("format_only"))
     for surface in manifest.load_surfaces():
         verdict = _surface_verdict(surface, fields)
+        if format_only and surface.skipped_on_format_only:
+            verdict = False
         for consumer in surface.consumers:
             jobs.append(JobDecision(
                 workflow=consumer.workflow,
@@ -591,7 +628,11 @@ def _full_fields(root: Path, reason: str, base: str, forced: bool,
 
 def _decide(event: Mapping[str, Any], root: Path) -> Decision:
     """The decision for one event, without the recovery path."""
-    diff_range, forced, changed = select_paths(root, event)
+    # The decision is scoped to the pull request's own contribution, never to
+    # the last push: a baseline merge changes no contribution, so the
+    # repository-wide suites stay away while the contribution is re-tested
+    # against the new baseline.
+    diff_range, forced, changed = select_paths(root, event, latest=False)
 
     if not isinstance(event.get("pull_request"), Mapping):
         # Not a pull request: the contribution-surface rule does not apply,
@@ -773,6 +814,11 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "contracts": _text(decision.contracts),
         "backend": _text(decision.backend),
         "frontend": _text(decision.frontend),
+        # The two steps of the pull request gate that run the test matrix.
+        # They read one boolean each: the formatting-only shortcut is
+        # already folded in, so no condition has to combine two outputs.
+        "run_providers": _text(decision.provider_tests and not decision.format_only),
+        "run_frontend": _text(decision.frontend and not decision.format_only),
         "provider_tests": _text(decision.provider_tests),
         "provider_packages": " ".join(decision.provider_packages),
         "base_moved": _text(decision.base_moved),
@@ -783,8 +829,13 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
         "changed_paths": str(len(decision.changed_paths)),
         "diff_range": decision.diff_range or "",
     }
+    # A job that watches several surfaces runs when any of them is selected.
+    # The published key says so once, not once per surface.
+    verdicts: dict[str, bool] = {}
     for job in decision.jobs:
-        outputs[job.key] = _text(job.run)
+        verdicts[job.key] = verdicts.get(job.key, False) or job.run
+    for key, run in verdicts.items():
+        outputs[key] = _text(run)
     return outputs
 
 
@@ -805,7 +856,9 @@ def report(decision: Decision, whitespace_range: str | None = None) -> dict[str,
         "format_only": decision.format_only,
         "format_reasons": list(decision.format_reasons),
         "decision": outputs,
-        "jobs": [dataclasses.asdict(job) for job in decision.jobs],
+        "jobs": [dict(dataclasses.asdict(job), key=job.key,
+                      readable_key=job.readable_key)
+                 for job in decision.jobs],
         "note": "Selection only; not a test result or an approval.",
     }
 
@@ -823,12 +876,16 @@ def check_whitespace(root: Path, diff_range: str | None) -> None:
 
 
 def publish(event: Mapping[str, Any], root: Path, *,
-            all_checks: bool = False) -> dict[str, Any]:
+            all_checks: bool = False, whitespace: bool = True) -> dict[str, Any]:
     """Decide, publish the decision, and check the pull request's boundary.
 
     This is what the gate's scope step runs: it prints the report, writes the
     outputs the workflow's conditions read, and fails the step when the diff
     carries whitespace damage.
+
+    ``whitespace`` is the boundary check.  The pull request gate owns it; the
+    workflow-level gates never ran it, and asking them to would change what
+    they do, so they turn it off.
     """
     if all_checks:
         event = {"action": "manual", "reason": "full scope requested"}
@@ -842,7 +899,8 @@ def publish(event: Mapping[str, Any], root: Path, *,
         with open(output_path, "a", encoding="utf-8") as handle:
             for key, value in write_outputs(decision).items():
                 handle.write(f"{key}={value}\n")
-    check_whitespace(root, whitespace_range or decision.diff_range)
+    if whitespace:
+        check_whitespace(root, whitespace_range or decision.diff_range)
     return published
 
 
@@ -850,18 +908,20 @@ def main() -> None:
     """Print the decision for one event; the gate's offline entry point."""
     parser = argparse.ArgumentParser(description="Decide what the gates run for one event.")
     parser.add_argument("--all", action="store_true", help="Run all applicable checks")
+    parser.add_argument("--no-whitespace", dest="whitespace", action="store_false",
+                        help="Do not check the diff's whitespace boundary")
     parser.add_argument("--event", type=Path, default=os.environ.get("GITHUB_EVENT_PATH"))
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     root = args.root.resolve()
 
     if args.all:
-        publish({}, root, all_checks=True)
+        publish({}, root, all_checks=True, whitespace=args.whitespace)
         return
     if args.event is None:
         parser.error("--event or GITHUB_EVENT_PATH is required")
     event = json.loads(args.event.read_text(encoding="utf-8"))
-    publish(event, root)
+    publish(event, root, whitespace=args.whitespace)
 
 
 if __name__ == "__main__":
