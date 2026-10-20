@@ -37,6 +37,21 @@
 
 首次打开、重新打开、手动 dispatch，以及 push 到 main，都不走这条快门禁。PR 第一次被人看到时，整套矩阵必须跑；之后每次推送若只是重排版，才可以省。
 
+### 六、接线要求：被 job 级条件引用的 output 必须在该 job 的 outputs 中声明
+
+**job 的 outputs 是显式白名单**：step 往 `GITHUB_OUTPUT` 写了键，不等于下游 job 能读到它。下游只能用**该 job 在 `outputs:` 里声明过**的名字去引用，漏声明时取到的是**空字符串**。
+
+后果是**静默失效**：`needs.scope.outputs.format_only` 为空 → `'' != 'true'` 成立 → 跳过条件恒真 → 测试 job 照跑。判定器明明判定对了，门禁却没有生效，而且**不报任何错**。
+
+这条在 2026-10-20 的线上验证（#288）里被真实抓到：#287 合并后，七个工作流的 scope job 只声明了 `run`，`format_only` 从未声明，于是**所有工作流上的快门禁都从未真正生效过**。
+
+由此定下接线纪律：
+
+- 跨 job 引用某个 step 的输出，必须在该 job 的 `outputs:` 里显式声明；**step 级引用**（`steps.<id>.outputs.<name>`）不需要声明，可以直接用。
+- 新增或修改门禁条件时，用**守护测试**断言「工作流文件里声明的 outputs」与「脚本写出的键」一致——只测脚本输出不够，因为本地求值不会模拟这层白名单。
+- **守护测试自己必须有工作流在跑**。PR gate 的「Test CI scope scripts」步骤运行整个 `scripts/ci` 测试套件（`test_lingdoc_*.py`），且**无条件执行**：纯格式提交也必须跑它。测试没被任何工作流引用，等于保护网没挂上——2026-10-20 的线上验证正是这样发现 `test_lingdoc_format_scope.py` 从未在 CI 执行过。
+- 门禁条件的本地求值必须模拟 job outputs 的白名单，否则会得出「本地正确、线上失效」的结论。
+
 ## 被否决的备选方案
 
 **按标签或提交信息声明「这是格式改动」。** 需要人贴标签或写声明，等于把判定权交给提交者，而门禁的价值恰恰在于判定不依赖提交者的自觉。机器能判的就不该让人判。
@@ -49,7 +64,7 @@
 
 - 新增 `scripts/ci/lingdoc_format_scope.py`（判定器）与 `scripts/ci/test_lingdoc_format_scope.py`（单测）。
 - `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 增加 `format_only` 输出与判定理由。
-- 八个工作流的测试类 job 与 PR gate 的两个测试步骤改为在 `format_only` 为真时跳过；lint 与 contracts 步骤不动。
+- 七个工作流的测试类 job 与 PR gate 里的两个测试步骤改为在 `format_only` 为真时跳过；lint 与 contracts 步骤不动。其中六个是跳整个测试类 job（`app.yml`、`frontend.yml`、`lingdoc-mock.yml`、`lingdoc-workspace-concurrency.yml`、`lingdoc-interface-integration.yml`、`lingdoc-f01-runner.yml`），`lingdoc-review.yml` 是跳 PR gate 内的 provider tests 与 frontend 两个**步骤**。
 - 「先写接口」的含义在门禁上同样成立：判定器的接口是「给一个 diff 范围，回答它是不是只重排版」，不暴露 git 细节给调用方。
 
 ## 风险与限制
@@ -57,3 +72,4 @@
 - 判定器本身是 CI 的一部分：它出错可能导致一次本该跑的测试没跑。因此判据一律保守，且**任何异常都判为「不是格式改动」**。
 - `gofmt` 判据依赖 `gofmt` 在 PATH 上；缺席时该口径不可用，只剩注释/空白口径（更保守，漏判更多而不是误判）。
 - 快门禁会让「格式提交」这条路径上的测试覆盖**看起来是空的**。判定理由随检查边界发布，就是为了让人能看出这次是被跳过还是没写。
+- **门禁接线本身是失效点**：判定器再对，如果 job 的 outputs 没声明那个键，条件会退化成恒真且不报错。2026-10-20 的线上验证（#288）正是这样抓到一个「所有工作流上快门禁都从未生效」的缺陷。修复方式与守护测试见决策第六节。

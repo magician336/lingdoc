@@ -39,6 +39,10 @@ const (
 	// ImpactSeverityBlocking marks an impact whose unresolved state must
 	// prevent stabilization. Blocking impacts can only be discharged by
 	// producing real closure evidence; they can never be waived.
+	//
+	// The three severity values are the same vocabulary the rule side uses
+	// (lingdoctemplate.SeverityBlocking and friends), so a rule issue and
+	// an impact task speak about "blocking" in one word rather than two.
 	ImpactSeverityBlocking = "blocking"
 	// ImpactSeverityWarning marks an impact that weakens the evidence or
 	// currency behind a claim without invalidating a confirmation. It does not
@@ -54,6 +58,10 @@ const (
 // impactSeverities is the closed severity domain. A task whose severity falls
 // outside it is treated as blocking: an unrecognised severity must not be
 // read as permission to skip work.
+//
+// The list is the enumeration of the domain, not an example of it: adding a
+// fourth severity here changes what the domain means, so it is a product
+// decision rather than a refactoring.
 var impactSeverities = []string{ImpactSeverityBlocking, ImpactSeverityWarning, ImpactSeverityInfo}
 
 // impactBlockingActions derive ImpactSeverityBlocking.
@@ -129,6 +137,11 @@ func DeriveImpactSeverity(action string) string {
 // because the product treats them as two faces of one fact: an impact you
 // may waive is an impact that never blocked. See the Waiver entry in the
 // glossary, which makes the same statement for ValidationIssue.
+//
+// Both the gate (stabilization) and the action handler (dismiss) call this
+// one function, so the two can never drift apart. A second copy of the rule
+// would be a place where "can this be waived" and "does this block" could
+// answer differently.
 //
 // An unrecognised severity blocks. Fail closed.
 func impactSeverityBlocks(severity string) bool {

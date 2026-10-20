@@ -313,6 +313,20 @@ class WorkflowWiringTests(unittest.TestCase):
                 self.assertIn("format_only", condition,
                               f"{name}: job {job} runs the test matrix and must skip a formatting-only update")
 
+    def test_every_gated_workflow_declares_the_format_only_output(self):
+        # A job's outputs are an **explicit allow-list**: a step that writes
+        # `format_only` to GITHUB_OUTPUT does not make it visible as
+        # `needs.scope.outputs.format_only` unless the scope job declares it.
+        # When it is missing, the gate below reads an empty string, the
+        # comparison is true, and the job silently runs the full matrix —
+        # the rule looks wired but does nothing.
+        for name in self.TEST_JOBS:
+            document = self.load(name)
+            outputs = document["scope"].get("outputs", {})
+            self.assertIn("format_only", outputs,
+                          f"{name}: scope job must declare the format_only output, "
+                          f"otherwise needs.scope.outputs.format_only is empty and the gate never fires")
+
     def test_the_lint_job_keeps_running(self):
         # Lint is the judge of whether an update is well formatted, so it must
         # not be skipped by the rule it judges.
