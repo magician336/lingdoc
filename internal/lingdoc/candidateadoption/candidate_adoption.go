@@ -12,11 +12,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Tencent/WeKnora/internal/clienterror"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"

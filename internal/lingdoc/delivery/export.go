@@ -6,11 +6,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/Tencent/WeKnora/internal/clienterror"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"

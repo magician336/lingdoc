@@ -496,9 +496,59 @@ PR #285 提交后 `origin/main` 前进到 `e79f403`（PR #283 审计列宽修复
 `internal/lingdoc/workspacecore/g5_machine_read.go:210` 的逐个 append 循环被 staticcheck 判为
 可换成 append 展开。已改写为 `sourceIDs = append(sourceIDs, sourcemarker.IDs(...)...)`，行为不变。
 
+### 断裂四：Go lint job 被新的「按 diff 分级门禁」整条跳过（门禁漏洞）
+
+`origin/main` 的 PR #287 引入「按 diff 内容分级门禁」（ADR 0005）。它把每个 workflow 的触发范围
+限定到**最后一次推送**的 diff。对 `synchronize` 事件，范围是 `before...after`：
+
+```python
+if event.get("action") == "synchronize":
+    ...
+    return f"{before}...{after}", False
+```
+
+本 PR 的最后一次推送是「并入 `origin/main`（只含 CI 配置与文档）」，该范围里**没有 `.go` 文件**，
+于是 `go-lint.yml` 的 `scope` job 输出 `run=false`，`changes` 与 `golangci` 两个 job 整条被跳过。
+
+**后果**：PR 整体引入的 Go 代码逃过了 lint 门禁。`go-lint.yml` 自己的注释写着
+「A missing/invalid base is an explicit failure, never a silent switch to … a successful skipped lint」，
+而这条新路径恰好制造了一次**静默跳过**。这不是本 PR 引入的缺陷，但它会让本 PR 的 lint 证据落空。
+
+**本 PR 的处置**：
+
+1. 本地用 **CI 同版本 golangci-lint v2.12.2** 补跑两种口径：
+   - **CI 口径**（`--no-config`，即干净 runner 上没有仓库配置文件时的默认 linter 集）：
+     `golangci-lint run --no-config --new-from-rev=0eb1b38` → **0 issues**。
+   - **本机口径**（主仓库根目录有一份**未入库**的 `.golangci.yml`，启用 `lll`/`revive`/`gofumpt`）：
+     59 条（`lll` 42 / `revive` 14 / `gofumpt` 3）。逐条核对后确认：
+     `lll` 42 条对应全仓 **7951 行**超长（905 个文件）——是该仓库既有状态，不是本 PR 引入；
+     `revive` 的 14 条是「导出变量缺注释」，与仓库既有写法一致。
+2. 其中 **gofumpt 的 3 条有 1 处确属本 PR**：4 个文件里把 `clienterror` 的 import 插进了
+   标准库 import 组中间。已用 gofumpt 自己改（纯 import 位移，行为中性），
+   改后 gofumpt 脏文件集合与 base **完全一致**（21 → 21，本 PR 新增 0）。
+3. 这次修复顺带让**最后一次推送含 `.go` 改动**，CI 的 golangci-lint job 因此会真正跑起来，
+   本 PR 的 lint 门禁不再依赖本地补跑。
+
+### 断裂五：前端跨语言漂移守卫指着已被搬走的拥有者（CI 红）
+
+`frontend/src/views/lingdoc/chapterCitations.test.ts` 的「标记规则与服务端逐字一致」用例，
+去 `internal/lingdoc/workspacecore/service_facade.go` 里找标记正则。47.04 把这段语法搬到了
+`internal/lingdoc/sourcemarker`，守卫还指着旧位置，于是读不到正则、断言失败。
+
+这是本 PR 引入的真实断裂：**本地那次前端验证跑在 47.01 的旧 worktree 上**（那时正则还在
+`workspacecore`），没覆盖到 47.04 落地后的状态；CI 在最终 head 上报了出来。
+
+修法：守卫改指新的唯一拥有者 `internal/lingdoc/sourcemarker/sourcemarker.go`。
+字符集没有变（两端仍是 `[A-Za-z0-9_-]`），变的只是「拥有者在哪」。
+
+### 断裂六：staticcheck S1011（CI 红）
+
+`internal/lingdoc/workspacecore/g5_machine_read.go:210` 的逐个 append 循环被 staticcheck 判为
+可换成 append 展开。已改写为 `sourceIDs = append(sourceIDs, sourcemarker.IDs(...)...)`，行为不变。
+
 ### 阴性验证
 
-三处修法都做了阴性验证：注入违规 → 守卫精确报出 → 回滚。
+四处修法都做了阴性验证：注入违规 → 守卫精确报出 → 回滚。
 
 | 断言 | 注入的违规 | 报出 |
 | --- | --- | --- |
@@ -513,7 +563,9 @@ PR #285 提交后 `origin/main` 前进到 `e79f403`（PR #283 审计列宽修复
 | 行为回归 | `go test ./internal/lingdoc/... ./internal/evidence/... ./internal/clienterror/... ./internal/router/... ./internal/container/... -count=1` | 全部 ok |
 | 同上 + 真 PostgreSQL | 追加 `LINGDOC_TEST_POSTGRES_DSN`（隔离实例 127.0.0.1:55433） | 全部 ok，含 new main 带来的 `TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth` |
 | 静态检查 | `go vet ./internal/...` | 通过（带上 `CGO_CFLAGS` 指向本地 `sqlite3.h` 后，`internal/container` 不再被环境阻断） |
+| lint（CI 口径） | `golangci-lint run --no-config --new-from-rev=0eb1b38`（v2.12.2） | **0 issues** |
 | 格式 | `gofmt -l internal/lingdoc internal/clienterror internal/evidence` | 无输出 |
+| 格式（更严） | `golangci-lint fmt --diff`（gofumpt），与 base 逐文件对照 | 脏文件集合与 base 一致（21 → 21，本 PR 新增 0） |
 | 空白 | `git diff --check` | 无输出 |
 | 前端 | `tsx --test` | 1463 项 / 1462 通过 / 0 失败 / 1 跳过（既有） |
 
@@ -529,8 +581,8 @@ PR #285 提交后 `origin/main` 前进到 `e79f403`（PR #283 审计列宽修复
 | 实施与证据档 | `docs/08-本轮实施方案/Spec-47-模块边界收口与知识归属归位.md` | 本分支，未提交 |
 | GitHub Issue | [#259](https://github.com/magician336/lingdoc/issues/259) | 已发布，标签 `ready-for-agent` |
 | 前序 Spec | [#164](https://github.com/magician336/lingdoc/issues/164)（应用层传输解耦与幂等结果边界） | 已关闭；本 Spec 接续其边界 |
-| 实施分支 | `codex/lingdoc-architecture-improvement-20261020-arch` | 已推送到 `origin`；已合入 `origin/main @ e79f403` |
-| PR | [#285](https://github.com/magician336/lingdoc/pull/285) | 范围 = 段一的四张票；合并前已并入 `origin/main` 并修复合并引入的三处断裂 |
+| 实施分支 | `codex/lingdoc-architecture-improvement-20261020-arch` | 已推送到 `origin`；已并入 `origin/main @ 0eb1b38` |
+| PR | [#285](https://github.com/magician336/lingdoc/pull/285) | 范围 = 段一的四张票；合并前已并入 `origin/main` 并修复合并引入的断裂（含一处静默断裂） |
 
 ## 取证与实现脚本
 

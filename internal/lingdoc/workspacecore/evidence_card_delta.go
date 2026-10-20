@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/Tencent/WeKnora/internal/clienterror"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 )
 
 var ErrSemanticBatchStagingRequired = clienterror.Wrap(clienterror.Form{Status: 400, Code: "invalid_request", Message: "关联主张与证据卡请分两次正式变更：先应用主张，再按新主张版本复核并提交证据卡变更。", Retryable: false}, "invalid_request: change the associated claim and evidence card in separate ChangeSets; revalidate the card against the new claim version", ErrInvalidRequest)
