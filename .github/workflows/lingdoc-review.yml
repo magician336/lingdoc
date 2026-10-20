@@ -64,6 +64,11 @@ jobs:
       # only Git and the gate surface manifest, publishes the decision as the
       # step outputs the conditions below read, and checks the pull request's
       # whitespace boundary.  The report is the artifact the steps consume.
+      #
+      # The module also publishes the conclusion of this gate -- the same
+      # three fields every gate publishes, plus the reason of every step
+      # that was skipped -- into the summary a reader sees on the pull
+      # request page and into the artifact this job uploads.
       - name: Select checks and check diff whitespace
         id: scope
         env:
@@ -71,9 +76,15 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/lingdoc-checks"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            python scripts/ci/lingdoc_gate_decision.py --all > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+            python scripts/ci/lingdoc_gate_decision.py --all \
+              --gate .github/workflows/lingdoc-review.yml \
+              --artifact-dir "$RUNNER_TEMP/lingdoc-checks" \
+              > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           else
-            python scripts/ci/lingdoc_gate_decision.py > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+            python scripts/ci/lingdoc_gate_decision.py \
+              --gate .github/workflows/lingdoc-review.yml \
+              --artifact-dir "$RUNNER_TEMP/lingdoc-checks" \
+              > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           fi
           cat "$RUNNER_TEMP/lingdoc-checks/scope.json"
 
