@@ -382,9 +382,32 @@ class BaselineMergeTests(GateFixture):
 
 
 class PushEventTests(GateFixture):
-    """A push to main is not a pull request; the contribution does not apply."""
+    """A push is judged by the diff it delivers.
 
-    def test_a_push_answers_the_same_as_before(self):
+    A push carries no pull request, so it has no contribution surface.  It
+    does carry a range of its own, and that range is what the gates are
+    selected by -- the same conclusion the workflow-level script gave before
+    the contribution rule narrowed it.
+    """
+
+    def _compare(self, root: Path, event: dict) -> set[str]:
+        """Compare the old conclusion with the new one, job by job."""
+        running: set[str] = set()
+        for name, table in PATH_TABLES.items():
+            surface = next(surface for surface in manifest.load_surfaces()
+                           if surface.name == name)
+            old, _ = self._old_outputs(root, event, table, event_name="push")
+            new = self._new_outputs(root, event)
+            for consumer in surface.consumers:
+                key = decision.output_key(consumer.workflow, consumer.job)
+                identity = f"{Path(consumer.workflow).name}#{consumer.job}"
+                with self.subTest(surface=name, job=consumer.job):
+                    self.assertEqual(new[key], old["run"])
+                if old["run"] == "true":
+                    running.add(identity)
+        return running
+
+    def test_a_push_selects_the_gates_its_diff_touches(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._repo(root)
@@ -394,21 +417,29 @@ class PushEventTests(GateFixture):
             after = git(root, "rev-parse", "HEAD")
             event = {"ref": "refs/heads/main", "before": before, "after": after}
 
-            old, _ = self._old_outputs(root, event, PATH_TABLES["app"],
-                                       event_name="push")
-            new = self._new_outputs(root, event)
+            running = self._compare(root, event)
 
-            # The old script and the new decision answer the same: a push
-            # carries no pull request, so there is no contribution surface to
-            # select and the gate stays away.
-            self.assertEqual(old["run"], "false")
-            for name, table in PATH_TABLES.items():
-                surface = next(surface for surface in manifest.load_surfaces()
-                               if surface.name == name)
-                for consumer in surface.consumers:
-                    key = decision.output_key(consumer.workflow, consumer.job)
-                    with self.subTest(surface=name, job=consumer.job):
-                        self.assertEqual(new[key], "false")
+            self.assertEqual(running, {
+                "app.yml#verify",
+                "go-lint.yml#changes",
+                "go-lint.yml#golangci",
+                "lingdoc-interface-integration.yml#integration",
+                "lingdoc-interface-integration.yml#frontend",
+            })
+
+    def test_a_documentation_only_push_selects_no_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            write(root, "docs/note.md", "changed\n")
+            git(root, "add", "."); git(root, "commit", "-m", "docs")
+            before = git(root, "rev-parse", "HEAD~1")
+            after = git(root, "rev-parse", "HEAD")
+            event = {"ref": "refs/heads/main", "before": before, "after": after}
+
+            running = self._compare(root, event)
+
+            self.assertEqual(running, set())
 
 
 class PullRequestGateTests(GateFixture):
