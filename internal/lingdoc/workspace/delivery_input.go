@@ -339,13 +339,18 @@ func frozenReviewItems(items []candidateadoption.ReviewItem) []delivery.ReviewIt
 
 // frozenConfirmation 原样搬运 T12 的确认记录。
 //
-// 这里**不再判一次有效性**：T12 的读取侧（candidate_adoption/delivery_input.go:141）
-// 只交出 valid、且与章节版本、研究条件、模板版本都对得上的那一条，判据已经有一份；
-// 在这里再写一份，两处迟早会分叉，而分叉的那一天没人知道该信谁。
+// 这里**不再判一次有效性**：T12 的读取侧只交出 valid、且与章节版本、研究条件、
+// 模板版本都对得上的那一条，判据已经有一份；在这里再写一份，两处迟早会分叉，
+// 而分叉的那一天没人知道该信谁。
+//
+// 但「有效性」这个**事实**要一并搬过去：冻结出来的快照若看不到它，下游就得
+// 拿周边字段重新推一遍——那是同一判据的第二份、更弱的副本。搬运事实不改变
+// 任何现有判定结果；本票不引入任何新的判定。
 func frozenConfirmation(confirmation *candidateadoption.Confirmation) *delivery.Confirmation {
 	if confirmation == nil {
 		return nil
 	}
+	valid := confirmation.Valid
 	return &delivery.Confirmation{
 		ID:               confirmation.ID,
 		ChapterID:        confirmation.ChapterID,
@@ -356,6 +361,7 @@ func frozenConfirmation(confirmation *candidateadoption.Confirmation) *delivery.
 		ActorUserID:      confirmation.ActorUserID,
 		CreatedAt:        confirmation.CreatedAt,
 		Decisions:        frozenReviewDecisions(confirmation.ReviewDecisions),
+		Valid:            &valid,
 	}
 }
 

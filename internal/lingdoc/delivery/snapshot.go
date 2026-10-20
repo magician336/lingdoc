@@ -99,6 +99,24 @@ type Confirmation struct {
 	ActorUserID      string           `json:"actor_user_id"`
 	CreatedAt        time.Time        `json:"created_at"`
 	Decisions        []ReviewDecision `json:"review_decisions"`
+
+	// Valid records whether the confirmation still holds.
+	//
+	// A confirmation is invalidated whenever the chapter it belongs to moves on, and
+	// a frozen snapshot that cannot see that fact has to re-derive validity from the
+	// surrounding fields — which is a second, weaker version of the same rule.
+	//
+	// It is a pointer so that "recorded as invalid" and "never recorded" stay
+	// distinguishable: snapshots frozen before this field existed carry no value,
+	// and treating those as invalid would silently retire every historical
+	// snapshot.
+	//
+	// It is deliberately **not** serialized. The judgement is made on the in-memory
+	// input, where the fact is still live; a frozen snapshot is a point-in-time
+	// record and its confirmation held at the moment it was frozen. Serializing it
+	// would change the published response shape and the published snapshot digest
+	// for a fact no consumer reads back.
+	Valid *bool `json:"-"`
 }
 type FrozenSource struct {
 	ID             string `json:"id"`
