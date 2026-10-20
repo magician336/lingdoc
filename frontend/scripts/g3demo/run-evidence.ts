@@ -188,20 +188,21 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     const created = await runProjectChain(chain.ctx, client, chain.token, {
       projectName: `G3 验收台演示项目（${label} · 运行 ${chain.ctx.runId}）`,
       // 同一次运行里建**多个**项目时必须给不同的幂等键前缀：键相同而请求不同，
-      // 服务端会按 409 `idempotency_conflict` 拒掉。
+      // 服务端会按 409 `idempotency_conflict` 拒掉。前缀用 ASCII：中文进到幂等键里
+      // 会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键。
       idemPrefix: `g3-${label}`,
     })
     return { projectId: created.project.id }
   }
 
-  const faultProject = await newProject('故障注入')
+  const faultProject = await newProject('fault')
   await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
     runFaultInjectionChain(chain.ctx, client, chain.token, {
       projectId: faultProject.projectId,
       affectedChapterIds: [],
     }),
   )
-  const roadmapProject = await newProject('路线图')
+  const roadmapProject = await newProject('roadmap')
   await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
     runRoadmapChain(chain.ctx, client, chain.token, {
       projectId: roadmapProject.projectId,
@@ -213,7 +214,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     // roots 出发遍历依赖边，边的 source 不是那个 ref 时，action 不会传播。
     // target 取本轮影响评估里真实存在的章节版本。依据与理由是合成材料，
     // 不含真实课题信息。
-    const assistantProject = await newProject('助手候选')
+    const assistantProject = await newProject('assistant')
     const projectState = await readProjectState(
       chain.ctx,
       client,

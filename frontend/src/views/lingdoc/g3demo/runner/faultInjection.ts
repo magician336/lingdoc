@@ -282,16 +282,24 @@ export async function runFaultInjectionChain(
     G3_FAULT_STEPS.readAuditBefore,
   )
 
+  // 演示模板把 `research_subject` 与 `research_goal` 都声明成**必填**：
+  // 只提交其中一个，变更集会被按 400 `invalid_request` 拒掉（请求字段不符合约定）。
+  // 所以这里两个必填字段一起改——改的是合成项目的规格值，不含真实课题信息。
+  const fields: Record<string, { old_value: string; new_value: string }> = {}
+  for (const key of [specField, 'research_goal']) {
+    if (fields[key]) continue
+    const oldValue = projectStateBefore.spec[key] ?? ''
+    fields[key] = {
+      old_value: oldValue,
+      new_value: `${oldValue}（G3 验收台-11 受控故障注入观测）`,
+    }
+  }
+
   const changeSet = await createChangeSet(ctx, client, token, options.projectId, {
     stepName: G3_FAULT_STEPS.createChangeSet,
     idemLabel: 'fault-change-set',
     expectedContextRevision: projectStateBefore.currentContextRevision,
-    fields: {
-      [specField]: {
-        old_value: projectStateBefore.spec[specField] ?? '',
-        new_value: `${projectStateBefore.spec[specField] ?? ''}（G3 验收台-11 受控故障注入观测）`,
-      },
-    },
+    fields,
     affectedChapterIds,
     reason: options.reason ?? 'G3 验收台-11：观测受控故障注入是否装配（应用原子性）',
   })
