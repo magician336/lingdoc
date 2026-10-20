@@ -16,7 +16,7 @@
       "status": "NOT RUN",
       "boundary": "真实供应商的 HTTP 错误尚未穿过 LingDoc 生成接缝跑完；原因是验收夹具缺少可检索来源，生成入口在触达供应商前即返回 422 insufficient_evidence。这是夹具缺口，不是产品缺陷。",
       "provider_level_probe": {
-        "command": "curl --max-time 25 -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions -H 'Authorization: Bearer sk-invalid-g4-probe' -d '{\"model\":\"qwen3.8-flash\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'",
+        "command": "curl --max-time 25 -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions -H 'Authorization: Bearer <invalid-probe-key>' -d '{\"model\":\"qwen3.8-flash\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'",
         "status": 401,
         "elapsed_seconds": 0.1,
         "upstream_body": {
