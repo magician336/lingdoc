@@ -105,6 +105,7 @@ func (s *DeliveryReleaseService) Check(ctx context.Context, actorID, projectID s
 	if err := s.attachIssueDispositions(ctx, actorID, projectID, &result); err != nil {
 		return delivery.CheckResult{}, err
 	}
+	delivery.ApplyDispositions(&result)
 	if err := s.recordRuleSetUse(ctx, actorID, input, "preflight", "", string(result.Status)); err != nil {
 		return delivery.CheckResult{}, err
 	}
@@ -183,6 +184,7 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 	if err := s.attachIssueDispositions(ctx, actorID, projectID, &snapshot.Check); err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
 	}
+	delivery.ApplyDispositions(&snapshot.Check)
 	useEvent, governed, err := ruleSetUseEvent(ctx, actorID, input, "release_snapshot", snapshot.ID, string(snapshot.Check.Status))
 	if err != nil {
 		return delivery.ReleaseSnapshot{}, false, err
