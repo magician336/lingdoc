@@ -1,9 +1,12 @@
 package workspace
 
 import (
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
@@ -11,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/gin-gonic/gin"
 )
 
 // clientFormContract pins the outward shape of every business failure the
@@ -62,6 +66,7 @@ func clientFormContract() []struct {
 		{ErrRewriteUnavailable, 503, "dependency_unavailable", "改写模型暂不可用，请稍后重试。", true},
 		{evidence.ErrInvalidBinding, 400, "invalid_request", "请求字段不符合约定。", false},
 		{evidence.ErrIdempotencyConflict, 409, "idempotency_conflict", "同一个操作键对应不同请求。", false},
+		{evidence.ErrAssetNotFound, 404, "not_found", "资源不存在或不可访问。", false},
 		{delivery.ErrTemplateNotFound, 404, "not_found", "资源不存在或不可访问。", false},
 		{delivery.ErrInvalidRequest, 400, "invalid_request", "请求字段不符合约定。", false},
 		{delivery.ErrIdempotencyConflict, 409, "idempotency_conflict", "同一个操作键对应不同请求。", false},
@@ -70,6 +75,7 @@ func clientFormContract() []struct {
 		{delivery.ErrExportPreflightBlocked, 422, "preflight_blocked", "请先处理交付阻断项。", false},
 		{delivery.ErrExportStaleInput, 409, "stale_input", "快照基于的输入已变化，请重新准备。", false},
 		{delivery.ErrExportUnavailable, 422, "invalid_state", "导出文件不可用或完整性校验失败，请重新导出。", false},
+		{delivery.ErrSnapshotNotFound, 404, "not_found", "资源不存在或不可访问。", false},
 		{candidateadoption.ErrInvalidRequest, 400, "invalid_request", "请求字段不符合约定。", false},
 		{candidateadoption.ErrNotFound, 404, "not_found", "资源不存在或不可访问。", false},
 		{candidateadoption.ErrSourceAccessDenied, 403, "source_access_denied", "资料授权已不可用。", false},
@@ -103,23 +109,54 @@ func TestWrappedBusinessErrorKeepsItsFormAndItsCause(t *testing.T) {
 	if !ok || form.Code != "context_unstable" {
 		t.Fatalf("wrapped form = %+v, %v", form, ok)
 	}
-	if !errorsIs(wrapped, core.ErrInvalidState) {
+	if !errors.Is(wrapped, core.ErrInvalidState) {
 		t.Fatal("包装后的错误丢了它包裹的原因")
 	}
 }
 
-func errorsIs(err, target error) bool {
-	for err != nil {
-		if err == target {
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
+// TestRequestInProgressCarriesTheRetryAfterHeader pins the one response header
+// the workspace mapper used to set.
+//
+// The old mapper set "Retry-After: 1" on the request-in-progress branch, and
+// the contract still declares that header. Dropping it silently would tell the
+// caller to retry immediately when the request is still in flight, so the
+// header is part of the outward shape and is declared with it.
+func TestRequestInProgressCarriesTheRetryAfterHeader(t *testing.T) {
+	form, ok := clienterror.FormOf(core.ErrRequestInProgress)
+	if !ok {
+		t.Fatal("ErrRequestInProgress 没有声明对外形态")
 	}
-	return false
+	if form.RetryAfter != 1 {
+		t.Fatalf("RetryAfter = %d, want 1", form.RetryAfter)
+	}
+}
+
+// TestSendErrorSetsTheRetryAfterHeader checks the header actually reaches the
+// caller, not just that the error declares it.
+func TestSendErrorSetsTheRetryAfterHeader(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/lingdoc/projects/p", nil)
+
+	sendError(ctx, core.ErrRequestInProgress)
+
+	if got := recorder.Header().Get("Retry-After"); got != "1" {
+		t.Fatalf("Retry-After = %q, want %q", got, "1")
+	}
+}
+
+// TestSendErrorOmitsTheRetryAfterHeaderWhenNoneIsDeclared makes sure the
+// header is only set when the failure says so.
+func TestSendErrorOmitsTheRetryAfterHeaderWhenNoneIsDeclared(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/lingdoc/projects/p", nil)
+
+	sendError(ctx, core.ErrInvalidRequest)
+
+	if got := recorder.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After = %q, want empty", got)
+	}
 }
 
 // TestSendErrorHoldsNoBusinessErrorTable keeps the mapper free of a table of

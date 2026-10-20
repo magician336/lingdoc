@@ -19,12 +19,15 @@ import "errors"
 //
 // Status is the HTTP status code, Code the stable machine-readable error code
 // and Message the human-readable text. Retryable tells the caller whether
-// repeating the same request could succeed.
+// repeating the same request could succeed. RetryAfter is the number of
+// seconds the caller should wait before repeating it, when the failure has a
+// known wait (0 means it does not).
 type Form struct {
-	Status    int
-	Code      string
-	Message   string
-	Retryable bool
+	Status     int
+	Code       string
+	Message    string
+	Retryable  bool
+	RetryAfter int
 }
 
 // Presenter is implemented by errors that know their own client presentation.

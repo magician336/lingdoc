@@ -103,7 +103,7 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if !slices.Contains(ChangeSetProposalStatuses, old.Status) || old.TemplateUpgrade != nil {
+		if !ChangeSetStatusCanMove("editDraft", old.Status) || old.TemplateUpgrade != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if old.CreatedBy != actor.UserID && !projectOwner(p, actor.UserID) {

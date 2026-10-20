@@ -82,40 +82,77 @@ var ChangeSetProposalStatuses = []string{
 	ChangeSetStatusAssessed,
 }
 
-// ChangeSetStatusTransition is one legal move between two change-set states.
-type ChangeSetStatusTransition struct {
-	From string
+// ChangeSetStatusMove is one change of a change set's status: the statuses
+// the change set may be in when the change happens, and the status it ends in.
+type ChangeSetStatusMove struct {
+	From []string
 	To   string
 }
 
-// ChangeSetStatusTransitions lists the legal moves between change-set states.
+// ChangeSetStatusMoves lists the legal changes of a change-set status.
 //
-// Every move here is one the production code performs. A move that is not
-// listed is not a transition the domain supports, and a caller that attempts
-// one is refused rather than silently producing a state nothing else
-// understands.
-var ChangeSetStatusTransitions = []ChangeSetStatusTransition{
-	// The creator edits the proposal: the old assessment no longer describes
-	// the new text, so the proposal returns to draft.
-	{From: ChangeSetStatusAssessed, To: ChangeSetStatusDraft},
-	// The proposal is assessed against the current project state.
-	{From: ChangeSetStatusDraft, To: ChangeSetStatusAssessed},
+// The rule lives here so that a caller does not spell out the precondition at
+// its own call site. The precondition for "apply" and the precondition for
+// "reassess" differ even though both end at "assessed", so a single from/to
+// table could not express them. A change that is not named here is not one the
+// domain supports.
+//
+// A change set that is created starts in "draft" or "assessed"; creation is
+// not a change of an existing change set and has no predecessor.
+var ChangeSetStatusMoves = map[string]ChangeSetStatusMove{
 	// A human applies the proposal: the formal basis and the affected
 	// chapters change.
-	{From: ChangeSetStatusAssessed, To: ChangeSetStatusApplied},
+	"apply": {From: []string{ChangeSetStatusAssessed}, To: ChangeSetStatusApplied},
 	// A human refuses the proposal.
-	{From: ChangeSetStatusAssessed, To: ChangeSetStatusRejected},
+	"reject": {From: []string{ChangeSetStatusAssessed}, To: ChangeSetStatusRejected},
 	// The basis moved before the proposal could be applied, so it has to be
 	// reassessed.
-	{From: ChangeSetStatusAssessed, To: ChangeSetStatusStale},
+	"markStale": {From: []string{ChangeSetStatusAssessed}, To: ChangeSetStatusStale},
+	// The proposal is assessed against the current project state.
+	"assess": {From: []string{ChangeSetStatusDraft, ChangeSetStatusAssessed}, To: ChangeSetStatusAssessed},
 	// A reassessment produces a fresh assessment of a proposal whose basis
 	// has been restored.
-	{From: ChangeSetStatusStale, To: ChangeSetStatusAssessed},
+	"reassess": {From: []string{ChangeSetStatusStale}, To: ChangeSetStatusAssessed},
 	// A reassessment finds the project already carries the proposed values.
-	{From: ChangeSetStatusStale, To: ChangeSetStatusSatisfied},
+	"satisfy": {From: []string{ChangeSetStatusStale}, To: ChangeSetStatusSatisfied},
 	// Every impact task of the proposal is closed and the context revision
 	// is frozen.
-	{From: ChangeSetStatusApplied, To: ChangeSetStatusStabilized},
+	"stabilize": {From: []string{ChangeSetStatusApplied}, To: ChangeSetStatusStabilized},
+	// The creator edits the proposal: the old assessment no longer describes
+	// the new text, so the proposal returns to draft.
+	"editDraft": {From: []string{ChangeSetStatusDraft, ChangeSetStatusAssessed}, To: ChangeSetStatusDraft},
+}
+
+// ChangeSetStatusCanMove reports whether the named change is legal from the
+// given status.
+//
+// A change that is not named in ChangeSetStatusMoves is never legal: an
+// unrecognised name must not be treated as a free pass.
+func ChangeSetStatusCanMove(move, from string) bool {
+	declared, ok := ChangeSetStatusMoves[move]
+	if !ok {
+		return false
+	}
+	for _, candidate := range declared.From {
+		if candidate == from {
+			return true
+		}
+	}
+	return false
+}
+
+// ChangeSetStatusNeeds reports whether the change set is not yet in the state
+// the named change produces.
+//
+// It answers the idempotence question rather than the legality question: a
+// change set that is already in the target state does not need the change
+// again. A move that is not named is never needed, because it has no target.
+func ChangeSetStatusNeeds(move, status string) bool {
+	declared, ok := ChangeSetStatusMoves[move]
+	if !ok {
+		return false
+	}
+	return status != declared.To
 }
 
 // IsChangeSetStatus reports whether the value is a reachable change-set state.
@@ -133,24 +170,6 @@ func IsChangeSetStatus(status string) bool {
 func IsClosedChangeSetStatus(status string) bool {
 	for _, candidate := range ChangeSetClosedStatuses {
 		if candidate == status {
-			return true
-		}
-	}
-	return false
-}
-
-// ChangeSetStatusTransitionAllowed reports whether a change set may move from
-// one status to another.
-//
-// Writing the same status again is allowed and is a no-op: several code paths
-// re-write the current status while adding a reason or a timestamp, and
-// refusing those would change behaviour without changing meaning.
-func ChangeSetStatusTransitionAllowed(from, to string) bool {
-	if from == to {
-		return IsChangeSetStatus(from)
-	}
-	for _, transition := range ChangeSetStatusTransitions {
-		if transition.From == from && transition.To == to {
 			return true
 		}
 	}

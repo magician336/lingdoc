@@ -2244,7 +2244,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if change.Status == ChangeSetStatusApplied {
 			return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 		}
-		if change.Status != ChangeSetStatusAssessed {
+		if !ChangeSetStatusCanMove("apply", change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		// A governed template migration must never commit without a durable
@@ -2263,6 +2263,9 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		upgradeStale := change.TemplateUpgrade != nil && (p.TemplateCopy == nil || p.TemplateCopyVersion != change.TemplateUpgrade.BaseTemplateCopyVersion)
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
+			if !ChangeSetStatusCanMove("markStale", stale.Status) {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
 			stale.Status = ChangeSetStatusStale
 			stale.StaleReason = "context_revision_changed"
 			if change.BaseSpecRevision != p.SpecRevision {
@@ -2288,6 +2291,9 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			}
 			if !sameVersion(impact.ChapterVersionID, chapter.CurrentVersionID) {
 				stale := change
+				if !ChangeSetStatusCanMove("markStale", stale.Status) {
+					return operationResult[ChangeSet]{}, ErrInvalidState
+				}
 				stale.Status = ChangeSetStatusStale
 				stale.StaleReason = "chapter_version_changed"
 				if err := store.UpdateChangeSet(change, stale); err != nil {
@@ -2461,7 +2467,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if stale.Status != ChangeSetStatusStale {
+		if !ChangeSetStatusCanMove("reassess", stale.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		inverseSourceID, err := inverseLineageSource(tx, p.ID, stale, map[string]bool{})
@@ -2526,6 +2532,9 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 			if len(fields) == 0 && len(stale.SemanticDeltas) == 0 {
 				// No semantic/template work is discarded: only a completely
 				// already-current field proposal reaches this terminal outcome.
+				if !ChangeSetStatusCanMove("satisfy", stale.Status) {
+					return operationResult[ChangeSet]{}, ErrInvalidState
+				}
 				now := time.Now().UTC()
 				contextRevision, specRevision := p.CurrentContextRevision, p.SpecRevision
 				change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID,
@@ -2644,7 +2653,7 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		if change.Status == ChangeSetStatusRejected {
 			return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 		}
-		if change.Status != ChangeSetStatusAssessed {
+		if !ChangeSetStatusCanMove("reject", change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		previous := change

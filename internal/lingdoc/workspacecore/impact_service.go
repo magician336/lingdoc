@@ -1180,7 +1180,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		result.StaleTaskIDs = append(result.StaleTaskIDs, conditions.OwnerStaleTaskIDs()...)
 		if len(result.Blockers) == 0 {
 			result.Status = "STABILIZED"
-			if change.Status != ChangeSetStatusStabilized {
+			if ChangeSetStatusNeeds("stabilize", change.Status) {
 				next := change
 				next.Status = ChangeSetStatusStabilized
 				if err := changes.UpdateChangeSet(change, next); err != nil {
@@ -1211,7 +1211,7 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if !slices.Contains(ChangeSetProposalStatuses, change.Status) {
+		if !ChangeSetStatusCanMove("assess", change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
