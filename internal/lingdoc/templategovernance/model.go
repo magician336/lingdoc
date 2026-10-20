@@ -6,9 +6,9 @@ package templategovernance
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
@@ -29,19 +29,42 @@ const (
 	ActionRejectSuggestion Action = "reject_suggestion"
 )
 
+// The failures of the rule governance surface state their own outward form.
+//
+// The wording a caller reads is part of the contract, so it is declared here
+// instead of in the transport's error table.
 var (
-	ErrUnavailable         = errors.New("template_governance_unavailable")
-	ErrUnauthorized        = errors.New("template_governance_authorization_unavailable")
-	ErrNotFound            = errors.New("template_governance_not_found")
-	ErrInvalidRequest      = errors.New("template_governance_invalid_request")
-	ErrVersionConflict     = errors.New("template_governance_version_conflict")
-	ErrIdempotencyConflict = errors.New("template_governance_idempotency_conflict")
-	ErrInvalidState        = errors.New("template_governance_invalid_state")
-	ErrReplayRequired      = errors.New("template_replay_required")
-	ErrSourceUnavailable   = errors.New("template_source_unavailable")
-	ErrModelUnavailable    = errors.New("rule_suggestion_model_unavailable")
-	ErrStale               = errors.New("rule_suggestion_stale")
-	ErrInvalidOutput       = errors.New("rule_suggestion_invalid_output")
+	// ErrUnavailable is a governance service that is not configured.
+	ErrUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "template_governance_unavailable", Message: "目录或规则建议服务尚未配置。", Retryable: true}, "template_governance_unavailable")
+	// ErrModelUnavailable is a rule suggestion model that is not configured.
+	ErrModelUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "template_governance_unavailable", Message: "目录或规则建议服务尚未配置。", Retryable: true}, "rule_suggestion_model_unavailable")
+	// ErrUnauthorized is a governance authorization that could not be
+	// established.
+	ErrUnauthorized = clienterror.New(clienterror.Form{Status: 403, Code: "template_governance_authorization_unavailable", Message: "目录治理授权不可用。", Retryable: false}, "template_governance_authorization_unavailable")
+	// ErrNotFound is a governed object that does not exist.
+	ErrNotFound = clienterror.New(clienterror.NotFound, "template_governance_not_found")
+	// ErrInvalidRequest is a governance request whose fields do not follow the
+	// agreed shape.
+	ErrInvalidRequest = clienterror.New(clienterror.InvalidRequest, "template_governance_invalid_request")
+	// ErrVersionConflict is governed content or a baseline that changed.
+	ErrVersionConflict = clienterror.New(clienterror.BaselineConflict, "template_governance_version_conflict")
+	// ErrStale is a rule suggestion that was built on an outdated basis.
+	ErrStale = clienterror.New(clienterror.BaselineConflict, "rule_suggestion_stale")
+	// ErrIdempotencyConflict is one operation key used by two different
+	// requests.
+	ErrIdempotencyConflict = clienterror.New(clienterror.IdempotencyConflict, "template_governance_idempotency_conflict")
+	// ErrInvalidState is a governed object whose current state does not allow
+	// the requested operation.
+	ErrInvalidState = clienterror.New(clienterror.RuleSetStateNotAllowed, "template_governance_invalid_state")
+	// ErrReplayRequired is a rule suggestion that has to be replayed against
+	// the registered fixtures first.
+	ErrReplayRequired = clienterror.New(clienterror.Form{Status: 422, Code: "template_replay_required", Message: "须用服务器注册且绑定当前版本的正反例完成回放。", Retryable: false}, "template_replay_required")
+	// ErrSourceUnavailable is a governed source that is gone or not
+	// authorized.
+	ErrSourceUnavailable = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "来源已不可用或无当前授权。", Retryable: false}, "template_source_unavailable")
+	// ErrInvalidOutput is a model output that does not fit the current goal
+	// and the rule constraints. It is the only 502 in the catalog.
+	ErrInvalidOutput = clienterror.New(clienterror.InvalidModelOutput, "rule_suggestion_invalid_output")
 )
 
 type Profile struct {

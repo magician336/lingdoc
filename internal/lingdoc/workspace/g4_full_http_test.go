@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
@@ -128,15 +129,18 @@ func TestG4FullHTTPListsRegisteredReplayFixtureCatalog(t *testing.T) {
 	}
 }
 
-func TestG4ErrorStatusKeepsReplayAndAvailabilityFailuresDistinct(t *testing.T) {
+// TestGovernanceFailuresKeepTheirOwnForm pins the outward shape of the
+// governance failures that used to live in a transport table. The status and
+// the code now travel with the error itself.
+func TestGovernanceFailuresKeepTheirOwnForm(t *testing.T) {
 	for _, input := range []struct {
 		Err    error
 		Status int
 		Code   string
 	}{{governance.ErrReplayRequired, 422, "template_replay_required"}, {governance.ErrSourceUnavailable, 403, "source_access_denied"}, {governance.ErrVersionConflict, 409, "version_conflict"}, {ErrG4CrossTenantSourceUnsupported, 422, "cross_tenant_source_unsupported"}, {governance.ErrModelUnavailable, 503, "template_governance_unavailable"}} {
-		status, code, _, ok := G4ErrorStatus(input.Err)
-		if !ok || status != input.Status || code != input.Code {
-			t.Fatalf("error mapping %v: %d %s", input.Err, status, code)
+		form, ok := clienterror.FormOf(input.Err)
+		if !ok || form.Status != input.Status || form.Code != input.Code {
+			t.Fatalf("error form %v: %+v", input.Err, form)
 		}
 	}
 }

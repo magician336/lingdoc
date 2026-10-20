@@ -18,34 +18,45 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/google/uuid"
 )
 
+// The failures this surface reports state their own outward form.
+//
+// Only the failures the generation surface answers with a named form are
+// listed here. The remaining sentinels are internal states of the run and
+// keep falling through to the transport's fallback.
 var (
-	ErrInvalidRequest              = errors.New("invalid_request")
-	ErrNotFound                    = errors.New("not_found")
-	ErrForbidden                   = errors.New("forbidden")
-	ErrInsufficientEvidence        = errors.New("insufficient_evidence")
-	ErrAssetNotReady               = errors.New("asset_not_ready")
-	ErrPreflightBlocked            = errors.New("preflight_blocked")
-	ErrInvalidState                = errors.New("invalid_state")
-	ErrAssetNotAuthorized          = errors.New("asset_not_authorized")
-	ErrVersionConflict             = errors.New("version_conflict")
-	ErrSourceAccessDenied          = errors.New("source_access_denied")
-	ErrSourceStale                 = errors.New("source_stale")
-	ErrStaleInput                  = errors.New("stale_input")
-	ErrIdempotencyConflict         = errors.New("idempotency_conflict")
+	ErrInvalidRequest       = clienterror.New(clienterror.InvalidRequest, "invalid_request")
+	ErrNotFound             = clienterror.New(clienterror.NotFound, "not_found")
+	ErrForbidden            = clienterror.New(clienterror.Forbidden, "forbidden")
+	ErrInsufficientEvidence = clienterror.New(clienterror.Form{Status: 422, Code: "insufficient_evidence", Message: "允许资料不足以生成该章节。", Retryable: false}, "insufficient_evidence")
+	ErrAssetNotReady        = clienterror.New(clienterror.Form{Status: 422, Code: "asset_not_ready", Message: "资料尚未处理完成。", Retryable: false}, "asset_not_ready")
+	ErrPreflightBlocked     = clienterror.New(clienterror.PreflightBlocked, "preflight_blocked")
+	ErrInvalidState         = clienterror.New(clienterror.StageNotAllowed, "invalid_state")
+	ErrAssetNotAuthorized   = clienterror.New(clienterror.Form{Status: 422, Code: "asset_not_authorized", Message: "请求中存在未获授权的资料，未开始处理。", Retryable: false}, "asset_not_authorized")
+	ErrVersionConflict      = clienterror.New(clienterror.Form{Status: 409, Code: "version_conflict", Message: "输入版本已变化，请重新读取。", Retryable: false}, "version_conflict")
+	ErrSourceAccessDenied   = clienterror.New(clienterror.SourceAccessDenied, "source_access_denied")
+	ErrSourceStale          = errors.New("source_stale")
+	// ErrStaleInput is an input basis that changed before the run started.
+	// It used to fall through the transport's error table and be answered
+	// with a generic internal error; it now states the stale input form.
+	ErrStaleInput                  = clienterror.New(clienterror.CandidateStaleInput, "stale_input")
+	ErrIdempotencyConflict         = clienterror.New(clienterror.IdempotencyKeyConflict, "idempotency_conflict")
 	ErrRunUnavailable              = errors.New("generation_run_unavailable")
 	ErrGenerationCancelled         = errors.New("generation_cancelled")
-	ErrDependencyUnavailable       = errors.New("dependency_unavailable")
+	ErrDependencyUnavailable       = clienterror.New(clienterror.DependencyUnavailable, "dependency_unavailable")
 	ErrGenerationIncomplete        = errors.New("generation_incomplete")
 	ErrAcceptanceBudgetExceeded    = errors.New("acceptance_budget_exceeded")
 	ErrAcceptanceBudgetUnavailable = errors.New("acceptance_budget_unavailable")
 	ErrAcceptanceOutcomeUnknown    = errors.New("acceptance_outcome_unknown")
 	ErrAcceptanceModelMismatch     = errors.New("acceptance_model_mismatch")
+	// ErrUnauthenticated is a request without a usable actor.
+	ErrUnauthenticated = clienterror.New(clienterror.Unauthenticated, "unauthenticated")
 )
 
 // DeniedAsset records the per-asset reason that prevented a generation
