@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	ErrG2Unavailable        = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "依赖的服务此刻不可用，请稍后重试。", Retryable: true}, "lingdoc: research or agent dependency unavailable")
+	ErrG2Unavailable        = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "资料或模型能力暂不可用。", Retryable: true}, "lingdoc: research or agent dependency unavailable")
 	ErrG2ConsentRequired    = clienterror.New(clienterror.Form{Status: 422, Code: "confirmation_required", Message: "请明确核对范围并确认该操作。", Retryable: false}, "lingdoc: explicit action confirmation required")
 	ErrG2EvidenceIncomplete = clienterror.New(clienterror.Form{Status: 422, Code: "evidence_incomplete", Message: "证据卡、原文定位或当前版本尚不完整。", Retryable: false}, "lingdoc: evidence is incomplete or not current")
 	ErrG2OutcomeUnknown     = clienterror.New(clienterror.Form{Status: 409, Code: "outcome_unknown", Message: "原操作结果尚待核对，请勿重复执行。", Retryable: false}, "lingdoc: external action outcome unknown; reconcile before retry")
