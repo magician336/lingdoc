@@ -18,18 +18,30 @@ import (
 // failure reads outward, and the pipeline raises the very same error value
 // the workspace raised before, so a caller's error check does not change.
 
-// RequiresHumanDecision reports whether an operation needs the human decision
-// gate.
+// HumanGate says whether an operation needs the human decision gate.
 //
-// The list of operations used to live apart from the pipeline that applied it,
-// so nothing recorded that the two agreed.
-func RequiresHumanDecision(operation string) bool {
-	switch operation {
-	case "discardProject", "restoreProject", "activateProject", "applyChangeSet", "reverseChangeSet", "stabilizeRevision", "transferOwner", "requestOwnerTransfer", "acceptOwnerTransfer", "rejectOwnerTransfer", "inviteMember", "acceptMemberInvitation", "memberAssignment", "memberLifecycle", "apiKeyProjectGrant", "chapterReview", "chapterComment":
-		return true
-	}
-	return false
-}
+// The gate is a policy of the domain that owns the operation, not a rule of
+// the pipeline: one domain's operation may need a person's confirmation while
+// another's does not, and one may need it only for some of its calls. So the
+// caller declares it, and the pipeline applies what was declared.
+//
+// There are three values, not two, and not a bool. A bool's zero value would
+// silently mean "no gate" - the direction that quietly weakens a check
+// rather than strengthening it. An enum's zero value would have the same
+// problem, so the zero value here means "not declared": a caller that forgot
+// to say is refused at run time rather than let through.
+type HumanGate int
+
+const (
+	// HumanGateUndeclared means the caller did not say. The pipeline refuses
+	// the operation rather than guessing which way the check should fall.
+	HumanGateUndeclared HumanGate = iota
+	// HumanGateRequired refuses the operation unless the caller may act for
+	// themselves.
+	HumanGateRequired
+	// HumanGateNotRequired lets the caller act for themselves.
+	HumanGateNotRequired
+)
 
 // RequireHumanDecision refuses the operation when the caller may not act for
 // themselves.

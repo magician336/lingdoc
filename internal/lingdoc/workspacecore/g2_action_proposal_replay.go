@@ -54,7 +54,7 @@ func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Acto
 	// force the receipt's source union onto a changed incoming payload; the
 	// existing G2 engine separately rechecks the receipt's historical sources.
 	input.SourceIDs = g2IDs(append(input.SourceIDs, sourceIDs...))
-	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", identity.Target, key, input, input.SourceIDs, func(Transaction, Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", identity.Target, key, input, input.SourceIDs, operationcore.HumanGateNotRequired, func(Transaction, Project) (any, int, error) {
 		// If the previously observed operation disappeared, this is no longer
 		// a replay. Never execute an old request against a new baseline here.
 		return nil, 0, ErrVersionConflict

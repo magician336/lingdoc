@@ -220,6 +220,9 @@ type Request[A any, Tx any, P any] struct {
 	// SourceSensitive marks an operation whose sources must be rechecked
 	// before the operation is allowed to run.
 	SourceSensitive bool
+	// HumanGate declares whether this operation needs the human decision
+	// gate. The caller knows: the gate is the domain's policy.
+	HumanGate HumanGate
 	// Errors are the workspace sentinels the pipeline raises.
 	Errors Errors
 
@@ -279,7 +282,10 @@ type Request[A any, Tx any, P any] struct {
 	RuntimeGate func(ctx context.Context, tx Tx, project P, operation string) error
 	// AfterWrite performs the post-write bookkeeping inside the write
 	// transaction.
-	AfterWrite func(ctx context.Context, tx Tx, projectID, operation, target string, status int, value any, elapsed time.Duration) error
+	//
+	// The project is the one the write was performed on, so a domain can record
+	// what only that project knows.
+	AfterWrite func(ctx context.Context, tx Tx, project P, projectID, operation, target string, status int, value any, elapsed time.Duration) error
 	// ObserveFailure records a failed operation.
 	ObserveFailure func(ctx context.Context, projectID, operation string, cause error, elapsed time.Duration)
 	// Basis returns the comparable basis of an authorized project. The
@@ -328,25 +334,43 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 	if !ValidKey(key) {
 		return Outcome{}, request.Errors.InvalidRequest
 	}
-	if err := request.RequireInverseCaller(ctx, body); err != nil {
-		return Outcome{}, err
+	if request.RequireInverseCaller != nil {
+		if err := request.RequireInverseCaller(ctx, body); err != nil {
+			return Outcome{}, err
+		}
 	}
-	if RequiresHumanDecision(operation) {
+	switch request.HumanGate {
+	case HumanGateRequired:
 		if err := RequireHumanDecision(ctx, request.Errors.HumanDecisionRequired); err != nil {
 			return Outcome{}, err
 		}
+	case HumanGateNotRequired:
+		// The caller may act for themselves.
+	default:
+		// The caller did not say. Refusing is the safe direction: a check
+		// that was never declared must not be assumed absent.
+		return Outcome{}, request.Errors.InvalidRequest
 	}
 	started := time.Now()
 	hash, err := RequestHash(body)
 	if err != nil {
 		return Outcome{}, request.Errors.InvalidRequest
 	}
-	prepared, cached, err := request.PrepareCached(ctx, identity, body)
-	if err != nil {
-		return Outcome{Replayed: IsReplayPayloadDecodeError(err)}, err
-	}
-	ctx = prepared
-	if !cached {
+	// Not every domain has a preparation step. A seam that is not filled in is
+	// a step the domain does not have, not a step that must be faked.
+	if request.PrepareCached != nil {
+		prepared, cached, err := request.PrepareCached(ctx, identity, body)
+		if err != nil {
+			return Outcome{Replayed: IsReplayPayloadDecodeError(err)}, err
+		}
+		ctx = prepared
+		if !cached && request.Prepare != nil {
+			ctx, err = request.Prepare(ctx, identity, body)
+			if err != nil {
+				return Outcome{}, err
+			}
+		}
+	} else if request.Prepare != nil {
 		ctx, err = request.Prepare(ctx, identity, body)
 		if err != nil {
 			return Outcome{}, err
@@ -385,7 +409,9 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 				return request.Errors.IdempotencyConflict
 			}
 			checkedFound = found
-			checkedSources, err = request.SourceIDs(tx, previous, found)
+			if request.SourceIDs != nil {
+				checkedSources, err = request.SourceIDs(tx, previous, found)
+			}
 			if IsReplayPayloadDecodeError(err) {
 				replayed = true
 			}
@@ -398,8 +424,10 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 		// revocation must reject a replay before any cached body is returned.
 		// Denial preserves the record, so reauthorization can replay it
 		// unchanged.
-		if err := request.CheckSources(ctx, projectID, checkedSources); err != nil {
-			return Outcome{}, err
+		if request.CheckSources != nil {
+			if err := request.CheckSources(ctx, projectID, checkedSources); err != nil {
+				return Outcome{}, err
+			}
 		}
 	}
 
@@ -434,8 +462,10 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 			// transport mapper would answer a valid request with a bare 500.
 			return request.AuditWriteFailed(err)
 		}
-		if err := request.RuntimeGate(ctx, tx, project, operation); err != nil {
-			return err
+		if request.RuntimeGate != nil {
+			if err := request.RuntimeGate(ctx, tx, project, operation); err != nil {
+				return err
+			}
 		}
 		previous, found, err := ledger.Lookup(identity)
 		if err != nil {
@@ -444,11 +474,16 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 		if found && previous.BodyHash != hash {
 			return request.Errors.IdempotencyConflict
 		}
-		if err := request.Validate(ctx, tx, project); err != nil {
-			return err
+		if request.Validate != nil {
+			if err := request.Validate(ctx, tx, project); err != nil {
+				return err
+			}
 		}
 		if request.SourceSensitive {
-			sourceIDs, err := request.SourceIDs(tx, previous, found)
+			var sourceIDs []string
+			if request.SourceIDs != nil {
+				sourceIDs, err = request.SourceIDs(tx, previous, found)
+			}
 			if IsReplayPayloadDecodeError(err) {
 				replayed = true
 			}
@@ -463,8 +498,10 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 			result, replayed = previous, true
 			return nil
 		}
-		if err := request.StorePins(ctx, tx, projectID); err != nil {
-			return err
+		if request.StorePins != nil {
+			if err := request.StorePins(ctx, tx, projectID); err != nil {
+				return err
+			}
 		}
 		value, output, status, err := request.Write(ctx, tx, project)
 		if err != nil {
@@ -476,24 +513,32 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 		if output != request.Output {
 			return request.Errors.InvalidState
 		}
-		if err := request.StoreReverseSources(ctx, tx, value); err != nil {
-			return err
+		if request.StoreReverseSources != nil {
+			if err := request.StoreReverseSources(ctx, tx, value); err != nil {
+				return err
+			}
 		}
 		raw, err := json.Marshal(value)
 		if err != nil {
 			return err
 		}
 		result = Result{BodyHash: hash, Body: raw, Status: status, Output: output}
-		if err := request.StoreProvenance(ctx, tx, identity, result, value); err != nil {
-			return err
+		if request.StoreProvenance != nil {
+			if err := request.StoreProvenance(ctx, tx, identity, result, value); err != nil {
+				return err
+			}
 		}
-		if err := request.AfterWrite(ctx, tx, projectID, operation, target, status, value, time.Since(started)); err != nil {
-			return err
+		if request.AfterWrite != nil {
+			if err := request.AfterWrite(ctx, tx, project, projectID, operation, target, status, value, time.Since(started)); err != nil {
+				return err
+			}
 		}
 		return ledger.Save(identity, result)
 	})
 	if err != nil {
-		request.ObserveFailure(ctx, projectID, operation, err, time.Since(started))
+		if request.ObserveFailure != nil {
+			request.ObserveFailure(ctx, projectID, operation, err, time.Since(started))
+		}
 		return Outcome{Replayed: replayed}, err
 	}
 	visible, err := request.Project(ctx, operation, projectID, result.Body)

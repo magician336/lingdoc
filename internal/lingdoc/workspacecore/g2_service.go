@@ -132,88 +132,106 @@ func g2EmbeddedSources(raw json.RawMessage) []string {
 // stays outside SQLite transactions; both cached and new responses are
 // reauthorized before the final transaction and the project/object basis is
 // compared inside that transaction, including idempotent replays.
-func (s *Service) g2Operation(ctx context.Context, actor Actor, projectID, capability, op, target, key string, input any, sourceIDs []string, write func(Transaction, Project) (any, int, error)) (json.RawMessage, int, bool, error) {
+//
+// The pipeline is the shared one. This function only declares what the
+// operation is: the research domain's own rules - which capability it needs,
+// whether the human decision gate applies, what its basis is, and what its
+// audit says - are supplied as facts, and the order of the steps belongs to
+// the pipeline.
+func (s *Service) g2Operation(ctx context.Context, actor Actor, projectID, capability, op, target, key string, input any, sourceIDs []string, gate operationcore.HumanGate, write func(Transaction, Project) (any, int, error)) (json.RawMessage, int, bool, error) {
 	request, requestErr := authorizationRequestFromCapability(actor, projectID, capability)
 	if requestErr != nil {
 		return nil, 0, false, requestErr
 	}
-	if !validActor(actor) || !operationcore.ValidKey(key) {
-		return nil, 0, false, ErrInvalidRequest
-	}
-	raw, err := json.Marshal(input)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	bodyHash := g2Hash(string(raw))
-	identity := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
-	var checked Project
-	var previous OperationResult
-	var found bool
-	err = s.g2Read(ctx, actor, projectID, capability, func(tx Transaction, p Project) error {
-		checked = p
-		var err error
-		previous, found, err = tx.Operation(identity)
-		if err != nil {
-			return err
-		}
-		if found && previous.BodyHash != bodyHash {
-			return ErrIdempotencyConflict
-		}
-		if found {
-			sourceIDs = append(sourceIDs, g2EmbeddedSources(previous.Body)...)
-		}
-		return nil
+
+	// The research domain rechecks the operation record and its sources before
+	// every write, whether or not the caller named any source. The pipeline
+	// performs that recheck for a source-sensitive operation, so the research
+	// domain is always source-sensitive here.
+	const sourceSensitive = true
+
+	outcome, err := operationcore.Run(ctx, operationcore.Request[Actor, Transaction, Project]{
+		Identity: operationcore.Identity[Actor]{
+			Actor:     actor,
+			Operation: op,
+			Target:    target,
+			Key:       key,
+		},
+		Authorization: operationcore.Authorization[Actor]{
+			Actor:     actor,
+			ProjectID: projectID,
+			Action:    string(request.Action),
+			Resource:  request.Resource,
+		},
+		Body:            input,
+		Output:          "",
+		SourceSensitive: sourceSensitive,
+		HumanGate:       gate,
+		Errors: operationcore.Errors{
+			InvalidRequest:        ErrInvalidRequest,
+			IdempotencyConflict:   ErrIdempotencyConflict,
+			VersionConflict:       ErrVersionConflict,
+			InvalidState:          ErrInvalidState,
+			HumanDecisionRequired: ErrHumanDecisionRequired,
+		},
+		Transaction: func(ctx context.Context, options operationcore.Options, fn func(tx Transaction) error) error {
+			return s.repository.Transaction(ctx, TransactionOptions{
+				ReadOnly:   options.ReadOnly,
+				RetryLocks: options.RetryLocks,
+			}, fn)
+		},
+		ValidActor: func(actor Actor) bool { return validActor(actor) },
+		AuditWriteFailed: func(cause error) error {
+			return auditWriteFailed(cause)
+		},
+		Ledger: func(tx Transaction) (operationcore.Ledger[Actor], error) {
+			operations, err := mutationPort[OperationTransaction](tx)
+			if err != nil {
+				return nil, err
+			}
+			return operationLedger{operations: operations}, nil
+		},
+		AuthorizeTenant: func(ctx context.Context, tx Transaction, request operationcore.Authorization[Actor]) error {
+			return s.authorizeTenant(ctx, tx, pipelineAuthorizationRequest(request))
+		},
+		AuthorizeProject: func(ctx context.Context, tx Transaction, request operationcore.Authorization[Actor]) (Project, error) {
+			return s.authorizeProject(ctx, tx, pipelineAuthorizationRequest(request))
+		},
+		RecordAudit: func(ctx context.Context, tx Transaction, projectID, capability string, authErr error) error {
+			return s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+		},
+		CheckSources: func(ctx context.Context, projectID string, sourceIDs []string) error {
+			return s.checkSources(ctx, actor, projectID, g2IDs(sourceIDs))
+		},
+		SourceIDs: func(tx Transaction, previous operationcore.Result, found bool) ([]string, error) {
+			if !found {
+				return sourceIDs, nil
+			}
+			// A replay reuses the source set the server collected then, not the
+			// one the caller sent now.
+			return g2IDs(append(sourceIDs, g2EmbeddedSources(previous.Body)...)), nil
+		},
+		Write: func(ctx context.Context, tx Transaction, p Project) (any, string, int, error) {
+			value, status, err := write(tx, p)
+			if err != nil {
+				return nil, "", 0, err
+			}
+			return value, "", status, nil
+		},
+		Project: func(ctx context.Context, operation, projectID string, body json.RawMessage) (json.RawMessage, error) {
+			return s.g1OperationProjection(ctx, actor, operation, projectID, body)
+		},
+		AfterWrite: func(ctx context.Context, tx Transaction, p Project, projectID, operation, target string, status int, value any, elapsed time.Duration) error {
+			return g2Audit(tx, actor, projectID, "g2."+operation, target, "", map[string]any{"context_revision": p.CurrentContextRevision})
+		},
+		Basis: func(p Project) string {
+			return g2BasisFor(p, Chapter{}).String()
+		},
 	})
 	if err != nil {
-		return nil, 0, false, err
+		return nil, 0, outcome.Replayed, err
 	}
-	if err = s.checkSources(ctx, actor, projectID, g2IDs(sourceIDs)); err != nil {
-		return nil, 0, false, err
-	}
-	var result OperationResult
-	var replay bool
-	err = s.repository.Transaction(ctx, TransactionOptions{}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, request)
-		if err != nil {
-			return err
-		}
-		if !g2BasisCurrent(p, g2BasisFor(checked, Chapter{})) {
-			return ErrVersionConflict
-		}
-		stored, present, err := tx.Operation(identity)
-		if err != nil {
-			return err
-		}
-		if present && stored.BodyHash != bodyHash {
-			return ErrIdempotencyConflict
-		}
-		if present {
-			result = stored
-			replay = true
-			return nil
-		}
-		value, status, err := write(tx, p)
-		if err != nil {
-			return err
-		}
-		body, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		if err = g2Audit(tx, actor, projectID, "g2."+op, target, "", map[string]any{"context_revision": p.CurrentContextRevision}); err != nil {
-			return err
-		}
-		result = OperationResult{BodyHash: bodyHash, Body: body, Status: status}
-		return tx.SaveOperation(identity, result)
-	})
-	if err != nil {
-		return nil, 0, false, err
-	}
-	visible, err := s.g1OperationProjection(ctx, actor, op, projectID, result.Body)
-	if err != nil {
-		return nil, 0, replay, err
-	}
-	return visible, result.Status, replay, nil
+	return outcome.Body, outcome.Status, outcome.Replayed, nil
 }
 func g2Failure(err error) string {
 	switch {
@@ -266,7 +284,7 @@ func (s *Service) SaveResearchTask(ctx context.Context, actor Actor, projectID, 
 		}
 		catalogVersion = version
 	}
-	return s.g2Operation(ctx, actor, projectID, researchCapabilityForChapter(input.ChapterID), "saveResearchTask", projectID+"/"+input.TaskID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, researchCapabilityForChapter(input.ChapterID), "saveResearchTask", projectID+"/"+input.TaskID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input.G2Expectation) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -335,9 +353,8 @@ func (s *Service) ListResearchTasks(ctx context.Context, actor Actor, projectID 
 	return out, err
 }
 func (s *Service) ApproveResearchTask(ctx context.Context, actor Actor, projectID, taskID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if err := g2CheckConfirmed(input.Confirmed, input.Reason); err != nil {
 		return nil, 0, false, err
 	}
@@ -345,7 +362,7 @@ func (s *Service) ApproveResearchTask(ctx context.Context, actor Actor, projectI
 	if scopeErr != nil {
 		return nil, 0, false, scopeErr
 	}
-	return s.g2Operation(ctx, actor, projectID, capability, "approveResearchTask", projectID+"/"+taskID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, capability, "approveResearchTask", projectID+"/"+taskID, key, input, nil, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		task, old, err := g2Load[ResearchTask](tx, projectID, G2ResearchTaskKind, taskID)
 		if err != nil {
 			return nil, 0, err
@@ -372,7 +389,7 @@ func (s *Service) ControlResearchTask(ctx context.Context, actor Actor, projectI
 	if scopeErr != nil {
 		return nil, 0, false, scopeErr
 	}
-	return s.g2Operation(ctx, actor, projectID, capability, "controlResearchTask", projectID+"/"+taskID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, capability, "controlResearchTask", projectID+"/"+taskID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		task, old, err := g2Load[ResearchTask](tx, projectID, G2ResearchTaskKind, taskID)
 		if err != nil {
 			return nil, 0, err
@@ -409,7 +426,7 @@ func (s *Service) RunResearchTask(ctx context.Context, actor Actor, projectID, t
 	if scopeErr != nil {
 		return nil, 0, false, scopeErr
 	}
-	body, status, replay, err := s.g2Operation(ctx, actor, projectID, capability, "runResearchTask", projectID+"/"+taskID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	body, status, replay, err := s.g2Operation(ctx, actor, projectID, capability, "runResearchTask", projectID+"/"+taskID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		task, old, err := g2Load[ResearchTask](tx, projectID, G2ResearchTaskKind, taskID)
 		if err != nil {
 			return nil, 0, err
@@ -731,7 +748,7 @@ func (s *Service) CreateImportCandidate(ctx context.Context, actor Actor, projec
 	if input.URL != "" && !g2ValidURL(input.URL) {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.g2Operation(ctx, actor, projectID, "evidence-write", "createImportCandidate", projectID, key, input, []string{input.SourceID}, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "evidence-write", "createImportCandidate", projectID, key, input, []string{input.SourceID}, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input.G2Expectation) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -853,9 +870,8 @@ func (s *Service) ListImportCandidates(ctx context.Context, actor Actor, project
 	return out, nil
 }
 func (s *Service) ConfirmImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if err := g2CheckConfirmed(input.Confirmed, input.Reason); err != nil {
 		return nil, 0, false, err
 	}
@@ -888,7 +904,7 @@ func (s *Service) ConfirmImportCandidate(ctx context.Context, actor Actor, proje
 	if s.g2Runtime.Imports == nil && candidate.SaveMode != "metadata_only" {
 		return nil, 0, false, ErrG2Unavailable
 	}
-	body, status, replay, err := s.g2Operation(ctx, actor, projectID, "evidence-write", "confirmImportCandidate", projectID+"/"+candidateID, key, input, []string{candidate.SourceID}, func(tx Transaction, p Project) (any, int, error) {
+	body, status, replay, err := s.g2Operation(ctx, actor, projectID, "evidence-write", "confirmImportCandidate", projectID+"/"+candidateID, key, input, []string{candidate.SourceID}, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		value, old, err := g2Load[ImportCandidate](tx, projectID, G2ImportKind, candidateID)
 		if err != nil {
 			return nil, 0, err
@@ -1026,10 +1042,9 @@ func (s *Service) RefreshImportCandidate(ctx context.Context, actor Actor, proje
 	return value, ErrNotFound
 }
 func (s *Service) RejectImportCandidate(ctx context.Context, actor Actor, projectID, candidateID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
-	return s.g2Operation(ctx, actor, projectID, "evidence-write", "rejectImportCandidate", projectID+"/"+candidateID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
+	return s.g2Operation(ctx, actor, projectID, "evidence-write", "rejectImportCandidate", projectID+"/"+candidateID, key, input, nil, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		value, old, err := g2Load[ImportCandidate](tx, projectID, G2ImportKind, candidateID)
 		if err != nil {
 			return nil, 0, err
@@ -1047,9 +1062,8 @@ func (s *Service) RejectImportCandidate(ctx context.Context, actor Actor, projec
 }
 
 func (s *Service) SaveSourceAnchor(ctx context.Context, actor Actor, projectID, key string, input SaveSourceAnchorInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if !input.Confirmed {
 		return nil, 0, false, ErrG2ConsentRequired
 	}
@@ -1078,7 +1092,7 @@ func (s *Service) SaveSourceAnchor(ctx context.Context, actor Actor, projectID, 
 	}
 	hash := g2Hash(string(text[input.SelectionStart:input.SelectionEnd]))
 	dedup := g2Hash(source.AssetID + "|" + strconv.Itoa(source.AssetRevision) + "|" + source.SourceID + "|" + strconv.Itoa(input.SelectionStart) + ":" + strconv.Itoa(input.SelectionEnd) + "|" + hash)
-	return s.g2Operation(ctx, actor, projectID, "evidence-write", "saveSourceAnchor", projectID+"/"+input.AnchorID, key, input, []string{source.SourceID}, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "evidence-write", "saveSourceAnchor", projectID+"/"+input.AnchorID, key, input, []string{source.SourceID}, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input.G2Expectation) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -1174,9 +1188,8 @@ func (s *Service) validateG2Anchor(ctx context.Context, actor Actor, projectID s
 	return nil
 }
 func (s *Service) SaveResearchClaim(ctx context.Context, actor Actor, projectID, key string, input SaveResearchClaimInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if !input.Confirmed {
 		return nil, 0, false, ErrG2ConsentRequired
 	}
@@ -1189,7 +1202,7 @@ func (s *Service) SaveResearchClaim(ctx context.Context, actor Actor, projectID,
 	if input.Status != "active" && input.Status != "disputed" && input.Status != "superseded" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.g2Operation(ctx, actor, projectID, "evidence-write", "saveResearchClaim", projectID+"/"+input.ClaimID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "evidence-write", "saveResearchClaim", projectID+"/"+input.ClaimID, key, input, nil, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
 		}
@@ -1242,9 +1255,8 @@ func (s *Service) ListResearchClaims(ctx context.Context, actor Actor, projectID
 	return out, err
 }
 func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, key string, input SaveEvidenceCardInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if !input.Confirmed {
 		return nil, 0, false, ErrG2ConsentRequired
 	}
@@ -1283,7 +1295,7 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 			return nil, 0, false, err
 		}
 	}
-	return s.g2Operation(ctx, actor, projectID, "evidence-write", "saveEvidenceCard", projectID+"/"+input.CardID, key, input, sourceIDs, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "evidence-write", "saveEvidenceCard", projectID+"/"+input.CardID, key, input, sourceIDs, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		if p.Status != "active" {
 			return nil, 0, ErrInvalidState
 		}
@@ -1407,9 +1419,8 @@ func (s *Service) loadCheckedEvidenceCard(ctx context.Context, actor Actor, proj
 	return card, nil
 }
 func (s *Service) ConfirmEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if err := g2CheckConfirmed(input.Confirmed, input.Reason); err != nil {
 		return nil, 0, false, err
 	}
@@ -1417,7 +1428,7 @@ func (s *Service) ConfirmEvidenceCard(ctx context.Context, actor Actor, projectI
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.g2Operation(ctx, actor, projectID, g2CardConfirmationCapability(card), "confirmEvidenceCard", projectID+"/"+cardID, key, input, card.SourceIDs, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, g2CardConfirmationCapability(card), "confirmEvidenceCard", projectID+"/"+cardID, key, input, card.SourceIDs, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		value, old, err := g2Load[EvidenceCard](tx, projectID, G2CardKind, cardID)
 		if err != nil {
 			return nil, 0, err
@@ -1445,9 +1456,8 @@ func (s *Service) ConfirmEvidenceCard(ctx context.Context, actor Actor, projectI
 	})
 }
 func (s *Service) ReviewEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input ReviewEvidenceCardInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if err := g2CheckConfirmed(input.Confirmed, input.Reason); err != nil {
 		return nil, 0, false, err
 	}
@@ -1463,7 +1473,7 @@ func (s *Service) ReviewEvidenceCard(ctx context.Context, actor Actor, projectID
 	if err != nil {
 		return nil, 0, false, err
 	}
-	return s.g2Operation(ctx, actor, projectID, g2CardConfirmationCapability(card), "reviewEvidenceCard", projectID+"/"+cardID, key, input, card.SourceIDs, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, g2CardConfirmationCapability(card), "reviewEvidenceCard", projectID+"/"+cardID, key, input, card.SourceIDs, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		value, old, err := g2Load[EvidenceCard](tx, projectID, G2CardKind, cardID)
 		if err != nil {
 			return nil, 0, err
@@ -1559,7 +1569,7 @@ func (s *Service) InvalidateG2Evidence(ctx context.Context, actor Actor, project
 		Reason    string   `json:"reason"`
 	}{g2IDs(sourceIDs), reason}
 	// Invalidation may follow revocation, so it must not fetch the revoked text.
-	return s.g2Operation(ctx, actor, projectID, "evidence-write", "invalidateEvidence", projectID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "evidence-write", "invalidateEvidence", projectID, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		port, _ := g2Storage(tx)
 		rows, err := port.G2Objects(projectID, G2AnchorKind)
 		if err != nil {
@@ -1643,7 +1653,7 @@ func (s *Service) CreateAgentSession(ctx context.Context, actor Actor, projectID
 	if agent != "task_assistant" && agent != "research_agent" {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	return s.g2Operation(ctx, actor, projectID, "agent", "createAgentSession", projectID+"/"+agent, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "agent", "createAgentSession", projectID+"/"+agent, key, input, nil, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -1818,12 +1828,27 @@ func (s *Service) GetAgentTurns(ctx context.Context, actor Actor, projectID, ses
 	}
 	return out, nil
 }
-func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, sessionID, key string, input AgentTurnInput) (json.RawMessage, int, bool, error) {
+
+// g2AgentTurnGate decides whether an agent turn needs the human decision gate.
+//
+// A turn that carries a confirmed sensitive context needs a person: the
+// context it was given is not the caller's to decide. A turn without that
+// confirmation does not.
+//
+// The decision is the caller's, and it is declared rather than inferred from
+// the operation's name, because the same operation needs the gate for some of
+// its calls and not for others.
+func g2AgentTurnGate(input AgentTurnInput) operationcore.HumanGate {
 	if input.SensitiveContextConfirmed {
-		if err := RequireHumanDecision(ctx); err != nil {
-			return nil, 0, false, err
-		}
+		return operationcore.HumanGateRequired
 	}
+	return operationcore.HumanGateNotRequired
+}
+
+func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, sessionID, key string, input AgentTurnInput) (json.RawMessage, int, bool, error) {
+	// The gate the pipeline applies is decided here: a turn that carries
+	// a confirmed sensitive context needs a person, and one that does not
+	// does not. The pipeline applies what is declared, at its own position.
 	if strings.TrimSpace(input.UserInput) == "" || len(input.UserInput) > 12000 {
 		return nil, 0, false, ErrInvalidRequest
 	}
@@ -1864,7 +1889,7 @@ func (s *Service) SendAgentTurn(ctx context.Context, actor Actor, projectID, ses
 			safeHistory = append(safeHistory, AgentMessage{Role: "user", Content: turn.UserInput}, AgentMessage{Role: "assistant", Content: turn.Reply})
 		}
 	}
-	body, status, replay, err := s.g2Operation(ctx, actor, projectID, "agent", "sendAgentTurn", projectID+"/"+sessionID, key, input, ids, func(tx Transaction, p Project) (any, int, error) {
+	body, status, replay, err := s.g2Operation(ctx, actor, projectID, "agent", "sendAgentTurn", projectID+"/"+sessionID, key, input, ids, g2AgentTurnGate(input), func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input.G2Expectation) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -2026,7 +2051,7 @@ func (s *Service) CreateActionProposal(ctx context.Context, actor Actor, project
 			return nil, 0, false, err
 		}
 	}
-	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", projectID+"/"+input.TargetID, key, input, input.SourceIDs, func(tx Transaction, p Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", projectID+"/"+input.TargetID, key, input, input.SourceIDs, operationcore.HumanGateNotRequired, func(tx Transaction, p Project) (any, int, error) {
 		if !g2ExpectationMatches(p, input.G2Expectation) {
 			return nil, 0, ErrVersionConflict
 		}
@@ -2075,9 +2100,8 @@ func (s *Service) ListActionProposals(ctx context.Context, actor Actor, projectI
 	return out, nil
 }
 func (s *Service) ConfirmActionProposal(ctx context.Context, actor Actor, projectID, proposalID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
 	if err := g2CheckConfirmed(input.Confirmed, input.Reason); err != nil {
 		return nil, 0, false, err
 	}
@@ -2109,7 +2133,7 @@ func (s *Service) ConfirmActionProposal(ctx context.Context, actor Actor, projec
 		}
 		capability = g2CardConfirmationCapability(card)
 	}
-	body, status, replay, err := s.g2Operation(ctx, actor, projectID, capability, "confirmActionProposal", projectID+"/"+proposalID, key, input, proposal.SourceIDs, func(tx Transaction, p Project) (any, int, error) {
+	body, status, replay, err := s.g2Operation(ctx, actor, projectID, capability, "confirmActionProposal", projectID+"/"+proposalID, key, input, proposal.SourceIDs, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		value, old, err := g2Load[ActionProposal](tx, projectID, G2ActionKind, proposalID)
 		if err != nil {
 			return nil, 0, err
@@ -2215,10 +2239,9 @@ func (s *Service) ConfirmActionProposal(ctx context.Context, actor Actor, projec
 	return nil, 0, false, ErrNotFound
 }
 func (s *Service) RejectActionProposal(ctx context.Context, actor Actor, projectID, proposalID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error) {
-	if err := RequireHumanDecision(ctx); err != nil {
-		return nil, 0, false, err
-	}
-	return s.g2Operation(ctx, actor, projectID, "agent", "rejectActionProposal", projectID+"/"+proposalID, key, input, nil, func(tx Transaction, p Project) (any, int, error) {
+	// The human decision gate is declared to the pipeline, which applies it.
+	// Applying it here as well would run the same check twice.
+	return s.g2Operation(ctx, actor, projectID, "agent", "rejectActionProposal", projectID+"/"+proposalID, key, input, nil, operationcore.HumanGateRequired, func(tx Transaction, p Project) (any, int, error) {
 		value, old, err := g2Load[ActionProposal](tx, projectID, G2ActionKind, proposalID)
 		if err != nil {
 			return nil, 0, err

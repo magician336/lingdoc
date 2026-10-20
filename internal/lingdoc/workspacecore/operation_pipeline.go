@@ -84,6 +84,18 @@ func pipelineAuthorizationRequest(request operationcore.Authorization[Actor]) Au
 	}
 }
 
+// workspaceHumanGate says whether one of the workspace's operations needs the
+// human decision gate.
+//
+// The list is the workspace's own: what changes a project is the workspace's
+// judgement, and the research domain decides for its operations separately.
+func workspaceHumanGate(operation string) operationcore.HumanGate {
+	if workspaceHumanDecisionOperations()[operation] {
+		return operationcore.HumanGateRequired
+	}
+	return operationcore.HumanGateNotRequired
+}
+
 // projectBasis is the comparable basis of an authorized project.
 //
 // The pipeline refuses an operation whose basis moved between the source
@@ -127,6 +139,7 @@ func runOperationThroughPipeline[T any, I any, R any](
 		Body:            body,
 		Output:          string(operation.Output),
 		SourceSensitive: operation.SourceIDs != nil,
+		HumanGate:       workspaceHumanGate(op),
 		Errors: operationcore.Errors{
 			InvalidRequest:        ErrInvalidRequest,
 			IdempotencyConflict:   ErrIdempotencyConflict,
@@ -228,8 +241,8 @@ func runOperationThroughPipeline[T any, I any, R any](
 			}
 			return RuntimeGate(tx, actor, p, operation, s.runtimeMode)
 		},
-		AfterWrite: func(ctx context.Context, tx Transaction, projectID, operation, target string, status int, value any, elapsed time.Duration) error {
-			return s.afterOperationWrite(ctx, tx, actor, projectID, operation, target, status, elapsed)
+		AfterWrite: func(ctx context.Context, tx Transaction, p Project, projectID, operation, target string, status int, value any, elapsed time.Duration) error {
+			return s.afterOperationWrite(ctx, tx, actor, p, projectID, operation, target, status, elapsed)
 		},
 		ObserveFailure: func(ctx context.Context, projectID, operation string, cause error, elapsed time.Duration) {
 			s.observeOperationFailure(ctx, actor, projectID, operation, cause, elapsed)
@@ -250,7 +263,7 @@ func runOperationThroughPipeline[T any, I any, R any](
 // The critical audit and the runtime trace are the workspace's own records,
 // so they belong to the workspace. The pipeline decides that they happen
 // here; the workspace decides what they say.
-func (s *Service) afterOperationWrite(ctx context.Context, tx Transaction, actor Actor, projectID, operation, target string, status int, elapsed time.Duration) error {
+func (s *Service) afterOperationWrite(ctx context.Context, tx Transaction, actor Actor, project Project, projectID, operation, target string, status int, elapsed time.Duration) error {
 	if _, ok := tx.(gormTransaction); !ok || projectID == "" {
 		return nil
 	}

@@ -1,6 +1,7 @@
 package operationcore
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -67,19 +68,62 @@ func TestValueHashIsStableForAnUnencodableValue(t *testing.T) {
 	}
 }
 
-// The human decision gate knows which operations need it.
-func TestRequiresHumanDecisionNamesTheOperationsThatNeedIt(t *testing.T) {
-	for _, op := range []string{"applyChangeSet", "reverseChangeSet", "activateProject", "chapterReview"} {
-		if !RequiresHumanDecision(op) {
-			t.Fatalf("operation %q needs the human decision gate", op)
-		}
+// The human decision gate is a mechanism the pipeline applies; which
+// operations need it belongs to the domain that owns them.
+//
+// The gate has an explicit "not declared" state, and it is the zero value. A
+// caller that forgot to declare is refused at run time rather than let
+// through, because a check that was never declared must not be assumed
+// absent.
+func TestHumanGateTreatsAnUndeclaredGateAsRefused(t *testing.T) {
+	if HumanGateUndeclared != 0 {
+		t.Fatal("the undeclared gate must be the zero value, so a caller that forgot to declare is recognised")
 	}
-	for _, op := range []string{"saveSpec", "saveChapter", "createProject", ""} {
-		if RequiresHumanDecision(op) {
-			t.Fatalf("operation %q must not need the human decision gate", op)
-		}
+	if HumanGateRequired == HumanGateNotRequired {
+		t.Fatal("the two declared values must differ")
+	}
+	if HumanGateRequired == HumanGateUndeclared || HumanGateNotRequired == HumanGateUndeclared {
+		t.Fatal("a declared gate must not read as undeclared")
 	}
 }
+
+// A caller that does not say whether the operation needs the gate is refused.
+//
+// The refusal is the safe direction: a check that was never declared must not
+// be assumed absent, and a caller that forgot must not be let through.
+func TestRunRefusesAnUndeclaredGate(t *testing.T) {
+	refused := false
+	_, err := Run(context.Background(), Request[string, string, string]{
+		Identity: Identity[string]{Actor: "a", Operation: "op", Target: "t", Key: "12345678"},
+		Errors: Errors{
+			InvalidRequest:        errInvalidRequest,
+			IdempotencyConflict:   errInvalidRequest,
+			VersionConflict:       errInvalidRequest,
+			InvalidState:          errInvalidRequest,
+			HumanDecisionRequired: errInvalidRequest,
+		},
+		ValidActor: func(string) bool { return true },
+		Transaction: func(context.Context, Options, func(string) error) error {
+			return nil
+		},
+		Ledger: func(string) (Ledger[string], error) { return nil, nil },
+		Write: func(context.Context, string, string) (any, string, int, error) {
+			return nil, "", 0, nil
+		},
+		Project: func(context.Context, string, string, json.RawMessage) (json.RawMessage, error) {
+			return nil, nil
+		},
+	})
+	if !errors.Is(err, errInvalidRequest) {
+		t.Fatalf("an undeclared gate = %v, want the invalid request error", err)
+	}
+	refused = true
+	if !refused {
+		t.Fatal("the operation was not refused")
+	}
+}
+
+var errInvalidRequest = errors.New("invalid request")
 
 // A replay payload that could not be decoded is a replay attempt, not an
 // ordinary failure, and the marker must survive wrapping.

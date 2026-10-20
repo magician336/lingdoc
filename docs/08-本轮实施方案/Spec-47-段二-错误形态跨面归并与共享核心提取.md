@@ -539,6 +539,107 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 | `git diff --check` | PASS |
 | `go test -p 1 -count=1 ./internal/lingdoc/...` | PASS（13 个包全绿，含 `workspace` 123s、`workspacecore` 37s） |
 
+## 47.09 的第一片：调研域并入共享管道（2026-10-20）
+
+### 第二套管道没有了
+
+调研域原来有自己的管道：`g2Operation`（`g2_service.go`）自己实现幂等键检查、
+请求体摘要、只读复核、来源重查、授权、幂等记录读写、业务写入、投影。
+
+现在它走共享管道：`g2Operation` 只声明「做什么操作」，管道由
+`internal/lingdoc/operationcore` 的 `Run` 执行。域内 **18 个**调用点全部走这一条管道。
+
+调研域自己保留的是**领域事实**，不是管道步骤：
+
+| 调研域的事实 | 声明在哪里 |
+| --- | --- |
+| 需要哪个 capability | `g2Operation` 的 `capability` 参数 |
+| 要不要人工决策门 | 每次调用显式声明（见下） |
+| basis 由什么字段构成 | `Basis` 接缝：项目版本 + 研究条件修订 + 上下文修订（三字段） |
+| 审计写什么 | `AfterWrite` 接缝：`g2.<操作名>` + `{context_revision}` |
+| 来源怎么收集 | `SourceIDs` 接缝 |
+
+### 人工决策门改成声明式
+
+调研域的 18 个调用点**对门的要求不一致**，而且同一个操作的要求取决于调用：
+
+| 情形 | 例子 |
+| --- | --- |
+| 一定要门 | `saveResearchClaim`、`confirmEvidenceCard`、`rejectActionProposal` |
+| 一定不要门 | `createActionProposal`、`createAgentSession`、`createImportCandidate` |
+| 取决于调用 | `sendAgentTurn`：只有 `input.SensitiveContextConfirmed` 时才要门 |
+
+按操作名静态判定装不下这三种。所以门改成**由调用方声明**：
+
+- 共享核心新增 `HumanGate` 三态枚举：`HumanGateRequired` / `HumanGateNotRequired` /
+  `HumanGateUndeclared`；
+- **零值是 `HumanGateUndeclared`**，管道遇到未声明就拒绝（答 `invalid_request`）。
+  这不是多余的第三态：`bool` 的零值会静默表示「不要门」，那是**悄悄削弱检查**的方向；
+  枚举的零值若表示「要门」，未声明的调用方会被莫名拒绝。三态让「没说」被识别出来。
+- 共享核心**不再持有**操作名单。哪些操作要门是各域的知识：工作区有自己的名单
+  （`workspaceHumanDecisionOperations`），调研域每次调用显式声明。
+- 调研域用例层的 10 处 `RequireHumanDecision(ctx)` 检查**移除**——门由管道声明承担，
+  同一个检查跑两次没有意义。
+
+`sendAgentTurn` 的条件门由用例层算出（`g2AgentTurnGate(input)`）再声明进去。
+
+### 门的位置变了（一处口径变更）
+
+原来调研域的门是**用例的第一道检查**（在字段校验、来源检查、授权之前）。
+现在门在**管道内**，位于键检查之后、授权之前。
+
+因此对**机器身份**发起一个本身就不合法的请求时，答案会变——由「哪道检查先失败」
+决定，而不是一律由门决定：
+
+| 场景 | 原来 | 现在 |
+| --- | --- | --- |
+| 机器身份 + 未确认 | 403 `human_decision_required` | 422 `confirmation_required` |
+| 机器身份 + 字段非法 | 403 `human_decision_required` | 400 `invalid_request` |
+| 机器身份 + 授权不通过 | 403 `human_decision_required` | 404 `not_found` |
+| 机器身份 + 请求本身合法 | 403 `human_decision_required` | 403 `human_decision_required`（不变） |
+
+**合法请求的答案不变**；只有「本来就会被拒绝的请求」换了错误形态。这记为
+**少数口径变更第 10 项**。
+
+**安全语义没有变**：机器身份仍然被拒绝，且仍然不触发任何外部效果。
+`TestG2MachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag`
+的守门断言——「机器身份不得触发外部效果」「机器身份不得改写卡片真相」——**全部通过**，
+只有「必须是 `ErrHumanDecisionRequired`」这一条形态断言改成了「必须被拒绝」。
+
+归一后另有一条断言**证明门本身仍然拦得住**：
+`TestTheGateRefusesAMachineIdentityOnAnOtherwiseValidRequest` 用一个「其它检查都通过」
+的请求，断言答案是 `ErrHumanDecisionRequired`——即拒绝确实来自门，而不是授权。
+
+### 另外两处口径变更
+
+**第 11 项：调研域在授权失败时也写审计。**
+共享管道在授权失败时写一条授权决定审计（`RecordAudit(..., authErr)`）；调研域原来
+只在业务写入成功后写业务审计，授权失败不写。归一后调研域的授权失败会多一条审计记录。
+
+**第 12 项：调研域在写事务内多做一次来源集合比较。**
+共享管道在来源敏感的操作上，会在只读复核与写事务之间比较来源集合与「是否命中已有
+记录」；调研域原来只查一次。并发的写入会让两者不一致，管道此时拒绝（`version_conflict`），
+调研域原来会放过。这是**收紧**，不是放宽。
+
+### 证据
+
+| 断言 | 覆盖 |
+| --- | --- |
+| `TestResearchDomainBehavesLikeTheSharedPipeline` | 五处行为逐条：幂等键冲突、请求体哈希、重放顺序、来源重查、人类决策门 |
+| `TestTheResearchDomainDeclaresItsGatePerCall` | 同一个机器身份，走门的操作被门拒、不走门的操作不被门拒 |
+| `TestThePipelineHasNoCopyOfTheGateOperationList` | 结构断言：共享核心不得再持有按操作名判门的名单 |
+| `TestHumanGateTreatsAnUndeclaredGateAsRefused` | 三态的零值是「未声明」 |
+| `TestRunRefusesAnUndeclaredGate` | 未声明时管道拒绝操作 |
+
+**阴性验证**（每条都做过：注入违规 → 精确报出 → 回滚）：
+
+| 断言 | 注入的违规 | 报出 |
+| --- | --- | --- |
+| 共享核心不得持有门名单 | 在 `operationcore` 注入 `RequiresHumanDecision(operation)` | `zz_negative_probe.go: RequiresHumanDecision decides the gate from the operation name: the caller declares it` |
+
+另外，门的状态用**机械扫描**核对过：从基线代码读出每个方法自己是否调用
+`RequireHumanDecision`，与归一后的声明逐条比对，**18 个调用点的门要求全部一致**。
+
 ## 遗留与风险
 
 - **`ErrStaleInput` 的生成面落空**是本段取证中新发现的既有缺陷，D-47-04 需要裁决。
