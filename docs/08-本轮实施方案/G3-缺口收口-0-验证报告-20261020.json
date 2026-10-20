@@ -1,0 +1,156 @@
+{
+  "ticket": "#249（G3 缺口收口-0）：缺口清单事实校正（#246 与 g3Gaps.ts 同源）",
+  "head_at_evidence": "6015934（基线 integrate/g3-gap-closure-r2；本报告与本票改动在同一提交入库）",
+  "base": "integrate/g3-gap-closure-r2",
+  "branch": "feat/issue-249-gap-facts",
+  "mode": "real",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "node": "v24.14.1",
+    "npm": "11.11.0",
+    "frontend": "worktree frontend/（npm ci 按 package-lock.json 安装 437 个包），tsx --test 运行前端测试，vue-tsc --build 做类型检查",
+    "backend": "本票不涉及后端：不改 Go 代码、不改契约、不改迁移"
+  },
+  "scope": {
+    "owned_files": [
+      "frontend/src/views/lingdoc/g3demo/g3Gaps.ts",
+      "frontend/src/views/lingdoc/g3demo/g3Gaps.test.ts",
+      "docs/08-本轮实施方案/G3-缺口清单-246-副本.md（新建）",
+      "docs/08-本轮实施方案/G3-缺口收口-0-验证报告-20261020.json（本文件，新建）"
+    ],
+    "not_touched": [
+      "frontend/src/views/lingdoc/g3demo/g3Matrix.ts",
+      "frontend/src/views/lingdoc/g3demo/runner/**",
+      "frontend/src/views/lingdoc/g3demo/G3Demo.vue",
+      "docs/08-本轮实施方案/contracts/openapi.json",
+      "internal/lingdoc/workspace/impact_routes_contract_test.go"
+    ]
+  },
+  "commands": [
+    {
+      "command": "cd frontend && npm ci",
+      "result": "PASS：added 437 packages in 3m（registry=https://registry.npmmirror.com）"
+    },
+    {
+      "command": "cd frontend && npm run type-check",
+      "result": "PASS：vue-tsc --build 无输出、无错误"
+    },
+    {
+      "command": "cd frontend && npm test",
+      "result": "PASS：tests 1476 / pass 1475 / fail 0 / skipped 1 / duration 21741.8712ms（skip 的是仓库既有的一条环境相关跳过，不是本票新增）"
+    },
+    {
+      "command": "cd frontend && npx tsx --test src/views/lingdoc/g3demo/g3Gaps.test.ts",
+      "result": "PASS：tests 14 / pass 14 / fail 0（首次运行，基线为新写的同源守护与三条既有断言的改写）"
+    },
+    {
+      "command": "守护有效性反证：把 docs/08-本轮实施方案/G3-缺口清单-246-副本.md 里 G3-GAP-01 的「当前状态」由 BLOCKED 临时改成 PASS (follow-up)，再跑 npx tsx --test src/views/lingdoc/g3demo/g3Gaps.test.ts",
+      "result": "FAIL（预期的红）：tests 14 / pass 13 / fail 1。失败断言原文：「AssertionError [ERR_ASSERTION]: 前端副本与仓库内镜像不一致：G3-GAP-01 当前状态不一致：镜像「PASS (follow-up)」/ 前端「BLOCKED」」，exit code 1"
+    },
+    {
+      "command": "把镜像里的 G3-GAP-01 状态改回 BLOCKED，再跑同一条命令",
+      "result": "PASS：tests 14 / pass 14 / fail 0（绿）"
+    },
+    {
+      "command": "守护有效性反证（矩阵口径）：把 frontend/src/views/lingdoc/g3demo/g3Gaps.ts 里 G3-GAP-01 的 rowStatus 临时改成 TODO，再跑同一条命令",
+      "result": "FAIL（预期的红）：tests 14 / pass 12 / fail 2。失败断言原文：「G3-GAP-01 的 rowStatus 与矩阵行 AC-G3-03 的状态不一致」与同源守护的同一条差异，exit code 1"
+    },
+    {
+      "command": "把 g3Gaps.ts 里 G3-GAP-01 的 rowStatus 改回 BLOCKED，再跑同一条命令",
+      "result": "PASS：tests 14 / pass 14 / fail 0（绿）"
+    },
+    {
+      "command": "git status --short（在 worktree 根）",
+      "result": "只列出本票拥有的 4 个文件：M frontend/src/views/lingdoc/g3demo/g3Gaps.ts、M frontend/src/views/lingdoc/g3demo/g3Gaps.test.ts、?? docs/08-本轮实施方案/G3-缺口清单-246-副本.md、?? docs/08-本轮实施方案/G3-缺口收口-0-验证报告-20261020.json"
+    }
+  ],
+  "acceptance_matrix": {
+    "rows": 3,
+    "judged_from_this_run": [
+      {
+        "id": "AC-249-01",
+        "criterion": "缺口清单的仓库内镜像（#246 镜像）与前端结构化副本（g3Gaps.ts）逐条同源：编号、标题、对应验收行（rows + limits）、当前状态、承接票全部相等",
+        "user_visible_entry": "验收台页面的缺口清单区块与导出体（G3Demo.vue / g3Export.ts 引用的 G3_IMPLEMENTATION_GAPS）",
+        "invariant": "同一份事实只有一处可改：镜像为准，两份副本一致；不一致即红",
+        "evidence": "g3Gaps.test.ts:242「同源守护：前端缺口副本与 #246 的仓库内镜像逐条相等」；红灯反证见 commands 第 5 条",
+        "status": "PASS"
+      },
+      {
+        "id": "AC-249-02",
+        "criterion": "缺口的 rowStatus 与矩阵同名行的 status 一致，且落在仓库门禁词表内、不写 PASS",
+        "user_visible_entry": "验收台矩阵行状态与缺口清单状态并列展示",
+        "invariant": "缺口状态不另造词；直接缺口行（rows）与覆盖受限行（limits）分开，后者不按前者口径写",
+        "evidence": "g3Gaps.test.ts:307「矩阵口径一致性：缺口的 rowStatus 等于矩阵同名行的 status」、g3Gaps.test.ts:166「缺口对应行的状态不写 PASS，且取自仓库门禁词表」；红灯反证见 commands 第 7 条",
+        "status": "PASS"
+      },
+      {
+        "id": "AC-249-03",
+        "criterion": "改动只落在本票拥有的文件，前端类型检查与全量前端测试通过",
+        "user_visible_entry": "不涉及用户可见行为变化（本票是事实层校正）",
+        "invariant": "不碰并行开发中的 g3Matrix.ts / runner/ / G3Demo.vue / openapi.json / impact_routes_contract_test.go",
+        "evidence": "npm run type-check PASS；npm test 1476 项 1475 pass / 0 fail；git status 只列 4 个本票文件",
+        "status": "PASS"
+      }
+    ],
+    "gap_row_status_after_this_ticket": {
+      "note": "本票只改缺口清单的**事实口径**，不改矩阵行的判定。矩阵行状态由 g3Matrix.ts 持有（另有人在并行改），本次未改。缺口行状态与矩阵同名行已由守护测试钉死一致。",
+      "G3-GAP-01": "BLOCKED",
+      "G3-GAP-02": "BLOCKED",
+      "G3-GAP-03": "BLOCKED",
+      "G3-GAP-04": "BLOCKED",
+      "G3-GAP-05": "BLOCKED",
+      "G3-GAP-06": "NOT RUN",
+      "G3-GAP-07": "NOT RUN",
+      "G3-GAP-08": "WARNING",
+      "G3-GAP-09": "PASS (follow-up)",
+      "G3-GAP-10": "PASS (follow-up)",
+      "G3-GAP-11": "PASS (follow-up)"
+    }
+  },
+  "implementation_seams": [
+    {
+      "file": "docs/08-本轮实施方案/G3-缺口清单-246-副本.md",
+      "lines": "1-14（镜像与同步规则说明）、20-34（11 条缺口表）、36-49（承接票清单表）、51-（逐条缺口小节）",
+      "note": "新增。#246 正文的仓库内镜像，供离线守护读取"
+    },
+    {
+      "file": "frontend/src/views/lingdoc/g3demo/g3Gaps.ts",
+      "lines": "1-20（文件头：镜像位置与事实基线）、62-74（接口新增 implemented / evidence 可选字段）、84（缺口清单常量）、86-384（11 条缺口的事实口径与 rowStatus）",
+      "note": "既有导出符号 G3_GAP_LIST_ISSUE / G3_IMPLEMENTATION_GAPS / gapsForRow / gapIdsForRow / limitingGapsForRow / limitingGapIdsForRow 与调用方（G3Demo.vue、g3Export.ts）均未破坏"
+    },
+    {
+      "file": "frontend/src/views/lingdoc/g3demo/g3Gaps.test.ts",
+      "lines": "24-30（镜像绝对路径）、40-107（镜像解析：缺口表与承接票清单表）、173（影响中心措辞断言改写）、242（同源守护）、287（承接票存在性守护）、307（矩阵口径一致性守护）",
+      "note": "既有断言全部保留（数量不减少），仅把与新事实冲突的那一条措辞断言改成 #257 落证后的口径"
+    }
+  ],
+  "failure_permission_recovery_coverage": {
+    "failure": "同源守护与矩阵口径守护都是**差异即红**：镜像改错状态、缺口 rowStatus 与矩阵不一致、承接票不在清单表里、标题或验收行不一致，四类偏差各有一条断言并把差异逐条打印（见 commands 第 5、7 条的真实红灯输出）",
+    "permission": "本票不涉及权限面：缺口清单是只读的事实副本，没有新增端点、没有新增写入路径；未改任何权限判定",
+    "recovery": "镜像缺失时守护**显式失败**（g3Gaps.test.ts:70-73 的 assert.ok(existsSync)），不静默跳过——静默通过等于没有这条守护；恢复办法是把镜像文件补回仓库根对应路径"
+  },
+  "not_run": [
+    {
+      "item": "真实页面实跑 / 后端链路",
+      "status": "N/A",
+      "reason": "本票是事实层校正，只改前端常量副本与仓库内文档，不改后端代码、契约、迁移与页面渲染；没有需要连真实服务复跑的行为面"
+    },
+    {
+      "item": "把镜像内容回写 GitHub Issue #246 正文",
+      "status": "NOT RUN",
+      "reason": "按本票约束不调用 gh（本机网络需代理且不稳定）；回写由主会话用本文件的内容执行"
+    }
+  ],
+  "environment_limits": [
+    "本机没有检索 provider，#258（G3-GAP-08）的真实 ResearchRun 回执造不出来——该缺口在清单里按环境限制记 WARNING，矩阵行 G3.6 仍是 TODO。本票未触碰该环境事实。"
+  ],
+  "uncovered_risks": [
+    "矩阵行 g3Matrix.ts 由并行开发中的另一个人持有：本票只做**单向**一致性断言（缺口 rowStatus == 矩阵同名行 status）。若对方后续改动矩阵行状态而不同步缺口清单，这条守护会红——这是设计意图，但意味着两边都要改。",
+    "#246 正文尚未回写：在主会话回写之前，GitHub 上的 #246 与本镜像仍不一致；按镜像的定义，此时以镜像为准。",
+    "镜像的解析是**表格式**解析（按 `| G3-GAP-` 前缀与列序），改镜像的表格写法（换列序、改分隔符）会让守护解析不到条目——解析不到会因条数不等而红，不会静默放过。"
+  ],
+  "follow_up": [
+    "主会话把 docs/08-本轮实施方案/G3-缺口清单-246-副本.md 的内容回写 #246 正文。",
+    "本镜像与 g3Gaps.ts 的任何后续事实变更，必须同时改两处；守护测试会挡住只改一处的情况。"
+  ]
+}
