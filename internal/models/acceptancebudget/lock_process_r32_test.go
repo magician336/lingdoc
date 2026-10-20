@@ -159,10 +159,12 @@ func TestR32CrossProcessOwnerExcludesStaleAndLateRenewedContender(t *testing.T) 
 	if _, err := input.Write([]byte("q")); err != nil {
 		t.Fatal(err)
 	}
+	if err := input.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Wait(); err != nil {
 		t.Fatalf("owned helper failed: %v: %s", err, output.String())
 	}
-	input.Close()
 }
 
 func TestR32CrashReleasesKernelGuardWithoutWaitingForLeaseAge(t *testing.T) {
