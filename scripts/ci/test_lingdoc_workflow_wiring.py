@@ -155,7 +155,7 @@ class WorkflowWiringTests(unittest.TestCase):
             text = (WORKFLOWS / name).read_text(encoding="utf-8")
             with self.subTest(workflow=name):
                 self.assertIn("scripts/ci/lingdoc_gate_decision.py", text)
-                self.assertNotIn("lingdoc_change_scope.py", text)
+                self.assertNotRegex(text, r"lingdoc_\w*_scope\.py")
 
     def test_the_scope_job_declares_exactly_the_keys_of_its_own_jobs(self):
         for name in GATED_WORKFLOWS:
@@ -184,6 +184,59 @@ class WorkflowWiringTests(unittest.TestCase):
                         self.assertTrue(condition.startswith(expected))
                     else:
                         self.assertEqual(condition, expected)
+
+
+class GateStepWiringTests(unittest.TestCase):
+    """The steps of the pull request gate read one decision boolean each.
+
+    The pull request gate is a *step-level* gate: its job always runs and its
+    steps are skipped one by one.  These three mistakes stay silent in CI --
+    a step that decides the formatting-only shortcut a second time, a step
+    that keeps running when the shortcut says otherwise, and a step whose
+    condition combines two booleans -- so they are guarded here.
+    """
+
+    REVIEW = "lingdoc-review.yml"
+
+    def _steps(self, name: str) -> list[dict]:
+        steps: list[dict] = []
+        for job in jobs_of(name).values():
+            steps.extend(job.get("steps") or [])
+        return steps
+
+    def test_the_lint_job_keeps_running(self):
+        # Lint is the judge of whether an update is well formatted, so it
+        # must not be skipped by the rule it judges.
+        condition = str(jobs_of("go-lint.yml")["changes"].get("if", ""))
+        self.assertNotIn("format_only", condition)
+        surface = next(surface for surface in manifest.load_surfaces()
+                       if surface.name == "go-lint")
+        self.assertFalse(surface.skipped_on_format_only,
+                         "the lint surface must not be skipped on a formatting-only "
+                         "update")
+
+    def test_the_contract_validation_steps_keep_running(self):
+        contract_steps = [step for step in self._steps(self.REVIEW)
+                          if "contracts" in str(step.get("if", ""))
+                          and "provider_tests" not in str(step.get("if", ""))]
+        self.assertTrue(contract_steps, "the contract validation steps were not found")
+        for step in contract_steps:
+            self.assertNotIn("format_only", str(step.get("if", "")))
+
+    def test_the_provider_and_frontend_steps_are_gated(self):
+        gated = [step for step in self._steps(self.REVIEW)
+                 if "run_providers" in str(step.get("if", ""))
+                 or ("run_frontend" in str(step.get("if", ""))
+                     and "contracts" not in str(step.get("if", "")))]
+        self.assertTrue(gated, "the provider and frontend steps were not found")
+        for step in gated:
+            # One boolean each: the decision module already folded the
+            # formatting-only shortcut into it.
+            condition = str(step.get("if", ""))
+            self.assertNotIn("format_only", condition)
+            self.assertNotIn("&&", condition)
+            self.assertRegex(condition,
+                             r"steps\.scope\.outputs\.run_(providers|frontend) == 'true'")
 
 
 if __name__ == "__main__":

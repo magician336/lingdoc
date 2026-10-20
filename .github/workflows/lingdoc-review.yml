@@ -58,7 +58,7 @@ jobs:
 
       - name: Test gate selection
         id: selftest
-        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_pr_scope.py' -v
+        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_gate_decision.py' -v
 
       # The gate asks the decision module for the decision.  The module reads
       # only Git and the gate surface manifest, publishes the decision as the
