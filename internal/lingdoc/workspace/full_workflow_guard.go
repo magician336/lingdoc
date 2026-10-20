@@ -150,6 +150,7 @@ func (s *GuardedDeliveryRelease) Check(ctx context.Context, user, pid string, ex
 	if err = s.attachIssueDispositions(ctx, user, pid, &out); err != nil {
 		return out, err
 	}
+	delivery.ApplyDispositions(&out)
 	preflight, err := delivery.EvaluateTemplateScene(input, "preflight")
 	if err != nil {
 		return out, err

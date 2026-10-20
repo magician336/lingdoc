@@ -190,8 +190,17 @@ func ValidateRuleSnapshotReceipt(snapshot ReleaseSnapshot) error {
 	if fresh.Status != CheckPassed || fresh.RulesetHash != snapshot.Check.RulesetHash || snapshot.Check.Status != CheckPassed {
 		return ErrExportPreflightBlocked
 	}
-	// Human disposition is workflow metadata; it cannot manufacture new findings
-	// or alter an evaluator's severity, identity, evidence, or version.
+	// A human disposition is workflow metadata: it cannot manufacture new
+	// findings or alter an evaluator's severity, identity, evidence, or
+	// version. It does change one thing — whether the finding still blocks
+	// (see BlockingIssues) — and that question is answered by the published
+	// evaluation, not by this receipt.
+	//
+	// The receipt therefore replays the **disposition-free** evaluation on
+	// purpose: its subject is "the frozen rule snapshot still produces these
+	// findings". A dismissed finding still blocks the export receipt, because
+	// the receipt is not the delivery gate: the delivery gate is the
+	// stabilization of the revision, which a dismissal does not unblock.
 	old := snapshot.Check
 	old.ReceiptID = ""
 	old.Issues = cloneIssues(old.Issues)
