@@ -151,6 +151,9 @@ jobs:
           CONTRACTS: ${{ steps.contracts.outcome }}
           PROVIDERS: ${{ steps.providers.outcome }}
           FRONTEND: ${{ steps.frontend.outcome }}
+          SURFACE: ${{ steps.scope.outputs.surface }}
+          REASON: ${{ steps.scope.outputs.reason }}
+          BASE: ${{ steps.scope.outputs.base }}
         run: |
           python - <<'PY'
           import json, os
@@ -158,6 +161,11 @@ jobs:
           result = {key.lower(): os.environ[key] for key in
                     ('SELFTEST', 'CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
           result['tested_sha'] = os.environ['GITHUB_SHA']
+          # The surface says what was tested, the reason says why that surface
+          # was chosen, and the base says which baseline it was judged against.
+          result['surface'] = os.environ.get('SURFACE', '')
+          result['reason'] = os.environ.get('REASON', '')
+          result['base'] = os.environ.get('BASE', '')
           result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
           folder.mkdir(exist_ok=True)
@@ -166,6 +174,9 @@ jobs:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
               for key in ('selftest', 'ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
+              handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
+              handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
+              handle.write(f'Base: {result["base"] or "(not recorded)"}\n')
               handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
               handle.write(result['boundary'] + '\n')
           PY

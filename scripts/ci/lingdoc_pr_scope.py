@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import lingdoc_format_scope
+import lingdoc_risk_surface as risk_surface
 
 PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence",
                   "internal/models/acceptancebudget", "cmd/acceptance-budget-reconcile")
@@ -131,16 +132,22 @@ def main() -> None:
     event: dict = {}
     if args.all:
         paths, diff_range, whitespace_range = [], None, None
-        scope = dict.fromkeys(("contracts", "backend", "frontend"), True)
+        decision = risk_surface.full_decision(root, "full scope requested")
     else:
         if args.event is None:
             parser.error("--event or GITHUB_EVENT_PATH is required")
         event = json.loads(args.event.read_text(encoding="utf-8"))
-        diff_range, paths, scope = select_paths(root, event, args.latest)
+        diff_range, paths, _ = select_paths(root, event, args.latest)
         # Latest-update scope may include upstream merge commits. Whitespace is
         # always checked over the complete PR, including earlier topic commits.
         whitespace_range = git_range(event)
-    packages = provider_packages(root) if scope["backend"] else []
+        decision = risk_surface.decide_or_full(root, event)
+    # The area flags describe the pull request's own contribution, not the last
+    # push: a documentation-only push must not shrink the area a later
+    # baseline merge is judged against.
+    scope = classify(list(decision.contribution))
+    packages = list(decision.provider_packages) if decision.run_targeted else []
+    frontend = bool(scope["frontend"]) and decision.run_targeted
     format_only, format_reasons = (False, ["the formatting-only fast path does not apply to this event"])
     if not args.all and lingdoc_format_scope.fast_path_applies(event)[0]:
         format_only, format_reasons = lingdoc_format_scope.format_only_update(root, diff_range)
@@ -148,15 +155,21 @@ def main() -> None:
               "whitespace_diff_range": whitespace_range, "changed_paths": paths,
               "provider_packages": packages,
               "format_only": format_only, "format_reasons": format_reasons,
+              "decision": decision.as_outputs(),
               "note": "Selection only; not a test result or an approval."}
     print(json.dumps(report, ensure_ascii=True, indent=2))
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as handle:
-            for key, value in scope.items():
-                handle.write(f"{key}={str(value).lower()}\n")
+            handle.write(f"contracts={str(bool(scope['contracts'])).lower()}\n")
+            handle.write(f"backend={str(bool(scope['backend'])).lower()}\n")
+            handle.write(f"frontend={str(frontend).lower()}\n")
             handle.write(f"provider_tests={str(bool(packages)).lower()}\n")
             handle.write(f"format_only={str(format_only).lower()}\n")
             handle.write(f"format_reasons={' | '.join(format_reasons)}\n")
+            for key, value in decision.as_outputs().items():
+                if key in ("contracts", "backend", "frontend", "provider_tests"):
+                    continue
+                handle.write(f"{key}={value}\n")
     check_range = whitespace_range or diff_range
     if check_range:
         subprocess.run(["git", "diff", "--check", check_range, "--"], cwd=root, check=True, stdout=sys.stderr)

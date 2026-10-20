@@ -18,6 +18,7 @@ import sys
 from typing import Any
 
 import lingdoc_format_scope
+import lingdoc_risk_surface as risk_surface
 
 
 def _run_git(root: Path, *args: str) -> str:
@@ -157,7 +158,12 @@ def main() -> None:
     event = json.loads(Path(args.event).read_text(encoding="utf-8"))
     diff_range, forced, paths = select_paths(root, event)
     patterns = [line.strip() for line in args.patterns.splitlines() if line.strip()]
-    should_run = forced or matches(paths, patterns)
+    # The trigger follows the pull request's own contribution, not the last
+    # push: a baseline merge changes no contribution, so the repository-wide
+    # suites stay away while the targeted checks re-test the contribution
+    # against the new baseline.
+    decision = risk_surface.decide_or_full(root, event)
+    should_run = forced or (decision.run_code and matches(list(decision.contribution), patterns))
     format_only, format_reasons = (False, ["the formatting-only fast path does not apply to this event"])
     if lingdoc_format_scope.fast_path_applies(event)[0]:
         format_only, format_reasons = lingdoc_format_scope.format_only_update(root, diff_range)
@@ -169,6 +175,7 @@ def main() -> None:
         "patterns": patterns,
         "format_only": format_only,
         "format_reasons": format_reasons,
+        "decision": decision.as_outputs(),
     }
     print(json.dumps(output, ensure_ascii=True, indent=2))
     if output_path := os.environ.get("GITHUB_OUTPUT"):
@@ -177,6 +184,8 @@ def main() -> None:
             handle.write(f"changed_paths={len(paths)}\n")
             handle.write(f"format_only={str(format_only).lower()}\n")
             handle.write(f"format_reasons={' | '.join(format_reasons)}\n")
+            for key, value in decision.as_outputs().items():
+                handle.write(f"{key}={value}\n")
 
 
 if __name__ == "__main__":
