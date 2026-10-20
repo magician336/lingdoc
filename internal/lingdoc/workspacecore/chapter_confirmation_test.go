@@ -48,7 +48,7 @@ func TestChapterConfirmedAcceptsACompleteMatchingRecord(t *testing.T) {
 // condition decides the answer.
 func TestChapterConfirmedRejectsEachIncompleteOrStaleRecord(t *testing.T) {
 	cases := []struct {
-		name  string
+		name   string
 		mutate func(fact *ChapterConfirmationFact)
 	}{
 		{"the record is not valid", func(f *ChapterConfirmationFact) { f.Valid = false }},
