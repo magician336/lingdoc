@@ -26092,7 +26092,8 @@
                           "context_revision": 1,
                           "actor_id": "synthetic-actor-id",
                           "reason": "本人核对合成范围后明确提交此操作",
-                          "updated_at": "2026-10-18T00:00:00Z"
+                          "updated_at": "2026-10-18T00:00:00Z",
+                          "targets": []
                         }
                       ],
                       "request_id": "synthetic-contract-example",
