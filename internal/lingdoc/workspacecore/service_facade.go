@@ -1435,7 +1435,7 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 			}
 			if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
 				if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-					return operationResult[Project]{}, ErrInvalidState
+					return operationResult[Project]{}, ErrRuleSetStateNotAllowed
 				}
 				return operationResult[Project]{}, ErrInvalidRequest
 			}
@@ -1944,7 +1944,7 @@ func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, c
 	}
 	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
 		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-			return lingdoctemplate.Template{}, ErrInvalidState
+			return lingdoctemplate.Template{}, ErrRuleSetStateNotAllowed
 		}
 		return lingdoctemplate.Template{}, ErrInvalidRequest
 	}
@@ -2025,7 +2025,7 @@ func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, act
 	}
 	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
 		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-			return ErrInvalidState
+			return ErrRuleSetStateNotAllowed
 		}
 		return fmt.Errorf("%w: current RuleSet snapshot is invalid", ErrInvalidState)
 	}
