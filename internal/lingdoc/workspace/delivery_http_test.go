@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
@@ -208,15 +209,21 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 		t.Fatalf("stored disposition = %+v, want a blocking dismissal", stored)
 	}
 
+	// 「误报删除」进入求值：这条阻断级问题被误报删除之后，它**不再阻断当次求值**。
+	// 求值结论因此从 blocked 变成 passed——这是 AC-G3-09 的后半段，此前不成立。
 	request = deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, "")
 	request = request.WithContext(context.WithValue(request.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
 	checkedAgain := deliveryServe(router, request)
 	if checkedAgain.Code != http.StatusOK {
 		t.Fatalf("repeat check = %d: %s", checkedAgain.Code, checkedAgain.Body.String())
 	}
-	if err := json.Unmarshal(decodeDeliveryEnvelope(t, checkedAgain).Data, &result); err != nil || result.Status != delivery.CheckBlocked {
-		t.Fatalf("disposition changed the blocking gate: result=%+v err=%v", result, err)
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, checkedAgain).Data, &result); err != nil {
+		t.Fatalf("decode repeat check: %v", err)
 	}
+	if result.Status != delivery.CheckPassed {
+		t.Fatalf("dismissed finding still blocks the evaluation: result=%+v", result)
+	}
+	// 求值结果必须写明「这条问题被误报删除了」这一事实：问题仍在清单里，带着处置。
 	var found bool
 	for _, current := range result.Issues {
 		if current.ID == issue.ID {
@@ -246,11 +253,38 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 		t.Fatalf("POST releases = %d: %s", frozen.Code, frozen.Body.String())
 	}
 	var snapshot delivery.ReleaseSnapshot
-	if err := json.Unmarshal(decodeDeliveryEnvelope(t, frozen).Data, &snapshot); err != nil || snapshot.Check.Status != delivery.CheckBlocked {
-		t.Fatalf("frozen disposition gate = %+v err=%v", snapshot.Check, err)
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, frozen).Data, &snapshot); err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	// 冻结与检查是同一份求值：误报删除过的阻断问题同样不再阻断。
+	if snapshot.Check.Status != delivery.CheckPassed {
+		t.Fatalf("frozen disposition gate = %+v, want the dismissed finding to stop blocking", snapshot.Check)
 	}
 	if err := db.Exec("UPDATE lingdoc_projects SET project_version = project_version + 1 WHERE id = ?", "project-1").Error; err != nil {
 		t.Fatal(err)
+	}
+	// 绑定不匹配：项目版本一变，旧处置不再生效，问题重新出现并再次阻断。
+	rebound := deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", `{"expected_project_version":9}`, "")
+	rebound = rebound.WithContext(context.WithValue(rebound.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	reboundResponse := deliveryServe(router, rebound)
+	if reboundResponse.Code != http.StatusOK {
+		t.Fatalf("check after the project advanced = %d: %s", reboundResponse.Code, reboundResponse.Body.String())
+	}
+	var reboundResult delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, reboundResponse).Data, &reboundResult); err != nil {
+		t.Fatalf("decode rebound check: %v", err)
+	}
+	if reboundResult.Status != delivery.CheckBlocked {
+		t.Fatalf("a stale disposition still unblocks the evaluation: result=%+v", reboundResult)
+	}
+	var reapplied bool
+	for _, current := range reboundResult.Issues {
+		if current.ID == issue.ID {
+			reapplied = current.Disposition != nil
+		}
+	}
+	if reapplied {
+		t.Fatal("a disposition recorded for another project version leaked onto the new one")
 	}
 	lateRetry := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
 		`{"expected_project_version":8,"action":"dismiss","reason":"经核对属于不适用项"}`, "issue-action-001")
@@ -258,6 +292,164 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 	lateResponse := deliveryServe(router, lateRetry)
 	if lateResponse.Code != http.StatusCreated || !decodeDeliveryEnvelope(t, lateResponse).Meta.Replayed {
 		t.Fatalf("late same-key retry after project advanced = %d: %s", lateResponse.Code, lateResponse.Body.String())
+	}
+}
+
+// 绑定不匹配的第二种：目标版本变了。处置只对**当时那条**问题生效；章节出了新
+// 版本之后，同一条规则判断重新出现并再次阻断——项目版本一动，处置只是不再匹配，
+// 但这条断言要证明的是：绑定里的目标版本一变，处置就失效。
+func TestDismissalStopsApplyingWhenTheTargetVersionChanges(t *testing.T) {
+	handler, db, _ := seedBoundSource(t)
+	seedDeliveryWorkspace(t, db, deliveryEmptyChapter(), deliveryMethodChapter())
+	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS lingdoc_operations (
+			tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, operation TEXT NOT NULL,
+			target TEXT NOT NULL, key TEXT NOT NULL, body_hash TEXT NOT NULL,
+			response_json TEXT NOT NULL, response_code INTEGER NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (tenant_id, user_id, operation, target, key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
+			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare workspacecore persistence: %v", err)
+		}
+	}
+	core, ok := testRuntime(handler).service.(*Service)
+	if !ok {
+		t.Fatalf("workspace application = %T, want *Service", testRuntime(handler).service)
+	}
+	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
+	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)
+	router := deliveryRoutes(NewDeliveryHandler(release))
+	checked := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, ""))
+	if checked.Code != http.StatusOK {
+		t.Fatalf("POST checks = %d: %s", checked.Code, checked.Body.String())
+	}
+	var result delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, checked).Data, &result); err != nil {
+		t.Fatalf("decode check result: %v", err)
+	}
+	if result.Status != delivery.CheckBlocked || len(result.Issues) == 0 {
+		t.Fatalf("check = %+v, want a blocked result", result)
+	}
+	issue := result.Issues[0]
+	if issue.Severity != delivery.SeverityBlocking {
+		t.Fatalf("issue = %+v, want a blocking rule issue", issue)
+	}
+	dismiss := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"dismiss","reason":"经核对属于不适用项"}`, "issue-target-001")
+	dismiss = dismiss.WithContext(context.WithValue(dismiss.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	if response := deliveryServe(router, dismiss); response.Code != http.StatusCreated {
+		t.Fatalf("POST issue disposition = %d: %s", response.Code, response.Body.String())
+	}
+	dismissed := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, ""))
+	var after delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, dismissed).Data, &after); err != nil {
+		t.Fatalf("decode check after the dismissal: %v", err)
+	}
+	if after.Status != delivery.CheckPassed {
+		t.Fatalf("the dismissed finding still blocks: %+v", after)
+	}
+
+	// 章节出��新版本：确认记录还钉在旧版本上，于是同一条规则判断重新出现。
+	if err := db.Exec("INSERT INTO lingdoc_chapter_versions (id, project_id, chapter_id, body_markdown, source_ids_json, citation_usages_json, review_items_json, spec_revision, confirmation_valid, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"version-next", "project-1", deliveryChapterID, "新版本正文：确认记录还钉在旧版本上。", "[]", "[]", "[]", deliverySpecRevision, true, deliveryActorID,
+		time.Date(2026, time.September, 26, 10, 0, 0, 0, time.UTC)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("UPDATE lingdoc_chapters SET current_version_id = ? WHERE id = ?", "version-next", deliveryChapterID).Error; err != nil {
+		t.Fatal(err)
+	}
+	rebound := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, ""))
+	if rebound.Code != http.StatusOK {
+		t.Fatalf("check after the target version changed = %d: %s", rebound.Code, rebound.Body.String())
+	}
+	var resumed delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, rebound).Data, &resumed); err != nil {
+		t.Fatalf("decode check after the target version changed: %v", err)
+	}
+	if resumed.Status != delivery.CheckBlocked {
+		t.Fatalf("a disposition bound to another target version still unblocks: %+v", resumed)
+	}
+	for _, current := range resumed.Issues {
+		if current.Disposition != nil {
+			t.Fatalf("a stale disposition leaked onto the new target version: %+v", current)
+		}
+	}
+}
+
+// 三个动作的语义各自不变：「豁免」对阻断级仍被拒（400），「修正」不解除阻断，
+// 只有「误报删除」让问题不再阻断当次求值。
+func TestRuleIssueWaiveOnBlockingIsRejectedAndResolveKeepsBlocking(t *testing.T) {
+	handler, db, _ := seedBoundSource(t)
+	seedDeliveryWorkspace(t, db, deliveryEmptyChapter(), deliveryMethodChapter())
+	for _, statement := range []string{
+		`CREATE TABLE IF NOT EXISTS lingdoc_operations (
+			tenant_id INTEGER NOT NULL, user_id TEXT NOT NULL, operation TEXT NOT NULL,
+			target TEXT NOT NULL, key TEXT NOT NULL, body_hash TEXT NOT NULL,
+			response_json TEXT NOT NULL, response_code INTEGER NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (tenant_id, user_id, operation, target, key)
+		)`,
+		`CREATE TABLE IF NOT EXISTS lingdoc_project_audits (
+			id TEXT PRIMARY KEY, project_id TEXT NOT NULL, actor_id TEXT NOT NULL,
+			action TEXT NOT NULL, target TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		)`,
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			t.Fatalf("prepare workspacecore persistence: %v", err)
+		}
+	}
+	core, ok := testRuntime(handler).service.(*Service)
+	if !ok {
+		t.Fatalf("workspace application = %T, want *Service", testRuntime(handler).service)
+	}
+	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
+	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)
+	router := deliveryRoutes(NewDeliveryHandler(release))
+	checked := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, ""))
+	if checked.Code != http.StatusOK {
+		t.Fatalf("POST checks = %d: %s", checked.Code, checked.Body.String())
+	}
+	var result delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, checked).Data, &result); err != nil {
+		t.Fatalf("decode check result: %v", err)
+	}
+	if result.Status != delivery.CheckBlocked || len(result.Issues) == 0 || result.Issues[0].Severity != delivery.SeverityBlocking {
+		t.Fatalf("check = %+v, want a blocking rule issue", result)
+	}
+	issue := result.Issues[0]
+
+	waive := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"waive","reason":"接受风险"}`, "issue-waive-001")
+	waive = waive.WithContext(context.WithValue(waive.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	if response := deliveryServe(router, waive); response.Code != http.StatusBadRequest {
+		t.Fatalf("waive on a blocking issue = %d, want 400: %s", response.Code, response.Body.String())
+	}
+
+	resolve := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
+		`{"expected_project_version":8,"action":"resolve","reason":"按结论处置"}`, "issue-resolve-001")
+	resolve = resolve.WithContext(context.WithValue(resolve.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
+	if response := deliveryServe(router, resolve); response.Code != http.StatusCreated {
+		t.Fatalf("resolve on a blocking issue = %d, want 201: %s", response.Code, response.Body.String())
+	}
+
+	rechecked := deliveryServe(router, deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, ""))
+	if rechecked.Code != http.StatusOK {
+		t.Fatalf("repeat check = %d: %s", rechecked.Code, rechecked.Body.String())
+	}
+	var after delivery.CheckResult
+	if err := json.Unmarshal(decodeDeliveryEnvelope(t, rechecked).Data, &after); err != nil {
+		t.Fatalf("decode repeat check: %v", err)
+	}
+	if after.Status != delivery.CheckBlocked {
+		t.Fatalf("resolve must not unblock the evaluation: result=%+v", after)
 	}
 }
 

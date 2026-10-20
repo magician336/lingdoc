@@ -81,6 +81,10 @@ func RegisterImpactRoutes(group *gin.RouterGroup, service *core.Service) {
 	}
 	h := impactRoutesHandler{service}
 	r := group.Group("/projects/:projectId")
+	// The AI-proposed dependency candidates are registered here so that they
+	// live in the same project-scoped group as the dependency edges they
+	// become.
+	RegisterDependencyCandidateRoutes(group, service)
 	r.POST("/change-sets/drafts", impactRouteWrite(h, false, func(c *gin.Context, a core.Actor, k string, i core.ExtendedChangeSetInput) (json.RawMessage, int, bool, error) {
 		return service.CreateChangeDraft(c.Request.Context(), a, c.Param("projectId"), k, i)
 	}))

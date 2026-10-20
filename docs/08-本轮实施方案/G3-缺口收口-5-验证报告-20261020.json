@@ -1,0 +1,164 @@
+{
+  "ticket": "G3 缺口收口-5（#254）：误报删除进入规则问题求值（AC-G3-09 后半）",
+  "gap": "G3-GAP-10",
+  "spec": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:382-384（AC-G3-09）、§10.2（:306-308）",
+  "plan": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-gap-closure-development-plan.md（D5、D6）",
+  "adr": "docs/adr/0004-误报删除进入规则问题求值.md",
+  "branch": "feat/issue-254-misdelete-in-evaluation",
+  "head": "648515f2581345b63bfd8cbe12fe4edd31295903",
+  "head_tree": "370976294030d84b4960f5220dc02a6115b54597",
+  "merged_integration_branch": "origin/feat/g3-gap-closure = 0eb1b38（Already up to date）",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "db": "SQLite（生产迁移 000043_lingdoc_satisfied_change_sets.up.sql 为止的完整迁移链；真实 GORM + 真实 workspacecore Service + 真实审计表）",
+    "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'",
+    "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-254-misdelete-in-evaluation（独立 worktree，见 notes）"
+  },
+  "decision": {
+    "summary": "两阶段求值：delivery.Evaluate 保持纯函数，应用层读出处置后交给**一个**阻断集判定函数；两个求值器与稳定化聚合器共用这一个判定函数。",
+    "single_source_of_truth": "internal/lingdoc/delivery/blocking.go 的 BlockingIssues —— 「这条规则问题是否还阻断」只有这一处定义。两个求值器（delivery.Evaluate 与 TemplateGovernanceRuntime.Check）都走它。",
+    "rule": "阻断级问题被「误报删除」(dismiss) 后不再阻断当次求值；「修正」(resolve) 与「豁免」(waive) 不解除阻断。",
+    "boundaries": [
+      "dismiss 只解除该问题对求值的阻断：不关闭 ImpactTask、不解除稳定化阻断、不替代对象的重新确认。",
+      "处置只在绑定完全匹配时生效：规则、规则集摘要、严重度、目标、目标版本、项目版本全部一致；版本一变处置不生效，问题重新出现并再次阻断。",
+      "求值结果仍写明「该问题被误报删除」这一事实：被处置的问题仍留在 issues 清单里并带着处置记录。",
+      "resolve / waive 语义不变；waive 对 blocking 仍 400。"
+    ],
+    "second_evaluator_binding": "第二个求值器从同一条规则判断得出同一条 finding，但不发布交付链的 issue id（那是交付链的把手，不是 finding 的身份），因此按 finding 身份匹配：规则、规则集摘要、严重度、目标、目标版本、项目版本。交付链自己的读侧 Service.ValidationIssueDispositions 未改动，仍是完整绑定（含 issue id）匹配。",
+    "not_changed": [
+      "internal/lingdoc/workspace/http.go 的共享错误映射表（Spec #47 的 #262/#263 领域，本票不碰）。",
+      "影响任务侧「接受不处理」的语义（ADR 0003 已定）。",
+      "delivery.Evaluate 的纯函数性质：它仍不读处置、不读审计；合入发生在应用层。",
+      "delivery.ValidateRuleSnapshotReceipt 仍重放**不含处置**的那份求值：回执的命题是「冻结的规则快照仍然产生这些判断」，不是交付闸门；交付闸门是修订的稳定化，误报删除不解除它。"
+    ]
+  },
+  "code_seams": [
+    "internal/lingdoc/delivery/blocking.go（新增：唯一阻断集判定 BlockingIssues + ApplyDispositions）",
+    "internal/lingdoc/delivery/snapshot.go（IssueDisposition 注释更新：处置不再「不改变求值状态」）",
+    "internal/lingdoc/delivery/rule_snapshot.go（回执重放语义注释更新）",
+    "internal/lingdoc/workspace/delivery_release.go（Check 与 Prepare 在贴回处置后调用 delivery.ApplyDispositions）",
+    "internal/lingdoc/workspace/full_workflow_guard.go（GuardedDeliveryRelease.Check 同样合入）",
+    "internal/lingdoc/workspace/template_governance_runtime.go（第二个求值器：governanceRuleFindings + governanceFindingTarget + 走同一个 BlockingIssues）",
+    "internal/lingdoc/workspacecore/service_facade.go（新增 ValidationIssueDispositionsInTransaction：按 finding 身份读处置；在调用方事务里读，避免 SQLite 单连接互锁）"
+  ],
+  "passed": [
+    {
+      "id": "dismiss 后不再阻断求值（HTTP seam）",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/delivery_http_test.go TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate：真实 HTTP 路由 POST /api/v1/lingdoc/projects/project-1/issues/{id}/disposition（action=dismiss）→ 重检 POST /projects/project-1/checks，status 由 blocked 变为 passed，且该问题仍留在 issues 里并带 disposition。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate' -v"
+    },
+    {
+      "id": "任务仍 OPEN、项目仍不能稳定",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/issue_disposition_evaluation_test.go TestDismissedRuleIssueStopsBlockingTheEvaluationButNotTheProject：处置前后各跑一次真实稳定化聚合（projects.StabilizeRevision）。处置前 blockers 含 rule:chapter-confirmed 与 impact_task_open；处置后 status 仍为 BLOCKED，rule:chapter-confirmed 消失，impact_task_open 仍在；ListImpactTasks 显示仍有非 DONE 任务。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDismissedRuleIssueStopsBlockingTheEvaluationButNotTheProject' -v"
+    },
+    {
+      "id": "两个求值器同源、结论一致",
+      "status": "passed",
+      "evidence": "同上用例：稳定化聚合走的是**另一个**求值器（TemplateGovernanceRuntime.Check）。若两个求值器各写一份判定，误报删除只会影响交付链的检查，稳定化仍会被那条已被误报删除的问题挡住；用例断言处置后 rule:chapter-confirmed 不再出现在稳定化 blockers 中。判定规则本身只有一处：internal/lingdoc/delivery/blocking.go。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDismissedRuleIssueStopsBlockingTheEvaluationButNotTheProject' -v"
+    },
+    {
+      "id": "未匹配的处置不生效（项目版本）",
+      "status": "passed",
+      "evidence": "TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate 末段：项目版本 +1 后重检 → status 回到 blocked，被处置的问题不再带任何 disposition（处置不泄漏到新版本）。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate' -v"
+    },
+    {
+      "id": "未匹配的处置不生效（目标版本）",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/delivery_http_test.go TestDismissalStopsApplyingWhenTheTargetVersionChanges：章节换新版本后同一条规则判断重新出现并再次阻断，且不带旧处置。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDismissalStopsApplyingWhenTheTargetVersionChanges' -v"
+    },
+    {
+      "id": "resolve / waive 语义不变",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/delivery_http_test.go TestRuleIssueWaiveOnBlockingIsRejectedAndResolveKeepsBlocking：waive 对 blocking 返回 400；resolve 返回 201 但求值仍为 blocked。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestRuleIssueWaiveOnBlockingIsRejectedAndResolveKeepsBlocking' -v"
+    },
+    {
+      "id": "第二个求值器按 finding 身份匹配处置",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/g4_issue_disposition_finding_test.go TestValidationIssueDispositionsByFindingMatchesTheFindingNotTheIssueID：同一条 finding 换另一个 issue id 仍命中处置；目标版本 / 项目版本 / 规则集摘要任一变化即失效。",
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestValidationIssueDispositionsByFinding' -v"
+    },
+    {
+      "id": "阻断集判定只有一处",
+      "status": "passed",
+      "evidence": "internal/lingdoc/delivery/blocking_test.go 五个用例钉住判定本身（dismiss 不阻断；resolve/waive 仍阻断；非阻断级不阻断；not_evaluated 不受影响；被处置的问题不被改写）。grep 确认求值路径与稳定化路径没有第二份判定实现。",
+      "command": "go test ./internal/lingdoc/delivery/ -run 'TestBlockingIssues|TestApplyDispositions' -v"
+    },
+    {
+      "id": "术语与决策留痕",
+      "status": "passed",
+      "evidence": "GLOSSARY.md 补三条术语：误报删除（规则问题 dismiss，适用于任一严重度）、豁免（waive）、修正（resolve）；影响任务侧的「接受不处理」条目不动。docs/adr/0004-误报删除进入规则问题求值.md 记录冲突来源、选择理由与被否决的备选。",
+      "command": "人工审阅"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "PostgreSQL 隔离实例上的同组验证",
+      "reason": "本机没有 PostgreSQL 服务端二进制（C:\\Program Files\\PostgreSQL、C:\\Users\\ASUS\\scoop、WSL Ubuntu-24.04 内均无 pg_ctl/initdb；D:\\pgdata-g3gap 只是上一票遗留的数据目录），无法起隔离实例，故 NOT RUN。本票不涉及列宽或方言差异（#253 的 500 根因是审计 action 列宽，已由该票单独修复），本轮证据全部来自 SQLite 生产迁移链。",
+      "status": "NOT RUN（环境限制）"
+    },
+    {
+      "id": "G3-GAP-10 的页面实跑落证（/demo/g3）",
+      "reason": "L2 页面落证由 G3 缺口收口-8 统一完成；本票按两级完成线只要求 L1（实现完成线），对应验收行在页面实跑前只能是 PASS (follow-up)，不得判 PASS。",
+      "status": "NOT RUN（范围外）"
+    },
+    {
+      "id": "go test -race ./...（整树）",
+      "reason": "本轮按定向范围跑（delivery / workspace / workspacecore）。整树 -race 在 Windows + cgo sqlite-vec 下耗时与环境限制较大，未在本轮执行；本票未引入并发写入或共享可变状态（判定函数是纯函数，读侧在调用方事务内只读）。",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "真实模型与真实浏览器人验",
+      "reason": "本票不涉及模型调用；浏览器人验属验收台整体验收范围。",
+      "status": "NOT RUN（范围外）"
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test -count=1 ./internal/lingdoc/delivery/... ./internal/lingdoc/workspace/... ./internal/lingdoc/workspacecore/...",
+        "result": "PASS",
+        "output": [
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/delivery  4.156s",
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspace  158.083s",
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspacecore  40.660s"
+        ],
+        "note": "该次运行为提交 648515f 之后、只新增本报告文件时的最终全量定向运行（-count=1，未走缓存）。"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/delivery/... ./internal/lingdoc/workspace/... ./internal/lingdoc/workspacecore/...",
+        "result": "PASS",
+        "output": [
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/delivery  (cached)",
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspace  145.559s",
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspacecore  35.389s"
+        ],
+        "note": "提交前的同范围运行。"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go build ./internal/...",
+        "result": "PASS（无输出）"
+      },
+      {
+        "command": "gofmt -l internal/lingdoc/delivery internal/lingdoc/workspace internal/lingdoc/workspacecore",
+        "result": "PASS（无输出，无未格式化文件）"
+      }
+    ],
+    "before_fix_observation": "改动前，TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate 断言「处置不改变阻断闸门」，在处置后重检仍得到 status=blocked（这是被推翻的旧语义断言）；改动后同一条用例断言处置后 status=passed，且被处置的问题仍带 disposition 出现在清单里。"
+  },
+  "notes": [
+    "本票推翻了此前的一条代码断言：internal/lingdoc/delivery/rule_snapshot.go 里「Human disposition is workflow metadata; it cannot manufacture new findings or alter an evaluator's severity, identity, evidence, or version.」——前半句仍然成立（处置不改变判断本身），但它此前被读成「处置也不改变是否阻断」。注释已随行为一并更新。",
+    "冻结（POST /releases）与检查（POST /projects/{id}/checks）发布同一份求值结论：被误报删除的阻断问题在两处都不再阻断；快照的 issues 里仍带着该问题与它的处置。导出仍被挡住，但原因是稳定化（影响任务仍 OPEN）与回执重放的 fail-closed，不是这条规则。",
+    "术语根子：影响任务侧早有「接受不处理」，规则问题侧三个动作却没有术语条目，同名不同义正是本缺口的根子。已按 GLOSSARY.md 既有格式补齐三条。",
+    "工作树说明：本会话被分配的工作树 feat-auto-20261020-ac02c1f4 当时有另一名工作者（#255 稳定化 closure_stale）在同一目录的未提交改动，且其改动当时无法编译（declared and not used）。为避免互相破坏，本票的全部改动在独立 worktree .worktrees/issue-254-misdelete-in-evaluation 上完成；原工作树中本会话的改动已逐条撤销并复核（git status 不再包含本票文件）。",
+    "第二个求值器按 finding 身份匹配，与交付链的完整绑定匹配并不等价：交付链读侧（ValidationIssueDispositions）未改，仍要求 issue id 一致。两个读法都要求规则、规则集摘要、严重度、目标、目标版本、项目版本全部一致。"
+  ]
+}

@@ -177,8 +177,12 @@ type CheckIssue struct {
 	ChapterID        string                            `json:"-"`
 }
 
-// IssueDisposition is human workflow metadata attached to a finding. It does
-// not change the evaluator's status or satisfy any confirmation/export gate.
+// IssueDisposition is a human decision attached to one exact finding revision.
+// It does not change the evaluator's severity, identity, evidence, or version,
+// and it satisfies no confirmation or export gate. It does change one thing:
+// a dismissed finding stops blocking the evaluation it is attached to (see
+// BlockingIssues). The decision is recorded by the application layer, never by
+// the evaluator itself.
 type IssueDisposition struct {
 	Action    string    `json:"action"`
 	Reason    string    `json:"reason"`

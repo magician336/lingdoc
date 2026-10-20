@@ -27,13 +27,20 @@ type SemanticDelta struct {
 	ProposedAssetPolicy *ProjectAssetPolicy         `json:"proposed_asset_policy,omitempty"`
 	ProposedBinding     *governance.BindingOverride `json:"proposed_binding,omitempty"`
 	ProposedRoute       *RouteNode                  `json:"proposed_route,omitempty"`
+	// ProposedEdge carries a route edge change. An edge is a semantic change
+	// (it changes the prerequisite relations of the roadmap), so it travels
+	// through a ChangeSet like every other semantic delta.
+	ProposedEdge *RouteEdge `json:"proposed_edge,omitempty"`
 }
 type RouteNode struct {
-	ID              string             `json:"id"`
-	ProjectID       string             `json:"project_id"`
-	Version         int64              `json:"version"`
-	Name            string             `json:"name"`
-	Inputs          []ObjectVersionRef `json:"inputs"`
+	ID        string             `json:"id"`
+	ProjectID string             `json:"project_id"`
+	Version   int64              `json:"version"`
+	Name      string             `json:"name"`
+	Inputs    []ObjectVersionRef `json:"inputs"`
+	// Targets are the linked target objects of this node (associated outputs
+	// and claims in the minimal field set).
+	Targets         []ObjectVersionRef `json:"targets"`
 	Required        bool               `json:"required"`
 	Status          string             `json:"status"`
 	ContextRevision int64              `json:"context_revision"`
@@ -173,6 +180,8 @@ func validSemanticDelta(delta SemanticDelta) bool {
 		return delta.ProposedBinding != nil && delta.ProposedBinding.RuleID == delta.TargetID && delta.ExpectedVersion > 0
 	case "RouteNode":
 		return delta.ProposedRoute != nil
+	case "RouteEdge":
+		return delta.ProposedEdge != nil
 	}
 	return false
 }
@@ -284,6 +293,19 @@ func currentSemanticValue(tx Transaction, p Project, delta SemanticDelta) (Seman
 			out.SourceIDs = append(out.SourceIDs, state.SourceIDs...)
 		}
 		out.ProvenanceHash = hashImpactValue(node.Inputs)
+	case "RouteEdge":
+		store, ok := tx.(roadmapStore)
+		if !ok {
+			return out, ErrInvalidState
+		}
+		edge, err := store.RouteEdge(p.ID, delta.TargetID)
+		if err == ErrNotFound && delta.ExpectedVersion == 0 {
+			edge = RouteEdge{ID: delta.TargetID, ProjectID: p.ID}
+		} else if err != nil {
+			return out, err
+		}
+		out.Ref.Version = strconv.FormatInt(edge.Version, 10)
+		value = edge
 	default:
 		return out, ErrInvalidRequest
 	}
@@ -325,7 +347,7 @@ func validateSemanticProposal(tx Transaction, p Project, delta SemanticDelta) er
 		return semanticBindingError(err)
 	case "RouteNode":
 		node := delta.ProposedRoute
-		if strings.TrimSpace(node.Name) == "" || len(node.Name) > 240 || len(node.Inputs) > 100 || !slices.Contains([]string{"planned", "ready", "blocked", "retired"}, node.Status) {
+		if strings.TrimSpace(node.Name) == "" || len(node.Name) > 240 || len(node.Inputs) > 100 || !slices.Contains(RoadmapNodeStatuses, node.Status) {
 			return ErrInvalidRequest
 		}
 		if routeRequiredByRules(p, delta.TargetID) && (node.Status == "retired" || !node.Required) {
@@ -336,6 +358,23 @@ func validateSemanticProposal(tx Transaction, p Project, delta SemanticDelta) er
 				return ErrInvalidRequest
 			}
 			if _, err := currentImpactObject(tx, p, ref); err != nil {
+				return err
+			}
+		}
+	case "RouteEdge":
+		edge := delta.ProposedEdge
+		if strings.TrimSpace(edge.SourceID) == "" || strings.TrimSpace(edge.TargetID) == "" || edge.SourceID == edge.TargetID ||
+			strings.TrimSpace(edge.Relation) == "" || len(edge.Relation) > 64 {
+			return ErrInvalidRequest
+		}
+		// Both endpoints must be route nodes of this project: an edge between
+		// objects that do not exist is not a relation the roadmap can hold.
+		for _, id := range []string{edge.SourceID, edge.TargetID} {
+			store, ok := tx.(semanticTransaction)
+			if !ok {
+				return ErrInvalidState
+			}
+			if _, err := store.RouteNode(p.ID, id); err != nil {
 				return err
 			}
 		}
@@ -497,6 +536,28 @@ func (s *Service) ApplySemanticDeltas(ctx context.Context, tx Transaction, actor
 				if err := StoreConfirmedDependency(tx, DependencyEdge{ProjectID: before.ID, Source: ref, Target: ObjectVersionRef{Kind: "RouteNode", ID: node.ID, Version: strconv.FormatInt(node.Version, 10)}, Relation: "route_input", Action: "REVIEW_REQUIRED", Origin: "user", ActorID: actor.UserID, Reason: change.Reason}); err != nil {
 					return err
 				}
+			}
+		case "RouteEdge":
+			edgeStore, ok := tx.(roadmapStore)
+			if !ok {
+				return ErrInvalidState
+			}
+			oldEdge, err := edgeStore.RouteEdge(before.ID, delta.TargetID)
+			if err == ErrNotFound && delta.ExpectedVersion == 0 {
+				oldEdge = RouteEdge{ID: delta.TargetID, ProjectID: before.ID}
+			} else if err != nil {
+				return err
+			}
+			edge := *delta.ProposedEdge
+			edge.ID = delta.TargetID
+			edge.ProjectID = before.ID
+			edge.Version = oldEdge.Version + 1
+			edge.ContextRevision = next.CurrentContextRevision
+			edge.ActorID = actor.UserID
+			edge.Reason = change.Reason
+			edge.UpdatedAt = time.Now().UTC()
+			if err := edgeStore.InsertRouteEdge(edge); err != nil {
+				return err
 			}
 		}
 		if err := recordAuditEvent(tx, actor, before.ID, "semantic.apply", delta.TargetID, map[string]any{"kind": delta.Kind, "before_hash": delta.BeforeHash, "target_context_revision": next.CurrentContextRevision}); err != nil {

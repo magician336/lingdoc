@@ -1,0 +1,101 @@
+{
+  "ticket": "#257（G3 缺口收口-9）：验收台在当前 head 重跑与全量落证",
+  "head_at_evidence": "a87459f72e2577cfe0596b28c4dc9112f713c72b",
+  "base": "origin/feat/g3-gap-closure",
+  "mode": "real",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "go": "go1.27.1 windows/amd64",
+    "backend": "本地真实服务进程：go build ./cmd/server，编译期注入 CommitID=a87459f72e2577cfe0596b28c4dc9112f713c72b（/api/v1/system/info 实读一致），SQLite（db_version=45，即 SQLite 迁移 000044/000045 已生效），端口 41234",
+    "frontend": "Vite dev server（frontend/，VITE_DEV_PROXY_TARGET 指向本地后端），页面 /demo/g3",
+    "postgres": "隔离实例 PostgreSQL 18.3（127.0.0.1:55432，user/dbname=lingdoc_test）"
+  },
+  "commands": [
+    {
+      "command": "python scripts/acceptance/lingdoc_backend_closeout.py --output-dir .acceptance-257 --require-postgres（注入 LINGDOC_TEST_POSTGRES_DSN 指向隔离 PG）",
+      "result": "15 个场景 PASS（sqlite_migrations / postgres_migration / source_revocation_download_auth / version_conflict / duplicate_idempotency / response_lost_after_commit / provider_timeout / task_cancellation / restart_readback / corrupted_file_recovery / postgres_failure_recovery / ruleset_metrics / postgres_migration_rollback_roundtrip / real_provider_timeout(PASS follow-up) / production_migration_rollback(N/A)）；1 个场景 FAIL：full_server_restart，报「server shutdown returned exit 1」"
+    },
+    {
+      "command": "full_server_restart 场景的 Windows 复核：同一脚本的本地副本只放宽关停断言（Windows 的 Popen.terminate() 是 TerminateProcess，立即杀进程且退出码为 1，不是优雅关停），其余一字不改",
+      "result": "PASS：「server process restarted; same SQLite database, access token, and LingDoc project read back」。该场景的功能面在 Windows 上成立；原脚本失败是 POSIX 退出码期望与 Windows 进程语义不一致，不是产品缺陷。"
+    },
+    {
+      "command": "go test -count=1 ./internal/lingdoc/delivery/... ./internal/lingdoc/workspace/... ./internal/lingdoc/workspacecore/... ./internal/container/... ./internal/database/... ./internal/lingdoc/rulesetstore/... ./internal/lingdoc/templategovernance/...",
+      "result": "PASS（delivery 4.3s / workspace 144.8s / workspacecore 40.0s / container 3.4s / database 5.7s / rulesetstore 5.8s / templategovernance 7.9s），合并最新 main 并迁移错误形态之后复跑"
+    },
+    {
+      "command": "LINGDOC_TEST_POSTGRES_DSN=... go test -count=1 -p 1 -v ./internal/lingdoc/workspacecore/... ./internal/lingdoc/rulesetstore/... ./internal/lingdoc/templategovernance/... ./internal/container/...",
+      "result": "PASS（workspacecore 75.9s / rulesetstore 8.0s / templategovernance 10.4s / container 4.8s）。PG 用例 8 个全 PASS：TestPostgresDependencyCandidateBatchAndDecision、TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth、TestPostgresMigrationAndRepositoryContract、TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory、TestRoadmapMigrationGoesUpAndDownOnPostgres、TestPostgresRuleSetMigrationAndLifecycle、TestPostgresCatalogSchemaLifecycleAndAuditRollback、TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres"
+    },
+    {
+      "command": "浏览器实跑 /demo/g3（真实模式）：「创建演示账号并运行」→ 四条确定性链 + 模型链",
+      "result": "PASS：自建演示账号 g3demo-048190dbe2@example.com、运行标识 g3r-mvgonv7v-e82f5806、自建隔离项目 42c8a61f-bc88-4cd2-a1b6-5577f6ac99d8、激活后 question/method 两章就绪；变更集表读到 4 条真实变更集（局部影响 / 并发同基线 / 重评估记录 / 逆向撤销），状态均为 assessed，血缘字段 reassessed_from 与 reverses 均由服务端返回"
+    },
+    {
+      "command": "cd frontend && npx tsx scripts/g3demo/run-evidence.ts --live（G3_BASE_URL 指向当前 head 的本地后端）",
+      "result": "PASS：运行标识 g3r-mvgqpt88-7b4e074d，head a87459f72e2577cfe0596b28c4dc9112f713c72b（与后端 /api/v1/system/info 实读一致），前置链完成（项目 7525749c-5314-4e29-9fc8-04e2272e66a3），62 条步骤、4 条判定，导出落盘 docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json"
+    }
+  ],
+  "acceptance_matrix": {
+    "rows": 23,
+    "judged_from_this_run": [
+      { "id": "G3.1", "status": "PASS" },
+      { "id": "G3.6", "status": "WARNING", "note": "覆盖受限 G3-GAP-08" },
+      { "id": "G3.7", "status": "NOT RUN", "note": "缺口 G3-GAP-06/G3-GAP-07" },
+      { "id": "AC-G3-01", "status": "PASS" },
+      { "id": "AC-G3-02", "status": "PASS" },
+      { "id": "AC-G3-04", "status": "PASS (follow-up)", "note": "覆盖受限 G3-GAP-06/G3-GAP-07" },
+      { "id": "AC-G3-05", "status": "PASS" },
+      { "id": "AC-G3-06", "status": "WARNING" },
+      { "id": "AC-G3-07", "status": "PASS (follow-up)" },
+      { "id": "AC-G3-09", "status": "PASS (follow-up)", "note": "缺口 G3-GAP-09/G3-GAP-10" },
+      { "id": "AC-G3-10", "status": "PASS (follow-up)", "note": "历史快照 · 非本次运行" },
+      { "id": "AC-G3-11", "status": "PASS" },
+      { "id": "AC-G3-12", "status": "PASS (follow-up)", "note": "覆盖受限 G3-GAP-11" },
+      { "id": "AC-G3-13", "status": "PASS" },
+      { "id": "AC-G3-14", "status": "PASS (follow-up)", "note": "缺口 G3-GAP-04" },
+      { "id": "AC-G3-15", "status": "PASS (follow-up)", "note": "缺口 G3-GAP-05" }
+    ],
+    "still_blocked": [
+      { "id": "AC-G3-03", "status": "BLOCKED", "gap": "G3-GAP-01", "reason": "验收台没有覆盖受控故障注入的链路；该能力按设计是环境变量装配的组合根夹具，不是产品端点" },
+      { "id": "AC-G3-08", "status": "BLOCKED", "gap": "G3-GAP-02", "reason": "验收台没有覆盖路线图编辑会话（提案 / 提交 / 取消）的链路" },
+      { "id": "AC-G3-16", "status": "BLOCKED", "gap": "G3-GAP-03", "reason": "同上：路线图版本比较与恢复没有验收台链路" }
+    ],
+    "not_judged": [
+      { "id": "G3.2", "status": "TODO" },
+      { "id": "G3.3", "status": "TODO" },
+      { "id": "G3.4", "status": "TODO" },
+      { "id": "G3.5", "status": "TODO" }
+    ]
+  },
+  "not_run": [
+    {
+      "item": "AC-G3-03 / AC-G3-08 / AC-G3-16 的验收台链路",
+      "status": "NOT RUN",
+      "reason": "验收台的执行器（frontend/src/views/lingdoc/g3demo/runner/）尚未包含这三行的步骤：受控故障注入是组合根按环境变量装配的夹具（页面无法触发），路线图编辑会话与版本比较需要新增链路步骤。已另开跟踪票。"
+    },
+    {
+      "item": "真实模型下的三条非确定性验收项（助手草稿 / 批量候选依赖）",
+      "status": "NOT RUN",
+      "reason": "本机没有真实模型凭据；验收台对这三条按约定记 NOT RUN 并写明原因，其余行照常判定。"
+    },
+    {
+      "item": "full_server_restart 场景在原脚本下的 PASS",
+      "status": "NOT RUN（原脚本在 Windows 上不成立）",
+      "reason": "原脚本断言关停退出码为 0，这是 POSIX 优雅关停的期望；Windows 的 Popen.terminate() 是立即杀进程（退出码 1）。功能面已用只放宽这一条断言的本地副本验证为 PASS。"
+    }
+  ],
+  "environment_limits": [
+    "端口 8080 被上一轮会话遗留的旧构建进程占用（它的 /api/v1/system/info 报 commit_id=unknown、started_at 早于本轮）。本轮的全部实时链路改在 41234 上对着当前 head 的构建跑；因此「后端 head」以 /api/v1/system/info 的实读值为准，不用端口反推。",
+    "聚合导出 G3-验收台-8-整链证据-20261020.json 仍包含上一轮按链分文件的历史证据（head 7f5fd8c），所以聚合体的 head 显示「已过期」；绑定当前 head 的是本次运行文件 G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json。两份打在同一台机器上的旧构建（head unknown）的中间产物已删除，避免误引。"
+  ],
+  "uncovered_risks": [
+    "验收台的链路没有覆盖本轮新增的三类能力，AC-G3-03 / AC-G3-08 / AC-G3-16 仍是 BLOCKED——这三行的判定缺的不是实现，而是验收台的可执行步骤。",
+    "本轮实时链路跑在本地 SQLite 上；PG 侧只覆盖了迁移与仓库契约层（8 个 PG 用例），没有把整条验收链在 PG 上重跑。"
+  ],
+  "follow_up": [
+    "给验收台补三条链路步骤：路线图编辑会话（提案 / 提交 / 取消 / 版本比较）、受控故障注入的可观测口径、助手两组说明与依赖候选批次的读回。",
+    "把 full_server_restart 的关停断言改成按平台区分（Windows 接受立即杀进程的非零退出码），否则该场景在 Windows 上永远红。",
+    "在有真实模型凭据的环境重跑模型三项（非确定性结论，按约定记 WARNING）。"
+  ]
+}
