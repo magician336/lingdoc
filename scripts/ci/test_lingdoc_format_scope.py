@@ -305,33 +305,49 @@ class WorkflowWiringTests(unittest.TestCase):
         document = yaml.safe_load((self.WORKFLOWS / name).read_text(encoding="utf-8"))
         return document.get("jobs") or {}
 
-    def test_every_test_job_is_gated_on_format_only(self):
+    def test_every_test_job_reads_the_decision_of_the_gate(self):
+        # A formatting-only update keeps the meaning of the code, so the test
+        # matrix does not have to run again for it.  The decision module
+        # folds that shortcut into its verdict, so a test job reads the
+        # verdict and never the shortcut itself.
         for name, jobs in self.TEST_JOBS.items():
             document = self.load(name)
             for job in jobs:
                 condition = document[job].get("if", "")
-                self.assertIn("format_only", condition,
-                              f"{name}: job {job} runs the test matrix and must skip a formatting-only update")
+                self.assertIn("needs.scope.outputs.", condition,
+                              f"{name}: job {job} must read the decision of the gate")
+                self.assertNotIn("format_only", condition,
+                                 f"{name}: job {job} must not decide the "
+                                 f"formatting-only shortcut a second time")
 
-    def test_every_gated_workflow_declares_the_format_only_output(self):
+    def test_every_gated_workflow_declares_the_output_its_jobs_read(self):
         # A job's outputs are an **explicit allow-list**: a step that writes
-        # `format_only` to GITHUB_OUTPUT does not make it visible as
-        # `needs.scope.outputs.format_only` unless the scope job declares it.
+        # the decision to GITHUB_OUTPUT does not make it visible as
+        # `needs.scope.outputs.<name>` unless the scope job declares it.
         # When it is missing, the gate below reads an empty string, the
-        # comparison is true, and the job silently runs the full matrix —
-        # the rule looks wired but does nothing.
-        for name in self.TEST_JOBS:
+        # comparison is false, and the job is silently skipped -- the rule
+        # looks wired but does nothing.
+        for name, jobs in self.TEST_JOBS.items():
             document = self.load(name)
             outputs = document["scope"].get("outputs", {})
-            self.assertIn("format_only", outputs,
-                          f"{name}: scope job must declare the format_only output, "
-                          f"otherwise needs.scope.outputs.format_only is empty and the gate never fires")
+            for job in jobs:
+                self.assertIn(job, outputs,
+                              f"{name}: scope job must declare the {job} output, "
+                              f"otherwise needs.scope.outputs.{job} is empty and the "
+                              f"gate never fires")
 
     def test_the_lint_job_keeps_running(self):
         # Lint is the judge of whether an update is well formatted, so it must
         # not be skipped by the rule it judges.
+        import lingdoc_gate_surfaces as manifest
+
         condition = self.load("go-lint.yml")["changes"].get("if", "")
         self.assertNotIn("format_only", condition)
+        surface = next(surface for surface in manifest.load_surfaces()
+                       if surface.name == "go-lint")
+        self.assertFalse(surface.skipped_on_format_only,
+                         "the lint surface must not be skipped on a formatting-only "
+                         "update")
 
     def test_the_contract_validation_steps_keep_running(self):
         import yaml
@@ -352,11 +368,16 @@ class WorkflowWiringTests(unittest.TestCase):
         document = yaml.safe_load((self.WORKFLOWS / "lingdoc-review.yml").read_text(encoding="utf-8"))
         steps = [step for job in document["jobs"].values() for step in job.get("steps") or []]
         gated = [step for step in steps
-                 if "provider_tests" in str(step.get("if", "")) or
-                 ("frontend" in str(step.get("if", "")) and "contracts" not in str(step.get("if", "")))]
+                 if "run_providers" in str(step.get("if", "")) or
+                 ("run_frontend" in str(step.get("if", "")) and "contracts" not in str(step.get("if", "")))]
         self.assertTrue(gated, "the provider and frontend steps were not found")
         for step in gated:
-            self.assertIn("format_only", str(step.get("if", "")))
+            # One boolean each: the decision module already folded the
+            # formatting-only shortcut into it.
+            condition = str(step.get("if", ""))
+            self.assertNotIn("format_only", condition)
+            self.assertNotIn("&&", condition)
+            self.assertRegex(condition, r"steps\.scope\.outputs\.run_(providers|frontend) == 'true'")
 
 
 class ProjectionTests(unittest.TestCase):

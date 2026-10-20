@@ -27,34 +27,33 @@ env:
 
 jobs:
   scope:
-    name: Scope latest PR update
+    name: Decide what this gate runs
     runs-on: ubuntu-latest
+    # The job outputs are an explicit allow-list.  The decision module
+    # publishes one key per consuming job; only the declared ones reach the
+    # jobs below, and a name that is not declared reads as an empty string.
     outputs:
-      run: ${{ steps.scope.outputs.run }}
-      # The job outputs are an explicit allow-list. Without this line the
-      # formatting-only decision never reaches needs.scope.outputs, and the
-      # gate below silently degrades to 'always run'.
-      format_only: ${{ steps.scope.outputs.format_only }}
+      verify: ${{ steps.scope.outputs.job_frontend_verify }}
+      docker-image: ${{ steps.scope.outputs.job_frontend_docker_image }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select frontend paths changed by this update
+      - name: Decide what this gate runs
         id: scope
-        env:
-          LINGDOC_SCOPE_PATHS: |
-            frontend/**
-            scripts/build_frontend_dist.sh
-            .github/workflows/frontend.yml
-        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+        # The decision module owns the path table of this gate, the tested
+        # surface and the formatting-only shortcut.  The workflow only reads
+        # its answer.  The whitespace boundary belongs to the pull request
+        # gate, so it is not repeated here.
+        run: python scripts/ci/lingdoc_gate_decision.py --no-whitespace
 
   verify:
     name: Test, type-check, and build
     needs: scope
-    # A formatting-only update keeps the meaning of the code, so the test
-    # matrix does not have to run again for it. The lint job still runs.
-    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.verify == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -84,8 +83,9 @@ jobs:
   docker-image:
     name: Docker multi-stage image
     needs: scope
-    # An image built from a formatting-only update carries no new content.
-    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.docker-image == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

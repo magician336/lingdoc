@@ -17,36 +17,32 @@ concurrency:
   cancel-in-progress: true
 jobs:
   scope:
-    name: Scope latest PR update
+    name: Decide what this gate runs
     runs-on: ubuntu-latest
+    # The job outputs are an explicit allow-list.  The decision module
+    # publishes one key per consuming job; only the declared ones reach the
+    # jobs below, and a name that is not declared reads as an empty string.
     outputs:
-      run: ${{ steps.scope.outputs.run }}
-      # The job outputs are an explicit allow-list. Without this line the
-      # formatting-only decision never reaches needs.scope.outputs, and the
-      # gate below silently degrades to 'always run'.
-      format_only: ${{ steps.scope.outputs.format_only }}
+      integration: ${{ steps.scope.outputs.job_lingdoc_interface_integration_integration }}
+      frontend: ${{ steps.scope.outputs.job_lingdoc_interface_integration_frontend }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select integration paths changed by this update
+      - name: Decide what this gate runs
         id: scope
-        env:
-          LINGDOC_SCOPE_PATHS: |
-            internal/lingdoc/**
-            internal/evidence/**
-            scripts/acceptance/**
-            internal/container/lingdoc*
-            internal/router/lingdoc*
-            .github/workflows/lingdoc-interface-integration.yml
-        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+        # The decision module owns the path table of this gate, the tested
+        # surface and the formatting-only shortcut.  The workflow only reads
+        # its answer.  The whitespace boundary belongs to the pull request
+        # gate, so it is not repeated here.
+        run: python scripts/ci/lingdoc_gate_decision.py --no-whitespace
 
   integration:
     needs: scope
-    # A formatting-only update keeps the meaning of the code, so the test
-    # matrix does not have to run again for it.
-    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.integration == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -97,9 +93,9 @@ jobs:
           retention-days: 14
   frontend:
     needs: scope
-    # A formatting-only update keeps the meaning of the code, so the test
-    # matrix does not have to run again for it.
-    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

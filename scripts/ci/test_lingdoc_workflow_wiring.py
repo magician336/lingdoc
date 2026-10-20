@@ -141,5 +141,50 @@ class DecisionKeyTests(unittest.TestCase):
         self.assertEqual(len(keys), 1)
 
 
+class WorkflowWiringTests(unittest.TestCase):
+    """The seven gates read the decision module; they do not decide."""
+
+    def test_no_workflow_carries_a_path_table_any_more(self):
+        for path in sorted(WORKFLOWS.glob("*.yml")):
+            with self.subTest(workflow=path.name):
+                self.assertNotIn("LINGDOC_SCOPE_PATHS",
+                                 path.read_text(encoding="utf-8"))
+
+    def test_every_gated_workflow_asks_the_decision_module(self):
+        for name in GATED_WORKFLOWS:
+            text = (WORKFLOWS / name).read_text(encoding="utf-8")
+            with self.subTest(workflow=name):
+                self.assertIn("scripts/ci/lingdoc_gate_decision.py", text)
+                self.assertNotIn("lingdoc_change_scope.py", text)
+
+    def test_the_scope_job_declares_exactly_the_keys_of_its_own_jobs(self):
+        for name in GATED_WORKFLOWS:
+            declared = (jobs_of(name).get("scope") or {}).get("outputs") or {}
+            expected = {consumer.job: decision.output_key(consumer.workflow,
+                                                          consumer.job)
+                        for consumer in consumers_of(name)}
+            with self.subTest(workflow=name):
+                self.assertEqual(set(declared), set(expected))
+                for job, key in expected.items():
+                    self.assertEqual(declared[job],
+                                     f"${{{{ steps.scope.outputs.{key} }}}}")
+
+    def test_every_gate_condition_reads_one_decision_boolean(self):
+        for name in GATED_WORKFLOWS:
+            for consumer in consumers_of(name):
+                condition = str(jobs_of(name)[consumer.job].get("if") or "")
+                expected = f"needs.scope.outputs.{consumer.job} == 'true'"
+                guard = MATRIX_GUARDS.get((name, consumer.job))
+                with self.subTest(workflow=name, job=consumer.job):
+                    self.assertNotIn("format_only", condition)
+                    self.assertEqual(condition.count("&&"),
+                                     1 if guard else 0)
+                    if guard:
+                        self.assertTrue(condition.endswith(guard))
+                        self.assertTrue(condition.startswith(expected))
+                    else:
+                        self.assertEqual(condition, expected)
+
+
 if __name__ == "__main__":
     unittest.main()
