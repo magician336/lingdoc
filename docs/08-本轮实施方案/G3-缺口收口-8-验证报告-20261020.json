@@ -1,0 +1,137 @@
+{
+  "ticket": "G3 缺口收口-8（#251）：助手「确定受影响 / 可能受影响」两组说明（AC-G3-14）",
+  "gaps": ["G3-GAP-04"],
+  "acceptance_rows": ["AC-G3-14"],
+  "head": "473c1b6（实现提交；并入集成分支的 merge commit 见集成分支日志）",
+  "base": "f78dc96（本票基点）",
+  "branch": "feat/issue-251-assistant-two-groups",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "os": "Windows 10.0.26200 x86_64",
+    "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'（sqlite3.h 缺失时 internal 链接失败，构建与测试前设置）",
+    "frontend": "Node + tsx --test；vue-tsc --build 无错误"
+  },
+  "design": {
+    "naming_discipline": "助手侧两组用 definite_affected / possible_affected；助手侧任何位置都没有名为 certainty 的字段。影响解析侧继续用 impacts[].certainty（ImpactAssessment / ResolvedImpact），本票没有改动该链路。两侧各自可断言。",
+    "server_derived": "草稿里的两组由服务端从已落库的助手 turn 重新推导（assistantAffectedForDraft → AssistantAffectedFromTurn），与现有 agentChangeDraftSourcesAtBasis 取真源的做法一致；客户端传来的 affected_explanation 不被采信（AgentChangeDraftInput 走 DisallowUnknownFields，多带该字段直接被拒）。",
+    "basis_required": "每条说明必须同时有对象引用（kind/id/version）、原因（reason）与依据（basis.source_type + basis.source_id，source_type ∈ change_set/dependency_edge/ruleset/impact_task/object_version）。缺任一项，该条目不进入任一组；整份草稿写入走既有事务，失败时零写入（草稿不存在）。",
+    "no_state_machine": "复用既有提案确认路径与草稿/评估路径：模型回包 → turn 落库 → 提案登记 → 人工确认 → 草稿。助手产出只是草稿，不改变项目 revision、不产生影响任务、不关闭任务、不放行导出。",
+    "new_structures": "新结构集中在 internal/lingdoc/workspacecore/g2_assistant_explanation.go（AssistantAffectedExplanation / AssistantAffectedEntry / AssistantAffectedObject / AssistantAffectedBasis + 解码校验 + 真源推导），未新增状态机与数据表；ChangeSet 只加一个可空字段 affected_explanation，随既有 fields_json 信封落库（无迁移）。"
+  },
+  "commands": [
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestAssistantAffected' -count=1",
+      "result": "PASS：两组各带对象引用、原因与依据；缺对象引用/原因/依据的条目（含 certainty 字段混入）整份被拒；无说明的 turn 不产生任何分组。"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestAssistantAffected' -count=1",
+      "result": "PASS（6 个用例）：两组到达草稿且草稿仍是 draft、项目 revision 未动、无影响任务、无交付快照、无导出产物；草稿 JSON 不含 certainty 而影响评估 JSON 含 certainty 且不含两组字段；缺依据的条目两层都被拒（模型边界拒 + 落库 turn 被篡改后草稿写入仍被拒），失败零写入；客户端自带的两组被拒；未人工确认（未确认与机器主体）都不产生草稿，助手产出不进入正式评估。"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/... -count=1",
+      "result": "PASS：workspacecore 46.226s、workspace 211.435s，两个目标包全绿，既有助手草稿/影响解析用例未回归。"
+    },
+    {
+      "command": "go build ./internal/...  （CGO_CFLAGS 已设置）",
+      "result": "PASS"
+    },
+    {
+      "command": "go vet ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/...",
+      "result": "PASS"
+    },
+    {
+      "command": "cd frontend && npm test",
+      "result": "PASS：1469 个用例，1468 通过、0 失败、1 跳过（跳过项为既有用例，与本票无关）。含新增 assistantAffectedGroups.test.ts（3 个）与 G2ResearchPanel.test.js 新增的「助手两组说明各自带对象、原因与依据」用例。"
+    },
+    {
+      "command": "cd frontend && npx vue-tsc --build",
+      "result": "PASS：无类型错误。"
+    },
+    {
+      "command": "cd docs/08-本轮实施方案/contracts && python -c \"import json; json.load(open('openapi.json',encoding='utf-8'))\"",
+      "result": "PASS：契约文件仍是合法 JSON；ChangeSet 新增 affected_explanation（$ref AssistantAffectedExplanation），新增 4 个 schema。ChangeSet 是 additionalProperties:false，不同步契约会导致契约测试红。"
+    }
+  ],
+  "acceptance_matrix": [
+    {
+      "row": "草稿带两组说明 | 响应可读到两组与理由",
+      "status": "PASS",
+      "seam": "真实 application seam（真实 host 模型解析 + 真实 turn 落库 + 真实提案确认 + 真实 workspace service/SQLite）+ ChangeSet JSON 契约",
+      "evidence": "internal/lingdoc/workspace/agent_affected_groups_test.go：TestAssistantAffectedGroupsReachTheDraftWithoutTouchingFormalState 断言 draft.AffectedExplanation 的两组各一条，definite 组对象为 ChapterVersion + 章节 ID + 版本、reason 非空、basis.source_type=dependency_edge 且 source_id 非空；possible 组对象为 EvidenceCard、basis.source_type=ruleset。internal/lingdoc/workspacecore/g2_assistant_explanation_test.go 覆盖解码与逐项校验。",
+      "notes": "助手侧字段名是 definite_affected / possible_affected，与影响解析侧的 impacts[].certainty 互不重名。"
+    },
+    {
+      "row": "草稿不等于影响解析 | 两侧可分别断言",
+      "status": "PASS",
+      "seam": "真实 application seam + 两份响应体分别断言",
+      "evidence": "TestAssistantAffectedGroupsAndResolverCertaintyAreSeparate：草稿 JSON 含 definite_affected/possible_affected 且不含 certainty；对同一草稿跑 AssessChangeSet 后取 ImpactAssessment，其 JSON 含 certainty 且不含两组字段。",
+      "notes": "影响解析侧（impact_service.go 的 definite/possible 判定）本票未改动。"
+    },
+    {
+      "row": "缺依据的条目被拒 | 事务写入，失败零写入",
+      "status": "PASS",
+      "seam": "模型边界 + 落库 turn 被篡改后的草稿写入路径（真实 service/SQLite）",
+      "evidence": "TestAssistantAffectedGroupsRefuseEntriesWithoutBasis：缺 basis 的条目在模型边界被拒；把一条合法 turn 的落库 suggestions 换成缺依据版本后，草稿写入仍被拒（proposal status=failed、Result 为空、lingdoc_change_sets 行数为 0、项目 revision 未动、无影响任务），同流程换成可追溯依据则草稿正常写出。",
+      "notes": "零写入由同一事务回滚保证，草稿行数与项目 revision 均断言为 0 变化。"
+    },
+    {
+      "row": "确认后才评估 | 未确认不进入正式评估",
+      "status": "PASS",
+      "seam": "真实 application seam（提案确认 + 影响评估读回）",
+      "evidence": "TestAssistantAffectedGroupsNeedHumanConfirmationBeforeAnyAssessment：待确认提案不产生草稿；未确认（confirmed=false）与机器主体（PrincipalAPITenant）确认都被拒且草稿行数保持 0；人工确认后草稿状态为 draft，此时 GetImpactAssessment 报错、影响任务列表为空、项目 revision 未动。",
+      "notes": "评估只由既有 AssessChangeSet 端点触发，助手产出自身不进入评估。"
+    },
+    {
+      "row": "助手无写权限 | 状态不变、越权动作被拒、审计留痕",
+      "status": "PASS",
+      "seam": "真实 application seam + 数据库行数/版本断言",
+      "evidence": "同一用例断言项目 ProjectVersion / SpecRevision / CurrentContextRevision 与 Spec 均未变，ListImpactTasks 为空，lingdoc_release_snapshots 与 lingdoc_export_artifacts 行数均为 0；机器主体确认被拒。既有助手草稿用例（TestAgentChangeDraftCurrentHumanAndSourceGuards）继续覆盖越权与来源撤销路径。",
+      "notes": "审计留痕沿用既有 g2.audit 事件，未新增审计动作。"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "AC-G3-14 的页面实跑落证（/demo/g3）",
+      "reason": "页面实跑由 G3 缺口收口-8 之外的演示台验收负责；本票只交付实现、契约与定向测试，AC-G3-14 在页面落证前不得判为 PASS。",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "真实模型（非 fake provider）下的两组说明产出",
+      "reason": "本机未配置可用的真实模型凭据与配额；两组说明由 fake provider 的真实 host 解析路径产出并验证，真实模型是否稳定给出两组说明属于模型质量范畴，issue 明确列为范围外。",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "PostgreSQL 双库对照",
+      "reason": "本机未安装 PostgreSQL 可执行文件，无法起隔离实例；本票未改迁移与表结构（仅复用既有 fields_json 信封，无新增列），双库差异由既有迁移对照测试覆盖，本票范围内无新增迁移。",
+      "status": "NOT RUN"
+    }
+  ],
+  "changed_files": [
+    "internal/lingdoc/workspacecore/g2_assistant_explanation.go（新）",
+    "internal/lingdoc/workspacecore/g2_assistant_explanation_test.go（新）",
+    "internal/lingdoc/workspacecore/g2_change_draft_action.go（PrepareAgentChangeDraft 从真源推导两组）",
+    "internal/lingdoc/workspacecore/change_creation_mutation.go（草稿写入带上推导出的两组）",
+    "internal/lingdoc/workspacecore/model.go（ChangeSet 增加可空 affected_explanation）",
+    "internal/lingdoc/workspacecore/service.go（字段信封编解码带上两组）",
+    "internal/lingdoc/workspace/agent_model.go（模型边界校验两组 + 系统提示要求给出两组）",
+    "internal/lingdoc/workspace/agent_affected_groups_test.go（新）",
+    "internal/lingdoc/workspace/agent_change_draft_action_test.go（既有 fixture 补上两组）",
+    "docs/08-本轮实施方案/contracts/openapi.json（契约同步）",
+    "frontend/src/api/lingdoc/workspace.ts（类型）",
+    "frontend/src/api/lingdoc/g2.ts（turn.suggestions 类型）",
+    "frontend/src/views/lingdoc/assistantAffectedGroups.ts（新）",
+    "frontend/src/views/lingdoc/assistantAffectedGroups.test.ts（新）",
+    "frontend/src/views/lingdoc/G2ResearchPanel.vue（展示两组与各自理由）",
+    "frontend/src/views/lingdoc/G2ResearchPanel.test.js（用例 + 新模块注入）",
+    "GLOSSARY.md（新增术语「助手影响说明」）"
+  ],
+  "notes": [
+    "本票未改动影响解析的 certainty 判定链路（internal/lingdoc/workspacecore/impact_service.go:492-534），也未改动共享错误映射表（internal/lingdoc/workspace/http.go 的 sendError）。",
+    "草稿的两组随既有 fields_json 信封落库，未新增表或列，因此无迁移；旧记录读出时该字段为空，即「非助手产出的草稿不带说明」。",
+    "既有的助手草稿用例夹具（agent_change_draft_action_test.go 的模型回包）已补上两组，因为模型边界现在要求「给出 change_draft 必须同时给出两组」；这是本票引入的契约收紧，不是既有行为的回归。",
+    "基线提醒：本票基点为 f78dc96，集成分支此后并入 #256、#252；本票不做合并，由维护者在集成分支上合并并处理冲突。",
+    "并入集成分支后复跑：delivery / workspace / workspacecore / container / database / rulesetstore / templategovernance 七个包全绿（含契约双向覆盖测试）。合并无冲突。",
+    "契约收紧的影响面需在真实模型跑一遍时复核：模型若给出 change_draft 却不给 affected_explanation，整条回包会被拒（ErrInvalidRequest），助手草稿功能会整体不可用而不是只缺两组。收紧点集中在 internal/lingdoc/workspace/agent_model.go 的 change_draft 分支（是否 present 就拒），若要放宽为「缺失即空组」，改这一处即可。"
+  ]
+}

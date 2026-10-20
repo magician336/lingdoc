@@ -1,5 +1,5 @@
 import { get, post, put } from '@/utils/request'
-import type { Project, Result } from './workspace'
+import type { Project, Result, AssistantAffectedExplanation } from './workspace'
 
 export interface G2Expectation { expected_project_version: number; expected_context_revision: number; expected_version: number }
 export interface G2ConfirmedInput extends G2Expectation { confirmed: boolean; reason: string }
@@ -70,7 +70,8 @@ export interface AgentContextInput extends G2Expectation { chapter_id?: string; 
 export type LingDocAgent = 'task_assistant' | 'research_agent'
 export interface AgentSession { id: string; project_id: string; version: number; agent: LingDocAgent; created_by: string; created_at: string }
 export interface AgentTurn {
-  id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string; suggestions?: { reply?: string; task_card?: Partial<SaveResearchTaskInput>; change_draft?: AgentChangeDraftSuggestion }
+  id: string; project_id: string; session_id: string; version: number; agent: LingDocAgent; user_input: string; reply: string
+  suggestions?: { reply?: string; task_card?: Partial<SaveResearchTaskInput>; change_draft?: AgentChangeDraftSuggestion; affected_explanation?: AssistantAffectedExplanation }
   context: AgentContextPackage; status: string; failure_code?: string; model_id?: string; run_mode: string; input_tokens: number; output_tokens: number; created_by: string; created_at: string
 }
 // Only a real completed server turn can supply this provenance. No client grant flags.

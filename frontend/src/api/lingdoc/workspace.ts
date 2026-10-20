@@ -163,6 +163,33 @@ export interface ChangeImpact {
   status: 'open' | 'reviewed' | 'stale'
 }
 
+// The G3 impact assistant's own two-group reading of what a proposed change
+// affects. This is NOT the impact resolver's verdict: that one keeps
+// `impacts[].certainty` on ImpactAssessment, and the two never share a field
+// name. A draft that the assistant did not produce carries no explanation.
+export interface AssistantAffectedObject {
+  kind: string
+  id: string
+  version: string
+}
+
+export interface AssistantAffectedBasis {
+  source_type: 'change_set' | 'dependency_edge' | 'ruleset' | 'impact_task' | 'object_version'
+  source_id: string
+  detail?: string
+}
+
+export interface AssistantAffectedEntry {
+  object: AssistantAffectedObject
+  reason: string
+  basis: AssistantAffectedBasis
+}
+
+export interface AssistantAffectedExplanation {
+  definite_affected: AssistantAffectedEntry[]
+  possible_affected: AssistantAffectedEntry[]
+}
+
 export interface ChangeSet {
   id: string
   project_id: string
@@ -180,6 +207,7 @@ export interface ChangeSet {
   target_spec_revision?: number
   fields: Array<{ key: string; old_value: string; new_value: string }>
   impacts: ChangeImpact[]
+  affected_explanation?: AssistantAffectedExplanation
   template_upgrade?: {
     base_template_copy_version: number
     definition: ProjectTemplateCopy['definition']

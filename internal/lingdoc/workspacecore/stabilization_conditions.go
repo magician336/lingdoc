@@ -1,6 +1,7 @@
 package workspacecore
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 )
@@ -151,6 +152,28 @@ type stabilizationConditions struct {
 	// in-loop version could return the write error. Nothing is persisted either
 	// way, because the whole write transaction rolls back on error.
 	StaleTransitions []ImpactTask
+
+	// Reposts lists the obligations that must be re-raised, because the version
+	// their closure evidence named has been replaced by a newer one.
+	//
+	// Like StaleTransitions this is data, not a write: the evaluation decides,
+	// the Owner entry creates the tasks inside the same transaction, and the
+	// read-only gate ignores it because it writes nothing.
+	Reposts []stabilizationRepost
+}
+
+// stabilizationRepost is one obligation that has to be raised again against
+// the current version of the same object.
+//
+// The old closure evidence described a version that no longer exists, so it
+// must not be carried over: the re-raised task requires fresh evidence for
+// the current version.
+type stabilizationRepost struct {
+	// task is the obligation whose closure no longer holds.
+	task ImpactTask
+	// target is the CURRENT version of the same object, which the re-raised
+	// obligation must be raised against.
+	target ObjectVersionRef
 }
 
 // OwnerBlockers renders the Owner blocker list. Blocker codes are reproduced
@@ -282,9 +305,40 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 				continue
 			}
 		}
+		// A closure whose version was replaced makes the obligation live
+		// again; a closure that cannot be read at all invalidates it. The two
+		// are decided per task, and the stronger one (invalidation) wins.
+		var repost *stabilizationRepost
+		staled := false
 		for _, ref := range task.ClosureEvidence {
 			state, e := currentImpactObject(tx, p, ref)
 			if e != nil {
+				if errors.Is(e, ErrVersionConflict) {
+					// A replaced VERSION is a domain fact, not an unreadable
+					// object: the object is still there, the closure simply
+					// describes a version that is no longer the current one.
+					// The revision therefore stays BLOCKED with a closure_stale
+					// blocker that names the object and both versions, and the
+					// obligation is re-raised against the current version
+					// instead of being lost together with the old one.
+					reason := fmt.Sprintf("闭环证据绑定的对象 %s/%s 的版本 %s 已被替换，需重新处理", ref.Kind, ref.ID, ref.Version)
+					if current, currentErr := readImpactObjectState(tx, p, ref); currentErr == nil {
+						reason = fmt.Sprintf("闭环证据绑定的对象 %s/%s 的版本 %s 已被新版本 %s 替换，需重新处理", ref.Kind, ref.ID, ref.Version, current.Ref.Version)
+					}
+					// The obligation is about the object the task was raised
+					// against, so the re-raised task is re-targeted at THAT
+					// object's current version - not at the version of
+					// whichever evidence happened to be replaced.
+					target := task.Target
+					if current, currentErr := readImpactObjectState(tx, p, task.Target); currentErr == nil {
+						target = current.Ref
+					}
+					repost = &stabilizationRepost{task: task, target: target}
+					if result.record(stabilizationFailure{Code: "closure_stale", TargetID: task.ID, Reason: reason, GateError: e}, scope) {
+						return result, nil
+					}
+					continue
+				}
 				// Re-checked before closure: the version this result was produced
 				// against is no longer readable, so the result no longer holds.
 				// The Owner path records the invalidation as an explicit STALE
@@ -292,6 +346,7 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 				// propagates the read failure.
 				result.StaleTransitions = append(result.StaleTransitions, task)
 				invalidated[task.ID] = true
+				staled = true
 				if result.record(stabilizationFailure{task: task, StaleTransition: true, StaleReport: true, GateError: e}, scope) {
 					return result, nil
 				}
@@ -304,6 +359,9 @@ func (s *Service) stabilizationConditions(tx Transaction, p Project, store impac
 					return result, nil
 				}
 			}
+		}
+		if repost != nil && !staled {
+			result.Reposts = append(result.Reposts, *repost)
 		}
 	}
 	if scope.RecheckImpactedObjects {

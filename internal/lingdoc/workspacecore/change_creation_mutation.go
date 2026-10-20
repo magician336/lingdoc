@@ -149,6 +149,10 @@ func (s *Service) createChangeDraftMutation(ctx context.Context, actor Actor, pr
 			return operationResult[ChangeSet]{}, err
 		}
 		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReversesChangeSetID: sourceID, Reason: input.Reason, Status: ChangeSetStatusDraft, BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: time.Now().UTC()}
+		// The assistant's two explanation groups come from the persisted turn via
+		// the prepared context, never from the request body. A draft that was not
+		// produced by the assistant carries no explanation at all.
+		change.AffectedExplanation = assistantAffectedFromContext(ctx)
 		keys := make([]string, 0, len(input.Fields))
 		for key := range input.Fields {
 			keys = append(keys, key)

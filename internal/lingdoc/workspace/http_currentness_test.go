@@ -25,6 +25,16 @@ func (allowTestAssetAuthorizer) CanAccessAsset(context.Context, evidence.Actor, 
 
 func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 	t.Helper()
+	db := newSourceCurrentnessDB(t)
+	handler := newTestHandler(db, nil, nil)
+	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, allowTestAssetAuthorizer{})
+	return handler, db
+}
+
+// newSourceCurrentnessDB 建出 currentness 用例的库与种子数据，但不装配 handler。
+// 需要自己装配 handler 的用例（例如受控故障注入）复用同一份夹具。
+func newSourceCurrentnessDB(t *testing.T) *gorm.DB {
+	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "workspace.db")
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -132,10 +142,7 @@ func newSourceCurrentnessHandler(t *testing.T) (*Handler, *gorm.DB) {
 	if err := db.Exec("INSERT INTO lingdoc_members (project_id, user_id, role) VALUES (?, ?, ?)", "project-1", "reader", "owner").Error; err != nil {
 		t.Fatalf("seed project member: %v", err)
 	}
-
-	handler := newTestHandler(db, nil, nil)
-	testRuntime(handler).gateway = evidence.NewAssetGateway(testRuntime(handler).bindings, allowTestAssetAuthorizer{})
-	return handler, db
+	return db
 }
 
 func TestGetSourceUsesCurrentAssetAfterRefreshingKnowledgeSignal(t *testing.T) {

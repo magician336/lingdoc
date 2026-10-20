@@ -27,6 +27,17 @@ func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture, selectedSourceIDs
 	require.NoError(t, err)
 	response, err := json.Marshal(map[string]any{"reply": "这是研究条件候选；确定影响需由现有评估核对，可能影响仍待确认。", "change_draft": core.AgentChangeDraftSuggestion{
 		ExpectedContextRevision: p.CurrentContextRevision, Reason: "明确请求调整 research_goal", Fields: map[string]string{"research_goal": agentDraftSyntheticValue}, AffectedChapterIDs: []string{},
+	}, "affected_explanation": map[string]any{
+		"definite_affected": []any{map[string]any{
+			"object": map[string]any{"kind": "ChapterVersion", "id": f.chapters[0].ID, "version": "v1"},
+			"reason": "该章正文引用了被修改的研究条件",
+			"basis":  map[string]any{"source_type": "dependency_edge", "source_id": "edge-1"},
+		}},
+		"possible_affected": []any{map[string]any{
+			"object": map[string]any{"kind": "EvidenceCard", "id": "card-1", "version": "2"},
+			"reason": "证据卡适用范围可能覆盖新条件",
+			"basis":  map[string]any{"source_type": "ruleset", "source_id": "ruleset-1"},
+		}},
 	}})
 	require.NoError(t, err)
 	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(response), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}

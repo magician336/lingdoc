@@ -1,0 +1,223 @@
+{
+  "ticket": "G3 缺口收口-7（#256）：受控故障注入能力（AC-G3-03）",
+  "gap": "G3-GAP-01",
+  "spec": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md §12 切片 G3.1（:340）、AC-G3-03（:358-360）",
+  "head": "b1a5b03",
+  "head_note": "实现提交为 b1a5b03；本报告随后的提交只新增本文件与本票的 issue 回写。",
+  "branch": "feat/issue-256-fault-injection",
+  "base": "f78dc96（origin/feat/g3-gap-closure，本轮开始时的集成分支头；本轮结束时该分支未前进，合并为空操作）",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "cgo_cflags": "-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（sqlite3.h 头文件）",
+    "worktree": "D:/code_warehouse/Projects/lingdoc/.worktrees/issue-256-fault-injection（独立 worktree，基线 origin/feat/g3-gap-closure@f78dc96）"
+  },
+  "problem": {
+    "summary": "AC-G3-03（应用原子性：任务写入失败或权限失效时项目保持原 revision 与旧模板引用）此前只由后端 Go 集成测试覆盖（internal/lingdoc/workspacecore/change_set_task_rollback_test.go 用 SQLite trigger 让任务行写入失败），产品 API 面无法实跑，因此该验收行只能是 NOT RUN / BLOCKED。",
+    "before_fix_observation": "真实 HTTP seam（POST /projects/{id}/change-sets/{id}/apply）没有任何受控的失败开关：请求体不受控于任何失败开关；仓库内已有的故障注入都是测试局部桩（postgres_failure_test.go、stabilization_test.go、spec_retry_test.go），不是产品能力。",
+    "code_seams": [
+      "internal/lingdoc/workspace/http.go:314（POST /projects/:projectId/change-sets/:changeSetId/apply，写路由存在但无失败开关）",
+      "internal/lingdoc/workspacecore/service_facade.go:2258-2485（ApplyChangeSet：单一事务内推进 revision、写变更集状态、写 ImpactTask、写业务审计）",
+      "internal/lingdoc/workspacecore/impact_service.go:642-737（commitChangeImpactTasks：ImpactTask 与 handoff 的写入点）",
+      "internal/container/lingdoc.go:52（组合根：projectService 的装配处）"
+    ]
+  },
+  "design": {
+    "principle": "把「如何制造写入失败」这条测试知识挡在产品 API 之外。组合根按环境变量与演示租户校验，装配一个会失败的窄 port 实现；HTTP 路由、handler 与产品契约零新增端点，apply 走真事务、失败真发生。",
+    "写路径可替换性核实结论": {
+      "question": "core.Service 的写入路径是否已经经由可替换的窄 port（实施第一步的核实项）？",
+      "answer": "部分可替换，因此本票补了两处窄 port。Service 的事务边界本身已经可替换（Service.repository 是 Repository 端口，Transaction 是存储端口，ImpactTask 写入走 Transaction 的 impactTransaction 扩展）；但 ImpactTask 写入与业务审计写入在领域代码里是直接调用具体方法的，没有可替换的窄口，组合根无法只换实现就换掉「会失败」的那一步。因此按 development-rules.md §3「哪些 reader/writer port 是必需的」，本票新增两个窄写入端口：ImpactTaskWriter 与 BusinessAuditWriter。",
+      "既有可替换面": [
+        "Service.repository（Repository 端口）——组合根装配处",
+        "Service.authorizer（AuthorizationPolicy 端口）——撤权场景直接复用，未新建平行端口",
+        "Transaction 及其 impactTransaction / AuditTransaction 扩展"
+      ],
+      "本票新增的窄 port": [
+        "ImpactTaskWriter（internal/lingdoc/workspacecore/fault_injection.go）",
+        "BusinessAuditWriter（internal/lingdoc/workspacecore/fault_injection.go）"
+      ],
+      "成本": "领域改动只有两处写入调用点（apply 的任务写入、apply 的业务审计写入）加一处策略装配；其余路径零改动。"
+    },
+    "changes": [
+      "internal/lingdoc/workspacecore/fault_injection.go（新增）：FaultPoint / FaultInjection（注入点 + 租户 + 可选动作 + 可读原因）、InjectedFaultError（自带客户端表述：503 + code=injected_fault，不改共享错误映射表）、ImpactTaskWriter / BusinessAuditWriter 两个窄写入端口、按演示租户限定作用域的失败实现、InstallFaultInjection 与 NewFaultInjectingAuthorizationPolicy 两个装配入口。",
+      "internal/lingdoc/workspacecore/service_facade.go：Service 增加 impactTasks / businessAudit 两个端口字段（默认 nil，行为不变）；apply 的任务写入改走 s.commitChangeImpactTasks；apply 的业务审计写入改走 s.writeBusinessAudit。",
+      "internal/lingdoc/workspacecore/impact_service.go：commitChangeImpactTasks 抽出 writer 参数；新增 (s *Service) commitChangeImpactTasks 与 writeImpactTask，未装配端口时仍是原来的直写。",
+      "internal/container/lingdoc_fault_injection.go（新增）：按 LINGDOC_FAULT_INJECTION / LINGDOC_FAULT_TENANT_ID / LINGDOC_FAULT_ACTION / LINGDOC_FAULT_REASON 读取注入配置；缺注入点或缺租户一律不装配，未知注入点也 fail-closed。",
+      "internal/container/lingdoc.go：组合根装配注入（授权类注入替换 AuthorizationPolicy 策略，写入类注入装到 Service 的窄端口上）。默认组合与改动前等价（NewServiceWithAudit 在 authorizer=nil、mode=enforce 时与 NewServiceWithAuthorizationPolicy(..., nil, ...) 完全等价）。"
+    ],
+    "not_changed": [
+      "不改共享错误映射表（internal/lingdoc/workspace/http.go 的 sendError switch）：注入失败自带客户端表述（ClientFacingError），由传输层现有的回退分支直接采用。",
+      "不新增任何产品 API 端点、路由、鉴权、OpenAPI 或前端类型。",
+      "不改 apply 的事务边界、revision 推进规则、任务身份口径与既有领域判定。",
+      "不改受影响页面的渲染（由 G3 缺口收口-8 负责）。"
+    ],
+    "注入作用域": "仅本进程、仅被点名的演示租户。租户边界由项目读取的租户过滤实现：非演示租户的项目在注入实现里读不到，注入不会触发。授权类注入按请求里的 actor 租户判定。"
+  },
+  "acceptance_matrix": [
+    {
+      "验收项": "可制造写入失败",
+      "用户可见入口": "演示模式下的 apply（POST /projects/{id}/change-sets/{id}/apply）",
+      "领域不变量/事务边界": "注入点明确且可读；apply 是单一事务",
+      "成功": "apply 返回失败",
+      "失败/权限/恢复": "失败原因可辨认为注入（503 + code=injected_fault）",
+      "持久化与并发": "事务整体回滚",
+      "测试或运行证据": "internal/lingdoc/workspace/fault_injection_http_test.go:TestApplyFailsWithInjectedImpactTaskWriteAndRollsBack、TestApplyFailsWithInjectedAuditWriteAndRollsBack",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "回滚后状态未变",
+      "用户可见入口": "apply 后的读回",
+      "领域不变量/事务边界": "revision / 模板引用 / ImpactTask 集合不变；不得出现新 revision 但任务不全",
+      "成功": "读回与失败前一致",
+      "失败/权限/恢复": "变更集状态仍是 assessed（没有被留在 applied）",
+      "持久化与并发": "同上",
+      "测试或运行证据": "同上用例的读回断言（项目 current_context_revision / project_version / spec_revision、template_id / template_version / template_copy_version、ImpactTask 条数、project.change_set.apply 审计条数、变更集状态）",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "权限失效同样回滚",
+      "用户可见入口": "apply（撤权场景）",
+      "领域不变量/事务边界": "授权失败整体回滚",
+      "成功": "状态不变",
+      "失败/权限/恢复": "授权失败语义明确（503 + code=injected_fault + 可读原因）",
+      "持久化与并发": "同上",
+      "测试或运行证据": "internal/lingdoc/workspace/fault_injection_http_test.go:TestApplyFailsWithInjectedAuthorizationLapseAndKeepsState（注入点名 manage 动作：变更集创建只需 write 能力因此仍可建出，apply 需要 manage 因此失败）",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "开关默认关闭",
+      "用户可见入口": "常规运行",
+      "领域不变量/事务边界": "未开启时行为完全不变",
+      "成功": "常规路径无变化",
+      "失败/权限/恢复": "不得有隐式开启（缺注入点或缺租户都不装配；未知注入点 fail-closed）",
+      "持久化与并发": "N/A",
+      "测试或运行证据": "internal/container/lingdoc_fault_injection_test.go（4 项）+ internal/lingdoc/workspace/fault_injection_http_test.go:TestApplySucceedsWhenNoFaultIsInstalled + 既有全量用例",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "作用域受限",
+      "用户可见入口": "组合根",
+      "领域不变量/事务边界": "仅演示租户 / 进程内生效",
+      "成功": "非演示租户不可触发",
+      "失败/权限/恢复": "越范围不可注入",
+      "持久化与并发": "N/A",
+      "测试或运行证据": "internal/lingdoc/workspace/fault_injection_http_test.go:TestFaultInjectionDoesNotReachAnotherTenant + internal/lingdoc/workspacecore/fault_injection_test.go:TestFaultInjectionDoesNotReachAnotherTenant",
+      "状态": "PASS"
+    }
+  ],
+  "passed": [
+    {
+      "id": "开启注入后 apply 失败，且失败可辨认为注入",
+      "status": "passed",
+      "evidence": "go test ./internal/lingdoc/workspace/ -run 'TestApplyFailsWithInjected|TestApplySucceedsWhenNoFault|TestFaultInjectionDoesNotReach' -v → 5/5 PASS。真实 HTTP POST /api/projects/project-1/change-sets/{id}/apply 返回 503，响应体 error.code=injected_fault，error.message 含「受控故障注入」。"
+    },
+    {
+      "id": "读回证明：项目 revision、模板引用、ImpactTask 集合、审计业务事件均未变",
+      "status": "passed",
+      "evidence": "同一组 HTTP 用例读回 GET /api/projects/project-1、GET /api/projects/project-1/impact-tasks、GET /api/projects/project-1/audit 与 GET /api/projects/project-1/change-sets/{id}：current_context_revision / project_version / spec_revision、template_id / template_version / template_copy_version、ImpactTask 条数、project.change_set.apply 审计条数与失败前完全一致；变更集状态仍是 assessed 而不是 applied。"
+    },
+    {
+      "id": "回滚不是空转（审计注入点在事务末尾）",
+      "status": "passed",
+      "evidence": "审计注入点名 action=project.change_set.apply，即 apply 事务的最后一次写入。失败时变更集行在事务内已被写成 applied，读回仍是 assessed，说明 revision 推进、任务写入与变更集状态一起被回滚。"
+    },
+    {
+      "id": "权限失效注入同样整体回滚",
+      "status": "passed",
+      "evidence": "TestApplyFailsWithInjectedAuthorizationLapseAndKeepsState：注入点名 manage 动作后，apply 返回 503 injected_fault，项目 revision、模板引用、ImpactTask 集合与业务审计事件读回均未变。"
+    },
+    {
+      "id": "开关默认关闭",
+      "status": "passed",
+      "evidence": "internal/container/lingdoc_fault_injection_test.go 的 4 项（默认不装配 / 缺租户不装配 / 非法租户不装配 / 未知注入点不装配）PASS；TestApplySucceedsWhenNoFaultIsInstalled 证明未装配时 apply 仍推进一次 revision、创建 ImpactTask 并写下业务审计；既有全量用例保持全绿。"
+    },
+    {
+      "id": "非演示租户不可触发注入",
+      "status": "passed",
+      "evidence": "TestFaultInjectionDoesNotReachAnotherTenant（HTTP）与 TestFaultInjectionDoesNotReachAnotherTenant（workspacecore）均 PASS：点名另一个租户时 apply 正常成功。"
+    },
+    {
+      "id": "既有原子性用例仍然通过",
+      "status": "passed",
+      "evidence": "go test ./internal/lingdoc/workspacecore/... 全量 PASS（含 change_set_task_rollback_test.go 的 TestApplyChangeSetRollsBackWhenImpactTaskWriteFails）。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "G3-GAP-01 / AC-G3-03 的页面实跑落证（/demo/g3）",
+      "reason": "属 G3 缺口收口-8（#257）的范围。按 #256 的完成线，本票只交付 L1（实现完成线）：页面实跑前 AC-G3-03 只能是 PASS (follow-up)，不得判 PASS。"
+    },
+    {
+      "id": "真实进程 + 真实数据库（PostgreSQL）下的故障注入实跑",
+      "reason": "本轮环境未启动隔离 PostgreSQL 实例；注入的写入端口与租户作用域不依赖数据库方言，SQLite 真实事务 seam 已实跑。PostgreSQL 路径按 NOT RUN 记录，不冒充已实测。"
+    },
+    {
+      "id": "生产环境的故障演练",
+      "reason": "按票的范围外处理：当前没有生产验收目标，记 N/A。"
+    },
+    {
+      "id": "go test -race ./...（全仓）",
+      "reason": "只对本票新增与受影响的用例跑了 -race（见 validation），全仓 -race 未在本轮执行（耗时与并行工作区状态限制）。"
+    }
+  ],
+  "validation": [
+    {
+      "command": "go build ./...",
+      "env": "CGO_CFLAGS=-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc",
+      "result": "PASS（exit 0，无输出）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/... ./internal/container/...",
+      "env": "同上",
+      "result": "PASS（workspacecore ok 35.876s、workspace ok 146.581s、container ok 2.202s，exit 0）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestApplyFailsWithInjected|TestApplySucceedsWhenNoFault|TestFaultInjectionDoesNotReach' -v",
+      "env": "同上",
+      "result": "PASS（5/5）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestFaultInjection|TestImpactTaskWriteFault|TestBusinessAuditFault|TestInjectedFaultError' -v",
+      "env": "同上",
+      "result": "PASS（5/5）"
+    },
+    {
+      "command": "go test ./internal/container/ -run 'TestFaultInjection|TestLingDocWorkspaceComposition' -v",
+      "env": "同上",
+      "result": "PASS（6/6）"
+    },
+    {
+      "command": "go test -race ./internal/lingdoc/workspacecore/ -run 'TestFaultInjection|TestImpactTaskWriteFault|TestBusinessAuditFault|TestInjectedFaultError' 与 go test -race ./internal/lingdoc/workspace/ -run 'TestApplyFailsWithInjected|TestApplySucceedsWhenNoFault|TestFaultInjectionDoesNotReach'",
+      "env": "同上",
+      "result": "PASS（10/10，-race 无数据竞争报告）"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/workspacecore/ internal/container/ internal/lingdoc/workspace/",
+      "result": "无输出（格式合规）"
+    }
+  ],
+  "how_to_arm": {
+    "env": [
+      "LINGDOC_FAULT_INJECTION=impact_task_write | audit_write | authorization",
+      "LINGDOC_FAULT_TENANT_ID=<演示租户 ID>（必需；缺失则不装配）",
+      "LINGDOC_FAULT_ACTION=<可选：授权动作或审计动作>",
+      "LINGDOC_FAULT_REASON=<可选：注入的可读原因>"
+    ],
+    "notes": [
+      "audit_write 若不点名动作，会命中 apply 事务里的第一笔审计写入（授权决定审计），失败点更靠前；点名 action=project.change_set.apply 时失败落在事务末尾，回滚证明最强。",
+      "authorization 注入按动作限定时用 manage（apply 需要 manage，变更集创建只需 write），这样变更集仍能被建出来、apply 才失败。",
+      "装配与运行日志：容器启动时以 WARNING 打印「受控故障注入已装配/未装配」。"
+    ]
+  },
+  "risks": [
+    "注入是组合根级别的进程内能力：环境变量一旦在非演示环境被误配，该租户的 apply 会持续失败。缓解：必须同时点名租户、未知注入点 fail-closed、装配时打 WARNING 日志。",
+    "授权类注入是「整租户的某类动作失效」，粒度到动作而不是到单个请求；它会让演示租户的 manage 类操作全部失败，属于演示期的预期代价。",
+    "BusinessAuditWriter 只接住了 apply 路径的业务审计写入点；其它审计写入点（授权决定审计等）没有被该端口覆盖，若将来需要注入这些点，需要再各自引入窄口。"
+  ],
+  "notes": [
+    "本票没有新增任何产品 API 端点，也没有改动共享错误映射表：注入失败通过领域侧的 ClientFacingError 自带 503 + injected_fault 呈现。",
+    "既有测试夹具做了两处最小重构以便复用同一份库与绑定：newSourceCurrentnessHandler 拆出 newSourceCurrentnessDB，seedBoundSource 拆出 seedBoundSourceOn；原有调用方行为不变。",
+    "本轮验证全部在独立 worktree（D:/code_warehouse/Projects/lingdoc/.worktrees/issue-256-fault-injection，基线 origin/feat/g3-gap-closure@f78dc96）执行，避免共享工作区里其它并行改动的中间态污染结论。"
+  ]
+}

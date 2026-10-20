@@ -338,6 +338,14 @@ func semanticMeaning(kind string, body json.RawMessage) (any, error) {
 			Required     bool
 			Inputs       []ObjectVersionRef
 		}{value.Name, value.Status, value.Required, value.Inputs}, nil
+	case "RouteEdge":
+		var value RouteEdge
+		if e := json.Unmarshal(body, &value); e != nil {
+			return nil, e
+		}
+		return struct {
+			SourceID, TargetID, Relation string
+		}{value.SourceID, value.TargetID, value.Relation}, nil
 	}
 	return nil, ErrInvalidRequest
 }

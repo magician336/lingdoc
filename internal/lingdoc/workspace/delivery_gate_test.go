@@ -58,6 +58,22 @@ func newDeliveryGuardFixtureOverDB(t *testing.T, f deliveryGuardFixture) deliver
 // locally computed guess.
 func stabilizeThroughDeliveryGate(t *testing.T, f deliveryGuardFixture, changeID string) core.StabilizationResult {
 	t.Helper()
+	repairGateObligations(t, f, changeID)
+	raw, _, _, err := f.projects.StabilizeRevision(f.ctx, f.actor, f.project.ID, changeID, "gate-stabilize-"+changeID)
+	require.NoError(t, err)
+	var result core.StabilizationResult
+	require.NoError(t, json.Unmarshal(raw, &result))
+	return result
+}
+
+// repairGateObligations discharges every blocking obligation the Owner can
+// close through the real repair loop, leaving the revision ready to be
+// stabilized. It is the part of the loop that does NOT decide the verdict, so
+// a caller may stop here, change the world in between, and only then ask for
+// the verdict (#255 needs exactly that: a closure whose target is replaced
+// after the obligations were discharged).
+func repairGateObligations(t *testing.T, f deliveryGuardFixture, changeID string) {
+	t.Helper()
 	// A real Chapter edit invalidates the affected chapters' confirmation;
 	// re-confirming is the actual human repair the rules checker demands.
 	store := candidateadoption.NewSQLiteCandidateAdoptionStore(f.db)
@@ -166,12 +182,6 @@ func stabilizeThroughDeliveryGate(t *testing.T, f deliveryGuardFixture, changeID
 		_, _, _, err = f.projects.AcknowledgeImpactPreflight(f.ctx, f.actor, f.project.ID, changeID, fresh.ReceiptID, "gate-ack-"+changeID)
 		require.NoError(t, err)
 	}
-
-	raw, _, _, err := f.projects.StabilizeRevision(f.ctx, f.actor, f.project.ID, changeID, "gate-stabilize-"+changeID)
-	require.NoError(t, err)
-	var result core.StabilizationResult
-	require.NoError(t, json.Unmarshal(raw, &result))
-	return result
 }
 
 // deliveryGateTasks reads the current impact tasks for the fixture project.
