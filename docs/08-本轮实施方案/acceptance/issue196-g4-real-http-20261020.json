@@ -1,0 +1,176 @@
+{
+  "status": "PASS",
+  "source": {
+    "root": "/mnt/c/Users/ASUS/.codex/worktrees/issue196-g4-canonical",
+    "head": "5f6563e163b267945738e1c4a84f166452e1e6a1",
+    "tree": "5abce8b2095108ac9f222a04310fdc3fb3ca54ff",
+    "dirty": false
+  },
+  "flows": [
+    {
+      "status": "PASS",
+      "mode": "canonical",
+      "project_id": "20983893ee98279d",
+      "chapter_id": "ca02cb1fea45d188",
+      "setup": {
+        "project": {
+          "id": "d3e9ae2f-6df6-4422-866d-5cbe84e310e9",
+          "status": "draft",
+          "project_version": 2,
+          "template_copy_version": 2
+        },
+        "active": {
+          "id": "d3e9ae2f-6df6-4422-866d-5cbe84e310e9",
+          "status": "active",
+          "project_version": 4,
+          "template_copy_version": 2
+        }
+      },
+      "template_check": {
+        "status": "passed",
+        "project_version": 8,
+        "template_copy_version": 2,
+        "ruleset_hash": "5150be4c02462b3628f4dc6dbb017de1d85e40ee943247336b3e695cd3843b1d",
+        "ruleset_ref": {
+          "ruleset_id": "issue196-ruleset-3d691b8a",
+          "version": "v1"
+        }
+      },
+      "check": {
+        "status": "passed",
+        "project_version": 8,
+        "ruleset_hash": "5150be4c02462b3628f4dc6dbb017de1d85e40ee943247336b3e695cd3843b1d",
+        "ruleset_ref": {
+          "ruleset_id": "issue196-ruleset-3d691b8a",
+          "version": "v1"
+        }
+      },
+      "validation_issues": [
+        {
+          "id": "vi-6db4435ac4bbe691eb9cad08",
+          "rule_id": "method-length",
+          "severity": "warning",
+          "target_id": "a169eddd-aa72-4884-a3e1-ddcc158880c4",
+          "target_version": "0fa3aad3-1908-4600-8d4a-763f3c36aa33",
+          "ruleset_ref": {
+            "ruleset_id": "issue196-ruleset-3d691b8a",
+            "version": "v1"
+          }
+        }
+      ],
+      "snapshot": {
+        "id": "snapshot-5a614691174bd64c30f6e26511392878",
+        "ruleset_ref": {
+          "ruleset_id": "issue196-ruleset-3d691b8a",
+          "version": "v1"
+        },
+        "snapshot_digest": "ded463eb27afe8318418ced642a72416239eb35c0acb2fe9dbb50cbb583cb842"
+      },
+      "snapshot_readback": {
+        "id": "snapshot-5a614691174bd64c30f6e26511392878",
+        "ruleset_ref": {
+          "ruleset_id": "issue196-ruleset-3d691b8a",
+          "version": "v1"
+        },
+        "snapshot_digest": "ded463eb27afe8318418ced642a72416239eb35c0acb2fe9dbb50cbb583cb842"
+      },
+      "export": {
+        "id": "export-5661ef1b148599cdc101021562da1ed1",
+        "status": "verified",
+        "ruleset_ref": {
+          "ruleset_id": "issue196-ruleset-3d691b8a",
+          "version": "v1"
+        },
+        "download_path": "present"
+      },
+      "export_readback": {
+        "id": "export-5661ef1b148599cdc101021562da1ed1",
+        "status": "verified",
+        "ruleset_ref": {
+          "ruleset_id": "issue196-ruleset-3d691b8a",
+          "version": "v1"
+        },
+        "download_path": "present"
+      },
+      "project_audit_events": 31,
+      "ruleset_use_audit_events": 4,
+      "idempotency_replay": "PASS"
+    },
+    {
+      "status": "PASS",
+      "mode": "legacy",
+      "project_id": "df377a65959be037",
+      "chapter_id": "ed6d7560a1824960",
+      "setup": {
+        "project": {
+          "id": "96aa50c0-b8e9-4766-92da-18d784d0dec1",
+          "status": "draft",
+          "project_version": 1,
+          "template_copy_version": 1
+        },
+        "active": {
+          "id": "96aa50c0-b8e9-4766-92da-18d784d0dec1",
+          "status": "active",
+          "project_version": 3,
+          "template_copy_version": 1
+        }
+      },
+      "template_check": {
+        "status": "passed",
+        "project_version": 7,
+        "template_copy_version": 1,
+        "ruleset_hash": "ad709f6b87c1df0b6fae65c592118f23aff249e8d3d16df9f65623725adda1d5"
+      },
+      "check": {
+        "status": "passed",
+        "project_version": 7,
+        "ruleset_hash": "ad709f6b87c1df0b6fae65c592118f23aff249e8d3d16df9f65623725adda1d5"
+      },
+      "validation_issues": [],
+      "snapshot": {
+        "id": "snapshot-d107bfc3bc7cce771e24bb43a0bcf8f5",
+        "snapshot_digest": "cd3431026e7a3f64e714b1e2a8454456843d25a10a53daed1d29f629358b9e60"
+      },
+      "snapshot_readback": {
+        "id": "snapshot-d107bfc3bc7cce771e24bb43a0bcf8f5",
+        "snapshot_digest": "cd3431026e7a3f64e714b1e2a8454456843d25a10a53daed1d29f629358b9e60"
+      },
+      "export": {
+        "id": "export-a7010f9c8572a656f08b5a7ca9a5197b",
+        "status": "verified",
+        "download_path": "present"
+      },
+      "export_readback": {
+        "id": "export-a7010f9c8572a656f08b5a7ca9a5197b",
+        "status": "verified",
+        "download_path": "present"
+      },
+      "project_audit_events": 28,
+      "ruleset_use_audit_events": 0,
+      "idempotency_replay": "PASS"
+    }
+  ],
+  "uncovered": [
+    {
+      "id": "G4-BROWSER-01",
+      "status": "NOT RUN",
+      "reason": "No Edge/CDP endpoint was supplied to this HTTP runner."
+    },
+    {
+      "id": "G4-MODEL-01",
+      "status": "BLOCKED",
+      "reason": "Real Qwen call requires an authorized provider endpoint/key configured in the service environment."
+    },
+    {
+      "id": "G4-FAIL-01",
+      "status": "NOT RUN",
+      "reason": "Provider timeout/HTTP error injection is not part of the deterministic HTTP runner."
+    },
+    {
+      "id": "G4-PG-01",
+      "status": "NOT RUN",
+      "reason": "This run uses isolated SQLite; PostgreSQL requires an explicit disposable DSN."
+    }
+  ],
+  "unauthenticated_status": 401
+}
