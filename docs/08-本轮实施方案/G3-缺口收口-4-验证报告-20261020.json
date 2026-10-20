@@ -1,0 +1,113 @@
+{
+  "ticket": "G3 缺口收口-4（#253）：阻断级规则问题「接受不处理」返回 500 的根因定位与修复",
+  "gap": "G3-GAP-09",
+  "spec": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:382-384（AC-G3-09）、§10.2（:306-308）",
+  "head": "5eab41273ddf120eceef6cee76759b663a8aa387",
+  "head_tree": "74cfaffba9f8baad899ffbfeb84f98a6cd61d829",
+  "uncommitted_at_report_time": [
+    "internal/lingdoc/workspacecore/service_facade.go",
+    "internal/lingdoc/workspacecore/audit_action_width_test.go",
+    "internal/lingdoc/workspacecore/postgres_issue_disposition_test.go",
+    "internal/lingdoc/workspace/delivery_http_test.go"
+  ],
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "postgres": "PostgreSQL 18.3 on x86_64-pc-windows-msvc（隔离实例，127.0.0.1:55432，库 lingdoc_g3gap）",
+    "postgres_dsn_env": "LINGDOC_TEST_POSTGRES_DSN",
+    "note": "协议偏好 WSL2 Ubuntu + Go 1.26；本轮在 Windows 本机执行，属环境偏差。隔离 PG 用 Scoop 安装的 PostgreSQL，测试用完即停，不触碰任何应用库。"
+  },
+  "root_cause": {
+    "summary": "授权审计行把「动作 + 资源 ID」的复合 capability 写进了有界的 action 分类列，在 PostgreSQL 上超长被拒，原始数据库错误未进错误映射表，因而对合法请求返回 HTTP 500 internal_error。",
+    "detail": [
+      "审计表 lingdoc_project_audits.action 是分类列：PostgreSQL 迁移为 varchar(64)，GORM 模型为 size:64；SQLite 迁移为无界 TEXT —— 这个方言差异正是缺陷长期被掩盖的原因。",
+      "写入方 internal/lingdoc/workspacecore/service_facade.go 的 recordAuditInTransaction 之前写 Action: \"authorization.\" + capability，而 capability = 动作 + \":\" + 资源，资源是调用方给的、长度不受控。",
+      "阻断级 dismiss 的 capability 是 issue-dismiss-blocking:<36 位 UUID>（59 字符），拼上前缀后 action 长 73 字符 > 64，PostgreSQL 报 SQLSTATE 22001（值太长了(64)）。",
+      "resolve 的 capability 是 issue-resolve:<36 位 UUID>，action 恰好 64 字符压线通过 —— 这解释了同一端点上「dismiss 500、resolve 201、waive 400」的不对称。",
+      "该审计写入与业务操作同事务，写入失败即整个操作失败；错误是未映射的原始 SQL 错误，传输层默认分支把它变成 500 internal_error。",
+      "为什么必须用带审计 sink 的装配复现：recordAuditInTransaction 在 s.audit == nil 时提前返回，完全不写审计行。没有审计 sink 的复现看不到这个失败点（本地 SQLite 复现因此返回 201）。",
+      "为什么静态读代码看不到：GORMRepository.Transaction 传入的是 gormTransaction{tx} 值类型，tx.(gormTransaction) 断言成立，因此生产走 GORM 分支；而 s.audit 非 nil（workspaceAuditSink）才会进入该分支。"
+    ],
+    "code_seams": [
+      "internal/lingdoc/workspacecore/service_facade.go:407-454（recordAuditInTransaction，原 Action: \"authorization.\" + capability）",
+      "internal/lingdoc/workspacecore/service_facade.go:767（runOperation 内审计写入失败即操作失败）",
+      "internal/lingdoc/workspacecore/typed_contracts.go:142-147（capability = 动作 + \":\" + 资源）",
+      "internal/lingdoc/workspacecore/service.go:21-28（GORMRepository.Transaction 传 gormTransaction 值）",
+      "internal/lingdoc/workspacecore/model.go:509-517（auditEventRow.Action size:64）",
+      "migrations/versioned/000106_lingdoc_draft_provenance.up.sql:18-26（action varchar(64)）",
+      "migrations/sqlite/000027_lingdoc_draft_provenance.up.sql（action TEXT，无界）",
+      "internal/lingdoc/workspace/http.go:382（未映射错误的默认 500 internal_error）"
+    ]
+  },
+  "fix": {
+    "principle": "分类列只放分类。资源留在有界列之外。",
+    "changes": [
+      "新增 auditAuthorizationAction(capability)：action 列只写 \"authorization.\" + 动作种类（最长 36 字符），完整 capability 继续写在 details.capability 与事件本身。",
+      "审计写入失败改为携带自身对外形态的领域错误 auditWriteFailed（code=audit_write_failed，HTTP 500，消息说明「本次操作未生效」），沿用 ADR 0003 §六 的方向：业务错误自带形态，共享映射表只做兜底，不新增分支。",
+      "审计写入失败仍然 fail-closed（操作不生效），符合 CONTEXT.md「审计失败策略」对正式写入的约定。"
+    ],
+    "not_changed": [
+      "不改列宽：分类列有界是好事，恰恰能暴露「把无界内容塞进分类列」的错误。",
+      "不改 resolve / dismiss / waive 三态语义：waive 对 blocking 仍按语义被拒（400）。",
+      "不迁移错误映射表：42 个共享 case 的整体迁移属于健康度评分 R2，另开票，不混进本票。"
+    ]
+  },
+  "reproduction": {
+    "before_fix": [
+      "ERROR[2026-10-20 14:16:25.976] [audit_event=lingdoc_authorization capability=issue-dismiss-blocking:5013efc8-24f7-4983-b853-3e8b53329acd decision=allow error=错误: 对于可变字符类型来说，值太长了(64) (SQLSTATE 22001) project_id=e3b5ff2c-... tenant_id=1] service_facade.go:445[recordAuditInTransaction] | 发生错误",
+      "blocking dismiss -> status=0 err=错误: 对于可变字符类型来说，值太长了(64) (SQLSTATE 22001)",
+      "warning resolve -> status=201 err=<nil>",
+      "audit column action type = character varying(64)",
+      "audit row action=\"authorization.issue-resolve:5013efc8-24f7-4983-b853-3e8b53329acd\" len=64（压线通过）"
+    ],
+    "after_fix": [
+      "blocking dismiss -> status=201 err=<nil>",
+      "warning resolve -> status=201 err=<nil>",
+      "audit row action=\"authorization.issue-dismiss-blocking\" len=36",
+      "audit row action=\"authorization.issue-resolve\" len=27",
+      "audit row action=\"validation_issue.disposition\" len=28（处置事件本身照旧）"
+    ],
+    "sqlite_counter_example": "同一夹具在 SQLite 上修复前后都返回 201：SQLite 迁移把 action 声明为无界 TEXT，装不下的字符串也写得进去 —— 缺陷只在 PostgreSQL 上暴露。"
+  },
+  "passed": [
+    {
+      "id": "AC-G3-09 阻断级规则问题可被「误报删除」受理（不再 500）",
+      "status": "passed",
+      "evidence": "PostgreSQL（生产迁移 25 个版本化迁移）上 blocking dismiss → HTTP 201，处置落库，审计 action 36 字符。"
+    },
+    {
+      "id": "审计分类列不再接收无界资源",
+      "status": "passed",
+      "evidence": "TestAuthorizationAuditActionStaysWithinColumnWidth / TestEveryAuthorizationActionFitsTheAuditCategory：任意长度资源下 action ≤ 64 且不含资源；全部 19 个授权动作分类都放得下。"
+    },
+    {
+      "id": "资源不丢失：完整 capability 仍在同一审计行的 details 里",
+      "status": "passed",
+      "evidence": "TestAuthorizationAuditKeepsTheFullCapabilityInDetails + PG 回归测试断言 details_json 含目标 UUID。"
+    },
+    {
+      "id": "HTTP seam：阻断级规则问题的 dismiss 被受理",
+      "status": "passed",
+      "evidence": "TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate 增加显式断言：被处置的问题是 blocking，返回的处置 severity=blocking。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "G3-GAP-09 的页面实跑落证（/demo/g3）",
+      "reason": "L2 页面落证由 G3 缺口收口-8 统一完成；本票按两级完成线只要求 L1（实现完成线），对应验收行在页面实跑前只能是 PASS (follow-up)，不得判 PASS。"
+    },
+    {
+      "id": "真实模型与真实浏览器人验",
+      "reason": "本票不涉及模型调用；浏览器人验属验收台整体验收范围。"
+    },
+    {
+      "id": "internal 整树中两个非 LingDoc 包的既有用例",
+      "reason": "internal/agent/tools 与 internal/application/service 在干净树上（把本票改动 stash 掉后）同样失败，属宿主环境限制（Windows 文件占用、技能 Python 打包），与本票无关。"
+    }
+  ],
+  "notes": [
+    "本票的结论推翻了一条此前的推测：不是「授权动作缺少 admin 分支」，也不是「未映射错误该由映射表兜底」，而是分类列被写入了无界资源。",
+    "本票同时暴露了一个结构性事实：SQLite 与 PostgreSQL 的同一张表在列宽上不一致，这会持续掩盖只在一侧出现的缺陷。相关治理另开票。"
+  ]
+}

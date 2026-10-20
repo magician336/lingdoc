@@ -1,0 +1,218 @@
+# G3 缺口收口：按 Matt 方法的开发计划
+
+> 目的地：把 G3 验收台（`/demo/g3`）发现的 11 条实现缺口补齐，使 G3 验收矩阵在**当前 head** 上由页面实跑落证，常驻跟踪票 #246 可关闭。
+>
+> 基准 Spec：`docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md`（唯一给出 AC-G3-01…16 与 G3.1–G3.7 判据的文件）。
+>
+> 计划撰写时的 head：`5eab412`（PR #247「G3 验收台」已合入）。勘察基准 head `7f5fd8c` 的证据一律不得复用（`docs/agents/development-rules.md:120`）。
+
+---
+
+## 1. 要交付的用户结果
+
+用户在验收台 `/demo/g3` 上跑一遍真实链路，就能得到一份**当前 head 可复核**的 G3 验收结论：每一条验收行要么有页面实跑证据，要么明确写着为什么没跑、缺什么、什么时候能跑。
+
+具体地，交付后应当成立：
+
+1. **AC-G3-03 应用原子性**可从 HTTP 面观测：注入写入失败后，项目 revision 未变、模板引用未变、ImpactTask 集合完整。
+2. **AC-G3-08 / AC-G3-16 路线图**可实跑：能造出「必需节点缺失 / 待复核 / 版本落后」，也能造出「编辑未冻结路线图后取消编辑 → 恢复上一版本」。
+3. **AC-G3-14 影响助手**可实跑：助手草稿带「确定受影响 / 可能受影响」两组说明，用户确认后才进入正式评估。
+4. **AC-G3-15 批量导入依赖**可实跑：一次提出若干候选依赖（含对象版本、依据片段、建议理由），三态处理后只有确认的进入正式依赖图。
+5. **AC-G3-09 规则问题与任务分离**两半都成立：dismiss 后的规则问题不再阻断该次求值，但对应 ImpactTask 仍 OPEN、项目仍不能稳定。
+6. **AC-G3-12 稳定化重新读取**可实跑：目标对象版本被替换后，稳定化保持 BLOCKED 并重投任务，而不是提前 409。
+7. **影响中心**在验收台页面读原始响应渲染：确定影响对应的必需对象集合、确定/可能影响分组、来源对象。
+
+## 2. 事实、范围和停止条件
+
+### 已有事实（代码可核对）
+
+| # | 事实 | 证据 |
+| --- | --- | --- |
+| F1 | 缺口清单共 11 条，其中 3 条与当前 head 的描述已经不一致 | 见下表 |
+| F2 | 验收台**已经**渲染 `assessment.objects`、`certainty` 两分组、`causes[].source` | `frontend/src/views/lingdoc/g3demo/G3Demo.vue:286-314`、`:409-473`；分组计算 `runner/dependencies.ts:283-309` |
+| F3 | RouteNode 模型离 Spec §9.1 差一大截：只有 `ID/ProjectID/Version/Name/Inputs/Required/Status/ContextRevision/ActorID/Reason/UpdatedAt` | `internal/lingdoc/workspacecore/semantic_delta.go:31-43` |
+| F4 | `RouteEdge` 全库零命中；没有「冻结 / 未冻结」概念；没有版本序列读端点 | 全库检索 |
+| F5 | RouteNode 可经变更集语义增量写入（`SemanticDelta.ProposedRoute`），因此并非「完全不可写」 | `semantic_delta.go:29`、`:476-497` |
+| F6 | 路线图侧只有只读端点 `GET /projects/{projectId}/route-nodes` | `internal/lingdoc/workspace/impact_routes.go:113-115` |
+| F7 | 助手产出里没有两组说明结构：`AgentTurn.Suggestions` 是不透明 `json.RawMessage` | `internal/lingdoc/workspacecore/g2_model.go:368-386`、`:416-433` |
+| F8 | `impacts[].certainty` 是**影响解析结果**，与助手草稿解释分组不是同一件事 | `impact_model.go:70`、`impact_service.go:492-534` |
+| F9 | 依赖只有单边登记与三态决策；无批量提出端点与候选模型 | `impact_routes.go:116-124`、`impact_model.go:41-50` |
+| F10 | 阻断级 dismiss 与 resolve 的**唯一**代码差异是授权动作；单纯授权拒绝被映射为 404，500 只能来自未被映射的原始错误 | `service_facade.go:2876-2879`、`g5_policy.go:175-182`、`http.go:382`、`:410-411` |
+| F10a | **（2026-10-20 更新）** F10 的根因已定位：授权审计行把复合 capability（动作 + 资源 ID）写进了有界的 action 分类列，阻断级 dismiss 的 action 长 73 字符 > PostgreSQL 的 `varchar(64)` → `SQLSTATE 22001` → 事务回滚 → 未映射错误变 500。resolve 的 action 恰好 64 字符压线通过。**SQLite 把该列声明为无界 `TEXT`，缺陷只在 PostgreSQL 暴露** | `service_facade.go:407-454`、`model.go:509-517`、`migrations/versioned/000106_*.up.sql:18-26`、`migrations/sqlite/000027_*.up.sql`、`service.go:21-28` |
+| F11 | 人工处置当前**不改求值结论**，且有测试**主动断言**这一点 | `internal/lingdoc/delivery/rule_snapshot.go:193-200`、`internal/lingdoc/workspace/delivery_http_test.go:205-207` |
+| F12 | `closure_stale` 分支**存在**且有字面量断言；问题是 HTTP 链路在到达该分支前就 409 | `stabilization_conditions.go:285-306`、`stabilization_guard_test.go:318/688/733`、`impact_service.go:1184-1186` |
+| F13 | 产品 API 无任何故障注入能力；仓库内只有测试局部桩 | `internal/lingdoc/generation/postgres_failure_test.go:22-30`、`workspacecore/stabilization_test.go:305-336` |
+| F14 | 处置的读侧已存在：`Service.ValidationIssueDispositions(ctx, actor, projectID, current []ValidationIssueBinding)`，且应用层已把处置贴回检查结果 | `service_facade.go:2944-2999`、`internal/lingdoc/workspace/delivery_release.go:266-291` |
+| F15 | 术语表只有影响任务侧的「接受不处理」，规则问题侧的 dismiss/waive/resolve **没有条目** | `GLOSSARY.md:52` |
+
+**与 #246 不一致的三处（事实校正，票 #249）**
+
+| 缺口 | #246 的说法 | 当前事实 |
+| --- | --- | --- |
+| G3-GAP-06 / 07 | 「验收台页面尚未渲染」 | **已实现**（F2），缺的是当前 head 的落证 |
+| G3-GAP-11 | 「`closure_stale` 分支实际不可达」 | 分支存在且有断言（F12）；准确说法是「该 HTTP 场景在到达该分支前被 409 拦掉」 |
+| G3-GAP-02 / 03 | 「RouteNode 没有写入端点」 | 可经变更集语义增量写入（F5）；仍缺专门端点、取消编辑、版本序列、RouteEdge、冻结概念 |
+
+### 本次必须
+
+- 补齐 8 条能力缺口（G3-GAP-01…05、09…11）并让对应验收行可实跑。
+- 事实校正（#249）：#246 正文与 `frontend/src/views/lingdoc/g3demo/g3Gaps.ts` 同源且与当前 head 一致。
+- 一份当前 head 的整链证据（#257）。
+
+### 明确不做
+
+- **不做**产品 API 上的故障注入端点（见决策 D4）。
+- **不做**平行的 RouteNode 写端点（见决策 D2）。
+- 不动影响任务侧「接受不处理」的语义（ADR 0003 已定）。
+- 不动工作台面板 `ImpactOpsPanel.vue` 的行为（只读复用其渲染能力）。
+- 不动 G4 规则建议、模板升级等非 G3 能力。
+- 不在本轮实跑调研类闭环（GAP-08，环境限制，另开票 #258）。
+- 不做真实生产环境的故障演练（当前没有生产验收目标，按 `N/A` 记录）。
+
+### 停止条件
+
+出现下列任一情况，停止本计划并回到评审：
+
+1. 「先写接口」被读成「先定 HTTP 端点清单」——那会把测试知识与表层形状泄漏进产品 API（Ousterhout ch04/ch05/ch07）。
+2. 同一验收行的判定只剩一半成立却要记 `PASS`（`development-rules.md:31`）。
+3. 连续两轮评审出现新的 Blocker（`development-rules.md:135`）。
+4. 旧 head（`7f5fd8c`）的证据被当作当前 head 的结论使用。
+
+## 3. 领域决策（spec 固定点）
+
+这些决策是**计划的前提**，实施时不得各自漂移。括号内是拍板依据。
+
+| 编号 | 决策 | 依据 |
+| --- | --- | --- |
+| **D1** | 交付形态 = 一份计划文档（本文件）+ 10 张子票；#246 降为跟踪总票并链接子票 | 一 Issue 一 Spec 一卡的门禁要求；#246 本身是常驻跟踪票 |
+| **D2** | 路线图按**版本化编辑会话**深模块实现，不补平行的写端点 | 平行的写端点让「路线图怎么写、版本怎么算」这条知识同时存在于两处（信息泄漏），版本语义必然分叉；取消语义天然属于这个模块 |
+| **D3** | 助手草稿解释分组与 `impacts[].certainty` **在命名与来源上分开** | 两者是不同的事（F8）；共用字段名会让验收台用一个冒充另一个 |
+| **D4** | 故障注入走**组合根装配会失败的写入端口**，产品 API 零新增 | 把「如何制造失败」泄漏进产品 API 是难逆的公开契约；组合根方案让 apply 走真事务、失败真发生 |
+| **D5** | 规则问题的「误报删除」**进入求值**：不再阻断当次求值，但不关闭 ImpactTask、不解除稳定化阻断 | Spec AC-G3-09 + §10.2、ADR 0003「可接受 = 不阻断」三方一致；现有代码（F11）是孤例 |
+| **D6** | 求值采用**两阶段**：`Evaluate(input)` 保持纯函数 → 应用层读处置 → **一个**阻断集判定函数 | 求值器自己读审计会让两个求值器各合并一次，知识必然漂移；绑定又依赖当次求值产出的 issue，压不成单阶段 |
+| **D7** | 「阻断级 dismiss 的 500」**先复现定位，再修**；根因未定位前不改生产代码 | 现有证据只能把 500 定位到「未被映射的原始错误」，具体报错行未知（F10） |
+| **D8** | 完成线**分两级**：L1 实现完成线（后端票）/ L2 页面落证完成线（#257） | #246 自身要求「缺口补齐后由验收台实跑落证」「本票关闭前对应行一律不得判为 PASS」；后端票可以先做完，但行状态不能先升 PASS |
+
+### 领域术语（新增，随 D5 落盘）
+
+规则问题侧三个动作此前**没有术语条目**，而影响任务侧已有「接受不处理」（`GLOSSARY.md:52`）——同名不同义正是 GAP-10 的根子。需补：
+
+- **误报删除**（规则问题 `dismiss`）：Owner 判定这条规则判断不该存在于当前规则版本与目标版本下；它不关闭 ImpactTask，也不能替代对象重新确认。_避免_：接受不处理（那是影响任务侧）；豁免。
+- **豁免**（规则问题 `waive`）：接受风险。_避免_：误报删除；仅适用于非阻断级。
+- **修正**（规则问题 `resolve`）：这条判断成立且已按其结论处置。_避免_：豁免。
+
+## 4. Tracer-bullet tickets 与阻塞边
+
+| 票 | 标题 | 覆盖 | 先写的接口 | 阻塞于 |
+| --- | --- | --- | --- | --- |
+| [#249](https://github.com/magician336/lingdoc/issues/249) | G3 缺口收口-0：缺口清单事实校正 | G3-GAP-06/07/11/02/03 的陈述校正 | — | 无 |
+| [#250](https://github.com/magician336/lingdoc/issues/250) | G3 缺口收口-1：路线图版本化编辑会话模块 | G3-GAP-02 + G3-GAP-03（AC-G3-08 / AC-G3-16） | 编辑会话能力：BeginEdit / ProposeNode / ProposeEdge / Commit / Cancel / ReadVersion + 必需性判定 | #249 |
+| [#251](https://github.com/magician336/lingdoc/issues/251) | G3 缺口收口-2：助手两组说明 | G3-GAP-04（AC-G3-14） | 草稿产出的 `definite_affected` / `possible_affected` 两组结构 | #249 |
+| [#252](https://github.com/magician336/lingdoc/issues/252) | G3 缺口收口-3：AI 批量提出依赖候选 | G3-GAP-05（AC-G3-15） | 候选依赖批次：提交批次 / 读取候选 / 三态决策对接 / 同版本不再重提 | #249 |
+| [#253](https://github.com/magician336/lingdoc/issues/253) | G3 缺口收口-4：阻断级 dismiss 500 的根因定位与修复 | G3-GAP-09（AC-G3-09 前半） | 不写新接口（先复现、钉报错行） | #249 |
+| [#254](https://github.com/magician336/lingdoc/issues/254) | G3 缺口收口-5：误报删除进入规则问题求值 | G3-GAP-10（AC-G3-09 后半） | 两阶段求值 + 唯一阻断集判定函数 | #249、#253 |
+| [#255](https://github.com/magician336/lingdoc/issues/255) | G3 缺口收口-6：稳定化版本不匹配落到 closure_stale | G3-GAP-11（AC-G3-12） | 「请求级 revision 不符 409」与「闭环证据版本落后 → BLOCKED + 重投」的分离 | #249 |
+| [#256](https://github.com/magician336/lingdoc/issues/256) | G3 缺口收口-7：受控故障注入能力 | G3-GAP-01（AC-G3-03） | 组合根装配契约：可替换窄 port + 注入开关 + 作用域 | #249 |
+| [#257](https://github.com/magician336/lingdoc/issues/257) | G3 缺口收口-8：验收台在当前 head 重跑与全量落证 | G3-GAP-06/07 + 全矩阵行 | 不写新接口（复用现有 g3demo runner） | #250…#256 |
+| [#258](https://github.com/magician336/lingdoc/issues/258) | G3 缺口收口-9：检索渠道环境限制与调研类闭环实跑 | G3-GAP-08 | — | 外部凭据（`[REQUIRED]`） |
+
+**依赖边已在 GitHub 上用原生 issue dependencies 建立**（`issue_dependencies_summary.blocked_by`：#250–#256 各 1，#254 为 2，#257 为 7，#249 与 #258 为 0）。
+
+### 「先写接口」的落点（Ousterhout ch12/ch15 + `development-rules.md` §3）
+
+「先写接口」指**先写拥有真相的模块的接口契约与不变量**，不是先定 HTTP 端点签名。
+
+| 票 | 拥有真相的模块 | 关键不变量 |
+| --- | --- | --- |
+| #250 | 新建 `workspacecore` 路线图模块 | 版本单调；冻结版本只读；未冻结内容不进入导出输入；取消后无引用指向临时版本 |
+| #251 | 助手草稿产出层 | 助手产出只是草稿，不改项目状态；每条说明可追溯到依据；确认后才进入正式评估 |
+| #252 | 依赖注册表 | 候选不是依赖边；只有 confirm 的进入正式图；被拒/被改候选同版本不重提；确认时复检对象版本 |
+| #254 | 求值层 | `Evaluate` 保持纯函数；阻断集判定只有一处；绑定完全匹配才生效；dismiss 不关闭 ImpactTask |
+| #255 | 稳定化聚合器 | 按同一目标 revision 重新读取；不匹配 → BLOCKED + 重投；重投幂等 |
+| #256 | 组合根 + 一个 fake port | 开关默认关闭；仅演示租户/进程内；失败必须可辨认为注入 |
+
+**已知的信息泄漏点（实施时必须收敛）**：「这条规则问题是否还阻断」当前同时存在于 `delivery.Evaluate`（`snapshot.go:490-492`）与 `TemplateGovernanceRuntime.Check`（`template_governance_runtime.go:738`）——#254 把它收敛到一个函数。
+
+## 5. 实施顺序、完成线与 review
+
+### 顺序
+
+```
+#249 事实校正
+   ├─► #250 路线图模块 ─┐
+   ├─► #251 助手两组 ───┤
+   ├─► #252 依赖候选 ───┤
+   ├─► #253 dismiss 500 ─┴─► #254 误报删除进求值 ─┐
+   ├─► #255 closure_stale ────────────────────────┼─► #257 整链重跑落证 ─► 关闭 #246
+   └─► #256 故障注入 ─────────────────────────────┘
+#258 检索渠道（外部输入，独立推进）
+```
+
+#250–#256 之间**互不阻塞**，可并行；#254 必须等 #253 的根因结论（同一验收场景的另一半）。
+
+### 本轮进展（2026-10-20）
+
+| 票 | 状态 | 说明 |
+| --- | --- | --- |
+| #250 | 范围已收敛 | 用户拍板走**最小集**（见票内「必须做 / 明确不做」清单）。不做 Spec §9.1 的建模完备性字段与章节→路线节点引用关系；「章节引用不指向临时版本」在当前模型下平凡成立，票内已如实记录该风险 |
+| #253 | **L1 已达成** | 根因已定位并在隔离 PostgreSQL（生产迁移）上复现与复验：授权审计行把复合 capability 写进有界的 action 分类列（73 > 64）→ `SQLSTATE 22001` → 未映射错误变 500。修复后 blocking dismiss 返回 201。证据：`docs/08-本轮实施方案/G3-缺口收口-4-验证报告-20261020.json` |
+| #254 | 可开工 | #253 的根因结论已到位（不再有未知阻塞） |
+
+#253 遗留（建议另开票，不混进本批）：SQLite 与 PostgreSQL 的审计列宽方言差异（`TEXT` vs `varchar(64)`，会持续掩盖只在一侧出现的缺陷）；共享错误映射表仍有 42 个 `case errors.Is(...)`（健康度评分 R2）。
+
+### #253 的遗留拆票（2026-10-20 已开票；2026-10-20 与 Spec #47 归并）
+
+| 票 | 覆盖 | 现状 |
+| --- | --- | --- |
+| [#276](https://github.com/magician336/lingdoc/issues/276) G3 缺口收口-4-A | 审计分类列在两种方言上都强制有界 | 独立，open |
+| [#282](https://github.com/magician336/lingdoc/issues/282) G3 缺口收口-4-G | 审计动作新旧格式并存的读侧保证 | 独立，open |
+| ~~#277~~ #278 #279 #280 #281 | 错误形态归域：机制 → 专属形态迁移两批 → 共享形态迁移 → 收缩到兜底 | **已关闭并归并到 Spec #47（#259）的 [#262 错误形态跨面归并](https://github.com/magician336/lingdoc/issues/262) 与 [#263 旧错误平表 contract + 结构断言](https://github.com/magician336/lingdoc/issues/263)**：同一件事不做两遍。形态目录（6 个共享形态值 / 22 个共享错误 / 21 个专属形态）、两条归属判据、接口缺口（可重试标志、可选响应头）已移入 #262 正文；「新增错误不改表」的守护与收缩验收标准已移入 #263 |
+
+**设计裁决（2026-10-20）**：γ 混合（形态由错误本身决定 → 定义处声明；由场景决定 → 场景处包装）+ 收缩范围（先迁专属形态，共享形态按 6 个形态目录项批量迁）+ 扩展对外形态接口（可重试标志与可选响应头，`Retry-After` 属于错误自己的行为，不能留在传输层）。
+
+**与 Spec #47 的其它交叉点**：#256（受控故障注入的组合根装配契约）引用 #265（47.10 组合根缺能力 fail-closed）；#250（路线图版本化编辑会话模块）引用 #273（47.08 共享核心成为独立深模块）——两处都是**引用复用，不是阻塞依赖**。
+
+### 两级完成线
+
+| 级别 | 适用 | 要求 | 验收行状态 |
+| --- | --- | --- | --- |
+| **L1 实现完成线** | #249–#256、#258 | ① 证据落 `docs/08-本轮实施方案/T*-验证报告.json` 与 `T*-S*-证据.json`；② 关键行为经**真实 application/HTTP seam** 验证（只调 store 或内部函数的测试不计入）；③ 涉持久化时覆盖 SQLite/PostgreSQL 的迁移、重启读回、失败回滚、并发与幂等；④ 更新 #246 对应缺口状态与 `g3Gaps.ts`；⑤ 不要求 `/demo/g3` 页面实跑 | 只能 `PASS (follow-up)` 或保持 `NOT RUN` / `BLOCKED`，**不得判 `PASS`** |
+| **L2 页面落证完成线** | #257 | `/demo/g3` 页面实跑 + 证据绑定当前 head + `g3Gaps.ts` 与 #246 同步 + 逐条合取判据核对 | 满足的才升 `PASS`；只成立一半的记 `PASS (follow-up)` 并留跟进 Issue |
+
+**旧 head（`7f5fd8c`）的证据不得复用。**
+
+### 每张 PR 的完成线
+
+- PR 关联一个子票与一份 Spec 锚点，范围与 out-of-scope 与代码一致。
+- 验收矩阵每一行有当前 head 的实现位置与证据。
+- 定向测试、构建、lint 与相关集成测试已运行，命令与 PASS/FAIL/NOT RUN 已记录。
+- 涉及持久化、并发或审计时，迁移/重启读回/幂等重试/竞态/无部分写入证据齐备。
+- PR body 的 SHA、CI 链接与结论都指向当前 head。
+- 存在未决规则时保持 Draft。
+
+## 6. 交接与验证清单
+
+计划落地后交付：
+
+- [ ] 本计划文档 + 10 张子票（#249–#258）+ GitHub 原生阻塞依赖边
+- [ ] #246 正文与 `g3Gaps.ts` 事实校正完成并互相链接
+- [ ] 缺口→子票→验收行的可追踪链（每条缺口有归属票，每张票有归属验收行）
+- [ ] `lingdoc-health-scoring` 一次（记录高风险维度、拟采取措施、未验证证据）
+- [ ] 每张子票的验收矩阵初稿（状态全部 `TODO`，不得预填 `PASS`）
+
+**输入分类**（`development-rules.md:52-61`）
+
+- `[DERIVED]`：全部范围、模块边界、接口契约、验收行、顺序——由仓库、Issue、Spec 推出。
+- `[GENERATED]`：合成数据、测试夹具、临时库、浏览器运行时。
+- `[REQUIRED]`：仅 #258 的检索渠道凭据或真实 asset。
+- `[APPROVAL]`：无（无付费调用、无生产写入、无发布）。
+
+## 7. 后续触发条件
+
+以下情况发生时，本计划之外另开票，不在本批范围内：
+
+1. 调研类闭环（#258）解除后，G3.6 的调研类验收行才可判 `PASS`。
+2. `POST /research-tasks` 补 `provider_id` 仍返回 500 —— 另开缺陷票（环境票只记环境限制，不吞缺陷）。
+3. G4 的规则建议与模板升级与本批的交互 —— 走 G4 自己的线（#141、#142）。
+4. 验收台本身需要新增验收行或新场景 —— 走 #235 的 Spec 修订，不在本批夹带。
+5. 路线图模块落地后，路线图 UI 的完整形态（比较视图、跳转关联章节/主张）—— 按 #250 的 out-of-scope，另开票。

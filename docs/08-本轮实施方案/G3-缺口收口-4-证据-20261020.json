@@ -1,0 +1,69 @@
+{
+  "ticket": "G3 缺口收口-4（#253）",
+  "gap": "G3-GAP-09",
+  "head": "5eab41273ddf120eceef6cee76759b663a8aa387",
+  "head_tree": "74cfaffba9f8baad899ffbfeb84f98a6cd61d829",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "postgres": "PostgreSQL 18.3 on x86_64-pc-windows-msvc（隔离实例 127.0.0.1:55432 / 库 lingdoc_g3gap，测试用完即停）",
+    "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'（sqlite3.h；缺失时 internal/container 构建失败，属环境限制）"
+  },
+  "commands": [
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth|TestAuthorizationAuditAction|TestEveryAuthorizationAction' -v",
+      "result": "PASS（3 个用例全通过；PG 迁移 25 个版本化迁移真实执行）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate' -v",
+      "result": "PASS（HTTP seam：阻断级规则问题的 dismiss 被受理）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/... ./internal/container/...（带 LINGDOC_TEST_POSTGRES_DSN 与 CGO_CFLAGS）",
+      "result": "PASS（access、candidateadoption、delivery、docx、generation、reviewanchor、rulesetstore、template、templategovernance、workspace 541.862s、workspacecore 155.503s、container ok）"
+    },
+    {
+      "command": "go test -race ./internal/lingdoc/workspacecore/...",
+      "result": "PASS（280.817s，无数据竞争）"
+    },
+    {
+      "command": "go test ./internal/...（整树）",
+      "result": "LingDoc 全包 + container 全绿；两个非 LingDoc 包失败：internal/agent/tools（技能 Python 打包 / MCP schema / shell stdin 用例）与 internal/application/service（数据源软删除清理、种子技能 helper 用例）。已核对为**既存失败、与本票改动无关**：把本票的改动 stash 掉后，在干净树上重跑这两个包仍然失败（agent/tools FAIL，application/service FAIL 59.959s）；其中数据源用例的失败原因是 Windows 下测试自己 TempDir 清理时 sqlite 文件仍被占用（testing.go:1617 unlinkat ... The process cannot access the file because it is being used by another process），属宿主环境限制。"
+    },
+    {
+      "command": "cd frontend && npm run type-check && npm test",
+      "result": "PASS（vue-tsc 无输出；1462 tests / 1461 pass / 0 fail / 1 skipped）"
+    }
+  ],
+  "reproduction": {
+    "how": "在隔离 PostgreSQL 上用生产迁移建库，装配真实 workspacecore Service（带审计 sink），再调用 RecordValidationIssueDisposition，参数为 severity=blocking、action=dismiss、TargetID 为 36 位 UUID。",
+    "why_audit_sink_matters": "recordAuditInTransaction 在 s.audit == nil 时提前返回，完全不写审计行。没有审计 sink 的复现看不到失败点。",
+    "before_fix": {
+      "log": "ERROR[2026-10-20 14:16:25.976] [audit_event=lingdoc_authorization capability=issue-dismiss-blocking:5013efc8-24f7-4983-b853-3e8b53329acd decision=allow error=错误: 对于可变字符类型来说，值太长了(64) (SQLSTATE 22001) project_id=e3b5ff2c-d001-4b38-b006-f6743cc2c948 tenant_id=1] service_facade.go:445[recordAuditInTransaction] | 发生错误",
+      "blocking_dismiss": "status=0 err=SQLSTATE 22001（value too long for type character varying(64)）",
+      "warning_resolve": "status=201",
+      "audit_column_type": "character varying(64)",
+      "audit_row_action_resolve": "authorization.issue-resolve:5013efc8-24f7-4983-b853-3e8b53329acd（len=64，压线通过）"
+    },
+    "after_fix": {
+      "blocking_dismiss": "status=201",
+      "warning_resolve": "status=201",
+      "audit_row_action_dismiss": "authorization.issue-dismiss-blocking（len=36）",
+      "audit_row_action_resolve": "authorization.issue-resolve（len=27）",
+      "audit_row_action_disposition": "validation_issue.disposition（len=28，处置事件本身照旧）"
+    },
+    "sqlite_counter_example": "同一夹具在 SQLite 上修复前后都返回 201：SQLite 迁移把 action 声明为无界 TEXT，写得进去 —— 缺陷只在 PostgreSQL 暴露。"
+  },
+  "artifacts": [
+    "docs/08-本轮实施方案/G3-缺口收口-4-验证报告-20261020.json",
+    "internal/lingdoc/workspacecore/service_facade.go（auditAuthorizationAction、auditWriteFailed）",
+    "internal/lingdoc/workspacecore/audit_action_width_test.go",
+    "internal/lingdoc/workspacecore/postgres_issue_disposition_test.go",
+    "internal/lingdoc/workspace/delivery_http_test.go"
+  ],
+  "uncovered": [
+    "G3-GAP-09 的页面实跑落证（/demo/g3）：由 G3 缺口收口-8 完成；在此之前 AC-G3-09 只能记 PASS (follow-up)。",
+    "真实模型调用与真实浏览器人验：本票不涉及。",
+    "生产库的实际审计历史：修复前生产库里可能已存在 64 字符压线的 authorization.* 行；本票不迁移历史行，action 新旧两种格式并存不影响任何消费方（仓内只按前缀或无资源形态匹配）。"
+  ]
+}

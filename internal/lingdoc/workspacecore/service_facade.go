@@ -404,6 +404,45 @@ func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capab
 	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
 }
 
+// auditAuthorizationAction returns the bounded category string for an
+// authorization audit row.
+//
+// `lingdoc_project_audits.action` is a **category** column: 64 characters on
+// PostgreSQL (`varchar(64)`, and `size:64` in the GORM model). The capability
+// string is "action" or "action:resource", and the resource is caller-supplied
+// and unbounded, so writing the composite into that column overflowed it.
+// "authorization.issue-dismiss-blocking:<36-char uuid>" is 73 characters and
+// PostgreSQL rejected it with SQLSTATE 22001; the write shares the operation
+// transaction, so the whole operation failed and the raw database error
+// reached the transport unmapped — an HTTP 500 on a valid request.
+//
+// The resource stays where it belongs: the full capability is kept in
+// `details.capability` (JSON, unbounded) and on the event itself, and the
+// action column keeps the category.
+func auditAuthorizationAction(capability string) string {
+	action, _, _ := strings.Cut(capability, ":")
+	return "authorization." + action
+}
+
+// auditWriteFailed states its own client presentation. The operation did not
+// take effect because its audit record could not be written, which is a
+// storage failure rather than a business decision: the caller's request was
+// valid and nothing changed. It carries its own code so the transport mapper
+// stays a backstop (ADR 0003) instead of growing a branch per failure.
+type auditWriteFailed struct{ cause error }
+
+func (e auditWriteFailed) Error() string { return "audit_write_failed: " + e.cause.Error() }
+
+func (e auditWriteFailed) Unwrap() error { return e.cause }
+
+func (e auditWriteFailed) ClientStatus() int { return 500 }
+
+func (e auditWriteFailed) ClientCode() string { return "audit_write_failed" }
+
+func (e auditWriteFailed) ClientMessage() string {
+	return "审计记录写入失败，本次操作未生效，请稍后重试。"
+}
+
 // recordAuditInTransaction keeps the audit write on the caller's transaction.
 // SQLite uses a single pooled connection; opening the audit store separately
 // while a write transaction is active deadlocks the request until its context
@@ -423,7 +462,7 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 		return nil
 	}
 	event := AuditEvent{
-		ID: uuid.NewString(), ActorID: actor.UserID, Action: "authorization." + capability,
+		ID: uuid.NewString(), ActorID: actor.UserID, Action: auditAuthorizationAction(capability),
 		Target: projectID, CreatedAt: time.Now().UTC(),
 		Details: map[string]any{"tenant_id": actor.TenantID, "role": string(actor.Role),
 			"capability": capability, "decision": auditDecision(authErr), "reason": auditReason(authErr)},
@@ -765,7 +804,11 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 			}
 		}
 		if err := s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil); err != nil {
-			return err
+			// The audit row is part of the operation's atomic boundary, so a
+			// failed audit write fails the operation (fail-closed) — but it must
+			// not escape as a raw storage error, because the shared transport
+			// mapper would answer a valid request with a bare 500.
+			return auditWriteFailed{cause: err}
 		}
 		if s.runtimeMode != "" {
 			if err := RuntimeGate(tx, actor, p, op, s.runtimeMode); err != nil {
