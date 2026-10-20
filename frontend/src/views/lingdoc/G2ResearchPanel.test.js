@@ -20,6 +20,8 @@ function fixture(options={}){
  const exports={}
  const helperSource=fs.readFileSync(new URL('./g2UiState.ts',import.meta.url),'utf8'),helpers={}
  vm.runInNewContext(ts.transpileModule(helperSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:helpers,URL,crypto:{randomUUID:()=>String(calls.length)}})
+ const affectedSource=fs.readFileSync(new URL('./assistantAffectedGroups.ts',import.meta.url),'utf8'),affected={}
+ vm.runInNewContext(ts.transpileModule(affectedSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:affected,URL})
  const output=ts.transpileModule(script.content,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText
  const emitted=[]
  vm.runInNewContext(output,{exports,console,document:{activeElement:null},setTimeout,clearTimeout,require:id=>{
@@ -29,11 +31,12 @@ function fixture(options={}){
   if(id==='@/api/lingdoc/g2')return g2
   if(id==='@/api/lingdoc/workspace')return workspace
   if(id==='./g2UiState')return helpers
+  if(id==='./assistantAffectedGroups')return affected
   if(['@/api/lingdoc/delivery','@/api/web-search-provider','@/api/knowledge-base'].includes(id))return defaultAPI
   throw new Error('unexpected dependency '+id)
  }})
  const state=exports.default.setup(props,{expose:()=>{},emit:(...args)=>emitted.push(args)})
- return {state,props,calls,emitted,close:()=>cleanup.forEach(fn=>fn())}
+ return {state,props,calls,emitted,affected,close:()=>cleanup.forEach(fn=>fn())}
 }
 function task(){return {id:'task',version:2,goal:'定义与反例',scope:'当前资料',queries:['定义','反例'],exclusions:[],asset_ids:['asset'],status:'draft',basis:{context_revision:4}}}
 test('实际组件在明确确认前不发批准写入，确认后保留当前版本',async()=>{
@@ -236,5 +239,23 @@ test('直接触发函数也拒绝其他项目章节及当前只读身份',async(
  await f.state.proposeAction()
  assert.equal(f.calls.some(call=>call.method==='createActionProposal'),false)
  assert.match(f.state.error.value,/无权/)
+ f.close()
+})
+
+test('助手两组说明各自带对象、原因与依据，且不混用影响解析的 certainty',async()=>{
+ const f=fixture();await tick()
+ const turn=changeDraftTurn()
+ turn.suggestions.affected_explanation={
+  definite_affected:[{object:{kind:'ChapterVersion',id:'chapter-1',version:'v1'},reason:'该章正文引用了被修改的研究条件',basis:{source_type:'dependency_edge',source_id:'edge-1'}}],
+  possible_affected:[{object:{kind:'EvidenceCard',id:'card-1',version:'2'},reason:'证据卡适用范围可能覆盖新条件',basis:{source_type:'ruleset',source_id:'ruleset-1'}}],
+ }
+ f.state.turns.value=[turn];await tick()
+ const groups=f.affected.assistantAffectedGroups(turn.suggestions.affected_explanation)
+ assert.equal(groups.length,2)
+ assert.equal(groups[0].title,'确定受影响')
+ assert.equal(groups[1].title,'可能受影响')
+ assert.equal(f.affected.assistantAffectedObjectLabel(groups[0].entries[0]),'ChapterVersion · chapter-1 · v1')
+ assert.equal(f.affected.assistantAffectedBasisLabel(groups[0].entries[0]),'dependency_edge · edge-1')
+ assert.equal(JSON.stringify(groups).includes('certainty'),false)
  f.close()
 })

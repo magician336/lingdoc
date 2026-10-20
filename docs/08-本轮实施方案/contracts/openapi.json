@@ -22034,6 +22034,9 @@
               "$ref": "#/components/schemas/ChangeImpact"
             }
           },
+          "affected_explanation": {
+            "$ref": "#/components/schemas/AssistantAffectedExplanation"
+          },
           "template_upgrade": {
             "type": "object",
             "additionalProperties": true
@@ -22067,6 +22070,104 @@
           "created_at"
         ],
         "additionalProperties": false
+      },
+      "AssistantAffectedObject": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind",
+          "id",
+          "version"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "version": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "description": "One version of one object the assistant says is affected."
+      },
+      "AssistantAffectedBasis": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_type",
+          "source_id"
+        ],
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "change_set",
+              "dependency_edge",
+              "ruleset",
+              "impact_task",
+              "object_version"
+            ]
+          },
+          "source_id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "description": "The record the assistant relied on. An explanation without a basis is refused."
+      },
+      "AssistantAffectedEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "object",
+          "reason",
+          "basis"
+        ],
+        "properties": {
+          "object": {
+            "$ref": "#/components/schemas/AssistantAffectedObject"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 2000
+          },
+          "basis": {
+            "$ref": "#/components/schemas/AssistantAffectedBasis"
+          }
+        },
+        "description": "One explained object: what it is, why it is affected, and what the assistant relied on."
+      },
+      "AssistantAffectedExplanation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "definite_affected",
+          "possible_affected"
+        ],
+        "properties": {
+          "definite_affected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantAffectedEntry"
+            }
+          },
+          "possible_affected": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantAffectedEntry"
+            }
+          }
+        },
+        "description": "The G3 impact assistant's own two-group reading of what a proposed change affects. It is not the impact resolver's verdict: that one keeps impacts[].certainty on ImpactAssessment, and the two never share a field name."
       },
       "ChangeSetResponse": {
         "type": "object",

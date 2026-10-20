@@ -200,10 +200,18 @@ func (s *Service) PrepareAgentChangeDraft(ctx context.Context, actor Actor, prop
 	if err != nil {
 		return ctx, err
 	}
+	// The assistant's two explanation groups are re-derived from the persisted
+	// turn, never taken from the client. A turn whose explanation cannot cite a
+	// basis is refused here, so the draft write fails with zero writes and the
+	// unsupported object enters neither group.
+	affected, err := s.assistantAffectedForDraft(ctx, actor, proposal.ProjectID, input)
+	if err != nil {
+		return ctx, err
+	}
 	proof := prepared.Value(g1ProvenanceProofKey{}).(*g1ProvenanceProof)
 	proof.Operation = string(operationCreateChangeDraft)
 	proof.OperationBody = hashImpactValue(input.ExtendedChangeSetInput)
-	return context.WithValue(prepared, agentChangeDraftContextKey{}, agentChangeDraftProof{ProjectID: proposal.ProjectID, BodyHash: proof.OperationBody, Input: input}), nil
+	return withAssistantAffected(context.WithValue(prepared, agentChangeDraftContextKey{}, agentChangeDraftProof{ProjectID: proposal.ProjectID, BodyHash: proof.OperationBody, Input: input}), affected), nil
 }
 
 func storeAgentChangeDraftFields(ctx context.Context, tx Transaction, p Project, change ChangeSet, input ExtendedChangeSetInput) error {
