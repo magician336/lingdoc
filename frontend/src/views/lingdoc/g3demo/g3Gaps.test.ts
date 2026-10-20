@@ -74,17 +74,44 @@ test('缺口对应行的状态不写 PASS，且取自仓库门禁词表', () => 
   }
 })
 
-test('影响中心两条缺口的措辞是「工作台已补齐，验收台页面实跑证据待落」', () => {
+test('影响中心两条缺口的措辞是「验收台已渲染，缺当前 head 的实跑证据」', () => {
   const gap06 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-06')
   const gap07 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-07')
   assert.ok(gap06)
   assert.ok(gap07)
   for (const gap of [gap06, gap07]) {
-    assert.match(gap.title, /工作台已补齐/)
-    assert.match(gap.missing, /验收台页面/)
+    // 渲染能力已在 PR #247（head 5eab412）落到验收台页面；缺的是当前 head 的落证。
+    assert.match(gap.title, /验收台已渲染/)
+    assert.match(gap.title, /当前 head/)
+    assert.match(gap.missing, /当前 head/)
+    assert.match(gap.fact ?? '', /G3Demo\.vue/)
     assert.match(gap.fact ?? '', /ImpactOpsPanel\.vue/)
+    // 「工作台已补齐」是旧措辞：它把缺口说成「工作台没渲染」，与事实相反。
+    assert.doesNotMatch(gap.title, /工作台已补齐/)
     assert.doesNotMatch(gap.fact ?? '', /工作台面板未渲染/)
   }
+})
+
+test('每条缺口都有承接票，且票号落在本轮拆出的子票区间内', () => {
+  for (const gap of G3_IMPLEMENTATION_GAPS) {
+    assert.ok(typeof gap.ticket === 'number' && gap.ticket > 0, `${gap.id} 缺承接票号`)
+    assert.ok(gap.ticket! >= 249 && gap.ticket! <= 258, `${gap.id} 的承接票号不在 #249–#258 区间内`)
+  }
+  const ticketOf = (id: string) => G3_IMPLEMENTATION_GAPS.find((gap) => gap.id === id)!.ticket
+  // 路线图两条缺口由同一张票承接；影响中心两条由整链落证票承接。
+  assert.equal(ticketOf('G3-GAP-02'), ticketOf('G3-GAP-03'))
+  assert.equal(ticketOf('G3-GAP-06'), ticketOf('G3-GAP-07'))
+  assert.equal(ticketOf('G3-GAP-01'), 256)
+  assert.equal(ticketOf('G3-GAP-08'), 258)
+})
+
+test('G3-GAP-11 的措辞是「该链路上到不了」，不是「分支不可达」', () => {
+  const gap = G3_IMPLEMENTATION_GAPS.find((item) => item.id === 'G3-GAP-11')!
+  // closure_stale 分支存在且有字面量断言；问题是在到达该分支前被 409 拦掉。
+  assert.match(gap.title, /该链路上到不了/)
+  assert.match(gap.fact ?? '', /存在/)
+  assert.match(gap.fact ?? '', /stabilization_conditions\.go/)
+  assert.doesNotMatch(gap.title, /closure_stale 分支不可达/)
 })
 
 test('AC-G3-14 的助手解释分组与影响解析分组不混同', () => {
