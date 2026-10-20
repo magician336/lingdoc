@@ -100,6 +100,19 @@ func BuildInverseSemanticDeltas(tx Transaction, p Project, change ChangeSet) ([]
 				old.Inputs = []ObjectVersionRef{}
 			}
 			inverse.ProposedRoute = &old
+		case "RouteEdge":
+			var old RouteEdge
+			if err := json.Unmarshal(delta.Before, &old); err != nil {
+				return nil, err
+			}
+			if old.Version == 0 {
+				// A newly created edge has no previous version to restore, so
+				// its inverse is the same relation with an empty relation
+				// type: applying it retires the edge from the roadmap.
+				old = *delta.ProposedEdge
+				old.Relation = ""
+			}
+			inverse.ProposedEdge = &old
 		default:
 			return nil, ErrInvalidRequest
 		}

@@ -1,0 +1,165 @@
+{
+  "ticket": "G3 缺口收口-1（#250）",
+  "gaps": ["G3-GAP-02", "G3-GAP-03"],
+  "acceptance_rows": ["AC-G3-08", "AC-G3-16"],
+  "head": "4d8b2e51c0f5493ff323f9dea5ffe831d5515024",
+  "base": "0eb1b38 (origin/feat/g3-gap-closure)",
+  "branch": "feat/issue-250-roadmap-editing-session",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "os": "Windows 10.0.26200 x86_64",
+    "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'（sqlite3.h；缺失时 internal/container 构建失败，属环境限制）",
+    "postgres": "本机未安装 PostgreSQL（initdb/pg_ctl/psql 均不存在，D:\\pgdata-g3gap 不存在）→ PostgreSQL 迁移的升/降实跑为 NOT RUN，理由见 not_run"
+  },
+  "commands": [
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestRoadmap' -count=1",
+      "result": "PASS（9 个用例：提案不进冻结路线图、提交冻结新版本并产生复核任务、取消恢复基线并释放临时引用、语义提交产出 ChangeSet、版本序列与比较、必需性只由模板规则声明、三种必需节点前置给出 blocking ValidationIssue、三种状态可区分、同一项目只允许一个未冻结会话、基线漂移拒绝提交）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestRoadmap' -count=1",
+      "result": "PASS（3 个 HTTP seam 用例：编辑会话提交/取消全链路、语义提交答回 ChangeSet、机器主体被拒 403）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestRoadmapMigration' -count=1 -v",
+      "result": "PASS（SQLite：26 个生产迁移升到 000044，列定义在重开连接后一致，down 脚本把两张表删净）；PostgreSQL 用例为 SKIP：NOT RUN（无 LINGDOC_TEST_POSTGRES_DSN）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/... -count=1",
+      "result": "PASS（workspacecore 39.942s、workspace 142.003s；既有共享文件改动未打破任何既有用例）"
+    },
+    {
+      "command": "go build ./...  （带 CGO_CFLAGS）",
+      "result": "PASS"
+    },
+    {
+      "command": "go vet ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/...",
+      "result": "PASS"
+    },
+    {
+      "command": "cd frontend && node --test src/api/lingdoc/roadmap.test.js",
+      "result": "PASS（3/3：端点与编码、提案不携带 required 字段、版本比较问服务端要两版）"
+    },
+    {
+      "command": "cd frontend && npm run type-check",
+      "result": "PASS（vue-tsc --build 无输出）"
+    }
+  ],
+  "acceptance_matrix": [
+    {
+      "row": "造出「R7 缺失」",
+      "status": "PASS (follow-up)",
+      "seam": "HTTP seam + 领域求值",
+      "evidence": "路线图模块能创建/不创建必经节点；模板求值（RouteEvaluationFields → template.EvaluateScene(preflight)）对缺失的必经字段给出 severity=blocking 的 ValidationIssue（TestRoadmapRequiredNodeStatesProduceBlockingValidationIssues 第 1 段）。稳定化被 RouteStabilizationBlockers 与规则求值共同阻断，导出输入不含该节点。页面实跑由 #257 负责。",
+      "notes": "本机无 PostgreSQL，规则求值在 SQLite 上实跑；PG 上同一路径由既有 TestPostgresMigrationAndRepositoryContract 覆盖迁移链。"
+    },
+    {
+      "row": "造出「R7 待复核 / 版本落后」",
+      "status": "PASS (follow-up)",
+      "seam": "HTTP seam + 领域求值",
+      "evidence": "pending_review 状态与「钉住已被替换的输入版本」两种前置均可构造（TestRoadmapRequiredNodeStatesProduceBlockingValidationIssues 第 2、3 段；TestRoadmapNodeStateDistinguishesMissingPendingReviewAndStale）。两者都让必经字段取不到值 → blocking ValidationIssue；RouteStabilizationBlockers 同时给出 required_route_not_current（TestRoadmapRequiredNodeStateBlocksStabilization）。"
+    },
+    {
+      "row": "取消未冻结编辑",
+      "status": "PASS (follow-up)",
+      "seam": "HTTP seam",
+      "evidence": "POST /projects/{id}/roadmap/edits/{sessionId}/cancel 后冻结路线图仍停在上一冻结版本（TestRoadmapHTTPCommitFreezesANewVersionAndCancelRestoresTheBaseline）；指向临时版本的影响任务被置为 STALE（reason=cancelled_temporary_version）且闭环证据被解绑（TestRoadmapCancelRestoresTheBaselineAndReleasesTemporaryReferences）。"
+    },
+    {
+      "row": "版本序列与比较",
+      "status": "PASS",
+      "seam": "HTTP seam",
+      "evidence": "GET /projects/{id}/roadmap/nodes/{nodeId}/versions 返回冻结版本序列；GET .../compare?from=1&to=2 返回字段级前后比较（HTTP 用例 + TestRoadmapNodeVersionSequenceAndComparison）。"
+    },
+    {
+      "row": "导出只读冻结版本",
+      "status": "PASS (follow-up)",
+      "seam": "领域不变量",
+      "evidence": "未冻结提案只存在于会话记录，冻结表（route_node / route_node_version）在提交前没有新版本（TestRoadmapProposalStaysOutOfTheFrozenRoadmap、TestRoadmapUnfrozenProposalIsNotInTheVersionSequence）；导出输入读的是 RouteEvaluationFields → 冻结节点，因此读不到草稿。页面实跑由 #257 负责。"
+    },
+    {
+      "row": "提交的分流",
+      "status": "PASS",
+      "seam": "HTTP seam + 领域服务",
+      "evidence": "文字编辑冻结新的 RouteNode 版本并与影响任务同事务落库（TestRoadmapCommitFreezesANewNodeVersionAndCreatesTheReviewTask）；新增/删除节点、改变前置关系、任何路线边变化都生成 ChangeSet 而不是直接落库（TestRoadmapSemanticCommitProducesAChangeSetInsteadOfWritingTheRoadmap、HTTP 同名用例）。"
+    },
+    {
+      "row": "权限",
+      "status": "PASS",
+      "seam": "HTTP seam",
+      "evidence": "写路由要求人工主体：机器主体（API principal）被 403 human_decision_required 拒绝（TestRoadmapHTTPWriteRefusesAMachinePrincipal）；非项目成员按既有授权映射被拒。审计行（roadmap.edit.begin / propose / commit / cancel）与操作在同事务落库。"
+    }
+  ],
+  "artifacts": [
+    "internal/lingdoc/workspacecore/roadmap_model.go（RouteEdge / RoadmapEditSession / 提案 / 版本读模型）",
+    "internal/lingdoc/workspacecore/roadmap_store.go（会话与路线边持久化、路线节点版本序列读）",
+    "internal/lingdoc/workspacecore/roadmap_service.go（7 项能力、提交分流、取消清理、必需性判定接线）",
+    "internal/lingdoc/workspacecore/roadmap_test.go（领域用例）",
+    "internal/lingdoc/workspacecore/roadmap_migration_test.go（SQLite/PG 迁移升降）",
+    "internal/lingdoc/workspace/roadmap_routes.go（HTTP 路由）",
+    "internal/lingdoc/workspace/roadmap_http_test.go（HTTP seam 用例）",
+    "frontend/src/api/lingdoc/roadmap.ts（前端 API 客户端）",
+    "frontend/src/api/lingdoc/roadmap.test.js（前端客户端用例）",
+    "migrations/sqlite/000044_lingdoc_roadmap_edit_sessions.{up,down}.sql",
+    "migrations/versioned/000123_lingdoc_roadmap_edit_sessions.{up,down}.sql"
+  ],
+  "design_notes": {
+    "single_writer": "路线图节点版本仍走既有的 AppendRouteNode 单一写路径（变更集语义增量共用），所以「版本怎么算」只有一处知识；路线边是首次引入的对象，走同一 ChangeSet 语义增量路径（新增 RouteEdge 增量种类）。",
+    "frozen_vs_unfrozen": "未冻结提案只写会话表；冻结表在提交前没有新版本。导出输入读的是冻结节点，因此「导出只读冻结版本」是结构性质而不是过滤器。",
+    "semantic_routing": "节点文字编辑（名称/状态/输入引用/目标引用）冻结新版本；新增/删除节点、改变前置关系（节点输入里的 RouteNode 引用）、任何路线边变化属于语义变化，提交时生成 ChangeSet。",
+    "required_flag_owner": "必需性只由模板规则声明（Definition.RequiredFields 或启用的 blocking presence 规则绑定）。客户端显式声明与规则不一致 → ErrInvalidRequest；不一致时以规则为准。",
+    "stale_definition": "「版本落后」定义为：节点钉住的输入版本已经不是该输入的当前版本（currentImpactObject 读回的版本与钉住版本不同）。刻意不使用项目 context revision 做判据，以免把既有稳定化行为整体改写。"
+  },
+  "scope_boundary": {
+    "done": [
+      "RouteNode 最小字段集（稳定标识、版本、名称、必需性、状态、上下文修订、输入引用、关联目标引用）",
+      "RouteEdge 最小字段集（源节点、目标节点、关系类型、版本）+ 状态（用于表达撤回关系）",
+      "冻结版本与未冻结编辑会话的区分；导出只读冻结版本",
+      "编辑会话 7 项能力与两条提交路径",
+      "必需性判定接线（缺失/待复核/版本落后 → blocking ValidationIssue + 稳定化阻断）",
+      "取消语义（任务失效 + 闭环证据解绑 + 冻结路线图停在上一版本）"
+    ],
+    "not_done_on_purpose": [
+      "Spec §9.1 的建模完备性字段（目的、输出、方法/工具、前置节点、关联章节、关联主张或变量、负责人、来源、节点自身审计记录）——另开票。",
+      "章节 → 路线节点的引用关系——当前模型不存在这种引用，本票不新建引用模型。",
+      "路线图完整 UI（比较视图、跳转关联对象）——#250 范围外。",
+      "路线科学可行性判断——Spec §9.2 明确 G3 不替用户判断。",
+      "「改变产出 / 改变与研究条件的关联」的 ChangeSet 分支：这两类信息不在本票的最小字段集内，因此当前模型无法表达该变化；本票的 ChangeSet 分支覆盖节点增删、前置关系变化与路线边变化。"
+    ]
+  },
+  "risks": [
+    {
+      "risk": "AC-G3-16 的「章节引用不指向被取消的临时版本」在当前模型下平凡成立——仓库里没有章节→路线节点的引用关系（无 RouteEdge 之前的引用表，现已引入 RouteEdge 但它表达的是路线节点之间的关系，不是章节引用）。",
+      "impact": "该半句保证在本票范围内没有被证伪，只是没有被覆盖。",
+      "follow_up": "将来一旦建立章节→路线节点的引用关系，必须重新验证「取消后章节引用不指向被取消的临时版本」。本条不得在后续被当作已覆盖。"
+    },
+    {
+      "risk": "PostgreSQL 上的迁移升降没有在本机实跑（本机未安装 PostgreSQL）。SQLite 上已实跑升/降与重启读回。",
+      "impact": "PG 方言的升降只有代码评审，没有本机运行证据。",
+      "follow_up": "在有隔离 PG 实例的机器上设置 LINGDOC_TEST_POSTGRES_DSN 后运行 go test ./internal/lingdoc/workspacecore/ -run 'TestRoadmapMigration|TestPostgres'。"
+    },
+    {
+      "risk": "路线节点版本推进由路线图模块提交时，项目 context revision 同步推进（与变更集应用路径一致）；这会让同一项目的其它在途会话基线过期（提交时以 version_conflict 拒绝）。",
+      "impact": "并发编辑者需要重新开始编辑会话。",
+      "follow_up": "若产品要求多会话并行，需要引入显式的路线图版本对象，而不是放宽基线检查。"
+    }
+  ],
+  "not_run": [
+    {
+      "item": "PostgreSQL 迁移升降与重启读回",
+      "status": "NOT RUN",
+      "reason": "本机没有 PostgreSQL 可执行文件（initdb/pg_ctl/psql 均未安装，D:\\pgdata-g3gap 不存在），无法起隔离实例。用例已写好并以 LINGDOC_TEST_POSTGRES_DSN 为开关，缺环境时明确 SKIP 并打印 NOT RUN。"
+    },
+    {
+      "item": "/demo/g3 验收台页面实跑",
+      "status": "NOT RUN（本票范围外）",
+      "reason": "按 #250 的完成线，页面实跑由 G3 缺口收口-8（#257）负责；本票对应验收行只能记 PASS (follow-up)，不得记 PASS。"
+    },
+    {
+      "item": "前端最小交互（编辑未冻结版本、比较前后版本、取消编辑）",
+      "status": "PARTIAL",
+      "reason": "本票交付了前端可直接消费的 API 客户端（frontend/src/api/lingdoc/roadmap.ts + 同名用例），但没有做路线图界面；界面属「明确不做」的路线图完整 UI，由 #257 的验收台接线承接。"
+    }
+  ]
+}

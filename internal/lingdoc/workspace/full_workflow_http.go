@@ -19,6 +19,7 @@ func (h *Handler) RegisterFullRoutes(group *gin.RouterGroup) {
 	}
 	RegisterG2FullRoutes(group, h.full.Core)
 	RegisterImpactRoutes(group, h.full.Core)
+	RegisterRoadmapRoutes(group, h.full.Core)
 	RegisterG4FullRoutes(group, h.full.Governance)
 	registerG5G7FullRoutes(group, h.full.Core)
 }

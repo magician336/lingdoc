@@ -26,7 +26,7 @@ var ErrDependencyDecided = errors.New("dependency edge already decided")
 
 func (s *Service) SetImpactRuleChecker(checker ImpactRuleChecker) { s.impactRules = checker }
 func validObjectRef(ref ObjectVersionRef) bool {
-	return ref.ID != "" && ref.Version != "" && len(ref.ID) <= 128 && len(ref.Version) <= 128 && slices.Contains([]string{"ProjectSpec", "ProjectAsset", "SourceAnchor", "EvidenceCard", "ResearchClaim", "ChapterVersion", "TemplateCopy", "RuleSet", "RuleBinding", "RouteNode", "ResearchRun", "ComputationReceipt"}, ref.Kind)
+	return ref.ID != "" && ref.Version != "" && len(ref.ID) <= 128 && len(ref.Version) <= 128 && slices.Contains([]string{"ProjectSpec", "ProjectAsset", "SourceAnchor", "EvidenceCard", "ResearchClaim", "ChapterVersion", "TemplateCopy", "RuleSet", "RuleBinding", "RouteNode", "RouteEdge", "ResearchRun", "ComputationReceipt"}, ref.Kind)
 }
 func validImpactAction(action string) bool {
 	return slices.Contains([]string{"REVALIDATE_EVIDENCE", "RETRIEVE_CANDIDATES", "REVIEW_REQUIRED", "REGENERATE", "RECOMPUTE", "INVALIDATE_CONFIRMATION", "BLOCK_RELEASE", ImpactActionNoAction}, action)
@@ -95,6 +95,19 @@ func readImpactObjectState(tx Transaction, p Project, ref ObjectVersionRef) (Imp
 		if err != nil {
 			return state, err
 		}
+	case "RouteEdge":
+		store, ok := tx.(roadmapStore)
+		if !ok {
+			return state, ErrInvalidState
+		}
+		edge, err := store.RouteEdge(p.ID, ref.ID)
+		if err != nil {
+			return state, err
+		}
+		state.Ref.Version = strconv.FormatInt(edge.Version, 10)
+		state.State = "CURRENT"
+		state.Confirmed = true
+		state.ContextRevision = edge.ContextRevision
 	case "RuleBinding":
 		value, err := currentSemanticValue(tx, p, SemanticDelta{Kind: "RuleBinding", TargetID: ref.ID})
 		if err != nil {
