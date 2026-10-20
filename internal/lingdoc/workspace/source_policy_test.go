@@ -22,6 +22,13 @@ const sourcePolicyQuote = "current synthetic excerpt"
 func seedBoundSource(t *testing.T) (*Handler, *gorm.DB, string) {
 	t.Helper()
 	handler, db := newSourceCurrentnessHandler(t)
+	return handler, db, seedBoundSourceOn(t, handler, db)
+}
+
+// seedBoundSourceOn 在已经装配好的 handler 上落一份可用知识与分块行。需要自己
+// 装配 handler 的用例（例如受控故障注入）复用同一份绑定。
+func seedBoundSourceOn(t *testing.T, handler *Handler, db *gorm.DB) string {
+	t.Helper()
 	ctx := context.Background()
 	processedAt := time.Date(2026, time.September, 26, 10, 0, 0, 0, time.UTC)
 
@@ -53,7 +60,7 @@ func seedBoundSource(t *testing.T) (*Handler, *gorm.DB, string) {
 	}
 
 	seedChunk(t, db, "source-1", "knowledge-1", sourcePolicyQuote, 0, 0, len([]rune(sourcePolicyQuote)))
-	return handler, db, asset.ID
+	return asset.ID
 }
 
 func seedChunk(t *testing.T, db *gorm.DB, sourceID, knowledgeID, content string, revision, startAt, endAt int) {
