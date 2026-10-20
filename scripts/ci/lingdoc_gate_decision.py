@@ -29,6 +29,13 @@ The public interface is two functions
     cannot carry a dot, so a job level reference
     (``needs.scope.outputs.<name>``) can only name such a key.
 
+``gate_conclusion(decision, workflow)`` and ``publish_conclusion(...)``
+    Where a decision becomes something a **reader** sees: the job summary on
+    the pull request page and the gate artifact.  Every gate publishes the
+    same conclusion -- ``surface``, ``reason`` and ``base`` -- and every
+    check that did not run says why.  A skipped check without a reason
+    would break "Skipped means NOT RUN, not passed".
+
 Everything else in this module is a helper that the transitional shells call.
 None of them decides anything on its own; the decision is made once, in
 :func:`decide`.
@@ -84,6 +91,37 @@ CONTRACT_DIR = manifest.CONTRACT_DIR
 GOVERNANCE_FILES = tuple(manifest.GOVERNANCE_FILES)
 GOVERNANCE_DIRS = tuple(manifest.GOVERNANCE_DIRS)
 FRONTEND_ROOT = manifest.FRONTEND_ROOT
+
+# --------------------------------------------------------------------------
+# the published conclusion
+# --------------------------------------------------------------------------
+# The boundary statement every gate publishes.  A green gate is a statement
+# about automated checks; it is never an approval and never a product
+# acceptance.  All eight gates say the same sentence, so that no reader has
+# to guess what one gate's silence meant.
+BOUNDARY = ("Automated checks only; not consumer approval, a live-model run, "
+            "or product acceptance.")
+
+# What a gate says when it could not narrow the scope.  ADR 0006's own
+# wording stays untouched in ``reason``; this note is the readable Chinese
+# counterpart of the ``undecided`` flag.
+UNDECIDED_NOTE = ("未判定，已回退全量（not decided: the gate did not narrow "
+                  "the scope, so the full scope was used）")
+
+# The steps of a *step-level* gate.  The pull request gate's job always runs
+# and its steps are skipped one by one; this table says which boolean output
+# selects each step, whether the formatting-only shortcut skips it, and what
+# the step judges.  The surface names are the manifest's; the mapping from a
+# surface to the step that consumes it lives here, beside the outputs the
+# module publishes.
+STEP_OUTPUTS = {
+    "contracts": ("Contract examples and reference trace", "contracts", False,
+                  "the contract examples and the code they describe"),
+    "pr-gate-provider": ("Provider packages: test and vet", "run_providers",
+                         True, "the provider packages"),
+    "pr-gate-frontend": ("Frontend: test, type-check and build", "run_frontend",
+                         True, "the frontend"),
+}
 
 
 # --------------------------------------------------------------------------
@@ -840,6 +878,270 @@ def write_outputs(decision: Decision, *, patterns: Sequence[str] | None = None
 
 
 # --------------------------------------------------------------------------
+# the published conclusion
+# --------------------------------------------------------------------------
+def _paths_phrase(paths: Sequence[str]) -> str:
+    """The path set of a surface, as one readable phrase."""
+    return ", ".join(paths)
+
+
+def _in_scope_reason(decision: Decision, paths: Sequence[str],
+                      subject: str = "what this surface judges",
+                      detail: str = "") -> str:
+    """Why a check of this gate runs."""
+    text = f"in scope: the contribution changes {subject} ({_paths_phrase(paths)})"
+    if detail:
+        text = f"{text}; {detail}"
+    if decision.base_moved:
+        text = f"{text}; the base moved under the branch"
+    return text
+
+
+def _out_of_scope_reason(decision: Decision, paths: Sequence[str],
+                         subject: str = "what this surface judges", *,
+                         format_only: bool = False) -> str:
+    """Why a check of this gate does not run.
+
+    Every skip carries a readable reason: a bare ``false`` would leave the
+    reader guessing whether the check failed, passed or never ran.
+    """
+    if format_only:
+        return ("the change only reformats the code, so this check is skipped; "
+                "the lint check still runs")
+    if not decision.run_code:
+        if decision.base_moved:
+            return ("the base moved under the branch but the contribution's "
+                    "surface did not change, so only the surfaces the "
+                    "contribution touches are re-tested")
+        return ("the tested surface and the base did not change, so there is "
+                "nothing to re-test")
+    return (f"out of scope: the contribution does not change {subject} "
+            f"({_paths_phrase(paths)})")
+
+
+def _check(check: str, name: str, kind: str, surface: str,
+           paths: Sequence[str], run: bool, reason: str) -> dict[str, Any]:
+    """One published check: what it is, whether it runs, and why."""
+    return {
+        "check": check,
+        "name": name,
+        "kind": kind,
+        "surface": surface,
+        "paths": list(paths),
+        "run": run,
+        "verdict": "runs" if run else "skipped",
+        "reason": reason,
+    }
+
+
+def _workflow_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
+    """The consuming jobs of one workflow-level gate.
+
+    A workflow-level gate skips whole jobs, so the job is the unit that is
+    skipped.  One job may watch several surfaces; it then runs when any of
+    them is selected.
+    """
+    surfaces = {surface.name: surface for surface in manifest.load_surfaces()}
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for job in decision.jobs:
+        if job.workflow != workflow:
+            continue
+        entry = grouped.setdefault((job.workflow, job.job), {
+            "name": job.job_name,
+            "surfaces": [],
+            "paths": [],
+            "selected": [],
+            "run": False,
+            "format_only": False,
+        })
+        entry["run"] = entry["run"] or job.run
+        entry["surfaces"].append(job.surface)
+        surface = surfaces.get(job.surface)
+        if surface is not None:
+            entry["paths"].extend(surface.paths)
+            entry["format_only"] = entry["format_only"] or surface.skipped_on_format_only
+        if job.run:
+            entry["selected"].append(job.surface)
+
+    checks: list[dict[str, Any]] = []
+    for (workflow_name, job_key), entry in grouped.items():
+        paths = list(dict.fromkeys(entry["paths"]))
+        selected_paths: list[str] = []
+        for surface_name in entry["selected"]:
+            surface = surfaces.get(surface_name)
+            if surface is not None:
+                selected_paths.extend(surface.paths)
+        selected_paths = list(dict.fromkeys(selected_paths))
+        if entry["run"]:
+            reason = _in_scope_reason(decision, selected_paths or paths)
+        else:
+            reason = _out_of_scope_reason(
+                decision, paths,
+                format_only=decision.format_only and entry["format_only"])
+        checks.append(_check(
+            job_key, entry["name"], "job",
+            ", ".join(entry["surfaces"]), paths, entry["run"], reason))
+    return checks
+
+
+def _is_step_level(workflow: str) -> bool:
+    """Whether this gate selects its checks at step level.
+
+    A job that watches several surfaces cannot be skipped as a whole: the
+    pull request gate's job always runs and its steps are skipped one by
+    one.  Such a gate publishes its steps; every other gate publishes the
+    jobs it skips.
+    """
+    counts: dict[str, int] = {}
+    for surface in manifest.load_surfaces():
+        for consumer in surface.consumers:
+            if consumer.workflow != workflow:
+                continue
+            counts[consumer.job] = counts.get(consumer.job, 0) + 1
+    return any(count > 1 for count in counts.values())
+
+
+def _step_checks(decision: Decision, workflow: str) -> list[dict[str, Any]]:
+    """The checks of a step-level gate.
+
+    The steps that the decision selects read one boolean output each; the
+    surfaces without a step of their own -- the governance surfaces -- say
+    whether the gate judged itself by the whole scope.
+    """
+    outputs = write_outputs(decision)
+    surfaces = {surface.name: surface for surface in manifest.load_surfaces()}
+    verdicts: dict[str, dict[str, bool]] = {}
+    for job in decision.jobs:
+        if job.workflow != workflow:
+            continue
+        verdicts.setdefault(job.job, {})[job.surface] = job.run
+
+    checks: list[dict[str, Any]] = []
+    for job_name, surface_verdicts in verdicts.items():
+        for surface_name, verdict in surface_verdicts.items():
+            surface = surfaces.get(surface_name)
+            paths = list(surface.paths) if surface is not None else []
+            step = STEP_OUTPUTS.get(surface_name)
+            if step is not None:
+                name, output, format_only_skips, subject = step
+                run = outputs.get(output, "false") == "true"
+                kind = "step"
+                detail = ""
+                if output == "run_providers" and decision.provider_packages:
+                    detail = ("the provider packages are: "
+                              + ", ".join(decision.provider_packages))
+            else:
+                governance = (tuple(paths) in (tuple(GOVERNANCE_FILES),
+                                              tuple(GOVERNANCE_DIRS)))
+                name = ("Gate judged by the whole scope" if governance
+                        else f"Gate scope: {surface_name}")
+                run = verdict
+                kind = "surface"
+                format_only_skips = False
+                subject = ("the gate's own files" if governance
+                           else "what this surface judges")
+                detail = ""
+            if run:
+                reason = _in_scope_reason(decision, paths, subject, detail)
+            else:
+                reason = _out_of_scope_reason(
+                    decision, paths, subject,
+                    format_only=decision.format_only and format_only_skips)
+            checks.append(_check(surface_name, name, kind, surface_name,
+                                 paths, run, reason))
+    return checks
+
+
+def _gate_label(workflow: str, root: Path | None) -> str:
+    """The name of the gate, as a human reads it.
+
+    The workflow's display name is read from the file with a regular
+    expression: the manifest's YAML stays a lazy import, because the
+    workflow-level gates read the manifest in a job that installs nothing.
+    """
+    if root is not None:
+        try:
+            text = (Path(root) / workflow).read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        match = re.search(r"^name:\s*(.+?)\s*$", text, re.MULTILINE)
+        if match:
+            name = match.group(1).strip("'\"")
+            return f"{name} gate"
+    return f"{Path(workflow).stem} gate"
+
+
+def gate_conclusion(decision: Decision, workflow: str, *,
+                    root: Path | None = None) -> dict[str, Any]:
+    """The conclusion one gate publishes: what it tested, why, against what.
+
+    Every gate publishes the same three fields -- ``surface``, ``reason``
+    and ``base`` -- because they describe the one decision, not the gate.
+    What differs per gate is the list of checks: each entry says whether the
+    check runs and, when it does not, why.
+    """
+    workflow = str(workflow).replace("\\", "/")
+    checks = (_step_checks(decision, workflow) if _is_step_level(workflow)
+              else _workflow_checks(decision, workflow))
+    return {
+        "gate": _gate_label(workflow, root),
+        "workflow": workflow,
+        "surface": " ".join(decision.surface),
+        "reason": decision.reason,
+        "base": decision.base,
+        "undecided": decision.undecided,
+        "undecided_note": UNDECIDED_NOTE if decision.undecided else "",
+        "boundary": BOUNDARY,
+        "checks": checks,
+    }
+
+
+def conclusion_markdown(conclusion: Mapping[str, Any]) -> str:
+    """The conclusion as it appears in the job summary."""
+    lines = [f"## LingDoc gate conclusion: {conclusion['gate']}", ""]
+    lines += ["| Field | Value |", "|---|---|"]
+    lines.append(f"| Surface | {conclusion['surface'] or '(whole repository)'} |")
+    lines.append(f"| Reason | {conclusion['reason'] or '(not recorded)'} |")
+    lines.append(f"| Base | {conclusion['base'] or '(not recorded)'} |")
+    lines += ["", "| Check | Surface | Verdict | Why |", "|---|---|---|---|"]
+    for check in conclusion["checks"]:
+        lines.append(f"| {check['name']} | {check['surface']} | "
+                     f"{check['verdict']} | {check['reason']} |")
+    lines.append("")
+    if conclusion.get("undecided_note"):
+        lines += [conclusion["undecided_note"], ""]
+    lines += ["Skipped means NOT RUN, not passed.", "", conclusion["boundary"], ""]
+    return "\n".join(lines)
+
+
+def publish_conclusion(decision: Decision, workflow: str, *,
+                       artifact_dir: Path | None = None,
+                       summary: Path | None = None,
+                       root: Path | None = None) -> dict[str, Any]:
+    """Publish the conclusion of one gate: the summary and the artifact.
+
+    The summary is what a reader sees on the pull request page; the
+    artifact is what a reviewer can download and check.  Both carry the
+    same conclusion, including the reason of every skipped check.
+    """
+    conclusion = gate_conclusion(decision, workflow, root=root)
+    markdown = conclusion_markdown(conclusion)
+    if artifact_dir is not None:
+        folder = Path(artifact_dir)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "gate-conclusion.json").write_text(
+            json.dumps(conclusion, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        (folder / "gate-conclusion.md").write_text(markdown, encoding="utf-8")
+    if summary is None:
+        summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a", encoding="utf-8") as handle:
+            handle.write(markdown + "\n")
+    return conclusion
+
+
+# --------------------------------------------------------------------------
 # the offline entry point
 # --------------------------------------------------------------------------
 def report(decision: Decision, whitespace_range: str | None = None) -> dict[str, Any]:
@@ -876,7 +1178,9 @@ def check_whitespace(root: Path, diff_range: str | None) -> None:
 
 
 def publish(event: Mapping[str, Any], root: Path, *,
-            all_checks: bool = False, whitespace: bool = True) -> dict[str, Any]:
+            all_checks: bool = False, whitespace: bool = True,
+            gate: str | None = None,
+            artifact_dir: Path | None = None) -> dict[str, Any]:
     """Decide, publish the decision, and check the pull request's boundary.
 
     This is what the gate's scope step runs: it prints the report, writes the
@@ -886,6 +1190,11 @@ def publish(event: Mapping[str, Any], root: Path, *,
     ``whitespace`` is the boundary check.  The pull request gate owns it; the
     workflow-level gates never ran it, and asking them to would change what
     they do, so they turn it off.
+
+    ``gate`` names the workflow whose gate publishes the conclusion: the
+    summary a reader sees on the pull request page and the artifact a
+    reviewer can download.  Every gate publishes the same conclusion; what
+    differs per gate is which of its checks ran and which did not.
     """
     if all_checks:
         event = {"action": "manual", "reason": "full scope requested"}
@@ -899,6 +1208,8 @@ def publish(event: Mapping[str, Any], root: Path, *,
         with open(output_path, "a", encoding="utf-8") as handle:
             for key, value in write_outputs(decision).items():
                 handle.write(f"{key}={value}\n")
+    if gate:
+        publish_conclusion(decision, gate, artifact_dir=artifact_dir, root=root)
     if whitespace:
         check_whitespace(root, whitespace_range or decision.diff_range)
     return published
@@ -912,16 +1223,23 @@ def main() -> None:
                         help="Do not check the diff's whitespace boundary")
     parser.add_argument("--event", type=Path, default=os.environ.get("GITHUB_EVENT_PATH"))
     parser.add_argument("--root", type=Path, default=Path.cwd())
+    parser.add_argument("--gate",
+                        help="The workflow file whose gate publishes the conclusion "
+                             "(summary and artifact)")
+    parser.add_argument("--artifact-dir", type=Path,
+                        help="Where the conclusion artifact is written")
     args = parser.parse_args()
     root = args.root.resolve()
 
     if args.all:
-        publish({}, root, all_checks=True, whitespace=args.whitespace)
+        publish({}, root, all_checks=True, whitespace=args.whitespace,
+                gate=args.gate, artifact_dir=args.artifact_dir)
         return
     if args.event is None:
         parser.error("--event or GITHUB_EVENT_PATH is required")
     event = json.loads(args.event.read_text(encoding="utf-8"))
-    publish(event, root, whitespace=args.whitespace)
+    publish(event, root, whitespace=args.whitespace, gate=args.gate,
+            artifact_dir=args.artifact_dir)
 
 
 if __name__ == "__main__":
