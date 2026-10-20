@@ -3580,7 +3580,7 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 				if redact {
 					result[i].BodyMarkdown = ""
 					result[i].CitationUsages = []CitationUsage{}
-					result[i].ConfirmationValid = false
+					markChapterUnconfirmed(&result[i])
 				}
 			}
 			return result, nil
@@ -3683,7 +3683,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		next.BodyMarkdown = input.BodyMarkdown
 		next.SourceIDs = declared
 		next.CitationUsages = usages
-		next.ConfirmationValid = false
+		markChapterUnconfirmed(&next)
 		next.ReviewItems = rebaseReviewItems(old.BodyMarkdown, input.BodyMarkdown, old.ReviewItems, workingCopy.WorkingCopyRevision+1, &id)
 		if err := tx.AppendChapter(old, next, p.SpecRevision); err != nil {
 			return operationResult[Chapter]{}, err

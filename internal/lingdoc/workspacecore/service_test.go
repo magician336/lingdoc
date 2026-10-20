@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -520,8 +521,9 @@ func TestListChaptersReportsOnlyConfirmationForCurrentBasis(t *testing.T) {
 	insertConfirmation := func(id string, revision int64) {
 		t.Helper()
 		details, err := json.Marshal(chapterConfirmationDetails{
-			ID: id, ChapterVersionID: *saved.CurrentVersionID, SpecRevision: revision,
-			TemplateVersion: project.TemplateVersion, Valid: true,
+			ID: id, ChapterID: chapter.ID, ChapterVersionID: *saved.CurrentVersionID, SpecRevision: revision,
+			TemplateVersion: project.TemplateVersion, ActorUserID: owner.UserID,
+			CreatedAt: time.Now().UTC(), Valid: true,
 		})
 		if err != nil {
 			t.Fatal(err)

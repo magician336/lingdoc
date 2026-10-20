@@ -151,7 +151,7 @@ func TestCurrentConfirmationReadsCompleteRecordAndRejectsOldBasis(t *testing.T) 
 	var committed CommittedChapterVersion
 	_ = json.Unmarshal(raw, &committed)
 	db := s.repository.(*GORMRepository).db
-	details := map[string]any{"id": "c1", "chapter_id": id, "chapter_version_id": committed.ChapterVersionID, "spec_revision": 1, "template_version": "0.1.0", "valid": true, "actor_user_id": a.UserID, "review_decisions": []map[string]string{{"review_item_id": "r1", "disposition": "retained_warning", "reason": "synthetic reason"}}}
+	details := map[string]any{"id": "c1", "chapter_id": id, "chapter_version_id": committed.ChapterVersionID, "spec_revision": 1, "template_version": "0.1.0", "valid": true, "actor_user_id": a.UserID, "created_at": time.Now().UTC(), "review_decisions": []map[string]string{{"review_item_id": "r1", "disposition": "retained_warning", "reason": "synthetic reason"}}}
 	current, err := s.GetProject(ctx, a, p.ID)
 	if err != nil {
 		t.Fatal(err)
@@ -252,7 +252,7 @@ func TestLegacyEmptyConfirmationViewDoesNotRewriteStoredRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	details := map[string]any{"id": "empty-confirmation", "chapter_id": id, "chapter_version_id": committed.ChapterVersionID, "spec_revision": 1, "template_version": project.TemplateVersion, "valid": true, "review_decisions": nil}
+	details := map[string]any{"id": "empty-confirmation", "chapter_id": id, "chapter_version_id": committed.ChapterVersionID, "spec_revision": 1, "template_version": project.TemplateVersion, "valid": true, "actor_user_id": a.UserID, "created_at": time.Now().UTC(), "review_decisions": nil}
 	encoded, _ := json.Marshal(details)
 	db := s.repository.(*GORMRepository).db
 	_ = db.Model(&chapterVersionRow{}).Where("id = ?", committed.ChapterVersionID).Update("confirmation_valid", true).Error

@@ -54,11 +54,18 @@ func currentImpactObject(tx Transaction, p Project, ref ObjectVersionRef) (Impac
 			return state, ErrInvalidState
 		}
 		state.Ref.Version = *chapter.CurrentVersionID
-		version, err := tx.ChapterVersion(p.ID, ref.ID, *chapter.CurrentVersionID)
-		if err != nil {
+		if _, err := tx.ChapterVersion(p.ID, ref.ID, *chapter.CurrentVersionID); err != nil {
 			return state, err
 		}
-		state.Confirmed = chapter.ConfirmationValid && version.SpecRevision == p.SpecRevision
+		// The chapter view carries the answer of the one confirmation predicate
+		// (ChapterConfirmed), so this consumer no longer judges the same fact a
+		// second way. The version's own spec revision says when the version was
+		// created; the confirmation record says which research-conditions basis
+		// the confirmation was made on. A chapter re-confirmed under a newer
+		// revision has an older creation revision, and judging it by the
+		// creation revision made this gate disagree with the delivery preflight
+		// about the same chapter.
+		state.Confirmed = chapter.ConfirmationValid
 		state.SourceIDs = append(state.SourceIDs, chapter.SourceIDs...)
 		state.ContextRevision = p.CurrentContextRevision
 	case "ResearchRun", "ComputationReceipt":
