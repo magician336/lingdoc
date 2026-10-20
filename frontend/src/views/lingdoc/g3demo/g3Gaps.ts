@@ -9,8 +9,9 @@
  * 逐条比对编号、标题、对应验收行、当前状态与承接票）。改动这里的字段时，
  * 同一份事实要同步进那份镜像；两者不一致时以镜像为准。
  *
- * **事实基线**：验收台在 head `a87459f` 的实跑结论（#257）。本文件按该结果写，
- * 不再写「未实现 / 待当前 head 落证」这类已被实跑作废的旧口径。
+ * **事实基线**：验收台在 head `a87459f` 的实跑结论（#257）；本轮 head 未重跑这一段，
+ * 所以下面凡引用这份落证的地方都指名 head `a87459f`。
+ * 本文件按该结果写，不再写「未实现 / 待当前 head 落证」这类已被实跑作废的旧口径。
  *
  * 两条纪律：
  *
@@ -84,7 +85,7 @@ const anchor = (start: number, end: number = start): SpecAnchor => ({
 export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.freeze([
   {
     id: 'G3-GAP-01',
-    title: '应用原子性缺故障注入能力',
+    title: '应用原子性：故障注入的可观测口径',
     rows: ['AC-G3-03'],
     limits: [],
     missing:
@@ -113,7 +114,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-02',
-    title: 'RouteNode 只有只读接口，造不出「必需项缺失」与「版本落后」',
+    title: 'RouteNode：造不出「必需项缺失」与「版本落后」两种前置',
     rows: ['AC-G3-08'],
     limits: [],
     missing:
@@ -123,10 +124,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     specAnchor: anchor(378, 380),
     unblockCondition:
       '模板侧声明一个 RouteNode 类型的必需节点（R7），并在当前 head 重跑实跑落证；' +
-      '`AC-G3-08` 才能离开 `BLOCKED`。',
+      '`AC-G3-08` 才能离开 `NOT RUN`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 250,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'NOT RUN',
     fact:
       '路线图版本化编辑会话**已实现**（提案不进冻结路线图、提交冻结新版本并产生复核任务、' +
       '取消恢复基线并释放临时引用、版本序列与比较、' +
@@ -141,7 +142,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-03',
-    title: '缺 RouteNode 写入与「取消未冻结编辑」端点',
+    title: 'RouteNode：取消未冻结编辑后恢复上一版本',
     rows: ['AC-G3-16'],
     limits: [],
     missing:
@@ -167,7 +168,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-04',
-    title: '助手输出缺「确定受影响 / 可能受影响」解释分组',
+    title: '助手：「确定受影响 / 可能受影响」两组说明',
     rows: ['AC-G3-14'],
     limits: [],
     missing:
@@ -178,10 +179,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     specAnchor: anchor(402, 404),
     unblockCondition:
       '提供可用的模型凭据跑出一条带两组说明的助手草稿，并在当前 head 重跑实跑落证；' +
-      '`AC-G3-14` 才能离开 `BLOCKED`。',
+      '`AC-G3-14` 才能离开 `NOT RUN`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 251,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'NOT RUN',
     fact:
       '助手两组说明**已实现**（助手侧用 `definite_affected` / `possible_affected`，' +
       '服务端从已落库的助手 turn 重新推导，每条说明必须同时有对象引用、原因与依据）。' +
@@ -197,7 +198,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-05',
-    title: '依赖候选无批量提出端点',
+    title: '依赖候选：批量提出与三态读回',
     rows: ['AC-G3-15'],
     limits: [],
     missing:
@@ -230,7 +231,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     limits: ['AC-G3-04'],
     missing:
       '「本次必须处理的对象」集合（`assessment.objects`）的渲染能力**已实现，' +
-      '且已在当前 head 落证**（运行标识 `g3r-mvgqpt88-7b4e074d`，head `a87459f`）；' +
+      '且已在 head `a87459f` 落证**（运行标识 `g3r-mvgqpt88-7b4e074d`；' +
+      '本轮 head 未重跑这一段）；' +
       '缺的是把这份落证并入矩阵行 `G3.7` 的完成判据判定，该行当前仍记 `NOT RUN`。',
     specAnchor: anchor(346),
     unblockCondition:
@@ -241,8 +243,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     ticket: 257,
     rowStatus: 'NOT RUN',
     fact:
-      '渲染能力**已实现并已在当前 head 落证**：运行标识 `g3r-mvgqpt88-7b4e074d`、' +
-      'head `a87459f`，证据 ' +
+      '渲染能力**已实现并已在 head `a87459f` 落证**（本轮 head 未重跑这一段）：' +
+      '运行标识 `g3r-mvgqpt88-7b4e074d`，证据 ' +
       '`docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json`（#257）。' +
       '验收台 `G3Demo.vue` 已渲染 `assessment.objects`，工作台面板 `ImpactOpsPanel.vue` ' +
       '也已渲染「本次必须处理的对象」区块。' +
@@ -257,7 +259,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     limits: ['AC-G3-04'],
     missing:
       '「来源对象」（`impacts[].causes[].source`）与「确定影响 / 可能影响」分组的渲染能力' +
-      '**已实现，且已在当前 head 落证**（运行标识 `g3r-mvgqpt88-7b4e074d`，head `a87459f`）；' +
+      '**已实现，且已在 head `a87459f` 落证**（运行标识 `g3r-mvgqpt88-7b4e074d`；' +
+      '本轮 head 未重跑这一段）；' +
       '缺的是把这份落证并入矩阵行 `G3.7` 的完成判据判定，该行当前仍记 `NOT RUN`。',
     specAnchor: anchor(346),
     unblockCondition:
@@ -268,8 +271,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     ticket: 257,
     rowStatus: 'NOT RUN',
     fact:
-      '渲染能力**已实现并已在当前 head 落证**：运行标识 `g3r-mvgqpt88-7b4e074d`、' +
-      'head `a87459f`，证据 ' +
+      '渲染能力**已实现并已在 head `a87459f` 落证**（本轮 head 未重跑这一段）：' +
+      '运行标识 `g3r-mvgqpt88-7b4e074d`，证据 ' +
       '`docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json`（#257）。' +
       '验收台 `G3Demo.vue` 已渲染来源对象并按 `certainty` 分「确定影响 / 可能影响」两段；' +
       '工作台面板 `ImpactOpsPanel.vue` 同样在位。' +
@@ -279,27 +282,31 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-08',
-    title: '本机未配检索渠道，调研类闭环证据不可实跑',
+    title: '调研类闭环：外部检索渠道不可用，证据覆盖受限',
     rows: [],
     limits: ['G3.6'],
     missing:
-      '宿主环境缺检索渠道：本机 `web_search_providers` 表为空（父会话复核 ' +
-      '`select count(*)` = 0），没有 asset 且不传 `provider_id` 时 ' +
-      '`POST /projects/{id}/research-tasks` 返回 400 `invalid_request`，' +
-      '补 `provider_id` 后返回 500 `internal_error` —— ' +
-      '`RETRIEVE_CANDIDATES` 类影响任务要求的真实 `ResearchRun` 回执**造不出来**。',
+      '宿主环境缺**外部**检索渠道：本机 `web_search_providers` 表为空，' +
+      '免 key 的 DuckDuckGo 实测返回反爬挑战页，其余 provider 需要外部凭据。' +
+      '但**资料检索路径不需要渠道**：`asset_ids` 路径由服务端从已落库的 turn 推导，' +
+      '轮次 provider 为 `weknora_hybrid`。本轮已用它造出真实 `ResearchRun` 回执——' +
+      '缺的是**带真实命中**的证据与**可用**的外部渠道。',
     specAnchor: anchor(345),
     unblockCondition:
-      '先在租户里配好检索渠道凭据（或给一个真实 `asset`），再重跑调研链；' +
-      '在解除之前这一项只能记环境限制（矩阵行 `G3.6` 尚未判定、记 `TODO`，' +
-      '本缺口记 `WARNING`）并写明缺什么，**不得**用其他回执冒充。',
+      '在租户里配好检索渠道凭据，或给出**带真实命中**的资料证据，再重跑调研链；' +
+      '在此之前本项记 `PASS (follow-up)`（**流程闭环已实跑**，覆盖受限：合成材料、零命中、' +
+      '外部渠道不可用），并写明缺什么——**不得**把零命中的回执说成真实资料通过。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 258,
     rowStatus: 'WARNING',
     fact:
-      '因此 G3.6 的闭环证据只覆盖 INVALIDATE_CONFIRMATION / REVIEW_REQUIRED / RECOMPUTE ' +
-      '三类动作；矩阵行 `G3.6` 仍是 `TODO`（尚未判定），' +
-      '本缺口按宿主环境限制记 `WARNING`，不产出冒充证据。',
+      '调研类闭环**已在当前 head 实跑成立**：RETRIEVE_CANDIDATES 影响任务被服务端用真实 ' +
+      '`ResearchRun` 回执（至少两轮检索、scope 为 impact:{taskId}）判定并关闭为 DONE；' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-12-验证报告-20261020.json`（#258）。' +
+      '**覆盖受限**并因此记 PASS (follow-up) 而不是 PASS：闭环用的是**合成验收材料**、' +
+      '检索命中数为 0（本机 SQLite 构建不含 FTS5，且无嵌入模型凭据），' +
+      '外部检索渠道也不可用（DuckDuckGo 实测为反爬挑战页）——' +
+      '**流程闭环成立不代表真实课题资料质量通过**；另派生缺陷 #306。',
   },
   {
     id: 'G3-GAP-09',
@@ -413,3 +420,47 @@ export function limitingGapsForRow(rowId: string): G3ImplementationGap[] {
 export function limitingGapIdsForRow(rowId: string): string[] {
   return limitingGapsForRow(rowId).map((gap) => gap.id)
 }
+
+/**
+ * 承接票**登记表**（票号 → 该票承接的缺口编号）。
+ *
+ * 缺口清单镜像（`docs/08-本轮实施方案/G3-缺口清单-246-副本.md`）里那张
+ * 「承接票清单」表是同一份事实的**文档形态**；这里是它的**代码形态**。
+ * 两者必须逐条一致——`g3Gaps.test.ts` 的承接票守护按这张登记表核对镜像，
+ * 防的是「票号写错」「重复登记」「漏登记解除条件票」。
+ *
+ * **这张表不证明票在 GitHub 上确实存在**：那件事由 PR 评审与逐票回写承担；
+ * 自动化守护保证的只是「登记表内部自洽、无遗漏、无重复」。
+ *
+ * `kind` 的三种取值：
+ * - `sub`：子票——`gaps` 里的每条缺口的承接票就是它；
+ * - `unblock`：解除条件 / 派生缺陷票——它承接的是某条缺口的**解除条件**，
+ *   缺口本身的承接票仍然是 `sub` 票；
+ * - `maintenance`：本票（#249）自身的事实校正与同源守护，不承接任何缺口。
+ */
+export interface G3GapTicketRegistryEntry {
+  /** 票号（GitHub Issue 号）。 */
+  ticket: number
+  /** 这张票在缺口体系里的角色。 */
+  kind: 'sub' | 'unblock' | 'maintenance'
+  /** 这张票承接的缺口编号。 */
+  gaps: readonly string[]
+}
+
+/** 承接票登记表（顺序与镜像的「承接票清单」表一致）。 */
+export const G3_GAP_TICKET_REGISTRY: readonly G3GapTicketRegistryEntry[] = Object.freeze([
+  { ticket: 249, kind: 'maintenance', gaps: [] },
+  { ticket: 250, kind: 'sub', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
+  { ticket: 251, kind: 'sub', gaps: ['G3-GAP-04'] },
+  { ticket: 252, kind: 'sub', gaps: ['G3-GAP-05'] },
+  { ticket: 253, kind: 'sub', gaps: ['G3-GAP-09'] },
+  { ticket: 254, kind: 'sub', gaps: ['G3-GAP-10'] },
+  { ticket: 255, kind: 'sub', gaps: ['G3-GAP-11'] },
+  { ticket: 256, kind: 'sub', gaps: ['G3-GAP-01'] },
+  { ticket: 257, kind: 'sub', gaps: ['G3-GAP-06', 'G3-GAP-07'] },
+  { ticket: 258, kind: 'sub', gaps: ['G3-GAP-08'] },
+  { ticket: 306, kind: 'unblock', gaps: ['G3-GAP-08'] },
+  { ticket: 310, kind: 'unblock', gaps: ['G3-GAP-01'] },
+  { ticket: 314, kind: 'unblock', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
+  { ticket: 315, kind: 'unblock', gaps: ['G3-GAP-04'] },
+])

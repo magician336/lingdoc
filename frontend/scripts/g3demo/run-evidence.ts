@@ -230,8 +230,11 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     return { projectId: created.project.id, chapters: created.chapters }
   }
 
-  const faultProject = await newProject('fault')
+  // **只为选中的链建项目**：链过滤生效时，没选中的链不该建项目——那会白白
+  // 建项目、写库，还把项目列表搞脏。`fault` → fault 项目、`roadmap` →
+  // roadmap 项目、`assistant` → assistant 项目；三条都没选则一个都不建。
   if (wants('fault')) {
+    const faultProject = await newProject('fault')
     await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
       runFaultInjectionChain(chain.ctx, client, chain.token, {
         projectId: faultProject.projectId,
@@ -241,8 +244,8 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       }),
     )
   }
-  const roadmapProject = await newProject('roadmap')
   if (wants('roadmap')) {
+    const roadmapProject = await newProject('roadmap')
     await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
       runRoadmapChain(chain.ctx, client, chain.token, {
         projectId: roadmapProject.projectId,
@@ -287,14 +290,14 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
             },
           ]
         : []
-    if (!candidates.length) {
-      throw new Error('本轮影响评估里没有可用的 ChapterVersion 对象，候选批次无从提交')
-    }
-    return runAssistantChain(chain.ctx, client, chain.token, {
-      projectId: assistantProject.projectId,
-      candidates,
-      expectedContextRevision: projectState.currentContextRevision,
-    })
+      if (!candidates.length) {
+        throw new Error('本轮影响评估里没有可用的 ChapterVersion 对象，候选批次无从提交')
+      }
+      return runAssistantChain(chain.ctx, client, chain.token, {
+        projectId: assistantProject.projectId,
+        candidates,
+        expectedContextRevision: projectState.currentContextRevision,
+      })
     })
   }
 

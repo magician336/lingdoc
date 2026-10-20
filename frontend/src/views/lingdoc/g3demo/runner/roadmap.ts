@@ -26,6 +26,7 @@
  */
 
 import { errorCodeOf, type G3HttpClient } from './httpClient'
+import { bool, num, objectOf, projectPath, refOf, str } from './factHelpers'
 import {
   assessChangeSet,
   applyChangeSet,
@@ -193,34 +194,6 @@ export interface G3RoadmapTaskFact {
 export interface G3RoadmapStabilizeFact {
   status: string
   blockers: { code: string; targetId: string; reason: string }[]
-}
-
-function str(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function num(value: unknown): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function bool(value: unknown): boolean {
-  return value === true
-}
-
-function objectOf(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-function refOf(value: unknown): G3RoadmapRefFact {
-  const raw = objectOf(value)
-  return { kind: str(raw.kind), id: str(raw.id), version: str(raw.version) }
-}
-
-function projectPath(projectId: string, suffix: string): string {
-  return `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}${suffix}`
 }
 
 /** 把一个路线节点读成事实。 */

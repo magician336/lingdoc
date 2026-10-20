@@ -27,6 +27,7 @@
  */
 
 import { errorCodeOf, type G3HttpClient } from './httpClient'
+import { num, objectOf, projectPath, str } from './factHelpers'
 import {
   assessChangeSet,
   createChangeSet,
@@ -106,25 +107,6 @@ export interface G3FaultApplyObservation {
   tasksUnchanged: boolean
   /** 读回证明：业务审计事件是否未变。 */
   auditUnchanged: boolean
-}
-
-function str(value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function num(value: unknown): number {
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-function objectOf(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-function projectPath(projectId: string, suffix: string): string {
-  return `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}${suffix}`
 }
 
 /** 把项目状态读成「回滚可比对」的快照。 */

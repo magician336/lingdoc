@@ -291,7 +291,9 @@ func isImpactOwnedPath(path string, owned []string) bool {
 //
 // The count is asserted on its own in the two directions below: a filter that
 // matches nothing would turn the coverage into a silent skip, which is the
-// same defect class the `outputs:` whitelist had.
+// same defect class the `outputs:` whitelist had. The assertion is **exact
+// equality**, not "at least": a filter that only matched part of the roadmap
+// surface must fail too, otherwise a partial match still passes as coverage.
 const roadmapOwnedOperationCount = 12
 
 // isRoadmapOwnedPath tells whether a path belongs to the roadmap surface. Both
@@ -336,8 +338,8 @@ func TestEveryImpactRouteIsPublished(t *testing.T) {
 	if len(checked) == 0 {
 		t.Fatal("no impact routes were checked; the path filter matched nothing")
 	}
-	if roadmapChecked < roadmapOwnedOperationCount {
-		t.Fatalf("only %d roadmap operations were checked; the roadmap path filter did not match the %d routes #250 registered", roadmapChecked, roadmapOwnedOperationCount)
+	if roadmapChecked != roadmapOwnedOperationCount {
+		t.Fatalf("only %d roadmap operations were checked; the roadmap path filter did not match exactly the %d routes #250 registered", roadmapChecked, roadmapOwnedOperationCount)
 	}
 	t.Logf("direction 1: %d registered operations checked, %d of them roadmap", len(checked), roadmapChecked)
 	sort.Strings(missing)
@@ -391,8 +393,8 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no impact contract operations were checked; the path filter matched nothing")
 	}
-	if roadmapChecked < roadmapOwnedOperationCount {
-		t.Fatalf("only %d roadmap contract operations were checked; the roadmap path filter did not match the %d operations #297 published", roadmapChecked, roadmapOwnedOperationCount)
+	if roadmapChecked != roadmapOwnedOperationCount {
+		t.Fatalf("only %d roadmap contract operations were checked; the roadmap path filter did not match exactly the %d operations #297 published", roadmapChecked, roadmapOwnedOperationCount)
 	}
 	t.Logf("direction 2: %d published operations checked, %d of them roadmap", checked, roadmapChecked)
 }
