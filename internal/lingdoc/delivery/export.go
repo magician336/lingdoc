@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"sort"
 	"strings"
 	"sync"
@@ -22,19 +23,19 @@ var (
 	// ErrExportPreflightBlocked means the snapshot is a deliberately saved
 	// blocked check result. Callers must show its issues instead of offering a
 	// fake download.
-	ErrExportPreflightBlocked = errors.New("release snapshot is blocked")
+	ErrExportPreflightBlocked = clienterror.New(clienterror.Form{Status: 422, Code: "preflight_blocked", Message: "请先处理交付阻断项。", Retryable: false}, "release snapshot is blocked")
 	// ErrExportStaleInput prevents a new export from being created from a
 	// snapshot that no longer represents the current project input.
-	ErrExportStaleInput = errors.New("release snapshot is no longer current")
+	ErrExportStaleInput = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "快照基于的输入已变化，请重新准备。", Retryable: false}, "release snapshot is no longer current")
 	// ErrExportUnavailable is returned for failed or unknown artifacts.
-	ErrExportUnavailable = errors.New("export file is not available")
+	ErrExportUnavailable = clienterror.New(clienterror.Form{Status: 422, Code: "invalid_state", Message: "导出文件不可用或完整性校验失败，请重新导出。", Retryable: false}, "export file is not available")
 	// ErrExportNotFound 让传输层把「这里没有这个导出」答成 404。与
 	// ErrSnapshotNotFound 同一条：取不到是调用方写错了 ID，读失败才是服务端的问题。
-	ErrExportNotFound = errors.New("export artifact not found")
+	ErrExportNotFound = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "export artifact not found")
 	// ErrInvalidRequest 是交付包自己的入参判定。它与 workspace、candidateadoption
 	// 里同名的 sentinel 是**不同的值**，传输层必须逐个列出——漏一个就是把 400
 	// 答成 500。口径统一在传输层做，领域层不为了对上 HTTP 而改自己的错误。
-	ErrInvalidRequest = errors.New("invalid export request")
+	ErrInvalidRequest = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "请求字段不符合约定。", Retryable: false}, "invalid export request")
 	// ErrUnsupportedFormat means the frozen input contains Markdown that the
 	// prototype renderer cannot preserve. It must be surfaced as a failed
 	// artifact with an actionable format message.
