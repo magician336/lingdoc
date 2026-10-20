@@ -19,9 +19,12 @@ import {
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
 import { G3_BLOCKED_STEPS } from './runner/blocked'
+import { G3_ASSISTANT_STEPS } from './runner/assistant'
 import { G3_CS_STEPS } from './runner/changeset'
 import { G3_DEP_STEPS } from './runner/dependencies'
+import { G3_FAULT_STEPS } from './runner/faultInjection'
 import { G3_MODEL_STEPS } from './runner/model'
+import { G3_ROADMAP_STEPS } from './runner/roadmap'
 import { G3_STAB_STEPS } from './runner/stabilization'
 import { createRunContext, markRunStale, recordStep, type G3BackendHead, type G3RunContext, type G3RunVerdict } from './runner/runContext'
 
@@ -138,11 +141,11 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.deepEqual(
     Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
     [
-      'AC-G3-01', 'AC-G3-02',
+      'AC-G3-01', 'AC-G3-02', 'AC-G3-03',
       'AC-G3-04', 'AC-G3-05', 'AC-G3-06',
-      'AC-G3-07', 'AC-G3-09',
+      'AC-G3-07', 'AC-G3-08', 'AC-G3-09',
       'AC-G3-11', 'AC-G3-12',
-      'AC-G3-13', 'AC-G3-14', 'AC-G3-15',
+      'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16',
       'G3.1',     'G3.6'
     ],
   )
@@ -205,6 +208,9 @@ test('规则表引用的步骤名都真实存在（防止证据链断在名字�
     ...Object.values(G3_STAB_STEPS),
     ...Object.values(G3_BLOCKED_STEPS),
     ...Object.values(G3_MODEL_STEPS),
+    ...Object.values(G3_ROADMAP_STEPS),
+    ...Object.values(G3_FAULT_STEPS),
+    ...Object.values(G3_ASSISTANT_STEPS),
   ])
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     for (const name of rule.requires) {
