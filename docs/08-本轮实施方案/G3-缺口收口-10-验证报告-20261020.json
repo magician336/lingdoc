@@ -1,0 +1,200 @@
+{
+  "ticket": "#297（路线图路由发布进 OpenAPI 契约，并纳入契约双向覆盖）",
+  "head_at_evidence": "6015934e7633d2802bc19a9bb6b5ebc2b4b68382",
+  "base": "integrate/g3-gap-closure-r2（本地分支，HEAD = 6015934，即 main 的合并提交）",
+  "branch": "feat/issue-297-roadmap-contract",
+  "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-297-roadmap-contract",
+  "mode": "real",
+  "environment": {
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "go": "go1.27.1 windows/amd64",
+    "sqlite_build": "CGO_CFLAGS=-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（该目录经 Test-Path 确认为已存在）",
+    "contract": "docs/08-本轮实施方案/contracts/openapi.json（仓内跟踪产物，CRLF 工作树 / LF 入库，由 core.autocrlf=true 归一）"
+  },
+  "scope": {
+    "owned_files": [
+      "docs/08-本轮实施方案/contracts/openapi.json",
+      "internal/lingdoc/workspace/impact_routes_contract_test.go",
+      "docs/08-本轮实施方案/G3-缺口收口-10-验证报告-20261020.json"
+    ],
+    "not_touched": [
+      "frontend/（未改动任何文件）",
+      "internal/lingdoc/workspacecore/roadmap_model.go",
+      "internal/lingdoc/workspace/roadmap_routes.go",
+      "scripts/ci/check_lingdoc_routes.py、scripts/ci/test_lingdoc_routes.py（未改动，见 follow_up）"
+    ],
+    "no_new_endpoints": "本票只发布既有 12 条路线图路由的契约并把契约纳入双向覆盖；没有新增任何产品端点。"
+  },
+  "contract_additions": {
+    "paths_before": 131,
+    "paths_after": 142,
+    "operations_before": 156,
+    "operations_after": 168,
+    "schemas_before": 317,
+    "schemas_after": 339,
+    "new_paths": [
+      { "path": "/projects/{projectId}/roadmap", "method": "GET", "operationId": "readRoadmapBaseline", "data": "RoadmapBaseline", "response_schema": "RoadmapBaselineResponse" },
+      { "path": "/projects/{projectId}/roadmap/edges", "method": "GET", "operationId": "listRoadmapEdges", "data": "[]RouteEdge", "response_schema": "FullRouteEdgeListResponse" },
+      { "path": "/projects/{projectId}/roadmap/edges/{edgeId}/versions", "method": "GET", "operationId": "listRoadmapEdgeVersions", "data": "[]RouteEdge", "response_schema": "FullRouteEdgeListResponse" },
+      { "path": "/projects/{projectId}/roadmap/nodes/{nodeId}/versions", "method": "GET", "operationId": "listRoadmapNodeVersions", "data": "[]RoadmapVersionEntry", "response_schema": "FullRoadmapVersionEntryListResponse" },
+      { "path": "/projects/{projectId}/roadmap/nodes/{nodeId}/compare", "method": "GET", "operationId": "compareRoadmapNodeVersions", "data": "RoadmapComparison", "response_schema": "RoadmapComparisonResponse", "query": ["from", "to"] },
+      { "path": "/projects/{projectId}/roadmap/edits", "method": "GET", "operationId": "listRoadmapEditSessions", "data": "[]RoadmapEditSession", "response_schema": "FullRoadmapEditSessionListResponse" },
+      { "path": "/projects/{projectId}/roadmap/edits", "method": "POST", "operationId": "beginRoadmapEditSession", "data": "RoadmapEditSession", "request": "RoadmapEditBeginInput", "response_schema": "RoadmapEditSessionResponse", "success_status": ["201", "200"] },
+      { "path": "/projects/{projectId}/roadmap/edits/{sessionId}", "method": "GET", "operationId": "getRoadmapEditSession", "data": "RoadmapEditSession", "response_schema": "RoadmapEditSessionResponse" },
+      { "path": "/projects/{projectId}/roadmap/edits/{sessionId}/nodes", "method": "POST", "operationId": "proposeRoadmapNodeChange", "data": "RoadmapEditSession", "request": "RoadmapNodeProposalInput", "response_schema": "RoadmapEditSessionResponse" },
+      { "path": "/projects/{projectId}/roadmap/edits/{sessionId}/edges", "method": "POST", "operationId": "proposeRoadmapEdgeChange", "data": "RoadmapEditSession", "request": "RoadmapEdgeProposalInput", "response_schema": "RoadmapEditSessionResponse" },
+      { "path": "/projects/{projectId}/roadmap/edits/{sessionId}/commit", "method": "POST", "operationId": "commitRoadmapEditSession", "data": "RoadmapCommitResult", "request": "RoadmapCommitInput", "response_schema": "RoadmapCommitResultResponse" },
+      { "path": "/projects/{projectId}/roadmap/edits/{sessionId}/cancel", "method": "POST", "operationId": "cancelRoadmapEditSession", "data": "RoadmapEditSession", "request": "RoadmapCancelInput", "response_schema": "RoadmapEditSessionResponse" }
+    ],
+    "new_schemas": [
+      "RouteEdge",
+      "RoadmapNodeView",
+      "RoadmapBaseline",
+      "RoadmapNodeProposal",
+      "RoadmapEdgeProposal",
+      "RoadmapCommitResult",
+      "RoadmapEditSession",
+      "RoadmapVersionEntry",
+      "RoadmapFieldChange",
+      "RoadmapComparison",
+      "RoadmapEditBeginInput",
+      "RoadmapNodeProposalInput",
+      "RoadmapEdgeProposalInput",
+      "RoadmapCommitInput",
+      "RoadmapCancelInput",
+      "RoadmapBaselineResponse",
+      "FullRouteEdgeListResponse",
+      "FullRoadmapVersionEntryListResponse",
+      "RoadmapComparisonResponse",
+      "FullRoadmapEditSessionListResponse",
+      "RoadmapEditSessionResponse",
+      "RoadmapCommitResultResponse"
+    ],
+    "shape_conventions": [
+      "响应信封沿用既有 {data, request_id, meta}，meta 引用既有 ResponseMeta schema。",
+      "沿用既有 additionalProperties: false 的封闭对象约定；DTO 的 omitempty 字段不进 required，指针字段用 nullable 标注。",
+      "既有 RouteNode schema 未重复定义；ObjectVersionRef 直接引用既有 schema。",
+      "x-lingdoc-route-source 写作 roadmap_routes.go，x-lingdoc-route-line / x-lingdoc-service / x-lingdoc-go-response 按 roadmap_routes.go 的实际注册点与 workspacecore 的实际 DTO 填写。",
+      "写操作按既有 impact 写操作的形状发布 Idempotency-Key 头参数、requestBody.required 与人工决策守卫说明。"
+    ],
+    "diff_scope_proof": "把本次新增的 11 个 path 与 22 个 schema 从当前契约中删掉后重新序列化，与 HEAD 的 openapi.json 逐字节一致（除仓库 autocrlf 的 CRLF/LF 归一外无任何差异），即本票没有顺手改动契约里的其他内容。"
+  },
+  "bidirectional_coverage": {
+    "file": "internal/lingdoc/workspace/impact_routes_contract_test.go",
+    "new_helper": "isRoadmapOwnedPath(path string) bool —— 同时接受契约形式 /projects/{projectId}/roadmap... 与注册形式 /projects/:projectId/roadmap...，因为路线图路径不是后缀族（/roadmap、/roadmap/edges、/roadmap/nodes/{nodeId}/compare、/roadmap/edits/{sessionId}/commit …）。",
+    "direction_1_registered_must_be_published": {
+      "test": "TestEveryImpactRouteIsPublished",
+      "impact_and_roadmap_operations_checked": 25,
+      "roadmap_operations_checked": 12,
+      "expected_minimum": 12,
+      "silent_skip_guard": "roadmapChecked < 12 直接 t.Fatalf，避免路径过滤写错导致静默跳过。"
+    },
+    "direction_2_published_must_be_routed": {
+      "test": "TestEveryPublishedImpactOperationIsRouted",
+      "impact_and_roadmap_operations_checked": 25,
+      "roadmap_operations_checked": 12,
+      "expected_minimum": 12,
+      "silent_skip_guard": "roadmapChecked < 12 直接 t.Fatalf。"
+    },
+    "direction_3_runtime_responses_must_satisfy_published_schemas": {
+      "test": "TestRuntimeResponsesSatisfyPublishedSchemas",
+      "roadmap_operations_validated": 12,
+      "roadmap_operations_total": 12,
+      "validated": [
+        "GET /projects/{projectId}/roadmap → RoadmapBaselineResponse 200",
+        "GET /projects/{projectId}/roadmap/edges → FullRouteEdgeListResponse 200",
+        "GET /projects/{projectId}/roadmap/edges/{edgeId}/versions → FullRouteEdgeListResponse 200",
+        "GET /projects/{projectId}/roadmap/nodes/{nodeId}/versions → FullRoadmapVersionEntryListResponse 200",
+        "GET /projects/{projectId}/roadmap/nodes/{nodeId}/compare?from=1&to=2 → RoadmapComparisonResponse 200",
+        "GET /projects/{projectId}/roadmap/edits → FullRoadmapEditSessionListResponse 200",
+        "GET /projects/{projectId}/roadmap/edits/{sessionId} → RoadmapEditSessionResponse 200",
+        "POST /projects/{projectId}/roadmap/edits → RoadmapEditSessionResponse 201",
+        "POST /projects/{projectId}/roadmap/edits/{sessionId}/nodes → RoadmapEditSessionResponse 200",
+        "POST /projects/{projectId}/roadmap/edits/{sessionId}/edges → RoadmapEditSessionResponse 200",
+        "POST /projects/{projectId}/roadmap/edits/{sessionId}/commit → RoadmapCommitResultResponse 200",
+        "POST /projects/{projectId}/roadmap/edits/{sessionId}/cancel → RoadmapEditSessionResponse 200"
+      ],
+      "request_bodies_validated": [
+        "POST /roadmap/edits（RoadmapEditBeginInput，两次会话各一次）",
+        "POST /roadmap/edits/{sessionId}/nodes（RoadmapNodeProposalInput）",
+        "POST /roadmap/edits/{sessionId}/edges（RoadmapEdgeProposalInput）",
+        "POST /roadmap/edits/{sessionId}/commit（RoadmapCommitInput）",
+        "POST /roadmap/edits/{sessionId}/cancel（RoadmapCancelInput）"
+      ],
+      "silent_skip_guard": "方向 3 用 roadmapResponses 集合统计已校验的不同 operation 数量，不足 12 直接 t.Fatalf。",
+      "real_seam": "真实 HTTP：gin 路由 + SQLite 真实仓库 + 真实 workspacecore 服务，请求带真实身份上下文与 Idempotency-Key；校验对象是服务器真正返回的字节。"
+    },
+    "negative_control": {
+      "method": "临时从契约里删掉 /projects/{projectId}/roadmap/edges/{edgeId}/versions，并从 RoadmapBaseline schema 里删掉 context_revision，然后重跑三个测试。",
+      "result": "三个方向全部变红：方向 1 报「registered impact route GET /projects/{projectId}/roadmap/edges/{edgeId}/versions is absent from the OpenAPI contract」；方向 2 报「only 11 roadmap contract operations were checked; the roadmap path filter did not match the 12 operations #297 published」；方向 3 报「GET /projects/{projectId}/roadmap response does not satisfy #/components/schemas/RoadmapBaselineResponse」并打印真实响应体。随后从备份逐字节还原契约，三项重新 PASS。",
+      "conclusion": "新增的覆盖不是空转：路径过滤写错、schema 漂移、未发布路由都会被拦下。"
+    }
+  },
+  "commands": [
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/ -run 'TestEveryImpactRouteIsPublished|TestEveryPublishedImpactOperationIsRouted|TestRuntimeResponsesSatisfyPublishedSchemas' -v",
+      "result": "PASS：TestEveryImpactRouteIsPublished（direction 1: 25 registered operations checked, 12 of them roadmap）、TestEveryPublishedImpactOperationIsRouted（direction 2: 25 published operations checked, 12 of them roadmap）、TestRuntimeResponsesSatisfyPublishedSchemas（direction 3: 12 roadmap operations validated against the published schemas），ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 1.687s"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/ -count=1",
+      "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 145.863s（整个 workspace 包的既有测试未受影响）"
+    },
+    {
+      "command": "go build ./...",
+      "result": "PASS：退出码 0，无输出"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/workspace/impact_routes_contract_test.go",
+      "result": "PASS：无输出（文件已是 gofmt 形状）"
+    },
+    {
+      "command": "python scripts/ci/test_lingdoc_routes.py",
+      "result": "PASS：Ran 29 tests in 9.864s — OK（该脚本检查三个 full-workflow 注册器与契约、四个前端 API 消费方、五条 focused workspace 处理器的静态对等；本票改动后仍然全绿）"
+    },
+    {
+      "command": "python docs/08-本轮实施方案/contracts/validate_artifacts.py --source-root .",
+      "result": "PASS：退出码 0，报告 result=PASS，paths=142 operations=168 core_operations=165 schemas=339 local_refs=1634 shape_checks=929 negative_static_cases_rejected=46。validation-result.json 由该脚本重新生成（不是手工编辑）。"
+    }
+  ],
+  "route_parity_counters": {
+    "note": "scripts/ci/check_lingdoc_routes.py 的 ROUTE_FILES 清单只含 g2_full_http.go / impact_routes.go / full_workflow_http.go；roadmap_routes.go 通过 RegisterRoadmapRoutes() 注册，其路由不在该静态清单里，所以 registered_operations 计数不变。路线图路由的覆盖由本票的 Go 契约测试（方向 1/2）承担。",
+    "before": {
+      "contract_paths": 131,
+      "contract_operations": 156,
+      "contract_schemas": 317,
+      "route_parity_registered_operations": 82,
+      "route_parity_frontend_calls": 94,
+      "route_parity_frontend_calls_to_scoped_registrars": 79,
+      "route_parity_focused_workspace_operations": 5
+    },
+    "after": {
+      "contract_paths": 142,
+      "contract_operations": 168,
+      "contract_schemas": 339,
+      "route_parity_registered_operations": 82,
+      "route_parity_frontend_calls": 94,
+      "route_parity_frontend_calls_to_scoped_registrars": 79,
+      "route_parity_focused_workspace_operations": 5
+    }
+  },
+  "not_run": [
+    {
+      "item": "OpenAPI 3.0 元 schema 校验与 Prism 运行时代理校验（validation-result.json 里的 external_validation 段是历史 head 的外部校验记录）",
+      "status": "NOT RUN",
+      "reason": "本票只跑仓内的静态校验器与 Go 契约测试；外部校验工具（openapi-spec-validator / Prism）本机未安装，且票面未要求。"
+    },
+    {
+      "item": "前端消费方的路线图 API 调用（frontend/src/api/lingdoc/ 下的调用方）",
+      "status": "N/A",
+      "reason": "本票不改前端，且前端当前不消费这 12 条路由；静态对等脚本检查的前端调用方清单未受影响（frontend_calls 94 → 94）。"
+    }
+  ],
+  "uncovered_risks": [
+    "契约的 12 条路线图路由目前没有前端消费方，因此「生成客户端可调用」这一点只由契约本身与 Go 侧双向覆盖证明，没有真实客户端生成产物作为证据。",
+    "RoadmapEditSession.result、RouteEdge.status 这类字段的真实取值依赖服务端写法（例如存储里的路线边 status 实测为空串），契约因此没有给它们加 enum，避免把运行期取值锁死；代价是契约在这些字段上比 enum 宽松。"
+  ],
+  "follow_up": [
+    "把 internal/lingdoc/workspace/roadmap_routes.go 纳入 scripts/ci/check_lingdoc_routes.py 的 ROUTE_FILES 清单，让静态对等清单也覆盖这 12 条路由（该脚本不在本票文件所有权内，未改动）。",
+    "为 12 条路线图路由补前端 API 消费方，并用生成客户端验证契约可用性。"
+  ]
+}

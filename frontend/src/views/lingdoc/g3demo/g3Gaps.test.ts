@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import {
   G3_GAP_LIST_ISSUE,
@@ -9,6 +12,99 @@ import {
 } from './g3Gaps'
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
+
+/**
+ * 缺口清单 Issue #246 的**仓库内镜像**。
+ *
+ * #246 是权威副本，但前端还有一份结构化副本（`g3Gaps.ts`）。没有镜像就离线
+ * 核不动这两份副本，事实会各自漂移——所以这条守护直接读镜像逐条比对。
+ *
+ * 路径从本文件所在目录（`frontend/src/views/lingdoc/g3demo/`）上溯 5 级到仓库根。
+ */
+const MIRROR_ABS = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../../../docs/08-本轮实施方案/G3-缺口清单-246-副本.md',
+)
+
+/** 镜像里的一行缺口（按表头列序）。 */
+interface MirrorGap {
+  id: string
+  title: string
+  rows: string[]
+  limits: string[]
+  status: string
+  ticket: number
+}
+
+/** 拆表格行：去掉首尾空列，逐格 trim。 */
+function cellsOf(line: string): string[] {
+  return line
+    .split('|')
+    .slice(1, -1)
+    .map((cell) => cell.trim())
+}
+
+/**
+ * 解析镜像里的「对应验收行」列。
+ *
+ * 写法：`rows: AC-G3-03`、`rows: G3.7; limits: AC-G3-04`、`rows: 无; limits: G3.6`。
+ */
+function parseRowsCell(cell: string): { rows: string[]; limits: string[] } {
+  const rows: string[] = []
+  const limits: string[] = []
+  for (const part of cell.split(';')) {
+    const matched = part.trim().match(/^(rows|limits)\s*[:：]\s*(.*)$/)
+    if (!matched) continue
+    const values = matched[2]
+      .split(',')
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0 && !/^(无|—|-)$/.test(value))
+    if (matched[1] === 'rows') rows.push(...values)
+    else limits.push(...values)
+  }
+  return { rows, limits }
+}
+
+/** 读镜像并解析出 11 条缺口。 */
+function readMirrorGaps(): MirrorGap[] {
+  assert.ok(
+    existsSync(MIRROR_ABS),
+    `读不到缺口清单的仓库内镜像（${MIRROR_ABS}）：镜像缺失就无法做同源守护`,
+  )
+  const source = readFileSync(MIRROR_ABS, 'utf8')
+  const gaps: MirrorGap[] = []
+  for (const line of source.split('\n')) {
+    if (!/^\|\s*G3-GAP-\d+/.test(line.trim())) continue
+    const cells = cellsOf(line)
+    const { rows, limits } = parseRowsCell(cells[2] ?? '')
+    gaps.push({
+      id: cells[0] ?? '',
+      title: cells[1] ?? '',
+      rows,
+      limits,
+      status: cells[3] ?? '',
+      ticket: Number((cells[4] ?? '').replace('#', '').trim()),
+    })
+  }
+  return gaps
+}
+
+/** 读镜像里的「承接票清单」表，返回票号集合。 */
+function readMirrorTickets(): number[] {
+  assert.ok(
+    existsSync(MIRROR_ABS),
+    `读不到缺口清单的仓库内镜像（${MIRROR_ABS}）：镜像缺失就无法做同源守护`,
+  )
+  const source = readFileSync(MIRROR_ABS, 'utf8')
+  const tickets: number[] = []
+  for (const line of source.split('\n')) {
+    if (!/^\|\s*#\d+/.test(line.trim())) continue
+    const cells = cellsOf(line)
+    const ticket = Number((cells[0] ?? '').replace('#', '').trim())
+    if (Number.isFinite(ticket)) tickets.push(ticket)
+  }
+  return tickets
+}
 
 test('缺口清单覆盖本票点名的五条：AC-G3-03、AC-G3-08、AC-G3-16 与影响中心两个渲染缺口', () => {
   const ids = new Set(G3_IMPLEMENTATION_GAPS.map((gap) => gap.id))
@@ -25,7 +121,7 @@ test('缺口清单覆盖本票点名的五条：AC-G3-03、AC-G3-08、AC-G3-16 �
 })
 
 test('「覆盖受限」与「直接缺口」分开：判据已判定的行不会被误标成没跑过', () => {
-  // 影响中心两条缺口：G3.7 是直接缺口行（页面渲染证据待落），
+  // 影响中心两条缺口：G3.7 是直接缺口行（渲染已落证，但该行整体仍 NOT RUN），
   // AC-G3-04 的局部影响判定本身已在 #240 落证，只是渲染证据受限于同一条缺口。
   const gap06 = G3_IMPLEMENTATION_GAPS.find((gap) => gap.id === 'G3-GAP-06')!
   assert.deepEqual([...gap06.rows], ['G3.7'])
@@ -74,18 +170,22 @@ test('缺口对应行的状态不写 PASS，且取自仓库门禁词表', () => 
   }
 })
 
-test('影响中心两条缺口的措辞是「验收台已渲染，缺当前 head 的实跑证据」', () => {
+test('影响中心两条缺口的措辞是「已实现并已在当前 head 落证」，不是「实跑证据待落」', () => {
   const gap06 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-06')
   const gap07 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-07')
   assert.ok(gap06)
   assert.ok(gap07)
   for (const gap of [gap06, gap07]) {
-    // 渲染能力已在 PR #247（head 5eab412）落到验收台页面；缺的是当前 head 的落证。
-    assert.match(gap.title, /验收台已渲染/)
-    assert.match(gap.title, /当前 head/)
-    assert.match(gap.missing, /当前 head/)
+    // #257 已在当前 head（a87459f，运行标识 g3r-mvgqpt88-7b4e074d）落证；
+    // 「实跑证据待落」「盘上证据仍绑 head 7f5fd8c」是已被实跑作废的旧口径。
+    assert.match(gap.title, /已落证/)
+    assert.doesNotMatch(gap.title, /实跑证据待落/)
+    assert.doesNotMatch(gap.missing, /实跑证据待落/)
+    assert.doesNotMatch(gap.missing, /7f5fd8c/)
+    assert.match(gap.missing, /已在当前 head 落证/)
     assert.match(gap.fact ?? '', /G3Demo\.vue/)
     assert.match(gap.fact ?? '', /ImpactOpsPanel\.vue/)
+    assert.match(gap.fact ?? '', /g3r-mvgqpt88-7b4e074d/)
     // 「工作台已补齐」是旧措辞：它把缺口说成「工作台没渲染」，与事实相反。
     assert.doesNotMatch(gap.title, /工作台已补齐/)
     assert.doesNotMatch(gap.fact ?? '', /工作台面板未渲染/)
@@ -129,6 +229,90 @@ test('每条缺口都指向矩阵里真实存在的行', () => {
     assert.ok(related.length > 0, `${gap.id} 没写对应验收行`)
     for (const row of related) {
       assert.ok(rowIds.has(row), `${gap.id} 指向了不存在的矩阵行 ${row}`)
+    }
+  }
+})
+
+/**
+ * 同源守护：前端副本（`g3Gaps.ts`）与仓库内镜像（#246 的镜像）必须逐条相等。
+ *
+ * 这是本票的核心断言——编号、标题、对应验收行、当前状态、承接票任一项不等即失败，
+ * 并把差异逐条打印出来。只比字段、不比数量的话，少一条缺口会被当成「一致」。
+ */
+test('同源守护：前端缺口副本与 #246 的仓库内镜像逐条相等', () => {
+  const mirror = readMirrorGaps()
+  assert.equal(
+    mirror.length,
+    G3_IMPLEMENTATION_GAPS.length,
+    `缺口条数不一致：镜像 ${mirror.length} 条，前端副本 ${G3_IMPLEMENTATION_GAPS.length} 条`,
+  )
+  assert.deepEqual(
+    mirror.map((gap) => gap.id).sort(),
+    G3_IMPLEMENTATION_GAPS.map((gap) => gap.id).sort(),
+    '缺口编号集合不一致',
+  )
+
+  const diffs: string[] = []
+  for (const gap of G3_IMPLEMENTATION_GAPS) {
+    const mirrored = mirror.find((item) => item.id === gap.id)
+    if (!mirrored) {
+      diffs.push(`${gap.id}：镜像里没有这条缺口`)
+      continue
+    }
+    if (mirrored.title !== gap.title) {
+      diffs.push(`${gap.id} 标题不一致：镜像「${mirrored.title}」/ 前端「${gap.title}」`)
+    }
+    if (JSON.stringify(mirrored.rows) !== JSON.stringify([...gap.rows])) {
+      diffs.push(
+        `${gap.id} 对应验收行（rows）不一致：镜像 ${JSON.stringify(mirrored.rows)} / ` +
+          `前端 ${JSON.stringify([...gap.rows])}`,
+      )
+    }
+    if (JSON.stringify(mirrored.limits) !== JSON.stringify([...gap.limits])) {
+      diffs.push(
+        `${gap.id} 对应验收行（limits）不一致：镜像 ${JSON.stringify(mirrored.limits)} / ` +
+          `前端 ${JSON.stringify([...gap.limits])}`,
+      )
+    }
+    if (mirrored.status !== gap.rowStatus) {
+      diffs.push(`${gap.id} 当前状态不一致：镜像「${mirrored.status}」/ 前端「${gap.rowStatus}」`)
+    }
+    if (mirrored.ticket !== gap.ticket) {
+      diffs.push(`${gap.id} 承接票不一致：镜像 #${mirrored.ticket} / 前端 #${gap.ticket}`)
+    }
+  }
+  assert.deepEqual(diffs, [], `前端副本与仓库内镜像不一致：\n${diffs.join('\n')}`)
+})
+
+test('承接票存在性守护：每条缺口的承接票都在镜像的「承接票清单」表里', () => {
+  const tickets = readMirrorTickets()
+  for (const gap of G3_IMPLEMENTATION_GAPS) {
+    assert.ok(
+      tickets.includes(gap.ticket!),
+      `${gap.id} 的承接票 #${gap.ticket} 不在镜像的「承接票清单」表里`,
+    )
+  }
+  // 清单本身必须覆盖本轮拆出的十张票。
+  for (const ticket of [249, 250, 251, 252, 253, 254, 255, 256, 257, 258]) {
+    assert.ok(tickets.includes(ticket), `镜像的「承接票清单」缺 #${ticket}`)
+  }
+})
+
+/**
+ * 矩阵口径一致性守护：缺口的 `rowStatus` 必须等于矩阵里同名行的 `status`。
+ *
+ * 只比 `rows`（直接缺口行）；`limits`（覆盖受限行）的状态口径不同——
+ * 判据已判定、只是某类证据没覆盖到，不按直接缺口行的口径写。
+ */
+test('矩阵口径一致性：缺口的 rowStatus 等于矩阵同名行的 status', () => {
+  const statusOf = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row.status]))
+  for (const gap of G3_IMPLEMENTATION_GAPS) {
+    for (const row of gap.rows) {
+      assert.equal(
+        gap.rowStatus,
+        statusOf.get(row),
+        `${gap.id} 的 rowStatus 与矩阵行 ${row} 的状态不一致`,
+      )
     }
   }
 })
