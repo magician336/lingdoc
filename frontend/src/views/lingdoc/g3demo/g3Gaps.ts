@@ -42,6 +42,14 @@ export interface G3ImplementationGap {
   unblockCondition: string
   /** 缺口清单 Issue。 */
   issue: number
+  /**
+   * 承接本缺口的子票号。
+   *
+   * 缺口清单 Issue #246 是**权威副本**，本文件是它的结构化形态；子票是
+   * 「谁来做」的落点。开发计划见
+   * `docs/06-灵档产品开发规划/beta-gap-development-plans/G3-gap-closure-development-plan.md`。
+   */
+  ticket?: number
   /** 该缺口对应行在矩阵中的状态（绝不会是 `PASS`）。 */
   rowStatus: G3Status
   /** 实测事实（若有）。 */
@@ -71,6 +79,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '能在 `apply` 事务中令任务写入或审计写入失败，并读回证明项目 revision 未变、' +
       '模板引用未变、ImpactTask 集合完整；补齐后由验收台实跑落证。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 256,
     rowStatus: 'BLOCKED',
     fact:
       '写路由 `POST /projects/{projectId}/change-sets/{changeSetId}/apply` 存在，' +
@@ -91,8 +100,12 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '使页面能搭出 R7 缺失与 R7 版本落后两种前置，并观测到 blocking ValidationIssue ' +
       '与稳定化 / 导出被阻断。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 250,
     rowStatus: 'BLOCKED',
-    fact: '路线图侧当前只暴露只读端点，既不能制造缺失节点，也不能把节点版本落后到基线以下。',
+    fact:
+      '路线图侧只暴露只读端点 `GET /projects/{projectId}/route-nodes`，没有专门的写入端点；' +
+      'RouteNode 仍可经变更集语义增量 `SemanticDelta.ProposedRoute` 写入/升版，' +
+      '但因此造不出「缺失 / 待复核 / 版本落后」三种前置，也拿不到版本序列。',
   },
   {
     id: 'G3-GAP-03',
@@ -107,8 +120,11 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '补 RouteNode 写入端点与取消未冻结编辑端点（并保证取消后关联 ImpactTask 与章节引用' +
       '不指向被取消的临时版本），补齐后由 AC-G3-16 场景在验收台实跑落证。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 250,
     rowStatus: 'BLOCKED',
-    fact: '也没有任何返回 RouteNode 版本序列的读端点，无法断言「恢复到上一版本」。',
+    fact:
+      '也没有任何返回 RouteNode 版本序列的读端点，无法断言「恢复到上一版本」；' +
+      '`RouteEdge` 全库零命中，模型也没有「冻结 / 未冻结」概念。',
   },
   {
     id: 'G3-GAP-04',
@@ -123,6 +139,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '让助手草稿产出携带「确定受影响 / 可能受影响」两组对象与各自理由' +
       '（与 `impacts[].certainty` 显式区分），并保证助手不直接应用变更 / 关闭任务 / 放行导出。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 251,
     rowStatus: 'PASS (follow-up)',
     fact:
       '工作台 `ImpactOpsPanel.vue:101-102` 的分组是**影响解析结果**的分组（`impacts[].certainty`），' +
@@ -141,45 +158,52 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '补一个批量提出候选依赖的端点（返回候选集合 + 对象版本 + 依据片段 + 建议理由，' +
       '可与既有 `decision` 三态对接），补齐后由 AC-G3-15 场景在验收台实跑落证。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 252,
     rowStatus: 'PASS (follow-up)',
     fact: '当前只能人工构造建议边，无法实跑「AI 批量提出」那一段。',
   },
   {
     id: 'G3-GAP-06',
-    title: '影响中心：工作台已补齐，验收台页面的实跑证据待落',
+    title: '影响中心：验收台已渲染必需对象集合，当前 head 的实跑证据待落',
     rows: ['G3.7'],
     limits: ['AC-G3-04'],
     missing:
-      '「本次必须处理的对象」集合（`assessment.objects`）在**验收台页面**尚未落证：' +
-      '工作台面板已由 `2786bcc` 补齐渲染，缺的是验收台页面自己读原始响应的实跑证据。',
+      '「本次必须处理的对象」集合（`assessment.objects`）在**验收台页面已实现渲染**，' +
+      '缺的是当前 head 的整链实跑证据：盘上证据仍绑 head `7f5fd8c`，该行仍为 `NOT RUN`。',
     specAnchor: anchor(346),
     unblockCondition:
       '由验收台页面直接读 `assessment.objects` 渲染并落证（页面自己读 API 返回，' +
       '不改工作台面板的 props 与行为）；若按对象 `state` / `confirmed` / `context_revision` ' +
       '逐字段核对后仍有未渲染的子集，则回到本条继续跟踪。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 257,
     rowStatus: 'NOT RUN',
     fact:
-      '工作台面板 `ImpactOpsPanel.vue:42` 已渲染「本次必须处理的对象」区块' +
-      '（`2786bcc` 是当前 head 的祖先）；**未落证的是验收台页面**，不是工作台。',
+      '验收台 `G3Demo.vue:286-314` 与 `:409-473` 已渲染 `assessment.objects`，' +
+      '工作台面板 `ImpactOpsPanel.vue:42` 也已渲染「本次必须处理的对象」区块；' +
+      '**未落证的是当前 head 的整链实跑**，不是渲染能力。',
   },
   {
     id: 'G3-GAP-07',
-    title: '影响中心：工作台已补齐，来源对象与确定 / 可能影响分组的验收台实跑证据待落',
+    title: '影响中心：验收台已渲染来源对象与确定/可能影响分组，当前 head 的实跑证据待落',
     rows: ['G3.7'],
     limits: ['AC-G3-04'],
     missing:
       '「来源对象」（`impacts[].causes[].source`）与「确定影响 / 可能影响」分组' +
-      '在**验收台页面**尚未落证：工作台面板已由 `2786bcc` 补齐渲染，缺的是验收台页面的实跑证据。',
+      '在**验收台页面已实现渲染**，缺的是当前 head 的整链实跑证据：' +
+      '盘上证据仍绑 head `7f5fd8c`，该行仍为 `NOT RUN`。',
     specAnchor: anchor(346),
     unblockCondition:
       '由验收台页面按 `certainty` 分两组渲染 `impacts[]` 并逐条渲染 `causes[].source`' +
       '（含对象 kind / id / version），落证后方可判定。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 257,
     rowStatus: 'NOT RUN',
     fact:
-      '工作台面板 `ImpactOpsPanel.vue:42` 已渲染来源对象、`:101-102` 已按 `certainty` ' +
-      '分「确定影响 / 可能影响」两段；**未落证的是验收台页面**，不是工作台。',
+      '验收台 `G3Demo.vue:286-314` 已渲染来源对象，`:409-473` 已按 `certainty` ' +
+      '分「确定影响 / 可能影响」两段（分组计算在 `runner/dependencies.ts:283-309`）；' +
+      '工作台面板 `ImpactOpsPanel.vue:42`、`:101-102` 同样在位；' +
+      '**未落证的是当前 head 的整链实跑**，不是渲染能力。',
   },
   {
     id: 'G3-GAP-08',
@@ -197,6 +221,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '在解除之前这一项只能记环境限制（`WARNING` / `NOT RUN`）并写明缺什么，' +
       '**不得**用其他回执冒充。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 258,
     rowStatus: 'WARNING',
     fact: '因此 G3.6 的闭环证据只覆盖 INVALIDATE_CONFIRMATION / REVIEW_REQUIRED / RECOMPUTE 三类动作。',
   },
@@ -206,16 +231,27 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     rows: ['AC-G3-09'],
     limits: [],
     missing:
-      '对**阻断级**规则问题调用 disposition 的 `action=dismiss` 时，服务端返回 ' +
+      '对**阻断级**规则问题调用 disposition 的 `action=dismiss` 时，服务端曾返回 ' +
       '500 `internal_error`（`resolve` 返回 201、`waive` 返回 400），' +
-      '「接受不处理」这条路径在阻断级上不可用。',
+      '「接受不处理」这条路径在阻断级上不可用。' +
+      '**根因已定位并修复（#253，2026-10-20）**；当前缺的是 AC-G3-09 场景在当前 head 的实跑落证。',
     specAnchor: anchor(382, 384),
     unblockCondition:
-      '修掉阻断级规则问题 dismiss 的 500（让「接受不处理」要么按语义被拒（4xx）并给出可读原因，' +
-      '要么对规则问题开放），并由 AC-G3-09 场景实跑落证。',
+      '由 #257 在当前 head 重跑 AC-G3-09 场景落证（阻断级 dismiss 被受理、处置落库、' +
+      '审计行可读）；「不再阻断当次求值」那半段由 #254 负责，' +
+      '在两半都成立前本行只能是 `PASS (follow-up)`。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 253,
     rowStatus: 'PASS (follow-up)',
-    fact: '实测：dismiss → HTTP 500 code=internal_error；resolve → HTTP 201；waive → HTTP 400。',
+    fact:
+      '根因：授权审计行把「动作 + 资源 ID」的复合 capability 写进了有界的 action 分类列' +
+      '（`lingdoc_project_audits.action`，PostgreSQL `varchar(64)`），' +
+      '阻断级 dismiss 的 action 长 73 字符 → PostgreSQL 报 SQLSTATE 22001 → ' +
+      '事务回滚 → 未映射的原始错误变成 HTTP 500；resolve 的 action 恰好 64 字符压线通过。' +
+      '**SQLite 迁移把该列声明为无界 TEXT，所以缺陷只在 PostgreSQL 暴露。**' +
+      '修复：action 列只写分类（`authorization.issue-dismiss-blocking`，36 字符），' +
+      '完整 capability 留在 `details.capability`；审计写失败改为自带对外形态的领域错误。' +
+      '已在隔离 PostgreSQL（生产迁移）上复现（修复前 22001）并复验（修复后 201）。',
   },
   {
     id: 'G3-GAP-10',
@@ -231,6 +267,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '让求值在读规则问题时考虑该问题的 disposition（被 dismiss 的规则问题不再阻断当次求值，' +
       '但对应 ImpactTask 仍为 OPEN、项目仍不能稳定），并由 AC-G3-09 场景实跑落证。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 254,
     rowStatus: 'PASS (follow-up)',
     fact:
       '实测：处置（HTTP 201，问题带上处置）之后重检 `POST /projects/{id}/checks` 仍为 ' +
@@ -239,23 +276,26 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-11',
-    title: '目标对象版本被替换后稳定化直接 409，closure_stale 分支不可达',
+    title: '目标对象版本被替换后稳定化直接 409，closure_stale 分支在该链路上到不了',
     rows: [],
     limits: ['AC-G3-12'],
     missing:
       '目标对象在任务「已完成」之后被新版本替换时，稳定化在**预读闭环证据**阶段就直接返回 ' +
-      '409 `version_conflict`，`closure_stale` 分支实际不可达 —— ' +
-      'AC-G3-12 要求的「保持 BLOCKED 并创建 / 重投对应任务」这半段没有可观测的落点。',
+      '409 `version_conflict`，因此 AC-G3-12 要求的「保持 BLOCKED 并创建 / 重投对应任务」' +
+      '这半段没有可观测的落点。',
     specAnchor: anchor(394, 396),
     unblockCondition:
       '让稳定化在版本不匹配时落到 `closure_stale` 分支（保持 BLOCKED 并创建 / 重投任务），' +
       '而不是在预读闭环证据时直接 409；补齐后由 AC-G3-12 场景实跑落证。',
     issue: G3_GAP_LIST_ISSUE,
+    ticket: 255,
     rowStatus: 'PASS (follow-up)',
     fact:
       '实测：复写章节版本替换目标对象后 `POST .../stabilize` → HTTP 409 code=version_conflict' +
       '（阻断原因 0 条、失效任务 0 条）；本轮改走「按新基线重投变更集 → 重投任务闭环 → 再次稳定化」' +
-      '才回到 STABILIZED。',
+      '才回到 STABILIZED。`closure_stale` 分支本身**存在**且已有字面量断言' +
+      '（`stabilization_conditions.go:302`、`stabilization_guard_test.go:318/688/733`）—— ' +
+      '准确说法是「该 HTTP 场景在到达该分支前被 409 拦掉」，而不是「分支不可达」。',
   },
 ])
 
