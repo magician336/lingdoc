@@ -39,6 +39,7 @@ import { runRoadmapChain } from '../../src/views/lingdoc/g3demo/runner/roadmap'
 import { runFaultInjectionChain } from '../../src/views/lingdoc/g3demo/runner/faultInjection'
 import { runAssistantChain } from '../../src/views/lingdoc/g3demo/runner/assistant'
 import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
+import { runProjectChain } from '../../src/views/lingdoc/g3demo/runner/project'
 import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import type { G3BackendHead, G3RunContext, G3RunVerdict, G3StepRecord } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import { createFetchClient } from './fetchClient'
@@ -157,6 +158,10 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   // 缺口收口-11（#295）新增的三条链：路线图编辑会话 / 受控故障注入的可观测口径 /
   // 助手两组说明与依赖候选读回。任一条链失败都**不中断**整条实跑——失败本身是
   // 真实事实，要落进证据，而不是把整轮丢掉。
+  //
+  // **每条链各建各的项目**：链路自己会 apply 变更集，从而推进项目的上下文修订；
+  // 三条链共用一个项目时，后一条链拿着上一条推进前的修订号去写，就会撞
+  // 409「基线已漂移」。各用各的项目，这条干扰就不存在了。
   const extra: G3RunVerdict[] = []
   const guard = async (
     id: string,
@@ -179,15 +184,24 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     }
   }
 
+  const newProject = async (label: string): Promise<{ projectId: string }> => {
+    const created = await runProjectChain(chain.ctx, client, chain.token, {
+      projectName: `G3 验收台演示项目（${label} · 运行 ${chain.ctx.runId}）`,
+    })
+    return { projectId: created.project.id }
+  }
+
+  const faultProject = await newProject('故障注入')
   await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
     runFaultInjectionChain(chain.ctx, client, chain.token, {
-      projectId: chain.project.id,
-      affectedChapterIds: chain.chapters.map((chapter) => chapter.id),
+      projectId: faultProject.projectId,
+      affectedChapterIds: [],
     }),
   )
+  const roadmapProject = await newProject('路线图')
   await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
     runRoadmapChain(chain.ctx, client, chain.token, {
-      projectId: chain.project.id,
+      projectId: roadmapProject.projectId,
       operatorId: chain.identity.userId,
     }),
   )
@@ -196,11 +210,12 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     // roots 出发遍历依赖边，边的 source 不是那个 ref 时，action 不会传播。
     // target 取本轮影响评估里真实存在的章节版本。依据与理由是合成材料，
     // 不含真实课题信息。
+    const assistantProject = await newProject('助手候选')
     const projectState = await readProjectState(
       chain.ctx,
       client,
       chain.token,
-      chain.project.id,
+      assistantProject.projectId,
     )
     const chapterObject = lifecycle.assessment.objects.find(
       (item) => item.kind === 'ChapterVersion',
@@ -210,7 +225,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
           {
             source: {
               kind: 'ProjectSpec',
-              id: chain.project.id,
+              id: assistantProject.projectId,
               version: String(projectState.specRevision),
             },
             target: {
@@ -230,7 +245,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       throw new Error('本轮影响评估里没有可用的 ChapterVersion 对象，候选批次无从提交')
     }
     return runAssistantChain(chain.ctx, client, chain.token, {
-      projectId: chain.project.id,
+      projectId: assistantProject.projectId,
       candidates,
       expectedContextRevision: projectState.currentContextRevision,
     })
