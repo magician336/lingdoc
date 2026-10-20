@@ -315,7 +315,7 @@ func (e *OpenAIEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 }
 
 func acceptanceEmbeddingEndpointAllowed(modelName, baseURL string) bool {
-	if modelName != acceptancebudget.QwenEmbedding {
+	if _, allowed := acceptancebudget.EmbeddingInputNanoCNYPerToken(modelName); !allowed {
 		return false
 	}
 	parsed, err := url.Parse(baseURL)

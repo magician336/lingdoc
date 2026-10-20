@@ -5,6 +5,7 @@ on:
     paths:
       - 'scripts/lingdoc_mock/**'
       - 'scripts/ci/requirements-lingdoc.txt'
+      - 'scripts/ci/check_lingdoc_routes.py'
       - 'docs/08-本轮实施方案/contracts/**'
       - 'frontend/src/dev/lingdoc-mock/**'
       - 'frontend/lingdoc-mock.html'
@@ -38,6 +39,7 @@ jobs:
           LINGDOC_SCOPE_PATHS: |
             scripts/lingdoc_mock/**
             scripts/ci/requirements-lingdoc.txt
+            scripts/ci/check_lingdoc_routes.py
             docs/08-本轮实施方案/contracts/**
             frontend/src/dev/lingdoc-mock/**
             frontend/lingdoc-mock.html

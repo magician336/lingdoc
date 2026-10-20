@@ -612,7 +612,7 @@ func result(rule Rule, target, version, ruleset string, status EvaluationStatus,
 	if rule.Message != "" {
 		message = rule.Message
 	}
-	evaluation := Evaluation{RuleID: rule.ID, TargetRef: target, TargetVersion: version, RulesetHash: ruleset, Status: status, Severity: rule.Severity, Message: message, Evidence: append([]string(nil), evidence...), EvaluatorVersion: EvaluatorVersion}
+	evaluation := Evaluation{RuleID: rule.ID, TargetRef: target, TargetVersion: version, RulesetHash: ruleset, Status: status, Severity: rule.Severity, Message: message, Evidence: append([]string{}, evidence...), EvaluatorVersion: EvaluatorVersion}
 	if status == EvaluationIssue {
 		identity := struct {
 			RuleID, TargetRef, TargetVersion, RulesetHash, EvaluatorVersion string

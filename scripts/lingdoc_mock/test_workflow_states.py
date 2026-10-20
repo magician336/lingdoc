@@ -65,6 +65,7 @@ class SyntheticProvider:
         self.projects: dict[str, dict] = {}
         self.chapters: dict[str, list[dict]] = {}
         self.assets: dict[str, list[dict]] = {}
+        self.activation_reads: dict[str, dict] = {}
         self.calls: list[dict] = []
         self.counter = 0
         self.idempotency: dict[tuple[str, str], tuple[str, Response]] = {}
@@ -190,15 +191,21 @@ class SyntheticProvider:
         project = self.projects[project_id]
         if body["expected_project_version"] != project["project_version"]:
             return self._version_conflict()
-        return Response(201, self._envelope({"id": self._next_id("read"), "actor_id": OWNER_ID,
-                                             "project_id": project_id,
-                                             "project_version": project["project_version"],
-                                             "spec_revision": project["spec_revision"],
-                                             "read_at": "2026-01-01T00:00:00Z"}))
+        receipt = {"id": self._next_id("activation-read"), "actor_id": OWNER_ID,
+                   "project_id": project_id, "project_version": project["project_version"],
+                   "spec_revision": project["spec_revision"], "read_at": "2026-10-19T00:00:00Z"}
+        self.activation_reads[receipt["id"]] = dict(receipt)
+        return Response(201, self._envelope(receipt))
 
     def _activate(self, project_id, body):
         project = self.projects[project_id]
-        if body["expected_spec_revision"] != project["spec_revision"]:
+        receipt = self.activation_reads.get(body.get("activation_read_id"), {})
+        if (body["expected_spec_revision"] != project["spec_revision"]
+                or body.get("expected_project_version") != project["project_version"]
+                or body.get("reviewed_project_version") != project["project_version"]
+                or receipt.get("project_id") != project_id
+                or receipt.get("project_version") != project["project_version"]
+                or receipt.get("spec_revision") != project["spec_revision"]):
             return self._version_conflict()
         project["status"] = "active"
         project["project_version"] += 1
@@ -376,20 +383,21 @@ class BuildTest(unittest.TestCase):
         provider, loader = built("S2")
         project_id, chapter_id = loader.identifiers["project_id"], loader.identifiers["chapter.question"]
         self.assertEqual(provider.paths(), ["/projects", f"/projects/{project_id}/spec",
-                                            f"/projects/{project_id}/members",
-                                            f"/projects/{project_id}/activation-read",
+                                            f"/projects/{project_id}/members", f"/projects/{project_id}/activation-read",
                                             f"/projects/{project_id}/activate",
                                             f"/projects/{project_id}/chapters",
                                             f"/projects/{project_id}/chapters/{chapter_id}/versions"])
-        self.assertEqual([call["method"] for call in provider.calls],
-                         ["POST", "PUT", "PUT", "POST", "POST", "GET", "POST"])
+        self.assertEqual([call["method"] for call in provider.calls], ["POST", "PUT", "PUT", "POST", "POST", "GET", "POST"])
         bodies = [call["body"] for call in provider.calls]
         self.assertEqual(bodies[1]["expected_spec_revision"], 0)    # from the create response
         self.assertEqual(bodies[2]["expected_project_version"], 2)   # after the spec save
         self.assertEqual(bodies[2]["collaborator_user_ids"], [MEMBER_ID])
-        self.assertEqual(bodies[3]["expected_project_version"], 3)   # the read is bound to the current version
-        self.assertEqual(bodies[4]["expected_spec_revision"], 1)
-        self.assertTrue(bodies[4]["activation_read_id"])             # the receipt the read step returned
+        self.assertEqual(bodies[3]["expected_project_version"], 3)   # after the members save
+        receipt = provider.activation_reads[bodies[4]["activation_read_id"]]
+        self.assertEqual(receipt["project_id"], project_id)
+        self.assertEqual(bodies[4]["expected_project_version"], receipt["project_version"])
+        self.assertEqual(bodies[4]["reviewed_project_version"], receipt["project_version"])
+        self.assertEqual(bodies[4]["expected_spec_revision"], receipt["spec_revision"])
         self.assertEqual(bodies[6]["expected_spec_revision"], 1)
         self.assertIsNone(bodies[6]["expected_chapter_version_id"])  # the chapter has no version yet
         self.assertEqual(bodies[6]["body_markdown"], "人工编辑：这是合成测试材料，不是真实研究结果。")
@@ -425,8 +433,7 @@ class BuildTest(unittest.TestCase):
         loader = loader_for("S1", provider)
         with self.assertRaisesRegex(WorkflowError, r"S1-activate activateProject: HTTP 409 \(version_conflict\)"):
             loader.build()
-        self.assertEqual([step["id"] for step in loader.build_steps],
-                         ["S1-create", "S1-spec", "S1-activation-read"])
+        self.assertEqual([step["id"] for step in loader.build_steps], ["S1-create", "S1-spec", "S1-activation-read"])
 
     def test_the_run_target_is_taken_from_the_client_not_read_a_second_time(self):
         # --base-url 只解析一次：客户端解析后装载器跟着走。各解析一次的话，明明是对真实服务
@@ -443,13 +450,47 @@ class BuildTest(unittest.TestCase):
 
     def test_a_body_that_does_not_match_the_contract_is_refused(self):
         openapi = json.loads(json.dumps(OPENAPI))
-        openapi["components"]["schemas"]["ActivateProject"]["required"].append("expected_project_version")
+        schema = openapi["components"]["schemas"]["ActivateProject"]
+        schema["properties"]["unexpected_required_field"] = {"type": "string"}
+        schema["required"].append("unexpected_required_field")
         state = load_state(SCENARIOS_PATH, "S1")
         knowledge, member = bindings_for(state)
         loader = StateLoader(openapi, state, client_for(SyntheticProvider()), knowledge, member)
         with self.assertRaisesRegex(WorkflowError, r"S1-activate activateProject: this build sends body fields "
-                                                    r"\['activation_read_id', 'expected_spec_revision'\]"):
+                                                    r"\['activation_read_id', 'expected_project_version', 'expected_spec_revision', 'reviewed_project_version'\]"):
             loader.build()
+
+
+    def test_r30_missing_or_mismatched_receipt_stops_before_activation(self):
+        for field, value in (("id", ""), ("project_id", "another-project"),
+                             ("project_version", 99), ("spec_revision", 99)):
+            with self.subTest(field=field):
+                class WrongReceipt(SyntheticProvider):
+                    def _record_activation_read(self, project_id, body):
+                        response = super()._record_activation_read(project_id, body)
+                        payload = json.loads(response.payload.decode("utf-8"))
+                        payload["data"][field] = value
+                        return Response(response.status, payload)
+                provider = WrongReceipt()
+                loader = loader_for("S1", provider)
+                with self.assertRaises(WorkflowError):
+                    loader.build()
+                self.assertTrue(any(call["path"].endswith("/activation-read") for call in provider.calls))
+                self.assertFalse(any(call["path"].endswith("/activate") for call in provider.calls))
+                self.assertEqual(provider.projects[loader.identifiers["project_id"]]["status"], "draft")
+
+    def test_r30_project_edit_after_read_rejects_activation(self):
+        class EditedAfterRead(SyntheticProvider):
+            def _record_activation_read(self, project_id, body):
+                response = super()._record_activation_read(project_id, body)
+                self.projects[project_id]["project_version"] += 1
+                return response
+        provider = EditedAfterRead()
+        loader = loader_for("S1", provider)
+        with self.assertRaisesRegex(WorkflowError, r"S1-activate activateProject: HTTP 409"):
+            loader.build()
+        self.assertEqual(provider.projects[loader.identifiers["project_id"]]["status"], "draft")
+        self.assertEqual(loader.build_steps[-1]["operation_id"], "recordActivationRead")
 
 
 class ReadBackTest(unittest.TestCase):
