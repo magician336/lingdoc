@@ -1,0 +1,270 @@
+{
+  "ticket": "G3 缺口收口-3（#252）：AI 批量提出依赖候选（AC-G3-15）",
+  "issue": "https://github.com/magician336/lingdoc/issues/252",
+  "gap": "G3-GAP-05",
+  "spec": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md §6.2（:169-176）、§6.3（:177-197）、切片 G3.2（:341）、AC-G3-13（:398-400）、AC-G3-15（:406-408）",
+  "plan": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-gap-closure-development-plan.md",
+  "branch": "feat/issue-252-dependency-candidates",
+  "head": "21275cc26eaa563c02ea8c4b96ac7470fe5efc10",
+  "head_tree": "7e2fa84dd6a2e6ef8f92e1def4d7b16218407a8b",
+  "merged_integration_branch": "origin/feat/g3-gap-closure = 001eb6624cf22ef8d5c1cf703f8cf972ae460152（git merge 无冲突，合并提交 fb1a525）",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "db_sqlite": "SQLite：生产迁移链 000045_lingdoc_dependency_candidates.up.sql 为止的完整迁移链（真实 GORM + 真实 workspacecore Service + 真实审计表）",
+    "db_postgres": "PostgreSQL 18.3 隔离实例：initdb -D D:\\pgdata-g3gap2 -U postgres --auth=trust，pg_ctl -o \"-p 55434 -h 127.0.0.1\"，库 lingdoc_g3gap2；LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55434 user=postgres dbname=lingdoc_g3gap2 sslmode=disable'",
+    "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'",
+    "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-252-depcand（独立 worktree，基线 origin/feat/g3-gap-closure=f78dc96，未使用共享工作区）",
+    "frontend": "npm ci --offline（复用本机 npm 缓存）后 npm run type-check 通过；前端测试用 npx tsx --test 跑"
+  },
+  "decision": {
+    "summary": "引入「候选依赖批次」概念，而不是把候选硬塞进既有的单边登记端点：AI 一次提交若干候选，每条候选带源对象、目标对象、对象版本、依据片段、建议理由与置信度；批次带幂等键。人工对每条候选给出 confirm / modify / reject 三态结论，只有确认与修正后的候选进入正式依赖图。",
+    "domain_model": "候选不是依赖边：候选有自己的表（lingdoc_g3_dependency_candidates / ..._batches），不写进 lingdoc_g3_records 的依赖边集合，因此未确认的候选在物理上就读不到正式依赖图里。",
+    "routes": [
+      "POST /projects/{projectId}/dependency-candidates —— 批量提交候选（AI 侧；机器主体可调用，提出不是决定）",
+      "GET /projects/{projectId}/dependency-candidates —— 按批次或按范围读取候选集合与人工结论",
+      "POST /projects/{projectId}/dependency-candidates/{candidateId}/decision —— 三态决策（人工侧；复用 DependencyDecisionInput 与 confirm/modify/reject 词汇）"
+    ],
+    "invariants": [
+      "候选不是依赖边：未确认的候选不进入正式依赖图，不单独使章节失效，不阻断导出（与 AC-G3-13「待确认关系」语义一致）。",
+      "只有人工决定才产生边：confirm 写入候选原样，modify 写入修正后的关系/动作/置信度并把被替换的元组记在边的 SupersededRelation / SupersededAction 上，reject 不写任何边。",
+      "决定绑定项目版本：被 reject 或 modify 的候选在同一项目版本内不再被自动重提；项目版本推进后可以重新出现（重提不等于覆盖已有人工结论）。",
+      "确认时复检对象版本：候选携带的源/目标版本不再是当前版本时，返回 409 dependency_candidate_requires_reevaluation，并把候选标记为 stale，不静默确认。",
+      "批次提交在同一事务写入：要么整批候选落库，要么一条都不落；幂等键保证重放不产生第二批候选（同一批次键 + 不同内容为 409 idempotency_conflict）。",
+      "AI 不得越权：候选的两个端点都要通过当前授权与来源复核；用户选定的范围（scope.objects）之外的候选被拒。"
+    ],
+    "edge_write_path": "确认/修正时，候选先写成一条 suggested 边（version 1），再由人工决定把它变成 confirmed 边（version 2）——与既有 POST /dependencies + POST /dependencies/{edgeId}/decision 的两段式完全同形，所以 modify 后的边带修正后的理由与版本，SupersededRelation / SupersededAction 也复用同一套机制。",
+    "not_changed": [
+      "internal/lingdoc/workspace/http.go 的共享错误映射表（Spec #47 的领域）：本票的错误通过领域层的 ClientFacingError 自带对外形态（409 dependency_candidate_requires_reevaluation），没有往映射表加分支。",
+      "影响解析与传播规则本身（impacts[].certainty 的判定）：未改。",
+      "既有的单边登记与单边决策端点：未改，行为不变。",
+      "影响任务侧语义：未改。"
+    ],
+    "interpretation": "issue 正文「只有 confirm 的候选进入正式依赖图；modify 后的边带修正后的理由与版本」按领域不变量读作：confirm 与 modify 都产生边（§6.3 的「写入已确认边或保留为 suggested」），reject 不产生边；「修正后的版本」指修正后的边版本（候选 v1 → 人工决定 v2），端点对象版本不被改绑——这与既有依赖边决策的「modify 不改端点」一致。"
+  },
+  "code_seams": [
+    "internal/lingdoc/workspacecore/impact_dependency_candidate.go（新增：候选/批次领域模型、三态决策、版本复检、同版本不再重提、幂等键）",
+    "internal/lingdoc/workspacecore/impact_dependency_candidate_store.go（新增：候选与批次的持久化端口与 GORM 行）",
+    "internal/lingdoc/workspace/impact_dependency_candidate_routes.go（新增：三条路由）",
+    "internal/lingdoc/workspace/impact_routes.go（注册候选路由；共享文件，只加一行注册）",
+    "internal/lingdoc/workspacecore/impact_source_operation.go（把新操作接进来源复核分发表：submitDependencyCandidates / decideDependencyCandidate）",
+    "migrations/sqlite/000045_lingdoc_dependency_candidates.{up,down}.sql（新增，SQLite 方言）",
+    "migrations/versioned/000124_lingdoc_dependency_candidates.{up,down}.sql（新增，PostgreSQL 方言）",
+    "docs/08-本轮实施方案/contracts/openapi.json（发布三条路由与十一个 schema）",
+    "frontend/src/api/lingdoc/dependencyCandidates.ts（新增：前端 API 模块）",
+    "frontend/src/views/lingdoc/DependencyCandidatePanel.vue（新增：候选集合展示与三态操作）",
+    "frontend/src/views/lingdoc/ImpactOpsPanel.vue（「依赖与影响」页签挂载候选面板；共享文件，只加一行挂载与一行 import）"
+  ],
+  "acceptance_matrix": [
+    {
+      "item": "批量提出候选",
+      "entry": "POST /projects/{projectId}/dependency-candidates",
+      "invariant": "一次提交多个候选；每条候选带对象版本、依据片段、建议理由",
+      "success": "201，响应里每条候选都能读到源/目标对象、对象版本、依据片段、建议理由",
+      "failure": "缺依据片段/建议理由/超出选定范围 → 400，整批不写",
+      "persistence": "迁移 + 重启读回（SQLite 与 PG 各一轮）",
+      "evidence": "TestDependencyCandidateRoutesCoverBatchDecisionsAndIdempotency、TestDependencyCandidateBatchRefusesACandidateWithoutEvidence",
+      "status": "PASS"
+    },
+    {
+      "item": "三态处理",
+      "entry": "POST /projects/{projectId}/dependency-candidates/{candidateId}/decision",
+      "invariant": "只有 confirm/modify 产生边，reject 不产生边",
+      "success": "确认一条、修改一条、拒绝一条后，GET /dependencies 只有两条 confirmed 边",
+      "failure": "机器主体决定 → 403 human_decision_required；决定已存在的候选 → 409 invalid_state",
+      "persistence": "同事务写入候选结论与依赖边",
+      "evidence": "TestDependencyCandidateRoutesCoverBatchDecisionsAndIdempotency、TestDependencyCandidateRejectProducesNoEdge、TestDependencyCandidateDecisionRefusesAMachinePrincipal",
+      "status": "PASS"
+    },
+    {
+      "item": "拒绝不再重提",
+      "entry": "同一项目版本内再次提交同批候选",
+      "invariant": "被拒/被改候选同版本不重提；换版本后可重新出现",
+      "success": "第二次提交 candidates 为空、suppressed 给出 rejected_in_same_version / modified_in_same_version；应用 ChangeSet 使项目版本推进后，候选重新出现",
+      "failure": "越权被拒",
+      "persistence": "结论落在候选行（project_version + status）",
+      "evidence": "TestDependencyCandidateRejectedOrModifiedIsNotReproposedInSameProjectVersion",
+      "status": "PASS"
+    },
+    {
+      "item": "版本复检",
+      "entry": "确认动作",
+      "invariant": "确认时复检对象版本，落后则要求重评",
+      "success": "目标章节换版本后确认 → 409 dependency_candidate_requires_reevaluation，候选标记 stale，不产生边",
+      "failure": "不静默确认",
+      "persistence": "同事务回滚候选写入，stale 标记单独落库",
+      "evidence": "TestDependencyCandidateConfirmRechecksTheObjectVersion、TestDependencyCandidateDecisionRefusesAStaleBasis",
+      "status": "PASS"
+    },
+    {
+      "item": "幂等与权限",
+      "entry": "批次提交",
+      "invariant": "幂等键 + 决策权限",
+      "success": "同一传输幂等键重放返回同一批次；换一个传输幂等键但用同一批次键，仍返回同一批次且候选数不增；同键不同内容 → 409 idempotency_conflict",
+      "failure": "机器主体决定 → 403 human_decision_required",
+      "persistence": "批次键在 (project_id, actor_id, idempotency_key) 上唯一；审计事件 dependency.candidates.submit / dependency.candidate.{confirm,modify,reject,stale} 与写入同事务",
+      "evidence": "TestDependencyCandidateBatchIsIdempotent、TestPostgresDependencyCandidateBatchAndDecision",
+      "status": "PASS"
+    },
+    {
+      "item": "未确认候选不阻断导出、不使章节失效",
+      "entry": "影响评估与交付闸门",
+      "invariant": "候选不进依赖图即不进影响传播",
+      "success": "提交候选后 GET /dependencies 为空；影响评估里没有该候选目标的影响，目标也不在 required objects 里",
+      "failure": "—",
+      "persistence": "—",
+      "evidence": "TestUnconfirmedDependencyCandidateNeverGatesTheImpactGraph、TestDependencyCandidateRoutesCoverBatchDecisionsAndIdempotency",
+      "status": "PASS"
+    },
+    {
+      "item": "页面实跑落证（/demo/g3）",
+      "entry": "G3 影响中心页面",
+      "invariant": "—",
+      "success": "—",
+      "failure": "—",
+      "persistence": "—",
+      "evidence": "L2 页面落证由 G3 缺口收口-8 统一完成；本票只到 L1",
+      "status": "NOT RUN（范围外）"
+    }
+  ],
+  "passed": [
+    {
+      "id": "批量提出候选（真实 HTTP seam）",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/impact_dependency_candidate_http_test.go TestDependencyCandidateRoutesCoverBatchDecisionsAndIdempotency：真实路由 POST /api/projects/project-1/dependency-candidates 提交两条候选 → 201，响应里每条候选都带 source/target 的 version、evidence、reason、confidence；缺依据片段的批次返回 400 且不落库（TestDependencyCandidateBatchRefusesACandidateWithoutEvidence）。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDependencyCandidate' -v"
+    },
+    {
+      "id": "三态处理：只有确认/修正后的候选进入正式依赖图",
+      "status": "passed",
+      "evidence": "同一用例：confirm 一条、modify 一条后，GET /api/projects/project-1/dependencies 恰好两条且都是 confirmed；被 reject 的候选（TestDependencyCandidateRejectProducesNoEdge）不产生任何边，GET /dependencies 为空。modify 的边带修正后的 relation/action/confidence、修正后的人工理由，并记住被替换的元组（superseded_relation/superseded_action）。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDependencyCandidate' -v；go test ./internal/lingdoc/workspacecore/ -run 'TestDependencyCandidate' -v"
+    },
+    {
+      "id": "被拒/被改的候选在同一项目版本内不再被自动重提，换版本后可重新出现",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/impact_dependency_candidate_test.go TestDependencyCandidateRejectedOrModifiedIsNotReproposedInSameProjectVersion：reject 一条、modify 一条后，同一项目版本内再提交同批候选 → candidates 为空、suppressed 给出 rejected_in_same_version 与 modified_in_same_version；随后走真实应用路径（创建并应用 ChangeSet）推进项目版本，再提交 → 两条候选重新出现。",
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestDependencyCandidateRejectedOrModifiedIsNotReproposedInSameProjectVersion' -v"
+    },
+    {
+      "id": "确认时复检对象版本，落后则要求重新评估",
+      "status": "passed",
+      "evidence": "核心用例 TestDependencyCandidateConfirmRechecksTheObjectVersion：目标章节换新版本后确认 → errors.Is(err, ErrDependencyCandidateStale)，依赖边仍为空，候选被标记为 stale。HTTP 用例 TestDependencyCandidateDecisionRefusesAStaleBasis：真实路由返回 409 且错误码为 dependency_candidate_requires_reevaluation。",
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestDependencyCandidateConfirmRechecksTheObjectVersion' -v；go test ./internal/lingdoc/workspace/ -run 'TestDependencyCandidateDecisionRefusesAStaleBasis' -v"
+    },
+    {
+      "id": "幂等：同一批次同一幂等键重放不产生第二批候选",
+      "status": "passed",
+      "evidence": "核心用例 TestDependencyCandidateBatchIsIdempotent：同一传输键重放返回同一批次；换一个传输键但沿用同一批次键，仍返回同一批次且候选数不增（列表里只有一个批次、一条候选）；同键不同内容 → ErrIdempotencyConflict。HTTP 用例同文件还断言重放响应 meta.replayed=true。",
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestDependencyCandidateBatchIsIdempotent' -v"
+    },
+    {
+      "id": "未确认候选不进入依赖图、不使章节失效",
+      "status": "passed",
+      "evidence": "核心用例 TestUnconfirmedDependencyCandidateNeverGatesTheImpactGraph：提交候选后创建并评估 ChangeSet，影响评估里没有该候选目标的影响，目标也不在 required objects 里；HTTP 用例断言提交候选后 GET /dependencies 为空数组。",
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestUnconfirmedDependencyCandidateNeverGatesTheImpactGraph' -v"
+    },
+    {
+      "id": "权限：提出不是决定",
+      "status": "passed",
+      "evidence": "TestDependencyCandidateDecisionRefusesAMachinePrincipal：带租户 API Key 全权作用域的机器主体对候选做 confirm → 403 human_decision_required，且依赖图仍为空。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDependencyCandidateDecisionRefusesAMachinePrincipal' -v"
+    },
+    {
+      "id": "迁移覆盖 SQLite 与 PostgreSQL（真实生产迁移链）",
+      "status": "passed",
+      "evidence": "SQLite：workspacecore 的 SQLite fixture 走生产迁移链（含新增 000045_lingdoc_dependency_candidates.up.sql）。PostgreSQL：隔离实例上跑完整 versioned 迁移链（27 个迁移，直到 000124_lingdoc_dependency_candidates.up.sql），TestPostgresDependencyCandidateBatchAndDecision 全流程通过，并用**新连接**读回候选与依赖边，证明不是进程内状态；既有的两个 PG 用例同样通过。",
+      "command": "$env:LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55434 user=postgres dbname=lingdoc_g3gap2 sslmode=disable'; go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestPostgres' -v"
+    },
+    {
+      "id": "契约同步：路由已发布，运行时字节满足已发布 schema",
+      "status": "passed",
+      "evidence": "docs/08-本轮实施方案/contracts/openapi.json 发布三条候选路由与十一个 schema；TestDependencyCandidateContractMatchesTheRuntime 用运行中的 router 逐条校验「已发布 + 已注册 + 响应满足 schema」。同时把 /dependency-candidates 纳入既有双向覆盖清单（impactOwnedPathSuffixes），TestEveryImpactRouteIsPublished 与 TestEveryPublishedImpactOperationIsRouted 仍通过。",
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestDependencyCandidateContractMatchesTheRuntime|TestEveryImpactRouteIsPublished|TestEveryPublishedImpactOperationIsRouted|TestRuntimeResponsesSatisfyPublishedSchemas' -v"
+    },
+    {
+      "id": "前端最小交互（候选集合 + 三态操作）",
+      "status": "passed",
+      "evidence": "frontend/src/api/lingdoc/dependencyCandidates.ts 提供三条调用的类型化封装；frontend/src/views/lingdoc/DependencyCandidatePanel.vue 展示对象版本、依据片段、建议理由与人工结论，并提供确认/修正/拒绝三个动作；面板挂在「依赖与影响」页签。前端类型检查通过，API 模块测试 3 条通过。",
+      "command": "npm run type-check；npx tsx --test src/api/lingdoc/dependencyCandidates.test.js"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "G3-GAP-05 的页面实跑落证（/demo/g3）与真实模型跑一遍 AI 批量提出",
+      "reason": "L2 页面落证与模型侧由 G3 缺口收口-8 统一完成；本票按两级完成线只到 L1。模型供应商、凭据与生成质量属 issue 明确列出的范围外。因此 AC-G3-15 在本票交付后只能记 PASS (follow-up)，不得判 PASS。",
+      "status": "NOT RUN（范围外）"
+    },
+    {
+      "id": "前端 npm run build（产物构建）",
+      "reason": "本工作树执行 npm run type-check 时，仓库既有的 vue-tsc --build 脚本把 JS 产物写进了 frontend/src（666 个未跟踪 .js），这些产物与同名 .ts 并列时会被 vite 优先解析，构建结果会指向产物而非源码。已把会遮蔽本票新增源码的两个产物（api/lingdoc/dependencyCandidates.js、views/lingdoc/DependencyCandidatePanel.vue.js）移入回收站，其余产物由维护方统一清理后再构建。因此本轮只跑了类型检查与前端单测。",
+      "status": "NOT RUN（环境/产物污染）"
+    },
+    {
+      "id": "go test -race ./...（整树）",
+      "reason": "本轮按定向范围跑（workspacecore / workspace）。整树 -race 在 Windows + cgo sqlite-vec 下耗时与环境限制较大，未在本轮执行；本票未引入并发写入或共享可变状态（候选的读写都在既有事务边界内，幂等由既有操作表保证）。",
+      "status": "NOT RUN"
+    },
+    {
+      "id": "真实浏览器里的人验",
+      "reason": "属验收台整体验收范围；本票的页面落证由 G3 缺口收口-8 负责。",
+      "status": "NOT RUN（范围外）"
+    }
+  ],
+  "validation": {
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test -count=1 ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/...",
+        "result": "PASS",
+        "output": [
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspacecore  41.2s",
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspace  173.8s"
+        ],
+        "note": "合并 origin/feat/g3-gap-closure（001eb66）之后、只新增本报告文件时的最终定向运行（-count=1，未走缓存）。"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; $env:LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55434 user=postgres dbname=lingdoc_g3gap2 sslmode=disable'; go test -count=1 ./internal/lingdoc/workspacecore/ -run 'TestPostgres' -v",
+        "result": "PASS",
+        "output": [
+          "--- PASS: TestPostgresDependencyCandidateBatchAndDecision (1.04s)  versioned fixture applies 27 production migrations through 000124_lingdoc_dependency_candidates.up.sql",
+          "--- PASS: TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth (0.85s)",
+          "--- PASS: TestPostgresMigrationAndRepositoryContract (1.25s)",
+          "ok  github.com/Tencent/WeKnora/internal/lingdoc/workspacecore  3.879s"
+        ],
+        "note": "隔离 PostgreSQL 18.3 实例（127.0.0.1:55434，库 lingdoc_g3gap2）；每个用例自建 schema 并按生产迁移链建表，跑完即删 schema。"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go build ./internal/...",
+        "result": "PASS（无输出）"
+      },
+      {
+        "command": "gofmt -l internal/lingdoc migrations",
+        "result": "PASS（无输出，无未格式化文件）"
+      },
+      {
+        "command": "npm run type-check",
+        "result": "PASS（无输出）",
+        "note": "仓库既有脚本 vue-tsc --build；副作用是把 JS 产物写进 frontend/src，见 not_run。"
+      },
+      {
+        "command": "npx tsx --test src/api/lingdoc/dependencyCandidates.test.js",
+        "result": "PASS（3/3）",
+        "output": [
+          "✔ the candidate endpoints keep the project and the candidate in single encoded segments",
+          "✔ a submitted batch carries the idempotency key of the proposal run",
+          "✔ a confirmation never states anything the server decides"
+        ]
+      }
+    ]
+  },
+  "notes": [
+    "候选与依赖边分表存放，是「候选不是依赖边」这条不变量的物理保证：依赖边的读侧（ListDependencyEdges、影响评估）根本不读候选表，所以未确认的候选不可能出现在正式依赖图里，也就不可能使章节失效或阻断导出。",
+    "「同版本不再重提」按项目版本（ProjectVersion）判定：SaveSpec 与 ApplyChangeSet 都会推进项目版本。被拒或被改的候选在同版本内记入批次的 suppressed；换版本后可以重新出现，但重新确认仍受边的 SupersededRelation / SupersededAction 保护，不得覆盖已有人工结论（ErrDependencyDecided → 409）。",
+    "确认时的版本复检用既有 currentImpactObject：候选携带的源/目标版本不是当前版本即判为落后。领域错误自带对外形态（ClientFacingError），共享错误映射表没有新增分支。",
+    "迁移编号：SQLite 侧接 000044_lingdoc_roadmap_edit_sessions 之后排 000045，PostgreSQL 侧接 000123_lingdoc_roadmap_edit_sessions 之后排 000124；两套方言都写了 up/down。",
+    "前端：新增 API 模块与一个独立面板组件，只在 ImpactOpsPanel.vue 的「依赖与影响」页签加了一行挂载与一行 import，避免改动那个大文件里的其它逻辑。",
+    "工作树：本会话被分配的工作树 feat-auto-20261020-ac02c1f4 当时有另一名工作者在同一目录的未提交改动，因此本票的全部改动在独立 worktree .worktrees/issue-252-depcand 上完成，基线为 origin/feat/g3-gap-closure=f78dc96，交付前已把 origin/feat/g3-gap-closure=001eb66 合并进来（无冲突）。",
+    "遗留提醒：本工作树的 frontend/src 下有 666 个 tsc 产物 .js（vue-tsc --build 的副作用），未纳入提交（提交逐个显式 git add，无 git add -A）；其中会遮蔽本票新增 .ts 源文件的两个产物已移入回收站，其余待维护方统一清理后再跑前端构建。"
+  ]
+}
