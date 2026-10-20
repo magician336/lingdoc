@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 	"reflect"
@@ -745,28 +746,17 @@ func sameOptionalString(a, b *string) bool {
 }
 
 func sourceReferences(markdown string) ([]string, error) {
-	const prefix, suffix = "[[source:", "]]"
-	var result []string
+	if err := sourcemarker.Validate(markdown); err != nil {
+		return nil, ErrInvalidRequest
+	}
+	ids := sourcemarker.IDs(markdown)
 	seen := make(map[string]struct{})
-	for offset := 0; ; {
-		start := strings.Index(markdown[offset:], prefix)
-		if start < 0 {
-			break
-		}
-		start += offset + len(prefix)
-		end := strings.Index(markdown[start:], suffix)
-		if end < 0 {
-			return nil, ErrInvalidRequest
-		}
-		id := strings.TrimSpace(markdown[start : start+end])
-		if id == "" {
-			return nil, ErrInvalidRequest
-		}
+	result := make([]string, 0, len(ids))
+	for _, id := range ids {
 		if _, exists := seen[id]; !exists {
 			seen[id] = struct{}{}
 			result = append(result, id)
 		}
-		offset = start + end + len(suffix)
 	}
 	return normalizeIDs(result), nil
 }

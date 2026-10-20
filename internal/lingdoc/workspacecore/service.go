@@ -569,7 +569,7 @@ func (t gormTransaction) ChangeSets(projectID string) ([]ChangeSet, error) {
 // chapter version. The stored ChangeSet remains an audit record; a read should
 // reflect a newly completed confirmation without rewriting historical JSON.
 func (t gormTransaction) withCurrentImpactStatus(change ChangeSet) (ChangeSet, error) {
-	if change.Status != "applied" || change.TargetSpecRevision == nil {
+	if change.Status != ChangeSetStatusApplied || change.TargetSpecRevision == nil {
 		return change, nil
 	}
 	for i := range change.Impacts {

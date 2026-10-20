@@ -2,11 +2,11 @@ package workspacecore
 
 import (
 	"context"
-	"errors"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-var ErrHumanDecisionRequired = errors.New("human_decision_required")
+var ErrHumanDecisionRequired = clienterror.New(clienterror.Form{Status: 403, Code: "human_decision_required", Message: "此操作需要实际成员本人确认。", Retryable: false}, "human_decision_required")
 
 // This is an identity check, never a client-supplied confirmed flag. Existing
 // trusted domain fixtures without a HTTP Principal remain explicit fixtures.
@@ -31,4 +31,4 @@ func requiresHumanOperation(op string) bool {
 	return false
 }
 
-var ErrProjectInvitationRequired = errors.New("project_invitation_required")
+var ErrProjectInvitationRequired = clienterror.New(clienterror.Form{Status: 422, Code: "project_invitation_required", Message: "请使用邀请接受与逐成员分配流程；批量直接加入已停用。", Retryable: false}, "project_invitation_required")

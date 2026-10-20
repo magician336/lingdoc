@@ -9,6 +9,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"regexp"
 	"sort"
 	"strings"
@@ -41,7 +42,6 @@ type ReviewItem struct {
 	ID, Statement, Disposition, Reason string
 }
 
-var marker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
 var setextOrRuleMarkup = regexp.MustCompile(`^(?:-{3,}|={3,})\s*$`)
 var tableDelimiter = regexp.MustCompile(`^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$`)
 
@@ -216,7 +216,10 @@ func documentParagraphs(in Input) ([]paragraphSpec, error) {
 		}
 		used := map[string]bool{}
 		bodyParagraphs, err := markdownParagraphs(chapter.BodyMarkdown, func(token string) (string, error) {
-			id := marker.FindStringSubmatch(token)[1]
+			id, ok := sourcemarker.TokenID(token)
+			if !ok {
+				return "", fmt.Errorf("chapter %d uses an unparsable source marker", i+1)
+			}
 			if !declared[id] {
 				return "", fmt.Errorf("chapter %d uses undeclared source %q", i+1, id)
 			}

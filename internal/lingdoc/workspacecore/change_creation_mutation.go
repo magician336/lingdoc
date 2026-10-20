@@ -105,7 +105,7 @@ func (s *Service) createAssessedChangeMutation(ctx context.Context, actor Actor,
 			}
 			impacts = append(impacts, ChangeImpact{ChapterID: chapter.ID, ChapterVersionID: cloneString(chapter.CurrentVersionID), Title: chapter.Title, Reason: reason, Status: "open"})
 		}
-		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReversesChangeSetID: input.ReversesChangeSetID, Reason: strings.TrimSpace(input.Reason), Status: "assessed", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC()}
+		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReversesChangeSetID: input.ReversesChangeSetID, Reason: strings.TrimSpace(input.Reason), Status: ChangeSetStatusAssessed, BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts, TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC()}
 		if _, ok := tx.(impactTransaction); ok {
 			if err := AssessChangeImpact(featureTx, p, change); err != nil {
 				return operationResult[ChangeSet]{}, err
@@ -148,7 +148,7 @@ func (s *Service) createChangeDraftMutation(ctx context.Context, actor Actor, pr
 		if err := validateChangeTemplateInput(p, input.Fields); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReversesChangeSetID: sourceID, Reason: input.Reason, Status: "draft", BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: time.Now().UTC()}
+		change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReversesChangeSetID: sourceID, Reason: input.Reason, Status: ChangeSetStatusDraft, BaseContextRevision: p.CurrentContextRevision, BaseSpecRevision: p.SpecRevision, Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: time.Now().UTC()}
 		keys := make([]string, 0, len(input.Fields))
 		for key := range input.Fields {
 			keys = append(keys, key)
