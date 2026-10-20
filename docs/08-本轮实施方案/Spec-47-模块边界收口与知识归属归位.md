@@ -182,19 +182,30 @@ Issue / Spec：#47 模块边界收口与知识归属归位
 
 ## 验证命令
 
+> 基线在 `origin/main @ 5eab412`、集成分支创建后、任何实现改动之前跑出。
+> 环境：`go1.27.1 windows/amd64`，`GOCACHE=D:\gocache-lingdoc`，`GOTMPDIR=D:\gotmp-lingdoc`。
+
 | 目的 | 命令 | 结果 |
 | --- | --- | --- |
-| 工作区领域包测试 | `go test ./internal/lingdoc/workspacecore/...` | NOT RUN（待基线） |
-| 工作区传输包测试 | `go test ./internal/lingdoc/workspace/...` | NOT RUN（待基线） |
-| 规则集 / 候选采纳 / 生成 | `go test ./internal/lingdoc/rulesetstore/... ./internal/lingdoc/candidateadoption/... ./internal/lingdoc/generation/...` | NOT RUN（待基线） |
-| 组合根 | `go test ./internal/container/...` | NOT RUN（待基线） |
-| 路由与集成 | `go test ./internal/router/...` | NOT RUN（待基线） |
-| 全量 | `go test ./...` | NOT RUN（待基线） |
-| 格式 | `gofmt -l internal/lingdoc internal/container` | NOT RUN（待基线） |
-| 契约与结构 | `git diff --check`；CodeGraph `sync` | NOT RUN（待基线） |
+| 工作区领域包测试 | `go test ./internal/lingdoc/workspacecore/...` | **PASS**（83.5s） |
+| 工作区传输包测试 | `go test ./internal/lingdoc/workspace/...` | **PASS**（511.5s） |
+| 规则集存储 | `go test ./internal/lingdoc/rulesetstore/...` | **PASS**（17.4s） |
+| 候选采纳 | `go test ./internal/lingdoc/candidateadoption/...` | **PASS**（3.8s） |
+| 生成 | `go test ./internal/lingdoc/generation/...` | **PASS**（3.7s） |
+| 交付 | `go test ./internal/lingdoc/delivery/...` | **PASS**（16.2s） |
+| 模板治理 | `go test ./internal/lingdoc/templategovernance/...` | **PASS**（20.0s） |
+| 路由与集成 | `go test ./internal/router/...` | **PASS**（3.3s） |
+| 组合根 | `go test ./internal/container/...` | **BLOCKED（环境）**：`sqlite-vec-go-bindings/cgo` 缺 `sqlite3.h`，构建期失败；未出现业务断言失败 |
+| 格式 | `gofmt -l internal/lingdoc internal/container` | **PASS**（无输出） |
+| 空白与补丁 | `git diff --check` | **PASS**（无输出） |
+| 索引 | `codegraph sync` | 实施改动后重跑 |
+| 全量 | `go test ./...` | NOT RUN（受上述环境限制与仓库既有环境依赖测试影响） |
 
-> 基线未跑前不得开始任何一段。环境限制（Windows 缺少 `sqlite3.h` 等 cgo 依赖）按既有规则记
-> `WARNING`/`BLOCKED（环境）` 并与业务断言失败分开记录。
+> **环境限制说明**：`internal/container` 的构建失败是本机缺少 `sqlite3.h` 导致的 cgo 阻断，
+> 与本次 LingDoc 断言无关，按既有规则记 `BLOCKED（环境）`，不与业务断言失败混记。
+> 涉及组合根的改动（T10）其行为证据需改由可运行的包与装配测试承担，并在此注明该限制。
+> `internal/lingdoc/...` 与 `internal/router` 在本机可正常运行，说明 sqlite3.h 缺失只影响
+> 引入 `sqlite-vec` 的宿主包。
 
 ## 决策记录
 
