@@ -27,20 +27,41 @@ ADR 0006 把**决策**收敛到一处，却让**支撑知识**从三处变成四
 
 门禁判定只有一个模块：`scripts/ci/lingdoc_gate_decision.py`。它的公开接口是：
 
-- `decide(event, root) -> Decision`：回答一个事件，返回一个**带类型**的判定结果。
-- `write_outputs(decision) -> dict[str, str]`：**唯一**把类型退化成字符串的边界。
-- `report(decision) -> dict[str, Any]`：门禁发布的报告——判定结论与它选中的东西。
-- `publish(event, root) -> dict[str, Any]`：门禁 scope 步骤实际执行的那一件事：判定、发布、写产物、检查 PR 的空白边界。
-- `gate_conclusion(decision, workflow)` 与 `conclusion_markdown(conclusion)`：把判定变成**读者看得见**的东西——PR 页面上的 job summary 与门禁产物。
-- `check_whitespace(root, diff_range)`：PR gate 的边界检查：diff 不带空白损伤。
+- `decide` — 回答一个事件，返回一份带类型的判定结果；判定失败时回退全量
+- `write_outputs` — 唯一把判定退化成字符串的边界
+- `report` — 门禁发布的报告：判定结论与它选中的东西
+- `publish` — 门禁 scope 步骤实际执行的那一件事：判定、发布、写产物、检查 PR 的空白边界
+- `gate_conclusion` — 把判定变成读者看得见的结论：面、理由、基线与每个检查的去留
+- `conclusion_markdown` — 结论在 job summary 里的样子
+- `publish_conclusion` — 把结论写进 job summary 与门禁产物
+- `check_whitespace` — PR gate 的边界检查：diff 不带空白损伤
+- `output_key` — 一个消费 job 的输出键名（`job_frontend_verify`）
+- `Decision` — 判定结果这个一等类型
+- `Decision.as_outputs` — 判定结果的字符串形式（`write_outputs` 的别名）
+- `JobDecision` — 一个 job 在一个事件上的判定
+
+这份清单是**唯一来源**：守护测试 `scripts/ci/test_lingdoc_gate_scripts.py` 断言模块实际暴露的公开入口与它**一个不多、一个不少**（`Decision.as_outputs` 这类成员单独核对）。新增一个公开名而没有登记在这里，测试就红；登记了而模块里没有，测试同样红。
+
+`write_outputs(decision, *, patterns=)` 的 `patterns` 是**问这个判定的那个门禁的路径表**：同一个 `Decision` 对不同工作流给出不同的 `run`，因为不同工作流看的路径不同——`run` 必须由调用方的路径表决定，判定模块不替调用方猜。
 
 `Decision` 是**一等类型**：它携带每个 job 的布尔量、被测面、原因、基线、被测面内容指纹、基线是否移动、被测面是否变化、是否强制全量、要跑的 provider 包、是否治理类改动。判定结果在跨进程边界之前**不以字符串形式存在**。
 
-模块里其余的函数都是**内部实现**：diff 范围计算、改动文件、被测面推导、门禁面分类、格式快判。它们不决定任何事；判定只在 `decide` 里做一次。
+模块里其余的函数都是**内部实现**：diff 范围计算、改动文件、被测面推导、门禁面分类、格式快判、清单读取。它们不决定任何事；判定只在 `decide` 里做一次。
+
+#### 这份清单的演进
+
+- **#300**：判定层刚成形时，公开接口只有 `decide` 与 `write_outputs` 两个入口，其余全部是内部实现；当时的验收项是「模块内无其他公开判定入口」。
+- **#302**：每个门禁都要发布判定结论，于是新增 `gate_conclusion`、`conclusion_markdown` 与 `publish_conclusion`——结论是给读者看的东西，得有地方生成、有地方渲染、有地方写出去。
+- **#304**：旧脚本退场，判定收成一个深模块；`report`、`publish`、`check_whitespace` 与 `output_key` 从「模块内部」升为登记在册的公开接口：`publish` 是工作流执行的入口，`report` 是它发布的报告，`check_whitespace` 是 PR gate 的边界检查，`output_key` 是消费 job 的键名（接线测试与守护测试都要读它）。
+- **#300 的字面约束没有被悄悄放弃**：模块里没有第二个「跑不跑」的判定入口；今天所有的内部实现——diff 范围、改动文件、被测面推导、面分类、格式快判、清单读取——都是私有函数（`_` 前缀），只有上面这份清单里的名字是公开的。
 
 ### 二、fail-open 只有一条恢复路径
 
 判定失败（范围解析不出来、提交不存在、清单读不出来）时，`decide` **不抛异常**：它返回一份「全量」的 `Decision`，并在 `reason` 里写明「risk surface undetermined, fell back to the full scope」。
+
+清单读不出来时走的是**同一条**路径，不是第二条：`reason` 写「the gate surface manifest is unavailable; fell back to the full scope」，`undecided` 为真，回退的仍然是全量。清单是判定的一部分（归属知识住在那里），所以清单坏了就是判定坏了；它不能变成「门禁照常跑」。
+
+**「回退全量」只描述判定失败。** 刻意要全量（`--all`、手动 dispatch）不是失败：它的 `undecided` 为**假**，`reason` 写「full scope requested」；只有判定失败回退时 `undecided` 才为真，产物才写「未判定，已回退全量」。一个刻意跑全量的门禁不该被读成「没判定出来」。
 
 理由是 ADR 0006 的原话：**门禁的目的是不漏，不是卡人**。既然恢复路径只有一条，它就必须住在判定里；否则每个调用方都会长出自己的回退，恢复路径又会散开。`reason` 是**人类可读的短语**，产物直接给人看——fail-open 这一条沿用 0006 已发布的措辞，不另造一套说法。
 
@@ -55,6 +76,11 @@ ADR 0006 把**决策**收敛到一处，却让**支撑知识**从三处变成四
 - **格式快判的实现**（ADR 0005 的两个判据与它的兜底）。
 
 **归属知识**（provider 根目录、contracts 目录、治理文件集、前端根）不再由判定模块自己抄一份，而是从**门禁面清单**（`scripts/ci/lingdoc_gate_surfaces.py`）读。清单是「什么属于什么」的唯一真相源；判定模块是「什么会跑」的唯一决策源。
+
+清单同时登记两件判定需要、又不属于路径本身的事实：
+
+- **面的角色**（`role`）：这个面由哪个事实选中——`paths`（由它声明的路径表选中）、`provider`、`frontend`、`contracts`、`governance`。判定读角色，不猜路径：一条路径长得像 provider 根目录，它就**不是** provider 面。
+- **面消费的步骤**（`step`）：PR gate 的哪个步骤消费这个面、哪个布尔输出选中它、格式快判是否跳过它、它判什么。面到步骤的映射只登记一次，在清单里。
 
 ### 四、每个 job 的布尔量
 
@@ -107,7 +133,7 @@ ADR 0006 把**决策**收敛到一处，却让**支撑知识**从三处变成四
 
 ## 影响
 
-- `scripts/ci/lingdoc_gate_decision.py` 是判定模块：公开接口是 `decide`、`write_outputs`、`report`、`publish`、`gate_conclusion`、`conclusion_markdown`、`check_whitespace`。
+- `scripts/ci/lingdoc_gate_decision.py` 是判定模块：公开接口是第一节那份清单，守护测试断言模块与清单一致。
 - `scripts/ci/lingdoc_change_scope.py`、`scripts/ci/lingdoc_pr_scope.py`、`scripts/ci/lingdoc_risk_surface.py`、`scripts/ci/lingdoc_format_scope.py` **删除**；前三个是过渡期薄壳，最后一个的实现折进判定模块。
 - 门禁面清单的 YAML 依赖改为惰性导入：工作流级门禁在没装依赖的 job 里也能读到归属知识。
 - 判定模块自带离线入口：给定一份事件描述与一个工作树即可打印判定结论，不依赖网络。
