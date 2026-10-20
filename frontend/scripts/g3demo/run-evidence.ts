@@ -191,7 +191,9 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     }
   }
 
-  const newProject = async (label: string): Promise<{ projectId: string }> => {
+  const newProject = async (
+    label: string,
+  ): Promise<{ projectId: string; chapters: { id: string; currentVersionId: string | null }[] }> => {
     const created = await runProjectChain(chain.ctx, client, chain.token, {
       projectName: `G3 验收台演示项目（${label} · 运行 ${chain.ctx.runId}）`,
       // 同一次运行里建**多个**项目时必须给不同的幂等键前缀：键相同而请求不同，
@@ -199,7 +201,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       // 会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键。
       idemPrefix: `g3-${label}`,
     })
-    return { projectId: created.project.id }
+    return { projectId: created.project.id, chapters: created.chapters }
   }
 
   const faultProject = await newProject('fault')
@@ -207,7 +209,9 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
       runFaultInjectionChain(chain.ctx, client, chain.token, {
         projectId: faultProject.projectId,
-        affectedChapterIds: [],
+        // 受影响章节要**本项目**的章节：变更集指向空章节列表会被服务端按
+        // 400 `invalid_request` 拒掉（请求字段不符合约定）。
+        affectedChapterIds: faultProject.chapters.map((chapter) => chapter.id),
       }),
     )
   }
@@ -227,36 +231,36 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       // target 取本轮影响评估里真实存在的章节版本。依据与理由是合成材料，
       // 不含真实课题信息。
       const assistantProject = await newProject('assistant')
-    const projectState = await readProjectState(
-      chain.ctx,
-      client,
-      chain.token,
-      assistantProject.projectId,
-    )
-    const chapterObject = lifecycle.assessment.objects.find(
-      (item) => item.kind === 'ChapterVersion',
-    )
-    const candidates = chapterObject
-      ? [
-          {
-            source: {
-              kind: 'ProjectSpec',
-              id: assistantProject.projectId,
-              version: String(projectState.specRevision),
+      const projectState = await readProjectState(
+        chain.ctx,
+        client,
+        chain.token,
+        assistantProject.projectId,
+      )
+      // 候选的 target 必须是**本项目**的章节版本：拿别的项目的对象引用提交，
+      // 服务端会按 404「资源不存在或不可访问」拒掉。
+      const chapter = assistantProject.chapters.find((item) => item.currentVersionId)
+      const candidates = chapter?.currentVersionId
+        ? [
+            {
+              source: {
+                kind: 'ProjectSpec',
+                id: assistantProject.projectId,
+                version: String(projectState.specRevision),
+              },
+              target: {
+                kind: 'ChapterVersion',
+                id: chapter.id,
+                version: chapter.currentVersionId,
+              },
+              relation: 'synthetic_research_dependency',
+              action: 'RETRIEVE_CANDIDATES',
+              evidence: 'G3 验收台-11 合成依据：章节正文变更后需要重新检索项目资料候选',
+              reason: 'G3 验收台-11 合成候选：正文变化使既有检索结论过期',
+              confidence: 1,
             },
-            target: {
-              kind: chapterObject.kind,
-              id: chapterObject.id,
-              version: chapterObject.version,
-            },
-            relation: 'synthetic_research_dependency',
-            action: 'RETRIEVE_CANDIDATES',
-            evidence: 'G3 验收台-11 合成依据：章节正文变更后需要重新检索项目资料候选',
-            reason: 'G3 验收台-11 合成候选：正文变化使既有检索结论过期',
-            confidence: 1,
-          },
-        ]
-      : []
+          ]
+        : []
     if (!candidates.length) {
       throw new Error('本轮影响评估里没有可用的 ChapterVersion 对象，候选批次无从提交')
     }
