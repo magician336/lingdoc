@@ -2241,10 +2241,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if change.Status == "applied" {
+		if change.Status == ChangeSetStatusApplied {
 			return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 		}
-		if change.Status != "assessed" {
+		if change.Status != ChangeSetStatusAssessed {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		// A governed template migration must never commit without a durable
@@ -2263,7 +2263,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		upgradeStale := change.TemplateUpgrade != nil && (p.TemplateCopy == nil || p.TemplateCopyVersion != change.TemplateUpgrade.BaseTemplateCopyVersion)
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
-			stale.Status = "stale"
+			stale.Status = ChangeSetStatusStale
 			stale.StaleReason = "context_revision_changed"
 			if change.BaseSpecRevision != p.SpecRevision {
 				stale.StaleReason = "spec_revision_changed"
@@ -2288,7 +2288,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			}
 			if !sameVersion(impact.ChapterVersionID, chapter.CurrentVersionID) {
 				stale := change
-				stale.Status = "stale"
+				stale.Status = ChangeSetStatusStale
 				stale.StaleReason = "chapter_version_changed"
 				if err := store.UpdateChangeSet(change, stale); err != nil {
 					return operationResult[ChangeSet]{}, err
@@ -2395,7 +2395,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		targetContext, targetSpec := next.CurrentContextRevision, next.SpecRevision
 		now := time.Now().UTC()
 		previousChange := change
-		change.Status = "applied"
+		change.Status = ChangeSetStatusApplied
 		change.DecisionBy = actor.UserID
 		change.DecidedAt = &now
 		change.TargetContextRevision = &targetContext
@@ -2461,7 +2461,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if stale.Status != "stale" {
+		if stale.Status != ChangeSetStatusStale {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		inverseSourceID, err := inverseLineageSource(tx, p.ID, stale, map[string]bool{})
@@ -2529,7 +2529,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 				now := time.Now().UTC()
 				contextRevision, specRevision := p.CurrentContextRevision, p.SpecRevision
 				change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID,
-					ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID, Reason: stale.Reason, Status: "satisfied",
+					ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID, Reason: stale.Reason, Status: ChangeSetStatusSatisfied,
 					BaseContextRevision: contextRevision, TargetContextRevision: &contextRevision,
 					BaseSpecRevision: specRevision, TargetSpecRevision: &specRevision,
 					Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: now}
@@ -2567,7 +2567,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 		}
 		change := ChangeSet{
 			ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID,
-			Reason: stale.Reason, Status: "assessed", BaseContextRevision: p.CurrentContextRevision,
+			Reason: stale.Reason, Status: ChangeSetStatusAssessed, BaseContextRevision: p.CurrentContextRevision,
 			BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts,
 			TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC(),
 		}
@@ -2641,14 +2641,14 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if change.Status == "rejected" {
+		if change.Status == ChangeSetStatusRejected {
 			return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 		}
-		if change.Status != "assessed" {
+		if change.Status != ChangeSetStatusAssessed {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		previous := change
-		change.Status = "rejected"
+		change.Status = ChangeSetStatusRejected
 		now := time.Now().UTC()
 		change.DecisionBy = actor.UserID
 		change.DecidedAt = &now

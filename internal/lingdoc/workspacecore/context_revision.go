@@ -103,7 +103,7 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if !slices.Contains([]string{"draft", "assessed"}, old.Status) || old.TemplateUpgrade != nil {
+		if !slices.Contains(ChangeSetProposalStatuses, old.Status) || old.TemplateUpgrade != nil {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if old.CreatedBy != actor.UserID && !projectOwner(p, actor.UserID) {
@@ -116,7 +116,7 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 			return operationResult[ChangeSet]{}, err
 		}
 		next := old
-		next.Status = "draft"
+		next.Status = ChangeSetStatusDraft
 		next.Reason = input.Reason
 		next.Fields = []ChangeFieldDelta{}
 		next.Impacts = []ChangeImpact{}
@@ -150,7 +150,7 @@ func (s *Service) EditChangeDraft(ctx context.Context, actor Actor, projectID, c
 		if err := storeAgentChangeDraftEditFields(ctx, tx, p, old, next, input); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if err := recordAuditEvent(tx, actor, projectID, "change_set.edit", changeID, map[string]any{"status": "draft"}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "change_set.edit", changeID, map[string]any{"status": ChangeSetStatusDraft}); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
 		return operationResult[ChangeSet]{Value: next, Status: operationStatusOK}, nil
