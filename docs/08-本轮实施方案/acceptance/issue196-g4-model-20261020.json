@@ -87,8 +87,9 @@
     "candidates_from_failed_or_interrupted_runs": 0,
     "generation_runs_total": 8,
     "generation_runs_succeeded": 2,
-    "generation_runs_failed": 4,
-    "generation_runs_interrupted": 2
+    "generation_runs_failed": 3,
+    "generation_runs_interrupted": 3,
+    "interrupted_breakdown": "其中两次是真实供应商在途取消（90c00c6b…、82084f79…），第三次 751aa92f… 是 worker 迟迟未领取、批量运行结束后由验收侧手动取消的排队运行（cancel_requested=true, error_code=generation_cancelled），不是产品行为缺陷的证据。"
   },
   "seam_level_evidence_still_cited": {
     "note": "接缝级确定性契约测试仍作为补充证据（timeout→interrupted、取消、PostgreSQL 失败边界、worker 崩溃租约），见 issue196-g4-fail-20261020.json。",
