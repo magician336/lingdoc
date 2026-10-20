@@ -33560,6 +33560,2479 @@
         "x-domain": "workspace",
         "x-delivery-phase": "core"
       }
+    },
+    "/projects/{projectId}/roadmap": {
+      "get": {
+        "operationId": "readRoadmapBaseline",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取当前冻结的路线图基线",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线图基线",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapBaselineResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "version": 1,
+                        "context_revision": 1,
+                        "nodes": [
+                          {
+                            "id": "synthetic-node-id",
+                            "project_id": "synthetic-project-id",
+                            "version": 1,
+                            "name": "合成路线节点",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "required": true,
+                            "status": "ready",
+                            "state": "current",
+                            "state_reason": "合成状态原因",
+                            "context_revision": 1,
+                            "actor_id": "synthetic-actor-id",
+                            "reason": "合成路线节点",
+                            "updated_at": "2026-10-20T00:00:00Z",
+                            "frozen": true
+                          }
+                        ],
+                        "edges": [
+                          {
+                            "id": "synthetic-edge-id",
+                            "project_id": "synthetic-project-id",
+                            "version": 1,
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "status": "active",
+                            "context_revision": 1,
+                            "actor_id": "synthetic-actor-id",
+                            "reason": "合成路线边",
+                            "updated_at": "2026-10-20T00:00:00Z"
+                          }
+                        ]
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 29,
+        "x-lingdoc-service": "ReadRoadmap",
+        "x-lingdoc-go-response": "RoadmapBaseline",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/roadmap/edges": {
+      "get": {
+        "operationId": "listRoadmapEdges",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取当前冻结的路线边",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线边列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FullRouteEdgeListResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "synthetic-edge-id",
+                          "project_id": "synthetic-project-id",
+                          "version": 1,
+                          "source_id": "synthetic-node-id",
+                          "target_id": "synthetic-node-id-2",
+                          "relation": "synthetic-relation",
+                          "status": "active",
+                          "context_revision": 1,
+                          "actor_id": "synthetic-actor-id",
+                          "reason": "合成路线边",
+                          "updated_at": "2026-10-20T00:00:00Z"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 32,
+        "x-lingdoc-service": "ReadRouteEdges",
+        "x-lingdoc-go-response": "[]RouteEdge",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/roadmap/edges/{edgeId}/versions": {
+      "get": {
+        "operationId": "listRoadmapEdgeVersions",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取一条路线边的版本序列",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "edgeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线边版本序列",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FullRouteEdgeListResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "synthetic-edge-id",
+                          "project_id": "synthetic-project-id",
+                          "version": 1,
+                          "source_id": "synthetic-node-id",
+                          "target_id": "synthetic-node-id-2",
+                          "relation": "synthetic-relation",
+                          "status": "active",
+                          "context_revision": 1,
+                          "actor_id": "synthetic-actor-id",
+                          "reason": "合成路线边",
+                          "updated_at": "2026-10-20T00:00:00Z"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 35,
+        "x-lingdoc-service": "ReadRouteEdgeVersions",
+        "x-lingdoc-go-response": "[]RouteEdge",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/roadmap/nodes/{nodeId}/versions": {
+      "get": {
+        "operationId": "listRoadmapNodeVersions",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取一个路线节点的冻结版本序列",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线节点版本序列",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FullRoadmapVersionEntryListResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "version": 1,
+                          "name": "合成路线节点",
+                          "status": "ready",
+                          "required": true,
+                          "state": "current",
+                          "state_reason": "合成状态原因",
+                          "context_revision": 1,
+                          "actor_id": "synthetic-actor-id",
+                          "reason": "合成路线节点",
+                          "inputs": [
+                            {
+                              "kind": "ChapterVersion",
+                              "id": "synthetic-id",
+                              "version": "1"
+                            }
+                          ],
+                          "targets": [
+                            {
+                              "kind": "ChapterVersion",
+                              "id": "synthetic-id",
+                              "version": "1"
+                            }
+                          ],
+                          "updated_at": "2026-10-20T00:00:00Z"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 38,
+        "x-lingdoc-service": "ReadRoadmapNodeVersions",
+        "x-lingdoc-go-response": "[]RoadmapVersionEntry",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/roadmap/nodes/{nodeId}/compare": {
+      "get": {
+        "operationId": "compareRoadmapNodeVersions",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "比较一个路线节点的两个冻结版本",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "比较的起始版本号"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            },
+            "description": "比较的目标版本号"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线节点版本比较",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapComparisonResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "kind": "RouteNode",
+                        "id": "synthetic-node-id",
+                        "from": 1,
+                        "to": 2,
+                        "changes": [
+                          {
+                            "field": "name",
+                            "from": "合成路线节点",
+                            "to": "改写后的路线节点"
+                          }
+                        ]
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 41,
+        "x-lingdoc-service": "CompareRoadmapNodeVersions",
+        "x-lingdoc-go-response": "RoadmapComparison",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/roadmap/edits": {
+      "get": {
+        "operationId": "listRoadmapEditSessions",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "列出项目的路线图编辑会话",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线图编辑会话列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FullRoadmapEditSessionListResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": [
+                        {
+                          "id": "synthetic-session-id",
+                          "project_id": "synthetic-project-id",
+                          "status": "open",
+                          "baseline": {
+                            "version": 1,
+                            "context_revision": 1,
+                            "nodes": [
+                              {
+                                "id": "synthetic-node-id",
+                                "project_id": "synthetic-project-id",
+                                "version": 1,
+                                "name": "合成路线节点",
+                                "inputs": [
+                                  {
+                                    "kind": "ChapterVersion",
+                                    "id": "synthetic-id",
+                                    "version": "1"
+                                  }
+                                ],
+                                "targets": [
+                                  {
+                                    "kind": "ChapterVersion",
+                                    "id": "synthetic-id",
+                                    "version": "1"
+                                  }
+                                ],
+                                "required": true,
+                                "status": "ready",
+                                "state": "current",
+                                "state_reason": "合成状态原因",
+                                "context_revision": 1,
+                                "actor_id": "synthetic-actor-id",
+                                "reason": "合成路线节点",
+                                "updated_at": "2026-10-20T00:00:00Z",
+                                "frozen": true
+                              }
+                            ],
+                            "edges": [
+                              {
+                                "id": "synthetic-edge-id",
+                                "project_id": "synthetic-project-id",
+                                "version": 1,
+                                "source_id": "synthetic-node-id",
+                                "target_id": "synthetic-node-id-2",
+                                "relation": "synthetic-relation",
+                                "status": "active",
+                                "context_revision": 1,
+                                "actor_id": "synthetic-actor-id",
+                                "reason": "合成路线边",
+                                "updated_at": "2026-10-20T00:00:00Z"
+                              }
+                            ]
+                          },
+                          "node_proposals": [
+                            {
+                              "node_id": "synthetic-node-id",
+                              "kind": "update",
+                              "name": "合成路线节点",
+                              "status": "ready",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "reason": "合成提案",
+                              "temporary_version": 2
+                            }
+                          ],
+                          "edge_proposals": [
+                            {
+                              "edge_id": "synthetic-edge-id",
+                              "kind": "add",
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "reason": "合成提案",
+                              "temporary_version": 2
+                            }
+                          ],
+                          "result": {
+                            "session_id": "synthetic-session-id",
+                            "baseline_version": 1,
+                            "committed_version": 2,
+                            "applied_nodes": [
+                              {
+                                "id": "synthetic-node-id",
+                                "project_id": "synthetic-project-id",
+                                "version": 1,
+                                "name": "合成路线节点",
+                                "inputs": [
+                                  {
+                                    "kind": "ChapterVersion",
+                                    "id": "synthetic-id",
+                                    "version": "1"
+                                  }
+                                ],
+                                "targets": [
+                                  {
+                                    "kind": "ChapterVersion",
+                                    "id": "synthetic-id",
+                                    "version": "1"
+                                  }
+                                ],
+                                "required": true,
+                                "status": "ready",
+                                "state": "current",
+                                "state_reason": "合成状态原因",
+                                "context_revision": 1,
+                                "actor_id": "synthetic-actor-id",
+                                "reason": "合成路线节点",
+                                "updated_at": "2026-10-20T00:00:00Z",
+                                "frozen": true
+                              }
+                            ],
+                            "applied_edges": [
+                              {
+                                "id": "synthetic-edge-id",
+                                "project_id": "synthetic-project-id",
+                                "version": 1,
+                                "source_id": "synthetic-node-id",
+                                "target_id": "synthetic-node-id-2",
+                                "relation": "synthetic-relation",
+                                "status": "active",
+                                "context_revision": 1,
+                                "actor_id": "synthetic-actor-id",
+                                "reason": "合成路线边",
+                                "updated_at": "2026-10-20T00:00:00Z"
+                              }
+                            ],
+                            "change_set_id": "synthetic-change-set-id",
+                            "semantic": true
+                          },
+                          "actor_id": "synthetic-actor-id",
+                          "reason": "合成编辑会话",
+                          "created_at": "2026-10-20T00:00:00Z",
+                          "updated_at": "2026-10-20T00:00:00Z"
+                        }
+                      ],
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 54,
+        "x-lingdoc-service": "ListRoadmapSessions",
+        "x-lingdoc-go-response": "[]RoadmapEditSession",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      },
+      "post": {
+        "operationId": "beginRoadmapEditSession",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "打开一个未冻结的路线图编辑会话",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapEditBeginInput"
+              },
+              "example": {
+                "expected_context_revision": 1,
+                "reason": "编辑路线图"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "编辑会话已创建",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapEditSessionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-session-id",
+                        "project_id": "synthetic-project-id",
+                        "status": "open",
+                        "baseline": {
+                          "version": 1,
+                          "context_revision": 1,
+                          "nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ]
+                        },
+                        "node_proposals": [
+                          {
+                            "node_id": "synthetic-node-id",
+                            "kind": "update",
+                            "name": "合成路线节点",
+                            "status": "ready",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "edge_proposals": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "kind": "add",
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "result": {
+                          "session_id": "synthetic-session-id",
+                          "baseline_version": 1,
+                          "committed_version": 2,
+                          "applied_nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "applied_edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ],
+                          "change_set_id": "synthetic-change-set-id",
+                          "semantic": true
+                        },
+                        "actor_id": "synthetic-actor-id",
+                        "reason": "合成编辑会话",
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "updated_at": "2026-10-20T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Successful current operation or authorized stored receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapEditSessionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-session-id",
+                        "project_id": "synthetic-project-id",
+                        "status": "open",
+                        "baseline": {
+                          "version": 1,
+                          "context_revision": 1,
+                          "nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ]
+                        },
+                        "node_proposals": [
+                          {
+                            "node_id": "synthetic-node-id",
+                            "kind": "update",
+                            "name": "合成路线节点",
+                            "status": "ready",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "edge_proposals": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "kind": "add",
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "result": {
+                          "session_id": "synthetic-session-id",
+                          "baseline_version": 1,
+                          "committed_version": 2,
+                          "applied_nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "applied_edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ],
+                          "change_set_id": "synthetic-change-set-id",
+                          "semantic": true
+                        },
+                        "actor_id": "synthetic-actor-id",
+                        "reason": "合成编辑会话",
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "updated_at": "2026-10-20T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法或请求体无法解码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前资料访问被拒绝，或缺少人工决策",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或路线图对象不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "上下文修订、基线版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态、证据或显式确认的前置条件不满足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "原生持久化或审计失败，没有部分业务结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "所需的原生/模型/检索依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 60,
+        "x-lingdoc-service": "BeginRoadmapEdit",
+        "x-lingdoc-go-response": "RoadmapEditSession",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
+    },
+    "/projects/{projectId}/roadmap/edits/{sessionId}": {
+      "get": {
+        "operationId": "getRoadmapEditSession",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取一个路线图编辑会话",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "路线图编辑会话",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapEditSessionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-session-id",
+                        "project_id": "synthetic-project-id",
+                        "status": "open",
+                        "baseline": {
+                          "version": 1,
+                          "context_revision": 1,
+                          "nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ]
+                        },
+                        "node_proposals": [
+                          {
+                            "node_id": "synthetic-node-id",
+                            "kind": "update",
+                            "name": "合成路线节点",
+                            "status": "ready",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "edge_proposals": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "kind": "add",
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "result": {
+                          "session_id": "synthetic-session-id",
+                          "baseline_version": 1,
+                          "committed_version": 2,
+                          "applied_nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "applied_edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ],
+                          "change_set_id": "synthetic-change-set-id",
+                          "semantic": true
+                        },
+                        "actor_id": "synthetic-actor-id",
+                        "reason": "合成编辑会话",
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "updated_at": "2026-10-20T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 57,
+        "x-lingdoc-service": "GetRoadmapSession",
+        "x-lingdoc-go-response": "RoadmapEditSession",
+        "x-lingdoc-human-decision": {
+          "mode": "no_explicit_guard",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked."
+        },
+        "x-lingdoc-runtime-pause-gate": "not_inferred_from_method"
+      }
+    },
+    "/projects/{projectId}/roadmap/edits/{sessionId}/nodes": {
+      "post": {
+        "operationId": "proposeRoadmapNodeChange",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "在会话中提出一个路线节点变更",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapNodeProposalInput"
+              },
+              "example": {
+                "node_id": "synthetic-node-id",
+                "kind": "update",
+                "name": "合成路线节点",
+                "status": "ready",
+                "inputs": [],
+                "targets": [],
+                "reason": "合成提案"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "提案已记录，冻结路线图未变",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapEditSessionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-session-id",
+                        "project_id": "synthetic-project-id",
+                        "status": "open",
+                        "baseline": {
+                          "version": 1,
+                          "context_revision": 1,
+                          "nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ]
+                        },
+                        "node_proposals": [
+                          {
+                            "node_id": "synthetic-node-id",
+                            "kind": "update",
+                            "name": "合成路线节点",
+                            "status": "ready",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "edge_proposals": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "kind": "add",
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "result": {
+                          "session_id": "synthetic-session-id",
+                          "baseline_version": 1,
+                          "committed_version": 2,
+                          "applied_nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "applied_edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ],
+                          "change_set_id": "synthetic-change-set-id",
+                          "semantic": true
+                        },
+                        "actor_id": "synthetic-actor-id",
+                        "reason": "合成编辑会话",
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "updated_at": "2026-10-20T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法或请求体无法解码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前资料访问被拒绝，或缺少人工决策",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或路线图对象不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "上下文修订、基线版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态、证据或显式确认的前置条件不满足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "原生持久化或审计失败，没有部分业务结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "所需的原生/模型/检索依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 63,
+        "x-lingdoc-service": "ProposeRoadmapNode",
+        "x-lingdoc-go-response": "RoadmapEditSession",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
+    },
+    "/projects/{projectId}/roadmap/edits/{sessionId}/edges": {
+      "post": {
+        "operationId": "proposeRoadmapEdgeChange",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "在会话中提出一个路线边变更",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapEdgeProposalInput"
+              },
+              "example": {
+                "edge_id": "synthetic-edge-id",
+                "kind": "add",
+                "source_id": "synthetic-node-id",
+                "target_id": "synthetic-node-id-2",
+                "relation": "synthetic-relation",
+                "reason": "合成提案"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "提案已记录，冻结路线图未变",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapEditSessionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-session-id",
+                        "project_id": "synthetic-project-id",
+                        "status": "open",
+                        "baseline": {
+                          "version": 1,
+                          "context_revision": 1,
+                          "nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ]
+                        },
+                        "node_proposals": [
+                          {
+                            "node_id": "synthetic-node-id",
+                            "kind": "update",
+                            "name": "合成路线节点",
+                            "status": "ready",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "edge_proposals": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "kind": "add",
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "result": {
+                          "session_id": "synthetic-session-id",
+                          "baseline_version": 1,
+                          "committed_version": 2,
+                          "applied_nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "applied_edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ],
+                          "change_set_id": "synthetic-change-set-id",
+                          "semantic": true
+                        },
+                        "actor_id": "synthetic-actor-id",
+                        "reason": "合成编辑会话",
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "updated_at": "2026-10-20T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法或请求体无法解码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前资料访问被拒绝，或缺少人工决策",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或路线图对象不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "上下文修订、基线版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态、证据或显式确认的前置条件不满足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "原生持久化或审计失败，没有部分业务结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "所需的原生/模型/检索依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 66,
+        "x-lingdoc-service": "ProposeRoadmapEdge",
+        "x-lingdoc-go-response": "RoadmapEditSession",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
+    },
+    "/projects/{projectId}/roadmap/edits/{sessionId}/commit": {
+      "post": {
+        "operationId": "commitRoadmapEditSession",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "提交路线图编辑会话",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapCommitInput"
+              },
+              "example": {
+                "expected_baseline_version": 1,
+                "reason": "提交路线图编辑"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "提交结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapCommitResultResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "session_id": "synthetic-session-id",
+                        "baseline_version": 1,
+                        "committed_version": 2,
+                        "applied_nodes": [
+                          {
+                            "id": "synthetic-node-id",
+                            "project_id": "synthetic-project-id",
+                            "version": 1,
+                            "name": "合成路线节点",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "required": true,
+                            "status": "ready",
+                            "state": "current",
+                            "state_reason": "合成状态原因",
+                            "context_revision": 1,
+                            "actor_id": "synthetic-actor-id",
+                            "reason": "合成路线节点",
+                            "updated_at": "2026-10-20T00:00:00Z",
+                            "frozen": true
+                          }
+                        ],
+                        "applied_edges": [
+                          {
+                            "id": "synthetic-edge-id",
+                            "project_id": "synthetic-project-id",
+                            "version": 1,
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "status": "active",
+                            "context_revision": 1,
+                            "actor_id": "synthetic-actor-id",
+                            "reason": "合成路线边",
+                            "updated_at": "2026-10-20T00:00:00Z"
+                          }
+                        ],
+                        "change_set_id": "synthetic-change-set-id",
+                        "semantic": true
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法或请求体无法解码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前资料访问被拒绝，或缺少人工决策",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或路线图对象不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "上下文修订、基线版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态、证据或显式确认的前置条件不满足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "原生持久化或审计失败，没有部分业务结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "所需的原生/模型/检索依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 69,
+        "x-lingdoc-service": "CommitRoadmapEdit",
+        "x-lingdoc-go-response": "RoadmapCommitResult",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
+    },
+    "/projects/{projectId}/roadmap/edits/{sessionId}/cancel": {
+      "post": {
+        "operationId": "cancelRoadmapEditSession",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "取消路线图编辑会话",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128
+            },
+            "description": "Keep the original key and exact request on retry; current identity/source authorization is checked before a stored receipt is returned."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoadmapCancelInput"
+              },
+              "example": {
+                "expected_baseline_version": 1,
+                "reason": "取消编辑"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "会话已取消，冻结路线图未变",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoadmapEditSessionResponse"
+                },
+                "examples": {
+                  "synthetic_success": {
+                    "summary": "Synthetic contract illustration only; not an executed API result or authorization proof",
+                    "value": {
+                      "data": {
+                        "id": "synthetic-session-id",
+                        "project_id": "synthetic-project-id",
+                        "status": "open",
+                        "baseline": {
+                          "version": 1,
+                          "context_revision": 1,
+                          "nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ]
+                        },
+                        "node_proposals": [
+                          {
+                            "node_id": "synthetic-node-id",
+                            "kind": "update",
+                            "name": "合成路线节点",
+                            "status": "ready",
+                            "inputs": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "targets": [
+                              {
+                                "kind": "ChapterVersion",
+                                "id": "synthetic-id",
+                                "version": "1"
+                              }
+                            ],
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "edge_proposals": [
+                          {
+                            "edge_id": "synthetic-edge-id",
+                            "kind": "add",
+                            "source_id": "synthetic-node-id",
+                            "target_id": "synthetic-node-id-2",
+                            "relation": "synthetic-relation",
+                            "reason": "合成提案",
+                            "temporary_version": 2
+                          }
+                        ],
+                        "result": {
+                          "session_id": "synthetic-session-id",
+                          "baseline_version": 1,
+                          "committed_version": 2,
+                          "applied_nodes": [
+                            {
+                              "id": "synthetic-node-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "name": "合成路线节点",
+                              "inputs": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "targets": [
+                                {
+                                  "kind": "ChapterVersion",
+                                  "id": "synthetic-id",
+                                  "version": "1"
+                                }
+                              ],
+                              "required": true,
+                              "status": "ready",
+                              "state": "current",
+                              "state_reason": "合成状态原因",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线节点",
+                              "updated_at": "2026-10-20T00:00:00Z",
+                              "frozen": true
+                            }
+                          ],
+                          "applied_edges": [
+                            {
+                              "id": "synthetic-edge-id",
+                              "project_id": "synthetic-project-id",
+                              "version": 1,
+                              "source_id": "synthetic-node-id",
+                              "target_id": "synthetic-node-id-2",
+                              "relation": "synthetic-relation",
+                              "status": "active",
+                              "context_revision": 1,
+                              "actor_id": "synthetic-actor-id",
+                              "reason": "合成路线边",
+                              "updated_at": "2026-10-20T00:00:00Z"
+                            }
+                          ],
+                          "change_set_id": "synthetic-change-set-id",
+                          "semantic": true
+                        },
+                        "actor_id": "synthetic-actor-id",
+                        "reason": "合成编辑会话",
+                        "created_at": "2026-10-20T00:00:00Z",
+                        "updated_at": "2026-10-20T00:00:00Z"
+                      },
+                      "request_id": "synthetic-contract-example",
+                      "meta": {
+                        "replayed": false,
+                        "refresh_required": false
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法或请求体无法解码",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "当前资料访问被拒绝，或缺少人工决策",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "项目或路线图对象不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "上下文修订、基线版本或幂等键冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "当前状态、证据或显式确认的前置条件不满足",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "原生持久化或审计失败，没有部分业务结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "所需的原生/模型/检索依赖不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core",
+        "x-lingdoc-route-source": "roadmap_routes.go",
+        "x-lingdoc-route-line": 72,
+        "x-lingdoc-service": "CancelRoadmapEdit",
+        "x-lingdoc-go-response": "RoadmapEditSession",
+        "x-lingdoc-human-decision": {
+          "mode": "required",
+          "machine_access": "No machine grant is inferred; current Caller/Principal, G5 policy and source authorization are always rechecked.",
+          "source": "g3_g6_full_http.go/human wrapper or explicit handler check"
+        },
+        "description": "Current authenticated actor, role/scope, native versions and source authorization are required. Absence of an explicit human-decision guard does not grant machine access. An authenticated human is required by the HTTP/core decision guard; a client confirmed flag or an old receipt is not an authorization grant.",
+        "x-lingdoc-runtime-pause-gate": "reachable_when_enabled"
+      }
     }
   },
   "components": {
@@ -47118,6 +49591,835 @@
             "$ref": "#/components/schemas/ResponseMeta"
           }
         }
+      },
+      "RouteEdge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "边的生命周期状态：active 表示当前有效，retired 表示已退出路线。服务端决定，客户端不得本地推断。"
+          },
+          "context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "version",
+          "source_id",
+          "target_id",
+          "relation",
+          "status",
+          "context_revision",
+          "actor_id",
+          "reason",
+          "updated_at"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RouteEdge",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapNodeView": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "description": "冻结路线图中该节点的当前状态：current / pending_review / stale / missing / retired。"
+          },
+          "state_reason": {
+            "type": "string",
+            "description": "状态的具体原因；没有原因时该字段不出现。"
+          },
+          "context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "frozen": {
+            "type": "boolean",
+            "description": "true 表示该节点版本已进入冻结路线图；未冻结的提案不会作为节点视图发布。"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "version",
+          "name",
+          "inputs",
+          "targets",
+          "required",
+          "status",
+          "state",
+          "context_revision",
+          "actor_id",
+          "reason",
+          "updated_at",
+          "frozen"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapNodeView",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapBaseline": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapNodeView"
+            },
+            "nullable": true
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteEdge"
+            },
+            "nullable": true
+          }
+        },
+        "required": [
+          "version",
+          "context_revision",
+          "nodes",
+          "edges"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapBaseline",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapNodeProposal": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "reason": {
+            "type": "string"
+          },
+          "temporary_version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "node_id",
+          "kind",
+          "name",
+          "status",
+          "inputs",
+          "targets",
+          "reason",
+          "temporary_version"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapNodeProposal",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapEdgeProposal": {
+        "type": "object",
+        "properties": {
+          "edge_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "temporary_version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "edge_id",
+          "kind",
+          "source_id",
+          "target_id",
+          "relation",
+          "reason",
+          "temporary_version"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapEdgeProposal",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapCommitResult": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string"
+          },
+          "baseline_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "committed_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "applied_nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapNodeView"
+            },
+            "nullable": true
+          },
+          "applied_edges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteEdge"
+            },
+            "nullable": true
+          },
+          "change_set_id": {
+            "type": "string",
+            "description": "提交产生变更集而不是直接写入路线图时给出的变更集标识；否则该字段不出现。"
+          },
+          "semantic": {
+            "type": "boolean",
+            "description": "true 表示这次提交走的是语义变更（变更集）路径，路线图本身没有被直接写入。"
+          }
+        },
+        "required": [
+          "session_id",
+          "baseline_version",
+          "committed_version",
+          "applied_nodes",
+          "applied_edges",
+          "semantic"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapCommitResult",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapEditSession": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "committed",
+              "cancelled"
+            ]
+          },
+          "baseline": {
+            "$ref": "#/components/schemas/RoadmapBaseline"
+          },
+          "node_proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapNodeProposal"
+            },
+            "nullable": true
+          },
+          "edge_proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapEdgeProposal"
+            },
+            "nullable": true
+          },
+          "result": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoadmapCommitResult"
+              }
+            ],
+            "nullable": true
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "status",
+          "baseline",
+          "node_proposals",
+          "edge_proposals",
+          "actor_id",
+          "reason",
+          "created_at",
+          "updated_at"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapEditSession",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapVersionEntry": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "state": {
+            "type": "string"
+          },
+          "state_reason": {
+            "type": "string"
+          },
+          "context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "version",
+          "name",
+          "status",
+          "required",
+          "state",
+          "context_revision",
+          "actor_id",
+          "reason",
+          "inputs",
+          "targets",
+          "updated_at"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapVersionEntry",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapFieldChange": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapFieldChange",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapComparison": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "to": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapFieldChange"
+            },
+            "nullable": true
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "from",
+          "to",
+          "changes"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapComparison",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapEditBeginInput": {
+        "type": "object",
+        "properties": {
+          "expected_context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_context_revision",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapEditBeginInput",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapNodeProposalInput": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            },
+            "nullable": true
+          },
+          "required": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "可选；是否必填由模板规则声明，客户端给出的值与规则不一致时服务端拒绝，而不是忽略。"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id",
+          "kind",
+          "name",
+          "status",
+          "inputs",
+          "targets",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapNodeProposalInput",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapEdgeProposalInput": {
+        "type": "object",
+        "properties": {
+          "edge_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "add",
+              "update",
+              "delete"
+            ]
+          },
+          "source_id": {
+            "type": "string"
+          },
+          "target_id": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "edge_id",
+          "kind",
+          "source_id",
+          "target_id",
+          "relation",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapEdgeProposalInput",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapCommitInput": {
+        "type": "object",
+        "properties": {
+          "expected_baseline_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_baseline_version",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapCommitInput",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapCancelInput": {
+        "type": "object",
+        "properties": {
+          "expected_baseline_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_baseline_version",
+          "reason"
+        ],
+        "additionalProperties": false,
+        "x-go-type": "core.RoadmapCancelInput",
+        "x-go-source": "internal/lingdoc/workspacecore/roadmap_model.go"
+      },
+      "RoadmapBaselineResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RoadmapBaseline"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "FullRouteEdgeListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteEdge"
+            },
+            "nullable": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "FullRoadmapVersionEntryListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapVersionEntry"
+            },
+            "nullable": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RoadmapComparisonResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RoadmapComparison"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "FullRoadmapEditSessionListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoadmapEditSession"
+            },
+            "nullable": true
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RoadmapEditSessionResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RoadmapEditSession"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
+      },
+      "RoadmapCommitResultResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RoadmapCommitResult"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        },
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "additionalProperties": false
       }
     }
   },
