@@ -169,6 +169,7 @@ def record(**overrides) -> dict:
         "name": "example-surface",
         "gate_level": manifest.GATE_LEVEL_REPOSITORY,
         "path_kind": manifest.PATH_KIND_GLOB,
+        "role": manifest.ROLE_PATHS,
         "paths": ("frontend/**",),
         "consumers": ({
             "workflow": ".github/workflows/frontend.yml",
@@ -217,10 +218,43 @@ def _registration_literals(source: str) -> list[str]:
 class ManifestLoadTests(unittest.TestCase):
     """The committed manifest loads offline and says what it must say."""
 
+    def test_the_manifest_does_not_speak_of_deleted_scripts(self):
+        # The scope scripts are gone (#304).  A manifest that still tells the
+        # reader where the decision is made points at a file that no longer
+        # exists.
+        source = (CI_DIR / "lingdoc_gate_surfaces.py").read_text(encoding="utf-8")
+        for phrase in ("scope script", "scope scripts",
+                       "lingdoc_pr_scope.py", "lingdoc_change_scope.py",
+                       "lingdoc_risk_surface.py", "lingdoc_format_scope.py"):
+            with self.subTest(phrase=phrase):
+                self.assertNotIn(
+                    phrase, source,
+                    f"the manifest still mentions {phrase!r}; that script is "
+                    "gone and the decision now lives in "
+                    "lingdoc_gate_decision.py")
+
     def test_manifest_loads_and_validates(self):
         loaded = manifest.load_and_validate()
         self.assertTrue(loaded.surfaces)
         self.assertEqual(len(loaded.surfaces), len({s.name for s in loaded.surfaces}))
+
+    def test_every_surface_declares_the_role_that_selects_it(self):
+        # The decision reads the role, never the path set.  A surface that
+        # declares no deciding role would fall back to "does the contribution
+        # touch these paths", which is exactly the guess the role replaced.
+        for surface in manifest.load_and_validate().surfaces:
+            with self.subTest(surface=surface.name):
+                self.assertIn(
+                    surface.role, manifest.ROLES,
+                    f"{surface.name} declares no role the decision can read")
+                if surface.path_kind == manifest.PATH_KIND_GLOB:
+                    continue
+                self.assertIn(
+                    surface.role,
+                    (manifest.ROLE_PROVIDER, manifest.ROLE_FRONTEND,
+                     manifest.ROLE_CONTRACTS, manifest.ROLE_GOVERNANCE),
+                    f"{surface.name} is not selected by a path table, so it has "
+                    "to name the fact that selects it")
 
     def test_every_record_registers_a_surface_with_its_consumers(self):
         for surface in manifest.load_and_validate().surfaces:
@@ -312,6 +346,9 @@ class ManifestValidationTests(unittest.TestCase):
 
     def test_unknown_path_kind_is_rejected(self):
         self.assertRejected([record(path_kind="magic")], "path kind")
+
+    def test_unknown_role_is_rejected(self):
+        self.assertRejected([record(role="magic")], "role")
 
 
 class WorkflowWiringTests(unittest.TestCase):

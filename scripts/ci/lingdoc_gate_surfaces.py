@@ -12,11 +12,16 @@ ownership: for every surface it records
   it,
 * the gate level (``repository`` or ``targeted``),
 * whether that job is skipped on a formatting-only change,
-* the kind of the path set (``glob``, ``prefix`` or ``exact``).
+* the kind of the path set (``glob``, ``prefix`` or ``exact``),
+* the **role** of the surface: what the surface means for the decision
+  (``paths``, ``provider``, ``frontend``, ``contracts`` or ``governance``),
+* the **step** of the pull request gate that consumes it, when it has one: the
+  step's display name, the boolean output that selects it and what it judges.
 
 The manifest is **declarative data**.  It answers ownership questions only:
 which job watches which paths.  It contains no decision logic, and it does not
-decide whether a gate runs -- the scope scripts keep doing that.
+decide whether a gate runs -- the decision module
+(``scripts/ci/lingdoc_gate_decision.py``) is the one that decides.
 
 How to read the surface/job relation
 -------------------------------------
@@ -59,6 +64,21 @@ Terms
     itself is never skipped, while its provider and frontend *steps* honour
     the formatting-only shortcut.
 
+``role``
+    What the surface means for the decision.  ``paths`` -- the surface is
+    selected by the path table it declares.  ``provider`` -- the surface is
+    selected by the provider packages that are going to be tested.
+    ``frontend`` -- by the frontend verdict.  ``contracts`` -- by the
+    contracts verdict.  ``governance`` -- by the governance verdict: the gate
+    judging itself.  The role is what the decision reads; the path set stays
+    the ownership knowledge.
+
+``step``
+    The step of the pull request gate that consumes the surface, when the
+    surface has one: its display name, the boolean output that selects it,
+    whether the formatting-only shortcut skips it, and what it judges.  A
+    surface without a step is a whole-job surface.
+
 Ownership knowledge (provider roots, contracts directory, governance file
 set, frontend root) is registered here exactly once.  The gate decision
 module (``lingdoc_gate_decision``) reads it from here; no other script may
@@ -98,6 +118,16 @@ PATH_KIND_PREFIX = "prefix"
 PATH_KIND_EXACT = "exact"
 PATH_KINDS = (PATH_KIND_GLOB, PATH_KIND_PREFIX, PATH_KIND_EXACT)
 
+# What a surface means for the decision.  The role is the judgement's own
+# vocabulary; the decision reads it instead of guessing from the path set.
+ROLE_PATHS = "paths"
+ROLE_PROVIDER = "provider"
+ROLE_FRONTEND = "frontend"
+ROLE_CONTRACTS = "contracts"
+ROLE_GOVERNANCE = "governance"
+ROLES = (ROLE_PATHS, ROLE_PROVIDER, ROLE_FRONTEND, ROLE_CONTRACTS,
+         ROLE_GOVERNANCE)
+
 # --- ownership knowledge: registered here, once -----------------------------
 PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence",
                   "internal/models/acceptancebudget", "cmd/acceptance-budget-reconcile")
@@ -109,13 +139,16 @@ FRONTEND_ROOT = "frontend/"
 
 # --- the surfaces -----------------------------------------------------------
 # The path sets of the seven workflow-level gates are byte-for-byte the path
-# tables those workflows feed to the scope script.  Do not reformat them: the
-# wiring test compares them with the workflow files.
+# tables those workflows carried before the rewiring.  The workflows carry no
+# path table any more (#304): the manifest is the only registration of the
+# path ownership.  Do not reformat these paths -- the wiring test compares
+# them with the workflow files.
 SURFACES: tuple[Mapping[str, Any], ...] = (
     {
         "name": "frontend",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "frontend/**",
             "scripts/build_frontend_dist.sh",
@@ -135,6 +168,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "go-lint",
         "gate_level": GATE_LEVEL_TARGETED,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "**/*.go",
             "**/go.mod",
@@ -156,6 +190,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "app",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "**/*.go",
             "!cli/**",
@@ -189,6 +224,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "lingdoc-mock",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "scripts/lingdoc_mock/**",
             "scripts/ci/requirements-lingdoc.txt",
@@ -212,6 +248,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "lingdoc-f01-runner",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "scripts/lingdoc_mock/run_f01.py",
             "scripts/lingdoc_mock/load_state.py",
@@ -236,6 +273,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "lingdoc-workspace-concurrency",
         "gate_level": GATE_LEVEL_TARGETED,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "internal/lingdoc/workspacecore/**",
             "migrations/sqlite/000018_lingdoc_workspace.*.sql",
@@ -254,6 +292,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "lingdoc-interface-integration",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_GLOB,
+        "role": ROLE_PATHS,
         "paths": (
             "internal/lingdoc/**",
             "internal/evidence/**",
@@ -276,6 +315,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "pr-gate-provider",
         "gate_level": GATE_LEVEL_TARGETED,
         "path_kind": PATH_KIND_PREFIX,
+        "role": ROLE_PROVIDER,
         "paths": PROVIDER_ROOTS,
         "consumers": (
             {"workflow": ".github/workflows/lingdoc-review.yml",
@@ -283,11 +323,18 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        "step": {
+            "name": "Provider packages: test and vet",
+            "output": "run_providers",
+            "skipped_on_format_only": True,
+            "subject": "the provider packages",
+        },
     },
     {
         "name": "pr-gate-frontend",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_PREFIX,
+        "role": ROLE_FRONTEND,
         "paths": (FRONTEND_ROOT,),
         "consumers": (
             {"workflow": ".github/workflows/lingdoc-review.yml",
@@ -295,11 +342,18 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        "step": {
+            "name": "Frontend: test, type-check and build",
+            "output": "run_frontend",
+            "skipped_on_format_only": True,
+            "subject": "the frontend",
+        },
     },
     {
         "name": "contracts",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_PREFIX,
+        "role": ROLE_CONTRACTS,
         "paths": (CONTRACT_DIR,),
         "consumers": (
             {"workflow": ".github/workflows/lingdoc-review.yml",
@@ -307,11 +361,18 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
              "job_name": "LingDoc PR gate"},
         ),
         "skipped_on_format_only": False,
+        "step": {
+            "name": "Contract examples and reference trace",
+            "output": "contracts",
+            "skipped_on_format_only": False,
+            "subject": "the contract examples and the code they describe",
+        },
     },
     {
         "name": "governance-files",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_EXACT,
+        "role": ROLE_GOVERNANCE,
         "paths": GOVERNANCE_FILES,
         "consumers": (
             {"workflow": ".github/workflows/lingdoc-review.yml",
@@ -324,6 +385,7 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
         "name": "governance-scripts",
         "gate_level": GATE_LEVEL_REPOSITORY,
         "path_kind": PATH_KIND_PREFIX,
+        "role": ROLE_GOVERNANCE,
         "paths": GOVERNANCE_DIRS,
         "consumers": (
             {"workflow": ".github/workflows/lingdoc-review.yml",
@@ -335,12 +397,19 @@ SURFACES: tuple[Mapping[str, Any], ...] = (
 )
 
 SURFACE_FIELDS = ("name", "gate_level", "path_kind", "paths", "consumers",
-                  "skipped_on_format_only")
+                  "skipped_on_format_only", "role")
 CONSUMER_FIELDS = ("workflow", "job", "job_name")
+STEP_FIELDS = ("name", "output", "skipped_on_format_only", "subject")
 
 
-class SurfaceManifestError(Exception):
-    """The manifest is invalid; it must not be used as it is."""
+class SurfaceManifestError(ValueError):
+    """The manifest is invalid; it must not be used as it is.
+
+    It is a ``ValueError`` on purpose: the decision layer catches that one
+    exception type for everything that can go wrong while it reads the
+    manifest, so an invalid manifest falls back to the full scope instead of
+    escaping as a traceback.
+    """
 
 
 @dataclass(frozen=True)
@@ -353,6 +422,16 @@ class Consumer:
 
 
 @dataclass(frozen=True)
+class Step:
+    """One step of the pull request gate that consumes a surface."""
+
+    name: str
+    output: str
+    skipped_on_format_only: bool
+    subject: str
+
+
+@dataclass(frozen=True)
 class Surface:
     """One gate surface and the jobs that consume it."""
 
@@ -362,6 +441,8 @@ class Surface:
     gate_level: str
     path_kind: str
     skipped_on_format_only: bool
+    role: str = ROLE_PATHS
+    step: Step | None = None
 
 
 @dataclass(frozen=True)
@@ -405,6 +486,22 @@ def _consumer_from_record(entry: Any, surface_name: str) -> Consumer:
     )
 
 
+def _step_from_record(entry: Any, surface_name: str) -> Step:
+    """The step of the pull request gate that consumes the surface."""
+    what = f"surface {surface_name!r} step"
+    mapping = _require_mapping(entry, what)
+    _require_fields(mapping, STEP_FIELDS, what)
+    if not isinstance(mapping["skipped_on_format_only"], bool):
+        raise SurfaceManifestError(
+            f"{what} must state skipped_on_format_only as true or false")
+    return Step(
+        name=_require_text(mapping["name"], f"{what} name"),
+        output=_require_text(mapping["output"], f"{what} output"),
+        skipped_on_format_only=mapping["skipped_on_format_only"],
+        subject=_require_text(mapping["subject"], f"{what} subject"),
+    )
+
+
 def _surface_from_record(entry: Any, index: int) -> Surface:
     what = f"surface record #{index}"
     mapping = _require_mapping(entry, what)
@@ -420,6 +517,11 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
         raise SurfaceManifestError(
             f"surface {name!r} has an unknown path kind {path_kind!r}; "
             f"expected one of {', '.join(PATH_KINDS)}")
+    role = _require_text(mapping["role"], f"surface {name!r} role")
+    if role not in ROLES:
+        raise SurfaceManifestError(
+            f"surface {name!r} has an unknown role {role!r}; "
+            f"expected one of {', '.join(ROLES)}")
     paths = mapping["paths"]
     if not isinstance(paths, (list, tuple)) or not paths:
         raise SurfaceManifestError(f"surface {name!r} has an empty path set")
@@ -431,6 +533,7 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
     if not isinstance(mapping["skipped_on_format_only"], bool):
         raise SurfaceManifestError(
             f"surface {name!r} must state skipped_on_format_only as true or false")
+    step = mapping.get("step")
     return Surface(
         name=name,
         paths=tuple(paths),
@@ -438,6 +541,8 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
         gate_level=gate_level,
         path_kind=path_kind,
         skipped_on_format_only=mapping["skipped_on_format_only"],
+        role=role,
+        step=_step_from_record(step, name) if step is not None else None,
     )
 
 
@@ -477,6 +582,16 @@ def _check_consumers(surfaces: Sequence[Surface], root: Path) -> None:
                     f"{consumer.workflow} calls it {declared!r}")
 
 
+def check_consumers(surfaces: Sequence[Surface], root: Path) -> None:
+    """Check the consuming jobs against the workflow files they name.
+
+    This is the check that needs a YAML parser: it reads the workflow files
+    and asks whether the job exists and whether the display name matches.
+    Every failure raises :class:`SurfaceManifestError`.
+    """
+    _check_consumers(surfaces, root)
+
+
 def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[Surface, ...]:
     """Validate the shape of the manifest records and return the surfaces.
 
@@ -502,6 +617,68 @@ def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[Surface, ...
 def load_surfaces() -> tuple[Surface, ...]:
     """The committed surfaces, checked for shape only."""
     return validate_records(SURFACES)
+
+
+def load_surfaces_lenient() -> tuple[Surface, ...]:
+    """The committed surfaces, as far as the records can be read.
+
+    The decision layer's one recovery path uses this: when the manifest is
+    invalid the gate still has to know **which jobs exist**, so that the full
+    scope really is the full scope.  A record that cannot be read is skipped,
+    never guessed.
+    """
+    surfaces: list[Surface] = []
+    for entry in SURFACES:
+        if not isinstance(entry, Mapping):
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        raw_paths = entry.get("paths")
+        paths = tuple(path for path in raw_paths
+                      if isinstance(path, str) and path.strip()) \
+            if isinstance(raw_paths, (list, tuple)) else ()
+        consumers: list[Consumer] = []
+        raw_consumers = entry.get("consumers")
+        if isinstance(raw_consumers, (list, tuple)):
+            for raw in raw_consumers:
+                if not isinstance(raw, Mapping):
+                    continue
+                workflow = raw.get("workflow")
+                job = raw.get("job")
+                job_name = raw.get("job_name")
+                if not all(isinstance(value, str) and value.strip()
+                           for value in (workflow, job, job_name)):
+                    continue
+                consumers.append(Consumer(workflow=workflow, job=job,
+                                          job_name=job_name))
+        gate_level = entry.get("gate_level")
+        if gate_level not in GATE_LEVELS:
+            gate_level = GATE_LEVEL_REPOSITORY
+        path_kind = entry.get("path_kind")
+        if path_kind not in PATH_KINDS:
+            path_kind = PATH_KIND_EXACT
+        role = entry.get("role")
+        if role not in ROLES:
+            role = ROLE_PATHS
+        step = None
+        raw_step = entry.get("step")
+        if isinstance(raw_step, Mapping):
+            try:
+                step = _step_from_record(raw_step, name)
+            except SurfaceManifestError:
+                step = None
+        surfaces.append(Surface(
+            name=name,
+            paths=paths,
+            consumers=tuple(consumers),
+            gate_level=gate_level,
+            path_kind=path_kind,
+            skipped_on_format_only=bool(entry.get("skipped_on_format_only")),
+            role=role,
+            step=step,
+        ))
+    return tuple(surfaces)
 
 
 def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
