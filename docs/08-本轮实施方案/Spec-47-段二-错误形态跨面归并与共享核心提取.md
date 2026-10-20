@@ -251,23 +251,26 @@ Spec 决策 19：保留状态码与错误码，但必须**进入统一语义表*
 
 ## 未决决策记录
 
-### D-47-04（待产品语义确认）：生成面 `ErrStaleInput` 的落空
+### D-47-04（已裁定 2026-10-20）：生成面 `ErrStaleInput` 的落空 → 修正
 
 现状：生成面 `ErrStaleInput` 答 409 + `internal_error` + 「服务器暂时无法完成请求。」——
 状态码对，错误码与文案是兜底值。收口到统一机制后，它会自然变成 409 `stale_input` + 相应文案。
 
-- 选 A：**修正**为 `stale_input`（与候选采纳面、工作区主路由同语义）。这修掉一个既有落空，
-  但它是收口中**新发现的对外变化**，Spec 要求先登记并经产品语义确认。
-- 选 B：**保持** 409 + `internal_error`（把落空固化进形态）。这会让「同一业务错误在不同面返回不同错误码」
-  继续存在，与 User Story 32 冲突。
+**裁定：修正**（选项 A）。理由：`internal_error` 在这里不是「这个错误的样子」，是映射表漏了一支；
+保留它等于把缺陷写进新机制，并让「同一类错误在不同面返回不同错误码」继续存在
+（候选采纳面与工作区主路由对同类错误都答 409 `stale_input`）。
+影响面：生成路由 409 响应的错误码与文案。已登记为「少数口径变更清单」第 7 项。
 
-**默认推荐 A**（修正）。理由：`internal_error` 在这里不是「这个错误的样子」，是映射表漏了一支；
-保留它等于把缺陷写进新机制。影响面：生成路由的 409 响应错误码与文案。
-
-### D-47-05（暂定待确认）：5xx 可重试口径
+### D-47-05（暂定待确认，已单独成票）：5xx 可重试口径
 
 DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并逐条列出少数口径变更（清单第 4、5 项）。
-若产品改口径，需在合并前回写本档与 PR body。
+
+按 47.06 验收标准「DR-47-03 单独成子项」，该确认已单独开票：
+[#292](https://github.com/magician336/lingdoc/issues/292)「47.03b 5xx 的『可重试』标记口径确认」，
+挂在 #259 下，标签 `needs-info`。票里附了三张面在 5xx 上的现状取证，并点名一个待裁定的细节：
+规则治理面的 503「目录或规则建议服务尚未配置」是**尚未配置**（重试也不会变好），
+与候选采纳面的「依赖尚未就绪」业务含义不同。**该票不阻塞 47.06 的其余部分**；
+若确认结论与暂定口径不同，只需改 `clienterror.Form.Retryable` 的取值规则。
 
 ## 验收矩阵（段二当前范围）
 
@@ -289,6 +292,63 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 | 真实服务链路 | 外部模型 / 真实模型调用 | — | — | — | — | 本段不涉及外部服务；标 `N/A` | N/A |
 
 矩阵中的 `TODO` 在当前范围内闭环之前，PR 保持 Draft。
+
+## 47.03 的实现结果与数据核查（2026-10-20）
+
+### 一个谓词，三处消费者
+
+新增 `internal/lingdoc/workspacecore/chapter_confirmation.go`：
+`ChapterConfirmed(basis, facts)` 与它的变体 `ChapterConfirmationOf`。判据是票里的七条：
+存在有效确认记录，且**章节标识、章节版本标识、研究条件修订、模板版本、确认人、确认时间**
+全部与当前状态一致。
+
+三处消费者现在共用它：
+
+| 消费者 | 位置 | 改动 |
+| --- | --- | --- |
+| 交付预检 | `workspacecore/service.go` 的 `chapterView` | 内联判定换成谓词 |
+| 规则治理的影响阻断判定 | `workspace/template_governance_runtime.go` | 内联判定换成谓词；**「章节标识为空也算」收紧为相等**（DR-47-01） |
+| 稳定化的影响解析 | `workspacecore/impact_service.go` | 去掉额外判断，只用谓词的答案 |
+
+**为什么治理面此前要读 details 里的 `chapter_id`**：行上的 `chapter_id` 列在查询条件里，
+而 details JSON 里另有一份 `chapter_id`。宽松判定「为空也算」针对的就是后者。生产写入路径
+（`candidateadoption/candidate_adoption_store.go:256`）用**同一个** `in.ChapterID` 同时写行外键列
+与 details JSON，两份值恒等。
+
+### 47.03 带来的一处对外行为变化（少数口径变更第 8 项）
+
+稳定化的影响解析此前是 `chapter.ConfirmationValid && version.SpecRevision == p.SpecRevision`。
+后半句用的是**章节版本的创建修订**——它回答的是「这个版本是什么时候创建的」，
+而不是「这次确认是针对哪一版研究条件做的」。一个在新版研究条件下被重新确认过的章节，
+创建修订较旧，于是交付预检说「已确认」、稳定化闸门说「未确认」——正是本票要消除的分歧。
+
+现在由确认记录的修订与当前状态是否一致来判定（谓词），稳定化与另外两处同答。
+**影响面**：被重新确认过的章节（创建修订较旧）在稳定化影响解析里从「未确认」变为「已确认」。
+
+### 确认失效的单一写入点
+
+`markChapterUnconfirmed(chapter *Chapter)` 是唯一写这个标志的地方。
+「章节正文改写」「工作副本提交」两处的内存标志，以及「正式依据变更」那处的持久化失效，
+都收在这一个机制下。持久化那半在 `InvalidateChapterConfirmations`：
+一个不再是当前版本的章节版本，任何确认记录都对不上（谓词要比对章节版本标识），
+所以不需要额外调用。
+
+结构断言（`internal/lingdoc/workspacecore/chapter_confirmation_ownership_test.go`）扫本包源码，
+报出所有**不在** `markChapterUnconfirmed` 与 `chapterView` 里的 `ConfirmationValid` 赋值。
+断言计数也统计被允许的两个写入点，否则代码变干净后断言会变成空转。
+**已做阴性验证**：注入一个探针函数直接写该字段，断言精确报出 `zz_negative_probe.go:7`，随后删除探针。
+
+### 数据核查结论
+
+| 问题 | 结论 | 证据 |
+| --- | --- | --- |
+| 确认记录表的章节标识可能为空吗？ | **不可能** | PostgreSQL `migrations/versioned/000099_lingdoc_candidate_adoption.up.sql:32`：`chapter_id varchar(36) NOT NULL REFERENCES lingdoc_chapters(id)`；SQLite `migrations/sqlite/000020_lingdoc_candidate_adoption.up.sql:30,35`：`chapter_id TEXT NOT NULL` + 外键 |
+| details JSON 里的章节标识可能为空吗？ | **不可能** | 生产写入用同一个 `in.ChapterID` 写行与 details（`candidate_adoption_store.go:251-256`） |
+| 确认人 / 确认时间可能缺失吗？ | **不可能** | `candidateadoption/confirmation.go:185-189` 的 `newConfirmation` 总会写 `ActorUserID` 与 `CreatedAt` |
+| 章节标识可能与章节版本不匹配吗？ | **schema 不禁止，但谓词会拒绝** | 两个外键各自独立；谓词同时比对章节标识与章节版本标识，对不上就不算确认 |
+
+这与 DR-47-01 已核实的结论一致（「确认记录表的章节标识在两个数据库上都是非空且带外键」），
+**不需要数据迁移**。
 
 ## 遗留与风险
 
