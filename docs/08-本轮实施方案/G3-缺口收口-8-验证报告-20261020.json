@@ -2,8 +2,8 @@
   "ticket": "G3 缺口收口-8（#251）：助手「确定受影响 / 可能受影响」两组说明（AC-G3-14）",
   "gaps": ["G3-GAP-04"],
   "acceptance_rows": ["AC-G3-14"],
-  "head": "f78dc96 (origin/feat/g3-gap-closure 的本票基点)",
-  "base": "f78dc96",
+  "head": "473c1b6（实现提交；并入集成分支的 merge commit 见集成分支日志）",
+  "base": "f78dc96（本票基点）",
   "branch": "feat/issue-251-assistant-two-groups",
   "mode": "real",
   "environment": {
@@ -130,6 +130,8 @@
     "本票未改动影响解析的 certainty 判定链路（internal/lingdoc/workspacecore/impact_service.go:492-534），也未改动共享错误映射表（internal/lingdoc/workspace/http.go 的 sendError）。",
     "草稿的两组随既有 fields_json 信封落库，未新增表或列，因此无迁移；旧记录读出时该字段为空，即「非助手产出的草稿不带说明」。",
     "既有的助手草稿用例夹具（agent_change_draft_action_test.go 的模型回包）已补上两组，因为模型边界现在要求「给出 change_draft 必须同时给出两组」；这是本票引入的契约收紧，不是既有行为的回归。",
-    "基线提醒：本票基点为 f78dc96，集成分支此后并入 #256、#252；本票不做合并，由维护者在集成分支上合并并处理冲突。"
+    "基线提醒：本票基点为 f78dc96，集成分支此后并入 #256、#252；本票不做合并，由维护者在集成分支上合并并处理冲突。",
+    "并入集成分支后复跑：delivery / workspace / workspacecore / container / database / rulesetstore / templategovernance 七个包全绿（含契约双向覆盖测试）。合并无冲突。",
+    "契约收紧的影响面需在真实模型跑一遍时复核：模型若给出 change_draft 却不给 affected_explanation，整条回包会被拒（ErrInvalidRequest），助手草稿功能会整体不可用而不是只缺两组。收紧点集中在 internal/lingdoc/workspace/agent_model.go 的 change_draft 分支（是否 present 就拒），若要放宽为「缺失即空组」，改这一处即可。"
   ]
 }
