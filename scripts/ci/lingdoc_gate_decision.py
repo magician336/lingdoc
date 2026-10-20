@@ -199,14 +199,28 @@ def _event_shas(event: Mapping[str, Any]) -> tuple[str, str]:
     return base, head
 
 
-def pr_range(event: Mapping[str, Any]) -> str:
-    """The complete pull request range: ``base...head``."""
-    base, head = _event_shas(event)
+def pr_range(event: Mapping[str, Any], *, require_sha: bool = True) -> str:
+    """The complete pull request range: ``base...head``.
+
+    ``require_sha`` says whether the two commits must look like commit SHAs.
+    The workflow-level gate only needs two named revisions; the pull request
+    gate insists on real commits.
+    """
+    if require_sha:
+        base, head = _event_shas(event)
+        return f"{base}...{head}"
+    pull_request = event.get("pull_request")
+    if not isinstance(pull_request, Mapping):
+        raise ValueError("Expected a pull_request event; use --all for a manual run")
+    base = pull_request.get("base", {}).get("sha")
+    head = pull_request.get("head", {}).get("sha")
+    if not isinstance(base, str) or not isinstance(head, str):
+        raise ValueError("Pull request event is missing base/head SHAs")
     return f"{base}...{head}"
 
 
-def _range_is_resolvable(root: Path, before: str, after: str,
-                         git: Callable[..., str] = run_git) -> bool:
+def range_is_resolvable(root: Path, before: str, after: str,
+                        git: Callable[..., str] = run_git) -> bool:
     """Whether a three-dot diff has both commits and a merge base."""
     try:
         git(root, "merge-base", before, after)
@@ -233,20 +247,22 @@ def push_range(root: Path, event: Mapping[str, Any],
 
 
 def latest_range(root: Path, event: Mapping[str, Any],
-                 git: Callable[..., str] = run_git) -> str:
+                 git: Callable[..., str] = run_git, *,
+                 require_sha: bool = True) -> str:
     """Scope a pull request update to the ref update that ended at its head."""
     action = event.get("action")
     if action != "synchronize":
-        return pr_range(event)
+        return pr_range(event, require_sha=require_sha)
     head = event.get("pull_request", {}).get("head", {}).get("sha", "")
-    if not isinstance(head, str) or not SHA.fullmatch(head):
+    if not isinstance(head, str) or not head or (require_sha and not SHA.fullmatch(head)):
         raise ValueError("Event is missing a valid pull request head SHA")
     before = event.get("before")
     after = event.get("after")
-    if (isinstance(before, str) and isinstance(after, str)
-            and SHA.fullmatch(before) and SHA.fullmatch(after)
-            and after == head
-            and _range_is_resolvable(root, before, after, git)):
+    usable = (isinstance(before, str) and isinstance(after, str)
+              and before and after
+              and (not require_sha or (SHA.fullmatch(before) and SHA.fullmatch(after)))
+              and after == head)
+    if usable and range_is_resolvable(root, before, after, git):
         return f"{before}...{after}"
     parent = git(root, "rev-parse", f"{head}^")
     return f"{parent}...{head}"
@@ -267,7 +283,8 @@ def _event_kind(event: Mapping[str, Any], event_name: str | None) -> str:
 
 def event_range(root: Path, event: Mapping[str, Any], *, latest: bool = True,
                 event_name: str | None = None,
-                git: Callable[..., str] = run_git) -> tuple[str | None, bool]:
+                git: Callable[..., str] = run_git,
+                require_sha: bool = False) -> tuple[str | None, bool]:
     """Return ``(diff_range, forced)`` for the current event.
 
     A manual run has no range and is forced.  A push reports its own range.
@@ -280,8 +297,8 @@ def event_range(root: Path, event: Mapping[str, Any], *, latest: bool = True,
     if kind == "push":
         return push_range(root, event, git), False
     if latest:
-        return latest_range(root, event, git), False
-    return pr_range(event), False
+        return latest_range(root, event, git, require_sha=require_sha), False
+    return pr_range(event, require_sha=require_sha), False
 
 
 def select_paths(root: Path, event: Mapping[str, Any], *, latest: bool = True,
@@ -522,7 +539,7 @@ def _surface_verdict(surface, decision_fields: Mapping[str, Any]) -> bool:
 def _jobs(fields: Mapping[str, Any]) -> tuple[JobDecision, ...]:
     """One entry per consuming job of every surface the manifest declares."""
     jobs: list[JobDecision] = []
-    for surface in manifest.load_and_validate().surfaces:
+    for surface in manifest.load_surfaces():
         verdict = _surface_verdict(surface, fields)
         for consumer in surface.consumers:
             jobs.append(JobDecision(

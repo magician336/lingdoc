@@ -478,11 +478,12 @@ def _check_consumers(surfaces: Sequence[Surface], root: Path) -> None:
                     f"{consumer.workflow} calls it {declared!r}")
 
 
-def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
-    """Validate manifest records and return the manifest they describe.
+def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[Surface, ...]:
+    """Validate the shape of the manifest records and return the surfaces.
 
-    Every failure raises :class:`SurfaceManifestError`: an invalid manifest is
-    never used, and never silently degraded.
+    This checks the records themselves, without comparing them to the
+    workflow files.  It therefore needs no YAML parser: the gate reads the
+    manifest in jobs that install nothing.
     """
     if not isinstance(records, (list, tuple)) or not records:
         raise SurfaceManifestError("the manifest declares no gate surface")
@@ -496,6 +497,21 @@ def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
                 f"and #{index} declare the same surface")
         seen[surface.name] = index
         surfaces.append(surface)
+    return tuple(surfaces)
+
+
+def load_surfaces() -> tuple[Surface, ...]:
+    """The committed surfaces, checked for shape only."""
+    return validate_records(SURFACES)
+
+
+def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
+    """Validate manifest records and return the manifest they describe.
+
+    Every failure raises :class:`SurfaceManifestError`: an invalid manifest is
+    never used, and never silently degraded.
+    """
+    surfaces = validate_records(records)
     _check_consumers(surfaces, root)
     return Manifest(
         surfaces=tuple(surfaces),

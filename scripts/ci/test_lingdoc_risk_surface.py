@@ -157,8 +157,13 @@ class RiskSurfaceTests(unittest.TestCase):
             # A head that does not exist makes every git query fail.
             event["pull_request"]["head"]["sha"] = "f" * 40
             event["after"] = "f" * 40
-            with self.assertRaises(subprocess.CalledProcessError):
-                surface.decide(root, event)
+            # The recovery path lives in the decision itself: an undecidable
+            # surface costs compute, never correctness.
+            decision = surface.decide(root, event)
+            self.assertTrue(decision.run_code)
+            self.assertTrue(decision.run_targeted)
+            self.assertTrue(decision.forced)
+            self.assertIn("risk surface undetermined", decision.reason)
             # The CLI turns that into an explicit full scope instead of a skip.
             event_path = root / "event.json"
             event_path.write_text(json.dumps(event), encoding="utf-8")
