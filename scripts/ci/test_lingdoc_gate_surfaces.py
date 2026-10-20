@@ -44,13 +44,10 @@ GATED_WORKFLOWS = (
     "lingdoc-interface-integration.yml",
 )
 
-# Files that still carry their own copy of the ownership knowledge.  T2 moves
-# them to the manifest; until then they are expected, and any *other* file
-# registering the same knowledge is a bug.
-LEGACY_REGISTRATION_SITES = frozenset({
-    "lingdoc_risk_surface.py",
-    "lingdoc_pr_scope.py",
-})
+# Files that still carry their own copy of the ownership knowledge.  Ticket
+# T2 moved them to the manifest, so no file may register it any more: any
+# file that does is a bug.
+LEGACY_REGISTRATION_SITES = frozenset()
 
 
 def workflow_document(name: str) -> dict:
@@ -319,7 +316,7 @@ class KnowledgeRegistrationTests(unittest.TestCase):
                     self.assertIn(
                         path.name, LEGACY_REGISTRATION_SITES,
                         f"{path.name} registers {value!r}; the manifest is the only "
-                        "registration site. T2 switches the legacy copies over.")
+                        "registration site.")
 
 
 if __name__ == "__main__":

@@ -60,10 +60,9 @@ Terms
     the formatting-only shortcut.
 
 Ownership knowledge (provider roots, contracts directory, governance file
-set, frontend root) is registered here exactly once.  ``lingdoc_risk_surface``
-and ``lingdoc_pr_scope`` still carry their own copies of it; ticket T2 moves
-them over to this manifest, so this file is where those constants come from
-after that change.
+set, frontend root) is registered here exactly once.  The gate decision
+module (``lingdoc_gate_decision``) reads it from here; no other script may
+write it down a second time.
 """
 from __future__ import annotations
 
@@ -72,13 +71,21 @@ from pathlib import Path
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
-try:
-    import yaml
-except ImportError as error:  # pragma: no cover - dependency guard
-    raise ImportError(
-        "PyYAML is required to validate the gate surface manifest; install it "
-        "with: python -m pip install -r scripts/ci/requirements-lingdoc.txt"
-    ) from error
+def _yaml():
+    """PyYAML, imported only when the manifest is checked against the workflows.
+
+    The manifest's *data* -- the surfaces and the ownership knowledge -- is
+    plain Python and must stay readable without any dependency: the
+    workflow-level gates read it in a job that installs nothing.
+    """
+    try:
+        import yaml
+    except ImportError as error:  # pragma: no cover - dependency guard
+        raise ImportError(
+            "PyYAML is required to validate the gate surface manifest; install it "
+            "with: python -m pip install -r scripts/ci/requirements-lingdoc.txt"
+        ) from error
+    return yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -435,6 +442,7 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
 
 
 def _workflow_jobs(root: Path, workflow: str) -> Mapping[str, Any]:
+    yaml = _yaml()
     path = root / workflow
     if not path.is_file():
         raise SurfaceManifestError(f"workflow file not found: {workflow}")
@@ -469,11 +477,12 @@ def _check_consumers(surfaces: Sequence[Surface], root: Path) -> None:
                     f"{consumer.workflow} calls it {declared!r}")
 
 
-def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
-    """Validate manifest records and return the manifest they describe.
+def validate_records(records: Sequence[Mapping[str, Any]]) -> tuple[Surface, ...]:
+    """Validate the shape of the manifest records and return the surfaces.
 
-    Every failure raises :class:`SurfaceManifestError`: an invalid manifest is
-    never used, and never silently degraded.
+    This checks the records themselves, without comparing them to the
+    workflow files.  It therefore needs no YAML parser: the gate reads the
+    manifest in jobs that install nothing.
     """
     if not isinstance(records, (list, tuple)) or not records:
         raise SurfaceManifestError("the manifest declares no gate surface")
@@ -487,6 +496,21 @@ def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
                 f"and #{index} declare the same surface")
         seen[surface.name] = index
         surfaces.append(surface)
+    return tuple(surfaces)
+
+
+def load_surfaces() -> tuple[Surface, ...]:
+    """The committed surfaces, checked for shape only."""
+    return validate_records(SURFACES)
+
+
+def validate(records: Sequence[Mapping[str, Any]], root: Path) -> Manifest:
+    """Validate manifest records and return the manifest they describe.
+
+    Every failure raises :class:`SurfaceManifestError`: an invalid manifest is
+    never used, and never silently degraded.
+    """
+    surfaces = validate_records(records)
     _check_consumers(surfaces, root)
     return Manifest(
         surfaces=tuple(surfaces),
