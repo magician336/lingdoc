@@ -1,0 +1,84 @@
+{
+  "id": "G4-FAIL-01",
+  "title": "供应商失败注入：timeout / HTTP error / cancel，零部分写入、可审计错误码与恢复",
+  "acceptance_head": "d8229f42820ce8923886c195f1182b9b93ed5550",
+  "acceptance_tree": "707cc0b78c5441b0fcbb5299b435c2eafb1cc6e7",
+  "status": "BLOCKED",
+  "status_detail": "接缝级（provider 替身/确定性）失败路径已在当前 head PASS；真实供应商的 HTTP error/timeout/cancel 仍需已授权凭据与可检索来源，因此本行保持 BLOCKED，不得当作已实测。",
+  "environment": {
+    "backend": "current-head server binary on 127.0.0.1:8082, isolated PostgreSQL database WeKnora_g4_20261020",
+    "provider_endpoint_reached": "https://dashscope.aliyuncs.com/compatible-mode/v1 (real DashScope / Aliyun Model Studio)",
+    "local_fault_upstreams": "127.0.0.1:8099 (recovery stub), 127.0.0.1:8098 (slow stub, 30s delay) inside WSL"
+  },
+  "cases": [
+    {
+      "id": "A_real_provider_http_error",
+      "status": "NOT RUN",
+      "boundary": "真实供应商的 HTTP 错误尚未穿过 LingDoc 生成接缝跑完；原因是验收夹具缺少可检索来源，生成入口在触达供应商前即返回 422 insufficient_evidence。这是夹具缺口，不是产品缺陷。",
+      "provider_level_probe": {
+        "command": "curl --max-time 25 -X POST https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions -H 'Authorization: Bearer sk-invalid-g4-probe' -d '{\"model\":\"qwen3.8-flash\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}'",
+        "status": 401,
+        "elapsed_seconds": 0.1,
+        "upstream_body": {
+          "error": {
+            "message": "Incorrect API key provided. For details, see: https://help.aliyun.com/zh/model-studio/error-code#apikey-error",
+            "type": "invalid_request_error",
+            "code": "invalid_api_key"
+          },
+          "request_id": "b8743ad2-d2dd-979c-bb94-e54381bbf942"
+        },
+        "conclusion": "供应商真实可达，且真实返回结构化 HTTP 错误；凭据故意无效，因此这不是 G4-MODEL-01 的通过证据。"
+      },
+      "lingdoc_seam_attempt": {
+        "requests": [
+          "POST /api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/assets -> 200 (asset ready)",
+          "GET  /api/v1/lingdoc/projects/{pid}/assets/{assetId}/policy -> 200 (version 1)",
+          "POST /api/v1/lingdoc/projects/{pid}/assets/{assetId}/policy/proposals -> 201 (change draft)",
+          "POST /api/v1/lingdoc/projects/{pid}/change-sets/{id}/assess -> 200",
+          "POST /api/v1/lingdoc/projects/{pid}/change-sets/{id}/apply -> 200 (change set applied)",
+          "POST /api/v1/lingdoc/projects/{pid}/generations -> 422 insufficient_evidence"
+        ],
+        "observed_sequence": [
+          "asset_not_authorized（缺少资料使用授权）",
+          "授权链修复后变为 insufficient_evidence（合成资料没有 chunk，检索不到来源）"
+        ],
+        "assertions_observed": {
+          "no_generation_run_created": true,
+          "no_candidate_created": true,
+          "audit_rows_written": true
+        }
+      }
+    },
+    {
+      "id": "B_recovery_after_failure",
+      "status": "NOT RUN",
+      "boundary": "恢复用例依赖 A 先真正触达供应商；夹具缺口未补齐前不成立。授权链（proposal→assess→apply）已在真实接缝上 PASS，可作为恢复前提的前置证据。"
+    },
+    {
+      "id": "C_cancel_in_flight",
+      "status": "NOT RUN",
+      "boundary": "同上：取消必须先有一个真正在飞的生成运行。"
+    },
+    {
+      "id": "D_seam_level_failure_contract",
+      "status": "PASS",
+      "note": "仓库自带的确定性失败契约测试，在当前 head、隔离 PostgreSQL 上实跑通过。它证明接缝语义（timeout/cancel 落成 interrupted、模型期间变更被拒、worker 崩溃后租约持久化），但供应商是受控替身，不能冒充真实供应商。",
+      "commands": [
+        {
+          "command": "go test -p 1 -count=1 -v -run 'TestExecuteStoresProviderTimeoutAsInterrupted|TestExecuteStoresProviderCancellationAsInterrupted|TestSQLiteRepositoryCancelsQueuedAndRunningRuns' ./internal/lingdoc/generation",
+          "result": "PASS (3/3)",
+          "environment": "WSL2 Ubuntu-24.04, go1.26.0 linux/amd64, CGO_ENABLED=1"
+        },
+        {
+          "command": "go run ./scripts/acceptance/postgres_failure_fixture.go create && LINGDOC_FAILURE_TEST_DB=lingdoc_fault_<12 hex> LINGDOC_FAILURE_TEST_DSN='host=127.0.0.1 port=5432 user=lingdoc_fault_user_<12 hex> password=synthetic_ci_only dbname=lingdoc_fault_<12 hex> sslmode=disable' go test -p 1 -count=1 -v -run 'TestPostgresGenerationFailureBoundaries|TestPostgresWorkerCrashLeasePersistence' ./internal/lingdoc/generation",
+          "result": "PASS (changed-during-model / deadline / cancelled + worker crash lease persistence)",
+          "cleanup": "postgres_failure_fixture.go drop -> exit 0"
+        }
+      ]
+    }
+  ],
+  "unblock_conditions": [
+    "已授权的 DashScope 凭据（只经本地环境变量注入，不进聊天/Issue/PR），用于 G4-MODEL-01 与本行的真实供应商半边。",
+    "一个带可检索 chunk 的真实知识库，使生成入口能拿到至少一条来源（当前合成资料没有 chunk，检索结果为空）。"
+  ]
+}

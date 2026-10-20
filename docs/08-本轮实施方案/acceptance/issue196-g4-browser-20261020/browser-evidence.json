@@ -1,0 +1,850 @@
+{
+  "id": "G4-BROWSER-01",
+  "title": "Edge/CDP 真实浏览器链路：登录→立项→写作→确认→交付检查→冻结→导出→刷新读回",
+  "acceptance_head": "d8229f42820ce8923886c195f1182b9b93ed5550",
+  "acceptance_tree": "707cc0b78c5441b0fcbb5299b435c2eafb1cc6e7",
+  "status": "PASS",
+  "environment": {
+    "browser": "Microsoft Edge 155.0.4283.62 (isolated profile, CDP on 127.0.0.1:9222)",
+    "frontend": "Vite dev server 127.0.0.1:5173 (fixture worktree frontend/), /api proxied to the backend",
+    "backend": "current-head server binary on 127.0.0.1:8082, PostgreSQL database WeKnora_g4_20261020 (isolated)",
+    "identity": "isolated self-registered account g4browser_81379614@example.com (tenant 10005)"
+  },
+  "objects": {
+    "project_id": "f02b8196-655e-447e-828f-53ceb039bcda",
+    "chapter_question": "87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+    "chapter_method": "80568cd4-69d0-47dc-8ac7-288a63e2a423",
+    "release_snapshot_id": "snapshot-9e55c952f9c535375c94916b86f45615",
+    "release_snapshot_digest": "9eb2c49a5abeb5f76dd1a29c7935168183d3d1f04478f25ea5294ae29d927193",
+    "export_artifact_id": "export-7c42a099afe40907813027298b271bbe",
+    "export_file_sha256": "194c0a782cf3ba6678a219910d3dbe8e987d6b12d649355a28bc2337df8caf14",
+    "project_version_at_freeze": 7,
+    "spec_revision": 1,
+    "chapters_in_snapshot": 2
+  },
+  "browser_steps": [
+    {
+      "stage": "auth",
+      "steps": [
+        "open /login",
+        "register form filled",
+        "register submitted",
+        "after register submit",
+        "screenshot",
+        "login form filled",
+        "after login submit",
+        "screenshot",
+        "logged in",
+        "auth state",
+        "lingdoc workspace",
+        "screenshot"
+      ],
+      "lingdoc_api_calls": []
+    },
+    {
+      "stage": "create",
+      "steps": [
+        "workbench loaded",
+        "create dialog",
+        "project name set",
+        "project submitted",
+        "after create",
+        "screenshot"
+      ],
+      "lingdoc_api_calls": []
+    },
+    {
+      "stage": "activate",
+      "steps": [
+        "workspace",
+        "activation dialog opened",
+        "activation checkbox",
+        "screenshot",
+        "after confirm activate",
+        "screenshot",
+        "editor state"
+      ],
+      "lingdoc_api_calls": []
+    },
+    {
+      "stage": "author2",
+      "steps": [
+        "workspace",
+        "chapter ids",
+        "chapter selected 研究问题",
+        "typed 研究问题",
+        "commit 研究问题",
+        "chapter selected 研究方案",
+        "typed 研究方案",
+        "commit 研究方案",
+        "after commits",
+        "screenshot"
+      ],
+      "lingdoc_api_calls": []
+    },
+    {
+      "stage": "confirm",
+      "steps": [
+        "workspace",
+        "chapters",
+        "commit button 研究问题",
+        "commit choice 研究问题",
+        "confirm button 研究问题",
+        "after confirm 研究问题",
+        "commit button 研究方案",
+        "commit choice 研究方案",
+        "confirm button 研究方案",
+        "after confirm 研究方案",
+        "screenshot"
+      ],
+      "lingdoc_api_calls": [
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/project-invitations",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/template-catalog/profiles?state=published",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/assets",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/change-sets",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/versions",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/access-status",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/candidates",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/working-copy/commit",
+          "status": 201
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/versions",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/confirmations",
+          "status": 201
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/confirmations/current",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/confirmations/current",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/versions",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/candidates",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/working-copy/commit",
+          "status": 201
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/versions",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/confirmations",
+          "status": 201
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/confirmations/current",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/confirmations/current",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "stage": "deliver",
+      "steps": [
+        "workspace",
+        "delivery before",
+        "after check",
+        "screenshot",
+        "after freeze",
+        "screenshot",
+        "export click",
+        "after export",
+        "screenshot"
+      ],
+      "lingdoc_api_calls": [
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/project-invitations",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/template-catalog/profiles?state=published",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/assets",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/change-sets",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/versions",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/access-status",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/confirmations/current",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/candidates",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/checks",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 201
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases/snapshot-9e55c952f9c535375c94916b86f45615",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases/snapshot-9e55c952f9c535375c94916b86f45615/exports",
+          "status": 202
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases/snapshot-9e55c952f9c535375c94916b86f45615",
+          "status": 200
+        }
+      ]
+    },
+    {
+      "stage": "refresh",
+      "steps": [
+        "reloaded",
+        "workspace after reload",
+        "delivery after reload",
+        "screenshot",
+        "http readback"
+      ],
+      "lingdoc_api_calls": [
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/project-invitations",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/template-catalog/profiles?state=published",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/assets",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/change-sets",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/80568cd4-69d0-47dc-8ac7-288a63e2a423/working-copy",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/versions",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/access-status",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/confirmations/current",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/chapters/87cfc688-1126-417f-ae8d-ba5c3dbc8917/candidates",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=write:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:87cfc688-1126-417f-ae8d-ba5c3dbc8917",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/permissions?capability=confirm:80568cd4-69d0-47dc-8ac7-288a63e2a423",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "XHR",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases/snapshot-9e55c952f9c535375c94916b86f45615",
+          "status": 200
+        },
+        {
+          "method": "Fetch",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/releases",
+          "status": 200
+        },
+        {
+          "method": "Fetch",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda/exports",
+          "status": 200
+        },
+        {
+          "method": "Fetch",
+          "url": "/api/v1/lingdoc/projects/f02b8196-655e-447e-828f-53ceb039bcda",
+          "status": 200
+        }
+      ]
+    }
+  ],
+  "delivery_panel_after_export": {
+    "visible": "visible",
+    "snapshots": [
+      {
+        "head": "快照 snapshot 当前内容",
+        "text": "快照 snapshot 当前内容 冻结于项目版本 7 · 研究条件第 1 版 · 章节 2 章 · 资料 0 份 · 摘要 9eb2c49a5abe 冻结时的交付检查：通过 · 冻结时间 2026/10/20 19:22:36 检查结果固定于冻结时；当前检查或后续编辑不会自动更新这份快照。 生成 DOCX DOCX 已生成，可在本快照下点击“下载 DOCX”。 export-7 当前内容 下载 DOCX 摘要 194c0a782cf3"
+      }
+    ],
+    "artifacts": [
+      "export-7"
+    ],
+    "notes": [
+      "DOCX 已生成，可在本快照下点击“下载 DOCX”。"
+    ]
+  },
+  "delivery_panel_after_reload": {
+    "visible": "visible",
+    "snapshots": [
+      {
+        "head": "快照 snapshot 当前内容",
+        "text": "快照 snapshot 当前内容 冻结于项目版本 7 · 研究条件第 1 版 · 章节 2 章 · 资料 0 份 · 摘要 9eb2c49a5abe 冻结时的交付检查：通过 · 冻结时间 2026/10/20 19:22:36 检查结果固定于冻结时；当前检查或后续编辑不会自动更新这份快照。 生成 DOCX DOCX 已生成，可在本快照下点击“下载 DOCX”。 export-7 当前内容 下载 DOCX 摘要 194c0a782cf3"
+      }
+    ],
+    "artifacts": [
+      "export-7"
+    ],
+    "notes": [
+      "DOCX 已生成，可在本快照下点击“下载 DOCX”。"
+    ]
+  },
+  "http_readback_after_reload": {
+    "releasesStatus": 200,
+    "snapshots": [
+      {
+        "id": "snapshot-9e55c952f9c535375c94916b86f45615",
+        "digest": "9eb2c49a5abeb5f76dd1a29c7935168183d3d1f04478f25ea5294ae29d927193",
+        "check": "passed",
+        "projectVersion": 7,
+        "chapters": 2
+      }
+    ],
+    "exportsStatus": 200,
+    "artifacts": [
+      {
+        "id": "export-7c42a099afe40907813027298b271bbe",
+        "snapshot_id": "snapshot-9e55c952f9c535375c94916b86f45615",
+        "download_path": true,
+        "file_sha256": "194c0a782cf3ba6678a219910d3dbe8e987d6b12d649355a28bc2337df8caf14"
+      }
+    ],
+    "projectStatus": 200,
+    "projectVersion": 7
+  },
+  "consistency_assertions": {
+    "browser_snapshot_digest_matches_http": true,
+    "browser_export_id_matches_http": true,
+    "browser_export_sha_matches_http": true,
+    "project_version_matches": true,
+    "snapshot_check_status": "passed"
+  },
+  "screenshots": [
+    "01-register-result.png",
+    "02-login-result.png",
+    "03-workspace.png",
+    "04-project-created.png",
+    "05-activation-review.png",
+    "06-activated.png",
+    "07-body-committed.png",
+    "08-confirmed.png",
+    "09-delivery-check.png",
+    "10-frozen.png",
+    "11-exported.png",
+    "12-after-reload.png"
+  ],
+  "notes": [
+    "浏览器证据与 HTTP 读回指向同一个快照、同一份导出产物与同一个课题版本；刷新后仍然读回同一对象。",
+    "本行不包含真实模型调用：生成候选稿需要可检索来源与已授权资料，见 G4-MODEL-01 与 G4-FAIL-01 的边界说明。"
+  ]
+}
