@@ -184,6 +184,15 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 		t.Fatalf("check = %+v err=%v, want actionable blocked issues", result, err)
 	}
 	issue := result.Issues[0]
+	// The dismissed issue must be a **blocking** rule issue. "误报删除"
+	// (dismiss) applies to every severity, including blocking (G3 Spec
+	// §10.2), and the blocking path is the one that used to fail with
+	// HTTP 500 on PostgreSQL: the authorization audit row put the composite
+	// capability into the 64-character action column, the write overflowed,
+	// and the raw database error reached the transport unmapped.
+	if issue.Severity != delivery.SeverityBlocking {
+		t.Fatalf("dismissed issue severity = %q, want a blocking rule issue", issue.Severity)
+	}
 	dispositionRequest := deliveryRequest(http.MethodPost, deliveryRouteBase+"/issues/"+issue.ID+"/disposition",
 		`{"expected_project_version":8,"action":"dismiss","reason":"经核对属于不适用项"}`, "issue-action-001")
 	dispositionRequest = dispositionRequest.WithContext(context.WithValue(dispositionRequest.Context(), types.TenantRoleContextKey, types.TenantRoleContributor))
@@ -194,6 +203,9 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 	var stored ValidationIssueDisposition
 	if err := json.Unmarshal(decodeDeliveryEnvelope(t, response).Data, &stored); err != nil || stored.IssueID != issue.ID || stored.ProjectVersion != 8 || stored.Reason != "经核对属于不适用项" {
 		t.Fatalf("stored disposition = %+v err=%v", stored, err)
+	}
+	if stored.Action != "dismiss" || stored.Severity != delivery.SeverityBlocking {
+		t.Fatalf("stored disposition = %+v, want a blocking dismissal", stored)
 	}
 
 	request = deliveryRequest(http.MethodPost, deliveryRouteBase+"/checks", deliveryReadVersionBody, "")

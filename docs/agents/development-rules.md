@@ -17,6 +17,25 @@ GitHub PR 的顶层 `paths` 按整个 PR 相对 `main` 的变更集合匹配；�
 
 被跳过的 job 必须通过 job-level `if` 产生成功的 skipped 状态，不能用顶层路径过滤制造必需检查的 Pending 状态。修改公共契约、迁移、事务边界或 base 后，应手动 dispatch 或提交代码变更重新跑完整门禁。
 
+### 纯格式提交的 CI 边界
+
+路径判定回答不了「这次改动碰了代码路径，但只是把代码重新排版」。工作流因此在 `synchronize` 事件上再问一次**内容**：本次更新是否只重排版、不改语义？判定器是 `scripts/ci/lingdoc_format_scope.py`，它接受两个判据：
+
+- **gofmt 等价**：改动后的文件正是 `gofmt` 对改动前的文件会产出的结果。
+- **只改注释与空白**：去掉注释、去掉字符串字面量之外的空白之后，两版的 token 序列逐行相同。
+
+判定为纯格式提交时，**测试类** job（Go 测试、前端测试、integration、workspace-concurrency、mock、镜像构建、PR gate 里的 provider tests 与 frontend 步骤）以 job-level `if` 产生 skipped 状态。**lint 不跳**——它就是格式的裁判；contracts 校验、diff 空白检查与检查边界发布也不跳。
+
+边界：
+
+- 只覆盖 Go 文件。仓库没有前端格式化器，用「忽略空白」的弱判定会把字符串字面量里的空白变化误判成格式改动，那会改变行为。
+- 含编译期指令（`//go:`、`//line`）的文件永远不算格式改动。
+- 判不出来（范围解析不了、gofmt 不可用、文件增删或改名字）一律**不算**格式提交，照常跑全量。
+- 首次打开、重新打开、手动 dispatch 与 push 到 main **不走**这条快门禁：PR 第一次被人看到时，整套矩阵必须跑。
+- 判定结论与理由随检查边界一起发布，可复核。
+
+接线纪律（2026-10-20 线上验证 #288 补记）：**job 的 outputs 是显式白名单**。step 往 `GITHUB_OUTPUT` 写了键，不等于下游 job 读得到——漏声明时下游取到**空字符串**，于是 `'' != 'true'` 恒成立、跳过条件静默失效且不报错。跨 job 引用必须在该 job 的 `outputs:` 里显式声明；**step 级引用**（`steps.<id>.outputs.<name>`）不需要声明。给工作流加门禁条件时，用守护测试断言「工作流声明的 outputs」与「脚本写出的键」一致（`scripts/ci/test_lingdoc_format_scope.py::WorkflowWiringTests`），只测脚本输出不够——本地求值不会模拟这层白名单。守护测试本身也必须有工作流在跑：PR gate 的「Test CI scope scripts」步骤无条件执行整个 `scripts/ci` 测试套件（`test_lingdoc_*.py`）。
+
 ## 默认运行模式：Agent 先完成，人审结果
 
 这套规则默认把执行工作交给 Agent，把人的参与收敛到不可推断的信息、明确授权和最终审查。Agent 不得因为缺少偏好就暂停；先从 Issue、Spec、代码、CI 和环境推导事实，缺少事实时使用可复现的本地或 staging 替代，并在证据中标明边界。

@@ -39,6 +39,23 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Go is needed by the CI scope scripts' own tests: the "gofmt
+      # equivalence" judgement calls gofmt, and the wiring test asserts that
+      # every gated workflow declares the outputs its conditions read. Without
+      # this step those tests would never run in CI, so the gate that skips
+      # test jobs could silently break without anything noticing.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Install CI scope script dependencies
+        run: python -m pip install --disable-pip-version-check -r scripts/ci/requirements-lingdoc.txt
+
+      - name: Test CI scope scripts
+        id: ciscripts
+        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' -v
+
       - name: Test gate selection
         id: selftest
         run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_pr_scope.py' -v
@@ -64,11 +81,13 @@ jobs:
         if: steps.scope.outputs.contracts == 'true'
         id: contracts
         run: |
+          python -m unittest discover -s scripts/ci -p 'test_lingdoc_routes.py' -v
           scratch=$(mktemp -d "$RUNNER_TEMP/lingdoc-contracts.XXXXXX")
           cp -R "docs/08-本轮实施方案/contracts/." "$scratch/"
+          cp scripts/ci/check_lingdoc_routes.py "$scratch/check_lingdoc_routes.py"
           # Never mistake the committed report for a result from this run.
           rm -f "$scratch/validation-result.json"
-          python -X utf8 "$scratch/validate_artifacts.py" | tee "$RUNNER_TEMP/lingdoc-checks/contracts.log"
+          python -X utf8 "$scratch/validate_artifacts.py" --source-root "$GITHUB_WORKSPACE" | tee "$RUNNER_TEMP/lingdoc-checks/contracts.log"
           cp "$scratch/validation-result.json" "$RUNNER_TEMP/lingdoc-checks/validation-result.json"
           python - <<'PY'
           import json, os
@@ -79,14 +98,8 @@ jobs:
           # Counts are intentionally NOT fixed: adding F22 or a new API is valid.
           PY
 
-      - uses: actions/setup-go@v6
-        if: steps.scope.outputs.provider_tests == 'true'
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
       - name: Test and vet existing LingDoc provider packages
-        if: steps.scope.outputs.provider_tests == 'true'
+        if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
         id: providers
         env:
           CGO_ENABLED: "1"
@@ -113,14 +126,14 @@ jobs:
           go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
 
       - uses: actions/setup-node@v6
-        if: steps.scope.outputs.frontend == 'true'
+        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Test, type-check and build frontend
-        if: steps.scope.outputs.frontend == 'true'
+        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
         id: frontend
         working-directory: frontend
         run: |
@@ -133,6 +146,7 @@ jobs:
         if: always()
         env:
           SELFTEST: ${{ steps.selftest.outcome }}
+          CISCRIPTS: ${{ steps.ciscripts.outcome }}
           SCOPE: ${{ steps.scope.outcome }}
           CONTRACTS: ${{ steps.contracts.outcome }}
           PROVIDERS: ${{ steps.providers.outcome }}
@@ -142,7 +156,7 @@ jobs:
           import json, os
           from pathlib import Path
           result = {key.lower(): os.environ[key] for key in
-                    ('SELFTEST', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
+                    ('SELFTEST', 'CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
           result['tested_sha'] = os.environ['GITHUB_SHA']
           result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
@@ -150,7 +164,7 @@ jobs:
           (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
-              for key in ('selftest', 'scope', 'contracts', 'providers', 'frontend'):
+              for key in ('selftest', 'ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
               handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
               handle.write(result['boundary'] + '\n')

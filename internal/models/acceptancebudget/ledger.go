@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,19 +71,20 @@ type Ledger struct {
 }
 
 type Request struct {
-	Number          int       `json:"number"`
-	Model           string    `json:"model"`
-	Status          string    `json:"status"`
-	InputUpperBound int       `json:"input_upper_bound_tokens"`
-	OutputLimit     int       `json:"output_limit_tokens"`
-	InputTokens     int       `json:"input_tokens,omitempty"`
-	OutputTokens    int       `json:"output_tokens,omitempty"`
-	ReservedNanoCNY int64     `json:"reserved_nano_cny"`
-	ActualNanoCNY   int64     `json:"actual_nano_cny,omitempty"`
-	ReservedNanoUSD int64     `json:"reserved_nano_usd,omitempty"`
-	ActualNanoUSD   int64     `json:"actual_nano_usd,omitempty"`
-	FinishReason    string    `json:"finish_reason,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
+	Number          int                               `json:"number"`
+	Model           string                            `json:"model"`
+	Status          string                            `json:"status"`
+	InputUpperBound int                               `json:"input_upper_bound_tokens"`
+	OutputLimit     int                               `json:"output_limit_tokens"`
+	InputTokens     int                               `json:"input_tokens,omitempty"`
+	OutputTokens    int                               `json:"output_tokens,omitempty"`
+	ReservedNanoCNY int64                             `json:"reserved_nano_cny"`
+	ActualNanoCNY   int64                             `json:"actual_nano_cny,omitempty"`
+	ReservedNanoUSD int64                             `json:"reserved_nano_usd,omitempty"`
+	ActualNanoUSD   int64                             `json:"actual_nano_usd,omitempty"`
+	FinishReason    string                            `json:"finish_reason,omitempty"`
+	CreatedAt       time.Time                         `json:"created_at"`
+	Reconciliation  *EmbeddingHTTPErrorReconciliation `json:"reconciliation,omitempty"`
 }
 
 type Reservation struct {
@@ -115,6 +117,9 @@ func (b *Budget) Reserve(ctx context.Context, model string, inputUpperBound, out
 	}
 	if inputUpperBound < 0 || inputUpperBound > InputMax || outputLimit < 0 || outputLimit > OutputMax {
 		return nil, ErrInputTooLarge
+	}
+	if model == QwenEmbeddingFlash && b.profile != CostOnlyProfile {
+		return nil, ErrWrongModel
 	}
 	reserveNanoCNY, reserveNanoUSD, err := reserveAmounts(model, inputUpperBound, outputLimit)
 	if err != nil {
@@ -274,11 +279,12 @@ func reserveAmounts(model string, inputUpperBound, outputLimit int) (int64, int6
 	case DeepSeekModel:
 		usd := int64(inputUpperBound)*DeepSeekInputNanoUSDPerToken + int64(outputLimit)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
-	case QwenEmbedding:
+	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputLimit != 0 {
 			return 0, 0, ErrWrongModel
 		}
-		return int64(inputUpperBound) * QwenNanoCNYPerToken, 0, nil
+		price, _ := EmbeddingInputNanoCNYPerToken(model)
+		return int64(inputUpperBound) * price, 0, nil
 	default:
 		return 0, 0, ErrWrongModel
 	}
@@ -292,11 +298,12 @@ func actualAmounts(model string, inputTokens, outputTokens int) (int64, int64, e
 	case DeepSeekModel:
 		usd := int64(inputTokens)*DeepSeekInputNanoUSDPerToken + int64(outputTokens)*DeepSeekOutputNanoUSDPerToken
 		return usd * DeepSeekBudgetFXNanoCNYPerUSD, usd, nil
-	case QwenEmbedding:
+	case QwenEmbedding, QwenEmbeddingFlash:
 		if outputTokens != 0 {
 			return 0, 0, ErrWrongModel
 		}
-		return int64(inputTokens) * QwenNanoCNYPerToken, 0, nil
+		price, _ := EmbeddingInputNanoCNYPerToken(model)
+		return int64(inputTokens) * price, 0, nil
 	default:
 		return 0, 0, ErrWrongModel
 	}
@@ -340,11 +347,7 @@ func readLedger(path string, profiles ...string) (Ledger, error) {
 	if err != nil {
 		return Ledger{}, err
 	}
-	var ledger Ledger
-	if err := json.Unmarshal(data, &ledger); err != nil || ledger.SchemaVersion != ledgerVersion {
-		return Ledger{}, ErrUnavailable
-	}
-	return ledger, nil
+	return decodeLedger(data)
 }
 
 // migrateLedgerProfile upgrades only a fully validated, settled legacy ledger.
@@ -376,6 +379,12 @@ func validLedger(ledger Ledger, profile string) bool {
 	}
 	var reserveCNY, actualCNY, reserveUSD, actualUSD int64
 	for index, request := range ledger.Requests {
+		if request.Model == QwenEmbeddingFlash && profile != CostOnlyProfile {
+			return false
+		}
+		if request.Reconciliation != nil && (profile != CostOnlyProfile || !validEmbeddingHTTPErrorReconciliation(request)) {
+			return false
+		}
 		if request.Number != index+1 || request.InputUpperBound < 0 || request.InputUpperBound > InputMax ||
 			request.OutputLimit < 0 || request.OutputLimit > OutputMax || request.InputTokens < 0 || request.OutputTokens < 0 {
 			return false
@@ -389,8 +398,7 @@ func validLedger(ledger Ledger, profile string) bool {
 		default:
 			return false
 		}
-		if request.Status == "in_flight" || request.Status == "outcome_unknown" || request.Status == "usage_unknown" ||
-			request.Status == "http_error" || request.Status == "limit_violation" || request.Status == "cancel_reconciliation_required" {
+		if requestUnresolved(request) {
 			if !ledger.Blocked {
 				return false
 			}
@@ -400,21 +408,23 @@ func validLedger(ledger Ledger, profile string) bool {
 		reserveUSD += request.ReservedNanoUSD
 		actualUSD += request.ActualNanoUSD
 	}
-	return reserveCNY == ledger.ReservedNanoCNY && actualCNY == ledger.ActualNanoCNY && reserveUSD == ledger.ReservedNanoUSD && actualUSD == ledger.ActualNanoUSD
+	return reserveCNY == ledger.ReservedNanoCNY && actualCNY == ledger.ActualNanoCNY && reserveUSD == ledger.ReservedNanoUSD && actualUSD == ledger.ActualNanoUSD && consistentRecordedCosts(ledger)
 }
 
 func hasUnresolved(ledger Ledger) bool {
 	for _, request := range ledger.Requests {
-		if request.Status == "in_flight" || request.Status == "outcome_unknown" || request.Status == "usage_unknown" ||
-			request.Status == "http_error" || request.Status == "limit_violation" || request.Status == "cancel_reconciliation_required" {
+		if request.Reconciliation != nil && ledger.Profile != CostOnlyProfile {
+			return true
+		}
+		if requestUnresolved(request) {
 			return true
 		}
 	}
 	return false
 }
 
-// LockLeaseTTL bounds how long a crashed process can keep a ledger blocked.
-// Live owners renew the file lease while a provider call is in flight.
+// LockLeaseTTL is diagnostic only for old/incomplete markers. A live v2 owner
+// holds an OS guard throughout Reserve/Complete, even after its mtime expires.
 const LockLeaseTTL = 10 * time.Minute
 
 var (
@@ -423,41 +433,58 @@ var (
 )
 
 type lockLease struct {
-	stop chan struct{}
-	done chan struct{}
+	stop  chan struct{}
+	done  chan struct{}
+	guard *os.File
 }
 
-// AcquireLock creates a process-independent lock file and reclaims a lock
-// whose lease has expired. The metadata is diagnostic; the mtime is the lease
-// clock so a partially written lock file is still recoverable after a crash.
+// AcquireLock serializes the complete reservation with an OS-owned guard. It
+// never reclaims a live descriptor on the strength of a timestamp. Old binary
+// callers must be quiesced before switching this ledger to the v2 protocol.
 func AcquireLock(ctx context.Context, path string) (*os.File, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
+	guard, err := acquireProcessGuard(ctx, path+".guard")
+	if err != nil {
+		return nil, err
+	}
+	keepGuard := false
+	defer func() {
+		if !keepGuard {
+			_ = releaseProcessGuard(guard)
+		}
+	}()
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		lock, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 		if err == nil {
-			if _, writeErr := fmt.Fprintf(lock, "pid=%d acquired_at=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)); writeErr != nil {
+			if _, writeErr := fmt.Fprintf(lock, "%spid=%d acquired_at=%s\n", guardedLockProtocol, os.Getpid(), time.Now().UTC().Format(time.RFC3339Nano)); writeErr != nil {
 				_ = lock.Close()
 				_ = os.Remove(path)
 				return nil, writeErr
 			}
-			startLockLease(lock)
+			startLockLease(lock, guard)
+			keepGuard = true
 			return lock, nil
 		}
 		if !errors.Is(err, os.ErrExist) {
 			return nil, err
 		}
-		if reclaimExpiredLock(path) {
+		recovered, err := recoverGuardedMarker(path)
+		if err != nil {
+			return nil, err
+		}
+		if recovered {
 			continue
 		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(50 * time.Millisecond):
+		if err := waitForLock(ctx); err != nil {
+			return nil, err
 		}
 	}
 }
@@ -466,50 +493,45 @@ func lockLeaseExpiredInfo(info os.FileInfo) bool {
 	return info != nil && time.Now().UTC().After(info.ModTime().Add(LockLeaseTTL))
 }
 
-// reclaimExpiredLock moves the exact stale inode out of the lock path before
-// deleting it. A plain Stat followed by Remove could delete a replacement lock
-// created by another waiter in between those calls.
-func reclaimExpiredLock(path string) bool {
-	info, err := os.Stat(path)
+// Only call while holding path+".guard". Since all v2 owners hold that guard
+// until their final ledger write, a complete v2 marker here belongs to an exited
+// owner. Unknown/old/partial markers are never deleted by age.
+func recoverGuardedMarker(path string) (bool, error) {
+	marker, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return true
+		return true, nil
 	}
-	if err != nil || !lockLeaseExpiredInfo(info) {
-		return false
+	if err != nil {
+		return false, err
 	}
-	quarantine := fmt.Sprintf("%s.reclaim.%d.%d", path, os.Getpid(), time.Now().UnixNano())
-	if err := os.Rename(path, quarantine); err != nil {
-		return false
+	header := make([]byte, len(guardedLockProtocol))
+	_, readErr := io.ReadFull(marker, header)
+	info, statErr := marker.Stat()
+	closeErr := marker.Close()
+	if statErr != nil || closeErr != nil {
+		return false, errors.Join(statErr, closeErr)
 	}
-	moved, statErr := os.Stat(quarantine)
-	// Rename is atomic: the file now in quarantine is the exact object that
-	// occupied path at the rename point. Re-check its mtime after the move so a
-	// live owner that renewed during the handoff is restored instead of deleted.
-	if statErr == nil && lockLeaseExpiredInfo(moved) {
-		if err := os.Remove(quarantine); err == nil || errors.Is(err, os.ErrNotExist) {
-			return true
+	if readErr != nil || string(header) != guardedLockProtocol {
+		if lockLeaseExpiredInfo(info) {
+			return false, ErrLegacyLock
 		}
+		return false, nil
 	}
-	// The owner renewed between the first stat and the rename, or the path was
-	// not the same inode we observed. Restore it only when no replacement has
-	// appeared; never overwrite a newer owner's lock.
-	if _, pathErr := os.Stat(path); errors.Is(pathErr, os.ErrNotExist) {
-		_ = os.Rename(quarantine, path)
-	} else {
-		_ = os.Remove(quarantine)
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return false, err
 	}
-	return false
+	return true, nil
 }
 
-func startLockLease(lock *os.File) {
-	lease := &lockLease{stop: make(chan struct{}), done: make(chan struct{})}
+func startLockLease(lock, guard *os.File) {
+	lease := &lockLease{stop: make(chan struct{}), done: make(chan struct{}), guard: guard}
+	interval := lockLeaseHeartbeatInterval
+	if interval <= 0 {
+		interval = time.Second
+	}
 	activeLockLeases.Store(lock, lease)
 	go func() {
 		defer close(lease.done)
-		interval := lockLeaseHeartbeatInterval
-		if interval <= 0 {
-			interval = time.Second
-		}
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -517,8 +539,6 @@ func startLockLease(lock *os.File) {
 			case <-lease.stop:
 				return
 			case <-ticker.C:
-				// Writing through the owner descriptor updates the original
-				// inode even if a stale reclaim has moved the path elsewhere.
 				if _, err := fmt.Fprintf(lock, "heartbeat=%s\n", time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 					return
 				}
@@ -528,35 +548,39 @@ func startLockLease(lock *os.File) {
 	}()
 }
 
-func stopLockLease(lock *os.File) {
-	if lock == nil {
-		return
-	}
+func stopLockLease(lock *os.File) *lockLease {
 	value, ok := activeLockLeases.LoadAndDelete(lock)
 	if !ok {
-		return
+		return nil
 	}
 	lease := value.(*lockLease)
 	close(lease.stop)
 	<-lease.done
+	return lease
 }
 
-// ReleaseLock closes and removes a ledger lock. Removal tolerates a prior
-// stale-lock recovery so a completed owner cannot turn that recovery into an
-// error path.
-func ReleaseLock(lock *os.File, path string) error {
-	var owned os.FileInfo
-	if lock != nil {
-		stopLockLease(lock)
-		var err error
-		owned, err = lock.Stat()
-		if err != nil {
-			_ = lock.Close()
-			return err
-		}
-		if err := lock.Close(); err != nil {
-			return err
-		}
+// ReleaseLock removes only this owner marker, while still holding the stable
+// guard. Closing/unlocking the guard happens after the final write and cleanup.
+// A nil/foreign/repeated release cannot delete another owner's marker.
+func ReleaseLock(lock *os.File, path string) (result error) {
+	if lock == nil {
+		return nil
+	}
+	if filepath.Clean(path) != filepath.Clean(lock.Name()) {
+		return ErrUnavailable
+	}
+	lease := stopLockLease(lock)
+	if lease == nil {
+		return ErrUnavailable
+	}
+	defer func() { result = errors.Join(result, releaseProcessGuard(lease.guard)) }()
+	owned, err := lock.Stat()
+	if err != nil {
+		_ = lock.Close()
+		return err
+	}
+	if err := lock.Close(); err != nil {
+		return err
 	}
 	current, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -565,9 +589,7 @@ func ReleaseLock(lock *os.File, path string) error {
 	if err != nil {
 		return err
 	}
-	// A stale-lock recovery may have replaced this path while the original
-	// owner was finishing. Never remove the replacement owner's lock.
-	if owned != nil && !os.SameFile(owned, current) {
+	if !os.SameFile(owned, current) {
 		return nil
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {

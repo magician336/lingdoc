@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -14,7 +16,6 @@ import (
 	"github.com/google/uuid"
 	"maps"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -404,6 +405,46 @@ func (s *Service) recordAudit(ctx context.Context, actor Actor, projectID, capab
 	return s.recordAuditEvent(ctx, AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: capability, Decision: auditDecision(authErr), Reason: auditReason(authErr)})
 }
 
+// auditAuthorizationAction returns the bounded category string for an
+// authorization audit row.
+//
+// `lingdoc_project_audits.action` is a **category** column: 64 characters on
+// PostgreSQL (`varchar(64)`, and `size:64` in the GORM model). The capability
+// string is "action" or "action:resource", and the resource is caller-supplied
+// and unbounded, so writing the composite into that column overflowed it.
+// "authorization.issue-dismiss-blocking:<36-char uuid>" is 73 characters and
+// PostgreSQL rejected it with SQLSTATE 22001; the write shares the operation
+// transaction, so the whole operation failed and the raw database error
+// reached the transport unmapped — an HTTP 500 on a valid request.
+//
+// The resource stays where it belongs: the full capability is kept in
+// `details.capability` (JSON, unbounded) and on the event itself, and the
+// action column keeps the category.
+func auditAuthorizationAction(capability string) string {
+	action, _, _ := strings.Cut(capability, ":")
+	return "authorization." + action
+}
+
+// auditWriteFailed states its own client presentation. The operation did not
+// take effect because its audit record could not be written, which is a
+// storage failure rather than a business decision: the caller's request was
+// valid and nothing changed. It carries its own code so the transport mapper
+// stays a backstop (ADR 0003) instead of growing a branch per failure.
+//
+// The presentation is declared with clienterror, which is the one mechanism
+// the transport renders. A presentation declared on a private interface here
+// would be invisible to it: the failure would fall back to the generic 500
+// and lose the code that names the cause, turning a known storage failure
+// into an unexplained one.
+func auditWriteFailed(cause error) error {
+	return clienterror.Wrap(
+		clienterror.Form{
+			Status: 500, Code: "audit_write_failed",
+			Message: "审计记录写入失败，本次操作未生效，请稍后重试。",
+		},
+		"audit_write_failed: "+cause.Error(), cause)
+}
+
 // recordAuditInTransaction keeps the audit write on the caller's transaction.
 // SQLite uses a single pooled connection; opening the audit store separately
 // while a write transaction is active deadlocks the request until its context
@@ -423,7 +464,7 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 		return nil
 	}
 	event := AuditEvent{
-		ID: uuid.NewString(), ActorID: actor.UserID, Action: "authorization." + capability,
+		ID: uuid.NewString(), ActorID: actor.UserID, Action: auditAuthorizationAction(capability),
 		Target: projectID, CreatedAt: time.Now().UTC(),
 		Details: map[string]any{"tenant_id": actor.TenantID, "role": string(actor.Role),
 			"capability": capability, "decision": auditDecision(authErr), "reason": auditReason(authErr)},
@@ -765,7 +806,11 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 			}
 		}
 		if err := s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil); err != nil {
-			return err
+			// The audit row is part of the operation's atomic boundary, so a
+			// failed audit write fails the operation (fail-closed) — but it must
+			// not escape as a raw storage error, because the shared transport
+			// mapper would answer a valid request with a bare 500.
+			return auditWriteFailed(err)
 		}
 		if s.runtimeMode != "" {
 			if err := RuntimeGate(tx, actor, p, op, s.runtimeMode); err != nil {
@@ -2241,10 +2286,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if change.Status == "applied" {
+		if change.Status == ChangeSetStatusApplied {
 			return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 		}
-		if change.Status != "assessed" {
+		if !ChangeSetStatusCanMove("apply", change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		// A governed template migration must never commit without a durable
@@ -2263,7 +2308,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		upgradeStale := change.TemplateUpgrade != nil && (p.TemplateCopy == nil || p.TemplateCopyVersion != change.TemplateUpgrade.BaseTemplateCopyVersion)
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision || upgradeStale {
 			stale := change
-			stale.Status = "stale"
+			if !ChangeSetStatusCanMove("markStale", stale.Status) {
+				return operationResult[ChangeSet]{}, ErrInvalidState
+			}
+			stale.Status = ChangeSetStatusStale
 			stale.StaleReason = "context_revision_changed"
 			if change.BaseSpecRevision != p.SpecRevision {
 				stale.StaleReason = "spec_revision_changed"
@@ -2288,7 +2336,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			}
 			if !sameVersion(impact.ChapterVersionID, chapter.CurrentVersionID) {
 				stale := change
-				stale.Status = "stale"
+				if !ChangeSetStatusCanMove("markStale", stale.Status) {
+					return operationResult[ChangeSet]{}, ErrInvalidState
+				}
+				stale.Status = ChangeSetStatusStale
 				stale.StaleReason = "chapter_version_changed"
 				if err := store.UpdateChangeSet(change, stale); err != nil {
 					return operationResult[ChangeSet]{}, err
@@ -2395,7 +2446,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 		targetContext, targetSpec := next.CurrentContextRevision, next.SpecRevision
 		now := time.Now().UTC()
 		previousChange := change
-		change.Status = "applied"
+		change.Status = ChangeSetStatusApplied
 		change.DecisionBy = actor.UserID
 		change.DecidedAt = &now
 		change.TargetContextRevision = &targetContext
@@ -2461,7 +2512,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if stale.Status != "stale" {
+		if !ChangeSetStatusCanMove("reassess", stale.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		inverseSourceID, err := inverseLineageSource(tx, p.ID, stale, map[string]bool{})
@@ -2526,10 +2577,13 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 			if len(fields) == 0 && len(stale.SemanticDeltas) == 0 {
 				// No semantic/template work is discarded: only a completely
 				// already-current field proposal reaches this terminal outcome.
+				if !ChangeSetStatusCanMove("satisfy", stale.Status) {
+					return operationResult[ChangeSet]{}, ErrInvalidState
+				}
 				now := time.Now().UTC()
 				contextRevision, specRevision := p.CurrentContextRevision, p.SpecRevision
 				change := ChangeSet{ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID,
-					ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID, Reason: stale.Reason, Status: "satisfied",
+					ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID, Reason: stale.Reason, Status: ChangeSetStatusSatisfied,
 					BaseContextRevision: contextRevision, TargetContextRevision: &contextRevision,
 					BaseSpecRevision: specRevision, TargetSpecRevision: &specRevision,
 					Fields: []ChangeFieldDelta{}, Impacts: []ChangeImpact{}, CreatedAt: now}
@@ -2567,7 +2621,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 		}
 		change := ChangeSet{
 			ID: uuid.NewString(), ProjectID: projectID, CreatedBy: actor.UserID, ReassessedFromID: stale.ID, ReversesChangeSetID: stale.ReversesChangeSetID,
-			Reason: stale.Reason, Status: "assessed", BaseContextRevision: p.CurrentContextRevision,
+			Reason: stale.Reason, Status: ChangeSetStatusAssessed, BaseContextRevision: p.CurrentContextRevision,
 			BaseSpecRevision: p.SpecRevision, Fields: fields, Impacts: impacts,
 			TemplateUpgrade: templateUpgrade, CreatedAt: time.Now().UTC(),
 		}
@@ -2641,14 +2695,14 @@ func (s *Service) RejectChangeSet(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if change.Status == "rejected" {
+		if change.Status == ChangeSetStatusRejected {
 			return operationResult[ChangeSet]{Value: change, Status: operationStatusOK}, nil
 		}
-		if change.Status != "assessed" {
+		if !ChangeSetStatusCanMove("reject", change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		previous := change
-		change.Status = "rejected"
+		change.Status = ChangeSetStatusRejected
 		now := time.Now().UTC()
 		change.DecisionBy = actor.UserID
 		change.DecidedAt = &now
@@ -3568,20 +3622,14 @@ func orderChapters(chapters []Chapter, template Template) {
 	})
 }
 
-var sourceMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
-
 func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.SourceIDs == nil || len(input.BodyMarkdown) > 200000 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	markers := sourceMarker.FindAllStringSubmatch(input.BodyMarkdown, -1)
-	if strings.Count(input.BodyMarkdown, "[[source:") != len(markers) {
+	if err := sourcemarker.Validate(input.BodyMarkdown); err != nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	refs := make([]string, 0, len(markers))
-	for _, m := range markers {
-		refs = append(refs, m[1])
-	}
+	refs := sourcemarker.IDs(input.BodyMarkdown)
 	slices.Sort(refs)
 	refs = slices.Compact(refs)
 	declared := slices.Clone(input.SourceIDs)

@@ -1,0 +1,111 @@
+{
+  "ticket": "#284（CI：按 diff 内容分级门禁——纯格式修改跳过测试类 job）",
+  "stage": "Spec 实现完成（本票的 L1 完成线）",
+  "head_at_implementation": "e79f403b263a229475e1be4fd4ca30e04eb8557e",
+  "head_tree": null,
+  "mode": "real",
+  "environment": {
+    "python": "3.12（与 CI 的 actions/setup-python@v6 一致）",
+    "go": "go1.27.1 windows/amd64（gofmt 判据在本地可用；CI 的 scope job 由 ubuntu runner 提供）",
+    "note": "本票不改动 Go 代码与前端代码，只改 CI 脚本、工作流条件与文档；不需要 PostgreSQL。"
+  },
+  "decisions_implemented": {
+    "Q1_判定口径": "两个判据的并集：(a) gofmt 等价；(b) 去掉注释与字符串字面量之外的空白后，token 序列逐行相同。两个都满足才算纯格式修改。",
+    "Q2_覆盖范围": "只 Go 文件。非 Go 文件不参与判定（仓库没有前端格式化器，忽略空白的弱判定会误判字符串字面量里的空白）。",
+    "Q3_跳过范围": "只跳测试类 job：Go 测试、前端测试、镜像构建、mock、workspace-concurrency、interface-integration（integration + frontend）、F01 runner regression，以及 PR gate 里的 provider tests 与 frontend 步骤。lint、contracts 校验、diff 空白检查、检查边界发布都不跳。",
+    "Q4_兜底": "范围解析不了、gofmt 不可用、文件增删或改名、含编译期指令（//go:、//line）→ 判为非格式提交；首次打开 / 重新打开 / 手动 dispatch / push 到 main 不走快门禁。",
+    "Q5_流程": "独立票 + 独立评审；本 PR 不自行合并。"
+  },
+  "artifacts": [
+    "scripts/ci/lingdoc_format_scope.py（新增：内容级分类器）",
+    "scripts/ci/test_lingdoc_format_scope.py（新增：单测与集成用例）",
+    "scripts/ci/lingdoc_change_scope.py（增加 format_only / format_reasons 输出）",
+    "scripts/ci/lingdoc_pr_scope.py（同上）",
+    ".github/workflows/app.yml、frontend.yml、lingdoc-mock.yml、lingdoc-workspace-concurrency.yml、lingdoc-interface-integration.yml、lingdoc-f01-runner.yml、lingdoc-review.yml（测试类 job / 步骤加门）",
+    "docs/agents/development-rules.md（新增「纯格式提交的 CI 边界」小节）",
+    "docs/adr/0005-ci-gate-by-diff-content.md（新增 ADR）"
+  ],
+  "passed": [
+    {
+      "id": "分类器单测：gofmt 等价 / 只改注释与空白 / 加空行",
+      "status": "passed",
+      "evidence": "python -m unittest test_lingdoc_format_scope → 21 个分类器用例全绿（含 import 排序这种只有 gofmt 判据能认的改动）"
+    },
+    {
+      "id": "分类器单测：反例与 fail-closed",
+      "status": "passed",
+      "evidence": "字符串字面量内空白变化、字符串里的 //、逻辑改动、增删代码行、代码行重排、编译期指令改动、混合改动、只有非 Go 文件、新增文件、删除文件、范围不可解析、空范围 → 全部判为非格式修改"
+    },
+    {
+      "id": "快门禁的事件边界",
+      "status": "passed",
+      "evidence": "synchronize 走快门禁；opened / reopened / push / 手动 dispatch 不走"
+    },
+    {
+      "id": "scope 脚本的输出",
+      "status": "passed",
+      "evidence": "集成用例：格式提交 → format_only=true 且 run=true（路径判定不变）；opened → format_only=false；代码改动 → format_only=false 且 run=true"
+    },
+    {
+      "id": "仓内既有 CI scope 单测不回归",
+      "status": "passed",
+      "evidence": "python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' → 59 tests OK（原 52 + 新 7）"
+    },
+    {
+      "id": "接线验证：格式提交跳过测试类 job，lint 与 contracts 照跑",
+      "status": "passed",
+      "evidence": "用真实工作流的 if 表达式逐条求值（详见 wiring_verification）"
+    }
+  ],
+  "wiring_verification": {
+    "how": "在一个临时 git 仓库里放入真实的 scope 脚本，分别造一个「只加注释」的格式提交与一个「42 改 43」的代码提交，按工作流的方式跑两个 scope 脚本，再把每个工作流里带 scope 门禁的 job / step 的 if 表达式用产出的输出求值。",
+    "scenario_1_formatting_only": {
+      "change_scope": "run=true format_only=true",
+      "reasons": "internal/lingdoc/sample/sample.go: comments and whitespace only",
+      "skipped": [
+        "app.yml / Format, vet, test, and build",
+        "frontend.yml / Test, type-check, and build",
+        "frontend.yml / Docker multi-stage image",
+        "lingdoc-f01-runner.yml / F01 runner regression",
+        "lingdoc-interface-integration.yml / integration",
+        "lingdoc-interface-integration.yml / frontend",
+        "lingdoc-mock.yml / T06 fixed mock and request consumer",
+        "lingdoc-workspace-concurrency.yml / workspace-concurrency",
+        "lingdoc-review.yml / provider tests 步骤（setup-go、Test and vet existing LingDoc provider packages）",
+        "lingdoc-review.yml / frontend 步骤（setup-node、Test, type-check and build frontend）"
+      ],
+      "still_ran": [
+        "go-lint.yml / detect lint modules（lint 仍是格式的裁判）",
+        "lingdoc-review.yml / Install contract validator dependency",
+        "lingdoc-review.yml / Validate contract examples and reference trace"
+      ]
+    },
+    "scenario_2_code_change": {
+      "change_scope": "run=true format_only=false",
+      "reasons": "internal/lingdoc/sample/sample.go: code changed",
+      "note": "全部 15 条门禁条件都求值为 RUN——行为与改动前一致。"
+    }
+  },
+  "failed": [],
+  "not_run": [
+    {
+      "id": "真实 GitHub Actions 上的端到端验证",
+      "reason": "快门禁的判定在本地用真实脚本与真实工作流表达式验证通过；真正的 Actions 运行需要推分支开 PR 后由 CI 判定。本 PR 的 CI 本身就是全量（非格式改动），因此不会触发跳过分支——跳过分支的真实触发需要一次纯格式提交。",
+      "follow_up": "建议在合并后用一个纯格式提交验证一次真实跳过（见「后续」）。"
+    },
+    {
+      "id": "Go / 前端代码测试",
+      "reason": "本 PR 不改 Go 与前端代码；Go 与前端测试矩阵由 CI 正常执行。"
+    }
+  ],
+  "uncovered_risks": [
+    "判定器是 CI 的一部分：它出错可能导致一次本该跑的测试没跑。因此判据一律保守，异常一律判为「非格式修改」，并且单测覆盖了全部反例。",
+    "gofmt 判据依赖 PATH 上有 gofmt；缺席时只剩注释/空白口径（更保守，漏判更多而不是误判）。CI 的 scope job 跑在 ubuntu runner 上，带 Go 工具链。",
+    "「语义等价但非格式」的重写（例如 defer x.Close() 改成 defer func(){ _ = x.Close() }()）**不**属于本规则，会照常跑全量——这是刻意的边界。",
+    "快门禁会让格式提交那条路径上的测试覆盖看起来是空的。判定理由随检查边界一起发布，就是为了让人能区分「被跳过」与「没写」。"
+  ],
+  "follow_up": [
+    "合并后用一个纯格式提交在真实 GitHub Actions 上验证一次跳过（判定为真 → 测试类 job 显示 skipped，lint 仍跑）。",
+    "若将来给前端引入格式化器（prettier），可以按同一条判据把 Q2 的覆盖范围扩到前端；在此之前前端不走这条快门禁。"
+  ]
+}

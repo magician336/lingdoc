@@ -2,8 +2,8 @@
 package delivery
 
 import (
-	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 )
@@ -27,7 +27,7 @@ const (
 	DispositionRetainedWarning = "retained_warning"
 )
 
-var ErrTemplateNotFound = errors.New("lingdoc template not found")
+var ErrTemplateNotFound = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "lingdoc template not found")
 
 type TemplateReader = lingdoctemplate.Reader
 type Template = lingdoctemplate.Template

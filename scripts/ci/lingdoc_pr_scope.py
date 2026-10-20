@@ -9,7 +9,10 @@ import re
 import subprocess
 import sys
 
-PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence")
+import lingdoc_format_scope
+
+PROVIDER_ROOTS = ("internal/lingdoc", "internal/evidence",
+                  "internal/models/acceptancebudget", "cmd/acceptance-budget-reconcile")
 GOVERNANCE = (".github/workflows/lingdoc-review.yml", ".github/pull_request_template.md")
 
 
@@ -125,17 +128,26 @@ def main() -> None:
     parser.add_argument("--root", type=Path, default=Path.cwd())
     args = parser.parse_args()
     root = args.root.resolve()
+    event: dict = {}
     if args.all:
-        paths, diff_range = [], None
+        paths, diff_range, whitespace_range = [], None, None
         scope = dict.fromkeys(("contracts", "backend", "frontend"), True)
     else:
         if args.event is None:
             parser.error("--event or GITHUB_EVENT_PATH is required")
         event = json.loads(args.event.read_text(encoding="utf-8"))
         diff_range, paths, scope = select_paths(root, event, args.latest)
+        # Latest-update scope may include upstream merge commits. Whitespace is
+        # always checked over the complete PR, including earlier topic commits.
+        whitespace_range = git_range(event)
     packages = provider_packages(root) if scope["backend"] else []
-    report = {"scope": scope, "diff_range": diff_range, "changed_paths": paths,
+    format_only, format_reasons = (False, ["the formatting-only fast path does not apply to this event"])
+    if not args.all and lingdoc_format_scope.fast_path_applies(event)[0]:
+        format_only, format_reasons = lingdoc_format_scope.format_only_update(root, diff_range)
+    report = {"scope": scope, "diff_range": diff_range,
+              "whitespace_diff_range": whitespace_range, "changed_paths": paths,
               "provider_packages": packages,
+              "format_only": format_only, "format_reasons": format_reasons,
               "note": "Selection only; not a test result or an approval."}
     print(json.dumps(report, ensure_ascii=True, indent=2))
     if output := os.environ.get("GITHUB_OUTPUT"):
@@ -143,8 +155,11 @@ def main() -> None:
             for key, value in scope.items():
                 handle.write(f"{key}={str(value).lower()}\n")
             handle.write(f"provider_tests={str(bool(packages)).lower()}\n")
-    if diff_range:
-        subprocess.run(["git", "diff", "--check", diff_range, "--"], cwd=root, check=True, stdout=sys.stderr)
+            handle.write(f"format_only={str(format_only).lower()}\n")
+            handle.write(f"format_reasons={' | '.join(format_reasons)}\n")
+    check_range = whitespace_range or diff_range
+    if check_range:
+        subprocess.run(["git", "diff", "--check", check_range, "--"], cwd=root, check=True, stdout=sys.stderr)
 
 
 if __name__ == "__main__":
