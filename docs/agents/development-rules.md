@@ -34,6 +34,8 @@ GitHub PR 的顶层 `paths` 按整个 PR 相对 `main` 的变更集合匹配；�
 - 首次打开、重新打开、手动 dispatch 与 push 到 main **不走**这条快门禁：PR 第一次被人看到时，整套矩阵必须跑。
 - 判定结论与理由随检查边界一起发布，可复核。
 
+接线纪律（2026-10-20 线上验证 #288 补记）：**job 的 outputs 是显式白名单**。step 往 `GITHUB_OUTPUT` 写了键，不等于下游 job 读得到——漏声明时下游取到**空字符串**，于是 `'' != 'true'` 恒成立、跳过条件静默失效且不报错。跨 job 引用必须在该 job 的 `outputs:` 里显式声明；**step 级引用**（`steps.<id>.outputs.<name>`）不需要声明。给工作流加门禁条件时，用守护测试断言「工作流声明的 outputs」与「脚本写出的键」一致（`scripts/ci/test_lingdoc_format_scope.py::WorkflowWiringTests`），只测脚本输出不够——本地求值不会模拟这层白名单。
+
 ## 默认运行模式：Agent 先完成，人审结果
 
 这套规则默认把执行工作交给 Agent，把人的参与收敛到不可推断的信息、明确授权和最终审查。Agent 不得因为缺少偏好就暂停；先从 Issue、Spec、代码、CI 和环境推导事实，缺少事实时使用可复现的本地或 staging 替代，并在证据中标明边界。
