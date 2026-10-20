@@ -24,9 +24,8 @@ import unittest
 
 import yaml
 
+import lingdoc_gate_decision as decision
 import lingdoc_gate_surfaces as manifest
-import lingdoc_pr_scope as pr_scope
-import lingdoc_risk_surface as risk_surface
 
 CI_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CI_DIR.parents[1]
@@ -43,6 +42,86 @@ GATED_WORKFLOWS = (
     "lingdoc-workspace-concurrency.yml",
     "lingdoc-interface-integration.yml",
 )
+
+# The path table each workflow carried before the rewiring.  They are the
+# independent source of truth: if the manifest's surface drifts away from
+# them, the comparison fails and somebody has to say so on purpose.
+PATH_TABLES = {
+    "frontend": (
+        "frontend/**",
+        "scripts/build_frontend_dist.sh",
+        ".github/workflows/frontend.yml",
+    ),
+    "go-lint": (
+        "**/*.go",
+        "**/go.mod",
+        "**/go.sum",
+        ".golangci.yml",
+        ".github/workflows/go-lint.yml",
+    ),
+    "app": (
+        "**/*.go",
+        "!cli/**",
+        "!client/**",
+        "!docreader/**",
+        "!third_party/anydoc-go/**",
+        "go.mod",
+        "go.sum",
+        "Makefile",
+        "config/**",
+        "migrations/**",
+        "skills/preloaded/**",
+        "testdata/**",
+        "docker/Dockerfile.app",
+        "LICENSE",
+        "THIRD_PARTY_NOTICES.md",
+        "licenses/**",
+        "internal/textconv/data/**",
+        "scripts/*license*.sh",
+        "cmd/desktop/build/windows/installer/project.nsi",
+        ".github/workflows/app.yml",
+    ),
+    "lingdoc-mock": (
+        "scripts/lingdoc_mock/**",
+        "scripts/ci/requirements-lingdoc.txt",
+        "scripts/ci/check_lingdoc_routes.py",
+        "docs/08-本轮实施方案/contracts/**",
+        "frontend/src/dev/lingdoc-mock/**",
+        "frontend/lingdoc-mock.html",
+        "frontend/src/utils/request.ts",
+        "frontend/package*.json",
+        "frontend/vite.config.ts",
+        ".github/workflows/lingdoc-mock.yml",
+    ),
+    "lingdoc-f01-runner": (
+        "scripts/lingdoc_mock/run_f01.py",
+        "scripts/lingdoc_mock/load_state.py",
+        "scripts/lingdoc_mock/run_scenario.py",
+        "scripts/lingdoc_mock/build_t15_matrix.py",
+        "scripts/lingdoc_mock/test_workflow*.py",
+        "docs/08-本轮实施方案/contracts/**",
+        "docs/08-本轮实施方案/README.md",
+        "docs/08-本轮实施方案/02-接口与Mock约定.md",
+        "docs/08-本轮实施方案/T15-11-验证报告.json",
+        "docs/08-本轮实施方案/T15-11-证据.json",
+        ".github/workflows/lingdoc-f01-runner.yml",
+    ),
+    "lingdoc-workspace-concurrency": (
+        "internal/lingdoc/workspacecore/**",
+        "migrations/sqlite/000018_lingdoc_workspace.*.sql",
+        "go.mod",
+        "go.sum",
+        ".github/workflows/lingdoc-workspace-concurrency.yml",
+    ),
+    "lingdoc-interface-integration": (
+        "internal/lingdoc/**",
+        "internal/evidence/**",
+        "scripts/acceptance/**",
+        "internal/container/lingdoc*",
+        "internal/router/lingdoc*",
+        ".github/workflows/lingdoc-interface-integration.yml",
+    ),
+}
 
 # Files that still carry their own copy of the ownership knowledge.  Ticket
 # T2 moved them to the manifest, so no file may register it any more: any
@@ -295,16 +374,32 @@ class WorkflowWiringTests(unittest.TestCase):
                     self.assertNotIn("format_only", condition)
 
 
+class PathTableTests(unittest.TestCase):
+    """The manifest still carries the tables the workflows carried."""
+
+    def test_every_surface_still_watches_the_paths_it_watched(self):
+        for name, table in PATH_TABLES.items():
+            with self.subTest(surface=name):
+                surface = next(surface for surface in manifest.load_surfaces()
+                               if surface.name == name)
+                self.assertEqual(list(surface.paths), list(table))
+
+
 class KnowledgeRegistrationTests(unittest.TestCase):
     """Ownership knowledge is registered once, in the manifest."""
 
-    def test_manifest_knowledge_matches_the_scripts_in_use_today(self):
-        self.assertEqual(tuple(manifest.PROVIDER_ROOTS), tuple(risk_surface.PROVIDER_ROOTS))
-        self.assertEqual(tuple(manifest.PROVIDER_ROOTS), tuple(pr_scope.PROVIDER_ROOTS))
-        self.assertEqual(manifest.CONTRACT_DIR, risk_surface.CONTRACT_DIR)
-        self.assertEqual(tuple(manifest.GOVERNANCE_FILES), tuple(risk_surface.GOVERNANCE))
-        self.assertEqual(tuple(manifest.GOVERNANCE_FILES), tuple(pr_scope.GOVERNANCE))
-        self.assertEqual(manifest.FRONTEND_ROOT, risk_surface.FRONTEND_ROOT)
+    def test_manifest_knowledge_matches_the_module_in_use_today(self):
+        # The decision module is the only module that reads the ownership
+        # knowledge; it reads it from the manifest and registers none of it
+        # itself.
+        self.assertEqual(tuple(manifest.PROVIDER_ROOTS),
+                         tuple(decision.PROVIDER_ROOTS))
+        self.assertEqual(manifest.CONTRACT_DIR, decision.CONTRACT_DIR)
+        self.assertEqual(tuple(manifest.GOVERNANCE_FILES),
+                         tuple(decision.GOVERNANCE_FILES))
+        self.assertEqual(tuple(manifest.GOVERNANCE_DIRS),
+                         tuple(decision.GOVERNANCE_DIRS))
+        self.assertEqual(manifest.FRONTEND_ROOT, decision.FRONTEND_ROOT)
 
     def test_knowledge_appears_exactly_once_in_the_manifest(self):
         source = (CI_DIR / "lingdoc_gate_surfaces.py").read_text(encoding="utf-8")

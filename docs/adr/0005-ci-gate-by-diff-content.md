@@ -2,7 +2,7 @@
 
 **状态**：已采纳（2026-10-20，由 #284 的开发与 G3 缺口收口评审产生）
 
-**后续**：[ADR 0006](0006-gate-surface-by-contribution.md) 修订了本决策的适用范围。本决策处理「只重排版的推送」，0006 处理「基线合并」；两者合起来构成同一条判据的两半：验证单元是 (被测面内容, 基线内容)，两者都没变就不重测。[ADR 0007](0007-gate-decision-deep-module.md) 进一步把这两条判据的实现收进一个判定模块，**不改变**本决策的口径。
+**后续**：[ADR 0006](0006-gate-surface-by-contribution.md) 修订了本决策的适用范围。本决策处理「只重排版的推送」，0006 处理「基线合并」；两者合起来构成同一条判据的两半：验证单元是 (被测面内容, 基线内容)，两者都没变就不重测。[ADR 0007](0007-gate-decision-deep-module.md) 进一步把这两条判据的实现收进一个判定模块，**不改变**本决策的口径；#304 把格式快判的实现折进判定模块 `scripts/ci/lingdoc_gate_decision.py`，本决策原来新增的 `scripts/ci/lingdoc_format_scope.py` 随之删除。
 
 ## 背景
 
@@ -66,8 +66,8 @@
 
 ## 影响
 
-- 新增 `scripts/ci/lingdoc_format_scope.py`（判定器）与 `scripts/ci/test_lingdoc_format_scope.py`（单测）。
-- `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 增加 `format_only` 输出与判定理由。
+- 新增 `scripts/ci/lingdoc_format_scope.py`（判定器）与 `scripts/ci/test_lingdoc_format_scope.py`（单测）。（历史记录：#304 把格式快判的实现折进判定模块 `scripts/ci/lingdoc_gate_decision.py`，这两个文件随之删除；判据本身一字未改。）
+- `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 增加 `format_only` 输出与判定理由。（历史记录：这两个脚本也已随 #304 删除。）
 - 七个工作流的测试类 job 与 PR gate 里的两个测试步骤改为在 `format_only` 为真时跳过；lint 与 contracts 步骤不动。其中六个是跳整个测试类 job（`app.yml`、`frontend.yml`、`lingdoc-mock.yml`、`lingdoc-workspace-concurrency.yml`、`lingdoc-interface-integration.yml`、`lingdoc-f01-runner.yml`），`lingdoc-review.yml` 是跳 PR gate 内的 provider tests 与 frontend 两个**步骤**。
 - 「先写接口」的含义在门禁上同样成立：判定器的接口是「给一个 diff 范围，回答它是不是只重排版」，不暴露 git 细节给调用方。
 

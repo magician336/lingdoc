@@ -2,9 +2,14 @@
 
 The module is the deep module of the gate: it owns the diff ranges, the
 changed files, the tree hashes, the tested surface, the gate-surface
-classification and the formatting fast path.  Its public interface is two
-functions -- :func:`decide` returns a typed :class:`Decision`, and
-:func:`write_outputs` is the one place where a decision becomes strings.
+classification and the formatting fast path.  Its public interface is
+``decide`` / ``write_outputs`` / ``report`` / ``publish`` /
+``gate_conclusion`` / ``conclusion_markdown`` / ``check_whitespace``.
+
+This file is the **one seam** where the judgement semantics are tested: every
+case below observes the decision through that interface.  The guard tests --
+the wiring between the workflows, the manifest and the documents -- live in
+their own ``test_lingdoc_*.py`` files.
 
 These tests pin the behaviour ADR 0006 already established, one fixture per
 rule:
@@ -16,7 +21,7 @@ rule:
 * an undecidable surface falls back to the full scope and says so;
 * the formatting fast path keeps ADR 0005's mouth;
 * the three artifact fields keep their names and their meaning;
-* the transitional scripts and the decision module agree, item by item.
+* the per-job verdicts are the ones the old implementation gave.
 """
 from __future__ import annotations
 
@@ -71,6 +76,22 @@ class DecisionFixture(unittest.TestCase):
     def _topic(self, root: Path) -> str:
         git(root, "checkout", "-b", "topic")
         return git(root, "rev-parse", "HEAD")
+
+    def _contribution(self, root: Path,
+                      changes: dict[str, str]) -> decision.Decision:
+        """The decision for a pull request that contributes exactly these files.
+
+        The pull request carries one commit; the base is the commit it
+        branches off, so the contribution is ``base...head``.
+        """
+        base = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "-b", "topic")
+        for relative, content in changes.items():
+            write(root, relative, content)
+        git(root, "add", "-A")
+        git(root, "commit", "-m", "contribution")
+        head = git(root, "rev-parse", "HEAD")
+        return decision.decide(self._event(base, head, base), root)
 
 
 class ContributionTests(DecisionFixture):
@@ -186,7 +207,7 @@ class GovernanceTests(DecisionFixture):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._repo(root)
-            write(root, "scripts/ci/lingdoc_pr_scope.py", "# gate\n")
+            write(root, "scripts/ci/lingdoc_gate_decision.py", "# gate\n")
             write(root, "internal/lingdoc/workspace/service.go", "package workspace\n")
             write(root, "internal/evidence/source.go", "package evidence\n")
             git(root, "add", ".")
@@ -194,7 +215,7 @@ class GovernanceTests(DecisionFixture):
             base = git(root, "rev-parse", "HEAD")
             self._topic(root)
             before = git(root, "rev-parse", "HEAD")
-            write(root, "scripts/ci/lingdoc_pr_scope.py", "# gate changed\n")
+            write(root, "scripts/ci/lingdoc_gate_decision.py", "# gate changed\n")
             git(root, "add", "."); git(root, "commit", "-m", "gate")
             after = git(root, "rev-parse", "HEAD")
 
@@ -390,125 +411,103 @@ class ArtifactFieldTests(DecisionFixture):
             self.assertEqual(outputs["base"], base)
 
 
-class CrossImplementationConsistencyTests(DecisionFixture):
-    """The decision module and the transitional scripts answer alike.
+class JobVerdictGoldenTests(DecisionFixture):
+    """The per-job verdicts the old implementation produced, kept as literals.
 
-    While the seven workflow-level gates still call the old scripts, the two
-    implementations answer the same event side by side.  The fields on which
-    they may differ are listed explicitly: the workflow-level scripts publish
-    the decision's own contract flag, the pull request gate publishes the
-    scope flag, and only the gate's own flag is read by a workflow.
+    These are the answers the workflow-level scope script gave before the
+    decision module existed, recorded job by job.  They are the independent
+    source of truth for "the rewiring changed the structure, not the
+    verdicts": the shell that produced them is gone, so the comparison now
+    runs against these literals.
+
+    The pull request gate is listed with them: it is the consumer of the
+    targeted surfaces, and since #309 it appears on every pull request -- its
+    job runs and its steps are skipped one by one.
     """
 
-    COMPARED = ("run", "format_only", "surface", "base", "base_moved",
-                "surface_changed", "reason", "run_code", "run_targeted",
-                "contracts", "backend", "frontend", "provider_tests",
-                "provider_packages")
-    # The two implementations must not differ on any compared field.  The
-    # whitelist is empty on purpose: a difference here means the decision
-    # module and the transitional scripts answer the same event differently.
-    EXPECTED_DIFFERENCES = frozenset()
+    # The jobs that run, per scenario.  A job is named
+    # ``<workflow file>#<job key>``.  The pull request gate is the consumer
+    # of the targeted surfaces, so it runs whenever one of them does.
+    CODE_CHANGE = {
+        "app.yml#verify",
+        "go-lint.yml#changes",
+        "go-lint.yml#golangci",
+        "lingdoc-interface-integration.yml#integration",
+        "lingdoc-interface-integration.yml#frontend",
+        "lingdoc-review.yml#gate",
+    }
+    FRONTEND_CHANGE = {"frontend.yml#verify", "frontend.yml#docker-image",
+                       "lingdoc-review.yml#gate"}
+    # A formatting-only change keeps the meaning of the code: only the lint
+    # jobs run, because lint is the judge of formatting.  The pull request
+    # gate still runs: it is the gate that publishes the conclusion.
+    FORMAT_ONLY_CHANGE = {"go-lint.yml#changes", "go-lint.yml#golangci",
+                          "lingdoc-review.yml#gate"}
+    UNRELATED_CHANGE: set[str] = set()
 
-    def _run(self, script: str, args: list[str], root: Path,
-             scratch: Path) -> dict[str, str]:
-        output = scratch / "outputs.txt"
-        if output.exists():
-            output.unlink()
-        env = {**os.environ, "GITHUB_OUTPUT": str(output)}
-        result = subprocess.run(
-            [sys.executable, str(CI_DIR / script), *args],
-            env=env, capture_output=True, text=True, cwd=str(root))
-        self.assertEqual(result.returncode, 0, result.stderr)
-        written: dict[str, str] = {}
-        for line in output.read_text(encoding="utf-8").splitlines():
-            key, _, value = line.partition("=")
-            written[key] = value
-        return written
+    def _event_for(self, root: Path, changes: dict[str, str]) -> dict:
+        """A pull request that carries one commit with the given changes."""
+        git(root, "checkout", "-b", "topic")
+        for relative, content in changes.items():
+            write(root, relative, content)
+        git(root, "add", "-A")
+        git(root, "commit", "-m", "change")
+        head = git(root, "rev-parse", "HEAD")
+        base = git(root, "merge-base", "main", head)
+        return {"action": "synchronize", "before": base, "after": head,
+                "pull_request": {"base": {"sha": base}, "head": {"sha": head}}}
 
-    def _scenarios(self, root: Path):
-        """The three events the two implementations are compared on."""
-        base = git(root, "rev-parse", "HEAD")
-        self._topic(root)
-        before = git(root, "rev-parse", "HEAD")
-        write(root, "internal/lingdoc/workspace/service.go",
-              "package workspace\n\n// change\n")
-        git(root, "add", "."); git(root, "commit", "-m", "code")
-        after = git(root, "rev-parse", "HEAD")
-        code_change = self._event(before, after, base)
+    def _running_jobs(self, root: Path, event: dict) -> set[str]:
+        """The jobs the decision selects for this event."""
+        outputs = decision.write_outputs(decision.decide(event, root))
+        running = set()
+        for surface in manifest.load_surfaces():
+            for consumer in surface.consumers:
+                key = decision.output_key(consumer.workflow, consumer.job)
+                if outputs.get(key) == "true":
+                    running.add(f"{Path(consumer.workflow).name}#{consumer.job}")
+        return running
 
-        before = after
-        write(root, "docs/note.md", "evidence\n")
-        git(root, "add", "."); git(root, "commit", "-m", "docs")
-        after = git(root, "rev-parse", "HEAD")
-        docs_push = self._event(before, after, base)
-
-        before = after
-        git(root, "checkout", "main")
-        write(root, "internal/evidence/source.go",
-              "package evidence\n\n// upstream\n")
-        git(root, "add", "."); git(root, "commit", "-m", "upstream")
-        base = git(root, "rev-parse", "HEAD")
-        git(root, "checkout", "topic")
-        git(root, "merge", "--no-edit", "main")
-        after = git(root, "rev-parse", "HEAD")
-        baseline_merge = self._event(before, after, base)
-
-        return {"code_change": code_change, "docs_push": docs_push,
-                "baseline_merge": baseline_merge}
-
-    def test_the_module_and_the_scripts_answer_the_same_questions(self):
+    def test_a_code_change_runs_the_same_jobs_as_before(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "repo"
-            scratch = Path(tmp) / "scratch"
-            root.mkdir()
-            scratch.mkdir()
+            root = Path(tmp)
             self._repo(root)
-            scenarios = self._scenarios(root)
-            patterns = next(surface.paths for surface in manifest.load_surfaces()
-                            if surface.name == "app")
+            event = self._event_for(
+                root, {"internal/lingdoc/workspace/service.go":
+                       "package workspace\n\nfunc F() int { return 43 }\n"})
 
-            for name, event in scenarios.items():
-                event_path = scratch / "event.json"
-                event_path.write_text(json.dumps(event), encoding="utf-8")
-                with self.subTest(scenario=name):
-                    result = decision.decide(event, root)
-                    module_outputs = decision.write_outputs(result, patterns=patterns)
-                    script_outputs = self._run(
-                        "lingdoc_change_scope.py",
-                        ["--event", str(event_path), "--root", str(root),
-                         "--patterns", "\n".join(patterns)], root, scratch)
-                    differences = {
-                        field for field in self.COMPARED
-                        if module_outputs.get(field) != script_outputs.get(field)}
-                    self.assertEqual(
-                        differences, set(self.EXPECTED_DIFFERENCES),
-                        f"{name}: {[(field, module_outputs.get(field), script_outputs.get(field)) for field in sorted(differences)]}")
+            self.assertEqual(self._running_jobs(root, event), self.CODE_CHANGE)
 
-    def test_the_pull_request_gate_reads_the_same_decision(self):
+    def test_a_frontend_change_runs_the_same_jobs_as_before(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp) / "repo"
-            scratch = Path(tmp) / "scratch"
-            root.mkdir()
-            scratch.mkdir()
+            root = Path(tmp)
             self._repo(root)
-            scenarios = self._scenarios(root)
+            event = self._event_for(
+                root, {"frontend/src/views/lingdoc/Workspace.vue":
+                       "<template>changed</template>\n"})
 
-            for name, event in scenarios.items():
-                event_path = scratch / "event.json"
-                event_path.write_text(json.dumps(event), encoding="utf-8")
-                with self.subTest(scenario=name):
-                    result = decision.decide(event, root)
-                    module_outputs = decision.write_outputs(result)
-                    script_outputs = self._run(
-                        "lingdoc_pr_scope.py",
-                        ["--event", str(event_path), "--root", str(root),
-                         "--latest"], root, scratch)
-                    differences = {
-                        field for field in self.COMPARED
-                        if module_outputs.get(field) != script_outputs.get(field)}
-                    # The gate publishes the scope flags; the module publishes
-                    # the same flags, so nothing may differ here.
-                    self.assertEqual(differences, set())
+            self.assertEqual(self._running_jobs(root, event),
+                             self.FRONTEND_CHANGE)
+
+    def test_a_formatting_only_change_skips_the_same_jobs_as_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._event_for(
+                root, {"internal/lingdoc/workspace/service.go":
+                       "package workspace\n\n// A note.\n// Another note.\n"})
+
+            self.assertEqual(self._running_jobs(root, event),
+                             self.FORMAT_ONLY_CHANGE)
+
+    def test_an_unrelated_change_runs_no_job_as_before(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._event_for(root, {"docs/note.md": "changed\n"})
+
+            self.assertEqual(self._running_jobs(root, event),
+                             self.UNRELATED_CHANGE)
 
 
 class PreRefactorGoldenTests(DecisionFixture):
@@ -701,8 +700,9 @@ class PullRequestGateWiringTests(DecisionFixture):
     def test_the_gate_scope_step_asks_the_decision_module(self):
         workflow = self.WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("scripts/ci/lingdoc_gate_decision.py", workflow)
-        # The transitional script stays, but the gate no longer calls it.
-        self.assertNotIn("scripts/ci/lingdoc_pr_scope.py --latest", workflow)
+        # The decision module is the only entry point: no scope script is
+        # called any more.
+        self.assertNotRegex(workflow, r"lingdoc_\w*_scope\.py")
 
     def test_the_gate_still_publishes_the_three_artifact_fields(self):
         workflow = self.WORKFLOW.read_text(encoding="utf-8")
@@ -742,6 +742,631 @@ class PullRequestGateWiringTests(DecisionFixture):
             self.assertIn(f"base={base}", written)
             self.assertIn("surface=internal/lingdoc/workspace", written)
             self.assertIn("reason=contribution surface changed", written)
+
+
+class ScopeClassificationTests(DecisionFixture):
+    """Which surface a contribution belongs to (ADR 0006's classification)."""
+
+    def _scope_of(self, changes: dict[str, str]) -> tuple[bool, bool, bool]:
+        """The (contracts, backend, frontend) flags of one contribution."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            result = self._contribution(root, changes)
+            return (result.contracts, result.backend, result.frontend)
+
+    def test_a_planning_document_only_selects_the_contract_checks(self):
+        for path in ("docs/06-灵档产品开发规划/05-团队分工与代码边界.md",
+                     "docs/TEAM_DEVELOPMENT_TASKS.md"):
+            with self.subTest(path=path):
+                self.assertEqual(self._scope_of({path: "plan\n"}),
+                                 (True, False, False))
+
+    def test_a_contract_change_selects_the_contract_checks(self):
+        # The contract examples are re-validated.  The tested code surface is
+        # untouched, so no package is re-tested: the frontend flag also asks
+        # whether the surface behind it moved.
+        self.assertEqual(
+            self._scope_of({"docs/08-本轮实施方案/contracts/openapi.json": "{}\n"}),
+            (True, True, False))
+
+    def test_a_contract_change_counts_as_a_frontend_change(self):
+        # A contract change changes what the frontend consumes, so it is a
+        # frontend-scope change: together with a frontend change it selects
+        # the frontend surface.
+        self.assertEqual(
+            self._scope_of({
+                "docs/08-本轮实施方案/contracts/openapi.json": "{}\n",
+                "frontend/src/utils/request.ts": "export const x = 1\n"}),
+            (True, True, True))
+
+    def test_a_provider_or_shared_backend_change_selects_the_backend(self):
+        for path, content in (
+                ("internal/lingdoc/workspacecore/service.go", "package workspacecore\n"),
+                ("internal/evidence/source.go", "package evidence\n\n// change\n"),
+                ("internal/router/router.go", "package router\n"),
+                ("migrations/sqlite/a.sql", "-- migration\n"),
+                ("go.mod", "module example\n"),
+                ("go.sum", ""),
+                ("cmd/server/main.go", "package main\n"),
+                ("config/config.yaml", "key: value\n"),
+                ("internal/models/acceptancebudget/reconcile.go", "package budget\n"),
+                ("cmd/acceptance-budget-reconcile/main.go", "package main\n")):
+            with self.subTest(path=path):
+                self.assertEqual(self._scope_of({path: content}),
+                                 (True, True, False))
+
+    def test_a_frontend_change_selects_the_frontend(self):
+        for path, content in (
+                ("frontend/src/views/lingdoc/Workspace.vue", "<template>changed</template>\n"),
+                ("frontend/src/utils/request.ts", "export const x = 1\n"),
+                ("frontend/package-lock.json", "{}\n")):
+            with self.subTest(path=path):
+                self.assertEqual(self._scope_of({path: content}),
+                                 (True, False, True))
+
+    def test_a_governance_change_checks_its_contract_dependency(self):
+        for path, content in (
+                (".github/workflows/lingdoc-review.yml", "name: gate\n"),
+                (".github/pull_request_template.md", "# template\n"),
+                ("scripts/ci/requirements-lingdoc.txt", "PyYAML==6.0.3\n")):
+            with self.subTest(path=path):
+                self.assertEqual(self._scope_of({path: content}),
+                                 (True, True, True))
+
+    def test_an_unrelated_change_selects_nothing(self):
+        for path, content in (("README.md", "changed\n"),
+                              ("cli/cmd/doc/get.go", "package main\n"),
+                              ("client/knowledge.go", "package client\n")):
+            with self.subTest(path=path):
+                self.assertEqual(self._scope_of({path: content}),
+                                 (False, False, False))
+
+    def test_an_empty_contribution_selects_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+
+            result = decision.decide(self._event(base, base, base), root)
+
+            self.assertEqual((result.contracts, result.backend,
+                              result.frontend), (False, False, False))
+
+
+class ProviderSelectionTests(DecisionFixture):
+    """The provider packages the decision claims, and only those."""
+
+    def _full_scope(self, root: Path) -> decision.Decision:
+        return decision.decide({"action": "manual",
+                                "reason": "full scope requested"}, root)
+
+    def test_a_manual_run_claims_only_the_provider_roots_that_exist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "internal/evidence/source.go"
+            path.parent.mkdir(parents=True)
+            path.write_text("package evidence\n", encoding="utf-8")
+
+            result = self._full_scope(root)
+
+            self.assertEqual(result.provider_packages, ("./internal/evidence/...",))
+            self.assertTrue(result.run_code)
+            self.assertTrue(result.run_targeted)
+            self.assertTrue(result.contracts)
+            self.assertTrue(result.backend)
+            self.assertTrue(result.frontend)
+
+    def test_the_budget_package_is_claimed_without_the_other_provider_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "internal/models/acceptancebudget/reconcile_test.go"
+            path.parent.mkdir(parents=True)
+            path.touch()
+
+            result = self._full_scope(root)
+
+            self.assertEqual(result.provider_packages,
+                             ("./internal/models/acceptancebudget/...",))
+
+    def test_the_reconciliation_command_is_claimed_on_its_own(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path = root / "cmd/acceptance-budget-reconcile/main_test.go"
+            path.parent.mkdir(parents=True)
+            path.touch()
+
+            result = self._full_scope(root)
+
+            self.assertEqual(result.provider_packages,
+                             ("./cmd/acceptance-budget-reconcile/...",))
+
+    def test_every_provider_root_reaches_the_command_line_targets(self):
+        roots = ("internal/lingdoc", "internal/evidence",
+                 "internal/models/acceptancebudget", "cmd/acceptance-budget-reconcile")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in roots:
+                path = root / name / "package_test.go"
+                path.parent.mkdir(parents=True)
+                path.touch()
+            output = root / "outputs.txt"
+
+            result = subprocess.run(
+                [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
+                 "--all", "--root", str(root)],
+                env={**os.environ, "GITHUB_OUTPUT": str(output)},
+                capture_output=True, text=True)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)["provider_packages"],
+                             [f"./{name}/..." for name in roots])
+            self.assertIn("provider_tests=true", output.read_text(encoding="utf-8"))
+
+
+class PatternTableTests(DecisionFixture):
+    """The path table of a gate selects the event (the ``run`` verdict)."""
+
+    def _run_verdict(self, changes: dict[str, str],
+                     patterns: list[str]) -> str:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            result = self._contribution(root, changes)
+            return decision.write_outputs(result, patterns=patterns)["run"]
+
+    def test_a_documentation_only_contribution_selects_no_code_gate(self):
+        self.assertEqual(
+            self._run_verdict({"docs/report.md": "report\n"},
+                              ["internal/lingdoc/**", "**/*.go"]),
+            "false")
+
+    def test_a_code_path_selects_the_gate(self):
+        self.assertEqual(
+            self._run_verdict(
+                {"internal/lingdoc/workspace/service.go": "package workspace\n\n// c\n"},
+                ["internal/lingdoc/**", "**/*.go"]),
+            "true")
+
+    def test_a_double_star_matches_a_file_at_the_repository_root(self):
+        self.assertEqual(self._run_verdict({"main.go": "package main\n"},
+                                           ["**/*.go"]), "true")
+
+    def test_a_negative_pattern_keeps_an_unrelated_module_out(self):
+        patterns = ["**/*.go", "!cli/**", "!client/**"]
+        self.assertEqual(
+            self._run_verdict({"cli/main.go": "package main\n"}, patterns), "false")
+        self.assertEqual(
+            self._run_verdict({"internal/main.go": "package internal\n"}, patterns),
+            "true")
+
+
+class MalformedEventTests(DecisionFixture):
+    """A malformed event costs compute, never correctness."""
+
+    def test_a_malformed_commit_sha_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            base = git(root, "rev-parse", "HEAD")
+            event = self._event(base, base, base)
+            event["pull_request"]["head"]["sha"] = "$(touch injected)"
+            event["after"] = "$(touch injected)"
+
+            result = decision.decide(event, root)
+
+            self.assertTrue(result.forced)
+            self.assertTrue(result.undecided)
+            self.assertIn("risk surface undetermined", result.reason)
+            self.assertFalse((root / "injected").exists())
+
+    def test_an_event_without_a_pull_request_falls_back_to_the_full_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+
+            result = decision.decide({}, root)
+
+            self.assertTrue(result.forced)
+            self.assertTrue(result.run_code)
+            self.assertTrue(result.run_targeted)
+            self.assertTrue(result.contracts)
+            self.assertTrue(result.backend)
+            self.assertTrue(result.frontend)
+
+
+class FormatClassifierTests(DecisionFixture):
+    """ADR 0005's mouth: only Go, never a compiler directive, never a guess."""
+
+    PROGRAM = ("package sample\n\n"
+               "// A documented function.\n"
+               "func Value() int {\n"
+               "\treturn 42\n"
+               "}\n")
+
+    def _format_verdict(self, before: dict[str, str], after: dict[str, str],
+                        action: str = "synchronize") -> decision.Decision:
+        """The decision for a pull request update that rewrites these files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            git(root, "init", "-b", "main")
+            git(root, "config", "user.email", "synthetic@example.com")
+            git(root, "config", "user.name", "Synthetic CI test")
+            for relative, content in before.items():
+                write(root, relative, content)
+            git(root, "add", "-A")
+            git(root, "commit", "-m", "base")
+            base = git(root, "rev-parse", "HEAD")
+            git(root, "checkout", "-b", "topic")
+            for relative, content in after.items():
+                write(root, relative, content)
+            for relative in before:
+                if relative not in after:
+                    (root / relative).unlink()
+            git(root, "add", "-A")
+            git(root, "commit", "-m", "update")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(base, head, base)
+            event["action"] = action
+            return decision.decide(event, root)
+
+    def _program_change(self, after: str) -> decision.Decision:
+        return self._format_verdict({"sample.go": self.PROGRAM},
+                                     {"sample.go": after})
+
+    # --- judgement (b): comments and whitespace only ------------------------
+
+    def test_a_comment_only_change_is_a_formatting_only_update(self):
+        result = self._program_change(
+            self.PROGRAM.replace("// A documented function.",
+                                  "// A documented function.\n// It returns a constant."))
+
+        self.assertTrue(result.format_only, result.format_reasons)
+        self.assertTrue(any("sample.go" in reason for reason in result.format_reasons))
+
+    def test_a_whitespace_only_change_is_a_formatting_only_update(self):
+        result = self._program_change(self.PROGRAM.replace("\treturn 42",
+                                                           "    return 42"))
+
+        self.assertTrue(result.format_only, result.format_reasons)
+
+    def test_adding_a_blank_line_is_a_formatting_only_update(self):
+        result = self._program_change(self.PROGRAM.replace("func Value() int {",
+                                                           "\nfunc Value() int {"))
+
+        self.assertTrue(result.format_only, result.format_reasons)
+
+    # --- judgement (a): gofmt equivalence -----------------------------------
+
+    def test_gofmt_output_is_a_formatting_only_update(self):
+        # gofmt sorts the imports inside a block.  That changes the token
+        # order, so only the gofmt judgement can accept it.
+        before = "package sample\n\nimport (\n\t\"os\"\n\t\"fmt\"\n)\n"
+        after = "package sample\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n"
+
+        result = self._format_verdict({"sample.go": before}, {"sample.go": after})
+
+        self.assertTrue(result.format_only, result.format_reasons)
+        self.assertTrue(any("gofmt" in reason for reason in result.format_reasons))
+
+    # --- judgement (b) must not be fooled by string literals ----------------
+
+    def test_whitespace_inside_a_string_literal_is_not_a_formatting_only_change(self):
+        before = 'package sample\n\nfunc Value() string {\n\treturn "a b"\n}\n'
+        after = 'package sample\n\nfunc Value() string {\n\treturn "a  b"\n}\n'
+
+        result = self._format_verdict({"sample.go": before}, {"sample.go": after})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_a_comment_marker_inside_a_string_is_not_a_comment(self):
+        before = 'package sample\n\nfunc Value() string {\n\treturn "http://example.com/x"\n}\n'
+        after = 'package sample\n\nfunc Value() string {\n\treturn "http://example.com/y"\n}\n'
+
+        result = self._format_verdict({"sample.go": before}, {"sample.go": after})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_a_raw_string_literal_is_kept_verbatim(self):
+        before = "package sample\n\nvar s = `raw  text`\n"
+        after = "package sample\n\nvar s = `raw   text`\n"
+
+        result = self._format_verdict({"sample.go": before}, {"sample.go": after})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    # --- judgement (b) must not be fooled by code changes -------------------
+
+    def test_a_logic_change_is_not_a_formatting_only_change(self):
+        result = self._program_change(self.PROGRAM.replace("return 42", "return 43"))
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_an_added_code_line_is_not_a_formatting_only_change(self):
+        result = self._program_change(
+            self.PROGRAM.replace("\treturn 42", "\tx := 1\n\treturn x"))
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_reordered_code_lines_are_not_a_formatting_only_change(self):
+        result = self._program_change(
+            self.PROGRAM.replace("\treturn 42", "\tx := 1\n\ty := 2\n\treturn x + y"))
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_a_compiler_directive_change_is_never_a_formatting_only_change(self):
+        before = "//go:build linux\n\npackage sample\n\nfunc Value() int {\n\treturn 42\n}\n"
+        after = "//go:build windows\n\npackage sample\n\nfunc Value() int {\n\treturn 42\n}\n"
+
+        result = self._format_verdict({"sample.go": before}, {"sample.go": after})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+        self.assertTrue(any("directive" in reason for reason in result.format_reasons))
+
+    # --- mixed and non-Go changes -------------------------------------------
+
+    def test_a_mixed_change_is_not_a_formatting_only_change(self):
+        result = self._format_verdict(
+            {"sample.go": self.PROGRAM},
+            {"sample.go": self.PROGRAM.replace("return 42", "return 43"),
+             "other.go": "package sample\n\nfunc Other() int {\n\treturn 1\n}\n"})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+        self.assertTrue(any("other.go" in reason for reason in result.format_reasons))
+
+    def test_a_non_go_change_is_not_a_formatting_only_change(self):
+        # Documentation-only updates are handled by the path-based scope; the
+        # content-level verdict must not claim them as formatting.
+        result = self._format_verdict({"sample.go": self.PROGRAM},
+                                      {"sample.go": self.PROGRAM,
+                                       "notes.md": "hello\n"})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_an_added_file_is_not_a_formatting_only_change(self):
+        result = self._format_verdict(
+            {"sample.go": self.PROGRAM},
+            {"sample.go": self.PROGRAM,
+             "added.go": "package sample\n\nfunc Added() int {\n\treturn 1\n}\n"})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    def test_a_deleted_file_is_not_a_formatting_only_change(self):
+        result = self._format_verdict({"sample.go": self.PROGRAM}, {})
+
+        self.assertFalse(result.format_only, result.format_reasons)
+
+    # --- the fast path only applies to a pull request update ----------------
+
+    def test_an_opened_pull_request_runs_the_full_matrix(self):
+        result = self._program_change(
+            self.PROGRAM.replace("// A documented function.",
+                                  "// A documented function.\n// It returns a constant."))
+        # Re-judge the same change as an opened pull request.
+        opened = self._format_verdict(
+            {"sample.go": self.PROGRAM},
+            {"sample.go": self.PROGRAM.replace(
+                "// A documented function.",
+                "// A documented function.\n// It returns a constant.")},
+            action="opened")
+
+        self.assertTrue(result.format_only, result.format_reasons)
+        self.assertFalse(opened.format_only, opened.format_reasons)
+
+
+class WhitespaceBoundaryTests(DecisionFixture):
+    """The pull request gate's boundary check covers the complete range."""
+
+    def _whitespace_fixture(self, root: Path):
+        git(root, "init", "-b", "main")
+        git(root, "config", "user.email", "synthetic@example.com")
+        git(root, "config", "user.name", "Synthetic CI test")
+        (root / "base.txt").write_text("base\n", encoding="utf-8")
+        git(root, "add", "."); git(root, "commit", "-m", "base")
+        git(root, "checkout", "-b", "topic")
+        (root / "topic.md").write_text("topic\n", encoding="utf-8")
+        git(root, "add", "."); git(root, "commit", "-m", "topic")
+        before = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "main")
+        (root / "upstream.sh").write_text("upstream trailing space  \n",
+                                          encoding="utf-8")
+        git(root, "add", "."); git(root, "commit", "-m", "upstream")
+        base = git(root, "rev-parse", "HEAD")
+        git(root, "checkout", "topic")
+        git(root, "merge", "--no-edit", "main")
+        return base, before
+
+    def _run_gate(self, root: Path, event: dict) -> subprocess.CompletedProcess:
+        event_path = root / "event.json"
+        event_path.write_text(json.dumps(event), encoding="utf-8")
+        return subprocess.run(
+            [sys.executable, str(CI_DIR / "lingdoc_gate_decision.py"),
+             "--event", str(event_path), "--root", str(root)],
+            capture_output=True, text=True)
+
+    def test_an_upstream_merge_is_not_a_pull_request_defect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, before = self._whitespace_fixture(root)
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(before, head, base)
+
+            result = self._run_gate(root, event)
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertEqual(report["whitespace_diff_range"], f"{base}...{head}")
+            # The report names the pull request's own contribution.  The
+            # upstream merge is not part of it: the baseline already carries
+            # the upstream file, so the merge adds nothing of the pull
+            # request's own.
+            self.assertIn("topic.md", report["changed_paths"])
+            self.assertNotIn("upstream.sh", report["changed_paths"])
+
+    def test_whitespace_of_an_older_commit_is_still_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            base, _ = self._whitespace_fixture(root)
+            (root / "topic.md").write_text("topic trailing space  \n",
+                                           encoding="utf-8")
+            git(root, "add", "topic.md")
+            git(root, "commit", "-m", "bad topic whitespace")
+            before = git(root, "rev-parse", "HEAD")
+            (root / "followup.md").write_text("clean followup\n", encoding="utf-8")
+            git(root, "add", "followup.md")
+            git(root, "commit", "-m", "clean latest push")
+            head = git(root, "rev-parse", "HEAD")
+            event = self._event(before, head, base)
+
+            result = self._run_gate(root, event)
+
+            self.assertNotEqual(result.returncode, 0,
+                                "Full PR whitespace must not be skipped")
+            self.assertIn("topic.md", result.stderr)
+
+
+class PushEventTests(DecisionFixture):
+    """A push is judged by the diff it delivers (#308).
+
+    A pull request carries a contribution: the range ``base...head``.  A push
+    carries no pull request, but it does carry a range of its own -- GitHub
+    reports the ``before`` and ``after`` commits of the push -- so the push's
+    tested surface is the diff the push delivers, and the push's baseline is
+    the commit it started from.
+    """
+
+    def _push(self, root: Path, changes: dict[str, str],
+              message: str) -> dict[str, str]:
+        """Commit the changes and return the push event GitHub would send."""
+        for relative, content in changes.items():
+            write(root, relative, content)
+        git(root, "add", "-A")
+        git(root, "commit", "-m", message)
+        after = git(root, "rev-parse", "HEAD")
+        before = git(root, "rev-parse", "HEAD^")
+        return {"ref": "refs/heads/main", "before": before, "after": after}
+
+    def _outputs(self, root: Path, event: dict) -> dict[str, str]:
+        return decision.write_outputs(decision.decide(event, root))
+
+    def test_a_push_that_touches_the_frontend_selects_the_frontend_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {"frontend/src/views/Workspace.vue":
+                                      "<template>changed</template>\n"},
+                               "frontend")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["job_frontend_verify"], "true")
+            self.assertEqual(outputs["job_frontend_docker_image"], "true")
+            self.assertEqual(outputs["job_app_verify"], "false")
+            self.assertEqual(outputs["job_go_lint_changes"], "false")
+
+    def test_a_push_that_only_touches_documentation_selects_no_code_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {"docs/note.md": "changed\n"}, "docs")
+
+            outputs = self._outputs(root, event)
+
+            for key in ("job_frontend_verify", "job_frontend_docker_image",
+                        "job_go_lint_changes", "job_go_lint_golangci",
+                        "job_app_verify", "job_lingdoc_mock_mock",
+                        "job_lingdoc_f01_runner_runner_tests",
+                        "job_lingdoc_workspace_concurrency_workspace_concurrency",
+                        "job_lingdoc_interface_integration_integration",
+                        "job_lingdoc_interface_integration_frontend"):
+                with self.subTest(key=key):
+                    self.assertEqual(outputs[key], "false")
+            self.assertEqual(outputs["run"], "false")
+
+    def test_a_push_that_touches_the_backend_selects_the_app_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 2 }\n"}, "code")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["job_app_verify"], "true")
+            self.assertEqual(outputs["job_go_lint_changes"], "true")
+            self.assertEqual(outputs["job_go_lint_golangci"], "true")
+            self.assertEqual(outputs["job_frontend_verify"], "false")
+            # The workspace core is a surface of its own; the push did not
+            # touch it.
+            self.assertEqual(
+                outputs["job_lingdoc_workspace_concurrency_workspace_concurrency"],
+                "false")
+
+    def test_the_push_names_its_own_surface_and_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 2 }\n"}, "code")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["base"], event["before"])
+            self.assertEqual(outputs["diff_range"],
+                             f"{event['before']}...{event['after']}")
+            self.assertEqual(outputs["surface"], "internal/lingdoc/workspace")
+            self.assertIn("push", outputs["reason"])
+
+    def test_a_first_push_falls_back_to_the_parent_of_the_new_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 2 }\n"}, "code")
+            # GitHub reports an all-zero `before` when it creates a ref.
+            event["before"] = "0" * 40
+            parent = git(root, "rev-parse", "HEAD^")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["diff_range"], f"{parent}...{event['after']}")
+            self.assertEqual(outputs["base"], parent)
+            self.assertEqual(outputs["job_app_verify"], "true")
+
+    def test_a_formatting_only_push_still_runs_the_test_jobs(self):
+        # ADR 0005: a push never takes the formatting-only fast path.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\n// A note.\nfunc F() int { return 1 }\n"},
+                "format")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["format_only"], "false")
+            self.assertEqual(outputs["job_app_verify"], "true")
+
+    def test_a_push_that_changes_the_gate_is_judged_by_the_whole_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {"scripts/ci/lingdoc_gate_decision.py":
+                                      "# gate\n"}, "gate")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["run_code"], "true")
+            self.assertEqual(outputs["run_targeted"], "true")
+            self.assertEqual(outputs["contracts"], "true")
+            self.assertEqual(outputs["backend"], "true")
+            self.assertEqual(outputs["frontend"], "true")
+            self.assertIn("frontend", outputs["surface"])
+            self.assertIn("./internal/lingdoc/...", outputs["provider_packages"])
 
 
 if __name__ == "__main__":

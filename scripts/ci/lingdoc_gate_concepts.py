@@ -207,6 +207,19 @@ CONCEPTS: tuple[Concept, ...] = (
         fields=("Decision.contracts",),
         keys=("contracts",),
     ),
+    Concept(
+        term="推送被测面",
+        doc=RULES,
+        snippet="这次推送自己的 diff",
+        fields=("Decision.diff_range", "Decision.base"),
+        keys=("diff_range", "base"),
+    ),
+    Concept(
+        term="门禁始终出现",
+        doc=RULES,
+        snippet="门禁 job 永远创建",
+        guard="scripts/ci/test_lingdoc_gate_workflow_triggers.py",
+    ),
 )
 
 # The members of the decision result that no document names, and why.
