@@ -187,6 +187,9 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   const newProject = async (label: string): Promise<{ projectId: string }> => {
     const created = await runProjectChain(chain.ctx, client, chain.token, {
       projectName: `G3 验收台演示项目（${label} · 运行 ${chain.ctx.runId}）`,
+      // 同一次运行里建**多个**项目时必须给不同的幂等键前缀：键相同而请求不同，
+      // 服务端会按 409 `idempotency_conflict` 拒掉。
+      idemPrefix: `g3-${label}`,
     })
     return { projectId: created.project.id }
   }
