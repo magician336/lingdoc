@@ -40,7 +40,9 @@ jobs:
 
   integration:
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # A formatting-only update keeps the meaning of the code, so the test
+    # matrix does not have to run again for it.
+    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     services:
@@ -91,7 +93,9 @@ jobs:
           retention-days: 14
   frontend:
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # A formatting-only update keeps the meaning of the code, so the test
+    # matrix does not have to run again for it.
+    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
