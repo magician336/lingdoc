@@ -221,9 +221,15 @@ type ChangeSet struct {
 	TargetSpecRevision    *int64             `json:"target_spec_revision,omitempty"`
 	Fields                []ChangeFieldDelta `json:"fields"`
 	Impacts               []ChangeImpact     `json:"impacts"`
-	TemplateUpgrade       *TemplateUpgrade   `json:"template_upgrade,omitempty"`
-	CreatedAt             time.Time          `json:"created_at"`
-	AppliedAt             *time.Time         `json:"applied_at,omitempty"`
+	// AffectedExplanation carries the G3 impact assistant's own two-group
+	// reading of what this change affects ("确定受影响" / "可能受影响"). It is
+	// NOT the impact resolver's verdict: that one lives on ImpactAssessment as
+	// impacts[].certainty and the two never share a field name. A draft that
+	// was not produced by the assistant carries no explanation at all.
+	AffectedExplanation *AssistantAffectedExplanation `json:"affected_explanation,omitempty"`
+	TemplateUpgrade     *TemplateUpgrade              `json:"template_upgrade,omitempty"`
+	CreatedAt           time.Time                     `json:"created_at"`
+	AppliedAt           *time.Time                    `json:"applied_at,omitempty"`
 }
 
 // TemplateUpgrade pins the exact project-copy definition proposed by an
