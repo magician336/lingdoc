@@ -1,0 +1,50 @@
+{
+  "mode": "real",
+  "note": "47.06 错误形态跨面归并。五条传输面（规则治理 / 规则集存储 / 候选采纳 / 生成 / G2）的业务错误平表全部清空，渲染器只剩兜底；形态改由错误自己声明，共享形态目录在 internal/clienterror/catalog.go。迁移前后逐条比对由脚本从 git 历史解析旧平表得到，五维（状态码 / 错误码 / 文案 / retryable / 信封字段集）：比对 67 条，完全一致 33 条，有差异 34 条（维度级 42 行），未授权差异 0，脚本结论行 all differences are approved。PostgreSQL 覆盖：本轮不设 LINGDOC_TEST_POSTGRES_DSN，按仓内约定 SKIP，记 NOT RUN，不得当 PASS 引用。",
+  "passed": [
+    {
+      "id": "四条传输面并入同一机制",
+      "status": "passed"
+    },
+    {
+      "id": "DR-47-02 归并落地：状态不允许该操作 → 409 invalid_state；版本或基线已变化 → 409 version_conflict；对外错误码 state_conflict 退役",
+      "status": "passed"
+    },
+    {
+      "id": "少数口径变更逐条列出（变更内容、影响路由、理由）",
+      "status": "passed"
+    },
+    {
+      "id": "同步规则集相关在途票 #187、#193 的验收证据",
+      "status": "passed"
+    },
+    {
+      "id": "DR-47-03（5xx 可重试标记）单独成子项：#292",
+      "status": "passed"
+    },
+    {
+      "id": "502 只此一处使用的现状进入统一语义表",
+      "status": "passed"
+    },
+    {
+      "id": "跨面一致性测试：同一语义在所有面返回相同状态码、错误码、文案",
+      "status": "passed"
+    },
+    {
+      "id": "迁移前后逐条对照表（机械生成，五维，未授权差异 0）",
+      "status": "passed"
+    },
+    {
+      "id": "结构断言：传输层不得出现按业务错误逐个分支的映射表（已负例验证）",
+      "status": "passed"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "PostgreSQL 覆盖",
+      "status": "not_run",
+      "reason": "本轮不设 LINGDOC_TEST_POSTGRES_DSN，按仓内约定 PG 用例 SKIP；需要 PG 证据时单独一轮轻负载跑（隔离实例，autovacuum=off）"
+    }
+  ]
+}
