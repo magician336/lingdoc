@@ -1,5 +1,7 @@
 """Validate design examples and the reference trace; does not run the application."""
+import argparse
 import copy
+import importlib.util
 import hashlib
 import json
 import re
@@ -10,10 +12,21 @@ warnings.filterwarnings('ignore', category=DeprecationWarning)
 from jsonschema import Draft7Validator, FormatChecker, RefResolver
 
 ROOT=Path(__file__).resolve().parent
+parser=argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--source-root',type=Path,default=ROOT.parents[2],
+                    help='actual repository source, also when this contract directory is a scratch copy')
+args=parser.parse_args()
+checker_path=ROOT/'check_lingdoc_routes.py'
+if not checker_path.is_file():
+    checker_path=args.source_root/'scripts/ci/check_lingdoc_routes.py'
+checker_loader=importlib.util.spec_from_file_location('lingdoc_route_parity',checker_path)
+checker=importlib.util.module_from_spec(checker_loader)
+checker_loader.loader.exec_module(checker)
 def read(name): return json.loads((ROOT/name).read_text(encoding='utf-8'))
 spec=read('openapi.json')
 cases=read('scenarios.json')
 flow=read('workflow.json')
+route_parity=checker.check(args.source_root,spec)
 def canon(x): return json.dumps(x,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode('utf-8')
 def sha(x): return hashlib.sha256(canon(x)).hexdigest()
 def ptr(root,p):
@@ -32,14 +45,7 @@ def walk(x):
     elif isinstance(x,list):
         for value in x: walk(value)
 walk(spec)
-def normalize(x):
-    if isinstance(x,list): return [normalize(v) for v in x]
-    if not isinstance(x,dict): return x
-    result={k:normalize(v) for k,v in x.items() if k!='nullable'}
-    if x.get('nullable'):
-        assert isinstance(result.get('type'),str)
-        result['type']=[result['type'],'null']
-    return result
+normalize=checker.normalize_openapi_schema
 normalized=normalize(spec)
 resolver=RefResolver.from_schema(normalized)
 checks=0
@@ -323,7 +329,7 @@ def check_acceptance(previous,candidate,request,result):
     assert result['confirmation_valid'] is False
 
 def check_trace(steps):
-    project_version=None;spec_revision=None;chapters={};candidate=None;seen={};confirmations={}
+    project_version=None;spec_revision=None;chapters={};candidate=None;seen={};confirmations={};activation_reads={}
     for step in steps:
         oid=step['operation_id'];req=step['request'];body=req['json']
         response=step.get('reference_response');data=response['data'] if response else None
@@ -343,7 +349,14 @@ def check_trace(steps):
             assert body['expected_spec_revision']==spec_revision
             spec_revision+=1;project_version+=1
             assert data['spec_revision']==spec_revision and data['project_version']==project_version
+        elif oid=='recordActivationRead':
+            assert body['expected_project_version']==project_version
+            assert data['actor_id']==step['actor'] and data['project_id']==req['path_params']['projectId']
+            assert data['project_version']==project_version and data['spec_revision']==spec_revision
+            activation_reads[data['id']]=(data['actor_id'],data['project_id'],data['project_version'],data['spec_revision'])
         elif oid=='activateProject':
+            assert activation_reads[body['activation_read_id']]==(step['actor'],req['path_params']['projectId'],project_version,spec_revision)
+            assert body['expected_project_version']==project_version and body['reviewed_project_version']==project_version
             assert body['expected_spec_revision']==spec_revision
             project_version+=1
             assert data['project_version']==project_version and data['status']=='active'
@@ -392,20 +405,18 @@ assert hashlib.sha256(canonical).hexdigest()==(ROOT/'frozen-input.sha256').read_
 
 negative_results=[]
 def flow_index(step_id):
-    """Locate a trace step by its declared id.
-
-    The negative cases below used to point at steps by position, so inserting
-    one step into the trace silently moved the target onto a different step:
-    the check then either crashed on a missing key or stopped testing what it
-    claimed to test. An id does not move when the trace grows.
-    """
+    """Resolve stable workflow IDs for all mutation checks, including main's additions."""
     return next(index for index,step in enumerate(resolved) if step.get('id')==step_id)
-for label,index,mutate in [
- ('reject_lost_review_item',flow_index('F01-13'),lambda s:s['reference_response']['data'].update(review_items=[])),
- ('reject_wrong_expected_version',flow_index('F01-13'),lambda s:s['request']['json'].update(expected_chapter_version_id='wrong')),
- ('reject_frozen_content_changed_without_digest',flow_index('F01-19'),lambda s:s['reference_response']['data']['frozen_input']['spec'].update(research_goal='changed')),
+
+for label,step_id,mutate in [
+ ('reject_lost_review_item','F01-13',lambda s:s['reference_response']['data'].update(review_items=[])),
+ ('reject_wrong_expected_version','F01-13',lambda s:s['request']['json'].update(expected_chapter_version_id='wrong')),
+ ('reject_frozen_content_changed_without_digest','F01-19',lambda s:s['reference_response']['data']['frozen_input']['spec'].update(research_goal='changed')),
+ ('reject_activation_without_observed_receipt','F01-04',lambda s:s['request']['json'].update(activation_read_id='unobserved-receipt')),
+ ('reject_activation_receipt_actor_pin','F01-03b',lambda s:s['reference_response']['data'].update(actor_id='other-actor')),
 ]:
-    bad=copy.deepcopy(resolved);mutate(bad[index])
+    bad=copy.deepcopy(resolved)
+    mutate(next(step for step in bad if step['id']==step_id))
     try: check_trace(bad)
     except (AssertionError,KeyError): negative_results.append(label)
     else: raise AssertionError('negative case unexpectedly passed: '+label)
@@ -574,7 +585,7 @@ for label,action in [
 assert scenario_totals['steps_with_requests']>=1,'no scenario step declares a request, so nothing above was exercised'
 assert scenario_totals['checks_tied']>=1,'no check was tied back to a published response example'
 
-report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','paths':len(spec['paths']),
+report={'result':'PASS','scope':'static_design_artifacts_and_reference_trace_only','route_parity':route_parity,'paths':len(spec['paths']),
  'operations':len(ops),'core_operations':sum(o['x-delivery-phase']=='core' for o in ops.values()),
  'schemas':len(spec['components']['schemas']),'local_refs':refs,'shape_checks':checks,
  'scenarios':len(cases['scenarios']),'scenario_example_references':scenario_steps,'continuous_trace_steps':len(resolved),

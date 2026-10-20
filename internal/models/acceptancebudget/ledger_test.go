@@ -109,9 +109,10 @@ func TestAcquireLockRenewsWhileHeld(t *testing.T) {
 	}
 }
 
-func TestAcquireLockReclaimsAnExpiredLock(t *testing.T) {
+func TestAcquireLockRejectsExpiredLegacyMarkerWithoutDeletingIt(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "calls.json.lock")
-	if err := os.WriteFile(path, []byte("crashed owner\n"), 0o600); err != nil {
+	original := []byte("crashed legacy owner\n")
+	if err := os.WriteFile(path, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	stale := time.Now().Add(-2 * LockLeaseTTL)
@@ -119,14 +120,16 @@ func TestAcquireLockReclaimsAnExpiredLock(t *testing.T) {
 		t.Fatal(err)
 	}
 	lock, err := AcquireLock(context.Background(), path)
-	if err != nil {
-		t.Fatal(err)
+	if lock != nil {
+		_ = ReleaseLock(lock, path)
+		t.Fatal("unverified legacy owner was replaced")
 	}
-	if err := ReleaseLock(lock, path); err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrLegacyLock) {
+		t.Fatalf("legacy error = %v", err)
 	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("lock path after release = %v, want it removed", err)
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != string(original) {
+		t.Fatalf("legacy evidence changed: %v", err)
 	}
 }
 

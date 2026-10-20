@@ -239,7 +239,9 @@
       "capture": {
         "activation_read_id": "/data/id"
       },
-      "assertions": []
+      "assertions": [
+        "Owner已审阅当前activation-diff；回执属于当前actor、project_version及spec_revision。"
+      ]
     },
     {
       "id": "F01-04",
@@ -254,7 +256,9 @@
         },
         "json": {
           "expected_spec_revision": "{{spec_revision}}",
-          "activation_read_id": "{{activation_read_id}}"
+          "activation_read_id": "{{activation_read_id}}",
+          "expected_project_version": "{{project_version}}",
+          "reviewed_project_version": "{{project_version}}"
         }
       },
       "expected_http": 200,

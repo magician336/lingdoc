@@ -1,0 +1,141 @@
+{
+  "ticket": "#288（验证：纯格式提交在真实 GitHub Actions 上跳过测试类 job）",
+  "stage": "线上验证（#284 的 follow_up 解除条件）",
+  "head_at_verification": "c1e3fbf",
+  "pr": "#289（chore/format-only-scope-verify）",
+  "mode": "real",
+  "environment": {
+    "ci": "GitHub Actions（真实远端运行）",
+    "branch": "chore/format-only-scope-verify",
+    "note": "本票不改 Go / 前端代码，只推注释与工作流 YAML，用真实 PR 的四次推送把三个观测点分开看。"
+  },
+  "experiment_design": {
+    "shape": "一条 PR，四次推送，每次只改一处",
+    "pushes": [
+      {
+        "n": 1,
+        "head": "fb37295",
+        "change": "一条注释",
+        "event": "opened",
+        "expect": "完整矩阵（首次打开不走快门禁）",
+        "observed": "run=true, format_only=false；Format, vet, test, and build pass（2m32s）；golangci-lint (.) pass（7m39s）；frontend / concurrency / detect lint modules 全 pass",
+        "verdict": "PASS"
+      },
+      {
+        "n": 2,
+        "head": "bbd513b",
+        "change": "再一条注释",
+        "event": "synchronize",
+        "expect": "跳过测试类 job",
+        "observed": "判定正确（format_only=true 且带理由），但测试 job 照跑",
+        "verdict": "FAIL（抓到真缺陷）"
+      },
+      {
+        "n": 3,
+        "head": "99d56ca",
+        "change": "工作流 YAML + 守护测试",
+        "event": "synchronize",
+        "expect": "非格式改动 → 完整矩阵（线上对照）",
+        "observed": "完整矩阵照跑",
+        "verdict": "PASS"
+      },
+      {
+        "n": 4,
+        "head": "c1e3fbf",
+        "change": "再一条注释",
+        "event": "synchronize",
+        "expect": "跳过测试类 job + lint 仍跑",
+        "observed": "见 passed 明细",
+        "verdict": "PASS"
+      }
+    ],
+    "note": "四次改动都只加注释：满足判据二（只改注释与空白），且不改变任何行为，是最干净的可观察样本。"
+  },
+  "passed": [
+    {
+      "id": "内容判定在真实 Actions 上生效",
+      "status": "passed",
+      "evidence": "head c1e3fbf 的 scope job 日志：format_only=true，format_reasons=[\"internal/lingdoc/workspacecore/impact_severity.go: comments and whitespace only\"]（job 118579137432）"
+    },
+    {
+      "id": "测试类 job 全部 skipped",
+      "status": "passed",
+      "evidence": "check-runs on c1e3fbf：Format, vet, test, and build / Test, type-check, and build / Docker multi-stage image / T06 fixed mock and request consumer / workspace-concurrency / integration / frontend / F01 runner regression —— 全部 conclusion=skipped"
+    },
+    {
+      "id": "lint 不被跳过（关键）",
+      "status": "passed",
+      "evidence": "go-lint run 39408040495：detect lint modules=success，golangci-lint (.)=success"
+    },
+    {
+      "id": "PR gate 内部分离：provider/frontend 跳、contracts 照跑",
+      "status": "passed",
+      "evidence": "run 39408040706 步骤级：Test and vet existing LingDoc provider packages=skipped、Test, type-check and build frontend=skipped；Validate contract examples and reference trace=success、Select checks and check diff whitespace=success、Publish check boundary and results=success"
+    },
+    {
+      "id": "首次打开 / 非格式提交不跳过（负向对照）",
+      "status": "passed",
+      "evidence": "push 1（opened）与 push 3（非格式 YAML 改动）都跑完整矩阵"
+    },
+    {
+      "id": "守护测试能抓住本次缺陷",
+      "status": "passed",
+      "evidence": "临时去掉某工作流的 format_only output 声明 → WorkflowWiringTests.test_every_gated_workflow_declares_the_format_only_output 变红并报「scope job must declare the format_only output」；恢复声明 → 绿"
+    },
+    {
+      "id": "CI scope 单测不回归",
+      "status": "passed",
+      "evidence": "python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' → 64 tests OK"
+    },
+    {
+      "id": "CI scope 脚本的测试现在真的在 CI 里跑",
+      "status": "passed",
+      "evidence": "lingdoc-review.yml 新增「Install CI scope script dependencies」+「Test CI scope scripts」步骤（setup-go 之后运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'），并把结果纳入 Publish check boundary and results 的 ciscripts 项。第一次推送时该步骤在真机上失败（PyYAML 缺失），补依赖后重跑通过——见 defects_found_and_fixed 第三条"
+    }
+  ],
+  "defects_found_and_fixed": [
+    {
+      "title": "job outputs 是白名单，快门禁在所有工作流上从未生效",
+      "phenomenon": "第二次推送的 scope 判定完全正确，却没有跳过任何测试 job。",
+      "root_cause": "job 的 outputs 是显式白名单。scope 步骤确实把 format_only 写进了 GITHUB_OUTPUT，但七个工作流的 scope job 只声明了 run，于是 needs.scope.outputs.format_only 取到空字符串，'' != 'true' 成立 → 条件恒真 → job 照跑。这条规则在所有工作流里都静默失效了。",
+      "why_local_verification_missed_it": "上一次本地验证把脚本写出的全部 GITHUB_OUTPUT 直接喂给求值器，没有模拟 job outputs 的白名单，于是本地显示「正确」、线上「失效」。",
+      "fix": "六个会跳过测试类 job 的工作流（app.yml / frontend.yml / lingdoc-mock.yml / lingdoc-workspace-concurrency.yml / lingdoc-interface-integration.yml / lingdoc-f01-runner.yml）的 scope job 补上 format_only: ${{ steps.scope.outputs.format_only }}；新增守护测试 test_every_gated_workflow_declares_the_format_only_output 断言每个受门禁的工作流都声明了该 output。",
+      "note": "PR gate 里的两个测试步骤本来就是好的——它们用 step 级引用（steps.scope.outputs.format_only），step outputs 不需要声明。"
+    },
+    {
+      "title": "守护测试本身没有任何工作流在跑",
+      "phenomenon": "追查「谁在运行 scripts/ci 下的测试」时发现：CI 里只有 lingdoc-review.yml 跑 test_lingdoc_pr_scope.py；test_lingdoc_format_scope.py（含新增的守护测试）与 test_lingdoc_change_scope.py 从未在 CI 执行。",
+      "root_cause": "PR #287 引入的分类器与守护测试只落地在仓内，没有任何工作流引用它们；门禁自身的回归保护没有接线。",
+      "fix": "lingdoc-review.yml 新增 setup-go + 「Test CI scope scripts」步骤，运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'；结果作为 ciscripts 写入 Publish check boundary and results。这一步无条件执行——纯格式提交也必须跑它，否则守护测试就形同虚设。setup-go 从原先的 provider-tests 条件步骤上移到此处并改为无条件。",
+      "note": "setup-go 必须在此之前：gofmt 等价判据需要 gofmt 在 PATH 上。"
+    },
+    {
+      "title": "新加的测试步骤在真机上第一次就失败：PyYAML 没装",
+      "phenomenon": "「Test CI scope scripts」步骤第一次推送后在真机上失败：5 个 WorkflowWiringTests 报 ModuleNotFoundError: No module named 'yaml'。",
+      "root_cause": "守护测试用 PyYAML 解析工作流文件，但 CI runner 的 setup-python 不带 PyYAML，而 scripts/ci/requirements-lingdoc.txt 只声明了 jsonschema。本地能过是因为开发机恰好装了 PyYAML。",
+      "fix": "scripts/ci/requirements-lingdoc.txt 增加 PyYAML==6.0.3；工作流在跑测试前新增「Install CI scope script dependencies」步骤安装该清单。",
+      "note": "这条缺陷是新步骤自己抓到的：本地跑 64 个测试全绿，真机上才暴露环境缺件。这正是把测试接进 CI 的理由。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "前端与 Go 代码在本票下的测试",
+      "reason": "本票不改 Go / 前端代码；相关矩阵由 PR #289 前几次推送正常执行过。"
+    }
+  ],
+  "uncovered_risks": [
+    "本次验证覆盖的是「只加注释」这一类格式改动。gofmt 等价判据（import 排序等）没有单独在真实 Actions 上触发一次；它有单测覆盖，但未做线上端到端。",
+    "快门禁会让「格式提交」这条路径上的测试覆盖看起来是空的。判定理由随检查边界一起发布，可复核。"
+  ],
+  "follow_up": [
+    "若将来给前端引入格式化器（prettier），可以按同一条判据把覆盖范围扩到前端。",
+    "新增的守护测试把「工作流声明」与「脚本输出」绑在一起；以后给工作流加新的 scope 门禁时，它会拦住漏声明 output 的情况。"
+  ],
+  "related": {
+    "rule_source": "#284（PR #287 → merge commit 0eb1b38），已关闭",
+    "adr": "docs/adr/0005-ci-gate-by-diff-content.md",
+    "rules": "docs/agents/development-rules.md「纯格式提交的 CI 边界」",
+    "narrative": "docs/08-本轮实施方案/G3-缺口收口-CI门禁分级-线上验证-20261020.md"
+  }
+}
