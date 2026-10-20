@@ -39,6 +39,20 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Go is needed by the CI scope scripts' own tests: the "gofmt
+      # equivalence" judgement calls gofmt, and the wiring test asserts that
+      # every gated workflow declares the outputs its conditions read. Without
+      # this step those tests would never run in CI, so the gate that skips
+      # test jobs could silently break without anything noticing.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Test CI scope scripts
+        id: ciscripts
+        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' -v
+
       - name: Test gate selection
         id: selftest
         run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_pr_scope.py' -v
@@ -78,15 +92,6 @@ jobs:
           assert report['scope'] == 'static_design_artifacts_and_reference_trace_only'
           # Counts are intentionally NOT fixed: adding F22 or a new API is valid.
           PY
-
-      - uses: actions/setup-go@v6
-        # A formatting-only update keeps the meaning of the code, so the
-        # test matrix does not have to run again for it. The contract
-        # validation above still runs, and the lint job is untouched.
-        if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
 
       - name: Test and vet existing LingDoc provider packages
         if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
@@ -136,6 +141,7 @@ jobs:
         if: always()
         env:
           SELFTEST: ${{ steps.selftest.outcome }}
+          CISCRIPTS: ${{ steps.ciscripts.outcome }}
           SCOPE: ${{ steps.scope.outcome }}
           CONTRACTS: ${{ steps.contracts.outcome }}
           PROVIDERS: ${{ steps.providers.outcome }}
@@ -145,7 +151,7 @@ jobs:
           import json, os
           from pathlib import Path
           result = {key.lower(): os.environ[key] for key in
-                    ('SELFTEST', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
+                    ('SELFTEST', 'CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
           result['tested_sha'] = os.environ['GITHUB_SHA']
           result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
@@ -153,7 +159,7 @@ jobs:
           (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
-              for key in ('selftest', 'scope', 'contracts', 'providers', 'frontend'):
+              for key in ('selftest', 'ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
               handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
               handle.write(result['boundary'] + '\n')

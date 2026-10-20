@@ -86,15 +86,30 @@
       "id": "CI scope 单测不回归",
       "status": "passed",
       "evidence": "python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' → 64 tests OK"
+    },
+    {
+      "id": "CI scope 脚本的测试现在真的在 CI 里跑",
+      "status": "passed",
+      "evidence": "lingdoc-review.yml 新增「Test CI scope scripts」步骤（setup-go 之后运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'），并把结果纳入 Publish check boundary and results 的 ciscripts 项"
     }
   ],
-  "defect_found_and_fixed": {
-    "phenomenon": "第二次推送的 scope 判定完全正确，却没有跳过任何测试 job。",
-    "root_cause": "job 的 outputs 是显式白名单。scope 步骤确实把 format_only 写进了 GITHUB_OUTPUT，但七个工作流的 scope job 只声明了 run，于是 needs.scope.outputs.format_only 取到空字符串，'' != 'true' 成立 → 条件恒真 → job 照跑。这条规则在所有工作流里都静默失效了。",
-    "why_local_verification_missed_it": "上一次本地验证把脚本写出的全部 GITHUB_OUTPUT 直接喂给求值器，没有模拟 job outputs 的白名单，于是本地显示「正确」、线上「失效」。",
-    "fix": "六个会跳过测试类 job 的工作流（app.yml / frontend.yml / lingdoc-mock.yml / lingdoc-workspace-concurrency.yml / lingdoc-interface-integration.yml / lingdoc-f01-runner.yml）的 scope job 补上 format_only: ${{ steps.scope.outputs.format_only }}；新增守护测试 test_every_gated_workflow_declares_the_format_only_output 断言每个受门禁的工作流都声明了该 output。",
-    "note": "PR gate 里的两个测试步骤本来就是好的——它们用 step 级引用（steps.scope.outputs.format_only），step outputs 不需要声明。"
-  },
+  "defects_found_and_fixed": [
+    {
+      "title": "job outputs 是白名单，快门禁在所有工作流上从未生效",
+      "phenomenon": "第二次推送的 scope 判定完全正确，却没有跳过任何测试 job。",
+      "root_cause": "job 的 outputs 是显式白名单。scope 步骤确实把 format_only 写进了 GITHUB_OUTPUT，但七个工作流的 scope job 只声明了 run，于是 needs.scope.outputs.format_only 取到空字符串，'' != 'true' 成立 → 条件恒真 → job 照跑。这条规则在所有工作流里都静默失效了。",
+      "why_local_verification_missed_it": "上一次本地验证把脚本写出的全部 GITHUB_OUTPUT 直接喂给求值器，没有模拟 job outputs 的白名单，于是本地显示「正确」、线上「失效」。",
+      "fix": "六个会跳过测试类 job 的工作流（app.yml / frontend.yml / lingdoc-mock.yml / lingdoc-workspace-concurrency.yml / lingdoc-interface-integration.yml / lingdoc-f01-runner.yml）的 scope job 补上 format_only: ${{ steps.scope.outputs.format_only }}；新增守护测试 test_every_gated_workflow_declares_the_format_only_output 断言每个受门禁的工作流都声明了该 output。",
+      "note": "PR gate 里的两个测试步骤本来就是好的——它们用 step 级引用（steps.scope.outputs.format_only），step outputs 不需要声明。"
+    },
+    {
+      "title": "守护测试本身没有任何工作流在跑",
+      "phenomenon": "追查「谁在运行 scripts/ci 下的测试」时发现：CI 里只有 lingdoc-review.yml 跑 test_lingdoc_pr_scope.py；test_lingdoc_format_scope.py（含新增的守护测试）与 test_lingdoc_change_scope.py 从未在 CI 执行。",
+      "root_cause": "PR #287 引入的分类器与守护测试只落地在仓内，没有任何工作流引用它们；门禁自身的回归保护没有接线。",
+      "fix": "lingdoc-review.yml 新增 setup-go + 「Test CI scope scripts」步骤，运行 python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py'；结果作为 ciscripts 写入 Publish check boundary and results。这一步无条件执行——纯格式提交也必须跑它，否则守护测试就形同虚设。setup-go 从原先的 provider-tests 条件步骤上移到此处并改为无条件。",
+      "note": "setup-go 必须在此之前：gofmt 等价判据需要 gofmt 在 PATH 上。"
+    }
+  ],
   "failed": [],
   "not_run": [
     {
