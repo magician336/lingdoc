@@ -209,18 +209,25 @@ func isReplayPayloadDecodeError(err error) bool {
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
-	repository            Repository
-	templates             TemplateReader
-	ruleSets              RuleSetSnapshotReader
-	sources               SourcePolicy
-	authorizer            AuthorizationPolicy
-	audit                 AuditSink
-	mode                  AuthorizationMode
-	catalog               TemplateCatalogResolver
-	g2Runtime             G2Runtime
-	impactPreflight       ImpactPreflightChecker
-	impactRules           ImpactRuleChecker
-	runtimeRecovery       RuntimeRecoveryChecker
+	repository      Repository
+	templates       TemplateReader
+	ruleSets        RuleSetSnapshotReader
+	sources         SourcePolicy
+	authorizer      AuthorizationPolicy
+	audit           AuditSink
+	mode            AuthorizationMode
+	catalog         TemplateCatalogResolver
+	g2Runtime       G2Runtime
+	impactPreflight ImpactPreflightChecker
+	impactRules     ImpactRuleChecker
+	runtimeRecovery RuntimeRecoveryChecker
+	// impactTasks and businessAudit are the narrow writer ports of the
+	// change-set apply transaction. They are nil in the default composition,
+	// in which case the writes go through the caller's transaction exactly as
+	// before. The composition root may substitute a controlled failure
+	// implementation to exercise the atomicity boundary (#256).
+	impactTasks           ImpactTaskWriter
+	businessAudit         BusinessAuditWriter
 	requireActivationRead bool
 	runtimeMode           string
 }
@@ -2455,7 +2462,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			chapterIDs = append(chapterIDs, impact.ChapterID)
 		}
 		if _, ok := tx.(impactTransaction); ok {
-			if err := CommitChangeImpactTasks(featureTx, next, change); err != nil {
+			if err := s.commitChangeImpactTasks(featureTx, next, change); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
@@ -2470,7 +2477,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			if change.TemplateUpgrade != nil {
 				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)
 			}
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
+			if err := s.writeBusinessAudit(featureTx, audit, AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
