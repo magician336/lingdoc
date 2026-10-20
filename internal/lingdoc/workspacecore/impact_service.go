@@ -33,6 +33,29 @@ func validImpactAction(action string) bool {
 }
 func refIdentity(ref ObjectVersionRef) string { return ref.Kind + "/" + ref.ID + "/" + ref.Version }
 func currentImpactObject(tx Transaction, p Project, ref ObjectVersionRef) (ImpactObjectState, error) {
+	state, err := readImpactObjectState(tx, p, ref)
+	if err != nil {
+		return state, err
+	}
+	if state.Ref.Version != ref.Version {
+		return state, ErrVersionConflict
+	}
+	if state.State == "STALE" || state.State == "SUPERSEDED" || state.State == "replaced" || state.State == "failed" {
+		return state, ErrInvalidState
+	}
+	return state, nil
+}
+
+// readImpactObjectState resolves the CURRENT state of the object a ref names.
+//
+// It deliberately does NOT decide whether the ref's version is still the
+// current one. That decision belongs to the caller, because the two answers
+// mean different things: for most callers a replaced version is a request
+// error, while for the stabilization aggregator it is a domain fact (the
+// closure no longer holds) that must be reported as a blocker instead of
+// refused. Splitting the read from the comparison is what lets each caller
+// pick its own meaning without duplicating the resolution.
+func readImpactObjectState(tx Transaction, p Project, ref ObjectVersionRef) (ImpactObjectState, error) {
 	if !validObjectRef(ref) {
 		return ImpactObjectState{}, ErrInvalidRequest
 	}
@@ -103,12 +126,6 @@ func currentImpactObject(tx Transaction, p Project, ref ObjectVersionRef) (Impac
 		if err != nil {
 			return state, err
 		}
-	}
-	if state.Ref.Version != ref.Version {
-		return state, ErrVersionConflict
-	}
-	if state.State == "STALE" || state.State == "SUPERSEDED" || state.State == "replaced" || state.State == "failed" {
-		return state, ErrInvalidState
 	}
 	return state, nil
 }
@@ -720,6 +737,41 @@ func (s *Service) markImpactTaskStale(tx Transaction, actor Actor, p Project, st
 	return stale, nil
 }
 
+// repostImpactTask re-raises an obligation whose closure evidence was
+// replaced.
+//
+// The task identity is (change set, target object, target revision, action).
+// The version is deliberately NOT part of it, because the obligation is about
+// the object, not about the version it happened to be raised against. The
+// re-raised obligation is therefore the SAME task, re-opened and re-targeted
+// at the current version: no second task is minted, and the identity is what
+// makes repeating the stabilization idempotent.
+//
+// The old closure evidence is dropped. It described a version that no longer
+// exists, so the re-raised task demands fresh evidence for the current one.
+// The responsibility is not touched: the same person still owns the same
+// obligation, only against a newer version.
+func (s *Service) repostImpactTask(tx Transaction, actor Actor, p Project, store impactTransaction, repost stabilizationRepost) (ImpactTask, error) {
+	next := repost.task
+	now := time.Now().UTC()
+	next.Target = repost.target
+	next.Status = "OPEN"
+	next.ClosureEvidence = []ObjectVersionRef{}
+	next.HumanDecision = ""
+	next.Disposition = ""
+	next.Version++
+	next.UpdatedAt = now
+	if err := store.UpdateImpactTask(repost.task, next); err != nil {
+		return ImpactTask{}, err
+	}
+	if err := recordAuditEvent(tx, actor, p.ID, "impact_task.repost", next.ID, map[string]any{
+		"status": next.Status, "target": next.Target, "target_revision": next.TargetRevision,
+		"replaced_target": repost.task.Target}); err != nil {
+		return ImpactTask{}, err
+	}
+	return next, nil
+}
+
 // staleTargetReason reports why an impact target no longer supports work on
 // the version a task was raised against. It re-reads the current domain truth
 // instead of trusting a stored payload, so a redelivered or delayed event is
@@ -1122,9 +1174,9 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 	if err := RequireHumanDecision(ctx); err != nil {
 		return nil, 0, false, err
 	}
-	var refs []ObjectVersionRef
 	var preflightIDs []string
 	var preflightProofs []ImpactPreflightEvidence
+	var closureSourceIDs []string
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationManage, ""))
 		if err != nil {
@@ -1147,14 +1199,41 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 					for _, ref := range task.ClosureEvidence {
 						preflightIDs = append(preflightIDs, ref.ID)
 					}
-				} else {
-					refs = append(refs, task.ClosureEvidence...)
+					continue
+				}
+				for _, ref := range task.ClosureEvidence {
+					// A closure names the version it was produced against. If
+					// that version has been replaced, the closure no longer
+					// holds - but that is a DOMAIN FACT the aggregator has to
+					// report (closure_stale, BLOCKED, re-raised task), not a
+					// reason to refuse the request. The current version of the
+					// same object carries the sources that must stay
+					// authorized.
+					state, e := currentImpactObject(tx, p, ref)
+					if e != nil {
+						if !errors.Is(e, ErrVersionConflict) {
+							return e
+						}
+						current, currentErr := readImpactObjectState(tx, p, ref)
+						if currentErr != nil {
+							return currentErr
+						}
+						state = current
+					}
+					closureSourceIDs = append(closureSourceIDs, state.SourceIDs...)
 				}
 			}
 		}
 		return nil
 	})
 	if err != nil {
+		return nil, 0, false, err
+	}
+	// The closure evidence's sources must stay authorized. The read happens in
+	// the snapshot above, so the authorized set is the CURRENT one - a closure
+	// whose version was replaced is authorized against the version that is
+	// live now, which is the version the re-raised task will demand.
+	if err := s.checkSources(ctx, actor, projectID, closureSourceIDs); err != nil {
 		return nil, 0, false, err
 	}
 	for _, snapshotID := range preflightIDs {
@@ -1164,7 +1243,12 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		}
 		preflightProofs = append(preflightProofs, proof)
 	}
-	return checkedImpactWrite(s, ctx, actor, projectID, operationStabilizeRevision, projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, refs, authorizationRequest(actor, projectID, AuthorizationManage, ""), func(tx Transaction, p Project) (operationResult[StabilizationResult], error) {
+	// The closure evidence is deliberately NOT part of the write guard's ref
+	// set. The guard answers "did the request's own baseline move under us",
+	// which is a request error (409); whether a closure still holds is a
+	// domain fact, and it is decided inside the write transaction by the one
+	// evaluation that re-reads every condition at the current revision.
+	return checkedImpactWrite(s, ctx, actor, projectID, operationStabilizeRevision, projectID+"/"+changeID, key, map[string]string{"change_set_id": changeID}, nil, authorizationRequest(actor, projectID, AuthorizationManage, ""), func(tx Transaction, p Project) (operationResult[StabilizationResult], error) {
 		for _, proof := range preflightProofs {
 			if !validImpactPreflight(p, impactPreflightProofID(proof), proof) {
 				return operationResult[StabilizationResult]{}, ErrVersionConflict
@@ -1200,6 +1284,19 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				return operationResult[StabilizationResult]{}, markErr
 			}
 		}
+		// An obligation whose closure no longer holds is re-raised here, in
+		// the same transaction as the verdict. The re-raised task is derived
+		// from (change set, target, revision, action), so repeating the
+		// stabilization for the same object at the same revision addresses the
+		// very same task instead of raising a second one.
+		reposted := []string{}
+		for _, repost := range conditions.Reposts {
+			task, repostErr := s.repostImpactTask(tx, actor, p, store, repost)
+			if repostErr != nil {
+				return operationResult[StabilizationResult]{}, repostErr
+			}
+			reposted = append(reposted, task.ID)
+		}
 		result.Blockers = append(result.Blockers, conditions.OwnerBlockers()...)
 		result.StaleTaskIDs = append(result.StaleTaskIDs, conditions.OwnerStaleTaskIDs()...)
 		if len(result.Blockers) == 0 {
@@ -1212,7 +1309,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 				}
 			}
 		}
-		if err := recordAuditEvent(tx, actor, projectID, "revision.stabilize", changeID, map[string]any{"status": result.Status, "blockers": result.Blockers}); err != nil {
+		if err := recordAuditEvent(tx, actor, projectID, "revision.stabilize", changeID, map[string]any{"status": result.Status, "blockers": result.Blockers, "reposted_task_ids": reposted}); err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
 		return operationResult[StabilizationResult]{Value: result, Status: operationStatusOK}, nil

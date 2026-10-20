@@ -1,0 +1,154 @@
+{
+  "ticket": "G3 缺口收口-6（#255）：稳定化版本不匹配落到 closure_stale（AC-G3-12）",
+  "gap": "G3-GAP-11",
+  "spec": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md §10.1（:292-304）、AC-G3-12（:394-396）",
+  "head": "517773e",
+  "head_note": "本报告随后的提交只新增本文件；实现提交为 517773e。",
+  "branch": "feat/issue-255-closure-stale",
+  "base": "0eb1b38（origin/feat/g3-gap-closure，本轮开始时的集成分支头）",
+  "mode": "real",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "cgo_cflags": "-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（sqlite3.h 头文件）",
+    "postgres": "PostgreSQL 18.3 on x86_64-pc-windows-msvc（隔离实例 127.0.0.1:55432，库 lingdoc_g3gap，用完即停）",
+    "postgres_dsn_env": "LINGDOC_TEST_POSTGRES_DSN",
+    "worktree": "D:/code_warehouse/Projects/lingdoc/.worktrees/issue-255-closure-stale-wt（从 517773e detached 检出，用于不受并行改动影响的验证）"
+  },
+  "problem": {
+    "summary": "「所有任务页面显示已完成，但其中一个目标对象后来被新版本替换」时，稳定化聚合器在预读闭环证据阶段就返回 409 version_conflict，因此 AC-G3-12 要求的「保持 BLOCKED 并创建/重投对应任务」这一半在 HTTP 链路上没有落点。",
+    "before_fix_observation": "真实 HTTP seam（POST /projects/{id}/change-sets/{id}/stabilize）：目标章节版本被新版本替换后，稳定化返回 409 {\"error\":{\"code\":\"version_conflict\"}}，稳定化结果与重投任务都不存在。",
+    "why_409": "StabilizeRevision 把已完成任务的闭环证据 refs 交给 checkedImpactWrite 的写前复检；复检调用 currentImpactObject，而该函数在「对象版本已被替换」时返回 ErrVersionConflict，于是请求在进入稳定化求值之前就被拒绝。",
+    "code_seams": [
+      "internal/lingdoc/workspacecore/impact_service.go:35-56（currentImpactObject：读取与「版本是否仍然当前」的判断原本缠在一起）",
+      "internal/lingdoc/workspacecore/impact_service.go:58-146（readImpactObjectState：本次新增，只解析当前状态，不判断版本是否仍然当前）",
+      "internal/lingdoc/workspacecore/impact_service.go:1197-1237（StabilizeRevision 预读闭环证据：版本落后不再 409，改为按当前版本解析资料授权集合）",
+      "internal/lingdoc/workspacecore/impact_service.go:1268-1270（请求指向的 revision 不符 → 仍是 409 version_conflict，本类没有被改掉）",
+      "internal/lingdoc/workspacecore/impact_service.go:754-787（repostImpactTask：按当前版本重投同一条义务）",
+      "internal/lingdoc/workspacecore/stabilization_conditions.go:308-366（闭环证据版本落后 → closure_stale 阻断原因 + 重投数据）"
+    ]
+  },
+  "design": {
+    "principle": "把「请求错了」与「领域事实变了」分开：请求指向的 revision 不符是请求错误（409）；闭环证据绑定的对象版本被替换是领域事实（BLOCKED + closure_stale + 重投）。",
+    "split": [
+      {
+        "case": "请求指向的 revision 本身不符（ChangeSet 的 TargetContextRevision 已不是项目当前 revision）",
+        "outcome": "HTTP 409 version_conflict（保持不变）",
+        "seam": "internal/lingdoc/workspacecore/impact_service.go:1268-1270"
+      },
+      {
+        "case": "目标 revision 正确，但已完成任务的闭环证据所绑定的对象版本已被新版本替换",
+        "outcome": "HTTP 200，稳定化结果 BLOCKED，阻断原因含 closure_stale（点名对象与新旧版本），同一条影响任务按当前版本重投",
+        "seam": "internal/lingdoc/workspacecore/stabilization_conditions.go:308-366 + impact_service.go:754-787"
+      }
+    ],
+    "changes": [
+      "currentImpactObject 拆出 readImpactObjectState：解析当前状态与「版本是否仍然当前」的判断分离，由调用方选择语义（多数调用方仍是 409，稳定化聚合器是领域事实）。",
+      "稳定化预读闭环证据时，版本落后不再返回 409：改为解析该对象的当前版本，用它承载的资料来源集合做资料授权复核（授权面没有被削弱，只是改成对当前版本授权）。",
+      "闭环证据不再进入 checkedImpactWrite 的写前复检 ref 集合：写前复检回答的是「请求自己的基线是否被挪动」（请求错误），闭环是否仍然成立由写事务内那一次统一求值按当前 revision 重新读取后判定。写前复检保留项目版本并发守卫。",
+      "稳定化求值在闭环证据版本落后时记录 closure_stale 阻断原因（原因文本点名对象、被替换的版本与当前版本），并把重投所需的数据作为数据返回；求值本身仍然不写。",
+      "重投在稳定化判定的同一事务内执行：任务回到 OPEN、按当前版本重新定向、清空旧闭环证据与旧人工结论、版本号 +1，并写 impact_task.repost 审计。",
+      "审计详情新增 reposted_task_ids，revision.stabilize 事件可看到本轮重投了哪些任务。"
+    ],
+    "not_changed": [
+      "不改共享错误映射表（internal/lingdoc/workspace/http.go 的 sendError switch）：新语义由领域侧产生 200 + 结构化阻断原因，不需要新的错误形态。",
+      "不改稳定化条件的其余判定项（路线图、模板、规则、影响对象确认等）。",
+      "不改影响任务身份口径：身份仍是（变更集, 目标对象, 目标修订, 动作），版本不在身份内。"
+    ],
+    "repost_decision": {
+      "question": "重投是「新建一条任务」还是「把同一条任务重新打开」？",
+      "answer": "重新打开同一条任务。",
+      "reason": "影响任务身份是（变更集, 目标对象, 目标修订, 动作），版本不在身份内（#200 的口径）。同一变更集里同一对象在同一修订上的同一种动作只有一条任务，无法再插第二条；而「义务」本来就是关于对象而不是关于它当时的版本。所以重投 = 同一条任务回到 OPEN、按当前版本重新定向，旧闭环证据与旧人工结论不搬运过去。",
+      "idempotency": "重复稳定化不会产生第二条重投任务：任务重投后状态是 OPEN（不是 DONE），稳定化求值只对 DONE 任务的闭环证据求值，因此第二轮不会再触发重投；即使再次触发，身份相同、存储按身份合并，也不会出现第二条。",
+      "glossary_note": "GLOSSARY.md 的「失效任务」指的是依据已不存在（对象消失/不可读）的情形，本票把「对象仍在、只是版本被替换」判为义务重新生效；对象不可读时仍然照旧落到 STALE（stabilization_conditions.go 的失效分支未被改动）。"
+    }
+  },
+  "passed": [
+    {
+      "id": "版本落后落 closure_stale（HTTP seam）",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/stabilization_closure_stale_http_test.go:TestStabilizeReportsClosureStaleAndRepostsTaskWhenTargetVersionReplaced：真实 HTTP POST /projects/{id}/change-sets/{id}/stabilize 返回 200，稳定化结果为 BLOCKED，阻断原因含字面量 closure_stale，原因文本同时包含对象 ID、被替换的版本与当前版本。修复前同一夹具返回 409 version_conflict（已实跑复现）。"
+    },
+    {
+      "id": "任务被重投",
+      "status": "passed",
+      "evidence": "同一用例继续断言：GET /projects/{id}/impact-tasks 显示该义务回到 OPEN、目标版本是当前版本、closure_evidence 与 human_decision 均为空（旧版本的闭环证据没有被搬过去）。"
+    },
+    {
+      "id": "重复稳定化不产生第二条重投任务（幂等）",
+      "status": "passed",
+      "evidence": "TestStabilizeDoesNotRepostTheSameTaskTwice：连续两次稳定化（不同幂等键）后，该变更集下该对象的任务仍然只有 1 条。"
+    },
+    {
+      "id": "请求级 revision 不符仍 409",
+      "status": "passed",
+      "evidence": "TestStabilizeStillRejectsAChangeSetFromAnotherRevision：应用第二个变更集后（上下文修订前进），稳定化第一个变更集仍返回 HTTP 409 且 code=version_conflict，响应体不含 closure_stale。"
+    },
+    {
+      "id": "既有 closure_stale 字面量断言仍然通过",
+      "status": "passed",
+      "evidence": "go test ./internal/lingdoc/workspacecore/ -run 'TestStabilizationBlocksStaleClosureEvidence|TestReleaseGateRejectsUnconfirmedClosureEvidence|TestStabilizationRequiresHumanReviewOfResearchClaim|TestStabilizationRejectsReviewedClaimOnStaleBasis|TestReleaseGateRejectsStaleResultReceipt' -v → 5 项全 PASS（stabilization_guard_test.go:318/:688/:733 及其门禁对偶）。"
+    },
+    {
+      "id": "不得推进 STABILIZED / 不得写 READY",
+      "status": "passed",
+      "evidence": "同上用例断言 status=BLOCKED 且阻断原因非空；变更集状态不被推进（重投产生的是一条仍然阻断的 OPEN 任务，稳定化继续返回 BLOCKED）。交付门禁随之保持关闭。"
+    },
+    {
+      "id": "事务边界：失败零写入",
+      "status": "passed",
+      "evidence": "重投、STALE 转换与审计同属稳定化那一个写事务；workspacecore 全量套件里既有的「审计写失败 → 状态不变、记录行数不变」用例（stabilization_test.go 的 audit failure 用例）仍然通过，说明新增写入同样随事务回滚。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "G3-GAP-11 / AC-G3-12 的页面实跑落证（/demo/g3）",
+      "reason": "属 G3 缺口收口-8 的范围；按 #255 的完成线，本票只交付 L1（实现完成线），页面实跑前 AC-G3-12 只能是 PASS (follow-up)，不得判 PASS。"
+    },
+    {
+      "id": "TestPostgresDownloadRejectsPersistedCorruption / TestPostgresRendererFailureUsesRealDOCXValidator / TestPostgresGenerationFailureBoundaries / TestPostgresWorkerCrashLeasePersistence",
+      "reason": "这些用例在具备 PG 实例时仍自行 SKIP（需要额外的故障库/真实 DOCX 校验器环境），与本票改动无关；本票未触碰迁移与渲染路径。"
+    },
+    {
+      "id": "真实模型与真实浏览器人验",
+      "reason": "本票不涉及模型调用；浏览器人验属验收台整体验收范围。"
+    }
+  ],
+  "validation": [
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/workspace/...",
+      "env": "CGO_CFLAGS=-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc",
+      "result": "PASS（workspacecore ok 37.371s、workspace ok 207.851s，exit 0）",
+      "note": "在独立 worktree（从 517773e detached 检出）执行，避免与同工作区其它并行改动的中间态互相污染。"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestStabilizeReportsClosureStale|TestStabilizeDoesNotRepost|TestStabilizeStillRejects' -v",
+      "env": "同上",
+      "result": "PASS（3/3）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestStabilizationBlocksStaleClosureEvidence|TestReleaseGateRejectsUnconfirmedClosureEvidence|TestStabilizationRequiresHumanReviewOfResearchClaim|TestStabilizationRejectsReviewedClaimOnStaleBasis|TestReleaseGateRejectsStaleResultReceipt' -v",
+      "env": "同上",
+      "result": "PASS（5/5）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/... -run 'Postgres' -v",
+      "env": "LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55432 user=postgres dbname=lingdoc_g3gap sslmode=disable'",
+      "result": "PASS（TestPostgresMigrationAndRepositoryContract、TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory、TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth、TestPostgresRuleSetMigrationAndLifecycle、TestPostgresCatalogSchemaLifecycleAndAuditRollback）；其余 4 项 SKIP（需额外故障库/DOCX 校验器环境）"
+    },
+    {
+      "command": "gofmt -l <本票改动的 4 个 Go 文件>",
+      "result": "无输出（格式合规）"
+    }
+  ],
+  "risks": [
+    "写前复检的 ref 集合里不再包含闭环证据：闭环版本在「预读到写事务之间」被替换时，现在落成 closure_stale（领域事实）而不是 409。这是本票有意的语义变更，范围仅限稳定化端点。",
+    "重投保留原责任人与责任域，只重置状态、目标版本、闭环证据与人工结论；如果产品希望重投时把责任人也清空以便重新指派，需要另开决策。",
+    "同一对象在同一次稳定化里有多条闭环证据且都版本落后时，只重投一次（任务身份唯一），但会记录多条 closure_stale 阻断原因。"
+  ],
+  "notes": [
+    "本票没有新增任何 HTTP 错误形态，也没有改动共享错误映射表：新语义完全由领域侧产生 200 + 结构化阻断原因。",
+    "验收行「任务页面显示已完成 → 目标对象被新版本替换」在 HTTP seam 上现在可达且可观测：稳定化返回 BLOCKED 并点名对象与版本，影响任务列表里该义务回到 OPEN 并指向当前版本。",
+    "验证环境注意：本轮开始时，本工作区（.worktrees/feat-auto-20261020-ac02c1f4）被另一个并行任务同时写入（路线图编辑会话相关文件）。为避免其中间态污染结论，本票的最终验证全部在独立 worktree 中以 517773e 为基准执行；实现提交本身只包含本票的 4 个文件（已逐文件核对）。"
+  ]
+}
