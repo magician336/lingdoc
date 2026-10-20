@@ -585,12 +585,22 @@ type chapterConfirmationRow struct {
 
 func (chapterConfirmationRow) TableName() string { return "lingdoc_chapter_confirmations" }
 
+// chapterConfirmationDetails is the payload a confirmation record carries.
+//
+// The fields mirror `candidateadoption.Confirmation`, which writes them. The
+// chapter id, the confirmer and the confirmation time used to be missing here,
+// so this side could not tell a complete confirmation from an incomplete one —
+// one of the reasons the three consumers answered "is this chapter confirmed"
+// differently.
 type chapterConfirmationDetails struct {
-	ID               string `json:"id"`
-	ChapterVersionID string `json:"chapter_version_id"`
-	SpecRevision     int64  `json:"spec_revision"`
-	TemplateVersion  string `json:"template_version"`
-	Valid            bool   `json:"valid"`
+	ID               string    `json:"id"`
+	ChapterID        string    `json:"chapter_id"`
+	ChapterVersionID string    `json:"chapter_version_id"`
+	SpecRevision     int64     `json:"spec_revision"`
+	TemplateVersion  string    `json:"template_version"`
+	ActorUserID      string    `json:"actor_user_id"`
+	CreatedAt        time.Time `json:"created_at"`
+	Valid            bool      `json:"valid"`
 }
 
 type changeSetRow struct {

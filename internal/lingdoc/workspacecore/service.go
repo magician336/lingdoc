@@ -691,22 +691,16 @@ func chapterView(tx *gorm.DB, row chapterRow, project projectRow) (Chapter, erro
 	}
 	view.BodyMarkdown = version.BodyMarkdown
 	if version.ConfirmationValid {
-		var confirmations []chapterConfirmationRow
-		if err := tx.Where("chapter_id = ? AND chapter_version_id = ? AND valid = ?", row.ID, version.ID, true).
-			Order("created_at DESC, id DESC").Find(&confirmations).Error; err != nil {
+		facts, err := chapterConfirmationFacts(tx, row.ID, version.ID)
+		if err != nil {
 			return Chapter{}, err
 		}
-		for _, confirmation := range confirmations {
-			var details chapterConfirmationDetails
-			if err := json.Unmarshal([]byte(confirmation.DetailsJSON), &details); err != nil {
-				return Chapter{}, fmt.Errorf("decode chapter confirmation %q: %w", confirmation.ID, err)
-			}
-			if details.Valid && details.ID == confirmation.ID && details.ChapterVersionID == version.ID &&
-				details.SpecRevision == project.SpecRevision && details.TemplateVersion == project.TemplateVersion {
-				view.ConfirmationValid = true
-				break
-			}
-		}
+		view.ConfirmationValid = ChapterConfirmed(ChapterConfirmationBasis{
+			ChapterID:        row.ID,
+			ChapterVersionID: version.ID,
+			SpecRevision:     project.SpecRevision,
+			TemplateVersion:  project.TemplateVersion,
+		}, facts)
 	}
 	if err := json.Unmarshal([]byte(version.SourceIDsJSON), &view.SourceIDs); err != nil {
 		return Chapter{}, err
