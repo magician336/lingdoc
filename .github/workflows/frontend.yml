@@ -1,5 +1,16 @@
 name: Frontend
 
+# Always start on every pull request.  A top-level `paths:` filter would stop
+# the workflow from starting at all, leaving the required check pending
+# forever and the gate with nowhere to publish its conclusion; the rule is in
+# docs/agents/development-rules.md:25, and the header of the pull request gate
+# (.github/workflows/lingdoc-review.yml) says the same.  Which job runs is
+# decided by the job-level `if` below, which reads the decision module.
+#
+# The `push:` path list below is a static mirror of the surface paths in
+# scripts/ci/lingdoc_gate_surfaces.py.  GitHub cannot generate `paths:`
+# dynamically, so the mirror is maintained by hand: change the manifest and
+# this list together.
 on:
   push:
     branches: [main]
@@ -8,10 +19,6 @@ on:
       - "scripts/build_frontend_dist.sh"
       - ".github/workflows/frontend.yml"
   pull_request:
-    paths:
-      - "frontend/**"
-      - "scripts/build_frontend_dist.sh"
-      - ".github/workflows/frontend.yml"
   workflow_dispatch:
 
 concurrency:
