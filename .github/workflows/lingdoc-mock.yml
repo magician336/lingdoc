@@ -23,6 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run: ${{ steps.scope.outputs.run }}
+      # The job outputs are an explicit allow-list. Without this line the
+      # formatting-only decision never reaches needs.scope.outputs, and the
+      # gate below silently degrades to 'always run'.
+      format_only: ${{ steps.scope.outputs.format_only }}
     steps:
       - uses: actions/checkout@v6
         with:
