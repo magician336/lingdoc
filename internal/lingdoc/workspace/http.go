@@ -388,8 +388,11 @@ func sendError(c *gin.Context, err error) {
 			"retryable": form.Retryable}, "request_id": requestID(c)})
 		return
 	}
+	// The fallback is a 5xx, so it is retryable (DR-47-03: 4xx is not, 5xx is).
+	// Every surface answers an unknown failure the same way, and the same
+	// semantic must not answer differently depending on the route.
 	c.JSON(500, gin.H{"error": gin.H{"code": "internal_error", "message": "操作失败，请稍后再试。",
-		"retryable": false}, "request_id": requestID(c)})
+		"retryable": true}, "request_id": requestID(c)})
 }
 
 func sendErrorDetails(c *gin.Context, status int, code, message string, details any) {

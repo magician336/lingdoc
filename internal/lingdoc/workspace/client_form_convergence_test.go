@@ -409,6 +409,12 @@ func errorNames(node ast.Node) []string {
 //
 // The ruleset storage, generation and candidate adoption surfaces have the same
 // fallback; each one pins it in its own package, where its writer lives.
+//
+// The workspace main route is pinned here, because it is the one surface whose
+// writer lives in this package and whose fallback had not been compared with
+// the others. All of them must answer the same semantic the same way: 500
+// internal_error, the generic message, and retryable — the fallback is a 5xx,
+// and DR-47-03 says a 5xx is retryable.
 func TestUnknownFailureFallsBackWithoutLeaking(t *testing.T) {
 	internal := errors.New("pq: duplicate key value violates unique constraint \"lingdoc_chapters\"")
 	for _, tc := range []struct {
@@ -416,6 +422,9 @@ func TestUnknownFailureFallsBackWithoutLeaking(t *testing.T) {
 		write   func(*gin.Context)
 		message string
 	}{
+		{"工作区主路由", func(c *gin.Context) {
+			sendError(c, internal)
+		}, "操作失败，请稍后再试。"},
 		{"治理面", func(c *gin.Context) {
 			sendG4Error(c, internal)
 		}, "操作失败，请稍后再试。"},
@@ -449,6 +458,9 @@ func TestUnknownFailureFallsBackWithoutLeaking(t *testing.T) {
 			}
 			if body.Error.Message != tc.message {
 				t.Fatalf("message = %q, want %q", body.Error.Message, tc.message)
+			}
+			if !body.Error.Retryable {
+				t.Fatal("retryable = false, want true：兜底是 5xx，DR-47-03 说 5xx 可重试")
 			}
 			for _, leak := range []string{"pq:", "SQLSTATE", "duplicate key", "rulesetstore", "candidateadoption", "generation", "workspacecore"} {
 				if strings.Contains(recorder.Body.String(), leak) {
