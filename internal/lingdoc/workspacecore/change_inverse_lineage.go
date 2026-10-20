@@ -84,7 +84,7 @@ func inverseSourceAccess(tx Transaction, p Project, actor Actor, sourceID string
 	if err != nil {
 		return ChangeSet{}, err
 	}
-	if !slices.Contains([]string{"applied", "stabilized"}, source.Status) {
+	if !slices.Contains(ChangeSetClosedStatuses, source.Status) {
 		return ChangeSet{}, ErrInvalidState
 	}
 	return source, nil
@@ -121,7 +121,7 @@ func validateInverseLineage(tx Transaction, p Project, actor Actor, sourceID, re
 		if err != nil {
 			return ChangeSet{}, err
 		}
-		if ancestorSource != sourceID || ancestor.Status != "stale" {
+		if ancestorSource != sourceID || ancestor.Status != ChangeSetStatusStale {
 			return ChangeSet{}, ErrInvalidState
 		}
 		ancestors[id] = true
@@ -136,7 +136,7 @@ func validateInverseLineage(tx Transaction, p Project, actor Actor, sourceID, re
 		if err != nil {
 			return ChangeSet{}, err
 		}
-		if lineage == sourceID && change.Status != "rejected" && !ancestors[change.ID] {
+		if lineage == sourceID && change.Status != ChangeSetStatusRejected && !ancestors[change.ID] {
 			return ChangeSet{}, ErrInvalidState
 		}
 	}

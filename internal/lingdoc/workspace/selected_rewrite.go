@@ -7,8 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
-	"regexp"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"slices"
 	"sort"
 	"strings"
@@ -25,13 +26,13 @@ import (
 )
 
 var (
-	ErrRewriteInvalidRequest = errors.New("selected_rewrite_invalid_request")
-	ErrRewriteNotFound       = errors.New("selected_rewrite_not_found")
-	ErrRewriteStale          = errors.New("selected_rewrite_stale")
-	ErrRewriteConflict       = errors.New("selected_rewrite_conflict")
-	ErrRewriteUnavailable    = errors.New("selected_rewrite_unavailable")
-	ErrRewriteSourceDenied   = errors.New("selected_rewrite_source_denied")
-	ErrRewriteKeyConflict    = errors.New("selected_rewrite_idempotency_conflict")
+	ErrRewriteInvalidRequest = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "改写请求字段不符合约定。", Retryable: false}, "selected_rewrite_invalid_request")
+	ErrRewriteNotFound       = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "候选不存在或不可访问。", Retryable: false}, "selected_rewrite_not_found")
+	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_stale")
+	ErrRewriteConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_conflict")
+	ErrRewriteUnavailable    = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "改写模型暂不可用，请稍后重试。", Retryable: true}, "selected_rewrite_unavailable")
+	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选的来源已失效或当前不可访问。", Retryable: false}, "selected_rewrite_source_denied")
+	ErrRewriteKeyConflict    = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "selected_rewrite_idempotency_conflict")
 )
 
 type RewriteSelection struct {
@@ -266,8 +267,6 @@ func (s *SelectedRewriteService) recordAudit(ctx context.Context, actor Actor, p
 		ProjectID: projectID, Capability: capability, Decision: decision, Reason: reason, Details: details})
 }
 
-var rewriteCitationMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
-
 func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest) (SelectedRewriteCandidate, error) {
 	auditDetails := map[string]any{"chapter_id": chapterID, "idempotency_key": key, "spec_revision": input.ExpectedSpecRevision,
 		"working_copy_revision": input.ExpectedWorkingCopyRevision}
@@ -342,15 +341,15 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	// when a freshly opened editor has no manually selected retrieval results.
 	// Merge before authorization and hashing so explicit and inherited references
 	// share one effective request identity; never infer permission from model output.
-	for _, marker := range rewriteCitationMarker.FindAllStringSubmatch(input.Selection.SelectedText, -1) {
-		if !slices.Contains(copy.SourceIDs, marker[1]) {
+	for _, marker := range sourcemarker.IDs(input.Selection.SelectedText) {
+		if !slices.Contains(copy.SourceIDs, marker) {
 			auditDecision, auditReason = "deny", ErrRewriteSourceDenied.Error()
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
-		if len(input.EvidenceCardRefs) > 0 && !slices.Contains(input.SourceIDs, marker[1]) {
+		if len(input.EvidenceCardRefs) > 0 && !slices.Contains(input.SourceIDs, marker) {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
-		input.SourceIDs = append(input.SourceIDs, marker[1])
+		input.SourceIDs = append(input.SourceIDs, marker)
 	}
 	input.SourceIDs = stringSet(input.SourceIDs)
 	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
@@ -600,13 +599,10 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 		return core.WorkingCopy{}, false, ErrRewriteStale
 	}
 	body := copy.BodyMarkdown[:start] + row.ReplacementMarkdown + copy.BodyMarkdown[end:]
-	refs := make([]string, 0)
-	for _, marker := range rewriteCitationMarker.FindAllStringSubmatch(body, -1) {
-		refs = append(refs, marker[1])
-	}
-	if strings.Count(body, "[[source:") != len(refs) {
+	if err := sourcemarker.Validate(body); err != nil {
 		return core.WorkingCopy{}, false, ErrRewriteInvalidRequest
 	}
+	refs := sourcemarker.IDs(body)
 	reviewItems := mustDecodeReviewItems(row.ReviewItemsJSON)
 	for i := range reviewItems {
 		reviewItems[i].Anchor = &reviewanchor.Anchor{StartUTF16: row.StartUTF16, EndUTF16: row.StartUTF16 + len(utf16.Encode([]rune(row.ReplacementMarkdown))), QuoteMarkdown: row.ReplacementMarkdown, Status: "located"}
@@ -780,13 +776,10 @@ func validateRewriteOutput(output SelectedRewriteOutput, requested []string) err
 	for _, id := range requested {
 		allowed[id] = true
 	}
-	refs := make([]string, 0)
-	for _, item := range rewriteCitationMarker.FindAllStringSubmatch(output.ReplacementMarkdown, -1) {
-		refs = append(refs, item[1])
-	}
-	if strings.Count(output.ReplacementMarkdown, "[[source:") != len(refs) {
+	if err := sourcemarker.Validate(output.ReplacementMarkdown); err != nil {
 		return ErrRewriteInvalidRequest
 	}
+	refs := sourcemarker.IDs(output.ReplacementMarkdown)
 	for _, id := range output.SourceIDs {
 		if !allowed[id] {
 			return ErrRewriteSourceDenied

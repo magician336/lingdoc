@@ -3,6 +3,7 @@ package docx
 import (
 	"encoding/xml"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
 	"github.com/yuin/goldmark/text"
@@ -29,7 +30,7 @@ func markdownParagraphs(markdown string, citation func(string) (string, error)) 
 	}
 	source := []byte(strings.ReplaceAll(markdown, "\r\n", "\n"))
 	for _, line := range strings.Split(string(source), "\n") {
-		probe := syntaxProbe(marker.ReplaceAllString(line, ""))
+		probe := syntaxProbe(sourcemarker.Strip(line))
 		if referenceDefinition.MatchString(strings.TrimSpace(probe)) || tableDelimiter.MatchString(strings.TrimSpace(probe)) || inlineMath.MatchString(probe) || strings.Contains(probe, "~~") || inlineLink.MatchString(probe) || setextOrRuleMarkup.MatchString(strings.TrimSpace(probe)) {
 			return nil, fmt.Errorf("%w: table/reference/math/strike syntax", ErrUnsupportedMarkdown)
 		}
@@ -42,7 +43,7 @@ func markdownParagraphs(markdown string, citation func(string) (string, error)) 
 	}
 	placeholders := map[string]string{}
 	serial := 0
-	safe := marker.ReplaceAllStringFunc(string(source), func(token string) string {
+	safe := sourcemarker.ReplaceAll(string(source), func(token, _ string) string {
 		serial++
 		key := fmt.Sprintf("%s%d\uE001", prefix, serial)
 		placeholders[key] = token
@@ -80,15 +81,14 @@ func markdownParagraphs(markdown string, citation func(string) (string, error)) 
 		for key, token := range placeholders {
 			raw = strings.ReplaceAll(raw, key, token)
 		}
-		tokens := marker.FindAllString(raw, -1)
-		if strings.Count(raw, "[[source:") != len(tokens) {
+		if err := sourcemarker.Validate(raw); err != nil {
 			return "", fmt.Errorf("%w: malformed source marker", ErrUnsupportedMarkdown)
 		}
 		if citation == nil {
 			return raw, nil
 		}
 		var failure error
-		result := marker.ReplaceAllStringFunc(raw, func(token string) string {
+		result := sourcemarker.ReplaceAll(raw, func(token, _ string) string {
 			out, err := citation(token)
 			if err != nil {
 				failure = err

@@ -17,23 +17,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
+
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
 var (
-	ErrInvalidRequest        = errors.New("invalid_request")
-	ErrNotFound              = errors.New("not_found")
+	ErrInvalidRequest        = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "请求字段不符合约定。", Retryable: false}, "invalid_request")
+	ErrNotFound              = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "not_found")
 	ErrForbidden             = errors.New("forbidden")
-	ErrSourceAccessDenied    = errors.New("source_access_denied")
-	ErrStaleInput            = errors.New("stale_input")
-	ErrVersionConflict       = errors.New("version_conflict")
-	ErrInvalidState          = errors.New("invalid_state")
-	ErrIdempotencyConflict   = errors.New("idempotency_conflict")
-	ErrDependencyUnavailable = errors.New("dependency_unavailable")
+	ErrSourceAccessDenied    = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "资料授权已不可用。", Retryable: false}, "source_access_denied")
+	ErrStaleInput            = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "快照基于的输入已变化，请重新准备。", Retryable: false}, "stale_input")
+	ErrVersionConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "version_conflict", Message: "内容已变化，请先读取当前版本。", Retryable: false}, "version_conflict")
+	ErrInvalidState          = clienterror.New(clienterror.Form{Status: 422, Code: "invalid_state", Message: "当前项目状态或研究条件不满足操作要求。", Retryable: false}, "invalid_state")
+	ErrIdempotencyConflict   = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency_conflict")
+	ErrDependencyUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "依赖的服务此刻不可用，请稍后重试。", Retryable: true}, "dependency_unavailable")
 )
 
 // ReviewItem is copied from the candidate into every adopted version. It is
@@ -383,22 +386,11 @@ func validateSourceReferences(body string, sourceIDs []string) error {
 		want[id] = struct{}{}
 	}
 	got := make(map[string]struct{})
-	for i := 0; i < len(body); {
-		start := strings.Index(body[i:], "[[source:")
-		if start < 0 {
-			break
-		}
-		start += i + len("[[source:")
-		end := strings.Index(body[start:], "]]")
-		if end < 0 {
-			return ErrInvalidRequest
-		}
-		id := strings.TrimSpace(body[start : start+end])
-		if id == "" {
-			return ErrInvalidRequest
-		}
+	if err := sourcemarker.Validate(body); err != nil {
+		return ErrInvalidRequest
+	}
+	for _, id := range sourcemarker.IDs(body) {
 		got[id] = struct{}{}
-		i = start + end + 2
 	}
 	if len(want) != len(got) {
 		return ErrInvalidRequest

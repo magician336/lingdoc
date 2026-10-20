@@ -6,9 +6,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"slices"
 	"sort"
@@ -22,13 +23,13 @@ import (
 )
 
 var (
-	ErrSnapshotStaleInput = errors.New("delivery input is no longer current")
+	ErrSnapshotStaleInput = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "快照基于的输入已变化，请重新准备。", Retryable: false}, "delivery input is no longer current")
 	// ErrSnapshotNotFound 让传输层把「这里没有这份快照」答成 404。取不到与读失败
 	// 是两件事：前者是调用方写错了 ID，后者才是服务端出了问题。
-	ErrSnapshotNotFound = errors.New("release snapshot not found")
+	ErrSnapshotNotFound = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "release snapshot not found")
 	// ErrIdempotencyConflict 是一个动作键被换了请求复用。契约 §6：同键不同请求
 	// 返回冲突，而不是当成新动作再做一次。
-	ErrIdempotencyConflict = errors.New("idempotency key reused for a different request")
+	ErrIdempotencyConflict = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency key reused for a different request")
 )
 
 // DeliveryInput is the immutable value captured for checking and export.
@@ -99,6 +100,24 @@ type Confirmation struct {
 	ActorUserID      string           `json:"actor_user_id"`
 	CreatedAt        time.Time        `json:"created_at"`
 	Decisions        []ReviewDecision `json:"review_decisions"`
+
+	// Valid records whether the confirmation still holds.
+	//
+	// A confirmation is invalidated whenever the chapter it belongs to moves on, and
+	// a frozen snapshot that cannot see that fact has to re-derive validity from the
+	// surrounding fields — which is a second, weaker version of the same rule.
+	//
+	// It is a pointer so that "recorded as invalid" and "never recorded" stay
+	// distinguishable: snapshots frozen before this field existed carry no value,
+	// and treating those as invalid would silently retire every historical
+	// snapshot.
+	//
+	// It is deliberately **not** serialized. The judgement is made on the in-memory
+	// input, where the fact is still live; a frozen snapshot is a point-in-time
+	// record and its confirmation held at the moment it was frozen. Serializing it
+	// would change the published response shape and the published snapshot digest
+	// for a fact no consumer reads back.
+	Valid *bool `json:"-"`
 }
 type FrozenSource struct {
 	ID             string `json:"id"`
@@ -946,23 +965,13 @@ func sameAssetVersions(actual []AssetVersion, expected map[string]int) bool {
 }
 func citationIDs(body string) map[string]bool {
 	out := map[string]bool{}
-	for remaining := body; ; {
-		start := strings.Index(remaining, "[[source:")
-		if start < 0 {
-			return out
-		}
-		remaining = remaining[start+9:]
-		end := strings.Index(remaining, "]]")
-		if end < 0 {
-			return map[string]bool{"__invalid__": true}
-		}
-		id := remaining[:end]
-		if id == "" {
-			return map[string]bool{"__invalid__": true}
-		}
-		out[id] = true
-		remaining = remaining[end+2:]
+	if err := sourcemarker.Validate(body); err != nil {
+		return map[string]bool{"__invalid__": true}
 	}
+	for _, id := range sourcemarker.IDs(body) {
+		out[id] = true
+	}
+	return out
 }
 func sortedIssueCodes(issues []CheckIssue) []string {
 	out := make([]string, len(issues))
