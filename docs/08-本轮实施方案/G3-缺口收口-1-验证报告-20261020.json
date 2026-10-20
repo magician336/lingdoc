@@ -10,7 +10,7 @@
     "go": "go1.27.1 windows/amd64",
     "os": "Windows 10.0.26200 x86_64",
     "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'（sqlite3.h；缺失时 internal/container 构建失败，属环境限制）",
-    "postgres": "本机未安装 PostgreSQL（initdb/pg_ctl/psql 均不存在，D:\\pgdata-g3gap 不存在）→ PostgreSQL 迁移的升/降实跑为 NOT RUN，理由见 not_run"
+    "postgres": "隔离实例 PostgreSQL 18.3（Scoop 装于 E:\\Software\\Scoop\\apps\\postgresql\\current\\bin，数据目录 D:\\pgdata-g3gap，端口 55432，trust 认证，-c autovacuum=off）。2026-10-20 补跑 PG 轮：versioned 迁移 000123 的升/降往返与 PG 用例均 PASS。命令与结果见 commands 中标 (PG 轮) 的条目。"
   },
   "commands": [
     {
@@ -44,6 +44,18 @@
     {
       "command": "cd frontend && npm run type-check",
       "result": "PASS（vue-tsc --build 无输出）"
+    },
+    {
+      "command": "(PG 轮) $env:LINGDOC_TEST_POSTGRES_DSN='host=127.0.0.1 port=55432 user=postgres dbname=lingdoc_g3gap sslmode=disable'; go test -count=1 -p 1 -v -run 'TestRoadmapMigrationGoesUpAndDownOnPostgres' ./internal/lingdoc/workspacecore/...",
+      "result": "PASS（0.15s）——#250 的 versioned 迁移 000123 在真实 PostgreSQL 18.3 上完成升/降往返"
+    },
+    {
+      "command": "(PG 轮) go test -count=1 -p 1 -v ./internal/lingdoc/workspacecore/... ./internal/lingdoc/rulesetstore/... ./internal/lingdoc/templategovernance/... ./internal/container/...",
+      "result": "PASS（workspacecore 37.251s / rulesetstore 3.122s / templategovernance 4.237s / container 2.781s）。其中 PG 用例：TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth PASS、TestPostgresMigrationAndRepositoryContract PASS、TestPR150PostgresSatisfiedMigrationPreservesFullWorkflowHistory PASS（clean_down_up + refused_down 两个子用例）、TestRoadmapMigrationGoesUpAndDownOnPostgres PASS、TestPostgresRuleSetMigrationAndLifecycle PASS、TestPostgresCatalogSchemaLifecycleAndAuditRollback PASS、TestRuleSetProductionHTTPToExportPersistsAcrossRestartPostgres PASS"
+    },
+    {
+      "command": "(PG 轮期间发现并修复) go test -count=1 ./internal/database/...",
+      "result": "初次 FAIL（expected 43 / actual 44）→ 修复后 PASS（5.107s）。#250 新增 SQLite 迁移 000044 与 versioned 迁移 000123，但 internal/database 的双库对照测试没跟上：expectedSQLiteMigrationVersion 停在 43，且两张新表未登记。修复提交 e3bcf35。#252 并入后同类问题再次出现（版本 45 + 依赖候选两表），修复提交 97df283。"
     }
   ],
   "acceptance_matrix": [
@@ -52,7 +64,7 @@
       "status": "PASS (follow-up)",
       "seam": "HTTP seam + 领域求值",
       "evidence": "路线图模块能创建/不创建必经节点；模板求值（RouteEvaluationFields → template.EvaluateScene(preflight)）对缺失的必经字段给出 severity=blocking 的 ValidationIssue（TestRoadmapRequiredNodeStatesProduceBlockingValidationIssues 第 1 段）。稳定化被 RouteStabilizationBlockers 与规则求值共同阻断，导出输入不含该节点。页面实跑由 #257 负责。",
-      "notes": "本机无 PostgreSQL，规则求值在 SQLite 上实跑；PG 上同一路径由既有 TestPostgresMigrationAndRepositoryContract 覆盖迁移链。"
+      "notes": "PG 轮已于 2026-10-20 补跑：versioned 000123 迁移升/降往返 PASS；规则求值路径在 SQLite 与 PG 两侧都有实跑证据。"
     },
     {
       "row": "造出「R7 待复核 / 版本落后」",
@@ -135,9 +147,9 @@
       "follow_up": "将来一旦建立章节→路线节点的引用关系，必须重新验证「取消后章节引用不指向被取消的临时版本」。本条不得在后续被当作已覆盖。"
     },
     {
-      "risk": "PostgreSQL 上的迁移升降没有在本机实跑（本机未安装 PostgreSQL）。SQLite 上已实跑升/降与重启读回。",
-      "impact": "PG 方言的升降只有代码评审，没有本机运行证据。",
-      "follow_up": "在有隔离 PG 实例的机器上设置 LINGDOC_TEST_POSTGRES_DSN 后运行 go test ./internal/lingdoc/workspacecore/ -run 'TestRoadmapMigration|TestPostgres'。"
+      "risk": "PostgreSQL 上的迁移升降此前没有在本机实跑（本机未安装 PostgreSQL）。2026-10-20 已用隔离 PG 18.3 实例补跑：versioned 000123 的升/降往返 PASS，本条风险解除。",
+      "impact": "PG 方言的升降现在有本机运行证据，不再只有代码评审。",
+      "follow_up": "已解除。后续若改动 000123 附近的迁移，需重跑同一条 PG 命令。"
     },
     {
       "risk": "路线节点版本推进由路线图模块提交时，项目 context revision 同步推进（与变更集应用路径一致）；这会让同一项目的其它在途会话基线过期（提交时以 version_conflict 拒绝）。",
@@ -148,8 +160,8 @@
   "not_run": [
     {
       "item": "PostgreSQL 迁移升降与重启读回",
-      "status": "NOT RUN",
-      "reason": "本机没有 PostgreSQL 可执行文件（initdb/pg_ctl/psql 均未安装，D:\\pgdata-g3gap 不存在），无法起隔离实例。用例已写好并以 LINGDOC_TEST_POSTGRES_DSN 为开关，缺环境时明确 SKIP 并打印 NOT RUN。"
+      "status": "PASS（2026-10-20 补跑）",
+      "reason": "已用隔离 PostgreSQL 18.3 实例（127.0.0.1:55432）补跑：TestRoadmapMigrationGoesUpAndDownOnPostgres PASS（升/降往返），同轮其余 6 个 PG 用例也全部 PASS。命令见 commands 中标 (PG 轮) 的条目。"
     },
     {
       "item": "/demo/g3 验收台页面实跑",
