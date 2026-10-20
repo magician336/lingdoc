@@ -47,6 +47,7 @@ def run_evidence(
     account_password: str,
     out_dir: Path,
     only_chains: str = "",
+    skip_lifecycle: bool = False,
     timeout: int = 900,
 ) -> dict[str, object]:
     """跑一次真实验收台链路（``--live``），返回落盘证据文件列表。"""
@@ -57,6 +58,9 @@ def run_evidence(
     env["G3_ACCOUNT_PASSWORD"] = account_password
     if only_chains:
         env["G3_ONLY_CHAINS"] = only_chains
+    if skip_lifecycle:
+        # 装配了注入的那一轮里 apply 返回 503，前置的变更集链会中断并把整轮带崩。
+        env["G3_SKIP_LIFECYCLE"] = "1"
     out_dir.mkdir(parents=True, exist_ok=True)
     npx = shutil.which("npx.cmd") or shutil.which("npx")
     if not npx:
@@ -173,7 +177,14 @@ def main() -> int:
     # —— 轮 2：装配注入 ——
     proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id))
     print(f"round2: healthy (fault injection armed for tenant {tenant_id})")
-    round2 = run_evidence(base_url, email, password, out_dir / "round2", args.round2_chains)
+    round2 = run_evidence(
+        base_url,
+        email,
+        password,
+        out_dir / "round2",
+        args.round2_chains,
+        skip_lifecycle=True,
+    )
     code2 = base.stop_process(proc2)
     print(f"round2: server stopped, exit code={code2}")
 

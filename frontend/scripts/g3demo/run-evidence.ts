@@ -145,15 +145,21 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
   const chain = await runChain(client, { account, registerFirst: !reused, runId })
   console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
 
-  const lifecycle = await runChangeSetChain(chain.ctx, client, chain.token, {
-    projectId: chain.project.id,
-    chapters: chain.chapters.map((chapter) => ({
-      id: chapter.id,
-      sectionId: chapter.sectionId,
-      title: chapter.title,
-    })),
-    tenantId: chain.identity.tenantId,
-  })
+  // 变更集链（前置）：它在 apply 成功时才会跑完。**装配了受控故障注入的那一轮里，
+  // apply 会返回 503**，变更集链会因此中断并把整轮实跑带崩——所以那一轮用
+  // `G3_SKIP_LIFECYCLE=1` 跳过它：AC-G3-03 只需要故障注入链自己的结论。
+  const skipLifecycle = process.env.G3_SKIP_LIFECYCLE === '1'
+  const lifecycle = skipLifecycle
+    ? null
+    : await runChangeSetChain(chain.ctx, client, chain.token, {
+        projectId: chain.project.id,
+        chapters: chain.chapters.map((chapter) => ({
+          id: chapter.id,
+          sectionId: chapter.sectionId,
+          title: chapter.title,
+        })),
+        tenantId: chain.identity.tenantId,
+      })
 
   // 缺口收口-11（#295）新增的三条链：路线图编辑会话 / 受控故障注入的可观测口径 /
   // 助手两组说明与依赖候选读回。任一条链失败都**不中断**整条实跑——失败本身是
@@ -201,6 +207,26 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       // 会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键。
       idemPrefix: `g3-${label}`,
     })
+    // 章节要**有一版正文**才有 currentVersionId；后续链路要拿它当对象引用
+    // （候选的 target 就是章节版本）。模板激活后的章节正文是空的。
+    const first = created.chapters[0]
+    if (first) {
+      const written = await writeChapterVersion(
+        chain.ctx,
+        client,
+        chain.token,
+        created.project.id,
+        first.id,
+        {
+          stepName: `写章节正文（${label}）`,
+          idemLabel: `g3-${label}-chapter-body`,
+          expectedChapterVersionId: first.currentVersionId,
+          expectedSpecRevision: created.project.specRevision,
+          bodyMarkdown: `G3 验收台演示正文（${label} · 运行 ${chain.ctx.runId}）。`,
+        },
+      )
+      first.currentVersionId = written.currentVersionId
+    }
     return { projectId: created.project.id, chapters: created.chapters }
   }
 
@@ -272,7 +298,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     })
   }
 
-  const verdicts = [...lifecycle.verdicts, ...extra]
+  const verdicts = [...(lifecycle?.verdicts ?? []), ...extra]
   // 账号口令**不落盘**：证据里只留账号标识，不留凭据。
   console.log(`[g3demo] 实时链路判定：${verdicts.length} 条`)
 
