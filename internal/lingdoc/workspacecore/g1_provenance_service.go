@@ -238,7 +238,7 @@ func (s *Service) g1PrepareOperation(ctx context.Context, actor Actor, op, targe
 		if err != nil {
 			return ctx, err
 		}
-		if change.Status != "draft" || op != "applyChangeSet" {
+		if change.Status != ChangeSetStatusDraft || op != "applyChangeSet" {
 			ctx, err = s.g1PrepareChangeProvenance(ctx, actor, change, map[string]bool{})
 			if err != nil {
 				return ctx, err

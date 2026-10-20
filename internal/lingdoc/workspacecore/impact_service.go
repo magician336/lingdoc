@@ -1181,7 +1181,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		if err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
-		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains([]string{"applied", "stabilized"}, change.Status) {
+		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains(ChangeSetClosedStatuses, change.Status) {
 			return operationResult[StabilizationResult]{}, ErrVersionConflict
 		}
 		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, StaleTaskIDs: []string{}, CheckedAt: time.Now().UTC()}
@@ -1204,9 +1204,9 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		result.StaleTaskIDs = append(result.StaleTaskIDs, conditions.OwnerStaleTaskIDs()...)
 		if len(result.Blockers) == 0 {
 			result.Status = "STABILIZED"
-			if change.Status != "stabilized" {
+			if change.Status != ChangeSetStatusStabilized {
 				next := change
-				next.Status = "stabilized"
+				next.Status = ChangeSetStatusStabilized
 				if err := changes.UpdateChangeSet(change, next); err != nil {
 					return operationResult[StabilizationResult]{}, err
 				}
@@ -1235,7 +1235,7 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if !slices.Contains([]string{"draft", "assessed"}, change.Status) {
+		if !slices.Contains(ChangeSetProposalStatuses, change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
@@ -1248,7 +1248,7 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 			return operationResult[ChangeSet]{}, err
 		}
 		next := change
-		next.Status = "assessed"
+		next.Status = ChangeSetStatusAssessed
 		if err := store.UpdateChangeSet(change, next); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}

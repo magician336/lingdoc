@@ -45,7 +45,7 @@ func formalG2Object(tx Transaction, p Project, ref ObjectVersionRef) (bool, erro
 		return false, err
 	}
 	for _, change := range rows {
-		if change.Status != "applied" && change.Status != "stabilized" {
+		if change.Status != ChangeSetStatusApplied && change.Status != ChangeSetStatusStabilized {
 			continue
 		}
 		plan, err := plans.SemanticPlan(p.ID, change.ID)
