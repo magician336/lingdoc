@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -14,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"maps"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -3568,20 +3568,14 @@ func orderChapters(chapters []Chapter, template Template) {
 	})
 }
 
-var sourceMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
-
 func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (json.RawMessage, int, bool, error) {
 	if input.ExpectedSpecRevision < 0 || input.SourceIDs == nil || len(input.BodyMarkdown) > 200000 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	markers := sourceMarker.FindAllStringSubmatch(input.BodyMarkdown, -1)
-	if strings.Count(input.BodyMarkdown, "[[source:") != len(markers) {
+	if err := sourcemarker.Validate(input.BodyMarkdown); err != nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	refs := make([]string, 0, len(markers))
-	for _, m := range markers {
-		refs = append(refs, m[1])
-	}
+	refs := sourcemarker.IDs(input.BodyMarkdown)
 	slices.Sort(refs)
 	refs = slices.Compact(refs)
 	declared := slices.Clone(input.SourceIDs)

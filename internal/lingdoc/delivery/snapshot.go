@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"slices"
 	"sort"
@@ -946,23 +947,13 @@ func sameAssetVersions(actual []AssetVersion, expected map[string]int) bool {
 }
 func citationIDs(body string) map[string]bool {
 	out := map[string]bool{}
-	for remaining := body; ; {
-		start := strings.Index(remaining, "[[source:")
-		if start < 0 {
-			return out
-		}
-		remaining = remaining[start+9:]
-		end := strings.Index(remaining, "]]")
-		if end < 0 {
-			return map[string]bool{"__invalid__": true}
-		}
-		id := remaining[:end]
-		if id == "" {
-			return map[string]bool{"__invalid__": true}
-		}
-		out[id] = true
-		remaining = remaining[end+2:]
+	if err := sourcemarker.Validate(body); err != nil {
+		return map[string]bool{"__invalid__": true}
 	}
+	for _, id := range sourcemarker.IDs(body) {
+		out[id] = true
+	}
+	return out
 }
 func sortedIssueCodes(issues []CheckIssue) []string {
 	out := make([]string, len(issues))

@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"slices"
 	"strconv"
 	"strings"
@@ -206,8 +207,8 @@ func (s *Service) machineReadSnapshot(ctx context.Context, projectID, chapterID 
 				return ErrNotFound
 			}
 			sourceIDs = sortedImpactSourceIDs(chapter.SourceIDs)
-			for _, match := range sourceMarker.FindAllStringSubmatch(chapter.BodyMarkdown, -1) {
-				sourceIDs = append(sourceIDs, match[1])
+			for _, id := range sourcemarker.IDs(chapter.BodyMarkdown) {
+				sourceIDs = append(sourceIDs, id)
 			}
 			sourceIDs = sortedImpactSourceIDs(sourceIDs)
 			out.chapter = MachineChapterView{ID: chapter.ID, ProjectID: projectID, Title: chapter.Title,
