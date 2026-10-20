@@ -162,6 +162,8 @@ var impactSourceProjections = map[string]impactSourceResolver{
 	"actOnImpactTask":            resolveImpactTaskAction,
 	"createDependencyEdge":       resolveNewDependencyEdge,
 	"decideDependencyEdge":       resolveDependencyEdgeDecision,
+	"submitDependencyCandidates": resolveDependencyCandidateBatch,
+	"decideDependencyCandidate":  resolveDependencyCandidateDecision,
 	"acknowledgeImpactPreflight": resolveAcknowledgedPreflight,
 }
 
@@ -449,6 +451,34 @@ func resolveDependencyEdgeDecision(in impactSourceProjectionInput) (out impactSo
 		return out, err
 	}
 	return impactSourceContribution{refs: []ObjectVersionRef{edge.Source, edge.Target}}, nil
+}
+
+// resolveDependencyCandidateBatch authorizes every object the batch proposes
+// a relation between: an AI may not propose over an object the caller may
+// not read.
+func resolveDependencyCandidateBatch(in impactSourceProjectionInput) (out impactSourceContribution, err error) {
+	input, ok := in.body.(DependencyCandidateBatchInput)
+	if !ok {
+		return out, ErrInvalidRequest
+	}
+	for _, candidate := range input.Candidates {
+		out.refs = append(out.refs, candidate.Source, candidate.Target)
+	}
+	return out, nil
+}
+
+// resolveDependencyCandidateDecision authorizes the endpoints of the
+// candidate the request decides.
+func resolveDependencyCandidateDecision(in impactSourceProjectionInput) (out impactSourceContribution, err error) {
+	store, ok := in.tx.(dependencyCandidateStore)
+	if !ok {
+		return out, ErrInvalidState
+	}
+	candidate, err := store.DependencyCandidate(in.projectID, in.targetID)
+	if err != nil {
+		return out, err
+	}
+	return impactSourceContribution{refs: []ObjectVersionRef{candidate.Source, candidate.Target}}, nil
 }
 
 // resolveAcknowledgedPreflight authorizes the preflight proof the request
