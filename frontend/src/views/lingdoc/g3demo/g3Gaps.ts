@@ -88,14 +88,14 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     rows: ['AC-G3-03'],
     limits: [],
     missing:
-      '受控故障注入能力**已经实现**；缺的是**验收台链路**：' +
-      '验收台没有能触发「任务写入失败 / 权限失效」并从 HTTP 面观测「整体回滚」的步骤，' +
-      '所以行 `AC-G3-03` 仍为 `BLOCKED`。',
+      '受控故障注入能力**已经实现**；**验收台链路也已补上**（#295）：' +
+      '台面能触发「任务写入失败 / 权限失效」并从 HTTP 面观测「整体回滚」。' +
+      '现在缺的是**注入命中之后能读回完整回滚证据**——命中之后后端的写操作被阻塞。',
     specAnchor: anchor(358, 360),
     unblockCondition:
-      '由 #295 给验收台补受控故障注入的可观测步骤（触发失败 → 读回项目 revision 未变、' +
-      '模板引用未变、ImpactTask 集合完整），并在当前 head 实跑落证；' +
-      '落证后 `AC-G3-03` 才能离开 `BLOCKED`。',
+      '修掉 #310（装配注入后仍能继续写），在当前 head 重跑两轮实跑，' +
+      '拿到完整回滚读回证据（项目 revision 未变、模板引用未变、ImpactTask 集合完整、' +
+      '业务审计事件未变）；`AC-G3-03` 才能离开 `BLOCKED`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 256,
     rowStatus: 'BLOCKED',
@@ -104,7 +104,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '由组合根按环境变量与演示租户校验装配会失败的窄 port，' +
       'HTTP 路由与产品契约零新增端点，`apply` 走真事务、失败真发生）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json`（#256）。' +
-      '卡点在验收台没有对应链路 → #295；行 `AC-G3-03` 仍 `BLOCKED`。',
+      '本轮实跑：未装配注入时 apply 返回 HTTP 200，链路完整跑通并按口径记 `NOT RUN`；' +
+      '装配注入后 apply 返回 503 + `injected_fault`（注入命中已观测到），' +
+      '但命中后的回滚读回被后端写阻塞挡住（#310）。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json',
   },
@@ -114,13 +117,13 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     rows: ['AC-G3-08'],
     limits: [],
     missing:
-      '路线图的**版本化编辑会话模块已经实现**；缺的是**验收台链路**：' +
-      '验收台没有覆盖「提案 / 提交 / 取消」与版本比较的步骤，' +
-      '所以行 `AC-G3-08` 仍为 `BLOCKED`。',
+      '路线图的**版本化编辑会话模块已经实现**；**验收台链路也已补上**（#295）：' +
+      '台面覆盖「提案 / 提交 / 取消」与版本比较。' +
+      '现在缺的是**本轮基线具备前置**——演示模板不声明任何 RouteNode，基线路线图为空。',
     specAnchor: anchor(378, 380),
     unblockCondition:
-      '由 #295 给验收台补路线图编辑会话（提案 / 提交 / 取消 / 版本比较）的步骤，' +
-      '并在当前 head 实跑落证；落证后 `AC-G3-08` 才能离开 `BLOCKED`。',
+      '模板侧声明一个 RouteNode 类型的必需节点（R7），并在当前 head 重跑实跑落证；' +
+      '`AC-G3-08` 才能离开 `BLOCKED`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 250,
     rowStatus: 'BLOCKED',
@@ -130,7 +133,9 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '三种必需节点前置给出 blocking ValidationIssue）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。' +
       '原先「只有只读端点」的旧事实已作废；' +
-      '卡点在验收台没有对应链路 → #295；行 `AC-G3-08` 仍 `BLOCKED`。',
+      '本轮实跑 `NOT RUN`：演示模板不声明任何 RouteNode，基线路线图为空；' +
+      '台面自造前置（新增节点 → 变更集 → 应用）后，后续会话撞 409「基线已漂移」。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json',
   },
@@ -140,13 +145,13 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     rows: ['AC-G3-16'],
     limits: [],
     missing:
-      'RouteNode 写入与「取消未冻结编辑」**已经实现**；缺的是**验收台链路**：' +
-      '验收台没有覆盖版本比较与恢复的步骤，所以行 `AC-G3-16` 仍为 `BLOCKED`。',
+      'RouteNode 写入与「取消未冻结编辑」**已经实现**；**验收台链路也已补上**（#295）：' +
+      '台面覆盖版本比较与恢复。' +
+      '现在缺的是**本轮基线里有一个可编辑的冻结节点**——基线路线图为空。',
     specAnchor: anchor(410, 412),
     unblockCondition:
-      '由 #295 给验收台补路线图版本比较与恢复的步骤（取消编辑后回到上一个 RouteNode / ' +
-      'RouteEdge 版本，关联 ImpactTask 与章节引用不指向被取消的临时版本），' +
-      '并在当前 head 实跑落证；落证后 `AC-G3-16` 才能离开 `BLOCKED`。',
+      '同 G3-GAP-02（模板侧声明必需 RouteNode），并在当前 head 重跑实跑落证；' +
+      '`AC-G3-16` 才能离开 `BLOCKED`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 250,
     rowStatus: 'BLOCKED',
@@ -155,7 +160,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '取消恢复基线并释放临时版本引用）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。' +
       '原先「没有写入端点」的旧事实已作废；' +
-      '卡点在验收台没有对应链路 → #295；行 `AC-G3-16` 仍 `BLOCKED`。',
+      '本轮实跑 `BLOCKED`：基线里没有可编辑的冻结节点（与 G3-GAP-02 同因）。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json',
   },
@@ -166,13 +172,13 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     limits: [],
     missing:
       '助手草稿里的「确定受影响 / 可能受影响」两组说明**已经实现**；' +
-      '缺的是**验收台未覆盖读侧**：验收台没有把草稿里的两组说明读回来核对，' +
-      '所以行 `AC-G3-14` 仍为 `BLOCKED`。',
+      '**验收台读回链路也已补上**（#295）：台面把草稿里的两组说明读回来核对' +
+      '（缺说明时记「助手未给两组说明」，不崩掉也不假装有）。' +
+      '现在缺的是**一条带两组说明的助手草稿**——草稿由真实模型轮次产生。',
     specAnchor: anchor(402, 404),
     unblockCondition:
-      '由 #295 给验收台补助手草稿两组说明的读回步骤（草稿里读 `definite_affected` / ' +
-      '`possible_affected`，与 `impacts[].certainty` 显式区分），并在当前 head 实跑落证；' +
-      '落证后 `AC-G3-14` 才能离开 `BLOCKED`。',
+      '提供可用的模型凭据跑出一条带两组说明的助手草稿，并在当前 head 重跑实跑落证；' +
+      '`AC-G3-14` 才能离开 `BLOCKED`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 251,
     rowStatus: 'BLOCKED',
@@ -184,7 +190,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '须经**人工确认**后才进入正式评估。' +
       '工作台 `ImpactOpsPanel.vue` 的分组是**影响解析结果**的分组（`impacts[].certainty`），' +
       '**不是** AC-G3-14 要求的**助手草稿解释分组**，两者不可互替。' +
-      '卡点在验收台未覆盖读侧 → #295；行 `AC-G3-14` 仍 `BLOCKED`。',
+      '本轮实跑 `NOT RUN`：没有可读回的助手草稿（台面不自己造模型轮次）。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json',
   },
@@ -194,13 +201,14 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     rows: ['AC-G3-15'],
     limits: [],
     missing:
-      '依赖候选的**批量提出已经实现**；缺的是**验收台未覆盖读侧**：' +
-      '验收台没有把批量候选与既有决策三态的读回核对，' +
-      '所以行 `AC-G3-15` 仍为 `BLOCKED`。',
+      '依赖候选的**批量提出已经实现**；**验收台读回链路也已补上**（#295）：' +
+      '台面把批量候选与既有决策三态的读回核对。' +
+      '现在缺的是**在当前 head 上跑出绿**：本轮实跑撞出候选对象引用与项目对齐的问题（已修），' +
+      '尚未重跑。',
     specAnchor: anchor(406, 408),
     unblockCondition:
-      '由 #295 给验收台补候选批量读回与既有 `decision` 三态对接的步骤，' +
-      '并在当前 head 实跑落证；落证后 `AC-G3-15` 才能离开 `BLOCKED`。',
+      '在当前 head 重跑实跑，拿到三态决策（确认 / 修改 / 拒绝）、同版本不再重提、' +
+      '确认时版本复检的完整证据；`AC-G3-15` 才能离开 `BLOCKED`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 252,
     rowStatus: 'BLOCKED',
@@ -208,7 +216,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '依赖候选批量提出**已实现**（一次提出若干候选依赖，候选与已确认边**分表存放**，' +
       '候选带对象版本、依据片段与建议理由，可与既有 `decision` 三态对接）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json`（#252）。' +
-      '卡点在验收台未覆盖读侧 → #295；行 `AC-G3-15` 仍 `BLOCKED`。',
+      '本轮实跑 `BLOCKED`：候选的 source 必须是变更集 roots 里的 ProjectSpec ref、' +
+      'target 必须是本项目的章节版本（跨项目引用会被 404 拒掉），' +
+      '且三条链需各建各的项目（否则撞 409「基线已漂移」）；这些已修，未在当前 head 重跑出绿。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json',
   },

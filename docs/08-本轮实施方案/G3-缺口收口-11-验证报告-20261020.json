@@ -1,6 +1,12 @@
 {
   "ticket": "#295（G3 缺口收口-11）：给 G3 验收台补三条链路",
-  "gap": ["G3-GAP-01", "G3-GAP-02", "G3-GAP-03", "G3-GAP-04", "G3-GAP-05"],
+  "gap": [
+    "G3-GAP-01",
+    "G3-GAP-02",
+    "G3-GAP-03",
+    "G3-GAP-04",
+    "G3-GAP-05"
+  ],
   "head_at_evidence": "6015934",
   "head_note": "基线为 integrate/g3-gap-closure-r2（6015934，即 main 的合并提交）。本票的实跑由主会话在合并后执行；本报告记录的是实现接缝、单测证据与未实跑声明。",
   "branch": "feat/issue-295-acceptance-links",
@@ -93,12 +99,17 @@
     }
   ],
   "page_wiring": {
-    "files": ["frontend/src/views/lingdoc/g3demo/G3Demo.vue"],
+    "files": [
+      "frontend/src/views/lingdoc/g3demo/G3Demo.vue"
+    ],
     "what": "新增「缺口收口 · 三条新链路」区块：三个按钮分别跑路线图链 / 故障注入观测链 / 助手读回链；每条链的判定卡按 verdict id 渲染；矩阵投影仍走同一套 g3Evidence 规则表。",
     "note": "每段链各跑在自己的隔离项目上，结论逐段判，不跨项目串味。"
   },
   "evidence_rules": {
-    "files": ["frontend/src/views/lingdoc/g3demo/g3Evidence.ts", "frontend/src/views/lingdoc/g3demo/g3Evidence.test.ts"],
+    "files": [
+      "frontend/src/views/lingdoc/g3demo/g3Evidence.ts",
+      "frontend/src/views/lingdoc/g3demo/g3Evidence.test.ts"
+    ],
     "what": "规则表补 AC-G3-03 / AC-G3-08 / AC-G3-16 三条（requires 指向本票新链路的步骤名，verdictId 指向对应判定卡），并把这三组新步骤名纳入「规则表引用的步骤名都真实存在」的断言。",
     "not_changed": "g3Matrix.ts 的行状态本票**不改**（由主会话在实跑后统一改）；g3Gaps.ts / g3Gaps.test.ts 未触碰。"
   },
@@ -198,5 +209,59 @@
     "本票没有新增任何后端产品端点，也没有改任何后端业务代码：三个 runner 文件与页面接线全部在前端验收台侧。",
     "注入是夹具、不是端点这条口径同时写进了代码注释（faultInjection.ts 文件头）与本报告，未装配时一律记 NOT RUN。",
     "本票的判定函数沿用 runner/changeset.ts 的 G3Verdict（= runner/runContext.ts 的 G3RunVerdict），未自创结构。"
-  ]
+  ],
+  "follow_up_implemented_by_main_session": {
+    "note": "本票实现者自报的四条 follow-up，由主会话在合并后补齐。补齐过程中又撞出三处真实接口使用问题，一并记在这里。",
+    "items": [
+      {
+        "item": "实跑入口接上三条新链路",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "run-evidence.ts 的 --live 原来只跑前置链与变更集链；现在把路线图 / 故障注入 / 助手候选三条链都接进去，并把它们的判定并入同一次运行的导出。任一条链失败不中断整轮——失败本身是真实事实，要落进证据。"
+      },
+      {
+        "item": "复用已注册账号的入口",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "受控故障注入按**租户**限定，页面每次新建随机账号会落到别的租户去，注入永远不命中。新增 G3_ACCOUNT_EMAIL / G3_ACCOUNT_PASSWORD 环境变量入口：给了就用它登录（registerFirst=false），没给才自建账号。"
+      },
+      {
+        "item": "路线图链自造前置",
+        "file": "frontend/src/views/lingdoc/g3demo/runner/roadmap.ts",
+        "what": "基线里一个节点都没有时，台面自己造一个：新增节点走语义路径 → 得到变更集 → 评估 → 应用 → 重读基线。没有这一步，AC-G3-16 这类判据就没有可编辑的对象，台面只能永远记 BLOCKED。造出来的节点是合成材料（名字与理由只带运行标识）。"
+      },
+      {
+        "item": "候选批次按 roots 语义提交",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "影响评估从变更集 roots 出发遍历依赖边，边的 source 不是那个 ProjectSpec ref 时 action 不会传播；target 必须是**本项目**的章节版本（拿别的项目的对象引用会被 404 拒掉）。另外三条链各建各的项目：链路自己会 apply 变更集从而推进上下文修订，共用项目时后一条链会撞 409「基线已漂移」。"
+      },
+      {
+        "item": "同轮建多个项目时给不同幂等键前缀",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "runProjectChain 的 idemPrefix 入口本来就为「同一次运行建两个项目」准备；前缀用 ASCII——中文进到幂等键里会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键，服务端按 409 idempotency_conflict 拒掉。"
+      },
+      {
+        "item": "变更集同时提交两个必填字段",
+        "file": "frontend/src/views/lingdoc/g3demo/runner/faultInjection.ts",
+        "what": "演示模板把 research_subject 与 research_goal 都声明成必填，只提交一个会被按 400 invalid_request 拒掉。变更集的 affected_chapter_ids 也要指向**本项目**的章节，空列表同样被拒。"
+      },
+      {
+        "item": "HTTP 客户端加请求超时",
+        "file": "frontend/scripts/g3demo/fetchClient.ts",
+        "what": "没有超时的话，一个挂住的请求会把整轮实跑永久卡死——看上去像跑得慢，实际上什么结论都没有。带上超时之后，挂住会变成一次可读的失败：链路记成「本条链没有跑完：<真实原因>」，其余链路照跑。"
+      },
+      {
+        "item": "两轮实跑编排入库",
+        "file": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py",
+        "what": "轮 1 不装配注入、轮 2 装配同一个租户的注入，用同一个账号 / 同一个租户 / 同一个 SQLite。支持按链过滤（G3_ONLY_CHAINS）与跳过前置变更集链（G3_SKIP_LIFECYCLE，注入轮里 apply 返回 503 会把前置链带崩）。"
+      }
+    ],
+    "real_run_evidence": "docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json",
+    "real_run_head": "a8fb69f",
+    "real_run_conclusion": "三条链都已接入实跑入口并在真实后端上跑过：未装配注入时 AC-G3-03 按口径记 NOT RUN（链路本身完整跑通，附读回证据）；装配后注入命中（503 + injected_fault）已观测到，但命中后的回滚读回被后端写阻塞挡住（缺陷票 #310），因此该行仍不得判 PASS。AC-G3-08 / 14 / 15 / 16 的前置（模板声明必需 RouteNode、真实模型草稿、候选批次对象引用）本轮不具备，如实记 NOT RUN / BLOCKED 并写明解除条件。",
+    "new_defects": [
+      {
+        "issue": "#310",
+        "summary": "装配受控故障注入后 SQLite 上的后续写操作被阻塞。这是本轮实跑暴露的**新**缺陷，与本票的实现无关。"
+      }
+    ]
+  }
 }
