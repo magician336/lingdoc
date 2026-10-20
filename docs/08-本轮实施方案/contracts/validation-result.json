@@ -5,7 +5,7 @@
     "result": "PASS",
     "scope": "three_full_workflow_registrars_four_api_consumers_and_five_focused_workspace_handlers",
     "focused_workspace_operations": 5,
-    "registered_operations": 82,
+    "registered_operations": 94,
     "frontend_calls": 94,
     "frontend_calls_to_scoped_registrars": 79,
     "routes": [
@@ -271,6 +271,83 @@
         "fixed_success": "200",
         "typed_response": null,
         "read_method": "ListResearchTasks",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap",
+        "line": 29,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") (core.RoadmapBaseline, error)",
+        "read_method": "ReadRoadmap",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap/edges",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edges",
+        "line": 32,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") ([]core.RouteEdge, error)",
+        "read_method": "ReadRouteEdges",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap/edges/{}/versions",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edges/:edgeId/versions",
+        "line": 35,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") ([]core.RouteEdge, error)",
+        "read_method": "ReadRouteEdgeVersions",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap/edits",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits",
+        "line": 54,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") ([]core.RoadmapEditSession, error)",
+        "read_method": "ListRoadmapSessions",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap/edits/{}",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits/:sessionId",
+        "line": 57,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") (core.RoadmapEditSession, error)",
+        "read_method": "GetRoadmapSession",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap/nodes/{}/compare",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/nodes/:nodeId/compare",
+        "line": 41,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") (core.RoadmapComparison, error)",
+        "read_method": "CompareRoadmapNodeVersions",
+        "idempotent": false
+      },
+      {
+        "signature": "GET /projects/{}/roadmap/nodes/{}/versions",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/nodes/:nodeId/versions",
+        "line": 38,
+        "request_type": null,
+        "fixed_success": "200",
+        "typed_response": ") ([]core.RoadmapVersionEntry, error)",
+        "read_method": "ReadRoadmapNodeVersions",
         "idempotent": false
       },
       {
@@ -766,6 +843,61 @@
         "fixed_success": null,
         "typed_response": null,
         "read_method": "RunResearchTask",
+        "idempotent": true
+      },
+      {
+        "signature": "POST /projects/{}/roadmap/edits",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits",
+        "line": 60,
+        "request_type": "core.RoadmapEditBeginInput",
+        "fixed_success": null,
+        "typed_response": null,
+        "read_method": "BeginRoadmapEdit",
+        "idempotent": true
+      },
+      {
+        "signature": "POST /projects/{}/roadmap/edits/{}/cancel",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits/:sessionId/cancel",
+        "line": 72,
+        "request_type": "core.RoadmapCancelInput",
+        "fixed_success": null,
+        "typed_response": null,
+        "read_method": "CancelRoadmapEdit",
+        "idempotent": true
+      },
+      {
+        "signature": "POST /projects/{}/roadmap/edits/{}/commit",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits/:sessionId/commit",
+        "line": 69,
+        "request_type": "core.RoadmapCommitInput",
+        "fixed_success": null,
+        "typed_response": null,
+        "read_method": "CommitRoadmapEdit",
+        "idempotent": true
+      },
+      {
+        "signature": "POST /projects/{}/roadmap/edits/{}/edges",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits/:sessionId/edges",
+        "line": 66,
+        "request_type": "core.RoadmapEdgeProposalInput",
+        "fixed_success": null,
+        "typed_response": null,
+        "read_method": "ProposeRoadmapEdge",
+        "idempotent": true
+      },
+      {
+        "signature": "POST /projects/{}/roadmap/edits/{}/nodes",
+        "file": "internal/lingdoc/workspace/roadmap_routes.go",
+        "path": "/projects/:projectId/roadmap/edits/:sessionId/nodes",
+        "line": 63,
+        "request_type": "core.RoadmapNodeProposalInput",
+        "fixed_success": null,
+        "typed_response": null,
+        "read_method": "ProposeRoadmapNode",
         "idempotent": true
       },
       {
