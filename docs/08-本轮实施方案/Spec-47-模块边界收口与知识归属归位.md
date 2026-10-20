@@ -445,6 +445,82 @@ PR #285 走了一遍双轴评审（标准轴 / 规格轴），两条轴各自独
 | D-1 | 确认记录表中是否存在章节标识与章节版本标识不匹配的记录 | DR-47-01 收紧后这些记录将不再有效 | 需产品确认是否需要数据修复；若不修复，须在 PR 中记录「历史记录按新谓词判为未确认」的影响 |
 | D-2 | 确认记录表中是否存在章节标识为空或指向不存在章节的记录 | 同上 | 同上 |
 
+## 合并到 main 时的发现与处理（2026-10-20）
+
+### base 移动与合并
+
+PR #285 提交后 `origin/main` 前进到 `e79f403`（PR #283 审计列宽修复 + PR #286 G3 缺口收口文档），
+本分支落后 7 个提交。按「先核对 base 未移动」的约定，这次**核对发现 base 已移动**，因此先把
+`origin/main` 合进集成分支再合并，避免用 GitHub 的自动合并把冲突留给评审者。
+
+合并本身是干净的（ort 策略，`service_facade.go` 自动合并），但合并**改变了结论**：本 PR 引入的
+两处断裂必须先修，否则合并会静默回退刚落地的新 main 修复。
+
+### 断裂一：对外形态机制被绕过（新 main 的修复会被静默打回）
+
+`origin/main` 的 PR #283 新增了 `auditWriteFailed`：审计行写失败时，它自带
+`ClientStatus() / ClientCode() / ClientMessage()`，把「有效请求 + 存储失败」与「业务拒绝」区分开。
+
+但那三个方法是**已被本 PR 退役的私有接口**。本 PR 把传输层改成只认 `clienterror.Presenter`
+（`ClientForm() Form`），于是 `auditWriteFailed` 变成了 transport 读不到的形态：**它不会崩、不会报错，
+只会掉进兜底 500**——调用方拿到 `internal_error`，而本该命名原因的 `audit_write_failed` 消失了。
+
+合并前 new main 自己的测试**不会变红**：没有任何用例断言渲染出来的 code。
+
+修法：把 `auditWriteFailed` 迁到 `clienterror`（`clienterror.Wrap`），与本 PR 已迁移的
+`impact_task_source_unavailable` 同一写法。**对外形态逐字不变**（500 / `audit_write_failed` /
+「审计记录写入失败，本次操作未生效，请稍后重试。」），只换声明机制。
+
+守卫（`internal/lingdoc/workspace/client_form_ownership_test.go`）：
+
+- `TestClientPresentationHasOneDeclarationMechanism`：扫描 `internal/` 全部生产文件，
+  断言 `ClientStatus` / `ClientCode` / `ClientMessage` 三个方法名**不得再出现**。
+  退役的机制一旦复活，守卫立刻报出文件与行号。
+- `TestSendErrorRendersTheDeclaredForm`：HTTP 级断言「声明的形态 = 渲染出的形态」，
+  补上此前缺的一环——声明对了但被渲染成兜底 500，同样是缺陷。
+
+### 断裂二：前端跨语言漂移守卫指着已被搬走的拥有者（CI 红）
+
+`frontend/src/views/lingdoc/chapterCitations.test.ts` 的「标记规则与服务端逐字一致」用例，
+去 `internal/lingdoc/workspacecore/service_facade.go` 里找标记正则。47.04 把这段语法搬到了
+`internal/lingdoc/sourcemarker`，前端守卫还指着旧位置，于是读不到正则、断言失败。
+
+这是本 PR 引入的真实断裂：**本地那次前端验证跑在 47.01 的旧 worktree 上**（那时正则还在
+`workspacecore`），没覆盖到 47.04 落地后的状态；CI 在最终 head 上报了出来。
+
+修法：守卫改指新的唯一拥有者 `internal/lingdoc/sourcemarker/sourcemarker.go`。
+字符集没有变（两端仍是 `[A-Za-z0-9_-]`），变的只是「拥有者在哪」。
+
+### 断裂三：staticcheck S1011（CI 红）
+
+`internal/lingdoc/workspacecore/g5_machine_read.go:210` 的逐个 append 循环被 staticcheck 判为
+可换成 append 展开。已改写为 `sourceIDs = append(sourceIDs, sourcemarker.IDs(...)...)`，行为不变。
+
+### 阴性验证
+
+三处修法都做了阴性验证：注入违规 → 守卫精确报出 → 回滚。
+
+| 断言 | 注入的违规 | 报出 |
+| --- | --- | --- |
+| 形态唯一性 | 临时文件声明 `ClientStatus/ClientCode/ClientMessage` | 3 条，逐个带文件与行号 |
+| `auditWriteFailed` 形态 | 临时退回旧式结构体声明 | 「审计写入失败没有声明对外形态」 |
+| 前端漂移守卫 | Go 侧字符集临时改为 `[A-Za-z0-9_.-]` | 「sourcemarker 的标记正则变了，界面这一侧必须跟着改」 |
+
+### 合并后的验证证据（head 含合并与三处修复）
+
+| 验证 | 命令 | 结果 |
+| --- | --- | --- |
+| 行为回归 | `go test ./internal/lingdoc/... ./internal/evidence/... ./internal/clienterror/... ./internal/router/... ./internal/container/... -count=1` | 全部 ok |
+| 同上 + 真 PostgreSQL | 追加 `LINGDOC_TEST_POSTGRES_DSN`（隔离实例 127.0.0.1:55433） | 全部 ok，含 new main 带来的 `TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth` |
+| 静态检查 | `go vet ./internal/...` | 通过（带上 `CGO_CFLAGS` 指向本地 `sqlite3.h` 后，`internal/container` 不再被环境阻断） |
+| 格式 | `gofmt -l internal/lingdoc internal/clienterror internal/evidence` | 无输出 |
+| 空白 | `git diff --check` | 无输出 |
+| 前端 | `tsx --test` | 1463 项 / 1462 通过 / 0 失败 / 1 跳过（既有） |
+
+**注**：`CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'` 使
+`internal/container` 与 `go vet ./internal/...` 在本机可跑通，解除了一直记为
+`BLOCKED（环境）` 的限制；CI 不依赖该环境变量。
+
 ## 发布记录
 
 | 对象 | 标识 | 状态 |
@@ -453,8 +529,8 @@ PR #285 走了一遍双轴评审（标准轴 / 规格轴），两条轴各自独
 | 实施与证据档 | `docs/08-本轮实施方案/Spec-47-模块边界收口与知识归属归位.md` | 本分支，未提交 |
 | GitHub Issue | [#259](https://github.com/magician336/lingdoc/issues/259) | 已发布，标签 `ready-for-agent` |
 | 前序 Spec | [#164](https://github.com/magician336/lingdoc/issues/164)（应用层传输解耦与幂等结果边界） | 已关闭；本 Spec 接续其边界 |
-| 实施分支 | `codex/lingdoc-architecture-improvement-20261020-arch` | 已推送到 `origin`，基于 `origin/main @ 5eab412` |
-| PR | [#285](https://github.com/magician336/lingdoc/pull/285) | Draft，范围 = 段一的四张票 |
+| 实施分支 | `codex/lingdoc-architecture-improvement-20261020-arch` | 已推送到 `origin`；已合入 `origin/main @ e79f403` |
+| PR | [#285](https://github.com/magician336/lingdoc/pull/285) | 范围 = 段一的四张票；合并前已并入 `origin/main` 并修复合并引入的三处断裂 |
 
 ## 取证与实现脚本
 

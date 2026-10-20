@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
@@ -429,18 +430,19 @@ func auditAuthorizationAction(capability string) string {
 // storage failure rather than a business decision: the caller's request was
 // valid and nothing changed. It carries its own code so the transport mapper
 // stays a backstop (ADR 0003) instead of growing a branch per failure.
-type auditWriteFailed struct{ cause error }
-
-func (e auditWriteFailed) Error() string { return "audit_write_failed: " + e.cause.Error() }
-
-func (e auditWriteFailed) Unwrap() error { return e.cause }
-
-func (e auditWriteFailed) ClientStatus() int { return 500 }
-
-func (e auditWriteFailed) ClientCode() string { return "audit_write_failed" }
-
-func (e auditWriteFailed) ClientMessage() string {
-	return "审计记录写入失败，本次操作未生效，请稍后重试。"
+//
+// The presentation is declared with clienterror, which is the one mechanism
+// the transport renders. A presentation declared on a private interface here
+// would be invisible to it: the failure would fall back to the generic 500
+// and lose the code that names the cause, turning a known storage failure
+// into an unexplained one.
+func auditWriteFailed(cause error) error {
+	return clienterror.Wrap(
+		clienterror.Form{
+			Status: 500, Code: "audit_write_failed",
+			Message: "审计记录写入失败，本次操作未生效，请稍后重试。",
+		},
+		"audit_write_failed: "+cause.Error(), cause)
 }
 
 // recordAuditInTransaction keeps the audit write on the caller's transaction.
@@ -808,7 +810,7 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 			// failed audit write fails the operation (fail-closed) — but it must
 			// not escape as a raw storage error, because the shared transport
 			// mapper would answer a valid request with a bare 500.
-			return auditWriteFailed{cause: err}
+			return auditWriteFailed(err)
 		}
 		if s.runtimeMode != "" {
 			if err := RuntimeGate(tx, actor, p, op, s.runtimeMode); err != nil {
