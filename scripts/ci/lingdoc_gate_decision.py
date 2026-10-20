@@ -4,8 +4,8 @@ What this module owns
 ----------------------
 Every fact the gate needs in order to decide *what runs*:
 
-* the diff ranges -- the pull request's own range and the range of the last
-  push;
+* the diff ranges -- the pull request's own range and the range a push
+  reports;
 * the changed files of a range;
 * the tree hashes behind the tested surface;
 * the tested surface itself (Go packages, frontend directories);
@@ -544,14 +544,19 @@ def existing_provider_roots(root: Path) -> list[str]:
             if any((root / path).rglob("*.go"))]
 
 
-def _provider_packages(surface: Surface) -> list[str]:
-    """The provider packages the contribution touches."""
+def _provider_packages_of(go_packages: Sequence[str]) -> list[str]:
+    """The provider packages among the given Go package directories."""
     packages: list[str] = []
-    for package in surface.go_packages:
+    for package in go_packages:
         if any(package == root or package.startswith(root + "/")
                for root in PROVIDER_ROOTS):
             packages.append(f"./{package}/...")
     return packages
+
+
+def _provider_packages(surface: Surface) -> list[str]:
+    """The provider packages the contribution touches."""
+    return _provider_packages_of(surface.go_packages)
 
 
 def _pattern_verdict(forced: bool, run_code: bool,
@@ -664,6 +669,94 @@ def _full_fields(root: Path, reason: str, base: str, forced: bool,
     }
 
 
+def _push_baseline(diff_range: str | None) -> str:
+    """The commit a push starts from: the left side of the push's range.
+
+    A push that creates a branch reports an all-zero ``before``; the range
+    then names the new head's parent, which is the boundary
+    :func:`push_range` already picked.
+    """
+    if not diff_range:
+        return ""
+    return diff_range.split("...", 1)[0].strip()
+
+
+def _decide_push(event: Mapping[str, Any], root: Path,
+                 diff_range: str | None, forced: bool,
+                 changed: Sequence[str]) -> Decision:
+    """The decision for a branch push.
+
+    A push carries no pull request contribution, but it carries a range of
+    its own: GitHub reports the ``before`` and ``after`` commits of the
+    push.  The tested surface of a push is therefore the diff the push
+    delivers, and its baseline is the commit the push started from.  That is
+    the same validation unit ADR 0006 describes -- (tested surface content,
+    baseline content) -- with the push's own range in place of the pull
+    request's contribution.
+
+    A push never takes the formatting-only fast path (ADR 0005), and a push
+    that changes the gate itself is judged by the whole gate, exactly as a
+    pull request that changes it is.
+    """
+    after = event.get("after")
+    after_sha = after if isinstance(after, str) and SHA.fullmatch(after) else ""
+    base = _push_baseline(diff_range)
+    paths = list(changed)
+
+    go_packages = go_package_dirs(root, after_sha, paths) if after_sha else []
+    front = frontend_dirs(paths)
+    governance = any(_is_governance(path) for path in paths)
+    scope = classify(paths)
+    provider_packages = tuple(_provider_packages_of(go_packages))
+    surface = list(go_packages) + list(front)
+    run_code = bool(paths)
+    run_targeted = bool(paths)
+
+    if governance:
+        # The gate judges itself, exactly as it does for a pull request.
+        surface = list(existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
+        provider_packages = tuple(existing_provider_roots(root))
+        reason = "governance changed; the whole scope is tested"
+    elif forced and not paths:
+        # The range could not be resolved: the whole scope is tested.
+        surface = list(existing_provider_roots(root)) + [FRONTEND_ROOT.rstrip("/")]
+        provider_packages = tuple(existing_provider_roots(root))
+        run_code = run_targeted = True
+        reason = "the push range is undetermined; the whole scope is tested"
+    elif paths:
+        reason = "the push diff is the tested surface"
+    else:
+        reason = "the push carries no file"
+
+    fields: dict[str, Any] = {
+        "run_code": run_code,
+        "run_targeted": run_targeted,
+        "provider_packages": provider_packages,
+        "contracts": scope["contracts"],
+        "backend": scope["backend"],
+        "frontend": bool(scope["frontend"]),
+        "reason": reason,
+        "surface": tuple(surface),
+        "base": base,
+        "fingerprint": content_fingerprint(
+            root, after_sha,
+            Surface(base=base, head=after_sha, contribution=tuple(paths),
+                    go_packages=tuple(go_packages), frontend_dirs=tuple(front))),
+        "base_moved": False,
+        "surface_changed": bool(paths),
+        "forced": forced,
+        "governance_changed": governance,
+        "undecided": False,
+        "contribution": tuple(paths),
+        "diff_range": diff_range,
+        "changed_paths": tuple(paths),
+        "format_only": False,
+        "format_reasons": ("a push never takes the formatting-only fast "
+                           "path; the full matrix runs",),
+    }
+    return _build(fields)
+
+
 def _decide(event: Mapping[str, Any], root: Path) -> Decision:
     """The decision for one event, without the recovery path."""
     # The decision is scoped to the pull request's own contribution, never to
@@ -673,6 +766,10 @@ def _decide(event: Mapping[str, Any], root: Path) -> Decision:
     diff_range, forced, changed = select_paths(root, event, latest=False)
 
     if not isinstance(event.get("pull_request"), Mapping):
+        if _event_kind(event, None) == "push":
+            # A push has no contribution, but it has a range of its own: the
+            # diff it delivers is the tested surface.
+            return _decide_push(event, root, diff_range, forced, changed)
         # Not a pull request: the contribution-surface rule does not apply,
         # so the whole scope is used and the reason says so.
         reason = str(event.get("reason") or "risk surface undetermined, "
