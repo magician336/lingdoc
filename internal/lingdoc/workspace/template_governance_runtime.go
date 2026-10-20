@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
@@ -354,7 +355,10 @@ func (r *TemplateGovernanceRuntime) VerifyTemplateSourcesInTransaction(ctx conte
 	return nil
 }
 
-var ErrG4CrossTenantSourceUnsupported = errors.New("template_governance: cross-tenant shared sources require a transaction-safe grant reader and are unavailable in this first pass")
+// ErrG4CrossTenantSourceUnsupported is a cross-tenant shared source that the
+// governance flow cannot recheck inside one transaction. It states its own
+// outward form.
+var ErrG4CrossTenantSourceUnsupported = clienterror.New(clienterror.Form{Status: 422, Code: "cross_tenant_source_unsupported", Message: "当前目录流程无法在同一事务复核跨租户共享授权。", Retryable: false}, "template_governance: cross-tenant shared sources require a transaction-safe grant reader and are unavailable in this first pass")
 
 // g4ReadOnlyBindings hides CurrentAssetRefresher: parent transactions recheck
 // the actual stored active revision and fingerprint rather than auto-advancing
