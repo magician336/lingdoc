@@ -43,7 +43,7 @@ func TestRuleSetProductionLegacyTemplatePathPersistsAcrossRestartPostgres(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rootSQL.Close()
+	defer func() { _ = rootSQL.Close() }()
 	schema := fmt.Sprintf("lingdoc_g4_legacy_%d_%d", os.Getpid(), time.Now().UnixNano())
 	if err := root.Exec("CREATE SCHEMA " + schema).Error; err != nil {
 		t.Fatal(err)
