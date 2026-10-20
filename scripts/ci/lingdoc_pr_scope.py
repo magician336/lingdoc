@@ -127,15 +127,18 @@ def main() -> None:
     args = parser.parse_args()
     root = args.root.resolve()
     if args.all:
-        paths, diff_range = [], None
+        paths, diff_range, whitespace_range = [], None, None
         scope = dict.fromkeys(("contracts", "backend", "frontend"), True)
     else:
         if args.event is None:
             parser.error("--event or GITHUB_EVENT_PATH is required")
         event = json.loads(args.event.read_text(encoding="utf-8"))
         diff_range, paths, scope = select_paths(root, event, args.latest)
+        # Latest-update scope may include upstream merge commits. Whitespace is
+        # always checked over the complete PR, including earlier topic commits.
+        whitespace_range = git_range(event)
     packages = provider_packages(root) if scope["backend"] else []
-    report = {"scope": scope, "diff_range": diff_range, "changed_paths": paths,
+    report = {"scope": scope, "diff_range": diff_range, "whitespace_diff_range": whitespace_range, "changed_paths": paths,
               "provider_packages": packages,
               "note": "Selection only; not a test result or an approval."}
     print(json.dumps(report, ensure_ascii=True, indent=2))
@@ -144,8 +147,8 @@ def main() -> None:
             for key, value in scope.items():
                 handle.write(f"{key}={str(value).lower()}\n")
             handle.write(f"provider_tests={str(bool(packages)).lower()}\n")
-    if diff_range:
-        subprocess.run(["git", "diff", "--check", diff_range, "--"], cwd=root, check=True, stdout=sys.stderr)
+    if whitespace_range:
+        subprocess.run(["git", "diff", "--check", whitespace_range, "--"], cwd=root, check=True, stdout=sys.stderr)
 
 
 if __name__ == "__main__":
