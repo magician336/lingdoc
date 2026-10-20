@@ -105,7 +105,10 @@ jobs:
   verify:
     name: Format, vet, test, and build
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # A formatting-only update keeps the meaning of the code, so the test
+    # matrix does not have to run again for it. The lint job still runs:
+    # it is the judge of whether the update is well formatted.
+    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

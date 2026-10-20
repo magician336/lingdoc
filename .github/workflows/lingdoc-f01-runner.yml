@@ -49,7 +49,9 @@ jobs:
   runner-tests:
     name: F01 runner regression
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # A formatting-only update keeps the meaning of the code, so the test
+    # matrix does not have to run again for it.
+    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
