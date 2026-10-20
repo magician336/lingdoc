@@ -9,6 +9,7 @@ import (
 	"time"
 
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
@@ -401,4 +402,44 @@ func TestDependencyCandidateContractMatchesTheRuntime(t *testing.T) {
 		t.Fatalf("decision status = %d; body=%s", response.Code, response.Body.String())
 	}
 	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/dependency-candidates/{candidateId}/decision", "200", response.Body.Bytes())
+}
+
+// Proposing is not deciding: a machine principal may submit a batch, but it
+// may not decide one.
+func TestDependencyCandidateDecisionRefusesAMachinePrincipal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine, _, source, target := candidateFixtureEngine(t)
+	sourceJSON := candidateRefJSON(source)
+	targetJSON := candidateRefJSON(target)
+	body := `{"expected_context_revision":1,"reason":"研究条件、证据卡和第 2-4 章","candidates":[` +
+		`{"source":` + sourceJSON + `,"target":` + targetJSON + `,"relation":"supports","action":"REVALIDATE_EVIDENCE","evidence":"第 2 章结论引用了证据卡 E12","reason":"章节结论依赖该证据","confidence":0.6}]}`
+	var batch struct {
+		Candidates []struct {
+			ID string `json:"id"`
+		} `json:"candidates"`
+	}
+	response := postDependencyJSON(t, engine, http.MethodPost, "/api/projects/project-1/dependency-candidates", deliveryActorID, "candidate-batch-machine", body)
+	candidateDataFrom(t, response, &batch)
+	if len(batch.Candidates) != 1 {
+		t.Fatalf("candidate batch = %+v", batch)
+	}
+
+	machine := types.WithTenantAPIKeyScope(actorContext(deliveryActorID), types.TenantAPIKeyScope{KeyID: 12, FullAccess: true})
+	request := httptest.NewRequest(http.MethodPost, "/api/projects/project-1/dependency-candidates/"+batch.Candidates[0].ID+"/decision", strings.NewReader(`{"expected_version":1,"decision":"confirm","reason":"机器确认"}`)).WithContext(machine)
+	request.Header.Set("Idempotency-Key", "candidate-machine-decide")
+	recorded := httptest.NewRecorder()
+	engine.ServeHTTP(recorded, request)
+	if recorded.Code != http.StatusForbidden || !strings.Contains(recorded.Body.String(), "human_decision_required") {
+		t.Fatalf("machine decision status = %d; body=%s", recorded.Code, recorded.Body.String())
+	}
+	response = postDependencyJSON(t, engine, http.MethodGet, "/api/projects/project-1/dependencies", deliveryActorID, "", "")
+	var edges struct {
+		Data []DependencyEdge `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &edges); err != nil {
+		t.Fatalf("decode edges: %v", err)
+	}
+	if len(edges.Data) != 0 {
+		t.Fatalf("a machine principal confirmed a candidate: %+v", edges.Data)
+	}
 }
