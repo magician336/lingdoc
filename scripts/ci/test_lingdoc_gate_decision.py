@@ -1225,5 +1225,149 @@ class WhitespaceBoundaryTests(DecisionFixture):
             self.assertIn("topic.md", result.stderr)
 
 
+class PushEventTests(DecisionFixture):
+    """A push is judged by the diff it delivers (#308).
+
+    A pull request carries a contribution: the range ``base...head``.  A push
+    carries no pull request, but it does carry a range of its own -- GitHub
+    reports the ``before`` and ``after`` commits of the push -- so the push's
+    tested surface is the diff the push delivers, and the push's baseline is
+    the commit it started from.
+    """
+
+    def _push(self, root: Path, changes: dict[str, str],
+              message: str) -> dict[str, str]:
+        """Commit the changes and return the push event GitHub would send."""
+        for relative, content in changes.items():
+            write(root, relative, content)
+        git(root, "add", "-A")
+        git(root, "commit", "-m", message)
+        after = git(root, "rev-parse", "HEAD")
+        before = git(root, "rev-parse", "HEAD^")
+        return {"ref": "refs/heads/main", "before": before, "after": after}
+
+    def _outputs(self, root: Path, event: dict) -> dict[str, str]:
+        return decision.write_outputs(decision.decide(event, root))
+
+    def test_a_push_that_touches_the_frontend_selects_the_frontend_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {"frontend/src/views/Workspace.vue":
+                                      "<template>changed</template>\n"},
+                               "frontend")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["job_frontend_verify"], "true")
+            self.assertEqual(outputs["job_frontend_docker_image"], "true")
+            self.assertEqual(outputs["job_app_verify"], "false")
+            self.assertEqual(outputs["job_go_lint_changes"], "false")
+
+    def test_a_push_that_only_touches_documentation_selects_no_code_job(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {"docs/note.md": "changed\n"}, "docs")
+
+            outputs = self._outputs(root, event)
+
+            for key in ("job_frontend_verify", "job_frontend_docker_image",
+                        "job_go_lint_changes", "job_go_lint_golangci",
+                        "job_app_verify", "job_lingdoc_mock_mock",
+                        "job_lingdoc_f01_runner_runner_tests",
+                        "job_lingdoc_workspace_concurrency_workspace_concurrency",
+                        "job_lingdoc_interface_integration_integration",
+                        "job_lingdoc_interface_integration_frontend"):
+                with self.subTest(key=key):
+                    self.assertEqual(outputs[key], "false")
+            self.assertEqual(outputs["run"], "false")
+
+    def test_a_push_that_touches_the_backend_selects_the_app_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 2 }\n"}, "code")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["job_app_verify"], "true")
+            self.assertEqual(outputs["job_go_lint_changes"], "true")
+            self.assertEqual(outputs["job_go_lint_golangci"], "true")
+            self.assertEqual(outputs["job_frontend_verify"], "false")
+            # The workspace core is a surface of its own; the push did not
+            # touch it.
+            self.assertEqual(
+                outputs["job_lingdoc_workspace_concurrency_workspace_concurrency"],
+                "false")
+
+    def test_the_push_names_its_own_surface_and_baseline(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 2 }\n"}, "code")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["base"], event["before"])
+            self.assertEqual(outputs["diff_range"],
+                             f"{event['before']}...{event['after']}")
+            self.assertEqual(outputs["surface"], "internal/lingdoc/workspace")
+            self.assertIn("push", outputs["reason"])
+
+    def test_a_first_push_falls_back_to_the_parent_of_the_new_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\nfunc F() int { return 2 }\n"}, "code")
+            # GitHub reports an all-zero `before` when it creates a ref.
+            event["before"] = "0" * 40
+            parent = git(root, "rev-parse", "HEAD^")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["diff_range"], f"{parent}...{event['after']}")
+            self.assertEqual(outputs["base"], parent)
+            self.assertEqual(outputs["job_app_verify"], "true")
+
+    def test_a_formatting_only_push_still_runs_the_test_jobs(self):
+        # ADR 0005: a push never takes the formatting-only fast path.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {
+                "internal/lingdoc/workspace/service.go":
+                    "package workspace\n\n// A note.\nfunc F() int { return 1 }\n"},
+                "format")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["format_only"], "false")
+            self.assertEqual(outputs["job_app_verify"], "true")
+
+    def test_a_push_that_changes_the_gate_is_judged_by_the_whole_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._repo(root)
+            event = self._push(root, {"scripts/ci/lingdoc_gate_decision.py":
+                                      "# gate\n"}, "gate")
+
+            outputs = self._outputs(root, event)
+
+            self.assertEqual(outputs["run_code"], "true")
+            self.assertEqual(outputs["run_targeted"], "true")
+            self.assertEqual(outputs["contracts"], "true")
+            self.assertEqual(outputs["backend"], "true")
+            self.assertEqual(outputs["frontend"], "true")
+            self.assertIn("frontend", outputs["surface"])
+            self.assertIn("./internal/lingdoc/...", outputs["provider_packages"])
+
+
 if __name__ == "__main__":
     unittest.main()
