@@ -2,11 +2,12 @@ package template
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 )
 
 // RuleSetState describes whether a ruleset can be edited or bound to a new
@@ -22,10 +23,20 @@ const (
 )
 
 // RuleSet lifecycle errors distinguish invalid content from invalid state transitions.
+//
+// Each of them states its own outward form. The rule set storage surface and
+// the rule governance surface both report these failures, and the wording a
+// caller reads is part of the contract, so it is declared here instead of in a
+// transport table.
 var (
-	ErrInvalidRuleSet      = errors.New("invalid rule set")
-	ErrRuleSetNotDraft     = errors.New("rule set is not a draft")
-	ErrRuleSetNotPublished = errors.New("rule set is not published")
+	// ErrInvalidRuleSet is a rule set that does not satisfy its constraints.
+	// The rule governance surface words it as an invalid request; the rule set
+	// storage surface wraps it in its own scenario value.
+	ErrInvalidRuleSet = clienterror.New(clienterror.InvalidRequest, "invalid rule set")
+	// ErrRuleSetNotDraft is a rule set version that is not a draft.
+	ErrRuleSetNotDraft = clienterror.New(clienterror.RuleSetStateNotAllowed, "rule set is not a draft")
+	// ErrRuleSetNotPublished is a rule set version that is not published.
+	ErrRuleSetNotPublished = clienterror.New(clienterror.RuleSetStateNotAllowed, "rule set is not published")
 )
 
 // RuleDefinition is a server-owned evaluator contract. Definitions are
