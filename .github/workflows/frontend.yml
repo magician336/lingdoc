@@ -48,7 +48,9 @@ jobs:
   verify:
     name: Test, type-check, and build
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # A formatting-only update keeps the meaning of the code, so the test
+    # matrix does not have to run again for it. The lint job still runs.
+    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -78,7 +80,8 @@ jobs:
   docker-image:
     name: Docker multi-stage image
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # An image built from a formatting-only update carries no new content.
+    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:

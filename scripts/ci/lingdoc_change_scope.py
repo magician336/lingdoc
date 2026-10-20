@@ -17,6 +17,8 @@ import subprocess
 import sys
 from typing import Any
 
+import lingdoc_format_scope
+
 
 def _run_git(root: Path, *args: str) -> str:
     return subprocess.check_output(
@@ -156,18 +158,25 @@ def main() -> None:
     diff_range, forced, paths = select_paths(root, event)
     patterns = [line.strip() for line in args.patterns.splitlines() if line.strip()]
     should_run = forced or matches(paths, patterns)
+    format_only, format_reasons = (False, ["the formatting-only fast path does not apply to this event"])
+    if lingdoc_format_scope.fast_path_applies(event)[0]:
+        format_only, format_reasons = lingdoc_format_scope.format_only_update(root, diff_range)
     output = {
         "run": should_run,
         "forced": forced,
         "diff_range": diff_range,
         "changed_paths": paths,
         "patterns": patterns,
+        "format_only": format_only,
+        "format_reasons": format_reasons,
     }
     print(json.dumps(output, ensure_ascii=True, indent=2))
     if output_path := os.environ.get("GITHUB_OUTPUT"):
         with open(output_path, "a", encoding="utf-8") as handle:
             handle.write(f"run={str(should_run).lower()}\n")
             handle.write(f"changed_paths={len(paths)}\n")
+            handle.write(f"format_only={str(format_only).lower()}\n")
+            handle.write(f"format_reasons={' | '.join(format_reasons)}\n")
 
 
 if __name__ == "__main__":

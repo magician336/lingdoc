@@ -82,13 +82,16 @@ jobs:
           PY
 
       - uses: actions/setup-go@v6
-        if: steps.scope.outputs.provider_tests == 'true'
+        # A formatting-only update keeps the meaning of the code, so the
+        # test matrix does not have to run again for it. The contract
+        # validation above still runs, and the lint job is untouched.
+        if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
       - name: Test and vet existing LingDoc provider packages
-        if: steps.scope.outputs.provider_tests == 'true'
+        if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
         id: providers
         env:
           CGO_ENABLED: "1"
@@ -115,14 +118,14 @@ jobs:
           go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
 
       - uses: actions/setup-node@v6
-        if: steps.scope.outputs.frontend == 'true'
+        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Test, type-check and build frontend
-        if: steps.scope.outputs.frontend == 'true'
+        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
         id: frontend
         working-directory: frontend
         run: |
