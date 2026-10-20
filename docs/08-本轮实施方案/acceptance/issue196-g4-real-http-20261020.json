@@ -2,25 +2,25 @@
   "status": "PASS",
   "source": {
     "root": "/mnt/c/Users/ASUS/.codex/worktrees/issue196-g4-canonical",
-    "head": "9c9abd0242e484a2d5fa93d734b4b6cfa8b79703",
-    "tree": "a44dd9ddbd794c1e9510cbb5a838f4520e2ab1d3",
+    "head": "159e1f3c280d3ba55f5502d14ee38336ca1c9d46",
+    "tree": "cf10ddef9beef6c4d43e2095c921f67c63e09fb9",
     "dirty": false
   },
   "flows": [
     {
       "status": "PASS",
       "mode": "canonical",
-      "project_id": "b6511441d4f200de",
-      "chapter_id": "339a8144dbe79a7d",
+      "project_id": "6c9710016dd08894",
+      "chapter_id": "4b45508c07d6b7c5",
       "setup": {
         "project": {
-          "id": "b498c19b-1a5d-47de-8b23-b18f7e1d52bd",
+          "id": "93843c68-a68e-4ebb-acdf-92fe34fae446",
           "status": "draft",
           "project_version": 2,
           "template_copy_version": 2
         },
         "active": {
-          "id": "b498c19b-1a5d-47de-8b23-b18f7e1d52bd",
+          "id": "93843c68-a68e-4ebb-acdf-92fe34fae446",
           "status": "active",
           "project_version": 4,
           "template_copy_version": 2
@@ -30,64 +30,64 @@
         "status": "passed",
         "project_version": 8,
         "template_copy_version": 2,
-        "ruleset_hash": "365e9684495e0a91db7665f8e4fe04d13dab5e122435971d5126c56224b4cf9e",
+        "ruleset_hash": "b9f7dfdb8b74344395556a576f87526224e7f466b4e5b0cc7df078715d97f517",
         "ruleset_ref": {
-          "ruleset_id": "issue196-ruleset-b2799ef2",
+          "ruleset_id": "issue196-ruleset-fd1951dc",
           "version": "v1"
         }
       },
       "check": {
         "status": "passed",
         "project_version": 8,
-        "ruleset_hash": "365e9684495e0a91db7665f8e4fe04d13dab5e122435971d5126c56224b4cf9e",
+        "ruleset_hash": "b9f7dfdb8b74344395556a576f87526224e7f466b4e5b0cc7df078715d97f517",
         "ruleset_ref": {
-          "ruleset_id": "issue196-ruleset-b2799ef2",
+          "ruleset_id": "issue196-ruleset-fd1951dc",
           "version": "v1"
         }
       },
       "validation_issues": [
         {
-          "id": "vi-06af5d002b1be350308da230",
+          "id": "vi-0be8b0e2896391b9b259f3de",
           "rule_id": "method-length",
           "severity": "warning",
-          "target_id": "fe622e4c-aa13-4b98-9006-f1072d606d4a",
-          "target_version": "54dce0c0-27b0-4869-80d1-324c5fe358c4",
+          "target_id": "04c5a2be-e4e6-4e35-bb97-9f5a2ef6f472",
+          "target_version": "5fa49c98-5ab4-4a96-a53f-6dedf697d35e",
           "ruleset_ref": {
-            "ruleset_id": "issue196-ruleset-b2799ef2",
+            "ruleset_id": "issue196-ruleset-fd1951dc",
             "version": "v1"
           }
         }
       ],
       "snapshot": {
-        "id": "snapshot-6d68eadfcc0b944cb63b6ebfcded3656",
+        "id": "snapshot-ca0ee389e177ebc6bebc066723d0af54",
         "ruleset_ref": {
-          "ruleset_id": "issue196-ruleset-b2799ef2",
+          "ruleset_id": "issue196-ruleset-fd1951dc",
           "version": "v1"
         },
-        "snapshot_digest": "59adc79027fe48619b58e0b0d16fce0eeada8322bade4b30e3c5c9e497ff7c9a"
+        "snapshot_digest": "5618cebb07c9c8b749c54b35910561a7c0886b6053e2d051398ade43a330b9df"
       },
       "snapshot_readback": {
-        "id": "snapshot-6d68eadfcc0b944cb63b6ebfcded3656",
+        "id": "snapshot-ca0ee389e177ebc6bebc066723d0af54",
         "ruleset_ref": {
-          "ruleset_id": "issue196-ruleset-b2799ef2",
+          "ruleset_id": "issue196-ruleset-fd1951dc",
           "version": "v1"
         },
-        "snapshot_digest": "59adc79027fe48619b58e0b0d16fce0eeada8322bade4b30e3c5c9e497ff7c9a"
+        "snapshot_digest": "5618cebb07c9c8b749c54b35910561a7c0886b6053e2d051398ade43a330b9df"
       },
       "export": {
-        "id": "export-9015a4510feae7140908df1f4868fea9",
+        "id": "export-270789c6fbc86c7c4ff92a36fb2b231e",
         "status": "verified",
         "ruleset_ref": {
-          "ruleset_id": "issue196-ruleset-b2799ef2",
+          "ruleset_id": "issue196-ruleset-fd1951dc",
           "version": "v1"
         },
         "download_path": "present"
       },
       "export_readback": {
-        "id": "export-9015a4510feae7140908df1f4868fea9",
+        "id": "export-270789c6fbc86c7c4ff92a36fb2b231e",
         "status": "verified",
         "ruleset_ref": {
-          "ruleset_id": "issue196-ruleset-b2799ef2",
+          "ruleset_id": "issue196-ruleset-fd1951dc",
           "version": "v1"
         },
         "download_path": "present"
@@ -99,17 +99,17 @@
     {
       "status": "PASS",
       "mode": "legacy",
-      "project_id": "bf06853c39f8e03b",
-      "chapter_id": "fc165f09d1344830",
+      "project_id": "e5149690f5de2acb",
+      "chapter_id": "f46571a04706aa2e",
       "setup": {
         "project": {
-          "id": "9e9c58a1-05cc-4052-bfcf-636302e9430a",
+          "id": "baccedbb-21e0-495c-bf3c-65769fe112d5",
           "status": "draft",
           "project_version": 1,
           "template_copy_version": 1
         },
         "active": {
-          "id": "9e9c58a1-05cc-4052-bfcf-636302e9430a",
+          "id": "baccedbb-21e0-495c-bf3c-65769fe112d5",
           "status": "active",
           "project_version": 3,
           "template_copy_version": 1
@@ -128,20 +128,20 @@
       },
       "validation_issues": [],
       "snapshot": {
-        "id": "snapshot-736afcf521491dd93d66dcdbd858ca78",
-        "snapshot_digest": "ab6476951ddabdef4891df8b3b0dcb05b3b55462594fca0bfac9cd7faf6445bc"
+        "id": "snapshot-6a068373187e5494c0ae1fba2244482c",
+        "snapshot_digest": "8801ac4f3c5f008ae447afe994305c2308fee6b6a3bacefd7917dc62f5f3c0c7"
       },
       "snapshot_readback": {
-        "id": "snapshot-736afcf521491dd93d66dcdbd858ca78",
-        "snapshot_digest": "ab6476951ddabdef4891df8b3b0dcb05b3b55462594fca0bfac9cd7faf6445bc"
+        "id": "snapshot-6a068373187e5494c0ae1fba2244482c",
+        "snapshot_digest": "8801ac4f3c5f008ae447afe994305c2308fee6b6a3bacefd7917dc62f5f3c0c7"
       },
       "export": {
-        "id": "export-17f7c9b286b8e2fa07b5c4ea2ef5e2ad",
+        "id": "export-9705aa316e070e5bab73c0c24c5ed2de",
         "status": "verified",
         "download_path": "present"
       },
       "export_readback": {
-        "id": "export-17f7c9b286b8e2fa07b5c4ea2ef5e2ad",
+        "id": "export-9705aa316e070e5bab73c0c24c5ed2de",
         "status": "verified",
         "download_path": "present"
       },
