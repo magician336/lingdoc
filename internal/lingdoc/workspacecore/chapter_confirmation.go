@@ -105,6 +105,22 @@ func ChapterConfirmationOf(basis ChapterConfirmationBasis, facts []ChapterConfir
 	return ChapterConfirmationFact{}, false
 }
 
+// markChapterUnconfirmed clears a chapter's confirmation flag.
+//
+// This is the one place the flag is written. The three situations that make a
+// chapter unconfirmed — the chapter body rewrite, the working copy commit and
+// the formal basis change — all come through here, so no path can clear the
+// flag while another leaves it standing.
+//
+// The durable half lives in `InvalidateChapterConfirmations`, which clears the
+// stored confirmation rows. It does not have to be called from here: a chapter
+// version that is no longer current cannot be matched by any confirmation
+// record, because the predicate compares the record's chapter version id with
+// the current one.
+func markChapterUnconfirmed(chapter *Chapter) {
+	chapter.ConfirmationValid = false
+}
+
 // chapterConfirmationFacts reads the valid confirmation records of one chapter
 // version and turns them into the facts the predicate judges.
 //
