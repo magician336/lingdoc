@@ -640,6 +640,19 @@ func ValidateChangeImpactAssessment(tx Transaction, p Project, change ChangeSet)
 	return nil
 }
 func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error {
+	return commitChangeImpactTasks(nil, tx, p, change)
+}
+
+// commitChangeImpactTasks stores the impact tasks of an applied change set
+// through the service's ImpactTask writer port. The composition root may
+// substitute a controlled failure implementation there, which is how the
+// apply transaction's atomicity boundary becomes observable from outside the
+// process (#256). A nil writer keeps the direct transactional write.
+func (s *Service) commitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error {
+	return commitChangeImpactTasks(s.impactTasks, tx, p, change)
+}
+
+func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, p Project, change ChangeSet) error {
 	store, ok := tx.(impactTransaction)
 	if !ok {
 		return ErrInvalidState
@@ -711,7 +724,7 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 			task.StaleReason = reason
 			task.StaleAt = now
 		}
-		if err := store.InsertImpactTask(task); err != nil {
+		if err := writeImpactTask(writer, tx, store, task); err != nil {
 			return err
 		}
 		// The handoff record is keyed by the same identity, so a redelivery
@@ -721,6 +734,16 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 		}
 	}
 	return store.RecordContextRevision(p, change)
+}
+
+// writeImpactTask stores one impact task inside the caller's transaction.
+// The composition root may install a writer that fails on purpose; without
+// one the task is written directly through the transaction.
+func writeImpactTask(writer ImpactTaskWriter, tx Transaction, store impactTransaction, task ImpactTask) error {
+	if writer != nil {
+		return writer.WriteImpactTask(tx, task)
+	}
+	return store.InsertImpactTask(task)
 }
 
 // markImpactTaskStale performs the STALE transition, its version bump and its
