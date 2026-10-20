@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"strings"
 	"time"
@@ -429,13 +430,13 @@ func (ContractDemoTemplate) Get(id, version string) (Template, error) {
 }
 
 var (
-	ErrNotFound                    = errors.New("not_found")
-	ErrInvalidRequest              = errors.New("invalid_request")
-	ErrInvalidState                = errors.New("invalid_state")
-	ErrVersionConflict             = errors.New("version_conflict")
-	ErrIdempotencyConflict         = errors.New("idempotency_conflict")
-	ErrRequestInProgress           = errors.New("request_in_progress")
-	ErrSourceUnavailable           = errors.New("source_access_denied")
+	ErrNotFound                    = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "not_found")
+	ErrInvalidRequest              = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "请求字段不符合约定。", Retryable: false}, "invalid_request")
+	ErrInvalidState                = clienterror.New(clienterror.Form{Status: 422, Code: "invalid_state", Message: "当前项目状态或研究条件不满足操作要求。", Retryable: false}, "invalid_state")
+	ErrVersionConflict             = clienterror.New(clienterror.Form{Status: 409, Code: "version_conflict", Message: "内容已变化，请先读取当前版本。", Retryable: false}, "version_conflict")
+	ErrIdempotencyConflict         = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency_conflict")
+	ErrRequestInProgress           = clienterror.New(clienterror.Form{Status: 409, Code: "request_in_progress", Message: "原请求仍在提交，请稍后用相同操作键重试。", Retryable: true, RetryAfter: 1}, "request_in_progress")
+	ErrSourceUnavailable           = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "资料不可用或未获授权。", Retryable: false}, "source_access_denied")
 	ErrPermissionSchemaUnavailable = errors.New("permission_schema_unavailable")
 )
 

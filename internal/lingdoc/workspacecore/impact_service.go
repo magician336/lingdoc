@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/google/uuid"
 	"math"
 	"slices"
@@ -22,7 +23,7 @@ const ImpactActionNoAction = "NO_ACTION"
 
 // ErrDependencyDecided reports that a human already decided this dependency
 // pair, so an automated run may not silently re-propose or overwrite it.
-var ErrDependencyDecided = errors.New("dependency edge already decided")
+var ErrDependencyDecided = clienterror.New(clienterror.Form{Status: 409, Code: "dependency_decided", Message: "该依赖已有人工结论，自动运行不得覆盖。", Retryable: false}, "dependency edge already decided")
 
 func (s *Service) SetImpactRuleChecker(checker ImpactRuleChecker) { s.impactRules = checker }
 func validObjectRef(ref ObjectVersionRef) bool {
@@ -148,29 +149,6 @@ func hashImpactValue(value any) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// ClientFacingError lets a domain error state its own client presentation, so
-// the shared HTTP mapper does not grow one branch per business failure.
-//
-// The workspace HTTP layer checks for this before falling back to its own
-// translation table. An error that knows what the caller should see says so at
-// the point where that fact is known; the mapper stays a backstop for the
-// errors that have not been migrated yet.
-//
-// Status, code and message must describe the caller's situation, not the
-// internal mechanism that detected it. In particular a message about
-// "snapshots" is wrong for any operation that does not involve a snapshot.
-//
-// ClientStatus returns a raw int rather than http.StatusForbidden on purpose:
-// this package is the domain layer and must not depend on the transport layer
-// just to name a number. The transport owns the mapping; the domain only says
-// "forbidden" in a form the transport already understands.
-type ClientFacingError interface {
-	error
-	ClientStatus() int
-	ClientCode() string
-	ClientMessage() string
-}
-
 // impactTaskSourceUnavailable is what acting on an impact task looks like when
 // the sources backing its target are no longer readable by the caller.
 //
@@ -181,20 +159,18 @@ type ClientFacingError interface {
 // nothing to do with this operation. Wrapping here keeps the underlying cause
 // intact for internal errors.Is checks while giving the caller a message that
 // names the real blocker.
-type impactTaskSourceUnavailable struct{ cause error }
-
-func (e impactTaskSourceUnavailable) Error() string {
-	return "impact_task_source_unavailable: " + e.cause.Error()
-}
-
-// Unwrap keeps the original source error reachable, so callers that need to
-// distinguish denied from merely-unavailable keep working unchanged.
-func (e impactTaskSourceUnavailable) Unwrap() error { return e.cause }
-
-func (e impactTaskSourceUnavailable) ClientStatus() int  { return 403 }
-func (e impactTaskSourceUnavailable) ClientCode() string { return "impact_task_source_unavailable" }
-func (e impactTaskSourceUnavailable) ClientMessage() string {
-	return "该影响任务依据的资料授权已不可用，请先恢复资料访问权限，或改派给仍有权限的责任人。"
+//
+// The outward shape is stated here, where the fact is known: the status, code
+// and message describe the caller's situation, not the internal mechanism that
+// detected it. A message about "snapshots" would be wrong for an operation
+// that has nothing to do with snapshots.
+func impactTaskSourceUnavailable(cause error) error {
+	return clienterror.Wrap(
+		clienterror.Form{
+			Status: 403, Code: "impact_task_source_unavailable",
+			Message: "该影响任务依据的资料授权已不可用，请先恢复资料访问权限，或改派给仍有权限的责任人。",
+		},
+		"impact_task_source_unavailable: "+cause.Error(), cause)
 }
 
 func checkedImpactWrite[I any, R any](s *Service, ctx context.Context, actor Actor, projectID string, op operationName, target, key string, input I, refs []ObjectVersionRef, request AuthorizationRequest, write func(Transaction, Project) (operationResult[R], error)) (json.RawMessage, int, bool, error) {
@@ -225,7 +201,7 @@ func checkedImpactWrite[I any, R any](s *Service, ctx context.Context, actor Act
 		// other operation keeps the shared translation, which is still correct
 		// for them.
 		if op == operationActOnImpactTask {
-			return nil, 0, false, impactTaskSourceUnavailable{cause: err}
+			return nil, 0, false, impactTaskSourceUnavailable(err)
 		}
 		return nil, 0, false, err
 	}
@@ -1301,7 +1277,7 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		if err != nil {
 			return operationResult[StabilizationResult]{}, err
 		}
-		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains([]string{"applied", "stabilized"}, change.Status) {
+		if change.TargetContextRevision == nil || *change.TargetContextRevision != p.CurrentContextRevision || !slices.Contains(ChangeSetClosedStatuses, change.Status) {
 			return operationResult[StabilizationResult]{}, ErrVersionConflict
 		}
 		result := StabilizationResult{ChangeSetID: changeID, ContextRevision: p.CurrentContextRevision, Status: "BLOCKED", Blockers: []ImpactBlocker{}, StaleTaskIDs: []string{}, CheckedAt: time.Now().UTC()}
@@ -1337,9 +1313,9 @@ func (s *Service) StabilizeRevision(ctx context.Context, actor Actor, projectID,
 		result.StaleTaskIDs = append(result.StaleTaskIDs, conditions.OwnerStaleTaskIDs()...)
 		if len(result.Blockers) == 0 {
 			result.Status = "STABILIZED"
-			if change.Status != "stabilized" {
+			if ChangeSetStatusNeeds("stabilize", change.Status) {
 				next := change
-				next.Status = "stabilized"
+				next.Status = ChangeSetStatusStabilized
 				if err := changes.UpdateChangeSet(change, next); err != nil {
 					return operationResult[StabilizationResult]{}, err
 				}
@@ -1368,7 +1344,7 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 		if err != nil {
 			return operationResult[ChangeSet]{}, err
 		}
-		if !slices.Contains([]string{"draft", "assessed"}, change.Status) {
+		if !ChangeSetStatusCanMove("assess", change.Status) {
 			return operationResult[ChangeSet]{}, ErrInvalidState
 		}
 		if change.BaseContextRevision != p.CurrentContextRevision || change.BaseSpecRevision != p.SpecRevision {
@@ -1381,7 +1357,7 @@ func (s *Service) AssessChangeSet(ctx context.Context, actor Actor, projectID, c
 			return operationResult[ChangeSet]{}, err
 		}
 		next := change
-		next.Status = "assessed"
+		next.Status = ChangeSetStatusAssessed
 		if err := store.UpdateChangeSet(change, next); err != nil {
 			return operationResult[ChangeSet]{}, err
 		}

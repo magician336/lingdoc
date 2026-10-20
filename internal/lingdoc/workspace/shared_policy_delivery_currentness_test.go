@@ -93,14 +93,39 @@ func TestSharedPolicyRejectsStaleFrozenDelivery(t *testing.T) {
 			stale, _, err := exports.Start(f.ctx, f.actor.UserID, f.project.ID, snapshot.ID, "basis-export-after-"+change)
 			require.Error(t, err)
 			require.Empty(t, stale.ID)
-			_, bytes, err = exports.Download(f.ctx, f.actor.UserID, f.project.ID, artifact.ID)
-			require.Error(t, err)
-			require.Empty(t, bytes, "old download must not bypass live frozen-basis checks")
+			historical, bytes, err := exports.Download(f.ctx, f.actor.UserID, f.project.ID, artifact.ID)
+			if change == "copy_content_hash" || change == "ruleset_hash" {
+				require.Error(t, err, "tampered current template integrity must not authorize a historical download")
+				require.Empty(t, bytes)
+			} else {
+				require.NoError(t, err, "ordinary frozen-basis drift must not disable a verified historical export")
+				require.Equal(t, artifact.ID, historical.ID)
+				require.NotEmpty(t, bytes, "historical export bytes remain available while project access is valid")
+			}
 			var count int64
 			require.NoError(t, f.db.Table("lingdoc_export_artifacts").Where("project_id=?", f.project.ID).Count(&count).Error)
 			require.EqualValues(t, 1, count, "stale request must not create another artifact")
 		})
 	}
+}
+
+func TestSharedPolicyHistoricalDownloadRechecksFrozenSources(t *testing.T) {
+	f := newDeliveryGuardFixture(t, true)
+	reader := candidateadoption.NewSQLiteCandidateAdoptionStore(f.db)
+	inputs := &candidateadoption.DeliveryInputService{Reader: reader, Authorizer: deliveryGuardProjectAuthorizer{f.projects}}
+	policy := NewAccessPolicy(f.projects, f.runtime, reader)
+	snapshots := delivery.NewSQLiteSnapshotStore(f.db)
+	artifacts := delivery.NewSQLiteExportStore(f.db)
+	releases := NewDeliveryReleaseServiceWithPolicy(inputs, f.runtime.DeliveryInputBuilder(), snapshots, f.runtime.CandidateAdoptionSourcePolicy(), policy, nil)
+	exports := NewDeliveryExportServiceWithPolicy(snapshots, artifacts, DeliveryDocument{}, DeliveryDocument{}, inputs, f.runtime.WorkspaceSourcePolicy(), policy)
+	snapshot, _, err := releases.Prepare(f.ctx, f.actor.UserID, f.project.ID, "shared-source-freeze", f.project.ProjectVersion)
+	require.NoError(t, err)
+	artifact, _, err := exports.Start(f.ctx, f.actor.UserID, f.project.ID, snapshot.ID, "shared-source-export")
+	require.NoError(t, err)
+	require.NoError(t, f.db.Exec("UPDATE knowledge_bases SET deleted_at=CURRENT_TIMESTAMP WHERE id='kb-runtime'").Error)
+	_, bytes, err := exports.Download(f.ctx, f.actor.UserID, f.project.ID, artifact.ID)
+	require.Error(t, err, "source revocation must still block historical file access")
+	require.Empty(t, bytes)
 }
 
 type sharedBasisChangeAssembler struct {

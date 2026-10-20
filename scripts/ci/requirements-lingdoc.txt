@@ -1,2 +1,4 @@
 # Validator uses the existing RefResolver API; upgrade with contract checks.
 jsonschema==4.23.0
+# The CI scope scripts' wiring tests parse the workflow files with PyYAML.
+PyYAML==6.0.3

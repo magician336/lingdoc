@@ -180,7 +180,7 @@ func TestSpecRetryBoundAndCancellation(t *testing.T) {
 			}
 			started := time.Now()
 			_, _, _, err = svc.SaveSpec(ctx, actor, id, "save-bound", SaveSpecInput{ExpectedSpecRevision: 0, Fields: map[string]string{"research_goal": "blocked"}})
-			wantErr := ErrRequestInProgress
+			wantErr := error(ErrRequestInProgress)
 			if cancelOnLock {
 				wantErr = context.Canceled
 			}

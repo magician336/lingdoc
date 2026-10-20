@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
-	"regexp"
+	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"slices"
 	"strings"
 	"time"
@@ -12,20 +12,14 @@ import (
 	"github.com/google/uuid"
 )
 
-var workingCopySourceMarker = regexp.MustCompile(`\[\[source:([A-Za-z0-9_-]+)\]\]`)
-
 func validateWorkingCopyBody(body string, sourceIDs []string) ([]string, error) {
 	if sourceIDs == nil || len(body) > 200000 {
 		return nil, ErrInvalidRequest
 	}
-	markers := workingCopySourceMarker.FindAllStringSubmatch(body, -1)
-	if strings.Count(body, "[[source:") != len(markers) {
+	if err := sourcemarker.Validate(body); err != nil {
 		return nil, ErrInvalidRequest
 	}
-	refs := make([]string, 0, len(markers))
-	for _, marker := range markers {
-		refs = append(refs, marker[1])
-	}
+	refs := sourcemarker.IDs(body)
 	slices.Sort(refs)
 	refs = slices.Compact(refs)
 	declared := slices.Clone(sourceIDs)

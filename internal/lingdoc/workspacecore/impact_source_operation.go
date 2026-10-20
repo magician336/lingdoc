@@ -368,7 +368,7 @@ func resolveApplyChangeSet(in impactSourceProjectionInput) (out impactSourceCont
 	// SATISFIED is intentionally assessment-free and terminal. Current
 	// project/Owner authorization already ran before this decoder; reject the
 	// invalid business action instead of reading a nonexistent plan.
-	if change.Status == "satisfied" {
+	if change.Status == ChangeSetStatusSatisfied {
 		return out, ErrInvalidState
 	}
 	store, err := impactPort(in.tx)

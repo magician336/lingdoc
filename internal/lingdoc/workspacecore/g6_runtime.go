@@ -3,7 +3,7 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
-	"errors"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/google/uuid"
 	"regexp"
 	"slices"
@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-var ErrRuntimePaused = errors.New("runtime scope is paused")
-var ErrRuntimeRecoveryRequired = errors.New("runtime recovery rechecks are required")
+var ErrRuntimePaused = clienterror.New(clienterror.Form{Status: 423, Code: "runtime_paused", Message: "当前范围已暂停，请由负责人核对并恢复。", Retryable: false}, "runtime scope is paused")
+var ErrRuntimeRecoveryRequired = clienterror.New(clienterror.Form{Status: 422, Code: "runtime_recovery_required", Message: "恢复前需要核对当前检查、快照和导出文件。", Retryable: false}, "runtime recovery rechecks are required")
 
 type RuntimeScope struct {
 	Kind  string `json:"kind"`

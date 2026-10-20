@@ -578,11 +578,15 @@ class ScenarioReportTest(unittest.TestCase):
         self.assertEqual(f05["steps"][3]["checks"][0]["expected"], "version_conflict")
         self.assertEqual([check["status"] for check in f05["steps"][4]["checks"]], ["passed", "passed"])
         f12 = report["executed"][2]
-        # F12 now records an activation read before it activates: 201 sits between
-        # the spec save and the two activate calls.
-        self.assertEqual([step["actual_http"] for step in f12["steps"]], [200, 200, 201, 409, 200])
-        self.assertEqual(f12["steps"][3]["checks"][0]["expected"], "version_conflict")
-        self.assertEqual([check["status"] for check in f12["steps"][4]["checks"]], ["passed", "passed"])
+        self.assertEqual([step["step_id"] for step in f12["steps"]],
+                         ["F12-01", "F12-02", "F12-03", "F12-04", "F12-05"])
+        by_id = {step["step_id"]: step for step in f12["steps"]}
+        self.assertEqual({key: value["actual_http"] for key, value in by_id.items()},
+                         {"F12-01": 200, "F12-02": 200, "F12-03": 201, "F12-04": 409, "F12-05": 200})
+        self.assertEqual({check["path"] for check in by_id["F12-03"]["checks"]}, {"/data/project_id", "/data/project_version"})
+        self.assertEqual([check["status"] for check in by_id["F12-03"]["checks"]], ["passed", "passed"])
+        self.assertEqual(by_id["F12-04"]["checks"][0]["expected"], "version_conflict")
+        self.assertEqual([check["status"] for check in by_id["F12-05"]["checks"]], ["passed", "passed"])
 
 
 class ScenarioCommandLineTest(unittest.TestCase):
