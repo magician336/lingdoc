@@ -235,7 +235,7 @@ func acceptanceTasks(t *testing.T, f routeContractFixture) []core.ImpactTask {
 // `/assess` joined this list in #223. It was registered but unpublished, so a
 // generated client had no way to trigger an assessment; the contract now
 // publishes it and the bidirectional coverage below keeps it that way.
-var impactOwnedPathSuffixes = []string{"/impact-tasks", "/impact-assessment", "/assess", "/dependencies", "/stabilize", "/preflight", "/check-receipts"}
+var impactOwnedPathSuffixes = []string{"/impact-tasks", "/impact-assessment", "/assess", "/dependencies", "/dependency-candidates", "/stabilize", "/preflight", "/check-receipts"}
 
 func isImpactOwnedPath(path string, owned []string) bool {
 	for _, suffix := range owned {

@@ -16819,6 +16819,239 @@
         "x-domain": "workspace",
         "x-delivery-phase": "core"
       }
+    },
+    "/projects/{projectId}/dependency-candidates": {
+      "get": {
+        "operationId": "listDependencyCandidateBatches",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "读取 AI 提出的依赖候选批次与人工结论；逐条按来源授权过滤，不可访问对象的候选不返回",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "batch_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "候选批次列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyCandidateBatchListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      },
+      "post": {
+        "operationId": "submitDependencyCandidateBatch",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "批量提交 AI 依赖候选；候选不是依赖边，未确认的候选不进入正式依赖图",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyCandidateBatchInput"
+              },
+              "example": {
+                "expected_context_revision": 1,
+                "idempotency_key": "candidate-batch-001",
+                "reason": "研究条件、证据卡和第 2-4 章",
+                "scope": {
+                  "objects": [
+                    {
+                      "kind": "ChapterVersion",
+                      "id": "chapter-2",
+                      "version": "version-1"
+                    },
+                    {
+                      "kind": "ChapterVersion",
+                      "id": "chapter-4",
+                      "version": "version-1"
+                    }
+                  ],
+                  "reason": "用户选择的范围"
+                },
+                "candidates": [
+                  {
+                    "source": {
+                      "kind": "ChapterVersion",
+                      "id": "chapter-2",
+                      "version": "version-1"
+                    },
+                    "target": {
+                      "kind": "EvidenceCard",
+                      "id": "card-12",
+                      "version": "v3"
+                    },
+                    "relation": "supports",
+                    "action": "REVALIDATE_EVIDENCE",
+                    "evidence": "第 2 章结论引用了证据卡 E12",
+                    "reason": "章节结论依赖该证据",
+                    "confidence": 0.6,
+                    "model_run_id": "run-1"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "批次已写入；被同版本人工结论覆盖的候选不出现在 candidates 中，而记入 suppressed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyCandidateBatchResponse"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "同一个批次键重放：返回同一个批次，不产生第二批候选",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyCandidateBatchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法；候选缺少依据片段或理由，或超出用户选择的范围"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "基线已变化（version_conflict），或同一个批次键对应不同内容（idempotency_conflict）"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
+    },
+    "/projects/{projectId}/dependency-candidates/{candidateId}/decision": {
+      "post": {
+        "operationId": "decideDependencyCandidate",
+        "tags": [
+          "workspace"
+        ],
+        "summary": "人工确认、修改或拒绝一条依赖候选；只有确认与修正后的候选进入正式依赖图",
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "candidateId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DependencyCandidateDecisionInput"
+              },
+              "example": {
+                "expected_version": 1,
+                "decision": "modify",
+                "reason": "人工修正为强制复核",
+                "relation": "governs",
+                "action": "REVIEW_REQUIRED",
+                "confidence": 0.9
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "决定已记录；confirm 与 modify 产生正式依赖边，reject 不产生边",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyCandidateDecisionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "字段不合法；modify 至少要改一个字段"
+          },
+          "403": {
+            "description": "该操作需要实际成员作出决定"
+          },
+          "404": {
+            "description": "资源不存在或不可访问"
+          },
+          "409": {
+            "description": "候选版本已变化、候选已有结论、该元组已有人工结论（dependency_decided），或候选依据的对象版本已落后（dependency_candidate_requires_reevaluation）"
+          }
+        },
+        "x-domain": "workspace",
+        "x-delivery-phase": "core"
+      }
     }
   },
   "components": {
@@ -22519,6 +22752,502 @@
           }
         },
         "description": "confirm/reject 不得携带 relation/action/confidence；modify 至少要携带其中之一。"
+      },
+      "DependencyCandidate": {
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "batch_id",
+          "source",
+          "target",
+          "relation",
+          "action",
+          "evidence",
+          "reason",
+          "confidence",
+          "status",
+          "project_version",
+          "context_revision",
+          "actor_id",
+          "version",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "batch_id": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef",
+            "description": "候选的源对象；其版本是这条候选提出时依据的版本，确认时会复检。"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef",
+            "description": "候选的目标对象；其版本是这条候选提出时依据的版本，确认时会复检。"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE",
+              "NO_ACTION"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "description": "触发这条候选的文本或字段片段（依据片段）；没有依据的候选会被拒绝。"
+          },
+          "reason": {
+            "type": "string",
+            "description": "模型给出的建议理由。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "confirmed",
+              "modified",
+              "rejected",
+              "stale"
+            ],
+            "description": "由服务端决定。proposed 候选不是依赖边，不进入正式依赖图，不单独使章节失效或阻断导出；stale 表示候选依据的对象版本已落后，需要重新评估。"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "modify",
+              "reject"
+            ],
+            "description": "人工结论；未决定时省略。"
+          },
+          "decision_reason": {
+            "type": "string"
+          },
+          "decided_by": {
+            "type": "string"
+          },
+          "decided_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "edge_id": {
+            "type": "string",
+            "description": "确认或修正后产生的正式依赖边；被拒绝的候选没有边。"
+          },
+          "superseded_relation": {
+            "type": "string",
+            "description": "decision=modify 时被替换掉的原 relation；同版本不再重提该候选。"
+          },
+          "superseded_action": {
+            "type": "string",
+            "description": "decision=modify 时被替换掉的原 action。"
+          },
+          "project_version": {
+            "type": "integer",
+            "format": "int64",
+            "description": "候选提出时的项目版本；人工结论绑定在该版本上。"
+          },
+          "context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "model_run_id": {
+            "type": "string"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DependencyCandidateSuppression": {
+        "type": "object",
+        "required": [
+          "source",
+          "target",
+          "relation",
+          "action",
+          "reason"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "relation": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "rejected_in_same_version",
+              "modified_in_same_version",
+              "confirmed_in_same_version",
+              "already_proposed"
+            ],
+            "description": "这条候选本次没有被再次提出的原因；同一项目版本内的人工结论不被重复推荐。"
+          },
+          "previous_candidate_id": {
+            "type": "string"
+          },
+          "previous_status": {
+            "type": "string"
+          },
+          "previous_project_version": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DependencyCandidateScope": {
+        "type": "object",
+        "properties": {
+          "objects": {
+            "type": "array",
+            "description": "用户选择的范围；给出时，候选的两个端点都必须落在范围内。",
+            "items": {
+              "$ref": "#/components/schemas/ObjectVersionRef"
+            }
+          },
+          "target_kinds": {
+            "type": "array",
+            "description": "允许作为候选目标的对象类型。",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyCandidateBatch": {
+        "type": "object",
+        "required": [
+          "id",
+          "project_id",
+          "idempotency_key",
+          "scope",
+          "status",
+          "candidates",
+          "suppressed",
+          "project_version",
+          "context_revision",
+          "actor_id",
+          "reason",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "批次幂等键；同一个键不会产生第二批候选。"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DependencyCandidateScope"
+          },
+          "status": {
+            "type": "string"
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyCandidate"
+            }
+          },
+          "suppressed": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyCandidateSuppression"
+            }
+          },
+          "project_version": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "context_revision": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DependencyCandidateInput": {
+        "type": "object",
+        "required": [
+          "source",
+          "target",
+          "relation",
+          "action",
+          "evidence",
+          "reason",
+          "confidence"
+        ],
+        "properties": {
+          "source": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ObjectVersionRef"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE",
+              "NO_ACTION"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "description": "依据片段；缺失则整批被拒绝。"
+          },
+          "reason": {
+            "type": "string",
+            "description": "建议理由；缺失则整批被拒绝。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "model_run_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyCandidateBatchInput": {
+        "type": "object",
+        "required": [
+          "expected_context_revision",
+          "scope",
+          "reason",
+          "candidates"
+        ],
+        "properties": {
+          "expected_context_revision": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "idempotency_key": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "批次自身的幂等键；省略时使用传输层幂等键。"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/DependencyCandidateScope"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "candidates": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "$ref": "#/components/schemas/DependencyCandidateInput"
+            }
+          }
+        }
+      },
+      "DependencyCandidateDecisionInput": {
+        "type": "object",
+        "required": [
+          "expected_version",
+          "decision",
+          "reason"
+        ],
+        "properties": {
+          "expected_version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "description": "决定所针对的候选版本；不匹配返回 409。"
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "confirm",
+              "reject",
+              "modify"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "maxLength": 128,
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "REVALIDATE_EVIDENCE",
+              "RETRIEVE_CANDIDATES",
+              "REVIEW_REQUIRED",
+              "REGENERATE",
+              "RECOMPUTE",
+              "INVALIDATE_CONFIRMATION",
+              "BLOCK_RELEASE",
+              "NO_ACTION"
+            ],
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "仅 decision=modify 时可提供；省略表示不改该字段。"
+          }
+        },
+        "description": "confirm/reject 不得携带 relation/action/confidence；modify 至少要携带其中之一。"
+      },
+      "DependencyCandidateDecisionResult": {
+        "type": "object",
+        "required": [
+          "candidate"
+        ],
+        "properties": {
+          "candidate": {
+            "$ref": "#/components/schemas/DependencyCandidate"
+          },
+          "edge": {
+            "$ref": "#/components/schemas/DependencyEdge",
+            "description": "确认或修正后产生的正式依赖边；被拒绝的候选没有边。"
+          }
+        }
+      },
+      "DependencyCandidateBatchListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DependencyCandidateBatch"
+            }
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "DependencyCandidateBatchResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DependencyCandidateBatch"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
+      },
+      "DependencyCandidateDecisionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "data",
+          "request_id",
+          "meta"
+        ],
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DependencyCandidateDecisionResult"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ResponseMeta"
+          }
+        }
       }
     }
   },

@@ -1,0 +1,5 @@
+DROP INDEX IF EXISTS idx_lingdoc_g3_dependency_candidates_project;
+DROP INDEX IF EXISTS idx_lingdoc_g3_dependency_candidates_batch;
+DROP TABLE IF EXISTS lingdoc_g3_dependency_candidates;
+DROP INDEX IF EXISTS idx_lingdoc_g3_dependency_candidate_batches_project;
+DROP TABLE IF EXISTS lingdoc_g3_dependency_candidate_batches;
