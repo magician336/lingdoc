@@ -68,8 +68,7 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-        working-directory: frontend
+      - run: bash "$GITHUB_WORKSPACE/scripts/ci/npm-ci.sh" "$GITHUB_WORKSPACE/frontend"
       - name: Actual HTTP, Axios request layer and browser consumption
         shell: bash
         run: |

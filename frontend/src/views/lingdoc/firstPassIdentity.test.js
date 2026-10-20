@@ -319,15 +319,15 @@ test('collaboration same-project refresh leaves the assignment drawer open and i
   }
 })
 
-test('G3 same-project object refresh preserves pending proposed value and reason', async () => {
+test('impact panel same-project object refresh preserves pending proposed value and reason', async () => {
   const f = fixture()
   try {
     const props = vue.reactive({ project: { ...project(), status: 'active', current_context_revision: 1 }, currentUserId: 'u', readonly: false, preflightReceiptId: '' })
-    const h = f.mount('G3OpsPanel.vue', props); await quiet()
+    const h = f.mount('ImpactOpsPanel.vue', props); await quiet()
     h.state.draftValue.value = 'unsaved proposed value'; h.state.reason.value = 'unsaved proposal reason'
     props.project = { ...props.project, project_version: 2 }; await quiet()
     assert.equal(h.state.draftValue.value, 'unsaved proposed value'); assert.equal(h.state.reason.value, 'unsaved proposal reason')
-    evidence('g3_metadata_refresh', 'current', { retained: true, source_sha256: h.source_hash })
+    evidence('impact_metadata_refresh', 'current', { retained: true, source_sha256: h.source_hash })
   } finally { f.close() }
 })
 

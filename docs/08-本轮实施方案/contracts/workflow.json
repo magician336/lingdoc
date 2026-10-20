@@ -208,7 +208,7 @@
       "assertions": []
     },
     {
-      "id": "F01-03-read",
+      "id": "F01-03b",
       "operation_id": "recordActivationRead",
       "actor": "u-owner",
       "request": {
@@ -223,14 +223,14 @@
       "expected_http": 201,
       "reference_response": {
         "data": {
-          "id": "activation-read-demo",
+          "id": "read-demo-1",
           "actor_id": "u-owner",
           "project_id": "p-demo",
           "project_version": 2,
           "spec_revision": 1,
-          "read_at": "2026-10-18T00:00:00Z"
+          "read_at": "2026-10-19T14:30:00Z"
         },
-        "request_id": "synthetic-contract-example",
+        "request_id": "req-demo",
         "meta": {
           "replayed": false,
           "refresh_required": false

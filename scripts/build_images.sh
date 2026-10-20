@@ -165,10 +165,21 @@ build_docreader_image() {
     
     cd "$PROJECT_ROOT"
     
+    # 发布的 docreader 镜像只有 amd64（见 .github/workflows/docker-image.yml）：
+    # arm64 变体要在 QEMU 仿真下从源码编译 Python 扩展，单它一项就占掉整条镜像
+    # 流水线的大部分时间。本地构建用同一个平台，标签 wechatopenai/weknora-docreader:latest
+    # 才和 compose 拉取的镜像一致。需要在本机原生跑 arm64 时，
+    # 用 DOCREADER_PLATFORM=linux/arm64 覆盖（该镜像只在本地存在）。
+    DOCREADER_PLATFORM="${DOCREADER_PLATFORM:-linux/amd64}"
+    DOCREADER_TARGETARCH="amd64"
+    if [ "$DOCREADER_PLATFORM" = "linux/arm64" ]; then
+        DOCREADER_TARGETARCH="arm64"
+    fi
+    
     docker build \
-        --platform $PLATFORM \
-        --build-arg PLATFORM=$PLATFORM \
-        --build-arg TARGETARCH=$TARGETARCH \
+        --platform $DOCREADER_PLATFORM \
+        --build-arg PLATFORM=$DOCREADER_PLATFORM \
+        --build-arg TARGETARCH=$DOCREADER_TARGETARCH \
         --build-arg APT_MIRROR=${APT_MIRROR:-} \
         -f docker/Dockerfile.docreader \
         -t wechatopenai/weknora-docreader:latest \

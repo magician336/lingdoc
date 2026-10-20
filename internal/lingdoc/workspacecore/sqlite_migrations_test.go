@@ -12,21 +12,21 @@ import (
 // Both database fixtures discover the production LingDoc migration chain.
 // A copied cutoff list previously missed migration 116/37 and built a schema
 // that could not serve the current repository contract.
-func productionLingDocMigrationNames(t *testing.T, flavor string) []string {
-	t.Helper()
+func productionLingDocMigrationNames(tb testing.TB, flavor string) []string {
+	tb.Helper()
 	if flavor != "sqlite" && flavor != "versioned" {
-		t.Fatalf("unsupported migration fixture flavor %q", flavor)
+		tb.Fatalf("unsupported migration fixture flavor %q", flavor)
 	}
 	matches, err := filepath.Glob(filepath.Join("..", "..", "..", "migrations", flavor, "*_lingdoc_*.up.sql"))
 	if err != nil || len(matches) == 0 {
-		t.Fatalf("find %s production migrations: count=%d error=%v", flavor, len(matches), err)
+		tb.Fatalf("find %s production migrations: count=%d error=%v", flavor, len(matches), err)
 	}
 	sort.Strings(matches)
 	names := make([]string, len(matches))
 	for i, file := range matches {
 		names[i] = filepath.Base(file)
 	}
-	t.Logf("%s fixture applies %d production migrations through %s", flavor, len(names), names[len(names)-1])
+	tb.Logf("%s fixture applies %d production migrations through %s", flavor, len(names), names[len(names)-1])
 	return names
 }
 

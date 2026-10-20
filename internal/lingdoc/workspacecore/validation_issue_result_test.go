@@ -12,7 +12,7 @@ func TestValidationIssueDispositionTypedResultsPreserveFoundAndReplay(t *testing
 	ctx := context.Background()
 	service := testStore(t, filepath.Join(t.TempDir(), "validation-issue-result.db"))
 	actor := Actor{TenantID: 501, UserID: "owner"}
-	project := seedActiveG3Project(t, service, actor)
+	project := seedActiveImpactProject(t, service, actor)
 	binding := issueBinding(project.ProjectVersion, "warning")
 	input := ValidationIssueDispositionInput{
 		ExpectedProjectVersion: project.ProjectVersion,
@@ -58,7 +58,7 @@ func TestValidationIssueDispositionTypedResultsPreserveDomainDecodeErrors(t *tes
 	ctx := context.Background()
 	service := testStore(t, filepath.Join(t.TempDir(), "validation-issue-malformed.db"))
 	actor := Actor{TenantID: 502, UserID: "owner"}
-	project := seedActiveG3Project(t, service, actor)
+	project := seedActiveImpactProject(t, service, actor)
 	binding := issueBinding(project.ProjectVersion, "warning")
 	input := ValidationIssueDispositionInput{
 		ExpectedProjectVersion: project.ProjectVersion,
@@ -100,7 +100,7 @@ func TestValidationIssueDispositionTypedResultsPreserveIdempotencyErrors(t *test
 	ctx := context.Background()
 	service := testStore(t, filepath.Join(t.TempDir(), "validation-issue-errors.db"))
 	actor := Actor{TenantID: 503, UserID: "owner"}
-	project := seedActiveG3Project(t, service, actor)
+	project := seedActiveImpactProject(t, service, actor)
 	binding := issueBinding(project.ProjectVersion, "warning")
 	input := ValidationIssueDispositionInput{
 		ExpectedProjectVersion: project.ProjectVersion,

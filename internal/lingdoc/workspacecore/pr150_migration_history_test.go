@@ -28,7 +28,7 @@ func pr150SeedMigrationHistory(t *testing.T, s *Service) (Actor, Project, map[st
 	t.Helper()
 	ctx := context.Background()
 	a := Actor{TenantID: 1, UserID: "migration-owner"}
-	p := seedActiveG3Project(t, s, a)
+	p := seedActiveImpactProject(t, s, a)
 	chapters, err := s.ListChapters(ctx, a, p.ID)
 	if err != nil || len(chapters) == 0 {
 		t.Fatalf("read actual migration-fixture chapters: %v", err)

@@ -1339,7 +1339,7 @@ func (s *Service) SaveEvidenceCard(ctx context.Context, actor Actor, projectID, 
 	})
 }
 func g2PublishCardDependencies(tx Transaction, actor Actor, p Project, card EvidenceCard) error {
-	// Shared G3 owns dependency persistence and impact resolution.
+	// The impact coordinator owns dependency persistence and impact resolution.
 	for _, ref := range card.AnchorRefs {
 		edge := DependencyEdge{ID: uuid.NewString(), ProjectID: p.ID, Source: ObjectVersionRef{Kind: "SourceAnchor", ID: ref.ID, Version: strconv.FormatInt(ref.Version, 10)}, Target: ObjectVersionRef{Kind: "EvidenceCard", ID: card.ID, Version: strconv.FormatInt(card.Version, 10)}, Relation: "evidence_support", Action: "REVALIDATE_EVIDENCE", Origin: "user", Reason: "用户关联来源锚点", Status: "confirmed", Confidence: 1, ActorID: actor.UserID, Version: 1, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
 		if err := StoreConfirmedDependency(tx, edge); err != nil {
@@ -2378,7 +2378,7 @@ func (s *Service) actionProposalSources(ctx context.Context, actor Actor, projec
 			if err != nil {
 				return err
 			}
-			found, err := G3OperationSourceIDs(tx, string(operationCreateChangeDraft), projectID, projectID, request.ExtendedChangeSetInput)
+			found, err := OperationSourceIDs(tx, string(operationCreateChangeDraft), projectID, projectID, request.ExtendedChangeSetInput)
 			if err != nil {
 				return err
 			}
@@ -2502,7 +2502,7 @@ func (s *Service) ApplyProjectAssetPolicyDelta(tx Transaction, actor Actor, next
 	if err != nil {
 		return previous, err
 	}
-	// G3 checked these source IDs against the CURRENT underlying KB policy
+	// The impact coordinator checked these source IDs against the CURRENT underlying KB policy
 	// before apply. This local writer never changes an underlying KB grant.
 	if input.ModelUseAllowed && truth.Fingerprint == evidence.FingerprintNoContentSignal {
 		return previous, ErrG2EvidenceIncomplete

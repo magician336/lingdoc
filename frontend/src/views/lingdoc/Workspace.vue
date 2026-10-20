@@ -720,7 +720,7 @@
       <section class="full-workflow-dialog" role="dialog" aria-modal="true" :aria-label="fullPanelLabel" tabindex="-1">
         <header class="full-workflow-head"><strong>{{ fullPanelLabel }}</strong><button type="button" :disabled="fullPanelBusy" @click="closeFullPanel">返回文稿 ×</button></header>
         <G2ResearchPanel v-if="fullPanel === 'research'" ref="researchPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :selected-evidence="generationEvidenceRefs" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @use-evidence="useGenerationEvidence" />
-        <G3OpsPanel v-if="fullPanel === 'changes'" ref="opsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :preflight-receipt-id="currentCheckReceipt" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
+        <ImpactOpsPanel v-if="fullPanel === 'changes'" ref="opsPanelRef" :project="project" :current-user-id="auth.currentUserId ?? ''" :readonly="fullReadonly" :preflight-receipt-id="currentCheckReceipt" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <TemplateGovernancePanel v-if="fullPanel === 'governance'" ref="governancePanelRef" :project="project" :chapters="chapters" :sources="sources" @close="closeFullPanel" @refresh="refreshFullWorkflowProject" @error="errorMessage = $event" @data-dirty="fullPanelDirty = $event" />
         <ProjectCollaborationPanel v-if="fullPanel === 'members'" ref="collaborationPanelRef" :project="project" :chapters="chapters" :assets="assets" :current-user-id="auth.currentUserId ?? ''" :readonly="restricted" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" />
         <ChapterReviewPanel v-if="fullPanel === 'review' && chapter" ref="chapterReviewPanelRef" :project="project" :chapter="chapter" :current-user-id="auth.currentUserId ?? ''" :selection="commentSelection" :readonly="fullReadonly" :formal-current="!workingCopyDiffersFromFormal && !chapterChanged" @close="closeFullPanel" @changed="refreshFullWorkflowProject" @dirty="fullPanelDirty = $event" @locate="locateComment" />
@@ -757,7 +757,7 @@ import DeliveryPanel from './DeliveryPanel.vue'
 import ProjectMembers from './ProjectMembers.vue'
 import G2ResearchPanel from './G2ResearchPanel.vue'
 import DraftCandidatePanel from './DraftCandidatePanel.vue'
-import G3OpsPanel from './G3OpsPanel.vue'
+import ImpactOpsPanel from './ImpactOpsPanel.vue'
 import ChapterCommitReview from './ChapterCommitReview.vue'
 import { sameChapterCommitBasis, type ChapterCommitBasis } from './chapterCommitReview'
 import TemplateGovernancePanel from '@/components/TemplateGovernancePanel.vue'
@@ -807,7 +807,7 @@ const memberDraftDirty = ref(false)
 type FullPanel = 'research' | 'changes' | 'governance' | 'members' | 'review'
 const fullPanel=ref<FullPanel|null>(null),fullPanelDirty=ref(false),fullDrawerRef=ref<HTMLElement|null>(null)
 const researchPanelRef=ref<InstanceType<typeof G2ResearchPanel>|null>(null)
-const opsPanelRef=ref<InstanceType<typeof G3OpsPanel>|null>(null),governancePanelRef=ref<InstanceType<typeof TemplateGovernancePanel>|null>(null),collaborationPanelRef=ref<InstanceType<typeof ProjectCollaborationPanel>|null>(null),chapterReviewPanelRef=ref<InstanceType<typeof ChapterReviewPanel>|null>(null)
+const opsPanelRef=ref<InstanceType<typeof ImpactOpsPanel>|null>(null),governancePanelRef=ref<InstanceType<typeof TemplateGovernancePanel>|null>(null),collaborationPanelRef=ref<InstanceType<typeof ProjectCollaborationPanel>|null>(null),chapterReviewPanelRef=ref<InstanceType<typeof ChapterReviewPanel>|null>(null)
 const fullPanelBusy=computed(()=>!!researchPanelRef.value?.operationBusy||!!opsPanelRef.value?.busy||!!governancePanelRef.value?.busy||!!collaborationPanelRef.value?.busy||!!chapterReviewPanelRef.value?.busy)
 const fullPanelLabel=computed(()=>({research:'调研与证据',changes:'正式变更与运行',governance:'模板目录与规则',members:'成员协作',review:'章节评审与批注'}[fullPanel.value??'research']))
 const fullReadonly=computed(()=>{const m=project.value?.members.find(x=>x.user_id===auth.currentUserId);return restricted.value||!m||m.status!==undefined&&m.status!==''&&m.status!=='active'||m.role!=='owner'&&m.governance_role!=='admin'&&!(m.function_roles??[]).some(x=>x!=='observer')})

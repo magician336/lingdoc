@@ -513,6 +513,9 @@ start_app() {
     log_info "数据库地址: $DB_HOST:${DB_PORT:-5432}"
     
     export CGO_CFLAGS="-Wno-deprecated-declarations -Wno-gnu-folding-constant"
+    # sqlite-vec's cgo build includes "sqlite3.h"; a toolchain without the
+    # SQLite development package fails before it ever reaches the code above.
+    source "$PROJECT_ROOT/scripts/ensure-sqlite-header.sh"
     if [[ "$(uname)" == "Darwin" ]]; then
       export CGO_LDFLAGS="-Wl,-no_warn_duplicate_libraries"
     fi

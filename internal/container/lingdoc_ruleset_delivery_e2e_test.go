@@ -601,7 +601,7 @@ func runG4RuleSetDeliveryE2E(t *testing.T, db *gorm.DB, dialect string, reopen f
 		}
 	}
 
-	// Active projects migrate by assessing and applying a G3 ChangeSet that pins
+	// Active projects migrate by assessing and applying a ChangeSet that pins
 	// the exact next immutable RuleSet version. Existing release/export history
 	// must continue to point at v1; a fresh evaluation must point at v2.
 	v2Body := strings.Replace(draftBody, `"version":"`+g4E2EVersion+`"`, `"version":"v2"`, 1)

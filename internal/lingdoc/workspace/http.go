@@ -370,6 +370,15 @@ func sendError(c *gin.Context, err error) {
 		sendErrorDetails(c, status, code, message, details)
 		return
 	}
+	// An error that states its own client presentation wins over the table
+	// below. This keeps the table from growing a branch per business failure:
+	// a domain error that knows the caller's situation says so where that fact
+	// is known, and this mapper stays a backstop for the rest.
+	var facing core.ClientFacingError
+	if errors.As(err, &facing) {
+		sendErrorDetails(c, facing.ClientStatus(), facing.ClientCode(), facing.ClientMessage(), nil)
+		return
+	}
 	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
 	switch {
 	case errors.Is(err, core.ErrHumanDecisionRequired):
@@ -404,6 +413,8 @@ func sendError(c *gin.Context, err error) {
 		status, code, message = 404, "not_found", "资源不存在或不可访问。"
 	case errors.Is(err, ErrVersionConflict):
 		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
+	case errors.Is(err, ErrDependencyDecided):
+		status, code, message = 409, "dependency_decided", "该依赖已有人工结论，自动运行不得覆盖。"
 	case errors.Is(err, ErrIdempotencyConflict):
 		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
 	case errors.Is(err, ErrRequestInProgress):

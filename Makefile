@@ -86,9 +86,20 @@ else
     PLATFORM=linux/amd64
 endif
 
+# The published docreader image is amd64 only: its arm64 variant compiles Python
+# extensions under QEMU emulation and dominated the image pipeline. The local
+# docreader build uses the same platform so the
+# wechatopenai/weknora-docreader:latest tag matches what compose pulls.
+# Override with DOCREADER_PLATFORM=linux/arm64 for a native local arm64 build.
+DOCREADER_PLATFORM ?= linux/amd64
+
 # Build the application
+# sqlite-vec's cgo build includes "sqlite3.h"; a toolchain without the SQLite
+# development package fails before the build reaches this binary. The recipe
+# runs through bash explicitly because `make` on Windows would otherwise use
+# cmd.exe, where `source` does not exist.
 build:
-	go build -o $(BINARY_NAME) $(MAIN_PATH)
+	bash -c 'source ./scripts/ensure-sqlite-header.sh && go build -o $(BINARY_NAME) $(MAIN_PATH)'
 
 # Build the anydoc static archive (Rust) that the `anydoc` build tag links.
 # Override the platform with TARGET=<rust-target-triple>.
@@ -127,7 +138,7 @@ docker-build-app:
 
 # Build docreader Docker image
 docker-build-docreader:
-	docker build --platform $(PLATFORM) -f docker/Dockerfile.docreader -t wechatopenai/weknora-docreader:latest .
+	docker build --platform $(DOCREADER_PLATFORM) -f docker/Dockerfile.docreader -t wechatopenai/weknora-docreader:latest .
 
 # Build frontend Docker image (multi-stage: npm runs inside the builder stage)
 docker-build-frontend:

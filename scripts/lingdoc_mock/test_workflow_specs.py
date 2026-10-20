@@ -86,9 +86,9 @@ class SpecificationLoadTest(unittest.TestCase):
         spec = load_spec(WORKFLOW_PATH)
         self.assertEqual(spec.id, "F01")
         self.assertEqual(len(spec.steps), 24)
-        self.assertEqual([step["id"] for step in spec.steps if step["id"] != "F01-03-read"],
+        self.assertEqual([step["id"] for step in spec.steps if step["id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 24)])
-        self.assertEqual([step["id"] for step in spec.steps][2:5], ["F01-03", "F01-03-read", "F01-04"])
+        self.assertEqual([step["id"] for step in spec.steps][2:5], ["F01-03", "F01-03b", "F01-04"])
         self.assertEqual(spec.download_sha256_variable, "expected_export_sha256")
 
     def test_named_scenario_follows_the_specification_file_the_contract_declares(self):

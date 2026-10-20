@@ -50,10 +50,10 @@ class WorkflowRunnerTest(unittest.TestCase):
         )
         self.assertEqual(runner.spec.id, "F01")
         self.assertEqual(len(runner.spec.steps), 24)
-        self.assertEqual([step["id"] for step in runner.spec.steps if step["id"] != "F01-03-read"],
+        self.assertEqual([step["id"] for step in runner.spec.steps if step["id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 24)])
         self.assertEqual([step["id"] for step in runner.spec.steps][2:5],
-                         ["F01-03", "F01-03-read", "F01-04"])
+                         ["F01-03", "F01-03b", "F01-04"])
         for step in runner.spec.steps:
             self.assertIn(step["operation_id"], runner.operations, step["id"])
 
@@ -85,7 +85,8 @@ class WorkflowRunnerTest(unittest.TestCase):
         self.assertEqual(requests[1].method, "POST")
         self.assertTrue(requests[3].full_url.endswith("/activation-read"))
         activation = json.loads(requests[4].data.decode("utf-8"))
-        self.assertEqual(activation["activation_read_id"], "activation-read-demo")
+        receipt_step = next(step for step in runner.spec.steps if step["operation_id"] == "recordActivationRead")
+        self.assertEqual(activation["activation_read_id"], receipt_step["reference_response"]["data"]["id"])
         self.assertEqual(activation["expected_project_version"], activation["reviewed_project_version"])
         self.assertNotIn("{{", "\n".join(request.full_url for request in requests))
 

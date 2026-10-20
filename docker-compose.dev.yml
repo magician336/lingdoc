@@ -241,6 +241,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.docreader
     image: wechatopenai/weknora-docreader:${WEKNORA_VERSION:-latest}
+    # The published docreader image is amd64 only; see docker-compose.yml.
+    platform: ${DOCREADER_PLATFORM:-linux/amd64}
     container_name: WeKnora-docreader-dev
     ports:
       - "${DOCREADER_PORT:-50051}:50051"

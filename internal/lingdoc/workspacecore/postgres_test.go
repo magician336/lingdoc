@@ -118,24 +118,24 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	changeRaw, code, replay, err := s.CreateChangeSet(ctx, actor, id, "pg-g3-change-key", CreateChangeSetInput{
+	changeRaw, code, replay, err := s.CreateChangeSet(ctx, actor, id, "pg-change-key", CreateChangeSetInput{
 		ExpectedContextRevision: project.CurrentContextRevision,
 		Fields:                  map[string]ChangeFieldInput{"research_subject": {OldValue: "synthetic", NewValue: "synthetic-next"}},
 		AffectedChapterIDs:      []string{chapters[0].ID},
-		Reason:                  "PostgreSQL G3 persistence",
+		Reason:                  "PostgreSQL persistence",
 	})
 	if err != nil || code != 201 || replay {
-		t.Fatalf("G3 create: code=%d replay=%v err=%v", code, replay, err)
+		t.Fatalf("create: code=%d replay=%v err=%v", code, replay, err)
 	}
 	var change ChangeSet
 	if err := json.Unmarshal(changeRaw, &change); err != nil || change.Status != "assessed" {
-		t.Fatalf("G3 preview: %+v %v", change, err)
+		t.Fatalf("preview: %+v %v", change, err)
 	}
-	if _, code, replay, err := s.ApplyChangeSet(ctx, actor, id, change.ID, "pg-g3-apply-key"); err != nil || code != 200 || replay {
-		t.Fatalf("G3 apply: code=%d replay=%v err=%v", code, replay, err)
+	if _, code, replay, err := s.ApplyChangeSet(ctx, actor, id, change.ID, "pg-apply-key"); err != nil || code != 200 || replay {
+		t.Fatalf("apply: code=%d replay=%v err=%v", code, replay, err)
 	}
-	if _, code, replay, err := s.ApplyChangeSet(ctx, actor, id, change.ID, "pg-g3-apply-key"); err != nil || code != 200 || !replay {
-		t.Fatalf("G3 apply replay: code=%d replay=%v err=%v", code, replay, err)
+	if _, code, replay, err := s.ApplyChangeSet(ctx, actor, id, change.ID, "pg-apply-key"); err != nil || code != 200 || !replay {
+		t.Fatalf("apply replay: code=%d replay=%v err=%v", code, replay, err)
 	}
 	// New pool/service proves read-back is not process-local state.
 	reopened, err := gorm.Open(postgres.Open(dsn+" search_path="+schema), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
@@ -158,7 +158,7 @@ func TestPostgresMigrationAndRepositoryContract(t *testing.T) {
 	}
 	readChange, err := reopenedService.GetChangeSet(ctx, actor, id, change.ID)
 	if err != nil || readChange.Status != "applied" || readChange.TargetContextRevision == nil || *readChange.TargetContextRevision != 2 {
-		t.Fatalf("reopen G3 changeset: %+v %v", readChange, err)
+		t.Fatalf("reopen formal change set: %+v %v", readChange, err)
 	}
 	if err := db.Exec("UPDATE tenant_members SET status='inactive' WHERE user_id='owner'").Error; err != nil {
 		t.Fatal(err)

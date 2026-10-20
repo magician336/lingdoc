@@ -738,24 +738,24 @@ class G6MainPathTest(unittest.TestCase):
     def test_r30_declared_receipt_node_is_required_and_status_checked(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
         self.assertEqual(len(main["steps"]), 24)
-        self.assertEqual([step["step_id"] for step in main["steps"] if step["step_id"] != "F01-03-read"],
+        self.assertEqual([step["step_id"] for step in main["steps"] if step["step_id"] != "F01-03b"],
                          [f"F01-{n:02d}" for n in range(1, 24)])
         complete = g6_main_path.build_main_path_report(main_report=main, failure_observation=failure)
         self.assertEqual(complete["result"], "PASS")
         missing = copy.deepcopy(main)
-        missing["steps"] = [step for step in missing["steps"] if step["step_id"] != "F01-03-read"]
+        missing["steps"] = [step for step in missing["steps"] if step["step_id"] != "F01-03b"]
         missing["completed_steps"] = missing["total_steps"] = 23
         rejected = g6_main_path.build_main_path_report(main_report=missing, failure_observation=failure)
         self.assertEqual(rejected["result"], "BLOCKED")
-        self.assertEqual(rejected["fixture_coverage"]["missing_step_ids"], ["F01-03-read"])
+        self.assertEqual(rejected["fixture_coverage"]["missing_step_ids"], ["F01-03b"])
         wrong_status = copy.deepcopy(main)
-        next(step for step in wrong_status["steps"] if step["step_id"] == "F01-03-read")["actual_http"] = 200
+        next(step for step in wrong_status["steps"] if step["step_id"] == "F01-03b")["actual_http"] = 200
         rejected = g6_main_path.build_main_path_report(main_report=wrong_status, failure_observation=failure)
         self.assertEqual(rejected["main_path"]["result"], "FAIL")
 
     def test_r30_unknown_named_node_cannot_pass_or_expose_its_identifier(self):
         main, failure = g6_main_path.build_mock_main_path_fixture()
-        next(step for step in main["steps"] if step["step_id"] == "F01-03-read")["step_id"] = "F01-private-secret"
+        next(step for step in main["steps"] if step["step_id"] == "F01-03b")["step_id"] = "F01-private-secret"
         rejected = g6_main_path.build_main_path_report(main_report=main, failure_observation=failure)
         self.assertEqual(rejected["result"], "BLOCKED")
         self.assertFalse(rejected["fixture_coverage"]["step_sequence_complete"])
@@ -947,7 +947,7 @@ class G6RunTest(unittest.TestCase):
                              "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23,
+                                               "completed_steps": 24,
                                                "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,
@@ -975,7 +975,7 @@ class G6RunTest(unittest.TestCase):
                              "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23,
+                                               "completed_steps": 24,
                                                "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,
@@ -1001,7 +1001,7 @@ class G6RunTest(unittest.TestCase):
                              "verification_scope": "contract_fixture_only" if mode == "mock" else "observed",
                              "scenario_evidence": {
                                  "main_path": {"result": "PASS", "fixture_id": "F01:S1",
-                                               "completed_steps": 23,
+                                               "completed_steps": 24,
                                                "verification_scope": "contract_fixture_only" if mode == "mock" else "observed"},
                                  "key_failure": {"result": "PASS", "fixture_id": "F01:S1",
                                                  "actual_http": 409, "no_formal_side_effect": True,

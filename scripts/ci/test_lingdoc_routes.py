@@ -37,6 +37,30 @@ class LingDocRouteParity(unittest.TestCase):
         self.assertGreater(report["registered_operations"], 0)
         self.assertGreater(report["frontend_calls_to_scoped_registrars"], 0)
 
+    def test_main_refactored_impact_registrar_stays_in_the_inventory(self):
+        self.assertIn("internal/lingdoc/workspace/impact_routes.go", self.routes)
+        self.assertNotIn("internal/lingdoc/workspace/g3_g6_full_http.go", self.routes)
+        report = self.check()
+        reads = [route for route in report["routes"]
+                 if route["signature"] == "GET /projects/{}/check-receipts/{}"]
+        self.assertEqual(len(reads), 1)
+        self.assertEqual(reads[0]["fixed_success"], "200")
+
+    def test_refactored_impact_write_cannot_lose_its_idempotency_header(self):
+        bad = copy.deepcopy(self.document)
+        operation = bad["paths"]["/projects/{projectId}/change-sets/drafts"]["post"]
+        operation["parameters"] = [p for p in operation["parameters"]
+                                   if p.get("in") != "header"]
+        with self.assertRaisesRegex(parity.ContractParityError, "missing required Idempotency-Key"):
+            self.check(document=bad)
+
+    def test_refactored_impact_read_cannot_be_relabelled_as_created(self):
+        bad = copy.deepcopy(self.document)
+        responses = bad["paths"]["/projects/{projectId}/check-receipts/{receiptId}"]["get"]["responses"]
+        responses["201"] = responses.pop("200")
+        with self.assertRaisesRegex(parity.ContractParityError, "fixed handler success status"):
+            self.check(document=bad)
+
     def test_deleted_published_operation_is_rejected(self):
         bad = copy.deepcopy(self.document)
         del bad["paths"][self.path]["get"]

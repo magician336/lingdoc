@@ -197,7 +197,7 @@ AI 不得跨越项目权限读取对象，不得只凭名称相似建立正式�
 
 ### 6.4 传播规则
 
-ImpactResolver 从 ChangeSet 的变更对象出发，只沿有效边传播，并按关系类型转换为动作：`REVALIDATE_EVIDENCE`、`RETRIEVE_CANDIDATES`、`REVIEW_REQUIRED`、`REGENERATE`、`RECOMPUTE`、`INVALIDATE_CONFIRMATION` 或 `BLOCK_RELEASE`。
+ImpactResolver 从 ChangeSet 的变更对象出发，只沿有效边传播，并按关系类型转换为动作：`REVALIDATE_EVIDENCE`、`RETRIEVE_CANDIDATES`、`REVIEW_REQUIRED`、`REGENERATE`、`RECOMPUTE`、`INVALIDATE_CONFIRMATION`、`BLOCK_RELEASE` 或 `NO_ACTION`。`NO_ACTION` 只保留影响预览和因果理由，不创建任务。
 
 同一对象收到多个上游影响时合并任务，但保留所有原因和上游引用。纯排版编辑、未确认候选和没有版本依赖的对象不应被传播影响。
 
@@ -226,6 +226,7 @@ ImpactTask 是对某个目标版本的明确处置要求，不是异步计算日
 | `RECOMPUTE` | 所属规则域 | 在当前版本重算派生结果 |
 | `INVALIDATE_CONFIRMATION` | B | 使旧确认失效，要求绑定新版本 |
 | `BLOCK_RELEASE` | C | 在预检中阻止正式导出 |
+| `NO_ACTION` | 所属领域 | 记录本次差异不改变目标，不生成影响任务 |
 
 系统可以建议责任人，但没有责任人的任务不能因为异步作业成功而自动关闭。跨域任务必须记录交接事件和接收结果。
 

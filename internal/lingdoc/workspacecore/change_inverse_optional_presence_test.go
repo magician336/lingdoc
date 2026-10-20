@@ -15,7 +15,7 @@ func r27OptionalUpgrade(t *testing.T, mode string) (*Service, Actor, Project, Pr
 	path := filepath.Join(t.TempDir(), "r27-optional-upgrade.sqlite")
 	s := testStore(t, path)
 	a := Actor{TenantID: 927, UserID: "r27-template-owner"}
-	base := seedActiveG3Project(t, s, a)
+	base := seedActiveImpactProject(t, s, a)
 	fieldID := "r27_optional"
 	fieldType := "string"
 	if mode == "added_text_empty" {
@@ -191,7 +191,7 @@ func TestR27OptionalEmptyMigrationAuditFailureRollsBackAndRecovers(t *testing.T)
 	path := filepath.Join(t.TempDir(), "r27-empty-atomicity.sqlite")
 	s := testStore(t, path)
 	a := Actor{TenantID: 9271, UserID: "r27-empty-owner"}
-	base := seedActiveG3Project(t, s, a)
+	base := seedActiveImpactProject(t, s, a)
 	definition := lingdoctemplate.Clone(base.TemplateCopy.Definition)
 	definition.Fields = append(definition.Fields, lingdoctemplate.Field{ID: "r27_empty", Label: "Optional note", Type: "string"})
 	raw, _, _, err := s.CreateChangeSet(context.Background(), a, base.ID, "r27-empty-atomic-create", CreateChangeSetInput{

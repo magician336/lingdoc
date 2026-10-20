@@ -1,0 +1,164 @@
+{
+  "generated_at": "2026-10-20T05:15:00+08:00",
+  "ticket": "G3 验收台-9：验收台自身的验收矩阵与交付（浏览器实跑部分）",
+  "parent_spec": "#235",
+  "kind": "browser_real_run",
+  "browser": {
+    "provider": "in-app browser (Electron / Chromium)",
+    "url": "http://localhost:5173/demo/g3",
+    "frontend_dev_server": "vite（工作目录 D:\\code_warehouse\\Projects\\lingdoc\\frontend，端口 5173）",
+    "backend_base_url": "http://127.0.0.1:8080",
+    "console_errors": 0,
+    "console_warnings": 0
+  },
+  "backend_head": {
+    "commitId": "7f5fd8c",
+    "probedAt": "2026-10-19T17:42:56Z",
+    "probePath": "/api/v1/system/info",
+    "note": "编译期注入的 CommitID；页头「本次后端 HEAD」显示 7f5fd8c"
+  },
+  "frontend_head": {
+    "integration_branch_commit": "643a3fc",
+    "export_receipt_commit": "5e6e82f",
+    "note": "5e6e82f 是本轮浏览器实跑暴露问题后的唯一一处前端改动（导出可见回执 + 下载触发加固）"
+  },
+  "demo_account": {
+    "email": "g3demo-df77fc9524@example.com",
+    "created_at_runtime": true,
+    "note": "运行时自建（随机用户名 + 随机口令，口令不落盘）；可跨运行复用"
+  },
+  "segments": [
+    {
+      "segment": "创建演示账号并运行（真实模式）",
+      "run_id": "g3r-mvfqll2t-fe775328",
+      "project_id": "d1314eca-891f-4824-8ac9-46ae78f94850",
+      "observed": [
+        "POST /api/v1/auth/register → HTTP 201",
+        "存活探针 GET /api/v1/version → HTTP 401（不带凭据的 401 才是存活信号）",
+        "建项 → 写规格 → 登记立项阅读 → 激活 → 读章节列表 全 200",
+        "激活后的章节：question（研究问题）、method（研究方案）"
+      ]
+    },
+    {
+      "segment": "跑通变更集生命周期",
+      "run_id": "g3r-mvfqlq3b-7efa8d45",
+      "project_id": "203f1b03-d05c-4f81-9fd6-c3c564b82b00",
+      "step_count": 62,
+      "observed": [
+        "四张变更集（局部影响 / 并发同基线 / 重评估 / 逆向撤销）均落为 assessed",
+        "非 Owner 探测链路：注册非 Owner 账号 → 非 Owner 登录 → 添加租户成员 → 邀请项目成员 → 接受项目邀请 → 非 Owner 读 / 应用 / 拒绝变更集",
+        "非 Owner 应用与拒绝均返回 404 not_found（不泄露对象存在性）"
+      ]
+    },
+    {
+      "segment": "跑通依赖图与影响任务",
+      "run_id": "g3r-mvfqn2kd-d6e42e3d",
+      "project_id": "6d6c791f-46b2-4b65-802c-1185dbb95f2c",
+      "observed": [
+        "三组呈现（确定受影响 / 可能受影响 / 当前未发现影响）按服务端返回的 certainty 呈现，页面不自行重算",
+        "AC-G3-05 判定成立 → 矩阵该行判为 PASS",
+        "结论原文：同一目标（ChapterVersion/7ae926c7-d7c4-441a-a815-8cd30aa79442）的同一动作被合并成一条逻辑 ImpactTask，causes 保留 2 条上游原因；重复应用同一变更集后影响任务数量仍为 3"
+      ]
+    },
+    {
+      "segment": "跑通稳定化与交付闭环",
+      "run_id": "g3r-mvfqoejx-1c99147d",
+      "project_id": "de77290b-5c06-4657-a768-30678a6b2284",
+      "observed": [
+        "稳定化（阻断态）→ 稳定化前冻结（预期被拒）→ 指派/开始/复写/重新确认/完成影响任务 → 稳定化 → 交付检查 → 模板检查 → 冻结交付快照 → 发起导出 → 轮询导出产物 → 下载导出产物",
+        "G3.1 判定成立 → 矩阵该行判为 PASS",
+        "导出成功只看产物最终状态与 file_sha256，不看受理接口的 202"
+      ]
+    },
+    {
+      "segment": "跑通稳定化阻断与恢复路径",
+      "run_id": "g3r-mvfqrd4i-4025a47a",
+      "project_id": "9520b79d-9d31-4d6c-9378-e98232ee6364",
+      "observed": [
+        "稳定化（阻断态）→ 处置规则问题 → 稳定化（规则问题处置后）→ 对阻断影响尝试接受不处理（被拒）→ 对非阻断影响接受不处理 → 指派/开始/复写/重新确认/完成 → 稳定化（阻断项闭环后）",
+        "替换目标对象版本 → 稳定化（版本不匹配）→ 重投变更集 → 重投任务闭环 → 稳定化（重投闭环后）",
+        "人工复核探针：缺少人工复核完成 → 更新研究主张 → 带人工复核完成"
+      ]
+    },
+    {
+      "segment": "跑通真实模型验收项",
+      "run_id": "g3r-mvfqrd4i-4025a47a",
+      "observed": [
+        "3 次真实模型调用，模式 real，模型 lingdoc-chat-deepseek",
+        "AC-G3-06 旧异步结果：运行在 revision 4 发起，变更集把项目推进到 revision 5；旧运行返回后状态 stale（失败码 stale_context），结果只存成历史候选（awaiting_consent）",
+        "AC-G3-14 助手草稿：整理成变更草稿（draft），上下文修订 1 → 1（没有推进，没有应用变更），助手触达的应用/导出/任务处置端点 0 个，登记过的动作仅 create_change_set:completed",
+        "AC-G3-15 批量候选：一次性提出 3 条候选依赖；确认 confirmed、修改 confirmed、拒绝 rejected；被拒候选重投返回同一条边（新建=false）；依赖图现有边 3 条",
+        "三行状态一律 WARNING 判定成立（依赖真实模型 → 非确定性 → 不判 PASS）"
+      ],
+      "model_runs": [
+        {
+          "run_id": "3025e848-9d77-4143-8dab-2d40a3b95ad6",
+          "model": "lingdoc-chat-deepseek",
+          "mode": "real",
+          "status": "stale（失败码 stale_context）",
+          "duration_ms": 4343.79999999702,
+          "tokens": "580 / 575",
+          "ac_row": "AC-G3-06 旧异步结果（历史候选）"
+        },
+        {
+          "run_id": "0d52e2f3-6d8d-4582-b478-daff9cdc6004",
+          "model": "lingdoc-chat-deepseek",
+          "mode": "real",
+          "status": "completed",
+          "duration_ms": 2324.2999999970198,
+          "tokens": "784 / 360",
+          "ac_row": "AC-G3-14 影响助手：自然语言 → 变更草稿（模型侧）"
+        },
+        {
+          "run_id": "91a0361e-e19c-4826-8839-55ecf650b512",
+          "model": "lingdoc-chat-deepseek",
+          "mode": "real",
+          "status": "completed",
+          "duration_ms": 3042.300000011921,
+          "tokens": "832 / 642",
+          "ac_row": "AC-G3-15 模型批量候选依赖 → 确认 / 修改 / 拒绝（模型侧）"
+        }
+      ]
+    }
+  ],
+  "export_receipt": {
+    "button": "导出整链证据 JSON",
+    "receipt_text": "已导出：G3-验收台-8-证据-g3r-mvfqrd4i-4025a47a.json · 112309 字节 · 运行标识 g3r-mvfqrd4i-4025a47a · 后端 head 7f5fd8c · 含 23 条验收行、3 条判定、 11 条实现缺口 · 下载已触发；需要落盘证据请用 node 脚本（scripts/g3demo/run-evidence.ts）落到 docs/08-本轮实施方案/",
+    "file_name": "G3-验收台-8-证据-g3r-mvfqrd4i-4025a47a.json",
+    "bytes": 112309,
+    "row_count": 23,
+    "verdict_count": 3,
+    "gap_count": 11
+  },
+  "download_persistence_probe": {
+    "question": "受管宿主里浏览器下载是否落盘？",
+    "method": "对照实验：同一页面里另开一个探针页，分别点「普通 <a download> + data: URL」与「游离 blob anchor + 立即 revoke」",
+    "result": "两者都没有在磁盘上留下文件（Downloads / TEMP / 用户目录均无）",
+    "conclusion": "受管宿主（内置浏览器）不落盘下载文件；这是宿主环境限制，不是页面缺陷。页面因此给出可见导出回执，落盘证据以 node 脚本为准。",
+    "probe_page_removed_after_test": true
+  },
+  "fixes_made_from_this_run": [
+    {
+      "commit": "5e6e82f",
+      "file": "frontend/src/views/lingdoc/g3demo/G3Demo.vue",
+      "change": "导出后给出可见回执（文件名 / 字节数 / 运行标识 / head / 条数）",
+      "reason": "受管宿主不落盘下载，页面原先没有任何可核对的产出提示"
+    },
+    {
+      "commit": "5e6e82f",
+      "file": "frontend/src/views/lingdoc/g3demo/G3Demo.vue",
+      "change": "下载触发加固：anchor 挂到文档再点、objectURL 延后 30s 释放、用完移除 anchor",
+      "reason": "游离 anchor 的 click() 可能被忽略；Chromium 里同步 revokeObjectURL 会连带取消这次下载"
+    }
+  ],
+  "matrix_effect": {
+    "note": "本轮浏览器实跑把矩阵 CON-16（页面真实模式在浏览器里的交互）由 WARNING 改判 PASS；产品矩阵行的状态由本轮运行逐段更新",
+    "changed_to_pass": ["AC-G3-05", "G3.1"],
+    "model_rows_warning": ["AC-G3-06", "AC-G3-14", "AC-G3-15"]
+  },
+  "caveats": [
+    "本证据只覆盖「页面在真实后端上的交互与呈现」，不覆盖浏览器下载落盘（宿主限制，见 download_persistence_probe）。",
+    "产品矩阵仍有 TODO / BLOCKED 行（G3.2–G3.5、AC-G3-03 / 08 / 16、G3.7），由缺口清单 #246 承接，#246 保持 open。",
+    "head 变化后本证据整体失效：后端 head 7f5fd8c，前端 head 643a3fc + 5e6e82f。"
+  ]
+}

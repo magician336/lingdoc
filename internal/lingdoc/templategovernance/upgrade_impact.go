@@ -70,7 +70,7 @@ type UpgradePlan struct {
 }
 
 // BuildUpgradePlan consumes server-resolved migration/dependency facts. It
-// intentionally doesn't reproduce Workspace's field migration validator or G3's
+// intentionally doesn't reproduce Workspace's field migration validator or the impact coordinator's
 // task identities/status machine. The caller supplies observed persisted values.
 func BuildUpgradePlan(input UpgradeImpactInput) (UpgradePlan, error) {
 	if strings.TrimSpace(input.ProjectID) == "" || input.SourceBasis.ProjectVersion < 1 || input.SourceBasis.TemplateCopyVersion < 1 || input.ExpectedCurrentSnapshotID != input.SourceBasis.CurrentSnapshotID {
@@ -155,7 +155,7 @@ func BuildUpgradePlan(input UpgradeImpactInput) (UpgradePlan, error) {
 			add("validation", "issue/"+issue.ID, issue.TargetVersion, "old issue dispositions cannot authorize the new RuleSet")
 		}
 	}
-	add("delivery", "project/"+input.ProjectID, version, "new current snapshot/export requires G3 stabilization; existing snapshots remain historical")
+	add("delivery", "project/"+input.ProjectID, version, "new current snapshot/export requires Owner stabilization; existing snapshots remain historical")
 	sort.Slice(plan.FieldMigrations, func(i, j int) bool { return plan.FieldMigrations[i].FieldID < plan.FieldMigrations[j].FieldID })
 	sort.Slice(plan.Facts, func(i, j int) bool {
 		a, b := plan.Facts[i], plan.Facts[j]

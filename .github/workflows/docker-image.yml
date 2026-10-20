@@ -96,7 +96,14 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           push: true
-          platforms: linux/amd64,linux/arm64
+          # amd64 only: the docreader image compiles Python extensions from
+          # source, and the arm64 half of a multi-platform build runs under
+          # QEMU emulation on this runner. That build took ~20 minutes while
+          # the whole rest of the pipeline took ~13. Publishing amd64 only
+          # keeps the main-branch image run short; arm64 hosts run this
+          # image through emulation (see the `platform:` pin in
+          # docker-compose.yml and the note in helm/values.yaml).
+          platforms: linux/amd64
           file: docker/Dockerfile.docreader
           context: .
           labels: ${{ steps.meta.outputs.labels }}

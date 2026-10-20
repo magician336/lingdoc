@@ -18,7 +18,7 @@ type AgentChangeDraftSuggestion struct {
 }
 
 // AgentChangeDraftInput extends only the existing opaque ActionProposal input.
-// The public G3 ExtendedChangeSetInput and its HTTP route remain unchanged.
+// The public ExtendedChangeSetInput and its HTTP route remain unchanged.
 type AgentChangeDraftInput struct {
 	ExtendedChangeSetInput
 	FieldMetadata map[string]SpecFieldInput `json:"field_metadata"`
@@ -67,7 +67,7 @@ func DecodeAgentChangeDraftInput(projectID, targetID string, revision int64, raw
 	if input.ExpectedContextRevision != revision {
 		return input, ErrVersionConflict
 	}
-	// This assistant slice edits research-condition values only. Existing G3
+	// This assistant slice edits research-condition values only. Existing formal-change
 	// manual semantic-delta workflows remain available and unchanged.
 	if len(input.SemanticDeltas) != 0 || len(input.Fields) == 0 || len(input.Fields) > 100 || len(input.FieldMetadata) != len(input.Fields) {
 		return input, ErrInvalidRequest

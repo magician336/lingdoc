@@ -402,6 +402,14 @@ services:
 
   docreader:
     image: wechatopenai/weknora-docreader:${WEKNORA_VERSION:-latest}
+    # The published docreader image is amd64 only: building its arm64 variant
+    # runs the Python extension build under QEMU emulation, which is slow
+    # enough to dominate the whole image pipeline. Pin the platform so an
+    # arm64 host pulls the amd64 image and runs it under emulation instead of
+    # failing the pull with "no matching manifest for linux/arm64".
+    # Set DOCREADER_PLATFORM=linux/arm64 to build and run it natively; that
+    # image is local only, because the published tag has no arm64 manifest.
+    platform: ${DOCREADER_PLATFORM:-linux/amd64}
     build:
       context: .
       dockerfile: docker/Dockerfile.docreader

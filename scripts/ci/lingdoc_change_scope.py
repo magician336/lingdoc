@@ -1,9 +1,10 @@
-"""Decide whether a workflow should run for the latest PR update.
+"""Decide whether a workflow should run for the latest push or PR update.
 
-PR path filters describe the complete PR, so a later documentation-only commit
+Path filters describe the complete push, so a later documentation-only commit
 can otherwise retrigger every expensive job.  For ``synchronize`` events this
 module scopes the decision to the commit range delivered by that update.  PR
-creation/reopen events intentionally use the complete base..head range.
+creation/reopen events intentionally use the complete base..head range, and
+``push`` events scope to the before..after range GitHub reports for that push.
 """
 from __future__ import annotations
 
@@ -13,11 +14,49 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any
 
 
 def _run_git(root: Path, *args: str) -> str:
-    return subprocess.check_output(["git", *args], cwd=root, text=True).strip()
+    return subprocess.check_output(
+        ["git", *args], cwd=root, text=True, stderr=subprocess.PIPE
+    ).strip()
+
+
+def _range_is_resolvable(root: Path, before: str, after: str) -> bool:
+    try:
+        _run_git(root, "merge-base", before, after)
+    except subprocess.CalledProcessError:
+        return False
+    return True
+
+
+def _full_pr_range(event: dict[str, Any]) -> str:
+    pr = event.get("pull_request")
+    if not isinstance(pr, dict):
+        raise ValueError("Expected a pull_request event; use workflow_dispatch for a manual run")
+    base = pr.get("base", {}).get("sha")
+    head = pr.get("head", {}).get("sha")
+    if not isinstance(base, str) or not isinstance(head, str):
+        raise ValueError("Pull request event is missing base/head SHAs")
+    return f"{base}...{head}"
+
+
+def _push_range(event: dict[str, Any], root: Path) -> str:
+    """Return the before...after range for a branch push.
+
+    A push that creates a branch reports an all-zero ``before``, which names no
+    commit.  ``app.yml`` already falls back to HEAD^ there, so match it.
+    """
+    after = event.get("after")
+    before = event.get("before")
+    if not isinstance(after, str) or not after:
+        raise ValueError("Push event is missing the after SHA")
+    if isinstance(before, str) and before and set(before) != {"0"}:
+        return f"{before}...{after}"
+    parent = _run_git(root, "rev-parse", f"{after}^")
+    return f"{parent}...{after}"
 
 
 def event_range(event: dict[str, Any], root: Path) -> tuple[str | None, bool]:
@@ -25,6 +64,8 @@ def event_range(event: dict[str, Any], root: Path) -> tuple[str | None, bool]:
     event_name = os.environ.get("GITHUB_EVENT_NAME", "pull_request")
     if event_name == "workflow_dispatch":
         return None, True
+    if event_name == "push":
+        return _push_range(event, root), False
 
     pr = event.get("pull_request")
     if not isinstance(pr, dict):
@@ -43,7 +84,8 @@ def event_range(event: dict[str, Any], root: Path) -> tuple[str | None, bool]:
         after = event.get("after")
         if (isinstance(before, str) and isinstance(after, str)
                 and before and after and after == head):
-            return f"{before}...{after}", False
+            if _range_is_resolvable(root, before, after):
+                return f"{before}...{after}", False
         parent = _run_git(root, "rev-parse", f"{head}^")
         return f"{parent}...{head}", False
     return f"{base}...{head}", False
@@ -75,6 +117,31 @@ def matches(paths: list[str], patterns: list[str]) -> bool:
     return False
 
 
+def select_paths(root: Path, event: dict[str, Any]) -> tuple[str | None, bool, list[str]]:
+    """Select paths without making a scope-discovery failure fail the workflow."""
+    try:
+        diff_range, forced = event_range(event, root)
+        paths = [] if diff_range is None else changed_paths(root, diff_range)
+        return diff_range, forced, paths
+    except (subprocess.CalledProcessError, ValueError) as error:
+        print(
+            f"warning: unable to resolve the scoped diff ({error}); "
+            "falling back to the complete PR range",
+            file=sys.stderr,
+        )
+
+    try:
+        diff_range = _full_pr_range(event)
+        return diff_range, False, changed_paths(root, diff_range)
+    except (subprocess.CalledProcessError, ValueError) as error:
+        print(
+            f"warning: unable to resolve the complete PR diff ({error}); "
+            "forcing this workflow to run",
+            file=sys.stderr,
+        )
+        return None, True, []
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--event", type=Path, default=os.environ.get("GITHUB_EVENT_PATH"))
@@ -86,8 +153,7 @@ def main() -> None:
 
     root = args.root.resolve()
     event = json.loads(Path(args.event).read_text(encoding="utf-8"))
-    diff_range, forced = event_range(event, root)
-    paths = [] if diff_range is None else changed_paths(root, diff_range)
+    diff_range, forced, paths = select_paths(root, event)
     patterns = [line.strip() for line in args.patterns.splitlines() if line.strip()]
     should_run = forced or matches(paths, patterns)
     output = {

@@ -2536,7 +2536,7 @@ func (s *Service) ReassessChangeSet(ctx context.Context, actor Actor, projectID,
 				if err := store.InsertChangeSet(change); err != nil {
 					return operationResult[ChangeSet]{}, err
 				}
-				if err := g3Audit(tx, actor, projectID, "project.change_set.reassess", change.ID, map[string]any{
+				if err := recordAuditEvent(tx, actor, projectID, "project.change_set.reassess", change.ID, map[string]any{
 					"reassessed_from_id": stale.ID, "reverses_change_set_id": change.ReversesChangeSetID,
 					"outcome": "already_satisfied", "reason": change.Reason,
 					"base_context_revision": contextRevision, "target_context_revision": contextRevision,
@@ -2862,7 +2862,7 @@ func (s *Service) ReplayValidationIssueDispositionResult(ctx context.Context, ac
 }
 
 // RecordValidationIssueDisposition appends an immutable, version-bound audit
-// event. It deliberately does not mutate the rule result or close a G3 impact
+// event. It deliberately does not mutate the rule result or close a impact
 // task; those gates continue to be evaluated independently.
 func (s *Service) RecordValidationIssueDisposition(ctx context.Context, actor Actor, projectID, key string, input ValidationIssueDispositionInput) (json.RawMessage, int, bool, error) {
 	input.Action = strings.ToLower(strings.TrimSpace(input.Action))
@@ -3363,7 +3363,7 @@ func (s *Service) ActivateProject(ctx context.Context, actor Actor, projectID, k
 		}
 		// G7 callers predate the project-version review fields. Treat omitted
 		// values as the current version while still enforcing explicit stale
-		// values for G3 clients.
+		// values for clients.
 		if input.ExpectedProjectVersion == 0 {
 			input.ExpectedProjectVersion = p.ProjectVersion
 		}

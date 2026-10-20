@@ -49,6 +49,9 @@ web/
 **/__pycache__
 /scripts/scale_dev_jobs.sh
 /server
+# `go build` appends the executable suffix on Windows, so the bare `/server`
+# rule above never matched the artifact produced there.
+/server.exe
 frontend/.vite
 frontend/chrome-extension/
 WeKnora-Chrome-Extension

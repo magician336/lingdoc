@@ -19,7 +19,7 @@ func agentDraftExpectation(p core.Project, version int64) core.G2Expectation {
 }
 
 // The provider is an in-process existing chat stub. The real host parser,
-// SendAgentTurn, stored suggestions, proposal confirmation and G3 service run.
+// SendAgentTurn, stored suggestions, proposal confirmation and workspace service run.
 // This helper models the existing editable UI adapter, not a browser E2E.
 func agentDraftModelTurn(t *testing.T, f deliveryGuardFixture, selectedSourceIDs ...string) (core.AgentTurn, core.AgentChangeDraftInput, *acceptanceChatStub) {
 	t.Helper()
