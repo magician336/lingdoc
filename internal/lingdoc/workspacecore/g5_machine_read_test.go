@@ -133,7 +133,7 @@ func TestMachineReadRevocationAndMissingDependencyFailClosed(t *testing.T) {
 				}
 			}
 			summary, err := s.ReadMachineProjectSummary(ctx, p.ID)
-			want := ErrNotFound
+			want := error(ErrNotFound)
 			if change == "missing-bridge" {
 				want = ErrMachineReadDependency
 			}

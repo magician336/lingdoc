@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/google/uuid"
 	"slices"
@@ -12,7 +13,7 @@ import (
 
 // ErrRevisionNotStable preserves the existing invalid-state domain guard while
 // letting clients explain the pending Owner stabilization step.
-var ErrRevisionNotStable = fmt.Errorf("%w: current formal changes require Owner stabilization", ErrInvalidState)
+var ErrRevisionNotStable = clienterror.Wrap(clienterror.Form{Status: 422, Code: "context_unstable", Message: "正式变更尚未完成稳定化。请用当前交付检查回执闭环影响任务，再由 Owner 检查稳定化后冻结。", Retryable: false}, "invalid_state: current formal changes require Owner stabilization", ErrInvalidState)
 
 type PreflightBasis struct {
 	Project              Project

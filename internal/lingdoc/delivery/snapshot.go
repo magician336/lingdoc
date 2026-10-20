@@ -6,8 +6,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -23,13 +23,13 @@ import (
 )
 
 var (
-	ErrSnapshotStaleInput = errors.New("delivery input is no longer current")
+	ErrSnapshotStaleInput = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "快照基于的输入已变化，请重新准备。", Retryable: false}, "delivery input is no longer current")
 	// ErrSnapshotNotFound 让传输层把「这里没有这份快照」答成 404。取不到与读失败
 	// 是两件事：前者是调用方写错了 ID，后者才是服务端出了问题。
-	ErrSnapshotNotFound = errors.New("release snapshot not found")
+	ErrSnapshotNotFound = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "release snapshot not found")
 	// ErrIdempotencyConflict 是一个动作键被换了请求复用。契约 §6：同键不同请求
 	// 返回冲突，而不是当成新动作再做一次。
-	ErrIdempotencyConflict = errors.New("idempotency key reused for a different request")
+	ErrIdempotencyConflict = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency key reused for a different request")
 )
 
 // DeliveryInput is the immutable value captured for checking and export.

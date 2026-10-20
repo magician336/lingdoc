@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -365,133 +365,28 @@ func sendOK(c *gin.Context, code int, data any, replay bool) {
 		"meta": gin.H{"replayed": replay, "refresh_required": replay}})
 }
 
+// sendError renders a business failure.
+//
+// The outward shape of a failure is declared by the error itself, at the place
+// where that fact is known. This mapper therefore holds no table of business
+// errors: it renders what the error declares, and falls back to a generic
+// internal error for the failures that declare nothing.
+//
+// A table like the one this replaces had to grow a branch per business failure,
+// and a branch that was missed did not fail loudly — it silently answered an
+// internal error for a failure the caller could have been told about.
 func sendError(c *gin.Context, err error) {
 	if status, code, message, details, ok := sourceErrorStatus(err); ok {
 		sendErrorDetails(c, status, code, message, details)
 		return
 	}
-	// An error that states its own client presentation wins over the table
-	// below. This keeps the table from growing a branch per business failure:
-	// a domain error that knows the caller's situation says so where that fact
-	// is known, and this mapper stays a backstop for the rest.
-	var facing core.ClientFacingError
-	if errors.As(err, &facing) {
-		sendErrorDetails(c, facing.ClientStatus(), facing.ClientCode(), facing.ClientMessage(), nil)
+	if form, ok := clienterror.FormOf(err); ok {
+		c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message,
+			"retryable": form.Retryable}, "request_id": requestID(c)})
 		return
 	}
-	status, code, message := 500, "internal_error", "操作失败，请稍后再试。"
-	switch {
-	case errors.Is(err, core.ErrHumanDecisionRequired):
-		status, code, message = 403, "human_decision_required", "此操作需要实际成员本人确认。"
-	case errors.Is(err, core.ErrProjectInvitationRequired):
-		status, code, message = 422, "project_invitation_required", "请使用邀请接受与逐成员分配流程；批量直接加入已停用。"
-	case errors.Is(err, core.ErrRuntimePaused):
-		status, code, message = 423, "runtime_paused", "当前范围已暂停，请由负责人核对并恢复。"
-	case errors.Is(err, core.ErrRuntimeRecoveryRequired):
-		status, code, message = 422, "runtime_recovery_required", "恢复前需要核对当前检查、快照和导出文件。"
-	case errors.Is(err, core.ErrG2ConsentRequired):
-		status, code, message = 422, "confirmation_required", "请明确核对范围并确认该操作。"
-	case errors.Is(err, core.ErrG2EvidenceIncomplete):
-		status, code, message = 422, "evidence_incomplete", "证据卡、原文定位或当前版本尚不完整。"
-	case errors.Is(err, core.ErrG2OutcomeUnknown):
-		status, code, message = 409, "outcome_unknown", "原操作结果尚待核对，请勿重复执行。"
-	case errors.Is(err, core.ErrG2Unavailable):
-		status, code, message = 503, "dependency_unavailable", "资料或模型能力暂不可用。"
-	case errors.Is(err, core.ErrSemanticBatchStagingRequired):
-		status, code, message = 400, "invalid_request", "关联主张与证据卡请分两次正式变更：先应用主张，再按新主张版本复核并提交证据卡变更。"
-	case errors.Is(err, ErrInvalidRequest):
-		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
-	case errors.Is(err, evidence.ErrInvalidBinding):
-		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
-	case errors.Is(err, evidence.ErrIdempotencyConflict):
-		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
-	case errors.Is(err, evidence.ErrAssetNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, ErrNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, delivery.ErrTemplateNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, ErrVersionConflict):
-		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
-	case errors.Is(err, ErrDependencyDecided):
-		status, code, message = 409, "dependency_decided", "该依赖已有人工结论，自动运行不得覆盖。"
-	case errors.Is(err, ErrIdempotencyConflict):
-		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
-	case errors.Is(err, ErrRequestInProgress):
-		status, code, message = 409, "request_in_progress", "原请求仍在提交，请稍后用相同操作键重试。"
-		c.Header("Retry-After", "1")
-	case errors.Is(err, ErrRewriteInvalidRequest):
-		status, code, message = 400, "invalid_request", "改写请求字段不符合约定。"
-	case errors.Is(err, ErrRewriteNotFound):
-		status, code, message = 404, "not_found", "候选不存在或不可访问。"
-	case errors.Is(err, ErrRewriteConflict), errors.Is(err, ErrRewriteStale):
-		status, code, message = 409, "stale_input", "选区或工作副本已变化，请重新读取后再试。"
-	case errors.Is(err, ErrRewriteKeyConflict):
-		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
-	case errors.Is(err, ErrRewriteSourceDenied):
-		status, code, message = 403, "source_access_denied", "改写候选的来源已失效或当前不可访问。"
-	case errors.Is(err, ErrRewriteUnavailable):
-		status, code, message = 503, "dependency_unavailable", "改写模型暂不可用，请稍后重试。"
-	case errors.Is(err, ErrSourceUnavailable):
-		// 三处共用这一个结论：保存带引用的正文时复核不过、取来源时该资料不放行、
-		// 检索时缺资料底座。它们的共同点是「这批资料此刻不可用」。
-		// 措辞不再提「尚未接入」——来源复核已经接入，答 403 是有判据的拒绝，不是缺席。
-		status, code, message = 403, "source_access_denied", "资料不可用或未获授权。"
-	case errors.Is(err, core.ErrRevisionNotStable):
-		status, code, message = 422, "context_unstable", "正式变更尚未完成稳定化。请用当前交付检查回执闭环影响任务，再由 Owner 检查稳定化后冻结。"
-	case errors.Is(err, ErrInvalidState):
-		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
-	// 交付链（T12 候选采纳 / T13 冻结）的判定。这些是各自包里的 sentinel，
-	// 名字与工作区那几个相同却是**不同的值**，所以必须逐个列出来——漏一个就是把
-	// 409 答成 500。口径统一在传输层做，领域层不为了对上 HTTP 而改自己的错误。
-	case errors.Is(err, candidateadoption.ErrInvalidRequest):
-		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
-	case errors.Is(err, candidateadoption.ErrNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, delivery.ErrSnapshotNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, candidateadoption.ErrSourceAccessDenied):
-		status, code, message = 403, "source_access_denied", "资料授权已不可用。"
-	case errors.Is(err, candidateadoption.ErrVersionConflict):
-		status, code, message = 409, "version_conflict", "内容已变化，请先读取当前版本。"
-	case errors.Is(err, candidateadoption.ErrIdempotencyConflict), errors.Is(err, delivery.ErrIdempotencyConflict):
-		status, code, message = 409, "idempotency_conflict", "同一个操作键对应不同请求。"
-	case errors.Is(err, candidateadoption.ErrStaleInput), errors.Is(err, delivery.ErrSnapshotStaleInput):
-		// 读输入与冻结之间工作区被人改过。契约 §7：发生竞争变更返回 409，重新读取。
-		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
-	case errors.Is(err, candidateadoption.ErrInvalidState):
-		status, code, message = 422, "invalid_state", "当前项目状态或研究条件不满足操作要求。"
-	// T14 的导出与下载。与上面同一件事：这些是 delivery 包里**另一个** ErrInvalidRequest，
-	// 必须单独列出来——名字相同、值不同，漏掉就是把 400 答成 500。
-	case errors.Is(err, delivery.ErrInvalidRequest):
-		status, code, message = 400, "invalid_request", "请求字段不符合约定。"
-	case errors.Is(err, delivery.ErrExportNotFound):
-		status, code, message = 404, "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, delivery.ErrExportPreflightBlocked):
-		// F10：快照本来就是一份 blocked 的检查结论。要给的是那些 issue，
-		// 而不是一次假下载。
-		status, code, message = 422, "preflight_blocked", "请先处理交付阻断项。"
-	case errors.Is(err, delivery.ErrExportStaleInput):
-		// F11：快照基于的输入已经不是此刻的工作区了。
-		status, code, message = 409, "stale_input", "快照基于的输入已变化，请重新准备。"
-	case errors.Is(err, delivery.ErrExportUnavailable):
-		// F13：产物存在但不可下载（failed，或字节已不在）。这不是 404——
-		// 资源在，是它此刻不能交出去。
-		status, code, message = 422, "invalid_state", "导出文件不可用或完整性校验失败，请重新导出。"
-	case errors.Is(err, candidateadoption.ErrDependencyUnavailable):
-		// 复核侧「答不出来」的那一档：资料底座读不出结论，或某条引用既没被判可用也没被
-		// 判不可用。它和 403 的区别正是「不是你的授权有问题，是此刻判不了」——所以答 503
-		// 且 retryable（契约 §6 单列了这一档）。
-		//
-		// 这原本是一条罕见路径，直到章节保存也走复核（workspaceSourcePolicy）：现在它成了
-		// SaveChapter 的常规失败之一，漏掉映射就是把一句「请稍后重试」答成 500。
-		// generation 包里另有一个同名的 sentinel，走的是 generation 自己的 handler，
-		// 不经过这里——名字相同、值不同，这是本文件反复出现的那类陷阱。
-		status, code, message = 503, "dependency_unavailable", "依赖的服务此刻不可用，请稍后重试。"
-	}
-	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message,
-		"retryable": code == "request_in_progress" || code == "dependency_unavailable"},
-		"request_id": requestID(c)})
+	c.JSON(500, gin.H{"error": gin.H{"code": "internal_error", "message": "操作失败，请稍后再试。",
+		"retryable": false}, "request_id": requestID(c)})
 }
 
 func sendErrorDetails(c *gin.Context, status int, code, message string, details any) {
