@@ -174,7 +174,7 @@ func TestChangeSetStatusHasOneOwner(t *testing.T) {
 }
 
 // checkLiteral reports a bare string literal that carries a change-set status.
-func checkLiteral(name string, report func(string, ast.Node, string), info *types.Info, expr ast.Expr) {
+func checkLiteral(name string, report func(string, ast.Node, string), _ *types.Info, expr ast.Expr) {
 	lit, ok := expr.(*ast.BasicLit)
 	if !ok || lit.Kind != token.STRING {
 		return

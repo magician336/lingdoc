@@ -105,7 +105,7 @@ func TestReplaceAllRewritesTokens(t *testing.T) {
 
 func TestReplaceAllLeavesNonMarkersAlone(t *testing.T) {
 	body := "没有引用 [普通链接](x) 也没有"
-	got := ReplaceAll(body, func(token, id string) string { return "REPLACED" })
+	got := ReplaceAll(body, func(_, _ string) string { return "REPLACED" })
 	if got != body {
 		t.Fatalf("ReplaceAll = %q, want unchanged", got)
 	}

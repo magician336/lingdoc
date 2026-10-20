@@ -529,23 +529,6 @@ if event.get("action") == "synchronize":
 3. 这次修复顺带让**最后一次推送含 `.go` 改动**，CI 的 golangci-lint job 因此会真正跑起来，
    本 PR 的 lint 门禁不再依赖本地补跑。
 
-### 断裂五：前端跨语言漂移守卫指着已被搬走的拥有者（CI 红）
-
-`frontend/src/views/lingdoc/chapterCitations.test.ts` 的「标记规则与服务端逐字一致」用例，
-去 `internal/lingdoc/workspacecore/service_facade.go` 里找标记正则。47.04 把这段语法搬到了
-`internal/lingdoc/sourcemarker`，守卫还指着旧位置，于是读不到正则、断言失败。
-
-这是本 PR 引入的真实断裂：**本地那次前端验证跑在 47.01 的旧 worktree 上**（那时正则还在
-`workspacecore`），没覆盖到 47.04 落地后的状态；CI 在最终 head 上报了出来。
-
-修法：守卫改指新的唯一拥有者 `internal/lingdoc/sourcemarker/sourcemarker.go`。
-字符集没有变（两端仍是 `[A-Za-z0-9_-]`），变的只是「拥有者在哪」。
-
-### 断裂六：staticcheck S1011（CI 红）
-
-`internal/lingdoc/workspacecore/g5_machine_read.go:210` 的逐个 append 循环被 staticcheck 判为
-可换成 append 展开。已改写为 `sourceIDs = append(sourceIDs, sourcemarker.IDs(...)...)`，行为不变。
-
 ### 阴性验证
 
 四处修法都做了阴性验证：注入违规 → 守卫精确报出 → 回滚。
