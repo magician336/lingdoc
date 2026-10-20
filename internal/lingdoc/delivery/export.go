@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"sort"
 	"strings"
 	"sync"
@@ -379,7 +380,7 @@ func (s *ExportService) StartAs(ctx context.Context, actor Actor, projectID, sna
 		return ExportArtifact{}, false, fmt.Errorf("%w: export requires actor, project and snapshot", ErrInvalidRequest)
 	}
 	key = strings.TrimSpace(key)
-	if len(key) < 8 || len(key) > 128 {
+	if !operationcore.ValidKey(key) {
 		return ExportArtifact{}, false, fmt.Errorf("%w: idempotency key must be 8..128 characters", ErrInvalidRequest)
 	}
 	// 1. 身份与项目能力。

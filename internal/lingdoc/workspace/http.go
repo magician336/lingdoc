@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"io"
 	"net/http"
 	"strconv"
@@ -437,7 +438,7 @@ func decodeBody(c *gin.Context, dst any) bool {
 
 func idempotencyKey(c *gin.Context) (string, bool) {
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	if len(key) < 8 || len(key) > 128 {
+	if !operationcore.ValidKey(key) {
 		sendError(c, ErrInvalidRequest)
 		return "", false
 	}

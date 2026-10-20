@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"net/url"
 	"reflect"
 	"slices"
@@ -136,7 +137,7 @@ func (s *Service) g2Operation(ctx context.Context, actor Actor, projectID, capab
 	if requestErr != nil {
 		return nil, 0, false, requestErr
 	}
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+	if !validActor(actor) || !operationcore.ValidKey(key) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	raw, err := json.Marshal(input)

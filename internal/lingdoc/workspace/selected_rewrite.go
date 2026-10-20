@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/reviewanchor"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"slices"
@@ -536,7 +537,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 		}
 		s.recordAudit(ctx, actor, projectID, "selected_rewrite.apply", decision, reason, details)
 	}()
-	if s == nil || s.store == nil || s.workspace == nil || s.sources == nil || actor.TenantID == 0 || len(key) < 8 || len(key) > 128 {
+	if s == nil || s.store == nil || s.workspace == nil || s.sources == nil || actor.TenantID == 0 || !operationcore.ValidKey(key) {
 		return core.WorkingCopy{}, false, ErrRewriteInvalidRequest
 	}
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
@@ -930,12 +931,11 @@ func (s *SelectedRewriteService) updateCandidate(ctx context.Context, row select
 }
 
 func selectedRewriteRequestHash(input SelectedRewriteRequest) (string, error) {
-	encoded, err := json.Marshal(input)
+	digest, err := operationcore.RequestHash(input)
 	if err != nil {
 		return "", ErrRewriteInvalidRequest
 	}
-	digest := sha256.Sum256(encoded)
-	return hex.EncodeToString(digest[:]), nil
+	return digest, nil
 }
 
 func selectedRewriteFailureCode(err error) string {
@@ -967,7 +967,7 @@ func selectedRewriteContextError(err error) error {
 }
 
 func validateSelectedRewriteInput(key string, in SelectedRewriteRequest) error {
-	if len(key) < 8 || len(key) > 128 || in.ExpectedSpecRevision < 0 || in.ExpectedWorkingCopyRevision < 1 ||
+	if !operationcore.ValidKey(key) || in.ExpectedSpecRevision < 0 || in.ExpectedWorkingCopyRevision < 1 ||
 		strings.TrimSpace(in.Instruction) == "" || len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 || !validRewriteEvidenceRefs(in.EvidenceCardRefs) ||
 		in.Selection.EndUTF16 <= in.Selection.StartUTF16 || in.Selection.StartUTF16 < 0 || in.Selection.SelectedText == "" {
 		return ErrRewriteInvalidRequest

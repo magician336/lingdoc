@@ -2,11 +2,10 @@ package workspacecore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/google/uuid"
 	"math"
 	"slices"
@@ -121,9 +120,7 @@ func currentImpactObject(tx Transaction, p Project, ref ObjectVersionRef) (Impac
 	return state, nil
 }
 func hashImpactValue(value any) string {
-	raw, _ := json.Marshal(value)
-	hash := sha256.Sum256(raw)
-	return hex.EncodeToString(hash[:])
+	return operationcore.ValueHash(value)
 }
 
 // impactTaskSourceUnavailable is what acting on an impact task looks like when

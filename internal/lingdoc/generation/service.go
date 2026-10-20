@@ -6,10 +6,8 @@ package generation
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -240,7 +238,7 @@ func NewServiceWithAccessPolicy(policy lingdocaccess.Policy, inputs InputResolve
 
 func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string, request Request) (Run, error) {
 	if actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(projectID) == "" ||
-		len(key) < 8 || len(key) > 128 || strings.TrimSpace(request.ChapterID) == "" ||
+		!operationcore.ValidKey(key) || strings.TrimSpace(request.ChapterID) == "" ||
 		strings.TrimSpace(request.Instruction) == "" || request.ExpectedSpecRevision < 0 || len(request.AssetIDs) == 0 && len(request.EvidenceCardRefs) == 0 {
 		return Run{}, ErrInvalidRequest
 	}
@@ -280,12 +278,10 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	if err := s.authorizeWrite(ctx, actor, projectID, request.ChapterID); err != nil {
 		return Run{}, err
 	}
-	encoded, err := json.Marshal(request)
+	requestHash, err := operationcore.RequestHash(request)
 	if err != nil {
 		return Run{}, ErrInvalidRequest
 	}
-	hash := sha256.Sum256(encoded)
-	requestHash := hex.EncodeToString(hash[:])
 	var evidenceInput *Input
 	if len(request.EvidenceCardRefs) > 0 {
 		resolved, resolveErr := s.Inputs.ResolveGenerationInput(ctx, actor, projectID, request)

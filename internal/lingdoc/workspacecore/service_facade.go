@@ -2,12 +2,11 @@ package workspacecore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
@@ -702,7 +701,7 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 	op, target, key := string(operation.Name), operation.Target, operation.Key
 	body, projectID, capability := operation.Input, operation.Request.ProjectID, operation.Request.capability()
 
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+	if !validActor(actor) || !operationcore.ValidKey(key) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	if err := requireInverseCaller(ctx, body); err != nil {
@@ -714,12 +713,10 @@ func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Ac
 		}
 	}
 	started := time.Now()
-	encoded, err := json.Marshal(body)
+	hashString, err := operationcore.RequestHash(body)
 	if err != nil {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	hash := sha256.Sum256(encoded)
-	hashString := hex.EncodeToString(hash[:])
 	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
 	prepared, cached, err := s.g1PrepareCachedChangeOperation(ctx, actor, operation.Request, id, body)
 	if err != nil {
@@ -1405,7 +1402,7 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.RuleSetID == "" || input.RuleSetVersion == "" || len(input.RuleSetID) > 64 || len(input.RuleSetVersion) > 64 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+	if !validActor(actor) || !operationcore.ValidKey(key) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	if s.ruleSets == nil {
@@ -2856,7 +2853,7 @@ func sameValidationIssueBinding(left, right ValidationIssueBinding) bool {
 func (s *Service) ReplayValidationIssueDisposition(ctx context.Context, actor Actor, projectID, issueID, key, action, reason string, expectedProjectVersion int64) (json.RawMessage, int, bool, bool, error) {
 	action, reason = strings.ToLower(strings.TrimSpace(action)), strings.TrimSpace(reason)
 	if !validActor(actor) || strings.TrimSpace(projectID) == "" || strings.TrimSpace(issueID) == "" ||
-		len(key) < 8 || len(key) > 128 || (action != "resolve" && action != "dismiss" && action != "waive") ||
+		!operationcore.ValidKey(key) || (action != "resolve" && action != "dismiss" && action != "waive") ||
 		reason == "" || len([]rune(reason)) > 2000 || expectedProjectVersion < 1 {
 		return nil, 0, false, false, ErrInvalidRequest
 	}
