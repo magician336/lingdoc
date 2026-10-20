@@ -26,7 +26,12 @@
  */
 
 import { errorCodeOf, type G3HttpClient } from './httpClient'
-import { readProjectState, type G3ProjectState } from './changeset'
+import {
+  assessChangeSet,
+  applyChangeSet,
+  readProjectState,
+  type G3ProjectState,
+} from './changeset'
 import {
   runDeliveryCheckWithIssues,
   type G3CheckWithIssuesFact,
@@ -844,10 +849,54 @@ export async function runRoadmapChain(
   token: string,
   options: G3RoadmapChainOptions,
 ): Promise<G3RoadmapChainResult> {
-  const project = await readProjectState(ctx, client, token, options.projectId, '路线图-读项目状态')
+  let project = await readProjectState(ctx, client, token, options.projectId, '路线图-读项目状态')
 
-  // —— 前置链：读冻结基线 → 建会话 → 提案 → 提交 → 读版本序列 → 前后比较 ——
-  const baselineBefore = await readRoadmapBaseline(ctx, client, token, options.projectId)
+  // —— 前置链：读冻结基线 → （必要时先造一个可编辑节点）→ 建会话 → 提案 → 提交 ——
+  let baselineBefore = await readRoadmapBaseline(ctx, client, token, options.projectId)
+  let editable = editableNodeOf(baselineBefore)
+
+  if (!editable) {
+    // 基线里**一个节点都没有**时，台面自己造一个。
+    //
+    // 新增节点走的是**语义路径**：服务端给的是变更集，路线图本身不被直接改写，
+    // 变更集应用后节点才落到冻结路线图里（`roadmap_service.go:804-861`）。
+    // 没有这一步，「取消未冻结编辑后回到上一版本」这类判据就没有可编辑的对象，
+    // 台面只能永远记 BLOCKED —— 所以这里把造前置也做进链路。
+    //
+    // 造出来的节点是**合成材料**：名字与理由里只带运行标识，不含真实课题信息。
+    const seedSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
+      stepName: G3_ROADMAP_STEPS.beginSession,
+      idemLabel: 'roadmap-begin-seed',
+      expectedContextRevision: project.currentContextRevision,
+      reason: `G3 验收台-11：登记一个合成路线节点（运行 ${ctx.runId}）`,
+    })
+    await proposeRoadmapNode(ctx, client, token, options.projectId, seedSession.id, {
+      stepName: G3_ROADMAP_STEPS.proposeNode,
+      idemLabel: 'roadmap-propose-seed',
+      nodeId: `g3-seed-${ctx.runId}`,
+      kind: 'add',
+      name: `G3 验收台-11 合成路线节点 ${ctx.runId}`,
+      status: 'planned',
+      inputs: [],
+      targets: [],
+      reason: 'G3 验收台-11：基线为空，先造一个可编辑节点（合成，不含真实课题信息）',
+    })
+    const seedCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, seedSession.id, {
+      stepName: G3_ROADMAP_STEPS.commit,
+      idemLabel: 'roadmap-commit-seed',
+      expectedBaselineVersion: seedSession.baseline.version,
+      reason: 'G3 验收台-11：提交合成节点提案',
+    })
+    if (!seedCommit.changeSetId) {
+      throw new Error('新增节点提案没有给出变更集，无法把节点落到冻结路线图里')
+    }
+    await assessChangeSet(ctx, client, token, options.projectId, seedCommit.changeSetId)
+    await applyChangeSet(ctx, client, token, options.projectId, seedCommit.changeSetId)
+    baselineBefore = await readRoadmapBaseline(ctx, client, token, options.projectId)
+    project = await readProjectState(ctx, client, token, options.projectId, '路线图-读项目状态（造节点后）')
+    editable = editableNodeOf(baselineBefore)
+  }
+
   const session = await beginRoadmapEdit(ctx, client, token, options.projectId, {
     stepName: G3_ROADMAP_STEPS.beginSession,
     idemLabel: 'roadmap-begin',
@@ -855,7 +904,6 @@ export async function runRoadmapChain(
     reason: `G3 验收台-11：编辑技术路线（运行 ${ctx.runId}）`,
   })
 
-  const editable = editableNodeOf(baselineBefore)
   if (!editable) {
     throw new Error('路线图链需要一个可编辑的冻结节点（当前基线里没有节点）')
   }

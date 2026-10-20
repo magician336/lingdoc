@@ -33,9 +33,12 @@ import {
 } from '../../src/views/lingdoc/g3demo/g3Export'
 import { applyRunEvidence } from '../../src/views/lingdoc/g3demo/g3Evidence'
 import { G3_MATRIX_ROWS } from '../../src/views/lingdoc/g3demo/g3Matrix'
-import { runChangeSetChain } from '../../src/views/lingdoc/g3demo/runner/changeset'
+import { readProjectState, runChangeSetChain } from '../../src/views/lingdoc/g3demo/runner/changeset'
 import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
-import { createDemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
+import { runRoadmapChain } from '../../src/views/lingdoc/g3demo/runner/roadmap'
+import { runFaultInjectionChain } from '../../src/views/lingdoc/g3demo/runner/faultInjection'
+import { runAssistantChain } from '../../src/views/lingdoc/g3demo/runner/assistant'
+import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
 import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import type { G3BackendHead, G3RunContext, G3RunVerdict, G3StepRecord } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import { createFetchClient } from './fetchClient'
@@ -106,14 +109,39 @@ function readEvidenceFile(file: string): { input: G3EvidenceFileInput; raw: Reco
   }
 }
 
+/**
+ * 从环境变量读取**已注册**的演示账号。
+ *
+ * 为什么需要这个入口：受控故障注入是组合根夹具，按 `LINGDOC_FAULT_TENANT_ID`
+ * 限定**唯一租户**（`internal/container/lingdoc_fault_injection.go`）。要让它命中，
+ * 跑链路的账号必须属于那个租户；而每次新建随机账号都会落到**别的**租户去。
+ * 所以实跑时可以先注册一次拿到租户号，用同样的账号在装配了注入的后端上再跑一轮。
+ *
+ * 账号口令**不落盘**：它只在进程环境里，读完即用。
+ */
+function accountFromEnv(): G3DemoAccount | null {
+  const email = (process.env.G3_ACCOUNT_EMAIL ?? '').trim()
+  const password = process.env.G3_ACCOUNT_PASSWORD ?? ''
+  if (!email || !password) return null
+  return {
+    username: (process.env.G3_ACCOUNT_USERNAME ?? '').trim() || email.split('@')[0] || 'g3demo',
+    email,
+    password,
+  }
+}
+
 /** 跑一次真实链路（确定性部分），证明「一次运行结束后可导出」这条路径。 */
 async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunContext }> {
-  const account = createDemoAccount()
+  const reused = accountFromEnv()
+  const account = reused ?? createDemoAccount()
   const client = createFetchClient(BASE_URL)
   const runId = createRunId()
   console.log(`[g3demo] 实时链路：后端 ${BASE_URL} · 运行标识 ${runId}`)
+  if (reused) {
+    console.log(`[g3demo] 复用已注册账号 ${reused.email}（不落盘口令）`)
+  }
 
-  const chain = await runChain(client, { account, registerFirst: true, runId })
+  const chain = await runChain(client, { account, registerFirst: !reused, runId })
   console.log(`[g3demo] 前置链完成：项目 ${chain.project.id}`)
 
   const lifecycle = await runChangeSetChain(chain.ctx, client, chain.token, {
@@ -126,8 +154,91 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     tenantId: chain.identity.tenantId,
   })
 
+  // 缺口收口-11（#295）新增的三条链：路线图编辑会话 / 受控故障注入的可观测口径 /
+  // 助手两组说明与依赖候选读回。任一条链失败都**不中断**整条实跑——失败本身是
+  // 真实事实，要落进证据，而不是把整轮丢掉。
+  const extra: G3RunVerdict[] = []
+  const guard = async (
+    id: string,
+    title: string,
+    body: () => Promise<{ verdicts: G3RunVerdict[] }>,
+  ): Promise<void> => {
+    try {
+      const result = await body()
+      extra.push(...result.verdicts)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      extra.push({
+        id,
+        title,
+        holds: false,
+        detail: `本条链没有跑完：${message}`,
+        evidence: ['链路异常：真实报错已如实记录，未中断其余链路。'],
+        status: 'NOT RUN',
+      })
+    }
+  }
+
+  await guard('AC-G3-03', 'G3 应用原子性：受控故障注入的可观测口径', async () =>
+    runFaultInjectionChain(chain.ctx, client, chain.token, {
+      projectId: chain.project.id,
+      affectedChapterIds: chain.chapters.map((chapter) => chapter.id),
+    }),
+  )
+  await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
+    runRoadmapChain(chain.ctx, client, chain.token, {
+      projectId: chain.project.id,
+      operatorId: chain.identity.userId,
+    }),
+  )
+  await guard('AC-G3-14', 'G3 助手影响说明与依赖候选读回', async () => {
+    // 候选批次的 source 必须是**变更集 roots 里的 ProjectSpec ref**：影响评估从
+    // roots 出发遍历依赖边，边的 source 不是那个 ref 时，action 不会传播。
+    // target 取本轮影响评估里真实存在的章节版本。依据与理由是合成材料，
+    // 不含真实课题信息。
+    const projectState = await readProjectState(
+      chain.ctx,
+      client,
+      chain.token,
+      chain.project.id,
+    )
+    const chapterObject = lifecycle.assessment.objects.find(
+      (item) => item.kind === 'ChapterVersion',
+    )
+    const candidates = chapterObject
+      ? [
+          {
+            source: {
+              kind: 'ProjectSpec',
+              id: chain.project.id,
+              version: String(projectState.specRevision),
+            },
+            target: {
+              kind: chapterObject.kind,
+              id: chapterObject.id,
+              version: chapterObject.version,
+            },
+            relation: 'synthetic_research_dependency',
+            action: 'RETRIEVE_CANDIDATES',
+            evidence: 'G3 验收台-11 合成依据：章节正文变更后需要重新检索项目资料候选',
+            reason: 'G3 验收台-11 合成候选：正文变化使既有检索结论过期',
+            confidence: 1,
+          },
+        ]
+      : []
+    if (!candidates.length) {
+      throw new Error('本轮影响评估里没有可用的 ChapterVersion 对象，候选批次无从提交')
+    }
+    return runAssistantChain(chain.ctx, client, chain.token, {
+      projectId: chain.project.id,
+      candidates,
+      expectedContextRevision: projectState.currentContextRevision,
+    })
+  })
+
+  const verdicts = [...lifecycle.verdicts, ...extra]
   // 账号口令**不落盘**：证据里只留账号标识，不留凭据。
-  console.log(`[g3demo] 实时链路判定：${lifecycle.verdicts.length} 条`)
+  console.log(`[g3demo] 实时链路判定：${verdicts.length} 条`)
 
   return {
     input: {
@@ -137,7 +248,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       startedAt: chain.ctx.startedAt,
       head: chain.ctx.head,
       steps: chain.ctx.steps,
-      verdicts: lifecycle.verdicts,
+      verdicts,
       modelDependent: false,
     },
     ctx: chain.ctx,
@@ -207,7 +318,7 @@ async function main(): Promise<void> {
     if (read) loaded.push(read)
   }
   const inputs: G3EvidenceFileInput[] = loaded.map((item) => item.input)
-  if (!inputs.length) {
+  if (!inputs.length && !live) {
     throw new Error(`证据目录里没有可汇总的 G3 验收台证据：${EVIDENCE_DIR}`)
   }
 
