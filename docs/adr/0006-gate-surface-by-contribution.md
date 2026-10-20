@@ -40,7 +40,7 @@
 
 ### 三、判定集中在一个脚本
 
-`scripts/ci/lingdoc_risk_surface.py` 是唯一的判定源，工作流级的 `lingdoc_change_scope.py` 与 PR gate 的 `lingdoc_pr_scope.py` 都从它取决策。两边各判一次等于门禁自相矛盾。
+判定只有一处。（本决策落地时是 `scripts/ci/lingdoc_risk_surface.py`，工作流级的 `lingdoc_change_scope.py` 与 PR gate 的 `lingdoc_pr_scope.py` 都从它取决策；#304 按 [ADR 0007](0007-gate-decision-deep-module.md) 把判定收进 `scripts/ci/lingdoc_gate_decision.py`，那三个脚本随之删除。）两边各判一次等于门禁自相矛盾。
 
 判定只读 Git：贡献面、树哈希、合并基点。**任何异常都回退到全量**（fail-open）：门禁的目的是不漏，不是卡人。
 
@@ -66,8 +66,8 @@
 
 ## 影响
 
-- 新增 `scripts/ci/lingdoc_risk_surface.py`（判定器）与 `scripts/ci/test_lingdoc_risk_surface.py`（单测）。
-- `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 改为从判定器取决策；两者的**既有** diff 范围与格式快门禁语义保持不变。
+- 新增 `scripts/ci/lingdoc_risk_surface.py`（判定器）与 `scripts/ci/test_lingdoc_risk_surface.py`（单测）。（历史记录：#304 按 ADR 0007 把判定收进 `scripts/ci/lingdoc_gate_decision.py`，这两个文件随之删除。）
+- `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 改为从判定器取决策；两者的**既有** diff 范围与格式快门禁语义保持不变。（历史记录：这两个脚本也已随 #304 删除。）
 - PR gate 的 provider tests 目标从 provider 根目录收窄到贡献触及的包；frontend 步骤在贡献未触及前端时跳过并写明理由。
 - 门禁产物新增 `surface` / `reason` / `base` 三个字段。
 - ADR 0005 的格式快门禁继续存在且继续有效：一次只重排版的推送会改变被测面的内容哈希，格式快门禁正是覆盖这种情形的第二条判据。
