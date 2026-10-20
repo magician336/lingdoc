@@ -54,6 +54,10 @@ const (
 // impactSeverities is the closed severity domain. A task whose severity falls
 // outside it is treated as blocking: an unrecognised severity must not be
 // read as permission to skip work.
+//
+// The list is the enumeration of the domain, not an example of it: adding a
+// fourth severity here changes what the domain means, so it is a product
+// decision rather than a refactoring.
 var impactSeverities = []string{ImpactSeverityBlocking, ImpactSeverityWarning, ImpactSeverityInfo}
 
 // impactBlockingActions derive ImpactSeverityBlocking.
