@@ -72,13 +72,21 @@ from pathlib import Path
 import sys
 from typing import Any, Iterable, Mapping, Sequence
 
-try:
-    import yaml
-except ImportError as error:  # pragma: no cover - dependency guard
-    raise ImportError(
-        "PyYAML is required to validate the gate surface manifest; install it "
-        "with: python -m pip install -r scripts/ci/requirements-lingdoc.txt"
-    ) from error
+def _yaml():
+    """PyYAML, imported only when the manifest is checked against the workflows.
+
+    The manifest's *data* -- the surfaces and the ownership knowledge -- is
+    plain Python and must stay readable without any dependency: the
+    workflow-level gates read it in a job that installs nothing.
+    """
+    try:
+        import yaml
+    except ImportError as error:  # pragma: no cover - dependency guard
+        raise ImportError(
+            "PyYAML is required to validate the gate surface manifest; install it "
+            "with: python -m pip install -r scripts/ci/requirements-lingdoc.txt"
+        ) from error
+    return yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -435,6 +443,7 @@ def _surface_from_record(entry: Any, index: int) -> Surface:
 
 
 def _workflow_jobs(root: Path, workflow: str) -> Mapping[str, Any]:
+    yaml = _yaml()
     path = root / workflow
     if not path.is_file():
         raise SurfaceManifestError(f"workflow file not found: {workflow}")
