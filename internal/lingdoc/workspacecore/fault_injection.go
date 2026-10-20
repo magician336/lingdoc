@@ -3,6 +3,8 @@ package workspacecore
 import (
 	"errors"
 	"fmt"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 )
 
 // 受控故障注入（#256 / AC-G3-03）。
@@ -96,12 +98,15 @@ func (e *InjectedFaultError) Error() string {
 
 func (e *InjectedFaultError) Unwrap() error { return ErrInjectedFault }
 
-func (e *InjectedFaultError) ClientStatus() int { return 503 }
-
-func (e *InjectedFaultError) ClientCode() string { return "injected_fault" }
-
-func (e *InjectedFaultError) ClientMessage() string {
-	return fmt.Sprintf("受控故障注入已生效（%s）：%s。本次操作整体未生效，状态保持原样。", e.Point, e.Reason)
+// ClientForm states the outward shape of an injected failure: the caller is
+// told the operation did not take effect, and the failure is retryable because
+// nothing was written.
+func (e *InjectedFaultError) ClientForm() clienterror.Form {
+	return clienterror.Form{
+		Status:  503,
+		Code:    "injected_fault",
+		Message: fmt.Sprintf("受控故障注入已生效（%s）：%s。本次操作整体未生效，状态保持原样。", e.Point, e.Reason),
+	}
 }
 
 // IsInjectedFault reports whether err came from a controlled fault injection.

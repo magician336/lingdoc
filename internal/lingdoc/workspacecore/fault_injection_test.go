@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 )
 
 // 受控故障注入的定向用例（#256 / AC-G3-03）。
@@ -52,9 +54,12 @@ func TestImpactTaskWriteFaultRollsBackTheApply(t *testing.T) {
 	if !errors.Is(err, ErrInjectedFault) {
 		t.Fatalf("注入失败没有保留可判别的 sentinel: %v", err)
 	}
-	var facing ClientFacingError
-	if !errors.As(err, &facing) || facing.ClientCode() != "injected_fault" {
+	var facing clienterror.Presenter
+	if !errors.As(err, &facing) || facing.ClientForm().Code != "injected_fault" {
 		t.Fatalf("注入失败没有自己的客户端表述: %v", err)
+	}
+	if form := facing.ClientForm(); form.Status != 503 {
+		t.Fatalf("注入失败的状态码不对: %d", form.Status)
 	}
 	if status != 0 || replay {
 		t.Fatalf("失败的 apply 不该有成功状态: status=%d replay=%v", status, replay)
@@ -120,8 +125,9 @@ func TestFaultInjectionDoesNotReachAnotherTenant(t *testing.T) {
 
 func TestInjectedFaultErrorStatesItsOwnClientPresentation(t *testing.T) {
 	err := &InjectedFaultError{Point: FaultPointImpactTaskWrite, Reason: "合成注入"}
-	if err.ClientStatus() != 503 || err.ClientCode() != "injected_fault" {
-		t.Fatalf("注入失败的客户端表述不对: status=%d code=%s", err.ClientStatus(), err.ClientCode())
+	form := err.ClientForm()
+	if form.Status != 503 || form.Code != "injected_fault" {
+		t.Fatalf("注入失败的客户端表述不对: status=%d code=%s", form.Status, form.Code)
 	}
 	if err.Error() == "" || !IsInjectedFault(err) {
 		t.Fatalf("注入失败没有可读原因: %v", err)

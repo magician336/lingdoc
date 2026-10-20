@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/google/uuid"
 )
 
@@ -84,18 +85,20 @@ const (
 var ErrDependencyCandidateStale = errors.New("dependency candidate requires re-evaluation")
 
 // dependencyCandidateStaleError is the client-facing presentation of
-// ErrDependencyCandidateStale. It states its own status and code so the
-// shared transport error table does not grow a branch per feature.
+// ErrDependencyCandidateStale. It states its own status and code through the
+// clienterror package, so the shared transport error table does not grow a
+// branch per feature.
 type dependencyCandidateStaleError struct{ cause error }
 
-func (e dependencyCandidateStaleError) Error() string     { return ErrDependencyCandidateStale.Error() }
-func (e dependencyCandidateStaleError) Unwrap() error     { return e.cause }
-func (e dependencyCandidateStaleError) ClientStatus() int { return 409 }
-func (e dependencyCandidateStaleError) ClientCode() string {
-	return "dependency_candidate_requires_reevaluation"
-}
-func (e dependencyCandidateStaleError) ClientMessage() string {
-	return "候选依赖依据的对象版本已变化，请重新评估后再确认。"
+func (e dependencyCandidateStaleError) Error() string { return ErrDependencyCandidateStale.Error() }
+func (e dependencyCandidateStaleError) Unwrap() error { return e.cause }
+
+func (e dependencyCandidateStaleError) ClientForm() clienterror.Form {
+	return clienterror.Form{
+		Status:  409,
+		Code:    "dependency_candidate_requires_reevaluation",
+		Message: "候选依赖依据的对象版本已变化，请重新评估后再确认。",
+	}
 }
 
 // DependencyCandidateScope is the range the user selected before the AI
