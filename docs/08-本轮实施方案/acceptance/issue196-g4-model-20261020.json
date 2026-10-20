@@ -1,0 +1,107 @@
+{
+  "id": "G4-MODEL-01 / G4-FAIL-01（真实供应商半边）",
+  "title": "真实 Qwen 生成调用、真实供应商 HTTP 错误、真实供应商在途取消、非法来源拒绝",
+  "acceptance_head": "0c8703c",
+  "acceptance_head_note": "验收代码 head 0c8703c；服务二进制构建自 d8229f4（其后仅有一处测试文件的 errcheck 修复，不改变服务行为）。",
+  "acceptance_tree": "707cc0b78c5441b0fcbb5299b435c2eafb1cc6e7",
+  "status": "PASS",
+  "environment": {
+    "backend": "current-head server binary on 127.0.0.1:8082, isolated PostgreSQL database WeKnora_g4_20261020",
+    "provider": "Aliyun Model Studio workspace endpoint (真实供应商), model qwen3.8-flash",
+    "credential": "本机 .env 注入（DASHSCOPE_API_KEY / LLM_API_KEY），不进聊天、Issue、PR 与任何提交；报告不含密钥材料",
+    "fixture": "合成知识库 g4kb…/资料 g4kn… + 真实 embedding 向量（text-embedding-v3, 1024 维），来源可被产品检索命中"
+  },
+  "cases": [
+    {
+      "id": "M1_real_qwen_generation",
+      "status": "PASS",
+      "provider": "真实供应商 workspace endpoint, model qwen3.8-flash",
+      "runs": [
+        {"run_id": "667a2d9d-e66c-4514-bc56-7d1fb80c4847", "status": "succeeded", "candidate_id": "da31d38c-311b-4eef-8b16-3330efe6af6e"},
+        {"run_id": "4241f302-b91d-4e8d-9206-b374115d47ee", "status": "succeeded", "candidate_id": "aa48d3a0-3f03-4325-b5f9-43e5a6038117"}
+      ],
+      "start_http_status": 202,
+      "candidate_validity": "fresh",
+      "candidate_body_excerpt": "本研究问题聚焦于 Issue 196 G4 浏览器验收场景下的真实服务链路读回一致性验证。核心研究目标在于确认通过 Edge/CDP 在真实服务上执行写入操作后，检查、冻结、导出以及刷新后的数据读回结果保持一致 [[source:g4chunk00000000000000000000000000001]]。",
+      "candidate_source_ids": ["g4chunk00000000000000000000000000001"],
+      "candidate_review_items": 2,
+      "provider_call_evidence": "服务日志：remote_api.go chatWithRawHTTP -> endpoint=<workspace endpoint>/chat/completions, model=qwen3.8-flash（真实 HTTP 调用，非替身）",
+      "assertions": {
+        "run_succeeded": true,
+        "candidate_created": true,
+        "candidate_readable": true,
+        "body_cites_allowed_source": true,
+        "model_output_validated_by_product": true
+      }
+    },
+    {
+      "id": "F1_real_provider_http_error",
+      "status": "PASS",
+      "provider": "真实供应商：把模型名改成供应商不提供的 qwen3.8-flash-not-a-real-model，供应商返回错误",
+      "runs": [
+        {"run_id": "60f0a3a3-fb25-4b43-978a-872e107bc3e3", "status": "failed", "error_code": "generation_failed", "retryable": true},
+        {"run_id": "5dc65874-0618-4d19-b749-b5e18d7c0c02", "status": "failed", "error_code": "generation_failed", "retryable": true}
+      ],
+      "error_message": "生成失败，原始资料和凭据未写入任务错误。",
+      "assertions": {
+        "run_not_succeeded": true,
+        "error_code_present": true,
+        "error_is_auditable": true,
+        "credentials_not_leaked_into_error": true,
+        "no_candidate_written": true
+      }
+    },
+    {
+      "id": "F2_cancel_real_provider",
+      "status": "PASS",
+      "provider": "真实供应商：长提示词生成在途时发起取消",
+      "runs": [
+        {"run_id": "90c00c6b-dd30-4c64-a1fd-d7d8ac78f980", "status": "interrupted", "error_code": "generation_cancelled", "retryable": false},
+        {"run_id": "82084f79-924f-4d25-a936-154b7a3fe2e0", "status": "interrupted", "error_code": "generation_cancelled", "retryable": false}
+      ],
+      "cancel_http_status": 200,
+      "assertions": {
+        "run_interrupted": true,
+        "error_code_present": true,
+        "no_candidate_written": true
+      }
+    },
+    {
+      "id": "F3_model_output_rejected_invalid_source",
+      "status": "PASS",
+      "provider": "真实供应商：模型输出引用了不在允许集合里的来源 ID",
+      "runs": [
+        {"run_id": "b01e3fe8-9e02-4a6e-a7af-d8959fcc0649", "status": "failed", "error_code": "invalid_source_reference", "retryable": false}
+      ],
+      "assertions": {
+        "run_not_succeeded": true,
+        "error_code_present": true,
+        "no_candidate_written": true
+      },
+      "note": "这是真实模型输出被产品契约拒绝的失败模式：候选正文里出现非法来源标记时，运行判失败且不落候选。"
+    }
+  ],
+  "zero_partial_write_evidence": {
+    "candidates_total_after_all_cases": 2,
+    "candidates_from_successful_runs": 2,
+    "candidates_from_failed_or_interrupted_runs": 0,
+    "generation_runs_total": 8,
+    "generation_runs_succeeded": 2,
+    "generation_runs_failed": 3,
+    "generation_runs_interrupted": 3,
+    "interrupted_breakdown": "其中两次是真实供应商在途取消（90c00c6b…、82084f79…），第三次 751aa92f… 是 worker 迟迟未领取、批量运行结束后由验收侧手动取消的排队运行（cancel_requested=true, error_code=generation_cancelled），不是产品行为缺陷的证据。"
+  },
+  "seam_level_evidence_still_cited": {
+    "note": "接缝级确定性契约测试仍作为补充证据（timeout→interrupted、取消、PostgreSQL 失败边界、worker 崩溃租约），见 issue196-g4-fail-20261020.json。",
+    "commands": [
+      "go test -p 1 -count=1 -v -run 'TestExecuteStoresProviderTimeoutAsInterrupted|TestExecuteStoresProviderCancellationAsInterrupted|TestSQLiteRepositoryCancelsQueuedAndRunningRuns' ./internal/lingdoc/generation",
+      "go run ./scripts/acceptance/postgres_failure_fixture.go create && go test -p 1 -count=1 -v -run 'TestPostgresGenerationFailureBoundaries|TestPostgresWorkerCrashLeasePersistence' ./internal/lingdoc/generation && go run ./scripts/acceptance/postgres_failure_fixture.go drop"
+    ]
+  },
+  "remaining_boundary": "真实供应商的「客户端超时」半边没有单独复现：产品侧的 provider 客户端未设置独立超时，等待上限来自调用上下文；已用接缝级 TestExecuteStoresProviderTimeoutAsInterrupted 证明超时→interrupted 的映射，并保留为后续项，不写成已实测。",
+  "notes": [
+    "生成入口要真正触达供应商需要三道门：资料绑定且 ready、G2 资料使用授权（proposal→assess→apply）、可检索来源（chunk + embedding 模型）。本轮补齐了第三道门（真实 embedding 向量 + 打开索引管线）。",
+    "候选正文里出现非法来源标记时，产品判失败且不落候选；这既是失败路径证据，也是「模型输出必须经契约校验」的证据。",
+    "报告只保留 id、状态、错误码与生成正文摘录；密钥、供应商原始错误体与请求正文均未进入证据。"
+  ]
+}
