@@ -22,7 +22,7 @@ func (c r34AlteredPreflightChecker) Recheck(ctx context.Context, actor Actor, pi
 }
 
 func TestR34RefreshRejectsNonCurrentOrMismatchedProofWithoutMutation(t *testing.T) {
-	s, actor, p := extendedG3G6Store(t)
+	s, actor, p := extendedImpactStore(t)
 	ctx := context.Background()
 	proofID, _ := r34PersistedProof(t, s, actor, p, "policy")
 	now := time.Now().UTC()

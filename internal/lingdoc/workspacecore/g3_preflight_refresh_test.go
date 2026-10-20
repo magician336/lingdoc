@@ -54,7 +54,7 @@ func r34Tasks(t *testing.T, s *Service, a Actor, pid string) map[string]ImpactTa
 }
 
 func TestR34CurrentPreflightRefreshesDoneReleaseTaskAfterFormalEdit(t *testing.T) {
-	s, actor, p := extendedG3G6Store(t)
+	s, actor, p := extendedImpactStore(t)
 	ctx := context.Background()
 	chapter := extendedChapter(t, s, actor, p)
 	p, err := s.GetProject(ctx, actor, p.ID)
