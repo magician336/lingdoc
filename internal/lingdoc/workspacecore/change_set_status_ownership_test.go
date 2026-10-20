@@ -147,6 +147,23 @@ func TestChangeSetStatusHasOneOwner(t *testing.T) {
 				for _, element := range list.Elts {
 					checkLiteral(name, report, info, element)
 				}
+			case *ast.SwitchStmt:
+				// switch change.Status { case "draft": ... }
+				tag, tagOK := current.Tag.(*ast.SelectorExpr)
+				if !tagOK || tag.Sel.Name != "Status" || !isChangeSetType(info, tag.X) {
+					return true
+				}
+				for _, stmt := range current.Body.List {
+					clause, clauseOK := stmt.(*ast.CaseClause)
+					if !clauseOK {
+						continue
+					}
+					for _, expr := range clause.List {
+						checkLiteral(name, report, info, expr)
+					}
+				}
+			case *ast.TypeSwitchStmt:
+				return true
 			}
 			return true
 		})

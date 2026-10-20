@@ -381,6 +381,9 @@ func sendError(c *gin.Context, err error) {
 		return
 	}
 	if form, ok := clienterror.FormOf(err); ok {
+		if form.RetryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(form.RetryAfter))
+		}
 		c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message,
 			"retryable": form.Retryable}, "request_id": requestID(c)})
 		return

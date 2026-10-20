@@ -51,58 +51,80 @@ func TestChangeSetProposalStatuses(t *testing.T) {
 	}
 }
 
-func TestChangeSetStatusTransitions(t *testing.T) {
-	want := []ChangeSetStatusTransition{
-		{From: "assessed", To: "draft"},
-		{From: "draft", To: "assessed"},
-		{From: "assessed", To: "applied"},
-		{From: "assessed", To: "rejected"},
-		{From: "assessed", To: "stale"},
-		{From: "stale", To: "assessed"},
-		{From: "stale", To: "satisfied"},
-		{From: "applied", To: "stabilized"},
+func TestChangeSetStatusMoves(t *testing.T) {
+	want := map[string]ChangeSetStatusMove{
+		"apply":     {From: []string{"assessed"}, To: "applied"},
+		"reject":    {From: []string{"assessed"}, To: "rejected"},
+		"markStale": {From: []string{"assessed"}, To: "stale"},
+		"assess":    {From: []string{"draft", "assessed"}, To: "assessed"},
+		"reassess":  {From: []string{"stale"}, To: "assessed"},
+		"satisfy":   {From: []string{"stale"}, To: "satisfied"},
+		"stabilize": {From: []string{"applied"}, To: "stabilized"},
+		"editDraft": {From: []string{"draft", "assessed"}, To: "draft"},
 	}
-	if len(ChangeSetStatusTransitions) != len(want) {
-		t.Fatalf("ChangeSetStatusTransitions = %v, want %v", ChangeSetStatusTransitions, want)
+	if len(ChangeSetStatusMoves) != len(want) {
+		t.Fatalf("ChangeSetStatusMoves has %d entries, want %d: %v", len(ChangeSetStatusMoves), len(want), ChangeSetStatusMoves)
 	}
-	for i, transition := range want {
-		if ChangeSetStatusTransitions[i] != transition {
-			t.Fatalf("ChangeSetStatusTransitions[%d] = %v, want %v", i, ChangeSetStatusTransitions[i], transition)
+	for name, move := range want {
+		declared, ok := ChangeSetStatusMoves[name]
+		if !ok {
+			t.Fatalf("ChangeSetStatusMoves has no %q entry", name)
 		}
-	}
-	for _, transition := range ChangeSetStatusTransitions {
-		if !ChangeSetStatusTransitionAllowed(transition.From, transition.To) {
-			t.Fatalf("declared transition %v is not allowed", transition)
+		if declared.To != move.To || !slices.Equal(declared.From, move.From) {
+			t.Fatalf("ChangeSetStatusMoves[%q] = %+v, want %+v", name, declared, move)
 		}
 	}
 }
 
-func TestChangeSetStatusTransitionAllowedRejectsUnknownMoves(t *testing.T) {
-	for _, move := range [][2]string{
-		{"applied", "draft"},
-		{"applied", "rejected"},
-		{"rejected", "applied"},
-		{"rejected", "draft"},
-		{"satisfied", "assessed"},
-		{"stabilized", "applied"},
-		{"draft", "applied"},
-		{"draft", "rejected"},
-		{"unknown", "draft"},
-		{"draft", "unknown"},
-	} {
-		if ChangeSetStatusTransitionAllowed(move[0], move[1]) {
-			t.Fatalf("ChangeSetStatusTransitionAllowed(%q, %q) = true, want false", move[0], move[1])
+// Every move the production code performs is declared, and the declaration is
+// what the production code asks: a move that is not declared must be refused
+// even when its statuses look plausible.
+func TestChangeSetStatusCanMoveOnlyDeclaredMoves(t *testing.T) {
+	legal := []struct {
+		move string
+		from string
+	}{
+		{"apply", "assessed"},
+		{"reject", "assessed"},
+		{"markStale", "assessed"},
+		{"assess", "draft"},
+		{"assess", "assessed"},
+		{"reassess", "stale"},
+		{"satisfy", "stale"},
+		{"stabilize", "applied"},
+		{"editDraft", "draft"},
+		{"editDraft", "assessed"},
+	}
+	for _, item := range legal {
+		if !ChangeSetStatusCanMove(item.move, item.from) {
+			t.Fatalf("ChangeSetStatusCanMove(%q, %q) = false, want true", item.move, item.from)
 		}
 	}
-	// Writing the same status again is a no-op and is allowed: several code
-	// paths re-write the current status while adding a reason.
-	for _, status := range ChangeSetStatuses {
-		if !ChangeSetStatusTransitionAllowed(status, status) {
-			t.Fatalf("ChangeSetStatusTransitionAllowed(%q, %q) = false, want true", status, status)
-		}
+	illegal := []struct {
+		move string
+		from string
+	}{
+		{"apply", "draft"},
+		{"apply", "applied"},
+		{"apply", "rejected"},
+		{"reject", "draft"},
+		{"reject", "rejected"},
+		{"markStale", "stale"},
+		{"assess", "stale"},
+		{"assess", "applied"},
+		{"reassess", "draft"},
+		{"reassess", "assessed"},
+		{"satisfy", "assessed"},
+		{"stabilize", "draft"},
+		{"stabilize", "stabilized"},
+		{"editDraft", "stale"},
+		{"editDraft", "applied"},
+		{"unknown", "assessed"},
 	}
-	if ChangeSetStatusTransitionAllowed("unknown", "unknown") {
-		t.Fatal("a self-transition on an unknown status was allowed")
+	for _, item := range illegal {
+		if ChangeSetStatusCanMove(item.move, item.from) {
+			t.Fatalf("ChangeSetStatusCanMove(%q, %q) = true, want false", item.move, item.from)
+		}
 	}
 }
 
