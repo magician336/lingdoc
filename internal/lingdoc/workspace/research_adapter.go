@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	webfetch "github.com/Tencent/WeKnora/internal/infrastructure/web_fetch"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
@@ -22,6 +23,22 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
 )
+
+// ErrResearchProviderInvalid states that the requested provider_id cannot be
+// used by the current tenant.
+//
+// 对调用方而言，「这个 provider 不存在」与「这个 provider 属于别的租户」是同一
+// 件事：本租户用不了它。两种情况必须给同一个对外形态，否则响应就能被用来探测
+// 他租户的检索来源目录。
+//
+// 错误自带对外形态（internal/clienterror），因此 transport 不需要为此再添一条
+// 映射分支：只渲染错误自己声明的形状。
+var ErrResearchProviderInvalid = clienterror.New(clienterror.Form{
+	Status:    400,
+	Code:      "invalid_provider",
+	Message:   "provider_id 无效：当前租户没有可用的检索来源，请核对 provider_id 是否正确且属于本租户。",
+	Retryable: false,
+}, "lingdoc: research provider is not available for this tenant")
 
 type g2OriginalFetcher interface {
 	Fetch(context.Context, string) (string, error)
@@ -397,11 +414,21 @@ func (r *G2ResearchAdapter) ResearchCatalogVersion(ctx context.Context, actor co
 			UpdatedAt time.Time
 		}
 		if err := r.db.WithContext(ctx).Table("web_search_providers").Select("id", "provider", "updated_at").Where("id = ? AND tenant_id = ? AND deleted_at IS NULL", task.ProviderID, actor.TenantID).Take(&provider).Error; err != nil {
+			// 查不到行有两种成因：provider 根本不存在，或它属于别的租户（查询
+			// 已按 tenant_id 过滤）。两者对调用方是同一件事，所以给同一个对外
+			// 形态，不泄露他租户的目录。
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", ErrResearchProviderInvalid
+			}
 			return "", err
 		}
 		providerVersion = provider.ID + "|" + provider.Provider + "|" + provider.UpdatedAt.UTC().Format(time.RFC3339Nano)
 		var tenant types.Tenant
 		if err := r.db.WithContext(ctx).Where("id = ?", actor.TenantID).First(&tenant).Error; err != nil {
+			// 租户配置行缺失同样不是调用方的错：检索策略读不出来，能力不可用。
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return "", core.ErrG2Unavailable
+			}
 			return "", err
 		}
 		config := types.EffectiveWebSearchConfig(tenant.WebSearchConfig)

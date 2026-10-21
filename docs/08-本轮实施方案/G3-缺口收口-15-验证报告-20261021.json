@@ -1,0 +1,240 @@
+{
+  "ticket": "#306（G3 缺口收口-15）：research-task 指定不存在的 provider_id 返回 500 internal_error",
+  "head_at_evidence": "0b6d8b4",
+  "head_note": "本票未提交：改动留在工作区（分支 feat/issue-306-provider-not-found，基线 integrate/g3-gap-closure-r3 = 0b6d8b4）。以下证据取自该工作区的当前状态。",
+  "base": "integrate/g3-gap-closure-r3",
+  "branch": "feat/issue-306-provider-not-found",
+  "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-306-provider-not-found",
+  "mode": "real",
+  "conclusion": "缺陷已修复并通过真实 HTTP seam 回归。research-task 指定一个当前租户用不了的 provider_id（不存在，或属于别的租户）时，服务端现在返回 400 `invalid_provider`，而不是 500 `internal_error`；两种情况的响应体逐字节相同，跨租户存在性不泄露。既有行为未改动：既不给 asset_ids 也不给 provider_id 仍然是 400 `invalid_request`。",
+  "root_cause": {
+    "status": "PASS",
+    "primary_site": "internal/lingdoc/workspace/research_adapter.go:416（修复前为 :399-401）",
+    "secondary_site": "internal/lingdoc/workspace/research_adapter.go:427（修复前为 :404-406）",
+    "call_chain": [
+      "HTTP: POST /api/v1/lingdoc/projects/{projectId}/research-tasks → internal/lingdoc/workspace/g2_full_http.go:120 → service.SaveResearchTask",
+      "internal/lingdoc/workspacecore/g2_service.go:262 → catalog.ResearchCatalogVersion(ctx, actor, projectID, ResearchTask{... ProviderID: input.ProviderID ...})",
+      "internal/lingdoc/workspace/research_adapter.go ResearchCatalogVersion → web_search_providers 查询（Take）与 tenants 查询（First）"
+    ],
+    "why_500": "gorm 的 `Take(&provider)` 在查不到行时返回 `gorm.ErrRecordNotFound`；修复前该错误被 `return \"\", err` 原样返回。`gorm.ErrRecordNotFound` 不实现 internal/clienterror.Presenter，因此 internal/lingdoc/workspace/http.go:383 的 `clienterror.FormOf(err)` 不命中；`g2FullError`（internal/lingdoc/workspace/g2_full_http.go:10-25）也没有对应的分支，于是落到 http.go:391 的兜底 `c.JSON(500, ... internal_error ...)`。同一族的第二处：tenants 查询（`First(&tenant)`）同样把 `gorm.ErrRecordNotFound` 原样返回。",
+    "cross_tenant_note": "provider 查询本身已带 `tenant_id = ? AND deleted_at IS NULL`，所以「属于别的租户」在数据库层面就等同于「查不到」。缺陷不在于查不到，而在于查不到时没有对外形态。"
+  },
+  "fix": {
+    "status": "PASS",
+    "mechanism": "沿用仓内既有的「领域错误自带对外形态」做法（internal/clienterror）：错误在它被知道的地方声明自己的 Status/Code/Message，transport 只渲染（internal/lingdoc/workspace/http.go:378-393 的 sendError 无业务错误分支表，由 internal/lingdoc/workspace/client_form_contract_test.go 的 TestSendErrorHoldsNoBusinessErrorTable 钉住）。参考 internal/lingdoc/workspacecore/fault_injection.go:104 的 ClientForm() 形状，未照抄其语义。",
+    "no_shared_mapping_branch": "没有新增共享错误映射表分支：g2FullError 未改动，sendError 未改动。",
+    "changes": [
+      "internal/lingdoc/workspace/research_adapter.go:27-41 新增 `ErrResearchProviderInvalid = clienterror.New(clienterror.Form{Status: 400, Code: \"invalid_provider\", Message: \"provider_id 无效：当前租户没有可用的检索来源，请核对 provider_id 是否正确且属于本租户。\", Retryable: false}, ...)`",
+      "internal/lingdoc/workspace/research_adapter.go:416-424 provider 查询：`gorm.ErrRecordNotFound` → `ErrResearchProviderInvalid`；其它错误原样返回（语义未动）",
+      "internal/lingdoc/workspace/research_adapter.go:427-433 tenants 查询：`gorm.ErrRecordNotFound` → `core.ErrG2Unavailable`（503 dependency_unavailable，检索策略读不出来属能力不可用）；其它错误原样返回（语义未动）",
+      "internal/lingdoc/workspace/client_form_contract_test.go:67 把新错误登记进对外形态契约表（仓库惯例：形状由该表钉住）"
+    ],
+    "same_shape_for_both_cases": "不存在与他租户 provider 与不存在 provider 走同一分支（provider 查询的 tenant_id 过滤使两者在数据库层即合并），因此两者返回同一个错误值，对外形态必然一致。"
+  },
+  "before_after": {
+    "status": "PASS",
+    "seam": "真实 HTTP 路由 POST /api/v1/lingdoc/projects/{projectId}/research-tasks（真实 gin engine + 真实 core.Service + 真实 G2ResearchAdapter + 真实 SQLite）",
+    "request_common": {
+      "method": "POST",
+      "path": "/api/projects/project-1/research-tasks",
+      "body": "{\"goal\":\"合成研究目标\",\"queries\":[\"定义\",\"限制\"],\"expected_project_version\":1,\"expected_context_revision\":0,\"provider_id\":\"<见下>\"}"
+    },
+    "cases": [
+      {
+        "name": "provider_id 不存在",
+        "provider_id": "missing-provider",
+        "before": {
+          "status": 500,
+          "body": "{\"error\":{\"code\":\"internal_error\",\"message\":\"操作失败，请稍后再试。\",\"retryable\":false},\"request_id\":\"\"}"
+        },
+        "after": {
+          "status": 400,
+          "body": "{\"error\":{\"code\":\"invalid_provider\",\"message\":\"provider_id 无效：当前租户没有可用的检索来源，请核对 provider_id 是否正确且属于本租户。\",\"retryable\":false},\"request_id\":\"\"}"
+        }
+      },
+      {
+        "name": "provider_id 属于别的租户（tenant_id=8）",
+        "provider_id": "other-tenant-provider",
+        "before": {
+          "status": 500,
+          "body": "{\"error\":{\"code\":\"internal_error\",\"message\":\"操作失败，请稍后再试。\",\"retryable\":false},\"request_id\":\"\"}"
+        },
+        "after": {
+          "status": 400,
+          "body": "{\"error\":{\"code\":\"invalid_provider\",\"message\":\"provider_id 无效：当前租户没有可用的检索来源，请核对 provider_id 是否正确且属于本租户。\",\"retryable\":false},\"request_id\":\"\"}"
+        }
+      },
+      {
+        "name": "既无 asset_ids 也无 provider_id（既有行为，不得改变）",
+        "provider_id": "",
+        "before": {
+          "status": 400,
+          "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"请求字段不符合约定。\",\"retryable\":false},\"request_id\":\"\"}"
+        },
+        "after": {
+          "status": 400,
+          "body": "{\"error\":{\"code\":\"invalid_request\",\"message\":\"请求字段不符合约定。\",\"retryable\":false},\"request_id\":\"\"}"
+        }
+      },
+      {
+        "name": "provider 属于本租户但 tenants 配置行缺失（同一族的第二处「记录未找到」）",
+        "provider_id": "own-provider",
+        "before": {
+          "status": 500,
+          "body": "{\"error\":{\"code\":\"internal_error\",\"message\":\"操作失败，请稍后再试。\",\"retryable\":false},\"request_id\":\"\"}"
+        },
+        "after": {
+          "status": 503,
+          "body": "{\"error\":{\"code\":\"dependency_unavailable\",\"details\":null,\"message\":\"所需资料、搜索或模型能力暂不可用。\",\"retryable\":false},\"request_id\":\"\"}"
+        }
+      }
+    ],
+    "cross_tenant_indistinguishable": {
+      "status": "PASS",
+      "fact": "「不存在」与「属于别的租户」两条的修复后响应体逐字节相同：状态码同为 400，error.code 同为 invalid_provider，error.message 同文，error.retryable 同为 false。响应里没有任何能区分两者的事实，因此无法用响应探测他租户的检索来源目录。",
+      "verified_by": "internal/lingdoc/workspace/research_provider_http_test.go 的 TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown：直接比较两次响应的 status 与整个 error 结构（code/message/retryable）"
+    }
+  },
+  "regression_tests": {
+    "status": "PASS",
+    "file": "internal/lingdoc/workspace/research_provider_http_test.go",
+    "cases": [
+      {
+        "name": "TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError",
+        "asserts": "不存在的 provider_id → 4xx（非 500），错误码非空且不是 internal_error，文案点明 provider_id"
+      },
+      {
+        "name": "TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown",
+        "asserts": "他租户 provider_id → 同样 4xx，且与上一条的状态码与 error 结构完全一致"
+      },
+      {
+        "name": "TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest",
+        "asserts": "既无资料也无 provider_id → 仍是 400 invalid_request（既有行为未变）"
+      },
+      {
+        "name": "TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError",
+        "asserts": "tenants 配置行缺失 → 不再是 500 internal_error，错误码可读"
+      }
+    ],
+    "tdd_order": "先写测试并跑出红灯（修复前 3 条失败、1 条既有行为通过），再做实现，最后全绿。",
+    "red_output": "--- FAIL: TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError — research_provider_http_test.go:105: 不存在的 provider_id 落到了 500：status=500 body={\"error\":{\"code\":\"internal_error\",\"message\":\"操作失败，请稍后再试。\",\"retryable\":false},\"request_id\":\"\"}\n--- FAIL: TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown — research_provider_http_test.go:135: 他租户 provider 落到了 500：status=500 body={\"error\":{\"code\":\"internal_error\",\"message\":\"操作失败，请稍后再试。\",\"retryable\":false},\"request_id\":\"\"}\n--- PASS: TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest\n--- FAIL: TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError — research_provider_http_test.go:162: 租户配置行缺失落到了 500：status=500 body={\"error\":{\"code\":\"internal_error\",\"message\":\"操作失败，请稍后再试。\",\"retryable\":false},\"request_id\":\"\"}\nFAIL github.com/Tencent/WeKnora/internal/lingdoc/workspace 1.042s",
+    "green_output": "=== RUN   TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError\n--- PASS: TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError (0.38s)\n=== RUN   TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown\n--- PASS: TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown (0.08s)\n=== RUN   TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest\n--- PASS: TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest (0.08s)\n=== RUN   TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError\n--- PASS: TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError (0.09s)\nPASS\nok  github.com/Tencent/WeKnora/internal/lingdoc/workspace  1.306s"
+  },
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "go": "go1.27.1 windows/amd64",
+    "sqlite_include_dir": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（已确认存在，Test-Path 返回 True）",
+    "database": "本地 SQLite（modernc.org/sqlite 驱动），测试用真实表 tenants / web_search_providers / lingdoc_projects / lingdoc_members / tenant_members / lingdoc_project_audits / lingdoc_operations",
+    "backend": "HTTP seam 为真实 gin engine + 真实 core.Service + 真实 G2ResearchAdapter（生产组合根同款装配：ConfigureG2(G2Runtime{Sources: adapter, Research: adapter})），未经任何替身短路"
+  },
+  "commands": [
+    {
+      "command": "Test-Path 'C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'",
+      "result": "PASS：返回 True（该 include 目录存在，未另行编造路径）"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/... -count=1",
+      "result": "PASS：exit=0，ok  github.com/Tencent/WeKnora/internal/lingdoc/workspace  480.316s（go list ./internal/lingdoc/workspace/... 只有这一个包）"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go build ./...",
+      "result": "PASS：exit=0，无输出"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/workspace/research_adapter.go",
+      "result": "PASS：无输出（无格式差异）；另对 internal/lingdoc/workspace/research_provider_http_test.go 与 internal/lingdoc/workspace/client_form_contract_test.go 执行 gofmt -l，同样无输出"
+    }
+  ],
+  "acceptance_matrix": [
+    {
+      "item": "不存在的 provider_id 得到可读 4xx，而非 500",
+      "seam": "POST /api/v1/lingdoc/projects/{projectId}/research-tasks",
+      "invariant": "请求参数无效属于调用方错误，必须由领域错误自带对外形态表达",
+      "success": "400 invalid_provider",
+      "failure": "500 internal_error（修复前）",
+      "evidence": "internal/lingdoc/workspace/research_provider_http_test.go TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError",
+      "status": "PASS"
+    },
+    {
+      "item": "他租户 provider_id 与不存在 provider_id 对外形态一致（不泄露跨租户存在性）",
+      "seam": "同上",
+      "invariant": "两种成因在数据库层即合并为「查不到」，对外形态必须完全一致",
+      "success": "两条响应状态码与 error 结构逐项相等",
+      "failure": "任何可区分两者的字段",
+      "evidence": "TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown",
+      "status": "PASS"
+    },
+    {
+      "item": "既无 asset_ids 又无 provider_id 的既有 400 invalid_request 行为不变",
+      "seam": "同上",
+      "invariant": "不得顺手改动其它错误路径的语义",
+      "success": "400 invalid_request",
+      "failure": "变成 500 或换成别的错误码",
+      "evidence": "TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest（修复前后同为 400 invalid_request）",
+      "status": "PASS"
+    },
+    {
+      "item": "同一族的第二处未映射「记录未找到」（tenants 行缺失）不再落 500",
+      "seam": "同上",
+      "invariant": "检索策略读不出来属能力不可用，不是调用方错误，也不是内部错误",
+      "success": "503 dependency_unavailable",
+      "failure": "500 internal_error（修复前）",
+      "evidence": "TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError",
+      "status": "PASS"
+    },
+    {
+      "item": "对外形态契约登记",
+      "seam": "internal/lingdoc/workspace/client_form_contract_test.go",
+      "invariant": "workspace transport 报告的每个业务失败都必须在契约表里声明形状",
+      "success": "新错误已登记，TestBusinessErrorsDeclareTheirOwnClientForm 通过",
+      "failure": "契约表缺行",
+      "evidence": "go test ./internal/lingdoc/workspace/... -count=1 全绿",
+      "status": "PASS"
+    },
+    {
+      "item": "OpenAPI 契约同步",
+      "seam": "docs/08-本轮实施方案/contracts/openapi.json",
+      "invariant": "ErrorResponse.error.code 为自由字符串（type: string，无 enum），400 响应引用通用 ErrorResponse，因此新增 code 不需要改契约文件",
+      "success": "N/A",
+      "failure": "若 ErrorResponse 使用 enum 则需要改契约",
+      "evidence": "读 openapi.json components.schemas.Error：code 仅 type: string",
+      "status": "N/A"
+    },
+    {
+      "item": "独立进程真实服务实跑（go build ./cmd/server + curl）",
+      "seam": "cmd/server",
+      "invariant": "本票所有权限于 internal/lingdoc/workspace 与本报告；回归证据已覆盖真实 HTTP seam（gin engine + 真实 service + 真实 DB）",
+      "success": "N/A",
+      "failure": "-",
+      "evidence": "回归测试在真实路由与真实数据库上跑，而非替身短路",
+      "status": "N/A"
+    }
+  ],
+  "not_run": [
+    {
+      "item": "PostgreSQL 方言下的同一路径",
+      "status": "NOT RUN",
+      "reason": "本机无 PostgreSQL 实例；本次改动不含 DDL、不含方言相关 SQL，gorm 的 ErrRecordNotFound 语义在两种方言下一致。"
+    },
+    {
+      "item": "前端联动（前端对 400 invalid_provider 的提示文案）",
+      "status": "NOT RUN",
+      "reason": "本票所有权明确排除 frontend/；前端未按错误码分支处理 research-task 失败（frontend/src 内无该端点的错误码分支）。"
+    }
+  ],
+  "environment_limits": [
+    "本机无 PostgreSQL 实例，数据库证据为 SQLite。",
+    "回归测试用真实 HTTP 路由与真实数据库，但运行在进程内的 gin engine（httptest），不是独立服务进程 + 真实端口；HTTP 语义（状态码、响应体、错误码）完全由同一套 transport 代码产生。"
+  ],
+  "uncovered_risks": [
+    "新错误码 invalid_provider 是本仓新增的错误码词汇。OpenAPI 的 Error.code 是自由字符串，故契约文件无需改动；但若有仓外的客户端按 code 分支处理，需要另行适配（frontend/src 当前无此分支）。",
+    "tenants 行缺失被映射为 503 dependency_unavailable（而非 5xx internal_error）。这是服务端状态缺失，不是调用方错误；若产品希望这一情形有别的表述，需要另开决策。"
+  ],
+  "follow_up": [
+    "若前端需要针对「provider_id 无效」给出更具体的提示，需要在 frontend/ 增加对 invalid_provider 的文案（超出本票所有权，未修改）。"
+  ],
+  "coverage_limits": [
+    "合成夹具：provider 与租户数据为测试内造的合成行，仅用于证明对外形态与跨租户不可区分，不代表真实检索来源目录的可用性。",
+    "本票只处理两处未映射的「记录未找到」；同一函数里其它错误路径（数据库故障等）仍原样返回，未改语义。"
+  ]
+}

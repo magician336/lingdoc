@@ -64,6 +64,7 @@ func clientFormContract() []struct {
 		{ErrRewriteKeyConflict, 409, "idempotency_conflict", "同一个操作键对应不同请求。", false},
 		{ErrRewriteSourceDenied, 403, "source_access_denied", "改写候选的来源已失效或当前不可访问。", false},
 		{ErrRewriteUnavailable, 503, "dependency_unavailable", "改写模型暂不可用，请稍后重试。", true},
+		{ErrResearchProviderInvalid, 400, "invalid_provider", "provider_id 无效：当前租户没有可用的检索来源，请核对 provider_id 是否正确且属于本租户。", false},
 		{evidence.ErrInvalidBinding, 400, "invalid_request", "请求字段不符合约定。", false},
 		{evidence.ErrIdempotencyConflict, 409, "idempotency_conflict", "同一个操作键对应不同请求。", false},
 		{evidence.ErrAssetNotFound, 404, "not_found", "资源不存在或不可访问。", false},
