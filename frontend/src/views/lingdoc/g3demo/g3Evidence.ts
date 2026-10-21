@@ -14,6 +14,7 @@
  */
 
 import type { G3MatrixRow } from './g3Matrix'
+import { downgradeGapPass } from './g3Gaps'
 import type { G3Status } from './g3Status'
 import type { G3BlockedSnapshot } from './runner/blocked'
 import type { G3LifecycleSnapshot } from './runner/changeset'
@@ -178,7 +179,9 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '故障注入-读回变更集',
     ],
     verdictId: 'AC-G3-03',
-    status: 'PASS',
+    // 行状态必须与 g3Matrix.ts 的同名行一致：缺口清单 #246 未关闭前，
+    // 本票所列缺口对应的行一律不判 PASS（见 development-rules.md）。
+    status: 'PASS (follow-up)',
     note:
       '本轮的判定取自「故障注入-应用变更集」这一步的**真实响应**：' +
       '受控故障注入是组合根按环境变量装配的夹具（LINGDOC_FAULT_INJECTION + ' +
@@ -202,7 +205,8 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '路线图-稳定化',
     ],
     verdictId: 'AC-G3-08',
-    status: 'PASS',
+    // 与矩阵同名行一致：#314 的完成线要求本行在缺口清单里保持 BLOCKED。
+    status: 'BLOCKED',
     note:
       '本轮实跑判定成立的前提是**服务端给出**了 blocking 校验问题：' +
       '必需 RouteNode 缺失、待复核或版本落后时，服务端给出 required_route_not_current ' +
@@ -218,7 +222,8 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '路线图-读影响任务',
     ],
     verdictId: 'AC-G3-16',
-    status: 'PASS',
+    // 与矩阵同名行一致：前置不具备时该行不成立。
+    status: 'BLOCKED',
     note:
       '本轮实跑判定成立：取消未冻结编辑后，冻结基线版本回到取消前的版本，' +
       '被取消会话占用的**临时版本**（它从来没有被冻结）不出现在冻结版本序列里，' +
@@ -645,7 +650,12 @@ export function applyRunEvidence(
     }
     const hit = projection.hit
     // 状态：判定卡自带状态时以判定卡为准，否则取命中路径的状态。
-    const status = hit.evaluation.verdict?.status ?? hit.evaluation.group.status
+    // 但都要过一遍 #246 的降级：**带实现缺口的行不得判 `PASS`**
+    // （缺口清单 #246 未关闭前，缺口对应的验收行一律不判 PASS）。
+    const status = downgradeGapPass(
+      row.id,
+      hit.evaluation.verdict?.status ?? hit.evaluation.group.status,
+    )
     return {
       ...row,
       status,

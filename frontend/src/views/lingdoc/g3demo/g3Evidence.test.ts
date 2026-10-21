@@ -18,6 +18,7 @@ import {
 } from './g3Evidence'
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
+import { gapIdsForRow, limitingGapIdsForRow } from './g3Gaps'
 import { G3_BLOCKED_STEPS } from './runner/blocked'
 import { G3_ASSISTANT_STEPS } from './runner/assistant'
 import { G3_CS_STEPS } from './runner/changeset'
@@ -192,6 +193,25 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
     G3_ROW_EVIDENCE_RULES['AC-G3-08'].requires.includes(G3_ROADMAP_STEPS.compareVersions),
     'AC-G3-08 的必需步骤缺了前后比较',
   )
+  // 状态口径散在矩阵 / 缺口清单 / 规则表 / 镜像 / 报告五处，容易各说各话。
+  // **矩阵的静态状态**是「还没被实跑升格」的保守值，**规则表的 status** 是「判定成立
+  // 时这一行取什么状态」，两者本就可以不同（无缺口的行：矩阵 PASS (follow-up)、
+  // 规则表 PASS，实跑命中后行才升到 PASS）。
+  //
+  // 真正要守的是 #246 的硬规则：**本票所列缺口对应的验收行，在 #246 关闭前不得判 PASS。**
+  // 于是「有实现缺口的行，规则表不得写 PASS」——否则实跑命中时，矩阵行会被投影成
+  // 规则表的 status，直接违反那条规则（这正是本轮评审抓到的真缺陷）。
+  for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
+    const hasGap =
+      gapIdsForRow(id).length > 0 || limitingGapIdsForRow(id).length > 0
+    if (hasGap) {
+      assert.notEqual(
+        rule.status,
+        'PASS',
+        `${id} 有实现缺口，规则表不得写 PASS（缺口清单 #246 关闭前不判 PASS）`,
+      )
+    }
+  }
   // 真实模型路径的结论是非确定性的：状态一律 WARNING，并保留缺口清单 #246。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-06'].status, 'WARNING')
   for (const id of ['AC-G3-14', 'AC-G3-15']) {
@@ -652,4 +672,65 @@ test('累计清单坏掉时读成空数组，不静默当成有历史', () => {
   assert.deepEqual(loadRunHistory(storage), [])
   storage.setItem(G3_RUN_HISTORY_STORAGE_KEY, JSON.stringify({ runId: 'x' }))
   assert.deepEqual(loadRunHistory(storage), [])
+})
+
+test('#246 的硬规则：带实现缺口的行，页面矩阵投影不得写成 PASS', () => {
+  // 缺口清单 #246 未关闭前，**它列出的缺口所对应的验收行一律不得判 PASS**
+  // （docs/agents/development-rules.md）。
+  //
+  // 这条规则必须在**投影处**兜住：判定卡自己会带 status，判定成立时常常就是
+  // PASS。只改静态声明不够——投影会把判定卡的状态盖回矩阵行。
+  // 这里用「一个判定成立、且自带 PASS 的判定卡」把每一行都推一遍：
+  // 带缺口的行必须被降级成 PASS (follow-up)，无缺口的行才允许 PASS。
+  const head: G3BackendHead = {
+    commitId: 'guard0000',
+    probedAt: '2026-10-21T00:00:00.000Z',
+    probePath: '/api/v1/version',
+    probeStatus: 401,
+  }
+  let checked = 0
+  for (const row of G3_MATRIX_ROWS) {
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    if (!rule?.verdictId) continue
+    const hasGap = gapIdsForRow(row.id).length > 0 || limitingGapIdsForRow(row.id).length > 0
+    const ctx: G3RunContext = {
+      runId: 'g3r-guard',
+      startedAt: '2026-10-21T00:00:00.000Z',
+      accountEmail: 'guard@example.com',
+      steps: rule.requires.map((name, index) => ({
+        index: index + 1,
+        name,
+        method: 'GET',
+        path: '/api/v1/lingdoc/guard',
+        status: 200,
+        ok: true,
+        durationMs: 1,
+        conclusion: '守护测试用的假步骤',
+      })),
+      head,
+      chapters: [],
+      stale: false,
+      verdicts: [
+        {
+          id: rule.verdictId,
+          title: '守护测试用的判定卡',
+          holds: true,
+          detail: '守护测试用的判定卡',
+          evidence: [],
+          status: 'PASS',
+        },
+      ],
+    }
+    const projected = applyRunEvidence(G3_MATRIX_ROWS, ctx).rows.find((item) => item.id === row.id)
+    assert.ok(projected, `${row.id} 没有投影出矩阵行`)
+    if (hasGap) {
+      assert.notEqual(
+        projected.status,
+        'PASS',
+        `${row.id} 带实现缺口，页面投影不得写成 PASS（缺口清单 #246 关闭前不判 PASS）`,
+      )
+    }
+    checked += 1
+  }
+  assert.ok(checked >= 10, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
 })

@@ -144,7 +144,7 @@ test('当前无法实跑的验收项标为阻塞并写明缺口', () => {
   // 而不是 BLOCKED（两者语义不同）；BLOCKED 只留给「被缺陷挡住」的行。
   assert.deepEqual(
     blocked.map((row) => row.id),
-    ['AC-G3-15', 'AC-G3-16'],
+    ['AC-G3-08', 'AC-G3-15', 'AC-G3-16'],
   )
   for (const row of blocked) {
     assert.ok(row.note && row.note.length > 0, `${row.id} 缺缺口说明`)
@@ -188,10 +188,10 @@ test('状态计数覆盖全部七种状态', () => {
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)
-  assert.equal(counts['BLOCKED'], 2)
+  assert.equal(counts['BLOCKED'], 3)
   assert.equal(counts['PASS (follow-up)'], 12)
   assert.equal(counts['TODO'], 6)
-  assert.equal(counts['NOT RUN'], 3)
+  assert.equal(counts['NOT RUN'], 2)
 })
 
 test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准为准', () => {

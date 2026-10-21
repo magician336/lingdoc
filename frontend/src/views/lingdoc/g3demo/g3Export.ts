@@ -22,7 +22,7 @@
 import { G3_MATRIX_ROWS, formatAnchor, type G3MatrixRow } from './g3Matrix'
 import { G3_ROW_EVIDENCE_RULES, type G3RowEvidence } from './g3Evidence'
 import type { G3Status } from './g3Status'
-import { G3_GAP_LIST_ISSUE, G3_IMPLEMENTATION_GAPS, type G3ImplementationGap } from './g3Gaps'
+import { G3_GAP_LIST_ISSUE, G3_IMPLEMENTATION_GAPS, downgradeGapPass, type G3ImplementationGap } from './g3Gaps'
 import type { G3BackendHead, G3RunVerdict, G3StepRecord } from './runner/runContext'
 
 /** 结论来源：本次运行 / 历史快照 / 尚未判定。三者互斥。 */
@@ -238,21 +238,21 @@ export function resolveRowStatus(
   const held = deterministic.filter((verdict) => verdict.holds)
   if (held.length) {
     for (const verdict of held) {
-      if (verdict.status) return verdict.status
+      if (verdict.status) return downgradeGapPass(row.id, verdict.status)
     }
-    if (rule) return rule.status
-    return 'PASS'
+    if (rule) return downgradeGapPass(row.id, rule.status)
+    return downgradeGapPass(row.id, 'PASS')
   }
 
   // 判定卡不成立：状态由判定卡自己带（部分判定），没有就**不升格**。
   for (const verdict of verdicts) {
-    if (verdict.status) return verdict.status
+    if (verdict.status) return downgradeGapPass(row.id, verdict.status)
   }
 
   // 只有模型侧判定：状态一律不写 PASS。
   const modelHeld = verdicts.filter((verdict) => verdict.model_dependent && verdict.holds)
   if (modelHeld.length) {
-    if (rule) return rule.status === 'PASS' ? 'WARNING' : rule.status
+    if (rule) return downgradeGapPass(row.id, rule.status === 'PASS' ? 'WARNING' : rule.status)
     return 'WARNING'
   }
 
@@ -630,7 +630,9 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
     // 状态以**投影结果**为权威（判定已在单次运行内做完一次，导出体不重判）；
     // 未判定的行回到矩阵原状态。
     const base = G3_MATRIX_ROWS.find((item) => item.id === row.id) ?? row
-    let status = decided ? row.status : base.status
+    // 同样过一遍 #246 的降级：这条路径的 `row.status` 可能来自上一次导出，
+    // 带着实现缺口的行不得在这里重新变成 PASS。
+    let status = downgradeGapPass(row.id, decided ? row.status : base.status)
     let note = evidence?.note ?? row.note ?? ''
     // 兜底：判定卡不成立时**不许**写 PASS —— 退回矩阵原状态并写明原因。
     if (status === 'PASS' && rowVerdicts.length > 0 && !rowVerdicts.some((verdict) => verdict.holds)) {

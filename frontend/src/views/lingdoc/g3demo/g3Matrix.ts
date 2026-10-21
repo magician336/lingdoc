@@ -295,7 +295,8 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '模板声明 RouteNode.R7 为必需。R7 缺失、待复核或版本落后时，C 产生 blocking ValidationIssue；即使其他任务已完成，revision 也不能 STABILIZED 或 READY。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 378, end: 380 },
-    status: 'NOT RUN',
+    // #314 的完成线要求：本票完成前，AC-G3-08 / AC-G3-16 在缺口清单里保持 BLOCKED。
+    status: 'BLOCKED',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
       '路线图的版本化编辑会话与节点写入**已实现**，验收台链路也已补上（#295）；' +

@@ -428,9 +428,11 @@ export function verdictAcG303(result: G3FaultChainResult): G3Verdict {
   // 因此回滚证据只看三件事：**项目（revision + 模板引用）未变**、**ImpactTask 集合
   // 未变**、**变更集没有变成 applied**。
   //
-  // **业务审计事件集合格不作为原子性判据**：被拒绝的操作**本来就应该**留下一条
-  // 审计（谁被拒绝了是必须可查的），那是可观测性要求，不是「这次写没生效」的证据。
-  // 把它当成原子性的必要条件，会让「注入命中后审计多了一条」被误读成「回滚不干净」。
+  // **业务审计事件不作为原子性判据**：读回的是**项目全部**业务审计事件，其中混着与本次
+  // apply 无关的授权类事件（读项目、改规格都会留），所以两次读回的**集合**本来就不相等。
+  // 「这次 apply 的业务审计有没有留下」是另一个问题，由服务端侧保证：apply 的业务审计
+  // 写在同一笔事务里，注入命中后随事务一起回滚。
+  // 把「集合相等」当成原子性的必要条件，会让「集合里多了别的审计事件」被误读成「回滚不干净」。
   const changeSetNotApplied = result.observation.changeSetStatus !== 'applied'
   const rollbackComplete =
     result.observation.projectUnchanged &&
@@ -452,8 +454,10 @@ export function verdictAcG303(result: G3FaultChainResult): G3Verdict {
         `${result.projectAfter.templateId}@v${result.projectAfter.templateCopyVersion}）、` +
         `ImpactTask 集合（${result.tasksBefore.count} → ${result.tasksAfter.count} 条）均未变，` +
         `变更集状态为 ${result.observation.changeSetStatus || '（未读到）'}（没有变成 applied）。` +
-        `业务审计事件 ${result.auditBefore.count} → ${result.auditAfter.count} 条：` +
-        `被拒绝的操作留下审计是**应当**的（谁被拒绝了必须可查），它不作为原子性判据。`
+        `业务审计事件 ${result.auditBefore.count} → ${result.auditAfter.count} 条` +
+        `（读回的是**项目全部**业务审计事件，里面混着与本次 apply 无关的授权类事件，` +
+        `所以「集合相等」不是原子性的判据；「这次 apply 的业务审计没有留下」由服务端侧保证，` +
+        `见 workspacecore 的故障注入回归测试）。`
       : assembled
         ? `本轮后端装配了注入（apply 返回 HTTP ${result.observation.status}，code=${result.observation.code}），` +
           `但回滚证据不完整：项目未变=${result.observation.projectUnchanged}、` +
@@ -482,6 +486,11 @@ export function verdictAcG303(result: G3FaultChainResult): G3Verdict {
         ? `注入命中口径：HTTP ${G3_INJECTED_FAULT_STATUS} + code=${G3_INJECTED_FAULT_CODE}`
         : `未装配注入：夹具证据见 ${G3_FAULT_FIXTURE_EVIDENCE}`,
     ],
-    status: holds ? 'PASS' : 'NOT RUN',
+    // 三分支：
+    // - 成立 → PASS
+    // - 已装配注入但回滚证据不完整 → **TODO**（这一轮没判定成，不能记 NOT RUN：
+    //   NOT RUN 的口径是「本轮没观测到写入失败」，而这里观测到了、只是回滚没读全）
+    // - 未装配注入 → NOT RUN（口径见上面的 detail）
+    status: holds ? 'PASS' : assembled ? 'TODO' : 'NOT RUN',
   }
 }

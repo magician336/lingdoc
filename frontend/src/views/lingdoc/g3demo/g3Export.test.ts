@@ -15,6 +15,7 @@ import {
   type G3EvidenceFileInput,
 } from './g3Export'
 import { G3_MATRIX_ROWS } from './g3Matrix'
+import { gapIdsForRow, limitingGapIdsForRow } from './g3Gaps'
 import { G3_STATUS_VALUES } from './g3Status'
 import type { G3BackendHead, G3RunVerdict, G3StepRecord } from './runner/runContext'
 
@@ -114,6 +115,41 @@ test('只有依赖真实模型的判定时，规则里的 PASS 不得被照抄',
     run_id: 'g3r-x',
   }
   assert.equal(resolveRowStatus(row, [modelVerdict]), 'WARNING')
+})
+
+test('#246 的硬规则：带实现缺口的行，导出投影不得写成 PASS', () => {
+  // 判定卡**自带** status 时，投影优先用判定卡的状态（这是「判定成立」的口径）。
+  // 但缺口清单 #246 未关闭前，它列出的缺口所对应的验收行**一律不得判 PASS**。
+  //
+  // 这条护卫生的就是实跑里踩到的那条路：AC-G3-03 的原子性判定成立时自带
+  // status=PASS，直接照抄就会把一个仍带 G3-GAP-01 的行写成 PASS。
+  const heldVerdict = {
+    id: 'AC-G3-03',
+    title: '应用原子性',
+    holds: true,
+    detail: '判定成立',
+    evidence: [],
+    status: 'PASS' as const,
+    model_dependent: false,
+    run_id: 'g3r-guard',
+  }
+  const row = G3_MATRIX_ROWS.find((item) => item.id === 'AC-G3-03')!
+  assert.equal(resolveRowStatus(row, [heldVerdict]), 'PASS (follow-up)')
+
+  // 逐行推一遍：带缺口的行不得投影成 PASS。
+  let checked = 0
+  for (const item of G3_MATRIX_ROWS) {
+    const hasGap = gapIdsForRow(item.id).length > 0 || limitingGapIdsForRow(item.id).length > 0
+    if (!hasGap) continue
+    const status = resolveRowStatus(item, [{ ...heldVerdict, id: item.id }])
+    assert.notEqual(
+      status,
+      'PASS',
+      `${item.id} 带实现缺口，导出投影不得写成 PASS（缺口清单 #246 关闭前不判 PASS）`,
+    )
+    checked += 1
+  }
+  assert.ok(checked >= 8, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
 })
 
 test('页面与导出体都区分「本次运行得出」与「历史快照」两类结论', () => {

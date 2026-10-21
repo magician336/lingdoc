@@ -127,7 +127,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '`AC-G3-08` 才能离开 `NOT RUN`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 250,
-    rowStatus: 'NOT RUN',
+    rowStatus: 'BLOCKED',
     fact:
       '路线图版本化编辑会话**已实现**（提案不进冻结路线图、提交冻结新版本并产生复核任务、' +
       '取消恢复基线并释放临时引用、版本序列与比较、' +
@@ -419,6 +419,30 @@ export function limitingGapsForRow(rowId: string): G3ImplementationGap[] {
 /** 某一行涉及的「覆盖受限」缺口编号。 */
 export function limitingGapIdsForRow(rowId: string): string[] {
   return limitingGapsForRow(rowId).map((gap) => gap.id)
+}
+
+/**
+ * #246 的硬规则：**缺口清单未关闭前，缺口对应的验收行一律不得判 `PASS`**
+ * （`docs/agents/development-rules.md`）。
+ *
+ * 这条规则必须在**投影处**兜住，不能只靠静态声明：判定卡自己会带 `status`，
+ * 判定成立时常常就是 `PASS`（AC-G3-03 的原子性判定、路线图判定、助手判定都是）。
+ * 照搬判定卡状态的话，一个**仍带实现缺口**的行会被投影成 `PASS`，直接违反那条规则。
+ *
+ * 降级口径：`PASS` → `PASS (follow-up)`（判据成立，但仍有未关闭的缺口或覆盖受限，
+ * 因此保留跟进链接，不写「完全通过」）。其余状态原样保留。
+ *
+ * 覆盖两类缺口：
+ * - **直接缺口**（`gap_ids`）：因缺能力而无法实跑的行；
+ * - **覆盖受限缺口**（`limiting_gap_ids`）：判据已判定，但某类证据 / 分支没覆盖到。
+ *
+ * 三处投影（`g3Export.ts` 的两条导出路径、`g3Evidence.ts` 的页面矩阵投影）
+ * 共用这一个函数，避免「只修了一处、另一处还在投影 PASS」。
+ */
+export function downgradeGapPass(rowId: string, status: G3Status): G3Status {
+  if (status !== 'PASS') return status
+  const hasGap = gapIdsForRow(rowId).length > 0 || limitingGapIdsForRow(rowId).length > 0
+  return hasGap ? 'PASS (follow-up)' : status
 }
 
 /**

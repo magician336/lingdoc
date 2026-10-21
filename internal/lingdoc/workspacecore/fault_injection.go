@@ -209,11 +209,18 @@ func (w faultBusinessAuditWriter) WriteBusinessAudit(tx Transaction, event Audit
 // is tenant scoped, so a write of another tenant can never reach the demo
 // tenant's project.
 func (w faultImpactTaskWriter) inScope(tenantID uint64) bool {
-	return w.fault.TenantID != 0 && tenantID == w.fault.TenantID
+	return faultTargetsTenant(w.fault, tenantID)
 }
 
 func (w faultBusinessAuditWriter) inScope(tenantID uint64) bool {
-	return w.fault.TenantID != 0 && tenantID == w.fault.TenantID
+	return faultTargetsTenant(w.fault, tenantID)
+}
+
+// faultTargetsTenant reports whether the named tenant is the one the fault
+// is scoped to. Every writer that can fail uses it, so the scope rule
+// lives in exactly one place.
+func faultTargetsTenant(fault FaultInjection, tenantID uint64) bool {
+	return fault.TenantID != 0 && tenantID == fault.TenantID
 }
 
 // faultAuthorizationPolicy makes the authorization decision fail for one
