@@ -21,7 +21,7 @@ import {
   readDependencyCandidateBatchFact,
   runAssistantChain,
   verdictAcG314,
-  verdictAcG315,
+  verdictCandidateBatchSubmitted,
   type G3AssistantChainResult,
 } from './assistant'
 import type { G3ProjectState } from './changeset'
@@ -327,7 +327,7 @@ test('AC-G3-14：草稿缺 affected_explanation 时记「助手未给两组说�
   assert.equal(verdict.detail.includes('助手未给两组说明'), true)
 })
 
-test('AC-G3-15：三态齐备 + 拒绝不产生边 + 同版本不再重提 + 版本复检拒绝时成立', () => {
+test('候选批次三态：齐备 + 拒绝不产生边 + 同版本不再重提 + 版本复检拒绝时成立', () => {
   const result = {
     batchesBefore: [],
     batchesAfter: [{ id: 'batch-1', candidates: [], suppressed: [] }],
@@ -340,13 +340,14 @@ test('AC-G3-15：三态齐备 + 拒绝不产生边 + 同版本不再重提 + 版
     staleConfirmation: { candidateId: 'c4', decision: 'confirm', status: '', httpStatus: 409, code: 'dependency_candidate_requires_reevaluation', edgeId: '', relation: '', action: '', supersededRelation: '', supersededAction: '' },
   } as unknown as G3AssistantChainResult
 
-  const verdict = verdictAcG315(result)
+  const verdict = verdictCandidateBatchSubmitted(result)
   assert.equal(verdict.holds, true)
-  assert.equal(verdict.id, 'AC-G3-15')
+  // 交付面编号：这条判定**不占用** AC-G3-15（那一行由依赖候选链判定）。
+  assert.equal(verdict.id, 'CANDIDATE-BATCH-SUBMITTED')
   assert.equal(verdict.status, 'PASS')
 })
 
-test('AC-G3-15：被拒的候选同版本重投又新建了一条就不成立', () => {
+test('候选批次三态：被拒的候选同版本重投又新建了一条就不成立', () => {
   const result = {
     batchesBefore: [],
     batchesAfter: [],
@@ -359,10 +360,10 @@ test('AC-G3-15：被拒的候选同版本重投又新建了一条就不成立', 
     staleConfirmation: { candidateId: 'c4', decision: 'confirm', status: '', httpStatus: 409, code: 'dependency_candidate_requires_reevaluation', edgeId: '', relation: '', action: '', supersededRelation: '', supersededAction: '' },
   } as unknown as G3AssistantChainResult
 
-  assert.equal(verdictAcG315(result).holds, false)
+  assert.equal(verdictCandidateBatchSubmitted(result).holds, false)
 })
 
-test('AC-G3-15：依据版本已变更的候选被静默确认了就不成立', () => {
+test('候选批次三态：依据版本已变更的候选被静默确认了就不成立', () => {
   const result = {
     batchesBefore: [],
     batchesAfter: [],
@@ -375,7 +376,7 @@ test('AC-G3-15：依据版本已变更的候选被静默确认了就不成立', 
     staleConfirmation: { candidateId: 'c4', decision: 'confirm', status: 'confirmed', httpStatus: 200, code: '', edgeId: 'edge-3', relation: '', action: '', supersededRelation: '', supersededAction: '' },
   } as unknown as G3AssistantChainResult
 
-  const verdict = verdictAcG315(result)
+  const verdict = verdictCandidateBatchSubmitted(result)
   assert.equal(verdict.holds, false)
   assert.equal(verdict.status, 'NOT RUN')
 })
@@ -433,7 +434,13 @@ test('助手链：读回草稿与候选批次，写路由带幂等键、GET 不�
   assert.equal(result.draft?.explanation?.definiteAffected.length, 1)
   assert.equal(result.batchesAfter.length, 1)
   assert.equal(result.verdicts.length, 2)
-  assert.deepEqual((ctx.verdicts ?? []).map((item) => item.id), ['AC-G3-14', 'AC-G3-15'])
+  // 助手链**不占用** AC-G3-15：那一行由依赖候选链判定（runner/dependencies.ts）。
+  // 助手链只提交候选批次、不做三态裁决，同号会盖住依赖链的真实判定。
+  assert.deepEqual(
+    (ctx.verdicts ?? []).map((item) => item.id),
+    ['AC-G3-14', 'CANDIDATE-BATCH-SUBMITTED'],
+  )
+  assert.equal((ctx.verdicts ?? []).some((item) => item.id === 'AC-G3-15'), false)
   for (const call of fake.calls.filter((item) => item.method === 'GET')) {
     assert.equal(call.idempotencyKey, undefined)
   }

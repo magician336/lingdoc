@@ -602,6 +602,40 @@ func (s *Service) ApplySemanticDeltas(ctx context.Context, tx Transaction, actor
 	}
 	return nil
 }
+
+// blockingPresenceBindings returns the field ids a rule set declares through
+// blocking presence rules.
+//
+// ruleID narrows the answer to one rule (the contract's route node rule);
+// an empty ruleID means "any rule".
+//
+// This is the **one** place that knows what a blocking presence binding is,
+// so the two call sites - the template's required fields and the contract's
+// route node rule - cannot drift apart. The severity must be blocking (a
+// warning presence binding is an advisory, not a declaration), the definition
+// must be presence and the target must be a field (a binding over a chapter
+// says nothing about a spec field).
+func blockingPresenceBindings(set *template.RuleSet, ruleID string) []string {
+	if set == nil {
+		return nil
+	}
+	ids := []string{}
+	for _, binding := range set.Bindings {
+		if !binding.Enabled || binding.DefinitionID != "presence" ||
+			binding.Severity != template.SeverityBlocking || binding.TargetKind != "field" {
+			continue
+		}
+		if ruleID != "" && binding.RuleID != ruleID {
+			continue
+		}
+		if binding.TargetID == "" {
+			continue
+		}
+		ids = append(ids, binding.TargetID)
+	}
+	return ids
+}
+
 func routeRequiredByRules(p Project, id string) bool {
 	if p.TemplateCopy == nil {
 		return false
@@ -609,14 +643,7 @@ func routeRequiredByRules(p Project, id string) bool {
 	if slices.Contains(p.TemplateCopy.Definition.RequiredFields, id) {
 		return true
 	}
-	if p.TemplateCopy.RuleSetSnapshot != nil {
-		for _, binding := range p.TemplateCopy.RuleSetSnapshot.Bindings {
-			if binding.Enabled && binding.Severity == template.SeverityBlocking && binding.TargetKind == "field" && binding.TargetID == id && binding.DefinitionID == "presence" {
-				return true
-			}
-		}
-	}
-	return false
+	return slices.Contains(blockingPresenceBindings(p.TemplateCopy.RuleSetSnapshot, ""), id)
 }
 
 // routeNodeRequiredIDs returns the ids of the route nodes the project template
@@ -658,15 +685,8 @@ func routeNodeRequiredIDs(p Project) []string {
 		declare(id)
 	}
 	for _, set := range []*template.RuleSet{p.TemplateCopy.RuleSetSnapshot, p.TemplateCopy.Definition.RuleSetSnapshot} {
-		if set == nil {
-			continue
-		}
-		for _, binding := range set.Bindings {
-			if binding.RuleID != template.RuleRouteNodeRequired || binding.DefinitionID != "presence" || !binding.Enabled ||
-				binding.Severity != template.SeverityBlocking || binding.TargetKind != "field" {
-				continue
-			}
-			declare(binding.TargetID)
+		for _, id := range blockingPresenceBindings(set, template.RuleRouteNodeRequired) {
+			declare(id)
 		}
 	}
 	slices.Sort(ids)

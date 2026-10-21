@@ -25,7 +25,7 @@
  * 不自创结构。
  */
 
-import { errorCodeOf, type G3HttpClient } from './httpClient'
+import { G3ChainError, errorCodeOf, type G3HttpClient } from './httpClient'
 import { bool, num, objectOf, projectPath, refOf, str } from './factHelpers'
 import {
   assessChangeSet,
@@ -833,6 +833,8 @@ export interface G3RoadmapChainResult {
   pendingReview: G3RoadmapNodeFact | null
   /** 「待复核」阶段的交付检查（读服务端给出的 blocking 校验问题）。 */
   pendingReviewCheck: G3CheckWithIssuesFact | null
+  /** 「待复核」阶段的交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  pendingReviewCheckFailure: G3ToleratedFailure | null
   /** 合成前置节点（被必需节点钉住、被推进一版的那个）。 */
   prerequisiteNode: G3RoadmapNodeFact | null
   /** 冻结版本序列（读到的那一个节点）。 */
@@ -841,7 +843,11 @@ export interface G3RoadmapChainResult {
   tasks: G3RoadmapTaskFact[]
   /** 交付检查：读服务端给出的 blocking 校验问题。 */
   check: G3CheckWithIssuesFact | null
+  /** 交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  deliveryCheckFailure: G3ToleratedFailure | null
   stabilization: G3RoadmapStabilizeFact | null
+  /** 稳定化没取到时的真实失败（状态码 + 原因码）。 */
+  stabilizationFailure: G3ToleratedFailure | null
   /** 被取消会话占用过的临时版本引用。 */
   temporaryRefs: G3RoadmapRefFact[]
   verdicts: G3Verdict[]
@@ -853,6 +859,26 @@ function requiredNodeOf(baseline: G3RoadmapBaselineFact): G3RoadmapNodeFact | nu
 }
 
 /**
+ * 一步没取到时的**真实失败**：HTTP 状态码与原因码。
+ *
+ * 交付检查在带必需路线节点的项目上会以 403 `source_access_denied` 拒掉
+ * （服务端的问题，见 #324）。这属于「没取到」，但**必须原样记下来**——
+ * 把它写成 HTTP 200 会把没观测到的事实写成已观测。
+ */
+export interface G3ToleratedFailure {
+  /** 真实的状态码。 */
+  status: number
+  /** 真实的错误码（例如 `source_access_denied`）。 */
+  code: string
+}
+
+/** 一步的结果：取到了什么，或者为什么没取到。 */
+export interface G3Tolerated<T> {
+  value: T | null
+  failure: G3ToleratedFailure | null
+}
+
+/**
  * 交付检查与稳定化**取不到就记成「没取到」**，不吞掉整条链。
  *
  * 这两步都可能因为服务端的原因失败（例如交付检查在带必需路线节点的项目上会以
@@ -861,12 +887,16 @@ function requiredNodeOf(baseline: G3RoadmapBaselineFact): G3RoadmapNodeFact | nu
  * 只需要把事实记成空，让后面取消链的判定照样跑得出来。
  *
  * 写法沿用 `runner/model.ts` 的既有约定（那里的交付检查也是这么容错的）。
+ * 差别在于：失败时**额外把状态码与原因码带出来**，证据行照实写，不写死 200。
  */
-async function tolerateFailure<T>(body: () => Promise<T>): Promise<T | null> {
+async function tolerateFailure<T>(body: () => Promise<T>): Promise<G3Tolerated<T>> {
   try {
-    return await body()
-  } catch {
-    return null
+    return { value: await body(), failure: null }
+  } catch (err) {
+    if (err instanceof G3ChainError) {
+      return { value: null, failure: { status: err.status, code: err.code } }
+    }
+    return { value: null, failure: null }
   }
 }
 
@@ -1012,7 +1042,7 @@ export async function runRoadmapChain(
   // 交付检查：待复核状态下服务端就该给出 blocking 校验问题
   // （`RouteEvaluationFields` 把没就绪的路线节点值留空，
   // 模板的 presence 规则因此报出 blocking 问题）。
-  const pendingReviewCheck = await tolerateFailure(() =>
+  const pendingReviewCheckResult = await tolerateFailure(() =>
     runDeliveryCheckWithIssues(
       ctx,
       client,
@@ -1022,6 +1052,7 @@ export async function runRoadmapChain(
       G3_ROADMAP_STEPS.deliveryCheckPendingReview,
     ),
   )
+  const pendingReviewCheck = pendingReviewCheckResult.value
 
   // —— 复核：把必需节点改成 ready（文字编辑 → 冻结路径）——
   //
@@ -1190,7 +1221,7 @@ export async function runRoadmapChain(
   // 稳定化排在交付检查**前面**：它要求变更集的目标修订就是项目当前修订
   // （`workspacecore/impact_service.go:1287`），而交付检查会落一条回执，
   // 排在后面才不会被它顶掉当前修订。
-  const stabilization = await tolerateFailure(() =>
+  const stabilizationResult = await tolerateFailure(() =>
     readRoadmapStabilization(
       ctx,
       client,
@@ -1200,6 +1231,7 @@ export async function runRoadmapChain(
       G3_ROADMAP_STEPS.stabilize,
     ),
   )
+  const stabilization = stabilizationResult.value
   project = await readProjectState(
     ctx,
     client,
@@ -1207,7 +1239,7 @@ export async function runRoadmapChain(
     options.projectId,
     '路线图-读项目状态（交付检查前）',
   )
-  const check = await tolerateFailure(() =>
+  const checkResult = await tolerateFailure(() =>
     runDeliveryCheckWithIssues(
       ctx,
       client,
@@ -1217,6 +1249,7 @@ export async function runRoadmapChain(
       G3_ROADMAP_STEPS.deliveryCheck,
     ),
   )
+  const check = checkResult.value
 
   // —— 取消链：建第二个会话 → 提案 → 取消 → 读回 ——
   const cancelSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
@@ -1276,12 +1309,15 @@ export async function runRoadmapChain(
     requiredNode,
     pendingReview,
     pendingReviewCheck,
+    pendingReviewCheckFailure: pendingReviewCheckResult.failure,
     prerequisiteNode: prerequisite,
     versions,
     comparison,
     tasks,
     check,
+    deliveryCheckFailure: checkResult.failure,
     stabilization,
+    stabilizationFailure: stabilizationResult.failure,
     temporaryRefs,
     verdicts: [],
   }
@@ -1306,6 +1342,12 @@ export interface G3RoadmapSnapshot {
   pendingReview: G3RoadmapNodeFact | null
   /** 「待复核」阶段的交付检查。 */
   pendingReviewCheck: G3CheckWithIssuesFact | null
+  /** 「待复核」阶段的交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  pendingReviewCheckFailure: G3ToleratedFailure | null
+  /** 交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  deliveryCheckFailure: G3ToleratedFailure | null
+  /** 稳定化没取到时的真实失败（状态码 + 原因码）。 */
+  stabilizationFailure: G3ToleratedFailure | null
   /** 合成前置节点（被必需节点钉住、被推进一版的那个）。 */
   prerequisiteNode: G3RoadmapNodeFact | null
   versions: G3RoadmapVersionFact[]
@@ -1328,10 +1370,13 @@ export function toRoadmapSnapshot(result: G3RoadmapChainResult): G3RoadmapSnapsh
     requiredNode: result.requiredNode,
     pendingReview: result.pendingReview,
     pendingReviewCheck: result.pendingReviewCheck,
+    pendingReviewCheckFailure: result.pendingReviewCheckFailure,
     prerequisiteNode: result.prerequisiteNode,
     versions: result.versions,
     comparison: result.comparison,
     tasks: result.tasks,
+    deliveryCheckFailure: result.deliveryCheckFailure,
+    stabilizationFailure: result.stabilizationFailure,
     temporaryRefs: result.temporaryRefs,
     requiredNodes: result.baselineAfterCancel.nodes.filter((node) => node.required),
   }
@@ -1381,9 +1426,25 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
       ? `稳定化给出 ${routeBlockers.length} 条 required_route_not_current 阻断原因`
       : '',
   ].filter(Boolean).join('；')
+  // 交付检查的**真实**状态码：取到了就是 200，没取到就照实写失败状态与原因码。
+  // 写死 200 会把「服务端以 403 拒掉」写成「交付检查跑过了」——那是把没观测到
+  // 的事实写成已观测（实测踩过：交付检查在带必需路线节点的项目上 403
+  // `source_access_denied`，服务端的问题，见 #324）。
+  const deliveryCheckStatus = result.check
+    ? '200'
+    : result.deliveryCheckFailure
+      ? `${result.deliveryCheckFailure.status}${result.deliveryCheckFailure.code ? ` ${result.deliveryCheckFailure.code}` : ''}`
+      : '（本轮未取到）'
+  // 稳定化同理：取到了就是 200，没取到照实写失败状态与原因码。
+  const stabilizationStatus = result.stabilization
+    ? '200'
+    : result.stabilizationFailure
+      ? `${result.stabilizationFailure.status}${result.stabilizationFailure.code ? ` ${result.stabilizationFailure.code}` : ''}`
+      : '（本轮未取到）'
   const precondition = result.pendingReview
     ? `台面造出的两种前置：「待复核」读回 ${result.pendingReview.id}:${result.pendingReview.state}` +
-      `（该状态下交付检查给出 ${pendingReviewIssues.length} 条 blocking 校验问题）；` +
+      `（该状态下交付检查给出 ${pendingReviewIssues.length} 条 blocking 校验问题` +
+      `${result.pendingReviewCheckFailure ? `；该次交付检查未取到：HTTP ${result.pendingReviewCheckFailure.status} ${result.pendingReviewCheckFailure.code}` : ''}）；` +
       `「版本落后」读回 ${notCurrent.map((node) => `${node.id}:${node.state}`).join('、') || '（无）'}。`
     : '本轮没有读回「待复核」前置的节点状态。'
 
@@ -1408,7 +1469,7 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
     evidence: [
       `GET /api/v1/lingdoc/projects/{projectId}/roadmap → HTTP 200 · 必需节点 ${requiredNodes.length} 个 · ` +
         `非当前态 ${notCurrent.length} 个（${notCurrent.map((node) => `${node.id}:${node.state}`).join('、') || '（无）'}）`,
-      `POST /api/v1/lingdoc/projects/{projectId}/checks → HTTP 200 · ` +
+      `POST /api/v1/lingdoc/projects/{projectId}/checks → HTTP ${deliveryCheckStatus} · ` +
         `status=${result.check?.status ?? '（本轮未取到）'} · ` +
         `blocking 问题 ${blockingIssues.length} 条` +
         `（${blockingIssues.map((issue) => `${issue.ruleId}:${issue.targetId}`).join('、') || '（无）'}）`,
@@ -1417,7 +1478,7 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
       `POST /api/v1/lingdoc/projects/{projectId}/roadmap/edits/{sessionId}/commit（新增节点）→ HTTP 200 · ` +
         `semantic=${result.addCommit?.semantic ?? false} · change_set_id=${result.addCommit?.changeSetId || '（无）'}` +
         `（新增节点是语义改动，冻结路线图不被直接改写）`,
-      `POST /api/v1/lingdoc/projects/{projectId}/change-sets/{changeSetId}/stabilize → HTTP 200 · ` +
+      `POST /api/v1/lingdoc/projects/{projectId}/change-sets/{changeSetId}/stabilize → HTTP ${stabilizationStatus} · ` +
         `status=${result.stabilization?.status ?? '（本轮未取到）'} · ` +
         `route 阻断 ${routeBlockers.length} 条` +
         `（${routeBlockers.map((blocker) => `${blocker.code}:${blocker.targetId}`).join('、') || '（无）'}）`,

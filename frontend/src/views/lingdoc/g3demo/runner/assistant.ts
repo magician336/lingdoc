@@ -1168,7 +1168,7 @@ export async function runAssistantChain(
     verdicts: [],
   }
 
-  result.verdicts = [verdictAcG314(result), verdictAcG315(result)]
+  result.verdicts = [verdictAcG314(result), verdictCandidateBatchSubmitted(result)]
   ctx.verdicts = [...(ctx.verdicts ?? []), ...result.verdicts]
 
   return result
@@ -1323,7 +1323,16 @@ export function verdictAcG314(result: G3AssistantChainResult): G3Verdict {
 }
 
 /**
- * AC-G3-15 的判定：依赖候选批次的三态决策、同版本不再重提、确认时版本复检。
+ * 候选批次三态决策的判定——**交付面编号**，不对应某条 AC 行。
+ *
+ * 为什么不能占用 `AC-G3-15`：
+ * - `AC-G3-15` 这一行由**依赖候选链**（`runner/dependencies.ts`）判定：那条链真的
+ *   跑三态裁决（确认 / 修改 / 拒绝）、同版本重投与确认时的版本复检。
+ * - 助手链只**提交**候选批次并读回，不做三态裁决，所以这条判定在助手链里
+ *   **恒为空转**（holds=false、状态 NOT RUN）。
+ * - 两条判定同号时，投影按 id 取**第一条**（`g3Evidence.ts` 的 `evaluateGroups`），
+ *   助手链那条会盖住依赖链的真实判定。交付面编号沿用既有先例
+ *   （`TASK-CLOSURE`、`DRAFT-CREATED`）。
  *
  * 口径（服务端实现 `internal/lingdoc/workspacecore/impact_dependency_candidate.go`）：
  * - 确认 → 候选状态 `confirmed` 且**产生**一条依赖边；
@@ -1332,7 +1341,7 @@ export function verdictAcG314(result: G3AssistantChainResult): G3Verdict {
  * - 同版本不再重提 → 同一版本里重投被拒的元组，服务端记为抑制，不新建候选；
  * - 确认时版本复检 → 依据对象版本已变更的候选，确认被拒（409）。
  */
-export function verdictAcG315(result: G3AssistantChainResult): G3Verdict {
+export function verdictCandidateBatchSubmitted(result: G3AssistantChainResult): G3Verdict {
   const confirm = result.decisions.find((item) => item.decision === 'confirm')
   const modify = result.decisions.find((item) => item.decision === 'modify')
   const reject = result.decisions.find((item) => item.decision === 'reject')
@@ -1354,8 +1363,8 @@ export function verdictAcG315(result: G3AssistantChainResult): G3Verdict {
     threeStates && rejectHasNoEdge && modifyRemembers && notReproposed && staleRefused
 
   return {
-    id: 'AC-G3-15',
-    title: 'AI 批量导入依赖：候选批次的三态决策与同版本不再重提',
+    id: 'CANDIDATE-BATCH-SUBMITTED',
+    title: '候选批次提交与三态读回（本链路的交付面，不对应某条 AC 行）',
     holds,
     detail: holds
       ? `候选批次三态都跑通：确认（status=${confirm?.status}，产生边 ${confirm?.edgeId || '（无）'}）、` +

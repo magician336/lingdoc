@@ -178,7 +178,7 @@ type faultImpactTaskWriter struct {
 }
 
 func (w faultImpactTaskWriter) WriteImpactTask(tx Transaction, tenantID uint64, task ImpactTask) error {
-	if !w.inScope(tenantID) {
+	if !faultTargetsTenant(w.fault, tenantID) {
 		return w.inner.WriteImpactTask(tx, tenantID, task)
 	}
 	return &InjectedFaultError{Point: w.fault.Point, Reason: w.fault.reason()}
@@ -198,22 +198,10 @@ func (w faultBusinessAuditWriter) WriteBusinessAudit(tx Transaction, event Audit
 	if w.fault.Action != "" && event.Action != w.fault.Action {
 		return w.inner.WriteBusinessAudit(tx, event)
 	}
-	if !w.inScope(event.TenantID) {
+	if !faultTargetsTenant(w.fault, event.TenantID) {
 		return w.inner.WriteBusinessAudit(tx, event)
 	}
 	return &InjectedFaultError{Point: w.fault.Point, Reason: w.fault.reason()}
-}
-
-// inScope reports whether the write belongs to the tenant the fault is scoped
-// to. The write's own tenant is the project's tenant: the apply transaction
-// is tenant scoped, so a write of another tenant can never reach the demo
-// tenant's project.
-func (w faultImpactTaskWriter) inScope(tenantID uint64) bool {
-	return faultTargetsTenant(w.fault, tenantID)
-}
-
-func (w faultBusinessAuditWriter) inScope(tenantID uint64) bool {
-	return faultTargetsTenant(w.fault, tenantID)
 }
 
 // faultTargetsTenant reports whether the named tenant is the one the fault
