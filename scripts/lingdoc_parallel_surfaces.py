@@ -174,6 +174,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_source_guard_test.go", "file"),
             ("internal/lingdoc/workspace/http.go", "file"),
+            ("internal/lingdoc/workspace/generation.go", "file"),
+            ("internal/lingdoc/workspace/model_run_mode.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),

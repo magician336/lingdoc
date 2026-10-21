@@ -40,6 +40,8 @@ type g2ChangingModel struct {
 	validator *g2TestEvidenceValidator
 }
 
+func (m *g2ChangingModel) RunMode() string { return "mock" }
+
 func (m *g2ChangingModel) Generate(_ context.Context, in Input) (Draft, error) {
 	m.calls++
 	m.validator.denied = true

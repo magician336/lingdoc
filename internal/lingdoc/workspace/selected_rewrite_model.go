@@ -181,14 +181,5 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 }
 
 func rewriteRunMode(models []*types.Model, modelID string) string {
-	for _, model := range models {
-		if model != nil && model.ID == modelID {
-			provider := strings.ToLower(strings.TrimSpace(model.Parameters.Provider))
-			if strings.Contains(provider, "fake") || strings.Contains(provider, "mock") {
-				return "real_api_fake_model"
-			}
-			return "real"
-		}
-	}
-	return "real"
+	return modelRunMode(models, modelID, "real")
 }

@@ -70,9 +70,14 @@ type testModel struct {
 	err   error
 }
 
+// RunMode 报 mock：测试替身没有 provider，不得冒充真实证据。
+func (m testModel) RunMode() string { return "mock" }
+
 func (m testModel) Generate(context.Context, Input) (Draft, error) { return m.draft, m.err }
 
 type deadlineTestModel struct{}
+
+func (deadlineTestModel) RunMode() string { return "mock" }
 
 func (deadlineTestModel) Generate(ctx context.Context, _ Input) (Draft, error) {
 	<-ctx.Done()
@@ -83,6 +88,8 @@ type countingModel struct {
 	calls int
 	draft Draft
 }
+
+func (m *countingModel) RunMode() string { return "mock" }
 
 func (m *countingModel) Generate(context.Context, Input) (Draft, error) {
 	m.calls++
