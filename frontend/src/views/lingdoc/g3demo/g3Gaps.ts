@@ -264,8 +264,8 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     fact:
       '渲染能力**已实现**（验收台 `G3Demo.vue` 与工作台面板 `ImpactOpsPanel.vue` 都渲染' +
       '「本次必须处理的对象」区块），并在 head `a87459f` 落证（运行标识 `g3r-mvgqpt88-7b4e074d`，#257）。' +
-      '**本轮实跑判定成立**（依赖图与影响任务链，见「G3.7」判定卡）：' +
-      '本轮 head 的实跑把 `assessment.objects` 读回来并逐字段核对 ' +
+      '**本轮实跑判定成立**（依赖图与影响任务链 · 运行标识 `g3r-mvi801po-43012d9e` · head `e10a8ec2`，' +
+      '见「G3.7」判定卡）：本轮 head 的实跑把 `assessment.objects` 读回来（3 个对象）并逐字段核对 ' +
       '`state` / `confirmed` / `context_revision`，判定卡 `G3.7` 成立。' +
       '矩阵行 `G3.7` 记 `PASS (follow-up)`（不是 `NOT RUN`）：判定已成立，' +
       '但缺口清单 #246 未关闭前带缺口的行不判 `PASS`，且页面渲染那半段没有在当前 head 重跑。' +
@@ -298,9 +298,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '渲染能力**已实现**（验收台 `G3Demo.vue` 按 `certainty` 分「确定影响 / 可能影响」两段并逐条渲染 ' +
       '`causes[].source`；工作台面板 `ImpactOpsPanel.vue` 同样在位），' +
       '并在 head `a87459f` 落证（运行标识 `g3r-mvgqpt88-7b4e074d`，#257）。' +
-      '**本轮实跑判定成立**（依赖图与影响任务链，见「G3.7」判定卡）：' +
-      '本轮 head 的实跑把每条影响的来源对象与影响理由读回来（缺来源或原因 0 条），' +
-      '确定影响 + 可能影响 = 全部影响（分组取服务端 `certainty`，页面不自行重算）。' +
+      '**本轮实跑判定成立**（依赖图与影响任务链 · 运行标识 `g3r-mvi801po-43012d9e` · head `e10a8ec2`，' +
+      '见「G3.7」判定卡）：本轮 head 的实跑把每条影响的来源对象与影响理由读回来' +
+      '（6 条影响，缺来源或原因 0 条），确定影响 5 条 + 可能影响 1 条 = 全部影响' +
+      '（分组取服务端 `certainty`，页面不自行重算）。' +
       '矩阵行 `G3.7` 记 `PASS (follow-up)`（不是 `NOT RUN`）：判定已成立，' +
       '但缺口清单 #246 未关闭前带缺口的行不判 `PASS`，且页面渲染那半段没有在当前 head 重跑。' +
       '覆盖受限行 `AC-G3-04` 记 `PASS (follow-up)`。',

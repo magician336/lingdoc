@@ -113,8 +113,12 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 切片行的状态由**实跑证据**驱动，不由静态声明预判。这一行没有 #246 缺口，
     // 稳定化链在当前 head 实跑出「旧基线被拒 + 无半完成写入」，因此判 PASS。
     status: 'PASS',
-    evidence: '稳定化链实跑（run-stabilization.ts）· 判定卡 G3.1',
-    note: '本轮实跑判定成立：见「G3.1」判定卡与稳定化链的逐步结果。',
+    evidence: '稳定化与交付闭环链实跑（run-stabilization.ts · 运行标识 g3r-mvi802n9-3a92679f · head e10a8ec2）· 判定卡 G3.1',
+    note:
+      '本轮实跑判定成立：同基线的第二个变更集在第一个应用后被服务端按 409 拒掉' +
+      '（code=version_conflict），该变更集落为 stale（stale_reason=spec_revision_changed）；' +
+      '被拒之后上下文修订条数仍为 2、影响任务条数仍为 4——没有半完成写入。' +
+      '（证据见「G3.1」判定卡与该链的逐步结果。）',
   },
   {
     id: 'G3.2',
@@ -125,8 +129,15 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 341, end: 341 },
     // 依赖链在当前 head 实跑出三类边的语义，这一行没有 #246 缺口，判 PASS。
     status: 'PASS',
-    evidence: '依赖图与影响任务链实跑（run-dependencies.ts）· 判定卡 G3.2',
-    note: '本轮实跑判定成立：见「G3.2」判定卡与依赖链的逐步结果。',
+    evidence: '依赖图与影响任务链实跑（run-dependencies.ts · 运行标识 g3r-mvi801po-43012d9e · head e10a8ec2）· 判定卡 G3.2',
+    note:
+      '本轮实跑判定成立：影响评估的 6 条影响全部可追溯到来源（裁决之后读回依赖边 9 条' +
+      '——确认 7 / 建议 1 / 拒绝 1，未能追溯 0 条；变更集直接列入的对象按服务端给的 ' +
+      '`explicit:` 来源边记，同样可追溯）；两条来源边指向同一目标、动作相同时合并成' +
+      '**一条**逻辑任务（causes 保留两条来源），重复应用同一变更集不产生第二条任务；' +
+      '建议边（status=suggested）只进「可能受影响」、不为它的目标产生任务；' +
+      '人工「确认 / 修改」把边落成 confirmed（修改留旧关系 candidate_b），' +
+      '人工「拒绝」的边落 rejected、同一版本再投不新建边。',
   },
   {
     id: 'G3.3',
@@ -138,8 +149,12 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 变更集链在当前 head 实跑出「只生成受影响任务 + 无关对象保持原状态」，
     // 这一行没有 #246 缺口，判 PASS。
     status: 'PASS',
-    evidence: '变更集生命周期链实跑（run-evidence.ts）· 判定卡 G3.3',
-    note: '本轮实跑判定成立：见「G3.3」判定卡与变更集链的逐步结果。',
+    evidence: '变更集生命周期链实跑（run-evidence.ts 的整链运行 g3r-mvi80dq8-3fb5e83c · head e10a8ec2）· 判定卡 G3.3',
+    note:
+      '本轮实跑判定成立：应用之后读回的影响任务，每一条的目标都在本次变更集的受影响集合里' +
+      '（评估对象与评估影响构成那个集合，集合外的任务 0 条）；' +
+      '与本次变更集无关的章节既不在评估对象里、也不在影响里，没有为它产生影响任务，' +
+      '它的版本级确认标记在应用前后都保持有效——无关对象保持原状态。',
   },
   {
     id: 'G3.4',
@@ -150,8 +165,15 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 343, end: 343 },
     // 阻断链在当前 head 实跑出两段语义，这一行没有 #246 缺口，判 PASS。
     status: 'PASS',
-    evidence: '阻断与恢复链实跑（run-blocked.ts）· 判定卡 G3.4',
-    note: '本轮实跑判定成立：见「G3.4」判定卡与阻断链的逐步结果。',
+    evidence: '阻断与恢复链实跑（run-blocked.ts · 运行标识 g3r-mvi803pi-970c5d87 · head e10a8ec2）· 判定卡 G3.4',
+    note:
+      '本轮实跑判定成立：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现' +
+      '版本不匹配（HTTP 200 · status=BLOCKED）——这一版修订没有被放行；' +
+      '依据旧版本的任务被服务端落成失效（1 条，stale_reason=target_version_replaced）：' +
+      '失效任务终态但不算闭环，旧任务关不掉新版本。' +
+      '研究主张上的复核任务缺少人工复核决策时被服务端按 422 拒掉' +
+      '（code=invalid_state），带上 human_decision=reviewed 之后才允许闭环（HTTP 200）——' +
+      '异步作业成功关不掉人工复核任务。',
   },
   {
     id: 'G3.5',
@@ -163,8 +185,15 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 路线图链实跑出「可比较 / 可恢复 / 必需项不满足时阻断」三段，但判据字面的
     // 「必需项**缺失**」那一种前置本轮没有落点 ⇒ 覆盖受限，记 WARNING。
     status: 'WARNING',
-    evidence: '路线图链实跑（run-evidence.ts 的 roadmap 链）· 判定卡 G3.5',
-    note: '本轮实跑只成立一部分：见「G3.5」判定卡。',
+    evidence: '路线图链实跑（run-evidence.ts 的 roadmap 链 · 运行标识 g3r-mvi80dq8-3fb5e83c · head e10a8ec2）· 判定卡 G3.5',
+    note:
+      '本轮实跑只成立一部分：**可比较**（读出版本序列并读出两个版本之间的前后比较）、' +
+      '**可恢复**（取消未冻结编辑后冻结基线回到取消前的版本，节点版本一并恢复）、' +
+      '**必需项不满足时阻断**（必需 RouteNode 处于待复核 / 版本落后时，服务端给出 ' +
+      'required_route_not_current 阻断，项目不进入 STABILIZED / READY）三段都成立。' +
+      '**缺**的是判据字面那一段：「必需项**已声明但缺失**」的前置本轮没有可观测的落点' +
+      '（台面造不出来，那一种阻断由服务端侧保证，见 #319）——' +
+      '不用「等价前置」冒充「缺失」，因此记 WARNING。',
   },
   {
     id: 'G3.6',
@@ -177,8 +206,15 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // （RETRIEVE_CANDIDATES 的真实调研回执）在本机不可实跑 ⇒ 覆盖受限，
     // 记 WARNING（见 G3-GAP-08）。
     status: 'WARNING',
-    evidence: '稳定化链实跑（run-stabilization.ts）· 判定卡 G3.6',
-    note: '本轮实跑只成立一部分：见「G3.6」判定卡。',
+    evidence: '稳定化与交付闭环链实跑（run-stabilization.ts · 运行标识 g3r-mvi802n9-3a92679f · head e10a8ec2）· 判定卡 G3.6',
+    note:
+      '本轮实跑只成立一部分：阻断影响未闭环时，稳定化以 200 成功响应返回 BLOCKED 并给出' +
+      '7 条完整阻断原因（impact_task_open / impact_object_unconfirmed / ' +
+      'rule:chapter-confirmed），此时冻结交付快照被服务端按 422 拒掉' +
+      '（code=context_unstable，不能导出）；全部阻断影响闭环后稳定化返回 STABILIZED。' +
+      '**缺**的是 RETRIEVE_CANDIDATES 类影响要求的真实调研回执' +
+      '（本机 `web_search_providers` 为空表，见 G3-GAP-08）——' +
+      '按缺口清单的要求不得用其他回执冒充，因此记覆盖受限的 WARNING。',
   },
   {
     id: 'G3.7',
@@ -192,8 +228,16 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     // 这一行是 #246 的缺口行（G3-GAP-06 / G3-GAP-07）：缺口清单关闭前不判 PASS，
     // 记 PASS (follow-up)。
     status: 'PASS (follow-up)',
-    evidence: '依赖图与影响任务链实跑（run-dependencies.ts）· 判定卡 G3.7',
-    note: '本轮实跑判定成立（数据面）：见「G3.7」判定卡。',
+    evidence: '依赖图与影响任务链实跑（run-dependencies.ts · 运行标识 g3r-mvi801po-43012d9e · head e10a8ec2）· 判定卡 G3.7',
+    note:
+      '本轮实跑判定成立（**数据面**）：「本次必须处理的对象」集合 3 个，逐对象核对 ' +
+      'state / confirmed / context_revision 齐全；6 条影响都带来源对象与原因（缺 0 条）；' +
+      '确定影响 5 条 + 可能影响 1 条 = 全部影响（分组取服务端 certainty，页面不自行重算）；' +
+      '任务 3 条，其中 2 条带责任域与指派人（责任域取值 B）；每条影响都带下一步动作——' +
+      '影响理由、责任人与下一步动作都读得回来。' +
+      '**缺**的是页面渲染那半段在当前 head 的重跑（headless 实跑驱动不到验收台页面，' +
+      '页面上自己读 assessment.objects 渲染的那一段沿用 #257 在 head `a87459f` 的落证）；' +
+      '加上缺口清单 #246 未关闭前带缺口的行不判 PASS，因此记 PASS (follow-up)。',
   },
 ]
 
