@@ -251,22 +251,73 @@ type KnowledgeSearchService interface {
 	HybridSearch(context.Context, string, types.SearchParams) ([]*types.SearchResult, error)
 }
 
+// HandlerDependencies is what the workspace transport needs in order to serve
+// its routes.
+//
+// Six ports are required. Each one backs a family of routes that cannot
+// answer without it, so a handler assembled without it would answer a
+// request with a nil dereference instead of a refusal. The composition root
+// therefore fails at assembly time when one of them is missing: a service that
+// cannot serve a route must not start.
+//
+// The remaining ports are optional, and the difference is stated here rather
+// than left to a nil check at the call site:
+//
+//   - Integration supplies the shared source recheck and the frozen-input
+//     builder. Without it the workspace does not offer the delivery input
+//     assembly, and the delivery surface answers that it is unavailable.
+//   - Templates reads template definitions. Without it a fixed demo template
+//     is used, so the template routes still answer.
+//   - SelectedRewrites, the machine reads and the review anchors are enabled
+//     by calling the With... methods below. Not calling them means those
+//     endpoints are not registered - a decision the caller makes by writing
+//     the line, not by leaving a field empty.
 type HandlerDependencies struct {
 	FullWorkflow *FullWorkflowDependencies
 	// Service is retained for compatibility with older adapters. New route
 	// composition should provide the focused application ports below.
-	Service          ApplicationService
-	Read             WorkspaceReadApplication
-	Write            WorkspaceWriteApplication
-	Projects         ProjectApplication
-	Members          MembershipApplication
-	Chapters         ChapterApplication
-	TemplateApp      TemplateApplication
-	ChangeSets       ChangeSetApplication
-	Sources          SourceApplicationService
-	Integration      WorkspaceIntegration
-	SelectedRewrites SelectedRewriteApplication
-	Templates        delivery.TemplateReader
+	Service     ApplicationService
+	Read        WorkspaceReadApplication
+	Write       WorkspaceWriteApplication
+	Projects    ProjectApplication
+	Members     MembershipApplication
+	Chapters    ChapterApplication
+	TemplateApp TemplateApplication
+	ChangeSets  ChangeSetApplication
+	Sources     SourceApplicationService
+	Integration WorkspaceIntegration
+	Templates   delivery.TemplateReader
+
+	// The optional capabilities, as the caller enabled them. They are private
+	// so the With... methods below are the only way to turn one on: an
+	// endpoint's presence follows the caller's explicit choice.
+	selectedRewrites SelectedRewriteApplication
+	machineReads     MachineReadApplication
+	anchorsRead      ReviewAnchorReadApplication
+	anchorsWrite     ReviewAnchorWriteApplication
+}
+
+// WithSelectedRewrites enables the rewrite endpoints.
+//
+// The endpoints exist only when the caller asks for them. Registering them
+// because a field happened to be filled in would make an endpoint's presence
+// an accident; asking for them makes it a decision.
+func (d *HandlerDependencies) WithSelectedRewrites(app SelectedRewriteApplication) *HandlerDependencies {
+	d.selectedRewrites = app
+	return d
+}
+
+// WithMachineReads enables the machine read endpoints.
+func (d *HandlerDependencies) WithMachineReads(app MachineReadApplication) *HandlerDependencies {
+	d.machineReads = app
+	return d
+}
+
+// WithReviewAnchors enables the review anchor endpoints.
+func (d *HandlerDependencies) WithReviewAnchors(read ReviewAnchorReadApplication, write ReviewAnchorWriteApplication) *HandlerDependencies {
+	d.anchorsRead = read
+	d.anchorsWrite = write
+	return d
 }
 
 // WorkspaceIntegration supplies the same source recheck and frozen-input adapter to all consumers.

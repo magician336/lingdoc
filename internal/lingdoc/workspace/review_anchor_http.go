@@ -9,10 +9,21 @@ import (
 	"net/http"
 )
 
-type reviewAnchorWriteApplication interface {
+// ReviewAnchorWriteApplication is the review anchor write capability.
+//
+// It is optional: the caller declares it by calling
+// HandlerDependencies.WithReviewAnchors, and the endpoints exist only when it
+// was asked for.
+type ReviewAnchorWriteApplication interface {
 	SetReviewAnchor(context.Context, Actor, string, string, string, string, core.SetReviewAnchorInput) (json.RawMessage, int, bool, error)
 }
-type reviewAnchorReadApplication interface {
+
+// ReviewAnchorReadApplication is the review anchor read capability.
+//
+// It is optional: the caller declares it by calling
+// HandlerDependencies.WithReviewAnchors, and the endpoints exist only when it
+// was asked for.
+type ReviewAnchorReadApplication interface {
 	GetCurrentConfirmation(context.Context, Actor, string, string) (json.RawMessage, error)
 }
 

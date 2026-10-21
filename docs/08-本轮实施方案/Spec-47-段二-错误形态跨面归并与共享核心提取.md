@@ -640,6 +640,94 @@ DR-47-03 已暂定「4xx 不可重试、5xx 可重试」。本段按此执行并
 另外，门的状态用**机械扫描**核对过：从基线代码读出每个方法自己是否调用
 `RequireHumanDecision`，与归一后的声明逐条比对，**18 个调用点的门要求全部一致**。
 
+## 47.10 的实现：组合根缺能力 fail-closed（2026-10-21）
+
+### 六个必需端口，缺一个就启动失败
+
+组合根原来**推断**六个路由族背后的端口：给一个宽接口的 `Service`，或给一对拆分的
+`Read`/`Write`，都能得到同一组端口。推断散在三处，而其中一处把类型断言的结果**直接丢弃**
+（`machineReads, _ := readExtension.(machineReadApplication)`），于是「这个能力有没有」
+变成了「哪个字段碰巧填了」——端点的存在成了偶然。
+
+现在 `NewHandler(deps) (*Handler, error)` 把这件事写死：
+
+| 端口 | 背后的路由族 | 缺失时 |
+| --- | --- | --- |
+| projects | 项目读写、激活、草稿候选、审计 | 启动期失败 |
+| members | 成员变更、所有权转移 | 启动期失败 |
+| chapters | 章节、工作副本、当前确认、评审项 | 启动期失败 |
+| templates | 模板读取、模板副本 | 启动期失败 |
+| change sets | 变更集生命周期（建 / 评 / 申 / 驳） | 启动期失败 |
+| sources | 资料绑定、来源复核、检索 | 启动期失败 |
+
+六个里只有 `sources` **不可推断**：它没有宽接口兜底，其余五个都能从 `Service` 或
+`Read`/`Write` 推出来。缺任何一个，`NewHandler` 返回
+`lingdoc workspace handler: the <port> port is required`；生产入口
+`NewLingDocWorkspaceHandler` 把这个错误上抛，**服务不启动**。
+
+### 推断收敛到一处
+
+`resolvePorts(deps) (requiredPorts, error)` 是唯一做推断的地方：先取显式端口，
+再从 legacy 适配器补，再从单端口类型断言补，最后用 split 适配器补。路由不再依赖
+「调用方碰巧怎么注入」。
+
+### 可选能力由调用方点名
+
+三个可选能力（改写端点、机器读、评审锚点）改由 `HandlerDependencies` 上的显式方法开启：
+
+```go
+deps.WithSelectedRewrites(...)
+deps.WithMachineReads(...)
+deps.WithReviewAnchors(read, write)
+```
+
+这三个字段在 `HandlerDependencies` 里是**私有**的，`With...` 是唯一的开启方式——
+于是「端点存在」＝「调用方点名了这个能力」，不是「哪个字段碰巧填了」。
+
+### 端点存在 ⟺ 能力存在
+
+评审锚点的**写**端点原来无条件注册，能力缺失时答 409 `invalid_state`；
+**读**端点（当前确认）同样无条件注册。现在两个端点都跟着能力走：
+`reviewAnchorsWrite` / `reviewAnchorsRead` 为 nil 就没有路由。
+
+### 路由面没有变（base / head 同树对照）
+
+「行为零变化」是本段的硬约束，所以路由面做**同树对照**测量，而不是只数 head：
+
+| 装配口径 | base（`28a76a5`） | head | 结论 |
+| --- | ---: | ---: | --- |
+| **生产装配**（`NewLingDocWorkspaceHandler`） | **48** | **48** | 一致 |
+| 能力齐全的路由树装配 | **70** | **70** | 一致 |
+
+base 的机器读与评审锚点是**推断**出来的，head 是**点名**出来的；两边数出来的路由条数
+一样，说明「从推断改成点名」没有增删任何端点。
+
+路由测试里的旧基线 68 需要说明：旧的测试装配是 `HandlerDependencies{}`——**一个端口都没有**，
+因此它从来没有机器读端点。新装配点名了机器读能力，于是多 2 条（68 → 70）；
+base 用同样的能力集装配同样是 70。
+
+### 证据
+
+| 断言 | 覆盖 |
+| --- | --- |
+| `TestNewHandlerRefusesToAssembleWithoutARequiredPort` | 六个必需端口逐个缺失时启动期失败，并指名缺哪个 |
+| `TestTheRewriteEndpointsExistOnlyWhenTheCallerAsksForThem` | 可选能力的端点由调用方点名决定 |
+| `TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed` | 生产装配完整时启动成功 |
+| `TestLingDocWorkspaceCompositionKeepsItsRouteSurface` | 生产路由面 = 48（与 base 同树对照一致） |
+| `TestAllLingDocRoutesDeclareAPIKeyPolicies` | 路由树 = 70 条，且每条都声明了 API key 策略 |
+
+**阴性验证**（注入违规 → 精确报出 → 回滚）：
+
+| 断言 | 注入的违规 | 报出 |
+| --- | --- | --- |
+| 缺端口必须拒绝装配 | 把 `ports.X != nil` 的 fail-closed 检查改成恒真 | 三个子用例各报一条，指名缺哪个端口 |
+
+### 一处口径变化
+
+**第 13 项：组合根缺必需端口时启动失败，而不是启动成功、运行期才崩。**
+影响面：只有装配不完整的部署会看到（此前是 nil 解引用，或 409 `invalid_state`）。
+仓内所有调用点已补齐端口，生产装配不受影响。
+
 ## 遗留与风险
 
 - **`ErrStaleInput` 的生成面落空**是本段取证中新发现的既有缺陷，D-47-04 需要裁决。

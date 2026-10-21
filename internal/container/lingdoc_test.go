@@ -45,6 +45,22 @@ func TestLingDocWorkspaceCompositionRequiresTemplateCatalog(t *testing.T) {
 	}
 }
 
+// The workspace handler is assembled at startup, so a port it needs but does
+// not have must fail here rather than on the first request that reaches the
+// route family behind it.
+func TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed(t *testing.T) {
+	templates := NewLingDocTemplateCatalog()
+
+	// The complete composition starts.
+	workspace, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil, nil, templates)
+	if err != nil {
+		t.Fatalf("the complete composition = %v, want no error", err)
+	}
+	if workspace.Handler == nil {
+		t.Fatal("the complete composition produced no handler")
+	}
+}
+
 func TestLingDocDeliveryCompositionRequiresProtectionPorts(t *testing.T) {
 	if _, err := NewLingDocDelivery(DeliveryDependencies{}); err == nil {
 		t.Fatal("missing protection ports accepted")

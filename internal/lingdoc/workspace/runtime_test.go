@@ -11,7 +11,15 @@ func newTestHandler(db *gorm.DB, shares interfaces.KBShareService, knowledge int
 	runtime := NewGORMSourceRuntime(db, nil, shares, knowledge, delivery.NewFixedTemplateReader())
 	service := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(service)
-	return NewHandler(HandlerDependencies{Read: service, Write: service, Sources: runtime, Integration: runtime})
+	deps := HandlerDependencies{Read: service, Write: service, Sources: runtime, Integration: runtime}
+	// The capabilities the project service provides are named by the caller.
+	deps.WithMachineReads(service)
+	deps.WithReviewAnchors(service, service)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		panic("assemble the workspace handler: " + err.Error())
+	}
+	return handler
 }
 
 func testRuntime(handler *Handler) *SourceRuntime {

@@ -40,7 +40,10 @@ func TestFocusedChangeSetReassessKeepsTypedHTTPContract(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			app := &focusedReassessApplication{result: ChangeSetMutationResult{ChangeSet: ChangeSet{ID: "reassessed-1"}, Replayed: test.replayed}, err: test.err}
-			handler := NewHandler(HandlerDependencies{ChangeSets: app})
+			handler, err := NewHandler(HandlerDependencies{ChangeSets: app, Sources: emptySourcesStub{}, Service: &applicationServiceStub{}})
+			if err != nil {
+				t.Fatalf("assemble the workspace handler: %v", err)
+			}
 			engine := gin.New()
 			handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 			ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-1")
@@ -84,9 +87,16 @@ func TestFocusedChangeSetReassessKeepsTypedHTTPContract(t *testing.T) {
 func TestFocusedPortsRetainG5G7CompatibilityBridge(t *testing.T) {
 	legacy := &machineHTTPTestApplication{}
 	projects := &focusedProjectPortStub{}
-	handler := NewHandler(HandlerDependencies{Service: legacy, Projects: projects})
+	deps := HandlerDependencies{Service: legacy, Projects: projects, Sources: emptySourcesStub{}}
+	// The machine read capability is named by the caller, not inferred from
+	// the broad service.
+	deps.WithMachineReads(legacy)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	if handler.machineReads != legacy || handler.projects != projects {
-		t.Fatalf("G5/G7 bridge replaced an explicitly supplied focused port: service=%T projects=%T", handler.machineReads, handler.projects)
+		t.Fatalf("G5/G7 bridge replaced an explicitly supplied focused port: machine=%T projects=%T", handler.machineReads, handler.projects)
 	}
 }
 
@@ -124,7 +134,15 @@ func TestSplitApplicationPortsDoNotRouteWritesThroughRead(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	read := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "read-project"}}}
 	write := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "write-project"}}}
-	handler := NewHandler(HandlerDependencies{Read: read, Write: write})
+	deps := HandlerDependencies{Read: read, Write: write, Sources: emptySourcesStub{}}
+	// The read port serves the machine reads and the anchor reads; the write
+	// port serves the anchor writes.
+	deps.WithMachineReads(read)
+	deps.WithReviewAnchors(read, write)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-1")
@@ -167,7 +185,15 @@ func TestExplicitProjectPortPrecedesLegacyAndSplitDependencies(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	explicit := &createProjectApplicationStub{result: CreateProjectResult{Project: Project{ID: "explicit-project"}}}
 	legacy, read, write := &splitRoutingApplication{}, &splitRoutingApplication{}, &splitRoutingApplication{}
-	handler := NewHandler(HandlerDependencies{Projects: explicit, Service: legacy, Read: read, Write: write})
+	deps := HandlerDependencies{Projects: explicit, Service: legacy, Read: read, Write: write, Sources: emptySourcesStub{}}
+	// The compatibility service serves the optional capabilities when it is
+	// the one the caller named.
+	deps.WithMachineReads(legacy)
+	deps.WithReviewAnchors(legacy, legacy)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-1")
@@ -210,7 +236,22 @@ func TestSplitExtensionPortsKeepAnchorWritesAndMachineReadsSeparate(t *testing.T
 			if explicitLegacy {
 				deps.Service = legacy
 			}
-			handler := NewHandler(deps)
+			deps.Sources = emptySourcesStub{}
+			// The anchor and machine read capabilities are named by the
+			// caller. The anchor write goes to the write port and the
+			// anchor read and the machine reads go to the read port, which
+			// is what this test pins. When the caller supplies a
+			// compatibility service, it is the one that serves them.
+			deps.WithReviewAnchors(read, write)
+			deps.WithMachineReads(read)
+			if explicitLegacy {
+				deps.WithReviewAnchors(legacy, legacy)
+				deps.WithMachineReads(legacy)
+			}
+			handler, err := NewHandler(deps)
+			if err != nil {
+				t.Fatalf("assemble the workspace handler: %v", err)
+			}
 			engine := gin.New()
 			handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 			handler.RegisterMachineReadRoutes(engine.Group("/machine"))

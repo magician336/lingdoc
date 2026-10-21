@@ -49,7 +49,15 @@ func r27ReassessHTTP(t *testing.T, f deliveryGuardFixture, changeID, key, body s
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	NewHandler(HandlerDependencies{ChangeSets: f.projects}).Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	deps := HandlerDependencies{ChangeSets: f.projects, Service: f.projects, Sources: emptySourcesStub{}}
+	// The capabilities the project service provides are named by the caller.
+	deps.WithMachineReads(f.projects)
+	deps.WithReviewAnchors(f.projects, f.projects)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	request := httptest.NewRequest(http.MethodPost, "/api/projects/"+f.project.ID+"/change-sets/"+changeID+"/reassess", strings.NewReader(body)).WithContext(f.ctx)
 	request.Header.Set("Idempotency-Key", key)
 	response := httptest.NewRecorder()
