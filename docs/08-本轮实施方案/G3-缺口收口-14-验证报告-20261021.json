@@ -31,14 +31,23 @@
   "conclusion": "票面记录的现象（注入命中之后后续写全部挂住）**在本 head 上未能复现**：装配注入 → 注入命中（HTTP 503 + injected_fault）→ 紧跟着的 5 笔写（3 次建项目 + 2 次章节版本）**全部返回 HTTP 201**，读回全部 HTTP 200，SQLite 正常落盘。三个注入点（impact_task_write / audit_write / authorization）都如此。代码层面的三点核对结论是：**(1) 回滚是显式的**——apply 走 GORM 的 db.Transaction(...) 闭包，闭包返回注入错误时 GORM 立即 ROLLBACK 并把连接归还连接池；**(2) 三个注入点都成立**——注入错误没有被任何一层吞掉，回滚都覆盖 revision 推进、ImpactTask 与业务审计；**(3) 连接池没有被占满**——生产 SQLite 把连接池限成一条连接，注入命中之后紧跟着的写仍然能拿到这条连接。真正在故障缝隙里发现的缺陷是另一件事：**注入实现为了判定作用域，会在已经写过数据、已经握住写锁的写事务里再读一次项目行**（旧 faultInProjectScope），而这次读的错误被当成『不在作用域』吞掉——读一旦等锁，注入就从『一次干净的失败』变成『一个卡住的请求』，读失败时注入还会静默地不生效。本票把作用域判定改为**按写自己的租户判定**，故障缝隙因此**完全不做存储访问**，失败瞬时发生，回滚是唯一剩下的动作。",
   "root_cause": {
     "status": "NOT RUN",
-    "status_note": "票面记录的『挂住』在本 head 上未能复现，所以**它的根因没有成立**——按仓库门禁词表记 NOT RUN（本轮没有取得该根因的证据）。故障缝隙里**另有一个真实缺陷**已被定位并修复，见 confirmed_defect：它的机制形状与票面症状一致，但本轮没有观测到票面症状本身，所以不把它写成票面的根因。",
+    "status_note": "票面记录的『挂住』在本 head 上未能复现，所以**它的根因没有成立**——按仓库门禁词表记 NOT RUN（本轮没有取得该根因的证据）。故障缝隙里**另有一个真实缺陷**已被定位并修复，见 confirmed_defect；它是一个独立的缺陷，但**本轮没有证据说它就是票面症状的成因**（见 mechanism_correction）。",
     "status_note_scope": "本报告 acceptance_matrix 里「票面记录的『挂住』现场」那一行的状态同样是 NOT RUN，两处口径一致。",
+    "mechanism_correction": {
+      "claim_before": "本报告早先的版本把成因叙述成「故障缝隙里那次读会等锁 → 受控失败变成一个卡住的请求」。**这个叙述与代码不符，本轮已更正。**",
+      "why_it_does_not_hold": "旧实现 faultInProjectScope 调的 tx.Project 走的是 gormTransaction{db: tx}（internal/lingdoc/workspacecore/service.go:27、36），也就是**事务自己那条连接**。它不可能等连接池，也不可能等这条事务自己持有的写锁。所以「读等锁」这个机制在 SQLite 上不成立。",
+      "what_the_fix_still_is_worth": "去掉那次读仍然是对的：读的错误被当成「不在作用域」吞掉，注入会**静默地不生效**（apply 反而成功）。故障缝隙零存储访问把这条歧义去掉了，也顺带让受控失败瞬时发生。但它**不是**票面症状的成因证据。",
+      "reproduction_is_faithful": "票面实测的那个 head 是 a8fb69f；本报告早先用作「修复前」对照的基线是 0b6d8b4。两者在**服务端全部相关文件上逐字节相同**（fault_injection.go、service.go、container.go、lingdoc_fault_injection.go、impact_service.go、service_facade.go 全无差异；18 个差异文件里只有一个 Go 测试文件，其余是前端与文档）。所以「修复前」那次对照跑的就是票面那个 head 的服务端——**复现尝试是忠实的，症状在本机确实不复现**。",
+      "remaining_hypothesis": "票面记的症状是「第一个写就挂住、之后读也挂住、SQLite 文件 mtime 冻结」。这个形状更像**连接没归还 / 有别的进程占着同一个 SQLite 文件**，而不是「读等锁」。本轮在这台机器上确实发现过 15 个残留验收服务进程（它们各自占着数据目录）。要坐实这个假设，需要在**有残留进程占着数据目录**的环境里复跑，本轮没有那个环境。",
+      "harness_fix_in_this_round": "台面**浏览器侧**的 HTTP 客户端原本**没有**请求超时（node 脚本那份有 60 秒）。挂住的请求在页面上会永久挂着——正是票面「请求既不返回也不报错」那种表现。本轮给浏览器侧补上 60 秒超时并让超时变成一句可读的失败（g3HttpAdapter.ts），node 侧也把超时的异常改成可读失败（fetchClient.ts）。这一条把「挂住」从「无声无息」变成「明确的超时失败」。"
+    },
     "confirmed_defect": {
       "what": "受控故障注入的失败实现（faultImpactTaskWriter / faultBusinessAuditWriter）在判定『这次写是否属于演示租户』时，通过 tx.Project(fault.TenantID, projectID) 在**调用方的写事务里**读了一次项目行。",
       "where": "internal/lingdoc/workspacecore/fault_injection.go:226-234（旧 faultInProjectScope），调用点 :162-168（faultImpactTaskWriter.WriteImpactTask）与 :179-186（faultBusinessAuditWriter.WriteBusinessAudit）",
       "mechanism": [
         "apply 的事务顺序是：先 tx.UpdateProject 推进项目 revision（service_facade.go:2450），再 store.UpdateChangeSet（:2465），**再** commitChangeImpactTasks → 写 ImpactTask（:2472-2476）。也就是说，故障缝隙里的那次项目读发生在事务**已经写过数据、已经握住 SQLite 写锁**之后。",
-        "那次读唯一的用途是租户作用域判定；读不到项目时旧实现一律 return false，把读错误与『不在作用域』混为一谈：注入会**静默地不生效**（apply 反而成功），或者读在等锁时把一次受控失败变成一个**卡住的请求**。",
+        "那次读唯一的用途是租户作用域判定；读不到项目时旧实现一律 return false，把读错误与『不在作用域』混为一谈：注入会**静默地不生效**（apply 反而成功）。",
+        "（本报告早先还写过「读在等锁时把一次受控失败变成一个卡住的请求」。**这句已更正**：那次读走的是事务自己的连接，不会等锁也不会等池。见 root_cause.mechanism_correction。）",
         "生产 SQLite 把连接池限成一条连接（internal/container/container.go:969-973 的 sqlite 分支 SetMaxOpenConns(1)），所以『事务里再读一次』是最容易把受控失败拖成请求挂起的地方。"
       ],
       "fix": "作用域改由**写自己的租户**判定：ImpactTaskWriter 的端口带上写事务的租户号（WriteImpactTask(tx, tenantID, task)），业务审计用 AuditEvent 自带的 TenantID。故障缝隙因此**零存储访问**，失败瞬时发生，剩下的事只有回滚。",

@@ -19,7 +19,13 @@ import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from '../../src/view
  */
 const REQUEST_TIMEOUT_MS = 60_000
 
-/** 造一个打向真实后端的客户端。 */
+/**
+ * 造一个打向真实后端的客户端。
+ *
+ * 超时**不往外抛**：抛出去的话，异常会绕过步骤记录，实跑里只留下一句
+ * 「本条链没有跑完」，看不出是服务端挂住。返回一次可读的失败，链路就能把
+ * 「请求超时：服务端在 N 秒内没有返回」记进证据。
+ */
 export function createFetchClient(baseUrl: string): G3HttpClient {
   return async (request: G3HttpRequest): Promise<G3HttpResponse> => {
     const started = performance.now()
@@ -31,12 +37,27 @@ export function createFetchClient(baseUrl: string): G3HttpClient {
       headers[name] = value
     }
 
-    const response = await fetch(baseUrl + request.path, {
-      method: request.method,
-      headers,
-      body: request.body === undefined ? undefined : JSON.stringify(request.body),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+    let response: Response
+    try {
+      response = await fetch(baseUrl + request.path, {
+        method: request.method,
+        headers,
+        body: request.body === undefined ? undefined : JSON.stringify(request.body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+    } catch (error) {
+      const timeout = (error as { name?: unknown } | null)?.name === 'TimeoutError'
+      return {
+        status: 0,
+        ok: false,
+        body: {
+          error: timeout
+            ? `请求超时：服务端在 ${REQUEST_TIMEOUT_MS / 1000} 秒内没有返回。`
+            : `请求失败：${(error as { message?: unknown } | null)?.message ?? String(error)}`,
+        },
+        durationMs: Math.round(performance.now() - started),
+      }
+    }
     // 下载产物：这条接口不返回 JSON 信封，只能按字节读。
     if (request.raw) {
       const buffer = await response.arrayBuffer()
