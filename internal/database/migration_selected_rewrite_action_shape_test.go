@@ -55,10 +55,10 @@ func TestSQLiteSelectedRewriteActionShapeMigrationGoesUpAndDown(t *testing.T) {
 	insertSelectedRewriteRow(t, db, "rewrite-1", "ai_generated", "rewrite")
 	insertSelectedRewriteRow(t, db, "rewrite-2", "", "rewrite")
 	_, err = db.Exec(
-		"INSERT INTO lingdoc_selected_rewrites "+
-			"(id, tenant_id, actor_id, project_id, chapter_id, idempotency_key, request_hash, status, run_mode, "+
-			" spec_revision, working_copy_revision, start_utf16, end_utf16, selected_text, instruction, origin) "+
-			"VALUES ('rewrite-3', 1, 'user-1', 'project-1', 'chapter-1', 'key-3', 'digest', 'ready', 'mock', "+
+		"INSERT INTO lingdoc_selected_rewrites " +
+			"(id, tenant_id, actor_id, project_id, chapter_id, idempotency_key, request_hash, status, run_mode, " +
+			" spec_revision, working_copy_revision, start_utf16, end_utf16, selected_text, instruction, origin) " +
+			"VALUES ('rewrite-3', 1, 'user-1', 'project-1', 'chapter-1', 'key-3', 'digest', 'ready', 'mock', " +
 			"1, 1, 0, 4, '选段', '说明', 'written_by_hand')",
 	)
 	require.Error(t, err, "来源取值必须落在既有三值词表里")
@@ -119,10 +119,10 @@ func TestPostgresSelectedRewriteActionShapeMigrationGoesUpAndDown(t *testing.T) 
 	insertSelectedRewritePostgresRow(t, db, "rewrite-2", "", "rewrite")
 	insertSelectedRewritePostgresRow(t, db, "rewrite-3", "human", "an_action_that_does_not_exist_yet")
 	_, err = db.Exec(
-		"INSERT INTO lingdoc_selected_rewrites "+
-			"(id, tenant_id, actor_id, project_id, chapter_id, idempotency_key, request_hash, status, run_mode, "+
-			" spec_revision, working_copy_revision, start_utf16, end_utf16, selected_text, instruction, origin) "+
-			"VALUES ('rewrite-4', 1, 'user-1', 'project-1', 'chapter-1', 'key-4', 'digest', 'ready', 'mock', "+
+		"INSERT INTO lingdoc_selected_rewrites " +
+			"(id, tenant_id, actor_id, project_id, chapter_id, idempotency_key, request_hash, status, run_mode, " +
+			" spec_revision, working_copy_revision, start_utf16, end_utf16, selected_text, instruction, origin) " +
+			"VALUES ('rewrite-4', 1, 'user-1', 'project-1', 'chapter-1', 'key-4', 'digest', 'ready', 'mock', " +
 			"1, 1, 0, 4, '选段', '说明', 'written_by_hand')",
 	)
 	require.Error(t, err, "来源取值必须落在既有三值词表里")

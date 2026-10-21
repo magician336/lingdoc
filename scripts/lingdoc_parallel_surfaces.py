@@ -167,6 +167,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/selected_rewrite.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_model.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_action_test.go", "file"),
+            ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_source_guard_test.go", "file"),
             ("internal/lingdoc/workspace/http.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
@@ -181,6 +183,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/api/lingdoc/workspace.ts", "file"),
             ("frontend/src/api/lingdoc/writingAction.ts", "file"),
             ("frontend/src/components/LingDocCandidateAdoptionDialog.vue", "file"),
+            ("frontend/src/components/LingDocCandidateAdoptionDialog.test.js", "file"),
         ),
         "resolves": (),
         "summary": (
