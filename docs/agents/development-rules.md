@@ -34,9 +34,27 @@
 八个门禁（七个门禁级工作流与 PR gate）遵守同一条触发纪律，各个工作流只在 `on:` 段留一行指向这里：
 
 - **门禁始终创建**：门禁 job 永远创建，跑不跑由 job 条件决定。顶层 `paths:` 过滤会让工作流根本不启动，必需检查永远 Pending，门禁连结论都没有地方发布——所以触发器不按 PR 路径过滤，缩面发生在 job 条件里。被跳过的步骤给出 skipped 状态与理由，而不是让检查变成 Pending。
-- **路径归属只登记一次**：门禁看的路径写在门禁面清单 `scripts/ci/lingdoc_gate_surfaces.py` 里，工作流不再带路径表。工作流级门禁的 `push:` 触发器保留一份静态镜像（GitHub 不能动态生成 `paths:`），镜像由手工维护：改清单就要同时改这份镜像。
+- **路径归属只登记一次**：门禁看的路径写在门禁面清单 `scripts/ci/lingdoc_gate_surfaces.py` 里，门禁工作流不再带路径表。工作流级门禁的 `push:` 触发器保留一份静态镜像（GitHub 不能动态生成 `paths:`），镜像由手工维护：改清单就要同时改这份镜像。
 - **判定只有一个入口**：跑不跑由判定模块 `scripts/ci/lingdoc_gate_decision.py` 判定，工作流只读它的结论。
 - **结论一律发布**：每个门禁都发布同样的三个字段（`surface` / `reason` / `base`），每个没跑的检查都写明理由。
+
+#### 门禁面边界
+
+**门禁层只有这八个工作流**：`frontend.yml` / `go-lint.yml` / `app.yml` / `lingdoc-mock.yml` / `lingdoc-f01-runner.yml` / `lingdoc-workspace-concurrency.yml` / `lingdoc-interface-integration.yml` / `lingdoc-review.yml`。清单里登记了 12 个门禁面，加上 PR gate，就是这八个工作流。
+
+清单里没有登记的工作流不是门禁。它们各有各的起跑方式，不要按门禁的方式改：
+
+- `anydoc.yml` / `cli.yml` / `docreader.yml` / `dsh-plugin.yml` / `mcp-server.yml` 用自己的 `pull_request` 路径过滤器限定作用域。**那五个过滤器是它们唯一的 PR 作用域约束**，不是清单的副本——清单里没有它们的条目。删掉一个，就等于让它在每个 PR 上跑完整构建（多 OS × Go 版本矩阵、rag 端到端、多 Python 版本矩阵），那是成本回归，不是收敛。
+- `cli-e2e.yml` 同样不是门禁，但它的路径过滤器之外还有一道 label 门控（PR 要带 `acceptance-e2e` 标签）。过滤器仍然要保留：它限定「哪些带 label 的 PR 才跑」，删掉它会让每个带 label 的 PR 都跑一次端到端。
+- `lingdoc-minimal-acceptance.yml` 与路径无关：它以 main 为目标的每个 PR 都跑（它的验收与改了什么路径无关）。
+- `docker-image.yml` / `release-lite.yml` / `go-lint-cache.yml` 没有 PR 触发器（tag、schedule 或手动）。
+
+由此两条纪律：
+
+- **门禁级**：路径归属只写在清单里；改清单时，同步改工作流那份 `push:` 静态镜像（它是清单的副本）。
+- **非门禁级**：路径过滤只写在自己 YAML 里；清单里没有它的条目，也不要给它加。
+
+「每个门禁都发布判定结论」只对门禁成立——非门禁的工作流不判定，也不发布结论。
 
 ### 纯格式提交的 CI 边界
 
