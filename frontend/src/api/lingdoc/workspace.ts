@@ -1,4 +1,5 @@
 import { get, post, put } from '@/utils/request'
+import type { AdoptionConfirmation } from './candidateAdoption'
 
 export type ProjectFunctionRole = 'author' | 'researcher' | 'reviewer' | 'observer'
 export type ProjectGovernanceRole = 'owner' | 'admin' | 'member'
@@ -489,6 +490,13 @@ export const applySelectedRewrite = (projectId: string, chapterId: string, candi
   expected_spec_revision: number
   expected_working_copy_revision: number
   base_chapter_version_id: string | null
+  /**
+   * 采纳的显式确认载荷。
+   *
+   * 动作化路径的候选必须带它：服务端要确认这次采纳的是哪个动作的结果、写
+   * 到哪里、写到哪一段。缺了会被拒。形状与候选采纳端共用一份。
+   */
+  confirmation?: AdoptionConfirmation
 }, key: string) => post<Result<WorkingCopy>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates/${segment(candidateId)}/apply`, input, keyHeader(key),
 )

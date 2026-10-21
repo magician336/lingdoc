@@ -46,6 +46,15 @@ var (
 	// 用户可以点名它、可以选它，只是不能把它拿掉：「这一类必须用」是执行方
 	// 的事实，不是用户的偏好。
 	ErrRewriteContextRequired = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "这一类上下文是本次动作必须使用的，不能剔除。", Retryable: false}, "selected_rewrite_context_required")
+	// ErrRewriteConfirmationRequired 说清「这次采纳没有确认」。
+	//
+	// 候选记下了动作 ⇒ 采纳必须确认它。没有载荷的采纳请求在服务层被拒，不是
+	// 前端禁用一个按钮。
+	ErrRewriteConfirmationRequired = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "采纳动作化候选必须携带确认载荷：动作、采纳目标与目标范围。", Retryable: false}, "selected_rewrite_confirmation_required")
+	// ErrRewriteConfirmationForbidden 说清「这次确认不是你自己做的」。
+	//
+	// 代他人确认一律拒：确认人是这次请求的认证身份。
+	ErrRewriteConfirmationForbidden = clienterror.New(clienterror.Form{Status: 403, Code: "forbidden", Message: "确认人必须是这次请求的认证身份。", Retryable: false}, "selected_rewrite_confirmation_forbidden")
 )
 
 type RewriteSelection struct {
@@ -165,6 +174,15 @@ type ApplySelectedRewriteInput struct {
 	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
 	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
 	BaseChapterVersionID        *string `json:"base_chapter_version_id"`
+	// Confirmation 是采纳的显式确认载荷。
+	//
+	// 动作化路径的候选必须带它：采纳不是「点一下就写进去」，用户要确认这次
+	// 采纳的是哪个动作的结果、写到哪里、写到哪一段。载荷缺了，服务层拒。
+	//
+	// 它是**指针**：缺省即「没确认」，与「确认了但字段填错」要能分开——两者
+	// 的恢复动作不同。旧路径的候选没有动作可确认，它不带这个字段，行为逐字
+	// 不变。
+	Confirmation *candidateadoption.AdoptionConfirmation `json:"confirmation,omitempty"`
 }
 
 type selectedRewriteRow struct {
@@ -649,6 +667,18 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	if err := s.recheckSources(ctx, actor, projectID, snapshots); err != nil {
 		return core.WorkingCopy{}, false, ErrRewriteSourceDenied
 	}
+	// 撤权先说、确认后说：一个依据已经没了的候选，说的是「授权没了」，不是
+	// 「你的确认填错了」——两种失效要能分开说。
+	if err := validateRewriteAdoptionConfirmation(row, input.Confirmation, actor); err != nil {
+		return core.WorkingCopy{}, false, err
+	}
+	// 确认载荷进审计：采纳之后要能说清「用户确认的是哪一次采纳、写到哪里」。
+	if input.Confirmation != nil {
+		details["writing_action"] = row.WritingAction
+		details["confirmed_target"] = string(input.Confirmation.Target)
+		details["confirmed_at"] = input.Confirmation.ConfirmedAt
+		details["confirmed_by"] = input.Confirmation.ConfirmedBy
+	}
 	if row.AppliedKey == key && row.AppliedResponseJSON != "" {
 		if input.ExpectedSpecRevision != row.SpecRevision || input.ExpectedWorkingCopyRevision != row.WorkingCopyRevision ||
 			!sameOptionalVersion(input.BaseChapterVersionID, row.BaseChapterVersionID) {
@@ -757,6 +787,66 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 		return core.WorkingCopy{}, false, err
 	}
 	return saved, result.Replayed, nil
+}
+
+// rewriteAdoptionTarget 是选段采纳端点实现的采纳目标。
+//
+// 动作的许可位说「这个动作可以这样被采纳」，端点说的是「我能这样写」。两者
+// 都要成立：这个端点只写工作副本的选段——它把候选正文写回候选记录的那一段
+// 选区。
+const rewriteAdoptionTarget = writingaction.TargetWorkingCopyPartial
+
+// validateRewriteAdoptionConfirmation 校验采纳的显式确认载荷。
+//
+// 候选记下了动作 ⇒ 采纳必须确认它。确认载荷要说的六件事缺一不可：动作、采纳
+// 目标、目标范围、确认时刻、确认人与来源。其中动作与来源必须与候选对得上，
+// 采纳目标必须落在动作声明的许可位里（许可位查词汇包，执行方不按动作名
+// 分支），目标范围必须就是候选的选区——这个端点写的就是那一段。
+//
+// 旧路径的候选没有动作，确认不了：它不带确认载荷，行为逐字不变；带了载荷
+// 反而被拒，因为没有动作可对。
+func validateRewriteAdoptionConfirmation(row selectedRewriteRow,
+	confirmation *candidateadoption.AdoptionConfirmation, actor Actor) error {
+	if row.WritingAction == "" {
+		if confirmation != nil {
+			return ErrRewriteInvalidRequest
+		}
+		return nil
+	}
+	if confirmation == nil {
+		return ErrRewriteConfirmationRequired
+	}
+	if confirmation.WritingAction == "" || confirmation.Target == "" ||
+		confirmation.ConfirmedAt.IsZero() || strings.TrimSpace(confirmation.ConfirmedBy) == "" ||
+		confirmation.Origin == "" {
+		return ErrRewriteInvalidRequest
+	}
+	// 代他人确认：确认人必须是这次请求的认证身份。
+	if strings.TrimSpace(confirmation.ConfirmedBy) != strings.TrimSpace(actor.UserID) {
+		return ErrRewriteConfirmationForbidden
+	}
+	// 确认的动作与来源必须与候选对得上：确认了但没确认对东西，不算确认。
+	if confirmation.WritingAction != writingaction.Action(row.WritingAction) ||
+		confirmation.Origin != writingaction.Origin(row.Origin) {
+		return ErrRewriteInvalidRequest
+	}
+	allowed, err := writingaction.TargetsFor(writingaction.Action(row.WritingAction))
+	if err != nil {
+		return ErrRewriteInvalidRequest
+	}
+	if !slices.Contains(allowed, confirmation.Target) {
+		return ErrRewriteInvalidRequest
+	}
+	if confirmation.Target != rewriteAdoptionTarget {
+		return ErrRewriteInvalidRequest
+	}
+	// 部分采纳必须说清写到哪一段，而且那一段就是候选的选区。
+	if confirmation.Scope == nil ||
+		confirmation.Scope.StartUTF16 != row.StartUTF16 ||
+		confirmation.Scope.EndUTF16 != row.EndUTF16 {
+		return ErrRewriteInvalidRequest
+	}
+	return nil
 }
 
 func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, error) {
