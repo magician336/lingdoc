@@ -140,9 +140,11 @@ test('验收场景行锚定主基准 §13 的逐条标题', () => {
 
 test('当前无法实跑的验收项标为阻塞并写明缺口', () => {
   const blocked = G3_AC_ROWS.filter((row) => row.status === 'BLOCKED')
+  // AC-G3-08 / AC-G3-14 本轮实跑链路跑了但前置不具备、无可读回对象，记 NOT RUN
+  // 而不是 BLOCKED（两者语义不同）；BLOCKED 只留给「被缺陷挡住」的行。
   assert.deepEqual(
     blocked.map((row) => row.id),
-    ['AC-G3-03', 'AC-G3-08', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16'],
+    ['AC-G3-03', 'AC-G3-15', 'AC-G3-16'],
   )
   for (const row of blocked) {
     assert.ok(row.note && row.note.length > 0, `${row.id} 缺缺口说明`)
@@ -163,6 +165,8 @@ test('切片行尚未判定，标 TODO；G3.7 记 NOT RUN（与缺口清单口�
   for (const row of G3_SLICE_ROWS) {
     // G3.7 的缺口（G3-GAP-06 / G3-GAP-07）记的是「未实跑」，
     // 状态口径必须是 NOT RUN 而不是 TODO——两者含义不同，不能混用。
+    // 切片行的状态由实跑证据驱动，静态声明不预判：G3.6 的调研类闭环虽已在
+    // #258 实跑，但该切片的完成判据整体尚未判定，仍是 TODO。
     const expected = row.id === 'G3.7' ? 'NOT RUN' : 'TODO'
     assert.equal(row.status, expected)
     assert.ok(row.note && row.note.includes('判据基准'), `${row.id} 的说明不完整`)
@@ -174,10 +178,10 @@ test('状态计数覆盖全部七种状态', () => {
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)
-  assert.equal(counts['BLOCKED'], 5)
+  assert.equal(counts['BLOCKED'], 3)
   assert.equal(counts['PASS (follow-up)'], 11)
   assert.equal(counts['TODO'], 6)
-  assert.equal(counts['NOT RUN'], 1)
+  assert.equal(counts['NOT RUN'], 3)
 })
 
 test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准为准', () => {

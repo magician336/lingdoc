@@ -49,8 +49,16 @@ func NewLingDocWorkspaceHandler(
 	auditSink := workspaceAuditSink{service: audit}
 	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge, templates, auditSink)
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
-	projectService := workspacecore.NewServiceWithAudit(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), nil, auditSink).
-		WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
+	// 受控故障注入只在环境变量显式点名注入点与演示租户时装配（#256）。未装配
+	// 时，下面的策略与写入端口与本票之前完全一致。
+	fault := faultInjectionFromEnv(context.Background())
+	var authorizationPolicy workspacecore.AuthorizationPolicy
+	if fault.Point == workspacecore.FaultPointAuthorization {
+		authorizationPolicy = workspacecore.NewFaultInjectingAuthorizationPolicy(nil, fault)
+	}
+	projectService := workspacecore.NewServiceWithAuthorizationPolicy(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), authorizationPolicy, auditSink, workspacecore.AuthorizationModeEnforce)
+	projectService.InstallFaultInjection(fault)
+	projectService.WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
 	runtime.ConnectProjects(projectService)
 	runtime.EnableFullWorkflowPolicy()
 	projectService.RequireActivationRead(true)

@@ -18,6 +18,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
@@ -912,11 +913,22 @@ func (r *TemplateGovernanceRuntime) Check(tx core.Transaction, expected core.Pro
 	if err != nil {
 		return nil, err
 	}
-	blockers := []core.ImpactBlocker{}
-	for _, result := range evaluated {
-		if result.Status == template.EvaluationUnknown || result.Status == template.EvaluationIssue && result.Severity == template.SeverityBlocking {
-			blockers = append(blockers, core.ImpactBlocker{Code: "rule:" + result.RuleID, TargetID: result.TargetRef, Reason: result.Message})
+	// 这是第二个求值器。「这条规则问题是否还阻断」的知识只有一处：
+	// delivery.BlockingIssues。两个求值器都走它，结论因此必然一致。
+	findings, bindings := governanceRuleFindings(p, chapters, evaluated)
+	dispositions, err := r.projects.ValidationIssueDispositionsInTransaction(ctx, tx, actor, p.ID, bindings)
+	if err != nil {
+		return nil, err
+	}
+	for index := range findings {
+		if disposition, ok := dispositions[findings[index].ID]; ok {
+			findings[index].Disposition = &delivery.IssueDisposition{Action: disposition.Action, Reason: disposition.Reason,
+				ActorID: disposition.ActorID, CreatedAt: disposition.CreatedAt}
 		}
+	}
+	blockers := []core.ImpactBlocker{}
+	for _, finding := range delivery.BlockingIssues(findings) {
+		blockers = append(blockers, core.ImpactBlocker{Code: "rule:" + finding.RuleID, TargetID: finding.TargetID, Reason: finding.Message})
 	}
 	// An unavailable cited source is a current authorization blocker even when
 	// an optional catalog omitted source_available from its own check profile.
@@ -927,6 +939,65 @@ func (r *TemplateGovernanceRuntime) Check(tx core.Transaction, expected core.Pro
 	}
 	return blockers, nil
 }
+
+// governanceRuleFindings turns the template evaluator's results into the shared
+// rule-finding shape and into the bindings a human disposition is matched
+// against.
+//
+// 两条身份是分开的，各自都有用处：
+//
+//   - finding 保留模板求值器自己的 TargetRef（"chapter/<section>"），因为稳定化
+//     阻断项一直用它指向对象；
+//   - binding 用**交付链的口径**指向同一个目标（章节用章节 ID，项目用项目 ID），
+//     因为人工处置是照交付链的检查结果记的，两条求值路径必须指向同一个对象，
+//     处置才谈得上「同一条问题」。
+func governanceRuleFindings(p core.Project, chapters []core.Chapter, evaluated []template.Evaluation) ([]delivery.CheckIssue, []core.ValidationIssueBinding) {
+	findings := []delivery.CheckIssue{}
+	bindings := []core.ValidationIssueBinding{}
+	for _, result := range evaluated {
+		if result.Status != template.EvaluationUnknown && (result.Status != template.EvaluationIssue || result.Severity != template.SeverityBlocking) {
+			continue
+		}
+		target, version := governanceFindingTarget(result, p, chapters)
+		id := result.ID
+		if id == "" {
+			// An unknown evaluation has no published id of its own; the binding
+			// still needs a stable handle for the finding.
+			sum := sha256.Sum256([]byte(result.RuleID + "\x00" + result.TargetRef + "\x00" + result.TargetVersion + "\x00" + result.RulesetHash))
+			id = "gov-" + hex.EncodeToString(sum[:12])
+		}
+		findings = append(findings, delivery.CheckIssue{ID: id, RuleID: result.RuleID, RulesetHash: result.RulesetHash,
+			Severity: result.Severity, TargetID: result.TargetRef, TargetVersion: cloneIssueVersion(version),
+			Evidence: result.Evidence, Message: result.Message})
+		bindings = append(bindings, core.ValidationIssueBinding{IssueID: id, RuleID: result.RuleID, RulesetHash: result.RulesetHash,
+			Severity: result.Severity, TargetID: target, TargetVersion: cloneIssueVersion(version), ProjectVersion: p.ProjectVersion})
+	}
+	return findings, bindings
+}
+
+// governanceFindingTarget names the target the way the delivery evaluator does,
+// so both evaluators point at the same object for the same finding.
+func governanceFindingTarget(result template.Evaluation, p core.Project, chapters []core.Chapter) (string, *string) {
+	kind, id, _ := strings.Cut(result.TargetRef, "/")
+	target := id
+	switch kind {
+	case "project":
+		target = p.ID
+	case "chapter":
+		for _, chapter := range chapters {
+			if chapter.SectionID == id {
+				target = chapter.ID
+				break
+			}
+		}
+	}
+	version := result.TargetVersion
+	if version == "" {
+		return target, nil
+	}
+	return target, &version
+}
+
 func (r *TemplateGovernanceRuntime) BindingPoliciesForCopy(ctx context.Context, tx *gorm.DB, actor core.Actor, id, version string) ([]governance.BindingPolicy, string, error) {
 	return r.service.BindingPoliciesForCopy(ctx, tx, g4GovActor(actor), id, version)
 }

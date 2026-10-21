@@ -1,18 +1,8 @@
 name: LingDoc Mock
+# Gate trigger rules: docs/agents/development-rules.md:26; path ownership: scripts/ci/lingdoc_gate_surfaces.py.
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'scripts/lingdoc_mock/**'
-      - 'scripts/ci/requirements-lingdoc.txt'
-      - 'scripts/ci/check_lingdoc_routes.py'
-      - 'docs/08-本轮实施方案/contracts/**'
-      - 'frontend/src/dev/lingdoc-mock/**'
-      - 'frontend/lingdoc-mock.html'
-      - 'frontend/src/utils/request.ts'
-      - 'frontend/package*.json'
-      - 'frontend/vite.config.ts'
-      - '.github/workflows/lingdoc-mock.yml'
 permissions:
   contents: read
 concurrency:
@@ -20,41 +10,53 @@ concurrency:
   cancel-in-progress: true
 jobs:
   scope:
-    name: Scope latest PR update
+    name: Decide what this gate runs
     runs-on: ubuntu-latest
+    # The job outputs are an explicit allow-list.  The decision module
+    # publishes one key per consuming job; only the declared ones reach the
+    # jobs below, and a name that is not declared reads as an empty string.
     outputs:
-      run: ${{ steps.scope.outputs.run }}
-      # The job outputs are an explicit allow-list. Without this line the
-      # formatting-only decision never reaches needs.scope.outputs, and the
-      # gate below silently degrades to 'always run'.
-      format_only: ${{ steps.scope.outputs.format_only }}
+      mock: ${{ steps.scope.outputs.job_lingdoc_mock_mock }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select mock paths changed by this update
+      - name: Decide what this gate runs
         id: scope
-        env:
-          LINGDOC_SCOPE_PATHS: |
-            scripts/lingdoc_mock/**
-            scripts/ci/requirements-lingdoc.txt
-            scripts/ci/check_lingdoc_routes.py
-            docs/08-本轮实施方案/contracts/**
-            frontend/src/dev/lingdoc-mock/**
-            frontend/lingdoc-mock.html
-            frontend/src/utils/request.ts
-            frontend/package*.json
-            frontend/vite.config.ts
-            .github/workflows/lingdoc-mock.yml
-        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+        # The decision module owns the path table of this gate, the tested
+        # surface and the formatting-only shortcut.  The workflow only reads
+        # its answer.  The whitespace boundary belongs to the pull request
+        # gate, so it is not repeated here.
+        #
+        # The module also publishes the conclusion of this gate: the summary
+        # a reader sees on the pull request page and the artifact a reviewer
+        # downloads.  A skipped check carries its reason there.
+        run: |
+          mkdir -p "$RUNNER_TEMP/lingdoc-gate-conclusion"
+          python scripts/ci/lingdoc_gate_decision.py --no-whitespace \
+            --gate .github/workflows/lingdoc-mock.yml \
+            --artifact-dir "$RUNNER_TEMP/lingdoc-gate-conclusion" \
+            > "$RUNNER_TEMP/lingdoc-gate-conclusion/scope.json"
+          cat "$RUNNER_TEMP/lingdoc-gate-conclusion/scope.json"
+
+      # The conclusion is published even when every check of this gate is
+      # skipped: "skipped" alone never says why.
+      - name: Publish the gate conclusion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lingdoc-mock-conclusion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-gate-conclusion/
+          if-no-files-found: warn
+          retention-days: 14
 
   mock:
     name: T06 fixed mock and request consumer
     needs: scope
-    # A formatting-only update keeps the meaning of the code, so the test
-    # matrix does not have to run again for it.
-    if: needs.scope.outputs.run == 'true' && needs.scope.outputs.format_only != 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.
+    if: needs.scope.outputs.mock == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

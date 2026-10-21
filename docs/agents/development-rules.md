@@ -13,18 +13,39 @@
 
 ### 文档提交的 CI 边界
 
-GitHub PR 的顶层 `paths` 按整个 PR 相对 `main` 的变更集合匹配；一个已经包含代码的 PR 后续追加 Markdown 时，单靠 `paths` 仍会重新排队代码测试。项目工作流因此在 `synchronize` 事件上按本次 ref 更新重新判断路径：纯文档/证据提交保留快速门禁和文档契约校验，跳过 Go、前端、lint、mock、并发和真实接口集成矩阵；本次更新包含代码、迁移、契约或工作流变更时照常运行相关检查。首次打开、重新打开或手动 dispatch 仍按完整范围运行。
+门禁的**验证单元**是 (被测面内容, 基线内容)：被测面内容变了，或者基线在 PR 底下移动了，就要重测；两者都没变，就不重测。判定只读 Git（贡献面、树哈希、合并基点），判定器是 `scripts/ci/lingdoc_gate_decision.py`，工作流级与 PR gate 都从它取决策。**判定层只有这一个入口**：范围计算、改动文件、被测面推导、门禁面分类与格式快判都在这个模块里，没有第二个脚本能回答「跑不跑」。
 
-被跳过的 job 必须通过 job-level `if` 产生成功的 skipped 状态，不能用顶层路径过滤制造必需检查的 Pending 状态。修改公共契约、迁移、事务边界或 base 后，应手动 dispatch 或提交代码变更重新跑完整门禁。
+- **被测面**来自 PR 自己的贡献（`base...head`）：Go 侧到**包**级，前端侧到目录。判定与执行都在合并后的树上进行，所以「贡献在新 main 上还成立吗」被正面覆盖。
+- **推送被测面**是这次推送自己的 diff（`before...after`），基线是推送开始前的那个提交（创建分支时是 `after` 的父提交）。push 没有 PR 贡献面，它按自己的范围判定；验证单元仍是 (被测面内容, 基线内容)。
+- 纯文档/证据提交：贡献面内容没变 → 保留快速门禁与文档契约校验，跳过 Go、前端、lint、mock、并发和真实接口集成矩阵。
+- **基线合并**（把 main 并进分支或变基）：贡献面内容没变，基线变了 → 仓库级矩阵不重跑（main 的代码由 main 自己的 CI 负责），但 PR 贡献触及的包会在新基线上重测；贡献未触及前端时前端步骤跳过，并在门禁产物里写明理由。
+- **改动判定脚本或门禁工作流本身时不得缩面**：裁判必须由全量门禁来验。
+- 贡献包含代码、迁移、契约或工作流变更时，照常运行相关检查。首次打开、重新打开或手动 dispatch 按完整范围运行。
+- 判定失败一律回退到全量：门禁的目的是不漏，不是卡人。
+
+**门禁始终出现**：PR 上的必需检查必须有一个稳定的名字，否则 ruleset 要么永远等一个 Pending 的检查，要么在某次无关改动上突然失去它。所以 PR gate 的 job 不用顶层路径过滤把自己藏起来——**门禁 job 永远创建，跑不跑由 job 条件决定**；工作流级门禁同理，它们的触发器不按 PR 路径过滤，缩面发生在 job 条件里。被跳过的步骤给出 skipped 状态与理由，而不是让检查变成 Pending。
+
+被跳过的 job 必须通过 job-level `if` 产生成功的 skipped 状态，不能用顶层路径过滤制造必需检查的 Pending 状态。门禁产物必须写明这次测了什么面（`surface`）、为什么是这个面（`reason`）、以及所依据的基线（`base`）——「Skipped means NOT RUN, not passed」，跳过必须带可解释的理由。
+
+决策与理由见 [ADR 0006](../adr/0006-gate-surface-by-contribution.md)，判定层的结构见 [ADR 0007](../adr/0007-gate-decision-deep-module.md)：0005 处理「只重排版的推送」，0006 处理「基线合并」，0007 处理「判定这件事由谁做、结论以什么形状存在」。
+
+### 门禁触发说明
+
+八个门禁（七个门禁级工作流与 PR gate）遵守同一条触发纪律，各个工作流只在 `on:` 段留一行指向这里：
+
+- **门禁始终创建**：门禁 job 永远创建，跑不跑由 job 条件决定。顶层 `paths:` 过滤会让工作流根本不启动，必需检查永远 Pending，门禁连结论都没有地方发布——所以触发器不按 PR 路径过滤，缩面发生在 job 条件里。被跳过的步骤给出 skipped 状态与理由，而不是让检查变成 Pending。
+- **路径归属只登记一次**：门禁看的路径写在门禁面清单 `scripts/ci/lingdoc_gate_surfaces.py` 里，工作流不再带路径表。工作流级门禁的 `push:` 触发器保留一份静态镜像（GitHub 不能动态生成 `paths:`），镜像由手工维护：改清单就要同时改这份镜像。
+- **判定只有一个入口**：跑不跑由判定模块 `scripts/ci/lingdoc_gate_decision.py` 判定，工作流只读它的结论。
+- **结论一律发布**：每个门禁都发布同样的三个字段（`surface` / `reason` / `base`），每个没跑的检查都写明理由。
 
 ### 纯格式提交的 CI 边界
 
-路径判定回答不了「这次改动碰了代码路径，但只是把代码重新排版」。工作流因此在 `synchronize` 事件上再问一次**内容**：本次更新是否只重排版、不改语义？判定器是 `scripts/ci/lingdoc_format_scope.py`，它接受两个判据：
+路径判定回答不了「这次改动碰了代码路径，但只是把代码重新排版」。工作流因此在 `synchronize` 事件上再问一次**内容**：本次更新是否只重排版、不改语义？这条内容判据由判定模块自己实现（`scripts/ci/lingdoc_gate_decision.py` 内的格式快判），判定层没有第二个入口。它接受两个判据：
 
 - **gofmt 等价**：改动后的文件正是 `gofmt` 对改动前的文件会产出的结果。
 - **只改注释与空白**：去掉注释、去掉字符串字面量之外的空白之后，两版的 token 序列逐行相同。
 
-判定为纯格式提交时，**测试类** job（Go 测试、前端测试、integration、workspace-concurrency、mock、镜像构建、PR gate 里的 provider tests 与 frontend 步骤）以 job-level `if` 产生 skipped 状态。**lint 不跳**——它就是格式的裁判；contracts 校验、diff 空白检查与检查边界发布也不跳。
+判定为纯格式提交时，**测试类** job（Go 测试、前端测试、integration、workspace-concurrency、mock、镜像构建、PR gate 里的 provider tests 与 frontend 步骤）以 job-level `if` 产生 skipped 状态。**lint 不跳**——它就是格式的裁判；contracts 校验、diff 空白检查与检查边界发布也不跳。判定模块把这条快判**折进**它给出的那一个布尔量：工作流的 `if:` 只读判定结果，不再自己组合「跑不跑」与「是不是格式改动」。
 
 边界：
 
@@ -34,7 +55,7 @@ GitHub PR 的顶层 `paths` 按整个 PR 相对 `main` 的变更集合匹配；�
 - 首次打开、重新打开、手动 dispatch 与 push 到 main **不走**这条快门禁：PR 第一次被人看到时，整套矩阵必须跑。
 - 判定结论与理由随检查边界一起发布，可复核。
 
-接线纪律（2026-10-20 线上验证 #288 补记）：**job 的 outputs 是显式白名单**。step 往 `GITHUB_OUTPUT` 写了键，不等于下游 job 读得到——漏声明时下游取到**空字符串**，于是 `'' != 'true'` 恒成立、跳过条件静默失效且不报错。跨 job 引用必须在该 job 的 `outputs:` 里显式声明；**step 级引用**（`steps.<id>.outputs.<name>`）不需要声明。给工作流加门禁条件时，用守护测试断言「工作流声明的 outputs」与「脚本写出的键」一致（`scripts/ci/test_lingdoc_format_scope.py::WorkflowWiringTests`），只测脚本输出不够——本地求值不会模拟这层白名单。守护测试本身也必须有工作流在跑：PR gate 的「Test CI scope scripts」步骤无条件执行整个 `scripts/ci` 测试套件（`test_lingdoc_*.py`）。
+接线纪律（2026-10-20 线上验证 #288 补记）：**job 的 outputs 是显式白名单**。step 往 `GITHUB_OUTPUT` 写了键，不等于下游 job 读得到——漏声明时下游取到**空字符串**，于是 `'' != 'true'` 恒成立、跳过条件静默失效且不报错。跨 job 引用必须在该 job 的 `outputs:` 里显式声明；**step 级引用**（`steps.<id>.outputs.<name>`）不需要声明。给工作流加门禁条件时，用守护测试断言「工作流声明的 outputs」与「判定模块写出的键」一致（`scripts/ci/test_lingdoc_workflow_wiring.py::GateStepWiringTests`、`scripts/ci/test_lingdoc_gate_contracts.py::WiringTriadTests`），只测脚本输出不够——本地求值不会模拟这层白名单。守护测试本身也必须有工作流在跑：PR gate 的「Test CI scope scripts」步骤无条件执行整个 `scripts/ci` 测试套件（`test_lingdoc_*.py`）。判定语义的用例只在 `scripts/ci/test_lingdoc_gate_decision.py` 这一个 seam 上——判定模块的公开接口；接线与文档的守护测试各自成文件。
 
 ## 默认运行模式：Agent 先完成，人审结果
 

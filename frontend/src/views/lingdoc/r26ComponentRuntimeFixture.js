@@ -72,12 +72,24 @@ export function mountPanel(name,options={}){
    if(id.startsWith('.')){
     const resolved=resolveLocal(path.resolve(path.dirname(file),id))
     if(resolved===path.join(frontend,'src/utils/request.ts'))return request
+    // A child single-file component is compiled the same way the panel under
+    // test is, so a panel that mounts another panel keeps rendering the real
+    // component instead of having its source evaluated as plain TypeScript.
+    if(resolved.endsWith('.vue'))return {default:compileComponent(resolved)}
     return local(resolved)
    }
    return require(id)
   }
   new Function('require','module','exports','crypto',compile(source))(load,module,module.exports,crypto)
   return module.exports
+ }
+ function compileComponent(file){
+  const parsed=SFC.parse(fs.readFileSync(file,'utf8'),{filename:file})
+  assert.deepEqual(parsed.errors,[])
+  const script=SFC.compileScript(parsed.descriptor,{id:'r26-'+path.basename(file)})
+  const template=SFC.compileTemplate({source:parsed.descriptor.template.content,filename:file,id:'r26-'+path.basename(file),compilerOptions:{bindingMetadata:script.bindings,hoistStatic:false}})
+  assert.deepEqual(template.errors,[])
+  return {...evaluate(script.content,file).default,render:evaluate(template.code,file).render}
  }
  function local(file){if(!cache.has(file))cache.set(file,evaluate(fs.readFileSync(file,'utf8'),file));return cache.get(file)}
  const filename=path.join(frontend,'src/views/lingdoc',name+'.vue'),parsed=SFC.parse(fs.readFileSync(filename,'utf8'),{filename})

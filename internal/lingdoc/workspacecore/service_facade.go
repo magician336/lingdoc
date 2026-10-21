@@ -204,18 +204,25 @@ func isReplayPayloadDecodeError(err error) bool {
 // Service owns validation, permissions, version expectations and replay order.
 // Swapping storage cannot swap or omit these rules.
 type Service struct {
-	repository            Repository
-	templates             TemplateReader
-	ruleSets              RuleSetSnapshotReader
-	sources               SourcePolicy
-	authorizer            AuthorizationPolicy
-	audit                 AuditSink
-	mode                  AuthorizationMode
-	catalog               TemplateCatalogResolver
-	g2Runtime             G2Runtime
-	impactPreflight       ImpactPreflightChecker
-	impactRules           ImpactRuleChecker
-	runtimeRecovery       RuntimeRecoveryChecker
+	repository      Repository
+	templates       TemplateReader
+	ruleSets        RuleSetSnapshotReader
+	sources         SourcePolicy
+	authorizer      AuthorizationPolicy
+	audit           AuditSink
+	mode            AuthorizationMode
+	catalog         TemplateCatalogResolver
+	g2Runtime       G2Runtime
+	impactPreflight ImpactPreflightChecker
+	impactRules     ImpactRuleChecker
+	runtimeRecovery RuntimeRecoveryChecker
+	// impactTasks and businessAudit are the narrow writer ports of the
+	// change-set apply transaction. They are nil in the default composition,
+	// in which case the writes go through the caller's transaction exactly as
+	// before. The composition root may substitute a controlled failure
+	// implementation to exercise the atomicity boundary (#256).
+	impactTasks           ImpactTaskWriter
+	businessAudit         BusinessAuditWriter
 	requireActivationRead bool
 	runtimeMode           string
 }
@@ -2238,7 +2245,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			chapterIDs = append(chapterIDs, impact.ChapterID)
 		}
 		if _, ok := tx.(impactTransaction); ok {
-			if err := CommitChangeImpactTasks(featureTx, next, change); err != nil {
+			if err := s.commitChangeImpactTasks(featureTx, next, change); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
@@ -2253,7 +2260,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			if change.TemplateUpgrade != nil {
 				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)
 			}
-			if err := audit.RecordAudit(AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
+			if err := s.writeBusinessAudit(featureTx, audit, AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
@@ -2619,6 +2626,24 @@ func sameValidationIssueBinding(left, right ValidationIssueBinding) bool {
 		left.Severity != right.Severity || left.TargetID != right.TargetID || left.ProjectVersion != right.ProjectVersion {
 		return false
 	}
+	return sameValidationIssueTargetVersion(left, right)
+}
+
+// sameValidationIssueFinding matches the fields that identify the **finding**
+// itself. The issue id is deliberately left out: it is the delivery
+// evaluator's handle for the finding, and the second evaluator derives the same
+// finding from the same rule evaluation without publishing that handle.
+// Everything that decides *whether the decision still applies* — rule, ruleset,
+// severity, target, target version and project version — is still compared.
+func sameValidationIssueFinding(left, right ValidationIssueBinding) bool {
+	if left.RuleID != right.RuleID || left.RulesetHash != right.RulesetHash ||
+		left.Severity != right.Severity || left.TargetID != right.TargetID || left.ProjectVersion != right.ProjectVersion {
+		return false
+	}
+	return sameValidationIssueTargetVersion(left, right)
+}
+
+func sameValidationIssueTargetVersion(left, right ValidationIssueBinding) bool {
 	if left.TargetVersion == nil || right.TargetVersion == nil {
 		return left.TargetVersion == nil && right.TargetVersion == nil
 	}
@@ -2792,37 +2817,9 @@ func (s *Service) ValidationIssueDispositions(ctx context.Context, actor Actor, 
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
 			return err
 		}
-		audit, ok := tx.(auditTransaction)
-		if !ok {
-			return ErrInvalidState
-		}
-		events, err := audit.AuditEvents(projectID)
+		latest, err := s.latestValidationIssueDispositions(ctx, tx, projectID)
 		if err != nil {
 			return err
-		}
-		latest := make(map[string]ValidationIssueDisposition)
-		for _, event := range events {
-			if event.Action != "validation_issue.disposition" {
-				continue
-			}
-			raw, err := json.Marshal(event.Details)
-			if err != nil {
-				return err
-			}
-			var details struct {
-				Disposition ValidationIssueDisposition `json:"validation_issue_disposition"`
-			}
-			if err := json.Unmarshal(raw, &details); err != nil {
-				return err
-			}
-			if details.Disposition.IssueID == "" {
-				return ErrInvalidState
-			}
-			previous, exists := latest[details.Disposition.IssueID]
-			if !exists || details.Disposition.ProjectVersion > previous.ProjectVersion ||
-				(details.Disposition.ProjectVersion == previous.ProjectVersion && details.Disposition.CreatedAt.After(previous.CreatedAt)) {
-				latest[details.Disposition.IssueID] = details.Disposition
-			}
 		}
 		for id, binding := range byID {
 			if disposition, exists := latest[id]; exists && sameValidationIssueBinding(binding, disposition.ValidationIssueBinding) {
@@ -2835,6 +2832,95 @@ func (s *Service) ValidationIssueDispositions(ctx context.Context, actor Actor, 
 		return nil, err
 	}
 	return result, nil
+}
+
+// ValidationIssueDispositionsInTransaction returns the recorded decisions that
+// apply to the given rule findings, read **inside the caller's transaction**.
+//
+// 第二个求值器（模板治理求值）从**同一条规则判断**得出**同一条 finding**，但它不
+// 发布交付链的 issue id —— 那个 id 是交付链给 finding 的把手，而不是 finding
+// 本身的身份。因此这里的匹配跑在**标识 finding 本身**的字段上：规则、规则集
+// 摘要、严重度、目标、目标版本、项目版本。版本一变匹配即失效，问题重新出现；
+// 被记录的处置仍带着完整绑定（含 issue id）留在审计里。
+//
+// 它在调用方的事务里读，是因为稳定化聚合器正跑在那个事务里：另开一条读事务会
+// 和 SQLite 的单连接互锁。
+func (s *Service) ValidationIssueDispositionsInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID string, findings []ValidationIssueBinding) (map[string]ValidationIssueDisposition, error) {
+	if len(findings) > 500 {
+		return nil, ErrInvalidRequest
+	}
+	byID := make(map[string]ValidationIssueBinding, len(findings))
+	for _, binding := range findings {
+		if err := validateValidationIssueBinding(binding); err != nil {
+			return nil, err
+		}
+		if _, exists := byID[binding.IssueID]; exists {
+			return nil, ErrInvalidRequest
+		}
+		byID[binding.IssueID] = binding
+	}
+	if _, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, "")); err != nil {
+		return nil, err
+	}
+	latest, err := s.latestValidationIssueDispositions(ctx, tx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]ValidationIssueDisposition)
+	for id, binding := range byID {
+		matched, found := ValidationIssueDisposition{}, false
+		for _, disposition := range latest {
+			if !sameValidationIssueFinding(binding, disposition.ValidationIssueBinding) {
+				continue
+			}
+			if !found || disposition.CreatedAt.After(matched.CreatedAt) {
+				matched, found = disposition, true
+			}
+		}
+		if found {
+			result[id] = matched
+		}
+	}
+	return result, nil
+}
+
+// latestValidationIssueDispositions returns the newest recorded decision per
+// issue id. Older decisions stay in the audit log; only the newest one can
+// describe the present state of a finding.
+func (s *Service) latestValidationIssueDispositions(ctx context.Context, tx Transaction, projectID string) (map[string]ValidationIssueDisposition, error) {
+	audit, ok := tx.(auditTransaction)
+	if !ok {
+		return nil, ErrInvalidState
+	}
+	events, err := audit.AuditEvents(projectID)
+	if err != nil {
+		return nil, err
+	}
+	latest := make(map[string]ValidationIssueDisposition)
+	for _, event := range events {
+		if event.Action != "validation_issue.disposition" {
+			continue
+		}
+		raw, err := json.Marshal(event.Details)
+		if err != nil {
+			return nil, err
+		}
+		var details struct {
+			Disposition ValidationIssueDisposition `json:"validation_issue_disposition"`
+		}
+		if err := json.Unmarshal(raw, &details); err != nil {
+			return nil, err
+		}
+		if details.Disposition.IssueID == "" {
+			return nil, ErrInvalidState
+		}
+		previous, exists := latest[details.Disposition.IssueID]
+		if !exists || details.Disposition.ProjectVersion > previous.ProjectVersion ||
+			(details.Disposition.ProjectVersion == previous.ProjectVersion && details.Disposition.CreatedAt.After(previous.CreatedAt)) {
+			latest[details.Disposition.IssueID] = details.Disposition
+		}
+	}
+	return latest, nil
 }
 
 func (s *Service) RequestOwnerTransfer(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (json.RawMessage, int, bool, error) {

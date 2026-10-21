@@ -165,9 +165,15 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '聚合器、确认复核、冻结输入和 READY 闸门',
     criterion: '未关闭阻断项不能 STABILIZED 或导出',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 345, end: 345 },
+    // 切片行的状态由**实跑证据**驱动，不由静态声明预判。G3.6 的调研类闭环
+    // 已在当前 head 实跑（#258），但该切片的完成判据整体尚未判定，因此这里
+    // 仍是 TODO；外部检索渠道的覆盖受限见 G3-GAP-08。
     status: 'TODO',
     evidence: '本票未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    note:
+      '本票只建立判据基准与骨架，该切片的完成判据尚未判定；' +
+      '调研类闭环虽已在 #258 实跑（真实 `ResearchRun` 回执），但覆盖受限，' +
+      '不足以判定该切片成立。',
   },
   {
     id: 'G3.7',
@@ -285,10 +291,12 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '模板声明 RouteNode.R7 为必需。R7 缺失、待复核或版本落后时，C 产生 blocking ValidationIssue；即使其他任务已完成，revision 也不能 STABILIZED 或 READY。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 378, end: 380 },
-    status: 'BLOCKED',
+    status: 'NOT RUN',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
-      '技术路线节点只有 GET /route-nodes，没有写端点，造不出「必需节点缺失」与「版本落后」。' +
+      '路线图的版本化编辑会话与节点写入**已实现**，验收台链路也已补上（#295）；' +
+      '本轮实跑 `NOT RUN`：演示模板不声明任何 RouteNode，基线路线图为空，' +
+      '造不出「必需节点缺失」与「版本落后」两种前置。' +
       '解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
     domain: 'C',
@@ -363,10 +371,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用“确定受影响”和“可能受影响”两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 402, end: 404 },
-    status: 'BLOCKED',
+    status: 'NOT RUN',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
-      '变更草稿生成有端点，但「确定受影响 / 可能受影响」**助手解释分组**无实现' +
+      '助手草稿里的「确定受影响 / 可能受影响」**解释分组已实现**，验收台读回链路也已补上（#295）；' +
+      '本轮实跑 `NOT RUN`：没有可读回的助手草稿' +
       '（工作台那个分组是影响解析结果，不可互替）。解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
   },

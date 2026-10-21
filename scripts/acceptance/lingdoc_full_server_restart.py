@@ -104,6 +104,21 @@ def start_server(binary: Path, repo_root: Path, env: dict[str, str], log_path: P
 
 
 def stop_server(process: subprocess.Popen, log) -> None:
+    """Stop the server and check the exit code against this platform's semantics.
+
+    The exit-code expectation is platform-specific, and the reason is the
+    termination semantics, not a functional difference:
+
+    - POSIX: ``Popen.terminate()`` sends SIGTERM, the server shuts down
+      gracefully and exits with 0. That is the expected code there.
+    - Windows: ``Popen.terminate()`` is ``TerminateProcess`` — an immediate
+      kill with no graceful shutdown, so the exit code is 1. The functional
+      face of the scenario (same SQLite database, same token, same project
+      read back) still holds; only the exit code differs.
+
+    Accepting 0 or 1 on Windows keeps the assertion meaningful (a crash or a
+    non-zero signal failure is still rejected) instead of deleting it.
+    """
     if process.poll() is None:
         process.terminate()
     try:
@@ -116,8 +131,18 @@ def stop_server(process: subprocess.Popen, log) -> None:
     finally:
         if not log.closed:
             log.close()
-    if exit_code != 0:
-        raise RuntimeError(f"server shutdown returned exit {exit_code}")
+    if exit_code == 0:
+        return
+    if os.name == "nt" and exit_code == 1:
+        # TerminateProcess semantics: the process was killed, not shut down
+        # gracefully. The readback assertions below still cover the
+        # functional face of this scenario.
+        print(
+            "NOTE: server shutdown on Windows exited with code 1 (TerminateProcess semantics, "
+            "not a graceful shutdown); the readback assertions still decide the scenario"
+        )
+        return
+    raise RuntimeError(f"server shutdown returned exit {exit_code}")
 
 
 def require_project(envelope: dict, project_id: str, expected_name: str, stage: str) -> None:

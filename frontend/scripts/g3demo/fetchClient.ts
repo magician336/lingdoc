@@ -10,6 +10,15 @@
 
 import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from '../../src/views/lingdoc/g3demo/runner/httpClient'
 
+/**
+ * 单个请求的超时（毫秒）。
+ *
+ * 没有超时的话，一个**挂住**的请求会把整轮实跑永久卡死——表现为「脚本不报错也不
+ * 结束」，看上去像跑得慢，实际上什么结论都没有。带上超时之后，挂住会变成一次
+ * 可读的失败：链路把它记成「本条链没有跑完：<真实原因>」，其余链路照跑。
+ */
+const REQUEST_TIMEOUT_MS = 60_000
+
 /** 造一个打向真实后端的客户端。 */
 export function createFetchClient(baseUrl: string): G3HttpClient {
   return async (request: G3HttpRequest): Promise<G3HttpResponse> => {
@@ -26,6 +35,7 @@ export function createFetchClient(baseUrl: string): G3HttpClient {
       method: request.method,
       headers,
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     })
     // 下载产物：这条接口不返回 JSON 信封，只能按字节读。
     if (request.raw) {

@@ -19,9 +19,12 @@ import {
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
 import { G3_BLOCKED_STEPS } from './runner/blocked'
+import { G3_ASSISTANT_STEPS } from './runner/assistant'
 import { G3_CS_STEPS } from './runner/changeset'
 import { G3_DEP_STEPS } from './runner/dependencies'
+import { G3_FAULT_STEPS } from './runner/faultInjection'
 import { G3_MODEL_STEPS } from './runner/model'
+import { G3_ROADMAP_STEPS } from './runner/roadmap'
 import { G3_STAB_STEPS } from './runner/stabilization'
 import { createRunContext, markRunStale, recordStep, type G3BackendHead, type G3RunContext, type G3RunVerdict } from './runner/runContext'
 
@@ -138,11 +141,11 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.deepEqual(
     Object.keys(G3_ROW_EVIDENCE_RULES).sort(),
     [
-      'AC-G3-01', 'AC-G3-02',
+      'AC-G3-01', 'AC-G3-02', 'AC-G3-03',
       'AC-G3-04', 'AC-G3-05', 'AC-G3-06',
-      'AC-G3-07', 'AC-G3-09',
+      'AC-G3-07', 'AC-G3-08', 'AC-G3-09',
       'AC-G3-11', 'AC-G3-12',
-      'AC-G3-13', 'AC-G3-14', 'AC-G3-15',
+      'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16',
       'G3.1',     'G3.6'
     ],
   )
@@ -159,10 +162,36 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   // 完全判定的行是 PASS；部分覆盖的行是 PASS (follow-up) 并指向缺口清单 #246。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-05'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-13'].status, 'PASS')
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'PASS (follow-up)')
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'PASS (follow-up)')
+  // AC-G3-14 / AC-G3-15：助手两组说明与候选批次链**已实现并已接入台面**，
+  // 但本轮实跑的事实是「没有可读回的助手草稿」（NOT RUN）与
+  // 「候选对象引用与项目对齐的问题已修、未在当前 head 重跑出绿」（BLOCKED）。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'NOT RUN')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'BLOCKED')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
+  // AC-G3-14 / AC-G3-15 的必需步骤必须挂在**助手链 / 候选批次链**上：
+  // 规则表若还停在旧步骤名，这两行就永远命中不了台面判定。
+  assert.ok(
+    G3_ROW_EVIDENCE_RULES['AC-G3-14'].requires.includes(G3_ASSISTANT_STEPS.readChangeSet),
+    'AC-G3-14 的必需步骤没有接上助手链',
+  )
+  assert.deepEqual(
+    [...G3_ROW_EVIDENCE_RULES['AC-G3-15'].requires],
+    [
+      G3_ASSISTANT_STEPS.submitCandidates,
+      G3_ASSISTANT_STEPS.decideConfirm,
+      G3_ASSISTANT_STEPS.decideModify,
+      G3_ASSISTANT_STEPS.decideReject,
+      G3_ASSISTANT_STEPS.resubmitRejected,
+      G3_ASSISTANT_STEPS.confirmStale,
+    ],
+    'AC-G3-15 的必需步骤没有接上候选批次链',
+  )
+  // AC-G3-08 的判据要求「读版本序列**与前后比较**」：缺比较证据就不该判成立。
+  assert.ok(
+    G3_ROW_EVIDENCE_RULES['AC-G3-08'].requires.includes(G3_ROADMAP_STEPS.compareVersions),
+    'AC-G3-08 的必需步骤缺了前后比较',
+  )
   // 真实模型路径的结论是非确定性的：状态一律 WARNING，并保留缺口清单 #246。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-06'].status, 'WARNING')
   for (const id of ['AC-G3-14', 'AC-G3-15']) {
@@ -205,6 +234,9 @@ test('规则表引用的步骤名都真实存在（防止证据链断在名字�
     ...Object.values(G3_STAB_STEPS),
     ...Object.values(G3_BLOCKED_STEPS),
     ...Object.values(G3_MODEL_STEPS),
+    ...Object.values(G3_ROADMAP_STEPS),
+    ...Object.values(G3_FAULT_STEPS),
+    ...Object.values(G3_ASSISTANT_STEPS),
   ])
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
     for (const name of rule.requires) {
@@ -249,10 +281,16 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
   // AC-G3-04 的判据有一半未成立（服务端给不出未受影响理由），只能部分判定。
   assert.equal(byId.get('AC-G3-04')?.status, 'PASS (follow-up)')
   assert.equal(byId.get('AC-G3-04')?.followUpIssue, 246)
-  // 部分覆盖的两行：状态是 PASS (follow-up)，并保留指向缺口清单的跟进 Issue。
+  // AC-G3-14 / AC-G3-15 的必需步骤挂在**助手链 / 候选批次链**上；
+  // 本轮只跑了变更集链与依赖链，所以这两行**未被本轮覆盖**，状态原样保留。
+  const baseRows = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row]))
   for (const id of ['AC-G3-14', 'AC-G3-15']) {
-    assert.equal(byId.get(id)?.status, 'PASS (follow-up)')
-    assert.equal(byId.get(id)?.followUpIssue, 246)
+    assert.equal(byId.get(id)?.status, baseRows.get(id)?.status, `${id} 本轮未覆盖，状态不应被改动`)
+    assert.equal(
+      byId.get(id)?.followUpIssue,
+      baseRows.get(id)?.followUpIssue,
+      `${id} 本轮未覆盖，跟进 Issue 不应被改动`,
+    )
   }
   // 规则表之外的行状态原样保留。
   assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
@@ -574,13 +612,15 @@ test('跨段累计不串味：A 段的步骤不能配 B 段的判定', () => {
 })
 
 test('跨段累计：确定性判定优先于模型侧判定', () => {
-  const deterministic = segmentRun('g3r-det', ['创建变更草稿'], ['AC-G3-14'])
+  // AC-G3-14 的确定性路径要求「创建变更草稿 + 读回草稿上的两组说明」两步。
+  const deterministic = segmentRun('g3r-det', ['创建变更草稿', G3_ASSISTANT_STEPS.readChangeSet], ['AC-G3-14'])
   const model = segmentRun('g3r-model', ['模型-助手草稿-结论'], ['AC-G3-14'])
   model.verdicts = [{ id: 'AC-G3-14', title: 'AC-G3-14', holds: true, detail: '模型侧', evidence: [], status: 'WARNING', modelDependent: true }]
   const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, [deterministic, model])
   const byId = new Map(rows.map((row) => [row.id, row]))
-  // 确定性路径判成立：取确定性路径的状态（PASS (follow-up)），不取模型侧的 WARNING。
-  assert.equal(byId.get('AC-G3-14')?.status, 'PASS (follow-up)')
+  // 确定性路径判成立：取确定性路径的状态（规则表主路径的状态），不取模型侧的 WARNING。
+  assert.equal(byId.get('AC-G3-14')?.status, G3_ROW_EVIDENCE_RULES['AC-G3-14'].status)
+  assert.notEqual(byId.get('AC-G3-14')?.status, 'WARNING', '模型侧的 WARNING 不该盖过确定性判定')
   const item = evidence.find((entry) => entry.rowId === 'AC-G3-14')
   assert.equal(item?.runId, 'g3r-det')
 })
