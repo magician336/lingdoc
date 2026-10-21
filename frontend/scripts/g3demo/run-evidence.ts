@@ -356,7 +356,10 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       head: chain.ctx.head,
       steps: chain.ctx.steps,
       verdicts,
-      modelDependent: false,
+      // 本轮有没有**依赖真实模型**的判定：由判定卡自己说（AC-G3-14 的助手草稿
+      // 路径跑的是真实模型轮次 → 那条判定标成 model_dependent）。
+      // 写死 false 会让读者以为这一轮全是确定性结论。
+      modelDependent: verdicts.some((item) => item.modelDependent === true),
     },
     ctx: chain.ctx,
   }
