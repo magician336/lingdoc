@@ -257,6 +257,19 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   // 缺口清单关闭前不判 PASS，记 PASS (follow-up) 并保留跟进 Issue。
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.7'].status, 'PASS (follow-up)')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.7'].followUpIssue, 246)
+  // 七条切片行的**规则表状态必须与矩阵行状态一致**：
+  // 两处是手工同步的，漂移会让页面同时挂着两个说法。
+  // （切片行与 AC 行的差别只在于「静态状态记的是最后一次实跑判定的结论」，
+  //  但两处的**状态取值**仍必须一样。）
+  for (const row of G3_MATRIX_ROWS.filter((item) => item.group === 'slice')) {
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    assert.ok(rule, `${row.id} 没有规则表条目`)
+    assert.equal(
+      rule.status,
+      row.status,
+      `${row.id} 的规则表状态与矩阵行状态不一致（两处是手工同步的）`,
+    )
+  }
   // 本票新增的三条领域判据：AC-G3-12 只覆盖了实跑得出的那半段（#246 G3-GAP-11）；
   // AC-G3-09 与 AC-G3-07 同样只覆盖实跑得出的那半段。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].status, 'PASS (follow-up)')
