@@ -21,10 +21,19 @@ const panel=compile(source,script.content,id=>id==='@/api/lingdoc/writingAction'
 
 // The action table fixture is the known-good table from the development plan:
 // rewrite runs on a selection, takes a length and a tone, produces prose and
-// may be adopted at the three targets.
+// may be adopted at the three targets.  Continue runs on a selection too and
+// takes the same two output parameters.
 function actionTable(){
  return [{
   action:'rewrite',label:'改写',scopes:['section'],
+  output_params:[
+   {name:'length',values:['short','medium','long'],min:0,max:0},
+   {name:'tone',values:['neutral','formal','academic','plain'],min:0,max:0},
+  ],
+  produce:'prose',
+  targets:['working_copy_partial','working_copy_whole','formal_version_whole'],
+ },{
+  action:'continue',label:'续写',scopes:['section'],
   output_params:[
    {name:'length',values:['short','medium','long'],min:0,max:0},
    {name:'tone',values:['neutral','formal','academic','plain'],min:0,max:0},
@@ -81,4 +90,16 @@ test('the panel renders the action table the server gave instead of a table of i
  const {html}=await render({action:'synthetic-action',actionTable:synthetic})
  assert.match(html,/合成动作/);assert.match(html,/章节骨架/);assert.match(html,/工作副本·整段/)
  assert(!html.includes('改写'))
+})
+
+test('the panel shows the continue action with its own output parameters before the run',async()=>{
+ const {html,events,controller}=await render({action:'continue'})
+ assert.match(html,/续写/);assert.match(html,/continue/)
+ assert.match(html,/选段/);assert.match(html,/候选正文/)
+ assert.match(html,/length/);assert.match(html,/tone/)
+ controller.chosen.value={length:'medium',tone:'academic'}
+ controller.submit()
+ assert.equal(events.length,1)
+ assert.equal(events[0].action,'continue')
+ assert.deepEqual(events[0].output_params,{length:'medium',tone:'academic'})
 })
