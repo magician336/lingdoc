@@ -62,8 +62,27 @@
 | 宽口 | 方法数 | 声明位置 | 用途 | 处置 |
 | --- | --- | --- | --- | --- |
 | `ApplicationService` | 37 | `workspace/contracts.go:16` | 「HTTP 面向的工作区契约」，段二起已被 `HandlerDependencies.Service` 标为「为兼容旧适配器保留」 | #269 删除 |
-| `G2Application` | 31 | `workspace/agent_context.go:14` | 「additive transport port / 遗留兼容口」 | #269 删除 |
+| `G2Application` | 31 | `workspace/agent_context.go:14` | 「additive transport port / 遗留兼容口」 | **实测是死代码**：全仓只有它自己的声明（`:14`）与一条编译期证明（`:152`）提到它；G2 路由直接拿 `*core.Service`，从没消费过这个口。**#275 顺手删掉**（它就是 G2 那条面的遗留口） |
 | `WorkspaceReadApplication` + `WorkspaceWriteApplication` | 12 + 22 = **34** | `workspace/contracts.go:59,76` | 段二遗留的**推断输入**：`resolvePorts` 用它推断上下文口，`http.go` 的 `split*Application` 适配器转发到上下文口 | #269 一并退役 |
+
+### `ApplicationService` 的真实占用面（#269 的工作量在这里）
+
+实测全仓**生产代码**（不含测试）引用 `ApplicationService` 共 22 处：
+
+| 文件 | 处数 | 性质 |
+| --- | --- | --- |
+| `internal/container/container.go` | 6 | DI provider 的参数与 `service workspace.ApplicationService` 字段 |
+| `internal/lingdoc/workspace/access_policy.go` | 4 | 访问策略持有 |
+| `internal/lingdoc/workspace/generation.go` | 3 | 生成面持有 |
+| `internal/lingdoc/workspace/source_runtime_gorm.go` | 3 | 来源运行时持有 |
+| `internal/lingdoc/workspace/research_adapter.go` | 2 | G2 调研适配器持有 |
+| `internal/lingdoc/workspace/lingdoc.go` | 1 | 组合根对外字段 `Projects workspace.ApplicationService` |
+| `internal/lingdoc/workspace/delivery_input.go` | 1 | 交付输入装配持有 |
+| `internal/lingdoc/workspace/g2_generation_evidence.go` | 1 | `g2GenerationEvidenceValidator{workspace ApplicationService}` |
+| `internal/lingdoc/workspace/source_policy.go` | 1 | 来源策略持有 |
+| `internal/lingdoc/workspace/http.go` | 4 | 遗留推断路径（`legacyApplicationAdapter` + 运行时断言） |
+
+⇒ #269 不是「删一个接口声明」，是**给这 22 个消费点各自换一个窄口**。这是段三最后一张、也是最重的一张票。
 
 第三个宽口是实测发现：Spec 决策 34 只点名了前两个，但 `Read`/`Write` 合起来覆盖 34 个操作、跨越全部上下文，若留着，决策 34 的「一个上下文一个窄口」就没兑现，`resolvePorts` 的多重推断（决策 37）也删不掉。**票 #269 的「全部调用方迁到按上下文收窄的端口」按此口径执行。**
 
