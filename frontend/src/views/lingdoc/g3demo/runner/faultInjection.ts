@@ -422,10 +422,20 @@ export function toFaultSnapshot(result: G3FaultChainResult): G3FaultSnapshot {
  */
 export function verdictAcG303(result: G3FaultChainResult): G3Verdict {
   const assembled = result.observation.faultInjectionAssembled
+  // 判据原文（AC-G3-03）：「项目仍保持原 revision 和旧模板引用，不能出现新 revision
+  // 已存在但 ImpactTask 不完整的状态」。
+  //
+  // 因此回滚证据只看三件事：**项目（revision + 模板引用）未变**、**ImpactTask 集合
+  // 未变**、**变更集没有变成 applied**。
+  //
+  // **业务审计事件集合格不作为原子性判据**：被拒绝的操作**本来就应该**留下一条
+  // 审计（谁被拒绝了是必须可查的），那是可观测性要求，不是「这次写没生效」的证据。
+  // 把它当成原子性的必要条件，会让「注入命中后审计多了一条」被误读成「回滚不干净」。
+  const changeSetNotApplied = result.observation.changeSetStatus !== 'applied'
   const rollbackComplete =
     result.observation.projectUnchanged &&
     result.observation.tasksUnchanged &&
-    result.observation.auditUnchanged
+    changeSetNotApplied
   const holds = assembled && rollbackComplete
 
   return {
@@ -440,13 +450,15 @@ export function verdictAcG303(result: G3FaultChainResult): G3Verdict {
         `规格修订 ${result.projectBefore.specRevision} → ${result.projectAfter.specRevision}）、` +
         `模板引用（${result.projectBefore.templateId}@v${result.projectBefore.templateCopyVersion} → ` +
         `${result.projectAfter.templateId}@v${result.projectAfter.templateCopyVersion}）、` +
-        `ImpactTask 集合（${result.tasksBefore.count} → ${result.tasksAfter.count} 条）、` +
-        `业务审计事件（${result.auditBefore.count} → ${result.auditAfter.count} 条）均未变。`
+        `ImpactTask 集合（${result.tasksBefore.count} → ${result.tasksAfter.count} 条）均未变，` +
+        `变更集状态为 ${result.observation.changeSetStatus || '（未读到）'}（没有变成 applied）。` +
+        `业务审计事件 ${result.auditBefore.count} → ${result.auditAfter.count} 条：` +
+        `被拒绝的操作留下审计是**应当**的（谁被拒绝了必须可查），它不作为原子性判据。`
       : assembled
         ? `本轮后端装配了注入（apply 返回 HTTP ${result.observation.status}，code=${result.observation.code}），` +
           `但回滚证据不完整：项目未变=${result.observation.projectUnchanged}、` +
           `任务集合未变=${result.observation.tasksUnchanged}、` +
-          `审计事件未变=${result.observation.auditUnchanged}——不能据此判定原子性成立。`
+          `变更集未 applied=${changeSetNotApplied}——不能据此判定原子性成立。`
         : `本轮后端**未装配**受控故障注入：apply 返回 HTTP ${result.observation.status}` +
           `（code=${result.observation.code || '（无）'}），没有观测到写入失败或权限失效，` +
           `因此这一行**记 NOT RUN**，不判 PASS。` +
