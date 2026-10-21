@@ -6,15 +6,9 @@ name: Go Lint
 # responses fail above 300 files. A missing/invalid base is an explicit failure,
 # never a silent switch to a full-repository backlog or a successful skipped lint.
 
+# Gate trigger rules: docs/agents/development-rules.md:26; path ownership: scripts/ci/lingdoc_gate_surfaces.py.
 on:
   pull_request:
-    paths:
-      - "**/*.go"
-      - "**/go.mod"
-      - "**/go.sum"
-      - ".golangci.yml"
-      - ".github/workflows/go-lint.yml"
-      - ".github/scripts/prepare-go-lint-diff*.mjs"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -30,25 +24,47 @@ env:
 
 jobs:
   scope:
-    name: Scope latest PR update
+    name: Decide what this gate runs
     runs-on: ubuntu-latest
+    # The job outputs are an explicit allow-list.  The decision module
+    # publishes one key per consuming job; only the declared ones reach the
+    # jobs below, and a name that is not declared reads as an empty string.
     outputs:
-      run: ${{ steps.scope.outputs.run }}
+      changes: ${{ steps.scope.outputs.job_go_lint_changes }}
+      golangci: ${{ steps.scope.outputs.job_go_lint_golangci }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select Go paths changed by this update
+      - name: Decide what this gate runs
         id: scope
-        env:
-          LINGDOC_SCOPE_PATHS: |
-            **/*.go
-            **/go.mod
-            **/go.sum
-            .golangci.yml
-            .github/workflows/go-lint.yml
-        run: python scripts/ci/lingdoc_change_scope.py --patterns "$LINGDOC_SCOPE_PATHS"
+        # The decision module owns the path table of this gate, the tested
+        # surface and the formatting-only shortcut.  The workflow only reads
+        # its answer.  The whitespace boundary belongs to the pull request
+        # gate, so it is not repeated here.
+        #
+        # The module also publishes the conclusion of this gate: the summary
+        # a reader sees on the pull request page and the artifact a reviewer
+        # downloads.  A skipped check carries its reason there.
+        run: |
+          mkdir -p "$RUNNER_TEMP/lingdoc-gate-conclusion"
+          python scripts/ci/lingdoc_gate_decision.py --no-whitespace \
+            --gate .github/workflows/go-lint.yml \
+            --artifact-dir "$RUNNER_TEMP/lingdoc-gate-conclusion" \
+            > "$RUNNER_TEMP/lingdoc-gate-conclusion/scope.json"
+          cat "$RUNNER_TEMP/lingdoc-gate-conclusion/scope.json"
+
+      # The conclusion is published even when every check of this gate is
+      # skipped: "skipped" alone never says why.
+      - name: Publish the gate conclusion
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-lint-conclusion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/lingdoc-gate-conclusion/
+          if-no-files-found: warn
+          retention-days: 14
 
   # Path filters above start this workflow for any Go change; the matrix still
   # used to lint all three modules. Detect which modules the PR actually
@@ -58,7 +74,10 @@ jobs:
   changes:
     name: detect lint modules
     needs: scope
-    if: needs.scope.outputs.run == 'true'
+    # The decision says whether this job runs; the job reads that one
+    # boolean and nothing else.  Lint is the judge of formatting, so it is
+    # never skipped by the formatting-only shortcut.
+    if: needs.scope.outputs.changes == 'true'
     runs-on: ubuntu-latest
     outputs:
       modules: ${{ steps.detect.outputs.modules }}
@@ -103,8 +122,12 @@ jobs:
 
   golangci:
     name: golangci-lint (${{ matrix.module }})
-    needs: changes
-    if: needs.changes.outputs.modules != '[]'
+    needs: [changes, scope]
+    # The decision says whether this job runs.  The second term keeps the
+    # matrix from being empty: an empty matrix is a job error, not a skip,
+    # and a pull request that touches no lintable module has no module to
+    # lint.
+    if: needs.scope.outputs.golangci == 'true' && needs.changes.outputs.modules != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

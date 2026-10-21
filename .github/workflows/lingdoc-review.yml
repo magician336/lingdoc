@@ -56,10 +56,15 @@ jobs:
         id: ciscripts
         run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' -v
 
-      - name: Test gate selection
-        id: selftest
-        run: python -m unittest discover -s scripts/ci -p 'test_lingdoc_pr_scope.py' -v
-
+      # The gate asks the decision module for the decision.  The module reads
+      # only Git and the gate surface manifest, publishes the decision as the
+      # step outputs the conditions below read, and checks the pull request's
+      # whitespace boundary.  The report is the artifact the steps consume.
+      #
+      # The module also publishes the conclusion of this gate -- the same
+      # three fields every gate publishes, plus the reason of every step
+      # that was skipped -- into the summary a reader sees on the pull
+      # request page and into the artifact this job uploads.
       - name: Select checks and check diff whitespace
         id: scope
         env:
@@ -67,9 +72,15 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/lingdoc-checks"
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            python scripts/ci/lingdoc_pr_scope.py --all > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+            python scripts/ci/lingdoc_gate_decision.py --all \
+              --gate .github/workflows/lingdoc-review.yml \
+              --artifact-dir "$RUNNER_TEMP/lingdoc-checks" \
+              > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           else
-            python scripts/ci/lingdoc_pr_scope.py --latest > "$RUNNER_TEMP/lingdoc-checks/scope.json"
+            python scripts/ci/lingdoc_gate_decision.py \
+              --gate .github/workflows/lingdoc-review.yml \
+              --artifact-dir "$RUNNER_TEMP/lingdoc-checks" \
+              > "$RUNNER_TEMP/lingdoc-checks/scope.json"
           fi
           cat "$RUNNER_TEMP/lingdoc-checks/scope.json"
 
@@ -99,7 +110,7 @@ jobs:
           PY
 
       - name: Test and vet existing LingDoc provider packages
-        if: steps.scope.outputs.provider_tests == 'true' && steps.scope.outputs.format_only != 'true'
+        if: steps.scope.outputs.run_providers == 'true'
         id: providers
         env:
           CGO_ENABLED: "1"
@@ -126,14 +137,14 @@ jobs:
           go vet "${targets[@]}" 2>&1 | tee "$RUNNER_TEMP/lingdoc-checks/go-vet.log"
 
       - uses: actions/setup-node@v6
-        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
+        if: steps.scope.outputs.run_frontend == 'true'
         with:
           node-version: "24"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Test, type-check and build frontend
-        if: steps.scope.outputs.frontend == 'true' && steps.scope.outputs.format_only != 'true'
+        if: steps.scope.outputs.run_frontend == 'true'
         id: frontend
         working-directory: frontend
         run: |
@@ -145,27 +156,37 @@ jobs:
       - name: Publish check boundary and results
         if: always()
         env:
-          SELFTEST: ${{ steps.selftest.outcome }}
           CISCRIPTS: ${{ steps.ciscripts.outcome }}
           SCOPE: ${{ steps.scope.outcome }}
           CONTRACTS: ${{ steps.contracts.outcome }}
           PROVIDERS: ${{ steps.providers.outcome }}
           FRONTEND: ${{ steps.frontend.outcome }}
+          SURFACE: ${{ steps.scope.outputs.surface }}
+          REASON: ${{ steps.scope.outputs.reason }}
+          BASE: ${{ steps.scope.outputs.base }}
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
           result = {key.lower(): os.environ[key] for key in
-                    ('SELFTEST', 'CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
+                    ('CISCRIPTS', 'SCOPE', 'CONTRACTS', 'PROVIDERS', 'FRONTEND')}
           result['tested_sha'] = os.environ['GITHUB_SHA']
+          # The surface says what was tested, the reason says why that surface
+          # was chosen, and the base says which baseline it was judged against.
+          result['surface'] = os.environ.get('SURFACE', '')
+          result['reason'] = os.environ.get('REASON', '')
+          result['base'] = os.environ.get('BASE', '')
           result['boundary'] = 'Automated checks only; not consumer approval, a live-model run, or product acceptance.'
           folder = Path(os.environ['RUNNER_TEMP']) / 'lingdoc-checks'
           folder.mkdir(exist_ok=True)
           (folder / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a', encoding='utf-8') as handle:
               handle.write('## LingDoc PR gate\n\n| Check | Outcome |\n|---|---|\n')
-              for key in ('selftest', 'ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
+              for key in ('ciscripts', 'scope', 'contracts', 'providers', 'frontend'):
                   handle.write(f'| {key} | {result[key]} |\n')
+              handle.write(f'\nTested surface: {result["surface"] or "(whole repository)"}\n')
+              handle.write(f'Reason: {result["reason"] or "(not recorded)"}\n')
+              handle.write(f'Base: {result["base"] or "(not recorded)"}\n')
               handle.write('\nSkipped means NOT RUN, not passed. Provider packages may not exist yet on a planning-only revision.\n\n')
               handle.write(result['boundary'] + '\n')
           PY

@@ -2,6 +2,8 @@
 
 **状态**：已采纳（2026-10-20，由 #284 的开发与 G3 缺口收口评审产生）
 
+**后续**：[ADR 0006](0006-gate-surface-by-contribution.md) 修订了本决策的适用范围。本决策处理「只重排版的推送」，0006 处理「基线合并」；两者合起来构成同一条判据的两半：验证单元是 (被测面内容, 基线内容)，两者都没变就不重测。[ADR 0007](0007-gate-decision-deep-module.md) 进一步把这两条判据的实现收进一个判定模块，**不改变**本决策的口径；#304 把格式快判的实现折进判定模块 `scripts/ci/lingdoc_gate_decision.py`，本决策原来新增的 `scripts/ci/lingdoc_format_scope.py` 随之删除。
+
 ## 背景
 
 仓库的 CI 边界只按**路径**判定：动了 `internal/` 或 `frontend/` 下的文件，就重新排队整套矩阵。这对「纯文档 / 纯证据提交」已经处理过（`docs/agents/development-rules.md`「文档提交的 CI 边界」），但代码路径上的**纯格式**提交没有对应机制。
@@ -52,6 +54,8 @@
 - **守护测试自己必须有工作流在跑**。PR gate 的「Test CI scope scripts」步骤运行整个 `scripts/ci` 测试套件（`test_lingdoc_*.py`），且**无条件执行**：纯格式提交也必须跑它。测试没被任何工作流引用，等于保护网没挂上——2026-10-20 的线上验证正是这样发现 `test_lingdoc_format_scope.py` 从未在 CI 执行过。
 - 门禁条件的本地求值必须模拟 job outputs 的白名单，否则会得出「本地正确、线上失效」的结论。
 
+**后续（#301）**：这条快门禁不再由工作流自己组合条件。工作流改为直接消费判定模块给出的**单个布尔量**，纯格式快判已经折进这个布尔量里；上面那条「漏声明就静默失效」的纪律不变，守护测试照旧断言每个 `jobs.<id>.outputs` 的键名与工作流 `if:` 里读到的名字一致（另加一条：键名必须符合 GitHub workflow schema 的 `^[_a-zA-Z][a-zA-Z0-9_-]*$`，因为带点的 output 名连声明都过不了 schema）。
+
 ## 被否决的备选方案
 
 **按标签或提交信息声明「这是格式改动」。** 需要人贴标签或写声明，等于把判定权交给提交者，而门禁的价值恰恰在于判定不依赖提交者的自觉。机器能判的就不该让人判。
@@ -62,8 +66,8 @@
 
 ## 影响
 
-- 新增 `scripts/ci/lingdoc_format_scope.py`（判定器）与 `scripts/ci/test_lingdoc_format_scope.py`（单测）。
-- `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 增加 `format_only` 输出与判定理由。
+- 新增 `scripts/ci/lingdoc_format_scope.py`（判定器）与 `scripts/ci/test_lingdoc_format_scope.py`（单测）。（历史记录：#304 把格式快判的实现折进判定模块 `scripts/ci/lingdoc_gate_decision.py`，这两个文件随之删除；判据本身一字未改。）
+- `scripts/ci/lingdoc_change_scope.py` 与 `scripts/ci/lingdoc_pr_scope.py` 增加 `format_only` 输出与判定理由。（历史记录：这两个脚本也已随 #304 删除。）
 - 七个工作流的测试类 job 与 PR gate 里的两个测试步骤改为在 `format_only` 为真时跳过；lint 与 contracts 步骤不动。其中六个是跳整个测试类 job（`app.yml`、`frontend.yml`、`lingdoc-mock.yml`、`lingdoc-workspace-concurrency.yml`、`lingdoc-interface-integration.yml`、`lingdoc-f01-runner.yml`），`lingdoc-review.yml` 是跳 PR gate 内的 provider tests 与 frontend 两个**步骤**。
 - 「先写接口」的含义在门禁上同样成立：判定器的接口是「给一个 diff 范围，回答它是不是只重排版」，不暴露 git 细节给调用方。
 

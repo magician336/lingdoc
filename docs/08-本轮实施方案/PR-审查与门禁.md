@@ -80,7 +80,7 @@ Review 统一标注：
 ### 本地最小复核
 
 ```bash
-python -m unittest discover -s scripts/ci -p 'test_lingdoc_pr_scope.py' -v
+python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' -v
 python -m pip install -r scripts/ci/requirements-lingdoc.txt
 python -X utf8 docs/08-本轮实施方案/contracts/validate_artifacts.py
 # 下列只对该分支实际存在的包执行：
