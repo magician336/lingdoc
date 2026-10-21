@@ -140,11 +140,20 @@ test('验收场景行锚定主基准 §13 的逐条标题', () => {
 
 test('当前无法实跑的验收项标为阻塞并写明缺口', () => {
   const blocked = G3_AC_ROWS.filter((row) => row.status === 'BLOCKED')
-  // AC-G3-08 / AC-G3-14 本轮实跑链路跑了但前置不具备、无可读回对象，记 NOT RUN
-  // 而不是 BLOCKED（两者语义不同）；BLOCKED 只留给「被缺陷挡住」的行。
+  // 这四行的状态由**各自解除条件票的完成线**钉住：
+  // - AC-G3-08 / AC-G3-16：#314 的完成线要求本票完成前保持 `BLOCKED`；
+  // - AC-G3-14：#315 的完成线要求本票完成前保持 `BLOCKED`；
+  // - AC-G3-15：依赖候选三态要在当前 head 跑出绿（#321），在此之前被挡住。
+  //
+  // `NOT RUN` 与 `BLOCKED` 语义不同，不能混用：
+  // `NOT RUN` 是「本轮没观测到判定所需的事实」（例如未装配故障注入时的 AC-G3-03 判定、
+  // 影响中心的 G3.7），`BLOCKED` 是「这件事被一个未完成的前置/缺陷挡住」。
+  // 这五行原本在骨架里全是 `BLOCKED`，是实跑校准把它们改成了 `NOT RUN`，
+  // 那次改动**违反了两张解除条件票的完成线**（见 #314 / #315 的完成线），
+  // 因此按完成线恢复成 `BLOCKED`。
   assert.deepEqual(
     blocked.map((row) => row.id),
-    ['AC-G3-08', 'AC-G3-15', 'AC-G3-16'],
+    ['AC-G3-08', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16'],
   )
   for (const row of blocked) {
     assert.ok(row.note && row.note.length > 0, `${row.id} 缺缺口说明`)
@@ -188,10 +197,10 @@ test('状态计数覆盖全部七种状态', () => {
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)
-  assert.equal(counts['BLOCKED'], 3)
+  assert.equal(counts['BLOCKED'], 4)
   assert.equal(counts['PASS (follow-up)'], 12)
   assert.equal(counts['TODO'], 6)
-  assert.equal(counts['NOT RUN'], 2)
+  assert.equal(counts['NOT RUN'], 1)
 })
 
 test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准为准', () => {

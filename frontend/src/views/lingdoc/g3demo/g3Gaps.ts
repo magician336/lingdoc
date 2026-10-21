@@ -179,10 +179,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     specAnchor: anchor(402, 404),
     unblockCondition:
       '提供可用的模型凭据跑出一条带两组说明的助手草稿，并在当前 head 重跑实跑落证；' +
-      '`AC-G3-14` 才能离开 `NOT RUN`。',
+      '`AC-G3-14` 才能离开 `BLOCKED`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 251,
-    rowStatus: 'NOT RUN',
+    rowStatus: 'BLOCKED',
     fact:
       '助手两组说明**已实现**（助手侧用 `definite_affected` / `possible_affected`，' +
       '服务端从已落库的助手 turn 重新推导，每条说明必须同时有对象引用、原因与依据）。' +
@@ -192,7 +192,11 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '工作台 `ImpactOpsPanel.vue` 的分组是**影响解析结果**的分组（`impacts[].certainty`），' +
       '**不是** AC-G3-14 要求的**助手草稿解释分组**，两者不可互替。' +
       '本轮实跑 `NOT RUN`：没有可读回的助手草稿（台面不自己造模型轮次）。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。' +
+      '**行状态按 #315 的完成线保持 `BLOCKED`**：该行要等一条真实模型草稿（#320）' +
+      '在当前 head 实跑判定，才能离开 `BLOCKED`；在此之前不判 `PASS`。' +
+      '模型边界已放宽（#315：缺两组说明时不再整条拒，而是如实标注「缺说明」），' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-17-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json',
   },

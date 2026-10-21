@@ -232,7 +232,8 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
   'AC-G3-14': {
     requires: ['创建变更草稿', '助手-读回草稿说明'],
     verdictId: 'AC-G3-14',
-    status: 'NOT RUN',
+    // 与矩阵同名行一致：#315 的完成线要求本行在缺口清单里保持 BLOCKED。
+    status: 'BLOCKED',
     followUpIssue: 246,
     note:
       '助手的两组说明（「确定受影响 / 可能受影响」）**已实现**并已接入台面读回：' +

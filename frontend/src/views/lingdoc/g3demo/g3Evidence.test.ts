@@ -166,7 +166,7 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   // AC-G3-14 / AC-G3-15：助手两组说明与候选批次链**已实现并已接入台面**，
   // 但本轮实跑的事实是「没有可读回的助手草稿」（NOT RUN）与
   // 「候选对象引用与项目对齐的问题已修、未在当前 head 重跑出绿」（BLOCKED）。
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'NOT RUN')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'BLOCKED')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'BLOCKED')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
