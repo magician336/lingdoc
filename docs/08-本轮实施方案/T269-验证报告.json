@@ -1,7 +1,7 @@
 {
  "mode": "real",
  "note": "47.16 遗留宽口退役。三个宽口一起退役：ApplicationService(37) + WorkspaceReadApplication(12) + WorkspaceWriteApplication(22)。后两个合起来 34 个方法，正是 Spec 决策 34 说的「另一个覆盖三十余个操作的口」，而且它们是组合根推断路径的输入——不删它们，决策 37「组合根不再做多重推断」就没兑现。新增两个上下文窄口：core.CapabilityAuthorizer（1 个方法：Authorize）与 core.GenerationContextApplication（1 个方法：GenerationContext）；22 处消费点各换成它真正需要的那几个窄口。删掉 core_alias.go 的 type Service = core.Service 别名与 4 个 NewService* 工厂（实测全仓无人使用）。口径变化（本票唯一的对外可见变化在装配契约上，不是 HTTP 行为）：组合根不再从 Service / Read / Write 推断上下文口——以前只给 Service 也能装配出 handler，删除推断后必须显式给齐 5 个上下文口 + Sources，否则启动期失败并指名缺哪个（沿用段二的 fail-closed 规矩）。对外 HTTP 行为零变化。",
- "head": "pending-commit",
+ "head": "215cd274",
  "base": "633ba34",
  "passed": [
   {
