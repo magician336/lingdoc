@@ -2,8 +2,6 @@ package workspacecore
 
 import (
 	"context"
-	"encoding/json"
-	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
@@ -72,114 +70,10 @@ type MemberDirectoryEntry struct {
 	TenantRole string `json:"tenant_role"`
 }
 
-func (s *Service) ProjectMemberDirectory(ctx context.Context, a Actor, pid string) ([]MemberDirectoryEntry, error) {
-	var out []MemberDirectoryEntry
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(a, pid, AuthorizationManage, "")); err != nil {
-			return err
-		}
-		entries, err := s.memberDirectoryReader().ListActiveTenantMembers(ctx, tx, a.TenantID)
-		out = entries
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	return out, err
-}
-
 type MemberAssignmentInput struct {
 	ExpectedProjectVersion int64  `json:"expected_project_version"`
 	Assignment             Member `json:"assignment"`
 	Reason                 string `json:"reason"`
-}
-
-func (s *Service) SetMemberAssignment(ctx context.Context, a Actor, pid, user, key string, input MemberAssignmentInput) (json.RawMessage, int, bool, error) {
-	if input.Assignment.UserID != user || input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
-		return nil, 0, false, ErrInvalidRequest
-	}
-	return runOperation(s, ctx, a, operationInput(operationMemberAssignment, pid+"/"+user, key, input, authorizationRequest(a, pid, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[Project], error) {
-		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return operationResult[Project]{}, ErrVersionConflict
-		}
-		old, exists := projectMember(p, user)
-		if !exists || governanceRole(old) == "owner" || old.Status != "" && old.Status != "active" {
-			return operationResult[Project]{}, ErrInvalidState
-		}
-		nextMember := input.Assignment
-		if err := validateInvitation(tx, p, nextMember); err != nil {
-			return operationResult[Project]{}, err
-		}
-		active, err := tx.ActiveMember(Actor{TenantID: a.TenantID, UserID: user})
-		if err != nil {
-			return operationResult[Project]{}, err
-		}
-		if !active {
-			return operationResult[Project]{}, ErrNotFound
-		}
-		nextMember.Role = "collaborator"
-		nextMember.Status = "active"
-		next := p
-		next.ProjectVersion++
-		next.Members = slices.Clone(p.Members)
-		for i := range next.Members {
-			if next.Members[i].UserID == user {
-				next.Members[i] = nextMember
-			}
-		}
-		if err := tx.UpdateProject(a.TenantID, p, next); err != nil {
-			return operationResult[Project]{}, err
-		}
-		if err := tx.ReplaceMembers(pid, next.Members); err != nil {
-			return operationResult[Project]{}, err
-		}
-		if err := g5Audit(tx, a, pid, "member.assignment", user, input.Reason); err != nil {
-			return operationResult[Project]{}, err
-		}
-		return operationResult[Project]{Value: next, Status: operationStatusOK}, nil
-	})
-}
-
-func verifyMemberResourceScope(tx Transaction, p Project, scope string) error {
-	kind, id, found := strings.Cut(scope, ":")
-	if !found || id == "" {
-		return ErrInvalidRequest
-	}
-	db, err := TransactionDatabase(tx)
-	if err != nil {
-		return err
-	}
-	var count int64
-	switch kind {
-	case "asset", "knowledge":
-		q := db.Model(&evidence.ProjectAsset{}).Where("project_id=?", p.ID)
-		if kind == "asset" {
-			q = q.Where("id=?", id)
-		} else {
-			q = q.Where("knowledge_id=?", id)
-		}
-		if err := q.Count(&count).Error; err != nil {
-			return err
-		}
-	case "template":
-		if p.TemplateCopy != nil && (id == p.TemplateCopy.ID || id == p.TemplateID) {
-			count = 1
-		}
-	case "delivery":
-		if id == p.ID {
-			count = 1
-		} else {
-			if err := db.Table("lingdoc_release_snapshots").Where("project_id=? AND id=?", p.ID, id).Count(&count).Error; err != nil {
-				return err
-			}
-		}
-	default:
-		return ErrInvalidRequest
-	}
-	if count != 1 {
-		return ErrNotFound
-	}
-	return nil
 }
 
 // Called in the SAME transaction that removes/suspends tenant membership.
@@ -229,53 +123,6 @@ type ProjectAPIKeyGrant struct {
 	UpdatedAt              time.Time `json:"updated_at"`
 }
 
-func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key string, input ProjectAPIKeyGrant) (json.RawMessage, int, bool, error) {
-	if input.KeyID == 0 || input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
-		return nil, 0, false, ErrInvalidRequest
-	}
-	for _, cap := range input.Capabilities {
-		if cap != "read" {
-			return nil, 0, false, ErrInvalidRequest
-		}
-	}
-	return runOperation(s, ctx, a, operationInput(operationApiKeyProjectGrant, pid, key, input, authorizationRequest(a, pid, AuthorizationManage, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[ProjectAPIKeyGrant], error) {
-		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return operationResult[ProjectAPIKeyGrant]{}, ErrVersionConflict
-		}
-		keys := s.tenantAPIKeyReader()
-		has, err := keys.Has(ctx, tx, a.TenantID, input.KeyID)
-		if err != nil {
-			return operationResult[ProjectAPIKeyGrant]{}, err
-		}
-		if !has {
-			return operationResult[ProjectAPIKeyGrant]{}, ErrNotFound
-		}
-		if input.Active {
-			if err := keys.VerifyMachineNativeKey(ctx, tx, a.TenantID, input.KeyID); err != nil {
-				return operationResult[ProjectAPIKeyGrant]{}, err
-			}
-		}
-		records := s.memberRecords()
-		id := hashImpactValue(input.KeyID)
-		var old ProjectAPIKeyGrant
-		version, err := records.Get(ctx, tx, pid, "api_key_grant", id, &old)
-		if err != nil && err != ErrNotFound {
-			return operationResult[ProjectAPIKeyGrant]{}, err
-		}
-		if err == ErrNotFound {
-			version = 0
-		}
-		input.CreatedBy = a.UserID
-		input.UpdatedAt = time.Now().UTC()
-		if err := records.Put(ctx, tx, pid, "api_key_grant", id, version, input); err != nil {
-			return operationResult[ProjectAPIKeyGrant]{}, err
-		}
-		if err := g5Audit(tx, a, pid, "api_key.scope", id, input.Reason); err != nil {
-			return operationResult[ProjectAPIKeyGrant]{}, err
-		}
-		return operationResult[ProjectAPIKeyGrant]{Value: input, Status: operationStatusOK}, nil
-	})
-}
 func authorizeAPIKeyProject(ctx context.Context, tx Transaction, pid, capability string) error {
 	scope, ok := types.TenantAPIKeyScopeFromContext(ctx)
 	if !ok {
@@ -331,75 +178,9 @@ func authorizeAPIKeyProject(ctx context.Context, tx Transaction, pid, capability
 	return ErrNotFound
 }
 
-func (s *Service) ListMyProjectInvitations(ctx context.Context, a Actor) ([]MemberInvitation, error) {
-	result := []MemberInvitation{}
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		if err := s.authorizeTenant(ctx, tx, authorizationRequest(a, "", AuthorizationRead, "")); err != nil {
-			return err
-		}
-		invitations, err := s.memberRecords().ListTenantInvitations(ctx, tx, a.TenantID, a.UserID)
-		result = invitations
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	return result, err
-}
-
-func (s *Service) ListOwnerTransfers(ctx context.Context, a Actor, pid string) ([]OwnerTransfer, error) {
-	var result []OwnerTransfer
-	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, authorizationRequest(a, pid, AuthorizationRead, ""))
-		if err != nil {
-			return err
-		}
-		transfers, err := s.ownerTransferRecords().List(ctx, tx, pid, p, a.UserID)
-		result = transfers
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	return result, err
-}
-
 type OwnerTransferDecisionInput struct {
 	ExpectedProjectVersion int64  `json:"expected_project_version"`
 	Reason                 string `json:"reason"`
-}
-
-func (s *Service) RejectOwnerTransfer(ctx context.Context, a Actor, pid, id, key string, input OwnerTransferDecisionInput) (json.RawMessage, int, bool, error) {
-	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
-		return nil, 0, false, ErrInvalidRequest
-	}
-	return runOperation(s, ctx, a, operationInput(operationRejectOwnerTransfer, pid+"/"+id, key, input, authorizationRequest(a, pid, AuthorizationRead, "")), mutationPort[Transaction], func(tx Transaction, p Project) (operationResult[OwnerTransfer], error) {
-		if p.ProjectVersion != input.ExpectedProjectVersion {
-			return operationResult[OwnerTransfer]{}, ErrVersionConflict
-		}
-		store, ok := tx.(ownerTransferTransaction)
-		if !ok {
-			return operationResult[OwnerTransfer]{}, ErrInvalidState
-		}
-		item, err := store.OwnerTransfer(pid, id)
-		if err != nil {
-			return operationResult[OwnerTransfer]{}, err
-		}
-		if item.Status != "pending" || item.ToUserID != a.UserID && !projectOwner(p, a.UserID) {
-			return operationResult[OwnerTransfer]{}, ErrNotFound
-		}
-		if time.Since(item.CreatedAt) > 72*time.Hour {
-			return operationResult[OwnerTransfer]{}, ErrInvalidState
-		}
-		if err := s.ownerTransferRecords().Cancel(ctx, tx, pid, id); err != nil {
-			return operationResult[OwnerTransfer]{}, err
-		}
-		item.Status = "cancelled"
-		if err := g5Audit(tx, a, pid, "owner.transfer.reject", id, input.Reason); err != nil {
-			return operationResult[OwnerTransfer]{}, err
-		}
-		return operationResult[OwnerTransfer]{Value: item, Status: operationStatusOK}, nil
-	})
 }
 
 // Immutable baseline confirmation records are produced only by an actual

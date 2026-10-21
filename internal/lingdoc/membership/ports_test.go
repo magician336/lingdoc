@@ -10,15 +10,17 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
-// The two ports in this package describe operations the aggregate performs.
-// Their method sets and signatures must match the aggregate's, character for
-// character apart from the package qualifier this package has to write.
+// The two ports in this package describe the member and owner operations.
+// Their method sets and signatures must match the ones this package
+// implements, character for character apart from the package qualifier this
+// package has to write.
 //
-// The workspacecore assertion cannot see this package: it reads one file in
-// its own directory. So the promise is pinned here instead, against the same
-// aggregate source.
+// The promise is pinned here because the implementation is here: the service
+// in this package is what answers these operations, and the aggregate is not.
 var expectedPorts = map[string][]string{
 	"Application": {
 		"AcceptOwnerTransferResult",
@@ -41,17 +43,17 @@ var expectedPorts = map[string][]string{
 	},
 }
 
-// TestTheMemberAndOwnerPortsMatchTheAggregateVerbatim is the promise that
+// TestTheMemberAndOwnerPortsMatchTheServiceVerbatim is the promise that
 // moving the port did not restate it.
 //
-// A port may only narrow: every method it names must exist on the aggregate
+// A port may only narrow: every method it names must exist on the service
 // with the very same signature. If the port restated the operation, the two
 // would drift apart silently - the port would describe a contract the
-// aggregate does not actually offer.
-func TestTheMemberAndOwnerPortsMatchTheAggregateVerbatim(t *testing.T) {
+// service does not actually offer.
+func TestTheMemberAndOwnerPortsMatchTheServiceVerbatim(t *testing.T) {
 	directory := packageDirectory(t)
 	declared := portMethodSignatures(t, filepath.Join(directory, "ports.go"))
-	aggregate := aggregateMethodSignatures(t, filepath.Join(directory, "..", "workspacecore"))
+	service := serviceMethodSignatures(t, directory)
 
 	for name, expected := range expectedPorts {
 		methods, ok := declared[name]
@@ -74,13 +76,13 @@ func TestTheMemberAndOwnerPortsMatchTheAggregateVerbatim(t *testing.T) {
 			if !ok {
 				continue
 			}
-			origin, ok := aggregate[method]
+			origin, ok := service[method]
 			if !ok {
-				t.Errorf("%s.%s is not an aggregate operation any more; drop it from the port or move the operation back", name, method)
+				t.Errorf("%s.%s is not a service operation any more; drop it from the port or move the operation back", name, method)
 				continue
 			}
 			if signature != origin {
-				t.Errorf("%s.%s is declared as %q, the aggregate declares %q; a narrow port may only narrow, never restate", name, method, signature, origin)
+				t.Errorf("%s.%s is declared as %q, the service declares %q; a narrow port may only narrow, never restate", name, method, signature, origin)
 			}
 		}
 	}
@@ -92,15 +94,36 @@ func TestTheMemberAndOwnerPortsMatchTheAggregateVerbatim(t *testing.T) {
 	}
 }
 
-// aggregateMethodSignatures reads the aggregate's method signatures from the
-// workspacecore source, so the comparison is against the code that exists
-// rather than against a compiled type.
-func aggregateMethodSignatures(t *testing.T, directory string) map[string]string {
+// TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts is the promise
+// that the context actually left the aggregate.
+//
+// Go cannot say "this type does not satisfy this interface" at compile time,
+// so the promise is made at run time: the aggregate is handed to the ports as
+// an `any`, and the ports must refuse it.
+//
+// This is the half that a port declaration cannot carry. A port may name
+// operations the aggregate does not have, and the aggregate may still answer
+// them; only this assertion says the answer moved.
+func TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts(t *testing.T) {
+	var aggregate any = (*core.Service)(nil)
+
+	if _, ok := aggregate.(Application); ok {
+		t.Error("the aggregate still implements the member and owner port; the context has not left it")
+	}
+	if _, ok := aggregate.(MemberLifecycleApplication); ok {
+		t.Error("the aggregate still implements the member and owner lifecycle port; the context has not left it")
+	}
+}
+
+// serviceMethodSignatures reads the service's method signatures from this
+// package's source, so the comparison is against the code that exists rather
+// than against a compiled type.
+func serviceMethodSignatures(t *testing.T, directory string) map[string]string {
 	t.Helper()
 	signatures := map[string]string{}
 	entries, err := os.ReadDir(directory)
 	if err != nil {
-		t.Fatalf("read the aggregate package: %v", err)
+		t.Fatalf("read the package: %v", err)
 	}
 	for _, entry := range entries {
 		name := entry.Name()
@@ -171,7 +194,7 @@ func portMethodSignatures(t *testing.T, path string) map[string]map[string]strin
 
 // normalizeFuncType renders a function's parameter and result text with the
 // whitespace collapsed and the package qualifier removed, so that this
-// package writing core.Actor and the aggregate writing Actor are the same
+// package writing core.Actor and the service writing core.Actor are the same
 // contract.
 func normalizeFuncType(function *ast.FuncType) string {
 	parts := []string{}
@@ -186,7 +209,7 @@ func normalizeFuncType(function *ast.FuncType) string {
 
 // renderFieldList renders the types of the fields, without the parameter
 // names: the names are not part of the contract, and this package writes
-// unnamed parameters where the aggregate names them.
+// unnamed parameters where the service names them.
 func renderFieldList(list *ast.FieldList) string {
 	parts := []string{}
 	for _, field := range list.List {
@@ -209,7 +232,7 @@ func renderType(expression ast.Expr) string {
 	case *ast.StarExpr:
 		return "*" + renderType(typed.X)
 	case *ast.SelectorExpr:
-		// This package writes core.Actor where the aggregate writes Actor.
+		// This package writes core.Actor where the service writes core.Actor.
 		// The qualifier is not part of the contract, so it is dropped.
 		if ident, ok := typed.X.(*ast.Ident); ok && ident.Name == "core" {
 			return typed.Sel.Name

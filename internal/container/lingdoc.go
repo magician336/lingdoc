@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/membership"
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
@@ -89,6 +90,23 @@ func NewLingDocWorkspaceHandler(
 	}
 	projectService.SetTemplateCatalogResolver(governance)
 	projectService.SetImpactRuleChecker(governance.ImpactRuleChecker())
+	// The member and owner context left the aggregate: it runs its writes
+	// through the shared pipeline and reads through narrow ports, and it never
+	// holds the aggregate itself. The composition root is where those ports
+	// are built, and it is the only place that knows the aggregate answers
+	// them (Spec #47 决策 33、37).
+	memberStorage := workspacecore.NewMemberStorage(projectService)
+	memberService := membership.NewService(membership.Ports{
+		Runner:     workspacecore.NewOperationRunner(projectService),
+		Authorizer: workspacecore.NewWorkspaceAuthorizer(projectService),
+		Policy:     workspacecore.NewWorkspacePolicy(projectService),
+		Repository: workspacecore.NewGORMRepository(db),
+		Records:    memberStorage,
+		Directory:  memberStorage,
+		Transfers:  memberStorage,
+		APIKeys:    memberStorage,
+		Resources:  memberStorage,
+	})
 	guard := workspace.NewFullWorkflowGuard(workspace.FullWorkflowGuardPorts{
 		Delivery:   projectService,
 		Provenance: projectService,
@@ -120,13 +138,13 @@ func NewLingDocWorkspaceHandler(
 				ChangeSets:    projectService,
 			},
 			Routes: workspace.FullWorkflowRoutePorts{
-				Members:   projectService,
+				Members:   memberService,
 				Reviews:   projectService,
 				Lifecycle: projectService,
 			},
 		},
 		Projects:    projectService,
-		Members:     projectService,
+		Members:     memberService,
 		Chapters:    projectService,
 		TemplateApp: projectService,
 		ChangeSets:  projectService,

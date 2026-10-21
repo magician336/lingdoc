@@ -1,9 +1,7 @@
 package workspacecore
 
 import (
-	"context"
 	"slices"
-	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -182,31 +180,4 @@ func authorizeCurrentProject(tx Transaction, request AuthorizationRequest) (Proj
 		}
 	}
 	return Project{}, ErrNotFound
-}
-
-// Permission status is visible only after basic project membership has been
-// established. A denied stranger receives no object names or version metadata.
-func (s *Service) EffectivePermission(ctx context.Context, actor Actor, projectID, capability string) (EffectivePermission, error) {
-	request, err := authorizationRequestFromCapability(actor, projectID, capability)
-	if err != nil {
-		return EffectivePermission{}, err
-	}
-	var result EffectivePermission
-	err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		p, err := s.authorizeProject(ctx, tx, authorizationRequest(actor, projectID, AuthorizationRead, ""))
-		if err != nil {
-			return err
-		}
-		result = EffectivePermission{Capability: capability, ProjectVersion: p.ProjectVersion, ContextRevision: p.CurrentContextRevision}
-		_, result.Target, _ = strings.Cut(capability, ":")
-		_, err = s.authorizeProject(ctx, tx, request)
-		if err == nil {
-			result.Allowed = true
-			result.ReasonCode = "allowed"
-			return nil
-		}
-		result.ReasonCode = "capability_or_scope_denied"
-		return nil
-	})
-	return result, err
 }
