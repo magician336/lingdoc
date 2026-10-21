@@ -70,6 +70,25 @@ export const G3_DEP_STEPS = {
   readEdges: '读依赖边列表',
   /** 重投被拒绝的候选边。 */
   reproposeRejected: '重投被拒绝的候选边',
+  /**
+   * 提交一批**依赖候选**（AI 侧提案）。
+   *
+   * 这一组名字是 `g3Evidence.ts` 里 AC-G3-15 那一行的 `requires`：
+   * 候选与已确认边**分表**存放（服务端 `impact_dependency_candidate.go`），
+   * 所以「批量提出候选」这条链的步骤名带「助手-」前缀，与矩阵规则表对齐。
+   * 名字对不上时，矩阵那行会退回「未被本轮覆盖」，而不是给出假的 `PASS`。
+   */
+  submitCandidates: '助手-提交候选批次',
+  /** 对候选做「确认」裁决。 */
+  decideCandidateConfirm: '助手-候选决策-确认',
+  /** 对候选做「修改」裁决。 */
+  decideCandidateModify: '助手-候选决策-修改',
+  /** 对候选做「拒绝」裁决。 */
+  decideCandidateReject: '助手-候选决策-拒绝',
+  /** 在同一版本里重投被拒候选（服务端应当抑制，不新建）。 */
+  reproposeRejectedCandidate: '助手-重投被拒候选',
+  /** 确认一个依据版本已变更的候选（期望被 409 拒掉）。 */
+  decideStaleCandidate: '助手-确认版本已变更的候选',
   /** 创建变更草稿（AC-G3-14 的实跑那半段）。 */
   createDraft: '创建变更草稿',
   /** 读影响任务。 */
@@ -146,6 +165,79 @@ export interface G3DependencyEdgeFact {
   confidence: number
   version: number
   /** 被人工「修改」掉的旧关系与动作。 */
+  supersededRelation: string
+  supersededAction: string
+}
+
+/**
+ * 一条**依赖候选**（AI 侧提案）。
+ *
+ * 候选与已确认的依赖边**分表**存放：候选在决策之前**不是边**，
+ * 只有「确认 / 修改」才产生依赖边，「拒绝」不产生边
+ * （服务端 `internal/lingdoc/workspacecore/impact_dependency_candidate.go`）。
+ */
+export interface G3DependencyCandidateFact {
+  id: string
+  batchId: string
+  source: G3ObjectVersionRef
+  target: G3ObjectVersionRef
+  relation: string
+  action: string
+  /** 依据片段。 */
+  evidence: string
+  /** 建议理由。 */
+  reason: string
+  confidence: number
+  /** `proposed` / `confirmed` / `modified` / `rejected` / `stale`。 */
+  status: string
+  /** 人工结论：`confirm` / `modify` / `reject`。 */
+  decision: string
+  /** 被人工「修改」掉的旧关系与动作。 */
+  supersededRelation: string
+  supersededAction: string
+  version: number
+  /** 候选提出时的项目版本：人工结论绑在它上面。 */
+  projectVersion: number
+  /** 确认 / 修改产生的依赖边；**被拒绝的候选没有边**。 */
+  edgeId: string
+}
+
+/** 同一版本里被抑制的提案（已有人工结论，不再重复推荐）。 */
+export interface G3DependencySuppressionFact {
+  source: G3ObjectVersionRef
+  target: G3ObjectVersionRef
+  relation: string
+  action: string
+  /** `rejected_in_same_version` 等服务端给出的抑制原因。 */
+  reason: string
+  previousCandidateId: string
+  previousStatus: string
+}
+
+/** 一批依赖候选。 */
+export interface G3DependencyCandidateBatchFact {
+  id: string
+  status: string
+  projectVersion: number
+  contextRevision: number
+  candidates: G3DependencyCandidateFact[]
+  suppressed: G3DependencySuppressionFact[]
+}
+
+/** 一次候选决策的读回结果。 */
+export interface G3CandidateDecisionFact {
+  candidateId: string
+  decision: string
+  /** 候选的读回状态。 */
+  status: string
+  /** HTTP 状态码（被拒时是 409 / 422 等）。 */
+  httpStatus: number
+  /** 服务端错误码。 */
+  code: string
+  /** 产生的依赖边；**被拒绝的候选没有边**。 */
+  edgeId: string
+  relation: string
+  action: string
   supersededRelation: string
   supersededAction: string
 }
@@ -241,6 +333,56 @@ export function readDependencyEdgeFact(data: unknown): G3DependencyEdgeFact {
     version: num(raw.version),
     supersededRelation: str(raw.superseded_relation),
     supersededAction: str(raw.superseded_action),
+  }
+}
+
+/** 把后端返回的依赖候选读成事实。 */
+export function readDependencyCandidateFact(data: unknown): G3DependencyCandidateFact {
+  const raw = objectOf(data)
+  return {
+    id: str(raw.id),
+    batchId: str(raw.batch_id),
+    source: refOf(raw.source),
+    target: refOf(raw.target),
+    relation: str(raw.relation),
+    action: str(raw.action),
+    evidence: str(raw.evidence),
+    reason: str(raw.reason),
+    confidence: num(raw.confidence),
+    status: str(raw.status),
+    decision: str(raw.decision),
+    supersededRelation: str(raw.superseded_relation),
+    supersededAction: str(raw.superseded_action),
+    version: num(raw.version),
+    projectVersion: num(raw.project_version),
+    edgeId: str(raw.edge_id),
+  }
+}
+
+/** 把后端返回的抑制记录读成事实。 */
+export function readDependencySuppressionFact(data: unknown): G3DependencySuppressionFact {
+  const raw = objectOf(data)
+  return {
+    source: refOf(raw.source),
+    target: refOf(raw.target),
+    relation: str(raw.relation),
+    action: str(raw.action),
+    reason: str(raw.reason),
+    previousCandidateId: str(raw.previous_candidate_id),
+    previousStatus: str(raw.previous_status),
+  }
+}
+
+/** 把后端返回的候选批次读成事实。 */
+export function readDependencyCandidateBatchFact(data: unknown): G3DependencyCandidateBatchFact {
+  const raw = objectOf(data)
+  return {
+    id: str(raw.id),
+    status: str(raw.status),
+    projectVersion: num(raw.project_version),
+    contextRevision: num(raw.context_revision),
+    candidates: (Array.isArray(raw.candidates) ? raw.candidates : []).map(readDependencyCandidateFact),
+    suppressed: (Array.isArray(raw.suppressed) ? raw.suppressed : []).map(readDependencySuppressionFact),
   }
 }
 
@@ -452,6 +594,141 @@ export async function listDependencyEdges(
   return list.map(readDependencyEdgeFact)
 }
 
+/**
+ * 提交一批**依赖候选**（AI 侧提案）。
+ *
+ * 两条硬约束（服务端按对象引用校验，违反会被拒）：
+ * - `source` 必须是**变更集 roots 里的 ProjectSpec ref**（影响评估从 roots 出发
+ *   遍历依赖边，source 不是那个 ref 时 action 不传播）；
+ * - `target` 必须是**本项目**的章节版本（拿别的项目的对象引用会被 404 拒掉）。
+ */
+export async function submitDependencyCandidateBatch(
+  ctx: G3RunContext,
+  client: G3HttpClient,
+  token: string,
+  projectId: string,
+  options: {
+    stepName: string
+    idemLabel: string
+    expectedContextRevision: number
+    reason: string
+    candidates: {
+      source: G3ObjectVersionRef
+      target: G3ObjectVersionRef
+      relation: string
+      action: string
+      evidence: string
+      reason: string
+      confidence: number
+    }[]
+  },
+): Promise<G3DependencyCandidateBatchFact> {
+  const { data } = await runStep(ctx, client, {
+    name: options.stepName,
+    method: 'POST',
+    path: projectPath(projectId, '/dependency-candidates'),
+    token,
+    idempotencyKey: makeIdempotencyKey(ctx.runId, options.idemLabel),
+    body: {
+      expected_context_revision: options.expectedContextRevision,
+      reason: options.reason,
+      scope: {},
+      candidates: options.candidates,
+    },
+    conclusion: `候选依赖批次已提交（HTTP {status}）`,
+    detail: (body) => {
+      const batch = readDependencyCandidateBatchFact(objectOf(body).data)
+      return {
+        batch_id: batch.id,
+        status: batch.status,
+        candidate_count: batch.candidates.length,
+        suppressed_count: batch.suppressed.length,
+        error_code: errorCodeOf(body),
+      }
+    },
+  })
+  return readDependencyCandidateBatchFact(data)
+}
+
+/**
+ * 对一个**候选**做三态决策（确认 / 修改 / 拒绝）。
+ *
+ * 「拒绝」不产生依赖边；「确认 / 修改」产生一条边并记住被替换的元组。
+ * `expectedStatus` 用于「预期失败」的证据步骤（例如依据版本已变更 → 409）。
+ */
+export async function decideDependencyCandidate(
+  ctx: G3RunContext,
+  client: G3HttpClient,
+  token: string,
+  projectId: string,
+  candidateId: string,
+  options: {
+    stepName: string
+    idemLabel: string
+    expectedVersion: number
+    decision: 'confirm' | 'modify' | 'reject'
+    reason: string
+    relation?: string
+    action?: string
+    confidence?: number
+    expectedStatus?: number | readonly number[]
+    /** 允许失败：失败也记录，但不中断整条链（例如「依据版本已变更」本该被拒）。 */
+    allowFailure?: boolean
+  },
+): Promise<G3CandidateDecisionFact> {
+  const body: Record<string, unknown> = {
+    expected_version: options.expectedVersion,
+    decision: options.decision,
+    reason: options.reason,
+  }
+  if (options.decision === 'modify') {
+    if (options.relation !== undefined) body.relation = options.relation
+    if (options.action !== undefined) body.action = options.action
+    if (options.confidence !== undefined) body.confidence = options.confidence
+  }
+
+  const { response, data } = await runStep(ctx, client, {
+    name: options.stepName,
+    method: 'POST',
+    path: projectPath(projectId, `/dependency-candidates/${encodeURIComponent(candidateId)}/decision`),
+    token,
+    idempotencyKey: makeIdempotencyKey(ctx.runId, options.idemLabel),
+    expectedStatus: options.expectedStatus,
+    allowFailure: options.allowFailure,
+    body,
+    conclusion: `候选决策「${options.decision}」已提交（HTTP {status}）`,
+    detail: (raw) => {
+      const payload = objectOf(objectOf(raw).data)
+      const candidate = objectOf(payload.candidate)
+      const edge = objectOf(payload.edge)
+      return {
+        candidate_id: candidate.id,
+        status: candidate.status,
+        decision: candidate.decision,
+        edge_id: edge.id,
+        superseded_relation: candidate.superseded_relation,
+        superseded_action: candidate.superseded_action,
+        error_code: errorCodeOf(raw),
+      }
+    },
+  })
+  const payload = objectOf(data)
+  const candidate = objectOf(payload.candidate)
+  const edge = objectOf(payload.edge)
+  return {
+    candidateId: str(candidate.id) || candidateId,
+    decision: options.decision,
+    status: str(candidate.status),
+    httpStatus: response.status,
+    code: errorCodeOf(response.body),
+    edgeId: str(edge.id),
+    relation: str(candidate.relation),
+    action: str(candidate.action),
+    supersededRelation: str(candidate.superseded_relation),
+    supersededAction: str(candidate.superseded_action),
+  }
+}
+
 /** 读回影响任务（含处置所需的全部字段）。 */
 export async function listImpactTaskDetails(
   ctx: G3RunContext,
@@ -616,6 +893,30 @@ export interface G3DependencyChainOptions {
   operatorId: string
 }
 
+/**
+ * 候选三态的事实集合（AC-G3-15）。
+ *
+ * 三条语义各有各的落点，缺一条判定就不成立：
+ * - **拒绝不产生边**：`decisions` 里拒绝那条的 `edgeId` 为空，且决策前后
+ *   依赖边只多了两条（确认 + 修改各一条）；
+ * - **同版本不再重提**：`reproposal` 里没有新建候选，只有抑制记录；
+ * - **确认时版本复检**：`staleConfirmation` 是 409（依据版本已变更）。
+ */
+export interface G3CandidateChainFacts {
+  /** 提交的那一批候选。 */
+  batch: G3DependencyCandidateBatchFact | null
+  /** 三态决策的读回结果（确认 / 修改 / 拒绝）。 */
+  decisions: G3CandidateDecisionFact[]
+  /** 同版本里重投被拒候选的批次（新建 0 条 + 抑制 ≥1 条）。 */
+  reproposal: G3DependencyCandidateBatchFact | null
+  /** 依据版本已变更的候选在确认时的回应（期望 409）。 */
+  staleConfirmation: G3CandidateDecisionFact | null
+  /** 候选决策**之前**的依赖边条数。 */
+  edgesBeforeDecisions: number
+  /** 候选决策**之后**的依赖边条数。 */
+  edgesAfterDecisions: number
+}
+
 /** 链的结果。 */
 export interface G3DependencyChainResult {
   /** 变更集。 */
@@ -643,6 +944,8 @@ export interface G3DependencyChainResult {
     reject: G3DependencyEdgeFact
     reproposed: G3DependencyEdgeFact
   }
+  /** 候选批次的三态事实（AC-G3-15）。 */
+  candidates: G3CandidateChainFacts
   /** 建议边（AC-G3-13）。 */
   suggestedEdge: G3DependencyEdgeFact
   /** 建议边目标章节的版本级确认标记（应用后）。 */
@@ -685,6 +988,7 @@ export interface G3DependencySnapshot {
   unassignedCompletion: { status: number; code: string }
   transitions: G3TaskTransition[]
   decisions: G3DependencyChainResult['decisions']
+  candidates: G3CandidateChainFacts
   suggestedEdge: G3DependencyEdgeFact
   suggestedTargetVersionConfirmationValid: boolean | null
   knownObjects: G3ObjectVersionRef[]
@@ -704,6 +1008,7 @@ export function toDependencySnapshot(result: G3DependencyChainResult): G3Depende
     unassignedCompletion: result.unassignedCompletion,
     transitions: result.transitions,
     decisions: result.decisions,
+    candidates: result.candidates,
     suggestedEdge: result.suggestedEdge,
     suggestedTargetVersionConfirmationValid: result.suggestedTargetVersionConfirmationValid,
     knownObjects: result.knownObjects,
@@ -919,6 +1224,138 @@ export async function runDependencyChain(
 
   const edges = await listDependencyEdges(ctx, client, token, options.projectId)
 
+  // ——
+  // AC-G3-15 的候选三态：**候选与已确认边分表存放**（候选不是边）。
+  //
+  // 两条硬约束（服务端按对象引用校验，违反会被拒）：
+  // - 候选的 source 必须是**变更集 roots 里的 ProjectSpec ref**（影响评估从 roots
+  //   出发遍历依赖边，source 不是那个 ref 时 action 不传播）；
+  // - 候选的 target 必须是**本项目**的章节版本（别处的对象引用会被 404 拒掉）。
+  // ——
+  const projectBeforeCandidates = await readProjectState(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    '读项目状态（候选批次前）',
+  )
+  const candidateSourceRef: G3ObjectVersionRef = {
+    kind: 'ProjectSpec',
+    id: options.projectId,
+    version: String(projectBeforeCandidates.specRevision),
+  }
+  const candidateBatch = await submitDependencyCandidateBatch(ctx, client, token, options.projectId, {
+    stepName: G3_DEP_STEPS.submitCandidates,
+    idemLabel: 'dep-candidates',
+    expectedContextRevision: projectBeforeCandidates.currentContextRevision,
+    reason: 'G3 验收台-4：提交一批候选依赖（AI 侧提案，待人工裁决）',
+    candidates: [
+      {
+        source: candidateSourceRef,
+        target: questionRef,
+        relation: 'candidate_confirm',
+        action: 'NO_ACTION',
+        evidence: `合成依据片段：研究条件修订 ${projectBeforeCandidates.specRevision} 与研究问题章节的对应关系`,
+        reason: '候选关系 A：待人工判断是否成立',
+        confidence: 0.6,
+      },
+      {
+        source: candidateSourceRef,
+        target: questionRef,
+        relation: 'candidate_modify',
+        action: 'NO_ACTION',
+        evidence: '合成依据片段：研究方法章节引用了被改条件，关系名需要人工修正',
+        reason: '候选关系 B：待人工判断是否成立',
+        confidence: 0.5,
+      },
+      {
+        source: candidateSourceRef,
+        target: questionRef,
+        relation: 'candidate_reject',
+        action: 'NO_ACTION',
+        evidence: '合成依据片段：模型猜测，没有正文依据可核对',
+        reason: '候选关系 C：待人工判断是否成立',
+        confidence: 0.3,
+      },
+      {
+        source: candidateSourceRef,
+        target: questionRef,
+        relation: 'candidate_stale',
+        action: 'NO_ACTION',
+        evidence: '合成依据片段：提出时引用的规格修订会在本轮被替换',
+        reason: '候选关系 D：待人工判断是否成立（依据版本随后会变更）',
+        confidence: 0.4,
+      },
+    ],
+  })
+  const candidateByRelation = (relation: string): G3DependencyCandidateFact | undefined =>
+    candidateBatch.candidates.find((item) => item.relation === relation)
+  const candidateConfirm = candidateByRelation('candidate_confirm')
+  const candidateModify = candidateByRelation('candidate_modify')
+  const candidateReject = candidateByRelation('candidate_reject')
+  const candidateStale = candidateByRelation('candidate_stale')
+  if (!candidateConfirm || !candidateModify || !candidateReject || !candidateStale) {
+    throw new Error(
+      `候选批次没有读回预期的四条候选（读到 ${candidateBatch.candidates.length} 条：` +
+        `${candidateBatch.candidates.map((item) => item.relation).join('、') || '（空）'}）`,
+    )
+  }
+
+  const edgesBeforeCandidateDecisions = edges.length
+  const candidateDecisions: G3CandidateDecisionFact[] = []
+  candidateDecisions.push(
+    await decideDependencyCandidate(ctx, client, token, options.projectId, candidateConfirm.id, {
+      stepName: G3_DEP_STEPS.decideCandidateConfirm,
+      idemLabel: 'dep-candidate-confirm',
+      expectedVersion: candidateConfirm.version,
+      decision: 'confirm',
+      reason: '人工确认：候选关系 A 成立',
+    }),
+  )
+  candidateDecisions.push(
+    await decideDependencyCandidate(ctx, client, token, options.projectId, candidateModify.id, {
+      stepName: G3_DEP_STEPS.decideCandidateModify,
+      idemLabel: 'dep-candidate-modify',
+      expectedVersion: candidateModify.version,
+      decision: 'modify',
+      reason: '人工修改：候选关系 B 的关系名改为 candidate_b_corrected',
+      relation: 'candidate_b_corrected',
+      confidence: 0.8,
+    }),
+  )
+  candidateDecisions.push(
+    await decideDependencyCandidate(ctx, client, token, options.projectId, candidateReject.id, {
+      stepName: G3_DEP_STEPS.decideCandidateReject,
+      idemLabel: 'dep-candidate-reject',
+      expectedVersion: candidateReject.version,
+      decision: 'reject',
+      reason: '人工拒绝：候选关系 C 不成立',
+    }),
+  )
+  // 决策之后再读一次依赖边：确认 + 修改各产生一条边，**拒绝不产生边**。
+  const edgesAfterCandidateDecisions = (
+    await listDependencyEdges(ctx, client, token, options.projectId, '读依赖边列表（候选决策后）')
+  ).length
+
+  // 同一版本里重投被拒的候选：服务端记为抑制，不新建候选。
+  const candidateReproposal = await submitDependencyCandidateBatch(ctx, client, token, options.projectId, {
+    stepName: G3_DEP_STEPS.reproposeRejectedCandidate,
+    idemLabel: 'dep-candidates-repropose',
+    expectedContextRevision: projectBeforeCandidates.currentContextRevision,
+    reason: 'G3 验收台-4：同一版本里重投被拒候选（服务端应当抑制，不新建）',
+    candidates: [
+      {
+        source: candidateSourceRef,
+        target: questionRef,
+        relation: 'candidate_reject',
+        action: 'NO_ACTION',
+        evidence: '合成依据片段：模型猜测，没有正文依据可核对',
+        reason: '候选关系 C：待人工判断是否成立',
+        confidence: 0.3,
+      },
+    ],
+  })
+
   // —— AC-G3-14 的实跑那半段：生成变更草稿 ——
   const draft = await createChangeDraft(ctx, client, token, options.projectId, {
     stepName: G3_DEP_STEPS.createDraft,
@@ -955,6 +1392,24 @@ export async function runDependencyChain(
   await applyChangeSet(ctx, client, token, options.projectId, changeSet.id)
   const projectAfterApply = await readProjectState(ctx, client, token, options.projectId)
   const tasks = await listImpactTaskDetails(ctx, client, token, options.projectId)
+
+  // —— 确认时版本复检：候选 D 的依据（规格修订）已经变了，确认必须被拒（409）——
+  const staleConfirmation = await decideDependencyCandidate(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    candidateStale.id,
+    {
+      stepName: G3_DEP_STEPS.decideStaleCandidate,
+      idemLabel: 'dep-candidate-stale',
+      expectedVersion: candidateStale.version,
+      decision: 'confirm',
+      reason: '人工确认：候选关系 D（依据版本已变更，应当被复检拦下）',
+      expectedStatus: 409,
+      allowFailure: true,
+    },
+  )
 
   // —— 重复应用同一个变更集：不得产生第二条任务 ——
   await applyChangeSet(ctx, client, token, options.projectId, changeSet.id, {
@@ -1163,6 +1618,14 @@ export async function runDependencyChain(
     unassignedCompletion,
     transitions,
     decisions: { confirm: confirmed, modify: modified, reject: rejected, reproposed },
+    candidates: {
+      batch: candidateBatch,
+      decisions: candidateDecisions,
+      reproposal: candidateReproposal,
+      staleConfirmation,
+      edgesBeforeDecisions: edgesBeforeCandidateDecisions,
+      edgesAfterDecisions: edgesAfterCandidateDecisions,
+    },
     suggestedEdge,
     suggestedTargetVersionConfirmationValid,
     knownObjects,
@@ -1191,8 +1654,14 @@ export function verdictAcG305(result: G3DependencyChainResult): G3Verdict {
   const sameCount = result.tasksAfterReplay.length === result.tasks.length
   const holds = merged.length >= 1 && logicalTasks.length === 1 && sameCount
 
-  const impact = merged[0]
   const task = logicalTasks[0]
+  // 证据要指向**真的产生了那条任务**的那条影响：同一张图里可能还有别的多原因
+  // 影响（例如 NO_ACTION 的候选边合流），它们不产生任务，不能拿来当证据。
+  const impact =
+    merged.find(
+      (item) =>
+        item.target.kind === task?.target.kind && item.target.id === task?.target.id,
+    ) ?? merged[0]
   return {
     id: 'AC-G3-05',
     title: '多上游任务合并',
@@ -1277,33 +1746,99 @@ export function verdictAcG314(result: G3DependencyChainResult): G3Verdict {
   }
 }
 
-/** AC-G3-15 的判定（部分）：三态裁决实跑；AI 批量提出候选**已实现**，本链路未覆盖读侧。 */
+/**
+ * AC-G3-15 的判定：依赖候选的三态决策与三条语义。
+ *
+ * 判据（`g3Matrix.ts` 的 AC-G3-15 行）：「AI 提出若干候选依赖……用户确认其中
+ * 一部分、修改一部分、拒绝一部分。**只有确认的关系进入正式依赖图，拒绝记录
+ * 不会在同一版本中反复推荐。**」
+ *
+ * 四件事都要有事实，缺一件就不成立（没跑成不能写成已跑通）：
+ * 1. **三态齐备**：确认 → `confirmed`、修改 → `modified`、拒绝 → `rejected`；
+ * 2. **拒绝不产生边**：被拒的候选没有 `edge_id`，且依赖边只多了两条
+ *    （确认 + 修改各一条）；
+ * 3. **同版本不再重提**：重投被拒的元组没有新建候选，只有抑制记录；
+ * 4. **确认时版本复检**：依据版本已变更的候选在确认时被拒（409）。
+ */
 export function verdictAcG315(result: G3DependencyChainResult): G3Verdict {
   const { confirm, modify, reject, reproposed } = result.decisions
+  const candidates = result.candidates
+  const candidateConfirm = candidates?.decisions.find((item) => item.decision === 'confirm')
+  const candidateModify = candidates?.decisions.find((item) => item.decision === 'modify')
+  const candidateReject = candidates?.decisions.find((item) => item.decision === 'reject')
+
   const threeStates =
-    confirm.status === 'confirmed' &&
-    modify.status === 'confirmed' &&
-    modify.relation !== 'candidate_b' &&
-    reject.status === 'rejected'
-  const notReproposed = reproposed.id === reject.id
-  const holds = threeStates && notReproposed
+    candidateConfirm?.status === 'confirmed' &&
+    candidateModify?.status === 'modified' &&
+    candidateReject?.status === 'rejected'
+  // 拒绝不产生边：候选读回没有边 id，依赖边集合也只多了两条。
+  const rejectHasNoEdge =
+    candidateReject !== undefined &&
+    candidateReject.edgeId === '' &&
+    candidates !== undefined &&
+    candidates.edgesAfterDecisions - candidates.edgesBeforeDecisions === 2
+  // 同版本不再重提：重投没有新建候选，服务端记为抑制。
+  const notReproposed =
+    candidates !== undefined &&
+    candidates.reproposal !== null &&
+    candidates.reproposal.candidates.length === 0 &&
+    candidates.reproposal.suppressed.length > 0
+  // 确认时版本复检：依据版本已变更的候选，确认被 409 拒掉。
+  const staleRefused =
+    candidates !== undefined &&
+    candidates.staleConfirmation !== null &&
+    candidates.staleConfirmation.httpStatus === 409
+  const holds = threeStates && rejectHasNoEdge && notReproposed && staleRefused
+
   return {
     id: 'AC-G3-15',
-    title: 'AI 批量导入依赖（部分判定）',
+    title: 'AI 批量导入依赖：候选批次的三态决策与三条语义',
     holds,
     detail: holds
-      ? `实跑那半段成立：确认（${confirm.status}）、修改（${modify.status}，关系 ${modify.relation}）、` +
-        `拒绝（${reject.status}）三态都跑通；被拒绝的候选在同一版本里再投一次，服务端返回的是同一条边` +
-        `（edge_id=${reproposed.id}），没有新建。**本链路未覆盖那半段**：AI 批量提出候选依赖**已经实现**` +
-      `（缺口清单 #246 与 #295）；读回那半段由候选批次链负责。`
-      : `不成立：确认=${confirm.status}，修改=${modify.status}，拒绝=${reject.status}，重投未新建=${notReproposed}`,
+      ? `候选批次三态都跑通：确认（status=${candidateConfirm?.status}，产生边 ${candidateConfirm?.edgeId || '（无）'}）、` +
+        `修改（status=${candidateModify?.status}，记住被替换元组 ${candidateModify?.supersededRelation || '（无）'}/` +
+        `${candidateModify?.supersededAction || '（无）'}）、拒绝（status=${candidateReject?.status}，**没有**产生边）；` +
+        `依赖边在三次决策前后从 ${candidates?.edgesBeforeDecisions ?? 0} 条变成 ${candidates?.edgesAfterDecisions ?? 0} 条` +
+        `（只有确认与修改各产生一条）；同一版本里重投被拒的元组，服务端记为抑制（新建 ` +
+        `${candidates?.reproposal?.candidates.length ?? 0} 条 · 抑制 ${candidates?.reproposal?.suppressed.length ?? 0} 条，` +
+        `原因 ${candidates?.reproposal?.suppressed.map((item) => item.reason).join('、') || '（无）'}），没有再推荐；` +
+        `依据版本已变更的候选在确认时被复检拦下（HTTP ${candidates?.staleConfirmation?.httpStatus}，` +
+        `code=${candidates?.staleConfirmation?.code || '（无）'}），不会被静默确认。` +
+        `候选与已确认边**分表**存放：「候选不是边」是物理保证，只有确认 / 修改才产生边。`
+      : `不成立：三态齐备=${threeStates}（确认=${candidateConfirm?.status || '（未执行）'}、` +
+        `修改=${candidateModify?.status || '（未执行）'}、拒绝=${candidateReject?.status || '（未执行）'}）；` +
+        `拒绝未产生边=${rejectHasNoEdge}（依赖边 ${candidates?.edgesBeforeDecisions ?? 0} → ` +
+        `${candidates?.edgesAfterDecisions ?? 0} 条）；同版本不再重提=${notReproposed}` +
+        `（新建 ${candidates?.reproposal?.candidates.length ?? 0} 条 · 抑制 ` +
+        `${candidates?.reproposal?.suppressed.length ?? 0} 条）；版本复检拒绝=${staleRefused}` +
+        `（HTTP ${candidates?.staleConfirmation?.httpStatus ?? '（未执行）'}）。` +
+        `另：依赖边层面的三态裁决也在本轮跑过（确认=${confirm.status}、修改=${modify.status}、拒绝=${reject.status}，` +
+        `同元组重投返回同一条边=${reproposed.id === reject.id}）。`,
     evidence: [
-      `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → HTTP 200 · decision=confirm · status=${confirm.status}`,
-      `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → HTTP 200 · decision=modify · relation=${modify.relation} · superseded=${modify.supersededRelation}`,
-      `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → HTTP 200 · decision=reject · status=${reject.status}`,
-      `POST /api/v1/lingdoc/projects/{projectId}/dependencies（重投被拒候选）→ HTTP 200 · edge_id=${reproposed.id}（与被拒那条相同）`,
-      'AI 批量提出候选依赖已实现，缺口清单 #246；本链路未覆盖读侧，读回见 #295。',
+      `POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates → HTTP 200 · ` +
+        `batch_id=${candidates?.batch?.id ?? '（未执行）'} · 候选 ${candidates?.batch?.candidates.length ?? 0} 条 · ` +
+        `抑制 ${candidates?.batch?.suppressed.length ?? 0} 条`,
+      `POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision → HTTP ` +
+        `${candidateConfirm?.httpStatus ?? '（未执行）'} · decision=confirm · status=${candidateConfirm?.status || '（未执行）'} · ` +
+        `edge_id=${candidateConfirm?.edgeId || '（无）'}`,
+      `POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision → HTTP ` +
+        `${candidateModify?.httpStatus ?? '（未执行）'} · decision=modify · status=${candidateModify?.status || '（未执行）'} · ` +
+        `superseded=${candidateModify?.supersededRelation || '（无）'}/${candidateModify?.supersededAction || '（无）'} · ` +
+        `edge_id=${candidateModify?.edgeId || '（无）'}`,
+      `POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision → HTTP ` +
+        `${candidateReject?.httpStatus ?? '（未执行）'} · decision=reject · status=${candidateReject?.status || '（未执行）'} · ` +
+        `产生边=${candidateReject?.edgeId || '（无）'}（拒绝不产生边）`,
+      `GET /api/v1/lingdoc/projects/{projectId}/dependencies（候选决策前后）→ HTTP 200 · ` +
+        `边数 ${candidates?.edgesBeforeDecisions ?? 0} → ${candidates?.edgesAfterDecisions ?? 0}`,
+      `POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates（重投被拒元组）→ HTTP 200 · ` +
+        `新建 ${candidates?.reproposal?.candidates.length ?? 0} 条 · 抑制 ` +
+        `${candidates?.reproposal?.suppressed.length ?? 0} 条` +
+        `（原因 ${candidates?.reproposal?.suppressed.map((item) => item.reason).join('、') || '（无）'}）`,
+      `POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision（依据版本已变更）→ HTTP ` +
+        `${candidates?.staleConfirmation?.httpStatus ?? '（未执行）'} · ` +
+        `code=${candidates?.staleConfirmation?.code || '（无）'}`,
     ],
+    status: holds ? 'PASS' : 'NOT RUN',
   }
 }
 
