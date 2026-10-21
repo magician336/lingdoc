@@ -19,8 +19,8 @@ import (
 // 000104 LingDoc member permissions, 000105-000114 LingDoc lifecycle stores,
 // 000115 RuleSet base, 000116 full workflow, 000118-000120 RuleSet delivery,
 // 000123 roadmap editing sessions and route edges, 000124 dependency
-// candidates;
-// SQLite counterparts are 000036, 000037, and 000039-000045.
+// candidates, 000125 candidate storage shape and idempotency digest version;
+// SQLite counterparts are 000036, 000037, and 000039-000046.
 // 000122 is not listed: it renames lingdoc_change_sets in place, so it ends
 // up under the name the table already had.
 var versionedSQLiteTables = []string{
@@ -86,9 +86,11 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_generation_runs":         {"claim_token", "cancel_requested"},                                                                               // 000101
 	"lingdoc_chapter_versions":        {"citation_usages_json"},                                                                                          // 000110
 	"lingdoc_projects":                {"current_context_revision", "spec_metadata_json", "discarded_at", "delivery_status", "baseline_confirmation_id"}, // 000105-000109
+	"lingdoc_candidates":              {"writing_action", "origin", "run_mode", "model_id"},                                                              // 000125
+	"lingdoc_candidate_adoptions":     {"digest_version"},                                                                                                // 000125
 }
 
-const expectedSQLiteMigrationVersion = 45
+const expectedSQLiteMigrationVersion = 46
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

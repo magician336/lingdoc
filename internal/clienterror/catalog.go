@@ -33,6 +33,13 @@ var (
 	// IdempotencyConflict and keeps its own wording.
 	IdempotencyKeyConflict = Form{Status: 409, Code: "idempotency_conflict", Message: "同一幂等键对应不同请求。", Retryable: false}
 
+	// IdempotencyKeyExpired is the answer for one idempotency key that was
+	// issued under an older request digest rule. The request itself is
+	// fine -- the key belongs to a rule this build no longer speaks, so the
+	// caller replaces the key instead of looking for a request that never
+	// changed.
+	IdempotencyKeyExpired = Form{Status: 409, Code: "idempotency_key_expired", Message: "该幂等键属于旧版摘要规则，请换一个新的幂等键重试。", Retryable: false}
+
 	// VersionConflict is the answer for content that changed underneath the
 	// caller.
 	VersionConflict = Form{Status: 409, Code: "version_conflict", Message: "内容已变化，请先读取当前版本。", Retryable: false}

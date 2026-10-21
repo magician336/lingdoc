@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
 // SQLiteCandidateAdoptionStore owns the T11 candidate and adoption records
@@ -98,6 +100,10 @@ type candidateRow struct {
 	BasisJSON       string `gorm:"type:text;not null"`
 	Validity        string `gorm:"not null;size:16"`
 	ReviewItemsJSON string `gorm:"type:text;not null"`
+	WritingAction   string `gorm:"column:writing_action;not null;size:64;default:''"`
+	Origin          string `gorm:"column:origin;not null;size:32;default:''"`
+	RunMode         string `gorm:"column:run_mode;not null;size:32;default:''"`
+	ModelID         string `gorm:"column:model_id;not null;size:128;default:''"`
 	CreatedAt       time.Time
 }
 
@@ -115,6 +121,7 @@ type adoptionIdempotencyRow struct {
 	ActorID          string `gorm:"index;not null;size:128"`
 	Key              string `gorm:"column:idempotency_key;not null;size:128"`
 	RequestHash      string `gorm:"not null;size:64"`
+	DigestVersion    int    `gorm:"not null;default:1"`
 	ChapterVersionID string `gorm:"not null;size:36"`
 	ResponseJSON     string `gorm:"type:text;not null"`
 	CreatedAt        time.Time
@@ -323,7 +330,7 @@ func (s *SQLiteCandidateAdoptionStore) ListCandidates(ctx context.Context, proje
 		if err := json.Unmarshal([]byte(row.BasisJSON), &basis); err != nil {
 			return nil, fmt.Errorf("decode candidate basis: %w", err)
 		}
-		candidates = append(candidates, CandidateSummary{ID: row.ID, RunID: row.RunID, Validity: row.Validity, CreatedAt: row.CreatedAt, Basis: basis})
+		candidates = append(candidates, CandidateSummary{ID: row.ID, RunID: row.RunID, Validity: Validity(row.Validity), CreatedAt: row.CreatedAt, Basis: basis})
 	}
 	return candidates, nil
 }
@@ -394,8 +401,8 @@ func (s *SQLiteCandidateAdoptionStore) replayCandidateAcceptance(ctx context.Con
 	if err != nil {
 		return nil, err
 	}
-	if row.RequestHash != requestHash(in) {
-		return nil, ErrIdempotencyConflict
+	if err := compareAdoptionDigest(row, requestHash(in)); err != nil {
+		return nil, err
 	}
 	candidate, err := NewSQLiteCandidateAdoptionStore(tx).GetCandidate(ctx, in.ProjectID, in.CandidateID)
 	if err != nil {
@@ -427,8 +434,8 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		var existing adoptionIdempotencyRow
 		lookupErr := tx.Where("project_id = ? AND chapter_id = ? AND actor_id = ? AND idempotency_key = ?", in.ProjectID, in.ChapterID, in.ActorID, in.IdempotencyKey).First(&existing).Error
 		if lookupErr == nil {
-			if existing.RequestHash != hash {
-				return ErrIdempotencyConflict
+			if err := compareAdoptionDigest(existing, hash); err != nil {
+				return err
 			}
 			if err := json.Unmarshal([]byte(existing.ResponseJSON), &result.Chapter); err != nil {
 				return fmt.Errorf("decode idempotency response: %w", err)
@@ -584,6 +591,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err := tx.Create(&adoptionIdempotencyRow{
 			ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
 			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
+			DigestVersion:    adoptionDigestVersion,
 			ChapterVersionID: newVersionID, ResponseJSON: string(responseJSON),
 		}).Error; err != nil {
 			return err
@@ -634,8 +642,12 @@ func (s *SQLiteCandidateAdoptionStore) UpsertCandidate(ctx context.Context, cand
 	return s.db.WithContext(ctx).Save(&candidateRow{
 		ID: candidate.ID, ProjectID: candidate.ProjectID, ChapterID: candidate.ChapterID,
 		RunID: candidate.RunID, BodyMarkdown: candidate.BodyMarkdown,
-		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: candidate.Validity,
+		SourceIDsJSON: string(sources), BasisJSON: string(basis), Validity: string(candidate.Validity),
 		ReviewItemsJSON: string(reviews),
+		WritingAction:   string(candidate.WritingAction),
+		Origin:          string(candidate.Origin),
+		RunMode:         string(candidate.RunMode),
+		ModelID:         candidate.ModelID,
 	}).Error
 }
 
@@ -674,7 +686,11 @@ func (s *SQLiteCandidateAdoptionStore) chapterFromRow(tx *gorm.DB, row chapterRo
 func candidateFromRow(row candidateRow) (Candidate, error) {
 	var candidate Candidate
 	candidate.ID, candidate.ProjectID, candidate.ChapterID, candidate.RunID = row.ID, row.ProjectID, row.ChapterID, row.RunID
-	candidate.BodyMarkdown, candidate.Validity = row.BodyMarkdown, row.Validity
+	candidate.BodyMarkdown, candidate.Validity = row.BodyMarkdown, Validity(row.Validity)
+	candidate.WritingAction = writingaction.Action(row.WritingAction)
+	candidate.Origin = writingaction.Origin(row.Origin)
+	candidate.RunMode = RunMode(row.RunMode)
+	candidate.ModelID = row.ModelID
 	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &candidate.SourceIDs); err != nil {
 		return Candidate{}, err
 	}

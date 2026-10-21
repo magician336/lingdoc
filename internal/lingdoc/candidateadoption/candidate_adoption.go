@@ -20,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcepolicy"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -32,6 +33,7 @@ var (
 	ErrVersionConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "version_conflict", Message: "内容已变化，请先读取当前版本。", Retryable: false}, "version_conflict")
 	ErrInvalidState          = clienterror.New(clienterror.Form{Status: 422, Code: "invalid_state", Message: "当前项目状态或研究条件不满足操作要求。", Retryable: false}, "invalid_state")
 	ErrIdempotencyConflict   = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency_conflict")
+	ErrIdempotencyKeyExpired = clienterror.New(clienterror.IdempotencyKeyExpired, "idempotency_key_expired")
 	ErrDependencyUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "依赖的服务此刻不可用，请稍后重试。", Retryable: true}, "dependency_unavailable")
 )
 
@@ -77,14 +79,28 @@ type Candidate struct {
 	BodyMarkdown string       `json:"body_markdown"`
 	SourceIDs    []string     `json:"source_ids"`
 	Basis        Basis        `json:"basis"`
-	Validity     string       `json:"validity"`
+	Validity     Validity     `json:"validity"`
 	ReviewItems  []ReviewItem `json:"review_items"`
+
+	// WritingAction is the writing action that produced this candidate.
+	// The vocabulary belongs to the writingaction package: the action
+	// semantics have exactly one owner, and a candidate only records which
+	// action it came from.
+	WritingAction writingaction.Action `json:"writing_action,omitempty"`
+	// Origin says who the candidate text is from. The three values belong to
+	// the writingaction package too, so the origin vocabulary has one owner.
+	Origin writingaction.Origin `json:"origin,omitempty"`
+	// RunMode says how the run that produced this candidate reached the
+	// model.
+	RunMode RunMode `json:"run_mode,omitempty"`
+	// ModelID identifies the model that produced this candidate.
+	ModelID string `json:"model_id,omitempty"`
 }
 
 type CandidateSummary struct {
 	ID        string    `json:"id"`
 	RunID     string    `json:"run_id"`
-	Validity  string    `json:"validity"`
+	Validity  Validity  `json:"validity"`
 	CreatedAt time.Time `json:"created_at"`
 	Basis     Basis     `json:"-"`
 }
@@ -329,7 +345,7 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 	if err := validateNewBasis(workspace.Basis, candidate.Basis); err != nil {
 		return err
 	}
-	if candidate.Validity != "fresh" {
+	if candidate.Validity != ValidityFresh {
 		return ErrStaleInput
 	}
 	if workspace.SpecRevision != in.ExpectedSpecRevision || candidate.Basis.SpecRevision != in.ExpectedSpecRevision {
