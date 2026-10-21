@@ -167,7 +167,20 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		if proof.SpecRevision != int64(input.SpecRevision) || proof.TemplateCopyVersion != input.TemplateCopyVersion {
 			return delivery.DeliveryInput{}, candidateadoption.ErrVersionConflict
 		}
-		if err := projects.ValidateProjectProvenanceSnapshot(checked, a, input.ProjectID, input.Spec, proof, false); err != nil {
+		// 溯源校验比对的是**原始规格**：溯源快照记的正是它（#324）。
+		//
+		// input.Spec 是路线感知投影——模板声明为必需的路线节点在它里面是空的
+		// （路线图还没给出那个节点），而快照记的是规格里的占位值。拿投影去比，
+		// 值对不上，来源访问就被拒（403 source_access_denied）。
+		//
+		// 求值仍然读 input.Spec：投影那份才让「已声明但缺失的路线节点」保持缺失
+		// （#319）。两个值各司其职，少一个都不行。
+		provenanceSpec := input.SpecSource
+		if provenanceSpec == nil {
+			// 没有单独的原始规格时（比如调用方直接手写输入），手里这份就是它。
+			provenanceSpec = input.Spec
+		}
+		if err := projects.ValidateProjectProvenanceSnapshot(checked, a, input.ProjectID, provenanceSpec, proof, false); err != nil {
 			return delivery.DeliveryInput{}, err
 		}
 		specProvenance = &proof
