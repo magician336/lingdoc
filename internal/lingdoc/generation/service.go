@@ -44,8 +44,14 @@ var (
 	// ErrStaleInput is an input basis that changed before the run started.
 	// It used to fall through the transport's error table and be answered
 	// with a generic internal error; it now states the stale input form.
-	ErrStaleInput                  = clienterror.New(clienterror.CandidateStaleInput, "stale_input")
-	ErrIdempotencyConflict         = clienterror.New(clienterror.IdempotencyKeyConflict, "idempotency_conflict")
+	ErrStaleInput          = clienterror.New(clienterror.CandidateStaleInput, "stale_input")
+	ErrIdempotencyConflict = clienterror.New(clienterror.IdempotencyKeyConflict, "idempotency_conflict")
+	// ErrIdempotencyKeyExpired 说这个幂等键属于旧版摘要规则。
+	//
+	// 它与 ErrIdempotencyConflict 是两件事：前者的请求本身没问题，是键属于这个
+	// build 已经不说的规则——调用方换一个新键重试；后者是同一个键带了两份不同的
+	// 请求——调用方要找的是一份根本没变过的请求。
+	ErrIdempotencyKeyExpired       = clienterror.New(clienterror.IdempotencyKeyExpired, "idempotency_key_expired")
 	ErrRunUnavailable              = errors.New("generation_run_unavailable")
 	ErrGenerationCancelled         = errors.New("generation_cancelled")
 	ErrDependencyUnavailable       = clienterror.New(clienterror.DependencyUnavailable, "dependency_unavailable")
