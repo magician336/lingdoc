@@ -166,6 +166,53 @@ var narrowPortMethods = map[string][]string{
 		"CheckRuntimeOperation",
 		"ObserveDeliveryRuntime",
 		"ObserveRuntime",
+	}, "ProjectApplication": {
+		"ActivateProjectResult",
+		"ActivationDiff",
+		"CreateDraftCandidateResult",
+		"CreateProjectResult",
+		"DiscardProjectResult",
+		"GetProject",
+		"ListAuditEvents",
+		"ListDraftCandidates",
+		"ListProjects",
+		"RestoreProjectResult",
+		"SaveSpecResult",
+	},
+	"ChapterApplication": {
+		"ApplyRewriteResult",
+		"CommitWorkingCopyResult",
+		"GetWorkingCopy",
+		"ListChapterVersions",
+		"ListChapters",
+		"RestoreWorkingCopyResult",
+		"SaveChapterResult",
+		"SaveWorkingCopyResult",
+	},
+	"TemplateApplication": {
+		"BindTemplateCopyRuleSetResult",
+		"ChangeTemplateResult",
+		"GetTemplateCopy",
+		"PreviewTemplateCopyEdit",
+		"PreviewTemplateMigration",
+		"SaveTemplateCopyResult",
+	},
+	"ChangeSetApplication": {
+		"ApplyChangeSetResult",
+		"CreateChangeSetResult",
+		"GetChangeSet",
+		"ListChangeSets",
+		"ReassessChangeSetResult",
+		"RejectChangeSetResult",
+	},
+	"ProjectLifecycleApplication": {
+		"ListDiscardedProjects",
+		"RecordActivationRead",
+	},
+	"RuntimeCompositionApplication": {
+		"SetG2ActionExecutor",
+		"SetImpactPreflightChecker",
+		"SetRuntimeRecoveryChecker",
 	},
 }
 
@@ -195,12 +242,12 @@ var crossContextOperations = map[string]string{
 func TestEveryNarrowPortMethodMatchesTheAggregateMethodVerbatim(t *testing.T) {
 	directory := packageDirectory(t)
 	aggregate := aggregateMethodSignatures(t, directory)
-	declared := portMethodSignatures(t, filepath.Join(directory, "seg3_context_ports.go"))
+	declared := portMethodSignatures(t, directory)
 
 	for name, expected := range narrowPortMethods {
 		methods, ok := declared[name]
 		if !ok {
-			t.Errorf("the port %s is not declared in seg3_context_ports.go", name)
+			t.Errorf("the port %s is not declared in the narrow port files", name)
 			continue
 		}
 		got := make([]string, 0, len(methods))
@@ -247,7 +294,7 @@ func TestEveryNarrowPortMethodMatchesTheAggregateMethodVerbatim(t *testing.T) {
 // a context boundary, and no port may be a renaming of the whole aggregate.
 func TestTheNarrowPortsDoNotHandTheTransportTheWholeAggregate(t *testing.T) {
 	directory := packageDirectory(t)
-	declared := portMethodSignatures(t, filepath.Join(directory, "seg3_context_ports.go"))
+	declared := portMethodSignatures(t, directory)
 	aggregate := aggregateMethodSignatures(t, directory)
 
 	widest := 0
@@ -290,6 +337,13 @@ func TestTheNarrowPortsDoNotHandTheTransportTheWholeAggregate(t *testing.T) {
 	}
 }
 
+// narrowPortFiles are the files that declare the context narrow ports.
+//
+// The package also holds the store and transaction ports the aggregate
+// consumes; those are not narrowings of the aggregate, so they are not part
+// of this promise.
+var narrowPortFiles = []string{"seg3_context_ports.go", "seg3_migrated_ports.go"}
+
 // aggregateMethodSignatures reads the aggregate's method signatures from the
 // package source, so the comparison is against the code that actually
 // exists rather than against a compiled type.
@@ -328,39 +382,47 @@ func aggregateMethodSignatures(t *testing.T, directory string) map[string]string
 }
 
 // portMethodSignatures reads the method sets of the declared ports.
-func portMethodSignatures(t *testing.T, path string) map[string]map[string]string {
+// portMethodSignatures reads the method sets of the declared ports.
+//
+// The narrow ports live in more than one file: the ones written when the
+// narrow ports were introduced, and the ones that arrived with a context that
+// was cut out of the aggregate. So the files that declare them are listed
+// explicitly rather than guessed.
+func portMethodSignatures(t *testing.T, directory string) map[string]map[string]string {
 	t.Helper()
-	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-	if err != nil {
-		t.Fatalf("parse %s: %v", path, err)
-	}
 	ports := map[string]map[string]string{}
-	for _, declaration := range file.Decls {
-		generic, ok := declaration.(*ast.GenDecl)
-		if !ok || generic.Tok != token.TYPE {
-			continue
+	for _, name := range narrowPortFiles {
+		file, err := parser.ParseFile(token.NewFileSet(), filepath.Join(directory, name), nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
 		}
-		for _, specification := range generic.Specs {
-			typed, ok := specification.(*ast.TypeSpec)
-			if !ok {
+		for _, declaration := range file.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok || generic.Tok != token.TYPE {
 				continue
 			}
-			iface, ok := typed.Type.(*ast.InterfaceType)
-			if !ok {
-				continue
-			}
-			methods := map[string]string{}
-			for _, element := range iface.Methods.List {
-				if len(element.Names) == 0 {
-					continue
-				}
-				function, ok := element.Type.(*ast.FuncType)
+			for _, specification := range generic.Specs {
+				typed, ok := specification.(*ast.TypeSpec)
 				if !ok {
 					continue
 				}
-				methods[element.Names[0].Name] = normalizeFuncType(function)
+				iface, ok := typed.Type.(*ast.InterfaceType)
+				if !ok {
+					continue
+				}
+				methods := map[string]string{}
+				for _, element := range iface.Methods.List {
+					if len(element.Names) == 0 {
+						continue
+					}
+					function, ok := element.Type.(*ast.FuncType)
+					if !ok {
+						continue
+					}
+					methods[element.Names[0].Name] = normalizeFuncType(function)
+				}
+				ports[typed.Name.Name] = methods
 			}
-			ports[typed.Name.Name] = methods
 		}
 	}
 	return ports
@@ -383,6 +445,14 @@ func normalizeFuncType(function *ast.FuncType) string {
 	return strings.Join(parts, " -> ")
 }
 
+// renderFieldList renders the types of the fields, without the parameter
+// names.
+//
+// The names are not part of the contract: Go satisfies an interface by the
+// types, so a port may name its parameters differently from the aggregate.
+// The ports that arrived with a cut-out context write unnamed parameters
+// where the aggregate names them; comparing the names would report a
+// difference that means nothing.
 func renderFieldList(list *ast.FieldList) string {
 	parts := []string{}
 	for _, field := range list.List {
@@ -391,8 +461,8 @@ func renderFieldList(list *ast.FieldList) string {
 			parts = append(parts, typ)
 			continue
 		}
-		for _, name := range field.Names {
-			parts = append(parts, name.Name+" "+typ)
+		for range field.Names {
+			parts = append(parts, typ)
 		}
 	}
 	return "(" + strings.Join(parts, ", ") + ")"

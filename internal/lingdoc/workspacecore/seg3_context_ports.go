@@ -236,9 +236,21 @@ type AgentActionApplication interface {
 	CommitWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (json.RawMessage, int, bool, error)
 }
 
+// RuntimeCompositionApplication 是把守卫装进运行时的那三个装配操作。
+//
+// 全流程守卫今天就是自己往运行时里装的：预检复核器、恢复复核器、行动执行器。
+// 守卫要不再持有聚合体具体类型，这三个装配操作就得有一个窄口承载——
+// 装配关系本身也是一种能力，它属于运行时组合这一门语言。
+type RuntimeCompositionApplication interface {
+	SetG2ActionExecutor(executor G2ActionExecutor)
+	SetImpactPreflightChecker(checker ImpactPreflightChecker)
+	SetRuntimeRecoveryChecker(checker RuntimeRecoveryChecker)
+}
+
 var (
-	_ AgentActionApplication      = (*Service)(nil)
-	_ GovernanceReviewApplication = (*Service)(nil)
+	_ RuntimeCompositionApplication = (*Service)(nil)
+	_ AgentActionApplication        = (*Service)(nil)
+	_ GovernanceReviewApplication   = (*Service)(nil)
 
 	_ AgentContextApplication = (*Service)(nil)
 

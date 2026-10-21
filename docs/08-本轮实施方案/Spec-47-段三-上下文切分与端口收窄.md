@@ -373,6 +373,36 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
     5 种扰动全部被断言抓到；还原后 exit 0
 ```
 
+### 切片 0b：已有的上下文窄口归位（决策 33 的落地）
+
+已声明在消费方 `internal/lingdoc/workspace/contracts.go` 的上下文窄口，按决策 33
+「端口应当由它所描述的那门语言的拥有者声明」迁到拥有者模块：
+
+| 口 | 迁到 | 方法数 | 传输层留下的 |
+| --- | --- | --- | --- |
+| `ProjectApplication` | `workspacecore` | 11 | `type ProjectApplication = core.ProjectApplication` |
+| `ChapterApplication` | `workspacecore` | 8 | 别名 |
+| `TemplateApplication` | `workspacecore` | 6 | 别名 |
+| `ChangeSetApplication` | `workspacecore` | 6 | 别名 |
+| `MembershipApplication` | **新包 `internal/lingdoc/membership`** | 4 | `type MembershipApplication = membership.Application` |
+| `MemberLifecycleApplication`（新） | `internal/lingdoc/membership` | 11 | — |
+
+传输层留**类型别名**，所以 `http.go` 等处一行都不用改就继续编译。别名是过渡形态，
+票 #269 会把它们连同宽口一起清掉。
+
+**两处与理想形状的偏离，都是实测逼出来的，记在这里免得后来人以为漏了**：
+
+1. **`ListDiscardedProjects` / `RecordActivationRead` 单独成口**（`core.ProjectLifecycleApplication`），
+   没有并进 `ProjectApplication`。理由：这两个操作**遗留宽口提供不了**——37 方法的
+   `ApplicationService` 与它的读写拆分对都没有它们。把它们塞进 `ProjectApplication`
+   就等于逼着 `http.go` 的 `legacyApplicationAdapter` 与 `splitProjectApplication`
+   长大，而那两个适配器背后的宽口给不出这两个方法；于是唯一的出路是让遗留宽口
+   变宽（37 → 39），与本段「让遗留面越来越窄」的方向相反。**不能为了凑「一个上下文
+   一个口」而把操作塞进一个连遗留面都提供不了的口。**
+2. **断言比较的是类型，不是形参名**。Go 满足接口只看类型，形参名不是契约的一部分。
+   迁入的四个口沿用消费方的写法（无名形参），聚合体那边是有名字的；比名字会报出
+   一个毫无意义的差异。方法**集合**仍然由 `narrowPortMethods` 登记表逐条钉住。
+
 ### 已知前向影响：PR #248 落地后治理窄口要多一个方法
 
 在途 PR #248（G4 模板目录与版本治理）本轮**新引入**了一个聚合体方法
