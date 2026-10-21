@@ -302,8 +302,9 @@ test('5xx 不算「服务端按契约拒掉」：G3.4 / AC-G3-07 / 接受不处�
     modelSideCovered: false,
   })
   assert.equal(ac07.holds, false, '5xx 被当成了「按契约拒掉」')
-  // blocked.ts 的判定卡**不带 `status`**（只有 dependencies.ts 的卡带）：
-  // 「不成立」时投影保持该行的原状态，所以这里只能断言 holds。
+  // `blocked.ts` 的判定卡**大部分不带 `status`**：`AC-G3-07`（`verdictAC0907`）
+  // 这张卡不写 `status`，所以「不成立」时投影保持该行的原状态，这里只能断言 holds。
+  // （同一文件里**带** `status` 的是 `G3.4`：`holds ? 'PASS' : 'NOT RUN'`。）
   assert.equal(ac07.status, undefined)
 
   // 4xx 仍然是「被拒」：本轮落证里的真实码 422 判定成立。

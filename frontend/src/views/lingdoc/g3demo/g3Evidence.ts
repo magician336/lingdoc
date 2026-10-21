@@ -707,12 +707,26 @@ function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowP
 
   const observedSteps = hit.ctx.steps.filter((step) => step.ok).map((step) => step.name)
   const runTag = multi ? `（来自运行 ${hit.ctx.runId}）` : ''
-  // 判定卡**不成立但自带 status**（生产形状：`runner/dependencies.ts` 与
-  // `runner/changeset.ts` 的判定卡带 status；`runner/blocked.ts` 的卡不带，
-  // 那几条走「状态保持原样」分支）：
-  // 这一行按判定卡自带的 status 落（见 `applyRunEvidence`），
-  // 说明里必须写明「只部分成立（状态记为 X）」——
+  // 判定卡**不成立但自带 status** ⇒ 这一行按判定卡自带的 status 落
+  // （见 `applyRunEvidence`），说明里必须写明「只部分成立（状态记为 X）」——
   // 否则规则表的说明（「本轮实跑判定成立：……」）会被挂在一张**不成立**的判定卡上。
+  //
+  // **哪些卡自带 status（按卡逐个说，不是一律带）**：
+  // - **带**：`runner/dependencies.ts` 的 `G3.2` / `AC-G3-15`
+  //   （`holds ? 'PASS' : 'NOT RUN'`）与 `G3.7`
+  //   （`holds ? 'PASS (follow-up)' : 'NOT RUN'`）；`runner/changeset.ts` 的 `G3.3`
+  //   与 `AC-G3-04`（`AC-G3-04` 只在**不成立**时带 `'PASS (follow-up)'`，
+  //   成立时是 `undefined`）；`runner/blocked.ts` 的 `G3.4`；
+  //   `runner/assistant.ts` 的 `AC-G3-14` 与 `CANDIDATE-BATCH-SUBMITTED`；
+  //   `runner/roadmap.ts` 的 `G3.5` / `AC-G3-08` / `AC-G3-16`；
+  //   `runner/faultInjection.ts` 的 `AC-G3-03`；`runner/model.ts` 的模型侧三张卡。
+  // - **不带**：`runner/stabilization.ts` 的 `G3.1` / `G3.6` /
+  //   `DELIVERY-CLOSURE`；`runner/changeset.ts` 的 `AC-G3-01` / `AC-G3-02` /
+  //   `AC-G3-11`；`runner/dependencies.ts` 的 `AC-G3-05` / `AC-G3-13` /
+  //   `DRAFT-CREATED` / `TASK-CLOSURE`；`runner/blocked.ts` 的
+  //   `G3.6-BLOCKED-RECOVERY` / `AC-G3-09` / `AC-G3-12` / `AC-G3-07` /
+  //   `G3-DISMISS-BOUNDARY` / `G3-STALE-TASK`。
+  //   这些卡失败时走「不成立，状态保持原样」分支。
   const partial = hit.evaluation.verdictFailed && hit.evaluation.verdict?.status !== undefined
 
   return {
@@ -727,17 +741,21 @@ function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowP
       runId: hit.ctx.runId,
       verdictId: hit.evaluation.verdict?.id,
       head: hit.ctx.head?.commitId,
-      note: partial
-        ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**` +
-          `（状态记为 ${hit.evaluation.verdict?.status}）：${hit.evaluation.verdict?.detail}${runTag}`
-        : hit.evaluation.decided
-          ? hit.evaluation.verdict?.detail
-            ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
-            : `${hit.evaluation.group.note}${runTag}`
-          : stale
-            ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
-            : hit.evaluation.missingSteps.length > 0
-              ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
+      // 分支次序：**「结论过期」「还缺步骤」优先于「只部分成立」**。
+      // 过期运行或缺步骤时若同时有一张「失败且带 status」的卡，
+      // 先说「只部分成立」会盖掉「结论过期 / 还缺步骤」的信号——
+      // 状态本身不受影响，但说明会误导读者。
+      note: stale
+        ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
+        : hit.evaluation.missingSteps.length > 0
+          ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
+          : partial
+            ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**` +
+              `（状态记为 ${hit.evaluation.verdict?.status}）：${hit.evaluation.verdict?.detail}${runTag}`
+            : hit.evaluation.decided
+              ? hit.evaluation.verdict?.detail
+                ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
+                : `${hit.evaluation.group.note}${runTag}`
               : hit.evaluation.verdictFailed
                 ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」不成立，状态保持原样。`
                 : hit.evaluation.verdictMissing

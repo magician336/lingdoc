@@ -543,7 +543,7 @@ test('导出体每行同时给出「本轮运行判定出来的状态」与「�
   const exportBody = buildRunEvidenceExport({
     runId: 'g3r-t8-8',
     startedAt: '2026-10-21T00:00:00.000Z',
-    head: head('9641707b'),
+    head: head('abc1234'),
     steps: [step('创建变更集')],
     verdicts: [verdict('AC-G3-01')],
     stale: false,
@@ -574,11 +574,96 @@ test('导出体每行同时给出「本轮运行判定出来的状态」与「�
   assert.equal(ac03.evidence_kind, 'this_run')
   // 本轮判定过的行带运行标识与 head；没判定的行不带。
   assert.equal(ac01.run_id, 'g3r-t8-8')
-  assert.equal(ac01.head_commit, '9641707b')
+  assert.equal(ac01.head_commit, 'abc1234')
   const ac10 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-10')!
   assert.equal(ac10.run_status, undefined)
   assert.equal(ac10.run_id, undefined)
   assert.match(ac10.status_relation, /本轮未判定这一行/)
+})
+
+/**
+ * `status_relation` 必须按**矩阵状态实际是怎么来的**说明关系，
+ * 不能按「这一行挂没挂缺口」一刀切。
+ *
+ * 事实基础（`g3Gaps.ts` 的 `downgradeGapPass`）：降级**只有一种**——
+ * `PASS` → `PASS (follow-up)`，其余状态原样返回。
+ * 矩阵登记 `WARNING` 的行（`AC-G3-14`）真实理由是「结论依赖真实模型
+ * （非确定性）」，**与 #246 无关**：说成「缺口降级」会让读者推出
+ * 「关掉 #246 就能升 PASS」——那是不成立的推论。
+ */
+test('状态关系说明按矩阵状态的实际来源写：缺口降级与模型依赖不得混为一谈', () => {
+  // ① 缺口降级：`G3.7` 挂 G3-GAP-06 / G3-GAP-07，矩阵登记 `PASS (follow-up)`；
+  //    本轮判定卡不成立、自带 `NOT RUN`（`runner/dependencies.ts` 的 G3.7 卡形状：
+  //    `status: holds ? 'PASS (follow-up)' : 'NOT RUN'`）。
+  const downgraded = buildRunEvidenceExport({
+    runId: 'g3r-t8-gap',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('读影响评估')],
+    verdicts: [
+      verdict('G3.7', { holds: false, status: 'NOT RUN', detail: '不成立：必需对象集合未读全。' }),
+    ],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const g37 = downgraded.ac_rows.find((row) => row.id === 'G3.7')!
+  assert.equal(g37.run_status, 'NOT RUN')
+  assert.equal(g37.matrix_status, 'PASS (follow-up)')
+  assert.match(g37.status_relation, /本轮运行判定得到 NOT RUN/)
+  // 矩阵登记的 `PASS (follow-up)` 确实是缺口清单 #246 的降级结果 ⇒ 就这么说。
+  assert.match(g37.status_relation, /缺口清单 #246 的降级结果/)
+
+  // ② 矩阵登记 `WARNING`：**不是**缺口降级。`AC-G3-14` 确实挂着缺口
+  //    （G3-GAP-04），旧写法会因此套上「缺口降级」；真实理由是模型依赖。
+  const modelRow = buildRunEvidenceExport({
+    runId: 'g3r-t8-model',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('助手-读回草稿说明')],
+    verdicts: [
+      verdict('AC-G3-14', {
+        holds: false,
+        status: 'NOT RUN',
+        modelDependent: true,
+        detail: '不成立：本轮没有拿到助手草稿。',
+      }),
+    ],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const ac14 = modelRow.ac_rows.find((row) => row.id === 'AC-G3-14')!
+  assert.equal(ac14.run_status, 'NOT RUN')
+  assert.equal(ac14.matrix_status, 'WARNING')
+  // 前置事实：这一行**挂着缺口**——按「挂没挂缺口」一刀切的写法会走进缺口分支。
+  assert.ok(gapIdsForRow('AC-G3-14').length > 0, 'AC-G3-14 应当挂着实现缺口')
+  assert.match(ac14.status_relation, /依赖真实模型/)
+  assert.match(ac14.status_relation, /不是\*{0,2}缺口降级结果/)
+  assert.doesNotMatch(ac14.status_relation, /缺口清单 #246 的降级结果/)
+  // 本轮为什么没判成，也要说清。
+  assert.match(ac14.status_relation, /本轮这一行没判成/)
+
+  // ③ 其它情形：矩阵登记 `PASS (follow-up)` 但该行**不挂缺口**
+  //    （`AC-G3-01` 走历史快照 / 部分覆盖口径），不得说成缺口降级。
+  const plain = buildRunEvidenceExport({
+    runId: 'g3r-t8-plain',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('创建变更集')],
+    verdicts: [verdict('AC-G3-01')],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const ac01 = plain.ac_rows.find((row) => row.id === 'AC-G3-01')!
+  assert.equal(ac01.run_status, 'PASS')
+  assert.equal(ac01.matrix_status, 'PASS (follow-up)')
+  assert.equal(gapIdsForRow('AC-G3-01').length, 0)
+  assert.equal(limitingGapIdsForRow('AC-G3-01').length, 0)
+  assert.doesNotMatch(ac01.status_relation, /缺口清单 #246 的降级结果/)
+  assert.match(ac01.status_relation, /本轮运行判定得到 PASS/)
+  assert.match(ac01.status_relation, /PASS \(follow-up\)/)
 })
 
 test('PASS 行既没有 holds=true 判定卡、判定来源也核对不上时必须被标出来', () => {

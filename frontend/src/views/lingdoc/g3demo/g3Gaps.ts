@@ -260,9 +260,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '页面上自己读 `assessment.objects` 渲染的那一段沿用 #257 在 head `a87459f` 的落证。',
     specAnchor: anchor(346),
     unblockCondition:
-      '本轮已达成（数据面）：`G3.7` 的判定卡在当前 head 实跑成立——必需对象集合逐字段核对齐全。' +
-      '彻底收口要等两件事：缺口清单 #246 关闭（该行才能从 `PASS (follow-up)` 升到 `PASS`），' +
-      '以及验收台页面在当前 head 重渲「本次必须处理的对象」区块（页面那半段的落点）。',
+      '数据面判定本轮已达成并入矩阵行 `G3.7`：必需对象集合（`assessment.objects`）逐字段核对齐全。' +
+      '**仍缺**的是页面渲染那半段在当前 head 的重跑（headless 实跑驱动不到验收台页面，' +
+      '页面上自己读 `assessment.objects` 渲染的那一段沿用 #257 在 head `a87459f` 的落证），' +
+      '且缺口清单 #246 未关闭前该行只能记 `PASS (follow-up)`，不得判 `PASS`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 257,
     rowStatus: 'PASS (follow-up)',
@@ -293,10 +294,11 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '页面上按 `certainty` 分两组渲染 `impacts[]` 的那一段沿用 #257 在 head `a87459f` 的落证。',
     specAnchor: anchor(346),
     unblockCondition:
-      '本轮已达成（数据面）：`G3.7` 的判定卡在当前 head 实跑成立——来源对象与影响理由齐全，' +
+      '数据面判定本轮已达成并入矩阵行 `G3.7`：来源对象与影响理由齐全，' +
       '确定 / 可能两组不重不漏地覆盖全部影响。' +
-      '彻底收口要等两件事：缺口清单 #246 关闭（该行才能从 `PASS (follow-up)` 升到 `PASS`），' +
-      '以及验收台页面在当前 head 重渲「确定影响 / 可能影响」两段（页面那半段的落点）。',
+      '**仍缺**的是页面渲染那半段在当前 head 的重跑（headless 实跑驱动不到验收台页面，' +
+      '页面上按 `certainty` 分两组渲染 `impacts[]` 的那一段沿用 #257 在 head `a87459f` 的落证），' +
+      '且缺口清单 #246 未关闭前该行只能记 `PASS (follow-up)`，不得判 `PASS`。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 257,
     rowStatus: 'PASS (follow-up)',

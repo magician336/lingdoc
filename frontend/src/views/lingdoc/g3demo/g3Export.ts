@@ -256,6 +256,13 @@ export function conclusionSourceOf(row: G3MatrixRow, decidedThisRun: boolean): G
  * 前者是这一次运行判出来的，后者是矩阵登记的（带缺口的行已按 #246 降级）。
  * 两者并列时必须说清关系，否则读者会把「导出体 PASS」与「矩阵 PASS (follow-up)」
  * 当成两个互相矛盾的结论。
+ *
+ * **说清关系的依据是「矩阵状态实际是怎么来的」，不是「这一行挂没挂缺口」。**
+ * `downgradeGapPass` 只做**一种**降级（`PASS` → `PASS (follow-up)`），
+ * 别的差异（尤其矩阵登记 `WARNING`）**不是**降级结果：
+ * 一律说成「缺口清单 #246 的降级结果」，读者会推出
+ * 「关掉 #246 就能升 PASS」这个**不成立**的推论
+ * （例如 `AC-G3-14` 的 `WARNING` 来自「结论依赖真实模型」，与 #246 无关）。
  */
 function statusRelation(
   row: G3MatrixRow,
@@ -263,6 +270,7 @@ function statusRelation(
   matrixStatus: G3Status,
   source: G3ConclusionSource,
   hasCards: boolean,
+  verdicts: readonly G3ExportVerdict[] = [],
 ): string {
   if (runStatus === undefined) {
     if (hasCards) {
@@ -274,13 +282,77 @@ function statusRelation(
   if (runStatus === matrixStatus) {
     return `本轮运行判定得到 ${runStatus}，与矩阵登记的状态一致。`
   }
+  return (
+    `本轮运行判定得到 ${runStatus}；矩阵登记的状态是 ${matrixStatus}——` +
+    `${matrixStatusOrigin(row, matrixStatus, verdicts)}。` +
+    whyNotPassThisRound(runStatus, verdicts)
+  )
+}
+
+/**
+ * 矩阵登记的状态**实际**是怎么来的。
+ *
+ * `downgradeGapPass` 只做**一种**降级：`PASS` → `PASS (follow-up)`。所以：
+ *
+ * - 矩阵登记 `PASS (follow-up)` **且该行带缺口** ⇒ 确实是缺口清单 #246 的降级结果；
+ * - 矩阵登记 `PASS (follow-up)` **但该行不带缺口** ⇒ 那是该行自身的
+ *   「部分覆盖 / 跟进未结」登记口径，与 #246 无关；
+ * - 矩阵登记 `WARNING` ⇒ **不是**降级结果。它的口径是「这一行的结论不是
+ *   确定性结论」：要么依赖真实模型（非确定性），要么本轮覆盖受限
+ *   （宿主环境限制或产品缺陷，见该行的覆盖受限缺口）。这两种都与
+ *   「#246 是否关闭」无关。
+ */
+function matrixStatusOrigin(
+  row: G3MatrixRow,
+  matrixStatus: G3Status,
+  verdicts: readonly G3ExportVerdict[],
+): string {
   const hasGap = gapIdsOf(row.id).length > 0 || limitingGapIdsOf(row.id).length > 0
-  if (hasGap) {
-    return `本轮运行判定得到 ${runStatus}；矩阵登记的状态是 ${matrixStatus}——` +
-      '矩阵状态是**缺口清单 #246 的降级结果**（#246 未关闭前，带缺口的行不判 PASS）。'
+  if (matrixStatus === 'PASS (follow-up)') {
+    if (hasGap) {
+      return '矩阵状态是**缺口清单 #246 的降级结果**（#246 未关闭前，带缺口的行不判 `PASS`）'
+    }
+    return '矩阵登记的 `PASS (follow-up)` 是该行自身的**部分覆盖 / 跟进未结**登记口径；' +
+      '这一行**不挂缺口**，所以与缺口清单 #246 无关。'
   }
-  return `本轮运行判定得到 ${runStatus}；矩阵登记的状态是 ${matrixStatus}` +
-    '（矩阵登记的是本票未实跑时的静态状态 / 历史快照口径）——两者是不同口径，不要混读。'
+  if (matrixStatus === 'WARNING') {
+    if (verdicts.some((verdict) => verdict.model_dependent)) {
+      return '矩阵状态是**结论依赖真实模型（非确定性）**的口径，**不是**缺口降级结果' +
+        '（依赖真实模型的结论按仓库口径一律不写 `PASS`，与 #246 是否关闭无关）'
+    }
+    const limiting = limitingGapIdsOf(row.id)
+    if (limiting.length > 0) {
+      return `矩阵状态是**本轮覆盖受限**的口径（${limiting.join('、')}），**不是**缺口降级结果` +
+        '（覆盖受限的那一段本轮没有落点，与 #246 是否关闭无关）'
+    }
+    return '矩阵状态是**该行登记的覆盖受限口径**，**不是**缺口降级结果'
+  }
+  return '矩阵登记的状态与本轮判定**不是同一口径**' +
+    '（矩阵登记的是本票未实跑时的静态状态 / 历史快照口径）——两者不要混读'
+}
+
+/**
+ * 本轮这一行为什么没判成 `PASS`。
+ *
+ * 只在两个状态不一致时补这一句：读者看到「矩阵记 `WARNING`、本轮记 `NOT RUN`」
+ * 时，最想知道的是「本轮到底卡在哪」——不写这一句，差异就只剩两个没有解释的状态。
+ */
+function whyNotPassThisRound(
+  runStatus: G3Status,
+  verdicts: readonly G3ExportVerdict[],
+): string {
+  if (runStatus === 'PASS') return ''
+  if (verdicts.some((verdict) => verdict.model_dependent)) {
+    return '本轮这一行没判成 `PASS`：结论依赖真实模型（非确定性），按仓库口径不写 `PASS`。'
+  }
+  const notHeld = verdicts.filter((verdict) => !verdict.holds)
+  if (notHeld.length > 0) {
+    return `本轮这一行没判成：判定卡「${notHeld.map((verdict) => verdict.id).join('、')}」不成立。`
+  }
+  if (verdicts.length === 0) {
+    return '本轮这一行没有判定卡。'
+  }
+  return `本轮这一行没判成：判定卡给出的状态是 ${runStatus}。`
 }
 
 /**
@@ -491,7 +563,14 @@ export function buildRunEvidenceExport(input: G3RunExportInput): G3EvidenceExpor
       status,
       run_status: runStatus,
       matrix_status: matrixStatus,
-      status_relation: statusRelation(base, runStatus, matrixStatus, source, rowVerdicts.length > 0),
+      status_relation: statusRelation(
+        base,
+        runStatus,
+        matrixStatus,
+        source,
+        rowVerdicts.length > 0,
+        rowVerdicts,
+      ),
       source,
       source_label: G3_CONCLUSION_SOURCE_LABELS[source],
       decided: source === 'this_run',
@@ -677,7 +756,14 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
       status,
       run_status: runStatus,
       matrix_status: matrixStatus,
-      status_relation: statusRelation(base, runStatus, matrixStatus, source, rowVerdicts.length > 0),
+      status_relation: statusRelation(
+        base,
+        runStatus,
+        matrixStatus,
+        source,
+        rowVerdicts.length > 0,
+        rowVerdicts,
+      ),
       source,
       source_label: G3_CONCLUSION_SOURCE_LABELS[source],
       decided: source === 'this_run',
@@ -850,7 +936,14 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
       status,
       run_status: runStatus,
       matrix_status: matrixStatus,
-      status_relation: statusRelation(base, runStatus, matrixStatus, source, rowVerdicts.length > 0),
+      status_relation: statusRelation(
+        base,
+        runStatus,
+        matrixStatus,
+        source,
+        rowVerdicts.length > 0,
+        rowVerdicts,
+      ),
       source,
       source_label: G3_CONCLUSION_SOURCE_LABELS[source],
       decided,

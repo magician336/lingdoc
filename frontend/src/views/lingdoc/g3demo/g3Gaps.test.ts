@@ -197,6 +197,25 @@ test('影响中心两条缺口的措辞是「已并入 G3.7 判定」，不是�
   }
 })
 
+test('影响中心两条缺口的解除条件写「仍缺什么」，不是「仍缺并入判定」', () => {
+  const gap06 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-06')!
+  const gap07 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-07')!
+  for (const gap of [gap06, gap07]) {
+    const condition = gap.unblockCondition
+    // ① 本轮数据面判定已达成并入 `G3.7`。
+    assert.match(condition, /数据面判定本轮已达成并入矩阵行 `G3\.7`/)
+    // ② 仍缺的是**页面渲染那半段在当前 head 的重跑**（headless 实跑驱动不到页面）。
+    assert.match(condition, /仍缺.*页面渲染那半段在当前 head 的重跑/)
+    assert.match(condition, /headless 实跑驱动不到验收台页面/)
+    // ③ #246 未关闭前该行只能记 `PASS (follow-up)`。
+    assert.match(condition, /缺口清单 #246 未关闭前该行只能记 `PASS \(follow-up\)`/)
+    // 旧口径（「还缺把落证并入 G3.7 判定」「该行仍记 NOT RUN」）已被本轮实跑作废：
+    // 数据面判定**已经**并入 `G3.7`，该行记的是 `PASS (follow-up)` 而不是 `NOT RUN`。
+    assert.doesNotMatch(condition, /并入矩阵行.*的完成判据判定/)
+    assert.doesNotMatch(condition, /NOT RUN/)
+  }
+})
+
 test('每条缺口都有承接票，且票号落在本轮拆出的子票区间内', () => {
   for (const gap of G3_IMPLEMENTATION_GAPS) {
     assert.ok(typeof gap.ticket === 'number' && gap.ticket > 0, `${gap.id} 缺承接票号`)
