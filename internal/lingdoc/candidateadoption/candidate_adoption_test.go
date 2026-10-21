@@ -60,7 +60,9 @@ func TestAcceptCandidateCreatesVersionPreservesReviewItemsAndReplays(t *testing.
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0001", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	result, err := service.AcceptCandidate(context.Background(), input)
 	require.NoError(t, err)
@@ -89,7 +91,7 @@ func TestAcceptCandidateRequiresExplicitReplacementAndKeepsOldVersion(t *testing
 
 	allowSources := sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil })
 	service := NewCandidateAdoptionService(store, allowSources, allowAuthorizer{})
-	input := AcceptCandidateInput{ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-2", ActorID: "user-1", IdempotencyKey: "candidate-adoption-key-0002", ExpectedChapterVersionID: &first, ExpectedSpecRevision: 1, Confirmation: fixtureConfirmation("user-1")}
+	input := AcceptCandidateInput{ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-2", ActorID: "user-1", IdempotencyKey: "candidate-adoption-key-0002", ExpectedChapterVersionID: &first, ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 0, ExpectedBodyHash: workingCopyBodyHash(""), Confirmation: fixtureConfirmation("user-1")}
 	_, err := service.AcceptCandidate(context.Background(), input)
 	require.ErrorIs(t, err, ErrInvalidState)
 
@@ -118,7 +120,7 @@ func TestAcceptCandidateRejectsStaleAndMismatchedRequests(t *testing.T) {
 		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
 		Candidate{ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1", BodyMarkdown: "正文 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: Basis{SpecRevision: 1}, Validity: "stale", WritingAction: fixtureWritingAction, Origin: fixtureOrigin}, 1)
 	service := NewCandidateAdoptionService(store, nil, allowAuthorizer{})
-	base := AcceptCandidateInput{ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1", IdempotencyKey: "candidate-adoption-key-0003", ExpectedSpecRevision: 1, Confirmation: fixtureConfirmation("user-1")}
+	base := AcceptCandidateInput{ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1", IdempotencyKey: "candidate-adoption-key-0003", ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 0, ExpectedBodyHash: workingCopyBodyHash(""), Confirmation: fixtureConfirmation("user-1")}
 	_, err := service.AcceptCandidate(context.Background(), base)
 	require.ErrorIs(t, err, ErrStaleInput)
 
@@ -244,7 +246,9 @@ func TestAcceptCandidateRequiresAuthorizationDependency(t *testing.T) {
 	_, err := service.AcceptCandidate(context.Background(), AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1",
 		ActorID: "user-1", IdempotencyKey: "candidate-adoption-auth-1", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	})
 	require.ErrorIs(t, err, ErrDependencyUnavailable)
 }
@@ -262,7 +266,9 @@ func TestReplayCandidateAcceptanceRechecksCurrentSourceAccess(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-replay-1", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	allowSources := sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil })
 	service := NewCandidateAdoptionService(store, allowSources, allowAuthorizer{})

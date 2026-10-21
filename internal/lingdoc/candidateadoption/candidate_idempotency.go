@@ -16,8 +16,11 @@ import (
 // prefix in front. Version 3 adds the adoption confirmation to the payload:
 // what was confirmed (action, target, scope, confirmer, origin) is part of
 // what the request does, so a key that carries a different confirmation is a
-// different request.
-const adoptionDigestVersion = 3
+// different request. Version 4 adds the working copy declaration (revision,
+// body digest) and the snapshot identifier: which draft the caller acts on and
+// whether it asked for a recoverable snapshot are part of what the request
+// does.
+const adoptionDigestVersion = 4
 
 // adoptionRequestDigest is the payload the candidate adoption request digest
 // is computed over.
@@ -31,14 +34,17 @@ type adoptionRequestDigest struct {
 	// struct fields in declaration order, so the version prefix always sits
 	// in the same place and a digest says which rule produced it without a
 	// side table.
-	DigestVersion            int                         `json:"digest_version"`
-	ProjectID                string                      `json:"project_id"`
-	ChapterID                string                      `json:"chapter_id"`
-	CandidateID              string                      `json:"candidate_id"`
-	ExpectedChapterVersionID *string                     `json:"expected_chapter_version_id"`
-	ExpectedSpecRevision     int                         `json:"expected_spec_revision"`
-	ReplaceExisting          bool                        `json:"replace_existing"`
-	Confirmation             *adoptionConfirmationDigest `json:"confirmation,omitempty"`
+	DigestVersion               int                         `json:"digest_version"`
+	ProjectID                   string                      `json:"project_id"`
+	ChapterID                   string                      `json:"chapter_id"`
+	CandidateID                 string                      `json:"candidate_id"`
+	ExpectedChapterVersionID    *string                     `json:"expected_chapter_version_id"`
+	ExpectedSpecRevision        int                         `json:"expected_spec_revision"`
+	ReplaceExisting             bool                        `json:"replace_existing"`
+	ExpectedWorkingCopyRevision int64                       `json:"expected_working_copy_revision"`
+	ExpectedBodyHash            string                      `json:"expected_body_hash"`
+	SnapshotID                  string                      `json:"snapshot_id"`
+	Confirmation                *adoptionConfirmationDigest `json:"confirmation,omitempty"`
 }
 
 // adoptionConfirmationDigest is the projection of the adoption confirmation
@@ -68,14 +74,17 @@ type adoptionConfirmationDigest struct {
 // move, and the idempotency rows that carry it still match.
 func requestHash(in AcceptCandidateInput) string {
 	digest, _ := operationcore.RequestHash(adoptionRequestDigest{
-		DigestVersion:            adoptionDigestVersion,
-		ProjectID:                in.ProjectID,
-		ChapterID:                in.ChapterID,
-		CandidateID:              in.CandidateID,
-		ExpectedChapterVersionID: in.ExpectedChapterVersionID,
-		ExpectedSpecRevision:     in.ExpectedSpecRevision,
-		ReplaceExisting:          in.ReplaceExisting,
-		Confirmation:             confirmationDigestOf(in.Confirmation),
+		DigestVersion:               adoptionDigestVersion,
+		ProjectID:                   in.ProjectID,
+		ChapterID:                   in.ChapterID,
+		CandidateID:                 in.CandidateID,
+		ExpectedChapterVersionID:    in.ExpectedChapterVersionID,
+		ExpectedSpecRevision:        in.ExpectedSpecRevision,
+		ReplaceExisting:             in.ReplaceExisting,
+		ExpectedWorkingCopyRevision: in.ExpectedWorkingCopyRevision,
+		ExpectedBodyHash:            in.ExpectedBodyHash,
+		SnapshotID:                  in.SnapshotID,
+		Confirmation:                confirmationDigestOf(in.Confirmation),
 	})
 	return digest
 }

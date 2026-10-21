@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import type { AcceptCandidateInput, AdoptionConfirmation } from '@/api/lingdoc/candidateAdoption'
-import { adoptionSignature, keyForAttempt } from './candidateAdoption'
+import { adoptionSignature, keyForAttempt, newSnapshotId, workingCopyBodyHash } from './candidateAdoption'
 
 const workspace = readFileSync(new URL('./Workspace.vue', import.meta.url), 'utf8')
 const dialog = readFileSync(new URL('../../components/LingDocCandidateAdoptionDialog.vue', import.meta.url), 'utf8')
@@ -24,6 +24,8 @@ function inputOf(overrides: Partial<AcceptCandidateInput> = {}): AcceptCandidate
     expected_chapter_version_id: null,
     expected_spec_revision: 3,
     replace_existing: false,
+    expected_working_copy_revision: 7,
+    expected_body_hash: 'a'.repeat(64),
     confirmation: confirmationOf(),
     ...overrides,
   }
@@ -76,6 +78,11 @@ test('the signature covers every field that goes into the request body', () => {
   assert.notEqual(adoptionSignature(inputOf({ expected_chapter_version_id: 'version-9' })), base)
   assert.notEqual(adoptionSignature(inputOf({ expected_spec_revision: 4 })), base)
   assert.notEqual(adoptionSignature(inputOf({ replace_existing: true })), base)
+  // 工作副本声明：换了要动的那一份草稿，就是另一次请求。
+  assert.notEqual(adoptionSignature(inputOf({ expected_working_copy_revision: 8 })), base)
+  assert.notEqual(adoptionSignature(inputOf({ expected_body_hash: 'b'.repeat(64) })), base)
+  // 带快照的替换：它放行了 dirty，所以也是另一次请求。
+  assert.notEqual(adoptionSignature(inputOf({ snapshot_id: 'snapshot-1' })), base)
   assert.equal(adoptionSignature(inputOf()), base)
 })
 
@@ -111,6 +118,23 @@ test('the dialog signs the very body it sends', () => {
   assert.match(dialog, /keyForAttempt\(attempt\.value, input\.value, newIdempotencyKey\)/)
   assert.match(dialog, /acceptCandidate\(\s*props\.projectId,\s*props\.chapter\.id,\s*input\.value,/)
   assert.doesNotMatch(dialog, /idempotencyKeyForAttempt/)
+})
+
+test('the working copy digest is the sha256 of the body, in lowercase hex', async () => {
+  // 算法是契约的一部分：服务端算的是同一个值（candidateadoption 的
+  // workingCopyBodyHash）。两边算不出同一个值，这一声明就白声明了。
+  const digest = await workingCopyBodyHash('正文')
+  assert.equal(digest.length, 64)
+  assert.match(digest, /^[0-9a-f]{64}$/)
+  // 空正文也有确定的摘要。
+  assert.equal((await workingCopyBodyHash('')).length, 64)
+  // 换一个正文，摘要就换。
+  assert.notEqual(await workingCopyBodyHash('正文'), await workingCopyBodyHash('另一段'))
+})
+
+test('a snapshot id is minted per replacement', () => {
+  assert.notEqual(newSnapshotId(), newSnapshotId())
+  assert.match(newSnapshotId(), /^candidate-adoption-snapshot-/)
 })
 
 test('a successful adoption cannot be cancelled before chapter readback succeeds', () => {

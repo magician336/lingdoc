@@ -180,6 +180,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
             ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),
+            ("frontend/src/views/lingdoc/candidateAdoption.test.ts", "file"),
             ("frontend/src/views/lingdoc/GenerationActionPanel.vue", "file"),
             ("frontend/src/views/lingdoc/GenerationActionPanel.test.js", "file"),
             ("frontend/src/api/lingdoc/generation.ts", "file"),

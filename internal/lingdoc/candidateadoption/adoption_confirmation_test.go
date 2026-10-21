@@ -51,7 +51,10 @@ func adoptionFixture(t *testing.T, action writingaction.Action, origin writingac
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-confirm-0001", ExpectedSpecRevision: 1,
-		Confirmation: confirmationFixture(action, writingaction.TargetFormalVersionWhole, "user-1"),
+		// 这条夹具的现场里没有工作副本。
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                confirmationFixture(action, writingaction.TargetFormalVersionWhole, "user-1"),
 	}
 	_ = service
 	return store, input

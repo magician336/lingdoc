@@ -82,7 +82,10 @@ func adoptionInput(chapterID, candidateID, actor, key string) AcceptCandidateInp
 	return AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: chapterID, CandidateID: candidateID, ActorID: actor,
 		IdempotencyKey: key, ExpectedSpecRevision: 1, ReplaceExisting: true,
-		Confirmation: fixtureConfirmation(actor),
+		// 夹具里的工作副本是修订号 1、正文为空。
+		ExpectedWorkingCopyRevision: 1,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation(actor),
 	}
 }
 

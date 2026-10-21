@@ -28,7 +28,9 @@ func TestAcceptCandidateRefusesWhenTheAuthorizationIsGone(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-revoked-0001", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	_, err := service.AcceptCandidate(context.Background(), input)
 	require.ErrorIs(t, err, ErrSourceAccessDenied)
@@ -61,7 +63,9 @@ func TestRetryingAnAdoptionWithANewKeyDoesNotWriteASecondVersion(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-retry-0001", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	_, err := service.AcceptCandidate(context.Background(), input)
 	require.NoError(t, err)

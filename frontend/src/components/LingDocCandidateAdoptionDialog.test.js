@@ -38,7 +38,8 @@ const api = compile(path.join(frontend, 'src/api/lingdoc/candidateAdoption.ts'),
 const wikiLineDiff = compile(path.join(frontend, 'src/utils/wikiLineDiff.ts'), undefined, id => load(id))
 
 const source = path.join(frontend, 'src/components/LingDocCandidateAdoptionDialog.vue')
-const parsed = compiler.parse(fs.readFileSync(source, 'utf8'))
+const dialogSource = fs.readFileSync(source, 'utf8')
+const parsed = compiler.parse(dialogSource)
 assert.deepEqual(parsed.errors, [])
 const script = compiler.compileScript(parsed.descriptor, { id: 'candidate-adoption-test' })
 const template = compiler.compileTemplate({
@@ -49,7 +50,16 @@ assert.deepEqual(template.errors, [])
 
 const dialog = compile(source, script.content, id => {
   if (id === '@/api/lingdoc/candidateAdoption') return { ...api, newIdempotencyKey: () => `synthetic-key-${++nonce}` }
-  if (id === '@/views/lingdoc/candidateAdoption') return { keyForAttempt: (attempt, input, mint) => ({ signature: JSON.stringify(input), key: mint() }) }
+  if (id === '@/api/lingdoc/workspace') return {
+    getWorkingCopy: () => Promise.resolve({
+      data: { project_id: 'project-1', chapter_id: 'chapter-1', base_chapter_version_id: 'version-1', spec_revision: 1, working_copy_revision: 7, body_markdown: '旧的正文\n保留段', source_ids: [], review_items: [], updated_at: '' },
+    }),
+  }
+  if (id === '@/views/lingdoc/candidateAdoption') return {
+    keyForAttempt: (attempt, input, mint) => ({ signature: JSON.stringify(input), key: mint() }),
+    newSnapshotId: () => `synthetic-snapshot-${++nonce}`,
+    workingCopyBodyHash: async body => `hash-of-${body.length}`,
+  }
   if (id === '@/utils/wikiLineDiff') return wikiLineDiff
   if (id === '@/stores/auth') return { useAuthStore: () => ({ currentUserId: 'user-1' }) }
   return load(id)
@@ -103,6 +113,18 @@ test('the dialog states what is being confirmed', async () => {
   assert.match(html, /写入目标：正式版本·整段/)
   assert.match(html, /确认人：user-1/)
   assert.match(html, /来源标注：AI 生成/)
+})
+
+test('the dialog declares which working copy it replaces', async () => {
+  // 采纳要动的是工作副本，所以客户端必须说清它动的是哪一份：没有这份声明，
+  // 服务端无从分辨这次替换动的是不是用户正在看的那份内容。
+  const { html } = await render()
+  assert.match(html, /替换对象：工作副本第 \d+ 版/)
+  assert.match(dialogSource, /getWorkingCopy\(props\.projectId, props\.chapter\.id\)/)
+  assert.match(dialogSource, /expected_working_copy_revision: workingCopyRevision\.value/)
+  assert.match(dialogSource, /expected_body_hash: workingCopyHash\.value/)
+  // 读不到工作副本就不许发请求。
+  assert.match(html, /disabled/)
 })
 
 test('a candidate without a recorded action cannot be adopted', async () => {
