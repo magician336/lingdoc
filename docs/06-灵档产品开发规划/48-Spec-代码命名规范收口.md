@@ -19,7 +19,7 @@
 | 带 `g<数字>` / `t<数字>` 前缀的代码文件 | **123**（internal 55 / frontend/src 53 / frontend/scripts 8 / scripts 7），合计 **48,298 行** |
 | 按编号分布 | g3 = 54、g2 = 23、g5 = 13、g1 = 11、g6 = 11、g4 = 6、g7 = 1 |
 | 编号跨包数 | **G2 散在 5 个包**，**G3 散在 4 个包**，G1 / G4 各 3 个包，G5 / G6 各 2 个包 |
-| 带 `G<数字>` 前缀的导出标识符 | **47**（`G2AgentModel`、`G2HostAgentModel`、`G2ResearchAdapter`、`G2Runtime`、`G5Get`、`G5List`、`G5Put`、`G6CAS`、`G6Insert`、`G6List`、`G6Read` …） |
+| 带编号的标识符 | **266** = **56 个导出**（`G<数字>`，跨包可见：G2AgentModel、G2HostAgentModel、G2ResearchAdapter、G2Runtime、G5Get、G5List、G5Put、G6CAS、G6Insert、G6List、G6Read …）+ **210 个文件私有**（`g<数字>`，Go 视为未导出，只影响自己那个文件：g1Provenance、g2StoreOperationProvenance …，分布在 104 个 Go 文件） |
 
 **四个具体问题**
 
@@ -36,9 +36,9 @@
 
 | 层 | 规则 | 现状 |
 | --- | --- | --- |
-| **代码层**（Go / Vue / TS / 脚本） | 文件名与标识符表达「这段代码拥有什么知识」或「这个动作做什么」。**不用项目编号。** | 违规 123 文件 + 47 标识符 |
+| **代码层**（Go / Vue / TS / 脚本） | 文件名与标识符表达「这段代码拥有什么知识」或「这个动作做什么」。**不用项目编号。** | 违规 123 文件 + 266 标识符 |
 | **文档 / 票 / 契约 / 证据层** | **保留** `G1`–`G7` 与 `T01`–`T16`。那里编号是项目坐标，是有效的。 | `internal/` 下 `t<数字>` 文件数 = **0**；文档层 127 个 T*/G* 文件 |
-| **一次性全量改名** | **不可行。** 123 文件 / 48,298 行 / 47 标识符及其引用点，装不进一个 PR。 | — |
+| **一次性全量改名** | **不可行。** 123 文件 / 48,298 行 / 266 标识符及其引用点，装不进一个 PR。 | — |
 
 所以解法是三件事：
 
@@ -101,7 +101,7 @@
 
 - 每个代码文件的**路径**；
 - 它**拥有的知识**（一行自然语言，必须能唯一指向该文件）；
-- 它是否属于**遗留**（当前 123 个带编号的文件 + 47 个带编号的导出标识符全部登记为遗留）；
+- 它是否属于**遗留**（当前 123 个带编号的文件 + 266 个带编号的标识符全部登记为遗留）；
 - 遗留项的**所属批次**（见第 6 条）。
 
 登记表放在 `scripts/` 而非 `scripts/ci/`：`scripts/ci/` 是门禁判定层，必须保持「只有一个模块回答『什么会跑』」；`test_lingdoc_gate_scripts.py` 的 `KNOWN_SCRIPTS` 白名单会强制每个进入 `scripts/ci/` 的脚本登记用途。守护测试仍放 `scripts/ci/`。
@@ -138,13 +138,32 @@
 | 批次 | 内容 | 规模 | 理由 |
 | --- | --- | --- | --- |
 | **1** | 守护测试 + 登记表 + 棘轮基线 | 1 个 PR | **先冻结**，让债务不再增长 |
-| **2** | 47 个带编号的导出标识符 | 1–2 个 PR | 调用点少、收益直接；`G6CAS` 这类名字改完立刻自足 |
+| **2** | 56 个带编号的**导出**标识符 | 1–2 个 PR | 调用点少、收益直接；`G6CAS` 这类名字改完立刻自足。**走 expand → migrate → contract**，删除旧名须等在飞 PR #149 与 #248 合并 |
 | **3** | `frontend/src/views/lingdoc/g3demo/` 目录 + `frontend/scripts/g3demo/`，共 52 个文件 | 1–2 个 PR | 单文件最大 3,294 行，需要独立批次 |
 | **4** | `internal/lingdoc/workspacecore` 与 `internal/lingdoc/workspace` 的 g* 文件 | 2–4 个 PR | 两个包内改名，按知识簇切 |
 | **5** | 弱语义名与调试残留（`temporary_*`、`_repro_gap.mjs`、`copy.go`、`legacy`） | 1 个 PR | 独立于编号问题 |
 | **6** | 包名万能词（`workspacecore` / `workspace` / `demoroute`） | 另案 | 涉及包边界，需单独设计讨论 |
 
 **每个批次一个 PR。** 批次之间不合并。
+
+### 6.1 执行票
+
+本 Spec 已拆成 **10 张执行票**，全部是 [#358](https://github.com/magician336/lingdoc/issues/358) 的子票：
+
+| 票 | 范围 | Blocked by |
+| --- | --- | --- |
+| [#361](https://github.com/magician336/lingdoc/issues/361) | 命名登记表与守护测试（棘轮冻结新增） | 无 |
+| [#362](https://github.com/magician336/lingdoc/issues/362) | `workspacecore` 包编号命名收口 | #361 |
+| [#363](https://github.com/magician336/lingdoc/issues/363) | `workspace` 包编号命名收口 | #361 |
+| [#364](https://github.com/magician336/lingdoc/issues/364) | `generation` 与 `container` 包编号命名收口 | #361 |
+| [#365](https://github.com/magician336/lingdoc/issues/365) | 前端 `g3demo` 目录改名 | #361 |
+| [#366](https://github.com/magician336/lingdoc/issues/366) | 前端脚本 `g3demo` 目录改名 | #361 |
+| [#367](https://github.com/magician336/lingdoc/issues/367) | 脚本包 `g*` 文件改名 | #361 |
+| [#368](https://github.com/magician336/lingdoc/issues/368) | 前端文件名统一为 camelCase | #361 |
+| [#369](https://github.com/magician336/lingdoc/issues/369) | 弱语义名与调试残留清理 | #361 |
+| [#370](https://github.com/magician336/lingdoc/issues/370) | 棘轮基线归零与登记表收口 | #362–#369 |
+
+**票按包与目录切，不按编号切**：实测有 129 个文件同时含两个以上编号族（如共享门面文件同时含 g1/g2/g5），按编号切必然撞车；按包切则文件集天然不重叠，**#362–#369 互不依赖，可全部并行**。
 
 ### 7. 改名手法
 
