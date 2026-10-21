@@ -627,7 +627,7 @@ ch08：「每个新特性都要说明新增的接口、状态和依赖；若没�
 | 8 个动作一次交付 | 动作语义可能彼此不一致 | 每个动作一个提交 + 同一模板 + 词汇表集中校验 | 已知，缓解中 |
 | review 直接写工作副本会绕过显式确认 | AI 评审可能在用户未确认时改变正文 | 先生成 `ReviewReport`，`ApplyReview` 复用人工门禁、CAS、幂等和事务内授权复核 | 已消除 |
 | outline 整篇替换会丢失未保存编辑 | 用户工作副本发生不可恢复的数据丢失 | dirty 时服务端拒绝；保存、快照或明确的带快照替换操作后才允许继续 | 已消除 |
-| SQLite 无法直接修改既有 CHECK 约束 | 旧库升级失败或迁移后索引/外键丢失 | 临时表重建 + 行数/键/索引/外键校验；真实旧库 up/down 演练 | 已知，待迁移实现验证 |
+| SQLite 无法直接修改既有 CHECK 约束 | 旧库升级失败或迁移后索引/外键丢失 | 临时表重建 + 行数/键/索引/外键校验；真实旧库 up/down 演练 | **已消除**（#352 实测，证据见下） |
 | **命名撞名（本轮核实）**：`Action` 已被三义占用（依赖边 `workspacecore/impact_model.go:26`、审计 `candidateadoption/candidate_adoption_store.go:142`、治理操作 `operationcore.Identity.Operation`），后两个就在本面要改的包里 | 同包内 `Action` 二义，`core.DependencyEdge{Action:...}` 也在同文件 | D14：类型叫 `Action`（包名限定），跨包字段叫 `WritingAction`；`Origin` 保持（与 `SpecField.Origin` 同语义同取值） | 已消除 |
 | **「约束」二义 + 权限边界（本轮核实）**：既有 `AgentContextPackage.OutputConstraints` 是**服务端安全边界**（`g2_service.go:1686` 硬编码四条），新概念是**客户端产出参数** | 中文同叫「约束」会误导；混用会让客户端改安全边界 | D15 改名「产出参数 / `OutputParams`」+ 不变量 I-13 写死两者不得合并 | 已消除 |
 | **摘要守护测试有洞（本轮核实）**：`operationcore/ownership_test.go:80-108` 的 AST 检查只拦**内联式** `sha256.Sum256(json.Marshal(x))`；现有 `candidateadoption.requestHash` 用**两步式**（`candidate_adoption.go:406,414`）**逃过了检查** | 仓里实际存在**第二个摘要拥有者**，违反该测试自己的声明 | D9 第 0 步（换实现，算法等价故历史值不变）+ 第 5 步（AST 检查扩到两步式）+ 不变量 I-14 | 已消除 |
@@ -635,6 +635,21 @@ ch08：「每个新特性都要说明新增的接口、状态和依赖；若没�
 | **D5 第一层是死条目（本轮核实修正）**：`human_decision.go` 名单只被 `workspaceHumanGate()` 消费，而后者只在 `operation_pipeline.go:142` 被用 | 名单里加 `acceptCandidate` 读起来像「受门禁保护」，实际**没有任何调用会因此走 HumanGate**——采纳路径不走 workspacecore operation pipeline | 改为 `AcceptCandidate` 直接调 `core.RequireHumanDecision(ctx)`（`workspacecore` 已导出，`candidateadoption` 已 import，**无新依赖**；先例 `selected_rewrite.go:284,528`）；**名单不加项**，`human_decision.go` 移出所有权 | 已消除 |
 | **两个同名同形的 `ReviewItem`（本轮核实）**：`workspacecore.ReviewItem` 与 `candidateadoption.ReviewItem` 字段完全相同但不同型；rewrite 候选用前者，`ApplyRewrite` 收的也是前者 | 与「不碰 `workspacecore/model.go`」直接冲突 | 候选层统一到 `candidateadoption.ReviewItem`，`workspacecore.ReviewItem` 保留为工作副本侧类型，转换点放 `workspace` 包内（本面拥有） | 已消除 |
 | **`not_authorized` 同名不同义（本轮核实）** | 仓里已有资料级 `not_authorized`（`evidence/gateway.go:16` 的 `DenyReason`） | 候选级用 `Validity` 枚举承载，资料级拒权原因保持原样；前端展示区分「候选不可用」与「这份资料无权」 | 已消除 |
+
+### 9.1.1 迁移方言差异的实测结论（#352 补记）
+
+原风险行「SQLite 无法直接修改既有 CHECK 约束」记为「已知，待迁移实现验证」。#352 用**真实旧库**（SQLite v45 / PostgreSQL v124）跑完 up→down→up 演练后，结论如下，验收项按**方言实际语义**写：
+
+| 事项 | 实测结论 | 证据 |
+| --- | --- | --- |
+| 改写既有 CHECK 约束是否需要表重建 | **PostgreSQL 可原地 `DROP/ADD CONSTRAINT`，不需要重建**；**只有 SQLite 需要临时表重建** | `internal/database/migration_candidate_shape_legacy_test.go` |
+| 「表重建在两套方言上都成立」这条验收项 | **在 PG 侧不成立** —— 按最坏方言推广会让 PG 侧实现与验收项对不上。PG 侧改为断言「约束换掉后数据/索引/外键不变」，SQLite 侧断言真的重建 | 同上 |
+| 迁移的原子性 | 两套脚本**都原子**：golang-migrate 的 postgres 驱动不把迁移包在事务里，但 lib/pq 用 **simple protocol** 把整个 `.sql` 文件当一条查询发出，PostgreSQL 简单查询协议对多语句批次用**隐式事务**；SQLite 驱动则显式 `tx.Begin()/Commit()` | 同上 + 两套迁移脚本 |
+| 行数/主键/索引/外键保持 | SQLite 重建后由迁移内的守卫表校验（行数相等 + 每个旧主键都能在新表命中），索引与外键在重建后重建 | 同上 |
+
+**执行环境**：本机 PostgreSQL 17.9（Docker 容器 `WeKnora-postgres-dev`）+ `LINGDOC_TEST_POSTGRES_DSN` 约定，PG 侧迁移**已实际执行**（一次性库 + 隔离 schema，跑完 DROP，残留 0）。未设置该变量时相关用例明确 SKIP 并写原因。
+
+**CI 侧的已知缺口**：`app.yml:145-147` 跑全量 `go test`（含 `internal/database`）却**没有 PG service**，PG 用例在 CI 上会 SKIP；有 PG service 的 `lingdoc-interface-integration.yml` 只跑 `./internal/router` 与 `./internal/container` 的定向 `-run`。已登记为 **Issue #360**（CI 缺口），**不是本面范围**。
 
 ### 9.2 健康评分（`lingdoc-health-scoring`，Spec 完成阶段）
 
