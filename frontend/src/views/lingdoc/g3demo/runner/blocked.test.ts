@@ -23,9 +23,11 @@ import {
   verdictAC0909,
   verdictAC0912,
   verdictDismissBoundary,
+  verdictG34,
   type G3AC0907Input,
   type G3AC0909Input,
   type G3AC0912Input,
+  type G3BlockedChainResult,
   type G3DismissBoundaryInput,
 } from './blocked'
 
@@ -228,4 +230,119 @@ test('接受不处理的边界：阻断级被拒、非阻断级可达时判定�
   const verdict = verdictDismissBoundary(input)
   assert.equal(verdict.holds, true)
   assert.match(verdict.detail, /DISMISSED/)
+})
+
+/** 造一份「旧任务关不掉新版本、人工复核关不掉」的阻断链事实。 */
+function g34ResultOf(overrides: Partial<G3BlockedChainResult> = {}): G3BlockedChainResult {
+  const base = {
+    mismatchStatus: 409,
+    mismatchCode: 'version_conflict',
+    versionMismatch: { status: '', blockers: [], staleTaskIds: [] },
+    staleTasks: [{ id: 'task-9', action: 'INVALIDATE_CONFIRMATION', severity: 'blocking', staleReason: 'closure_stale' }],
+    replacedVersionId: 'v-m2',
+    reviewProbe: {
+      taskId: 'task-7',
+      taskAction: 'REVIEW_REQUIRED',
+      targetKind: 'ResearchClaim',
+      completeWithoutReviewStatus: 422,
+      completeWithoutReviewCode: 'invalid_state',
+      completeWithReviewStatus: 200,
+      completeWithReviewAccepted: true,
+      modelSideCovered: false,
+    },
+  } as unknown as G3BlockedChainResult
+  return { ...base, ...overrides } as G3BlockedChainResult
+}
+
+test('G3.4：旧任务不能关闭新版本、异步成功不等于人工关闭时判定成立', () => {
+  const verdict = verdictG34(g34ResultOf())
+  assert.equal(verdict.id, 'G3.4')
+  assert.equal(verdict.holds, true)
+  assert.equal(verdict.status, 'PASS')
+  assert.match(verdict.detail, /409/)
+  assert.match(verdict.detail, /invalid_state/)
+  assert.ok(verdict.evidence.length > 0)
+})
+
+test('G3.4：版本被替换之后这一版修订被放行了就不成立', () => {
+  const broken = verdictG34(g34ResultOf({ mismatchStatus: 200 } as Partial<G3BlockedChainResult>))
+  assert.equal(broken.holds, false)
+  assert.equal(broken.status, 'NOT RUN')
+  assert.match(broken.detail, /旧任务不能关闭新版本=false/)
+})
+
+test('G3.4：没有跑失效任务就不成立（没观测到就不许说旧任务失效）', () => {
+  const broken = verdictG34(g34ResultOf({ staleTasks: [] } as Partial<G3BlockedChainResult>))
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /失效任务 0 条/)
+})
+
+test('G3.4：没有人工复核探针就不成立（异步成功不等于人工关闭没观测到）', () => {
+  const broken = verdictG34(g34ResultOf({ reviewProbe: null } as Partial<G3BlockedChainResult>))
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /本轮没有跑人工复核探针/)
+})
+
+/**
+ * 「服务端按契约拒了这个请求」只认 **4xx**。
+ *
+ * 5xx 是服务端**自己**崩了：把它算成「被拒」，等于让判定卡在服务端故障时
+ * 反而判成立——那是拿错误冒充拒绝。当前落证里的真实码是 422（4xx），
+ * 所以收紧后本轮已有落证的结论不变。
+ */
+test('5xx 不算「服务端按契约拒掉」：G3.4 / AC-G3-07 / 接受不处理边界', () => {
+  // AC-G3-07：缺人工复核决策时服务端 500（自身错误）⇒ 不算被拒 ⇒ 判定不成立。
+  const ac07 = verdictAC0907({
+    taskAction: 'REVIEW_REQUIRED',
+    targetKind: 'ResearchClaim',
+    completeWithoutReviewStatus: 500,
+    completeWithoutReviewCode: 'internal_error',
+    completeWithReviewStatus: 200,
+    completeWithReviewAccepted: true,
+    modelSideCovered: false,
+  })
+  assert.equal(ac07.holds, false, '5xx 被当成了「按契约拒掉」')
+  // `blocked.ts` 的判定卡**大部分不带 `status`**：`AC-G3-07`（`verdictAC0907`）
+  // 这张卡不写 `status`，所以「不成立」时投影保持该行的原状态，这里只能断言 holds。
+  // （同一文件里**带** `status` 的是 `G3.4`：`holds ? 'PASS' : 'NOT RUN'`。）
+  assert.equal(ac07.status, undefined)
+
+  // 4xx 仍然是「被拒」：本轮落证里的真实码 422 判定成立。
+  const ac07Rejected = verdictAC0907({
+    taskAction: 'REVIEW_REQUIRED',
+    targetKind: 'ResearchClaim',
+    completeWithoutReviewStatus: 422,
+    completeWithoutReviewCode: 'invalid_state',
+    completeWithReviewStatus: 200,
+    completeWithReviewAccepted: true,
+    modelSideCovered: false,
+  })
+  assert.equal(ac07Rejected.holds, true)
+
+  // 接受不处理边界：阻断级 dismiss 返回 500 ⇒ 不算被拒 ⇒ 判定不成立。
+  const boundary = verdictDismissBoundary({
+    blockingDismissStatus: 500,
+    blockingDismissCode: 'internal_error',
+    nonBlockingDismissStatus: 200,
+    nonBlockingDismissFinalStatus: 'DISMISSED',
+  })
+  assert.equal(boundary.holds, false, '5xx 被当成了「按契约拒掉」')
+
+  // G3.4：缺人工复核决策那一步返回 5xx ⇒ 判定不成立。
+  const g34 = verdictG34(
+    g34ResultOf({
+      reviewProbe: {
+        taskId: 'task-7',
+        taskAction: 'REVIEW_REQUIRED',
+        targetKind: 'ResearchClaim',
+        completeWithoutReviewStatus: 500,
+        completeWithoutReviewCode: 'internal_error',
+        completeWithReviewStatus: 200,
+        completeWithReviewAccepted: true,
+        modelSideCovered: false,
+      },
+    } as unknown as Partial<G3BlockedChainResult>),
+  )
+  assert.equal(g34.holds, false, '5xx 被当成了「按契约拒掉」')
+  assert.equal(g34.status, 'NOT RUN')
 })

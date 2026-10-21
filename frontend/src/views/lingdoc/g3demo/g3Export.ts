@@ -19,7 +19,7 @@
  * 本模块是纯函数：页面与 node 脚本跑的是同一份，导出的结构不会走样。
  */
 
-import { G3_MATRIX_ROWS, formatAnchor, type G3MatrixRow } from './g3Matrix'
+import { G3_MATRIX_ROWS, formatAnchor, type G3EvidenceKind, type G3JudgedBy, type G3MatrixRow } from './g3Matrix'
 import { G3_ROW_EVIDENCE_RULES, type G3RowEvidence } from './g3Evidence'
 import type { G3Status } from './g3Status'
 import { G3_GAP_LIST_ISSUE, G3_IMPLEMENTATION_GAPS, downgradeGapPass, type G3ImplementationGap } from './g3Gaps'
@@ -31,7 +31,7 @@ export type G3ConclusionSource = 'this_run' | 'historical_snapshot' | 'not_judge
 /** 结论来源的文案（页面与导出体共用同一套说法）。 */
 export const G3_CONCLUSION_SOURCE_LABELS: Record<G3ConclusionSource, string> = {
   this_run: '本次运行得出',
-  historical_snapshot: '历史快照 · 非本次运行',
+  historical_snapshot: '非本次运行 · 历史快照或既有实跑',
   not_judged: '尚未判定',
 }
 
@@ -64,6 +64,21 @@ export interface G3ExportRow {
   name: string
   criterion: string
   status: G3Status
+  /**
+   * 本轮运行判定出来的状态。
+   *
+   * 本轮没判定这一行时**缺省**：写一个「本轮没跑出来的状态」就是假的。
+   */
+  run_status?: G3Status
+  /**
+   * 矩阵登记的状态（静态声明；带缺口的行已按缺口清单 #246 的规则降级）。
+   *
+   * 它与 `run_status` 是**两套口径**，并列给出，读者才不会把「导出体判成 PASS」
+   * 与「矩阵登记 PASS (follow-up)」当成同一个说法。
+   */
+  matrix_status: G3Status
+  /** 两个状态的关系说明（为什么不一致、哪个是哪个）。 */
+  status_relation: string
   source: G3ConclusionSource
   source_label: string
   /** 本轮是否真的判定过这一行。 */
@@ -84,6 +99,14 @@ export interface G3ExportRow {
    * 读者才不会把不同项目的步骤混成一条链。
    */
   run_id?: string
+  /** 判定这一行的那一次运行的**后端 head**（commitId）。 */
+  head_commit?: string
+  /** 证据位的类别（结构化，不靠中文子串判定）。 */
+  evidence_kind: G3EvidenceKind
+  /** 矩阵登记的证据位（链 + 判定卡 + 落证文件）。 */
+  matrix_evidence: string
+  /** 判定来源：哪条链的哪张判定卡判的。 */
+  judged_by?: G3JudgedBy
 }
 
 /** 导出体里的一条实现缺口。 */
@@ -118,6 +141,14 @@ export interface G3EvidenceExport {
   verdicts: G3ExportVerdict[]
   gaps: G3ExportGap[]
   runs?: G3ExportRun[]
+  /**
+   * 本文件里**核不出来**的 `PASS` 行（既没有 `holds=true` 判定卡，
+   * 判定来源指的那张卡在本文件里也不存在）。
+   *
+   * 这张清单是导出体的诚实性自检：读者能一眼看出哪些 `PASS` 行
+   * 在**这个文件**里没有可核对的判定卡。
+   */
+  pass_rows_without_verdict_card: string[]
   evidence_dir: string
   evidence_file: string
   evidence_file_note: string
@@ -191,11 +222,170 @@ export function exportFilePath(dateStamp: string, runId?: string): string {
   return `${G3_EVIDENCE_DIR}/${exportFileName(dateStamp, runId)}`
 }
 
-/** 结论来源：优先看本轮是否真的判定过这一行。 */
+/**
+ * 判定一行的结论来源。
+ *
+ * 三者互斥：
+ * - `this_run`：本次运行（含本次导出体所含的那几次运行）判定出来的；
+ * - `historical_snapshot`：**不是**本次运行判定的，但有落证——
+ *   矩阵里记着上一次真实运行的判定（切片行）或历史快照（AC 行）；
+ * - `not_judged`：没有落证，状态只是静态声明。
+ *
+ * **判据是结构化的**（`row.evidenceKind`），不靠 `evidence` 里有没有
+ * 「实跑」「历史快照」两个中文字符：否定句（本轮**未**实跑判定成立）
+ * 也会命中那两个字，靠子串判「有落证」会把没跑的行说成跑过。
+ *
+ * 自由文本只作为**兜底**：结构化字段缺失的行（外部构造的老数据）仍能按
+ * 子串识别，但它**不是**判定「有落证」的唯一依据。
+ */
 export function conclusionSourceOf(row: G3MatrixRow, decidedThisRun: boolean): G3ConclusionSource {
   if (decidedThisRun) return 'this_run'
-  if (row.evidence.includes('历史快照')) return 'historical_snapshot'
+  if (row.evidenceKind === 'this_run' || row.evidenceKind === 'historical_snapshot') {
+    return 'historical_snapshot'
+  }
+  if (row.evidenceKind === 'not_judged') return 'not_judged'
+  // 没有结构化字段：回退到自由文本（历史快照 / 实跑字样）。
+  if (row.evidence.includes('历史快照') || row.evidence.includes('实跑')) return 'historical_snapshot'
   return 'not_judged'
+}
+
+/**
+ * 两个状态的关系说明。
+ *
+ * 导出体里「本轮运行判定出来的状态」与「矩阵登记的状态」是**两套口径**：
+ * 前者是这一次运行判出来的，后者是矩阵登记的（带缺口的行已按 #246 降级）。
+ * 两者并列时必须说清关系，否则读者会把「导出体 PASS」与「矩阵 PASS (follow-up)」
+ * 当成两个互相矛盾的结论。
+ *
+ * **说清关系的依据是「矩阵状态实际是怎么来的」，不是「这一行挂没挂缺口」。**
+ * `downgradeGapPass` 只做**一种**降级（`PASS` → `PASS (follow-up)`），
+ * 别的差异（尤其矩阵登记 `WARNING`）**不是**降级结果：
+ * 一律说成「缺口清单 #246 的降级结果」，读者会推出
+ * 「关掉 #246 就能升 PASS」这个**不成立**的推论
+ * （例如 `AC-G3-14` 的 `WARNING` 来自「结论依赖真实模型」，与 #246 无关）。
+ */
+function statusRelation(
+  row: G3MatrixRow,
+  runStatus: G3Status | undefined,
+  matrixStatus: G3Status,
+  source: G3ConclusionSource,
+  hasCards: boolean,
+  verdicts: readonly G3ExportVerdict[] = [],
+): string {
+  if (runStatus === undefined) {
+    if (hasCards) {
+      return `本轮判定**不成立**（判定卡不成立且没有自带状态）⇒ 该行保留矩阵登记的状态 ${matrixStatus}。`
+    }
+    return `本轮未判定这一行（来源：${G3_CONCLUSION_SOURCE_LABELS[source]}）；` +
+      `矩阵登记的状态是 ${matrixStatus}。`
+  }
+  if (runStatus === matrixStatus) {
+    return `本轮运行判定得到 ${runStatus}，与矩阵登记的状态一致。`
+  }
+  return (
+    `本轮运行判定得到 ${runStatus}；矩阵登记的状态是 ${matrixStatus}——` +
+    `${matrixStatusOrigin(row, matrixStatus, verdicts)}。` +
+    whyNotPassThisRound(runStatus, verdicts)
+  )
+}
+
+/**
+ * 矩阵登记的状态**实际**是怎么来的。
+ *
+ * `downgradeGapPass` 只做**一种**降级：`PASS` → `PASS (follow-up)`。所以：
+ *
+ * - 矩阵登记 `PASS (follow-up)` **且该行带缺口** ⇒ 确实是缺口清单 #246 的降级结果；
+ * - 矩阵登记 `PASS (follow-up)` **但该行不带缺口** ⇒ 那是该行自身的
+ *   「部分覆盖 / 跟进未结」登记口径，与 #246 无关；
+ * - 矩阵登记 `WARNING` ⇒ **不是**降级结果。它的口径是「这一行的结论不是
+ *   确定性结论」：要么依赖真实模型（非确定性），要么本轮覆盖受限
+ *   （宿主环境限制或产品缺陷，见该行的覆盖受限缺口）。这两种都与
+ *   「#246 是否关闭」无关。
+ */
+function matrixStatusOrigin(
+  row: G3MatrixRow,
+  matrixStatus: G3Status,
+  verdicts: readonly G3ExportVerdict[],
+): string {
+  const hasGap = gapIdsOf(row.id).length > 0 || limitingGapIdsOf(row.id).length > 0
+  if (matrixStatus === 'PASS (follow-up)') {
+    if (hasGap) {
+      return '矩阵状态是**缺口清单 #246 的降级结果**（#246 未关闭前，带缺口的行不判 `PASS`）'
+    }
+    return '矩阵登记的 `PASS (follow-up)` 是该行自身的**部分覆盖 / 跟进未结**登记口径；' +
+      '这一行**不挂缺口**，所以与缺口清单 #246 无关。'
+  }
+  if (matrixStatus === 'WARNING') {
+    if (verdicts.some((verdict) => verdict.model_dependent)) {
+      return '矩阵状态是**结论依赖真实模型（非确定性）**的口径，**不是**缺口降级结果' +
+        '（依赖真实模型的结论按仓库口径一律不写 `PASS`，与 #246 是否关闭无关）'
+    }
+    const limiting = limitingGapIdsOf(row.id)
+    if (limiting.length > 0) {
+      return `矩阵状态是**本轮覆盖受限**的口径（${limiting.join('、')}），**不是**缺口降级结果` +
+        '（覆盖受限的那一段本轮没有落点，与 #246 是否关闭无关）'
+    }
+    return '矩阵状态是**该行登记的覆盖受限口径**，**不是**缺口降级结果'
+  }
+  return '矩阵登记的状态与本轮判定**不是同一口径**' +
+    '（矩阵登记的是本票未实跑时的静态状态 / 历史快照口径）——两者不要混读'
+}
+
+/**
+ * 本轮这一行为什么没判成 `PASS`。
+ *
+ * 只在两个状态不一致时补这一句：读者看到「矩阵记 `WARNING`、本轮记 `NOT RUN`」
+ * 时，最想知道的是「本轮到底卡在哪」——不写这一句，差异就只剩两个没有解释的状态。
+ */
+function whyNotPassThisRound(
+  runStatus: G3Status,
+  verdicts: readonly G3ExportVerdict[],
+): string {
+  if (runStatus === 'PASS') return ''
+  if (verdicts.some((verdict) => verdict.model_dependent)) {
+    return '本轮这一行没判成 `PASS`：结论依赖真实模型（非确定性），按仓库口径不写 `PASS`。'
+  }
+  const notHeld = verdicts.filter((verdict) => !verdict.holds)
+  if (notHeld.length > 0) {
+    return `本轮这一行没判成：判定卡「${notHeld.map((verdict) => verdict.id).join('、')}」不成立。`
+  }
+  if (verdicts.length === 0) {
+    return '本轮这一行没有判定卡。'
+  }
+  return `本轮这一行没判成：判定卡给出的状态是 ${runStatus}。`
+}
+
+/**
+ * 本轮运行**判定出来**的状态。
+ *
+ * 「判定出来」= 有成立的判定卡，或者有判定卡自带状态（部分成立）。
+ * 判定卡不成立且没有自带状态 ⇒ 这一行本轮**没有**判定出状态，
+ * 只能保留矩阵登记的状态——这时写一个 run_status 就是假的。
+ */
+function runStatusOf(
+  row: G3MatrixRow,
+  verdicts: readonly G3ExportVerdict[],
+): G3Status | undefined {
+  if (!verdicts.length) return undefined
+  if (verdicts.some((verdict) => verdict.holds)) return resolveRowStatus(row, verdicts)
+  const partial = verdicts.find((verdict) => verdict.status !== undefined)
+  if (partial?.status) return downgradeGapPass(row.id, partial.status)
+  return undefined
+}
+
+/**
+ * 本文件里**核不出来**的 `PASS` 行。
+ *
+ * 判据：这一行既没有 `holds=true` 的判定卡，判定来源（结构化字段）指的那张卡
+ * 在本文件里也不存在——读者在这个文件里拿不到任何可核对的判定卡。
+ */
+export function passRowsWithoutVerdictCard(rows: readonly G3ExportRow[]): G3ExportRow[] {
+  return rows.filter((row) => {
+    if (row.status !== 'PASS') return false
+    const card = row.judged_by?.card
+    const cardInFile = card !== undefined && row.verdicts.some((verdict) => verdict.id === card)
+    return !row.verdicts.some((verdict) => verdict.holds) && !cardInFile
+  })
 }
 
 /** 导出体里的缺口清单。 */
@@ -361,11 +551,26 @@ export function buildRunEvidenceExport(input: G3RunExportInput): G3EvidenceExpor
     const evidence = evidenceById.get(row.id)
     const source = rowSource(row, rowVerdicts)
     const status = resolveRowStatus(row, rowVerdicts)
+    // 矩阵登记的那一份（静态声明）：导出体不能拿投影结果冒充它。
+    const base = G3_MATRIX_ROWS.find((item) => item.id === row.id) ?? row
+    const matrixStatus = base.status
+    // 本轮判定出来的状态：这一行本轮没判定出状态就**缺省**（不写假状态）。
+    const runStatus = runStatusOf(row, rowVerdicts)
     return {
       id: row.id,
       name: row.name,
       criterion: row.criterion,
       status,
+      run_status: runStatus,
+      matrix_status: matrixStatus,
+      status_relation: statusRelation(
+        base,
+        runStatus,
+        matrixStatus,
+        source,
+        rowVerdicts.length > 0,
+        rowVerdicts,
+      ),
       source,
       source_label: G3_CONCLUSION_SOURCE_LABELS[source],
       decided: source === 'this_run',
@@ -375,6 +580,11 @@ export function buildRunEvidenceExport(input: G3RunExportInput): G3EvidenceExpor
       limiting_gap_ids: limitingGapIdsOf(row.id),
       verdicts: rowVerdicts,
       stale: input.stale,
+      run_id: rowVerdicts.length > 0 ? input.runId : undefined,
+      head_commit: rowVerdicts.length > 0 ? input.head?.commitId : undefined,
+      evidence_kind: base.evidenceKind,
+      matrix_evidence: base.evidence,
+      judged_by: base.judgedBy,
     }
   })
 
@@ -431,6 +641,7 @@ export function buildRunEvidenceExport(input: G3RunExportInput): G3EvidenceExpor
     ac_rows: acRows,
     verdicts,
     gaps: exportGaps(),
+    pass_rows_without_verdict_card: passRowsWithoutVerdictCard(acRows).map((row) => row.id),
     evidence_dir: G3_EVIDENCE_DIR,
     evidence_file: fileName,
     evidence_file_note:
@@ -530,11 +741,29 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
           .filter(Boolean)
           .join('｜')
       : (row.note ?? '')
+    // 矩阵登记的那一份（静态声明）与本轮判定出来的状态**并列**给出。
+    const base = G3_MATRIX_ROWS.find((item) => item.id === row.id) ?? row
+    const matrixStatus = base.status
+    const runStatus = runStatusOf(row, rowVerdicts)
+    // 判定这一行的那一次运行的后端 head：按判定卡自己的运行标识回查。
+    const headCommit = rowVerdicts
+      .map((verdict) => input.files.find((file) => file.runId === verdict.run_id)?.head?.commitId)
+      .find((commitId): commitId is string => Boolean(commitId))
     return {
       id: row.id,
       name: row.name,
       criterion: row.criterion,
       status,
+      run_status: runStatus,
+      matrix_status: matrixStatus,
+      status_relation: statusRelation(
+        base,
+        runStatus,
+        matrixStatus,
+        source,
+        rowVerdicts.length > 0,
+        rowVerdicts,
+      ),
       source,
       source_label: G3_CONCLUSION_SOURCE_LABELS[source],
       decided: source === 'this_run',
@@ -546,6 +775,11 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
       limiting_gap_ids: limitingGapIdsOf(row.id),
       verdicts: rowVerdicts,
       stale,
+      run_id: rowVerdicts[0]?.run_id,
+      head_commit: headCommit,
+      evidence_kind: base.evidenceKind,
+      matrix_evidence: base.evidence,
+      judged_by: base.judgedBy,
     }
   })
 
@@ -601,6 +835,7 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
     verdicts,
     gaps: exportGaps(),
     runs,
+    pass_rows_without_verdict_card: passRowsWithoutVerdictCard(acRows).map((row) => row.id),
     evidence_dir: G3_EVIDENCE_DIR,
     evidence_file: exportFileName(dateStamp),
     evidence_file_note:
@@ -686,11 +921,29 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
     }
     const partial = status === 'PASS (follow-up)'
     const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    // 矩阵登记的那一份（静态声明）与本轮判定出来的状态**并列**给出：
+    // 两者口径不同（例如导出体判成 PASS、矩阵登记 PASS (follow-up)），
+    // 并列 + 说明关系，读者才不会把它们当成互相矛盾的两个结论。
+    const matrixStatus = base.status
+    const runStatus = decided ? runStatusOf(row, rowVerdicts) : undefined
+    // 判定这一行的那一次运行的后端 head。
+    const headCommit = evidence?.head
+      ?? input.runs.find((run) => run.runId === evidence?.runId)?.head?.commitId
     return {
       id: row.id,
       name: row.name,
       criterion: row.criterion,
       status,
+      run_status: runStatus,
+      matrix_status: matrixStatus,
+      status_relation: statusRelation(
+        base,
+        runStatus,
+        matrixStatus,
+        source,
+        rowVerdicts.length > 0,
+        rowVerdicts,
+      ),
       source,
       source_label: G3_CONCLUSION_SOURCE_LABELS[source],
       decided,
@@ -703,6 +956,10 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
       verdicts: rowVerdicts,
       stale,
       run_id: evidence?.runId,
+      head_commit: headCommit,
+      evidence_kind: base.evidenceKind,
+      matrix_evidence: base.evidence,
+      judged_by: base.judgedBy,
     }
   })
 
@@ -762,6 +1019,7 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
     verdicts,
     gaps: exportGaps(),
     runs,
+    pass_rows_without_verdict_card: passRowsWithoutVerdictCard(acRows).map((row) => row.id),
     evidence_dir: G3_EVIDENCE_DIR,
     evidence_file: exportFileName(dateStamp),
     evidence_file_note:
@@ -772,18 +1030,33 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
 /**
  * 找出导出体里「不诚实」的行：不该写 `PASS` 却写了 `PASS`。
  *
- * 规则：来源不是本次运行、涉及实现缺口、只有依赖真实模型的判定、
- * **或判定卡本身不成立**（`holds=false` 却仍被写成 `PASS`）—— 四者任一，
- * 都不许是 `PASS`。
+ * 规则：**没有落证的** `PASS` 一律不算数——来源是「尚未判定」、涉及实现缺口、
+ * 只有依赖真实模型的判定、**或判定卡本身不成立**（`holds=false` 却仍被写成
+ * `PASS`），四者任一，都不许是 `PASS`。
+ *
+ * 「来源不是本次运行」**不**单独构成假 PASS：矩阵的静态状态记的是「该行最后
+ * 一次被真实判定得到的结论」，导出体只含部分运行时，那几行仍然带着上一次实跑
+ * 得出的结论（来源标成「非本次运行」）。
+ *
+ * **更紧的兜底（本轮补上）**：一条 `PASS` 行，如果在本文件里
+ * - 既**没有** `holds=true` 的判定卡，
+ * - **又**核不出判定来源（结构化字段缺失，或它指的那张判定卡 id 在本文件里
+ *   根本不存在），
+ * 那么读者在这个文件里拿不到任何可核对的判定卡——它必须被标出来。
+ * 导出体顶层的 `pass_rows_without_verdict_card` 就是这张清单。
  */
 export function falsePassRows(rows: readonly G3ExportRow[]): G3ExportRow[] {
   return rows.filter((row) => {
     if (row.status !== 'PASS') return false
-    if (row.source !== 'this_run') return true
+    if (row.source === 'not_judged') return true
     if (row.gap_ids.length > 0) return true
     if (row.verdicts.length > 0 && row.verdicts.every((verdict) => verdict.model_dependent)) return true
     // 判定卡不成立就不许升格：这一步是「假 PASS」的最后一道兜底。
     if (row.verdicts.some((verdict) => !verdict.holds)) return true
+    // 本文件里没有可核对的判定卡 ⇒ 标出来。
+    const card = row.judged_by?.card
+    const cardInFile = card !== undefined && row.verdicts.some((verdict) => verdict.id === card)
+    if (!row.verdicts.some((verdict) => verdict.holds) && !cardInFile) return true
     return false
   })
 }

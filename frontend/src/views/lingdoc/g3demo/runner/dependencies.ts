@@ -68,6 +68,13 @@ export const G3_DEP_STEPS = {
   decideReject: '裁决依赖边-拒绝',
   /** 读回依赖边列表。 */
   readEdges: '读依赖边列表',
+  /**
+   * **全部裁决之后**再读一次依赖边。
+   *
+   * 候选批次的「确认 / 修改」会新建边，所以判「每条影响可追溯到来源边」时
+   * 要用裁决之后的这一份——它与 `readEdges`（裁决之前）是两次不同的读取。
+   */
+  readEdgesAfterDecisions: '读依赖边列表（候选决策后）',
   /** 重投被拒绝的候选边。 */
   reproposeRejected: '重投被拒绝的候选边',
   /**
@@ -925,12 +932,26 @@ export interface G3DependencyChainResult {
   draft: G3ChangeSetFact
   /** 读到的依赖边。 */
   edges: G3DependencyEdgeFact[]
+  /**
+   * **全部裁决之后**再读一次的依赖边快照。
+   *
+   * `edges` 是候选裁决**之前**读的那一份；候选批次的「确认 / 修改」会**新建**边，
+   * 判「每条影响可追溯到来源边」时必须用裁决之后的这一份。
+   */
+  finalEdges: G3DependencyEdgeFact[]
   /** 影响评估。 */
   assessment: G3ImpactAssessmentFact
   /** 三组呈现。 */
   grouping: G3ImpactGrouping
   /** 应用后的影响任务。 */
   tasks: G3ImpactTaskDetailFact[]
+  /**
+   * 处置之后**再读一次**的影响任务。
+   *
+   * 影响中心要展示「责任人」与「下一步动作」，指派信息只有处置之后才在任务上
+   * （`assignee_id` / `responsibility_domain`），所以判定读的是这一份。
+   */
+  finalTasks: G3ImpactTaskDetailFact[]
   /** 重复应用之后的影响任务（用于验证不产生第二条任务）。 */
   tasksAfterReplay: G3ImpactTaskDetailFact[]
   /** 未指派就完成时的服务端回应。 */
@@ -981,9 +1002,13 @@ export interface G3DependencySnapshot {
   changeSet: G3ChangeSetFact
   draft: G3ChangeSetFact
   edges: G3DependencyEdgeFact[]
+  /** 全部裁决之后再读一次的依赖边快照。 */
+  finalEdges: G3DependencyEdgeFact[]
   assessment: G3ImpactAssessmentFact
   grouping: G3ImpactGrouping
   tasks: G3ImpactTaskDetailFact[]
+  /** 处置之后再读一次的影响任务（带指派人与责任域）。 */
+  finalTasks: G3ImpactTaskDetailFact[]
   tasksAfterReplay: G3ImpactTaskDetailFact[]
   unassignedCompletion: { status: number; code: string }
   transitions: G3TaskTransition[]
@@ -1001,9 +1026,11 @@ export function toDependencySnapshot(result: G3DependencyChainResult): G3Depende
     changeSet: result.changeSet,
     draft: result.draft,
     edges: result.edges,
+    finalEdges: result.finalEdges,
     assessment: result.assessment,
     grouping: result.grouping,
     tasks: result.tasks,
+    finalTasks: result.finalTasks,
     tasksAfterReplay: result.tasksAfterReplay,
     unassignedCompletion: result.unassignedCompletion,
     transitions: result.transitions,
@@ -1333,9 +1360,15 @@ export async function runDependencyChain(
     }),
   )
   // 决策之后再读一次依赖边：确认 + 修改各产生一条边，**拒绝不产生边**。
-  const edgesAfterCandidateDecisions = (
-    await listDependencyEdges(ctx, client, token, options.projectId, '读依赖边列表（候选决策后）')
-  ).length
+  // 这一份是**全部裁决之后**的依赖图快照，判「影响可追溯到来源边」时用它。
+  const edgesAfterCandidateDecisionsList = await listDependencyEdges(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    G3_DEP_STEPS.readEdgesAfterDecisions,
+  )
+  const edgesAfterCandidateDecisions = edgesAfterCandidateDecisionsList.length
 
   // 同一版本里重投被拒的候选：服务端记为抑制，不新建候选。
   const candidateReproposal = await submitDependencyCandidateBatch(ctx, client, token, options.projectId, {
@@ -1611,9 +1644,11 @@ export async function runDependencyChain(
     changeSet,
     draft,
     edges,
+    finalEdges: edgesAfterCandidateDecisionsList,
     assessment,
     grouping,
     tasks,
+    finalTasks,
     tasksAfterReplay,
     unassignedCompletion,
     transitions,
@@ -1638,6 +1673,8 @@ export async function runDependencyChain(
     verdictDraftCreated(result),
     verdictAcG315(result),
     verdictTaskClosure(result),
+    verdictG32(result),
+    verdictG37(result),
   ]
   // 判定挂到运行上下文上：矩阵规则表按判定 id 取结论，判定不成立就不许写 PASS。
   ctx.verdicts = [...(ctx.verdicts ?? []), ...result.verdicts]
@@ -1879,3 +1916,203 @@ export function verdictTaskClosure(result: G3DependencyChainResult): G3Verdict {
 }
 
 export type { G3ImpactAssessmentFact, G3ImpactTaskFact, G3Verdict }
+
+/**
+ * G3.2 判定：每条影响可追溯到来源边；重复边、建议边和人工确认边有明确语义。
+ *
+ * 判据是**四段合取**，缺一段就不成立（本判定不替服务端补语义，只看读回来的事实）：
+ *
+ * 1. **可追溯**：影响评估里每条影响的每个 cause 都引用一条**读回来的**来源——
+ *    要么是依赖边列表里的一条边（`edge_id` 对得上），要么是变更集**直接列入**
+ *    那个对象时服务端给的 `explicit:<change_set_id>`；两者都带来源对象与原因；
+ * 2. **重复边**：两条来源边指向同一目标、动作相同 ⇒ 服务端合并成**一条**逻辑任务，
+ *    `causes` 保留两条来源；重复应用同一变更集不产生第二条任务；
+ * 3. **建议边**：`status=suggested` 的边只进「可能受影响」，不为它的目标产生任务；
+ * 4. **人工确认边**：人工「确认 / 修改」把建议边落成 `confirmed`（修改还留旧关系），
+ *    人工「拒绝」的边落 `rejected`，同一版本里再投也不新建边。
+ */
+export function verdictG32(result: G3DependencyChainResult): G3Verdict {
+  // 来源边的全集：**全部裁决之后**读回来的依赖边。
+  const edgeIds = new Set(result.finalEdges.map((edge) => edge.id))
+  // 变更集**直接列入**的受影响对象，服务端给的来源边 id 是 `explicit:<change_set_id>`
+  // （`internal/lingdoc/workspacecore/impact_service.go` 的 `explicit:` 分支）：
+  // 那不是依赖图里的一条边，而是「这次变更直接点了这个对象」这一条来源。
+  const explicitEdgeId = `explicit:${result.changeSet?.id ?? ''}`
+  const untraceable = result.assessment.impacts.flatMap((impact) =>
+    impact.causes
+      .filter((cause) => {
+        const knownEdge = edgeIds.has(cause.edgeId) || cause.edgeId === explicitEdgeId
+        const hasSource = Boolean(cause.source.kind) && Boolean(cause.source.id) && Boolean(cause.source.version)
+        return !knownEdge || !hasSource || !cause.reason
+      })
+      .map(
+        (cause) =>
+          `${impact.target.kind}/${impact.target.id} ← edge=${cause.edgeId || '（无边 id）'}` +
+          `${cause.source.id ? '' : ' · 来源对象缺失'}${cause.reason ? '' : ' · 原因缺失'}`,
+      ),
+  )
+  const traceable = result.assessment.impacts.length > 0 && untraceable.length === 0
+
+  // 重复边：同一目标的多条来源边 ⇒ 一条逻辑任务，causes 保留多条来源。
+  const mergedImpacts = result.assessment.impacts.filter((impact) => impact.causes.length > 1)
+  const mergedTasks = result.tasks.filter((task) => task.causes.length > 1)
+  const mergedTask = mergedTasks[0]
+  // 证据要指向**真的产生了那条任务**的那条影响：同一张图里可能还有别的多原因
+  // 影响（例如 NO_ACTION 的候选边合流），它们不产生任务，不能拿来当证据。
+  const mergedImpact = mergedImpacts.find(
+    (impact) =>
+      impact.target.kind === mergedTask?.target.kind &&
+      impact.target.id === mergedTask?.target.id,
+  )
+  const duplicateMerged =
+    mergedImpacts.length > 0 &&
+    mergedTasks.length === 1 &&
+    mergedImpact !== undefined &&
+    mergedImpact.causes.length === mergedTask.causes.length &&
+    result.tasksAfterReplay.length === result.tasks.length
+
+  // 建议边：只进「可能受影响」，不为它的目标产生任务。
+  const suggestedTarget = result.suggestedEdge.target
+  const suggestedPossible = result.grouping.possible.some(
+    (entry) => entry.target.kind === suggestedTarget.kind && entry.target.id === suggestedTarget.id,
+  )
+  const suggestedTasks = result.tasks.filter(
+    (task) => task.target.kind === suggestedTarget.kind && task.target.id === suggestedTarget.id,
+  )
+  const suggestedSemantics =
+    result.suggestedEdge.status === 'suggested' && suggestedPossible && suggestedTasks.length === 0
+
+  // 人工确认边：确认 / 修改 ⇒ confirmed；拒绝 ⇒ rejected，且同一版本再投不新建边。
+  const confirmedByHuman =
+    result.decisions.confirm.status === 'confirmed' &&
+    result.decisions.modify.status === 'confirmed' &&
+    result.decisions.modify.supersededRelation !== '' &&
+    result.decisions.reject.status === 'rejected' &&
+    result.decisions.reproposed.id === result.decisions.reject.id &&
+    result.decisions.reproposed.status === 'rejected'
+
+  const holds = traceable && duplicateMerged && suggestedSemantics && confirmedByHuman
+  return {
+    id: 'G3.2',
+    title: '依赖图切片：影响可追溯到来源边，重复 / 建议 / 人工确认三类边语义明确',
+    holds,
+    // 判定成立时状态由规则表决定（这一行没有 #246 缺口，可以判 PASS）；
+    // 不成立时如实记「没跑成」，不猜。
+    status: holds ? 'PASS' : 'NOT RUN',
+    detail: holds
+      ? `影响评估的 ${result.assessment.impacts.length} 条影响全部可追溯到来源边` +
+        `（裁决之后的依赖边共 ${result.finalEdges.length} 条，未能追溯 ${untraceable.length} 条；` +
+        `变更集直接列入的对象按服务端给的 \`explicit:\` 来源边记，同样可追溯）；` +
+        `重复边合并：${mergedImpact?.target.kind}/${mergedImpact?.target.id} 的 ` +
+        `${mergedImpact?.causes.length ?? 0} 条来源边合并成 ${mergedTasks.length} 条逻辑任务` +
+        `（任务 ${mergedTask?.id ?? '（无）'} 保留 ${mergedTask?.causes.length ?? 0} 条来源；` +
+        `重复应用后任务数仍为 ${result.tasksAfterReplay.length}）；` +
+        `建议边：status=${result.suggestedEdge.status}，只进「可能受影响」，目标任务数=${suggestedTasks.length}；` +
+        `人工确认边：确认 → ${result.decisions.confirm.status}、修改 → ${result.decisions.modify.status}` +
+        `（旧关系 ${result.decisions.modify.supersededRelation || '（无）'}）、` +
+        `拒绝 → ${result.decisions.reject.status}（同版本再投仍是同一条边 ${result.decisions.reproposed.id}）。`
+      : `不成立：可追溯=${traceable}（未能追溯 ${untraceable.length} 条：${untraceable.join('、') || '（无）'}），` +
+        `重复边合并=${duplicateMerged}，建议边语义=${suggestedSemantics}，人工确认边语义=${confirmedByHuman}`,
+    evidence: [
+      `GET /api/v1/lingdoc/projects/{projectId}/dependencies → HTTP 200 · 裁决之后的依赖边 ${result.finalEdges.length} 条 · ` +
+        `确认 ${result.finalEdges.filter((edge) => edge.status === 'confirmed').length} 条 · ` +
+        `建议 ${result.finalEdges.filter((edge) => edge.status === 'suggested').length} 条 · ` +
+        `拒绝 ${result.finalEdges.filter((edge) => edge.status === 'rejected').length} 条`,
+      `GET /api/v1/lingdoc/projects/{projectId}/change-sets/${result.changeSet?.id ?? ''}/impact-assessment → HTTP 200 · ` +
+        `影响 ${result.assessment.impacts.length} 条 · 未能追溯到来源边的 cause ${untraceable.length} 条`,
+      `GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 任务 ${result.tasks.length} 条 · ` +
+        `其中多来源（合并）任务 ${mergedTasks.length} 条`,
+      `POST /api/v1/lingdoc/projects/{projectId}/change-sets/${result.changeSet?.id ?? ''}/apply（重复）→ HTTP 200 · ` +
+        `重复应用后任务数=${result.tasksAfterReplay.length}（不产生第二条任务）`,
+      `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decisions（确认 / 修改 / 拒绝）→ HTTP 200 · ` +
+        `status=${result.decisions.confirm.status} / ${result.decisions.modify.status} / ${result.decisions.reject.status} · ` +
+        `修改后旧关系=${result.decisions.modify.supersededRelation || '（无）'}`,
+    ],
+  }
+}
+
+/**
+ * G3.7 判定（影响中心）：用户能看见影响理由、责任人和下一步动作。
+ *
+ * 这一行判的是**影响中心要渲染的那三组数据**是否真的从服务端读回来了：
+ *
+ * - **「本次必须处理的对象」集合**（`assessment.objects`）：逐对象核对
+ *   `kind` / `id` / `version` / `state` / `confirmed` / `context_revision`；
+ * - **来源对象与影响理由**（`impacts[].causes[]`）：每条影响都带来源对象与原因；
+ * - **确定影响 / 可能影响两组**（`impacts[].certainty`，服务端给的确定性）；
+ * - **责任人与下一步动作**：任务带责任域（`responsibility_domain`）与指派人，
+ *   影响带动作（`impacts[].action`）。
+ *
+ * **页面渲染那半段**（验收台页面自己读 `assessment.objects` 渲染）由 #257 在
+ * head `a87459f` 的落证承担：headless 实跑驱动不到 Vue 页面，本轮只核对数据面。
+ * 因此这一行按缺口清单 #246 的规则记 `PASS (follow-up)`，不判 `PASS`。
+ */
+export function verdictG37(result: G3DependencyChainResult): G3Verdict {
+  const objects = result.assessment.objects
+  const objectFieldsOk = objects.every(
+    (object) =>
+      Boolean(object.kind) &&
+      Boolean(object.id) &&
+      Boolean(object.version) &&
+      Boolean(object.state) &&
+      typeof object.confirmed === 'boolean' &&
+      object.contextRevision > 0,
+  )
+  const requiredObjectsRead = objects.length > 0 && objectFieldsOk
+
+  // 来源对象与影响理由：每条影响都带来源对象与原因。
+  const missingSource = result.assessment.impacts.flatMap((impact) =>
+    impact.causes
+      .filter((cause) => !cause.source.kind || !cause.source.id || !cause.source.version || !cause.reason)
+      .map((cause) => `${impact.target.kind}/${impact.target.id} ← ${cause.source.id || '（无来源）'}`),
+  )
+  const reasonsTraceable = result.assessment.impacts.length > 0 && missingSource.length === 0
+
+  // 确定 / 可能两组：不重不漏地覆盖全部影响（分组只用服务端给的 certainty）。
+  const definiteCount = result.grouping.definite.length
+  const possibleCount = result.grouping.possible.length
+  const grouped = definiteCount + possibleCount === result.assessment.impacts.length
+
+  // 责任人与下一步动作。
+  const tasksWithOwner = result.finalTasks.filter(
+    (task) => Boolean(task.responsibilityDomain) && Boolean(task.assigneeId),
+  )
+  const actionsPresent = result.assessment.impacts.every((impact) => Boolean(impact.action))
+  const ownerAndAction = tasksWithOwner.length > 0 && actionsPresent
+
+  const holds = requiredObjectsRead && reasonsTraceable && grouped && ownerAndAction
+  return {
+    id: 'G3.7',
+    title: '影响中心切片：影响理由、责任人与下一步动作都读得回来',
+    holds,
+    // 这一行是 #246 的缺口行（G3-GAP-06 / G3-GAP-07）：缺口清单关闭前不判 PASS。
+    status: holds ? 'PASS (follow-up)' : 'NOT RUN',
+    detail: holds
+      ? `「本次必须处理的对象」集合 ${objects.length} 个，逐字段核对 ` +
+        `（state / confirmed / context_revision 齐全）；` +
+        `影响 ${result.assessment.impacts.length} 条都带来源对象与原因（缺来源或原因 ${missingSource.length} 条）；` +
+        `确定影响 ${definiteCount} 条 + 可能影响 ${possibleCount} 条 = 全部影响（分组取服务端 certainty）；` +
+        `任务 ${result.finalTasks.length} 条，其中 ${tasksWithOwner.length} 条带责任域与指派人；` +
+        `每条影响都带下一步动作。**页面渲染那半段**沿用 #257 在 head \`a87459f\` 的落证` +
+        `（headless 实跑驱动不到验收台页面），本轮只核对数据面——` +
+        `按缺口清单 #246 的规则记 PASS (follow-up)。`
+      : `不成立：必需对象集合=${requiredObjectsRead}（${objects.length} 个），` +
+        `来源与理由可追溯=${reasonsTraceable}（缺 ${missingSource.length} 条：${missingSource.join('、') || '（无）'}），` +
+        `分组完整=${grouped}（${definiteCount} + ${possibleCount} vs ${result.assessment.impacts.length}），` +
+        `责任人与动作=${ownerAndAction}（带责任人与指派人的任务 ${tasksWithOwner.length} 条）`,
+    evidence: [
+      `GET /api/v1/lingdoc/projects/{projectId}/change-sets/${result.changeSet?.id ?? ''}/impact-assessment → HTTP 200 · ` +
+        `必需对象集合 ${objects.length} 个 · 逐字段核对 state/confirmed/context_revision 齐全=${objectFieldsOk}`,
+      `GET /api/v1/lingdoc/projects/{projectId}/change-sets/${result.changeSet?.id ?? ''}/impact-assessment → HTTP 200 · ` +
+        `影响 ${result.assessment.impacts.length} 条 · 来源对象与原因齐全=${reasonsTraceable} · ` +
+        `动作齐全=${actionsPresent}`,
+      `GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 任务 ${result.finalTasks.length} 条 · ` +
+        `带责任域与指派人的 ${tasksWithOwner.length} 条 · ` +
+        `责任域取值 ${[...new Set(result.finalTasks.map((task) => task.responsibilityDomain).filter(Boolean))].join('、') || '（无）'}`,
+      `GET /api/v1/lingdoc/projects/{projectId}/change-sets/${result.changeSet?.id ?? ''}/impact-assessment → HTTP 200 · ` +
+        `确定影响 ${definiteCount} 条 · 可能影响 ${possibleCount} 条（分组取服务端 certainty，页面不自行重算）`,
+      '页面渲染（验收台读 assessment.objects 渲染「本次必须处理的对象」）沿用 #257 在 head `a87459f` 的落证；' +
+        '本轮 headless 实跑只核对数据面，页面渲染未在当前 head 重跑。',
+    ],
+  }
+}

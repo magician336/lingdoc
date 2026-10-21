@@ -74,8 +74,18 @@ test('跑通前置链不改变任何一行的状态', () => {
 test('跑通前置链不会把任何一行判成 PASS', () => {
   const ctx = prerequisiteRun()
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
-  assert.equal(rows.filter((row) => row.status === 'PASS').length, 0)
-  assert.equal(rows.filter((row) => row.status === 'TODO').length, 6, '切片六行应保持 TODO（G3.7 记 NOT RUN）')
+  // 前置链不构成任何判据的证据：每一行的状态都**原样保留**。
+  // （切片行的静态状态记的是「当前 head 实跑得到（或最后已知）的值」，
+  // 投影只在本轮判定成立时升格，前置链跑不到判定卡，所以状态不动。）
+  const before = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row.status]))
+  for (const row of rows) {
+    assert.equal(row.status, before.get(row.id), `${row.id} 的状态被前置链改动了`)
+  }
+  assert.equal(
+    rows.filter((row) => row.status === 'TODO').length,
+    0,
+    '切片七行都已有实跑判定，不该再有 TODO',
+  )
 })
 
 test('未被本轮覆盖的行明确标出未覆盖', () => {
@@ -147,7 +157,8 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
       'AC-G3-07', 'AC-G3-08', 'AC-G3-09',
       'AC-G3-11', 'AC-G3-12',
       'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16',
-      'G3.1',     'G3.6'
+      'G3.1',     'G3.2',     'G3.3',     'G3.4',
+      'G3.5',     'G3.6',     'G3.7',
     ],
   )
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
@@ -226,6 +237,39 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.1'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'WARNING')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].followUpIssue, 246)
+  // 七条切片行的规则表条目都挂判定卡：没有判定卡就只剩「步骤跑到了」，
+  // 而「步骤跑到了」不等于「判据成立」——这是防假 PASS 的结构性守护。
+  for (const id of ['G3.1', 'G3.2', 'G3.3', 'G3.4', 'G3.5', 'G3.6', 'G3.7']) {
+    const rule = G3_ROW_EVIDENCE_RULES[id]
+    assert.ok(rule, `${id} 没有规则表条目`)
+    assert.equal(rule.verdictId, id, `${id} 的规则表必须挂自己的判定卡`)
+    assert.ok(rule.requires.length > 0, `${id} 没有声明必需步骤`)
+  }
+  // G3.2 / G3.3 / G3.4：依赖图、影响解析、任务协调三段本轮实跑判定成立，
+  // 这三行没有 #246 缺口，可以判 PASS。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.2'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.3'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.4'].status, 'PASS')
+  // G3.5：路线图切片只成立一部分（「必需项已声明但缺失」那一种前置本轮没有落点），
+  // 按仓库口径记覆盖受限的 WARNING，不写 PASS。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.5'].status, 'WARNING')
+  // G3.7：影响中心是 #246 的缺口行（G3-GAP-06 / G3-GAP-07），
+  // 缺口清单关闭前不判 PASS，记 PASS (follow-up) 并保留跟进 Issue。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.7'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.7'].followUpIssue, 246)
+  // 七条切片行的**规则表状态必须与矩阵行状态一致**：
+  // 两处是手工同步的，漂移会让页面同时挂着两个说法。
+  // （切片行与 AC 行的差别只在于「静态状态记的是最后一次实跑判定的结论」，
+  //  但两处的**状态取值**仍必须一样。）
+  for (const row of G3_MATRIX_ROWS.filter((item) => item.group === 'slice')) {
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    assert.ok(rule, `${row.id} 没有规则表条目`)
+    assert.equal(
+      rule.status,
+      row.status,
+      `${row.id} 的规则表状态与矩阵行状态不一致（两处是手工同步的）`,
+    )
+  }
   // 本票新增的三条领域判据：AC-G3-12 只覆盖了实跑得出的那半段（#246 G3-GAP-11）；
   // AC-G3-09 与 AC-G3-07 同样只覆盖实跑得出的那半段。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].status, 'PASS (follow-up)')
@@ -317,7 +361,9 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
   // AC-G3-03 是**例外**：它在本轮已实跑判定成立（注入命中 + 回滚读回完整），
   // 但行状态按缺口清单 #246 的规则保留 follow-up（#246 未关闭前不判 PASS）。
   assert.equal(byId.get('AC-G3-03')?.status, 'PASS (follow-up)')
-  assert.equal(byId.get('G3.1')?.status, 'TODO')
+  // G3.1 的必需步骤挂在**稳定化链**上：本轮只跑了变更集链与依赖链，
+  // 所以它未被本轮覆盖，状态原样保留（静态状态记的是上一次实跑判定的结论）。
+  assert.equal(byId.get('G3.1')?.status, baseRows.get('G3.1')?.status)
   assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
 })
 
@@ -427,7 +473,52 @@ test('稳定化链跑完后，G3.1 与 G3.6 由本轮证据驱动为 PASS', () =
   assert.equal(byId.get('G3.6')?.followUpIssue, 246)
 })
 
-test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
+test('判定卡不成立但自带状态时（生产同形），该行取判定卡自带的状态', () => {
+  // 生产同形的夹具：这张卡**确实自带 `status`**，而且是**真的**自带——
+  // `runner/dependencies.ts` 的 `G3.2`（判定卡 `verdictG32`）写的是
+  // `status: holds ? 'PASS' : 'NOT RUN'`（同文件 `AC-G3-15` 的 `verdictAcG315`
+  // 同一形状，`G3.7` 的 `verdictG37` 写的是 `holds ? 'PASS (follow-up)' : 'NOT RUN'`）。
+  //
+  // **不要**拿 `G3.1` / `G3.6` 来做这个夹具：它们出自
+  // `runner/stabilization.ts`（`verdictG31` / `verdictG36`），**那两张卡不写
+  // `status`**——生产里它们失败时走的是「不成立，状态保持原样」分支。
+  const ctx = prerequisiteRun()
+  for (const name of [...Object.values(G3_CS_STEPS), ...Object.values(G3_DEP_STEPS)]) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = [
+    {
+      id: 'G3.2',
+      title: 'G3.2',
+      holds: false,
+      detail: '不成立：影响可追溯到来源边那一半没跑出来。',
+      evidence: [],
+      status: 'NOT RUN',
+    },
+  ]
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  // 判定卡自带状态 ⇒ 这一行取判定卡自带的状态（不是矩阵原状态，也不是 PASS）。
+  assert.equal(byId.get('G3.2')?.status, 'NOT RUN')
+  // 证据说明必须写明「只部分成立（状态记为 X）」——
+  // 否则规则表的说明（「本轮实跑判定成立：……」）会被挂在一张**不成立**的判定卡上。
+  const notes = new Map(evidence.map((item) => [item.rowId, item.note]))
+  assert.match(notes.get('G3.2') ?? '', /只部分成立/, 'G3.2 的说明没有写明判定卡只部分成立')
+  assert.match(notes.get('G3.2') ?? '', /状态记为 NOT RUN/, 'G3.2 的说明没有写明判定卡自带的状态')
+})
+
+test('判定卡不成立且没有状态时（生产同形），该行状态保持原样', () => {
+  // 生产同形的夹具：这张卡**不带 `status`**——`G3.1` / `G3.6` 出自
+  // `runner/stabilization.ts`（`verdictG31` / `verdictG36`），两张卡都**不写
+  // `status`**。生产里它们失败时走的就是「不成立，状态保持原样」这条分支。
   const ctx = prerequisiteRun()
   for (const name of Object.values(G3_STAB_STEPS)) {
     recordStep(ctx, {
@@ -444,10 +535,19 @@ test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
     { id: 'G3.1', title: 'G3.1', holds: false, detail: '不成立', evidence: [] },
     { id: 'G3.6', title: 'G3.6', holds: false, detail: '不成立', evidence: [] },
   ]
-  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   const byId = new Map(rows.map((row) => [row.id, row]))
-  assert.equal(byId.get('G3.1')?.status, 'TODO', '判定不成立不得判成 PASS')
-  assert.equal(byId.get('G3.6')?.status, 'TODO', '判定不成立不得判成 PASS')
+  // 判定不成立时，投影**不改动**矩阵里的静态状态：切片行的静态状态记的是
+  // 上一次实跑判定的结论，不是一次失败就抹掉。
+  const before = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row.status]))
+  assert.equal(byId.get('G3.1')?.status, before.get('G3.1'))
+  assert.equal(byId.get('G3.6')?.status, before.get('G3.6'))
+  // 但**证据说明里必须写明判定卡不成立**——状态不变不等于这一轮判定成立。
+  const notes = new Map(evidence.map((item) => [item.rowId, item.note]))
+  for (const id of ['G3.1', 'G3.6']) {
+    assert.match(notes.get(id) ?? '', /判定卡.*不成立/, `${id} 的说明没有写明判定卡不成立`)
+    assert.match(notes.get(id) ?? '', /状态保持原样/, `${id} 的说明没有写明状态保持原样`)
+  }
 })
 
 test('阻断与恢复链跑完后，AC-G3-09 / AC-G3-12 / AC-G3-07 由本轮证据驱动', () => {
@@ -480,6 +580,51 @@ test('阻断与恢复链跑完后，AC-G3-09 / AC-G3-12 / AC-G3-07 由本轮证�
   assert.equal(byId.get('AC-G3-09')?.followUpIssue, 246)
   assert.equal(byId.get('AC-G3-07')?.status, 'PASS (follow-up)')
   assert.equal(byId.get('AC-G3-07')?.followUpIssue, 243)
+})
+
+test('「结论过期」「还缺步骤」优先于「只部分成立」：说明不得被盖掉', () => {
+  // ① 过期运行：判定卡不成立且自带 status（`runner/dependencies.ts` 的卡形状）。
+  //    说明必须写「结论过期」——「只部分成立」会盖掉过期这个信号。
+  const staleCtx = prerequisiteRun()
+  for (const name of Object.values(G3_STAB_STEPS)) {
+    recordStep(staleCtx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1/stabilize',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  staleCtx.verdicts = [
+    { id: 'G3.1', title: 'G3.1', holds: false, detail: '不成立', evidence: [], status: 'NOT RUN' },
+  ]
+  markRunStale(staleCtx, '后端 head 从 7f5fd8c 变为 af18497')
+  const staleEvidence = applyRunEvidence(G3_MATRIX_ROWS, staleCtx).evidence
+  const staleNote = staleEvidence.find((item) => item.rowId === 'G3.1')?.note ?? ''
+  assert.match(staleNote, /结论过期/)
+  assert.doesNotMatch(staleNote, /只部分成立/)
+
+  // ② 还缺步骤：同一张自带 status 的失败卡，但这一行所需步骤没跑齐。
+  //    说明必须写「还缺步骤」。
+  const partialCtx = prerequisiteRun()
+  recordStep(partialCtx, {
+    name: G3_DEP_STEPS.createEdge,
+    method: 'POST',
+    path: '/api/v1/lingdoc/projects/p1',
+    status: 200,
+    ok: true,
+    durationMs: 5,
+    conclusion: '成功',
+  })
+  partialCtx.verdicts = [
+    { id: 'G3.2', title: 'G3.2', holds: false, detail: '不成立', evidence: [], status: 'NOT RUN' },
+  ]
+  const partialEvidence = applyRunEvidence(G3_MATRIX_ROWS, partialCtx).evidence
+  const partialNote = partialEvidence.find((item) => item.rowId === 'G3.2')?.note ?? ''
+  assert.match(partialNote, /还缺步骤/)
+  assert.doesNotMatch(partialNote, /只部分成立/)
 })
 
 test('阻断与恢复链的判定不成立时，那三行保持原样', () => {

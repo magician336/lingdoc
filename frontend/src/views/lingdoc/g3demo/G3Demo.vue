@@ -1602,6 +1602,9 @@
                   <small v-if="coverageRunId(row.id)">
                     来自运行 <code>{{ coverageRunId(row.id) }}</code>
                   </small>
+                  <small v-if="coverageHead(row.id)">
+                    后端 head <code>{{ coverageHead(row.id) }}</code>
+                  </small>
                   <small>{{ coverageById.get(row.id)?.note }}</small>
                 </td>
               </tr>
@@ -1667,6 +1670,9 @@
                   <small v-if="coverageRunId(row.id)">
                     来自运行 <code>{{ coverageRunId(row.id) }}</code>
                   </small>
+                  <small v-if="coverageHead(row.id)">
+                    后端 head <code>{{ coverageHead(row.id) }}</code>
+                  </small>
                   <small>{{ coverageById.get(row.id)?.note }}</small>
                 </td>
               </tr>
@@ -1680,7 +1686,9 @@
           BLOCKED {{ counts['BLOCKED'] }} · TODO {{ counts['TODO'] }}。
           「覆盖」是**本次会话累计的真实运行**与每一行的关系：前置链跑通**不构成**任何一条判据的证据，
           所以没被覆盖的行状态原样保留，绝不会被判成 <code>PASS</code>。
-          页面上每段链各跑在自己的隔离项目上，所以每一行都标出**它由哪一段运行判定**。
+          页面上每段链各跑在自己的隔离项目上，所以每一行都标出**它由哪一段运行判定**、
+          跑在哪个后端 head 上。证据位（矩阵登记的那一份）只写「链 + 判定卡 + 落证文件」：
+          运行标识与 head 每次重跑都会变，写死在静态矩阵里就是写下**下一次就过期**的串。
         </p>
 
         <h3 class="matrix-group-title">实现缺口（无法实跑的验收行与渲染缺口）</h3>
@@ -2130,6 +2138,19 @@ const coverageRunId = (rowId: string): string => {
   return item.runId ?? ''
 }
 
+/**
+ * 这一行的结论跑在哪个后端 head 上。
+ *
+ * 证据位（矩阵登记的那一份）里**不写 head**：head 每次重跑都会变，
+ * 写死等于写下「下一次就过期」的串。真正的那一次运行的 head 由运行上下文
+ * 带出来，在这一列显示——读者看到的运行标识与 head 永远是真的。
+ */
+const coverageHead = (rowId: string): string => {
+  const item = coverageById.value.get(rowId)
+  if (!item?.decided) return ''
+  return item.head ?? ''
+}
+
 const anchorLabel = (anchor: SpecAnchor) => formatAnchor(anchor)
 const anchorPath = (anchor: SpecAnchor) => anchor.path
 
@@ -2143,10 +2164,13 @@ const gapIdsOf = (rowId: string) => gapIdsForRow(rowId)
 const limitingGapIdsOf = (rowId: string) => limitingGapIdsForRow(rowId)
 
 /**
- * 一行的结论来源：本次运行得出 / 历史快照 · 非本次运行 / 尚未判定。
+ * 一行的结论来源：本次运行得出 / 非本次运行（历史快照或既有实跑）/ 尚未判定。
  *
- * 两者在页面上**视觉与文案互斥**：本次运行用青色实心标记，历史快照用琥珀色
- * 「历史快照 · 非本次运行」标记（与页头、证据块的既有标识一致）。
+ * 两者在页面上**视觉与文案互斥**：本次运行用青色实心标记，非本次运行用琥珀色
+ * 标记（与页头、证据块的既有标识一致）。
+ *
+ * 切片行的静态状态记的是「该行最后一次被真实判定得到的结论」，所以它们在
+ * 本次会话没跑那条链时是「非本次运行」——**不是**「尚未判定」。
  */
 const sourceOf = (rowId: string): G3ConclusionSource => {
   const row = matrixView.value.rows.find((item) => item.id === rowId)

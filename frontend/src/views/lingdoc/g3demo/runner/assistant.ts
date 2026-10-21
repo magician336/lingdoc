@@ -56,7 +56,7 @@
  */
 
 import { errorCodeOf, type G3HttpClient } from './httpClient'
-import { num, objectOf, projectPath, refOf, str } from './factHelpers'
+import { num, objectOf, projectPath, refOf, str, isClientRejection } from './factHelpers'
 import type { G3ProjectState, G3Verdict } from './changeset'
 import { makeIdempotencyKey, runStep, type G3RunContext } from './runContext'
 
@@ -1356,9 +1356,11 @@ export function verdictCandidateBatchSubmitted(result: G3AssistantChainResult): 
       ? false
       : result.resubmission.candidates.length === 0 &&
         result.resubmission.suppressed.length > 0
+  // 「版本已变更的候选在确认时被拒」只认 **4xx**：服务端按契约拒掉才是「被拒」；
+  // 5xx 是服务端自身错误，不能拿它当「不会被静默确认」的证据。
   const staleRefused =
     result.staleConfirmation !== null &&
-    result.staleConfirmation.httpStatus >= 400
+    isClientRejection(result.staleConfirmation.httpStatus)
   const holds =
     threeStates && rejectHasNoEdge && modifyRemembers && notReproposed && staleRefused
 

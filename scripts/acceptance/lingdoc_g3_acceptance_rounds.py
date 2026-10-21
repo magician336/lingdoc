@@ -15,6 +15,13 @@
 三条链各用**各的项目**：链路自己会 apply 变更集从而推进项目的上下文修订，
 共用一个项目时后一条链会撞 409「基线已漂移」。
 
+除 `run-evidence.ts`（变更集 / 故障注入 / 路线图 / 助手）与 `run-dependencies.ts`
+（依赖图与影响任务）之外，本脚本还跑**三条独立链脚本**：稳定化与交付闭环
+（`run-stabilization.ts`）、阻断与恢复路径（`run-blocked.ts`）与真实模型验收
+（`run-model.ts`）。它们各建各的项目、各带各的判定，落进**同一轮的证据目录**，
+于是整链导出（`run-evidence.ts` 的 `buildAggregateEvidenceExport`）汇总的是
+「这一轮真正跑过的全部链」。
+
 用法::
 
     python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server.exe
@@ -143,6 +150,70 @@ def run_dependency_chain(
         print(proc.stderr[-4000:], file=sys.stderr)
         raise SystemExit(f"run-dependencies failed rc={proc.returncode}")
     return {"elapsed_seconds": elapsed, "file": out_path.name}
+
+
+# 独立链脚本清单：``(脚本文件名, 证据文件名模板)``。
+#
+# 这三条链各建各的项目（``runChain`` 自建账号与项目），所以它们与
+# ``run-evidence.ts`` / ``run-dependencies.ts`` 互不干扰，可以同轮跑。
+# 证据文件名带轮次后缀（``-r1`` / ``-r2``）：两轮是**两次不同的运行**，
+# 同名的话整链证据里那条 ``runs[].file`` 引用会指到另一轮的文件上。
+CHAIN_SCRIPTS: tuple[tuple[str, str], ...] = (
+    ("run-stabilization.ts", "G3-验收台-5-稳定化与交付闭环证据-{date}-{round}.json"),
+    ("run-blocked.ts", "G3-验收台-6-阻断与恢复路径证据-{date}-{round}.json"),
+    ("run-model.ts", "G3-验收台-7-真实模型验收证据-{date}-{round}.json"),
+)
+
+
+def run_chain_script(
+    base_url: str,
+    out_path: Path,
+    script: str,
+    timeout: int = 900,
+) -> dict[str, object]:
+    """跑一条独立链脚本（真实后端），把证据落进指定路径。
+
+    调用形态与 ``run_dependency_chain`` 同一套：``npx tsx scripts/g3demo/<脚本>
+    --base <后端> --out <证据路径>``，工作目录是 ``frontend/``。
+
+    **失败不中断整轮**：某条链跑不通时把失败如实记进摘要，其余链照跑。
+    一条链的失败会连带丢掉其余链已经拿到的证据——那比多一个红项更糟。
+    失败时进程退出码仍然非零（末尾统一汇总），但已经落盘的证据不撤。
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    npx = shutil.which("npx.cmd") or shutil.which("npx")
+    if not npx:
+        raise SystemExit("npx not found on PATH")
+    started = time.monotonic()
+    proc = subprocess.run(
+        [
+            npx,
+            "tsx",
+            f"scripts/g3demo/{script}",
+            "--base",
+            base_url,
+            "--out",
+            str(out_path),
+        ],
+        cwd=str(ROOT / "frontend"),
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+    elapsed = round(time.monotonic() - started, 1)
+    print(proc.stdout[-4000:])
+    if proc.returncode != 0:
+        print(proc.stderr[-4000:], file=sys.stderr)
+        return {
+            "elapsed_seconds": elapsed,
+            "file": out_path.name,
+            "ok": False,
+            "error": f"{script} failed rc={proc.returncode}",
+        }
+    return {"elapsed_seconds": elapsed, "file": out_path.name, "ok": True}
 
 
 def register_account(base_url: str, db_path: Path) -> tuple[str, str, int]:
@@ -289,9 +360,19 @@ def main() -> int:
     email, password, tenant_id = register_account(base_url, data_dir / "lingdoc.sqlite")
     print(f"round1: registered {email} · tenant_id={tenant_id}")
     date = date_stamp()
+    # —— 本轮要跑的四条独立链 ——
+    # 依赖候选链先跑：整链导出汇总的是目录里已有的 `G3-验收台-*` 文件，
+    # 后跑的链必须赶在整链导出之前落盘，否则它的判定进不了汇总。
+    chain_results: dict[str, dict[str, object]] = {}
     if args.with_dependency_chain:
-        # 依赖候选链先跑：整链导出汇总的是目录里已有的 `G3-验收台-*` 文件。
-        run_dependency_chain(base_url, out_dir / "round1", date, "r1")
+        chain_results["dependencies"] = run_dependency_chain(base_url, out_dir / "round1", date, "r1")
+    for script, name_template in CHAIN_SCRIPTS:
+        label = script.removesuffix(".ts")
+        chain_results[label] = run_chain_script(
+            base_url,
+            out_dir / "round1" / name_template.format(date=date, round="r1"),
+            script,
+        )
     round1 = run_evidence(base_url, email, password, out_dir / "round1", args.round1_chains)
     code1 = base.stop_process(proc)
     print(f"round1: server stopped, exit code={code1} (Windows TerminateProcess 期望 1)")
@@ -300,7 +381,14 @@ def main() -> int:
     proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id), model_config)
     print(f"round2: healthy (fault injection armed for tenant {tenant_id})")
     if args.with_dependency_chain:
-        run_dependency_chain(base_url, out_dir / "round2", date, "r2")
+        chain_results["dependencies-r2"] = run_dependency_chain(base_url, out_dir / "round2", date, "r2")
+    for script, name_template in CHAIN_SCRIPTS:
+        label = f"{script.removesuffix('.ts')}-r2"
+        chain_results[label] = run_chain_script(
+            base_url,
+            out_dir / "round2" / name_template.format(date=date, round="r2"),
+            script,
+        )
     round2 = run_evidence(
         base_url,
         email,
@@ -319,10 +407,15 @@ def main() -> int:
         "account_email": email,
         "tenant_id": tenant_id,
         "fault_point": args.fault_point,
+        "chain_scripts": chain_results,
         "round1_without_fault_injection": round1,
         "round2_with_fault_injection": round2,
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
+    failed = [name for name, item in chain_results.items() if item.get("ok") is False]
+    if failed:
+        print(f"有链没跑通：{'、'.join(failed)}（证据已落盘，判定按各自证据如实记）")
+        return 1
     return 0
 
 

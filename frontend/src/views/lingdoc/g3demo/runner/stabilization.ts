@@ -55,6 +55,7 @@ import {
   type G3ObjectVersionRef,
   type G3TaskTransition,
 } from './dependencies'
+import { isClientRejection } from './factHelpers'
 
 /**
  * 本链的步骤名。
@@ -1495,7 +1496,9 @@ export function verdictG31(result: G3StabilizationChainResult): G3Verdict {
 export function verdictG36(result: G3StabilizationChainResult): G3Verdict {
   const blockedWithReasons =
     result.blocked.status === 'BLOCKED' && result.blocked.blockers.length > 0
-  const freezeRefused = result.freezeBeforeStable.status >= 400
+  // 冻结被拒只认 **4xx**：服务端按契约拒掉才是「被拒」；
+  // 5xx 是服务端自身错误，不能拿它当「不能导出」的证据。
+  const freezeRefused = isClientRejection(result.freezeBeforeStable.status)
   const stabilized = result.stabilized.status === 'STABILIZED' && result.stabilized.blockers.length === 0
   const receiptClosureAccepted =
     !result.stabilizedAfterReceipt || result.stabilizedAfterReceipt.status === 'STABILIZED'

@@ -12,6 +12,7 @@
 
 import { del, get, post, postNoBody, put } from '@/utils/request'
 import type { G3HttpClient, G3HttpResponse } from './runner/httpClient'
+import { isSuccessStatus } from './runner/factHelpers'
 
 /**
  * 单个请求的超时（毫秒）。
@@ -119,7 +120,7 @@ export function createRequestClient(): G3HttpClient {
       const status = statusOf(payload)
       return {
         status,
-        ok: status >= 200 && status < 300,
+        ok: isSuccessStatus(status),
         body: payload,
         bytes: request.raw ? toBytes(payload) : undefined,
         durationMs: performance.now() - started,

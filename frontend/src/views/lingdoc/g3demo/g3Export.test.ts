@@ -11,8 +11,10 @@ import {
   exportFileName,
   exportFilePath,
   falsePassRows,
+  passRowsWithoutVerdictCard,
   resolveRowStatus,
   type G3EvidenceFileInput,
+  type G3ExportRow,
 } from './g3Export'
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { gapIdsForRow, limitingGapIdsForRow } from './g3Gaps'
@@ -85,10 +87,20 @@ test('未实跑、豁免、缺能力、依赖真实模型的行，状态一律�
     generatedAt: '2026-10-20T00:01:00.000Z',
   })
 
-  assert.deepEqual(falsePassRows(exportBody.ac_rows), [], '导出体里有不该写 PASS 的行')
+  // 本文件里没有判定卡的 `PASS` 行必须被标出来：
+  // 这一份导出体只含 AC-G3-06 的判定卡，切片四行（G3.1–G3.4）的静态状态是
+  // 「上一次真实运行的结论」，**在这个文件里核不出来** ⇒ 必须被标出来。
+  assert.deepEqual(
+    falsePassRows(exportBody.ac_rows).map((row) => row.id),
+    ['G3.1', 'G3.2', 'G3.3', 'G3.4'],
+    '导出体里没有判定卡可核对的 PASS 行没有被标出来',
+  )
+  assert.deepEqual(exportBody.pass_rows_without_verdict_card, ['G3.1', 'G3.2', 'G3.3', 'G3.4'])
   for (const row of exportBody.ac_rows) {
-    if (row.source !== 'this_run') {
-      assert.notEqual(row.status, 'PASS', `${row.id} 不是本次运行得出，却写了 PASS`)
+    // **没有落证**的行不许写 PASS：矩阵的静态状态只是声明，没有实跑落证的行
+    // 写 PASS 就是「把没跑成的写成跑通」。
+    if (row.source === 'not_judged') {
+      assert.notEqual(row.status, 'PASS', `${row.id} 没有落证，却写了 PASS`)
     }
     if (row.gap_ids.length > 0) {
       assert.notEqual(row.status, 'PASS', `${row.id} 有实现缺口，却写了 PASS`)
@@ -196,12 +208,17 @@ test('#246 的硬规则：带实现缺口的行，导出投影不得写成 PASS'
   assert.ok(checked >= 8, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
 })
 
-test('页面与导出体都区分「本次运行得出」与「历史快照」两类结论', () => {
+test('页面与导出体都区分「本次运行得出」与「非本次运行」两类结论', () => {
   const snapshotRow = G3_MATRIX_ROWS.find((row) => row.id === 'AC-G3-10')!
   assert.equal(conclusionSourceOf(snapshotRow, false), 'historical_snapshot')
   assert.equal(conclusionSourceOf(snapshotRow, true), 'this_run')
   assert.equal(G3_CONCLUSION_SOURCE_LABELS.this_run, '本次运行得出')
-  assert.equal(G3_CONCLUSION_SOURCE_LABELS.historical_snapshot, '历史快照 · 非本次运行')
+  assert.equal(G3_CONCLUSION_SOURCE_LABELS.historical_snapshot, '非本次运行 · 历史快照或既有实跑')
+  // 切片行的静态状态记着上一次真实运行的判定：它不是「尚未判定」，
+  // 只是不是**本次**运行得出的。
+  const sliceRow = G3_MATRIX_ROWS.find((row) => row.id === 'G3.1')!
+  assert.equal(conclusionSourceOf(sliceRow, false), 'historical_snapshot')
+  assert.equal(conclusionSourceOf(sliceRow, true), 'this_run')
 
   const exportBody = buildRunEvidenceExport({
     runId: 'g3r-t8-3',
@@ -216,7 +233,7 @@ test('页面与导出体都区分「本次运行得出」与「历史快照」�
   assert.ok(kinds.includes('historical_snapshot'))
   const ac10 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-10')
   assert.equal(ac10?.source, 'historical_snapshot')
-  assert.equal(ac10?.source_label, '历史快照 · 非本次运行')
+  assert.equal(ac10?.source_label, '非本次运行 · 历史快照或既有实跑')
   assert.equal(ac10?.decided, false)
 })
 
@@ -286,7 +303,12 @@ test('汇总导出体把各票证据合并成一份总证据，并带出各自�
   const ac06 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-06')
   assert.equal(ac06?.status, 'WARNING')
   assert.equal(ac06?.verdicts[0]?.model_dependent, true)
-  assert.deepEqual(falsePassRows(exportBody.ac_rows), [])
+  // 这一份汇总只含 AC-G3-01 / AC-G3-06 两张卡：切片四行（G3.1–G3.4）的 `PASS`
+  // 在**这个文件里**没有可核对的判定卡 ⇒ 必须被标出来。
+  assert.deepEqual(
+    falsePassRows(exportBody.ac_rows).map((row) => row.id),
+    ['G3.1', 'G3.2', 'G3.3', 'G3.4'],
+  )
 })
 
 test('汇总的各份证据 head 不一致时整体标为过期', () => {
@@ -416,7 +438,13 @@ test('整链导出把多段运行并成一份，并逐段记账', () => {
   const g31 = exportBody.ac_rows.find((row) => row.id === 'G3.1')
   assert.equal(g31?.status, 'PASS')
   assert.equal(g31?.run_id, 'g3r-seg-2')
-  assert.deepEqual(falsePassRows(exportBody.ac_rows), [])
+  // G3.1 在本文件里有 `holds=true` 的判定卡 ⇒ 不算「核不出来」；
+  // G3.2 / G3.3 / G3.4 在本文件里没有卡 ⇒ 必须被标出来。
+  assert.deepEqual(
+    falsePassRows(exportBody.ac_rows).map((row) => row.id),
+    ['G3.2', 'G3.3', 'G3.4'],
+  )
+  assert.deepEqual(exportBody.pass_rows_without_verdict_card, ['G3.2', 'G3.3', 'G3.4'])
 })
 
 test('整链导出：各段 head 不一致时整体标为过期', () => {
@@ -482,5 +510,205 @@ test('整链导出：判定不成立的行不会被写成 PASS', () => {
   // 兜底把状态退回矩阵原状态，并在说明里写明原因。
   assert.equal(ac01?.status, 'PASS (follow-up)')
   assert.match(ac01?.note ?? '', /导出兜底/)
-  assert.deepEqual(falsePassRows(exportBody.ac_rows), [], '导出体里还有不该写 PASS 的行')
+  // 切片四行（G3.1–G3.4）的 `PASS` 在**这个文件里**没有可核对的判定卡 ⇒ 标出来。
+  assert.deepEqual(
+    falsePassRows(exportBody.ac_rows).map((row) => row.id),
+    ['G3.1', 'G3.2', 'G3.3', 'G3.4'],
+    '导出体里还有核不出判定卡的 PASS 行',
+  )
+})
+
+test('「有落证」按结构化字段判定：否定表述的证据文字不算落证', () => {
+  const base = G3_MATRIX_ROWS.find((row) => row.id === 'AC-G3-10')!
+  // 否定表述：证据文字里出现「实跑」两个字，说的却是**未**实跑。
+  // 靠中文子串判「有落证」会把这一行说成跑过 ⇒ 判据必须是结构化字段。
+  const negated = {
+    ...base,
+    evidence: '本轮未实跑判定成立（服务端缺能力）',
+    evidenceKind: 'not_judged' as const,
+  }
+  assert.equal(conclusionSourceOf(negated, false), 'not_judged')
+  // 结构化字段说了算：历史快照行即使证据文字被改写，也仍是历史快照。
+  const snapshot = {
+    ...base,
+    evidence: '本轮未实跑判定成立',
+    evidenceKind: 'historical_snapshot' as const,
+  }
+  assert.equal(conclusionSourceOf(snapshot, false), 'historical_snapshot')
+  // 本轮判定过的行一律是「本次运行得出」。
+  assert.equal(conclusionSourceOf(negated, true), 'this_run')
+})
+
+test('导出体每行同时给出「本轮运行判定出来的状态」与「矩阵登记的状态」', () => {
+  const exportBody = buildRunEvidenceExport({
+    runId: 'g3r-t8-8',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('创建变更集')],
+    verdicts: [verdict('AC-G3-01')],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const ac01 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-01')!
+  // 本轮判定出来的状态：判定卡成立 ⇒ PASS。
+  assert.equal(ac01.run_status, 'PASS')
+  // 矩阵登记的状态：PASS (follow-up)（矩阵登记的是本票未实跑时的静态状态）。
+  assert.equal(ac01.matrix_status, 'PASS (follow-up)')
+  assert.equal(ac01.status, 'PASS')
+  // 两者的关系必须写明，否则读者会把它们当成互相矛盾的两个结论。
+  assert.match(ac01.status_relation, /本轮运行判定得到 PASS/)
+  assert.match(ac01.status_relation, /PASS \(follow-up\)/)
+  // 证据位与判定来源是结构化的：读者能顺着它找到链、判定卡与落证文件。
+  assert.equal(ac01.evidence_kind, 'historical_snapshot')
+  // 切片行的证据位指到「链 + 判定卡 + 落证文件」，不写运行标识与 head。
+  const g31 = exportBody.ac_rows.find((row) => row.id === 'G3.1')!
+  assert.match(g31.matrix_evidence, /run-stabilization\.ts/)
+  assert.match(g31.matrix_evidence, /判定卡 G3\.1/)
+  assert.match(g31.matrix_evidence, /落证：docs\/08-本轮实施方案\//)
+  assert.doesNotMatch(g31.matrix_evidence, /g3r-/)
+  // 判定来源（哪条链的哪张卡）也是结构化的：AC-G3-03 的判定卡出自实时链路的故障注入段。
+  const ac03 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-03')!
+  assert.equal(ac03.judged_by?.card, 'AC-G3-03')
+  assert.equal(ac03.judged_by?.chain, 'run-evidence.ts')
+  assert.equal(ac03.evidence_kind, 'this_run')
+  // 本轮判定过的行带运行标识与 head；没判定的行不带。
+  assert.equal(ac01.run_id, 'g3r-t8-8')
+  assert.equal(ac01.head_commit, 'abc1234')
+  const ac10 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-10')!
+  assert.equal(ac10.run_status, undefined)
+  assert.equal(ac10.run_id, undefined)
+  assert.match(ac10.status_relation, /本轮未判定这一行/)
+})
+
+/**
+ * `status_relation` 必须按**矩阵状态实际是怎么来的**说明关系，
+ * 不能按「这一行挂没挂缺口」一刀切。
+ *
+ * 事实基础（`g3Gaps.ts` 的 `downgradeGapPass`）：降级**只有一种**——
+ * `PASS` → `PASS (follow-up)`，其余状态原样返回。
+ * 矩阵登记 `WARNING` 的行（`AC-G3-14`）真实理由是「结论依赖真实模型
+ * （非确定性）」，**与 #246 无关**：说成「缺口降级」会让读者推出
+ * 「关掉 #246 就能升 PASS」——那是不成立的推论。
+ */
+test('状态关系说明按矩阵状态的实际来源写：缺口降级与模型依赖不得混为一谈', () => {
+  // ① 缺口降级：`G3.7` 挂 G3-GAP-06 / G3-GAP-07，矩阵登记 `PASS (follow-up)`；
+  //    本轮判定卡不成立、自带 `NOT RUN`（`runner/dependencies.ts` 的 G3.7 卡形状：
+  //    `status: holds ? 'PASS (follow-up)' : 'NOT RUN'`）。
+  const downgraded = buildRunEvidenceExport({
+    runId: 'g3r-t8-gap',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('读影响评估')],
+    verdicts: [
+      verdict('G3.7', { holds: false, status: 'NOT RUN', detail: '不成立：必需对象集合未读全。' }),
+    ],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const g37 = downgraded.ac_rows.find((row) => row.id === 'G3.7')!
+  assert.equal(g37.run_status, 'NOT RUN')
+  assert.equal(g37.matrix_status, 'PASS (follow-up)')
+  assert.match(g37.status_relation, /本轮运行判定得到 NOT RUN/)
+  // 矩阵登记的 `PASS (follow-up)` 确实是缺口清单 #246 的降级结果 ⇒ 就这么说。
+  assert.match(g37.status_relation, /缺口清单 #246 的降级结果/)
+
+  // ② 矩阵登记 `WARNING`：**不是**缺口降级。`AC-G3-14` 确实挂着缺口
+  //    （G3-GAP-04），旧写法会因此套上「缺口降级」；真实理由是模型依赖。
+  const modelRow = buildRunEvidenceExport({
+    runId: 'g3r-t8-model',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('助手-读回草稿说明')],
+    verdicts: [
+      verdict('AC-G3-14', {
+        holds: false,
+        status: 'NOT RUN',
+        modelDependent: true,
+        detail: '不成立：本轮没有拿到助手草稿。',
+      }),
+    ],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const ac14 = modelRow.ac_rows.find((row) => row.id === 'AC-G3-14')!
+  assert.equal(ac14.run_status, 'NOT RUN')
+  assert.equal(ac14.matrix_status, 'WARNING')
+  // 前置事实：这一行**挂着缺口**——按「挂没挂缺口」一刀切的写法会走进缺口分支。
+  assert.ok(gapIdsForRow('AC-G3-14').length > 0, 'AC-G3-14 应当挂着实现缺口')
+  assert.match(ac14.status_relation, /依赖真实模型/)
+  assert.match(ac14.status_relation, /不是\*{0,2}缺口降级结果/)
+  assert.doesNotMatch(ac14.status_relation, /缺口清单 #246 的降级结果/)
+  // 本轮为什么没判成，也要说清。
+  assert.match(ac14.status_relation, /本轮这一行没判成/)
+
+  // ③ 其它情形：矩阵登记 `PASS (follow-up)` 但该行**不挂缺口**
+  //    （`AC-G3-01` 走历史快照 / 部分覆盖口径），不得说成缺口降级。
+  const plain = buildRunEvidenceExport({
+    runId: 'g3r-t8-plain',
+    startedAt: '2026-10-21T00:00:00.000Z',
+    head: head('abc1234'),
+    steps: [step('创建变更集')],
+    verdicts: [verdict('AC-G3-01')],
+    stale: false,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+  })
+  const ac01 = plain.ac_rows.find((row) => row.id === 'AC-G3-01')!
+  assert.equal(ac01.run_status, 'PASS')
+  assert.equal(ac01.matrix_status, 'PASS (follow-up)')
+  assert.equal(gapIdsForRow('AC-G3-01').length, 0)
+  assert.equal(limitingGapIdsForRow('AC-G3-01').length, 0)
+  assert.doesNotMatch(ac01.status_relation, /缺口清单 #246 的降级结果/)
+  assert.match(ac01.status_relation, /本轮运行判定得到 PASS/)
+  assert.match(ac01.status_relation, /PASS \(follow-up\)/)
+})
+
+test('PASS 行既没有 holds=true 判定卡、判定来源也核对不上时必须被标出来', () => {
+  const base: G3ExportRow = {
+    id: 'G3.9',
+    name: '测试行',
+    criterion: '判据原文',
+    status: 'PASS',
+    run_status: 'PASS',
+    matrix_status: 'PASS',
+    status_relation: '',
+    source: 'historical_snapshot',
+    source_label: '非本次运行 · 历史快照或既有实跑',
+    decided: false,
+    note: '',
+    gap_ids: [],
+    limiting_gap_ids: [],
+    verdicts: [],
+    stale: false,
+    evidence_kind: 'this_run',
+    matrix_evidence: '稳定化与交付闭环链实跑（run-stabilization.ts · 判定卡 G3.9）· 落证：x.json',
+    judged_by: { chain: 'run-stabilization.ts', card: 'G3.9' },
+  }
+  // 结构化字段在，但那张卡**不在本文件里** ⇒ 核不出来 ⇒ 标出来。
+  assert.equal(falsePassRows([base]).length, 1)
+  assert.equal(passRowsWithoutVerdictCard([base]).length, 1)
+  // 结构化字段缺失 ⇒ 同样标出来。
+  const withoutSource = { ...base, judged_by: undefined }
+  assert.equal(falsePassRows([withoutSource]).length, 1)
+  // 卡在本文件里、且 `holds=true` ⇒ 核得出来 ⇒ 不标。
+  const held: G3ExportRow = {
+    ...base,
+    judged_by: { chain: 'run-stabilization.ts', card: 'G3.9' },
+    verdicts: [
+      {
+        id: 'G3.9',
+        title: 'G3.9',
+        holds: true,
+        detail: '成立',
+        evidence: [],
+        model_dependent: false,
+        run_id: 'g3r-t8-9',
+      },
+    ],
+  }
+  assert.deepEqual(falsePassRows([held]), [])
+  assert.deepEqual(passRowsWithoutVerdictCard([held]), [])
 })

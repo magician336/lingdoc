@@ -18,6 +18,8 @@ import {
   reassessChangeSet,
   runChangeSetChain,
   unaffectedReason,
+  verdictG33,
+  type G3ChangeSetFact,
   type G3ImpactAssessmentFact,
 } from './changeset'
 
@@ -565,8 +567,61 @@ test('四条判据都由响应事实判定', async () => {
   }
 })
 
-test('非 Owner 调用应用与拒绝都拿到明确错误码', async () => {
+test('G3.3：只生成受影响任务、无关对象保持原状态时判定成立', async () => {
   const fake = createFakeClient()
+  seed(fake)
+  const ctx = context()
+  const result = await runChangeSetChain(ctx, fake.client, 'jwt-1', CHAIN_OPTIONS)
+
+  const g33 = result.verdicts.find((verdict) => verdict.id === 'G3.3')
+  assert.ok(g33, '缺少 G3.3 的判定')
+  assert.equal(g33.holds, true, `G3.3 判定不成立：${g33.detail}`)
+  assert.equal(g33.status, 'PASS')
+  assert.match(g33.evidence.join('\n'), /impact-tasks/)
+  assert.match(g33.evidence.join('\n'), /confirmation_valid/)
+})
+
+test('G3.3：出现了受影响集合之外的任务就不成立', () => {
+  const verdict = verdictG33({
+    scoped: {
+      id: 'cs-a',
+      impacts: [{ chapter_id: METHOD, reason: '研究条件变化' }],
+    } as unknown as G3ChangeSetFact,
+    assessment: ASSESSMENT,
+    tasksAfter: [
+      { id: 't-1', changeSetId: 'cs-a', action: 'REVIEW_REQUIRED', severity: 'blocking', responsibilityDomain: 'B', status: 'OPEN', target: { kind: 'ChapterVersion', id: METHOD, version: 'v-m1' } },
+      { id: 't-2', changeSetId: 'cs-a', action: 'REVIEW_REQUIRED', severity: 'blocking', responsibilityDomain: 'B', status: 'OPEN', target: { kind: 'ChapterVersion', id: QUESTION, version: 'v-q1' } },
+    ],
+    unaffectedBefore: { chapterId: QUESTION, sectionId: 'question', title: '研究问题', currentVersionId: 'v-q1', confirmationValid: true, versionConfirmationValid: true, versionSpecRevision: 1, currentConfirmation: null },
+    unaffectedAfter: { chapterId: QUESTION, sectionId: 'question', title: '研究问题', currentVersionId: 'v-q1', confirmationValid: true, versionConfirmationValid: true, versionSpecRevision: 1, currentConfirmation: null },
+  })
+  assert.equal(verdict.holds, false)
+  assert.equal(verdict.status, 'NOT RUN')
+  assert.match(verdict.detail, /集合外任务 1 条/)
+})
+
+test('G3.3：无关对象的确认被本次变更集置为失效就不成立', () => {
+  const unaffectedAfter = {
+    chapterId: QUESTION, sectionId: 'question', title: '研究问题', currentVersionId: 'v-q1',
+    confirmationValid: true, versionConfirmationValid: false, versionSpecRevision: 1, currentConfirmation: null,
+  }
+  const verdict = verdictG33({
+    scoped: {
+      id: 'cs-a',
+      impacts: [{ chapter_id: METHOD, reason: '研究条件变化' }],
+    } as unknown as G3ChangeSetFact,
+    assessment: ASSESSMENT,
+    tasksAfter: [
+      { id: 't-1', changeSetId: 'cs-a', action: 'REVIEW_REQUIRED', severity: 'blocking', responsibilityDomain: 'B', status: 'OPEN', target: { kind: 'ChapterVersion', id: METHOD, version: 'v-m1' } },
+    ],
+    unaffectedBefore: { ...unaffectedAfter, versionConfirmationValid: true },
+    unaffectedAfter,
+  })
+  assert.equal(verdict.holds, false)
+  assert.match(verdict.detail, /确认保持=false/)
+})
+
+test('非 Owner 调用应用与拒绝都拿到明确错误码', async () => {  const fake = createFakeClient()
   seed(fake)
   const ctx = context()
   const result = await runChangeSetChain(ctx, fake.client, 'jwt-1', CHAIN_OPTIONS)

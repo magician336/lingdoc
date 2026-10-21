@@ -355,6 +355,98 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '**未覆盖那半段**：「证据重检返回新候选」需要真实模型，造证据卡要走模型侧（见 #243）；' +
       '因此本行不是完全判定，状态记为 PASS (follow-up)。',
   },
+  'G3.2': {
+    requires: [
+      '建立已确认依赖边',
+      '建立建议依赖边',
+      '裁决依赖边-确认',
+      '裁决依赖边-修改',
+      '裁决依赖边-拒绝',
+      '重投被拒绝的候选边',
+      '读依赖边列表',
+      '读依赖边列表（候选决策后）',
+      '读影响评估',
+      '读影响任务',
+      '重复应用变更集',
+    ],
+    verdictId: 'G3.2',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：影响评估里的每条影响都追得到读回来的依赖边（每条 cause 带 edge_id、' +
+      '来源对象与原因）；两条来源边指向同一目标、动作相同时服务端合并成一条逻辑任务、' +
+      'causes 保留两条来源，重复应用同一变更集不产生第二条任务；' +
+      '建议边（status=suggested）只进「可能受影响」、不为它的目标产生任务；' +
+      '人工「确认 / 修改」把建议边落成 confirmed（修改留旧关系），人工「拒绝」的边落 rejected、' +
+      '同一版本再投不新建边——三类边的语义各自明确。',
+  },
+  'G3.3': {
+    requires: [
+      '创建变更集',
+      '评估变更集',
+      '读影响评估',
+      '应用变更集',
+      '读影响任务',
+      '读章节版本列表',
+    ],
+    verdictId: 'G3.3',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：应用之后读回的影响任务，每一条的目标都在本次变更集的受影响集合里' +
+      '（评估对象与评估影响构成那个集合），集合之外没有任务；' +
+      '与本次变更集无关的章节既不在评估对象里、也不在影响里，没有为它产生影响任务，' +
+      '它的版本级确认标记在应用前后都保持有效——无关对象保持原状态。' +
+      '（判据不要求服务端给出「未受影响理由」，那是 AC-G3-04 的另一半，见缺口清单 #246。）',
+  },
+  'G3.4': {
+    requires: [
+      '阻断-替换目标对象版本',
+      '阻断-稳定化（版本不匹配）',
+      '阻断-读影响任务',
+      '阻断-人工复核探针-缺少人工复核完成',
+      '阻断-人工复核探针-带人工复核完成',
+    ],
+    verdictId: 'G3.4',
+    status: 'PASS',
+    note:
+      '本轮实跑判定成立：目标对象在任务「已完成」之后被新版本替换，稳定化重新读取时发现版本不匹配，' +
+      '这一版修订没有被放行；依据旧版本的任务被服务端落成失效（STALE：终态但不算闭环）——' +
+      '旧任务关不掉新版本。研究主张上的复核任务缺少人工复核决策时被服务端拒掉，' +
+      '带上人工复核决策之后才允许闭环——异步作业成功关不掉人工复核任务。',
+  },
+  'G3.5': {
+    requires: [
+      '路线图-读版本序列',
+      '路线图-读前后比较',
+      '路线图-取消编辑',
+      '路线图-读取消后基线',
+      '路线图-稳定化',
+    ],
+    verdictId: 'G3.5',
+    status: 'WARNING',
+    note:
+      '本轮实跑判定成立的是三段里的两段半：**可比较**（读出版本序列并读出两个版本之间的前后比较）、' +
+      '**可恢复**（取消未冻结编辑后冻结基线回到取消前的版本，节点版本一并恢复）、' +
+      '**必需项不满足时阻断**（模板声明的必需 RouteNode 处于待复核 / 版本落后时，' +
+      '服务端给出 required_route_not_current 阻断，项目不进入 STABILIZED / READY）。' +
+      '**覆盖受限**：判据字面写的是「必需项**缺失**」，而「已声明但缺失」那一种前置' +
+      '验收台造不出来（演示模板 v2 声明了 route-r7，台面随后把它登记上），' +
+      '它的阻断由服务端侧保证（#319）——本轮 headless 实跑没有这一段的落点。' +
+      '按仓库口径记 WARNING 并写明缺什么，不用「等价前置」冒充「缺失」。',
+  },
+  'G3.7': {
+    requires: ['创建变更集', '读影响评估', '读影响任务'],
+    verdictId: 'G3.7',
+    status: 'PASS (follow-up)',
+    followUpIssue: 246,
+    note:
+      '本轮实跑判定成立的是**数据面**：「本次必须处理的对象」集合逐对象核对' +
+      '（state / confirmed / context_revision 齐全）、每条影响都带来源对象与原因、' +
+      '确定影响 / 可能影响两组由服务端 certainty 给出（不重不漏）、' +
+      '任务带责任域与指派人、每条影响都带下一步动作——影响理由、责任人与下一步动作都读得回来。' +
+      '**页面渲染那半段**（验收台页面自己读 assessment.objects 渲染）沿用 #257 在 head `a87459f` ' +
+      '的落证：headless 实跑驱动不到验收台页面，本轮没有在当前 head 重渲。' +
+      '行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。',
+  },
   'G3.1': {
     requires: [
       '稳定化-创建变更集',
@@ -426,6 +518,13 @@ export interface G3RowEvidence {
    * 免得把不同运行的同名判定混成一条。
    */
   verdictId?: string
+  /**
+   * 判定这一行的**那一次运行**的后端 head（commitId）。
+   *
+   * 证据位（静态矩阵）里不写 head：head 每次重跑都会变，写死等于写下
+   * **下一次就过期**的串。这一次的 head 由运行上下文带出来，随证据一起投影。
+   */
+  head?: string
 }
 
 /** 本轮证据在矩阵上的投影。 */
@@ -608,6 +707,27 @@ function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowP
 
   const observedSteps = hit.ctx.steps.filter((step) => step.ok).map((step) => step.name)
   const runTag = multi ? `（来自运行 ${hit.ctx.runId}）` : ''
+  // 判定卡**不成立但自带 status** ⇒ 这一行按判定卡自带的 status 落
+  // （见 `applyRunEvidence`），说明里必须写明「只部分成立（状态记为 X）」——
+  // 否则规则表的说明（「本轮实跑判定成立：……」）会被挂在一张**不成立**的判定卡上。
+  //
+  // **哪些卡自带 status（按卡逐个说，不是一律带）**：
+  // - **带**：`runner/dependencies.ts` 的 `G3.2` / `AC-G3-15`
+  //   （`holds ? 'PASS' : 'NOT RUN'`）与 `G3.7`
+  //   （`holds ? 'PASS (follow-up)' : 'NOT RUN'`）；`runner/changeset.ts` 的 `G3.3`
+  //   与 `AC-G3-04`（`AC-G3-04` 只在**不成立**时带 `'PASS (follow-up)'`，
+  //   成立时是 `undefined`）；`runner/blocked.ts` 的 `G3.4`；
+  //   `runner/assistant.ts` 的 `AC-G3-14` 与 `CANDIDATE-BATCH-SUBMITTED`；
+  //   `runner/roadmap.ts` 的 `G3.5` / `AC-G3-08` / `AC-G3-16`；
+  //   `runner/faultInjection.ts` 的 `AC-G3-03`；`runner/model.ts` 的模型侧三张卡。
+  // - **不带**：`runner/stabilization.ts` 的 `G3.1` / `G3.6` /
+  //   `DELIVERY-CLOSURE`；`runner/changeset.ts` 的 `AC-G3-01` / `AC-G3-02` /
+  //   `AC-G3-11`；`runner/dependencies.ts` 的 `AC-G3-05` / `AC-G3-13` /
+  //   `DRAFT-CREATED` / `TASK-CLOSURE`；`runner/blocked.ts` 的
+  //   `G3.6-BLOCKED-RECOVERY` / `AC-G3-09` / `AC-G3-12` / `AC-G3-07` /
+  //   `G3-DISMISS-BOUNDARY` / `G3-STALE-TASK`。
+  //   这些卡失败时走「不成立，状态保持原样」分支。
+  const partial = hit.evaluation.verdictFailed && hit.evaluation.verdict?.status !== undefined
 
   return {
     hit,
@@ -620,21 +740,27 @@ function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowP
       stale,
       runId: hit.ctx.runId,
       verdictId: hit.evaluation.verdict?.id,
-      note: hit.evaluation.decided
-        ? hit.evaluation.verdict?.detail
-          ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
-          : `${hit.evaluation.group.note}${runTag}`
-        : stale
-          ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
-          : hit.evaluation.missingSteps.length > 0
-            ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
-            : hit.evaluation.verdictFailed
-              ? hit.evaluation.verdict?.status
-                ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**（状态记为 ${hit.evaluation.verdict.status}）：${hit.evaluation.verdict.detail}`
-                : `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」不成立，状态保持原样。`
-              : hit.evaluation.verdictMissing
-                ? `本轮已跑到该行所需步骤，但本轮没有「${hit.evaluation.group.verdictId}」的判定结论，状态保持原样。`
-                : '本轮未覆盖该行，状态保持原样。',
+      head: hit.ctx.head?.commitId,
+      // 分支次序：**「结论过期」「还缺步骤」优先于「只部分成立」**。
+      // 过期运行或缺步骤时若同时有一张「失败且带 status」的卡，
+      // 先说「只部分成立」会盖掉「结论过期 / 还缺步骤」的信号——
+      // 状态本身不受影响，但说明会误导读者。
+      note: stale
+        ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
+        : hit.evaluation.missingSteps.length > 0
+          ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
+          : partial
+            ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**` +
+              `（状态记为 ${hit.evaluation.verdict?.status}）：${hit.evaluation.verdict?.detail}${runTag}`
+            : hit.evaluation.decided
+              ? hit.evaluation.verdict?.detail
+                ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
+                : `${hit.evaluation.group.note}${runTag}`
+              : hit.evaluation.verdictFailed
+                ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」不成立，状态保持原样。`
+                : hit.evaluation.verdictMissing
+                  ? `本轮已跑到该行所需步骤，但本轮没有「${hit.evaluation.group.verdictId}」的判定结论，状态保持原样。`
+                  : '本轮未覆盖该行，状态保持原样。',
     },
   }
 }
@@ -669,7 +795,11 @@ export function applyRunEvidence(
     return {
       ...row,
       status,
-      evidence: hit.evaluation.group.note,
+      // 证据位保留**矩阵登记的那一份**（链 + 判定卡 + 落证文件）：
+      // 它是稳定的指针，被投影覆盖掉的话，读者在跑完一轮之后就看不到
+      // 「这条结论出自哪条链、哪张卡、哪个文件」了。
+      // 这一轮的实际运行标识与 head 由证据投影（`runId` / `head`）单独带出。
+      evidence: row.evidence,
       note: projection.evidence.note,
       // 完全判定的行：接它的「跟进 Issue」不再是待办，保留会让人以为还有未完成的事；
       // 部分覆盖的行：跟进 Issue 指向缺口清单（例如 #246），必须留着。

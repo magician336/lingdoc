@@ -254,6 +254,16 @@ test('G3.6 判定：未关闭阻断项时不能 STABILIZED，也不能冻结导�
   assert.equal(freezeAllowed.holds, false)
 })
 
+test('G3.6：冻结被拒只认 4xx（5xx 是服务端自身错误，不算「按契约拒掉」）', () => {
+  // 4xx：服务端按契约拒掉（当前落证里的真实码是 422）⇒ 判定成立。
+  assert.equal(verdictG36(chainResultOf()).holds, true)
+  // 5xx：服务端自己崩了，不能拿它当「不能导出」的证据。
+  const serverError = verdictG36(
+    chainResultOf({ freezeBeforeStable: { status: 500, code: 'internal_error' } } as Partial<G3StabilizationChainResult>),
+  )
+  assert.equal(serverError.holds, false, '5xx 被当成了「按契约拒掉」')
+})
+
 test('交付闭环判定：产物 verified + 哈希一致才算导出成功', () => {
   const verdict = verdictDeliveryClosure(chainResultOf())
   assert.equal(verdict.holds, true)

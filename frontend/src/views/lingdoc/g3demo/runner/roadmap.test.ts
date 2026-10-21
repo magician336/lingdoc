@@ -24,6 +24,7 @@ import {
   runRoadmapChain,
   verdictAcG308,
   verdictAcG316,
+  verdictG35,
   type G3RoadmapChainResult,
   type G3RoadmapNodeFact,
 } from './roadmap'
@@ -665,8 +666,68 @@ test('AC-G3-08：必需节点非当前态 + 服务端给出 blocking 校验问�
   assert.equal(verdict.status, 'PASS')
 })
 
-test('AC-G3-08：没有 blocking 校验问题就不能判成立', () => {
-  const result = {
+/** 造一份「可比较 / 可恢复 / 必需项不满足时阻断」的路线图链事实。 */
+function g35ResultOf(overrides: Partial<G3RoadmapChainResult> = {}): G3RoadmapChainResult {
+  const frozen = nodeFact({ version: 2, state: 'stale', stateReason: '版本落后' })
+  const base = {
+    baselineBefore: baselineOf([nodeFact()]),
+    baselineAfterCommit: baselineOf([frozen], 1),
+    baselineAfterCancel: baselineOf([frozen], 1),
+    committedSession: { status: 'committed' },
+    cancelledSession: { status: 'cancelled', nodeProposals: [], edgeProposals: [] },
+    versions: [{ version: 1, state: 'current' }, { version: 2, state: 'stale' }],
+    comparison: { kind: 'RouteNode', id: 'r7', from: 1, to: 2, changes: [{ field: 'name', from: '旧', to: '新' }] },
+    check: {
+      status: 'blocked',
+      issues: [{ ruleId: 'required-route', severity: 'blocking', targetId: 'route/r7', message: '必经路线未就绪' }],
+    },
+    stabilization: {
+      status: 'BLOCKED',
+      blockers: [{ code: 'required_route_not_current', targetId: 'r7', reason: '必经技术路线未就绪' }],
+    },
+  } as unknown as G3RoadmapChainResult
+  return { ...base, ...overrides } as G3RoadmapChainResult
+}
+
+test('G3.5：可比较 / 可恢复 / 必需项不满足时阻断都成立时判定成立（覆盖受限记 WARNING）', () => {
+  const verdict = verdictG35(g35ResultOf())
+  assert.equal(verdict.id, 'G3.5')
+  assert.equal(verdict.holds, true)
+  // 「必需项已声明但缺失」那一种前置本轮没有落点 ⇒ 覆盖受限，记 WARNING。
+  assert.equal(verdict.status, 'WARNING')
+  assert.match(verdict.detail, /覆盖受限/)
+  assert.match(verdict.detail, /缺失/)
+})
+
+test('G3.5：读不出前后比较就不成立（可比较没观测到）', () => {
+  const broken = verdictG35(g35ResultOf({ comparison: null } as Partial<G3RoadmapChainResult>))
+  assert.equal(broken.holds, false)
+  assert.equal(broken.status, 'NOT RUN')
+  assert.match(broken.detail, /可比较=false/)
+})
+
+test('G3.5：取消编辑后基线没有回去就不成立（可恢复没观测到）', () => {
+  const broken = verdictG35(
+    g35ResultOf({
+      baselineAfterCancel: baselineOf([nodeFact({ version: 3, state: 'stale' })], 2),
+    } as Partial<G3RoadmapChainResult>),
+  )
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /可恢复=false/)
+})
+
+test('G3.5：服务端没有给出阻断就不成立', () => {
+  const broken = verdictG35(
+    g35ResultOf({
+      check: { status: 'passed', issues: [] },
+      stabilization: { status: 'STABILIZED', blockers: [] },
+    } as unknown as Partial<G3RoadmapChainResult>),
+  )
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /必需项阻断=false/)
+})
+
+test('AC-G3-08：没有 blocking 校验问题就不能判成立', () => {  const result = {
     baselineAfterCancel: baselineOf([nodeFact({ state: 'stale' })]),
     versions: [{ version: 1, state: 'stale' }],
     check: { status: 'blocked', issues: [] },
@@ -801,11 +862,11 @@ test('路线图链：建会话用**建会话那一刻**的上下文修订，链�
     assert.equal(step?.ok, true, `步骤「${name}」没有成功记录`)
   }
 
-  // 两条判定都在台面上跑出来。
+  // 三条判定都在台面上跑出来（AC-G3-08 / AC-G3-16 / G3.5 切片行）。
   const byId = new Map(result.verdicts.map((verdict) => [verdict.id, verdict]))
   assert.equal(byId.get('AC-G3-08')?.holds, true)
   assert.equal(byId.get('AC-G3-16')?.holds, true)
-  assert.deepEqual((ctx.verdicts ?? []).map((item) => item.id), ['AC-G3-08', 'AC-G3-16'])
+  assert.deepEqual((ctx.verdicts ?? []).map((item) => item.id), ['AC-G3-08', 'AC-G3-16', 'G3.5'])
 })
 
 test('路线图链：写路由的人工确认守卫被拒时，执行器给出可读的权限说明', async () => {

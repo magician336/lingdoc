@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { G3_STATUS_VALUES } from './g3Status'
+import { gapIdsForRow, limitingGapIdsForRow } from './g3Gaps'
 import {
   G3_AC_ROWS,
   G3_LIFECYCLE_READINGS,
@@ -185,32 +186,101 @@ test('可实跑但本票未实跑的验收项走 follow-up 且必须挂独立 Is
   }
 })
 
-test('切片行尚未判定，标 TODO；G3.7 记 NOT RUN（与缺口清单口径一致）', () => {
+test('切片七行都有实跑判定：状态取本轮实跑观测到的值，不预判也不留空话', () => {
+  // 切片行的静态状态记的是「该行最后一次被真实判定得到的结论」。
+  // 每一行都必须有实跑落证（G3.5 / G3.6 是覆盖受限的 WARNING），
+  // 带 #246 缺口的 G3.7 一律不判 PASS。
+  const expected: Record<string, string> = {
+    'G3.1': 'PASS',
+    'G3.2': 'PASS',
+    'G3.3': 'PASS',
+    'G3.4': 'PASS',
+    'G3.5': 'WARNING',
+    'G3.6': 'WARNING',
+    'G3.7': 'PASS (follow-up)',
+  }
   for (const row of G3_SLICE_ROWS) {
-    // G3.7 的缺口（G3-GAP-06 / G3-GAP-07）记的是「未实跑」，
-    // 状态口径必须是 NOT RUN 而不是 TODO——两者含义不同，不能混用。
-    // 切片行的状态由实跑证据驱动，静态声明不预判：G3.6 的调研类闭环虽已在
-    // #258 实跑，但该切片的完成判据整体尚未判定，仍是 TODO。
-    const expected = row.id === 'G3.7' ? 'NOT RUN' : 'TODO'
-    assert.equal(row.status, expected)
-    assert.ok(row.note && row.note.includes('判据基准'), `${row.id} 的说明不完整`)
+    assert.equal(row.status, expected[row.id], `${row.id} 的状态与本轮实跑观测不一致`)
+    // 证据位必须指到**实跑**：没有落证的 PASS 就是把没跑成的写成跑通。
+    assert.match(row.evidence, /实跑|判定卡/, `${row.id} 的证据位没有指向实跑落证`)
+    // 说明必须写清「成立 / 只成立一部分」与缺什么，不能是空话。
+    assert.ok(row.note && row.note.length > 10, `${row.id} 的说明不完整`)
+    assert.match(row.note, /实跑|判定卡/, `${row.id} 的说明没有写明实跑判定`)
+  }
+  // 带缺口的行不判 PASS：缺口清单 #246 关闭前一律不判。
+  for (const row of G3_SLICE_ROWS) {
+    if (gapIdsForRow(row.id).length > 0 || limitingGapIdsForRow(row.id).length > 0) {
+      assert.notEqual(row.status, 'PASS', `${row.id} 带实现缺口，不得判 PASS`)
+    }
   }
 })
 
-test('状态计数覆盖全部七种状态', () => {
-  const counts = statusCounts(G3_MATRIX_ROWS)
+test('矩阵证据位不再硬编码运行标识与 head（它们每次重跑都会变）', () => {
+  for (const row of G3_MATRIX_ROWS) {
+    assert.doesNotMatch(row.evidence, /g3r-/, `${row.id} 的证据位写了运行标识（重跑即过期）`)
+    assert.doesNotMatch(
+      row.evidence,
+      /head [`'“]?[0-9a-f]{7,}/i,
+      `${row.id} 的证据位写了 head（重跑即过期）`,
+    )
+  }
+  // 切片七行：证据位必须指到「链 + 判定卡 + 落证文件」三样。
+  for (const row of G3_SLICE_ROWS) {
+    assert.match(row.evidence, /run-[a-z]+\.ts/, `${row.id} 的证据位没有指到链脚本`)
+    assert.match(row.evidence, new RegExp(`判定卡 ${row.id}`), `${row.id} 的证据位没有指到自己的判定卡`)
+    assert.match(
+      row.evidence,
+      /落证：docs\/08-本轮实施方案\/.+\.json/,
+      `${row.id} 的证据位没有指到落证文件`,
+    )
+    // 结构化字段：哪条链的哪张卡判的（导出体按它核对「本文件里有没有这张卡」）。
+    assert.equal(row.judgedBy?.card, row.id, `${row.id} 的判定来源没有指名自己的判定卡`)
+    assert.ok(row.judgedBy?.chain, `${row.id} 的判定来源没有指名链脚本`)
+  }
+})
+
+test('每一行都写明证据位的类别（结构化，不靠中文子串判定）', () => {
+  for (const row of G3_MATRIX_ROWS) {
+    assert.ok(
+      (['this_run', 'historical_snapshot', 'not_judged'] as const).includes(row.evidenceKind),
+      `${row.id} 缺证据类别`,
+    )
+  }
+  // 历史快照行（b3 那一轮）标成 historical_snapshot；切片七行标成 this_run。
+  for (const id of ['AC-G3-01', 'AC-G3-10', 'AC-G3-13']) {
+    assert.equal(
+      G3_MATRIX_ROWS.find((row) => row.id === id)?.evidenceKind,
+      'historical_snapshot',
+      `${id} 的证据类别不是历史快照`,
+    )
+  }
+  for (const row of G3_SLICE_ROWS) {
+    assert.equal(row.evidenceKind, 'this_run', `${row.id} 的证据类别不是本轮实跑`)
+  }
+})
+
+test('状态计数覆盖全部七种状态', () => {  const counts = statusCounts(G3_MATRIX_ROWS)
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)
   assert.equal(counts['BLOCKED'], 0)
-  assert.equal(counts['PASS (follow-up)'], 15)
-  assert.equal(counts['TODO'], 6)
-  assert.equal(counts['NOT RUN'], 1)
+  assert.equal(counts['PASS (follow-up)'], 16)
+  assert.equal(counts['TODO'], 0)
+  assert.equal(counts['NOT RUN'], 0)
   // AC-G3-14 的结论依赖真实模型（非确定性），按仓库口径记 WARNING，不写 PASS。
-  assert.equal(counts['WARNING'], 1)
-  // 静态矩阵里**没有**任何一行写 PASS：它记的是「当前 head 实跑得到（或最后已知）
-  // 的值」，而带实现缺口的行在 #246 关闭前一律不判 PASS。
-  assert.equal(counts['PASS'], 0)
+  // G3.5（路线图切片）与 G3.6（稳定化切片）是覆盖受限，也记 WARNING。
+  assert.equal(counts['WARNING'], 3)
+  // 切片行 G3.1–G3.4 本轮实跑判定成立，且**没有** #246 缺口，可以判 PASS；
+  // 带缺口的行（AC 行与 G3.7）一律不判 PASS。
+  assert.equal(counts['PASS'], 4)
+  for (const row of G3_MATRIX_ROWS) {
+    if (row.status !== 'PASS') continue
+    assert.equal(
+      gapIdsForRow(row.id).length + limitingGapIdsForRow(row.id).length,
+      0,
+      `${row.id} 带实现缺口，不得判 PASS（缺口清单 #246 关闭前不判 PASS）`,
+    )
+  }
 })
 
 test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准为准', () => {
