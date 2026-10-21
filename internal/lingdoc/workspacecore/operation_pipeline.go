@@ -112,6 +112,10 @@ func projectBasis(p Project) string {
 // pipeline this replaces: the body the caller reads, the HTTP status, whether
 // the response was replayed, and the error. What changed is that the steps
 // are now the shared pipeline's steps.
+//
+// This is a thin wrapper. It adapts the typed descriptor, the typed
+// transaction port and the typed result to the untyped core, so that the
+// core holds the only copy of the pipeline's wiring.
 func runOperationThroughPipeline[T any, I any, R any](
 	s *Service,
 	ctx context.Context,
@@ -120,8 +124,62 @@ func runOperationThroughPipeline[T any, I any, R any](
 	port func(Transaction) (T, error),
 	write func(T, Project) (operationResult[R], error),
 ) (json.RawMessage, int, bool, error) {
-	op, target, key := string(operation.Name), operation.Target, operation.Key
-	body, projectID := operation.Input, operation.Request.ProjectID
+	return runOperationCore(s, ctx, actor, operationSpecOf(operation), func(tx Transaction, project Project) (OperationOutcome, error) {
+		mutation, err := port(tx)
+		if err != nil {
+			return OperationOutcome{}, err
+		}
+		written, err := write(mutation, project)
+		if err != nil {
+			return OperationOutcome{}, err
+		}
+		return OperationOutcome{Value: written.Value, Status: written.Status, Output: written.Output}, nil
+	})
+}
+
+// operationSpecOf reads the typed descriptor as the untyped specification the
+// core runs.
+//
+// SourceIDs stays nil when the descriptor has no source decoder, because the
+// core reads that nil to decide whether the operation is source sensitive.
+func operationSpecOf[I any](operation operationDescriptor[I]) OperationSpec {
+	spec := OperationSpec{
+		Name:         operation.Name,
+		Target:       operation.Target,
+		Key:          operation.Key,
+		Body:         operation.Input,
+		Request:      operation.Request,
+		Output:       operation.Output,
+		CheckProject: operation.CheckProject,
+	}
+	if operation.SourceIDs != nil {
+		spec.SourceIDs = func(tx ChapterWorkspaceTransaction, previous OperationResult, found bool) ([]string, error) {
+			return operation.SourceIDs(tx, operation, previous, found)
+		}
+	}
+	return spec
+}
+
+// runOperationCore runs one operation under the shared pipeline.
+//
+// The core holds the only copy of the pipeline's wiring: which seams the
+// pipeline runs on, in which order, and what a failure reads outward. A
+// caller supplies the operation and the write; the core supplies everything
+// else.
+//
+// The write closure receives the wide transaction rather than a typed port,
+// so the core stays free of the caller's port types. A caller that needs a
+// typed port raises it with MutationPort inside the write, which is where the
+// port assertion happened before.
+func runOperationCore(
+	s *Service,
+	ctx context.Context,
+	actor Actor,
+	spec OperationSpec,
+	write OperationWrite,
+) (json.RawMessage, int, bool, error) {
+	op, target, key := string(spec.Name), spec.Target, spec.Key
+	body, projectID := spec.Body, spec.Request.ProjectID
 
 	outcome, err := operationcore.Run(ctx, operationcore.Request[Actor, Transaction, Project]{
 		Identity: operationcore.Identity[Actor]{
@@ -133,12 +191,12 @@ func runOperationThroughPipeline[T any, I any, R any](
 		Authorization: operationcore.Authorization[Actor]{
 			Actor:     actor,
 			ProjectID: projectID,
-			Action:    string(operation.Request.Action),
-			Resource:  operation.Request.Resource,
+			Action:    string(spec.Request.Action),
+			Resource:  spec.Request.Resource,
 		},
 		Body:            body,
-		Output:          string(operation.Output),
-		SourceSensitive: operation.SourceIDs != nil,
+		Output:          string(spec.Output),
+		SourceSensitive: spec.SourceIDs != nil,
 		HumanGate:       workspaceHumanGate(op),
 		Errors: operationcore.Errors{
 			InvalidRequest:        ErrInvalidRequest,
@@ -177,7 +235,10 @@ func runOperationThroughPipeline[T any, I any, R any](
 			return s.checkSources(ctx, actor, projectID, sourceIDs)
 		},
 		SourceIDs: func(tx Transaction, previous operationcore.Result, found bool) ([]string, error) {
-			return operationSourceIDs(tx, operation, OperationResult{
+			if spec.SourceIDs == nil {
+				return nil, nil
+			}
+			return spec.SourceIDs(tx, OperationResult{
 				BodyHash: previous.BodyHash,
 				Body:     previous.Body,
 				Status:   previous.Status,
@@ -185,7 +246,7 @@ func runOperationThroughPipeline[T any, I any, R any](
 			}, found)
 		},
 		PrepareCached: func(ctx context.Context, id operationcore.Identity[Actor], body any) (context.Context, bool, error) {
-			return s.g1PrepareCachedChangeOperation(ctx, actor, operation.Request, OperationIdentity{
+			return s.g1PrepareCachedChangeOperation(ctx, actor, spec.Request, OperationIdentity{
 				Actor:     id.Actor,
 				Operation: id.Operation,
 				Target:    id.Target,
@@ -201,16 +262,12 @@ func runOperationThroughPipeline[T any, I any, R any](
 		Validate: func(ctx context.Context, tx Transaction, p Project) error {
 			return s.g1ValidateOperation(ctx, tx, actor, p, op)
 		},
-		CheckProject: operation.CheckProject,
+		CheckProject: spec.CheckProject,
 		StorePins: func(ctx context.Context, tx Transaction, projectID string) error {
 			return s.g1StoreOperationPins(ctx, tx, projectID)
 		},
 		Write: func(ctx context.Context, tx Transaction, p Project) (any, string, int, error) {
-			mutation, err := port(tx)
-			if err != nil {
-				return nil, "", 0, err
-			}
-			written, err := write(mutation, p)
+			written, err := write(tx, p)
 			if err != nil {
 				return nil, "", 0, err
 			}
