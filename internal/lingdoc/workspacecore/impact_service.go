@@ -615,8 +615,12 @@ func ValidateChangeImpactAssessment(tx Transaction, p Project, change ChangeSet)
 	}
 	return nil
 }
+
+// CommitChangeImpactTasks stores the impact tasks of an applied change set
+// directly through the caller's transaction. It is the package-level seam for
+// callers that own their transaction and do not install a writer port.
 func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error {
-	return commitChangeImpactTasks(nil, tx, p, change)
+	return commitChangeImpactTasks(nil, tx, 0, p, change)
 }
 
 // commitChangeImpactTasks stores the impact tasks of an applied change set
@@ -624,11 +628,14 @@ func CommitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error 
 // substitute a controlled failure implementation there, which is how the
 // apply transaction's atomicity boundary becomes observable from outside the
 // process (#256). A nil writer keeps the direct transactional write.
-func (s *Service) commitChangeImpactTasks(tx Transaction, p Project, change ChangeSet) error {
-	return commitChangeImpactTasks(s.impactTasks, tx, p, change)
+//
+// The tenant is the writing tenant: it lets a substituted writer decide its
+// scope without reading storage inside the caller's write transaction (#310).
+func (s *Service) commitChangeImpactTasks(tx Transaction, tenantID uint64, p Project, change ChangeSet) error {
+	return commitChangeImpactTasks(s.impactTasks, tx, tenantID, p, change)
 }
 
-func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, p Project, change ChangeSet) error {
+func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, tenantID uint64, p Project, change ChangeSet) error {
 	store, ok := tx.(impactTransaction)
 	if !ok {
 		return ErrInvalidState
@@ -700,7 +707,7 @@ func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, p Project,
 			task.StaleReason = reason
 			task.StaleAt = now
 		}
-		if err := writeImpactTask(writer, tx, store, task); err != nil {
+		if err := writeImpactTask(writer, tx, tenantID, store, task); err != nil {
 			return err
 		}
 		// The handoff record is keyed by the same identity, so a redelivery
@@ -715,9 +722,9 @@ func commitChangeImpactTasks(writer ImpactTaskWriter, tx Transaction, p Project,
 // writeImpactTask stores one impact task inside the caller's transaction.
 // The composition root may install a writer that fails on purpose; without
 // one the task is written directly through the transaction.
-func writeImpactTask(writer ImpactTaskWriter, tx Transaction, store impactTransaction, task ImpactTask) error {
+func writeImpactTask(writer ImpactTaskWriter, tx Transaction, tenantID uint64, store impactTransaction, task ImpactTask) error {
 	if writer != nil {
-		return writer.WriteImpactTask(tx, task)
+		return writer.WriteImpactTask(tx, tenantID, task)
 	}
 	return store.InsertImpactTask(task)
 }

@@ -117,12 +117,23 @@ func IsInjectedFault(err error) bool { return errors.Is(err, ErrInjectedFault) }
 // The change-set apply path stores its impact tasks through this port only, so
 // a composition root can substitute a controlled failure implementation and
 // observe the atomicity boundary of the apply transaction.
+//
+// The tenant is part of the call so that a substituted implementation can
+// decide its scope **without reading the database inside the caller's write
+// transaction** (#310). A failure seam that has to query storage while the
+// transaction already holds the write lock can turn a controlled failure into
+// a stuck request, and the read's error would be indistinguishable from "not
+// in scope".
 type ImpactTaskWriter interface {
-	WriteImpactTask(Transaction, ImpactTask) error
+	WriteImpactTask(Transaction, uint64, ImpactTask) error
 }
 
 // BusinessAuditWriter is the narrow writer port for the business audit row of
 // a mutation transaction.
+//
+// The audit event carries its own tenant, so a substituted implementation can
+// decide its scope without reading the database inside the caller's write
+// transaction (#310).
 type BusinessAuditWriter interface {
 	WriteBusinessAudit(Transaction, AuditEvent) error
 }
@@ -132,7 +143,7 @@ type BusinessAuditWriter interface {
 // atomic boundary.
 type transactionImpactTaskWriter struct{}
 
-func (transactionImpactTaskWriter) WriteImpactTask(tx Transaction, task ImpactTask) error {
+func (transactionImpactTaskWriter) WriteImpactTask(tx Transaction, _ uint64, task ImpactTask) error {
 	store, ok := tx.(impactTransaction)
 	if !ok {
 		return ErrInvalidState
@@ -154,14 +165,21 @@ func (transactionBusinessAuditWriter) WriteBusinessAudit(tx Transaction, event A
 // faultImpactTaskWriter fails the ImpactTask write for one tenant only. Other
 // tenants keep the real write: the injection is a demonstration tool scoped to
 // the demo tenant, not a global outage.
+//
+// The scope is decided from the tenant of the write itself. The failure seam
+// performs **no storage access at all**: a substituted writer that has to read
+// the project row inside the apply transaction would run that read after the
+// transaction already advanced the project revision, i.e. while it holds the
+// write lock (#310). A controlled failure must be able to fail *instantly* and
+// leave the rollback to the transaction boundary, not wait on storage.
 type faultImpactTaskWriter struct {
 	fault FaultInjection
 	inner ImpactTaskWriter
 }
 
-func (w faultImpactTaskWriter) WriteImpactTask(tx Transaction, task ImpactTask) error {
-	if !faultInProjectScope(tx, w.fault, task.ProjectID) {
-		return w.inner.WriteImpactTask(tx, task)
+func (w faultImpactTaskWriter) WriteImpactTask(tx Transaction, tenantID uint64, task ImpactTask) error {
+	if !w.inScope(tenantID) {
+		return w.inner.WriteImpactTask(tx, tenantID, task)
 	}
 	return &InjectedFaultError{Point: w.fault.Point, Reason: w.fault.reason()}
 }
@@ -180,10 +198,22 @@ func (w faultBusinessAuditWriter) WriteBusinessAudit(tx Transaction, event Audit
 	if w.fault.Action != "" && event.Action != w.fault.Action {
 		return w.inner.WriteBusinessAudit(tx, event)
 	}
-	if !faultInProjectScope(tx, w.fault, event.ProjectID) {
+	if !w.inScope(event.TenantID) {
 		return w.inner.WriteBusinessAudit(tx, event)
 	}
 	return &InjectedFaultError{Point: w.fault.Point, Reason: w.fault.reason()}
+}
+
+// inScope reports whether the write belongs to the tenant the fault is scoped
+// to. The write's own tenant is the project's tenant: the apply transaction
+// is tenant scoped, so a write of another tenant can never reach the demo
+// tenant's project.
+func (w faultImpactTaskWriter) inScope(tenantID uint64) bool {
+	return w.fault.TenantID != 0 && tenantID == w.fault.TenantID
+}
+
+func (w faultBusinessAuditWriter) inScope(tenantID uint64) bool {
+	return w.fault.TenantID != 0 && tenantID == w.fault.TenantID
 }
 
 // faultAuthorizationPolicy makes the authorization decision fail for one
@@ -214,20 +244,6 @@ func (p faultAuthorizationPolicy) inScope(request AuthorizationRequest) bool {
 		return false
 	}
 	if p.fault.Action != "" && string(request.Action) != p.fault.Action {
-		return false
-	}
-	return true
-}
-
-// faultInProjectScope reports whether the project belongs to the tenant the
-// fault is scoped to. The tenant filter of the project read is the scope
-// check: a project of another tenant is simply not found here, so its writes
-// are never touched by the injection.
-func faultInProjectScope(tx Transaction, fault FaultInjection, projectID string) bool {
-	if fault.TenantID == 0 || projectID == "" {
-		return false
-	}
-	if _, err := tx.Project(fault.TenantID, projectID); err != nil {
 		return false
 	}
 	return true
