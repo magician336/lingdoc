@@ -1,11 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
-import type { AcceptCandidateInput } from '@/api/lingdoc/candidateAdoption'
+import type { AcceptCandidateInput, AdoptionConfirmation } from '@/api/lingdoc/candidateAdoption'
 import { adoptionSignature, keyForAttempt } from './candidateAdoption'
 
 const workspace = readFileSync(new URL('./Workspace.vue', import.meta.url), 'utf8')
 const dialog = readFileSync(new URL('../../components/LingDocCandidateAdoptionDialog.vue', import.meta.url), 'utf8')
+
+function confirmationOf(overrides: Partial<AdoptionConfirmation> = {}): AdoptionConfirmation {
+  return {
+    writing_action: 'generate',
+    adoption_target: 'formal_version_whole',
+    confirmed_at: '2026-10-22T01:00:00.000Z',
+    confirmed_by: 'user-1',
+    origin: 'ai_generated',
+    ...overrides,
+  }
+}
 
 function inputOf(overrides: Partial<AcceptCandidateInput> = {}): AcceptCandidateInput {
   return {
@@ -13,6 +24,7 @@ function inputOf(overrides: Partial<AcceptCandidateInput> = {}): AcceptCandidate
     expected_chapter_version_id: null,
     expected_spec_revision: 3,
     replace_existing: false,
+    confirmation: confirmationOf(),
     ...overrides,
   }
 }
@@ -65,6 +77,32 @@ test('the signature covers every field that goes into the request body', () => {
   assert.notEqual(adoptionSignature(inputOf({ expected_spec_revision: 4 })), base)
   assert.notEqual(adoptionSignature(inputOf({ replace_existing: true })), base)
   assert.equal(adoptionSignature(inputOf()), base)
+})
+
+test('the signature covers the adoption confirmation', () => {
+  // 确认载荷在请求体里，所以它必须在签名里：确认了另一个动作、另一个采纳目标或
+  // 另一个范围，都是另一次采纳，必须换一把键。
+  const base = adoptionSignature(inputOf())
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ writing_action: 'rewrite' }) })), base)
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ adoption_target: 'working_copy_whole' }) })), base)
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ confirmed_by: 'user-2' }) })), base)
+  assert.notEqual(adoptionSignature(inputOf({ confirmation: confirmationOf({ origin: 'human' }) })), base)
+  assert.notEqual(
+    adoptionSignature(inputOf({ confirmation: confirmationOf({ adoption_target: 'working_copy_partial', scope: { start_utf16: 0, end_utf16: 4 } }) })),
+    base,
+  )
+  assert.equal(adoptionSignature(inputOf()), base)
+})
+
+test('a retried adoption keeps its key because the confirmation moment does not move', () => {
+  // 确认时刻在对话框打开时定下：它每次都变的话，同一次采纳的重试会换一把键，
+  // 整章替换就做两遍。
+  const { state, mint } = mintCounter()
+  let attempt = keyForAttempt(null, inputOf(), mint)
+  assert.equal(state.calls, 1)
+  attempt = keyForAttempt(attempt, inputOf(), mint)
+  assert.equal(state.calls, 1)
+  assert.equal(attempt.key, 'key-1')
 })
 
 test('the dialog signs the very body it sends', () => {
