@@ -1,7 +1,7 @@
 {
   "mode": "real",
   "note": "#282 G3 缺口收口-4-G：审计动作新旧格式并存的读侧保证。审计动作列有两种形状——旧形状 authorization.<种类>:<资源>（#253 修复前的写入方把完整能力写进了分类列）与新形状 authorization.<种类>（资源留在 details_json.capability）。本轮把「已知无影响」升级成有保证：读侧的全量盘点落到 ADR 0010，规则写清楚（按动作种类匹配，不按完整动作串匹配），并用守护测试钉住「两种形状的行都从读侧回来且 action 原样透传」。盘点结论：生产代码里没有任何读侧按完整动作串过滤授权族，所以本轮不需要改生产代码；两处按动作串等值匹配的地方属于另一个从不带资源的动作族（validation_issue.disposition），与形状变化无关。",
-  "head": "6b15f8fd",
+  "head": "bbe6459a",
   "base": "058637c4",
   "passed": [
     {
@@ -59,6 +59,7 @@
     }
   ],
   "notes": [
-    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。"
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。"
   ]
 }

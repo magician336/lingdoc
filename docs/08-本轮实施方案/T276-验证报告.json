@@ -1,7 +1,7 @@
 {
   "mode": "real",
   "note": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界。PostgreSQL 侧的 action 列一直是 varchar(64)（写入时拒超长值，SQLSTATE 22001），SQLite 侧此前是无界 TEXT —— 同一类缺陷在开发机上完全看不见（#253 的「合法请求得到 500」只在 PG 上现形）。本轮让两种方言对同一条规则表达一致：SQLite 表重建加 CHECK (length(action) <= 64)，PostgreSQL 加同名显式约束 ck_lingdoc_project_audits_action_len。盘点结论：两种方言的真实库里都没有超 64 字符的行，因此不需要清理；迁移里对旧格式超长行的原地规范化是防御性分支。",
-  "head": "6b15f8fd",
+  "head": "bbe6459a",
   "base": "058637c4",
   "passed": [
     {
@@ -74,6 +74,7 @@
     }
   ],
   "notes": [
-    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。"
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。"
   ]
 }

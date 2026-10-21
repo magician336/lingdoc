@@ -1,6 +1,6 @@
 {
   "ticket": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界",
-  "head": "6b15f8fd",
+  "head": "bbe6459a",
   "base": "058637c4",
   "environment": {
     "go": "go1.27.1 windows/amd64",
@@ -149,6 +149,7 @@
     "生产数据库不可从本机访问；盘点在本机可达的两个真实库上完成（见 inventory）。生产库需按同一口径自查一次。",
     "SQLite 的表重建走仓内既有模板（migrations/sqlite/000043_lingdoc_satisfied_change_sets.up.sql），不是自研写法。",
     "生产迁移执行器（internal/database/migration.go）用 golang-migrate v4，SQLite 驱动带事务（NoTxWrap 未开）⇒ 迁移失败时整个迁移回滚，不会留下半张表。",
-    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。"
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。"
   ]
 }
