@@ -22,11 +22,13 @@ func TestSQLiteCandidateStorageShapeMigrationGoesUpAndDown(t *testing.T) {
 
 	dbPath := filepath.Join(t.TempDir(), "shape.db")
 	migrator := newSQLiteMigrator(t, dbPath)
-	require.NoError(t, migrator.Up())
+	// 钉住**这一条**迁移的版本号，不是「最新的那个」：迁移号是共享序列资源，
+	// 别的面后面还要加迁移。版本号本身由 expectedSQLiteMigrationVersion 守着。
+	require.NoError(t, migrator.Migrate(candidateShapeSQLiteVersion))
 
 	version, dirty, err := migrator.Version()
 	require.NoError(t, err)
-	require.Equal(t, uint(46), version)
+	require.Equal(t, uint(candidateShapeSQLiteVersion), version)
 	require.False(t, dirty)
 
 	db := openSQLiteDB(t, dbPath)
@@ -93,7 +95,7 @@ func TestSQLiteCandidateStorageShapeMigrationGoesUpAndDown(t *testing.T) {
 	require.NoError(t, migrator.Steps(1))
 	version, dirty, err = migrator.Version()
 	require.NoError(t, err)
-	require.Equal(t, uint(46), version)
+	require.Equal(t, uint(candidateShapeSQLiteVersion), version)
 	require.False(t, dirty)
 
 	for _, column := range []string{"writing_action", "origin", "run_mode", "model_id"} {
@@ -122,7 +124,8 @@ func TestSQLiteCandidateStorageShapeMigrationRefusesToDropNotAuthorizedCandidate
 
 	dbPath := filepath.Join(t.TempDir(), "guard.db")
 	migrator := newSQLiteMigrator(t, dbPath)
-	require.NoError(t, migrator.Up())
+	// 同样钉住这一条迁移的版本号：回滚一步才是这一条迁移的回滚。
+	require.NoError(t, migrator.Migrate(candidateShapeSQLiteVersion))
 
 	db := openSQLiteDB(t, dbPath)
 	insertCandidateRow(t, db, "candidate-1", "not_authorized")

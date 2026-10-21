@@ -97,8 +97,8 @@ func TestLingDocWorkspaceCompositionKeepsItsRouteSurface(t *testing.T) {
 			t.Errorf("the production composition does not serve %s although the capability is declared", path)
 		}
 	}
-	if got := len(engine.Routes()); got != 48 {
-		t.Fatalf("the production composition registered %d routes, want 48", got)
+	if got := len(engine.Routes()); got != 49 {
+		t.Fatalf("the production composition registered %d routes, want 49", got)
 	}
 }
 

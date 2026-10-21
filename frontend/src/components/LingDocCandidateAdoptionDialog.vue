@@ -17,6 +17,18 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
+// 三值来源文案。来源标注是候选的事实，不由界面猜。
+const originLabels: Record<string, string> = {
+  human: '人工撰写',
+  ai_generated: 'AI 生成',
+  ai_assisted_human: 'AI 辅助整理',
+}
+
+function originLabel(origin?: string) {
+  if (!origin) return '未标注'
+  return originLabels[origin] ?? origin
+}
+
 const submitting = ref(false)
 const errorMessage = ref('')
 const accepted = ref(false)
@@ -90,19 +102,30 @@ function cancel() {
       <p v-else class="candidate-adoption__hint">当前章节为空，将创建一个新的章节版本。</p>
 
       <section class="candidate-adoption__preview">
-        <h3>候选正文</h3>
-        <pre>{{ candidate.body_markdown }}</pre>
-        <p>来源：{{ candidate.source_ids.length ? candidate.source_ids.join('、') : '无' }}</p>
-        <p>研究条件：第 {{ candidate.basis.spec_revision }} 版；模板 {{ candidate.basis.template_id }} / {{ candidate.basis.template_version }}</p>
-        <p>规则集：{{ candidate.basis.ruleset_hash || '未提供' }}</p>
-        <p>资料版本：{{ candidate.basis.asset_versions.length ? candidate.basis.asset_versions.map((item) => `${item.asset_id}@${item.asset_revision}`).join('、') : '无' }}</p>
-        <div v-if="candidate.review_items.length" class="candidate-adoption__reviews">
-          <p>待核项（采纳后需要重新确认）：</p>
-          <ul>
+        <div class="candidate-adoption__column">
+          <h3>候选正文</h3>
+          <pre>{{ candidate.body_markdown }}</pre>
+        </div>
+        <div class="candidate-adoption__column">
+          <h3>来源</h3>
+          <p>{{ candidate.source_ids.length ? candidate.source_ids.join('、') : '无' }}</p>
+          <p>来源标注：{{ originLabel(candidate.origin) }}</p>
+        </div>
+        <div class="candidate-adoption__column candidate-adoption__column--unconfirmed">
+          <h3>待核事项（未确认的依据）</h3>
+          <p v-if="candidate.review_items.length" class="candidate-adoption__unconfirmed-hint">
+            以下是候选自己提出的、尚未确认的依据。它们不是正式依据，采纳后需要重新确认。
+          </p>
+          <ul v-if="candidate.review_items.length">
             <li v-for="item in candidate.review_items" :key="item.id">{{ item.statement }}</li>
           </ul>
+          <p v-else>待核事项：无</p>
         </div>
-        <p v-else>待核项：无</p>
+        <div class="candidate-adoption__basis">
+          <p>研究条件：第 {{ candidate.basis.spec_revision }} 版；模板 {{ candidate.basis.template_id }} / {{ candidate.basis.template_version }}</p>
+          <p>规则集：{{ candidate.basis.ruleset_hash || '未提供' }}</p>
+          <p>资料版本：{{ candidate.basis.asset_versions.length ? candidate.basis.asset_versions.map((item) => `${item.asset_id}@${item.asset_revision}`).join('、') : '无' }}</p>
+        </div>
       </section>
 
       <p v-if="errorMessage" class="candidate-adoption__error" role="alert">{{ errorMessage }}</p>
@@ -132,7 +155,11 @@ h2, h3 { margin: 0; }
 .candidate-adoption__warning, .candidate-adoption__hint { margin: 20px 0; padding: 12px 14px; border-radius: 10px; }
 .candidate-adoption__warning { background: #fff7ed; color: #9a3412; }
 .candidate-adoption__hint { background: #f0fdf4; color: #166534; }
-.candidate-adoption__preview { padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.candidate-adoption__preview { display: grid; gap: 12px; padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.candidate-adoption__column { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
+.candidate-adoption__column--unconfirmed { border-color: #fed7aa; background: #fff7ed; }
+.candidate-adoption__unconfirmed-hint { color: #9a3412; }
+.candidate-adoption__basis { padding: 10px 12px; border-radius: 10px; background: #f1f5f9; }
 .candidate-adoption__preview pre { max-height: 260px; overflow: auto; white-space: pre-wrap; font: inherit; line-height: 1.6; }
 .candidate-adoption__preview p { margin: 8px 0 0; color: #475569; font-size: 13px; }
 .candidate-adoption__reviews ul { margin: 6px 0 0; padding-left: 20px; color: #475569; font-size: 13px; }

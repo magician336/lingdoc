@@ -51,8 +51,8 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	// from a handler assembled with no ports at all, which never had the
 	// machine read endpoints - the production composition root always had
 	// them.
-	if got := len(engine.Routes()); got != 70 {
-		t.Fatalf("registered %d LingDoc routes, want 70", got)
+	if got := len(engine.Routes()); got != 71 {
+		t.Fatalf("registered %d LingDoc routes, want 71", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)

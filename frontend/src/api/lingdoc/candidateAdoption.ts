@@ -25,6 +25,8 @@ export interface Candidate {
   basis: CandidateBasis
   validity: 'fresh' | 'stale'
   review_items: ReviewItem[]
+  /** 候选正文的来源。三值文案由采纳对话框写，不在客户端猜。 */
+  origin?: 'human' | 'ai_generated' | 'ai_assisted_human'
 }
 
 export interface Chapter {
