@@ -215,8 +215,51 @@ test('切片七行都有实跑判定：状态取本轮实跑观测到的值，�
   }
 })
 
-test('状态计数覆盖全部七种状态', () => {
-  const counts = statusCounts(G3_MATRIX_ROWS)
+test('矩阵证据位不再硬编码运行标识与 head（它们每次重跑都会变）', () => {
+  for (const row of G3_MATRIX_ROWS) {
+    assert.doesNotMatch(row.evidence, /g3r-/, `${row.id} 的证据位写了运行标识（重跑即过期）`)
+    assert.doesNotMatch(
+      row.evidence,
+      /head [`'“]?[0-9a-f]{7,}/i,
+      `${row.id} 的证据位写了 head（重跑即过期）`,
+    )
+  }
+  // 切片七行：证据位必须指到「链 + 判定卡 + 落证文件」三样。
+  for (const row of G3_SLICE_ROWS) {
+    assert.match(row.evidence, /run-[a-z]+\.ts/, `${row.id} 的证据位没有指到链脚本`)
+    assert.match(row.evidence, new RegExp(`判定卡 ${row.id}`), `${row.id} 的证据位没有指到自己的判定卡`)
+    assert.match(
+      row.evidence,
+      /落证：docs\/08-本轮实施方案\/.+\.json/,
+      `${row.id} 的证据位没有指到落证文件`,
+    )
+    // 结构化字段：哪条链的哪张卡判的（导出体按它核对「本文件里有没有这张卡」）。
+    assert.equal(row.judgedBy?.card, row.id, `${row.id} 的判定来源没有指名自己的判定卡`)
+    assert.ok(row.judgedBy?.chain, `${row.id} 的判定来源没有指名链脚本`)
+  }
+})
+
+test('每一行都写明证据位的类别（结构化，不靠中文子串判定）', () => {
+  for (const row of G3_MATRIX_ROWS) {
+    assert.ok(
+      (['this_run', 'historical_snapshot', 'not_judged'] as const).includes(row.evidenceKind),
+      `${row.id} 缺证据类别`,
+    )
+  }
+  // 历史快照行（b3 那一轮）标成 historical_snapshot；切片七行标成 this_run。
+  for (const id of ['AC-G3-01', 'AC-G3-10', 'AC-G3-13']) {
+    assert.equal(
+      G3_MATRIX_ROWS.find((row) => row.id === id)?.evidenceKind,
+      'historical_snapshot',
+      `${id} 的证据类别不是历史快照`,
+    )
+  }
+  for (const row of G3_SLICE_ROWS) {
+    assert.equal(row.evidenceKind, 'this_run', `${row.id} 的证据类别不是本轮实跑`)
+  }
+})
+
+test('状态计数覆盖全部七种状态', () => {  const counts = statusCounts(G3_MATRIX_ROWS)
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)

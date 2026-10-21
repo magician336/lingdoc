@@ -282,3 +282,66 @@ test('G3.4：没有人工复核探针就不成立（异步成功不等于人工�
   assert.equal(broken.holds, false)
   assert.match(broken.detail, /本轮没有跑人工复核探针/)
 })
+
+/**
+ * 「服务端按契约拒了这个请求」只认 **4xx**。
+ *
+ * 5xx 是服务端**自己**崩了：把它算成「被拒」，等于让判定卡在服务端故障时
+ * 反而判成立——那是拿错误冒充拒绝。当前落证里的真实码是 422（4xx），
+ * 所以收紧后本轮已有落证的结论不变。
+ */
+test('5xx 不算「服务端按契约拒掉」：G3.4 / AC-G3-07 / 接受不处理边界', () => {
+  // AC-G3-07：缺人工复核决策时服务端 500（自身错误）⇒ 不算被拒 ⇒ 判定不成立。
+  const ac07 = verdictAC0907({
+    taskAction: 'REVIEW_REQUIRED',
+    targetKind: 'ResearchClaim',
+    completeWithoutReviewStatus: 500,
+    completeWithoutReviewCode: 'internal_error',
+    completeWithReviewStatus: 200,
+    completeWithReviewAccepted: true,
+    modelSideCovered: false,
+  })
+  assert.equal(ac07.holds, false, '5xx 被当成了「按契约拒掉」')
+  // blocked.ts 的判定卡**不带 `status`**（只有 dependencies.ts 的卡带）：
+  // 「不成立」时投影保持该行的原状态，所以这里只能断言 holds。
+  assert.equal(ac07.status, undefined)
+
+  // 4xx 仍然是「被拒」：本轮落证里的真实码 422 判定成立。
+  const ac07Rejected = verdictAC0907({
+    taskAction: 'REVIEW_REQUIRED',
+    targetKind: 'ResearchClaim',
+    completeWithoutReviewStatus: 422,
+    completeWithoutReviewCode: 'invalid_state',
+    completeWithReviewStatus: 200,
+    completeWithReviewAccepted: true,
+    modelSideCovered: false,
+  })
+  assert.equal(ac07Rejected.holds, true)
+
+  // 接受不处理边界：阻断级 dismiss 返回 500 ⇒ 不算被拒 ⇒ 判定不成立。
+  const boundary = verdictDismissBoundary({
+    blockingDismissStatus: 500,
+    blockingDismissCode: 'internal_error',
+    nonBlockingDismissStatus: 200,
+    nonBlockingDismissFinalStatus: 'DISMISSED',
+  })
+  assert.equal(boundary.holds, false, '5xx 被当成了「按契约拒掉」')
+
+  // G3.4：缺人工复核决策那一步返回 5xx ⇒ 判定不成立。
+  const g34 = verdictG34(
+    g34ResultOf({
+      reviewProbe: {
+        taskId: 'task-7',
+        taskAction: 'REVIEW_REQUIRED',
+        targetKind: 'ResearchClaim',
+        completeWithoutReviewStatus: 500,
+        completeWithoutReviewCode: 'internal_error',
+        completeWithReviewStatus: 200,
+        completeWithReviewAccepted: true,
+        modelSideCovered: false,
+      },
+    } as unknown as Partial<G3BlockedChainResult>),
+  )
+  assert.equal(g34.holds, false, '5xx 被当成了「按契约拒掉」')
+  assert.equal(g34.status, 'NOT RUN')
+})

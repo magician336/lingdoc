@@ -10,16 +10,20 @@
  * 同一份事实要同步进那份镜像；两者不一致时以镜像为准。
  *
  * **事实基线**：本轮（切片七行接实跑判定那一轮）在当前 head 重跑了影响中心那条链，
- * 所以下面凡引用落证的地方都指名**本轮的运行标识与 head**；
+ * 所以下面凡引用落证的地方都指名**落证文件与判定卡**；
  * `a87459f` 那一轮（#257）是**页面渲染**那一半的落证，两处不混读。
+ *
+ * **不写运行标识与 head**：运行标识每次重跑都变、后端 head 也会跟着变，
+ * 写死等于写下**下一次就过期**的串，读者还取不到。
+ * 这一次到底是哪一次运行、哪个 head，由运行上下文在页面与导出体里带出来。
  *
  * 两条纪律：
  *
  * 1. **每条缺口都必须写清三件事**：缺什么、对应 Spec 位置、解除条件。
  *    只写「没做」的缺口不可行动。
  * 2. **缺口对应行的状态不写 `PASS`**：缺能力记 `BLOCKED`，部分覆盖记
- *    `PASS (follow-up)`，宿主环境限制记 `WARNING`，未落证记 `NOT RUN`
- *    （`docs/agents/development-rules.md` 的门禁词表）。
+ *    `PASS (follow-up)`，覆盖受限（宿主环境限制或产品缺陷）记 `WARNING`，
+ *    未落证记 `NOT RUN`（`docs/agents/development-rules.md` 的门禁词表）。
  */
 
 import { G3_MAIN_BASELINE_PATH, type SpecAnchor } from './g3Matrix'
@@ -68,7 +72,8 @@ export interface G3ImplementationGap {
    *
    * 「缺什么」写的是**缺口还差哪一步**，不是「产品有没有这个能力」——
    * 能力已实现、只差验收台链路时，这里是 `true`。
-   * 宿主环境限制型缺口（G3-GAP-08）不设这个字段：它卡在环境，不在实现。
+   * G3-GAP-08 不设这个字段：它缺的不是能力（能力侧无缺口），
+   * 而是**产品走不到**已可用的外部渠道——设成 `true` 会让读者以为「已实现 = 已闭合」。
    */
   implemented?: boolean
   /** 支撑该缺口的证据文件（仓库内相对路径）。 */
@@ -263,9 +268,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     rowStatus: 'PASS (follow-up)',
     fact:
       '渲染能力**已实现**（验收台 `G3Demo.vue` 与工作台面板 `ImpactOpsPanel.vue` 都渲染' +
-      '「本次必须处理的对象」区块），并在 head `a87459f` 落证（运行标识 `g3r-mvgqpt88-7b4e074d`，#257）。' +
-      '**本轮实跑判定成立**（依赖图与影响任务链 · 运行标识 `g3r-mvi801po-43012d9e` · head `e10a8ec2`，' +
-      '见「G3.7」判定卡）：本轮 head 的实跑把 `assessment.objects` 读回来（3 个对象）并逐字段核对 ' +
+      '「本次必须处理的对象」区块），并在 head `a87459f` 落证（#257）。' +
+      '**本轮实跑判定成立**（依赖图与影响任务链 · 判定卡 `G3.7` · ' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-21-验证报告-20261021.json`）：' +
+      '本轮 head 的实跑把 `assessment.objects` 读回来（3 个对象）并逐字段核对 ' +
       '`state` / `confirmed` / `context_revision`，判定卡 `G3.7` 成立。' +
       '矩阵行 `G3.7` 记 `PASS (follow-up)`（不是 `NOT RUN`）：判定已成立，' +
       '但缺口清单 #246 未关闭前带缺口的行不判 `PASS`，且页面渲染那半段没有在当前 head 重跑。' +
@@ -297,9 +303,10 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
     fact:
       '渲染能力**已实现**（验收台 `G3Demo.vue` 按 `certainty` 分「确定影响 / 可能影响」两段并逐条渲染 ' +
       '`causes[].source`；工作台面板 `ImpactOpsPanel.vue` 同样在位），' +
-      '并在 head `a87459f` 落证（运行标识 `g3r-mvgqpt88-7b4e074d`，#257）。' +
-      '**本轮实跑判定成立**（依赖图与影响任务链 · 运行标识 `g3r-mvi801po-43012d9e` · head `e10a8ec2`，' +
-      '见「G3.7」判定卡）：本轮 head 的实跑把每条影响的来源对象与影响理由读回来' +
+      '并在 head `a87459f` 落证（#257）。' +
+      '**本轮实跑判定成立**（依赖图与影响任务链 · 判定卡 `G3.7` · ' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-21-验证报告-20261021.json`）：' +
+      '本轮 head 的实跑把每条影响的来源对象与影响理由读回来' +
       '（6 条影响，缺来源或原因 0 条），确定影响 5 条 + 可能影响 1 条 = 全部影响' +
       '（分组取服务端 `certainty`，页面不自行重算）。' +
       '矩阵行 `G3.7` 记 `PASS (follow-up)`（不是 `NOT RUN`）：判定已成立，' +
@@ -310,31 +317,38 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-08',
-    title: '调研类闭环：外部检索渠道不可用，证据覆盖受限',
+    title: '调研类闭环：外部检索渠道可用但产品走不到，证据覆盖受限',
     rows: [],
     limits: ['G3.6'],
     missing:
-      '宿主环境缺**外部**检索渠道：本机 `web_search_providers` 表为空，' +
-      '免 key 的 DuckDuckGo 实测返回反爬挑战页，其余 provider 需要外部凭据。' +
-      '但**资料检索路径不需要渠道**：`asset_ids` 路径由服务端从已落库的 turn 推导，' +
-      '轮次 provider 为 `weknora_hybrid`。本轮已用它造出真实 `ResearchRun` 回执——' +
-      '缺的是**带真实命中**的证据与**可用**的外部渠道。',
+      '**产品走不到外部检索渠道**。宿主环境**不缺**渠道：本机自托管的 SearXNG 实例' +
+      '（经代理出网）对中文通用查询返回 **38~40 条真实命中**，**不需要任何 API key**；' +
+      '但调研轮次从**不调用**它。缺的两处都在产品侧：' +
+      '① `internal/lingdoc/workspace/research_adapter.go:164` 的 `SearchResearch` **先**跑' +
+      '项目资料检索，那条路径返回错误时函数直接 return，外部 provider 那条路**走不到**；' +
+      '② `internal/lingdoc/workspacecore/g2_service.go:564-571` 把 provider 的真实错误映射成 ' +
+      '`provider_failure`，**既不返回也不记录**，于是「渠道没配 / URL 被 SSRF 拒了 / ' +
+      'provider 自己失败」在实测里**完全不可区分**。',
     specAnchor: anchor(345),
     unblockCondition:
-      '在租户里配好检索渠道凭据，或给出**带真实命中**的资料证据，再重跑调研链；' +
-      '在此之前本项记 `PASS (follow-up)`（**流程闭环已实跑**，覆盖受限：合成材料、零命中、' +
-      '外部渠道不可用），并写明缺什么——**不得**把零命中的回执说成真实资料通过。',
+      '修掉上面两处（见 **#335**），让调研轮次真的调用外部渠道并带回真实命中，再重跑调研链；' +
+      '在此之前本项记 `WARNING`（覆盖受限）——**流程闭环成立不代表真实课题资料质量通过**，' +
+      '也不得用零命中的回执说成真实资料通过。另派生缺陷 #306（provider_id 无效返回 500）已修。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 258,
     rowStatus: 'WARNING',
     fact:
-      '调研类闭环**已在当前 head 实跑成立**：RETRIEVE_CANDIDATES 影响任务被服务端用真实 ' +
-      '`ResearchRun` 回执（至少两轮检索、scope 为 impact:{taskId}）判定并关闭为 DONE；' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-12-验证报告-20261020.json`（#258）。' +
-      '**覆盖受限**并因此记 PASS (follow-up) 而不是 PASS：闭环用的是**合成验收材料**、' +
-      '检索命中数为 0（本机 SQLite 构建不含 FTS5，且无嵌入模型凭据），' +
-      '外部检索渠道也不可用（DuckDuckGo 实测为反爬挑战页）——' +
-      '**流程闭环成立不代表真实课题资料质量通过**；另派生缺陷 #306。',
+      '**外部检索渠道可用**（本机自托管 SearXNG，经代理出网）：中文通用查询返回 **38~40 条真实命中**，' +
+      '**不需要任何 API key**。' +
+      '**但产品走不到**：`SearchResearch` 先跑项目资料检索、那条路径返回错误时直接 return，' +
+      '外部 provider 那条路走不到；provider 的真实错误又被映射成 `provider_failure` 且既不返回也不记录，' +
+      '三种失败原因在实测里不可区分。轮次的 provider 身份已经是 ' +
+      '`weknora_hybrid;web_search:<id>:searxng`（产品认得这个渠道），但服务端日志里没有 provider 的任何一行。' +
+      '已开票 **#335**。' +
+      '因此本项仍记 `WARNING`：这不是宿主环境限制，是**产品缺陷**——' +
+      '「流程闭环成立」不代表「真实课题资料质量通过」。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-21-验证报告-20261021.json` 的 ' +
+      '`external_search_channel` 节。',
   },
   {
     id: 'G3-GAP-09',

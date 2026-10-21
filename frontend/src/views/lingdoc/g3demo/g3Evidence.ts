@@ -518,6 +518,13 @@ export interface G3RowEvidence {
    * 免得把不同运行的同名判定混成一条。
    */
   verdictId?: string
+  /**
+   * 判定这一行的**那一次运行**的后端 head（commitId）。
+   *
+   * 证据位（静态矩阵）里不写 head：head 每次重跑都会变，写死等于写下
+   * **下一次就过期**的串。这一次的 head 由运行上下文带出来，随证据一起投影。
+   */
+  head?: string
 }
 
 /** 本轮证据在矩阵上的投影。 */
@@ -700,6 +707,13 @@ function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowP
 
   const observedSteps = hit.ctx.steps.filter((step) => step.ok).map((step) => step.name)
   const runTag = multi ? `（来自运行 ${hit.ctx.runId}）` : ''
+  // 判定卡**不成立但自带 status**（生产形状：`runner/dependencies.ts` 与
+  // `runner/changeset.ts` 的判定卡带 status；`runner/blocked.ts` 的卡不带，
+  // 那几条走「状态保持原样」分支）：
+  // 这一行按判定卡自带的 status 落（见 `applyRunEvidence`），
+  // 说明里必须写明「只部分成立（状态记为 X）」——
+  // 否则规则表的说明（「本轮实跑判定成立：……」）会被挂在一张**不成立**的判定卡上。
+  const partial = hit.evaluation.verdictFailed && hit.evaluation.verdict?.status !== undefined
 
   return {
     hit,
@@ -712,21 +726,23 @@ function projectRow(contexts: readonly G3RunContext[], row: G3MatrixRow): G3RowP
       stale,
       runId: hit.ctx.runId,
       verdictId: hit.evaluation.verdict?.id,
-      note: hit.evaluation.decided
-        ? hit.evaluation.verdict?.detail
-          ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
-          : `${hit.evaluation.group.note}${runTag}`
-        : stale
-          ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
-          : hit.evaluation.missingSteps.length > 0
-            ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
-            : hit.evaluation.verdictFailed
-              ? hit.evaluation.verdict?.status
-                ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**（状态记为 ${hit.evaluation.verdict.status}）：${hit.evaluation.verdict.detail}`
-                : `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」不成立，状态保持原样。`
-              : hit.evaluation.verdictMissing
-                ? `本轮已跑到该行所需步骤，但本轮没有「${hit.evaluation.group.verdictId}」的判定结论，状态保持原样。`
-                : '本轮未覆盖该行，状态保持原样。',
+      head: hit.ctx.head?.commitId,
+      note: partial
+        ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」**只部分成立**` +
+          `（状态记为 ${hit.evaluation.verdict?.status}）：${hit.evaluation.verdict?.detail}${runTag}`
+        : hit.evaluation.decided
+          ? hit.evaluation.verdict?.detail
+            ? `${hit.evaluation.group.note}｜${hit.evaluation.verdict.detail}${runTag}`
+            : `${hit.evaluation.group.note}${runTag}`
+          : stale
+            ? `本轮已跑到该行所需步骤，但 head 已变化（${hit.ctx.staleReason ?? '未知'}），结论过期，状态保持原样。`
+            : hit.evaluation.missingSteps.length > 0
+              ? `本轮未覆盖该行，还缺步骤：${hit.evaluation.missingSteps.join('、')}，状态保持原样。`
+              : hit.evaluation.verdictFailed
+                ? `本轮已跑到该行所需步骤，但判定卡「${hit.evaluation.group.verdictId}」不成立，状态保持原样。`
+                : hit.evaluation.verdictMissing
+                  ? `本轮已跑到该行所需步骤，但本轮没有「${hit.evaluation.group.verdictId}」的判定结论，状态保持原样。`
+                  : '本轮未覆盖该行，状态保持原样。',
     },
   }
 }
@@ -761,7 +777,11 @@ export function applyRunEvidence(
     return {
       ...row,
       status,
-      evidence: hit.evaluation.group.note,
+      // 证据位保留**矩阵登记的那一份**（链 + 判定卡 + 落证文件）：
+      // 它是稳定的指针，被投影覆盖掉的话，读者在跑完一轮之后就看不到
+      // 「这条结论出自哪条链、哪张卡、哪个文件」了。
+      // 这一轮的实际运行标识与 head 由证据投影（`runId` / `head`）单独带出。
+      evidence: row.evidence,
       note: projection.evidence.note,
       // 完全判定的行：接它的「跟进 Issue」不再是待办，保留会让人以为还有未完成的事；
       // 部分覆盖的行：跟进 Issue 指向缺口清单（例如 #246），必须留着。

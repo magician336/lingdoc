@@ -16,6 +16,7 @@
  */
 
 import type { G3HttpClient, G3HttpRequest, G3HttpResponse } from './httpClient'
+import { isSuccessStatus } from './factHelpers'
 
 /** 假客户端的一次应答。 */
 export interface G3FakeReply {
@@ -83,7 +84,7 @@ export function createFakeClient(): G3FakeClient {
     const settled = reply ?? { status: 404, body: { error: { code: 'not_found' } } }
     return {
       status: settled.status,
-      ok: settled.status >= 200 && settled.status < 300,
+      ok: isSuccessStatus(settled.status),
       body: settled.body ?? {},
       bytes: settled.bytes,
       durationMs: 1,

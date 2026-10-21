@@ -473,7 +473,41 @@ test('稳定化链跑完后，G3.1 与 G3.6 由本轮证据驱动为 PASS', () =
   assert.equal(byId.get('G3.6')?.followUpIssue, 246)
 })
 
-test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
+test('判定卡不成立但自带状态时（生产形状），该行取判定卡自带的状态', () => {
+  // 生产里的判定卡**都带 `status`**（runner/dependencies.ts:2001 写
+  // `status: holds ? 'PASS' : 'NOT RUN'`，:2089 写 `'PASS (follow-up)'`）。
+  // 所以夹具必须与生产同形，否则这条测试断言的语义在生产里并不成立。
+  const ctx = prerequisiteRun()
+  for (const name of Object.values(G3_STAB_STEPS)) {
+    recordStep(ctx, {
+      name,
+      method: 'POST',
+      path: '/api/v1/lingdoc/projects/p1/stabilize',
+      status: 200,
+      ok: true,
+      durationMs: 5,
+      conclusion: '成功',
+    })
+  }
+  ctx.verdicts = [
+    { id: 'G3.1', title: 'G3.1', holds: false, detail: '不成立', evidence: [], status: 'NOT RUN' },
+    { id: 'G3.6', title: 'G3.6', holds: false, detail: '不成立', evidence: [], status: 'NOT RUN' },
+  ]
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  // 判定卡自带状态 ⇒ 这一行取判定卡自带的状态（不是矩阵原状态，也不是 PASS）。
+  assert.equal(byId.get('G3.1')?.status, 'NOT RUN')
+  assert.equal(byId.get('G3.6')?.status, 'NOT RUN')
+  // 证据说明必须写明「只部分成立（状态记为 X）」——
+  // 否则规则表的说明（「本轮实跑判定成立：……」）会被挂在一张**不成立**的判定卡上。
+  const notes = new Map(evidence.map((item) => [item.rowId, item.note]))
+  for (const id of ['G3.1', 'G3.6']) {
+    assert.match(notes.get(id) ?? '', /只部分成立/, `${id} 的说明没有写明判定卡只部分成立`)
+    assert.match(notes.get(id) ?? '', /状态记为 NOT RUN/, `${id} 的说明没有写明判定卡自带的状态`)
+  }
+})
+
+test('判定卡不成立且没有状态时，该行状态保持原样', () => {
   const ctx = prerequisiteRun()
   for (const name of Object.values(G3_STAB_STEPS)) {
     recordStep(ctx, {
@@ -501,6 +535,7 @@ test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
   const notes = new Map(evidence.map((item) => [item.rowId, item.note]))
   assert.match(notes.get('G3.1') ?? '', /判定卡/)
   assert.match(notes.get('G3.6') ?? '', /判定卡/)
+  assert.match(notes.get('G3.1') ?? '', /状态保持原样/)
 })
 
 test('阻断与恢复链跑完后，AC-G3-09 / AC-G3-12 / AC-G3-07 由本轮证据驱动', () => {

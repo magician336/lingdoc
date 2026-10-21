@@ -55,6 +55,7 @@ import {
   type G3StabilizationFact,
 } from './stabilization'
 import { runProjectChain } from './project'
+import { isClientRejection, isFailedRequest } from './factHelpers'
 
 /**
  * 本链的步骤名。
@@ -1540,7 +1541,9 @@ export function verdictG34(result: G3BlockedChainResult): G3Verdict {
 
   // ② 异步成功不等于人工关闭。
   const probe = result.reviewProbe
-  const refusedWithoutReview = Boolean(probe) && probe!.completeWithoutReviewStatus >= 400
+  // 「缺人工复核决策被服务端拒掉」只认 **4xx**：5xx 是服务端自己崩了，
+  // 拿它当「按契约拒掉」等于让判定卡在服务端故障时反而判成立。
+  const refusedWithoutReview = Boolean(probe) && isClientRejection(probe!.completeWithoutReviewStatus)
   const acceptedWithReview = Boolean(probe) && probe!.completeWithReviewAccepted
   const manualCloseRequired = refusedWithoutReview && acceptedWithReview
 
@@ -1625,14 +1628,14 @@ export function verdictAC0909(input: G3AC0909Input): G3Verdict {
         `**未成立那半段**：「问题不再阻断当次求值」在当前后端上不成立：` +
         `处置后重检的结论仍为 ${input.checkStatusAfter}（处置前 ${input.checkStatusBefore}），` +
         `服务端把人工处置当工作流元数据，不改求值结论` +
-        (input.dismissStatus >= 400
+        (isFailedRequest(input.dismissStatus)
           ? `；且对阻断级规则问题调用「接受不处理」（dismiss）本轮返回 HTTP ${input.dismissStatus}` +
             `（code=${input.dismissCode || '（未给码）'}）。`
           : '。')
       : `不成立：规则问题处置=${input.resolveStatus}（问题带处置=${input.issueCarriesDisposition}）、` +
         `求值结论 ${input.checkStatusBefore}→${input.checkStatusAfter}、影响任务=${input.impactTaskStatus}、` +
         `稳定化=${input.stabilizationStatus}。` +
-        (input.dismissStatus >= 400
+        (isFailedRequest(input.dismissStatus)
           ? `本轮实测：对阻断级规则问题调用「接受不处理」（dismiss）返回 HTTP ${input.dismissStatus}` +
             `（code=${input.dismissCode || '（未给码）'}）。`
           : ''),
@@ -1721,7 +1724,8 @@ export interface G3AC0907Input {
 
 /** AC-G3-07：证据复核不能自动确认。 */
 export function verdictAC0907(input: G3AC0907Input): G3Verdict {
-  const refusedWithoutReview = input.completeWithoutReviewStatus >= 400
+  // 只认 **4xx**：服务端按契约拒掉才是「被拒」；5xx 是服务端自身错误。
+  const refusedWithoutReview = isClientRejection(input.completeWithoutReviewStatus)
   const acceptedWithReview = input.completeWithReviewAccepted
   // 判定卡只对本轮实跑得出来的那半段负责：
   // 「异步作业成功不关闭人工复核任务」是实跑出来的；
@@ -1762,7 +1766,9 @@ export interface G3DismissBoundaryInput {
 
 /** 接受不处理只对非阻断影响可达。 */
 export function verdictDismissBoundary(input: G3DismissBoundaryInput): G3Verdict {
-  const blockingRefused = input.blockingDismissStatus >= 400
+  // 只认 **4xx**：服务端按契约拒掉才是「被拒」；5xx 是服务端自身错误
+  // （本链历史上出现过 500，那是缺陷，不是契约里的拒绝）。
+  const blockingRefused = isClientRejection(input.blockingDismissStatus)
   const nonBlockingAccepted =
     input.nonBlockingDismissStatus === 200 && input.nonBlockingDismissFinalStatus === 'DISMISSED'
   const holds = blockingRefused && nonBlockingAccepted

@@ -54,3 +54,30 @@ export function refOf(value: unknown): G3ObjectVersionRef {
 export function projectPath(projectId: string, suffix: string): string {
   return `/api/v1/lingdoc/projects/${encodeURIComponent(projectId)}${suffix}`
 }
+
+/**
+ * HTTP 状态码的三种判据。
+ *
+ * 为什么单独收成一份：**「服务端拒了这个请求」只能由客户端错误（4xx）成立。**
+ * 5xx 是服务端**自己**崩了——把它算成「按契约拒掉」，等于让判定卡在服务端出
+ * 故障时反而判成立，那是拿错误冒充拒绝。
+ *
+ * 三者的区别：
+ * - `isSuccessStatus`：2xx 才算成功；
+ * - `isClientRejection`：**只有 4xx** 算「服务端按契约拒了这个请求」；
+ * - `isFailedRequest`：请求没拿到 2xx 成功（4xx 拒绝**或** 5xx 服务端错误）——
+ *   用来如实叙述「这次调用失败了，HTTP 是多少」，不替它判断责任方。
+ */
+export function isSuccessStatus(status: number): boolean {
+  return status >= 200 && status < 300
+}
+
+/** 服务端按契约拒了这个请求：只有 4xx 算（5xx 是服务端自身错误，不算拒绝）。 */
+export function isClientRejection(status: number): boolean {
+  return status >= 400 && status < 500
+}
+
+/** 这次调用没拿到 2xx 成功（可能是 4xx 拒绝，也可能是 5xx 服务端错误）。 */
+export function isFailedRequest(status: number): boolean {
+  return !isSuccessStatus(status)
+}

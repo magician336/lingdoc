@@ -381,6 +381,31 @@ test('候选批次三态：依据版本已变更的候选被静默确认了就�
   assert.equal(verdict.status, 'NOT RUN')
 })
 
+test('候选批次：版本复检「被拒」只认 4xx（5xx 是服务端自身错误）', () => {
+  const base = {
+    batchesBefore: [],
+    batchesAfter: [{ id: 'batch-1', candidates: [], suppressed: [] }],
+    decisions: [
+      { candidateId: 'c1', decision: 'confirm', status: 'confirmed', httpStatus: 200, code: '', edgeId: 'edge-1', relation: '', action: '', supersededRelation: '', supersededAction: '' },
+      { candidateId: 'c2', decision: 'modify', status: 'modified', httpStatus: 200, code: '', edgeId: 'edge-2', relation: 'r2', action: 'a2', supersededRelation: 'r1', supersededAction: 'a1' },
+      { candidateId: 'c3', decision: 'reject', status: 'rejected', httpStatus: 200, code: '', edgeId: '', relation: '', action: '', supersededRelation: '', supersededAction: '' },
+    ],
+    resubmission: { id: 'batch-2', candidates: [], suppressed: [{ reason: 'rejected_in_same_version' }] },
+  }
+  // 4xx：服务端按契约拒掉（当前落证里的真实码是 409）⇒ 判定成立。
+  const rejected = verdictCandidateBatchSubmitted({
+    ...base,
+    staleConfirmation: { candidateId: 'c4', decision: 'confirm', status: '', httpStatus: 409, code: 'dependency_candidate_requires_reevaluation', edgeId: '', relation: '', action: '', supersededRelation: '', supersededAction: '' },
+  } as unknown as G3AssistantChainResult)
+  assert.equal(rejected.holds, true)
+  // 5xx：服务端自己崩了，不能拿它当「不会被静默确认」的证据。
+  const serverError = verdictCandidateBatchSubmitted({
+    ...base,
+    staleConfirmation: { candidateId: 'c4', decision: 'confirm', status: '', httpStatus: 500, code: 'internal_error', edgeId: '', relation: '', action: '', supersededRelation: '', supersededAction: '' },
+  } as unknown as G3AssistantChainResult)
+  assert.equal(serverError.holds, false, '5xx 被当成了「按契约拒掉」')
+})
+
 test('助手链：读回草稿与候选批次，写路由带幂等键、GET 不带', async () => {
   const fake = createFakeClient()
   const projectPath = '/api/v1/lingdoc/projects/p1'
