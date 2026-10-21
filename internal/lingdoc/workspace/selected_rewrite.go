@@ -82,22 +82,22 @@ type RewriteSourceSnapshot struct {
 }
 
 type SelectedRewriteCandidate struct {
-	EvidenceCardRefs     []generation.EvidenceCardRef `json:"evidence_card_refs,omitempty"`
-	CandidateID          string                       `json:"candidate_id"`
-	ProjectID            string                       `json:"project_id"`
-	ChapterID            string                       `json:"chapter_id"`
-	Status               string                       `json:"status"`
-	RunMode              candidateadoption.RunMode    `json:"run_mode"`
-	BaseChapterVersionID *string                      `json:"base_chapter_version_id"`
-	SpecRevision         int64                        `json:"spec_revision"`
-	WorkingCopyRevision  int64                        `json:"working_copy_revision"`
-	Selection            RewriteSelection             `json:"selection"`
-	ReplacementMarkdown  string                       `json:"replacement_markdown"`
-	SourceIDs            []string                     `json:"source_ids"`
-	AuthorizedSources    []RewriteSourceSnapshot      `json:"authorized_sources"`
-	ReviewItems          []core.ReviewItem            `json:"review_items"`
-	ErrorCode            string                       `json:"error_code"`
-	CreatedAt            time.Time                    `json:"created_at"`
+	EvidenceCardRefs     []generation.EvidenceCardRef   `json:"evidence_card_refs,omitempty"`
+	CandidateID          string                         `json:"candidate_id"`
+	ProjectID            string                         `json:"project_id"`
+	ChapterID            string                         `json:"chapter_id"`
+	Status               string                         `json:"status"`
+	RunMode              candidateadoption.RunMode      `json:"run_mode"`
+	BaseChapterVersionID *string                        `json:"base_chapter_version_id"`
+	SpecRevision         int64                          `json:"spec_revision"`
+	WorkingCopyRevision  int64                          `json:"working_copy_revision"`
+	Selection            RewriteSelection               `json:"selection"`
+	ReplacementMarkdown  string                         `json:"replacement_markdown"`
+	SourceIDs            []string                       `json:"source_ids"`
+	AuthorizedSources    []RewriteSourceSnapshot        `json:"authorized_sources"`
+	ReviewItems          []candidateadoption.ReviewItem `json:"review_items"`
+	ErrorCode            string                         `json:"error_code"`
+	CreatedAt            time.Time                      `json:"created_at"`
 	// WritingAction 是产生这个候选的动作。旧路径没有动作，字段为空。
 	//
 	// 它挂在结构体末尾并带 omitempty：旧路径的候选 JSON 逐字不变。
@@ -653,7 +653,7 @@ func (s *SelectedRewriteService) Apply(ctx context.Context, actor Actor, project
 	writeInput := core.SaveWorkingCopyInput{BaseChapterVersionID: row.BaseChapterVersionID,
 		ExpectedSpecRevision: project.SpecRevision, ExpectedWorkingCopyRevision: copy.WorkingCopyRevision,
 		BodyMarkdown: body, SourceIDs: stringSet(refs)}
-	pendingJSON, err := json.Marshal(selectedRewritePendingApply{WorkingCopy: writeInput, ReviewItems: reviewItems})
+	pendingJSON, err := json.Marshal(selectedRewritePendingApply{WorkingCopy: writeInput, ReviewItems: reviewItemsForWorkingCopy(reviewItems)})
 	if err != nil {
 		return core.WorkingCopy{}, false, err
 	}
@@ -711,7 +711,7 @@ func (s *SelectedRewriteService) completePendingApply(ctx context.Context, actor
 func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, error) {
 	var sourceIDs []string
 	var snapshots []RewriteSourceSnapshot
-	var reviewItems []core.ReviewItem
+	var reviewItems []candidateadoption.ReviewItem
 	if err := json.Unmarshal([]byte(row.SourceIDsJSON), &sourceIDs); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
@@ -728,7 +728,7 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		snapshots = []RewriteSourceSnapshot{}
 	}
 	if reviewItems == nil {
-		reviewItems = []core.ReviewItem{}
+		reviewItems = []candidateadoption.ReviewItem{}
 	}
 	evidenceRefs, refErr := decodeRewriteEvidenceRefs(row.EvidenceCardRefsJSON)
 	if refErr != nil {
@@ -920,9 +920,9 @@ func writeRewriteResult(row *selectedRewriteRow, output SelectedRewriteOutput) e
 	if err := validateRewriteOutput(output, mustDecodeIDs(row.SourceIDsJSON)); err != nil {
 		return err
 	}
-	items := make([]core.ReviewItem, 0, len(output.ReviewItems))
+	items := make([]candidateadoption.ReviewItem, 0, len(output.ReviewItems))
 	for _, statement := range output.ReviewItems {
-		items = append(items, core.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement), OriginCandidateID: row.ID})
+		items = append(items, candidateadoption.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement), OriginCandidateID: row.ID})
 	}
 	ids := stringSet(output.SourceIDs)
 	idsJSON, err := json.Marshal(ids)
@@ -966,10 +966,24 @@ func mustDecodeSnapshots(raw string) []RewriteSourceSnapshot {
 	return snapshots
 }
 
-func mustDecodeReviewItems(raw string) []core.ReviewItem {
-	var items []core.ReviewItem
+func mustDecodeReviewItems(raw string) []candidateadoption.ReviewItem {
+	var items []candidateadoption.ReviewItem
 	_ = json.Unmarshal([]byte(raw), &items)
 	return items
+}
+
+// reviewItemsForWorkingCopy 把候选层的待核事项转成工作副本侧的类型。
+//
+// 转换点在 workspace 包内：候选层的待核事项只有一种类型，工作副本侧保留
+// 自己的类型（开发计划 A39 / I-9）。两型的 JSON 形状逐字相同，所以落库的
+// 格式不变，改的是 Go 类型。
+func reviewItemsForWorkingCopy(items []candidateadoption.ReviewItem) []core.ReviewItem {
+	converted := make([]core.ReviewItem, 0, len(items))
+	for _, item := range items {
+		converted = append(converted, core.ReviewItem{ID: item.ID, Statement: item.Statement,
+			OriginCandidateID: item.OriginCandidateID, Anchor: item.Anchor})
+	}
+	return converted
 }
 
 func (s *SelectedRewriteService) updateCandidate(ctx context.Context, row selectedRewriteRow) (SelectedRewriteCandidate, error) {
