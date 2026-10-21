@@ -2,6 +2,8 @@ package workspacecore
 
 import (
 	"encoding/json"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 )
 
 // The workspace's generic mechanisms, as ports.
@@ -69,4 +71,13 @@ func RecordProjectAudit(tx Transaction, actor Actor, projectID, action, target, 
 // that the pipeline opened.
 func MutationPort[T any](tx Transaction) (T, error) {
 	return mutationPort[T](tx)
+}
+
+// ValueHash returns the digest of the JSON encoding of the value.
+//
+// A value that cannot be encoded still has a stable digest: the digest of its
+// empty encoding. The workspace's own value hashes rely on that, because they
+// hash values they do not control.
+func ValueHash(value any) string {
+	return operationcore.ValueHash(value)
 }

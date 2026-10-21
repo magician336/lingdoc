@@ -66,65 +66,26 @@ type ProjectResourceReader interface {
 	ResourceExists(ctx context.Context, tx Transaction, projectID, kind, id string) (bool, error)
 }
 
-// memberRecords is the workspace's implementation of the member and owner
+// MemberStorage is the workspace's implementation of the member and owner
 // storage ports.
 //
 // It holds the aggregate because the composition root builds the ports from
 // it. The ports never hand the aggregate back: a caller receives records, not
 // the workspace.
-type memberRecords struct {
+//
+// One value answers every storage question the member context asks, so the
+// composition root builds it once and hands it to each port.
+type MemberStorage struct {
 	service *Service
 }
 
-// NewMemberRecords returns the reader and writer for the workspace's general records.
+// NewMemberStorage returns the member and owner storage.
 //
-// The service is the workspace's. The records it holds are the workspace's own,
-// and the port never gives the service back to a caller.
-func NewMemberRecords(service *Service) MemberRecords { return &memberRecords{service: service} }
-
-// NewMemberDirectoryReader returns the reader for the members a tenant has.
-//
-// The service is the workspace's. The directory is the workspace's own, and the
+// The service is the workspace's. The storage is the workspace's own, and the
 // port never gives the service back to a caller.
-func NewMemberDirectoryReader(service *Service) MemberDirectoryReader {
-	return &memberRecords{service: service}
+func NewMemberStorage(service *Service) *MemberStorage {
+	return &MemberStorage{service: service}
 }
-
-// NewOwnerTransferRecords returns the reader and canceller for owner transfers.
-//
-// The service is the workspace's. The transfers are the workspace's own, and
-// the port never gives the service back to a caller.
-func NewOwnerTransferRecords(service *Service) OwnerTransferRecords {
-	return &memberRecords{service: service}
-}
-
-// NewTenantAPIKeyReader returns the reader for a tenant's API keys.
-//
-// The service is the workspace's. The keys are the workspace's own, and the
-// port never gives the service back to a caller.
-func NewTenantAPIKeyReader(service *Service) TenantAPIKeyReader {
-	return &memberRecords{service: service}
-}
-
-// NewProjectResourceReader returns the reader for a project's resources.
-//
-// The service is the workspace's. The resources are the workspace's own, and
-// the port never gives the service back to a caller.
-func NewProjectResourceReader(service *Service) ProjectResourceReader {
-	return &memberRecords{service: service}
-}
-
-// memberRecords returns the workspace's general records.
-func (s *Service) memberRecords() MemberRecords { return &memberRecords{service: s} }
-
-// memberDirectoryReader returns the workspace's member directory.
-func (s *Service) memberDirectoryReader() MemberDirectoryReader { return &memberRecords{service: s} }
-
-// ownerTransferRecords returns the workspace's owner transfer records.
-func (s *Service) ownerTransferRecords() OwnerTransferRecords { return &memberRecords{service: s} }
-
-// tenantAPIKeyReader returns the workspace's tenant API keys.
-func (s *Service) tenantAPIKeyReader() TenantAPIKeyReader { return &memberRecords{service: s} }
 
 // listActiveTenantMembers reads the members of a tenant that a project may see.
 //
@@ -307,53 +268,53 @@ func (s *Service) resourceExists(tx Transaction, projectID, kind, id string) (bo
 }
 
 // ListActiveTenantMembers lists the members of a tenant that a project may see.
-func (r *memberRecords) ListActiveTenantMembers(_ context.Context, tx Transaction, tenantID uint64) ([]MemberDirectoryEntry, error) {
+func (r *MemberStorage) ListActiveTenantMembers(_ context.Context, tx Transaction, tenantID uint64) ([]MemberDirectoryEntry, error) {
 	return r.service.listActiveTenantMembers(tx, tenantID)
 }
 
 // Get reads one general record and returns its version.
-func (r *memberRecords) Get(_ context.Context, tx Transaction, projectID, kind, id string, dst any) (int64, error) {
+func (r *MemberStorage) Get(_ context.Context, tx Transaction, projectID, kind, id string, dst any) (int64, error) {
 	return r.service.getMemberRecord(tx, projectID, kind, id, dst)
 }
 
 // Put writes one general record, refusing a stale version.
-func (r *memberRecords) Put(_ context.Context, tx Transaction, projectID, kind, id string, expected int64, value any) error {
+func (r *MemberStorage) Put(_ context.Context, tx Transaction, projectID, kind, id string, expected int64, value any) error {
 	return r.service.putMemberRecord(tx, projectID, kind, id, expected, value)
 }
 
 // ListRecords reads the records of one kind in a project.
 //
 // The caller decodes the payload it knows: the kinds differ.
-func (r *memberRecords) ListRecords(_ context.Context, tx Transaction, projectID, kind string) ([]G5Record, error) {
+func (r *MemberStorage) ListRecords(_ context.Context, tx Transaction, projectID, kind string) ([]G5Record, error) {
 	return r.service.listMemberRecords(tx, projectID, kind)
 }
 
 // ListTenantInvitations reads the invitations a tenant holds for one user.
-func (r *memberRecords) ListTenantInvitations(_ context.Context, tx Transaction, tenantID uint64, userID string) ([]MemberInvitation, error) {
+func (r *MemberStorage) ListTenantInvitations(_ context.Context, tx Transaction, tenantID uint64, userID string) ([]MemberInvitation, error) {
 	return r.service.listTenantInvitations(tx, tenantID, userID)
 }
 
 // List reads the owner transfers of a project that one user may see.
-func (r *memberRecords) List(_ context.Context, tx Transaction, projectID string, project Project, userID string) ([]OwnerTransfer, error) {
+func (r *MemberStorage) List(_ context.Context, tx Transaction, projectID string, project Project, userID string) ([]OwnerTransfer, error) {
 	return r.service.listOwnerTransfers(tx, projectID, project, userID)
 }
 
 // Cancel cancels a pending owner transfer.
-func (r *memberRecords) Cancel(_ context.Context, tx Transaction, projectID, transferID string) error {
+func (r *MemberStorage) Cancel(_ context.Context, tx Transaction, projectID, transferID string) error {
 	return r.service.cancelOwnerTransfer(tx, projectID, transferID)
 }
 
 // Has reports whether the tenant owns the key.
-func (r *memberRecords) Has(_ context.Context, tx Transaction, tenantID uint64, keyID uint64) (bool, error) {
+func (r *MemberStorage) Has(_ context.Context, tx Transaction, tenantID uint64, keyID uint64) (bool, error) {
 	return r.service.hasTenantAPIKey(tx, tenantID, keyID)
 }
 
 // VerifyMachineNativeKey reports whether the key is a usable native machine key.
-func (r *memberRecords) VerifyMachineNativeKey(_ context.Context, tx Transaction, tenantID uint64, keyID uint64) error {
+func (r *MemberStorage) VerifyMachineNativeKey(_ context.Context, tx Transaction, tenantID uint64, keyID uint64) error {
 	return r.service.verifyMachineNativeKey(tx, tenantID, keyID)
 }
 
 // ResourceExists reports whether a project holds a stored resource.
-func (r *memberRecords) ResourceExists(_ context.Context, tx Transaction, projectID, kind, id string) (bool, error) {
+func (r *MemberStorage) ResourceExists(_ context.Context, tx Transaction, projectID, kind, id string) (bool, error) {
 	return r.service.resourceExists(tx, projectID, kind, id)
 }

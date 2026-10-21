@@ -1,6 +1,10 @@
 package workspacecore
 
-import "context"
+import (
+	"context"
+
+	"github.com/Tencent/WeKnora/internal/types"
+)
 
 // WorkspaceAuthorizer authorizes one action inside a transaction.
 //
@@ -43,4 +47,13 @@ func (a *workspaceAuthorizer) AuthorizeProject(ctx context.Context, tx Transacti
 // authorizer hands the caller a port, never the aggregate.
 func NewWorkspaceAuthorizer(service *Service) WorkspaceAuthorizer {
 	return &workspaceAuthorizer{service: service}
+}
+
+// CurrentTenantRole reads the actor's role in the tenant.
+//
+// The role is the workspace's fact: the tenant's own membership table holds
+// it, and a context that read it another way would answer a different
+// question.
+func CurrentTenantRole(tx Transaction, actor Actor) (types.TenantRole, error) {
+	return currentTenantRole(tx, actor)
 }

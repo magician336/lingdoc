@@ -28,3 +28,12 @@ func GovernanceRole(member Member) string {
 func ProjectOwner(project Project, userID string) bool {
 	return projectOwner(project, userID)
 }
+
+// OwnerCurrentlyAvailable reports whether the user still owns the project and
+// still may act in the tenant.
+//
+// The owner may have transferred the ownership, or the tenant may have
+// suspended them; either way the answer is no.
+func OwnerCurrentlyAvailable(tx Transaction, project Project, tenant uint64, user string) bool {
+	return ownerCurrentlyAvailable(tx, project, tenant, user)
+}
