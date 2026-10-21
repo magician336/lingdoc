@@ -1955,10 +1955,19 @@ export function verdictG32(result: G3DependencyChainResult): G3Verdict {
   // 重复边：同一目标的多条来源边 ⇒ 一条逻辑任务，causes 保留多条来源。
   const mergedImpacts = result.assessment.impacts.filter((impact) => impact.causes.length > 1)
   const mergedTasks = result.tasks.filter((task) => task.causes.length > 1)
+  const mergedTask = mergedTasks[0]
+  // 证据要指向**真的产生了那条任务**的那条影响：同一张图里可能还有别的多原因
+  // 影响（例如 NO_ACTION 的候选边合流），它们不产生任务，不能拿来当证据。
+  const mergedImpact = mergedImpacts.find(
+    (impact) =>
+      impact.target.kind === mergedTask?.target.kind &&
+      impact.target.id === mergedTask?.target.id,
+  )
   const duplicateMerged =
     mergedImpacts.length > 0 &&
     mergedTasks.length === 1 &&
-    mergedTasks[0].causes.length === mergedImpacts[0].causes.length &&
+    mergedImpact !== undefined &&
+    mergedImpact.causes.length === mergedTask.causes.length &&
     result.tasksAfterReplay.length === result.tasks.length
 
   // 建议边：只进「可能受影响」，不为它的目标产生任务。
@@ -1993,9 +2002,10 @@ export function verdictG32(result: G3DependencyChainResult): G3Verdict {
       ? `影响评估的 ${result.assessment.impacts.length} 条影响全部可追溯到来源边` +
         `（裁决之后的依赖边共 ${result.finalEdges.length} 条，未能追溯 ${untraceable.length} 条；` +
         `变更集直接列入的对象按服务端给的 \`explicit:\` 来源边记，同样可追溯）；` +
-        `重复边合并：${mergedImpacts[0]?.target.kind}/${mergedImpacts[0]?.target.id} 的 ` +
-        `${mergedImpacts[0]?.causes.length ?? 0} 条来源边合并成 ${mergedTasks.length} 条逻辑任务` +
-        `（重复应用后任务数仍为 ${result.tasksAfterReplay.length}）；` +
+        `重复边合并：${mergedImpact?.target.kind}/${mergedImpact?.target.id} 的 ` +
+        `${mergedImpact?.causes.length ?? 0} 条来源边合并成 ${mergedTasks.length} 条逻辑任务` +
+        `（任务 ${mergedTask?.id ?? '（无）'} 保留 ${mergedTask?.causes.length ?? 0} 条来源；` +
+        `重复应用后任务数仍为 ${result.tasksAfterReplay.length}）；` +
         `建议边：status=${result.suggestedEdge.status}，只进「可能受影响」，目标任务数=${suggestedTasks.length}；` +
         `人工确认边：确认 → ${result.decisions.confirm.status}、修改 → ${result.decisions.modify.status}` +
         `（旧关系 ${result.decisions.modify.supersededRelation || '（无）'}）、` +

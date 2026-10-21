@@ -2143,10 +2143,13 @@ const gapIdsOf = (rowId: string) => gapIdsForRow(rowId)
 const limitingGapIdsOf = (rowId: string) => limitingGapIdsForRow(rowId)
 
 /**
- * 一行的结论来源：本次运行得出 / 历史快照 · 非本次运行 / 尚未判定。
+ * 一行的结论来源：本次运行得出 / 非本次运行（历史快照或既有实跑）/ 尚未判定。
  *
- * 两者在页面上**视觉与文案互斥**：本次运行用青色实心标记，历史快照用琥珀色
- * 「历史快照 · 非本次运行」标记（与页头、证据块的既有标识一致）。
+ * 两者在页面上**视觉与文案互斥**：本次运行用青色实心标记，非本次运行用琥珀色
+ * 标记（与页头、证据块的既有标识一致）。
+ *
+ * 切片行的静态状态记的是「该行最后一次被真实判定得到的结论」，所以它们在
+ * 本次会话没跑那条链时是「非本次运行」——**不是**「尚未判定」。
  */
 const sourceOf = (rowId: string): G3ConclusionSource => {
   const row = matrixView.value.rows.find((item) => item.id === rowId)
