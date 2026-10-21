@@ -1142,8 +1142,13 @@ func resolveRewritePlan(input SelectedRewriteRequest) (*writingaction.Plan, erro
 		return nil, err
 	}
 	// 这个端点只实现改写。别的已知动作由它们自己的端点负责。动作身份引用
-	// 常量，不写字符串字面量。
-	if plan.Action != writingaction.ActionRewrite {
+	// 管道常量，不写字符串字面量，也不写具体动作常量——执行方因此在语法上
+	// 就没法按动作名分支（A33）。
+	pipelineAction, err := writingaction.ActionFor(writingaction.PipelineRewrite)
+	if err != nil {
+		return nil, err
+	}
+	if plan.Action != pipelineAction {
 		return nil, ErrRewriteInvalidRequest
 	}
 	return &plan, nil

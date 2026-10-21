@@ -21,6 +21,8 @@ type Pipeline string
 const (
 	// PipelineGeneration 是整章生成管道：它实现「生成」这个动作。
 	PipelineGeneration Pipeline = "generation"
+	// PipelineRewrite 是选段改写管道：它实现「改写」这个动作。
+	PipelineRewrite Pipeline = "rewrite"
 )
 
 // pipelineActions 是管道到动作的唯一映射表。
@@ -30,6 +32,7 @@ const (
 // 条轴的同一个拥有者。
 var pipelineActions = map[Pipeline]Action{
 	PipelineGeneration: ActionGenerate,
+	PipelineRewrite:    ActionRewrite,
 }
 
 // ActionFor 返回这个管道实现的动作。
