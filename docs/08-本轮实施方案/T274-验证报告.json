@@ -1,7 +1,7 @@
 {
  "mode": "real",
  "note": "47.12 直连收口②：全流程路由 + 全流程守卫——段三的组装点，也是最后两条直连面。全流程路由的 17 个方法改走三个上下文窄口（membership.MemberLifecycleApplication 11 个 / core.ChapterReviewApplication 4 个 / core.ProjectLifecycleApplication 2 个）；全流程守卫的 16 个方法改走六个上下文窄口（Delivery / Provenance / Impact / Runtime / Actions / Compose）。守卫今天就是自己往运行时里装的（预检复核器、恢复复核器、行动执行器），那三个装配操作由 core.RuntimeCompositionApplication 承载——装配关系本身也是一种能力。FullWorkflowDependencies 里的 Core *core.Service 字段整个删掉。口径变化：本票无对外变化——路由、信封、状态码、错误码、文案逐字不变，契约面 base/head 逐字段对照后 94 = 94、签名集完全相同、摘掉源文件行号后差异 0 条。本票做完之后，internal/lingdoc/workspace 包内再没有聚合体具体类型持有者；结构断言的白名单只剩 #269 的三条。",
- "head": "pending-commit",
+ "head": "9e40552",
  "base": "633ba34",
  "passed": [
   {
