@@ -221,7 +221,7 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	}
 	var definition string
 	if err := db.Raw(
-		"SELECT pg_get_constraintdef(oid) FROM pg_constraint " +
+		"SELECT pg_get_constraintdef(oid) FROM pg_constraint "+
 			"WHERE conrelid = 'lingdoc_project_audits'::regclass AND conname = ?",
 		"ck_lingdoc_project_audits_action_len").Scan(&definition).Error; err != nil {
 		t.Fatal(err)
@@ -243,7 +243,7 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	}
 	var afterDown string
 	if err := db.Raw(
-		"SELECT coalesce(max(pg_get_constraintdef(oid)), '') FROM pg_constraint " +
+		"SELECT coalesce(max(pg_get_constraintdef(oid)), '') FROM pg_constraint "+
 			"WHERE conrelid = 'lingdoc_project_audits'::regclass AND conname = ?",
 		"ck_lingdoc_project_audits_action_len").Scan(&afterDown).Error; err != nil {
 		t.Fatal(err)

@@ -1,0 +1,114 @@
+{
+  "ticket": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界",
+  "head": "11df0c69",
+  "base": "058637c4",
+  "environment": {
+    "go": "go1.27.1 windows/amd64",
+    "cgo_cflags": "-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc",
+    "postgres": "PostgreSQL 17.9（Docker 容器 WeKnora-postgres-dev，port 5432）；测试用独立 schema，用完 DROP SCHEMA ... CASCADE",
+    "postgres_dsn_env": "LINGDOC_TEST_POSTGRES_DSN",
+    "sqlite": "生产迁移链（migrations/sqlite，000046 为止）；包级快照在测试时从生产迁移链现建"
+  },
+  "inventory": {
+    "question": "两种方言现存的历史审计行里，action 长度分布如何、有没有超过 64 字符的行",
+    "postgres": {
+      "source": "容器 WeKnora-postgres-dev 的 WeKnora 库（真实数据）",
+      "column_definition": "action character varying(64) NOT NULL",
+      "constraints": "lingdoc_project_audits_pkey (PRIMARY KEY) | lingdoc_project_audits_project_id_fkey (FOREIGN KEY project_id → lingdoc_projects ON DELETE CASCADE)",
+      "rows": 5628,
+      "max_action_length": 64,
+      "rows_over_64": 0,
+      "length_distribution": {
+        "13": 32, "14": 93, "15": 12, "16": 194, "17": 615, "18": 1558, "19": 894,
+        "20": 615, "21": 280, "22": 1, "23": 10, "24": 177, "25": 494, "27": 16,
+        "28": 101, "29": 1, "56": 272, "58": 252, "64": 11
+      },
+      "longest_examples": [
+        "authorization.issue-resolve:0b964d92-c857-4cee-a7d7-64500205aba0 (64)",
+        "authorization.issue-resolve:5013efc8-24f7-4983-b853-3e8b53329acd (64)"
+      ],
+      "legacy_shape_rows": 535,
+      "legacy_shape_note": "带 ':<资源>' 后缀的旧形状行真实存在（长度 56 / 58 / 64）",
+      "action_top": [
+        "authorization.read x1370", "authorization.write x876", "authorization.manage x518",
+        "project.change_set.review x323", "workspace.saveChapter x257", "project.change_set.create x171",
+        "project_spec.save x156", "dependency.create x148", "project.activate x147",
+        "project.change_set.apply x133", "impact_task.assign x104", "change_set.assess x101"
+      ]
+    },
+    "sqlite": {
+      "source": "本机验收跑出来的真实库 .acceptance-257/lingdoc-41234.sqlite",
+      "column_definition": "action TEXT NOT NULL（无界 —— 本轮要改的就是它）",
+      "rows": 54,
+      "max_action_length": 28,
+      "rows_over_64": 0,
+      "length_distribution": {
+        "13": 2, "14": 1, "16": 1, "17": 2, "18": 13, "19": 8, "20": 10, "21": 6,
+        "24": 3, "25": 6, "27": 1, "28": 1
+      },
+      "action_top": [
+        "authorization.read x13", "authorization.manage x10", "authorization.write x8",
+        "workspace.saveChapter x3", "project.change_set.review x3", "project.change_set.create x3",
+        "authorization.confirm x3", "project.change_set.apply x2"
+      ]
+    },
+    "conclusion": "两种方言的真实库里都没有超过 64 字符的行 ⇒ 不需要清理。旧形状的超长行只可能出现在 SQLite 上（PostgreSQL 的 varchar(64) 写不进去，那正是 #253 的缺陷面），迁移里的原地规范化是防御性分支。边界取 <= 64（含）由真实数据决定：PG 侧有 11 行恰好 64 字符的旧形状行，用 < 64 会拒掉它们。"
+  },
+  "commands": [
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestSQLiteAuditCategoryColumnRejectsOverLongAction|TestPostgresAuditCategoryColumnRejectsOverLongAction' -count=1 -v",
+      "result": "PASS（SQLite 0.23s / PostgreSQL 0.19s；快照与迁移链都跑到 000046 / 000125）",
+      "output": [
+        "sqlite fixture applies 28 production migrations through 000046_lingdoc_audit_action_bounds.up.sql",
+        "versioned fixture applies 28 production migrations through 000125_lingdoc_audit_action_bounds.up.sql",
+        "--- PASS: TestSQLiteAuditCategoryColumnRejectsOverLongAction (0.23s)",
+        "--- PASS: TestPostgresAuditCategoryColumnRejectsOverLongAction (0.19s)"
+      ]
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'AuditBoundMigration' -count=1 -v",
+      "result": "PASS（3 条用例 0.52s / 0.17s / 0.42s）",
+      "output": [
+        "--- PASS: TestSQLiteAuditBoundMigrationNormalizesLegacyRows (0.52s)",
+        "--- PASS: TestPostgresAuditBoundMigrationAddsTheExplicitConstraint (0.17s)",
+        "--- PASS: TestSQLiteAuditBoundMigrationRefusesUnhandledOverLongRows (0.42s)"
+      ]
+    },
+    {
+      "command": "（红灯）临时去掉 SQLite 迁移里的 CHECK 后重跑",
+      "result": "FAIL —— 守护测试在错误实现下失败（约束随后恢复）",
+      "output": [
+        "--- FAIL: TestSQLiteAuditCategoryColumnRejectsOverLongAction (0.57s)",
+        "audit_action_bounds_test.go:68: SQLite accepted an over-long audit category"
+      ]
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/candidateadoption/... ./internal/router/... ./internal/database/... -count=1 -timeout 30m",
+      "result": "PASS（ok 35.537s / ok 0.793s / ok 2.734s / ok 3.800s，exit 0）"
+    },
+    {
+      "command": "bash scripts/check_migration_pairs.sh",
+      "result": "PASS",
+      "output": [
+        "validated migration pairs: migrations/versioned (latest 000125_lingdoc_audit_action_bounds)",
+        "validated migration pairs: migrations/sqlite (latest 000046_lingdoc_audit_action_bounds)"
+      ]
+    }
+  ],
+  "files": [
+    "migrations/sqlite/000046_lingdoc_audit_action_bounds.up.sql（新增）",
+    "migrations/sqlite/000046_lingdoc_audit_action_bounds.down.sql（新增）",
+    "migrations/versioned/000125_lingdoc_audit_action_bounds.up.sql（新增）",
+    "migrations/versioned/000125_lingdoc_audit_action_bounds.down.sql（新增）",
+    "internal/database/migration_sqlite_versioned_schema_test.go（变更：expectedSQLiteMigrationVersion 45 → 46）",
+    "internal/lingdoc/workspacecore/audit_action_bounds_test.go（新增）",
+    "internal/lingdoc/workspacecore/audit_action_migration_rehearsal_test.go（新增）",
+    "docs/08-本轮实施方案/T276-验证报告.json（新增）",
+    "docs/08-本轮实施方案/T276-S1-证据.json（新增）"
+  ],
+  "notes": [
+    "生产数据库不可从本机访问；盘点在本机可达的两个真实库上完成（见 inventory）。生产库需按同一口径自查一次。",
+    "SQLite 的表重建走仓内既有模板（migrations/sqlite/000043_lingdoc_satisfied_change_sets.up.sql），不是自研写法。",
+    "生产迁移执行器（internal/database/migration.go）用 golang-migrate v4，SQLite 驱动带事务（NoTxWrap 未开）⇒ 迁移失败时整个迁移回滚，不会留下半张表。"
+  ]
+}
