@@ -157,18 +157,16 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "status": "claimed",
         "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/generation/service.go", "file"),
-            ("internal/lingdoc/generation/application.go", "file"),
-            ("internal/lingdoc/generation/http.go", "file"),
-            ("internal/lingdoc/generation/store.go", "file"),
+            # The two packages below are claimed as directories, so that a new
+            # file inside them is covered by this face's ownership without a
+            # manifest edit.  ``internal/lingdoc/workspace/`` is deliberately
+            # NOT a directory here: PF-5 owns a file in it, and a directory
+            # claim would overlap.
+            ("internal/lingdoc/generation/", "dir"),
+            ("internal/lingdoc/candidateadoption/", "dir"),
             ("internal/lingdoc/workspace/selected_rewrite.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_model.go", "file"),
             ("internal/lingdoc/workspace/http.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_adoption.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_adoption_store.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_basis.go", "file"),
-            ("internal/lingdoc/candidateadoption/candidate_adoption_http.go", "file"),
-            ("internal/lingdoc/candidateadoption/confirmation.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
             ("internal/lingdoc/writingaction/", "dir"),
