@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
 func TestAdoptionAdvancesCleanWorkingCopyAndReplaysWithoutRevisionBump(t *testing.T) {
@@ -60,6 +62,56 @@ func TestAdoptionRejectsDirtyOrStaleWorkingCopyAtomically(t *testing.T) {
 			var copy adoptionWorkingCopyRow
 			require.NoError(t, store.DB().First(&copy).Error)
 			require.Equal(t, int64(4), copy.WorkingCopyRevision)
+		})
+	}
+}
+
+// TestARejectedAdoptionLeavesTheWorkingCopyUntouched 断言拒绝与取消之后工作
+// 副本读回不变（A24）。
+//
+// 拒绝的理由有好几种（缺确认载荷、越权目标、代他人、脏工作副本），但结果
+// 必须一样：工作副本一个字都不动，用户在编辑器里看到的还是他刚才的内容。
+func TestARejectedAdoptionLeavesTheWorkingCopyUntouched(t *testing.T) {
+	for _, reason := range []string{"missing-confirmation", "forbidden-target", "other-confirmer"} {
+		t.Run(reason, func(t *testing.T) {
+			store := newCandidateAdoptionStore(t)
+			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
+			candidate := Candidate{
+				ID: "candidate", ProjectID: "project", ChapterID: "chapter",
+				BodyMarkdown: "new [[source:source]]", SourceIDs: []string{"source"},
+				Validity: "fresh", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
+			}
+			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, candidate, 2)
+			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{
+				ProjectID: "project", ChapterID: "chapter", SpecRevision: 2, WorkingCopyRevision: 4,
+				BodyMarkdown: "old body", SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]",
+			}).Error)
+			input := AcceptCandidateInput{
+				ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor",
+				IdempotencyKey: "rejected-adoption", ExpectedSpecRevision: 2,
+				Confirmation: fixtureConfirmation("actor"),
+			}
+			switch reason {
+			case "missing-confirmation":
+				input.Confirmation = nil
+			case "forbidden-target":
+				input.Confirmation.Target = writingaction.TargetFormalVersionWhole
+				input.Confirmation.WritingAction = writingaction.ActionOutline
+			case "other-confirmer":
+				input.Confirmation.ConfirmedBy = "somebody-else"
+			}
+			service := NewCandidateAdoptionService(store,
+				sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil }), allowAuthorizer{})
+			_, err := service.AcceptCandidate(context.Background(), input)
+			require.Error(t, err)
+
+			var copy adoptionWorkingCopyRow
+			require.NoError(t, store.DB().First(&copy).Error)
+			require.Equal(t, "old body", copy.BodyMarkdown, "被拒绝的采纳不得改动工作副本正文")
+			require.Equal(t, int64(4), copy.WorkingCopyRevision, "被拒绝的采纳不得推进工作副本修订号")
+			var versions int64
+			require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&versions).Error)
+			require.Zero(t, versions, "被拒绝的采纳不得留下章节版本")
 		})
 	}
 }
