@@ -96,6 +96,7 @@ Issue #144 是依赖图，不是功能实现任务。下表列出功能 Issue �
 | G6 | 真实试用窗口、指标与质量决策 | [`46-Spec-G6真实试用窗口与质量决策.md`](06-灵档产品开发规划/46-Spec-G6真实试用窗口与质量决策.md) | [#146](https://github.com/magician336/lingdoc/issues/146) |
 | G7 | 正式章节编辑器版本与复核 | [`32-Spec-G7正式章节编辑器版本与复核.md`](06-灵档产品开发规划/32-Spec-G7正式章节编辑器版本与复核.md) | [#133](https://github.com/magician336/lingdoc/issues/133) |
 | G7 | 章节 AI 辅助写作 | [`33-Spec-G7章节AI辅助写作.md`](06-灵档产品开发规划/33-Spec-G7章节AI辅助写作.md) | [#134](https://github.com/magician336/lingdoc/issues/134) |
+| G7 | 章节比较、复核包与依据可追溯 | [`43-Spec-G7正式章节比较复核与依据可追溯.md`](06-灵档产品开发规划/43-Spec-G7正式章节比较复核与依据可追溯.md) | [#337](https://github.com/magician336/lingdoc/issues/337) |
 
 ## 3. 领取卡片
 
