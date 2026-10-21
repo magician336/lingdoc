@@ -42,11 +42,9 @@ const workspaceCoreImportPath = "github.com/Tencent/WeKnora/internal/lingdoc/wor
 // is the last one. A file that stops naming the aggregate must lose its
 // entry in the same change, otherwise the assertion reports a stale entry.
 var aggregateHolders = map[string]string{
-	"core_alias.go":          "#269 alias layer: type Service = core.Service and the NewService factory",
-	"contracts.go":           "#269 wide port layer: the (*Service)(nil) proofs that the aggregate satisfies the retired application ports",
-	"delivery_contracts.go":  "#269 wide port layer: the (*Service)(nil) proof for the validation issue disposition port",
-	"full_workflow_http.go":  "#274 full workflow HTTP surface",
-	"full_workflow_guard.go": "#274 full workflow guard surface",
+	"core_alias.go":         "#269 alias layer: type Service = core.Service and the NewService factory",
+	"contracts.go":          "#269 wide port layer: the (*Service)(nil) proofs that the aggregate satisfies the retired application ports",
+	"delivery_contracts.go": "#269 wide port layer: the (*Service)(nil) proof for the validation issue disposition port",
 }
 
 // aggregateReference is one place where a file names the aggregate type.

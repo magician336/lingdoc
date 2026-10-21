@@ -94,7 +94,7 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 	p, err = projects.GetProject(ctx, actor, p.ID)
 	require.NoError(t, err)
 	projects.SetRuntimeMode("real")
-	guard := NewFullWorkflowGuard(projects, runtime)
+	guard := NewFullWorkflowGuard(fullWorkflowGuardPortsFor(projects), runtime)
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryGuardProjectAuthorizer{projects}}
 	builder := runtime.DeliveryInputBuilder()
 	snapshots := delivery.NewSQLiteSnapshotStore(db)

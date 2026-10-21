@@ -72,10 +72,16 @@ func NewLingDocWorkspaceHandler(
 	}
 	projectService.SetTemplateCatalogResolver(governance)
 	projectService.SetImpactRuleChecker(governance.ImpactRuleChecker())
-	guard := workspace.NewFullWorkflowGuard(projectService, runtime)
+	guard := workspace.NewFullWorkflowGuard(workspace.FullWorkflowGuardPorts{
+		Delivery:   projectService,
+		Provenance: projectService,
+		Impact:     projectService,
+		Runtime:    projectService,
+		Actions:    projectService,
+		Compose:    projectService,
+	}, runtime)
 	deps := workspace.HandlerDependencies{
 		FullWorkflow: &workspace.FullWorkflowDependencies{
-			Core:       projectService,
 			Governance: governance,
 			Impact: workspace.ImpactRoutePorts{
 				ChangeSets: projectService,
@@ -95,6 +101,11 @@ func NewLingDocWorkspaceHandler(
 				Proposals:     projectService,
 				Context:       projectService,
 				ChangeSets:    projectService,
+			},
+			Routes: workspace.FullWorkflowRoutePorts{
+				Members:   projectService,
+				Reviews:   projectService,
+				Lifecycle: projectService,
 			},
 		},
 		Projects:    projectService,

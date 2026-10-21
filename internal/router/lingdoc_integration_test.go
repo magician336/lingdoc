@@ -368,12 +368,13 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	deps := workspace.HandlerDependencies{Service: projects,
-		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{Core: projects,
+		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{
 			Impact: workspace.ImpactRoutePorts{ChangeSets: projects, Impact: projects, Dependency: projects,
 				Runtime: projects, Trials: projects, Roadmap: projects},
 			G2: workspace.G2RoutePorts{Research: projects, Imports: projects, EvidenceCards: projects,
 				Claims: projects, Anchors: projects, AgentSessions: projects, Proposals: projects,
-				Context: projects, ChangeSets: projects}}}
+				Context: projects, ChangeSets: projects},
+			Routes: workspace.FullWorkflowRoutePorts{Members: projects, Reviews: projects, Lifecycle: projects}}}
 	// The capabilities the project service provides are named by the caller.
 	deps.WithMachineReads(projects)
 	deps.WithReviewAnchors(projects, projects)

@@ -59,7 +59,7 @@ func agentReopenDraftService(t *testing.T, f deliveryGuardFixture) *core.Service
 	projects.SetTemplateCatalogResolver(governance)
 	projects.SetImpactRuleChecker(governance.ImpactRuleChecker())
 	projects.SetRuntimeMode("real")
-	NewFullWorkflowGuard(projects, runtime)
+	NewFullWorkflowGuard(fullWorkflowGuardPortsFor(projects), runtime)
 	return projects
 }
 

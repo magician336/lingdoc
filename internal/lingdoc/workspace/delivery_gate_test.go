@@ -38,7 +38,7 @@ func newDeliveryGuardFixtureOverDB(t *testing.T, f deliveryGuardFixture) deliver
 	projects.SetImpactRuleChecker(governance.ImpactRuleChecker())
 	projects.RequireActivationRead(true)
 	projects.SetRuntimeMode("real")
-	guard := NewFullWorkflowGuard(projects, runtime)
+	guard := NewFullWorkflowGuard(fullWorkflowGuardPortsFor(projects), runtime)
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(f.db), Authorizer: deliveryGuardProjectAuthorizer{projects}}
 	builder := runtime.DeliveryInputBuilder()
 	snapshots := delivery.NewSQLiteSnapshotStore(f.db)
