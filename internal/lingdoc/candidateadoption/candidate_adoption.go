@@ -41,6 +41,21 @@ var (
 	// 没记动作，就没法被确认——它必须重新跑一次动作化路径，而不是被猜一个
 	// 动作放行。这个形态单独存在，免得它落进泛泛的 400 里让人猜。
 	ErrCandidateActionUnknown = clienterror.New(clienterror.CandidateActionUnknown, "candidate_action_unknown")
+	// ErrCandidateStale says the candidate's inputs changed.
+	//
+	// It wraps ErrStaleInput, so the older reason stays reachable, and it
+	// carries the recovery step in its own wording: the inputs changed means
+	// run the action again.
+	ErrCandidateStale = clienterror.Wrap(clienterror.CandidateStaleAction, "candidate_stale_input", ErrStaleInput)
+	// ErrCandidateNotAuthorized says the authorization the candidate rests on
+	// is gone.
+	//
+	// It wraps ErrSourceAccessDenied so the source-level reason stays
+	// reachable, and it answers with its own form: the candidate-level state
+	// is "not authorized", and the recovery step is "restore the
+	// authorization and run the action again" -- not "find the permission that
+	// was never missing".
+	ErrCandidateNotAuthorized = clienterror.Wrap(clienterror.CandidateNotAuthorized, "candidate_not_authorized", ErrSourceAccessDenied)
 )
 
 // ReviewItem is copied from the candidate into every adopted version. It is
@@ -306,6 +321,18 @@ func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in Accep
 	if err := validateConfirmationAgainstCandidate(in, candidate); err != nil {
 		return AcceptResult{}, err
 	}
+	// 候选还能不能用，要按**当前授权**真算一次：两种失效要能分开说，
+	// 下一步也要跟着说——「输入变了」重跑动作，「授权没了」先恢复授权。
+	validity, err := s.candidateValidityUnderCurrentAuthorization(ctx, in, candidate)
+	if err != nil {
+		return AcceptResult{}, err
+	}
+	switch validity {
+	case ValidityNotAuthorized:
+		return AcceptResult{}, ErrCandidateNotAuthorized
+	case ValidityStale:
+		return AcceptResult{}, ErrCandidateStale
+	}
 	if !pending {
 		workspace, e := s.Workspace.GenerationContext(ctx, in.ProjectID, in.ChapterID)
 		if e != nil {
@@ -368,27 +395,32 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 	if err := validateNewBasis(workspace.Basis, candidate.Basis); err != nil {
 		return err
 	}
-	if candidate.Validity != ValidityFresh {
-		return ErrStaleInput
+	// 候选记下的可用性有两种失效，说法要分开：授权没了与输入变了。
+	switch candidate.Validity {
+	case ValidityNotAuthorized:
+		return ErrCandidateNotAuthorized
+	case ValidityFresh:
+	default:
+		return ErrCandidateStale
 	}
 	if workspace.SpecRevision != in.ExpectedSpecRevision || candidate.Basis.SpecRevision != in.ExpectedSpecRevision {
 		return ErrVersionConflict
 	}
 	if workspace.Basis.TemplateID != "" && candidate.Basis.TemplateID != workspace.Basis.TemplateID {
-		return ErrStaleInput
+		return ErrCandidateStale
 	}
 	if workspace.Basis.TemplateVersion != "" && candidate.Basis.TemplateVersion != workspace.Basis.TemplateVersion {
-		return ErrStaleInput
+		return ErrCandidateStale
 	}
 	if workspace.Basis.RulesetHash != "" && candidate.Basis.RulesetHash != workspace.Basis.RulesetHash {
-		return ErrStaleInput
+		return ErrCandidateStale
 	}
 	if len(candidate.Basis.AssetVersions) > 0 {
 		if !currentAssetSubset(workspace.Basis.AssetVersions, candidate.Basis.AssetVersions) {
-			return ErrStaleInput
+			return ErrCandidateStale
 		}
 	} else if candidateHasNewBasis(candidate.Basis) && len(candidate.SourceIDs) > 0 {
-		return ErrStaleInput
+		return ErrCandidateStale
 	}
 	if !sameOptionalString(candidate.Basis.ChapterVersionID, in.ExpectedChapterVersionID) {
 		return ErrVersionConflict

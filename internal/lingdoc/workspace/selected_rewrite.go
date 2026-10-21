@@ -31,10 +31,10 @@ import (
 var (
 	ErrRewriteInvalidRequest = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "改写请求字段不符合约定。", Retryable: false}, "selected_rewrite_invalid_request")
 	ErrRewriteNotFound       = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "候选不存在或不可访问。", Retryable: false}, "selected_rewrite_not_found")
-	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_stale")
+	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新运行该改写动作。", Retryable: false}, "selected_rewrite_stale")
 	ErrRewriteConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_conflict")
 	ErrRewriteUnavailable    = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "改写模型暂不可用，请稍后重试。", Retryable: true}, "selected_rewrite_unavailable")
-	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选的来源已失效或当前不可访问。", Retryable: false}, "selected_rewrite_source_denied")
+	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选所依据的授权已失效，请恢复授权后重新运行该改写动作。", Retryable: false}, "selected_rewrite_source_denied")
 	ErrRewriteKeyConflict    = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "selected_rewrite_idempotency_conflict")
 )
 
