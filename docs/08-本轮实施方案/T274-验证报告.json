@@ -1,0 +1,81 @@
+{
+ "mode": "real",
+ "note": "47.12 直连收口②：全流程路由 + 全流程守卫——段三的组装点，也是最后两条直连面。全流程路由的 17 个方法改走三个上下文窄口（membership.MemberLifecycleApplication 11 个 / core.ChapterReviewApplication 4 个 / core.ProjectLifecycleApplication 2 个）；全流程守卫的 16 个方法改走六个上下文窄口（Delivery / Provenance / Impact / Runtime / Actions / Compose）。守卫今天就是自己往运行时里装的（预检复核器、恢复复核器、行动执行器），那三个装配操作由 core.RuntimeCompositionApplication 承载——装配关系本身也是一种能力。FullWorkflowDependencies 里的 Core *core.Service 字段整个删掉。口径变化：本票无对外变化——路由、信封、状态码、错误码、文案逐字不变，契约面 base/head 逐字段对照后 94 = 94、签名集完全相同、摘掉源文件行号后差异 0 条。本票做完之后，internal/lingdoc/workspace 包内再没有聚合体具体类型持有者；结构断言的白名单只剩 #269 的三条。",
+ "head": "pending-commit",
+ "base": "633ba34",
+ "passed": [
+  {
+   "id": "全流程路由不再持有聚合体具体类型",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/full_workflow_http.go：FullWorkflowDependencies 删掉 Core *core.Service、加 Routes FullWorkflowRoutePorts；registerG5G7FullRoutes 的 17 处调用改走 Members(11) / Reviews(4) / Lifecycle(2) 三个窄口"
+  },
+  {
+   "id": "全流程守卫不再持有聚合体具体类型",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/full_workflow_guard.go：FullWorkflowGuard 改持 ports FullWorkflowGuardPorts（Delivery / Provenance / Impact / Runtime / Actions / Compose 六个窄口）；13 处调用按上下文改走对应口；两个私有适配器（fullWorkflowExportAuthorizer / fullWorkflowExportRecorder）也改窄口"
+  },
+  {
+   "id": "守卫的自我安装改走窄口",
+   "status": "passed",
+   "evidence": "NewFullWorkflowGuard 里的 SetImpactPreflightChecker / SetRuntimeRecoveryChecker 与 GuardFullWorkflowExport 里的 SetG2ActionExecutor 改走 core.RuntimeCompositionApplication"
+  },
+  {
+   "id": "nil 守卫逐条译回旧形态",
+   "status": "passed",
+   "evidence": "h.full.Core == nil 的早退译为 !h.full.Routes.wired()；守卫 before() 的 g.Core == nil 译为 !g.ports.wired()——都保持「能力缺失即整条拒绝、不解引用空口」的旧形态"
+  },
+  {
+   "id": "结构断言：传输层无聚合体具体类型引用",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_transport_ports_test.go 的白名单删掉 #274 两行后，full_workflow_http.go 与 full_workflow_guard.go 不再有任何聚合体类型引用"
+  },
+  {
+   "id": "阴性验证：注入 *core.Service 引用被抓到",
+   "status": "passed",
+   "evidence": "往 full_workflow_guard.go 注入聚合体引用后，TestTheTransportLayerHoldsNoAggregateType 报出「full_workflow_guard.go:24 still names the aggregate concrete type (core.Service)」；还原后同一条断言 ok"
+  },
+  {
+   "id": "白名单只剩 #269 的三条",
+   "status": "passed",
+   "evidence": "core_alias.go（别名层 type Service = core.Service 与 NewService 工厂）、contracts.go 与 delivery_contracts.go（宽口层的 (*Service)(nil) 编译期证明）"
+  },
+  {
+   "id": "行为零变化：契约面 base/head 逐字段对照",
+   "status": "passed",
+   "evidence": "result / registered_operations / frontend_calls / consumers / scope / limits / focused_workspace_operations / frontend_calls_to_scoped_registrars 全部 SAME；compare_routes_shape.py：base 94 = head 94，独有签名无，摘掉源文件行号后差异 0 条"
+  },
+  {
+   "id": "行为零变化：路由树 70 与生产装配 48 未变",
+   "status": "passed",
+   "evidence": "internal/router/lingdoc_routes_test.go 的 TestAllLingDocRoutesDeclareAPIKeyPolicies（70）与 internal/container/lingdoc_test.go 的 TestLingDocWorkspaceCompositionKeepsItsRouteSurface（48）断言期望值一字未改且通过"
+  },
+  {
+   "id": "读方法承重路由数不变",
+   "status": "passed",
+   "evidence": "check_readmethod_weight.py：改动前 14 条、改动后仍 14 条。full_workflow_http.go 的读路由全部带 typed_response，形状不依赖 read_method，接收者改名不影响它"
+  },
+  {
+   "id": "全量定向测试通过（主会话独立复跑）",
+   "status": "passed",
+   "evidence": "go test -count=1 ./internal/lingdoc/workspace/ ./internal/router/ ./internal/container/ → 三包全绿，exit 0；gofmt -l 无输出；go build ./internal/... exit 0；go vet ./internal/... exit 0；python scripts/ci/check_lingdoc_routes.py → result PASS"
+  }
+ ],
+ "failed": [],
+ "not_run": [
+  {
+   "id": "go test -race",
+   "status": "not_run",
+   "reason": "本票是形态重构，没有并发语义变更；且本机另有兄弟会话在跑 Go 测试，race 全量并发跑会互相抢资源。段三整体收口前补一轮。"
+  },
+  {
+   "id": "隔离 PostgreSQL 用例",
+   "status": "not_run",
+   "reason": "本票只改传输层接缝，不改持久化路径；PG 用例需要单独一轮轻负载（隔离实例 55433）。"
+  },
+  {
+   "id": "真实服务链路（外部模型 / 真实模型调用）",
+   "status": "not_run",
+   "reason": "本票不涉及外部服务，记 N/A"
+  }
+ ]
+}
