@@ -108,6 +108,7 @@ async function main(): Promise<void> {
     unassigned_completion: dependency.unassignedCompletion,
     task_transitions: dependency.transitions,
     dependency_decisions: dependency.decisions,
+    dependency_candidates: dependency.candidates,
     suggested_edge: dependency.suggestedEdge,
     suggested_target_version_confirmation_valid: dependency.suggestedTargetVersionConfirmationValid,
     known_objects: dependency.knownObjects,
@@ -134,6 +135,29 @@ async function main(): Promise<void> {
   console.log(`  可能受影响：${dependency.grouping.possible.length} 条`)
   console.log(`  当前未发现影响：${dependency.grouping.unaffected.length} 个对象`)
   console.log(`  必需对象集合：${dependency.grouping.requiredObjects.length} 个`)
+  console.log('')
+  console.log('[g3demo] 依赖候选三态（AC-G3-15）：')
+  const candidates = dependency.candidates
+  for (const decision of candidates.decisions) {
+    console.log(
+      `  ${decision.decision} → HTTP ${decision.httpStatus} · status=${decision.status || '（无）'}` +
+        ` · edge_id=${decision.edgeId || '（无）'}` +
+        `${decision.code ? ` · code=${decision.code}` : ''}`,
+    )
+  }
+  console.log(
+    `  拒绝不产生边：依赖边 ${candidates.edgesBeforeDecisions} → ${candidates.edgesAfterDecisions} 条` +
+      `（确认 + 修改各一条）`,
+  )
+  console.log(
+    `  同版本不再重提：新建 ${candidates.reproposal?.candidates.length ?? 0} 条 · ` +
+      `抑制 ${candidates.reproposal?.suppressed.length ?? 0} 条` +
+      `（原因 ${candidates.reproposal?.suppressed.map((item) => item.reason).join('、') || '（无）'}）`,
+  )
+  console.log(
+    `  确认时版本复检：HTTP ${candidates.staleConfirmation?.httpStatus ?? '（未执行）'} · ` +
+      `code=${candidates.staleConfirmation?.code || '（无）'}`,
+  )
   console.log('')
   console.log('[g3demo] 判定：')
   for (const verdict of dependency.verdicts) {
