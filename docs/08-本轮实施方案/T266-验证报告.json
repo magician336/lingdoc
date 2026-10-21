@@ -1,0 +1,71 @@
+{
+ "mode": "real",
+ "note": "47.11 直连收口①：规则治理运行时 / 选区改写 / 审阅锚点。规则治理运行时的 projects *core.Service 拆成 review / agentContext 两个窄口字段（core.GovernanceReviewApplication + core.AgentContextApplication），组合根那一行原样编译——Go 的接口是结构化的，*core.Service 满足组合口。选区改写的 SelectedRewriteService.workspace 由 37 方法的 ApplicationService 宽口换成4 方法的 RewriteWorkspaceApplication 窄口（Authorize / GetProject / GetWorkingCopy / ApplyRewriteResult，签名逐字取自聚合体）。审阅锚点本来就只消费 ReviewAnchorRead/WriteApplication 两个窄口，本票不改代码，由结构断言证明它合规。口径变化：本票无对外变化。g2SelectFormal 的首参由 ApplicationService 放宽为 any——断言失败返回 generation.ErrDependencyUnavailable 是可观测行为（依赖缺失时的 503 形态），收窄参数会把这份可观测的降级变成编译期错误；取舍以注释记录在代码里。",
+ "head": "0604f5a",
+ "base": "633ba34",
+ "passed": [
+  {
+   "id": "规则治理运行时不再持有聚合体具体类型",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/template_governance_runtime.go：结构体字段由 projects *core.Service 拆为 review core.GovernanceReviewApplication 与 agentContext core.AgentContextApplication；7 处 r.projects.* 改走对应窄口"
+  },
+  {
+   "id": "选区改写不再持有 37 方法宽口",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/selected_rewrite.go：新增 RewriteWorkspaceApplication（4 方法），SelectedRewriteService.workspace 字段与 NewSelectedRewriteService 参数类型由 ApplicationService 改为该窄口"
+  },
+  {
+   "id": "审阅锚点面已合规（无需改代码）",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_transport_ports_test.go 的 TestTheNarrowPortSurfacesHoldNoAggregateType 逐条断言 template_governance_runtime.go / selected_rewrite.go / review_anchor_http.go 三个文件均无聚合体类型引用"
+  },
+  {
+   "id": "端口按上下文收窄，方法签名逐字不变",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspacecore/seg3_context_ports_test.go 的 TestEveryNarrowPortMethodMatchesTheAggregateMethodVerbatim：窄口方法集 = 登记表，且每个窄口方法的参数与返回文本与聚合体同名方法逐字相同"
+  },
+  {
+   "id": "结构断言：传输层无聚合体具体类型引用",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_transport_ports_test.go：go/parser + go/ast 扫本包全部非测试文件的类型表达式，检出 core.Service / workspacecore.Service 与包内别名 Service；白名单表逐条列出「文件 + 归属票号 + 原因」，白名单条目失效也判失败"
+  },
+  {
+   "id": "阴性验证：注入 *core.Service 引用被抓到",
+   "status": "passed",
+   "evidence": "往 review_anchor_http.go 注入 var seg3NegativeValidationProbe *core.Service 后，TestTheTransportLayerHoldsNoAggregateType 与 TestTheNarrowPortSurfacesHoldNoAggregateType 各报一条并指名文件与行号；还原后复跑通过"
+  },
+  {
+   "id": "阴性验证：注入包内别名 *Service 也被抓到",
+   "status": "passed",
+   "evidence": "往 delivery_export.go 注入 var seg3AliasProbe *Service（走 core_alias.go 的类型别名）后，断言报出「Service (the package alias of core.Service)」；还原后复跑通过"
+  },
+  {
+   "id": "行为零变化：既有路由面断言未改且通过",
+   "status": "passed",
+   "evidence": "internal/router/lingdoc_routes_test.go 的 70 条路由树与 internal/container/lingdoc_test.go 的 48 条生产装配路由面，断言期望值一字未改且通过"
+  },
+  {
+   "id": "行为零变化：契约一致性脚本仍 PASS，读方法承重路由仍为 14 条",
+   "status": "passed",
+   "evidence": "python scripts/ci/check_lingdoc_routes.py → {\"result\": \"PASS\"}，registered_operations 94；python .scratch/lingdoc-arch-20261021/seg3/check_readmethod_weight.py → 「read_method 在 read_types 里（兜底真正承重的路由）: 14」，与改动前一致"
+  },
+  {
+   "id": "全量定向测试通过",
+   "status": "passed",
+   "evidence": "go test -count=1 ./internal/lingdoc/workspace/ ./internal/router/ ./internal/container/ → ok workspace 128.601s / ok router 1.907s / ok container 1.957s，exit 0（主会话独立复跑）；go build ./internal/... exit 0；go vet ./internal/lingdoc/workspace/ ./internal/container/ exit 0；gofmt -l internal/lingdoc/workspace/ internal/container/ 无输出"
+  }
+ ],
+ "failed": [],
+ "not_run": [
+  {
+   "id": "隔离 PostgreSQL 用例",
+   "status": "not_run",
+   "reason": "本票只改传输层接缝，不改持久化路径；PG 用例需要单独一轮轻负载（隔离实例 55433），与全量回归并发会被本机资源压垮。段三整体收口前单独跑一轮。"
+  },
+  {
+   "id": "真实服务链路（外部模型 / 真实模型调用）",
+   "status": "not_run",
+   "reason": "本票不涉及外部服务，记 N/A"
+  }
+ ]
+}
