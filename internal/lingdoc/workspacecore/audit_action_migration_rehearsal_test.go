@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -58,12 +57,8 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 
 	const legacyAction = "authorization.issue-dismiss-blocking:5013efc8-24f7-4983-b853-3e8b53329acd"
 	const capability = "issue-dismiss-blocking:5013efc8-24f7-4983-b853-3e8b53329acd"
-	if _, err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"legacy-row", "project-legacy", "owner", legacyAction, "project-legacy",
-		`{"capability":"`+capability+`"}`, "2026-01-01 00:00:00",
-	); err != nil {
+	if err := insertAuditRow(t, db, "legacy-row", "project-legacy", "owner", legacyAction, "project-legacy",
+		`{"capability":"`+capability+`"}`, "2026-01-01 00:00:00"); err != nil {
 		t.Fatalf("the legacy shape must be writable before the bound migration: %v", err)
 	}
 
@@ -74,6 +69,17 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	}
 	if _, err := db.ExecContext(context.Background(), string(raw)); err != nil {
 		t.Fatalf("%s: %v", last, err)
+	}
+
+	// The bound carries the same constraint name as the PostgreSQL side, so
+	// both dialects write the rule under one name.
+	var schema string
+	if err := db.QueryRow(
+		"SELECT sql FROM sqlite_master WHERE type='table' AND name='lingdoc_project_audits'").Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(schema, "CONSTRAINT ck_lingdoc_project_audits_action_len") {
+		t.Fatalf("the SQLite audit category bound is not named like the PostgreSQL one: %s", schema)
 	}
 
 	var action, details string
@@ -92,12 +98,8 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	}
 
 	// The bound now holds for new writes too.
-	if _, err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
-		"project-legacy", "{}", "2026-01-01 00:00:00",
-	); err == nil {
+	if err := insertAuditRow(t, db, "over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00"); err == nil {
 		t.Fatal("the bound migration did not bound the column")
 	}
 
@@ -111,12 +113,8 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	if _, err := db.ExecContext(context.Background(), string(down)); err != nil {
 		t.Fatalf("%s (down): %v", last, err)
 	}
-	if _, err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
-		"project-legacy", "{}", "2026-01-01 00:00:00",
-	); err != nil {
+	if err := insertAuditRow(t, db, "over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00"); err != nil {
 		t.Fatalf("the down migration did not widen the column: %v", err)
 	}
 	// The operator's action before re-applying the bound: the over-long row
@@ -132,12 +130,8 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	if _, err := db.ExecContext(context.Background(), string(up)); err != nil {
 		t.Fatalf("%s (up again): %v", last, err)
 	}
-	if _, err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
-		"project-legacy", "{}", "2026-01-01 00:00:00",
-	); err == nil {
+	if err := insertAuditRow(t, db, "over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00"); err == nil {
 		t.Fatal("the up migration did not restore the bound")
 	}
 }
@@ -202,12 +196,7 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	// The legacy shape does not fit varchar(64): PostgreSQL rejected it, and
 	// that rejection is the #253 defect.
 	const legacyAction = "authorization.issue-dismiss-blocking:5013efc8-24f7-4983-b853-3e8b53329acd"
-	if err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"legacy-row", "project-legacy", "owner", legacyAction, "project-legacy",
-		`{"capability":"issue-dismiss-blocking:5013efc8-24f7-4983-b853-3e8b53329acd"}`, time.Now().UTC(),
-	); err == nil {
+	if err := insertAuditCategory(t, db, "project-legacy", "owner", legacyAction); err == nil {
 		t.Fatal("PostgreSQL accepted the legacy shape; the varchar(64) bound is gone")
 	}
 
@@ -251,12 +240,7 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	if afterDown != "" {
 		t.Fatalf("the down migration left the explicit constraint behind: %q", afterDown)
 	}
-	if err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
-		"project-legacy", "{}", time.Now().UTC(),
-	); err == nil {
+	if err := insertAuditCategory(t, db, "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1)); err == nil {
 		t.Fatal("PostgreSQL accepted an over-long category after the down migration; the varchar(64) bound is gone")
 	}
 }
@@ -289,12 +273,8 @@ func TestSQLiteAuditBoundMigrationRefusesUnhandledOverLongRows(t *testing.T) {
 	}
 
 	// A row the migration cannot normalize: not the old authorization shape.
-	if _, err := db.Exec(
-		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
-			"VALUES (?, ?, ?, ?, ?, ?, ?)",
-		"odd-row", "project-legacy", "owner", strings.Repeat("y", auditCategoryWidth+1),
-		"project-legacy", "{}", "2026-01-01 00:00:00",
-	); err != nil {
+	if err := insertAuditRow(t, db, "odd-row", "project-legacy", "owner", strings.Repeat("y", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00"); err != nil {
 		t.Fatalf("the unbounded column must accept the row first: %v", err)
 	}
 
@@ -307,4 +287,15 @@ func TestSQLiteAuditBoundMigrationRefusesUnhandledOverLongRows(t *testing.T) {
 	} else if !strings.Contains(err.Error(), "CHECK constraint failed") {
 		t.Fatalf("the bound migration failed for the wrong reason: %v", err)
 	}
+}
+
+// insertAuditRow writes one audit row straight through SQL, so the category
+// bound is what decides the outcome.
+func insertAuditRow(t *testing.T, db *sql.DB, id, projectID, actorID, action, target, details, createdAt string) error {
+	t.Helper()
+	_, err := db.Exec(
+		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, projectID, actorID, action, target, details, createdAt)
+	return err
 }

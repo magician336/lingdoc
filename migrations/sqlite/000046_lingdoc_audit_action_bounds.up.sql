@@ -19,7 +19,7 @@ CREATE TABLE lingdoc_project_audits_next (
     id TEXT PRIMARY KEY,
     project_id TEXT NOT NULL REFERENCES lingdoc_projects(id) ON DELETE CASCADE,
     actor_id TEXT NOT NULL,
-    action TEXT NOT NULL CHECK (length(action) <= 64),
+    action TEXT NOT NULL CONSTRAINT ck_lingdoc_project_audits_action_len CHECK (length(action) <= 64),
     target TEXT NOT NULL,
     details_json TEXT NOT NULL DEFAULT '{}',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP

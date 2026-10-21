@@ -52,7 +52,7 @@
       "where": "internal/lingdoc/workspacecore/service_facade.go:468",
       "action": "authorization.<种类>",
       "carries_resource": false,
-      "max_length": 36
+      "max_length": "36（整串：前缀 `authorization.` 14 + 最长种类 22）"
     },
     {
       "where": "internal/lingdoc/candidateadoption/candidate_adoption_store.go:287",

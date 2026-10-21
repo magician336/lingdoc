@@ -13,7 +13,7 @@
 | 形状 | 例子 | 长度 | 何时写入 |
 | --- | --- | --- | --- |
 | 旧形状 | `authorization.issue-dismiss-blocking:<uuid>` | 73 | #253 修复**之前**的写入方（`aa9bc394` 的父提交）把完整能力写进了分类列 |
-| 新形状 | `authorization.issue-dismiss-blocking` | 32 | #253 之后（`internal/lingdoc/workspacecore/service_facade.go:424-427` 的 `auditAuthorizationAction`） |
+| 新形状 | `authorization.issue-dismiss-blocking` | 36 | #253 之后（`internal/lingdoc/workspacecore/service_facade.go:424-427` 的 `auditAuthorizationAction`） |
 
 #253 修掉的是「旧形状把资源写进分类列」这件事。旧形状的最坏情况是 73 字符：**PostgreSQL 的 `varchar(64)` 拒写**（SQLSTATE 22001），于是一个合法的处置请求得到未映射的 500。SQLite 侧当时是无界 `TEXT`，同样的写入被静静接受——**缺陷在开发机上完全看不见**。这是 [#276](https://github.com/magician336/lingdoc/issues/276) 的由来。
 
@@ -23,7 +23,7 @@
 
 | 写点 | 产出 | 带资源吗 |
 | --- | --- | --- |
-| `internal/lingdoc/workspacecore/service_facade.go:468` | `auditAuthorizationAction(capability)` = `"authorization." + 种类` | **不带**（种类最长 36 字符） |
+| `internal/lingdoc/workspacecore/service_facade.go:468` | `auditAuthorizationAction(capability)` = `"authorization." + 种类` | **不带**（整串最长 36 字符 = 前缀 `authorization.` 14 + 最长种类 22） |
 | `internal/lingdoc/candidateadoption/candidate_adoption_store.go:287` | `project.change_set.review`（字面量） | 不带 |
 
 其余动作族（`project.*`、`project_spec.*`、`member.*`、`validation_issue.*`、`semantic.*`、`impact_task.*`、`dependency.*`、`roadmap.*`、`trial.*`、`g2.*`、`workspace.*`、`machine.read`、`delivery.export`、`preflight.compute` 等）都是字面量，或「前缀 + 枚举受限的片段」——片段取值由入参校验限定（`internal/lingdoc/workspacecore/impact_service.go:31-33` 的 `validImpactAction` 等），因此都不带资源、都在 64 字符内。
