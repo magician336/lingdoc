@@ -9,9 +9,9 @@
  * 逐条比对编号、标题、对应验收行、当前状态与承接票）。改动这里的字段时，
  * 同一份事实要同步进那份镜像；两者不一致时以镜像为准。
  *
- * **事实基线**：验收台在 head `a87459f` 的实跑结论（#257）；本轮 head 未重跑这一段，
- * 所以下面凡引用这份落证的地方都指名 head `a87459f`。
- * 本文件按该结果写，不再写「未实现 / 待当前 head 落证」这类已被实跑作废的旧口径。
+ * **事实基线**：本轮（切片七行接实跑判定那一轮）在当前 head 重跑了影响中心那条链，
+ * 所以下面凡引用落证的地方都指名**本轮的运行标识与 head**；
+ * `a87459f` 那一轮（#257）是**页面渲染**那一半的落证，两处不混读。
  *
  * 两条纪律：
  *
@@ -243,57 +243,67 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
   },
   {
     id: 'G3-GAP-06',
-    title: '影响中心：必需对象集合已落证，矩阵行 G3.7 仍未判定',
+    title: '影响中心：必需对象集合已落证并入 G3.7 判定，矩阵行 G3.7 记 PASS (follow-up)',
     rows: ['G3.7'],
     limits: ['AC-G3-04'],
     missing:
-      '「本次必须处理的对象」集合（`assessment.objects`）的渲染能力**已实现，' +
-      '且已在 head `a87459f` 落证**（运行标识 `g3r-mvgqpt88-7b4e074d`；' +
-      '本轮 head 未重跑这一段）；' +
-      '缺的是把这份落证并入矩阵行 `G3.7` 的完成判据判定，该行当前仍记 `NOT RUN`。',
+      '「本次必须处理的对象」集合（`assessment.objects`）的渲染能力**已实现**，' +
+      '**也已并入矩阵行 `G3.7` 的完成判据判定**：本轮 head 的依赖链实跑把该集合读回来，' +
+      '并按对象 `state` / `confirmed` / `context_revision` 逐字段核对。' +
+      '**仍缺**：① 缺口清单 #246 未关闭前该行不得判 `PASS`（按规则记 `PASS (follow-up)`）；' +
+      '② **页面渲染那半段**没有在当前 head 重跑——headless 实跑驱动不到验收台页面，' +
+      '页面上自己读 `assessment.objects` 渲染的那一段沿用 #257 在 head `a87459f` 的落证。',
     specAnchor: anchor(346),
     unblockCondition:
-      '把本次落证并入 `G3.7` 的完成判据判定（验收台页面自己读 `assessment.objects` 渲染，' +
-      '不改工作台面板的 props 与行为，并按对象 `state` / `confirmed` / `context_revision` ' +
-      '逐字段核对）；判定成立前本行保持 `NOT RUN`。',
+      '本轮已达成（数据面）：`G3.7` 的判定卡在当前 head 实跑成立——必需对象集合逐字段核对齐全。' +
+      '彻底收口要等两件事：缺口清单 #246 关闭（该行才能从 `PASS (follow-up)` 升到 `PASS`），' +
+      '以及验收台页面在当前 head 重渲「本次必须处理的对象」区块（页面那半段的落点）。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 257,
-    rowStatus: 'NOT RUN',
+    rowStatus: 'PASS (follow-up)',
     fact:
-      '渲染能力**已实现并已在 head `a87459f` 落证**（本轮 head 未重跑这一段）：' +
-      '运行标识 `g3r-mvgqpt88-7b4e074d`，证据 ' +
-      '`docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json`（#257）。' +
-      '验收台 `G3Demo.vue` 已渲染 `assessment.objects`，工作台面板 `ImpactOpsPanel.vue` ' +
-      '也已渲染「本次必须处理的对象」区块。' +
-      '矩阵行 `G3.7` 仍记 `NOT RUN`；覆盖受限行 `AC-G3-04` 记 `PASS (follow-up)`。',
+      '渲染能力**已实现**（验收台 `G3Demo.vue` 与工作台面板 `ImpactOpsPanel.vue` 都渲染' +
+      '「本次必须处理的对象」区块），并在 head `a87459f` 落证（运行标识 `g3r-mvgqpt88-7b4e074d`，#257）。' +
+      '**本轮实跑判定成立**（依赖图与影响任务链，见「G3.7」判定卡）：' +
+      '本轮 head 的实跑把 `assessment.objects` 读回来并逐字段核对 ' +
+      '`state` / `confirmed` / `context_revision`，判定卡 `G3.7` 成立。' +
+      '矩阵行 `G3.7` 记 `PASS (follow-up)`（不是 `NOT RUN`）：判定已成立，' +
+      '但缺口清单 #246 未关闭前带缺口的行不判 `PASS`，且页面渲染那半段没有在当前 head 重跑。' +
+      '覆盖受限行 `AC-G3-04` 记 `PASS (follow-up)`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json',
   },
   {
     id: 'G3-GAP-07',
-    title: '影响中心：来源对象与确定/可能影响分组已落证，矩阵行 G3.7 仍未判定',
+    title: '影响中心：来源对象与确定/可能影响分组已落证并入 G3.7 判定，矩阵行 G3.7 记 PASS (follow-up)',
     rows: ['G3.7'],
     limits: ['AC-G3-04'],
     missing:
       '「来源对象」（`impacts[].causes[].source`）与「确定影响 / 可能影响」分组的渲染能力' +
-      '**已实现，且已在 head `a87459f` 落证**（运行标识 `g3r-mvgqpt88-7b4e074d`；' +
-      '本轮 head 未重跑这一段）；' +
-      '缺的是把这份落证并入矩阵行 `G3.7` 的完成判据判定，该行当前仍记 `NOT RUN`。',
+      '**已实现**，**也已并入矩阵行 `G3.7` 的完成判据判定**：本轮 head 的依赖链实跑把来源对象' +
+      '（含对象 kind / id / version）与影响理由读回来，并按 `certainty` 分两组核对。' +
+      '**仍缺**：① 缺口清单 #246 未关闭前该行不得判 `PASS`（按规则记 `PASS (follow-up)`）；' +
+      '② **页面渲染那半段**没有在当前 head 重跑——headless 实跑驱动不到验收台页面，' +
+      '页面上按 `certainty` 分两组渲染 `impacts[]` 的那一段沿用 #257 在 head `a87459f` 的落证。',
     specAnchor: anchor(346),
     unblockCondition:
-      '把本次落证并入 `G3.7` 的完成判据判定（验收台页面按 `certainty` 分两组渲染 `impacts[]` ' +
-      '并逐条渲染 `causes[].source`，含对象 kind / id / version）；' +
-      '判定成立前本行保持 `NOT RUN`。',
+      '本轮已达成（数据面）：`G3.7` 的判定卡在当前 head 实跑成立——来源对象与影响理由齐全，' +
+      '确定 / 可能两组不重不漏地覆盖全部影响。' +
+      '彻底收口要等两件事：缺口清单 #246 关闭（该行才能从 `PASS (follow-up)` 升到 `PASS`），' +
+      '以及验收台页面在当前 head 重渲「确定影响 / 可能影响」两段（页面那半段的落点）。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 257,
-    rowStatus: 'NOT RUN',
+    rowStatus: 'PASS (follow-up)',
     fact:
-      '渲染能力**已实现并已在 head `a87459f` 落证**（本轮 head 未重跑这一段）：' +
-      '运行标识 `g3r-mvgqpt88-7b4e074d`，证据 ' +
-      '`docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json`（#257）。' +
-      '验收台 `G3Demo.vue` 已渲染来源对象并按 `certainty` 分「确定影响 / 可能影响」两段；' +
-      '工作台面板 `ImpactOpsPanel.vue` 同样在位。' +
-      '矩阵行 `G3.7` 仍记 `NOT RUN`；覆盖受限行 `AC-G3-04` 记 `PASS (follow-up)`。',
+      '渲染能力**已实现**（验收台 `G3Demo.vue` 按 `certainty` 分「确定影响 / 可能影响」两段并逐条渲染 ' +
+      '`causes[].source`；工作台面板 `ImpactOpsPanel.vue` 同样在位），' +
+      '并在 head `a87459f` 落证（运行标识 `g3r-mvgqpt88-7b4e074d`，#257）。' +
+      '**本轮实跑判定成立**（依赖图与影响任务链，见「G3.7」判定卡）：' +
+      '本轮 head 的实跑把每条影响的来源对象与影响理由读回来（缺来源或原因 0 条），' +
+      '确定影响 + 可能影响 = 全部影响（分组取服务端 `certainty`，页面不自行重算）。' +
+      '矩阵行 `G3.7` 记 `PASS (follow-up)`（不是 `NOT RUN`）：判定已成立，' +
+      '但缺口清单 #246 未关闭前带缺口的行不判 `PASS`，且页面渲染那半段没有在当前 head 重跑。' +
+      '覆盖受限行 `AC-G3-04` 记 `PASS (follow-up)`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvgqpt88-7b4e074d.json',
   },

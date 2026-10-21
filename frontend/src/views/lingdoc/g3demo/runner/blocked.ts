@@ -1263,6 +1263,7 @@ export async function runBlockedChain(
 
   result.verdicts = [
     verdictBlockedRecovery(result),
+    verdictG34(result),
     verdictAC0909({
       issueId: disposition?.issueId ?? '',
       dismissStatus: disposition?.dismissStatus ?? 0,
@@ -1512,6 +1513,76 @@ export function verdictBlockedRecovery(result: G3BlockedChainResult): G3Verdict 
         `status=${result.afterDisposition.status} · 阻断原因 ${result.afterDisposition.blockers.length} 条`,
       `POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（阻断项闭环后）→ HTTP 200 · ` +
         `status=${result.stabilized.status} · checked_at=${result.stabilized.checkedAt}`,
+    ],
+  }
+}
+
+/**
+ * G3.4 判定：旧任务不能关闭新版本；异步成功不等于人工关闭。
+ *
+ * 判据是**两段合取**：
+ *
+ * 1. **旧任务不能关闭新版本**：目标对象在任务「已完成」之后被新版本替换，
+ *    稳定化重新读取时发现版本不匹配——这一版修订**没有被放行**
+ *    （HTTP 409 / 422 或 200 + BLOCKED），依据旧版本的任务被服务端落成
+ *    失效（`STALE`，终态但不算闭环）；
+ * 2. **异步成功不等于人工关闭**：研究主张上的复核任务缺少人工复核决策时被服务端拒掉，
+ *    带上人工复核决策之后才允许闭环——异步作业成功关不掉人工复核任务。
+ */
+export function verdictG34(result: G3BlockedChainResult): G3Verdict {
+  // ① 旧任务不能关闭新版本。
+  const notReleased =
+    result.mismatchStatus === 409 ||
+    result.mismatchStatus === 422 ||
+    result.versionMismatch.status === 'BLOCKED'
+  const staleReported = result.staleTasks.length > 0
+  const oldTaskCannotClose = notReleased && staleReported
+
+  // ② 异步成功不等于人工关闭。
+  const probe = result.reviewProbe
+  const refusedWithoutReview = Boolean(probe) && probe!.completeWithoutReviewStatus >= 400
+  const acceptedWithReview = Boolean(probe) && probe!.completeWithReviewAccepted
+  const manualCloseRequired = refusedWithoutReview && acceptedWithReview
+
+  const holds = oldTaskCannotClose && manualCloseRequired
+  return {
+    id: 'G3.4',
+    title: '任务协调切片：旧任务不能关闭新版本，异步成功不等于人工关闭',
+    holds,
+    status: holds ? 'PASS' : 'NOT RUN',
+    detail: holds
+      ? `目标对象在任务完成后被新版本替换（被替换掉的版本 ${result.replacedVersionId || '（未读到）'}），` +
+        `稳定化重新读取时发现版本不匹配：HTTP ${result.mismatchStatus}` +
+        `${result.mismatchCode ? `（code=${result.mismatchCode}）` : ''}` +
+        `${result.versionMismatch.status ? `· status=${result.versionMismatch.status}` : ''}——这一版修订没有被放行；` +
+        `依据旧版本的任务被落成失效（${result.staleTasks.length} 条：` +
+        `${result.staleTasks.map((task) => `${task.id}(${task.staleReason || '未给原因'})`).join('、') || '（无）'}），` +
+        `失效任务不算闭环。` +
+        `人工复核任务（${probe?.taskAction ?? '（无）'} / ${probe?.targetKind ?? '（无）'}）` +
+        `缺少人工复核决策时被服务端按 HTTP ${probe?.completeWithoutReviewStatus ?? 0}` +
+        `${probe?.completeWithoutReviewCode ? `（code=${probe.completeWithoutReviewCode}）` : ''} 拒掉，` +
+        `带上人工复核决策之后才允许闭环（HTTP ${probe?.completeWithReviewStatus ?? 0}）——` +
+        `异步作业成功关不掉人工复核任务。`
+      : `不成立：旧任务不能关闭新版本=${oldTaskCannotClose}` +
+        `（版本不匹配后稳定化 HTTP ${result.mismatchStatus}${result.mismatchCode ? ` code=${result.mismatchCode}` : ''}` +
+        `· status=${result.versionMismatch.status || '（未取到）'}，失效任务 ${result.staleTasks.length} 条），` +
+        `异步成功不等于人工关闭=${manualCloseRequired}` +
+        `（缺人工复核决策 HTTP ${probe?.completeWithoutReviewStatus ?? 0}，` +
+        `带人工复核决策 HTTP ${probe?.completeWithReviewStatus ?? 0}，已闭环=${probe?.completeWithReviewAccepted ?? false}）` +
+        `${probe ? '' : '；本轮没有跑人工复核探针'}`,
+    evidence: [
+      `POST /api/v1/lingdoc/projects/{projectId}/chapters/{id}/versions → HTTP 201 · 目标对象被新版本替换` +
+        `（新版本 ${result.replacedVersionId || '（未读到）'}）`,
+      `POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（目标版本被替换后）→ HTTP ${result.mismatchStatus} · ` +
+        `code=${result.mismatchCode || '（无）'} · status=${result.versionMismatch.status || '（未放行）'} · ` +
+        `这一版修订没有被放行`,
+      `GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 失效任务 ${result.staleTasks.length} 条：` +
+        `${result.staleTasks.map((task) => `${task.id}(${task.staleReason || '未给原因'})`).join('、') || '（无）'}` +
+        `（失效任务终态但不算闭环）`,
+      `POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/{taskId}/actions（缺 human_decision）→ HTTP ` +
+        `${probe?.completeWithoutReviewStatus ?? 0} · code=${probe?.completeWithoutReviewCode || '（未给码）'}`,
+      `POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/{taskId}/actions（带 human_decision=reviewed）→ HTTP ` +
+        `${probe?.completeWithReviewStatus ?? 0} · ${probe?.completeWithReviewAccepted ? '已闭环' : '未闭环'}`,
     ],
   }
 }

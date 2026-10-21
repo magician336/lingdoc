@@ -1248,6 +1248,13 @@ export async function runChangeSetChain(
       unaffectedAfter,
       unaffected,
     }),
+    verdictG33({
+      scoped,
+      assessment,
+      tasksAfter,
+      unaffectedBefore,
+      unaffectedAfter,
+    }),
     verdictAcG311({
       scoped,
       source,
@@ -1570,6 +1577,78 @@ function verdictAcG304(input: {
       `GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/versions → HTTP 200 · confirmation_valid ${input.unaffectedBefore.versionConfirmationValid} → ${input.unaffectedAfter.versionConfirmationValid} · spec_revision=${input.unaffectedAfter.versionSpecRevision}`,
       `GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · task_count=${input.tasksAfter.length} · targets=[${input.tasksAfter.map((task) => task.target.id).join(' ')}]`,
       `GET /api/v1/lingdoc/projects/{projectId}/chapters/{unaffectedId}/confirmations/current → HTTP 200 · ${input.unaffectedAfter.currentConfirmation ? `confirmation_id=${input.unaffectedAfter.currentConfirmation.id}` : '无当前确认（规格修订已推进，章节读视图口径）'}`,
+    ],
+  }
+}
+
+/**
+ * G3.3 判定：只生成受影响任务；无关对象保持原状态。
+ *
+ * 两段各有各的落点：
+ *
+ * 1. **只生成受影响任务**：应用之后读回的影响任务，每一条的目标都在这次变更集
+ *    的受影响集合里（`assessment.objects` 与 `assessment.impacts` 的目标）；
+ * 2. **无关对象保持原状态**：与本次变更集无关的章节既不在评估对象里、也不在影响里，
+ *    没有为它产生影响任务，而且它的**版本级确认标记**在应用前后都保持有效
+ *    （本次变更集没有使它失效）。
+ *
+ * 注意：判据只要求「无关对象保持原状态」，**不要求**服务端给出「未受影响理由」——
+ * 那是 AC-G3-04 的另一半（服务端当前给不出，见缺口清单 #246）。
+ */
+export function verdictG33(input: {
+  scoped: G3ChangeSetFact
+  assessment: G3ImpactAssessmentFact
+  tasksAfter: G3ImpactTaskFact[]
+  unaffectedBefore: G3ChapterSnapshot
+  unaffectedAfter: G3ChapterSnapshot
+}): G3Verdict {
+  const affectedKeys = new Set([
+    ...input.assessment.objects.map((object) => `${object.kind}/${object.id}`),
+    ...input.assessment.impacts.map((impact) => `${impact.target.kind}/${impact.target.id}`),
+  ])
+  const unrelatedTasks = input.tasksAfter.filter(
+    (task) => !affectedKeys.has(`${task.target.kind}/${task.target.id}`),
+  )
+  const onlyAffectedTasks = input.tasksAfter.length > 0 && unrelatedTasks.length === 0
+
+  const unrelatedKey = `${input.unaffectedAfter.chapterId}`
+  const inObjects = input.assessment.objects.some((object) => object.id === unrelatedKey)
+  const inImpacts = input.assessment.impacts.some((impact) => impact.target.id === unrelatedKey)
+  const hasTask = input.tasksAfter.some((task) => task.target.id === unrelatedKey)
+  const keptConfirmation =
+    input.unaffectedBefore.versionConfirmationValid === true &&
+    input.unaffectedAfter.versionConfirmationValid === true
+  const unrelatedUnchanged = !inObjects && !inImpacts && !hasTask && keptConfirmation
+
+  const holds = onlyAffectedTasks && unrelatedUnchanged
+  return {
+    id: 'G3.3',
+    title: '影响解析切片：只生成受影响任务，无关对象保持原状态',
+    holds,
+    status: holds ? 'PASS' : 'NOT RUN',
+    detail: holds
+      ? `应用后读回的影响任务 ${input.tasksAfter.length} 条，每一条的目标都在本次变更集的受影响集合里` +
+        `（评估对象 ${input.assessment.objects.length} 个、评估影响 ${input.assessment.impacts.length} 条；` +
+        `落在集合之外的任务 ${unrelatedTasks.length} 条）；` +
+        `无关对象 ${input.unaffectedAfter.sectionId}（${input.unaffectedAfter.chapterId}）` +
+        `既不在评估对象里（${inObjects ? '在' : '不在'}）、也不在影响里（${inImpacts ? '在' : '不在'}），` +
+        `没有为它产生影响任务（${hasTask ? '有' : '无'}），` +
+        `它的版本级确认标记应用前后都有效（${input.unaffectedBefore.versionConfirmationValid} → ` +
+        `${input.unaffectedAfter.versionConfirmationValid}）——无关对象保持原状态。`
+      : `不成立：只生成受影响任务=${onlyAffectedTasks}（集合外任务 ${unrelatedTasks.length} 条），` +
+        `无关对象保持原状态=${unrelatedUnchanged}（在评估对象里=${inObjects}，在影响里=${inImpacts}，` +
+        `有任务=${hasTask}，确认保持=${keptConfirmation}）`,
+    evidence: [
+      `POST /api/v1/lingdoc/projects/{projectId}/change-sets → HTTP 201 · change_set_id=${input.scoped.id} · ` +
+        `受影响章节 ${input.scoped.impacts.map((impact) => impact.chapter_id).join('、') || '（无）'}`,
+      `GET /api/v1/lingdoc/projects/{projectId}/change-sets/${input.scoped.id}/impact-assessment → HTTP 200 · ` +
+        `评估对象 ${input.assessment.objects.length} 个 · 评估影响 ${input.assessment.impacts.length} 条 · ` +
+        `集合外的影响任务 ${unrelatedTasks.length} 条`,
+      `GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 任务 ${input.tasksAfter.length} 条 · ` +
+        `目标 [${input.tasksAfter.map((task) => `${task.target.kind}/${task.target.id}`).join(' ')}]`,
+      `GET /api/v1/lingdoc/projects/{projectId}/chapters/${input.unaffectedAfter.chapterId}/versions → HTTP 200 · ` +
+        `confirmation_valid ${input.unaffectedBefore.versionConfirmationValid} → ${input.unaffectedAfter.versionConfirmationValid} · ` +
+        `无关章节 ${input.unaffectedAfter.sectionId} 未被本次变更集失效`,
     ],
   }
 }

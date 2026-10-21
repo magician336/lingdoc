@@ -74,8 +74,18 @@ test('跑通前置链不改变任何一行的状态', () => {
 test('跑通前置链不会把任何一行判成 PASS', () => {
   const ctx = prerequisiteRun()
   const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
-  assert.equal(rows.filter((row) => row.status === 'PASS').length, 0)
-  assert.equal(rows.filter((row) => row.status === 'TODO').length, 6, '切片六行应保持 TODO（G3.7 记 NOT RUN）')
+  // 前置链不构成任何判据的证据：每一行的状态都**原样保留**。
+  // （切片行的静态状态记的是「当前 head 实跑得到（或最后已知）的值」，
+  // 投影只在本轮判定成立时升格，前置链跑不到判定卡，所以状态不动。）
+  const before = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row.status]))
+  for (const row of rows) {
+    assert.equal(row.status, before.get(row.id), `${row.id} 的状态被前置链改动了`)
+  }
+  assert.equal(
+    rows.filter((row) => row.status === 'TODO').length,
+    0,
+    '切片七行都已有实跑判定，不该再有 TODO',
+  )
 })
 
 test('未被本轮覆盖的行明确标出未覆盖', () => {
@@ -147,7 +157,8 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
       'AC-G3-07', 'AC-G3-08', 'AC-G3-09',
       'AC-G3-11', 'AC-G3-12',
       'AC-G3-13', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16',
-      'G3.1',     'G3.6'
+      'G3.1',     'G3.2',     'G3.3',     'G3.4',
+      'G3.5',     'G3.6',     'G3.7',
     ],
   )
   for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
@@ -226,6 +237,26 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.1'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].status, 'WARNING')
   assert.equal(G3_ROW_EVIDENCE_RULES['G3.6'].followUpIssue, 246)
+  // 七条切片行的规则表条目都挂判定卡：没有判定卡就只剩「步骤跑到了」，
+  // 而「步骤跑到了」不等于「判据成立」——这是防假 PASS 的结构性守护。
+  for (const id of ['G3.1', 'G3.2', 'G3.3', 'G3.4', 'G3.5', 'G3.6', 'G3.7']) {
+    const rule = G3_ROW_EVIDENCE_RULES[id]
+    assert.ok(rule, `${id} 没有规则表条目`)
+    assert.equal(rule.verdictId, id, `${id} 的规则表必须挂自己的判定卡`)
+    assert.ok(rule.requires.length > 0, `${id} 没有声明必需步骤`)
+  }
+  // G3.2 / G3.3 / G3.4：依赖图、影响解析、任务协调三段本轮实跑判定成立，
+  // 这三行没有 #246 缺口，可以判 PASS。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.2'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.3'].status, 'PASS')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.4'].status, 'PASS')
+  // G3.5：路线图切片只成立一部分（「必需项已声明但缺失」那一种前置本轮没有落点），
+  // 按仓库口径记覆盖受限的 WARNING，不写 PASS。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.5'].status, 'WARNING')
+  // G3.7：影响中心是 #246 的缺口行（G3-GAP-06 / G3-GAP-07），
+  // 缺口清单关闭前不判 PASS，记 PASS (follow-up) 并保留跟进 Issue。
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.7'].status, 'PASS (follow-up)')
+  assert.equal(G3_ROW_EVIDENCE_RULES['G3.7'].followUpIssue, 246)
   // 本票新增的三条领域判据：AC-G3-12 只覆盖了实跑得出的那半段（#246 G3-GAP-11）；
   // AC-G3-09 与 AC-G3-07 同样只覆盖实跑得出的那半段。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-12'].status, 'PASS (follow-up)')
@@ -317,7 +348,9 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
   // AC-G3-03 是**例外**：它在本轮已实跑判定成立（注入命中 + 回滚读回完整），
   // 但行状态按缺口清单 #246 的规则保留 follow-up（#246 未关闭前不判 PASS）。
   assert.equal(byId.get('AC-G3-03')?.status, 'PASS (follow-up)')
-  assert.equal(byId.get('G3.1')?.status, 'TODO')
+  // G3.1 的必需步骤挂在**稳定化链**上：本轮只跑了变更集链与依赖链，
+  // 所以它未被本轮覆盖，状态原样保留（静态状态记的是上一次实跑判定的结论）。
+  assert.equal(byId.get('G3.1')?.status, baseRows.get('G3.1')?.status)
   assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
 })
 
@@ -444,10 +477,17 @@ test('稳定化链的判定不成立时，G3.1 与 G3.6 保持原样', () => {
     { id: 'G3.1', title: 'G3.1', holds: false, detail: '不成立', evidence: [] },
     { id: 'G3.6', title: 'G3.6', holds: false, detail: '不成立', evidence: [] },
   ]
-  const { rows } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
+  const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, ctx)
   const byId = new Map(rows.map((row) => [row.id, row]))
-  assert.equal(byId.get('G3.1')?.status, 'TODO', '判定不成立不得判成 PASS')
-  assert.equal(byId.get('G3.6')?.status, 'TODO', '判定不成立不得判成 PASS')
+  // 判定不成立时，投影**不改动**矩阵里的静态状态：切片行的静态状态记的是
+  // 上一次实跑判定的结论，不是一次失败就抹掉。
+  const before = new Map(G3_MATRIX_ROWS.map((row) => [row.id, row.status]))
+  assert.equal(byId.get('G3.1')?.status, before.get('G3.1'))
+  assert.equal(byId.get('G3.6')?.status, before.get('G3.6'))
+  // 但**证据说明里必须写明判定卡不成立**——状态不变不等于这一轮判定成立。
+  const notes = new Map(evidence.map((item) => [item.rowId, item.note]))
+  assert.match(notes.get('G3.1') ?? '', /判定卡/)
+  assert.match(notes.get('G3.6') ?? '', /判定卡/)
 })
 
 test('阻断与恢复链跑完后，AC-G3-09 / AC-G3-12 / AC-G3-07 由本轮证据驱动', () => {

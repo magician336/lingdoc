@@ -24,6 +24,8 @@ import {
   verdictAcG305,
   verdictAcG313,
   verdictAcG315,
+  verdictG32,
+  verdictG37,
   type G3CandidateDecisionFact,
   type G3DependencyCandidateBatchFact,
   type G3DependencyCandidateFact,
@@ -31,6 +33,7 @@ import {
   type G3DependencyEdgeFact,
   type G3DependencySuppressionFact,
   type G3ImpactAssessmentFact,
+  type G3ImpactTaskDetailFact,
 } from './dependencies'
 
 function assessmentOf(): G3ImpactAssessmentFact {
@@ -490,4 +493,158 @@ test('候选三态的步骤名与矩阵规则表 AC-G3-15 要求的锚一致', (
   assert.equal(G3_DEP_STEPS.decideCandidateReject, '助手-候选决策-拒绝')
   assert.equal(G3_DEP_STEPS.reproposeRejectedCandidate, '助手-重投被拒候选')
   assert.equal(G3_DEP_STEPS.decideStaleCandidate, '助手-确认版本已变更的候选')
+})
+
+/** 造一条带指定 id 的依赖边。 */
+function edgeWithId(id: string, status: string, relation: string): G3DependencyEdgeFact {
+  return { ...edgeFactOf(status, relation), id }
+}
+
+/** 造一条影响任务。 */
+function taskWith(
+  id: string,
+  targetId: string,
+  action: string,
+  causes: number,
+  overrides: Partial<G3ImpactTaskDetailFact> = {},
+): G3ImpactTaskDetailFact {
+  return {
+    id,
+    changeSetId: 'cs-1',
+    target: { kind: 'ChapterVersion', id: targetId, version: 'v1' },
+    targetRevision: 2,
+    action,
+    severity: 'blocking',
+    responsibilityDomain: 'B',
+    assigneeId: 'user-1',
+    status: 'OPEN',
+    causes: Array.from({ length: causes }, (_, index) => ({
+      edgeId: `e-${index + 2}`,
+      source: { kind: 'ProjectSpec', id: 'p-1', version: '1' },
+      reason: '合成理由',
+    })),
+    version: 1,
+    disposition: '',
+    humanDecision: '',
+    closureEvidence: [],
+    staleReason: '',
+    staleAt: '',
+    ...overrides,
+  }
+}
+
+/**
+ * 一份「三类边语义都成立」的依赖链事实。
+ *
+ * 对应判据：每条影响可追溯到来源边；重复边、建议边和人工确认边有明确语义。
+ */
+function g32ResultOf(overrides: Partial<G3DependencyChainResult> = {}): G3DependencyChainResult {
+  const assessment = assessmentOf()
+  const base = {
+    changeSet: { id: 'cs-1' },
+    edges: [],
+    finalEdges: [
+      edgeWithId('e-2', 'confirmed', 'spec_invalidates_method'),
+      edgeWithId('e-3', 'confirmed', 'template_invalidates_method'),
+      edgeWithId('e-4', 'suggested', 'candidate_question_dependency'),
+    ],
+    assessment,
+    grouping: groupImpactAssessment(assessment, [
+      { kind: 'ProjectSpec', id: 'p-1', version: '1' },
+      { kind: 'ChapterVersion', id: 'ch-method', version: 'v1' },
+      { kind: 'ChapterVersion', id: 'ch-question', version: 'v1' },
+    ]),
+    tasks: [taskWith('task-1', 'ch-method', 'INVALIDATE_CONFIRMATION', 2)],
+    finalTasks: [taskWith('task-1', 'ch-method', 'INVALIDATE_CONFIRMATION', 2)],
+    tasksAfterReplay: [taskWith('task-1', 'ch-method', 'INVALIDATE_CONFIRMATION', 2)],
+    decisions: {
+      confirm: edgeWithId('edge-confirm', 'confirmed', 'candidate_a'),
+      modify: {
+        ...edgeWithId('edge-modify', 'confirmed', 'candidate_b_corrected'),
+        supersededRelation: 'candidate_b',
+      },
+      reject: edgeWithId('edge-reject', 'rejected', 'candidate_c'),
+      reproposed: edgeWithId('edge-reject', 'rejected', 'candidate_c'),
+    },
+    suggestedEdge: edgeWithId('edge-suggested', 'suggested', 'candidate_question_dependency'),
+  } as unknown as G3DependencyChainResult
+  return { ...base, ...overrides } as G3DependencyChainResult
+}
+
+test('G3.2：影响可追溯到来源边、三类边语义明确时判定成立', () => {
+  const verdict = verdictG32(g32ResultOf())
+  assert.equal(verdict.id, 'G3.2')
+  assert.equal(verdict.holds, true)
+  assert.equal(verdict.status, 'PASS')
+  assert.ok(verdict.evidence.length > 0)
+  assert.match(verdict.evidence.join('\n'), /dependencies/)
+})
+
+test('G3.2：有影响追不到来源边就不成立（不猜）', () => {
+  const broken = verdictG32(
+    g32ResultOf({
+      finalEdges: [edgeWithId('e-4', 'suggested', 'candidate_question_dependency')],
+    } as Partial<G3DependencyChainResult>),
+  )
+  assert.equal(broken.holds, false)
+  assert.equal(broken.status, 'NOT RUN')
+  assert.match(broken.detail, /未能追溯/)
+})
+
+test('G3.2：变更集直接列入的对象按服务端给的 explicit: 来源边记，同样可追溯', () => {
+  const assessment = assessmentOf()
+  assessment.impacts[0].causes[0].edgeId = 'explicit:cs-1'
+  const verdict = verdictG32(g32ResultOf({ assessment } as Partial<G3DependencyChainResult>))
+  assert.equal(verdict.holds, true)
+})
+
+test('G3.2：建议边产生了任务就不成立（建议边不单独使章节失效）', () => {
+  const tasks = [
+    taskWith('task-1', 'ch-method', 'INVALIDATE_CONFIRMATION', 2),
+    taskWith('task-2', 'ch-question', 'REVIEW_REQUIRED', 1),
+  ]
+  const broken = verdictG32(
+    g32ResultOf({
+      tasks,
+      finalTasks: tasks,
+      tasksAfterReplay: tasks,
+    } as Partial<G3DependencyChainResult>),
+  )
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /建议边语义=false/)
+})
+
+test('G3.2：人工拒绝的边没有被记成 rejected 就不成立', () => {
+  const result = g32ResultOf()
+  result.decisions.reject = { ...result.decisions.reject, status: 'confirmed' }
+  assert.equal(verdictG32(result).holds, false)
+})
+
+test('G3.7：必需对象集合、来源与理由、分组、责任人与动作都读得回来时判定成立', () => {
+  const verdict = verdictG37(g32ResultOf())
+  assert.equal(verdict.id, 'G3.7')
+  assert.equal(verdict.holds, true)
+  // 这一行是 #246 的缺口行：缺口清单关闭前不判 PASS。
+  assert.equal(verdict.status, 'PASS (follow-up)')
+  assert.match(verdict.detail, /#246/)
+})
+
+test('G3.7：必需对象集合缺字段就不成立（逐字段核对）', () => {
+  const assessment = assessmentOf()
+  assessment.objects[0].contextRevision = 0
+  const broken = verdictG37(g32ResultOf({ assessment } as Partial<G3DependencyChainResult>))
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /必需对象集合=false/)
+})
+
+test('G3.7：任务没有责任人与指派人不成立（用户看不见责任人）', () => {
+  const finalTasks = [
+    taskWith('task-1', 'ch-method', 'INVALIDATE_CONFIRMATION', 2, {
+      responsibilityDomain: '',
+      assigneeId: '',
+    }),
+  ]
+  const broken = verdictG37(g32ResultOf({ finalTasks } as Partial<G3DependencyChainResult>))
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /责任人与动作=false/)
 })

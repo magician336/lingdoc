@@ -23,9 +23,11 @@ import {
   verdictAC0909,
   verdictAC0912,
   verdictDismissBoundary,
+  verdictG34,
   type G3AC0907Input,
   type G3AC0909Input,
   type G3AC0912Input,
+  type G3BlockedChainResult,
   type G3DismissBoundaryInput,
 } from './blocked'
 
@@ -228,4 +230,55 @@ test('接受不处理的边界：阻断级被拒、非阻断级可达时判定�
   const verdict = verdictDismissBoundary(input)
   assert.equal(verdict.holds, true)
   assert.match(verdict.detail, /DISMISSED/)
+})
+
+/** 造一份「旧任务关不掉新版本、人工复核关不掉」的阻断链事实。 */
+function g34ResultOf(overrides: Partial<G3BlockedChainResult> = {}): G3BlockedChainResult {
+  const base = {
+    mismatchStatus: 409,
+    mismatchCode: 'version_conflict',
+    versionMismatch: { status: '', blockers: [], staleTaskIds: [] },
+    staleTasks: [{ id: 'task-9', action: 'INVALIDATE_CONFIRMATION', severity: 'blocking', staleReason: 'closure_stale' }],
+    replacedVersionId: 'v-m2',
+    reviewProbe: {
+      taskId: 'task-7',
+      taskAction: 'REVIEW_REQUIRED',
+      targetKind: 'ResearchClaim',
+      completeWithoutReviewStatus: 422,
+      completeWithoutReviewCode: 'invalid_state',
+      completeWithReviewStatus: 200,
+      completeWithReviewAccepted: true,
+      modelSideCovered: false,
+    },
+  } as unknown as G3BlockedChainResult
+  return { ...base, ...overrides } as G3BlockedChainResult
+}
+
+test('G3.4：旧任务不能关闭新版本、异步成功不等于人工关闭时判定成立', () => {
+  const verdict = verdictG34(g34ResultOf())
+  assert.equal(verdict.id, 'G3.4')
+  assert.equal(verdict.holds, true)
+  assert.equal(verdict.status, 'PASS')
+  assert.match(verdict.detail, /409/)
+  assert.match(verdict.detail, /invalid_state/)
+  assert.ok(verdict.evidence.length > 0)
+})
+
+test('G3.4：版本被替换之后这一版修订被放行了就不成立', () => {
+  const broken = verdictG34(g34ResultOf({ mismatchStatus: 200 } as Partial<G3BlockedChainResult>))
+  assert.equal(broken.holds, false)
+  assert.equal(broken.status, 'NOT RUN')
+  assert.match(broken.detail, /旧任务不能关闭新版本=false/)
+})
+
+test('G3.4：没有跑失效任务就不成立（没观测到就不许说旧任务失效）', () => {
+  const broken = verdictG34(g34ResultOf({ staleTasks: [] } as Partial<G3BlockedChainResult>))
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /失效任务 0 条/)
+})
+
+test('G3.4：没有人工复核探针就不成立（异步成功不等于人工关闭没观测到）', () => {
+  const broken = verdictG34(g34ResultOf({ reviewProbe: null } as Partial<G3BlockedChainResult>))
+  assert.equal(broken.holds, false)
+  assert.match(broken.detail, /本轮没有跑人工复核探针/)
 })

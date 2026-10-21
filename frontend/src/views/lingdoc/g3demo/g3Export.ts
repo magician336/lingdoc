@@ -31,7 +31,7 @@ export type G3ConclusionSource = 'this_run' | 'historical_snapshot' | 'not_judge
 /** 结论来源的文案（页面与导出体共用同一套说法）。 */
 export const G3_CONCLUSION_SOURCE_LABELS: Record<G3ConclusionSource, string> = {
   this_run: '本次运行得出',
-  historical_snapshot: '历史快照 · 非本次运行',
+  historical_snapshot: '非本次运行 · 历史快照或既有实跑',
   not_judged: '尚未判定',
 }
 
@@ -191,10 +191,23 @@ export function exportFilePath(dateStamp: string, runId?: string): string {
   return `${G3_EVIDENCE_DIR}/${exportFileName(dateStamp, runId)}`
 }
 
-/** 结论来源：优先看本轮是否真的判定过这一行。 */
+/**
+ * 判定一行的结论来源。
+ *
+ * 三者互斥：
+ * - `this_run`：本次运行（含本次导出体所含的那几次运行）判定出来的；
+ * - `historical_snapshot`：**不是**本次运行判定的，但有落证——
+ *   矩阵里记着上一次真实运行的判定（切片行）或历史快照（AC 行）；
+ * - `not_judged`：没有落证，状态只是静态声明。
+ *
+ * 为什么要把「既有实跑」也算作 `historical_snapshot`：矩阵的静态状态记的是
+ * 「该行最后一次被真实判定得到的结论」。导出体只含部分运行时，那几行仍然
+ * 带着上一次实跑得出的结论——把它们标成「尚未判定」会让读者以为那一行没跑过。
+ */
 export function conclusionSourceOf(row: G3MatrixRow, decidedThisRun: boolean): G3ConclusionSource {
   if (decidedThisRun) return 'this_run'
   if (row.evidence.includes('历史快照')) return 'historical_snapshot'
+  if (row.evidence.includes('实跑')) return 'historical_snapshot'
   return 'not_judged'
 }
 
@@ -772,14 +785,18 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
 /**
  * 找出导出体里「不诚实」的行：不该写 `PASS` 却写了 `PASS`。
  *
- * 规则：来源不是本次运行、涉及实现缺口、只有依赖真实模型的判定、
- * **或判定卡本身不成立**（`holds=false` 却仍被写成 `PASS`）—— 四者任一，
- * 都不许是 `PASS`。
+ * 规则：**没有落证的** `PASS` 一律不算数——来源是「尚未判定」、涉及实现缺口、
+ * 只有依赖真实模型的判定、**或判定卡本身不成立**（`holds=false` 却仍被写成
+ * `PASS`），四者任一，都不许是 `PASS`。
+ *
+ * 「来源不是本次运行」**不**单独构成假 PASS：矩阵的静态状态记的是「该行最后
+ * 一次被真实判定得到的结论」，导出体只含部分运行时，那几行仍然带着上一次实跑
+ * 得出的结论（来源标成「非本次运行」）。真正要拦的是**没有落证**的 `PASS`。
  */
 export function falsePassRows(rows: readonly G3ExportRow[]): G3ExportRow[] {
   return rows.filter((row) => {
     if (row.status !== 'PASS') return false
-    if (row.source !== 'this_run') return true
+    if (row.source === 'not_judged') return true
     if (row.gap_ids.length > 0) return true
     if (row.verdicts.length > 0 && row.verdicts.every((verdict) => verdict.model_dependent)) return true
     // 判定卡不成立就不许升格：这一步是「假 PASS」的最后一道兜底。

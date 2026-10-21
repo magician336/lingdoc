@@ -110,9 +110,11 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '创建、评估、应用、拒绝、过期和 revision 条件写入',
     criterion: '旧基线不能应用；应用无半完成写入',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 340, end: 340 },
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    // 切片行的状态由**实跑证据**驱动，不由静态声明预判。这一行没有 #246 缺口，
+    // 稳定化链在当前 head 实跑出「旧基线被拒 + 无半完成写入」，因此判 PASS。
+    status: 'PASS',
+    evidence: '稳定化链实跑（run-stabilization.ts）· 判定卡 G3.1',
+    note: '本轮实跑判定成立：见「G3.1」判定卡与稳定化链的逐步结果。',
   },
   {
     id: 'G3.2',
@@ -121,9 +123,10 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: 'DependencyRegistry、版本化边、AI 候选导入、传播查询和审计',
     criterion: '每条影响可追溯到来源边；重复边、建议边和人工确认边有明确语义',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 341, end: 341 },
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    // 依赖链在当前 head 实跑出三类边的语义，这一行没有 #246 缺口，判 PASS。
+    status: 'PASS',
+    evidence: '依赖图与影响任务链实跑（run-dependencies.ts）· 判定卡 G3.2',
+    note: '本轮实跑判定成立：见「G3.2」判定卡与依赖链的逐步结果。',
   },
   {
     id: 'G3.3',
@@ -132,9 +135,11 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: 'ImpactResolver、预览、动作映射和任务幂等',
     criterion: '只生成受影响任务；无关对象保持原状态',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 342, end: 342 },
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    // 变更集链在当前 head 实跑出「只生成受影响任务 + 无关对象保持原状态」，
+    // 这一行没有 #246 缺口，判 PASS。
+    status: 'PASS',
+    evidence: '变更集生命周期链实跑（run-evidence.ts）· 判定卡 G3.3',
+    note: '本轮实跑判定成立：见「G3.3」判定卡与变更集链的逐步结果。',
   },
   {
     id: 'G3.4',
@@ -143,9 +148,10 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '分派、处置、关闭、STALE 和跨域事件',
     criterion: '旧任务不能关闭新版本；异步成功不等于人工关闭',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 343, end: 343 },
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    // 阻断链在当前 head 实跑出两段语义，这一行没有 #246 缺口，判 PASS。
+    status: 'PASS',
+    evidence: '阻断与恢复链实跑（run-blocked.ts）· 判定卡 G3.4',
+    note: '本轮实跑判定成立：见「G3.4」判定卡与阻断链的逐步结果。',
   },
   {
     id: 'G3.5',
@@ -154,9 +160,11 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '节点/边版本、章节/主张关联、必需性',
     criterion: '路线图可比较、可恢复；必需项缺失可阻断',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 344, end: 344 },
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    // 路线图链实跑出「可比较 / 可恢复 / 必需项不满足时阻断」三段，但判据字面的
+    // 「必需项**缺失**」那一种前置本轮没有落点 ⇒ 覆盖受限，记 WARNING。
+    status: 'WARNING',
+    evidence: '路线图链实跑（run-evidence.ts 的 roadmap 链）· 判定卡 G3.5',
+    note: '本轮实跑只成立一部分：见「G3.5」判定卡。',
   },
   {
     id: 'G3.6',
@@ -165,15 +173,12 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '聚合器、确认复核、冻结输入和 READY 闸门',
     criterion: '未关闭阻断项不能 STABILIZED 或导出',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 345, end: 345 },
-    // 切片行的状态由**实跑证据**驱动，不由静态声明预判。G3.6 的调研类闭环
-    // 已在当前 head 实跑（#258），但该切片的完成判据整体尚未判定，因此这里
-    // 仍是 TODO；外部检索渠道的覆盖受限见 G3-GAP-08。
-    status: 'TODO',
-    evidence: '本票未实跑（形态预览）',
-    note:
-      '本票只建立判据基准与骨架，该切片的完成判据尚未判定；' +
-      '调研类闭环虽已在 #258 实跑（真实 `ResearchRun` 回执），但覆盖受限，' +
-      '不足以判定该切片成立。',
+    // 稳定化链在当前 head 实跑出「阻断态不给放行 / 不给冻结」，但调研类闭环
+    // （RETRIEVE_CANDIDATES 的真实调研回执）在本机不可实跑 ⇒ 覆盖受限，
+    // 记 WARNING（见 G3-GAP-08）。
+    status: 'WARNING',
+    evidence: '稳定化链实跑（run-stabilization.ts）· 判定卡 G3.6',
+    note: '本轮实跑只成立一部分：见「G3.6」判定卡。',
   },
   {
     id: 'G3.7',
@@ -182,12 +187,13 @@ export const G3_SLICE_ROWS: readonly G3MatrixRow[] = [
     deliverable: '变更、影响树、任务、路线图最小 UI',
     criterion: '用户能看见影响理由、责任人和下一步动作',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 346, end: 346 },
-    // 状态口径与缺口清单一致：G3-GAP-06 / G3-GAP-07 记的是「未实跑（NOT RUN）」，
-    // 不是「待办（TODO）」——这一行**跑过**相关链路，只是验收台页面自己读原始响应的
-    // 落证没做（工作台面板已由 2786bcc 补齐）。
-    status: 'NOT RUN',
-    evidence: '本轮未实跑（形态预览）',
-    note: '本票只建立判据基准与骨架，该切片的完成判据尚未判定。',
+    // 数据面（必需对象集合 / 来源对象与理由 / 确定与可能分组 / 责任人与下一步动作）
+    // 已在当前 head 实跑判定成立；页面渲染那半段沿用 #257 在 head `a87459f` 的落证。
+    // 这一行是 #246 的缺口行（G3-GAP-06 / G3-GAP-07）：缺口清单关闭前不判 PASS，
+    // 记 PASS (follow-up)。
+    status: 'PASS (follow-up)',
+    evidence: '依赖图与影响任务链实跑（run-dependencies.ts）· 判定卡 G3.7',
+    note: '本轮实跑判定成立（数据面）：见「G3.7」判定卡。',
   },
 ]
 

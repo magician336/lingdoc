@@ -87,8 +87,10 @@ test('未实跑、豁免、缺能力、依赖真实模型的行，状态一律�
 
   assert.deepEqual(falsePassRows(exportBody.ac_rows), [], '导出体里有不该写 PASS 的行')
   for (const row of exportBody.ac_rows) {
-    if (row.source !== 'this_run') {
-      assert.notEqual(row.status, 'PASS', `${row.id} 不是本次运行得出，却写了 PASS`)
+    // **没有落证**的行不许写 PASS：矩阵的静态状态只是声明，没有实跑落证的行
+    // 写 PASS 就是「把没跑成的写成跑通」。
+    if (row.source === 'not_judged') {
+      assert.notEqual(row.status, 'PASS', `${row.id} 没有落证，却写了 PASS`)
     }
     if (row.gap_ids.length > 0) {
       assert.notEqual(row.status, 'PASS', `${row.id} 有实现缺口，却写了 PASS`)
@@ -196,12 +198,17 @@ test('#246 的硬规则：带实现缺口的行，导出投影不得写成 PASS'
   assert.ok(checked >= 8, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
 })
 
-test('页面与导出体都区分「本次运行得出」与「历史快照」两类结论', () => {
+test('页面与导出体都区分「本次运行得出」与「非本次运行」两类结论', () => {
   const snapshotRow = G3_MATRIX_ROWS.find((row) => row.id === 'AC-G3-10')!
   assert.equal(conclusionSourceOf(snapshotRow, false), 'historical_snapshot')
   assert.equal(conclusionSourceOf(snapshotRow, true), 'this_run')
   assert.equal(G3_CONCLUSION_SOURCE_LABELS.this_run, '本次运行得出')
-  assert.equal(G3_CONCLUSION_SOURCE_LABELS.historical_snapshot, '历史快照 · 非本次运行')
+  assert.equal(G3_CONCLUSION_SOURCE_LABELS.historical_snapshot, '非本次运行 · 历史快照或既有实跑')
+  // 切片行的静态状态记着上一次真实运行的判定：它不是「尚未判定」，
+  // 只是不是**本次**运行得出的。
+  const sliceRow = G3_MATRIX_ROWS.find((row) => row.id === 'G3.1')!
+  assert.equal(conclusionSourceOf(sliceRow, false), 'historical_snapshot')
+  assert.equal(conclusionSourceOf(sliceRow, true), 'this_run')
 
   const exportBody = buildRunEvidenceExport({
     runId: 'g3r-t8-3',
@@ -216,7 +223,7 @@ test('页面与导出体都区分「本次运行得出」与「历史快照」�
   assert.ok(kinds.includes('historical_snapshot'))
   const ac10 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-10')
   assert.equal(ac10?.source, 'historical_snapshot')
-  assert.equal(ac10?.source_label, '历史快照 · 非本次运行')
+  assert.equal(ac10?.source_label, '非本次运行 · 历史快照或既有实跑')
   assert.equal(ac10?.decided, false)
 })
 

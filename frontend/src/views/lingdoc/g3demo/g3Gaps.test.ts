@@ -171,25 +171,26 @@ test('缺口对应行的状态不写 PASS，且取自仓库门禁词表', () => 
   }
 })
 
-test('影响中心两条缺口的措辞是「已实现并已在 head `a87459f` 落证」，不是「实跑证据待落」', () => {
+test('影响中心两条缺口的措辞是「已并入 G3.7 判定」，不是「矩阵行仍未判定」', () => {
   const gap06 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-06')
   const gap07 = gapsForRow('G3.7').find((gap) => gap.id === 'G3-GAP-07')
   assert.ok(gap06)
   assert.ok(gap07)
   for (const gap of [gap06, gap07]) {
-    // #257 已在 head `a87459f`（运行标识 g3r-mvgqpt88-7b4e074d）落证；本轮 head
-    // 未重跑这一段，所以措辞必须**指名 head**，不写「已在当前 head 落证」。
-    // 「实跑证据待落」「盘上证据仍绑 head 7f5fd8c」是已被实跑作废的旧口径。
+    // 本轮已把落证并入 `G3.7` 的完成判据判定：措辞必须写「已判定」，
+    // 「仍未判定」是已被实跑作废的旧口径。
     assert.match(gap.title, /已落证/)
-    assert.doesNotMatch(gap.title, /实跑证据待落/)
+    assert.match(gap.title, /G3\.7/)
+    assert.doesNotMatch(gap.title, /仍未判定/)
+    assert.doesNotMatch(gap.missing, /仍未判定/)
     assert.doesNotMatch(gap.missing, /实跑证据待落/)
-    assert.doesNotMatch(gap.missing, /7f5fd8c/)
-    assert.match(gap.missing, /已在 head `a87459f` 落证/)
-    assert.doesNotMatch(gap.missing, /已在当前 head 落证/)
-    assert.match(gap.fact ?? '', /本轮 head 未重跑这一段/)
-    assert.match(gap.fact ?? '', /G3Demo\.vue/)
-    assert.match(gap.fact ?? '', /ImpactOpsPanel\.vue/)
-    assert.match(gap.fact ?? '', /g3r-mvgqpt88-7b4e074d/)
+    // 页面渲染那一半仍由 #257 在 head `a87459f` 的落证承担，措辞要指名 head。
+    assert.match(gap.missing, /a87459f/)
+    assert.match(gap.fact ?? '', /a87459f/)
+    // 本轮实跑判定成立：事实里必须写明判定成立与还缺什么。
+    assert.match(gap.fact ?? '', /本轮实跑判定成立/)
+    assert.match(gap.fact ?? '', /G3\.7/)
+    assert.match(gap.fact ?? '', /PASS \(follow-up\)/)
     // 「工作台已补齐」是旧措辞：它把缺口说成「工作台没渲染」，与事实相反。
     assert.doesNotMatch(gap.title, /工作台已补齐/)
     assert.doesNotMatch(gap.fact ?? '', /工作台面板未渲染/)

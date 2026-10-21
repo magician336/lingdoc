@@ -1322,7 +1322,7 @@ export async function runRoadmapChain(
     verdicts: [],
   }
 
-  result.verdicts = [verdictAcG308(result), verdictAcG316(result)]
+  result.verdicts = [verdictAcG308(result), verdictAcG316(result), verdictG35(result)]
   // 判定挂到运行上下文上：矩阵规则表按判定 id 取结论，判定不成立就不许写 PASS。
   ctx.verdicts = [...(ctx.verdicts ?? []), ...result.verdicts]
 
@@ -1567,5 +1567,92 @@ export function verdictAcG316(result: G3RoadmapChainResult): G3Verdict {
         `状态 ${pointingAtTemporary.map((task) => `${task.id}:${task.status}`).join('、') || '（无）'}`,
     ],
     status: holds ? 'PASS' : 'NOT RUN',
+  }
+}
+
+/**
+ * G3.5 判定：路线图可比较、可恢复；必需项缺失可阻断。
+ *
+ * 三段各有各的落点：
+ *
+ * 1. **可比较**：能读出版本序列，并按两个版本号读出**前后比较**（改了哪些字段）；
+ * 2. **可恢复**：取消未冻结编辑后，冻结基线回到取消前的版本，节点版本一并恢复；
+ * 3. **必需项缺失可阻断**：模板声明的必需 RouteNode 不是当前态（待复核 / 版本落后）时，
+ *    服务端给出 `required_route_not_current` 阻断，项目不进入 STABILIZED / READY。
+ *
+ * **覆盖受限**：第 3 段本轮实跑覆盖的是「待复核」与「版本落后」两种前置；
+ * 「必需项**已声明但缺失**」那一种前置，验收台造不出来（演示模板 v2 声明了
+ * `route-r7`，台面随后把它登记上），它的阻断由服务端侧保证（#319）——本轮
+ * headless 实跑**没有**这一段的落点。按仓库口径，记 `WARNING` 并写明缺什么，
+ * 不用「等价前置」冒充「缺失」。
+ */
+export function verdictG35(result: G3RoadmapChainResult): G3Verdict {
+  // ① 可比较。
+  const comparable =
+    result.versions.length > 0 &&
+    result.comparison !== null &&
+    result.comparison.from !== result.comparison.to
+  // ② 可恢复。
+  const restored =
+    result.cancelledSession.status === 'cancelled' &&
+    result.baselineAfterCancel.version === result.baselineAfterCommit.version &&
+    result.baselineAfterCancel.nodes.every((node) => {
+      const before = result.baselineAfterCommit.nodes.find((item) => item.id === node.id)
+      return before === undefined || before.version === node.version
+    })
+  // ③ 必需项非当前态时阻断。
+  const requiredNodes = result.baselineAfterCancel.nodes.filter((node) => node.required)
+  const notCurrent = requiredNodes.filter(
+    (node) => node.state !== 'current' && node.state !== 'retired',
+  )
+  const routeBlockers = (result.stabilization?.blockers ?? []).filter(
+    (blocker) => blocker.code === 'required_route_not_current',
+  )
+  const blockingIssues = (result.check?.issues ?? []).filter((issue) => issue.severity === 'blocking')
+  const serverBlocked = routeBlockers.length > 0 || blockingIssues.length > 0
+  const notStabilized = result.stabilization !== null && result.stabilization.status !== 'STABILIZED'
+  const requiredBlocks =
+    requiredNodes.length > 0 && notCurrent.length > 0 && serverBlocked && notStabilized
+
+  const holds = comparable && restored && requiredBlocks
+  // 覆盖受限：「必需项已声明但缺失」那一种前置本轮没有落点 ⇒ 记 WARNING。
+  const missingVariant =
+    '「必需项已声明但缺失」那一种前置本轮 headless 实跑没有落点（由服务端侧保证，见 #319）'
+  return {
+    id: 'G3.5',
+    title: 'RouteNode 切片：路线图可比较、可恢复，必需项不满足时阻断',
+    holds,
+    // 三段都成立，但「缺失」那一种前置没覆盖到 ⇒ 覆盖受限，记 WARNING。
+    status: holds ? 'WARNING' : 'NOT RUN',
+    detail: holds
+      ? `可比较：版本序列 ${result.versions.length} 版，前后比较 ${result.comparison?.from} → ` +
+        `${result.comparison?.to}（${result.comparison?.changes.length ?? 0} 处字段变化）；` +
+        `可恢复：取消未冻结编辑（会话状态 ${result.cancelledSession.status}）后冻结基线回到版本 ` +
+        `${result.baselineAfterCancel.version}，节点版本一并恢复；` +
+        `必需项阻断：必需 RouteNode ${requiredNodes.length} 个，其中 ${notCurrent.length} 个不是当前态` +
+        `（${notCurrent.map((node) => `${node.id}:${node.state}`).join('、') || '（无）'}），` +
+        `服务端给出 ${routeBlockers.length} 条 required_route_not_current 阻断` +
+        `${blockingIssues.length ? ` + ${blockingIssues.length} 条 blocking 校验问题` : ''}，` +
+        `稳定化结论 ${result.stabilization?.status ?? '（未取到）'}——项目没有进入 STABILIZED / READY。` +
+        `**覆盖受限**：${missingVariant}——本轮只覆盖「待复核」与「版本落后」两种前置。`
+      : `不成立：可比较=${comparable}（版本序列 ${result.versions.length} 版、比较 ${result.comparison ? '有' : '无'}），` +
+        `可恢复=${restored}（会话状态 ${result.cancelledSession.status || '（未取到）'}，` +
+        `基线 ${result.baselineAfterCommit.version} → ${result.baselineAfterCancel.version}），` +
+        `必需项阻断=${requiredBlocks}（必需节点 ${requiredNodes.length} 个、非当前态 ${notCurrent.length} 个、` +
+        `服务端阻断 ${routeBlockers.length + blockingIssues.length} 条、` +
+        `稳定化 ${result.stabilization?.status ?? '（未取到）'}）`,
+    evidence: [
+      `GET /api/v1/lingdoc/projects/{projectId}/roadmap/nodes/{nodeId}/versions → HTTP 200 · ` +
+        `版本序列 ${result.versions.map((entry) => `${entry.version}:${entry.state}`).join('、') || '（空）'}`,
+      `GET /api/v1/lingdoc/projects/{projectId}/roadmap/nodes/{nodeId}/compare?from=${result.comparison?.from ?? 0}` +
+        `&to=${result.comparison?.to ?? 0} → HTTP 200 · 比较 ${result.comparison?.changes.length ?? 0} 处字段变化`,
+      `POST /api/v1/lingdoc/projects/{projectId}/roadmap/edits/{sessionId}/cancel → HTTP 200 · ` +
+        `会话状态 ${result.cancelledSession.status || '（未取到）'} · 冻结基线回到版本 ${result.baselineAfterCancel.version}`,
+      `GET /api/v1/lingdoc/projects/{projectId}/roadmap → HTTP 200 · 必需节点 ${requiredNodes.length} 个 · ` +
+        `非当前态 ${notCurrent.length} 个（${notCurrent.map((node) => `${node.id}:${node.state}`).join('、') || '（无）'}）`,
+      `POST /api/v1/lingdoc/projects/{projectId}/change-sets/{changeSetId}/stabilize → HTTP 200 · ` +
+        `status=${result.stabilization?.status ?? '（本轮未取到）'} · ` +
+        `required_route_not_current 阻断 ${routeBlockers.length} 条`,
+    ],
   }
 }
