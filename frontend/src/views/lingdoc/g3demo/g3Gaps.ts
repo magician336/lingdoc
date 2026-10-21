@@ -508,4 +508,5 @@ export const G3_GAP_TICKET_REGISTRY: readonly G3GapTicketRegistryEntry[] = Objec
   { ticket: 319, kind: 'unblock', gaps: ['G3-GAP-02'] },
   { ticket: 320, kind: 'unblock', gaps: ['G3-GAP-04'] },
   { ticket: 321, kind: 'unblock', gaps: ['G3-GAP-05'] },
+  { ticket: 324, kind: 'unblock', gaps: ['G3-GAP-02'] },
 ])
