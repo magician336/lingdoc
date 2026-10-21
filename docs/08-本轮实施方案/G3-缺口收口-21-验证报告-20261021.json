@@ -1,7 +1,7 @@
 {
   "ticket": "G3 缺口收口-21：#324 的溯源口径修复、七条交付切片行接上实跑判定、外部检索渠道的实测与边界",
-  "head_at_evidence": "9641707b",
-  "head_note": "服务二进制由 9641707b 编译（-ldflags 注入 CommitID），六条链脚本取自同一 head 的工作区。本报告入库后只改证据文件本身。",
+  "head_at_evidence": "dd8dd097",
+  "head_note": "服务二进制由 dd8dd097 编译（-ldflags 注入 CommitID），八条链脚本取自同一 head 的工作区。**这个 head 是分支内可 fetch 的提交**（`git fetch origin dd8dd097` 能取到，且是当前分支的祖先），证据里的 `head.commitId` 就是它。上一轮实跑用的 9641707b 已被后续的变基改写，**已不在分支历史里**（`git fetch origin 9641707b` 报 \"couldn't find remote ref\"），评审人取不到那个提交，落证与被审提交对不上；因此本轮在修完评审意见的提交上**重跑了两轮**，把证据重新落在分支内的提交上。本报告入库后只改证据与文档文件本身。",
   "mode": "real",
   "environment": {
     "os": "Windows 10.0.26200 x86_64",
@@ -9,9 +9,9 @@
     "python": "3.14.3",
     "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
     "sqlite_include": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（已确认存在）",
-    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=9641707b'\" -o .g3-server-r15.exe ./cmd/server",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=dd8dd097'\" -o .g3-server-r16.exe ./cmd/server",
     "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库；本轮起它还跑稳定化 / 阻断 / 真实模型三条独立链）",
-    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r15.exe --out .acceptance-r15 --round2-chains 'fault' --with-dependency-chain --with-real-model"
+    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r16.exe --out .acceptance-r16 --round2-chains 'fault' --with-dependency-chain --with-real-model"
   },
   "what_this_round_did": [
     {
@@ -73,38 +73,106 @@
         "依赖真实模型的验收项": "g3r-mvi8phvj-bb763ded",
         "证据导出与实现缺口标注": "g3r-mvi8ppos-aa99788f"
       },
-      "row_status_distribution": "TODO 0 / NOT RUN 0 / PASS 6 / PASS (follow-up) 13 / WARNING 4",
+      "row_status_distribution": "轮 2：TODO 0 / NOT RUN 1 / PASS 6 / PASS (follow-up) 13 / WARNING 3。唯一的 NOT RUN 是真实模型那条 AC-G3-14（模型轮次当轮以 provider_failure 失败），矩阵该行记 WARNING，不判 PASS。",
       "notes": [
         "AC-G3-03：轮 1 未装配注入 → NOT RUN（口径如此）；轮 2 注入命中 → 判定成立。",
-        "AC-G3-14：两轮的模型轮次都 status=completed / run_mode=real，读回「确定受影响 1 条 / 可能受影响 0 条」⇒ WARNING。模型侧结论不写 PASS。"
+        "AC-G3-14：**轮 1** 的模型轮次 status=completed / run_mode=real，读回「确定受影响 1 条 / 可能受影响 0 条」；**轮 2** 的助手模型轮次以 provider_failure 失败（该轮这一行记 NOT RUN，失败原因在服务端不可见——正是 #335 记的那类「provider 的真实失败原因被吞掉」）。模型侧结论不写 PASS，矩阵该行记 WARNING。"
       ]
     }
   ],
+  "re_run_at_fix_commit": {
+    "why": "独立评审的 Blocker B2：上一轮落证的 head（`9641707b`）被后续变基改写，既不是分支 head 的祖先，而且 `git fetch origin 9641707b` 也失败（远端不提供该 ref）——评审人 checkout 不到那个提交，证据与被审提交无法对上。同一评审的 Blocker B1 还发现，矩阵七行里有三个运行标识在任何证据文件里都不存在、一个 head 落在任何分支之外。",
+    "fix": "按评审意见把矩阵证据位改成「链脚本 + 判定卡 + 落证文件」（源码里不再硬编码运行标识与 sha），并在**修完之后的提交**上重跑两轮落证：服务二进制由该提交编译（`-ldflags` 注入 CommitID），证据里的 `head.commitId` 因此直接落在分支内可 fetch 的提交上。",
+    "head_at_evidence": "dd8dd097",
+    "head_is_fetchable": "`git fetch origin dd8dd097` 可以取到；`git merge-base --is-ancestor dd8dd097 HEAD` 成立。该提交与本分支 head 之间**没有 `.go` / `.ts` / `.vue` 的变动**（`git diff --name-only dd8dd097 HEAD -- '*.go' '*.ts' '*.vue'` 输出为空），落证与被审的代码是同一份。",
+    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r16.exe --out .acceptance-r16 --round2-chains 'fault' --with-dependency-chain --with-real-model",
+    "run_ids": {
+      "round_1": {
+        "依赖图与影响任务链 (run-dependencies.ts)": "g3r-mvic4qtx-4beb3052",
+        "稳定化与交付闭环链 (run-stabilization.ts)": "g3r-mvic4s2c-85a330c4",
+        "阻断与恢复链 (run-blocked.ts)": "g3r-mvic4tr6-177c7519",
+        "真实模型链 (run-model.ts)": "g3r-mvic4vx6-e5653683",
+        "实时链路 / 证据导出 (run-evidence.ts)": "g3r-mvic5854-9c56c749"
+      },
+      "round_2": {
+        "依赖图与影响任务链 (run-dependencies.ts)": "g3r-mvic5fb9-225141f1",
+        "稳定化与交付闭环链 (run-stabilization.ts)": "g3r-mvic5got-7be998c3",
+        "阻断与恢复链 (run-blocked.ts)": "g3r-mvic5igk-20ce1ecf",
+        "真实模型链 (run-model.ts)": "g3r-mvic5kek-49397e95",
+        "实时链路 / 证据导出 (run-evidence.ts)": "g3r-mvic5shg-e0f85d46"
+      }
+    },
+    "evidence_files": {
+      "轮 1": [
+        "docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-20261022-r1.json",
+        "docs/08-本轮实施方案/G3-验收台-5-稳定化与交付闭环证据-20261022-r1.json",
+        "docs/08-本轮实施方案/G3-验收台-6-阻断与恢复路径证据-20261022-r1.json",
+        "docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-20261022-r1.json",
+        "docs/08-本轮实施方案/G3-验收台-8-整链证据-20261022-r1.json",
+        "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvic5854-9c56c749.json"
+      ],
+      "轮 2": [
+        "docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-20261022-r2.json",
+        "docs/08-本轮实施方案/G3-验收台-5-稳定化与交付闭环证据-20261022-r2.json",
+        "docs/08-本轮实施方案/G3-验收台-6-阻断与恢复路径证据-20261022-r2.json",
+        "docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-20261022-r2.json",
+        "docs/08-本轮实施方案/G3-验收台-8-整链证据-20261022-r2.json",
+        "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvic5shg-e0f85d46.json"
+      ]
+    },
+    "superseded_round": "上一轮（head `9641707b`）的证据文件 `G3-验收台-*-20261021-r*.json` **保留在仓内**：报告 19 / 20 的正文引用它们，而且它们是那一轮的真实运行记录。它们不是本轮的落证——本轮的落证是上表 `20261022` 那批。"
+  },
+  "model_round_variance": {
+    "rows": [
+      "AC-G3-14",
+      "AC-G3-15"
+    ],
+    "fact": "两轮都跑了**真实模型**轮次（DeepSeek，凭据走环境变量 DEEPSEEK_API_KEY），模型的输出非确定性，因此两轮结论不同：轮 1 的助手轮次 status=completed、读回「确定受影响 1 条 / 可能受影响 0 条」；**轮 2 的助手模型轮次以 `provider_failure` 失败**（`AC-G3-14` 该轮记 `NOT RUN`），另有一次模型调用返回 0 条候选（模型侧 `AC-G3-15` 该轮记 `NOT RUN`）。",
+    "why_it_matters": "轮 2 的 `provider_failure` **复现了 #335 记的那一类缺陷**：provider 的真实失败原因在服务端不可见（既不返回也不落日志），台面只能看到 `provider_failure` 这个映射后的码。这条证据加强了 #335 的必要性，不改变它的范围。",
+    "matrix_status": "矩阵这两行分别记 `WARNING`（AC-G3-14，依赖真实模型，不判 `PASS`）与 `PASS (follow-up)`（AC-G3-15，依赖图链的三态判定在两轮都成立；缺口清单 #246 未关闭前不判 `PASS`）。两行都不判 `PASS`。",
+    "evidence": "docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-20261022-r1.json 与 -r2.json；docs/08-本轮实施方案/G3-验收台-8-整链证据-20261022-r1.json 与 -r2.json",
+    "status": "WARNING"
+  },
+  "round_1_not_run_superseded": {
+    "ac_row": "AC-G3-03",
+    "round_1_status": "NOT RUN",
+    "round_1_is_by_design": "轮 1 的 `AC-G3-03` 记 `NOT RUN` 是**按口径的设计**，不是漏跑：轮 1 按口径**不装配**受控故障注入（apply 返回 HTTP 200），因此**没有观测到写入失败**，不满足判据、也不该判 `PASS`，只能记 `NOT RUN`。",
+    "round_2_status": "PASS (follow-up)",
+    "round_2_fact": "轮 2 装配了受控故障注入并**命中**：apply 返回 HTTP 503 + `injected_fault`；读回证明回滚完整——项目 revision 未变、模板引用未变、ImpactTask 集合未变、变更集**未变成 applied**（仍是 assessed）。`AC-G3-03` 至此才有判定（记 `PASS (follow-up)`，缺口清单 #246 未关闭前不判 `PASS`）。",
+    "authoritative_round": "**验收以轮 2 为准，轮 1 已被取代。** `AC-G3-03` 的 `NOT RUN` 只出现在轮 1 的原始导出体里（docs/08-本轮实施方案/G3-验收台-8-整链证据-20261022-r1.json 的 ac_rows 中 AC-G3-03 = NOT RUN），**不是当前交付范围内矩阵行的状态**：当前矩阵 23 行里 `TODO 0 / NOT RUN 0`。轮 2 的导出体（docs/08-本轮实施方案/G3-验收台-8-整链证据-20261022-r2.json）里，`AC-G3-03` 记 `PASS (follow-up)`（注入命中）；**另有** `AC-G3-14` 记 `NOT RUN`——那是真实模型当轮以 `provider_failure` 失败（非确定性），矩阵该行记 `WARNING`，不判 `PASS`。",
+    "current_matrix_row_status_distribution": "轮 1：TODO 0 / NOT RUN 1 / PASS 9 / PASS (follow-up) 9 / WARNING 4；轮 2：TODO 0 / NOT RUN 1 / PASS 6 / PASS (follow-up) 13 / WARNING 3。两个 NOT RUN 分别是：轮 1 的 AC-G3-03（按口径不装配注入）、轮 2 的 AC-G3-14（真实模型当轮 provider_failure）。带 #246 缺口的行**没有一行是 `PASS`**；矩阵（静态登记）本身 `TODO 0 / NOT RUN 0`。"
+  },
   "delivery_check_403": {
-    "status": "PARTIALLY FIXED",
+    "status": "PASS (follow-up)",
+    "status_reason": "#324 的溯源口径在**交付闭环链与阻断链**上已修好：POST /projects/{id}/checks 返回 HTTP 200（#324 点名的 403 source_access_denied 在这两条链上消失了）。但路线图链那个项目仍取不到交付检查（主路径 409 version_conflict，「待复核」那一次 409→403），那是**另一处成因**（internal/lingdoc/workspacecore/g1_provenance_service.go:509 的独立拒绝条件），不在 #324 本轮修的那条路径上。#324 的票**保持开放** ⇒ 按仓库门禁词表记 `PASS (follow-up)`，**不记 `PASS`**。",
+    "follow_up": "`PASS (follow-up)` 在这里是**已链接验收 Issue 的跟进项**：跟的是 **#324**，范围已收窄成「变更集应用之后再做交付检查仍 403」。该票保持开放，直到这一条在当前 head 有实跑落证为止；在此之前本项不得写成 `PASS`。",
     "fixed_case": "交付闭环链与阻断链的交付检查现在**返回 200**：POST /projects/{id}/checks → HTTP 200 · status=passed · receipt_id=852c4045-…（阻断链那次是 status=blocked，带 blocking 校验问题）。403 source_access_denied 在这两条链上**消失了**。",
     "still_failing_case": "路线图链那个项目仍取不到交付检查：主路径 HTTP 409 version_conflict（台面带的 expected_project_version 已过期），「待复核」那一次 HTTP 403 source_access_denied。",
     "why_it_is_a_different_cause": "溯源校验在 ValidateProjectProvenanceInTransaction（internal/lingdoc/workspacecore/g1_provenance_service.go:509）里有一条独立的拒绝条件：证明与当前项目状态不一致（g1ProjectHash / snapshot 摘要不等）时**直接给 ErrSourceUnavailable**，而不是版本冲突。路线图链的项目刚被多次变更集应用改写过，规格与项目状态都动过，落在这条条件上。",
     "next_step": "#324 保持开放，范围收窄成「变更集应用之后再做交付检查仍 403」。本轮不在此继续（用户决定不修了）。"
   },
   "external_search_channel": {
-    "status": "PROVEN REACHABLE, BUT NOT REACHABLE FROM THE PRODUCT",
+    "status": "WARNING",
+    "status_reason": "外部渠道**可用**这件事已经测到（本机自托管 SearXNG 中文通用查询 38~40 条真实命中、**不需要任何 API key**），但**产品走不到**它——这是**产品缺陷**，不是宿主环境限制。按仓库门禁词表记 `WARNING`；G3-GAP-08 因此仍记 `WARNING`（覆盖受限），不记 `PASS`。",
+    "two_distinct_facts": "这是**两件事**，不要混成一件：① **外部渠道可用**（宿主环境不限制，本机自托管 SearXNG 经代理 http://127.0.0.1:7890 出网就有真实命中）；② **产品走不到**（调研轮次压根不调用外部 provider）——② 是产品缺陷，归属 **#335**，与宿主环境无关。",
     "channel_that_works": "本机自托管 SearXNG（经代理出网，settings.yml 开 formats: [html, json]）：中文通用查询返回 **38~40 条真实命中**（来源含真实站点：高校学报、知网、CSDN、中科院软件所），**不需要任何 API key**。",
     "channel_that_does_not_work": "免 key 的 DuckDuckGo Instant Answer API 经代理可用（英文查询有真实命中，中文查询 0 命中）；DuckDuckGo 的 HTML / lite 端点返**反爬挑战页**（status=202、challenge_marker_count=13）；本机直连全部超时（WinError 10060），一切外部访问必须经代理 http://127.0.0.1:7890。",
-    "why_the_product_cannot_use_it": "调研任务指名了 provider（轮次的 provider 身份是 `weknora_hybrid;web_search:<id>:searxng`，产品认得这个渠道），但轮次仍以 provider_failure 结束、服务端日志里没有 provider 的任何一行：① SearchResearch（internal/lingdoc/workspace/research_adapter.go:164）**先**跑项目资料检索，那条路径返回错误时函数直接 return，外部 provider 那条路走不到；② g2_service.go:564-571 把 provider 的真实错误映射成 provider_failure，**既不返回也不记录**，于是渠道没配 / URL 被 SSRF 拒了 / provider 自己失败，在实测里完全不可区分。",
-    "ticket": "#335（本轮新开）",
+    "why_the_product_cannot_use_it": "调研任务指名了 provider（轮次的 provider 身份是 `weknora_hybrid;web_search:<id>:searxng`，产品认得这个渠道），但轮次仍以 provider_failure 结束、服务端日志里没有 provider 的任何一行。**两处成因（都在产品侧）**：① SearchResearch（internal/lingdoc/workspace/research_adapter.go:164）**先**跑项目资料检索，那条路径返回错误时函数直接 return，外部 provider 那条路走不到；② internal/lingdoc/workspacecore/g2_service.go:564-571 把 provider 的真实错误映射成 provider_failure，**既不返回也不记录**，于是渠道没配 / URL 被 SSRF 拒了 / provider 自己失败，在实测里完全不可区分。",
+    "ticket": "#335（本轮新开；承接的是「产品侧能走到外部 provider」与「provider 的真实失败原因落日志」这两件事）",
+    "unblock_condition": "**产品侧要能走到外部 provider，并把 provider 的真实失败原因落日志**：① internal/lingdoc/workspace/research_adapter.go:164 那条短路要处理（项目资料检索返回错误时不能直接 return，外部 provider 那条路要走到）；② internal/lingdoc/workspacecore/g2_service.go:564-571 不能把 provider 的真实错误吞成 provider_failure（要么返回、要么落日志，让「渠道没配 / URL 被 SSRF 拒了 / provider 自己失败」可区分）。**不再是**「宿主环境缺外部检索渠道」——外部渠道本身已验证可用（SearXNG 38~40 条真实命中、无需 key），不再是解除条件的一部分。",
     "what_did_not_change": "G3-GAP-08 仍记 **WARNING**：外部渠道**可用**这件事本身已经测到，但「产品走不到它」是产品缺陷，不是环境限制——按缺口清单的口径，这一项在产品能真正用上渠道之前不解除。"
   },
   "row_status_audit": {
     "rule": "缺口清单 #246 未关闭前，它列出的缺口所对应的验收行一律不得判 PASS（docs/agents/development-rules.md）。",
     "checked": "两轮导出体的 23 行逐行核对：带缺口的行（G3.7 / AC-G3-03 / AC-G3-04 / AC-G3-08 / AC-G3-09 / AC-G3-12 / AC-G3-14 / AC-G3-15 / AC-G3-16）**没有一行是 PASS**；矩阵里**没有 TODO 行**了。",
+    "current_matrix_row_status_distribution": "轮 1：TODO 0 / NOT RUN 1 / PASS 9 / PASS (follow-up) 9 / WARNING 4；轮 2：TODO 0 / NOT RUN 1 / PASS 6 / PASS (follow-up) 13 / WARNING 3。**带 #246 缺口的行没有一行是 `PASS`**。轮 1 的 `NOT RUN` 是 AC-G3-03 按口径的设计（不装配注入、未观测到写入失败），已被轮 2 取代；轮 2 的 `NOT RUN` 是 AC-G3-14 的真实模型轮次当轮 `provider_failure`——见 round_1_not_run_superseded 与 model_round_variance。",
     "static_matrix": "TODO 0 / NOT RUN 0 / PASS 4（G3.1–G3.4，不挂缺口）/ WARNING 3（G3.5 / G3.6 / AC-G3-14）/ PASS (follow-up) 16"
   },
   "verification_commands": [
     "cd frontend && npm run type-check   # exit 0",
     "cd frontend && npm test            # 1547 tests / 1546 pass / 0 fail / 1 skipped",
     "go test ./internal/lingdoc/candidateadoption/... ./internal/lingdoc/workspace/... -count=1 -timeout 20m   # ok（0.714s / 182.986s）",
-    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r15.exe --out .acceptance-r15 --round2-chains 'fault' --with-dependency-chain --with-real-model   # 六条链脚本全部 ok"
+    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r16.exe --out .acceptance-r16 --round2-chains 'fault' --with-dependency-chain --with-real-model   # 六条链脚本全部 ok"
   ],
   "honest_boundaries": [
     {
