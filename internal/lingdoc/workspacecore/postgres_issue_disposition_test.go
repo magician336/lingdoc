@@ -139,6 +139,15 @@ func TestPostgresBlockingIssueDismissSurvivesAuditColumnWidth(t *testing.T) {
 	if !strings.Contains(rows[0].DetailsJSON, target) {
 		t.Fatalf("audit details lost the resource: %s", rows[0].DetailsJSON)
 	}
+	// The disposition audit row is a second write path into the same bounded
+	// column: it has to land on PostgreSQL too.
+	var dispositionRows []auditEventRow
+	if err := db.Where("project_id = ? AND action = ?", after.ID, "validation_issue.disposition").Find(&dispositionRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(dispositionRows) != 1 {
+		t.Fatalf("expected one disposition audit row, got %d", len(dispositionRows))
+	}
 }
 
 // pgRegressionAuditSink satisfies AuditSink without swallowing errors: the
