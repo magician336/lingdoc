@@ -311,6 +311,12 @@ export interface SelectedRewriteCandidate {
   writing_action?: string
   /** 候选正文的来源。旧路径没有来源标注，字段不出现。 */
   origin?: 'human' | 'ai_generated' | 'ai_assisted_human'
+  /**
+   * 用户选了、但没有进入模型请求的可选上下文条目。
+   *
+   * 丢弃是可见的：服务端点名并附原因，界面才能告诉用户「这一条没进去」。
+   */
+  dropped_context?: Array<{ category: string; id: string; reason: string }>
 }
 
 export interface Asset {
@@ -464,6 +470,16 @@ export const createSelectedRewrite = (projectId: string, chapterId: string, inpu
   writing_action?: string
   output_params?: { length?: string; tone?: string; ratio?: number; transform?: { mode?: string; target_language?: string; audience?: string } }
   scope?: 'chapter' | 'section'
+  /**
+   * 用户对这次执行要纳入的可选上下文的选择。
+   *
+   * 键是上下文类别，值是这一类别的条目。类别必须落在服务端声明的可选上下文
+   * 里：越过的请求会被拒。没授权的条目不进模型请求，服务端在响应里点名。
+   */
+  context?: {
+    include?: Record<string, Array<{ id: string; version?: number }>>
+    exclude?: Record<string, Array<{ id: string; version?: number }>>
+  }
 }, key: string) => post<Result<SelectedRewriteCandidate>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates`, input, keyHeader(key),
 )

@@ -102,10 +102,17 @@ type Run struct {
 	Status      Status    `json:"status"`
 	CandidateID *string   `json:"candidate_id"`
 	Error       *RunError `json:"error,omitempty"`
-	CreatedAt   time.Time `json:"-"`
-	UpdatedAt   time.Time `json:"-"`
-	Replayed    bool      `json:"-"`
-	ClaimToken  string    `json:"-"`
+	// InputSummary says what this run was started from.
+	//
+	// It is a summary, not the input: a failed or cancelled run has to be
+	// readable back (what was asked, over what, at which revision) without the
+	// service handing out the raw instruction again. It is absent only when
+	// the stored input cannot be read at all.
+	InputSummary *RunInputSummary `json:"input_summary,omitempty"`
+	CreatedAt    time.Time        `json:"-"`
+	UpdatedAt    time.Time        `json:"-"`
+	Replayed     bool             `json:"-"`
+	ClaimToken   string           `json:"-"`
 }
 
 // Actor is the authenticated owner identity passed from the HTTP boundary.
@@ -620,12 +627,54 @@ func (s *Service) ListCandidates(ctx context.Context, actor Actor, projectID, ch
 	}
 	for i := range candidates {
 		candidates[i].Validity = s.candidateValidity(ctx, actor, projectID, chapterID, candidates[i].Basis)
-		_, input, readErr := s.Repository.GetCandidate(ctx, projectID, candidates[i].RunID)
-		if readErr != nil || s.validateEvidence(ctx, actor, projectID, chapterID, input) != nil {
+		candidate, input, readErr := s.Repository.GetCandidate(ctx, projectID, candidates[i].RunID)
+		if readErr != nil {
 			candidates[i].Validity = candidateadoption.ValidityStale
+			continue
+		}
+		if evidenceErr := s.validateEvidence(ctx, actor, projectID, chapterID, input); evidenceErr != nil {
+			candidates[i].Validity = validityForSourceFailure(evidenceErr)
+			continue
+		}
+		if sourceErr := s.validateCandidateSources(ctx, actor, projectID, candidate, input); sourceErr != nil {
+			candidates[i].Validity = validityForSourceFailure(sourceErr)
 		}
 	}
 	return candidates, nil
+}
+
+// validateCandidateSources 按**当前授权**复核候选引用的来源。
+//
+// 候选列表要能说清「这个候选为什么不能用了」：来源的授权没了与来源本身
+// 变了，是两种要分开说的失效。
+func (s *Service) validateCandidateSources(ctx context.Context, actor Actor, projectID string, candidate candidateadoption.Candidate, input Input) error {
+	if s.Sources == nil || len(candidate.SourceIDs) == 0 {
+		return nil
+	}
+	allowed := make(map[string]Source, len(input.Sources))
+	for _, source := range input.Sources {
+		allowed[source.ID] = source
+	}
+	used := make([]Source, 0, len(candidate.SourceIDs))
+	for _, sourceID := range candidate.SourceIDs {
+		source, ok := allowed[sourceID]
+		if !ok {
+			return ErrSourceAccessDenied
+		}
+		used = append(used, source)
+	}
+	return s.Sources.ValidateGenerationSources(ctx, actor, projectID, used)
+}
+
+// validityForSourceFailure 按失败原因区分两种失效。
+//
+// 「授权没了」与「输入变了」要能分开说：前者要先恢复授权再重跑，后者直接
+// 重跑动作。把两者都算成 stale，会让用户去重跑一个注定还是被拒的动作。
+func validityForSourceFailure(err error) candidateadoption.Validity {
+	if errors.Is(err, ErrSourceAccessDenied) {
+		return candidateadoption.ValidityNotAuthorized
+	}
+	return candidateadoption.ValidityStale
 }
 
 func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runID string) (candidateadoption.Candidate, error) {

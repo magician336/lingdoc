@@ -76,6 +76,25 @@ var (
 	// built on an input that has changed since.
 	CandidateStaleInput = Form{Status: 409, Code: "stale_input", Message: "候选稿或快照基于旧输入。", Retryable: false}
 
+	// CandidateStaleAction is the answer for a candidate whose inputs changed.
+	//
+	// It shares the error code with CandidateStaleInput and keeps its own
+	// wording, because the recovery step is part of the answer: the inputs
+	// changed means the action has to be run again, and the caller is told so
+	// instead of being left to guess.
+	CandidateStaleAction = Form{Status: 409, Code: "stale_input", Message: "输入已变，请重新运行该动作。", Retryable: false}
+
+	// CandidateNotAuthorized is the answer for a candidate whose authorization
+	// is gone.
+	//
+	// It is the candidate-level answer and it is deliberately distinct from
+	// SourceAccessDenied, which is the source-level reason: "this source is
+	// not accessible to you" and "this candidate rests on an authorization that
+	// no longer exists" need two different recovery steps -- restore the
+	// authorization and run the action again, rather than looking for a
+	// permission that was never missing.
+	CandidateNotAuthorized = Form{Status: 403, Code: "candidate_not_authorized", Message: "该候选所依据的授权已失效，请恢复授权后重新运行该动作。", Retryable: false}
+
 	// CandidateActionUnknown is the answer for a candidate that does not record
 	// the writing action (or the origin) that produced it.
 	//

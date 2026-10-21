@@ -31,11 +31,21 @@ import (
 var (
 	ErrRewriteInvalidRequest = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "改写请求字段不符合约定。", Retryable: false}, "selected_rewrite_invalid_request")
 	ErrRewriteNotFound       = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "候选不存在或不可访问。", Retryable: false}, "selected_rewrite_not_found")
-	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_stale")
+	ErrRewriteStale          = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新运行该改写动作。", Retryable: false}, "selected_rewrite_stale")
 	ErrRewriteConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "选区或工作副本已变化，请重新读取后再试。", Retryable: false}, "selected_rewrite_conflict")
 	ErrRewriteUnavailable    = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "改写模型暂不可用，请稍后重试。", Retryable: true}, "selected_rewrite_unavailable")
-	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选的来源已失效或当前不可访问。", Retryable: false}, "selected_rewrite_source_denied")
+	ErrRewriteSourceDenied   = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "改写候选所依据的授权已失效，请恢复授权后重新运行该改写动作。", Retryable: false}, "selected_rewrite_source_denied")
 	ErrRewriteKeyConflict    = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "selected_rewrite_idempotency_conflict")
+	// ErrRewriteContextNotAllowed 说清「这个动作不读你选的那一类上下文」。
+	//
+	// 它是请求错误：客户端要求纳入的东西这个动作根本不读，服务端不会替它
+	// 猜一个意思，也不会把这一类上下文悄悄塞进模型请求。
+	ErrRewriteContextNotAllowed = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "这个动作不读所选的那一类上下文，请调整上下文选择后再试。", Retryable: false}, "selected_rewrite_context_not_allowed")
+	// ErrRewriteContextRequired 说清「这一类上下文这个动作必须用」。
+	//
+	// 用户可以点名它、可以选它，只是不能把它拿掉：「这一类必须用」是执行方
+	// 的事实，不是用户的偏好。
+	ErrRewriteContextRequired = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "这一类上下文是本次动作必须使用的，不能剔除。", Retryable: false}, "selected_rewrite_context_required")
 )
 
 type RewriteSelection struct {
@@ -65,11 +75,16 @@ type SelectedRewriteRequest struct {
 	WritingAction *writingaction.Action       `json:"writing_action,omitempty"`
 	OutputParams  *writingaction.OutputParams `json:"output_params,omitempty"`
 	Scope         *writingaction.Scope        `json:"scope,omitempty"`
+	// Context 是用户对这次执行要纳入的可选上下文的选择。
+	//
+	// 它是**指针**加 omitempty：缺省即「没选」，旧请求的 JSON 与它的摘要
+	// 值逐字不变。它只在动作路径下有意义——旧路径带上它会被拒。
+	Context *RewriteContextSelection `json:"context,omitempty"`
 }
 
 // isLegacyPath 判定这次请求是不是旧路径。
 func (r SelectedRewriteRequest) isLegacyPath() bool {
-	return r.WritingAction == nil && r.OutputParams == nil && r.Scope == nil
+	return r.WritingAction == nil && r.OutputParams == nil && r.Scope == nil && r.Context == nil
 }
 
 type RewriteSourceSnapshot struct {
@@ -105,6 +120,11 @@ type SelectedRewriteCandidate struct {
 	// Origin 是候选正文的来源。改写是模型产出，所以是 ai_generated；
 	// 旧路径没有来源标注，字段为空。
 	Origin writingaction.Origin `json:"origin,omitempty"`
+	// DroppedContext 是用户选了、但没有进入模型请求的可选上下文条目。
+	//
+	// 丢弃是可见的：静默丢弃会让用户以为它进去了。它只在发起的那一刻
+	// 有值——之后读回来的是候选本身。
+	DroppedContext []DroppedContextItem `json:"dropped_context,omitempty"`
 }
 
 type SelectedRewritePrompt struct {
@@ -178,8 +198,12 @@ type selectedRewriteRow struct {
 	AppliedResponseJSON     string  `gorm:"not null;type:text;default:''"`
 	ApplyPendingKey         string  `gorm:"not null;size:128;default:''"`
 	ApplyPendingInputJSON   string  `gorm:"not null;type:text;default:''"`
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
+	// DroppedContextJSON 是这一次请求里被丢掉的可选上下文条目。
+	//
+	// 它不进库：丢弃只发生在发起的那一刻，之后读回来的是候选本身。
+	DroppedContextJSON string `gorm:"-"`
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 func (selectedRewriteRow) TableName() string { return "lingdoc_selected_rewrites" }
@@ -333,6 +357,20 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.SourceIDs = slices.Clone(input.SourceIDs)
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
+	// 用户对可选上下文的选择先解析：类别越过策略的请求被拒；没授权的条目
+	// 被丢掉并被点名；用户剔除的条目不进模型请求。
+	var droppedContext []DroppedContextItem
+	if plan != nil && input.Context != nil {
+		includedSources, includedCards, dropped, contextErr := s.resolveRewriteContext(ctx, actor, projectID, chapterID, *plan, *input.Context)
+		if contextErr != nil {
+			auditDecision, auditReason = "deny", contextErr.Error()
+			return SelectedRewriteCandidate{}, contextErr
+		}
+		droppedContext = dropped
+		input.SourceIDs = append(input.SourceIDs, includedSources...)
+		input.EvidenceCardRefs = append(input.EvidenceCardRefs, includedCards...)
+		input.EvidenceCardRefs = removeRewriteExcludedCards(input.EvidenceCardRefs, input.Context)
+	}
 	var evidenceConstraints []generation.EvidenceConstraint
 	if len(input.EvidenceCardRefs) > 0 {
 		selected, selectErr := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
@@ -348,10 +386,18 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 			ids = append(ids, source.SourceID)
 		}
 		ids = stringSet(ids)
-		if len(input.SourceIDs) > 0 && !slices.Equal(stringSet(input.SourceIDs), ids) {
-			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+		if input.Context == nil {
+			// 旧路径的来源集合就是卡片解析出来的那一组：客户端列的来源必须
+			// 与它逐字一致，否则整个请求按「来源对不上」被拒。
+			if len(input.SourceIDs) > 0 && !slices.Equal(stringSet(input.SourceIDs), ids) {
+				return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
+			}
+			input.SourceIDs = ids
+		} else {
+			// 有上下文选择时，用户此刻正在显式地选资料：客户端列的来源与卡片
+			// 解析出来的来源取并集，每一个都还要过取来源那一步的授权。
+			input.SourceIDs = stringSet(append(input.SourceIDs, ids...))
 		}
-		input.SourceIDs = ids
 	}
 	if err := s.workspace.Authorize(ctx, actor, projectID, "write:"+chapterID); err != nil {
 		auditDecision, auditReason = "deny", err.Error()
@@ -393,6 +439,10 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		}
 		input.SourceIDs = append(input.SourceIDs, marker)
 	}
+	// 用户剔除的来源不进模型请求。剔除在继承来源标记之后：用户剔除一条
+	// 继承来的来源，意思正是「这一条不要」，它不该被标记再塞回来。剔除
+	// 先于取来源——用户剔除一条来源，往往正是因为它已经不可用了。
+	input.SourceIDs = s.removeRewriteExcludedSources(ctx, actor, projectID, input.SourceIDs, input.Context)
 	input.SourceIDs = stringSet(input.SourceIDs)
 	sources, snapshots, err := s.fetchSources(ctx, actor, projectID, input.SourceIDs)
 	if err != nil {
@@ -420,6 +470,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
+	seed.DroppedContextJSON = encodeDroppedContext(droppedContext)
 	templateBasis, basisErr := g2RewriteProjectBasis(project)
 	if basisErr != nil {
 		return SelectedRewriteCandidate{}, basisErr
@@ -738,13 +789,20 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 	if row.ApplyPendingKey != "" && row.AppliedKey == "" {
 		status = "applying"
 	}
+	var dropped []DroppedContextItem
+	if row.DroppedContextJSON != "" {
+		if err := json.Unmarshal([]byte(row.DroppedContextJSON), &dropped); err != nil {
+			return SelectedRewriteCandidate{}, err
+		}
+	}
 	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
 		Status: status, RunMode: candidateadoption.RunMode(row.RunMode), BaseChapterVersionID: row.BaseChapterVersionID,
 		SpecRevision: row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
 		ReplacementMarkdown: row.ReplacementMarkdown, SourceIDs: sourceIDs, AuthorizedSources: snapshots,
 		ReviewItems: reviewItems, ErrorCode: row.ErrorCode, CreatedAt: row.CreatedAt,
-		WritingAction: writingaction.Action(row.WritingAction), Origin: writingaction.Origin(row.Origin)}, nil
+		WritingAction: writingaction.Action(row.WritingAction), Origin: writingaction.Origin(row.Origin),
+		DroppedContext: dropped}, nil
 }
 
 func stringSet(values []string) []string {
