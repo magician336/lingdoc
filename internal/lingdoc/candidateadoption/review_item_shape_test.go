@@ -62,7 +62,7 @@ var knownReviewItemShapeExceptions = map[string]string{
 // 它们的待核事项字段的元素类型必须是候选层的唯一类型：工作副本侧的类型
 // 不得出现在候选形态里。
 var candidateShapes = map[string]map[string]bool{
-	candidateLayerPackage: {"Candidate": true, "Chapter": true},
+	candidateLayerPackage:        {"Candidate": true, "Chapter": true},
 	"internal/lingdoc/workspace": {"SelectedRewriteCandidate": true},
 }
 

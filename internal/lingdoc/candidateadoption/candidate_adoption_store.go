@@ -427,8 +427,15 @@ func (s *SQLiteCandidateAdoptionStore) replayCandidateAcceptance(ctx context.Con
 func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in AcceptCandidateInput, candidate Candidate) (AcceptResult, error) {
 	var result AcceptResult
 	hash := requestHash(in)
+	// 审计表在聚焦测试库里可能不存在（生产迁移会建），所以先探一次。
+	auditEnabled := s.db.Migrator().HasTable((projectAuditRow{}).TableName())
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.authorizeCandidateInTransaction(ctx, tx, in); err != nil {
+			return err
+		}
+		// 确认载荷在事务内复核：授权与内容校验在同一个事务里，不给
+		// 「校验过了、写入时又变了」留缝。
+		if err := validateAdoptionConfirmation(in); err != nil {
 			return err
 		}
 		var existing adoptionIdempotencyRow
@@ -512,6 +519,11 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err != nil {
 			return err
 		}
+		// 确认的范围必须还对得上工作副本当前正文：范围是用户看着正文选出来的，
+		// 正文在确认之后又变了，范围就落在别的段落上了。
+		if err := validateAdoptionScopeAgainstBody(in, adoptionBodyOf(workingCopy, current)); err != nil {
+			return err
+		}
 
 		oldVersionID := chapter.CurrentVersionID
 		newVersionID := uuid.NewString()
@@ -588,6 +600,9 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err != nil {
 			return err
 		}
+		if err := recordAdoptionAudit(tx, auditEnabled, in, candidate, newVersionID); err != nil {
+			return err
+		}
 		if err := tx.Create(&adoptionIdempotencyRow{
 			ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
 			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
@@ -599,6 +614,55 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		return nil
 	})
 	return result, err
+}
+
+// recordAdoptionAudit 把这次采纳的确认载荷写进项目审计。
+//
+// 确认载荷落在审计详情里，而不是新增章节版本列：它是一次采纳的凭据，不是
+// 正文的一部分。为一条审计记录动表结构，代价大于收益。
+func recordAdoptionAudit(tx *gorm.DB, auditEnabled bool, in AcceptCandidateInput, candidate Candidate, chapterVersionID string) error {
+	if !auditEnabled {
+		return nil
+	}
+	details := map[string]any{
+		"candidate_id":       candidate.ID,
+		"chapter_id":         in.ChapterID,
+		"chapter_version_id": chapterVersionID,
+		"spec_revision":      in.ExpectedSpecRevision,
+	}
+	if confirmation := in.Confirmation; confirmation != nil {
+		details["writing_action"] = string(confirmation.WritingAction)
+		details["adoption_target"] = string(confirmation.Target)
+		details["confirmed_at"] = confirmation.ConfirmedAt.UTC().Format(time.RFC3339Nano)
+		details["confirmed_by"] = confirmation.ConfirmedBy
+		details["origin"] = string(confirmation.Origin)
+		if confirmation.Scope != nil {
+			details["scope"] = map[string]any{
+				"start_utf16": confirmation.Scope.StartUTF16,
+				"end_utf16":   confirmation.Scope.EndUTF16,
+			}
+		}
+	}
+	encoded, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	return tx.Create(&projectAuditRow{
+		ID: uuid.NewString(), ProjectID: in.ProjectID, ActorID: in.ActorID,
+		Action: "project.candidate.adopt", Target: in.ChapterID,
+		DetailsJSON: string(encoded), CreatedAt: time.Now().UTC(),
+	}).Error
+}
+
+// adoptionBodyOf 取出采纳要面对的正文。
+//
+// 有工作副本时以工作副本为准——范围是用户在工作副本上选的；聚焦测试库可能
+// 没有工作副本表，这时以章节当前正文为准。
+func adoptionBodyOf(workingCopy *adoptionWorkingCopyRow, current Chapter) string {
+	if workingCopy != nil {
+		return workingCopy.BodyMarkdown
+	}
+	return current.BodyMarkdown
 }
 
 func (s *SQLiteCandidateAdoptionStore) UpsertProject(ctx context.Context, id string, version int) error {

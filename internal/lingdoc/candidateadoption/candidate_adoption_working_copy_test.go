@@ -5,15 +5,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
 func TestAdoptionAdvancesCleanWorkingCopyAndReplaysWithoutRevisionBump(t *testing.T) {
 	store := newCandidateAdoptionStore(t)
 	require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
-	candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new [[source:source]]", SourceIDs: []string{"source"}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check"}}}
+	candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new [[source:source]]", SourceIDs: []string{"source"}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check"}}, WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 	seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, candidate, 2)
 	require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", SpecRevision: 2, WorkingCopyRevision: 4, SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]"}).Error)
-	input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "adoption-working-copy", ExpectedSpecRevision: 2}
+	input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "adoption-working-copy", ExpectedSpecRevision: 2, Confirmation: fixtureConfirmation("actor")}
 	result, err := store.AcceptCandidate(context.Background(), input, candidate)
 	require.NoError(t, err)
 	var copy adoptionWorkingCopyRow
@@ -38,7 +40,7 @@ func TestAdoptionRejectsDirtyOrStaleWorkingCopyAtomically(t *testing.T) {
 			store := newCandidateAdoptionStore(t)
 			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
 			old := "old"
-			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new"}
+			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project", CurrentVersionID: &old}, candidate, 2)
 			require.NoError(t, store.DB().Create(&chapterVersionRow{ID: old, ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "old body", SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]"}).Error)
 			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", BaseChapterVersionID: &old, SpecRevision: 2, WorkingCopyRevision: 4, BodyMarkdown: "old body", SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]"}).Error)
@@ -47,7 +49,7 @@ func TestAdoptionRejectsDirtyOrStaleWorkingCopyAtomically(t *testing.T) {
 				value = "unsaved"
 			}
 			require.NoError(t, store.DB().Model(&adoptionWorkingCopyRow{}).Where("chapter_id = ?", "chapter").Update(field, value).Error)
-			_, err := store.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "dirty", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &old, ReplaceExisting: true}, candidate)
+			_, err := store.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "dirty", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &old, ReplaceExisting: true, Confirmation: fixtureConfirmation("actor")}, candidate)
 			require.ErrorIs(t, err, ErrVersionConflict)
 			var count int64
 			require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&count).Error)
@@ -64,16 +66,66 @@ func TestAdoptionRejectsDirtyOrStaleWorkingCopyAtomically(t *testing.T) {
 	}
 }
 
+// TestARejectedAdoptionLeavesTheWorkingCopyUntouched 断言拒绝与取消之后工作
+// 副本读回不变（A24）。
+//
+// 拒绝的理由有好几种（缺确认载荷、越权目标、代他人、脏工作副本），但结果
+// 必须一样：工作副本一个字都不动，用户在编辑器里看到的还是他刚才的内容。
+func TestARejectedAdoptionLeavesTheWorkingCopyUntouched(t *testing.T) {
+	for _, reason := range []string{"missing-confirmation", "forbidden-target", "other-confirmer"} {
+		t.Run(reason, func(t *testing.T) {
+			store := newCandidateAdoptionStore(t)
+			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
+			candidate := Candidate{
+				ID: "candidate", ProjectID: "project", ChapterID: "chapter",
+				BodyMarkdown: "new [[source:source]]", SourceIDs: []string{"source"},
+				Validity: "fresh", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
+			}
+			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, candidate, 2)
+			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{
+				ProjectID: "project", ChapterID: "chapter", SpecRevision: 2, WorkingCopyRevision: 4,
+				BodyMarkdown: "old body", SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]",
+			}).Error)
+			input := AcceptCandidateInput{
+				ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor",
+				IdempotencyKey: "rejected-adoption", ExpectedSpecRevision: 2,
+				Confirmation: fixtureConfirmation("actor"),
+			}
+			switch reason {
+			case "missing-confirmation":
+				input.Confirmation = nil
+			case "forbidden-target":
+				input.Confirmation.Target = writingaction.TargetFormalVersionWhole
+				input.Confirmation.WritingAction = writingaction.ActionOutline
+			case "other-confirmer":
+				input.Confirmation.ConfirmedBy = "somebody-else"
+			}
+			service := NewCandidateAdoptionService(store,
+				sourcePolicyFunc(func(context.Context, string, string, []string) error { return nil }), allowAuthorizer{})
+			_, err := service.AcceptCandidate(context.Background(), input)
+			require.Error(t, err)
+
+			var copy adoptionWorkingCopyRow
+			require.NoError(t, store.DB().First(&copy).Error)
+			require.Equal(t, "old body", copy.BodyMarkdown, "被拒绝的采纳不得改动工作副本正文")
+			require.Equal(t, int64(4), copy.WorkingCopyRevision, "被拒绝的采纳不得推进工作副本修订号")
+			var versions int64
+			require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&versions).Error)
+			require.Zero(t, versions, "被拒绝的采纳不得留下章节版本")
+		})
+	}
+}
+
 func TestProductionAdoptionFailsWhenWorkingCopySchemaOrRowMissing(t *testing.T) {
 	for _, tableExists := range []bool{false, true} {
 		store := newCandidateAdoptionStore(t)
 		if tableExists {
 			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
 		}
-		candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new"}
+		candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 		seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, candidate, 1)
 		productionStore := NewSQLiteCandidateAdoptionStore(store.DB())
-		_, err := productionStore.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", ExpectedSpecRevision: 1}, candidate)
+		_, err := productionStore.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", ExpectedSpecRevision: 1, Confirmation: fixtureConfirmation("actor")}, candidate)
 		require.Error(t, err)
 		var count int64
 		require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&count).Error)
@@ -90,7 +142,7 @@ func TestAdoptionInitializesUnknownUsagesAndPreservesPriorVersion(t *testing.T) 
 			oldBody := "old [[source:retained]] [[source:removed]]"
 			oldSources := `["removed","retained"]`
 			oldUsages := `[{"source_id":"removed","purpose":"old purpose"},{"source_id":"retained","purpose":"old interpretation","limitation":"old limitation"}]`
-			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 			expected := []CitationUsage{}
 			if withSources {
 				candidate.BodyMarkdown = "new [[source:retained]] [[source:new]] [[source:retained]]"
@@ -100,7 +152,7 @@ func TestAdoptionInitializesUnknownUsagesAndPreservesPriorVersion(t *testing.T) 
 			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project", CurrentVersionID: &oldID}, candidate, 2)
 			require.NoError(t, store.DB().Create(&chapterVersionRow{ID: oldID, ProjectID: "project", ChapterID: "chapter", BodyMarkdown: oldBody, SourceIDsJSON: oldSources, CitationUsagesJSON: oldUsages, ReviewItemsJSON: "[]"}).Error)
 			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", BaseChapterVersionID: &oldID, SpecRevision: 2, WorkingCopyRevision: 4, BodyMarkdown: oldBody, SourceIDsJSON: oldSources, CitationUsagesJSON: oldUsages, ReviewItemsJSON: "[]"}).Error)
-			input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "citation-usages", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &oldID, ReplaceExisting: true}
+			input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "citation-usages", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &oldID, ReplaceExisting: true, Confirmation: fixtureConfirmation("actor")}
 			result, err := store.AcceptCandidate(context.Background(), input, candidate)
 			require.NoError(t, err)
 			require.Equal(t, expected, result.Chapter.CitationUsages)

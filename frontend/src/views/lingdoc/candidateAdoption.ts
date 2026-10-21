@@ -12,6 +12,9 @@ import type { AcceptCandidateInput } from '@/api/lingdoc/candidateAdoption'
  * 直接对**将要发出去的那个对象**序列化，而不是另抄一份字段清单：两份清单漂开的症状
  * 最难查——请求体变了、签名没变，用户看到的是「同一个操作键对应不同请求」，而两边都
  * 「有实现」。判据只有一处定义，就不可能漂。
+ *
+ * 确认载荷在请求体里，所以它**自动**在签名里：确认了不同的动作、不同的采纳目标或
+ * 不同的范围，就是另一次采纳，必须换一把键。
  */
 export function adoptionSignature(input: AcceptCandidateInput): string {
   return JSON.stringify(input)
@@ -27,9 +30,10 @@ export interface AdoptionAttempt {
  * 该复用上一次的键，还是为这次请求新铸一把。
  *
  * 逐字相同签名才复用：`expected_chapter_version_id` 变了（别人刚存了一版）、
- * `replace_existing` 翻了（这一章从空变成有版本），都是**另一次**请求，共用一把键只会
- * 让服务端把它判成冲突。反过来，用户点「重试」而输入没变时，必须仍用原来那把键，
- * 否则一次网络超时重试会把整章替换做两遍。
+ * `replace_existing` 翻了（这一章从空变成有版本）、确认载荷变了（确认了另一个
+ * 动作或另一个采纳目标），都是**另一次**请求，共用一把键只会让服务端把它判成冲突。
+ * 反过来，用户点「重试」而输入没变时，必须仍用原来那把键，否则一次网络超时重试
+ * 会把整章替换做两遍。
  *
  * `mint` 由调用方注入，测试因此不必碰 crypto。
  */

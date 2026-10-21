@@ -105,7 +105,7 @@ func TestRequestDigestCarriesTheVersionPrefix(t *testing.T) {
 		ExpectedSpecRevision: input.ExpectedSpecRevision,
 	})
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(string(encoded), `{"digest_version":2,`),
+	require.True(t, strings.HasPrefix(string(encoded), `{"digest_version":3,`),
 		"版本前缀必须是摘要结构的第一个字段，实际编码为 %s", string(encoded))
 
 	legacyDigest, _ := digestBothWays(t, legacyAdoptionRequestDigest{
@@ -132,7 +132,7 @@ func TestIdempotencyKeyFromAnOlderDigestVersionExpiresOnEveryPath(t *testing.T) 
 		ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1",
 		BodyMarkdown: "候选正文 [[source:source-1]]", SourceIDs: []string{"source-1"},
 		Basis:    Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1"},
-		Validity: "fresh",
+		Validity: "fresh", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
 	}
 	seedCandidateAdoptionWorkspace(t, store,
 		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
@@ -141,6 +141,7 @@ func TestIdempotencyKeyFromAnOlderDigestVersionExpiresOnEveryPath(t *testing.T) 
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0001", ExpectedSpecRevision: 1,
+		Confirmation: fixtureConfirmation("user-1"),
 	}
 	// A row written before the digest rule carried a version: its digest is
 	// the one the old rule produced.
@@ -166,6 +167,57 @@ func TestIdempotencyKeyFromAnOlderDigestVersionExpiresOnEveryPath(t *testing.T) 
 	require.ErrorIs(t, err, ErrIdempotencyKeyExpired, "待决探测路径必须回答键过期")
 }
 
+// TestIdempotencyKeyFromThePreviousDigestVersionExpires pins the same answer
+// for the rule that was current before the confirmation entered the digest.
+//
+// 上一版规则（版本 2）的行带着一条本版本算不出来的摘要。若版本不先比，它会
+// 落进「摘要不同」那一支，被报成冲突——那会把用户引去查一个根本不存在的问题。
+// 答案必须是「键已过期，请换新键」。
+func TestIdempotencyKeyFromThePreviousDigestVersionExpires(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	ctx := context.Background()
+	candidate := Candidate{
+		ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1",
+		BodyMarkdown: "候选正文 [[source:source-1]]", SourceIDs: []string{"source-1"},
+		Basis:    Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1"},
+		Validity: "fresh", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
+	}
+	seedCandidateAdoptionWorkspace(t, store,
+		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
+		candidate, 1)
+
+	input := AcceptCandidateInput{
+		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
+		IdempotencyKey: "candidate-adoption-key-previous-version", ExpectedSpecRevision: 1,
+		Confirmation: fixtureConfirmation("user-1"),
+	}
+	// 版本 2 的行：摘要载荷还没有确认投影。
+	previousDigest, _ := digestBothWays(t, adoptionRequestDigest{
+		DigestVersion:            adoptionDigestVersion - 1,
+		ProjectID:                input.ProjectID,
+		ChapterID:                input.ChapterID,
+		CandidateID:              input.CandidateID,
+		ExpectedChapterVersionID: input.ExpectedChapterVersionID,
+		ExpectedSpecRevision:     input.ExpectedSpecRevision,
+		ReplaceExisting:          input.ReplaceExisting,
+	})
+	require.NotEqual(t, previousDigest, requestHash(input))
+	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
+		ID: uuid.NewString(), ProjectID: input.ProjectID, ChapterID: input.ChapterID,
+		ActorID: input.ActorID, Key: input.IdempotencyKey, RequestHash: previousDigest,
+		DigestVersion: adoptionDigestVersion - 1, ChapterVersionID: "version-1", ResponseJSON: "{}",
+	}).Error)
+
+	_, err := store.ReplayCandidateAcceptance(ctx, input)
+	require.ErrorIs(t, err, ErrIdempotencyKeyExpired, "回放路径必须回答键过期，而不是冲突")
+
+	_, err = store.AcceptCandidate(ctx, input, candidate)
+	require.ErrorIs(t, err, ErrIdempotencyKeyExpired, "写事务路径必须回答键过期，而不是冲突")
+
+	_, err = store.CandidateAcceptancePending(ctx, input)
+	require.ErrorIs(t, err, ErrIdempotencyKeyExpired, "待决探测路径必须回答键过期，而不是冲突")
+}
+
 // TestSameVersionDifferentDigestConflictsOnEveryPath pins the other half of
 // the three-state answer: under the same digest version, a different digest
 // is still a real conflict, on every path.
@@ -176,7 +228,7 @@ func TestSameVersionDifferentDigestConflictsOnEveryPath(t *testing.T) {
 		ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1",
 		BodyMarkdown: "候选正文 [[source:source-1]]", SourceIDs: []string{"source-1"},
 		Basis:    Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1"},
-		Validity: "fresh",
+		Validity: "fresh", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
 	}
 	seedCandidateAdoptionWorkspace(t, store,
 		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
@@ -185,6 +237,7 @@ func TestSameVersionDifferentDigestConflictsOnEveryPath(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0002", ExpectedSpecRevision: 1,
+		Confirmation: fixtureConfirmation("user-1"),
 	}
 	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
 		ID: uuid.NewString(), ProjectID: input.ProjectID, ChapterID: input.ChapterID,
@@ -212,7 +265,7 @@ func TestAcceptedCandidateRecordsTheDigestVersion(t *testing.T) {
 		ID: "candidate-1", ProjectID: "project-1", ChapterID: "chapter-1", RunID: "run-1",
 		BodyMarkdown: "候选正文 [[source:source-1]]", SourceIDs: []string{"source-1"},
 		Basis:    Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1"},
-		Validity: "fresh",
+		Validity: "fresh", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
 	}
 	seedCandidateAdoptionWorkspace(t, store,
 		Chapter{ID: "chapter-1", ProjectID: "project-1", SectionID: "question", Title: "问题"},
@@ -221,6 +274,7 @@ func TestAcceptedCandidateRecordsTheDigestVersion(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0003", ExpectedSpecRevision: 1,
+		Confirmation: fixtureConfirmation("user-1"),
 	}
 	result, err := store.AcceptCandidate(ctx, input, candidate)
 	require.NoError(t, err)

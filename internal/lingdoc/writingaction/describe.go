@@ -71,6 +71,16 @@ func Describe(scope Scope) []Description {
 	return descriptions
 }
 
+// canonicalScope 是这个动作的一份合法目标范围。
+//
+// 它由允许的范围机械地取第一个，不引入第二份范围表。
+func (s actionSpec) canonicalScope() Scope {
+	for _, scope := range s.scopes {
+		return scope
+	}
+	return ScopeChapter
+}
+
 // canonicalParams 是这个动作的一份合法产出参数。
 //
 // 它由允许的参数维度机械地取第一个合法取值，不引入第二份取值表。

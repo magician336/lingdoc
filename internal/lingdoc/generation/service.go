@@ -20,6 +20,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/google/uuid"
 )
 
@@ -543,6 +544,14 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		ID: candidateID, ProjectID: run.ProjectID, ChapterID: run.ChapterID, RunID: run.ID,
 		BodyMarkdown: draft.BodyMarkdown, SourceIDs: sourceIDs, Basis: input.Basis,
 		Validity: candidateadoption.ValidityFresh, ReviewItems: reviewItems,
+		// 这个生成端点产出的就是「生成」这个动作的结果，正文全部来自模型，
+		// 来源是 AI 生成。候选必须记下自己是怎么来的：采纳是一次显式确认，
+		// 确认载荷要能拿它和候选对上。动作与来源的词表归 writingaction 所有。
+		//
+		// #341 会把动作改成请求显式声明的那一个，并补上产出参数与 run_mode；
+		// 这里先不让「候选没记动作」成为常态。
+		WritingAction: writingaction.ActionGenerate,
+		Origin:        writingaction.OriginGenerated,
 	}
 	completed, err := s.Repository.Complete(workCtx, run.ID, run.ClaimToken, candidate)
 	if errors.Is(err, ErrGenerationCancelled) {

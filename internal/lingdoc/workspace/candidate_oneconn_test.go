@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
@@ -171,9 +172,19 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	require.NoError(t, err)
 	current.Basis.AssetVersions = []candidateadoption.AssetVersion{{AssetID: assetID, AssetRevision: 1}}
 	current.Basis.EvidenceCardRefs = []core.G2VersionRef{{ID: card.ID, Version: card.Version, Kind: "EvidenceCard"}}
-	candidate := candidateadoption.Candidate{ID: "oneconn-candidate", ProjectID: p.ID, ChapterID: "chapter-2", Validity: "fresh", RunID: "synthetic-local-run", BodyMarkdown: "合成候选 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: current.Basis}
+	candidate := candidateadoption.Candidate{ID: "oneconn-candidate", ProjectID: p.ID, ChapterID: "chapter-2", Validity: "fresh", RunID: "synthetic-local-run", BodyMarkdown: "合成候选 [[source:source-1]]", SourceIDs: []string{"source-1"}, Basis: current.Basis, WritingAction: writingaction.ActionGenerate, Origin: writingaction.OriginGenerated}
 	require.NoError(t, store.UpsertCandidate(deadline, candidate))
-	input := candidateadoption.AcceptCandidateInput{ProjectID: p.ID, ChapterID: "chapter-2", CandidateID: candidate.ID, ActorID: actor.UserID, IdempotencyKey: "oneconn-adoption", ExpectedChapterVersionID: current.ChapterVersionID, ExpectedSpecRevision: current.SpecRevision, ReplaceExisting: true}
+	// 采纳是一次显式确认：确认载荷要说清采纳的是哪个动作的结果、写到哪里、
+	// 谁确认的、候选是什么来源。夹具里的候选记了动作与来源，确认载荷就得
+	// 确认同一件事。
+	confirmation := &candidateadoption.AdoptionConfirmation{
+		WritingAction: candidate.WritingAction,
+		Target:        writingaction.TargetFormalVersionWhole,
+		ConfirmedAt:   time.Now().UTC(),
+		ConfirmedBy:   actor.UserID,
+		Origin:        candidate.Origin,
+	}
+	input := candidateadoption.AcceptCandidateInput{ProjectID: p.ID, ChapterID: "chapter-2", CandidateID: candidate.ID, ActorID: actor.UserID, IdempotencyKey: "oneconn-adoption", ExpectedChapterVersionID: current.ChapterVersionID, ExpectedSpecRevision: current.SpecRevision, ReplaceExisting: true, Confirmation: confirmation}
 	adoption := candidateadoption.NewCandidateAdoptionService(store, runtime.CandidateAdoptionSourcePolicy(), candidateOneConnAuthorizer{projects})
 	return candidateOneConnFixture{db, runtime, projects, store, adoption, deadline, actor, candidate, input, card}
 }
