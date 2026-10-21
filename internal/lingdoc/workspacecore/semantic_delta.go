@@ -618,6 +618,60 @@ func routeRequiredByRules(p Project, id string) bool {
 	}
 	return false
 }
+
+// routeNodeRequiredIDs returns the ids of the route nodes the project template
+// copy declares as required.
+//
+// The template contract declares a required route node by binding the blocking
+// presence rule to it: template.RuleRouteNodeRequired is the "blocking presence
+// rule bound to the route node the demo template declares as required ... the
+// rule that turns 'the required route node is missing / not reviewed / behind'
+// into a blocking validation issue". The id such a rule binds is a route node
+// id, and the roadmap - not the spec - owns the value of that field.
+//
+// The rule binding is what tells a route node id apart from an ordinary spec
+// field: the template's required fields carry both, and only the presence
+// binding names the route node. The id must also be required by the template
+// rules (routeRequiredByRules), because an id the rules do not require is a
+// free field the spec owns.
+func routeNodeRequiredIDs(p Project) []string {
+	if p.TemplateCopy == nil {
+		return nil
+	}
+	ids := []string{}
+	seen := map[string]bool{}
+	declare := func(id string) {
+		if id == "" || seen[id] || !routeRequiredByRules(p, id) {
+			return
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	for _, rule := range p.TemplateCopy.Definition.Rules {
+		if rule.ID != template.RuleRouteNodeRequired || rule.Kind != "presence" || rule.Severity != template.SeverityBlocking {
+			continue
+		}
+		if kind, _ := rule.Parameters["target_kind"].(string); kind != "field" {
+			continue
+		}
+		id, _ := rule.Parameters["target_id"].(string)
+		declare(id)
+	}
+	for _, set := range []*template.RuleSet{p.TemplateCopy.RuleSetSnapshot, p.TemplateCopy.Definition.RuleSetSnapshot} {
+		if set == nil {
+			continue
+		}
+		for _, binding := range set.Bindings {
+			if binding.RuleID != template.RuleRouteNodeRequired || binding.DefinitionID != "presence" || !binding.Enabled ||
+				binding.Severity != template.SeverityBlocking || binding.TargetKind != "field" {
+				continue
+			}
+			declare(binding.TargetID)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
 func RouteEvaluationFields(tx Transaction, p Project) (map[string]string, error) {
 	store, ok := tx.(semanticTransaction)
 	if !ok {
@@ -628,6 +682,17 @@ func RouteEvaluationFields(tx Transaction, p Project) (map[string]string, error)
 		return nil, err
 	}
 	fields := maps.Clone(p.Spec)
+	if fields == nil {
+		fields = map[string]string{}
+	}
+	// The roadmap owns the value of every route node id the template declares
+	// as required. A declared node the roadmap does not hold yet has no value:
+	// the placeholder the spec may carry under that id must not stand in for
+	// the missing node, or the template would read the project as complete
+	// while the required route is not there.
+	for _, id := range routeNodeRequiredIDs(p) {
+		fields[id] = ""
+	}
 	for _, node := range nodes {
 		fields[node.ID] = ""
 		if node.Status == "ready" && node.ContextRevision <= p.CurrentContextRevision {

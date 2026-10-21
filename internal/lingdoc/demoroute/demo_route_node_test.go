@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -88,11 +89,15 @@ func (f *fixture) createAndActivate(t *testing.T, templateVersion string) core.P
 	// The template's required fields are the spec's vocabulary, and the
 	// activation gate requires every one of them to carry a value
 	// (workspacecore/service_facade.go). The route node id is one of them, so
-	// the spec carries a placeholder for it. The placeholder is not what the
-	// template evaluates: the route-aware evaluation overwrites it with the
-	// route node's value, and with an empty value while the node is missing,
-	// not reviewed, or behind. That overwrite is what makes the three
-	// preconditions of AC-G3-08 observable.
+	// the spec carries a placeholder for it.
+	//
+	// The placeholder is not what the template evaluates. The route aware
+	// evaluation lets the roadmap speak for a route node id: it carries the
+	// node's value while the node is ready and current, and no value at all
+	// while the node is missing, not reviewed, or behind (issue #319). That is
+	// what makes the three preconditions of AC-G3-08 observable, and the
+	// placeholder left in the spec on purpose shows that the server does not
+	// take the spec's word for a route node.
 	raw, _, _, err = f.svc.SaveSpec(ctx, f.actor, project.ID, "demoroute-spec", core.SaveSpecInput{
 		ExpectedSpecRevision: 0,
 		Fields: map[string]string{
@@ -340,7 +345,13 @@ func TestDemoRouteTemplateRequiredRouteNodePreconditions(t *testing.T) {
 		// declares as required: a declared node that the roadmap does not hold
 		// has no value, so the presence rule of the template reports it.
 		evaluated := f.routeIssues(t, f.current(t))
-		if !hasBlockingRouteIssue(evaluated, lingdoctemplate.DemoRequiredRouteNodeID) {
+		blocking := hasBlockingRouteIssue(evaluated, lingdoctemplate.DemoRequiredRouteNodeID)
+		project := f.current(t)
+		t.Logf("missing precondition: id=%s node=absent in the frozen roadmap required-by-the-rules=%v state=absent status=absent version=absent blocking=%v",
+			lingdoctemplate.DemoRequiredRouteNodeID,
+			slices.Contains(project.TemplateCopy.Definition.RequiredFields, lingdoctemplate.DemoRequiredRouteNodeID),
+			blocking)
+		if !blocking {
 			t.Fatalf("a missing required route node must produce a blocking issue: %+v", evaluated)
 		}
 	})
