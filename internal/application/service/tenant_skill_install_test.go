@@ -1198,9 +1198,13 @@ func TestInstallSkillDoesNotSkipARemovalOfTheSameArchive(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "sk-1", id)
-	skill, getErr := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
-	require.NoError(t, getErr)
-	require.Equal(t, types.SkillStatusInstalling, skill.Status,
+	// The install outlives the request, so the row may already be past
+	// "installing" by the time it is read. What this test is about is that the
+	// removal was not skipped, so the status must no longer be "removing".
+	require.Eventually(t, func() bool {
+		skill, err := fx.skillRepo.GetSkill(context.Background(), 7, "cfg-1", "sk-1")
+		return err == nil && skill.Status != types.SkillStatusRemoving
+	}, 2*time.Second, time.Millisecond,
 		"re-uploading during a removal is how the upload cancels it")
 }
 
