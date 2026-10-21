@@ -18,6 +18,15 @@ list is a *mirror* of the surface paths in ``scripts/ci/lingdoc_gate_surfaces.py
 -- the manifest stays the single place that says what belongs to what, and
 the mirror has to be updated by hand whenever the manifest changes.
 
+Why the other workflows keep their path filter
+------------------------------------------------
+The workflows that are **not** gates scope themselves by their own subtree.
+Their path filter is not a copy of the manifest -- the manifest has no entry
+for them -- so it is the only statement of what they watch, and removing it
+would make them build on every pull request.  The tests below keep that fact
+true and keep the decision layer and the manifest from drifting apart about
+which workflows are gates.
+
 The tests below read the workflow files with PyYAML, the same way the
 manifest validates its consumers.
 """
@@ -34,24 +43,69 @@ import lingdoc_gate_surfaces as manifest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = REPO_ROOT / ".github" / "workflows"
 
-# The seven workflow-level gates.  Each of them carries a scope job that asks
-# the decision module, and the jobs below it read its answer.
-GATED_WORKFLOWS = (
-    "frontend.yml",
-    "go-lint.yml",
-    "app.yml",
-    "lingdoc-mock.yml",
-    "lingdoc-f01-runner.yml",
-    "lingdoc-workspace-concurrency.yml",
-    "lingdoc-interface-integration.yml",
-)
+
+def load(name: str) -> dict:
+    document = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
+    return document or {}
+
 
 # The pull request gate is not one of the seven, but it is the model they
 # follow: it has never carried a top-level path filter.
 PULL_REQUEST_GATE = "lingdoc-review.yml"
 
+# The decision module.  Running it is what makes a workflow part of the
+# gate layer, so the gate workflows are derived from the workflow files
+# instead of being written down twice.
+DECISION_MODULE = "scripts/ci/lingdoc_gate_decision.py"
+
+
+def decision_module_workflows() -> set[str]:
+    """The workflows that run the decision module.
+
+    The module is looked for in the ``run:`` of a step, not in the text of
+    the file: a comment that names the module does not make a workflow a
+    gate.
+    """
+    names = set()
+    for path in WORKFLOWS.glob("*.yml"):
+        for job in (load(path.name).get("jobs") or {}).values():
+            for step in job.get("steps") or []:
+                if DECISION_MODULE in str(step.get("run") or ""):
+                    names.add(path.name)
+                    break
+    return names
+
+
 # Every workflow whose trigger must not filter paths.
-UNFILTERED_WORKFLOWS = GATED_WORKFLOWS + (PULL_REQUEST_GATE,)
+UNFILTERED_WORKFLOWS = tuple(sorted(decision_module_workflows()))
+
+# The workflow-level gates: the gate layer without the pull request gate.
+GATED_WORKFLOWS = tuple(name for name in UNFILTERED_WORKFLOWS
+                         if name != PULL_REQUEST_GATE)
+
+# The workflows that are not gates and scope themselves with a path filter.
+# They are not submodules -- the repository has no submodules -- they are
+# workflows that own a directory of this repository and watch it themselves.
+NON_GATE_WORKFLOWS = (
+    "anydoc.yml",
+    "cli.yml",
+    "cli-e2e.yml",
+    "docreader.yml",
+    "dsh-plugin.yml",
+    "mcp-server.yml",
+)
+
+# The directories those workflows own.  No gate surface may claim one of
+# them: that would turn the workflow's own filter into a copy of the
+# manifest, which is the drift #309 removed from the gates.
+NON_GATE_ROOTS = {
+    "cli/": ("cli.yml", "cli-e2e.yml"),
+    "docreader/": ("docreader.yml",),
+    "mcp-server/": ("mcp-server.yml",),
+    "packages/dsh-weknora/": ("dsh-plugin.yml",),
+    "third_party/anydoc-go/": ("anydoc.yml",),
+    "internal/infrastructure/docparser/": ("anydoc.yml",),
+}
 
 # The explanation the gates have to carry, so the next reader knows why the
 # path filter is gone and what the push mirror owes to the manifest.
@@ -67,11 +121,6 @@ RULE_FRAGMENT = "**门禁始终出现**"
 
 # The citation the gates carry: ``<file>:<line>``.
 CITATION = re.compile(r"docs/agents/development-rules\.md:(\d+)")
-
-
-def load(name: str) -> dict:
-    document = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
-    return document or {}
 
 
 def on_of(name: str) -> dict:
@@ -108,6 +157,13 @@ def surfaces_of(workflow: str):
     return [found[name] for name in sorted(found)]
 
 
+def manifest_workflows() -> set[str]:
+    """The workflows the manifest registers as gate surface consumers."""
+    return {Path(consumer.workflow).name
+            for surface in manifest.load_surfaces()
+            for consumer in surface.consumers}
+
+
 class PullRequestTriggerTests(unittest.TestCase):
     """A pull request always starts the gates; the job conditions decide."""
 
@@ -130,6 +186,71 @@ class PullRequestTriggerTests(unittest.TestCase):
         trigger = trigger_of(PULL_REQUEST_GATE, "pull_request")
         self.assertNotIn("paths", trigger)
         self.assertNotIn("paths-ignore", trigger)
+
+
+class GateSurfaceBoundaryTests(unittest.TestCase):
+    """Which workflows are gates, and which ones scope themselves.
+
+    The gate layer is the decision module plus the manifest that says what
+    belongs to what.  A workflow is part of it when it runs the decision
+    module, and the manifest registers exactly those workflows.  The two
+    answers have to agree; when they drift, the decision layer judges a
+    different set of workflows than the manifest describes.
+
+    The workflows below are **not** gates.  They own a directory of this
+    repository and watch it themselves with a path filter.  The manifest has
+    no entry for them, so their filter is not a copy of anything -- it is
+    their own statement of what they watch.  ``cli-e2e.yml`` has a second
+    constraint, the ``acceptance-e2e`` label on the pull request, so its
+    filter narrows the labelled pull requests rather than being the only
+    one.
+    """
+
+    def test_the_decision_layer_and_the_manifest_agree_on_the_gate_workflows(self):
+        # Both sides are read, not written down: the workflows that run the
+        # decision module, and the workflows the manifest registers.
+        self.assertEqual(
+            decision_module_workflows(), manifest_workflows(),
+            "the workflows that run the decision module and the workflows "
+            "the manifest registers have drifted apart; the decision layer "
+            "judges a different set of workflows than the manifest describes")
+
+    def test_non_gate_workflows_keep_their_own_pull_request_path_filter(self):
+        for name in NON_GATE_WORKFLOWS:
+            with self.subTest(workflow=name):
+                trigger = trigger_of(name, "pull_request")
+                self.assertTrue(
+                    trigger.get("paths"),
+                    f"{name}: it scopes itself with its own path filter, "
+                    "which is not a copy of the manifest; deleting it widens "
+                    "the build to pull requests the workflow does not own")
+                self.assertNotIn(
+                    name, manifest_workflows(),
+                    f"{name}: it is not a gate, so the manifest must not "
+                    "register it; a registered workflow has no path filter "
+                    "and this one has")
+
+    def test_no_gate_surface_claims_a_directory_a_non_gate_workflow_owns(self):
+        """A directory owned by a non-gate workflow stays out of the manifest.
+
+        Registering one of these directories as a gate surface would make
+        the workflow's own filter a copy of the manifest -- the drift #309
+        removed from the gates.  The entries a non-gate workflow shares with
+        a gate (``go.mod``, ``testdata/**``) are genuinely shared ownership
+        and are not claimed here.
+        """
+        for surface in manifest.load_surfaces():
+            for path in surface.paths:
+                if path.startswith("!"):
+                    continue  # a negated pattern excludes, it does not claim
+                for root, owners in NON_GATE_ROOTS.items():
+                    if path != root.rstrip("/") and not path.startswith(root):
+                        continue
+                    with self.subTest(surface=surface.name, path=path):
+                        self.fail(
+                            f"surface {surface.name!r} claims {root!r}, which "
+                            f"{' and '.join(owners)} own; the workflow's own "
+                            "filter would become a copy of the manifest")
 
 
 class PushMirrorTests(unittest.TestCase):
