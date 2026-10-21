@@ -285,6 +285,29 @@ func TestLegacyGenerationPathKeepsTheClientInstruction(t *testing.T) {
 	}
 }
 
+// TestGenerationRunInputSummaryReportsTheAction 覆盖「失败与取消保留 run 输入」。
+//
+// 输入摘要要能读回「这次是按什么发起的」：动作路径说得出目标范围；旧路径没有
+// 声明过范围，摘要里也不出现这一项。动作本身两条路径都是「生成」——候选带的
+// 就是它，摘要与候选说的是同一件事。
+func TestGenerationRunInputSummaryReportsTheAction(t *testing.T) {
+	action := actionRequest()
+	input := Input{Request: action}
+	summary := inputSummaryOf(input)
+	if summary.WritingAction != writingaction.ActionGenerate {
+		t.Fatalf("summary writing action = %q, want %q", summary.WritingAction, writingaction.ActionGenerate)
+	}
+	if summary.Scope != writingaction.ScopeChapter {
+		t.Fatalf("summary scope = %q, want %q", summary.Scope, writingaction.ScopeChapter)
+	}
+
+	legacy := Input{Request: Request{ChapterID: "chapter-1", Instruction: "Draft"}}
+	legacySummary := inputSummaryOf(legacy)
+	if legacySummary.Scope != "" {
+		t.Fatalf("legacy summary scope = %q, want no scope: the legacy path declares none", legacySummary.Scope)
+	}
+}
+
 // TestGenerationActionPathCandidateCarriesActionOriginAndRunMode 覆盖「候选带
 // 动作、来源与运行模式」。
 func TestGenerationActionPathCandidateCarriesActionOriginAndRunMode(t *testing.T) {

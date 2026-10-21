@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
 // RunInputSummary is the readable summary of the input a run was started from.
@@ -30,6 +31,14 @@ type RunInputSummary struct {
 	InstructionRunes int `json:"instruction_runes"`
 	// InstructionHash identifies the instruction without revealing it.
 	InstructionHash string `json:"instruction_hash"`
+	// WritingAction is the action this run was started with.
+	//
+	// It is absent on the legacy path: that path is driven by a free text
+	// instruction and records no action.
+	WritingAction writingaction.Action `json:"writing_action,omitempty"`
+	// Scope is the target range of that action. It is absent on the legacy
+	// path, and absent when the action declares the whole chapter by default.
+	Scope writingaction.Scope `json:"scope,omitempty"`
 }
 
 // inputSummaryOf builds the summary of one captured run input.
@@ -43,6 +52,10 @@ func inputSummaryOf(input Input) *RunInputSummary {
 		SpecRevision:     input.Request.ExpectedSpecRevision,
 		ChapterVersionID: input.Request.ExpectedChapterVersionID,
 		InstructionRunes: utf8.RuneCountInString(input.Request.Instruction),
+		WritingAction:    candidateAction(input.Request),
+	}
+	if input.Request.Scope != nil {
+		summary.Scope = *input.Request.Scope
 	}
 	assets := make([]string, 0, len(input.Request.AssetIDs))
 	assets = append(assets, input.Request.AssetIDs...)

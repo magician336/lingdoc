@@ -188,6 +188,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/views/lingdoc/GenerationActionPanel.test.js", "file"),
             ("frontend/src/api/lingdoc/generation.ts", "file"),
             ("frontend/src/api/lingdoc/generation.test.ts", "file"),
+            ("frontend/src/api/lingdoc/generationAction.ts", "file"),
+            ("frontend/src/api/lingdoc/generationAction.test.ts", "file"),
             ("frontend/src/api/lingdoc/candidateAdoption.ts", "file"),
             ("frontend/src/api/lingdoc/workspace.ts", "file"),
             ("frontend/src/api/lingdoc/writingAction.ts", "file"),
