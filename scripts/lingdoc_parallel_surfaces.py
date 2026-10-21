@@ -170,6 +170,7 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/selected_rewrite_revocation_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_context_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_context.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_unsupported_reference_test.go", "file"),
             ("internal/lingdoc/workspace/candidate_oneconn_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_source_guard_test.go", "file"),
             ("internal/lingdoc/workspace/http.go", "file"),
