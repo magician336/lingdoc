@@ -469,10 +469,12 @@ test('助手草稿链：自然语言 → 轮次 → 提案 → 人工确认 → 
   assert.equal(stepNames.includes('创建变更草稿'), true)
   assert.equal(stepNames.includes(G3_ASSISTANT_STEPS.readChangeSet), true)
 
-  // 判定卡成立。
+  // 判定卡成立。这条路径**跑了真实模型轮次**（两组说明的内容由模型给），
+  // 所以按仓库口径它不是确定性结论：状态记 WARNING，并标成依赖真实模型。
   const verdict = result.verdicts.find((item) => item.id === 'AC-G3-14')
   assert.equal(verdict?.holds, true)
-  assert.equal(verdict?.status, 'PASS')
+  assert.equal(verdict?.status, 'WARNING')
+  assert.equal(verdict?.modelDependent, true)
 })
 
 test('助手草稿链：人工确认的请求体带 turn 出处，写路由都带幂等键、GET 不带', async () => {
@@ -599,6 +601,35 @@ test('AC-G3-14：模型给了两组但**都是空的**时如实记「两组都�
   // 「两组都是空的」与「助手未给两组说明」是**两件事**：前者是模型给了两组却没指出对象。
   assert.equal(verdict?.detail.includes('两组都是空的'), true)
   assert.equal(verdict?.detail.includes('助手未给两组说明'), false)
+})
+
+test('AC-G3-14：只读回一条已存在的草稿（本轮没跑模型轮次）时仍是确定性结论', async () => {
+  const fake = createFakeClient()
+  fake.reply(`${ASSISTANT_PROJECT_PATH}/change-sets/cs-1`, {
+    status: 200,
+    body: {
+      data: {
+        id: 'cs-1',
+        project_id: 'p1',
+        status: 'draft',
+        fields: [],
+        impacts: [],
+        affected_explanation: ASSISTANT_TURN_SUGGESTIONS.affected_explanation,
+      },
+    },
+  })
+  fake.reply(`${ASSISTANT_PROJECT_PATH}/dependency-candidates`, { status: 200, body: { data: [] } })
+
+  const result = await runAssistantChain(ctxOf(), fake.client, 'jwt-1', {
+    projectId: 'p1',
+    draftChangeSetId: 'cs-1',
+  })
+
+  const verdict = result.verdicts.find((item) => item.id === 'AC-G3-14')
+  assert.equal(verdict?.holds, true)
+  // 本轮没有跑模型轮次 → 不是模型依赖结论，状态照旧是 PASS。
+  assert.equal(verdict?.status, 'PASS')
+  assert.equal(verdict?.modelDependent, undefined)
 })
 
 test('助手草稿链：助手不触达应用 / 任务处置 / 导出端点（否定性证据）', async () => {

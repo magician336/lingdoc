@@ -1223,6 +1223,15 @@ export function verdictAcG314(result: G3AssistantChainResult): G3Verdict {
   const groupsEmpty = explanation !== null && !twoGroups
   // 本轮跑过助手草稿路径时，判定还要看这条路径本身跑没跑通。
   const pathRan = run === null
+  /**
+   * 本轮是否**依赖真实模型**。
+   *
+   * 台面自己造草稿时，那条草稿的两组说明是**模型给的**（模型说哪些对象受影响），
+   * 所以结论是非确定性的：按仓库口径（`runContext.ts` 的 `G3RunVerdict.modelDependent`）
+   * 状态记 `WARNING`、并标成模型依赖，不与确定性结论混读。
+   * 只读回一条**已存在**的草稿（本轮没跑模型轮次）时，判的是已落库的事实，照旧记 `PASS`。
+   */
+  const modelDriven = run !== null
   const pathOk = pathRan || (
     run.unavailableReason === '' &&
     run.draftId !== '' &&
@@ -1254,8 +1263,7 @@ export function verdictAcG314(result: G3AssistantChainResult): G3Verdict {
         `${run.forbiddenCalls.length === 0 ? '是（0 次）' : run.forbiddenCalls.join('、')}`,
     ]
 
-  return {
-    id: 'AC-G3-14',
+  return {    id: 'AC-G3-14',
     title: 'G3 影响助手：草稿随附「确定受影响 / 可能受影响」两组说明',
     holds,
     detail: !draft
@@ -1307,7 +1315,8 @@ export function verdictAcG314(result: G3AssistantChainResult): G3Verdict {
         `与求值器的影响确定性（ImpactAssessment.impacts[].certainty）**不是同一回事**，两边不可互替。`,
       ...runEvidence,
     ],
-    status: holds ? 'PASS' : 'NOT RUN',
+    status: holds ? (modelDriven ? 'WARNING' : 'PASS') : 'NOT RUN',
+    modelDependent: modelDriven ? true : undefined,
   }
 }
 
