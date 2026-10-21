@@ -542,7 +542,7 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	candidate := candidateadoption.Candidate{
 		ID: candidateID, ProjectID: run.ProjectID, ChapterID: run.ChapterID, RunID: run.ID,
 		BodyMarkdown: draft.BodyMarkdown, SourceIDs: sourceIDs, Basis: input.Basis,
-		Validity: "fresh", ReviewItems: reviewItems,
+		Validity: candidateadoption.ValidityFresh, ReviewItems: reviewItems,
 	}
 	completed, err := s.Repository.Complete(workCtx, run.ID, run.ClaimToken, candidate)
 	if errors.Is(err, ErrGenerationCancelled) {
@@ -613,7 +613,7 @@ func (s *Service) ListCandidates(ctx context.Context, actor Actor, projectID, ch
 		candidates[i].Validity = s.candidateValidity(ctx, actor, projectID, chapterID, candidates[i].Basis)
 		_, input, readErr := s.Repository.GetCandidate(ctx, projectID, candidates[i].RunID)
 		if readErr != nil || s.validateEvidence(ctx, actor, projectID, chapterID, input) != nil {
-			candidates[i].Validity = "stale"
+			candidates[i].Validity = candidateadoption.ValidityStale
 		}
 	}
 	return candidates, nil
@@ -650,7 +650,7 @@ func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runI
 	}
 	if err := s.Sources.ValidateGenerationSources(ctx, actor, projectID, usedSources); err != nil {
 		if errors.Is(err, ErrSourceStale) {
-			candidate.Validity = "stale"
+			candidate.Validity = candidateadoption.ValidityStale
 			return candidate, nil
 		}
 		if errors.Is(err, ErrSourceAccessDenied) {
@@ -662,15 +662,15 @@ func (s *Service) GetCandidate(ctx context.Context, actor Actor, projectID, runI
 	return candidate, nil
 }
 
-func (s *Service) candidateValidity(ctx context.Context, actor Actor, projectID, chapterID string, basis candidateadoption.Basis) string {
+func (s *Service) candidateValidity(ctx context.Context, actor Actor, projectID, chapterID string, basis candidateadoption.Basis) candidateadoption.Validity {
 	if !s.hasCurrentness() {
-		return "stale"
+		return candidateadoption.ValidityStale
 	}
 	current, err := s.current(ctx, actor, projectID, chapterID, basis)
 	if err != nil || !current {
-		return "stale"
+		return candidateadoption.ValidityStale
 	}
-	return "fresh"
+	return candidateadoption.ValidityFresh
 }
 
 func (s *Service) hasAuthorization() bool {
