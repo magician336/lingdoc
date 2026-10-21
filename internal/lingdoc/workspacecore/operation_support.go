@@ -19,7 +19,12 @@ import (
 //
 // The action is what the caller wants to do; the resource is the chapter,
 // asset, delivery, or issue identifier whose function scope is being checked.
-func NewAuthorizationRequest(actor Actor, projectID string, action AuthorizationAction, resource string) AuthorizationRequest {
+func NewAuthorizationRequest(
+	actor Actor,
+	projectID string,
+	action AuthorizationAction,
+	resource string,
+) AuthorizationRequest {
 	return authorizationRequest(actor, projectID, action, resource)
 }
 

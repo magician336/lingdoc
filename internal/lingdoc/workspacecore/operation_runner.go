@@ -35,7 +35,7 @@ const (
 	OperationMemberAssignment       = operationMemberAssignment
 	OperationMemberLifecycle        = operationMemberLifecycle
 	OperationRejectOwnerTransfer    = operationRejectOwnerTransfer
-	OperationApiKeyProjectGrant     = operationApiKeyProjectGrant
+	OperationAPIKeyProjectGrant     = operationApiKeyProjectGrant
 )
 
 // OperationStatus is the status a write answers with.
@@ -111,8 +111,13 @@ type operationRunner struct {
 }
 
 // Run runs one operation under the shared pipeline.
-func (r *operationRunner) Run(ctx context.Context, actor Actor, spec OperationSpec, write OperationWrite) (json.RawMessage, int, bool, error) {
-	return runOperationCore(r.service, ctx, actor, spec, write)
+func (r *operationRunner) Run(
+	ctx context.Context,
+	actor Actor,
+	spec OperationSpec,
+	write OperationWrite,
+) (json.RawMessage, int, bool, error) {
+	return runOperationCore(ctx, r.service, actor, spec, write)
 }
 
 // NewOperationRunner returns the runner a context uses to run operations.

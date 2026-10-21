@@ -376,33 +376,6 @@ func TestDefaultProjectAuthorizerEnforcesTenantRoleCeiling(t *testing.T) {
 	}
 }
 
-func TestTenantRoleMatrixCapsProjectMemberPermissions(t *testing.T) {
-	ctx := context.Background()
-	tests := []struct {
-		name       string
-		role       types.TenantRole
-		wantManage bool
-	}{
-		{name: "viewer", role: types.TenantRoleViewer},
-		{name: "contributor", role: types.TenantRoleContributor, wantManage: true},
-		{name: "admin", role: types.TenantRoleAdmin, wantManage: true},
-		{name: "owner", role: types.TenantRoleOwner, wantManage: true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := NewService(fakeWorkspace())
-			actor := Actor{TenantID: 1, UserID: "owner", Role: tt.role}
-			_, _, _, err := service.SaveMembers(ctx, actor, "p", "matrix-"+tt.name, SaveMembersInput{ExpectedProjectVersion: 1, CollaboratorUserIDs: []string{}})
-			if tt.wantManage && err != nil {
-				t.Fatalf("manage: %v", err)
-			}
-			if !tt.wantManage && !errors.Is(err, ErrNotFound) {
-				t.Fatalf("manage error = %v, want ErrNotFound", err)
-			}
-		})
-	}
-}
-
 func TestTenantRoleDowngradeDeniesIdempotentReplay(t *testing.T) {
 	repository := fakeWorkspace()
 	service := NewService(repository)
@@ -447,53 +420,6 @@ func TestProjectCapabilityAndChapterScopeAreIndependentFromTenantRole(t *testing
 	}
 	if err := service.Authorize(ctx, admin, "p", "manage"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("suspended admin authorization = %v, want ErrNotFound", err)
-	}
-}
-
-func TestMemberAssignmentsPersistCapabilityAndScopeInTransaction(t *testing.T) {
-	repository := fakeWorkspace()
-	audit := &auditSinkStub{}
-	service := NewServiceWithAudit(repository, ContractDemoTemplate{}, nil, nil, audit)
-	input := SaveMembersInput{ExpectedProjectVersion: 1, Members: []Member{{
-		UserID: "author", GovernanceRole: "member", FunctionRoles: []string{"author"},
-		FunctionScopes: map[string][]string{"author": {"c"}},
-	}}}
-	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
-	if _, _, _, err := service.SaveMembers(context.Background(), actor, "p", "assignments-1", input); err != nil {
-		t.Fatalf("save assignments: %v", err)
-	}
-	var found bool
-	for _, got := range repository.project.Members {
-		if got.UserID == "author" {
-			found = true
-			if len(got.FunctionRoles) != 1 || got.FunctionRoles[0] != "author" || got.FunctionScopes["author"][0] != "c" {
-				t.Fatalf("assignment not persisted: %+v", got)
-			}
-		}
-	}
-	if !found {
-		t.Fatal("assignment member missing")
-	}
-	if len(audit.events) < 2 || audit.events[len(audit.events)-1].Capability != "manage:members" || audit.events[len(audit.events)-1].Details["change"] != "member_permissions_replaced" {
-		t.Fatalf("member change audit = %+v", audit.events)
-	}
-}
-
-func TestTransferOwnerIsAtomicAndClearsFunctionAxis(t *testing.T) {
-	repository := fakeWorkspace()
-	repository.project.Members = append(repository.project.Members, Member{UserID: "recipient", Role: "collaborator", GovernanceRole: "member", FunctionRoles: []string{"author"}, FunctionScopes: map[string][]string{"author": {"c"}}})
-	service := NewService(repository)
-	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
-	if _, _, _, err := service.TransferOwner(context.Background(), actor, "p", "transfer-1", TransferOwnerInput{ExpectedProjectVersion: 1, NewOwnerUserID: "recipient"}); err != nil {
-		t.Fatalf("transfer: %v", err)
-	}
-	for _, member := range repository.project.Members {
-		if member.UserID == "recipient" && (member.Role != "owner" || member.GovernanceRole != "owner" || len(member.FunctionRoles) != 0) {
-			t.Fatalf("recipient not promoted: %+v", member)
-		}
-		if member.UserID == "owner" && member.Role != "collaborator" {
-			t.Fatalf("old owner not demoted: %+v", member)
-		}
 	}
 }
 
@@ -563,14 +489,6 @@ func TestAuthorizationLogModeAllowsWhatThePolicyAudits(t *testing.T) {
 	}
 	if len(audit.events) == 0 || audit.events[0].Capability != "shadow:manage" || audit.events[0].Decision != "allow" {
 		t.Fatalf("shadow allow audit = %+v", audit.events)
-	}
-}
-
-func TestAuthorizationRollbackModeStopsNewMemberAssignments(t *testing.T) {
-	service := NewServiceWithAuditMode(fakeWorkspace(), ContractDemoTemplate{}, nil, nil, nil, AuthorizationModeRollback)
-	actor := Actor{TenantID: 1, UserID: "owner", Role: types.TenantRoleAdmin}
-	if _, _, _, err := service.SaveMembers(context.Background(), actor, "p", "rollback-members", SaveMembersInput{ExpectedProjectVersion: 1, Members: []Member{{UserID: "author", GovernanceRole: "member", FunctionRoles: []string{"author"}}}}); !errors.Is(err, ErrInvalidState) {
-		t.Fatalf("rollback mode assignment error = %v, want ErrInvalidState", err)
 	}
 }
 
@@ -778,51 +696,6 @@ func malformedOperationResult(input any) OperationResult {
 	encoded, _ := json.Marshal(input)
 	hash := sha256.Sum256(encoded)
 	return OperationResult{BodyHash: hex.EncodeToString(hash[:]), Body: json.RawMessage("{"), Status: 200}
-}
-
-func TestProjectMutationResultsPreserveMemberAndOwnerSemantics(t *testing.T) {
-	repository := fakeWorkspace()
-	repository.project.Members = []Member{
-		{UserID: "owner", Role: "owner", GovernanceRole: "owner", Status: "active"},
-		{UserID: "member", Role: "collaborator", GovernanceRole: "member", Status: "active"},
-	}
-	service := NewService(repository)
-	actor := Actor{TenantID: 1, UserID: "owner"}
-
-	members, err := service.SaveMembersResult(context.Background(), actor, "p", "typed-members", SaveMembersInput{
-		ExpectedProjectVersion: 1,
-		Members:                []Member{{UserID: "member", GovernanceRole: "member", Status: "active"}},
-	})
-	if err != nil {
-		t.Fatalf("typed members: %v", err)
-	}
-	if members.Replayed || members.Project.ProjectVersion != 2 || len(members.Project.Members) != 2 {
-		t.Fatalf("typed members result = %+v, want updated project", members)
-	}
-
-	transfer, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
-		ExpectedProjectVersion: 2,
-		NewOwnerUserID:         "member",
-	})
-	if err != nil {
-		t.Fatalf("typed owner transfer: %v", err)
-	}
-	hasNewOwner := false
-	for _, member := range transfer.Project.Members {
-		if member.UserID == "member" && member.Role == "owner" {
-			hasNewOwner = true
-		}
-	}
-	if transfer.Replayed || transfer.Project.ProjectVersion != 3 || !hasNewOwner {
-		t.Fatalf("typed owner transfer result = %+v, want owner change", transfer)
-	}
-
-	if _, err := service.TransferOwnerResult(context.Background(), actor, "p", "typed-owner-transfer", TransferOwnerInput{
-		ExpectedProjectVersion: 2,
-		NewOwnerUserID:         "member",
-	}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("owner transfer replay after ownership change = %v, want authorization denial", err)
-	}
 }
 
 // A stateful non-SQL adapter. The SAME Service owns every rule, and rollback

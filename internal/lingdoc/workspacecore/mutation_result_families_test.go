@@ -35,28 +35,10 @@ func TestStandardMutationResultFamiliesPreserveTypedValueAndReplay(t *testing.T)
 		}
 	})
 
-	t.Run("owner transfer", func(t *testing.T) {
-		svc := testStore(t, filepath.Join(t.TempDir(), "owner-transfer.db"))
-		actor := Actor{TenantID: 402, UserID: "owner"}
-		project := seedActiveImpactProject(t, svc, actor)
-		recipient := Actor{TenantID: actor.TenantID, UserID: "recipient"}
-		seedTenantMember(t, svc, recipient)
-		input := OwnerTransferInput{ExpectedProjectVersion: project.ProjectVersion, ToUserID: recipient.UserID}
-		first, err := svc.RequestOwnerTransferResult(ctx, actor, project.ID, "typed-owner-transfer", input)
-		if err != nil {
-			t.Fatalf("typed owner transfer: %v", err)
-		}
-		if first.Replayed || first.Transfer.ProjectID != project.ID || first.Transfer.ToUserID != recipient.UserID || first.Transfer.Status != "pending" {
-			t.Fatalf("typed owner transfer result = %+v, want pending transfer", first)
-		}
-		replayed, err := svc.RequestOwnerTransferResult(ctx, actor, project.ID, "typed-owner-transfer", input)
-		if err != nil {
-			t.Fatalf("typed owner transfer replay: %v", err)
-		}
-		if !replayed.Replayed || replayed.Transfer.ID != first.Transfer.ID || replayed.Transfer.Status != first.Transfer.Status {
-			t.Fatalf("typed owner transfer replay = %+v, want same value with replay=true", replayed)
-		}
-	})
+	// The owner-transfer family of this table moved with the member and owner
+	// context: RequestOwnerTransferResult now belongs to it, and the aggregate's
+	// internal test package cannot import that package (it would close a cycle).
+	// See internal/lingdoc/membership/mutation_result_families_test.go.
 
 	t.Run("change set", func(t *testing.T) {
 		svc := testStore(t, filepath.Join(t.TempDir(), "change-set.db"))

@@ -13,7 +13,12 @@ import (
 )
 
 // SaveMembersResult exposes the updated project without transport fields.
-func (s *Service) SaveMembersResult(ctx context.Context, actor core.Actor, projectID, key string, input core.SaveMembersInput) (core.ProjectMutationResult, error) {
+func (s *Service) SaveMembersResult(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.SaveMembersInput,
+) (core.ProjectMutationResult, error) {
 	project, replayed, err := core.AdaptMutationResult[core.Project](func() (json.RawMessage, int, bool, error) {
 		return s.SaveMembers(ctx, actor, projectID, key, input)
 	}, "project mutation result")
@@ -24,7 +29,12 @@ func (s *Service) SaveMembersResult(ctx context.Context, actor core.Actor, proje
 }
 
 // TransferOwnerResult exposes the updated project without transport fields.
-func (s *Service) TransferOwnerResult(ctx context.Context, actor core.Actor, projectID, key string, input core.TransferOwnerInput) (core.ProjectMutationResult, error) {
+func (s *Service) TransferOwnerResult(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.TransferOwnerInput,
+) (core.ProjectMutationResult, error) {
 	project, replayed, err := core.AdaptMutationResult[core.Project](func() (json.RawMessage, int, bool, error) {
 		return s.TransferOwner(ctx, actor, projectID, key, input)
 	}, "project mutation result")
@@ -36,7 +46,12 @@ func (s *Service) TransferOwnerResult(ctx context.Context, actor core.Actor, pro
 
 // RequestOwnerTransferResult exposes the transfer request without transport
 // fields. The HTTP adapter retains the established 201 status.
-func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor core.Actor, projectID, key string, input core.OwnerTransferInput) (core.OwnerTransferResult, error) {
+func (s *Service) RequestOwnerTransferResult(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.OwnerTransferInput,
+) (core.OwnerTransferResult, error) {
 	transfer, replayed, err := core.AdaptMutationResult[core.OwnerTransfer](func() (json.RawMessage, int, bool, error) {
 		return s.RequestOwnerTransfer(ctx, actor, projectID, key, input)
 	}, "owner transfer result")
@@ -48,7 +63,11 @@ func (s *Service) RequestOwnerTransferResult(ctx context.Context, actor core.Act
 
 // AcceptOwnerTransferResult exposes the accepted transfer without transport
 // fields.
-func (s *Service) AcceptOwnerTransferResult(ctx context.Context, actor core.Actor, projectID, transferID, key string) (core.OwnerTransferResult, error) {
+func (s *Service) AcceptOwnerTransferResult(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, transferID, key string,
+) (core.OwnerTransferResult, error) {
 	transfer, replayed, err := core.AdaptMutationResult[core.OwnerTransfer](func() (json.RawMessage, int, bool, error) {
 		return s.AcceptOwnerTransfer(ctx, actor, projectID, transferID, key)
 	}, "owner transfer result")
@@ -62,7 +81,12 @@ func (s *Service) AcceptOwnerTransferResult(ctx context.Context, actor core.Acto
 //
 // The collaborator list is one shape of the same decision as the member
 // assignment list: either one is given, never both.
-func (s *Service) SaveMembers(ctx context.Context, actor core.Actor, projectID, key string, input core.SaveMembersInput) (json.RawMessage, int, bool, error) {
+func (s *Service) SaveMembers(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.SaveMembersInput,
+) (json.RawMessage, int, bool, error) {
 	if s.policy.RequiresActivationRead() {
 		return nil, 0, false, core.ErrProjectInvitationRequired
 	}
@@ -126,9 +150,11 @@ func (s *Service) SaveMembers(ctx context.Context, actor core.Actor, projectID, 
 				return core.OperationOutcome{}, err
 			}
 			if audit, ok := tx.(core.AuditTransaction); ok {
-				if err := audit.RecordAudit(core.AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+				if err := audit.RecordAudit(core.AuditEvent{
+					ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
 					Action: "project.member_permissions.replace", Target: projectID,
-					Details: map[string]any{"collaborator_user_ids": ids}, CreatedAt: time.Now().UTC()}); err != nil {
+					Details: map[string]any{"collaborator_user_ids": ids}, CreatedAt: time.Now().UTC(),
+				}); err != nil {
 					return core.OperationOutcome{}, err
 				}
 			}
@@ -146,7 +172,12 @@ func (s *Service) SaveMembers(ctx context.Context, actor core.Actor, projectID, 
 // saveMemberPermissions replaces non-owner assignments in the same transaction
 // as the project version and replay record. Owner changes use a separate,
 // recipient-confirmed transfer workflow.
-func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, projectID, key string, input core.SaveMembersInput) (json.RawMessage, int, bool, error) {
+func (s *Service) saveMemberPermissions(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.SaveMembersInput,
+) (json.RawMessage, int, bool, error) {
 	if s.policy.AuthorizationMode() == core.AuthorizationModeRollback {
 		return nil, 0, false, core.ErrInvalidState
 	}
@@ -176,7 +207,9 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, p
 					return core.OperationOutcome{}, core.ErrInvalidState
 				}
 				ownerID = member.UserID
-				members = append(members, core.Member{UserID: member.UserID, Role: "owner", GovernanceRole: "owner", Status: "active"})
+				members = append(members, core.Member{
+					UserID: member.UserID, Role: "owner", GovernanceRole: "owner", Status: "active",
+				})
 			}
 		}
 		if ownerID == "" {
@@ -192,7 +225,9 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, p
 		}
 		seen := map[string]bool{ownerID: true}
 		for _, member := range input.Members {
-			if member.UserID == "" || len(member.UserID) > 64 || strings.TrimSpace(member.UserID) != member.UserID || seen[member.UserID] || (member.GovernanceRole != "admin" && member.GovernanceRole != "member") {
+			if member.UserID == "" || len(member.UserID) > 64 ||
+				strings.TrimSpace(member.UserID) != member.UserID || seen[member.UserID] ||
+				(member.GovernanceRole != "admin" && member.GovernanceRole != "member") {
 				return core.OperationOutcome{}, core.ErrInvalidRequest
 			}
 			seen[member.UserID] = true
@@ -227,7 +262,8 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, p
 					}
 					// Chapter author/reviewer scopes must name an existing chapter;
 					// asset/delivery identifiers use explicit resource prefixes.
-					if !chapterIDs[scope] && !strings.HasPrefix(scope, "asset:") && !strings.HasPrefix(scope, "delivery:") {
+					if !chapterIDs[scope] && !strings.HasPrefix(scope, "asset:") &&
+						!strings.HasPrefix(scope, "delivery:") {
 						return core.OperationOutcome{}, core.ErrInvalidRequest
 					}
 					seenScopes[scope] = true
@@ -258,9 +294,11 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, p
 					"status": member.Status,
 				})
 			}
-			if err := audit.RecordAudit(core.AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+			if err := audit.RecordAudit(core.AuditEvent{
+				ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
 				Action: "project.member_permissions.replace", Target: projectID,
-				Details: map[string]any{"members": changes}, CreatedAt: time.Now().UTC()}); err != nil {
+				Details: map[string]any{"members": changes}, CreatedAt: time.Now().UTC(),
+			}); err != nil {
 				return core.OperationOutcome{}, err
 			}
 		}
@@ -275,7 +313,11 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, p
 				"status": member.Status,
 			})
 		}
-		_ = s.policy.RecordAuditEvent(ctx, core.AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: "manage:members", Decision: "allow", Details: map[string]any{"change": "member_permissions_replaced", "members": changes}})
+		_ = s.policy.RecordAuditEvent(ctx, core.AuditEvent{
+			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID,
+			Capability: "manage:members", Decision: "allow",
+			Details: map[string]any{"change": "member_permissions_replaced", "members": changes},
+		})
 	}
 	return body, status, replayed, err
 }
@@ -283,11 +325,19 @@ func (s *Service) saveMemberPermissions(ctx context.Context, actor core.Actor, p
 // TransferOwner atomically promotes an existing project member and demotes the
 // current owner, clearing the new owner's function axis as required by the
 // project permission model.
-func (s *Service) TransferOwner(ctx context.Context, actor core.Actor, projectID, key string, input core.TransferOwnerInput) (json.RawMessage, int, bool, error) {
+func (s *Service) TransferOwner(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.TransferOwnerInput,
+) (json.RawMessage, int, bool, error) {
 	if s.policy.AuthorizationMode() == core.AuthorizationModeRollback {
 		return nil, 0, false, core.ErrInvalidState
 	}
-	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.NewOwnerUserID) != input.NewOwnerUserID || input.NewOwnerUserID == "" || len(input.NewOwnerUserID) > 64 || input.NewOwnerUserID == actor.UserID {
+	if input.ExpectedProjectVersion < 1 ||
+		strings.TrimSpace(input.NewOwnerUserID) != input.NewOwnerUserID ||
+		input.NewOwnerUserID == "" || len(input.NewOwnerUserID) > 64 ||
+		input.NewOwnerUserID == actor.UserID {
 		return nil, 0, false, core.ErrInvalidRequest
 	}
 	body, status, replayed, err := s.runner.Run(ctx, actor, core.OperationSpec{
@@ -329,9 +379,11 @@ func (s *Service) TransferOwner(ctx context.Context, actor core.Actor, projectID
 		for i := range members {
 			switch members[i].UserID {
 			case actor.UserID:
-				members[i].Role, members[i].GovernanceRole, members[i].FunctionRoles, members[i].FunctionScopes = "collaborator", "member", nil, nil
+				members[i].Role, members[i].GovernanceRole,
+					members[i].FunctionRoles, members[i].FunctionScopes = "collaborator", "member", nil, nil
 			case recipient.UserID:
-				members[i].Role, members[i].GovernanceRole, members[i].FunctionRoles, members[i].FunctionScopes = "owner", "owner", nil, nil
+				members[i].Role, members[i].GovernanceRole,
+					members[i].FunctionRoles, members[i].FunctionScopes = "owner", "owner", nil, nil
 			}
 		}
 		next := p
@@ -344,16 +396,22 @@ func (s *Service) TransferOwner(ctx context.Context, actor core.Actor, projectID
 			return core.OperationOutcome{}, err
 		}
 		if audit, ok := tx.(core.AuditTransaction); ok {
-			if err := audit.RecordAudit(core.AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
+			if err := audit.RecordAudit(core.AuditEvent{
+				ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID,
 				Action: "project.owner_transfer", Target: projectID,
-				Details: map[string]any{"new_owner_user_id": input.NewOwnerUserID}, CreatedAt: time.Now().UTC()}); err != nil {
+				Details: map[string]any{"new_owner_user_id": input.NewOwnerUserID}, CreatedAt: time.Now().UTC(),
+			}); err != nil {
 				return core.OperationOutcome{}, err
 			}
 		}
 		return core.OperationOutcome{Value: next, Status: core.OperationStatusOK}, nil
 	})
 	if err == nil && !replayed {
-		_ = s.policy.RecordAuditEvent(ctx, core.AuditEvent{TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID, Capability: "manage:members", Decision: "allow", Details: map[string]any{"change": "owner_transfer", "new_owner_user_id": input.NewOwnerUserID}})
+		_ = s.policy.RecordAuditEvent(ctx, core.AuditEvent{
+			TenantID: actor.TenantID, UserID: actor.UserID, Role: actor.Role, ProjectID: projectID,
+			Capability: "manage:members", Decision: "allow",
+			Details: map[string]any{"change": "owner_transfer", "new_owner_user_id": input.NewOwnerUserID},
+		})
 	}
 	return body, status, replayed, err
 }
@@ -362,7 +420,12 @@ func (s *Service) TransferOwner(ctx context.Context, actor core.Actor, projectID
 //
 // The transfer is a request, not a transfer: the recipient confirms it, and
 // only then does the ownership move.
-func (s *Service) RequestOwnerTransfer(ctx context.Context, actor core.Actor, projectID, key string, input core.OwnerTransferInput) (json.RawMessage, int, bool, error) {
+func (s *Service) RequestOwnerTransfer(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, key string,
+	input core.OwnerTransferInput,
+) (json.RawMessage, int, bool, error) {
 	input.ToUserID = strings.TrimSpace(input.ToUserID)
 	if input.ToUserID == "" || input.ToUserID == actor.UserID || input.ExpectedProjectVersion < 1 {
 		return nil, 0, false, core.ErrInvalidRequest
@@ -421,7 +484,7 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor core.Actor, pr
 		}
 		_ = role
 		isRecoveryAdmin := currentRole == types.TenantRoleOwner
-		if actor.UserID != currentOwner && !(isRecoveryAdmin && !ownerActive) {
+		if actor.UserID != currentOwner && (!isRecoveryAdmin || ownerActive) {
 			return core.OperationOutcome{}, core.ErrNotFound
 		}
 		if p.ProjectVersion != input.ExpectedProjectVersion || p.Status == "archived" {
@@ -440,7 +503,10 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor core.Actor, pr
 				return core.OperationOutcome{}, core.ErrNotFound
 			}
 		}
-		transfer := core.OwnerTransfer{ID: uuid.NewString(), ProjectID: projectID, FromUserID: currentOwner, ToUserID: input.ToUserID, Status: "pending", ExpectedProjectVersion: p.ProjectVersion, CreatedAt: time.Now().UTC()}
+		transfer := core.OwnerTransfer{
+			ID: uuid.NewString(), ProjectID: projectID, FromUserID: currentOwner, ToUserID: input.ToUserID,
+			Status: "pending", ExpectedProjectVersion: p.ProjectVersion, CreatedAt: time.Now().UTC(),
+		}
 		if err := port.InsertOwnerTransfer(transfer); err != nil {
 			return core.OperationOutcome{}, err
 		}
@@ -454,7 +520,11 @@ func (s *Service) RequestOwnerTransfer(ctx context.Context, actor core.Actor, pr
 }
 
 // AcceptOwnerTransfer accepts an owner transfer and moves the ownership.
-func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor core.Actor, projectID, transferID, key string) (json.RawMessage, int, bool, error) {
+func (s *Service) AcceptOwnerTransfer(
+	ctx context.Context,
+	actor core.Actor,
+	projectID, transferID, key string,
+) (json.RawMessage, int, bool, error) {
 	if s.policy.RequiresActivationRead() {
 		if err := core.RequireHumanDecision(ctx); err != nil {
 			return nil, 0, false, err
@@ -532,11 +602,15 @@ func (s *Service) AcceptOwnerTransfer(ctx context.Context, actor core.Actor, pro
 			return core.OperationOutcome{}, err
 		}
 		acceptedAt := time.Now().UTC()
-		if err := port.AcceptOwnerTransfer(projectID, transferID, transfer.ExpectedProjectVersion, acceptedAt); err != nil {
+		if err := port.AcceptOwnerTransfer(
+			projectID, transferID, transfer.ExpectedProjectVersion, acceptedAt,
+		); err != nil {
 			return core.OperationOutcome{}, err
 		}
 		if s.policy.RequiresActivationRead() {
-			if err := core.RecordProjectAudit(featureTx, actor, p.ID, "owner.transfer.accept", transfer.ID, ""); err != nil {
+			if err := core.RecordProjectAudit(
+				featureTx, actor, p.ID, "owner.transfer.accept", transfer.ID, "",
+			); err != nil {
 				return core.OperationOutcome{}, err
 			}
 		}
@@ -554,7 +628,13 @@ type ownerTransferOrigin struct {
 }
 
 // recordOwnerTransferOrigin writes the origin of an owner transfer request.
-func (s *Service) recordOwnerTransferOrigin(ctx context.Context, tx core.Transaction, a core.Actor, p core.Project, transfer core.OwnerTransfer) error {
+func (s *Service) recordOwnerTransferOrigin(
+	ctx context.Context,
+	tx core.Transaction,
+	a core.Actor,
+	p core.Project,
+	transfer core.OwnerTransfer,
+) error {
 	origin := ownerTransferOrigin{RequesterID: a.UserID, Recovery: a.UserID != transfer.FromUserID}
 	if err := s.records.Put(ctx, tx, p.ID, "owner_transfer_origin", transfer.ID, 0, origin); err != nil {
 		return err
@@ -565,7 +645,13 @@ func (s *Service) recordOwnerTransferOrigin(ctx context.Context, tx core.Transac
 // verifyOwnerTransferOrigin checks that an owner transfer was asked for by the
 // owner it names, or recovered by a tenant owner while the owner was
 // unavailable.
-func (s *Service) verifyOwnerTransferOrigin(ctx context.Context, tx core.Transaction, a core.Actor, p core.Project, transfer core.OwnerTransfer) error {
+func (s *Service) verifyOwnerTransferOrigin(
+	ctx context.Context,
+	tx core.Transaction,
+	a core.Actor,
+	p core.Project,
+	transfer core.OwnerTransfer,
+) error {
 	if err := core.RequireHumanDecision(ctx); err != nil {
 		return err
 	}
@@ -581,7 +667,8 @@ func (s *Service) verifyOwnerTransferOrigin(ctx context.Context, tx core.Transac
 		if err != nil || role != types.TenantRoleOwner {
 			return core.ErrNotFound
 		}
-	} else if origin.RequesterID != transfer.FromUserID || !core.OwnerCurrentlyAvailable(tx, p, a.TenantID, transfer.FromUserID) {
+	} else if origin.RequesterID != transfer.FromUserID ||
+		!core.OwnerCurrentlyAvailable(tx, p, a.TenantID, transfer.FromUserID) {
 		return core.ErrInvalidState
 	}
 	role, err := core.CurrentTenantRole(tx, a)

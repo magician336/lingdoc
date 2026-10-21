@@ -36,7 +36,11 @@ func (a *workspaceAuthorizer) AuthorizeTenant(ctx context.Context, tx Transactio
 
 // AuthorizeProject authorizes the request against the project, and returns
 // the project it authorized.
-func (a *workspaceAuthorizer) AuthorizeProject(ctx context.Context, tx Transaction, request AuthorizationRequest) (Project, error) {
+func (a *workspaceAuthorizer) AuthorizeProject(
+	ctx context.Context,
+	tx Transaction,
+	request AuthorizationRequest,
+) (Project, error) {
 	return a.service.authorizeProject(ctx, tx, request)
 }
 

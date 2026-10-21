@@ -78,11 +78,17 @@ func TestTheMemberAndOwnerPortsMatchTheServiceVerbatim(t *testing.T) {
 			}
 			origin, ok := service[method]
 			if !ok {
-				t.Errorf("%s.%s is not a service operation any more; drop it from the port or move the operation back", name, method)
+				t.Errorf(
+					"%s.%s is not a service operation any more; drop it from the port or move the operation back",
+					name, method,
+				)
 				continue
 			}
 			if signature != origin {
-				t.Errorf("%s.%s is declared as %q, the service declares %q; a narrow port may only narrow, never restate", name, method, signature, origin)
+				t.Errorf(
+					"%s.%s is declared as %q, the service declares %q; a narrow port may only narrow, never restate",
+					name, method, signature, origin,
+				)
 			}
 		}
 	}

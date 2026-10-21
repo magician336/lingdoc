@@ -6,8 +6,6 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
-
-	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func issueBinding(projectVersion int64, severity string) ValidationIssueBinding {
@@ -76,52 +74,6 @@ func TestValidationIssueDispositionPersistsBindingAndRejectsStaleOrDuplicateActi
 	}
 	if count != 1 {
 		t.Fatalf("disposition audit count = %d, want exactly one", count)
-	}
-}
-
-func TestReviewerMayOnlyDismissBlockingIssueInAssignedScope(t *testing.T) {
-	service := testStore(t, filepath.Join(t.TempDir(), "issue-reviewer.db"))
-	owner := Actor{TenantID: 402, UserID: "owner", Role: types.TenantRoleOwner}
-	project := seedActiveImpactProject(t, service, owner)
-	chapters, err := service.ListChapters(context.Background(), owner, project.ID)
-	if err != nil || len(chapters) == 0 {
-		t.Fatalf("chapters: %+v err=%v", chapters, err)
-	}
-	reviewer := Actor{TenantID: owner.TenantID, UserID: "reviewer", Role: types.TenantRoleContributor}
-	seedTenantMember(t, service, reviewer)
-	if _, _, _, err := service.SaveMembers(context.Background(), owner, project.ID, "issue-reviewer-assign", SaveMembersInput{
-		ExpectedProjectVersion: project.ProjectVersion,
-		Members:                []Member{{UserID: reviewer.UserID, GovernanceRole: "member", FunctionRoles: []string{"reviewer"}, FunctionScopes: map[string][]string{"reviewer": {chapters[0].ID}}}},
-	}); err != nil {
-		t.Fatalf("assign reviewer scope: %v", err)
-	}
-	project, err = service.GetProject(context.Background(), owner, project.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	blocking := issueBinding(project.ProjectVersion, "blocking")
-	blocking.TargetID = chapters[0].ID
-	if _, _, _, err := service.RecordValidationIssueDisposition(context.Background(), reviewer, project.ID, "reviewer-dismiss-001", ValidationIssueDispositionInput{
-		ExpectedProjectVersion: project.ProjectVersion, ValidationIssueBinding: blocking, Action: "dismiss", Reason: "经核对，该规则对此章节不适用",
-	}); err != nil {
-		t.Fatalf("in-scope blocking dismiss: %v", err)
-	}
-
-	outOfScope := blocking
-	outOfScope.IssueID = "issue-out-of-scope"
-	outOfScope.TargetID = chapters[len(chapters)-1].ID
-	if _, _, _, err := service.RecordValidationIssueDisposition(context.Background(), reviewer, project.ID, "reviewer-dismiss-002", ValidationIssueDispositionInput{
-		ExpectedProjectVersion: project.ProjectVersion, ValidationIssueBinding: outOfScope, Action: "dismiss", Reason: "not in my scope",
-	}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("out-of-scope dismiss error = %v, want ErrNotFound", err)
-	}
-	warning := blocking
-	warning.IssueID = "issue-warning"
-	warning.Severity = "warning"
-	if _, _, _, err := service.RecordValidationIssueDisposition(context.Background(), reviewer, project.ID, "reviewer-waive-001", ValidationIssueDispositionInput{
-		ExpectedProjectVersion: project.ProjectVersion, ValidationIssueBinding: warning, Action: "waive", Reason: "not permitted for reviewer",
-	}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("reviewer waive error = %v, want ErrNotFound", err)
 	}
 }
 

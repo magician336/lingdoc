@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	"github.com/Tencent/WeKnora/internal/lingdoc/membership"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -46,6 +47,7 @@ type candidateOneConnFixture struct {
 	db        *gorm.DB
 	runtime   *SourceRuntime
 	projects  *core.Service
+	members   *membership.Service
 	store     *candidateadoption.SQLiteCandidateAdoptionStore
 	adoption  *candidateadoption.CandidateAdoptionService
 	ctx       context.Context
@@ -176,7 +178,10 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	require.NoError(t, store.UpsertCandidate(deadline, candidate))
 	input := candidateadoption.AcceptCandidateInput{ProjectID: p.ID, ChapterID: "chapter-2", CandidateID: candidate.ID, ActorID: actor.UserID, IdempotencyKey: "oneconn-adoption", ExpectedChapterVersionID: current.ChapterVersionID, ExpectedSpecRevision: current.SpecRevision, ReplaceExisting: true}
 	adoption := candidateadoption.NewCandidateAdoptionService(store, runtime.CandidateAdoptionSourcePolicy(), candidateOneConnAuthorizer{projects})
-	return candidateOneConnFixture{db, runtime, projects, store, adoption, deadline, actor, candidate, input, card}
+	return candidateOneConnFixture{
+		db, runtime, projects, newMembershipService(projects, core.NewGORMRepository(db)),
+		store, adoption, deadline, actor, candidate, input, card,
+	}
 }
 
 func TestCandidateActualOneConnectionAdaptersAdoptSelectedAssetAndRecheckReplay(t *testing.T) {
@@ -262,9 +267,33 @@ func TestCandidateActualAdapterRejectsMachineAdoptionAndPreservesScope(t *testin
 	require.NoError(t, err)
 	// Native keys have an explicit read seam, never an artificial human write
 	// grant. The real native-auth positive/KB tests live in router integration.
-	_, _, _, err = f.projects.SaveProjectAPIKeyGrant(f.ctx, f.actor, f.input.ProjectID, "candidate-api-write-grant", core.ProjectAPIKeyGrant{ExpectedProjectVersion: p.ProjectVersion, KeyID: 44, Capabilities: []string{"read", "write"}, Active: true, Reason: "合成机器写权限必须拒绝"})
+	_, _, _, err = f.members.SaveProjectAPIKeyGrant(
+		f.ctx,
+		f.actor,
+		f.input.ProjectID,
+		"candidate-api-write-grant",
+		core.ProjectAPIKeyGrant{
+			ExpectedProjectVersion: p.ProjectVersion,
+			KeyID:                  44,
+			Capabilities:           []string{"read", "write"},
+			Active:                 true,
+			Reason:                 "合成机器写权限必须拒绝",
+		},
+	)
 	require.ErrorIs(t, err, core.ErrInvalidRequest)
-	_, _, _, err = f.projects.SaveProjectAPIKeyGrant(f.ctx, f.actor, f.input.ProjectID, "candidate-api-read-grant", core.ProjectAPIKeyGrant{ExpectedProjectVersion: p.ProjectVersion, KeyID: 44, Capabilities: []string{"read"}, Active: true, Reason: "合成只读许可不代表人工采纳"})
+	_, _, _, err = f.members.SaveProjectAPIKeyGrant(
+		f.ctx,
+		f.actor,
+		f.input.ProjectID,
+		"candidate-api-read-grant",
+		core.ProjectAPIKeyGrant{
+			ExpectedProjectVersion: p.ProjectVersion,
+			KeyID:                  44,
+			Capabilities:           []string{"read"},
+			Active:                 true,
+			Reason:                 "合成只读许可不代表人工采纳",
+		},
+	)
 	require.NoError(t, err)
 	for _, kb := range []string{"kb-1", "kb-excluded"} {
 		scoped := types.WithTenantAPIKeyScope(f.ctx, types.TenantAPIKeyScope{KeyID: 44, ScopeType: types.APIKeyScopeTenant, KnowledgeBaseIDs: types.StringArray{kb}, Capabilities: types.StringArray{"retrieve", "ingest"}})

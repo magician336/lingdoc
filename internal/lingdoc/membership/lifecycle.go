@@ -16,7 +16,12 @@ import (
 // The invitation is a record of its own: it names the assignment it carries,
 // it expires, and the collaborator it names becomes a member of the project
 // only when the invitation is accepted.
-func (s *Service) InviteProjectMember(ctx context.Context, actor core.Actor, pid, key string, input core.InviteMemberInput) (json.RawMessage, int, bool, error) {
+func (s *Service) InviteProjectMember(
+	ctx context.Context,
+	actor core.Actor,
+	pid, key string,
+	input core.InviteMemberInput,
+) (json.RawMessage, int, bool, error) {
 	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, core.ErrInvalidRequest
 	}
@@ -61,7 +66,8 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor core.Actor, pid
 				return core.OperationOutcome{}, core.ErrVersionConflict
 			}
 		}
-		if existing, exists := core.ProjectMember(p, m.UserID); exists && existing.Status != "invited" && existing.Status != "removed" {
+		if existing, exists := core.ProjectMember(p, m.UserID); exists &&
+			existing.Status != "invited" && existing.Status != "removed" {
 			return core.OperationOutcome{}, core.ErrInvalidState
 		}
 		if id == "" {
@@ -70,7 +76,11 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor core.Actor, pid
 		now := time.Now().UTC()
 		m.Role = "collaborator"
 		m.Status = "invited"
-		invitation := core.MemberInvitation{ID: id, ProjectID: pid, UserID: m.UserID, Version: version + 1, Assignment: m, Status: "invited", Inviter: actor.UserID, Reason: input.Reason, CreatedAt: now, ExpiresAt: now.Add(72 * time.Hour)}
+		invitation := core.MemberInvitation{
+			ID: id, ProjectID: pid, UserID: m.UserID, Version: version + 1,
+			Assignment: m, Status: "invited", Inviter: actor.UserID,
+			Reason: input.Reason, CreatedAt: now, ExpiresAt: now.Add(72 * time.Hour),
+		}
 		if err := s.records.Put(ctx, tx, pid, "invitation", id, version, invitation); err != nil {
 			return core.OperationOutcome{}, err
 		}
@@ -104,13 +114,20 @@ func (s *Service) InviteProjectMember(ctx context.Context, actor core.Actor, pid
 // invited assignment the actor's member assignment.
 //
 // Tenant authorization is enough to view one's own invitation, never content.
-func (s *Service) AcceptProjectInvitation(ctx context.Context, actor core.Actor, pid, id, key string, input core.AcceptMemberInput) (json.RawMessage, int, bool, error) {
+func (s *Service) AcceptProjectInvitation(
+	ctx context.Context,
+	actor core.Actor,
+	pid, id, key string,
+	input core.AcceptMemberInput,
+) (json.RawMessage, int, bool, error) {
 	if input.ExpectedInvitationVersion < 1 {
 		return nil, 0, false, core.ErrInvalidRequest
 	}
 	var checked core.MemberInvitation
 	err := s.repository.Transaction(ctx, core.TransactionOptions{ReadOnly: true}, func(tx core.Transaction) error {
-		if err := s.authorizer.AuthorizeTenant(ctx, tx, core.NewAuthorizationRequest(actor, "", core.AuthorizationRead, "")); err != nil {
+		if err := s.authorizer.AuthorizeTenant(
+			ctx, tx, core.NewAuthorizationRequest(actor, "", core.AuthorizationRead, ""),
+		); err != nil {
 			return err
 		}
 		p, err := tx.Project(actor.TenantID, pid)
@@ -129,13 +146,15 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor core.Actor,
 		}
 		if checked.Status == "accepted" {
 			m, ok := core.ProjectMember(p, actor.UserID)
-			if !ok || m.Status != "active" || checked.Version != input.ExpectedInvitationVersion || v != input.ExpectedInvitationVersion+1 {
+			if !ok || m.Status != "active" || checked.Version != input.ExpectedInvitationVersion ||
+				v != input.ExpectedInvitationVersion+1 {
 				return core.ErrNotFound
 			}
 		} else if v != input.ExpectedInvitationVersion {
 			return core.ErrVersionConflict
 		}
-		if checked.Status != "accepted" && (checked.Status != "invited" || !time.Now().UTC().Before(checked.ExpiresAt)) {
+		if checked.Status != "accepted" &&
+			(checked.Status != "invited" || !time.Now().UTC().Before(checked.ExpiresAt)) {
 			return core.ErrInvalidState
 		}
 		return nil
@@ -164,7 +183,8 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor core.Actor,
 		if err != nil {
 			return core.OperationOutcome{}, err
 		}
-		if version != input.ExpectedInvitationVersion || invitation.Status != "invited" || !time.Now().UTC().Before(invitation.ExpiresAt) {
+		if version != input.ExpectedInvitationVersion || invitation.Status != "invited" ||
+			!time.Now().UTC().Before(invitation.ExpiresAt) {
 			return core.OperationOutcome{}, core.ErrVersionConflict
 		}
 		if err := s.validateInvitation(ctx, tx, p, invitation.Assignment); err != nil {
@@ -211,10 +231,16 @@ func (s *Service) AcceptProjectInvitation(ctx context.Context, actor core.Actor,
 // A manager sees every invitation of the project; anyone else sees only the
 // invitations addressed to them. A stranger sees nothing at all, and the
 // listing says so the same way an absent object does.
-func (s *Service) ListProjectInvitations(ctx context.Context, actor core.Actor, pid string) ([]core.MemberInvitation, error) {
+func (s *Service) ListProjectInvitations(
+	ctx context.Context,
+	actor core.Actor,
+	pid string,
+) ([]core.MemberInvitation, error) {
 	var result []core.MemberInvitation
 	err := s.repository.Transaction(ctx, core.TransactionOptions{ReadOnly: true}, func(tx core.Transaction) error {
-		if err := s.authorizer.AuthorizeTenant(ctx, tx, core.NewAuthorizationRequest(actor, "", core.AuthorizationRead, "")); err != nil {
+		if err := s.authorizer.AuthorizeTenant(
+			ctx, tx, core.NewAuthorizationRequest(actor, "", core.AuthorizationRead, ""),
+		); err != nil {
 			return err
 		}
 		p, err := tx.Project(actor.TenantID, pid)
@@ -222,9 +248,13 @@ func (s *Service) ListProjectInvitations(ctx context.Context, actor core.Actor, 
 			return err
 		}
 		m, isMember := core.ProjectMember(p, actor.UserID)
-		manager := isMember && (core.GovernanceRole(m) == "owner" || core.GovernanceRole(m) == "admin") && (m.Status == "" || m.Status == "active")
+		manager := isMember &&
+			(core.GovernanceRole(m) == "owner" || core.GovernanceRole(m) == "admin") &&
+			(m.Status == "" || m.Status == "active")
 		if manager {
-			_, err := s.authorizer.AuthorizeProject(ctx, tx, core.NewAuthorizationRequest(actor, pid, core.AuthorizationManage, ""))
+			_, err := s.authorizer.AuthorizeProject(
+				ctx, tx, core.NewAuthorizationRequest(actor, pid, core.AuthorizationManage, ""),
+			)
 			manager = err == nil
 		}
 		rows, err := s.records.ListRecords(ctx, tx, pid, "invitation")
@@ -256,8 +286,14 @@ func (s *Service) ListProjectInvitations(ctx context.Context, actor core.Actor, 
 //
 // The owner is not a member state: the owner leaves by transferring the
 // ownership, never by a state change.
-func (s *Service) ChangeMemberState(ctx context.Context, actor core.Actor, pid, user, key string, input core.MemberLifecycleInput) (json.RawMessage, int, bool, error) {
-	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" || !slices.Contains([]string{"suspend", "remove", "restore", "restore_tenant"}, input.Action) {
+func (s *Service) ChangeMemberState(
+	ctx context.Context,
+	actor core.Actor,
+	pid, user, key string,
+	input core.MemberLifecycleInput,
+) (json.RawMessage, int, bool, error) {
+	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" ||
+		!slices.Contains([]string{"suspend", "remove", "restore", "restore_tenant"}, input.Action) {
 		return nil, 0, false, core.ErrInvalidRequest
 	}
 	return s.runner.Run(ctx, actor, core.OperationSpec{
@@ -292,7 +328,8 @@ func (s *Service) ChangeMemberState(ctx context.Context, actor core.Actor, pid, 
 			m.Status = "removed"
 			m.FunctionScopes = map[string][]string{}
 		case "restore", "restore_tenant":
-			if input.Action == "restore" && m.Status != "suspended" || input.Action == "restore_tenant" && m.Status != "suspended_by_tenant" {
+			if input.Action == "restore" && m.Status != "suspended" ||
+				input.Action == "restore_tenant" && m.Status != "suspended_by_tenant" {
 				return core.OperationOutcome{}, core.ErrInvalidState
 			}
 			active, err := port.ActiveMember(core.Actor{TenantID: actor.TenantID, UserID: user})
@@ -332,7 +369,8 @@ func (s *Service) ChangeMemberState(ctx context.Context, actor core.Actor, pid, 
 // project holds. The resource check asks the workspace whether the project
 // owns the resource; the chapter check asks the project itself.
 func (s *Service) validateInvitation(ctx context.Context, tx core.Transaction, p core.Project, m core.Member) error {
-	if m.UserID == "" || len(m.UserID) > 64 || strings.TrimSpace(m.UserID) != m.UserID || m.Role == "owner" || m.GovernanceRole != "member" && m.GovernanceRole != "admin" {
+	if m.UserID == "" || len(m.UserID) > 64 || strings.TrimSpace(m.UserID) != m.UserID ||
+		m.Role == "owner" || m.GovernanceRole != "member" && m.GovernanceRole != "admin" {
 		return core.ErrInvalidRequest
 	}
 	functions := map[string]bool{}
@@ -352,7 +390,10 @@ func (s *Service) validateInvitation(ctx context.Context, tx core.Transaction, p
 				return core.ErrInvalidRequest
 			}
 			seen[scope] = true
-			if strings.HasPrefix(scope, "asset:") || strings.HasPrefix(scope, "knowledge:") || strings.HasPrefix(scope, "template:") || strings.HasPrefix(scope, "delivery:") {
+			if strings.HasPrefix(scope, "asset:") ||
+				strings.HasPrefix(scope, "knowledge:") ||
+				strings.HasPrefix(scope, "template:") ||
+				strings.HasPrefix(scope, "delivery:") {
 				if err := s.verifyMemberResourceScope(ctx, tx, p, scope); err != nil {
 					return err
 				}
@@ -375,7 +416,12 @@ func (s *Service) validateInvitation(ctx context.Context, tx core.Transaction, p
 // The template scope names the project's own template copy, so that rule
 // belongs here, where the project is. The other scopes name a stored
 // resource, and the workspace says whether the project holds it.
-func (s *Service) verifyMemberResourceScope(ctx context.Context, tx core.Transaction, p core.Project, scope string) error {
+func (s *Service) verifyMemberResourceScope(
+	ctx context.Context,
+	tx core.Transaction,
+	p core.Project,
+	scope string,
+) error {
 	kind, id, found := strings.Cut(scope, ":")
 	if !found || id == "" {
 		return core.ErrInvalidRequest

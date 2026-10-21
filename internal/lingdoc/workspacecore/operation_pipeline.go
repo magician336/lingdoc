@@ -124,17 +124,20 @@ func runOperationThroughPipeline[T any, I any, R any](
 	port func(Transaction) (T, error),
 	write func(T, Project) (operationResult[R], error),
 ) (json.RawMessage, int, bool, error) {
-	return runOperationCore(s, ctx, actor, operationSpecOf(operation), func(tx Transaction, project Project) (OperationOutcome, error) {
-		mutation, err := port(tx)
-		if err != nil {
-			return OperationOutcome{}, err
-		}
-		written, err := write(mutation, project)
-		if err != nil {
-			return OperationOutcome{}, err
-		}
-		return OperationOutcome{Value: written.Value, Status: written.Status, Output: written.Output}, nil
-	})
+	return runOperationCore(
+		ctx, s, actor, operationSpecOf(operation),
+		func(tx Transaction, project Project) (OperationOutcome, error) {
+			mutation, err := port(tx)
+			if err != nil {
+				return OperationOutcome{}, err
+			}
+			written, err := write(mutation, project)
+			if err != nil {
+				return OperationOutcome{}, err
+			}
+			return OperationOutcome{Value: written.Value, Status: written.Status, Output: written.Output}, nil
+		},
+	)
 }
 
 // operationSpecOf reads the typed descriptor as the untyped specification the
@@ -172,8 +175,8 @@ func operationSpecOf[I any](operation operationDescriptor[I]) OperationSpec {
 // typed port raises it with MutationPort inside the write, which is where the
 // port assertion happened before.
 func runOperationCore(
-	s *Service,
 	ctx context.Context,
+	s *Service,
 	actor Actor,
 	spec OperationSpec,
 	write OperationWrite,

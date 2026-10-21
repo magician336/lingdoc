@@ -21,10 +21,16 @@ import (
 //
 // Only a project manager may ask. A stranger receives the same answer the
 // workspace gives for an object it may not see.
-func (s *Service) ProjectMemberDirectory(ctx context.Context, a core.Actor, pid string) ([]core.MemberDirectoryEntry, error) {
+func (s *Service) ProjectMemberDirectory(
+	ctx context.Context,
+	a core.Actor,
+	pid string,
+) ([]core.MemberDirectoryEntry, error) {
 	var out []core.MemberDirectoryEntry
 	err := s.repository.Transaction(ctx, core.TransactionOptions{ReadOnly: true}, func(tx core.Transaction) error {
-		if _, err := s.authorizer.AuthorizeProject(ctx, tx, core.NewAuthorizationRequest(a, pid, core.AuthorizationManage, "")); err != nil {
+		if _, err := s.authorizer.AuthorizeProject(
+			ctx, tx, core.NewAuthorizationRequest(a, pid, core.AuthorizationManage, ""),
+		); err != nil {
 			return err
 		}
 		entries, err := s.directory.ListActiveTenantMembers(ctx, tx, a.TenantID)
@@ -41,7 +47,9 @@ func (s *Service) ProjectMemberDirectory(ctx context.Context, a core.Actor, pid 
 func (s *Service) ListMyProjectInvitations(ctx context.Context, a core.Actor) ([]core.MemberInvitation, error) {
 	result := []core.MemberInvitation{}
 	err := s.repository.Transaction(ctx, core.TransactionOptions{ReadOnly: true}, func(tx core.Transaction) error {
-		if err := s.authorizer.AuthorizeTenant(ctx, tx, core.NewAuthorizationRequest(a, "", core.AuthorizationRead, "")); err != nil {
+		if err := s.authorizer.AuthorizeTenant(
+			ctx, tx, core.NewAuthorizationRequest(a, "", core.AuthorizationRead, ""),
+		); err != nil {
 			return err
 		}
 		invitations, err := s.records.ListTenantInvitations(ctx, tx, a.TenantID, a.UserID)
@@ -62,7 +70,9 @@ func (s *Service) ListMyProjectInvitations(ctx context.Context, a core.Actor) ([
 func (s *Service) ListOwnerTransfers(ctx context.Context, a core.Actor, pid string) ([]core.OwnerTransfer, error) {
 	var result []core.OwnerTransfer
 	err := s.repository.Transaction(ctx, core.TransactionOptions{ReadOnly: true}, func(tx core.Transaction) error {
-		p, err := s.authorizer.AuthorizeProject(ctx, tx, core.NewAuthorizationRequest(a, pid, core.AuthorizationRead, ""))
+		p, err := s.authorizer.AuthorizeProject(
+			ctx, tx, core.NewAuthorizationRequest(a, pid, core.AuthorizationRead, ""),
+		)
 		if err != nil {
 			return err
 		}
@@ -80,7 +90,12 @@ func (s *Service) ListOwnerTransfers(ctx context.Context, a core.Actor, pid stri
 //
 // The owner is not a member assignment: the owner leaves by transferring the
 // ownership, never by an assignment.
-func (s *Service) SetMemberAssignment(ctx context.Context, a core.Actor, pid, user, key string, input core.MemberAssignmentInput) (json.RawMessage, int, bool, error) {
+func (s *Service) SetMemberAssignment(
+	ctx context.Context,
+	a core.Actor,
+	pid, user, key string,
+	input core.MemberAssignmentInput,
+) (json.RawMessage, int, bool, error) {
 	if input.Assignment.UserID != user || input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, core.ErrInvalidRequest
 	}
@@ -141,7 +156,12 @@ func (s *Service) SetMemberAssignment(ctx context.Context, a core.Actor, pid, us
 //
 // The grant names a key the tenant owns and the scope it may read; the
 // workspace says whether the key may be used.
-func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a core.Actor, pid, key string, input core.ProjectAPIKeyGrant) (json.RawMessage, int, bool, error) {
+func (s *Service) SaveProjectAPIKeyGrant(
+	ctx context.Context,
+	a core.Actor,
+	pid, key string,
+	input core.ProjectAPIKeyGrant,
+) (json.RawMessage, int, bool, error) {
 	if input.KeyID == 0 || input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, core.ErrInvalidRequest
 	}
@@ -151,12 +171,12 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a core.Actor, pid,
 		}
 	}
 	return s.runner.Run(ctx, a, core.OperationSpec{
-		Name:    core.OperationApiKeyProjectGrant,
+		Name:    core.OperationAPIKeyProjectGrant,
 		Target:  pid,
 		Key:     key,
 		Body:    input,
 		Request: core.NewAuthorizationRequest(a, pid, core.AuthorizationManage, ""),
-		Output:  core.OperationOutputFor(core.OperationApiKeyProjectGrant),
+		Output:  core.OperationOutputFor(core.OperationAPIKeyProjectGrant),
 	}, func(tx core.Transaction, p core.Project) (core.OperationOutcome, error) {
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return core.OperationOutcome{}, core.ErrVersionConflict
@@ -197,7 +217,12 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a core.Actor, pid,
 // RejectOwnerTransfer refuses a pending owner transfer.
 //
 // Only the recipient, or the project's owner, may refuse it.
-func (s *Service) RejectOwnerTransfer(ctx context.Context, a core.Actor, pid, id, key string, input core.OwnerTransferDecisionInput) (json.RawMessage, int, bool, error) {
+func (s *Service) RejectOwnerTransfer(
+	ctx context.Context,
+	a core.Actor,
+	pid, id, key string,
+	input core.OwnerTransferDecisionInput,
+) (json.RawMessage, int, bool, error) {
 	if input.ExpectedProjectVersion < 1 || strings.TrimSpace(input.Reason) == "" {
 		return nil, 0, false, core.ErrInvalidRequest
 	}

@@ -33,7 +33,12 @@ type MemberRecords interface {
 	Get(ctx context.Context, tx Transaction, projectID, kind, id string, dst any) (int64, error)
 	Put(ctx context.Context, tx Transaction, projectID, kind, id string, expected int64, value any) error
 	ListRecords(ctx context.Context, tx Transaction, projectID, kind string) ([]G5Record, error)
-	ListTenantInvitations(ctx context.Context, tx Transaction, tenantID uint64, userID string) ([]MemberInvitation, error)
+	ListTenantInvitations(
+		ctx context.Context,
+		tx Transaction,
+		tenantID uint64,
+		userID string,
+	) ([]MemberInvitation, error)
 }
 
 // G5Record is one stored record: its identity, its version, and its payload.
@@ -96,7 +101,13 @@ func (s *Service) listActiveTenantMembers(tx Transaction, tenantID uint64) ([]Me
 	if err != nil {
 		return nil, err
 	}
-	err = db.Table("tenant_members AS tm").Select("tm.user_id, u.username AS name, tm.role AS tenant_role").Joins("JOIN users u ON u.id=tm.user_id AND u.deleted_at IS NULL AND u.is_active=?", true).Where("tm.tenant_id=? AND tm.status='active' AND tm.deleted_at IS NULL", tenantID).Order("u.username,tm.user_id").Limit(200).Scan(&out).Error
+	err = db.Table("tenant_members AS tm").
+		Select("tm.user_id, u.username AS name, tm.role AS tenant_role").
+		Joins("JOIN users u ON u.id=tm.user_id AND u.deleted_at IS NULL AND u.is_active=?", true).
+		Where("tm.tenant_id=? AND tm.status='active' AND tm.deleted_at IS NULL", tenantID).
+		Order("u.username,tm.user_id").
+		Limit(200).
+		Scan(&out).Error
 	return out, err
 }
 
@@ -155,7 +166,12 @@ func (s *Service) listTenantInvitations(tx Transaction, tenantID uint64, userID 
 		return result, err
 	}
 	var rows []g5RecordRow
-	if err := db.Table("lingdoc_g5_records AS g").Select("g.*").Joins("JOIN lingdoc_projects p ON p.id=g.project_id").Where("p.tenant_id=? AND g.kind='invitation'", tenantID).Order("g.id").Find(&rows).Error; err != nil {
+	if err := db.Table("lingdoc_g5_records AS g").
+		Select("g.*").
+		Joins("JOIN lingdoc_projects p ON p.id=g.project_id").
+		Where("p.tenant_id=? AND g.kind='invitation'", tenantID).
+		Order("g.id").
+		Find(&rows).Error; err != nil {
 		return result, err
 	}
 	for _, row := range rows {
@@ -173,7 +189,12 @@ func (s *Service) listTenantInvitations(tx Transaction, tenantID uint64, userID 
 // listOwnerTransfers reads the owner transfers of a project that one user may see.
 //
 // The row shape stays here: the caller receives the domain transfers.
-func (s *Service) listOwnerTransfers(tx Transaction, projectID string, p Project, userID string) ([]OwnerTransfer, error) {
+func (s *Service) listOwnerTransfers(
+	tx Transaction,
+	projectID string,
+	p Project,
+	userID string,
+) ([]OwnerTransfer, error) {
 	db, err := TransactionDatabase(tx)
 	if err != nil {
 		return nil, err
@@ -205,7 +226,9 @@ func (s *Service) cancelOwnerTransfer(tx Transaction, projectID, transferID stri
 	if err != nil {
 		return err
 	}
-	update := db.Model(&ownerTransferRow{}).Where("id=? AND project_id=? AND status='pending'", transferID, projectID).Update("status", "cancelled")
+	update := db.Model(&ownerTransferRow{}).
+		Where("id=? AND project_id=? AND status='pending'", transferID, projectID).
+		Update("status", "cancelled")
 	return affected(update)
 }
 
@@ -216,7 +239,9 @@ func (s *Service) hasTenantAPIKey(tx Transaction, tenantID uint64, keyID uint64)
 		return false, err
 	}
 	var count int64
-	if err := db.Table("tenant_api_keys").Where("id=? AND tenant_id=?", keyID, tenantID).Count(&count).Error; err != nil {
+	if err := db.Table("tenant_api_keys").
+		Where("id=? AND tenant_id=?", keyID, tenantID).
+		Count(&count).Error; err != nil {
 		return false, err
 	}
 	return count == 1, nil
@@ -257,7 +282,9 @@ func (s *Service) resourceExists(tx Transaction, projectID, kind, id string) (bo
 		if id == projectID {
 			count = 1
 		} else {
-			if err := db.Table("lingdoc_release_snapshots").Where("project_id=? AND id=?", projectID, id).Count(&count).Error; err != nil {
+			if err := db.Table("lingdoc_release_snapshots").
+				Where("project_id=? AND id=?", projectID, id).
+				Count(&count).Error; err != nil {
 				return false, err
 			}
 		}
@@ -268,7 +295,11 @@ func (s *Service) resourceExists(tx Transaction, projectID, kind, id string) (bo
 }
 
 // ListActiveTenantMembers lists the members of a tenant that a project may see.
-func (r *MemberStorage) ListActiveTenantMembers(_ context.Context, tx Transaction, tenantID uint64) ([]MemberDirectoryEntry, error) {
+func (r *MemberStorage) ListActiveTenantMembers(
+	_ context.Context,
+	tx Transaction,
+	tenantID uint64,
+) ([]MemberDirectoryEntry, error) {
 	return r.service.listActiveTenantMembers(tx, tenantID)
 }
 
@@ -278,7 +309,13 @@ func (r *MemberStorage) Get(_ context.Context, tx Transaction, projectID, kind, 
 }
 
 // Put writes one general record, refusing a stale version.
-func (r *MemberStorage) Put(_ context.Context, tx Transaction, projectID, kind, id string, expected int64, value any) error {
+func (r *MemberStorage) Put(
+	_ context.Context,
+	tx Transaction,
+	projectID, kind, id string,
+	expected int64,
+	value any,
+) error {
 	return r.service.putMemberRecord(tx, projectID, kind, id, expected, value)
 }
 
@@ -290,12 +327,23 @@ func (r *MemberStorage) ListRecords(_ context.Context, tx Transaction, projectID
 }
 
 // ListTenantInvitations reads the invitations a tenant holds for one user.
-func (r *MemberStorage) ListTenantInvitations(_ context.Context, tx Transaction, tenantID uint64, userID string) ([]MemberInvitation, error) {
+func (r *MemberStorage) ListTenantInvitations(
+	_ context.Context,
+	tx Transaction,
+	tenantID uint64,
+	userID string,
+) ([]MemberInvitation, error) {
 	return r.service.listTenantInvitations(tx, tenantID, userID)
 }
 
 // List reads the owner transfers of a project that one user may see.
-func (r *MemberStorage) List(_ context.Context, tx Transaction, projectID string, project Project, userID string) ([]OwnerTransfer, error) {
+func (r *MemberStorage) List(
+	_ context.Context,
+	tx Transaction,
+	projectID string,
+	project Project,
+	userID string,
+) ([]OwnerTransfer, error) {
 	return r.service.listOwnerTransfers(tx, projectID, project, userID)
 }
 
