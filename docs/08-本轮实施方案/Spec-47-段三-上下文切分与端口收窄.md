@@ -414,9 +414,22 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 `ValidationIssueDispositionsInTransaction`）。**该方法在 main 上不存在**，所以段三此刻
 无法把它加进窄口（加了编译不过）。
 
-⇒ **#248 合入后需要一处适配**：给 `core.GovernanceReviewApplication` 补上
-`TenantPermissionInTransaction`，并在 `seg3_context_ports_test.go` 的登记表里登记。
-这一步在 #248 的 rebase 里做即可，段三这边不需要提前改。
+⇒ **#248 合入后需要两处适配**（已在段三的实际形态下核实过，不是三四处）：
+
+| # | 站点 | 改什么 |
+| --- | --- | --- |
+| 1 | `internal/lingdoc/workspacecore/seg3_context_ports.go` | `GovernanceReviewApplication` 补 `TenantPermissionInTransaction(ctx context.Context, tx Transaction, actor Actor, required types.TenantRole) (bool, error)` |
+| 2 | `internal/lingdoc/workspacecore/seg3_context_ports_test.go` | 登记表里补 `"TenantPermissionInTransaction"` |
+
+**两处曾被推演存在、实测不成立的地方**（省下 #248 的人力）：
+
+- `nilPort` 是**函数**（`func nilPort(port any) bool`），不是实现该端口的类型，窄口加方法不会让它破编译。
+- 段三**没有引入任何窄口适配结构体**：生产装配直接把 `*core.Service` 交给窄口（Go 的接口是结构化的），所以没有「适配器要补方法」这回事。
+
+**不能简化的一点**：`TenantPermissionInTransaction` 与 `AuthorizeInTransaction` 的错误语义不同——
+前者先用 `ActiveMember` 区分「非活跃成员 → `ErrNotFound`」与「活跃但角色不足 → `(false, nil)`」，
+后者对「角色权限不足」直接 `ErrNotFound`，与「不是活跃成员」同码。
+**收窄的是消费方依赖面，不是删聚合体方法**；把前者并回后者会把那次修复退回去。
 
 已与 #248 的负责会话对齐：它确认「不为段三 rebase」，并在复审时按「行为等价 +
 证据绑定」两项核对；若它发现是语义变化而非形态变化，会第一时间反馈。
