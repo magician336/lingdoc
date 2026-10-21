@@ -78,11 +78,12 @@ func (s *Service) ProjectMemberDirectory(ctx context.Context, a Actor, pid strin
 		if _, err := s.authorizeProject(ctx, tx, authorizationRequest(a, pid, AuthorizationManage, "")); err != nil {
 			return err
 		}
-		db, err := TransactionDatabase(tx)
+		entries, err := s.memberDirectoryReader().ListActiveTenantMembers(ctx, tx, a.TenantID)
+		out = entries
 		if err != nil {
 			return err
 		}
-		return db.Table("tenant_members AS tm").Select("tm.user_id, u.username AS name, tm.role AS tenant_role").Joins("JOIN users u ON u.id=tm.user_id AND u.deleted_at IS NULL AND u.is_active=?", true).Where("tm.tenant_id=? AND tm.status='active' AND tm.deleted_at IS NULL", a.TenantID).Order("u.username,tm.user_id").Limit(200).Scan(&out).Error
+		return nil
 	})
 	return out, err
 }
@@ -241,29 +242,23 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key 
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return operationResult[ProjectAPIKeyGrant]{}, ErrVersionConflict
 		}
-		db, err := TransactionDatabase(tx)
+		keys := s.tenantAPIKeyReader()
+		has, err := keys.Has(ctx, tx, a.TenantID, input.KeyID)
 		if err != nil {
 			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
-		var count int64
-		if err := db.Table("tenant_api_keys").Where("id=? AND tenant_id=?", input.KeyID, a.TenantID).Count(&count).Error; err != nil {
-			return operationResult[ProjectAPIKeyGrant]{}, err
-		}
-		if count != 1 {
+		if !has {
 			return operationResult[ProjectAPIKeyGrant]{}, ErrNotFound
 		}
 		if input.Active {
-			if _, err := currentMachineNativeKey(tx, a.TenantID, input.KeyID); err != nil {
+			if err := keys.VerifyMachineNativeKey(ctx, tx, a.TenantID, input.KeyID); err != nil {
 				return operationResult[ProjectAPIKeyGrant]{}, err
 			}
 		}
-		store, ok := tx.(g5Transaction)
-		if !ok {
-			return operationResult[ProjectAPIKeyGrant]{}, ErrInvalidState
-		}
+		records := s.memberRecords()
 		id := hashImpactValue(input.KeyID)
 		var old ProjectAPIKeyGrant
-		version, err := store.G5Get(pid, "api_key_grant", id, &old)
+		version, err := records.Get(ctx, tx, pid, "api_key_grant", id, &old)
 		if err != nil && err != ErrNotFound {
 			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
@@ -272,7 +267,7 @@ func (s *Service) SaveProjectAPIKeyGrant(ctx context.Context, a Actor, pid, key 
 		}
 		input.CreatedBy = a.UserID
 		input.UpdatedAt = time.Now().UTC()
-		if err := store.G5Put(pid, "api_key_grant", id, version, input); err != nil {
+		if err := records.Put(ctx, tx, pid, "api_key_grant", id, version, input); err != nil {
 			return operationResult[ProjectAPIKeyGrant]{}, err
 		}
 		if err := g5Audit(tx, a, pid, "api_key.scope", id, input.Reason); err != nil {
@@ -342,22 +337,10 @@ func (s *Service) ListMyProjectInvitations(ctx context.Context, a Actor) ([]Memb
 		if err := s.authorizeTenant(ctx, tx, authorizationRequest(a, "", AuthorizationRead, "")); err != nil {
 			return err
 		}
-		db, err := TransactionDatabase(tx)
+		invitations, err := s.memberRecords().ListTenantInvitations(ctx, tx, a.TenantID, a.UserID)
+		result = invitations
 		if err != nil {
 			return err
-		}
-		var rows []g5RecordRow
-		if err := db.Table("lingdoc_g5_records AS g").Select("g.*").Joins("JOIN lingdoc_projects p ON p.id=g.project_id").Where("p.tenant_id=? AND g.kind='invitation'", a.TenantID).Order("g.id").Find(&rows).Error; err != nil {
-			return err
-		}
-		for _, row := range rows {
-			var item MemberInvitation
-			if err := json.Unmarshal([]byte(row.PayloadJSON), &item); err != nil {
-				return err
-			}
-			if item.UserID == a.UserID && item.Status == "invited" && time.Now().UTC().Before(item.ExpiresAt) {
-				result = append(result, item)
-			}
 		}
 		return nil
 	})
@@ -371,24 +354,10 @@ func (s *Service) ListOwnerTransfers(ctx context.Context, a Actor, pid string) (
 		if err != nil {
 			return err
 		}
-		db, err := TransactionDatabase(tx)
+		transfers, err := s.ownerTransferRecords().List(ctx, tx, pid, p, a.UserID)
+		result = transfers
 		if err != nil {
 			return err
-		}
-		var rows []ownerTransferRow
-		if err := db.Where("project_id=?", pid).Order("created_at DESC,id").Find(&rows).Error; err != nil {
-			return err
-		}
-		result = []OwnerTransfer{}
-		for _, row := range rows {
-			item := OwnerTransfer(row)
-			if !projectOwner(p, a.UserID) && item.FromUserID != a.UserID && item.ToUserID != a.UserID {
-				continue
-			}
-			if item.Status == "pending" && time.Since(item.CreatedAt) > 72*time.Hour {
-				item.Status = "expired"
-			}
-			result = append(result, item)
 		}
 		return nil
 	})
@@ -408,10 +377,6 @@ func (s *Service) RejectOwnerTransfer(ctx context.Context, a Actor, pid, id, key
 		if p.ProjectVersion != input.ExpectedProjectVersion {
 			return operationResult[OwnerTransfer]{}, ErrVersionConflict
 		}
-		db, err := TransactionDatabase(tx)
-		if err != nil {
-			return operationResult[OwnerTransfer]{}, err
-		}
 		store, ok := tx.(ownerTransferTransaction)
 		if !ok {
 			return operationResult[OwnerTransfer]{}, ErrInvalidState
@@ -426,8 +391,7 @@ func (s *Service) RejectOwnerTransfer(ctx context.Context, a Actor, pid, id, key
 		if time.Since(item.CreatedAt) > 72*time.Hour {
 			return operationResult[OwnerTransfer]{}, ErrInvalidState
 		}
-		update := db.Model(&ownerTransferRow{}).Where("id=? AND project_id=? AND status='pending'", id, pid).Update("status", "cancelled")
-		if err := affected(update); err != nil {
+		if err := s.ownerTransferRecords().Cancel(ctx, tx, pid, id); err != nil {
 			return operationResult[OwnerTransfer]{}, err
 		}
 		item.Status = "cancelled"
