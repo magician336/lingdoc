@@ -7,9 +7,6 @@ package candidateadoption
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -400,19 +397,6 @@ func validateSourceReferences(body string, sourceIDs []string) error {
 		}
 	}
 	return nil
-}
-
-func requestHash(in AcceptCandidateInput) string {
-	b, _ := json.Marshal(struct {
-		ProjectID                string  `json:"project_id"`
-		ChapterID                string  `json:"chapter_id"`
-		CandidateID              string  `json:"candidate_id"`
-		ExpectedChapterVersionID *string `json:"expected_chapter_version_id"`
-		ExpectedSpecRevision     int     `json:"expected_spec_revision"`
-		ReplaceExisting          bool    `json:"replace_existing"`
-	}{in.ProjectID, in.ChapterID, in.CandidateID, in.ExpectedChapterVersionID, in.ExpectedSpecRevision, in.ReplaceExisting})
-	sum := sha256.Sum256(b)
-	return hex.EncodeToString(sum[:])
 }
 
 func normalizeIDs(ids []string) []string {
