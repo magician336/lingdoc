@@ -243,5 +243,75 @@ func TestTheWorkingCopyPathsNeverBuildFormalVersions(t *testing.T) {
 	require.True(t, pathFormalVersionWhole.buildsFormalVersion())
 }
 
+// TestTheFormalVersionPathIsAlsoProtectedAgainstADirtyWorkingCopy 断言正式版本
+// 路径同样受 dirty 保护。
+//
+// 「整段替换」有两个目标：写草稿与建正式版本。两个都要挡——建正式版本那一路
+// 更狠：它盖掉的是用户已经写下的正式正文，用户编辑器里没保存的内容也跟着
+// 一起没了。
+func TestTheFormalVersionPathIsAlsoProtectedAgainstADirtyWorkingCopy(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	candidate := Candidate{
+		ID: "candidate", ProjectID: "project", ChapterID: "chapter",
+		BodyMarkdown: "new body", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
+	}
+	seedDraftWorkspace(t, store, candidate, draftWorkingCopy("old body", 4))
+
+	input := AcceptCandidateInput{
+		ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor",
+		IdempotencyKey: "adopt-formal-dirty", ExpectedSpecRevision: 2,
+		ExpectedChapterVersionID:    stringPtr("old-version"),
+		ExpectedWorkingCopyRevision: 4, ExpectedBodyHash: workingCopyBodyHash("用户在编辑器里还没保存的内容"),
+		ReplaceExisting: true,
+		Confirmation:    fixtureConfirmationFor(writingaction.TargetFormalVersionWhole, "actor"),
+	}
+	_, err := store.AcceptCandidate(context.Background(), input, candidate)
+	require.ErrorIs(t, err, ErrWorkingCopyDirty)
+
+	// 零写入：正式版本没多，章节版本指针没动，幂等行没留。
+	var versions int64
+	require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&versions).Error)
+	require.Equal(t, int64(1), versions)
+	var chapter chapterRow
+	require.NoError(t, store.DB().First(&chapter).Error)
+	require.Equal(t, "old-version", *chapter.CurrentVersionID)
+	var idem int64
+	require.NoError(t, store.DB().Model(&adoptionIdempotencyRow{}).Count(&idem).Error)
+	require.Zero(t, idem)
+	var copy adoptionWorkingCopyRow
+	require.NoError(t, store.DB().First(&copy).Error)
+	require.Equal(t, "old body", copy.BodyMarkdown)
+	require.Equal(t, int64(4), copy.WorkingCopyRevision)
+}
+
+// TestTheFormalVersionPathContinuesWithASnapshot 断言带快照的替换在正式版本
+// 路径上同样可以继续。
+func TestTheFormalVersionPathContinuesWithASnapshot(t *testing.T) {
+	store := newCandidateAdoptionStore(t)
+	candidate := Candidate{
+		ID: "candidate", ProjectID: "project", ChapterID: "chapter",
+		BodyMarkdown: "new body", WritingAction: fixtureWritingAction, Origin: fixtureOrigin,
+	}
+	seedDraftWorkspace(t, store, candidate, draftWorkingCopy("old body", 4))
+
+	input := AcceptCandidateInput{
+		ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor",
+		IdempotencyKey: "adopt-formal-snapshot", ExpectedSpecRevision: 2,
+		ExpectedChapterVersionID:    stringPtr("old-version"),
+		ExpectedWorkingCopyRevision: 4, ExpectedBodyHash: workingCopyBodyHash("用户在编辑器里还没保存的内容"),
+		ReplaceExisting: true,
+		SnapshotID:      "snapshot-formal-1",
+		Confirmation:    fixtureConfirmationFor(writingaction.TargetFormalVersionWhole, "actor"),
+	}
+	result, err := store.AcceptCandidate(context.Background(), input, candidate)
+	require.NoError(t, err)
+	require.NotNil(t, result.Chapter.CurrentVersionID)
+	require.NotEqual(t, "old-version", *result.Chapter.CurrentVersionID)
+
+	var versions int64
+	require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&versions).Error)
+	require.Equal(t, int64(2), versions)
+}
+
 // stringPtr 取一个字符串的指针（夹具用）。
 func stringPtr(value string) *string { return &value }
