@@ -49,7 +49,14 @@ func r27ReassessHTTP(t *testing.T, f deliveryGuardFixture, changeID, key, body s
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	deps := HandlerDependencies{Projects: f.projects, Members: f.projects, Chapters: f.projects, TemplateApp: f.projects, ChangeSets: f.projects, Sources: emptySourcesStub{}}
+	deps := HandlerDependencies{
+		Projects:    f.projects,
+		Members:     newMembershipService(f.projects, core.NewGORMRepository(f.db)),
+		Chapters:    f.projects,
+		TemplateApp: f.projects,
+		ChangeSets:  f.projects,
+		Sources:     emptySourcesStub{},
+	}
 	// The capabilities the project service provides are named by the caller.
 	deps.WithMachineReads(f.projects)
 	deps.WithReviewAnchors(f.projects, f.projects)

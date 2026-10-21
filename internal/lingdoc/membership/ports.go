@@ -40,7 +40,19 @@ type MemberLifecycleApplication interface {
 	SetMemberAssignment(ctx context.Context, a core.Actor, pid, user, key string, input core.MemberAssignmentInput) (json.RawMessage, int, bool, error)
 }
 
+// The ports are implemented here, not by the aggregate.
+//
+// The aggregate used to answer these operations, and the port was declared
+// next to the language it describes while the aggregate kept the
+// implementation. Now the service in this package holds it, and the
+// aggregate no longer implements either port.
+//
+// The reverse half of that promise - that the aggregate does NOT implement
+// these ports any more - cannot be a compile-time assertion, because Go has
+// no way to say "this type does not satisfy this interface". It is asserted
+// at run time in ports_test.go, where the aggregate is handed to the ports
+// as an `any` and refused.
 var (
-	_ Application                = (*core.Service)(nil)
-	_ MemberLifecycleApplication = (*core.Service)(nil)
+	_ Application                = (*Service)(nil)
+	_ MemberLifecycleApplication = (*Service)(nil)
 )

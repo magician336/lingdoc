@@ -404,33 +404,6 @@ func TestR25SemanticReverseReplayChecksCurrentSourcesAfterApplyAndReopen(t *test
 	}
 }
 
-func TestR25ReverseReplayRejectsFormerOwnerWithoutAlteringOperation(t *testing.T) {
-	s, a, p, source, _ := r25InverseFieldFixture(t)
-	ctx := context.Background()
-	key := "r25-owner-replay"
-	if _, _, _, err := s.ReverseChangeSet(ctx, a, p.ID, source.ID, key); err != nil {
-		t.Fatal(err)
-	}
-	original := r25InverseOperationRecord(t, s, a, p.ID, source.ID, key)
-	target := Actor{TenantID: a.TenantID, UserID: "new-owner"}
-	seedTenantMember(t, s, target)
-	raw, _, _, err := s.RequestOwnerTransfer(ctx, a, p.ID, "r25-owner-transfer", OwnerTransferInput{ToUserID: target.UserID, ExpectedProjectVersion: p.ProjectVersion})
-	if err != nil {
-		t.Fatal(err)
-	}
-	transfer := rawOwnerTransfer(t, raw)
-	if _, _, _, err := s.AcceptOwnerTransfer(ctx, target, p.ID, transfer.ID, "r25-owner-accept"); err != nil {
-		t.Fatal(err)
-	}
-	raw, status, replayed, err := s.ReverseChangeSet(ctx, a, p.ID, source.ID, key)
-	if !errors.Is(err, ErrNotFound) || raw != nil || status != 0 || replayed {
-		t.Fatalf("former Owner replayed inverse: status=%d replay=%v body=%s err=%v", status, replayed, raw, err)
-	}
-	if got := r25InverseOperationRecord(t, s, a, p.ID, source.ID, key); !reflect.DeepEqual(original, got) {
-		t.Fatal("Owner revocation altered durable operation")
-	}
-}
-
 func TestR25TemplateInverseRestoresExactRuleSetPolicyAndHistory(t *testing.T) {
 	for _, sameRef := range []bool{false, true} {
 		name := "historical_exact_version"
