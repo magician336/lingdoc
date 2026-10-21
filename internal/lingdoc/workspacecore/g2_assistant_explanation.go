@@ -20,6 +20,12 @@ import (
 // Every entry must be traceable: an object reference, a reason and a basis.
 // An entry that cannot cite a basis is refused, so an unsupported object never
 // enters either group and the draft write fails with zero writes.
+//
+// Issue #315: a model that proposes a change draft *without* the two groups is
+// not refused any more. The missing groups are a fact about the assistant's
+// answer ("助手未给两组说明"), not a reason to throw a reviewable draft away:
+// the draft is written and carries no affected_explanation, so every reader
+// downstream sees the gap instead of seeing nothing at all.
 
 // AssistantAffectedObject is the object one explanation entry talks about.
 // The three fields are the same versioned reference the impact graph uses, so
@@ -64,6 +70,17 @@ var AssistantAffectedBasisTypes = []string{"change_set", "dependency_edge", "rul
 // AssistantAffectedExplanationKey is the key the assistant writes the two
 // groups under, both in its structured output and on the draft it produces.
 const AssistantAffectedExplanationKey = "affected_explanation"
+
+// AssistantAffectedExplanationAbsent reports whether the raw payload states no
+// two-group explanation at all: the key is missing, or its value is JSON null.
+//
+// A payload that DOES state an explanation is never "absent": it is either
+// valid or invalid, and an invalid one (an entry that cannot cite a basis) is
+// refused. Absent is only about the assistant having said nothing.
+func AssistantAffectedExplanationAbsent(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null"))
+}
 
 // DecodeAssistantAffectedExplanation decodes and validates the assistant's
 // two-group explanation. A payload that carries an entry without a usable
@@ -149,6 +166,46 @@ func AssistantAffectedFromTurn(turn AgentTurn) (*AssistantAffectedExplanation, e
 	return &explanation, nil
 }
 
+// The assistant's answer about what a change affects has three states. They
+// are facts about the assistant's answer, not verdicts about the project.
+//
+//   - present: the assistant gave the two groups;
+//   - missing: the assistant proposed a change but gave no two groups
+//     ("助手未给两组说明");
+//   - not_applicable: the turn proposed no change at all, so no group was due.
+//
+// A missing explanation is a fact that is recorded, not a reason to throw the
+// draft away: a draft without the two groups is still reviewable by a human,
+// and the missing groups are exactly what the reader has to be told.
+const (
+	AssistantAffectedStatePresent       = "present"
+	AssistantAffectedStateMissing       = "missing"
+	AssistantAffectedStateNotApplicable = "not_applicable"
+)
+
+// AssistantAffectedStateForTurn judges, from the persisted turn alone, whether
+// the assistant gave the two explanation groups.
+func AssistantAffectedStateForTurn(turn AgentTurn) (string, error) {
+	state, _, err := assistantAffectedStateFromTurn(turn)
+	return state, err
+}
+
+// assistantAffectedStateFromTurn is the internal form: the state and the
+// decoded groups, if any.
+func assistantAffectedStateFromTurn(turn AgentTurn) (string, *AssistantAffectedExplanation, error) {
+	explanation, err := AssistantAffectedFromTurn(turn)
+	if err != nil {
+		return "", nil, err
+	}
+	if explanation != nil {
+		return AssistantAffectedStatePresent, explanation, nil
+	}
+	if assistantTurnProposedChangeDraft(turn) {
+		return AssistantAffectedStateMissing, nil, nil
+	}
+	return AssistantAffectedStateNotApplicable, nil, nil
+}
+
 // assistantAffectedContextKey carries the server-derived groups from the
 // assistant turn into the draft write. It is deliberately not part of any
 // client-supplied input: a client cannot state which objects are affected.
@@ -173,10 +230,12 @@ func assistantAffectedFromContext(ctx context.Context) *AssistantAffectedExplana
 // what the assistant stored. Here the client does not even state the groups -
 // the server reads them back from the turn it already validated.
 //
-// A turn that proposed a change draft but carries no usable two-group
-// explanation is refused: an assistant draft always states which objects it
-// believes are affected and why. A stored turn whose explanation cannot cite
-// a basis is refused too, so the draft write fails with zero writes.
+// A turn that proposed a change draft but carries no two-group explanation is
+// not refused: the draft is written and carries no explanation, so the reader
+// is told exactly that ("助手未给两组说明"). A missing annotation is a fact
+// about the assistant's answer, not a reason to throw a reviewable draft away.
+// A stored turn whose explanation cannot cite a basis is refused too, so the
+// draft write fails with zero writes.
 func (s *Service) assistantAffectedForDraft(ctx context.Context, actor Actor, projectID string, input AgentChangeDraftInput) (*AssistantAffectedExplanation, error) {
 	var derived *AssistantAffectedExplanation
 	err := s.g2Read(ctx, actor, projectID, "read", func(tx Transaction, p Project) error {
@@ -208,16 +267,23 @@ func (s *Service) assistantAffectedForDraft(ctx context.Context, actor Actor, pr
 		if turn.Context.ProjectVersion != p.ProjectVersion || turn.Context.SpecRevision != p.SpecRevision || turn.Context.ContextRevision != p.CurrentContextRevision {
 			return ErrVersionConflict
 		}
-		explanation, err := AssistantAffectedFromTurn(turn)
+		state, explanation, err := assistantAffectedStateFromTurn(turn)
 		if err != nil {
 			return err
 		}
-		if explanation == nil && assistantTurnProposedChangeDraft(turn) {
+		switch state {
+		case AssistantAffectedStatePresent:
+			// The assistant gave the two groups: they travel with the draft.
+			derived = explanation
+		case AssistantAffectedStateMissing:
 			// The assistant proposed a change but did not say which objects it
-			// affects. The draft cannot be written without that explanation.
-			return ErrInvalidRequest
+			// affects. The draft is written anyway and carries no
+			// affected_explanation, so the acceptance bench reads that back
+			// as "助手未给两组说明" instead of crashing on a missing draft.
+			derived = nil
+		default:
+			derived = nil
 		}
-		derived = explanation
 		return nil
 	})
 	if err != nil {
