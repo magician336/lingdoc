@@ -1,6 +1,6 @@
 {
   "ticket": "#282 G3 缺口收口-4-G：审计动作新旧格式并存的读侧保证",
-  "head": "11df0c69",
+  "head": "6b15f8fd",
   "base": "058637c4",
   "environment": {
     "go": "go1.27.1 windows/amd64",
@@ -70,7 +70,11 @@
     "source": "PostgreSQL 容器 WeKnora-postgres-dev 的 WeKnora 库",
     "audit_rows": 5628,
     "legacy_shape_rows": 535,
-    "legacy_shape_lengths": [56, 58, 64],
+    "legacy_shape_lengths": [
+      56,
+      58,
+      64
+    ],
     "rows_at_exactly_64": 11,
     "rows_over_64": 0,
     "note": "旧形状行真实存在；边界必须含 64（用 < 64 会拒掉这 11 行历史）。"
@@ -98,6 +102,7 @@
   ],
   "notes": [
     "本票不改生产代码：盘点表明没有任何读侧按完整动作串过滤授权族，改动只会带来放宽风险（见 read_side_inventory 最后一条）。",
-    "旧形状行在 PostgreSQL 上真实存在 535 行 —— 这条事实是本票的立论基础，也是 ADR 决策一里「按种类匹配」这条规则的理由。"
+    "旧形状行在 PostgreSQL 上真实存在 535 行 —— 这条事实是本票的立论基础，也是 ADR 决策一里「按种类匹配」这条规则的理由。",
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。"
   ]
 }

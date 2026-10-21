@@ -1,6 +1,6 @@
 {
   "ticket": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界",
-  "head": "11df0c69",
+  "head": "6b15f8fd",
   "base": "058637c4",
   "environment": {
     "go": "go1.27.1 windows/amd64",
@@ -19,9 +19,25 @@
       "max_action_length": 64,
       "rows_over_64": 0,
       "length_distribution": {
-        "13": 32, "14": 93, "15": 12, "16": 194, "17": 615, "18": 1558, "19": 894,
-        "20": 615, "21": 280, "22": 1, "23": 10, "24": 177, "25": 494, "27": 16,
-        "28": 101, "29": 1, "56": 272, "58": 252, "64": 11
+        "13": 32,
+        "14": 93,
+        "15": 12,
+        "16": 194,
+        "17": 615,
+        "18": 1558,
+        "19": 894,
+        "20": 615,
+        "21": 280,
+        "22": 1,
+        "23": 10,
+        "24": 177,
+        "25": 494,
+        "27": 16,
+        "28": 101,
+        "29": 1,
+        "56": 272,
+        "58": 252,
+        "64": 11
       },
       "longest_examples": [
         "authorization.issue-resolve:0b964d92-c857-4cee-a7d7-64500205aba0 (64)",
@@ -30,10 +46,18 @@
       "legacy_shape_rows": 535,
       "legacy_shape_note": "带 ':<资源>' 后缀的旧形状行真实存在（长度 56 / 58 / 64）",
       "action_top": [
-        "authorization.read x1370", "authorization.write x876", "authorization.manage x518",
-        "project.change_set.review x323", "workspace.saveChapter x257", "project.change_set.create x171",
-        "project_spec.save x156", "dependency.create x148", "project.activate x147",
-        "project.change_set.apply x133", "impact_task.assign x104", "change_set.assess x101"
+        "authorization.read x1370",
+        "authorization.write x876",
+        "authorization.manage x518",
+        "project.change_set.review x323",
+        "workspace.saveChapter x257",
+        "project.change_set.create x171",
+        "project_spec.save x156",
+        "dependency.create x148",
+        "project.activate x147",
+        "project.change_set.apply x133",
+        "impact_task.assign x104",
+        "change_set.assess x101"
       ]
     },
     "sqlite": {
@@ -43,13 +67,28 @@
       "max_action_length": 28,
       "rows_over_64": 0,
       "length_distribution": {
-        "13": 2, "14": 1, "16": 1, "17": 2, "18": 13, "19": 8, "20": 10, "21": 6,
-        "24": 3, "25": 6, "27": 1, "28": 1
+        "13": 2,
+        "14": 1,
+        "16": 1,
+        "17": 2,
+        "18": 13,
+        "19": 8,
+        "20": 10,
+        "21": 6,
+        "24": 3,
+        "25": 6,
+        "27": 1,
+        "28": 1
       },
       "action_top": [
-        "authorization.read x13", "authorization.manage x10", "authorization.write x8",
-        "workspace.saveChapter x3", "project.change_set.review x3", "project.change_set.create x3",
-        "authorization.confirm x3", "project.change_set.apply x2"
+        "authorization.read x13",
+        "authorization.manage x10",
+        "authorization.write x8",
+        "workspace.saveChapter x3",
+        "project.change_set.review x3",
+        "project.change_set.create x3",
+        "authorization.confirm x3",
+        "project.change_set.apply x2"
       ]
     },
     "conclusion": "两种方言的真实库里都没有超过 64 字符的行 ⇒ 不需要清理。旧形状的超长行只可能出现在 SQLite 上（PostgreSQL 的 varchar(64) 写不进去，那正是 #253 的缺陷面），迁移里的原地规范化是防御性分支。边界取 <= 64（含）由真实数据决定：PG 侧有 11 行恰好 64 字符的旧形状行，用 < 64 会拒掉它们。"
@@ -109,6 +148,7 @@
   "notes": [
     "生产数据库不可从本机访问；盘点在本机可达的两个真实库上完成（见 inventory）。生产库需按同一口径自查一次。",
     "SQLite 的表重建走仓内既有模板（migrations/sqlite/000043_lingdoc_satisfied_change_sets.up.sql），不是自研写法。",
-    "生产迁移执行器（internal/database/migration.go）用 golang-migrate v4，SQLite 驱动带事务（NoTxWrap 未开）⇒ 迁移失败时整个迁移回滚，不会留下半张表。"
+    "生产迁移执行器（internal/database/migration.go）用 golang-migrate v4，SQLite 驱动带事务（NoTxWrap 未开）⇒ 迁移失败时整个迁移回滚，不会留下半张表。",
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。"
   ]
 }

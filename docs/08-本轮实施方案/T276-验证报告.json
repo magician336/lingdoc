@@ -1,7 +1,7 @@
 {
   "mode": "real",
   "note": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界。PostgreSQL 侧的 action 列一直是 varchar(64)（写入时拒超长值，SQLSTATE 22001），SQLite 侧此前是无界 TEXT —— 同一类缺陷在开发机上完全看不见（#253 的「合法请求得到 500」只在 PG 上现形）。本轮让两种方言对同一条规则表达一致：SQLite 表重建加 CHECK (length(action) <= 64)，PostgreSQL 加同名显式约束 ck_lingdoc_project_audits_action_len。盘点结论：两种方言的真实库里都没有超 64 字符的行，因此不需要清理；迁移里对旧格式超长行的原地规范化是防御性分支。",
-  "head": "11df0c69",
+  "head": "6b15f8fd",
   "base": "058637c4",
   "passed": [
     {
@@ -72,5 +72,8 @@
       "status": "not_run",
       "reason": "本机没有生产数据库。盘点在本机可达的两个真实库上做：PostgreSQL 容器 WeKnora-postgres-dev 的 WeKnora 库（5628 行真实审计数据）与本机验收跑出来的 SQLite 库（54 行）。生产库需按本报告的盘点口径自行跑一次：统计 action 长度分布、列出超过 64 字符的行（含项目与时间）。"
     }
+  ],
+  "notes": [
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。"
   ]
 }
