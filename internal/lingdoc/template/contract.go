@@ -98,6 +98,38 @@ const (
 	RuleChapterConfirmed = "chapter-confirmed"
 	RuleReviewItems      = "review-items-decided"
 	RuleSourceAvailable  = "source-available"
+	// RuleRouteNodeRequired is the blocking presence rule bound to the route
+	// node the demo template declares as required. It is the rule that turns
+	// "the required route node is missing / not reviewed / behind" into a
+	// blocking validation issue.
+	RuleRouteNodeRequired = "route-node-required"
+)
+
+// DemoRouteTemplateVersion is the second immutable version of the demo
+// template.
+//
+// Version 1 is published: it is frozen into the T13 wire contract
+// (docs/08-本轮实施方案/contracts/frozen-input.canonical.json) and into the
+// demo delivery fixtures, so it is never edited in place. Version 2 carries
+// the one declaration AC-G3-08 needs and version 1 does not have: a required
+// RouteNode. A new version is the only honest way to add a requirement to a
+// published template.
+//
+// DemoRequiredRouteNodeID is the route node this template version declares as
+// required. The id is the rule binding target: a route node whose id is in the
+// template's required fields is required **by the template rules**, and the
+// server computes the node's `required` flag from exactly that. A client can
+// never state the flag itself.
+//
+// The identifier is lowercase because a rule binding target has to be a stable
+// id in this codebase.
+const (
+	DemoRouteTemplateVersion = "2"
+	DemoRequiredRouteNodeID  = "route-r7"
+	// DemoRouteTemplateRulesetHash is the server-computed ruleset hash of
+	// DemoRouteTemplate. Like DemoRulesetHash it is published: the rule set
+	// identity is part of the wire contract of every evaluation.
+	DemoRouteTemplateRulesetHash = "eb4106f0dfebcb5fc56a837e01e931e4d4f482dc99ffe8e4d6770272c4924139"
 )
 
 // FixedDemoReader is the immutable T02 seed catalog. G4 copies this exact
@@ -105,10 +137,17 @@ const (
 type FixedDemoReader struct{}
 
 func (FixedDemoReader) Get(id, version string) (Template, error) {
-	if id != DemoTemplateID || version != DemoTemplateVersion {
+	if id != DemoTemplateID {
 		return Template{}, fmt.Errorf("%w: %q version %q", ErrVersionNotFound, id, version)
 	}
-	return DemoTemplate(), nil
+	switch version {
+	case DemoTemplateVersion:
+		return DemoTemplate(), nil
+	case DemoRouteTemplateVersion:
+		return DemoRouteTemplate(), nil
+	default:
+		return Template{}, fmt.Errorf("%w: %q version %q", ErrVersionNotFound, id, version)
+	}
 }
 
 func DemoTemplate() Template {
@@ -132,6 +171,34 @@ func DemoTemplate() Template {
 			{ID: RuleSourceAvailable, Kind: "computed", Severity: SeverityBlocking, Evaluator: "source_available", Parameters: map[string]any{}},
 		},
 	}
+}
+
+// DemoRouteTemplate is the second immutable version of the demo template.
+//
+// It is version 1 plus exactly one declaration: the route node
+// DemoRequiredRouteNodeID is a required field, and the blocking presence rule
+// RuleRouteNodeRequired is bound to it. Everything else is identical to
+// version 1, so a project that uses this template behaves like a demo project
+// with one extra required route.
+//
+// The route node is declared the way the architecture declares it: as a
+// template field that is also a required field. The server reads the required
+// fields of the project's template copy to decide whether a route node is
+// required (see the roadmap module), so the requirement cannot be downgraded
+// by a client that proposes the node.
+func DemoRouteTemplate() Template {
+	template := DemoTemplate()
+	template.Version = DemoRouteTemplateVersion
+	template.Fields = append(template.Fields, Field{
+		ID: DemoRequiredRouteNodeID, Label: "技术路线 R7（演示必需节点）", Type: "text", Order: 3, Required: true,
+	})
+	template.RequiredFields = append(template.RequiredFields, DemoRequiredRouteNodeID)
+	template.Rules = append(template.Rules, Rule{
+		ID: RuleRouteNodeRequired, Kind: "presence", Severity: SeverityBlocking,
+		Parameters: map[string]any{"target_kind": "field", "target_id": DemoRequiredRouteNodeID},
+	})
+	template.RulesetHash = DemoRouteTemplateRulesetHash
+	return template
 }
 
 func cloneTemplate(template Template) Template {
