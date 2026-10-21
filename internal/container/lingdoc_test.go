@@ -5,6 +5,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/gin-gonic/gin"
 	"go.uber.org/dig"
 	"gorm.io/gorm"
 	"testing"
@@ -58,6 +59,46 @@ func TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed(t *testing.T)
 	}
 	if workspace.Handler == nil {
 		t.Fatal("the complete composition produced no handler")
+	}
+}
+
+// The production composition is the one that ships, so its route surface is
+// the surface that must not change.
+//
+// The base tree measured the same 48 routes for the same production
+// composition, so making the optional capabilities explicit did not add or
+// remove an endpoint. The optional routes are named here so that a future
+// change that quietly drops one of them is reported by name.
+func TestLingDocWorkspaceCompositionKeepsItsRouteSurface(t *testing.T) {
+	templates := NewLingDocTemplateCatalog()
+	composed, err := NewLingDocWorkspaceHandler(&gorm.DB{}, nil, nil, nil, nil, nil, nil, templates)
+	if err != nil {
+		t.Fatalf("the complete composition = %v, want no error", err)
+	}
+	engine := gin.New()
+	composed.Handler.Register(workspace.RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	composed.Handler.RegisterMachineReadRoutes(engine.Group("/api"))
+
+	routes := map[string]bool{}
+	for _, route := range engine.Routes() {
+		routes[route.Method+" "+route.Path] = true
+	}
+	// The optional capabilities the production composition declares by name.
+	for _, path := range []string{
+		"PUT /api/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor",
+		"GET /api/projects/:projectId/chapters/:chapterId/confirmations/current",
+		"GET /api/projects/:projectId/machine-read",
+		"GET /api/projects/:projectId/chapters/:chapterId/machine-read",
+		"GET /api/projects/:projectId/rewrite-candidates/:candidateId",
+		"POST /api/projects/:projectId/chapters/:chapterId/rewrite-candidates",
+		"POST /api/projects/:projectId/chapters/:chapterId/rewrite-candidates/:candidateId/apply",
+	} {
+		if !routes[path] {
+			t.Errorf("the production composition does not serve %s although the capability is declared", path)
+		}
+	}
+	if got := len(engine.Routes()); got != 48 {
+		t.Fatalf("the production composition registered %d routes, want 48", got)
 	}
 }
 

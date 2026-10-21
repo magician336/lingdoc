@@ -1,0 +1,134 @@
+{
+  "mode": "real",
+  "issue": "https://github.com/magician336/lingdoc/issues/265",
+  "ticket": "47.10 组合根缺能力 fail-closed",
+  "head": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "base": "28a76a5",
+  "environment": {
+    "os": "windows/amd64",
+    "go": "go1.27.1 windows/amd64",
+    "cgo_flags": "-I <worktree>/.scratch/sqlite-include（sqlite3.h 从 go-sqlite3@v1.14.24 的 sqlite3-binding.h 拷贝而来，取自 PR #226 的做法）",
+    "note": "本机协议偏好 WSL2 Ubuntu + Go 1.26，执行环境属环境偏差；sqlite3.h 由仓内 PR #226 的既定做法补齐"
+  },
+  "seams_proved": [
+    {
+      "id": "组合根装配",
+      "seam": "internal/lingdoc/workspace.NewHandler + internal/container.NewLingDocWorkspaceHandler",
+      "what": "六个必需端口缺一个 → 启动期错误并指名缺哪个；完整装配 → 成功"
+    },
+    {
+      "id": "HTTP 路由面",
+      "seam": "workspace.Handler.Register / RegisterMachineReadRoutes 经 internal/router 注册到 gin",
+      "what": "端点集合由已声明的可选能力决定；生产装配的路由面与 base 同树对照一致"
+    }
+  ],
+  "base_head_comparison": [
+    {
+      "assembly": "生产装配（NewLingDocWorkspaceHandler）",
+      "base_routes": 48,
+      "head_routes": 48,
+      "same": true,
+      "how": "base 侧在 base-28a76a5 对照工作树用同一个生产装配装配出 handler，注册 Register + RegisterMachineReadRoutes 后数 engine.Routes()"
+    },
+    {
+      "assembly": "能力齐全的路由树（registerLingDocWorkspaceRoutes + ruleset + delivery + candidateadoption + generation）",
+      "base_routes": 70,
+      "head_routes": 70,
+      "same": true,
+      "how": "base 侧用同一个能实现机器读与评审锚点的 stub 装配（Service + Sources），head 侧用显式 WithMachineReads + WithReviewAnchors 装配"
+    }
+  ],
+  "route_count_note": "路由测试里的旧基线 68 来自 HandlerDependencies{} —— 一个端口都没有的装配，因此它从来没有机器读端点。68 不是生产路由面；生产路由面是 48，路由树是 70。",
+  "assertions": [
+    {
+      "name": "TestNewHandlerRefusesToAssembleWithoutARequiredPort",
+      "file": "internal/lingdoc/workspace/composition_test.go",
+      "covers": "三个子用例：缺 sources / 缺全部应用端口 / 有 legacy 服务但缺 sources",
+      "result": "PASS"
+    },
+    {
+      "name": "TestTheRewriteEndpointsExistOnlyWhenTheCallerAsksForThem",
+      "file": "internal/lingdoc/workspace/composition_test.go",
+      "covers": "改写端口只在调用方点名时装上",
+      "result": "PASS"
+    },
+    {
+      "name": "TestTheOptionalCapabilitiesDecideWhichRoutesExist",
+      "file": "internal/lingdoc/workspace/composition_test.go",
+      "covers": "两条装配的路由集合逐条比对，差异恰为锚点写、当前确认读、机器读两条",
+      "result": "PASS"
+    },
+    {
+      "name": "TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed",
+      "file": "internal/container/lingdoc_test.go",
+      "covers": "生产装配完整时启动成功",
+      "result": "PASS"
+    },
+    {
+      "name": "TestLingDocWorkspaceCompositionKeepsItsRouteSurface",
+      "file": "internal/container/lingdoc_test.go",
+      "covers": "生产路由面 = 48，且七个可选能力路由逐条点名",
+      "result": "PASS"
+    },
+    {
+      "name": "TestAllLingDocRoutesDeclareAPIKeyPolicies",
+      "file": "internal/router/lingdoc_routes_test.go",
+      "covers": "路由树 = 70 条且每条声明 API key 策略",
+      "result": "PASS"
+    }
+  ],
+  "negative_validation": [
+    {
+      "assertion": "TestNewHandlerRefusesToAssembleWithoutARequiredPort",
+      "injected": "把 resolvePorts 的 fail-closed 检查（ports.X != nil）改成恒真",
+      "reported": "三个子用例各报一条，指名缺哪个端口",
+      "rolled_back": true
+    },
+    {
+      "assertion": "TestTheOptionalCapabilitiesDecideWhichRoutesExist",
+      "injected": "把 getCurrentConfirmation 的能力条件改成恒真（端点无条件注册）",
+      "reported": "composition_test.go:149: GET /api/projects/:projectId/chapters/:chapterId/confirmations/current exists although the capability was not asked for",
+      "rolled_back": true
+    }
+  ],
+  "commands": [
+    {
+      "command": "go test -p 1 -count=1 ./internal/lingdoc/...",
+      "result": "PASS（13 包全绿，exit 0；workspace 493.686s、workspacecore 70.130s、rulesetstore 13.154s、templategovernance 14.397s）"
+    },
+    {
+      "command": "go test -count=1 ./internal/router/",
+      "result": "PASS（exit 0）"
+    },
+    {
+      "command": "go test -count=1 ./internal/container/",
+      "result": "PASS（exit 0）"
+    },
+    {
+      "command": "go test -count=1 ./internal/lingdoc/workspace/ -run 'TestNewHandlerRefusesToAssembleWithoutARequiredPort|TestTheRewriteEndpointsExistOnlyWhenTheCallerAsksForThem|TestTheOptionalCapabilitiesDecideWhichRoutesExist|TestSplitExtensionPortsKeepAnchorWritesAndMachineReadsSeparate'",
+      "result": "PASS（exit 0）"
+    },
+    {
+      "command": "go vet ./internal/...",
+      "result": "PASS（exit 0）"
+    },
+    {
+      "command": "gofmt -l internal/",
+      "result": "PASS（无输出）"
+    }
+  ],
+  "not_run": [
+    {
+      "id": "隔离 PostgreSQL 轮",
+      "reason": "本票不触碰持久化方言；全量轮未设 LINGDOC_TEST_POSTGRES_DSN，按仓内约定 PG 用例 SKIP"
+    },
+    {
+      "id": "真实服务链路",
+      "reason": "本票不涉及外部服务；记 N/A"
+    }
+  ],
+  "environment_limits": [
+    "同机上另有两个兄弟会话在各自工作树里并行跑 Go 测试，CPU 有竞争；本票所有断言均单独复跑过，未把并发噪声当成业务失败。",
+    "GitHub CI 上 head 6876a61 的 app 工作流「Vet and test」失败，失败用例是宿主层的 TestInstallSkillRetriesAFailedSkillWithTheSameArchive（internal/application/service/tenant_skill_install_test.go）。判定为宿主层偶发：本 PR 范围（28a76a5..HEAD）未改 internal/application/，该用例在 head 与 base 工作树本地各跑 5 次全绿，main 的 app 工作流在 2026-10-21 06:43 成功。"
+  ]
+}
