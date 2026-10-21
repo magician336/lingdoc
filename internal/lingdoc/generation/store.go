@@ -350,5 +350,9 @@ func runFromRow(row generationRow) Run {
 	if row.ErrorCode != "" {
 		run.Error = &RunError{Code: row.ErrorCode, Message: row.ErrorMessage, Retryable: row.Retryable}
 	}
+	// The input summary is derived from the stored input on read: the run row
+	// keeps the whole input for a retry, and the summary is the part a caller
+	// may read back.
+	run.InputSummary = inputSummaryFromJSON(row.InputJSON)
 	return run
 }

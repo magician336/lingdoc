@@ -102,10 +102,17 @@ type Run struct {
 	Status      Status    `json:"status"`
 	CandidateID *string   `json:"candidate_id"`
 	Error       *RunError `json:"error,omitempty"`
-	CreatedAt   time.Time `json:"-"`
-	UpdatedAt   time.Time `json:"-"`
-	Replayed    bool      `json:"-"`
-	ClaimToken  string    `json:"-"`
+	// InputSummary says what this run was started from.
+	//
+	// It is a summary, not the input: a failed or cancelled run has to be
+	// readable back (what was asked, over what, at which revision) without the
+	// service handing out the raw instruction again. It is absent only when
+	// the stored input cannot be read at all.
+	InputSummary *RunInputSummary `json:"input_summary,omitempty"`
+	CreatedAt    time.Time        `json:"-"`
+	UpdatedAt    time.Time        `json:"-"`
+	Replayed     bool             `json:"-"`
+	ClaimToken   string           `json:"-"`
 }
 
 // Actor is the authenticated owner identity passed from the HTTP boundary.
