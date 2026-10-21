@@ -1,0 +1,336 @@
+{
+  "ticket": "#315（AC-G3-14 的前置）：复核 #251 收紧的模型边界并放宽到「有草稿但无说明」，并跑出一条真实模型产出的带两组说明的助手草稿",
+  "head_at_evidence": "0b6d8b4（分支 feat/issue-315-assistant-explanation-boundary，工作区未提交改动；本报告与改动同时进入主会话的统一提交）",
+  "base": "integrate/g3-gap-closure-r3 (0b6d8b4)",
+  "branch": "feat/issue-315-assistant-explanation-boundary",
+  "mode": "real",
+  "conclusion": "**模型边界复核结论：#251 收紧的『缺 affected_explanation 就整条拒』过严，本票已放宽。** 改动前，模型只给 change_draft 而没给两组说明时，`internal/lingdoc/workspace/agent_model.go` 直接返回 ErrInvalidRequest，整条回包被丢：`workspacecore/g2_service.go:1931-1935` 把这一轮置为 failed、reply 与 suggestions 全部清空，助手草稿功能整体不可用（不只是「草稿里没有两组说明」）。改动后：①模型边界接受这类回包（草稿与自然语言回复都留下）；②服务端推导也不再拒草稿写入，而是从已落库的 turn 重新判定助手是否给了两组说明，三态为 present / missing / not_applicable；③缺说明时草稿**不带** affected_explanation，验收台读回即为「助手未给两组说明」（前端 `assistantAffectedGroups.ts` / `runner/assistant.ts` 已按此容错，不崩掉）。**给了两组说明但某条依据不可追溯的既有语义未动**：该回包仍被整条拒，条目仍不得进入任一组。**真实模型那一半已跑通**：本机环境变量里有可用的 DeepSeek 凭据（凭据值不入库、不入报告），真实模型轮次产出了带两组说明的助手草稿并写进草稿读回（definite 0 条 / possible 2 条，每条带可追溯依据）。",
+  "model_boundary_review": {
+    "status": "PASS",
+    "verdict": "过严",
+    "reviewed_seams": [
+      "internal/lingdoc/workspace/agent_model.go:158-191（模型回包校验：change_draft 分支）",
+      "internal/lingdoc/workspacecore/g2_assistant_explanation.go:180-247（服务端从已落库 turn 重新推导两组说明）"
+    ],
+    "why_too_strict": [
+      "丢的是**整条回包**，不是「一个注解」。`workspacecore/g2_service.go:1931-1935` 在模型返回错误时把 turn 置为 failed、failure_code 记下、reply 与 suggestions 全部清空：用户提的研究条件修改连同助手的自然语言解释一起消失，助手草稿功能整体不可用。",
+      "**有草稿但无说明**比**没有草稿**更有用：草稿里的拟议字段值仍然可以被人工逐条确认（「人工仍可确认草稿」），而『说明缺失』是一个**可标注的事实**，不是可丢弃的产物；丢掉它等于把唯一还能人工复核的东西也丢了。",
+      "边界与模型行为不匹配：真实模型是有可能不遵守这条 system prompt 指令的（指令在 `agent_model.go:67`，按票面要求保持原样不动）。把「模型是否听话」升级成「整条回包作废」，是拿可用性换一致性。",
+      "服务端侧同一条规则被复制了一遍（`g2_assistant_explanation.go` 旧 215-219 行：turn 提了草稿但没有说明就直接 ErrInvalidRequest），两处叠加后，草稿**根本写不出来**——放宽只改模型边界不够。"
+    ],
+    "behavior_before_after": [
+      {
+        "case": "模型给 change_draft，不给 affected_explanation（键缺失）",
+        "before": "模型边界 ErrInvalidRequest → 整条回包被拒 → turn=failed、reply/suggestions 清空；即便绕过模型边界，服务端推导也会 ErrInvalidRequest → 草稿写不出来（零写入）",
+        "after": "模型边界接受回包（草稿与自然语言回复都留下）→ turn=completed → 服务端推导判定 missing → 草稿写出来且不带 affected_explanation → 验收台读回为「助手未给两组说明」"
+      },
+      {
+        "case": "模型给 change_draft，affected_explanation 为 JSON null",
+        "before": "DecodeAssistantAffectedExplanation(null) → ErrInvalidRequest → 整条回包被拒",
+        "after": "与「键缺失」同义：null 即「助手没说」，接受回包并记 missing"
+      },
+      {
+        "case": "模型给 change_draft 与两组说明，每条依据可追溯",
+        "before": "接受；两组说明随草稿存在",
+        "after": "不变（PASS）"
+      },
+      {
+        "case": "模型给了两组说明但某条依据不可追溯",
+        "before": "DecodeAssistantAffectedExplanation 整条拒绝 → 不可追溯条目不得进入任一组；已落库的 turn 若仍带这种说明，草稿写入被拒（零写入）",
+        "after": "不变（既有语义原样保留，未顺手改）"
+      },
+      {
+        "case": "模型没给 change_draft，但给了 affected_explanation",
+        "before": "仍校验两组说明的可追溯性（null 会被拒）",
+        "after": "可追溯性校验不变；null 按「没说」处理，不再整条拒"
+      }
+    ],
+    "glossary_consistency": {
+      "term": "GLOSSARY.md「助手影响说明」",
+      "reading": "该词条说说明「只是助手的解读，且始终随草稿存在，须经人工确认后才进入正式评估」。本票的放宽不破坏这三条：①说明仍然只从已落库的 turn 由服务端重新推导，绝不由客户端提供（`assistantAffectedForDraft` 不变）；②说明仍然只随草稿存在，不单独落库、不进入正式评估（求值器的 `ImpactAssessment.impacts[].certainty` 与助手侧字段名仍然互不可替）；③仍然必须人工确认才写草稿、才进入正式评估。放宽只新增一个**状态**（助手未给说明时，说明位缺席并被如实标注），没有把「缺说明」变成「空两组」——服务端从不为助手编造受影响对象。",
+      "glossary_file_modified": false,
+      "todo_for_owner": "词条原文「始终随草稿存在」是否需要补一句「助手未给出时如实记为缺说明」，由主会话/术语所有者裁决；本票未改 GLOSSARY.md。"
+    }
+  },
+  "changes": [
+    {
+      "file": "internal/lingdoc/workspace/agent_model.go",
+      "lines": "165-191",
+      "change": "change_draft 分支不再因「缺 affected_explanation」整条拒回包：键缺失或值为 null 视为「助手没说」，接受回包；给出了说明时仍按原语义校验可追溯性。system prompt（:67）与其余分支未动。"
+    },
+    {
+      "file": "internal/lingdoc/workspacecore/g2_assistant_explanation.go",
+      "lines": "11-22, 68-77, 160-207, 225-247",
+      "change": "新增 AssistantAffectedExplanationAbsent（缺失/null 判定）、三态常量与 AssistantAffectedStateForTurn（服务端推导的显式状态）；assistantAffectedForDraft 不再因「提了草稿但没说」而 ErrInvalidRequest，改为推导 missing 并写出没有 affected_explanation 的草稿。"
+    },
+    {
+      "file": "internal/lingdoc/workspacecore/g2_assistant_explanation_test.go",
+      "lines": "132-197",
+      "change": "新增三态判定与「缺失只覆盖沉默」的单测。"
+    },
+    {
+      "file": "internal/lingdoc/workspace/agent_assistant_explanation_boundary_test.go",
+      "lines": "1-215（新增文件）",
+      "change": "三条回归路径 + 一条模型边界直测，走真实应用缝（真实 host 模型解析器、真实轮次落库、真实提案确认、真实 workspace service / SQLite）。"
+    }
+  ],
+  "acceptance_matrix": [
+    {
+      "验收项": "模型边界复核（结论与依据）",
+      "用户可见入口": "助手轮次（POST /agent-sessions/{id}/turns）",
+      "领域不变量/事务边界": "说明只从已落库 turn 推导；缺说明是事实，不是丢弃草稿的理由",
+      "成功": "缺两组说明时回包被接受、轮次 completed",
+      "失败/权限/恢复": "给了说明但依据不可追溯 → 仍整条拒（既有语义）",
+      "持久化与并发": "无新增表/列/迁移；未动事务边界",
+      "测试或运行证据": "本报告 model_boundary_review + 三条回归路径的测试输出",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "回归路径 1：模型只给 change_draft、不给 affected_explanation → 不再整条被拒，产出草稿并标注「助手未给两组说明」",
+      "用户可见入口": "助手轮次 → 提案 → 人工确认 → 草稿读回",
+      "领域不变量/事务边界": "草稿仍只是草稿：无修订推进、无影响任务、无交付物",
+      "成功": "turn=completed；草稿= draft；草稿 JSON 不含 affected_explanation；服务端状态=missing",
+      "失败/权限/恢复": "人工确认仍是写草稿的前提（未确认不写）；正式状态不动",
+      "持久化与并发": "零写入校验：缺说明时草稿照写，正式状态（project/spec/context revision、影响任务、交付快照、导出物）全部未变",
+      "测试或运行证据": "TestAssistantBoundaryKeepsDraftWhenModelOmitsAffectedExplanation → PASS (5.28s)",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "回归路径 2：模型给了两组说明且每条依据可追溯 → 照旧接受，两组说明随草稿存在",
+      "用户可见入口": "同上",
+      "领域不变量/事务边界": "说明随草稿存在；不与求值器 certainty 混用",
+      "成功": "turn=completed；草稿带 definite 1 条 / possible 1 条，每条含对象引用、原因与可追溯依据；服务端状态=present",
+      "失败/权限/恢复": "不变",
+      "持久化与并发": "不变",
+      "测试或运行证据": "TestAssistantBoundaryKeepsBothGroupsWhenModelGivesTraceableExplanation → PASS (4.59s)",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "回归路径 3：模型给了两组说明但某条依据不可追溯 → 按既有语义处理（不可追溯的条目不得进入任一组）",
+      "用户可见入口": "助手轮次",
+      "领域不变量/事务边界": "不可追溯的条目不进任一组；回包被拒即轮次失败，不留结构化输出",
+      "成功": "turn=failed、failure_code 非空、suggestions 为空",
+      "失败/权限/恢复": "服务端侧：已落库 turn 若仍带不可追溯说明，草稿写入被拒、零写入（既有测试 TestAssistantAffectedGroupsRefuseEntriesWithoutBasis 仍 PASS）",
+      "持久化与并发": "既有语义未改",
+      "测试或运行证据": "TestAssistantBoundaryRefusesUntraceableExplanation → PASS (2.11s)；TestAssistantAffectedGroupsRefuseEntriesWithoutBasis → PASS（未改动）",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "真实模型轮次：跑出一条真实模型产出的带两组说明的助手草稿",
+      "用户可见入口": "真实 DeepSeek（api.deepseek.com）→ 真实 host 模型解析器 → 真实 workspace service（SQLite）→ 真实提案人工确认 → 草稿读回",
+      "领域不变量/事务边界": "真实模型的回包必须被服务端解码、推导并随草稿落库；正式状态不动",
+      "成功": "turn=completed、run_mode=real、模型自带两组说明且每条依据可追溯；草稿写成功并带两组说明（definite 0 / possible 2）",
+      "失败/权限/恢复": "凭据缺失时无凭据可用（见 environment_limits）；本机凭据来自环境变量，未写入仓库/Issue/PR/报告",
+      "持久化与并发": "单轮，无并发；草稿仍只是草稿",
+      "测试或运行证据": "见 real_model_draft 段（真实回包原文与草稿读回）",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "验收台读回：缺说明的草稿不崩掉且被标为「助手未给两组说明」",
+      "用户可见入口": "GET /change-sets/{id} → 前端 runner/assistant.ts 的 readAssistantDraft",
+      "领域不变量/事务边界": "读回的是草稿上的 affected_explanation，不是模型自由文本",
+      "成功": "草稿无 affected_explanation → readAssistantExplanation 返回 null → explanationMissing=true → verdict 写「助手未给两组说明」",
+      "失败/权限/恢复": "不适用",
+      "持久化与并发": "不适用",
+      "测试或运行证据": "前端既有实现（frontend/src/views/lingdoc/g3demo/runner/assistant.ts:170-179, 237-273）已按此口径实现，本票未改 frontend/；服务端侧「草稿不带 affected_explanation」已由回归路径 1 证明",
+      "状态": "PASS"
+    },
+    {
+      "验收项": "整包回归（internal/lingdoc/workspace 全包）",
+      "用户可见入口": "不适用",
+      "领域不变量/事务边界": "不适用",
+      "成功": "全包通过",
+      "失败/权限/恢复": "不适用",
+      "持久化与并发": "不适用",
+      "测试或运行证据": "go test ./internal/lingdoc/workspace/... -count=1 -timeout 40m → PASS：ok ... 613.230s（exit=0）；默认 10 分钟包超时在本机触发（整包需 613s > 600s 默认值），超时堆栈落在 stabilization_closure_stale_http_test.go 的 DB fixture 写入，与本票改动无关——按词表记 WARNING（宿主局部限制，等价路径已通过）",
+      "状态": "WARNING"
+    }
+  ],
+  "regression_paths": [
+    {
+      "path": "1 · 模型只给 change_draft，不给 affected_explanation",
+      "status": "PASS",
+      "test": "TestAssistantBoundaryKeepsDraftWhenModelOmitsAffectedExplanation",
+      "seam": "真实 host 模型解析器 → 真实轮次落库 → 真实 action proposal → 真实 workspace service（SQLite）→ 草稿读回",
+      "assertions": [
+        "turn.Status=completed（改动前为 failed）",
+        "turn.Reply 非空、turn.Suggestions 含 change_draft（自然语言回复不再随整条回包一起丢）",
+        "core.AssistantAffectedStateForTurn(turn)=missing（服务端如实记「助手未给两组说明」）",
+        "提案确认后 completed、draft.Status=draft（草稿写得出来）",
+        "draft.AffectedExplanation=nil，且草稿 JSON 不含 affected_explanation 键（读回即「助手未给两组说明」）",
+        "草稿 JSON 不含 certainty（不与求值器词汇混用）",
+        "project_version / spec_revision / current_context_revision / spec 全部未变；无影响任务"
+      ],
+      "red_before_change": "第一次运行（改动前）失败：expected \"completed\", actual \"failed\"，消息「a draft without the two groups must not lose the whole reply」；模型边界直测报 invalid_request。"
+    },
+    {
+      "path": "2 · 模型给了两组说明且每条依据可追溯",
+      "status": "PASS",
+      "test": "TestAssistantBoundaryKeepsBothGroupsWhenModelGivesTraceableExplanation",
+      "seam": "同上",
+      "assertions": [
+        "turn.Status=completed，服务端状态=present",
+        "草稿带 AffectedExplanation：definite 1 条 / possible 1 条",
+        "definite 条目：kind=ChapterVersion、id=章节 id、version 非空、reason 非空、basis.source_type=dependency_edge、basis.source_id 非空"
+      ]
+    },
+    {
+      "path": "3 · 模型给了两组说明但某条依据不可追溯（既有语义，不得顺手改）",
+      "status": "PASS",
+      "test": "TestAssistantBoundaryRefusesUntraceableExplanation + TestAssistantAffectedGroupsRefuseEntriesWithoutBasis（既有，未改）",
+      "seam": "同上",
+      "assertions": [
+        "turn.Status=failed、failure_code 非空、turn.Suggestions 为空（不可追溯的条目不得进入任一组）",
+        "模型边界直测：不可追溯条目仍被拒（TestAssistantBoundaryModelReplyKeepsDraftWithoutAffectedExplanation 的后半段）",
+        "服务端侧既有测试仍 PASS：被篡改的 turn 写草稿时失败、lingdoc_change_sets 零写入"
+      ]
+    }
+  ],
+  "real_model_draft": {
+    "status": "PASS",
+    "provider": "DeepSeek（https://api.deepseek.com），凭据取自本机环境变量 DEEPSEEK_API_KEY；凭据值未写入仓库、Issue、PR、报告或任何落盘文件",
+    "credential_probe": {
+      "command": "Invoke-RestMethod POST https://api.deepseek.com/chat/completions（model=deepseek-chat, max_tokens=5, content=ping）",
+      "result": "HTTP 200，response.model=deepseek-flash，content=\"Pong!\""
+    },
+    "harness": {
+      "note": "临时测试文件 internal/lingdoc/workspace/zz_tmp_realmodel_315_test.go，跑完后已删除（未留在交付里）",
+      "seam": "真实 chat.NewChat(chat.ConfigFromModel(...)) → 真实 G2HostAgentModel.Reply → 真实 workspace service（SQLite）→ 真实提案人工确认 → 真实草稿读回"
+    },
+    "run_1_model_parser_only": {
+      "status": "PASS",
+      "run_mode": "real",
+      "model_id": "model-315-deepseek",
+      "input_tokens": 560,
+      "output_tokens": 504,
+      "has_change_draft": true,
+      "has_affected_explanation": true,
+      "groups_decode": "GROUPS_DECODE_OK definite=2 possible=2（服务端解码通过，说明每条依据可追溯）",
+      "raw_structured_output": "{\"reply\":\"已按你的要求生成研究条件修改候选草稿，仅作建议，不会自动应用。当前上下文 revision=1，草稿的 expected_context_revision 与之一致。需要说明：现有上下文未提供 research_goal 的旧值，因此草稿只给出拟议新值，不编造旧值；该修改对下游对象的影响中，确定受影响与可能受影响均仅依据当前可见的上下文与规则约束，未读取其他章节或隐藏依赖。\",\"change_draft\":{\"expected_context_revision\":1,\"reason\":\"用户明确提出将研究条件 research_goal 改为「仅使用合成访谈数据比较软件流程的可追踪性」，故生成候选修改草稿供界面确认。\",\"fields\":{\"research_goal\":\"仅使用合成访谈数据比较软件流程的可追踪性\"},\"affected_chapter_ids\":[\"chapter-question\"]},\"affected_explanation\":{\"definite_affected\":[{\"object\":{\"kind\":\"chapter\",\"id\":\"chapter-question\",\"version\":\"chapter-version-question\"},\"reason\":\"该章节为当前正在研究的方案章节，研究条件 research_goal 的拟议变更直接作用于本章节的研究范围表述，需在界面确认后由用户决定是否更新。\",\"basis\":{\"source_type\":\"object_version\",\"source_id\":\"chapter-version-question\"}},{\"object\":{\"kind\":\"change_set\",\"id\":\"corr-315\",\"version\":\"1\"},\"reason\":\"本次修改候选以当前上下文 revision=1 为基准，若界面确认应用，将形成新的上下文修订，需与当前 change_set 关联核对。\",\"basis\":{\"source_type\":\"change_set\",\"source_id\":\"corr-315\"}}],\"possible_affected\":[{\"object\":{\"kind\":\"ruleset\",\"id\":\"template-315\",\"version\":\"1\"},\"reason\":\"研究条件变更后，模板对研究目标表述的约束可能影响草稿字段的合规性，需在确认前核对模板规则，当前仅提示可能影响。\",\"basis\":{\"source_type\":\"ruleset\",\"source_id\":\"template-315\"}},{\"object\":{\"kind\":\"impact_task\",\"id\":\"corr-315\",\"version\":\"1\"},\"reason\":\"研究目标范围收窄为仅使用合成访谈数据，可能触发对相关调研任务范围的重新评估，但当前上下文未给出具体任务对象，故仅列为可能影响。\",\"basis\":{\"source_type\":\"impact_task\",\"source_id\":\"corr-315\"}}]}}"
+    },
+    "run_2_end_to_end_draft": {
+      "status": "PASS",
+      "turn_status": "completed",
+      "turn_failure_code": "",
+      "run_mode": "real",
+      "model_id": "model-315-deepseek",
+      "model_prompt_tokens": 591,
+      "model_completion_tokens": 314,
+      "turn_reply": "已按你的要求生成 research_goal 的候选修改草稿，仅作建议，未写入、未确认。当前上下文没有可引用的来源、卡片或依赖边，因此无法给出任何“确定受影响”对象；只能基于本次修改本身说明可能影响，且这些影响均待确认。",
+      "model_groups": {
+        "definite_affected": [],
+        "possible_affected": [
+          {
+            "object": {"kind": "research_condition", "id": "research_goal", "version": "1"},
+            "reason": "该字段本身拟被替换，若后续确认应用，研究目标表述将随之变化；当前仅为候选，未生效。",
+            "basis": {"source_type": "change_set", "source_id": "d70823fd-82fc-4ed5-bf8c-f941b8c31caf"}
+          },
+          {
+            "object": {"kind": "task_card", "id": "template-demo", "version": "1"},
+            "reason": "任务卡模板可能引用研究目标以生成调研问题与预期产出；是否受影响需查看模板字段绑定，当前上下文未提供，故仅为可能影响。",
+            "basis": {"source_type": "object_version", "source_id": "template-demo@1"}
+          }
+        ]
+      },
+      "proposal_status": "completed",
+      "proposal_failure_code": "",
+      "draft_id": "f84a56d2-3a08-4b14-aa45-7184242f5556",
+      "draft_status": "draft",
+      "draft_groups_readback": {
+        "definite_affected": [],
+        "possible_affected_count": 2
+      },
+      "assistant_affected_state": "present",
+      "note": "真实模型这一轮给的是「确定受影响 0 条 / 可能受影响 2 条」：上下文里没有可引用的来源、卡片或依赖边，模型如实说明了这一点。空数组是模型明确给出的两组（不是缺说明），因此服务端状态是 present 而不是 missing——这正是「缺说明」与「两组为空」必须区分开的场景。"
+    },
+    "not_proven_by_real_model": "真实模型在本轮**遵守**了 system prompt 指令，两组说明都给了；因此「模型不遵守」这一分支只能由确定性回归测试覆盖（回归路径 1）。真实模型轮次证明的是：真实回包能被服务端解码、推导并随草稿落库（路径 2 的真实版）。"
+  },
+  "commands": [
+    {
+      "command": "Test-Path 'C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'",
+      "result": "PASS：True（SQLite 头文件目录存在，无需另造路径）"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/ -run 'TestAssistantBoundary' -count=1 -v",
+      "result": "PASS：4 个用例全过（5.28s / 4.59s / 2.11s / 0.00s），ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 13.377s"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/ -run 'TestAssistantAffected' -count=1 -v",
+      "result": "PASS：9 个用例全过，ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 2.197s"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/... -count=1",
+      "result": "WARNING：默认 10 分钟包超时被触发，FAIL github.com/Tencent/WeKnora/internal/lingdoc/workspace 601.065s。超时堆栈落在 stabilization_closure_stale_http_test.go:193 → newDeliveryGuardFixture → g4WriteConfirmedChapters → candidateadoption.ConfirmChapter → gorm Commit（DB fixture 写入），与本票改动的助手边界路径无关；同一份代码放宽包级超时后整包实际耗时 613.230s，刚好超过 go test 默认的 600s 包超时，故默认命令在本机必然超时。"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/... -count=1 -timeout 40m",
+      "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 613.230s（exit=0）——同一份代码，只放宽包级超时即整包通过，说明上条的 FAIL 是宿主速度（整包需 613s > 默认 600s），不是本票的回归"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/... -count=1 -timeout 40m",
+      "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 97.967s（exit=0）"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go build ./...",
+      "result": "PASS：exit=0，无输出"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/workspace/agent_model.go",
+      "result": "PASS：空输出（agent_model.go 已是 gofmt 形态）"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/workspace/agent_model.go internal/lingdoc/workspacecore/g2_assistant_explanation.go internal/lingdoc/workspace/agent_assistant_explanation_boundary_test.go internal/lingdoc/workspacecore/g2_assistant_explanation_test.go",
+      "result": "PASS：空输出（四个文件均已是 gofmt 形态）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestTmpRealModelAssistantDraft|TestTmpRealModelDraftReachesTheDraft' -count=1 -v（临时文件，跑完即删）",
+      "result": "PASS：真实 DeepSeek 轮次 2 个用例全过，详见 real_model_draft 段"
+    }
+  ],
+  "full_suite_timeout_40m": {
+    "status": "PASS",
+    "workspace": "ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 613.230s（exit=0）",
+    "workspacecore": "ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 97.967s（exit=0）",
+    "detail": "整包在放宽包级超时后重跑通过；默认 10 分钟包超时在本机触发属宿主速度限制（整包需 613.230s > 默认 600s），已如实记录，未用旧 head 的证据顶替。"
+  },
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "go": "go1.27.1 windows/amd64",
+    "sqlite": "本机 SQLite（需要 CGO_CFLAGS 指向 C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc，实测存在）",
+    "model": "DeepSeek api.deepseek.com，model=deepseek-chat（回包 model=deepseek-flash），凭据来自本机环境变量",
+    "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-315-assistant-explanation-boundary（分支 feat/issue-315-assistant-explanation-boundary，基线 0b6d8b4）"
+  },
+  "not_run": [
+    {
+      "item": "真实模型**不遵守** system prompt（缺两组说明）时的实跑",
+      "status": "NOT RUN",
+      "reason": "真实 DeepSeek 在本轮遵守了指令（两组都给了），无法在不篡改 system prompt 的前提下让它不遵守；该分支由确定性回归测试（回归路径 1）覆盖。",
+      "unblock_condition": "不需要解除条件：模型不遵守是概率事件，要复现需要多次真实调用或一个可控的假模型，二者都已被确定性测试覆盖。"
+    },
+    {
+      "item": "验收台浏览器实跑（frontend g3demo 全链）",
+      "status": "NOT RUN",
+      "reason": "本票不拥有 frontend/；台面读回所需的「缺说明不崩掉」在前端既有实现里已经具备（runner/assistant.ts 的 explanationMissing），服务端侧行为已由回归路径 1 证明。",
+      "unblock_condition": "由主会话在有凭据的机器上按 G3 验收台既有脚本实跑一次。"
+    }
+  ],
+  "environment_limits": [
+    "本机跑完 internal/lingdoc/workspace 整包超过 go test 默认 10 分钟包超时；默认命令因此报 FAIL（超时堆栈在 stabilization_closure_stale_http_test.go 的 fixture 写入，与本票改动无关）。这是宿主速度限制，不是本票的回归结论。",
+    "真实模型输出非确定：同一输入不保证同样的回包，报告里的回包原文是某一次真实调用的快照。"
+  ],
+  "uncovered_risks": [
+    "验收台前端 verdict 文案（frontend/src/views/lingdoc/g3demo/runner/assistant.ts:594-597）仍写着「模型给 change_draft 必须同时给 affected_explanation，否则整条回包被拒」，这在放宽后已不准确；文案属 frontend/ 所有者，本票未改。",
+    "「缺说明」的草稿在草稿列表/导出等其它读回位上如何呈现，本次只核对了验收台读回路径（GET /change-sets/{id}）与服务端推导；其它读回位未逐一核对。",
+    "GLOSSARY.md「助手影响说明」词条未改；「始终随草稿存在」与新增的 missing 状态的口径是否需要在术语层补一句，留给术语所有者裁决。"
+  ],
+  "follow_up": [
+    "前端所有者：刷新 AC-G3-14 verdict 文案里关于「整条回包被拒」的描述（frontend/src/views/lingdoc/g3demo/runner/assistant.ts）。",
+    "术语所有者：裁决 GLOSSARY.md「助手影响说明」是否补「助手未给出时如实记为缺说明」；本票未改 GLOSSARY.md。",
+    "主会话：把本票的两条新增服务端 API（AssistantAffectedStateForTurn / AssistantAffectedExplanationAbsent）并入 #251 的后续契约同步。"
+  ],
+  "coverage_limits": [
+    "三条回归路径的模型输出是合成夹具（走真实 host 模型解析器与真实服务），不是真实模型；真实模型只覆盖了「两组齐全且可追溯」这一条。",
+    "真实模型那轮的上下文是手工构造的 AgentContextPackage（真实轮次那一版走的是服务的 BuildAgentContext），项目/章节 id 为合成值。",
+    "「缺说明的草稿」在正式评估（AssessChangeSet）里的行为未单独验证；求值器不读 AffectedExplanation，故不影响求值结论，但本票没有为此单独出证据。"
+  ]
+}
