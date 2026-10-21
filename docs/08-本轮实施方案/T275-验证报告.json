@@ -1,0 +1,76 @@
+{
+ "mode": "real",
+ "note": "47.14 直连收口④：G2 路由 + 智能体上下文。G2 路由改由九个上下文窄口驱动（ResearchTask / ImportCandidate / EvidenceCard / ResearchClaim / SourceAnchor / AgentSession / ActionProposal / AgentContext / ChangeSetDraft）；智能体上下文的行动执行器改持 core.AgentActionApplication（七个原始操作形态）。同时删掉 G2Application——实测它是死代码：全仓只有它自己的声明与一条编译期证明提到它，G2 路由从来就没消费过这个 31 方法的口。注册期守卫逐口译回旧形态：迁移前是 service == nil 时 panic(\"lingdoc G2 routes require core service\")，现在是九门语言逐口 nilPort 检查，panic 文案逐字未动。口径变化：本票无对外变化——路由、信封、状态码、错误码、文案逐字不变，契约面 base/head 逐字段对照后 94 = 94、签名集完全相同、摘掉源文件行号后差异 0 条。",
+ "head": "pending-commit",
+ "base": "633ba34",
+ "passed": [
+  {
+   "id": "G2 路由不再持有聚合体具体类型",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/g2_full_http.go：RegisterG2FullRoutes 由 (group, service *core.Service) 改为 (group, ports G2RoutePorts)；35 处调用改走 ports.Research / Imports / EvidenceCards / Claims / Anchors / AgentSessions / Proposals / Context / ChangeSets"
+  },
+  {
+   "id": "智能体上下文不再持有聚合体具体类型",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/agent_context.go：G2ActionExecutor 的 projects *core.Service 改为 actions core.AgentActionApplication；7 处 e.projects.* 改走 e.actions.*；旧守卫译为 nilPort(e.actions)"
+  },
+  {
+   "id": "遗留宽口 G2Application 删除（死代码）",
+   "status": "passed",
+   "evidence": "删除前全仓 grep G2Application：Go 代码里只有它自己的声明（agent_context.go:14）与一条编译期证明（:152）两处，无任何消费者；删除后 Go 代码零引用"
+  },
+  {
+   "id": "注册期守卫逐口译回旧形态",
+   "status": "passed",
+   "evidence": "base 的 g2_full_http.go:83-85 是 if service == nil { panic(\"lingdoc G2 routes require core service\") }；head 改为九门语言逐口 nilPort 检查，panic 文案逐字未动"
+  },
+  {
+   "id": "结构断言：传输层无聚合体具体类型引用",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_transport_ports_test.go 的白名单删掉 #275 两行后，g2_full_http.go 与 agent_context.go 不再有任何聚合体类型引用"
+  },
+  {
+   "id": "阴性验证：注入 *core.Service 引用被抓到",
+   "status": "passed",
+   "evidence": "往 g2_full_http.go 注入 func g2NegativeProbe(service *core.Service) *core.Service 后，TestTheTransportLayerHoldsNoAggregateType 报出「g2_full_http.go:240 still names the aggregate concrete type (core.Service)」；从字节备份还原后复跑通过"
+  },
+  {
+   "id": "读方法承重路由数不变（形状校验没有无声失效）",
+   "status": "passed",
+   "evidence": "python .scratch/lingdoc-arch-20261021/seg3/check_readmethod_weight.py：改动前 14 条、改动后仍 14 条。这 14 条全部出自 g2_full_http.go，且它们的读路由返回 (any, error)，形状只能靠 read_method 推——本票正是改这个文件，所以这一条是本票最关键的门"
+  },
+  {
+   "id": "行为零变化：契约面 base/head 逐字段对照",
+   "status": "passed",
+   "evidence": "python .scratch/lingdoc-arch-20261021/seg3/compare_routes_shape.py：base 94 = head 94，独有签名无，摘掉源文件行号后路由条目差异 0 条；行号位移 51 处（反映源文件多了一行字段，不涉及对外契约）"
+  },
+  {
+   "id": "行为零变化：路由树 70 与生产装配 48 未变",
+   "status": "passed",
+   "evidence": "internal/router/lingdoc_routes_test.go 的 TestAllLingDocRoutesDeclareAPIKeyPolicies（70）与 internal/container/lingdoc_test.go 的 TestLingDocWorkspaceCompositionKeepsItsRouteSurface（48）断言期望值一字未改且通过"
+  },
+  {
+   "id": "全量定向测试通过（主会话独立复跑）",
+   "status": "passed",
+   "evidence": "go test -count=1 ./internal/lingdoc/workspace/ ./internal/router/ ./internal/container/ → 三包全绿，exit 0；gofmt -l 无输出；go build ./internal/... exit 0；python scripts/ci/check_lingdoc_routes.py → result PASS，registered_operations 94"
+  }
+ ],
+ "failed": [],
+ "not_run": [
+  {
+   "id": "go test -race",
+   "status": "not_run",
+   "reason": "本票是形态重构，没有并发语义变更；且本机另有兄弟会话在跑 Go 测试，race 全量并发跑会互相抢资源。段三整体收口前补一轮。"
+  },
+  {
+   "id": "隔离 PostgreSQL 用例",
+   "status": "not_run",
+   "reason": "本票只改传输层接缝，不改持久化路径；PG 用例需要单独一轮轻负载（隔离实例 55433）。"
+  },
+  {
+   "id": "真实服务链路（外部模型 / 真实模型调用）",
+   "status": "not_run",
+   "reason": "本票不涉及外部服务，记 N/A"
+  }
+ ]
+}
