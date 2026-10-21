@@ -52,6 +52,7 @@ class Concept:
 # dropped has to be moved here on purpose, not by accident.
 DOC_SECTIONS: tuple[tuple[str, str], ...] = (
     ("docs/agents/development-rules.md", "### 文档提交的 CI 边界"),
+    ("docs/agents/development-rules.md", "#### 门禁面边界"),
     ("docs/agents/development-rules.md", "### 纯格式提交的 CI 边界"),
     ("docs/adr/0005-ci-gate-by-diff-content.md", "### 六、接线要求"),
     ("docs/adr/0006-gate-surface-by-contribution.md", "### 一、验证单元"),
@@ -218,6 +219,23 @@ CONCEPTS: tuple[Concept, ...] = (
         term="门禁始终出现",
         doc=RULES,
         snippet="门禁 job 永远创建",
+        guard="scripts/ci/test_lingdoc_gate_workflow_triggers.py",
+    ),
+    Concept(
+        term="门禁面",
+        doc=GLOSSARY,
+        snippet="一份归属声明：哪些路径属于谁",
+        # The surface a job belongs to is carried by the job decision.  The
+        # published key ``surface`` is *not* this concept: it names the
+        # tested surface (the packages and directories this run measured),
+        # which the concept "`surface`" already owns.
+        fields=("JobDecision.surface",),
+        covers_job_keys=True,
+    ),
+    Concept(
+        term="门禁面边界",
+        doc=RULES,
+        snippet="清单里没有登记的工作流不是门禁",
         guard="scripts/ci/test_lingdoc_gate_workflow_triggers.py",
     ),
 )
