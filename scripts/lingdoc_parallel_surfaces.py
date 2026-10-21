@@ -143,16 +143,32 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/candidate_basis.go", "file"),
             ("internal/lingdoc/candidateadoption/candidate_adoption_http.go", "file"),
             ("internal/lingdoc/candidateadoption/confirmation.go", "file"),
-            ("internal/lingdoc/workspacecore/human_decision.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
+            ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
+            ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),
+            ("frontend/src/views/lingdoc/GenerationActionPanel.vue", "file"),
+            ("frontend/src/api/lingdoc/generation.ts", "file"),
+            ("frontend/src/api/lingdoc/candidateAdoption.ts", "file"),
+            ("frontend/src/api/lingdoc/workspace.ts", "file"),
+            ("frontend/src/api/lingdoc/writingAction.ts", "file"),
+            ("frontend/src/components/LingDocCandidateAdoptionDialog.vue", "file"),
         ),
         "resolves": (),
         "summary": (
             "生成服务目前只有自由文本 Instruction 加一个 rewrite 服务，"
             "outline/continue/compress/expand/translate 五个动作没有枚举与各自约束，"
-            "「人工 / AI / AI 辅助」来源标注也缺。路径集按 #326 票面实测的「新增纳入」清单登记（含 candidateadoption/*、generation/store.go、workspace/http.go、workspacecore/human_decision.go、clienterror/catalog.go、router/lingdoc_routes_test.go）。证据那半边用 #138 已落地的生成接入，"
+            "「人工 / AI / AI 辅助」来源标注也缺。路径集按 #326 票面实测的「新增纳入」清单登记："
+            "动作词汇包 internal/lingdoc/writingaction/（新建）、candidateadoption/*、"
+            "generation/store.go、workspace/http.go、clienterror/catalog.go、"
+            "router/lingdoc_routes_test.go，以及前端的 generationAttempt.ts、"
+            "candidateAdoption.ts、GenerationActionPanel.vue、api/lingdoc/{generation,candidateAdoption,workspace,writingAction}.ts "
+            "与 components/LingDocCandidateAdoptionDialog.vue。"
+            "workspacecore/human_decision.go 已移出本面：那份门禁名单只被 workspaceHumanGate() 消费，"
+            "而采纳路径不走 workspacecore operation pipeline，加项是无消费者的死条目；"
+            "改为在 AcceptCandidate 里直接调 workspacecore.RequireHumanDecision。"
+            "证据那半边用 #138 已落地的生成接入，"
             "不必等 #137 或 #133 的新行为。"
         ),
     },
