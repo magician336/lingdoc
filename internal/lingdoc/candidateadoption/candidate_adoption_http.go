@@ -99,6 +99,10 @@ type acceptCandidateRequest struct {
 	ExpectedChapterVersionID *string `json:"expected_chapter_version_id"`
 	ExpectedSpecRevision     int     `json:"expected_spec_revision"`
 	ReplaceExisting          bool    `json:"replace_existing"`
+	// Confirmation 是这次采纳的显式确认载荷。
+	//
+	// 它必填：缺了它，服务层拒。没有例外路径——重放与待决探测也不例外。
+	Confirmation *AdoptionConfirmation `json:"confirmation" binding:"required"`
 }
 
 func (h *CandidateAdoptionHandler) AcceptCandidate(c *gin.Context) {
@@ -132,6 +136,7 @@ func (h *CandidateAdoptionHandler) AcceptCandidate(c *gin.Context) {
 		ProjectID: c.Param("projectId"), ChapterID: c.Param("chapterId"), CandidateID: req.CandidateID,
 		ActorID: actor, IdempotencyKey: key, ExpectedChapterVersionID: req.ExpectedChapterVersionID,
 		ExpectedSpecRevision: req.ExpectedSpecRevision, ReplaceExisting: req.ReplaceExisting,
+		Confirmation: req.Confirmation,
 	})
 	if err != nil {
 		writeCandidateAdoptionError(c, requestID, err)

@@ -58,7 +58,7 @@ func newBoundCandidateFixture(t *testing.T, refs bool) (*SQLiteCandidateAdoption
 	t.Helper()
 	store := newCandidateAdoptionStore(t)
 	require.NoError(t, store.DB().AutoMigrate(&projectTemplateCopyRow{}))
-	c := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "正文 [[source:source]]", SourceIDs: []string{"source"}, Validity: "fresh", Basis: Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1", ContextRevision: 4, TemplateCopyID: "copy", TemplateCopyVersion: 2, TemplateCopyContentHash: "content-hash", RulesetHash: "effective-rules-hash", AssetVersions: []AssetVersion{{AssetID: "asset", AssetRevision: 1}}}}
+	c := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "正文 [[source:source]]", SourceIDs: []string{"source"}, Validity: "fresh", Basis: Basis{SpecRevision: 1, TemplateID: "template-demo", TemplateVersion: "1", ContextRevision: 4, TemplateCopyID: "copy", TemplateCopyVersion: 2, TemplateCopyContentHash: "content-hash", RulesetHash: "effective-rules-hash", AssetVersions: []AssetVersion{{AssetID: "asset", AssetRevision: 1}}}, WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 	if refs {
 		c.Basis.EvidenceCardRefs = []core.G2VersionRef{{ID: "card", Version: 3, Kind: "EvidenceCard"}}
 	}
@@ -67,7 +67,7 @@ func newBoundCandidateFixture(t *testing.T, refs bool) (*SQLiteCandidateAdoption
 	require.NoError(t, store.DB().Model(&projectRow{}).Where("id = ?", "project").Updates(map[string]any{"current_context_revision": 4, "template_copy_version": 2, "status": "active"}).Error)
 	require.NoError(t, store.DB().Create(&projectTemplateCopyRow{ID: "copy", ProjectID: "project", Version: 2, ContentHash: "content-hash", RulesetHash: "effective-rules-hash", Status: core.TemplateCopyBound, DefinitionJSON: "{}"}).Error)
 	policy := &candidateEvidenceTestPolicy{selected: core.G2EvidenceSelection{ContextRevision: 4, Cards: []core.EvidenceCard{{ID: "card", ProjectID: "project", Version: 3, Status: "CONFIRMED", SourceIDs: []string{"source"}, Confirmation: &core.EvidenceConfirmation{CardVersion: 3, ConfirmedBy: "reviewer"}}}, Sources: []core.AgentSourceRef{{SourceID: "source", AssetID: "asset", AssetRevision: 1, ModelUseAllowed: true}}}}
-	return store, c, AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", ExpectedSpecRevision: 1, IdempotencyKey: "bound-adoption-key"}, policy
+	return store, c, AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", ExpectedSpecRevision: 1, IdempotencyKey: "bound-adoption-key", Confirmation: fixtureConfirmation("actor")}, policy
 }
 
 func TestCandidateAdoptionPinsCurrentCopyContextAndEffectiveRulesInFinalWrite(t *testing.T) {

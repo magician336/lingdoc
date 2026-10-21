@@ -35,6 +35,12 @@ var (
 	ErrIdempotencyConflict   = clienterror.New(clienterror.Form{Status: 409, Code: "idempotency_conflict", Message: "同一个操作键对应不同请求。", Retryable: false}, "idempotency_conflict")
 	ErrIdempotencyKeyExpired = clienterror.New(clienterror.IdempotencyKeyExpired, "idempotency_key_expired")
 	ErrDependencyUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "dependency_unavailable", Message: "依赖的服务此刻不可用，请稍后重试。", Retryable: true}, "dependency_unavailable")
+	// ErrCandidateActionUnknown 说清「这个候选没有记录自己是怎么来的」。
+	//
+	// 采纳是一次显式确认：确认载荷要说清采纳的是哪个动作的结果。候选自己
+	// 没记动作，就没法被确认——它必须重新跑一次动作化路径，而不是被猜一个
+	// 动作放行。这个形态单独存在，免得它落进泛泛的 400 里让人猜。
+	ErrCandidateActionUnknown = clienterror.New(clienterror.CandidateActionUnknown, "candidate_action_unknown")
 )
 
 // ReviewItem is copied from the candidate into every adopted version. It is
@@ -136,6 +142,11 @@ type AcceptCandidateInput struct {
 	ExpectedChapterVersionID *string `json:"expected_chapter_version_id"`
 	ExpectedSpecRevision     int     `json:"expected_spec_revision"`
 	ReplaceExisting          bool    `json:"replace_existing"`
+	// Confirmation 是这次采纳的显式确认载荷。
+	//
+	// 它是**指针**：缺省即「没确认」，与「确认了但字段为空」要能分开。它必填，
+	// 没有例外路径——重放与待决探测也不例外。
+	Confirmation *AdoptionConfirmation `json:"confirmation,omitempty"`
 }
 
 type AcceptResult struct {
@@ -260,6 +271,13 @@ func NewCandidateAdoptionService(store *SQLiteCandidateAdoptionStore, sources So
 }
 
 func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in AcceptCandidateInput) (AcceptResult, error) {
+	// 人工门禁先于一切：机器身份与代他人操作不得发起采纳。
+	//
+	// 它是一次身份检查，不是客户端的「已确认」标志——所以它放在请求内容
+	// 的校验之前：连一次格式不对的机器请求也不该走到写路径。
+	if err := core.RequireHumanDecision(ctx); err != nil {
+		return AcceptResult{}, err
+	}
 	if err := validateInput(in); err != nil {
 		return AcceptResult{}, err
 	}
@@ -283,6 +301,10 @@ func (s *CandidateAdoptionService) AcceptCandidate(ctx context.Context, in Accep
 	}
 	if candidate.ProjectID != in.ProjectID || candidate.ChapterID != in.ChapterID {
 		return AcceptResult{}, ErrNotFound
+	}
+	// 确认载荷必须与候选对得上：确认的动作与来源要和候选实际记录的一致。
+	if err := validateConfirmationAgainstCandidate(in, candidate); err != nil {
+		return AcceptResult{}, err
 	}
 	if !pending {
 		workspace, e := s.Workspace.GenerationContext(ctx, in.ProjectID, in.ChapterID)
@@ -334,7 +356,8 @@ func validateInput(in AcceptCandidateInput) error {
 		in.ExpectedSpecRevision < 0 {
 		return ErrInvalidRequest
 	}
-	return nil
+	// 确认载荷必填：没有它就没有「这次采纳确认了什么」。
+	return validateAdoptionConfirmation(in)
 }
 
 func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, candidate Candidate) error {

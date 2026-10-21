@@ -13,8 +13,11 @@ import (
 //
 // Version 1 is the rule that had no version prefix at all: the six request
 // fields, hashed by hand. Version 2 is the same six fields with the version
-// prefix in front.
-const adoptionDigestVersion = 2
+// prefix in front. Version 3 adds the adoption confirmation to the payload:
+// what was confirmed (action, target, scope, confirmer, origin) is part of
+// what the request does, so a key that carries a different confirmation is a
+// different request.
+const adoptionDigestVersion = 3
 
 // adoptionRequestDigest is the payload the candidate adoption request digest
 // is computed over.
@@ -28,13 +31,31 @@ type adoptionRequestDigest struct {
 	// struct fields in declaration order, so the version prefix always sits
 	// in the same place and a digest says which rule produced it without a
 	// side table.
-	DigestVersion            int     `json:"digest_version"`
-	ProjectID                string  `json:"project_id"`
-	ChapterID                string  `json:"chapter_id"`
-	CandidateID              string  `json:"candidate_id"`
-	ExpectedChapterVersionID *string `json:"expected_chapter_version_id"`
-	ExpectedSpecRevision     int     `json:"expected_spec_revision"`
-	ReplaceExisting          bool    `json:"replace_existing"`
+	DigestVersion            int                         `json:"digest_version"`
+	ProjectID                string                      `json:"project_id"`
+	ChapterID                string                      `json:"chapter_id"`
+	CandidateID              string                      `json:"candidate_id"`
+	ExpectedChapterVersionID *string                     `json:"expected_chapter_version_id"`
+	ExpectedSpecRevision     int                         `json:"expected_spec_revision"`
+	ReplaceExisting          bool                        `json:"replace_existing"`
+	Confirmation             *adoptionConfirmationDigest `json:"confirmation,omitempty"`
+}
+
+// adoptionConfirmationDigest is the projection of the adoption confirmation
+// that enters the request digest.
+//
+// It carries only what changes the result of the adoption: the action, the
+// adoption target, the scope, the confirmer and the origin. The confirmation
+// moment is deliberately absent -- it differs on every attempt, so hashing it
+// would make a retry of the very same adoption look like a different request
+// and the idempotency key would never replay.
+type adoptionConfirmationDigest struct {
+	WritingAction string `json:"writing_action"`
+	Target        string `json:"adoption_target"`
+	StartUTF16    *int   `json:"start_utf16,omitempty"`
+	EndUTF16      *int   `json:"end_utf16,omitempty"`
+	ConfirmedBy   string `json:"confirmed_by"`
+	Origin        string `json:"origin"`
 }
 
 // requestHash computes the digest of one candidate adoption request.
@@ -54,6 +75,7 @@ func requestHash(in AcceptCandidateInput) string {
 		ExpectedChapterVersionID: in.ExpectedChapterVersionID,
 		ExpectedSpecRevision:     in.ExpectedSpecRevision,
 		ReplaceExisting:          in.ReplaceExisting,
+		Confirmation:             confirmationDigestOf(in.Confirmation),
 	})
 	return digest
 }

@@ -9,6 +9,7 @@ import (
 
 	lingdocaccess "github.com/Tencent/WeKnora/internal/lingdoc/access"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/hibiken/asynq"
 )
@@ -246,6 +247,14 @@ func TestExecuteCreatesCandidateOnlyForVerifiedSources(t *testing.T) {
 	}
 	if repo.candidate.ID != "candidate-1" || len(repo.candidate.SourceIDs) != 1 || repo.candidate.SourceIDs[0] != "source-1" {
 		t.Fatalf("candidate source result = %+v", repo.candidate)
+	}
+	// 候选必须记下自己是怎么来的：采纳是一次显式确认，确认载荷要拿它和候选
+	// 对上。这个生成端点产出的就是「生成」这个动作的结果，正文全部来自模型。
+	if repo.candidate.WritingAction != writingaction.ActionGenerate {
+		t.Fatalf("candidate writing action = %q, want %q", repo.candidate.WritingAction, writingaction.ActionGenerate)
+	}
+	if repo.candidate.Origin != writingaction.OriginGenerated {
+		t.Fatalf("candidate origin = %q, want %q", repo.candidate.Origin, writingaction.OriginGenerated)
 	}
 	candidate, err := svc.GetCandidate(context.Background(), Actor{TenantID: 1, UserID: "user-1"}, "project-1", "run-1")
 	if err != nil || candidate.Validity != "fresh" {

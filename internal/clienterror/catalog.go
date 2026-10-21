@@ -76,6 +76,16 @@ var (
 	// built on an input that has changed since.
 	CandidateStaleInput = Form{Status: 409, Code: "stale_input", Message: "候选稿或快照基于旧输入。", Retryable: false}
 
+	// CandidateActionUnknown is the answer for a candidate that does not record
+	// the writing action (or the origin) that produced it.
+	//
+	// Adoption is an explicit confirmation: the confirmation has to name the
+	// action it confirms. A candidate that does not say what produced it cannot
+	// be confirmed against, so it is refused loudly instead of being adopted
+	// under a guessed action. The wording carries the next step: run the
+	// action path again, then adopt.
+	CandidateActionUnknown = Form{Status: 409, Code: "candidate_action_unknown", Message: "该候选没有记录产生它的动作与来源，请用动作化路径重新运行后再采纳。", Retryable: false}
+
 	// PreflightBlocked is the answer for a request that has to clear the
 	// delivery blockers first.
 	PreflightBlocked = Form{Status: 422, Code: "preflight_blocked", Message: "请先处理交付阻断项。", Retryable: false}

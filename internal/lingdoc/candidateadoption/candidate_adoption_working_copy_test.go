@@ -10,10 +10,10 @@ import (
 func TestAdoptionAdvancesCleanWorkingCopyAndReplaysWithoutRevisionBump(t *testing.T) {
 	store := newCandidateAdoptionStore(t)
 	require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
-	candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new [[source:source]]", SourceIDs: []string{"source"}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check"}}}
+	candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new [[source:source]]", SourceIDs: []string{"source"}, ReviewItems: []ReviewItem{{ID: "review", Statement: "check"}}, WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 	seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, candidate, 2)
 	require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", SpecRevision: 2, WorkingCopyRevision: 4, SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]"}).Error)
-	input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "adoption-working-copy", ExpectedSpecRevision: 2}
+	input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "adoption-working-copy", ExpectedSpecRevision: 2, Confirmation: fixtureConfirmation("actor")}
 	result, err := store.AcceptCandidate(context.Background(), input, candidate)
 	require.NoError(t, err)
 	var copy adoptionWorkingCopyRow
@@ -38,7 +38,7 @@ func TestAdoptionRejectsDirtyOrStaleWorkingCopyAtomically(t *testing.T) {
 			store := newCandidateAdoptionStore(t)
 			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
 			old := "old"
-			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new"}
+			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project", CurrentVersionID: &old}, candidate, 2)
 			require.NoError(t, store.DB().Create(&chapterVersionRow{ID: old, ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "old body", SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]"}).Error)
 			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", BaseChapterVersionID: &old, SpecRevision: 2, WorkingCopyRevision: 4, BodyMarkdown: "old body", SourceIDsJSON: "[]", CitationUsagesJSON: "[]", ReviewItemsJSON: "[]"}).Error)
@@ -47,7 +47,7 @@ func TestAdoptionRejectsDirtyOrStaleWorkingCopyAtomically(t *testing.T) {
 				value = "unsaved"
 			}
 			require.NoError(t, store.DB().Model(&adoptionWorkingCopyRow{}).Where("chapter_id = ?", "chapter").Update(field, value).Error)
-			_, err := store.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "dirty", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &old, ReplaceExisting: true}, candidate)
+			_, err := store.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "dirty", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &old, ReplaceExisting: true, Confirmation: fixtureConfirmation("actor")}, candidate)
 			require.ErrorIs(t, err, ErrVersionConflict)
 			var count int64
 			require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&count).Error)
@@ -70,10 +70,10 @@ func TestProductionAdoptionFailsWhenWorkingCopySchemaOrRowMissing(t *testing.T) 
 		if tableExists {
 			require.NoError(t, store.DB().AutoMigrate(&adoptionWorkingCopyRow{}))
 		}
-		candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new"}
+		candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 		seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project"}, candidate, 1)
 		productionStore := NewSQLiteCandidateAdoptionStore(store.DB())
-		_, err := productionStore.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", ExpectedSpecRevision: 1}, candidate)
+		_, err := productionStore.AcceptCandidate(context.Background(), AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", ExpectedSpecRevision: 1, Confirmation: fixtureConfirmation("actor")}, candidate)
 		require.Error(t, err)
 		var count int64
 		require.NoError(t, store.DB().Model(&chapterVersionRow{}).Count(&count).Error)
@@ -90,7 +90,7 @@ func TestAdoptionInitializesUnknownUsagesAndPreservesPriorVersion(t *testing.T) 
 			oldBody := "old [[source:retained]] [[source:removed]]"
 			oldSources := `["removed","retained"]`
 			oldUsages := `[{"source_id":"removed","purpose":"old purpose"},{"source_id":"retained","purpose":"old interpretation","limitation":"old limitation"}]`
-			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", SourceIDs: []string{}, ReviewItems: []ReviewItem{}}
+			candidate := Candidate{ID: "candidate", ProjectID: "project", ChapterID: "chapter", BodyMarkdown: "new", SourceIDs: []string{}, ReviewItems: []ReviewItem{}, WritingAction: fixtureWritingAction, Origin: fixtureOrigin}
 			expected := []CitationUsage{}
 			if withSources {
 				candidate.BodyMarkdown = "new [[source:retained]] [[source:new]] [[source:retained]]"
@@ -100,7 +100,7 @@ func TestAdoptionInitializesUnknownUsagesAndPreservesPriorVersion(t *testing.T) 
 			seedCandidateAdoptionWorkspace(t, store, Chapter{ID: "chapter", ProjectID: "project", CurrentVersionID: &oldID}, candidate, 2)
 			require.NoError(t, store.DB().Create(&chapterVersionRow{ID: oldID, ProjectID: "project", ChapterID: "chapter", BodyMarkdown: oldBody, SourceIDsJSON: oldSources, CitationUsagesJSON: oldUsages, ReviewItemsJSON: "[]"}).Error)
 			require.NoError(t, store.DB().Create(&adoptionWorkingCopyRow{ProjectID: "project", ChapterID: "chapter", BaseChapterVersionID: &oldID, SpecRevision: 2, WorkingCopyRevision: 4, BodyMarkdown: oldBody, SourceIDsJSON: oldSources, CitationUsagesJSON: oldUsages, ReviewItemsJSON: "[]"}).Error)
-			input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "citation-usages", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &oldID, ReplaceExisting: true}
+			input := AcceptCandidateInput{ProjectID: "project", ChapterID: "chapter", CandidateID: "candidate", ActorID: "actor", IdempotencyKey: "citation-usages", ExpectedSpecRevision: 2, ExpectedChapterVersionID: &oldID, ReplaceExisting: true, Confirmation: fixtureConfirmation("actor")}
 			result, err := store.AcceptCandidate(context.Background(), input, candidate)
 			require.NoError(t, err)
 			require.Equal(t, expected, result.Chapter.CitationUsages)
