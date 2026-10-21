@@ -63,6 +63,8 @@ func clientFormContract() []struct {
 		{ErrRewriteConflict, 409, "stale_input", "选区或工作副本已变化，请重新读取后再试。", false},
 		{ErrRewriteKeyConflict, 409, "idempotency_conflict", "同一个操作键对应不同请求。", false},
 		{ErrRewriteSourceDenied, 403, "source_access_denied", "改写候选所依据的授权已失效，请恢复授权后重新运行该改写动作。", false},
+		{ErrRewriteContextNotAllowed, 400, "invalid_request", "这个动作不读所选的那一类上下文，请调整上下文选择后再试。", false},
+		{ErrRewriteContextRequired, 400, "invalid_request", "这一类上下文是本次动作必须使用的，不能剔除。", false},
 		{ErrRewriteUnavailable, 503, "dependency_unavailable", "改写模型暂不可用，请稍后重试。", true},
 		{ErrResearchProviderInvalid, 400, "invalid_provider", "provider_id 无效：当前租户没有可用的检索来源，请核对 provider_id 是否正确且属于本租户。", false},
 		{evidence.ErrInvalidBinding, 400, "invalid_request", "请求字段不符合约定。", false},

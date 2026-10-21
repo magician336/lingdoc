@@ -58,9 +58,14 @@ type actionSpec struct {
 	scopes       []Scope
 	params       []paramKind
 	alsoRequired []ContextItem
-	produce      Produce
-	targets      []AdoptionTarget
-	instruction  InstructionTemplate
+	// optional 是这个动作允许用户在授权范围内增删的上下文类别。
+	//
+	// 它是「用户能选什么」，不是「这次执行必须有什么」——后者在
+	// alsoRequired 与目标范围里。
+	optional    []ContextItem
+	produce     Produce
+	targets     []AdoptionTarget
+	instruction InstructionTemplate
 }
 
 // paramKind 是一个产出参数维度。
@@ -85,6 +90,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceOutline,
 		targets:      []AdoptionTarget{TargetWorkingCopyWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "先给出本章的章节骨架：每节的小标题与要点，不展开成完整正文。",
 	},
 	{
@@ -95,6 +101,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextAssets, ContextCards},
 		produce:      ProduceProse,
 		targets:      []AdoptionTarget{TargetWorkingCopyPartial, TargetWorkingCopyWhole, TargetFormalVersionWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "按给定的长度与语气写出正文，只依据已授权的章节上下文、资料与证据卡。",
 	},
 	{
@@ -105,6 +112,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceProse,
 		targets:      []AdoptionTarget{TargetWorkingCopyPartial, TargetWorkingCopyWhole, TargetFormalVersionWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "接着选区及其前文继续写，保持与前文一致的语气与衔接，不重复已有内容。",
 	},
 	{
@@ -115,6 +123,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceProse,
 		targets:      []AdoptionTarget{TargetWorkingCopyPartial, TargetWorkingCopyWhole, TargetFormalVersionWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "只改写选中的片段，保留原有信息与含义，不改动选区之外的文字。",
 	},
 	{
@@ -125,6 +134,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceProse,
 		targets:      []AdoptionTarget{TargetWorkingCopyPartial, TargetWorkingCopyWhole, TargetFormalVersionWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "把选中的片段压缩到指定比例，保留关键信息与论证链条，不新增未经支持的内容。",
 	},
 	{
@@ -135,6 +145,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceProse,
 		targets:      []AdoptionTarget{TargetWorkingCopyPartial, TargetWorkingCopyWhole, TargetFormalVersionWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "把选中的片段扩展到指定比例，展开论证与例证，不新增未经支持的内容。",
 	},
 	{
@@ -145,6 +156,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceProse,
 		targets:      []AdoptionTarget{TargetWorkingCopyPartial, TargetWorkingCopyWhole, TargetFormalVersionWhole},
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "按指定的转写模式改写目标内容：translate 译成目标语言，explain 面向指定读者层次解释。",
 	},
 	{
@@ -154,6 +166,7 @@ var actionSpecs = []actionSpec{
 		alsoRequired: []ContextItem{ContextTemplate},
 		produce:      ProduceFindings,
 		targets:      nil,
+		optional:     []ContextItem{ContextAssets, ContextCards},
 		instruction:  "对目标内容做语言评审，产出可逐条处置的评审意见；只评审表达，不改动事实与数据。",
 	},
 }
@@ -179,16 +192,26 @@ func PlanFor(a Action, scope Scope, p OutputParams) (Plan, error) {
 	if err := spec.validateParams(p); err != nil {
 		return Plan{}, err
 	}
-	required, forbidden := spec.contextFor(scope)
+	required, optional, forbidden := spec.contextFor(scope)
 	return Plan{
 		Action:       spec.action,
 		Scope:        scope,
 		Produce:      spec.produce,
-		Context:      ContextPolicy{Required: required, Forbidden: forbidden},
+		Context:      ContextPolicy{Required: required, Optional: optional, Forbidden: forbidden},
 		Targets:      spec.targets,
 		Instruction:  spec.instruction,
 		OutputParams: p,
 	}, nil
+}
+
+// AllowsContext reports whether this action reads the given context category.
+//
+// 消费方用它判断「客户端要求纳入的东西，这个动作到底读不读」：读的就是
+// 可能的增删对象，不读的就是越过策略，越过策略的请求要被拒。
+//
+// 它查的是计划，不是动作名：消费方不按动作分支。
+func (p Plan) AllowsContext(item ContextItem) bool {
+	return slices.Contains(p.Context.Required, item) || slices.Contains(p.Context.Optional, item)
 }
 
 // specFor 是动作到规格的唯一查找入口。
@@ -210,15 +233,20 @@ func (s actionSpec) uses(kind paramKind) bool {
 //
 // 目标范围本身（整章或选段）总是必需的；与范围不符的那一类上下文被禁止：
 // 整章执行不读选段，选段执行不读整章。
-func (s actionSpec) contextFor(scope Scope) (required []ContextItem, forbidden []ContextItem) {
+//
+// optional 是用户可以在授权范围内增删的类别。已经在 required 里的类别同样
+// 列在 optional 里：用户能选它、能点名它，只是不能把它拿掉——「这一类
+// 上下文这个动作必须用」是执行方的事实，不该靠「用户没提」来表达。
+func (s actionSpec) contextFor(scope Scope) (required, optional, forbidden []ContextItem) {
 	target, other := ContextSection, ContextChapter
 	if scope == ScopeChapter {
 		target, other = ContextChapter, ContextSection
 	}
 	required = append(required, target)
 	required = append(required, s.alsoRequired...)
+	optional = append(optional, s.optional...)
 	forbidden = append(forbidden, other)
-	return required, forbidden
+	return required, optional, forbidden
 }
 
 // validateParams 校验产出参数是否落在该动作的闭合取值集内。
