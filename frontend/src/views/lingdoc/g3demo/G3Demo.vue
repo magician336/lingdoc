@@ -1266,6 +1266,209 @@
       </template>
     </section>
 
+    <section class="lifecycle-card" aria-labelledby="gapclosure-title">
+      <div class="section-heading">
+        <div>
+          <p class="section-kicker">缺口收口 · 三条新链路</p>
+          <h2 id="gapclosure-title">路线图编辑会话 · 受控故障注入口径 · 助手两组说明与候选批次</h2>
+        </div>
+        <span class="section-note">页面与 node 脚本跑同一份执行器</span>
+      </div>
+
+      <p class="live-lede">
+        这三段补的是此前「台面缺链路」的三行验收：<strong>AC-G3-03</strong>（应用原子性）、
+        <strong>AC-G3-08 / AC-G3-16</strong>（路线图必需项与版本恢复）、
+        <strong>AC-G3-14 / AC-G3-15</strong>（助手两组说明与依赖候选批次）。
+        每一段各跑在自己的隔离项目上，结论**逐段**判，不跨项目串味。
+      </p>
+
+      <div class="live-actions">
+        <button
+          class="live-button live-button--primary"
+          :disabled="roadmapRunning || running"
+          @click="startRoadmap"
+        >
+          {{ roadmapRunning ? '运行中…' : '跑通路线图编辑会话' }}
+        </button>
+        <button
+          class="live-button"
+          :disabled="faultInjectionRunning || running"
+          @click="startFaultInjection"
+        >
+          {{ faultInjectionRunning ? '运行中…' : '观测受控故障注入' }}
+        </button>
+        <button
+          class="live-button"
+          :disabled="assistantRunning || running"
+          @click="startAssistant"
+        >
+          {{ assistantRunning ? '运行中…' : '读回助手两组说明与候选批次' }}
+        </button>
+      </div>
+
+      <p v-if="roadmapError" class="live-error" role="alert">
+        <strong>路线图链运行失败：</strong>{{ roadmapError }}
+      </p>
+      <p v-if="faultInjectionError" class="live-error" role="alert">
+        <strong>故障注入观测运行失败：</strong>{{ faultInjectionError }}
+      </p>
+      <p v-if="assistantError" class="live-error" role="alert">
+        <strong>助手读回链运行失败：</strong>{{ assistantError }}
+      </p>
+
+      <template v-if="roadmap">
+        <h3 class="matrix-group-title">路线图编辑会话（AC-G3-08 / AC-G3-16）</h3>
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in roadmap.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdictCardClass(verdict)"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
+              >
+                {{ verdictStatus(verdict) }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="matrix-scroll">
+          <table class="g3-table g3-table--compact">
+            <thead>
+              <tr><th>阶段</th><th>基线版本</th><th>节点</th><th>必需</th><th>状态（服务端判定）</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th scope="row">提交前</th>
+                <td>{{ roadmap.baselineBefore.version }}</td>
+                <td>{{ roadmap.baselineBefore.nodes.length }}</td>
+                <td>{{ roadmap.baselineBefore.nodes.filter((n) => n.required).length }}</td>
+                <td>
+                  <span v-for="node in roadmap.baselineBefore.nodes" :key="`before-${node.id}`" class="fact-line">
+                    <code>{{ node.id }}</code> · {{ node.state }}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">提交后</th>
+                <td>{{ roadmap.baselineAfterCommit.version }}</td>
+                <td>{{ roadmap.baselineAfterCommit.nodes.length }}</td>
+                <td>{{ roadmap.baselineAfterCommit.nodes.filter((n) => n.required).length }}</td>
+                <td>
+                  <span v-for="node in roadmap.baselineAfterCommit.nodes" :key="`after-${node.id}`" class="fact-line">
+                    <code>{{ node.id }}</code> · {{ node.state }}
+                  </span>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">取消后</th>
+                <td>{{ roadmap.baselineAfterCancel.version }}</td>
+                <td>{{ roadmap.baselineAfterCancel.nodes.length }}</td>
+                <td>{{ roadmap.baselineAfterCancel.nodes.filter((n) => n.required).length }}</td>
+                <td>
+                  <span v-for="node in roadmap.baselineAfterCancel.nodes" :key="`cancel-${node.id}`" class="fact-line">
+                    <code>{{ node.id }}</code> · {{ node.state }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="card-footnote">
+          冻结版本序列：<code v-for="entry in roadmap.versions" :key="`v-${entry.version}`">
+            v{{ entry.version }}:{{ entry.state }}
+          </code><span v-if="!roadmap.versions.length">—</span>。
+          被取消会话占用的临时版本：
+          <code v-for="ref in roadmap.temporaryRefs" :key="`${ref.kind}-${ref.id}-${ref.version}`">
+            {{ ref.kind }}/{{ ref.id }}@v{{ ref.version }}
+          </code><span v-if="!roadmap.temporaryRefs.length">—</span>
+          ——它们**从来没有被冻结**。
+        </p>
+      </template>
+
+      <template v-if="faultInjection">
+        <h3 class="matrix-group-title">受控故障注入的可观测口径（AC-G3-03）</h3>
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in faultInjection.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdictCardClass(verdict)"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
+              >
+                {{ verdictStatus(verdict) }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+        <p class="card-footnote">
+          本轮后端是否装配了受控故障注入：
+          <span
+            class="status-badge"
+            :class="faultInjection.observation.faultInjectionAssembled ? 'status-badge--pass' : 'status-badge--not-run'"
+          >
+            {{ faultInjection.observation.faultInjectionAssembled ? '已装配' : '未装配' }}
+          </span>
+          ——注入是**组合根按环境变量装配的夹具**，不是产品端点：页面无法触发，只能观测。
+          apply 返回 HTTP {{ faultInjection.observation.status }}（错误码
+          <code>{{ faultInjection.observation.code || '（无）' }}</code>）。
+        </p>
+      </template>
+
+      <template v-if="assistant">
+        <h3 class="matrix-group-title">助手两组说明与依赖候选批次（AC-G3-14 / AC-G3-15）</h3>
+        <div class="verdict-grid">
+          <article
+            v-for="verdict in assistant.verdicts"
+            :key="verdict.id"
+            class="verdict-card"
+            :class="verdictCardClass(verdict)"
+          >
+            <header>
+              <strong>{{ verdict.id }} · {{ verdict.title }}</strong>
+              <span
+                class="status-badge"
+                :class="`status-badge--${statusTone(verdictStatus(verdict))}`"
+              >
+                {{ verdictStatus(verdict) }}
+              </span>
+            </header>
+            <p class="verdict-detail">{{ verdict.detail }}</p>
+            <ul class="verdict-evidence">
+              <li v-for="(line, index) in verdict.evidence" :key="index"><code>{{ line }}</code></li>
+            </ul>
+          </article>
+        </div>
+        <p class="card-footnote">
+          助手草稿：<code>{{ assistant.draft?.changeSetId || '（本轮未读回）' }}</code>
+          （状态 <code>{{ assistant.draft?.status || '（无）' }}</code>）·
+          「确定受影响」{{ assistant.draft?.explanation?.definiteAffected.length ?? 0 }} 条 ·
+          「可能受影响」{{ assistant.draft?.explanation?.possibleAffected.length ?? 0 }} 条。
+          <template v-if="assistant.draft?.explanationMissing">
+            ——草稿在但**助手未给两组说明**（模型边界收紧后的容错情形，如实记录，不崩掉）。
+          </template>
+        </p>
+      </template>
+    </section>
+
     <div class="console-columns">
       <section class="flow-card" aria-labelledby="flow-title">
         <div class="section-heading">
@@ -1769,6 +1972,21 @@ import {
   toBlockedSnapshot,
   type G3BlockedSnapshot,
 } from './runner/blocked'
+import {
+  runRoadmapChain,
+  toRoadmapSnapshot,
+  type G3RoadmapSnapshot,
+} from './runner/roadmap'
+import {
+  runFaultInjectionChain,
+  toFaultSnapshot,
+  type G3FaultSnapshot,
+} from './runner/faultInjection'
+import {
+  runAssistantChain,
+  toAssistantSnapshot,
+  type G3AssistantSnapshot,
+} from './runner/assistant'
 import { createDemoAccount, loadDemoAccount, saveDemoAccount, type G3DemoAccount } from './runner/identity'
 import { createRunId, type G3BackendHead, type G3ChapterFact, type G3RunContext, type G3RunVerdict, type G3StepRecord } from './runner/runContext'
 
@@ -1829,6 +2047,18 @@ const lastExport = ref<{
 const blocked = ref<G3BlockedSnapshot | null>(null)
 const blockedError = ref('')
 const blockedRunning = ref(false)
+/** 路线图编辑会话链（#295）。 */
+const roadmap = ref<G3RoadmapSnapshot | null>(null)
+const roadmapError = ref('')
+const roadmapRunning = ref(false)
+/** 受控故障注入的可观测口径（#295）。 */
+const faultInjection = ref<G3FaultSnapshot | null>(null)
+const faultInjectionError = ref('')
+const faultInjectionRunning = ref(false)
+/** 助手两组说明与依赖候选批次的读回（#295）。 */
+const assistant = ref<G3AssistantSnapshot | null>(null)
+const assistantError = ref('')
+const assistantRunning = ref(false)
 
 /** 接管会话之前先把用户原来的令牌记住，好还回去。 */
 let originalToken: string | null = null
@@ -2764,6 +2994,182 @@ async function startBlocked(): Promise<void> {
     }
   } finally {
     blockedRunning.value = false
+  }
+}
+
+/**
+ * 跑一次「路线图编辑会话」链。
+ *
+ * 复用同一份执行器（`runner/roadmap.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startRoadmap(): Promise<void> {
+  if (roadmapRunning.value || running.value) return
+  roadmapRunning.value = true
+  roadmapError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const roadmapResult = await runRoadmapChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+      operatorId: result.identity.userId,
+    })
+
+    roadmap.value = toRoadmapSnapshot(roadmapResult)
+    commitRun(result, account, registerFirst, undefined, undefined, undefined, undefined, undefined)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    roadmapError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    roadmapRunning.value = false
+  }
+}
+
+/**
+ * 跑一次「受控故障注入的可观测口径」链。
+ *
+ * 这一段**不能**触发注入：注入是组合根按环境变量装配的夹具，不是产品端点。
+ * 页面只能观测 apply 的真实响应：命中注入时是 503 + `injected_fault`，
+ * 未装配时 apply 正常成功。后者一律记 NOT RUN，不得判 PASS。
+ */
+async function startFaultInjection(): Promise<void> {
+  if (faultInjectionRunning.value || running.value) return
+  faultInjectionRunning.value = true
+  faultInjectionError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const faultResult = await runFaultInjectionChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+    })
+
+    faultInjection.value = toFaultSnapshot(faultResult)
+    commitRun(result, account, registerFirst, undefined, undefined, undefined, undefined, undefined)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    faultInjectionError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    faultInjectionRunning.value = false
+  }
+}
+
+/**
+ * 跑一次「助手两组说明与依赖候选批次」链。
+ *
+ * 复用同一份执行器（`runner/assistant.ts`）：页面与 node 脚本跑的是同一套代码，
+ * 所以页面上的判定与落盘的证据不会走样。
+ */
+async function startAssistant(): Promise<void> {
+  if (assistantRunning.value || running.value) return
+  assistantRunning.value = true
+  assistantError.value = ''
+
+  const account = savedAccount.value ?? createDemoAccount()
+  const registerFirst = !savedAccount.value
+  const runId = createRunId()
+
+  try {
+    if (originalToken === null) {
+      originalToken = localStorage.getItem('weknora_token')
+      originalTenantId = localStorage.getItem('weknora_selected_tenant_id')
+    }
+    auth.setSelectedTenant(null, null)
+
+    const result = await runChain(client, {
+      account,
+      registerFirst,
+      runId,
+      onToken: (token) => {
+        auth.setToken(token)
+        sessionTakenOver.value = true
+      },
+      onIdentity: (identity) => {
+        const tenantId = Number(identity.tenantId)
+        if (Number.isFinite(tenantId) && tenantId > 0) {
+          auth.setSelectedTenant(tenantId, `${identity.username} 的验收台空间`)
+        }
+      },
+    })
+
+    const assistantResult = await runAssistantChain(result.ctx, client, result.token, {
+      projectId: result.project.id,
+    })
+
+    assistant.value = toAssistantSnapshot(assistantResult)
+    commitRun(result, account, registerFirst, undefined, undefined, undefined, undefined, undefined)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    assistantError.value = message
+    const failed = (error as { runContext?: G3RunContext } | null)?.runContext
+    if (failed) {
+      liveSteps.value = failed.steps
+      liveHead.value = failed.head
+      liveRunId.value = failed.runId
+    }
+  } finally {
+    assistantRunning.value = false
   }
 }
 

@@ -1314,7 +1314,7 @@ export async function runModelChain(
     title: 'AC-G3-14 影响助手（模型侧）',
     holds: ac14Holds,
     detail: ac14Holds
-      ? `${ac14.detail} 未实现那半段：助手草稿里的「确定受影响 / 可能受影响」**解释分组**没有实现` +
+      ? `${ac14.detail} 本链路未覆盖那半段：助手草稿里的「确定受影响 / 可能受影响」**解释分组**已经实现` +
         `（模型回复里成组出现=${ac14.groupedExplanation}，工作台那个分组是影响解析结果，不可互替），缺口清单见 #246。`
       : `不成立：${ac14.detail}`,
     evidence: [
@@ -1756,7 +1756,7 @@ export async function runModelChain(
     title: 'AC-G3-15 依赖候选（模型侧）',
     holds: ac15Holds,
     detail: ac15Holds
-      ? `${ac15.detail} 未实现那半段：候选的「依据片段 / 建议理由」只落在依赖边的 reason 字段里，` +
+      ? `${ac15.detail} 本链路未覆盖那半段：候选的「依据片段 / 建议理由」只落在依赖边的 reason 字段里，` +
         `没有独立的结构化展示位，缺口清单见 #246。`
       : `不成立：${ac15.detail}`,
     evidence: [

@@ -13,7 +13,8 @@ import re
 from urllib.parse import urlsplit
 
 ROUTE_FILES = tuple("internal/lingdoc/workspace/" + name for name in
-                    ("g2_full_http.go", "impact_routes.go", "full_workflow_http.go"))
+                    ("g2_full_http.go", "impact_routes.go", "full_workflow_http.go",
+                     "roadmap_routes.go"))
 CLIENT_FILES = tuple("frontend/src/api/lingdoc/" + name for name in
                      ("g2.ts", "mainlineChanges.ts", "collaboration.ts", "chapterReview.ts"))
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}

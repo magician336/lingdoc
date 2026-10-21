@@ -1,0 +1,164 @@
+{
+  "ticket": "#295（G3 缺口收口-11）的当前 head 实跑落证",
+  "issue": "https://github.com/magician336/lingdoc/issues/295",
+  "head_at_evidence": "a8fb69f",
+  "head_note": "证据的后端身份由编译期注入的 commit_id 读回；轮 1 的完整导出文件产出于 head f8c299e，其后 3 个提交只改验收台脚本（run-evidence.ts 与两轮编排脚本），未触碰 faultInjection.ts 的判定逻辑、未触碰任何后端 Go 代码；轮 2 的注入命中观测产出于 head a8fb69f。",
+  "mode": "real",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "node": "v24.14.1",
+    "python": "3.14.3",
+    "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=<head>'\" -o .g3-server-rN.exe ./cmd/server",
+    "cgo": "CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'",
+    "frontend": "frontend/（npm ci 后 npm run type-check 与 npm test）"
+  },
+  "how_to_reproduce": {
+    "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库）",
+    "commands": [
+      "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r9.exe --out .acceptance-rounds --round1-chains 'fault,roadmap' --round2-chains 'fault'",
+      "cd frontend && npm run type-check",
+      "cd frontend && npm test"
+    ],
+    "why_two_rounds": "受控故障注入是组合根按环境变量装配的夹具，按租户限定（internal/container/lingdoc_fault_injection.go）。轮 1 不装配注入，轮 2 装配同一个租户的注入；两轮用同一个账号、同一个租户、同一个 SQLite。"
+  },
+  "rounds": [
+    {
+      "round": "轮 1 · 后端未装配受控故障注入",
+      "head": "f8c299e",
+      "run_id": "g3r-mvgzpvbh-9de58f57",
+      "chains_run": ["fault", "roadmap", "assistant"],
+      "facts": {
+        "AC-G3-03": {
+          "chain_outcome": "链路**完整跑通**：建变更集 → 评估 → 读影响评估 → 应用（HTTP 200）→ 读项目（后）→ 读影响任务（后）→ 读审计（后）→ 读回变更集，全部成功。",
+          "verdict": "本轮后端**未装配**受控故障注入：apply 返回 HTTP 200（code=（无）），没有观测到写入失败或权限失效，因此这一行**记 NOT RUN**，不判 PASS。",
+          "read_back": "current_context_revision 1 → 2 · project_version 3 → 4 · spec_revision 1 → 2",
+          "status": "NOT RUN",
+          "口径核对": "与 #295 的口径一致：注入是夹具、不是端点，页面无法触发，只能观测；未装配注入时记 NOT RUN 并指向夹具证据 docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json。**不判 PASS**。"
+        },
+        "AC-G3-08": {
+          "chain_outcome": "没有跑完。",
+          "verdict": "本条链没有跑完：版本冲突或幂等键冲突：基线已漂移（内容已变化，请先读取当前版本。）",
+          "status": "NOT RUN",
+          "原因": "演示模板（template-demo）**不声明任何 RouteNode**，基线路线图为空；台面尝试自造前置（新增节点 → 变更集 → 应用）后，后续会话撞 409「基线已漂移」。",
+          "解除条件": "模板侧声明一个 RouteNode 类型的必需节点（R7），或在台面链路里把「新增节点 → 应用 → 重读基线 → 重建会话」这一步的上下文修订对齐。"
+        },
+        "AC-G3-14": {
+          "chain_outcome": "没有跑完。",
+          "verdict": "本条链没有跑完：资源不存在或对当前账号不可见（资源不存在或不可访问。）",
+          "status": "NOT RUN",
+          "原因": "候选批次的 target 引用了**别的项目**的章节版本，服务端按 404 拒掉；已改为引用本项目章节版本（head f8c299e 之后的提交）。",
+          "解除条件": "助手草稿需要真实模型轮次（台面不自己造模型轮次），没有草稿 id 时该行记「本轮没有读回助手草稿」。"
+        },
+        "AC-G3-15": {
+          "chain_outcome": "没有跑完。",
+          "verdict": "本条链没有跑完：版本冲突或幂等键冲突：基线已漂移",
+          "status": "BLOCKED",
+          "原因": "候选批次提交时链路自建的项目与提交候选的项目不一致；已改为每条链各建各的项目（head 94474d6 之后的提交）。",
+          "解除条件": "候选的 source 必须是变更集 roots 里的 ProjectSpec ref，target 必须是本项目的章节版本；确认后才有三态决策可判。"
+        },
+        "AC-G3-16": {
+          "chain_outcome": "没有跑完（与 AC-G3-08 同一条链路）。",
+          "status": "BLOCKED",
+          "原因": "同 AC-G3-08：基线里没有可编辑的冻结节点。",
+          "解除条件": "同 AC-G3-08。"
+        }
+      }
+    },
+    {
+      "round": "轮 2 · 后端装配了受控故障注入（同一个租户）",
+      "head": "a8fb69f",
+      "chains_run": ["fault"],
+      "facts": {
+        "AC-G3-03": {
+          "injection_hit": true,
+          "observed_response": "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{changeSetId}/apply → HTTP 503 · code=injected_fault · 受控故障注入已生效（impact_task_write）：受控故障注入已启用。本次操作整体未生效，状态保持原样。",
+          "blocker": "注入命中之后，后端上的**后续写操作被阻塞**：轮 2 的第一条写（建项目）既不返回也不报错，SQLite 文件 mtime 停在注册账号那一刻，之后 90 秒无更新；注入命中后的读回步骤（读项目 / 读影响任务 / 读审计 / 读回变更集）也挂住。",
+          "status": "BLOCKED",
+          "结论": "「装配了注入 → 注入能命中 → 命中信号是 503 + injected_fault」这一半**已实跑证实**；「命中之后能读回完整回滚证据」这一半**没拿到**，因为后端写被阻塞。因此该行本轮**不得判 PASS**，记 BLOCKED。",
+          "缺陷票": "#310（装配受控故障注入后 SQLite 上的后续写操作被阻塞）"
+        }
+      }
+    }
+  ],
+  "acceptance_matrix": [
+    {
+      "item": "AC-G3-03 · 应用原子性",
+      "entry": "POST /projects/{id}/change-sets/{id}/apply（台面链路）",
+      "invariant": "未装配注入时该行必须记 NOT RUN，不得判 PASS；装配后必须有完整回滚读回证据",
+      "success": "未装配：链路跑通且按口径记 NOT RUN（已实跑）",
+      "failure": "装配后注入命中 503 + injected_fault（已实跑）；命中后回滚读回被后端写阻塞挡住（#310）",
+      "persistence": "同一 SQLite，注入按租户限定",
+      "evidence": "docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json（本文件）",
+      "status": "BLOCKED"
+    },
+    {
+      "item": "AC-G3-08 · RouteNode 必需项",
+      "entry": "POST /projects/{id}/roadmap/edits 等 12 条路线图路由",
+      "invariant": "必需节点缺失/待复核/版本落后时给出 blocking 校验问题且项目不进入 STABILIZED",
+      "success": "链路已就位并接入实跑入口",
+      "failure": "演示模板不声明任何 RouteNode，基线路线图为空；自造前置后撞 409",
+      "persistence": "N/A",
+      "evidence": "轮 1 整链证据的 AC-G3-08 判定（detail 已如实记录）",
+      "status": "NOT RUN"
+    },
+    {
+      "item": "AC-G3-14 · 助手两组说明",
+      "entry": "GET /projects/{id}/change-sets/{id}（读 affected_explanation）",
+      "invariant": "缺 affected_explanation 时记「助手未给两组说明」，不崩掉不假装有",
+      "success": "读回与容错逻辑已就位并有单测",
+      "failure": "本轮没有可读回的助手草稿（草稿由真实模型轮次产生，台面不自己造）",
+      "persistence": "N/A",
+      "evidence": "runner/assistant.ts 与 runner/assistant.test.ts",
+      "status": "NOT RUN"
+    },
+    {
+      "item": "AC-G3-15 · 依赖候选批次",
+      "entry": "POST /projects/{id}/dependency-candidates 与 …/{candidateId}/decision",
+      "invariant": "只有人工确认才产生边；候选不是边（分表存放）",
+      "success": "链路已就位并有单测（三态 / 同版本不再重提 / 版本复检）",
+      "failure": "本轮候选提交的项目与对象引用对齐问题已修（head f8c299e 之后的提交），未在当前 head 上重跑出绿",
+      "persistence": "N/A",
+      "evidence": "runner/assistant.ts 与 runner/assistant.test.ts",
+      "status": "BLOCKED"
+    },
+    {
+      "item": "AC-G3-16 · 路线图版本恢复",
+      "entry": "POST /projects/{id}/roadmap/edits/{sessionId}/cancel",
+      "invariant": "取消未冻结编辑后回到上一个冻结版本，临时版本被释放，指向它的任务落 STALE",
+      "success": "链路已就位并有单测",
+      "failure": "基线里没有可编辑的冻结节点（同 AC-G3-08）",
+      "persistence": "N/A",
+      "evidence": "runner/roadmap.ts 与 runner/roadmap.test.ts",
+      "status": "BLOCKED"
+    }
+  ],
+  "not_run": [
+    {
+      "item": "三条链路的**页面**实跑（/demo/g3 按钮）",
+      "status": "NOT RUN",
+      "reason": "本轮走的是 node 编排入口（frontend/scripts/g3demo/run-evidence.ts --live），它与页面共用同一批 runner 模块与同一份证据导出构造函数。页面本身的点击路径未实跑。"
+    },
+    {
+      "item": "AC-G3-08 的「项目不进入 STABILIZED / READY」那半段",
+      "status": "NOT RUN",
+      "reason": "需要一次稳定化调用，而稳定化要求有一个已应用的变更集；本轮基线不满足前置（无模板声明的必需 RouteNode），链路里稳定化事实是可选字段，缺它时判定如实不成立。"
+    },
+    {
+      "item": "轮 2 的完整导出文件",
+      "status": "NOT RUN",
+      "reason": "注入命中之后后端写被阻塞（#310），整轮实跑没有跑完，导出文件未落盘。决定性观测（503 + injected_fault）由服务日志捕获，已如实记录在上表。"
+    }
+  ],
+  "found_defects": [
+    {
+      "issue": "#310",
+      "summary": "装配受控故障注入后，SQLite 上的后续写操作被阻塞（疑似事务回滚后写锁未释放 / 连接未归还）。这让 AC-G3-03 的回滚读回拿不到。"
+    }
+  ],
+  "notes": [
+    "本轮实跑把 G3-GAP-01 的卡点从「验收台缺链路」推进到了「链路已就位且注入命中已观测，剩下的是注入命中后后端写阻塞（#310）」——这是实质进展，但该行仍不能判 PASS。",
+    "本轮实跑没有让任何一条验收行升格：AC-G3-03 / 08 / 14 / 15 / 16 的矩阵状态保持原样（BLOCKED / NOT RUN），缺口清单的措辞按本轮事实更新。",
+    "证据的「head 一致」要求按仓内规则执行：轮 1 的导出文件产出于 f8c299e，轮 2 的注入命中观测产出于 a8fb69f；两者之间只有验收台脚本变更，链路实现与后端 Go 代码未变，差异已在此写明。"
+  ]
+}

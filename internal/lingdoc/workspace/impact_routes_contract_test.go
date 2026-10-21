@@ -12,9 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/santhosh-tekuri/jsonschema/v6"
+	"gorm.io/gorm"
 
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
@@ -90,6 +92,41 @@ func routedOperations(engine *gin.Engine) map[string]map[string]bool {
 		result[method][publishedPathFor(route.Path)] = true
 	}
 	return result
+}
+
+// validateOperationRequest compiles the request schema the contract publishes
+// for a method+path and validates a real request body against it, so a request
+// schema that drifted from the Go input type fails here rather than in a
+// generated client.
+func validateOperationRequest(t *testing.T, doc map[string]any, compiler *jsonschema.Compiler, method, path string, body []byte) {
+	t.Helper()
+	operation, ok := contractOperation(t, doc, method, path)
+	if !ok {
+		t.Fatalf("%s %s is published nowhere in the contract", strings.ToUpper(method), path)
+	}
+	requestBody, ok := operation["requestBody"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s %s publishes no request body", strings.ToUpper(method), path)
+	}
+	media, ok := requestBody["content"].(map[string]any)["application/json"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s %s has no application/json request schema", strings.ToUpper(method), path)
+	}
+	ref, ok := media["schema"].(map[string]any)["$ref"].(string)
+	if !ok {
+		t.Fatalf("%s %s uses an inline request schema; this contract check resolves $refs", strings.ToUpper(method), path)
+	}
+	schema, err := compiler.Compile(publishedResourceFor + ref)
+	if err != nil {
+		t.Fatalf("compile %s: %v", ref, err)
+	}
+	value, err := jsonschema.UnmarshalJSON(bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("%s %s sent unparsable JSON: %v", strings.ToUpper(method), path, err)
+	}
+	if err := schema.Validate(value); err != nil {
+		t.Fatalf("%s %s request does not satisfy %s:\n%s", strings.ToUpper(method), path, ref, string(body))
+	}
 }
 
 // validateOperationResponse compiles the response schema the contract
@@ -246,20 +283,53 @@ func isImpactOwnedPath(path string, owned []string) bool {
 	return false
 }
 
+// roadmapOwnedOperationCount is the number of roadmap operations #250
+// registered. The roadmap routes are not a suffix family (they are
+// /roadmap, /roadmap/edges, /roadmap/nodes/{nodeId}/compare,
+// /roadmap/edits/{sessionId}/commit, ...), so they get their own predicate
+// instead of being folded into the impact suffix list.
+//
+// The count is asserted on its own in the two directions below: a filter that
+// matches nothing would turn the coverage into a silent skip, which is the
+// same defect class the `outputs:` whitelist had. The assertion is **exact
+// equality**, not "at least": a filter that only matched part of the roadmap
+// surface must fail too, otherwise a partial match still passes as coverage.
+const roadmapOwnedOperationCount = 12
+
+// isRoadmapOwnedPath tells whether a path belongs to the roadmap surface. Both
+// the contract form ({projectId}) and the registered gin form (:projectId) are
+// accepted, so the same predicate works on both sides of the comparison.
+func isRoadmapOwnedPath(path string) bool {
+	for _, prefix := range []string{"/projects/{projectId}/roadmap", "/projects/:projectId/roadmap"} {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
 // Direction 1: every impact/dependency/stabilize/preflight route the server
-// registers is published in the contract. An unpublished route is a route no
-// generated client can call.
+// registers is published in the contract, and the same holds for the roadmap
+// routes #250 added. An unpublished route is a route no generated client can
+// call.
 func TestEveryImpactRouteIsPublished(t *testing.T) {
 	doc, _ := contractDocument(t)
-	engine := newRouteContractFixture(t).engine
+	// The roadmap fixture registers the impact routes and the roadmap routes on
+	// one router, so both surfaces are checked against the same contract.
+	engine := newRoadmapHTTPFixture(t).engine
 	registered := routedOperations(engine)
 	var missing, checked []string
+	roadmapChecked := 0
 	for method, paths := range registered {
 		for path := range paths {
-			if !isImpactOwnedPath(path, impactOwnedPathSuffixes) {
+			roadmap := isRoadmapOwnedPath(path)
+			if !roadmap && !isImpactOwnedPath(path, impactOwnedPathSuffixes) {
 				continue
 			}
 			checked = append(checked, strings.ToUpper(method)+" "+path)
+			if roadmap {
+				roadmapChecked++
+			}
 			if _, ok := contractOperation(t, doc, method, path); !ok {
 				missing = append(missing, strings.ToUpper(method)+" "+path)
 			}
@@ -268,6 +338,10 @@ func TestEveryImpactRouteIsPublished(t *testing.T) {
 	if len(checked) == 0 {
 		t.Fatal("no impact routes were checked; the path filter matched nothing")
 	}
+	if roadmapChecked != roadmapOwnedOperationCount {
+		t.Fatalf("only %d roadmap operations were checked; the roadmap path filter did not match exactly the %d routes #250 registered", roadmapChecked, roadmapOwnedOperationCount)
+	}
+	t.Logf("direction 1: %d registered operations checked, %d of them roadmap", len(checked), roadmapChecked)
 	sort.Strings(missing)
 	for _, operation := range missing {
 		t.Errorf("registered impact route %s is absent from the OpenAPI contract", operation)
@@ -275,11 +349,12 @@ func TestEveryImpactRouteIsPublished(t *testing.T) {
 }
 
 // Direction 2: every published impact/dependency/stabilize/preflight
-// operation is actually served. A contract path with no handler is a promise
-// the server does not keep.
+// operation is actually served, and the same holds for the published roadmap
+// operations. A contract path with no handler is a promise the server does not
+// keep.
 func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	doc, _ := contractDocument(t)
-	engine := newRouteContractFixture(t).engine
+	engine := newRoadmapHTTPFixture(t).engine
 	registered := routedOperations(engine)
 
 	paths, ok := doc["paths"].(map[string]any)
@@ -291,8 +366,13 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	// impact/dependency/stabilization acceptance surface.
 	owned := impactOwnedPathSuffixes
 	checked := 0
+	roadmapChecked := 0
 	for path, item := range paths {
-		if !strings.HasPrefix(path, "/projects/{projectId}/") || !isImpactOwnedPath(path, owned) {
+		if !strings.HasPrefix(path, "/projects/{projectId}/") {
+			continue
+		}
+		roadmap := isRoadmapOwnedPath(path)
+		if !roadmap && !isImpactOwnedPath(path, owned) {
 			continue
 		}
 		item, ok := item.(map[string]any)
@@ -301,6 +381,9 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 		}
 		for method := range item {
 			checked++
+			if roadmap {
+				roadmapChecked++
+			}
 			if registered[strings.ToLower(method)][path] {
 				continue
 			}
@@ -310,6 +393,10 @@ func TestEveryPublishedImpactOperationIsRouted(t *testing.T) {
 	if checked == 0 {
 		t.Fatal("no impact contract operations were checked; the path filter matched nothing")
 	}
+	if roadmapChecked != roadmapOwnedOperationCount {
+		t.Fatalf("only %d roadmap contract operations were checked; the roadmap path filter did not match exactly the %d operations #297 published", roadmapChecked, roadmapOwnedOperationCount)
+	}
+	t.Logf("direction 2: %d published operations checked, %d of them roadmap", checked, roadmapChecked)
 }
 
 // Direction 3: the bytes the running server returns satisfy the schema the
@@ -427,4 +514,175 @@ func TestRuntimeResponsesSatisfyPublishedSchemas(t *testing.T) {
 		t.Fatalf("stabilize status = %d; body=%s", response.Code, response.Body.String())
 	}
 	validateOperationResponse(t, doc, compiler, http.MethodPost, contractBase+"/change-sets/{changeSetId}/stabilize", "200", response.Body.Bytes())
+
+	// #297: the roadmap routes #250 registered are published in the contract,
+	// so the bytes the running server returns for them have to satisfy the
+	// published schemas as well. Path existence alone would not catch a field
+	// the server emits but the contract omits.
+	//
+	// The roadmap writes are guarded by the human-decision check, so these
+	// requests carry the caller's owner role instead of the plain actor
+	// context the impact calls above use.
+	roadmap := newRoadmapHTTPFixture(t)
+	seedRouteNode(t, roadmap.db, roadmap.project.ID, "contract-node-1", "合成路线 contract-node-1", "ready")
+	// The edge proposal needs both of its ends to be route nodes that exist.
+	seedRouteNode(t, roadmap.db, roadmap.project.ID, "contract-node-2", "合成路线 contract-node-2", "ready")
+	seedContractRouteEdge(t, roadmap.db, roadmap.project.ID, "contract-edge-1", "contract-node-1", "contract-node-2")
+
+	roadmapSend := func(method, path, key, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		request := httptest.NewRequest(method, path, strings.NewReader(body)).WithContext(roadmapContext())
+		if key != "" {
+			request.Header.Set("Idempotency-Key", key)
+		}
+		response := httptest.NewRecorder()
+		roadmap.engine.ServeHTTP(response, request)
+		return response
+	}
+	roadmapBase := "/api/projects/" + roadmap.project.ID
+
+	// Every roadmap operation is validated against its published schema, and
+	// the count of distinct operations is asserted, so a response check that
+	// silently stopped running cannot leave the roadmap surface unverified.
+	roadmapResponses := map[string]bool{}
+	validateRoadmapResponse := func(method, path, status string, body []byte) {
+		t.Helper()
+		validateOperationResponse(t, doc, compiler, method, path, status, body)
+		roadmapResponses[strings.ToUpper(method)+" "+path+" "+status] = true
+	}
+
+	// The frozen roadmap and its edges.
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("read roadmap status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap", "200", response.Body.Bytes())
+
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap/edges", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("read roadmap edges status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap/edges", "200", response.Body.Bytes())
+
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap/edges/contract-edge-1/versions", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("read roadmap edge versions status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap/edges/{edgeId}/versions", "200", response.Body.Bytes())
+
+	// The editing session: open it, propose a node change, and commit it. The
+	// request bodies are validated against the published request schemas too,
+	// so a request schema that drifted from the Go input type fails here.
+	beginBody := `{"expected_context_revision":1,"reason":"契约校验 打开编辑会话"}`
+	response = roadmapSend(http.MethodPost, roadmapBase+"/roadmap/edits", "contract-roadmap-begin", beginBody)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("begin roadmap edit status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/roadmap/edits", []byte(beginBody))
+	validateRoadmapResponse(http.MethodPost, contractBase+"/roadmap/edits", "201", response.Body.Bytes())
+	var opened struct {
+		Data core.RoadmapEditSession `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &opened); err != nil {
+		t.Fatalf("decode roadmap session: %v", err)
+	}
+	session := opened.Data
+	if session.ID == "" {
+		t.Fatalf("the roadmap session has no id: %s", response.Body.String())
+	}
+
+	proposeBody := `{"node_id":"contract-node-1","kind":"update","name":"契约校验改写","status":"ready","inputs":[],"targets":[],"reason":"契约校验 改写节点"}`
+	response = roadmapSend(http.MethodPost, roadmapBase+"/roadmap/edits/"+session.ID+"/nodes", "contract-roadmap-propose", proposeBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("propose roadmap node status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/nodes", []byte(proposeBody))
+	validateRoadmapResponse(http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/nodes", "200", response.Body.Bytes())
+
+	commitBody := `{"expected_baseline_version":` + strconv.FormatInt(session.Baseline.Version, 10) + `,"reason":"契约校验 提交编辑"}`
+	response = roadmapSend(http.MethodPost, roadmapBase+"/roadmap/edits/"+session.ID+"/commit", "contract-roadmap-commit", commitBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("commit roadmap edit status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/commit", []byte(commitBody))
+	validateRoadmapResponse(http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/commit", "200", response.Body.Bytes())
+
+	// The frozen versions and their comparison are readable after the commit.
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap/nodes/contract-node-1/versions", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("read roadmap node versions status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap/nodes/{nodeId}/versions", "200", response.Body.Bytes())
+
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap/nodes/contract-node-1/compare?from=1&to=2", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("compare roadmap node versions status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap/nodes/{nodeId}/compare", "200", response.Body.Bytes())
+
+	// The session list and one session.
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap/edits", "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("list roadmap sessions status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap/edits", "200", response.Body.Bytes())
+
+	response = roadmapSend(http.MethodGet, roadmapBase+"/roadmap/edits/"+session.ID, "", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("read roadmap session status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateRoadmapResponse(http.MethodGet, contractBase+"/roadmap/edits/{sessionId}", "200", response.Body.Bytes())
+
+	// A second session proposes an edge and is cancelled: the frozen roadmap
+	// stays where it was, and the cancelled proposals never reach it.
+	current, err := roadmap.service.GetProject(policyContext(), Actor{TenantID: 7, UserID: deliveryActorID}, roadmap.project.ID)
+	if err != nil {
+		t.Fatalf("read project: %v", err)
+	}
+	secondBody := `{"expected_context_revision":` + strconv.FormatInt(current.CurrentContextRevision, 10) + `,"reason":"契约校验 第二次会话"}`
+	response = roadmapSend(http.MethodPost, roadmapBase+"/roadmap/edits", "contract-roadmap-begin-2", secondBody)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("begin second roadmap edit status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/roadmap/edits", []byte(secondBody))
+	validateRoadmapResponse(http.MethodPost, contractBase+"/roadmap/edits", "201", response.Body.Bytes())
+	var second struct {
+		Data core.RoadmapEditSession `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &second); err != nil {
+		t.Fatalf("decode second roadmap session: %v", err)
+	}
+
+	edgeBody := `{"edge_id":"contract-edge-2","kind":"add","source_id":"contract-node-1","target_id":"contract-node-2","relation":"supports","reason":"契约校验 新增路线边"}`
+	response = roadmapSend(http.MethodPost, roadmapBase+"/roadmap/edits/"+second.Data.ID+"/edges", "contract-roadmap-propose-edge", edgeBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("propose roadmap edge status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/edges", []byte(edgeBody))
+	validateRoadmapResponse(http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/edges", "200", response.Body.Bytes())
+
+	cancelBody := `{"expected_baseline_version":` + strconv.FormatInt(second.Data.Baseline.Version, 10) + `,"reason":"契约校验 取消编辑"}`
+	response = roadmapSend(http.MethodPost, roadmapBase+"/roadmap/edits/"+second.Data.ID+"/cancel", "contract-roadmap-cancel", cancelBody)
+	if response.Code != http.StatusOK {
+		t.Fatalf("cancel roadmap edit status = %d; body=%s", response.Code, response.Body.String())
+	}
+	validateOperationRequest(t, doc, compiler, http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/cancel", []byte(cancelBody))
+	validateRoadmapResponse(http.MethodPost, contractBase+"/roadmap/edits/{sessionId}/cancel", "200", response.Body.Bytes())
+
+	if len(roadmapResponses) != roadmapOwnedOperationCount {
+		t.Fatalf("%d roadmap operations were validated against the published schemas; the roadmap surface has %d published operations", len(roadmapResponses), roadmapOwnedOperationCount)
+	}
+	t.Logf("direction 3: %d roadmap operations validated against the published schemas", len(roadmapResponses))
+}
+
+// seedContractRouteEdge writes one frozen route edge version into the table
+// the roadmap store owns, so the edge reads answer with real content instead
+// of an empty projection.
+func seedContractRouteEdge(t *testing.T, db *gorm.DB, projectID, edgeID, sourceID, targetID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	if err := db.Exec(`INSERT INTO lingdoc_g3_route_edges(id,project_id,edge_id,version,source_id,target_id,relation,context_revision,actor_id,reason,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+		"contract-edge-"+edgeID, projectID, edgeID, 1, sourceID, targetID, "supports", 1, deliveryActorID, "契约校验 合成路线边", now).Error; err != nil {
+		t.Fatalf("seed contract route edge %s: %v", edgeID, err)
+	}
 }

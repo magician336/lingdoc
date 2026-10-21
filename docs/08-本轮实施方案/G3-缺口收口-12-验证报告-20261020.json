@@ -1,0 +1,271 @@
+{
+  "ticket": "#258（G3 缺口收口-9）：检索渠道环境限制与调研类闭环实跑（G3-GAP-08）",
+  "head_at_evidence": "6015934e7633d2802bc19a9bb6b5ebc2b4b68382",
+  "base": "integrate/g3-gap-closure-r2",
+  "branch": "feat/issue-258-research-closure",
+  "mode": "real",
+  "conclusion": "G3-GAP-08 的**流程闭环**已在真实服务上实跑成立：RETRIEVE_CANDIDATES 影响任务被服务端用真实 `ResearchRun` 回执（至少两轮检索、scope 为 impact:{taskId}）判定并关闭为 DONE。**覆盖受限**并因此记 PASS (follow-up) 而不是 PASS：闭环用的是**合成验收材料**、检索命中数为 0（本机 SQLite 构建不含 FTS5 且无嵌入模型凭据）、外部检索渠道不可用（DuckDuckGo 实测为反爬挑战页）。**流程闭环成立不代表真实课题资料质量通过。**",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "go": "go1.27.1 windows/amd64",
+    "backend": "本地真实服务进程：go build -ldflags \"-X github.com/Tencent/WeKnora/internal/handler.CommitID=6015934e...\" -o .acceptance-258/lingdoc-server.exe ./cmd/server（CGO_CFLAGS=-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc），/api/v1/system/info 实读 commit_id=6015934e7633d2802bc19a9bb6b5ebc2b4b68382，与被测 checkout HEAD 一致；SQLite；RETRIEVE_DRIVER=sqlite；端口为每次实跑随机分配",
+    "external_search": "无可用外部检索 provider（本机无凭据、无外部实例）",
+    "sqlite_retrieval": "本机 SQLite 构建不含 FTS5 模块（服务端日志实测：no such module: fts5），故 keyword 检索管线在本机不可运行"
+  },
+  "commands": [
+    {
+      "command": "python scripts/acceptance/lingdoc_research_closure.py --help",
+      "result": "PASS：脚本参数与用法正常输出，退出码 0（--repo-root / --binary / --live / --output）"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go build -ldflags \"-X github.com/Tencent/WeKnora/internal/handler.CommitID=6015934e7633d2802bc19a9bb6b5ebc2b4b68382 ...\" -o .acceptance-258/lingdoc-server.exe ./cmd/server",
+      "result": "PASS：exit=0，head=6015934e7633d2802bc19a9bb6b5ebc2b4b68382"
+    },
+    {
+      "command": "python scripts/acceptance/lingdoc_research_closure.py --live --binary .acceptance-258/lingdoc-server.exe --output .acceptance-258/report.json",
+      "result": "PASS：报告 status=PASS，14 项服务端闭环判定全部为 true；无 error 字段"
+    }
+  ],
+  "external_search_channel_probe": {
+    "status": "WARNING",
+    "fact": "免 API key 的 DuckDuckGo 端点在本机返回反爬挑战页，不是结果列表。",
+    "probed": [
+      {
+        "name": "duckduckgo_html",
+        "url": "https://html.duckduckgo.com/html/?q=lingdoc%20synthetic%20acceptance%20probe&kl=cn-zh",
+        "http_status": 202,
+        "response_bytes": 14293,
+        "result_link_count": 0,
+        "challenge_marker_count": 13,
+        "is_challenge_page": true
+      },
+      {
+        "name": "duckduckgo_lite",
+        "url": "https://lite.duckduckgo.com/lite/?q=lingdoc%20synthetic%20acceptance%20probe",
+        "http_status": 202,
+        "response_bytes": 14304,
+        "result_link_count": 0,
+        "challenge_marker_count": 13,
+        "is_challenge_page": true
+      }
+    ],
+    "other_providers": "tavily / exa / brave / bing / google / baidu / bocha / metaso / zhipu / keenable / searxng / ollama 均需要外部凭据或外部实例，本机没有配置，故未逐一探测（探测它们只会得到凭据缺失，不构成新事实）。",
+    "why_not_blocking": "服务端判定（internal/lingdoc/workspacecore/impact_action_result.go 的 RETRIEVE_CANDIDATES 分支）对每一轮只要求 Status == \"completed\"、Provider != \"\"、RetrievedAt 非零，不要求结果非空；且 internal/lingdoc/workspace/research_adapter.go:160-176 证明 asset_ids 路径完全不需要 provider。"
+  },
+  "material_retrieval_path": {
+    "status": "PASS",
+    "channel": "项目资料检索（asset_ids），未使用任何外部 provider",
+    "synthetic_material": {
+      "kind": "合成验收材料，内容可控、不含真实课题资料或敏感信息",
+      "knowledge_bases": "直写服务正在使用的同一 SQLite 文件（服务启动后写入，迁��链已完成）",
+      "knowledge": "parse_status=completed",
+      "chunks": "content_revision=0、chunk_type=text、is_enabled=1",
+      "indexing_strategy_readback": "{\"vector_enabled\": false, \"keyword_enabled\": false, \"wiki_enabled\": true, \"graph_enabled\": false}"
+    },
+    "asset": {
+      "asset_revision": 1,
+      "processing_state": "ready",
+      "policy_scope": "project",
+      "policy_version": 1,
+      "policy_model_use_allowed": false
+    },
+    "hit_count": 0,
+    "hit_count_note": "检索命中数为 0 是真实事实，不是缺陷：本机 SQLite 构建不含 FTS5 模块（服务端日志：no such module: fts5 → no such table: lite_embeddings_fts），keyword 检索管线不可运行；向量检索需要嵌入模型凭据，本机没有。因此合成 KB 显式关闭了两条检索管线，服务端如实返回「No retrievable indexing pipelines across 1 KBs」，一次检索完成、零候选、无错误。",
+    "rounds": 2,
+    "round_provider": "weknora_hybrid",
+    "round_queries": [
+      "合成资料里的关键结论是什么",
+      "合成资料提到哪些技术路线"
+    ]
+  },
+  "closure_verdict": {
+    "status": "PASS",
+    "server_side_rule": "internal/lingdoc/workspacecore/impact_action_result.go:209-244（VerifyImpactActionResult 的 RETRIEVE_CANDIDATES 分支）",
+    "checks": {
+      "run_status_completed": true,
+      "run_rounds_at_least_two": true,
+      "run_finished_at_present": true,
+      "run_correlation_id_present": true,
+      "run_created_by_present": true,
+      "research_scope_matches_impact_task": true,
+      "research_latest_run_id_matches": true,
+      "research_status_completed": true,
+      "research_not_paused": true,
+      "research_approved_by_present": true,
+      "approved_status_is_approved": true,
+      "every_round_completed": true,
+      "every_round_has_provider": true,
+      "impact_task_closed": true
+    },
+    "all_checks_passed": true,
+    "read_back_values": {
+      "run_status": "completed",
+      "run_version": 4,
+      "run_rounds": 2,
+      "run_results": 0,
+      "run_failure_code": "",
+      "run_created_by": "a8a230d8-eff2-4c4e-8fce-ecdc3691e3ec",
+      "run_correlation_id_present": true,
+      "run_finished_at": "2026-10-20T16:30:03.1000994Z",
+      "run_basis_asset_versions": [
+        {
+          "asset_id": "e8e4ef6d-9112-46ee-b84c-2446adb95516",
+          "asset_revision": 1
+        }
+      ],
+      "research_task_status": "completed",
+      "research_task_version": 5,
+      "research_scope": "impact:014cc35d-618a-578e-99e8-6bc5d0366442",
+      "research_latest_run_id": "8ca86c80-2b0c-4ed1-8821-2bb9d898bb42",
+      "research_paused": false,
+      "approved_status": "approved",
+      "approved_by_present": true,
+      "impact_task_id": "014cc35d-618a-578e-99e8-6bc5d0366442",
+      "impact_task_action": "RETRIEVE_CANDIDATES",
+      "impact_task_severity": "warning",
+      "impact_task_target_revision": 2,
+      "impact_task_status_before": "OPEN",
+      "impact_task_status_after": "DONE",
+      "impact_task_closure_evidence": [
+        {
+          "kind": "ResearchRun",
+          "id": "8ca86c80-2b0c-4ed1-8821-2bb9d898bb42",
+          "version": "4"
+        }
+      ],
+      "rounds": [
+        {
+          "number": 1,
+          "query": "合成资料里的关键结论是什么",
+          "provider": "weknora_hybrid",
+          "status": "completed",
+          "failure_code": "",
+          "result_ids": 0
+        },
+        {
+          "number": 2,
+          "query": "合成资料提到哪些技术路线",
+          "provider": "weknora_hybrid",
+          "status": "completed",
+          "failure_code": "",
+          "result_ids": 0
+        }
+      ]
+    }
+  },
+  "acceptance_steps_executed": [
+    {
+      "step": "server_start",
+      "status": "PASS",
+      "detail": "服务在随机端口启动并通过 /health"
+    },
+    {
+      "step": "register_login",
+      "status": "PASS",
+      "detail": "隔离账号注册并登录"
+    },
+    {
+      "step": "system_info",
+      "status": "PASS",
+      "detail": "commit_id=6015934e7633d2802bc19a9bb6b5ebc2b4b68382，与被测 HEAD 一致（该端点需 token，匿名返回 401）"
+    },
+    {
+      "step": "probe_external_search_channels",
+      "status": "WARNING",
+      "detail": "外部渠道反爬挑战页，见 external_search_channel_probe"
+    },
+    {
+      "step": "resolve_tenant",
+      "status": "PASS",
+      "detail": "从同一 SQLite 的 users 表读到租户 id"
+    },
+    {
+      "step": "setup_project",
+      "status": "PASS",
+      "detail": "建项目 → 写 spec → 激活 → 两章节写正文并确认"
+    },
+    {
+      "step": "seed_synthetic_asset",
+      "status": "PASS",
+      "detail": "直写 knowledge_bases / knowledges / chunks（服务启动后写入）"
+    },
+    {
+      "step": "bind_asset",
+      "status": "PASS",
+      "detail": "POST /projects/{id}/assets，asset_revision=1、processing_state=ready"
+    },
+    {
+      "step": "read_asset_policy",
+      "status": "PASS",
+      "detail": "scope=project、version=1、asset_revision=1（无 policy 变更集即默认可检索）"
+    },
+    {
+      "step": "create_impact_task",
+      "status": "PASS",
+      "detail": "依赖候选批次（action=RETRIEVE_CANDIDATES）→ decision=confirm → confirmed 边 → 变更集 assess/apply → 影响任务落地（action=RETRIEVE_CANDIDATES、severity=warning）"
+    },
+    {
+      "step": "create_research_task",
+      "status": "PASS",
+      "detail": "scope=impact:{taskId}、queries 两条、asset_ids 指向合成资料"
+    },
+    {
+      "step": "approve_research_task",
+      "status": "PASS",
+      "detail": "人工确认后 status=approved、approved_by 非空"
+    },
+    {
+      "step": "run_research_task",
+      "status": "PASS",
+      "detail": "run completed、2 轮、provider=weknora_hybrid、命中 0"
+    },
+    {
+      "step": "assign_impact_task",
+      "status": "PASS",
+      "detail": "指派给本人（否则 complete 会 404）"
+    },
+    {
+      "step": "close_impact_task",
+      "status": "PASS",
+      "detail": "以 ResearchRun 回执关闭，影响任务 status=DONE（服务端已按 impact_action_result.go 校验通过）"
+    }
+  ],
+  "implementation_notes": [
+    "影响评估从变更集 roots 出发遍历依赖边，边的 source 必须是该 roots 里的 ProjectSpec 引用，action 才会传播成影响任务；用 ChapterVersion 作 source 不会产生 RETRIEVE_CANDIDATES 任务。",
+    "indexing_strategy 那一列必须以 BLOB 写入：服务端的 types.IndexingStrategy.Scan 只接受 []byte，TEXT 列经 SQLite 驱动读成 string 后会回退默认策略（vector+keyword 全开），从而触发本机缺失的 FTS5 管线。",
+    "合成 KB 的策略不能是零值：types.KnowledgeBase.EnsureDefaults 会把零值策略替换成 vector+keyword 默认值，因此显式置 wiki_enabled=true 使其非零。",
+    "影响任务必须先 assign 给本人再 complete，否则服务端按「非 assignee 不可见」返回 404。",
+    "研究任务的当前状态（status=completed、latest_run_id）只在 run 结束后才写入，必须重新读回任务列表，不能用创建时的响应快照判定。"
+  ],
+  "not_run": [
+    {
+      "item": "页面实跑（前端 /demo/g3 等）",
+      "status": "NOT RUN",
+      "reason": "本票所有权仅限 scripts/acceptance/lingdoc_research_closure.py 与本验证报告；前端文件由其他实现者并行修改，不得触碰。闭环判定的服务端 seam 已由真实 HTTP 服务实跑证明。"
+    },
+    {
+      "item": "外部检索渠道（tavily/exa/brave/…）实跑",
+      "status": "NOT RUN",
+      "reason": "本机没有任何外部 provider 凭据或实例；探测只会得到凭据缺失。免 key 的 DuckDuckGo 已实测为反爬挑战页。"
+    }
+  ],
+  "environment_limits": [
+    "本机 SQLite 构建不含 FTS5 模块（no such module: fts5），keyword 检索管线不可运行；因此本次检索命中数为 0，且必须关闭 keyword 管线。",
+    "本机无嵌入模型凭据，向量检索管线不可运行。",
+    "Windows 的 Popen.terminate() 是 TerminateProcess，退出码为 1；脚本只报告退出码，不断言其为 0。"
+  ],
+  "uncovered_risks": [
+    "本次闭环证明的是「项目资料检索路径可在无外部 provider 时完成两轮检索并回执」，不证明检索命中质量；命中数为 0。",
+    "合成 KB 的 indexing_strategy 关闭了全部检索管线，真实有索引的资料库不会走这条分支；若要验证命中路径，需要一台带 FTS5 的 SQLite 构建或可用的外部/嵌入检索后端。"
+  ],
+  "follow_up": [
+    "若要把「检索命中数 > 0」纳入验收，需要在具备 FTS5 的 SQLite 构建（或可用嵌入模型）上再跑一轮本脚本；脚本已把命中数作为报告字段，无需改动。",
+    "外部检索渠道一旦具备凭据，可在同一脚本上追加 provider 路径的对照实跑。"
+  ],
+  "coverage_limits": [
+    "合成验收材料：内容可控、不含真实敏感信息；用于重复验证流程，不代表真实课题资料质量通过。",
+    "检索命中数 0：本机 SQLite 构建不含 FTS5 模块（no such module: fts5），且无可用嵌入模型凭据，服务端如实返回「No retrievable indexing pipelines」（一次检索完成、零候选、无错误）。",
+    "外部检索渠道不可用：DuckDuckGo 的 html / lite 端点均返回 HTTP 202 的反爬挑战页；其余 provider 需要外部凭据。",
+    "派生缺陷 #306：research-task 指定不存在的 provider_id 返回 500。"
+  ]
+}
