@@ -1,31 +1,31 @@
 {
-  "generated_at": "2026-10-21T16:37:16.288Z",
-  "backend_base_url": "http://127.0.0.1:65534",
-  "run_id": "g3r-mvic4tr6-177c7519",
-  "started_at": "2026-10-21T16:37:14.275Z",
+  "generated_at": "2026-10-21T17:19:49.227Z",
+  "backend_base_url": "http://127.0.0.1:63281",
+  "run_id": "g3r-mvidnkh8-af346523",
+  "started_at": "2026-10-21T17:19:48.332Z",
   "ticket": "G3 验收台-6：稳定化阻断与恢复路径",
   "demo_account": {
-    "username": "g3demo-feab98b3d3",
-    "email": "g3demo-feab98b3d3@example.com"
+    "username": "g3demo-96679afc74",
+    "email": "g3demo-96679afc74@example.com"
   },
   "account_reused": false,
   "backend_head": {
-    "commitId": "dd8dd097",
+    "commitId": "5088e31b",
     "buildTime": "unknown",
     "version": "unknown",
-    "probedAt": "2026-10-21T16:37:14.440Z",
+    "probedAt": "2026-10-21T17:19:48.468Z",
     "probePath": "/api/v1/version",
     "probeStatus": 401
   },
   "identity": {
-    "userId": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
-    "username": "g3demo-feab98b3d3",
-    "email": "g3demo-feab98b3d3@example.com",
+    "userId": "9dc3334f-f1d3-48dc-9f63-13150919a160",
+    "username": "g3demo-96679afc74",
+    "email": "g3demo-96679afc74@example.com",
     "tenantId": "4"
   },
   "project": {
-    "id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
-    "name": "G3 验收台演示项目（运行 g3r-mvic4tr6-177c7519）",
+    "id": "4d292444-fcde-43c9-b756-0f777d348946",
+    "name": "G3 验收台演示项目（运行 g3r-mvidnkh8-af346523）",
     "status": "active",
     "projectVersion": 3,
     "specRevision": 1,
@@ -35,14 +35,14 @@
   },
   "chapters": [
     {
-      "id": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
+      "id": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
       "sectionId": "question",
       "title": "研究问题",
       "currentVersionId": null,
       "bodyEmpty": true
     },
     {
-      "id": "10ac821e-6984-424c-af11-f442bfd61f1b",
+      "id": "e5470185-da74-445c-b74a-e137692fb55a",
       "sectionId": "method",
       "title": "研究方案",
       "currentVersionId": null,
@@ -52,15 +52,15 @@
   "failure": "",
   "blocked_chain": {
     "change_set": {
-      "id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
-      "projectId": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
+      "projectId": "4d292444-fcde-43c9-b756-0f777d348946",
       "status": "assessed",
       "reason": "G3 验收台-6：研究条件变化，构造稳定化阻断与恢复路径",
       "baseContextRevision": 1,
       "targetContextRevision": null,
       "baseSpecRevision": 1,
       "targetSpecRevision": null,
-      "createdBy": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+      "createdBy": "9dc3334f-f1d3-48dc-9f63-13150919a160",
       "decisionBy": "",
       "staleReason": "",
       "reassessedFromId": "",
@@ -74,8 +74,8 @@
       ],
       "impacts": [
         {
-          "chapter_id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-          "chapter_version_id": "db9ac409-85ca-4c57-b471-826979fbaee8",
+          "chapter_id": "e5470185-da74-445c-b74a-e137692fb55a",
+          "chapter_version_id": "d7dc464a-2023-43bf-a67d-bba42a3232b2",
           "title": "研究方案",
           "reason": "研究条件变化，需要重新复核",
           "status": "open"
@@ -83,15 +83,15 @@
       ]
     },
     "reissued_change_set": {
-      "id": "4d2b417c-0386-47aa-8df1-82f049c20d27",
-      "projectId": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "id": "5ffaab75-e88d-4c95-afc2-7c87747ba807",
+      "projectId": "4d292444-fcde-43c9-b756-0f777d348946",
       "status": "assessed",
       "reason": "G3 验收台-6：目标对象版本已变化，按新基线重投影响任务",
       "baseContextRevision": 2,
       "targetContextRevision": null,
       "baseSpecRevision": 2,
       "targetSpecRevision": null,
-      "createdBy": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+      "createdBy": "9dc3334f-f1d3-48dc-9f63-13150919a160",
       "decisionBy": "",
       "staleReason": "",
       "reassessedFromId": "",
@@ -99,14 +99,14 @@
       "fields": [
         {
           "key": "research_subject",
-          "old_value": "G3 验收台演示对象（运行 g3r-mvic4tr6-177c7519）",
-          "new_value": "G3 验收台演示对象（运行 g3r-mvic4tr6-177c7519）（G3 验收台-6 重投）"
+          "old_value": "G3 验收台演示对象（运行 g3r-mvidnkh8-af346523）",
+          "new_value": "G3 验收台演示对象（运行 g3r-mvidnkh8-af346523）（G3 验收台-6 重投）"
         }
       ],
       "impacts": [
         {
-          "chapter_id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-          "chapter_version_id": "456f1d26-cde7-4d30-863e-509e818629d6",
+          "chapter_id": "e5470185-da74-445c-b74a-e137692fb55a",
+          "chapter_version_id": "100f1969-fa74-4b5a-b9fd-5d3df6b97af0",
           "title": "研究方案",
           "reason": "研究条件变化，需要重新复核",
           "status": "open"
@@ -114,23 +114,23 @@
       ]
     },
     "blocked": {
-      "changeSetId": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+      "changeSetId": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
       "contextRevision": 2,
       "status": "BLOCKED",
       "blockers": [
         {
           "code": "impact_task_open",
-          "targetId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+          "targetId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
           "reason": "INVALIDATE_CONFIRMATION"
         },
         {
           "code": "impact_task_open",
-          "targetId": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+          "targetId": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
           "reason": "REVIEW_REQUIRED"
         },
         {
           "code": "impact_object_unconfirmed",
-          "targetId": "10ac821e-6984-424c-af11-f442bfd61f1b",
+          "targetId": "e5470185-da74-445c-b74a-e137692fb55a",
           "reason": "受影响对象的当前确认已失效，需重新确认"
         },
         {
@@ -145,33 +145,33 @@
         }
       ],
       "staleTaskIds": [],
-      "checkedAt": "2026-10-21T16:37:14.5805707Z"
+      "checkedAt": "2026-10-21T17:19:48.5810283Z"
     },
     "blocked_lines": [
-      "impact_task_open｜对象 18107c86-a754-5f72-8fa7-3f4b2cacdf26｜原因 INVALIDATE_CONFIRMATION",
-      "impact_task_open｜对象 f00fa622-5a61-5218-8598-7b09d55ddc31｜原因 REVIEW_REQUIRED",
-      "impact_object_unconfirmed｜对象 10ac821e-6984-424c-af11-f442bfd61f1b｜原因 受影响对象的当前确认已失效，需重新确认",
+      "impact_task_open｜对象 9861a7e9-1a0a-5b62-b952-eab334acfe49｜原因 INVALIDATE_CONFIRMATION",
+      "impact_task_open｜对象 b1c775b6-e65d-5a48-b5a2-6e0f72052c1d｜原因 REVIEW_REQUIRED",
+      "impact_object_unconfirmed｜对象 e5470185-da74-445c-b74a-e137692fb55a｜原因 受影响对象的当前确认已失效，需重新确认",
       "rule:chapter-confirmed｜对象 chapter/method｜原因 required chapter is not confirmed",
       "rule:chapter-confirmed｜对象 chapter/question｜原因 required chapter is not confirmed"
     ],
     "after_disposition": {
-      "changeSetId": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+      "changeSetId": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
       "contextRevision": 2,
       "status": "BLOCKED",
       "blockers": [
         {
           "code": "impact_task_open",
-          "targetId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+          "targetId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
           "reason": "INVALIDATE_CONFIRMATION"
         },
         {
           "code": "impact_task_open",
-          "targetId": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+          "targetId": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
           "reason": "REVIEW_REQUIRED"
         },
         {
           "code": "impact_object_unconfirmed",
-          "targetId": "10ac821e-6984-424c-af11-f442bfd61f1b",
+          "targetId": "e5470185-da74-445c-b74a-e137692fb55a",
           "reason": "受影响对象的当前确认已失效，需重新确认"
         },
         {
@@ -181,30 +181,30 @@
         }
       ],
       "staleTaskIds": [],
-      "checkedAt": "2026-10-21T16:37:14.66454Z"
+      "checkedAt": "2026-10-21T17:19:48.6398633Z"
     },
     "stabilized": {
-      "changeSetId": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+      "changeSetId": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
       "contextRevision": 2,
       "status": "STABILIZED",
       "blockers": [],
       "staleTaskIds": [],
-      "checkedAt": "2026-10-21T16:37:16.0445571Z"
+      "checkedAt": "2026-10-21T17:19:49.0299777Z"
     },
     "version_mismatch": {
-      "changeSetId": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+      "changeSetId": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
       "contextRevision": 2,
       "status": "BLOCKED",
       "blockers": [
         {
           "code": "closure_stale",
-          "targetId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
-          "reason": "闭环证据绑定的对象 ChapterVersion/10ac821e-6984-424c-af11-f442bfd61f1b 的版本 10cdaadf-f882-4ef7-bd74-1b242c262afd 已被新版本 456f1d26-cde7-4d30-863e-509e818629d6 替换，需重新处理"
+          "targetId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
+          "reason": "闭环证据绑定的对象 ChapterVersion/e5470185-da74-445c-b74a-e137692fb55a 的版本 375213fc-1d52-4778-bd8a-42305ce5efa3 已被新版本 100f1969-fa74-4b5a-b9fd-5d3df6b97af0 替换，需重新处理"
         },
         {
           "code": "closure_stale",
-          "targetId": "f00fa622-5a61-5218-8598-7b09d55ddc31",
-          "reason": "闭环证据绑定的对象 ChapterVersion/10ac821e-6984-424c-af11-f442bfd61f1b 的版本 10cdaadf-f882-4ef7-bd74-1b242c262afd 已被新版本 456f1d26-cde7-4d30-863e-509e818629d6 替换，需重新处理"
+          "targetId": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
+          "reason": "闭环证据绑定的对象 ChapterVersion/e5470185-da74-445c-b74a-e137692fb55a 的版本 375213fc-1d52-4778-bd8a-42305ce5efa3 已被新版本 100f1969-fa74-4b5a-b9fd-5d3df6b97af0 替换，需重新处理"
         },
         {
           "code": "rule:chapter-confirmed",
@@ -213,42 +213,42 @@
         }
       ],
       "staleTaskIds": [],
-      "checkedAt": "2026-10-21T16:37:16.0620196Z"
+      "checkedAt": "2026-10-21T17:19:49.0449935Z"
     },
     "mismatch_status": 200,
     "mismatch_code": "",
     "final_stabilized": {
-      "changeSetId": "4d2b417c-0386-47aa-8df1-82f049c20d27",
+      "changeSetId": "5ffaab75-e88d-4c95-afc2-7c87747ba807",
       "contextRevision": 3,
       "status": "STABILIZED",
       "blockers": [],
       "staleTaskIds": [
-        "66821193-f9de-52c1-9ee4-d0411a5a231f"
+        "cdd744cd-1173-5667-946e-e094e140518a"
       ],
-      "checkedAt": "2026-10-21T16:37:16.1788161Z"
+      "checkedAt": "2026-10-21T17:19:49.1401587Z"
     },
     "check_before": {
-      "receiptId": "acff3fcb-fb4c-4b0f-8bb3-12f431a0d798",
+      "receiptId": "e92ae816-206f-4042-9843-4433ffe618dd",
       "status": "blocked",
       "projectVersion": 8,
       "issues": [
         {
-          "id": "vi-4b4b62a945117faa779a7a93",
+          "id": "vi-ff47e8a0fa18ffdac69cd082",
           "ruleId": "chapter-confirmed",
           "severity": "blocking",
-          "targetId": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
-          "targetVersion": "17ea4171-c33b-4c37-a2a9-413101d67cf0",
+          "targetId": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
+          "targetVersion": "34bcd75c-1a86-41c7-b54c-b8f2fb03d6e1",
           "message": "确认记录与冻结章节、研究条件及模板不一致",
           "dispositionAction": "",
           "dispositionReason": "",
           "dispositionActorId": ""
         },
         {
-          "id": "vi-01648c3ff4223561d255a2b0",
+          "id": "vi-8c46bd88b9e1d1e09882483a",
           "ruleId": "chapter-confirmed",
           "severity": "blocking",
-          "targetId": "10ac821e-6984-424c-af11-f442bfd61f1b",
-          "targetVersion": "db9ac409-85ca-4c57-b471-826979fbaee8",
+          "targetId": "e5470185-da74-445c-b74a-e137692fb55a",
+          "targetVersion": "d7dc464a-2023-43bf-a67d-bba42a3232b2",
           "message": "确认记录与冻结章节、研究条件及模板不一致",
           "dispositionAction": "",
           "dispositionReason": "",
@@ -257,27 +257,27 @@
       ]
     },
     "check_after": {
-      "receiptId": "5a97394d-a04c-4544-bece-dd8956a225ed",
+      "receiptId": "343bcf9b-7561-4303-a029-110d065e2c1c",
       "status": "blocked",
       "projectVersion": 8,
       "issues": [
         {
-          "id": "vi-4b4b62a945117faa779a7a93",
+          "id": "vi-ff47e8a0fa18ffdac69cd082",
           "ruleId": "chapter-confirmed",
           "severity": "blocking",
-          "targetId": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
-          "targetVersion": "17ea4171-c33b-4c37-a2a9-413101d67cf0",
+          "targetId": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
+          "targetVersion": "34bcd75c-1a86-41c7-b54c-b8f2fb03d6e1",
           "message": "确认记录与冻结章节、研究条件及模板不一致",
           "dispositionAction": "dismiss",
           "dispositionReason": "G3 验收台-6：本次不处理该规则问题",
-          "dispositionActorId": "fd6f2211-9847-4a58-a10e-f2d32d819e2b"
+          "dispositionActorId": "9dc3334f-f1d3-48dc-9f63-13150919a160"
         },
         {
-          "id": "vi-01648c3ff4223561d255a2b0",
+          "id": "vi-8c46bd88b9e1d1e09882483a",
           "ruleId": "chapter-confirmed",
           "severity": "blocking",
-          "targetId": "10ac821e-6984-424c-af11-f442bfd61f1b",
-          "targetVersion": "db9ac409-85ca-4c57-b471-826979fbaee8",
+          "targetId": "e5470185-da74-445c-b74a-e137692fb55a",
+          "targetVersion": "d7dc464a-2023-43bf-a67d-bba42a3232b2",
           "message": "确认记录与冻结章节、研究条件及模板不一致",
           "dispositionAction": "",
           "dispositionReason": "",
@@ -286,10 +286,10 @@
       ]
     },
     "disposition": {
-      "issueId": "vi-4b4b62a945117faa779a7a93",
+      "issueId": "vi-ff47e8a0fa18ffdac69cd082",
       "ruleId": "chapter-confirmed",
       "severity": "blocking",
-      "targetId": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
+      "targetId": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
       "dismissStatus": 201,
       "dismissCode": "",
       "resolveStatus": 422,
@@ -300,7 +300,7 @@
     "dismiss_attempts": [
       {
         "label": "阻断级影响",
-        "taskId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "taskId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "severity": "blocking",
         "status": 422,
         "code": "invalid_state",
@@ -309,7 +309,7 @@
       },
       {
         "label": "非阻断级影响",
-        "taskId": "a6f92af1-c0ac-5fa5-9dc8-7a1bbf02d581",
+        "taskId": "9ee31413-64ff-549c-a9a2-544805e4b1d1",
         "severity": "info",
         "status": 200,
         "code": "",
@@ -319,18 +319,18 @@
     ],
     "task_transitions": [
       {
-        "taskId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "taskId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "assign",
         "severity": "blocking",
         "from": "OPEN",
         "to": "OPEN",
         "closureEvidence": [],
-        "note": "指派给当前操作者（assignee_id=fd6f2211-9847-4a58-a10e-f2d32d819e2b）",
+        "note": "指派给当前操作者（assignee_id=9dc3334f-f1d3-48dc-9f63-13150919a160）",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "taskId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "start",
         "severity": "blocking",
         "from": "OPEN",
@@ -341,18 +341,18 @@
         "code": ""
       },
       {
-        "taskId": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+        "taskId": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
         "action": "assign",
         "severity": "blocking",
         "from": "OPEN",
         "to": "OPEN",
         "closureEvidence": [],
-        "note": "指派给当前操作者（assignee_id=fd6f2211-9847-4a58-a10e-f2d32d819e2b）",
+        "note": "指派给当前操作者（assignee_id=9dc3334f-f1d3-48dc-9f63-13150919a160）",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+        "taskId": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
         "action": "start",
         "severity": "blocking",
         "from": "OPEN",
@@ -363,7 +363,7 @@
         "code": ""
       },
       {
-        "taskId": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "taskId": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "complete",
         "severity": "blocking",
         "from": "IN_PROGRESS",
@@ -371,16 +371,16 @@
         "closureEvidence": [
           {
             "kind": "ChapterVersion",
-            "id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-            "version": "10cdaadf-f882-4ef7-bd74-1b242c262afd"
+            "id": "e5470185-da74-445c-b74a-e137692fb55a",
+            "version": "375213fc-1d52-4778-bd8a-42305ce5efa3"
           }
         ],
-        "note": "以闭环证据完成：ChapterVersion/10ac821e-6984-424c-af11-f442bfd61f1b@10cdaadf-f882-4ef7-bd74-1b242c262afd",
+        "note": "以闭环证据完成：ChapterVersion/e5470185-da74-445c-b74a-e137692fb55a@375213fc-1d52-4778-bd8a-42305ce5efa3",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+        "taskId": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
         "action": "complete",
         "severity": "blocking",
         "from": "IN_PROGRESS",
@@ -388,27 +388,27 @@
         "closureEvidence": [
           {
             "kind": "ChapterVersion",
-            "id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-            "version": "10cdaadf-f882-4ef7-bd74-1b242c262afd"
+            "id": "e5470185-da74-445c-b74a-e137692fb55a",
+            "version": "375213fc-1d52-4778-bd8a-42305ce5efa3"
           }
         ],
-        "note": "以闭环证据完成：ChapterVersion/10ac821e-6984-424c-af11-f442bfd61f1b@10cdaadf-f882-4ef7-bd74-1b242c262afd",
+        "note": "以闭环证据完成：ChapterVersion/e5470185-da74-445c-b74a-e137692fb55a@375213fc-1d52-4778-bd8a-42305ce5efa3",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "c0173db5-cd2e-5248-890f-e294befa610d",
+        "taskId": "3265c189-2a34-5703-b7b3-e99beeaf9b66",
         "action": "assign",
         "severity": "blocking",
         "from": "OPEN",
         "to": "OPEN",
         "closureEvidence": [],
-        "note": "重投任务：指派给当前操作者（assignee_id=fd6f2211-9847-4a58-a10e-f2d32d819e2b）",
+        "note": "重投任务：指派给当前操作者（assignee_id=9dc3334f-f1d3-48dc-9f63-13150919a160）",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "c0173db5-cd2e-5248-890f-e294befa610d",
+        "taskId": "3265c189-2a34-5703-b7b3-e99beeaf9b66",
         "action": "start",
         "severity": "blocking",
         "from": "OPEN",
@@ -419,7 +419,7 @@
         "code": ""
       },
       {
-        "taskId": "c0173db5-cd2e-5248-890f-e294befa610d",
+        "taskId": "3265c189-2a34-5703-b7b3-e99beeaf9b66",
         "action": "complete",
         "severity": "blocking",
         "from": "IN_PROGRESS",
@@ -427,27 +427,27 @@
         "closureEvidence": [
           {
             "kind": "ChapterVersion",
-            "id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-            "version": "7c557a2a-65fd-4288-be59-0da0d73cb97c"
+            "id": "e5470185-da74-445c-b74a-e137692fb55a",
+            "version": "e3e56d9a-e541-4438-9a40-224152d8b5b1"
           }
         ],
-        "note": "重投任务：以闭环证据完成（ChapterVersion/10ac821e-6984-424c-af11-f442bfd61f1b@7c557a2a-65fd-4288-be59-0da0d73cb97c）",
+        "note": "重投任务：以闭环证据完成（ChapterVersion/e5470185-da74-445c-b74a-e137692fb55a@e3e56d9a-e541-4438-9a40-224152d8b5b1）",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "66821193-f9de-52c1-9ee4-d0411a5a231f",
+        "taskId": "cdd744cd-1173-5667-946e-e094e140518a",
         "action": "assign",
         "severity": "blocking",
         "from": "OPEN",
         "to": "OPEN",
         "closureEvidence": [],
-        "note": "重投任务：指派给当前操作者（assignee_id=fd6f2211-9847-4a58-a10e-f2d32d819e2b）",
+        "note": "重投任务：指派给当前操作者（assignee_id=9dc3334f-f1d3-48dc-9f63-13150919a160）",
         "status": 200,
         "code": ""
       },
       {
-        "taskId": "66821193-f9de-52c1-9ee4-d0411a5a231f",
+        "taskId": "cdd744cd-1173-5667-946e-e094e140518a",
         "action": "start",
         "severity": "blocking",
         "from": "OPEN",
@@ -460,20 +460,20 @@
     ],
     "stale_tasks": [
       {
-        "id": "66821193-f9de-52c1-9ee4-d0411a5a231f",
+        "id": "cdd744cd-1173-5667-946e-e094e140518a",
         "action": "REVIEW_REQUIRED",
         "severity": "blocking",
         "staleReason": "target_version_replaced"
       }
     ],
     "reissued_task_ids": [
-      "c0173db5-cd2e-5248-890f-e294befa610d",
-      "66821193-f9de-52c1-9ee4-d0411a5a231f"
+      "3265c189-2a34-5703-b7b3-e99beeaf9b66",
+      "cdd744cd-1173-5667-946e-e094e140518a"
     ],
     "review_probe": {
-      "projectId": "e079e02b-0dae-4579-8db5-27e78b677a58",
-      "claimId": "0eb873b1-d0e3-4955-babc-bf74f1404489",
-      "taskId": "4a83d952-c4b7-5331-b0e5-40be1352d76d",
+      "projectId": "f4165101-6ba4-4f58-a507-2b42157647da",
+      "claimId": "b6333ae5-98de-4d66-9992-2f6e4c661b06",
+      "taskId": "a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a",
       "taskAction": "REVIEW_REQUIRED",
       "targetKind": "ResearchClaim",
       "completeWithoutReviewStatus": 422,
@@ -488,16 +488,16 @@
         "id": "G3.6-BLOCKED-RECOVERY",
         "title": "稳定化阻断与恢复：阻断原因原样展示 → 闭环 → 再次已稳定",
         "holds": true,
-        "detail": "未闭环的阻断影响存在时，稳定化以 200 成功响应返回 BLOCKED，带出 5 条阻断原因（impact_task_open｜对象 18107c86-a754-5f72-8fa7-3f4b2cacdf26｜原因 INVALIDATE_CONFIRMATION；impact_task_open｜对象 f00fa622-5a61-5218-8598-7b09d55ddc31｜原因 REVIEW_REQUIRED；impact_object_unconfirmed｜对象 10ac821e-6984-424c-af11-f442bfd61f1b｜原因 受影响对象的当前确认已失效，需重新确认；rule:chapter-confirmed｜对象 chapter/method｜原因 required chapter is not confirmed；rule:chapter-confirmed｜对象 chapter/question｜原因 required chapter is not confirmed）；规则问题被处置之后再次稳定化仍为 BLOCKED（4 条阻断原因），项目仍然不能稳定；阻断影响按「指派 → 开始 → 复写并重新确认 → 以闭环证据完成」闭环之后，稳定化转为 STABILIZED。",
+        "detail": "未闭环的阻断影响存在时，稳定化以 200 成功响应返回 BLOCKED，带出 5 条阻断原因（impact_task_open｜对象 9861a7e9-1a0a-5b62-b952-eab334acfe49｜原因 INVALIDATE_CONFIRMATION；impact_task_open｜对象 b1c775b6-e65d-5a48-b5a2-6e0f72052c1d｜原因 REVIEW_REQUIRED；impact_object_unconfirmed｜对象 e5470185-da74-445c-b74a-e137692fb55a｜原因 受影响对象的当前确认已失效，需重新确认；rule:chapter-confirmed｜对象 chapter/method｜原因 required chapter is not confirmed；rule:chapter-confirmed｜对象 chapter/question｜原因 required chapter is not confirmed）；规则问题被处置之后再次稳定化仍为 BLOCKED（4 条阻断原因），项目仍然不能稳定；阻断影响按「指派 → 开始 → 复写并重新确认 → 以闭环证据完成」闭环之后，稳定化转为 STABILIZED。",
         "evidence": [
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（阻断态）→ HTTP 200 · status=BLOCKED · 阻断原因 5 条",
-          "阻断原因：impact_task_open｜对象 18107c86-a754-5f72-8fa7-3f4b2cacdf26｜原因 INVALIDATE_CONFIRMATION",
-          "阻断原因：impact_task_open｜对象 f00fa622-5a61-5218-8598-7b09d55ddc31｜原因 REVIEW_REQUIRED",
-          "阻断原因：impact_object_unconfirmed｜对象 10ac821e-6984-424c-af11-f442bfd61f1b｜原因 受影响对象的当前确认已失效，需重新确认",
+          "阻断原因：impact_task_open｜对象 9861a7e9-1a0a-5b62-b952-eab334acfe49｜原因 INVALIDATE_CONFIRMATION",
+          "阻断原因：impact_task_open｜对象 b1c775b6-e65d-5a48-b5a2-6e0f72052c1d｜原因 REVIEW_REQUIRED",
+          "阻断原因：impact_object_unconfirmed｜对象 e5470185-da74-445c-b74a-e137692fb55a｜原因 受影响对象的当前确认已失效，需重新确认",
           "阻断原因：rule:chapter-confirmed｜对象 chapter/method｜原因 required chapter is not confirmed",
           "阻断原因：rule:chapter-confirmed｜对象 chapter/question｜原因 required chapter is not confirmed",
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（规则问题处置后）→ HTTP 200 · status=BLOCKED · 阻断原因 4 条",
-          "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（阻断项闭环后）→ HTTP 200 · status=STABILIZED · checked_at=2026-10-21T16:37:16.0445571Z"
+          "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（阻断项闭环后）→ HTTP 200 · status=STABILIZED · checked_at=2026-10-21T17:19:49.0299777Z"
         ]
       },
       {
@@ -505,11 +505,11 @@
         "title": "任务协调切片：旧任务不能关闭新版本，异步成功不等于人工关闭",
         "holds": true,
         "status": "PASS",
-        "detail": "目标对象在任务完成后被新版本替换（被替换掉的版本 456f1d26-cde7-4d30-863e-509e818629d6），稳定化重新读取时发现版本不匹配：HTTP 200· status=BLOCKED——这一版修订没有被放行；依据旧版本的任务被落成失效（1 条：66821193-f9de-52c1-9ee4-d0411a5a231f(target_version_replaced)），失效任务不算闭环。人工复核任务（REVIEW_REQUIRED / ResearchClaim）缺少人工复核决策时被服务端按 HTTP 422（code=invalid_state） 拒掉，带上人工复核决策之后才允许闭环（HTTP 200）——异步作业成功关不掉人工复核任务。",
+        "detail": "目标对象在任务完成后被新版本替换（被替换掉的版本 100f1969-fa74-4b5a-b9fd-5d3df6b97af0），稳定化重新读取时发现版本不匹配：HTTP 200· status=BLOCKED——这一版修订没有被放行；依据旧版本的任务被落成失效（1 条：cdd744cd-1173-5667-946e-e094e140518a(target_version_replaced)），失效任务不算闭环。人工复核任务（REVIEW_REQUIRED / ResearchClaim）缺少人工复核决策时被服务端按 HTTP 422（code=invalid_state） 拒掉，带上人工复核决策之后才允许闭环（HTTP 200）——异步作业成功关不掉人工复核任务。",
         "evidence": [
-          "POST /api/v1/lingdoc/projects/{projectId}/chapters/{id}/versions → HTTP 201 · 目标对象被新版本替换（新版本 456f1d26-cde7-4d30-863e-509e818629d6）",
+          "POST /api/v1/lingdoc/projects/{projectId}/chapters/{id}/versions → HTTP 201 · 目标对象被新版本替换（新版本 100f1969-fa74-4b5a-b9fd-5d3df6b97af0）",
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（目标版本被替换后）→ HTTP 200 · code=（无） · status=BLOCKED · 这一版修订没有被放行",
-          "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 失效任务 1 条：66821193-f9de-52c1-9ee4-d0411a5a231f(target_version_replaced)（失效任务终态但不算闭环）",
+          "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 失效任务 1 条：cdd744cd-1173-5667-946e-e094e140518a(target_version_replaced)（失效任务终态但不算闭环）",
           "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/{taskId}/actions（缺 human_decision）→ HTTP 422 · code=invalid_state",
           "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/{taskId}/actions（带 human_decision=reviewed）→ HTTP 200 · 已闭环"
         ]
@@ -533,12 +533,12 @@
         "id": "AC-G3-12",
         "title": "稳定化重新读取：版本不匹配时保持阻断并重投对应任务",
         "holds": true,
-        "detail": "目标对象在任务完成之后被新版本替换，稳定化重新读取时发现版本不匹配，保持 BLOCKED（阻断原因码 closure_stale、closure_stale、rule:chapter-confirmed）——这一版修订没有被放行；随后重投了 2 条对应任务（c0173db5-cd2e-5248-890f-e294befa610d、66821193-f9de-52c1-9ee4-d0411a5a231f），闭环之后稳定化转为 STABILIZED。",
+        "detail": "目标对象在任务完成之后被新版本替换，稳定化重新读取时发现版本不匹配，保持 BLOCKED（阻断原因码 closure_stale、closure_stale、rule:chapter-confirmed）——这一版修订没有被放行；随后重投了 2 条对应任务（3265c189-2a34-5703-b7b3-e99beeaf9b66、cdd744cd-1173-5667-946e-e094e140518a），闭环之后稳定化转为 STABILIZED。",
         "evidence": [
           "POST /api/v1/lingdoc/projects/{projectId}/chapters/{id}/versions → HTTP 201 · 目标对象被新版本替换",
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（目标版本被替换后）→ HTTP 200 · status=BLOCKED · code=（无） · 阻断原因码 closure_stale、closure_stale、rule:chapter-confirmed · 失效任务 0 条",
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets → HTTP 201 · 重投变更集",
-          "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/apply → HTTP 200 · 重投任务 2 条：c0173db5-cd2e-5248-890f-e294befa610d、66821193-f9de-52c1-9ee4-d0411a5a231f",
+          "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/apply → HTTP 200 · 重投任务 2 条：3265c189-2a34-5703-b7b3-e99beeaf9b66、cdd744cd-1173-5667-946e-e094e140518a",
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize（重投闭环后）→ HTTP 200 · status=STABILIZED · 阻断原因 0 条"
         ]
       },
@@ -567,9 +567,9 @@
         "id": "G3-STALE-TASK",
         "title": "失效任务：既不算闭环，也不阻断稳定化，只被单独上报",
         "holds": true,
-        "detail": "本轮出现 1 条失效任务（66821193-f9de-52c1-9ee4-d0411a5a231f：target_version_replaced）；稳定化把它们单独上报（stale_task_ids 0 → 1 条），状态仍是 STABILIZED——失效任务既不算闭环，也没有阻断稳定化。",
+        "detail": "本轮出现 1 条失效任务（cdd744cd-1173-5667-946e-e094e140518a：target_version_replaced）；稳定化把它们单独上报（stale_task_ids 0 → 1 条），状态仍是 STABILIZED——失效任务既不算闭环，也没有阻断稳定化。",
         "evidence": [
-          "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 失效任务 66821193-f9de-52c1-9ee4-d0411a5a231f(target_version_replaced)",
+          "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 失效任务 cdd744cd-1173-5667-946e-e094e140518a(target_version_replaced)",
           "POST /api/v1/lingdoc/projects/{projectId}/change-sets/{id}/stabilize → HTTP 200 · status=STABILIZED · stale_task_ids=1 条 · 单独上报=true"
         ]
       }
@@ -582,10 +582,10 @@
       "path": "/api/v1/version",
       "status": 401,
       "ok": false,
-      "durationMs": 34,
+      "durationMs": 30,
       "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
       "index": 1,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "注册演示账号",
@@ -593,16 +593,16 @@
       "path": "/api/v1/auth/register",
       "status": 201,
       "ok": true,
-      "durationMs": 64,
-      "conclusion": "注册成功（HTTP 201）：g3demo-feab98b3d3@example.com",
+      "durationMs": 51,
+      "conclusion": "注册成功（HTTP 201）：g3demo-96679afc74@example.com",
       "details": {
-        "user_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
-        "username": "g3demo-feab98b3d3",
-        "email": "g3demo-feab98b3d3@example.com",
+        "user_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
+        "username": "g3demo-96679afc74",
+        "email": "g3demo-96679afc74@example.com",
         "tenant_id": 4
       },
       "index": 2,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "登录",
@@ -610,15 +610,15 @@
       "path": "/api/v1/auth/login",
       "status": 200,
       "ok": true,
-      "durationMs": 59,
-      "conclusion": "登录成功（HTTP 200）：g3demo-feab98b3d3@example.com",
+      "durationMs": 49,
+      "conclusion": "登录成功（HTTP 200）：g3demo-96679afc74@example.com",
       "details": {
-        "user_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
-        "email": "g3demo-feab98b3d3@example.com",
+        "user_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
+        "email": "g3demo-96679afc74@example.com",
         "tenant_id": 4
       },
       "index": 3,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "读取当前身份",
@@ -629,7 +629,7 @@
       "durationMs": 2,
       "conclusion": "令牌有效（HTTP 200）",
       "index": 4,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "读取后端 head",
@@ -637,10 +637,10 @@
       "path": "/api/v1/system/info",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 1,
       "conclusion": "读取后端 head 成功（HTTP 200）",
       "index": 5,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "建项",
@@ -648,11 +648,11 @@
       "path": "/api/v1/lingdoc/projects",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-create-project",
-      "durationMs": 5,
-      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvic4tr6-177c7519）",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-create-project",
+      "durationMs": 4,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvidnkh8-af346523）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "draft",
         "project_version": 1,
         "spec_revision": 0,
@@ -660,16 +660,16 @@
         "template_version": "1"
       },
       "index": 6,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "写规格",
       "method": "PUT",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/spec",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/spec",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-save-spec",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-save-spec",
+      "durationMs": 6,
       "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
       "details": {
         "spec_revision": 1,
@@ -680,50 +680,50 @@
         ]
       },
       "index": 7,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "登记立项阅读",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/activation-read",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/activation-read",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-activation-read",
-      "durationMs": 4,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-activation-read",
+      "durationMs": 3,
       "conclusion": "立项阅读已登记（HTTP 201）",
       "details": {
-        "activation_read_id": "230f88e6-4979-424a-9bea-7fc7f3417cfe",
+        "activation_read_id": "b958ab03-9476-4ad6-9eac-ae95dea44179",
         "project_version": 2,
         "spec_revision": 1
       },
       "index": 8,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "激活",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/activate",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/activate",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-activate",
-      "durationMs": 9,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-activate",
+      "durationMs": 6,
       "conclusion": "项目已激活（HTTP 200）",
       "details": {
         "status": "active",
         "project_version": 3,
         "current_context_revision": 1,
-        "baseline_confirmation_id": "c318df7a-e427-4c52-935f-58f43840ddc1"
+        "baseline_confirmation_id": "7496e61e-9277-4847-8e14-f2959f9cd67b"
       },
       "index": 9,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "读章节列表",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "章节列表已读回（HTTP 200）",
       "details": {
         "chapter_count": 2,
@@ -733,123 +733,123 @@
         ]
       },
       "index": 10,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946",
       "status": 200,
       "ok": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "active",
         "project_version": 3,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 11,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-写入章节正文",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/6bfd7944-6481-4b38-b315-8a31fde8e03c/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/6fe6243a-c432-44f8-94d1-a80c3379ab8b/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-chapter-body-question",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-chapter-body-question",
+      "durationMs": 5,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
       "details": {
-        "chapter_id": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
-        "current_version_id": "17ea4171-c33b-4c37-a2a9-413101d67cf0",
+        "chapter_id": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
+        "current_version_id": "34bcd75c-1a86-41c7-b54c-b8f2fb03d6e1",
         "confirmation_valid": false
       },
       "index": 12,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-确认章节",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/6bfd7944-6481-4b38-b315-8a31fde8e03c/confirmations",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/6fe6243a-c432-44f8-94d1-a80c3379ab8b/confirmations",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-confirm-question",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-confirm-question",
       "durationMs": 4,
-      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 17ea4171-c33b-4c37-a2a9-413101d67cf0 · 规格修订 1",
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 34bcd75c-1a86-41c7-b54c-b8f2fb03d6e1 · 规格修订 1",
       "details": {
-        "confirmation_id": "f8bca022-1901-46fa-8bd4-0352d65e4879",
-        "chapter_version_id": "17ea4171-c33b-4c37-a2a9-413101d67cf0",
+        "confirmation_id": "c67fb3de-c03b-4d2b-9d7a-70820897fbfd",
+        "chapter_version_id": "34bcd75c-1a86-41c7-b54c-b8f2fb03d6e1",
         "spec_revision": 1
       },
       "index": 13,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-写入章节正文",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-chapter-body-method",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-chapter-body-method",
+      "durationMs": 4,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
       "details": {
-        "chapter_id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-        "current_version_id": "db9ac409-85ca-4c57-b471-826979fbaee8",
+        "chapter_id": "e5470185-da74-445c-b74a-e137692fb55a",
+        "current_version_id": "d7dc464a-2023-43bf-a67d-bba42a3232b2",
         "confirmation_valid": false
       },
       "index": 14,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-确认章节",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/confirmations",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/confirmations",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-confirm-method",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-confirm-method",
       "durationMs": 4,
-      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 db9ac409-85ca-4c57-b471-826979fbaee8 · 规格修订 1",
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 d7dc464a-2023-43bf-a67d-bba42a3232b2 · 规格修订 1",
       "details": {
-        "confirmation_id": "585ea8be-5d1b-41a1-8a92-8dce7ed2d4ec",
-        "chapter_version_id": "db9ac409-85ca-4c57-b471-826979fbaee8",
+        "confirmation_id": "e411a5b1-316b-4ff9-931f-b627d1882e58",
+        "chapter_version_id": "d7dc464a-2023-43bf-a67d-bba42a3232b2",
         "spec_revision": 1
       },
       "index": 15,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946",
       "status": 200,
       "ok": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "active",
         "project_version": 7,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 16,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-建立依赖边",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/dependencies",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/dependencies",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-edge-spec-method",
-      "durationMs": 8,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-edge-spec-method",
+      "durationMs": 7,
       "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → ChapterVersion · spec_invalidates_method",
       "details": {
-        "edge_id": "0a786206-17c6-496e-9eaf-437870ee3ccb",
+        "edge_id": "94652b61-81a5-4e71-97f7-66cdc90dcfac",
         "status": "confirmed",
         "origin": "user",
         "action": "INVALIDATE_CONFIRMATION",
@@ -858,19 +858,19 @@
         "error_code": ""
       },
       "index": 17,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-建立依赖边",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/dependencies",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/dependencies",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-edge-spec-template",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-edge-spec-template",
+      "durationMs": 7,
       "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → TemplateCopy · spec_requires_recompute",
       "details": {
-        "edge_id": "af594ca8-3715-445e-933a-6b4534241020",
+        "edge_id": "283f3c57-4499-4d73-8994-5344f2bb2918",
         "status": "confirmed",
         "origin": "user",
         "action": "RECOMPUTE",
@@ -879,118 +879,118 @@
         "error_code": ""
       },
       "index": 18,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-创建变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-change-set",
-      "durationMs": 14,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-change-set",
+      "durationMs": 10,
       "conclusion": "变更集已创建（HTTP 201）：G3 验收台-6：研究条件变化，构造稳定化阻断与恢复路径",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "assessed",
         "base_context_revision": 1,
         "base_spec_revision": 1,
         "affected_chapter_ids": [
-          "10ac821e-6984-424c-af11-f442bfd61f1b"
+          "e5470185-da74-445c-b74a-e137692fb55a"
         ]
       },
       "index": 19,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "评估变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/assess",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/assess",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-assess-8b24fd67-1fbb-4db6-9515-c1baae594ca0",
-      "durationMs": 14,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-assess-dfcb9cd9-bf78-4246-9675-8b5516b55317",
+      "durationMs": 13,
       "conclusion": "变更集已评估（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "assessed"
       },
       "index": 20,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读影响评估",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/impact-assessment",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/impact-assessment",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "影响评估已读回（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "context_revision": 1,
         "object_count": 3,
         "impact_count": 3
       },
       "index": 21,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-应用变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/apply",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/apply",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-apply",
-      "durationMs": 16,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-apply",
+      "durationMs": 13,
       "conclusion": "变更集已应用（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "applied",
         "target_context_revision": 2,
         "target_spec_revision": 2,
         "error_code": ""
       },
       "index": 22,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "active",
         "project_version": 8,
         "spec_revision": 2,
         "current_context_revision": 2
       },
       "index": 23,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-稳定化（阻断态）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/stabilize",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/stabilize",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-stabilize-blocked",
-      "durationMs": 14,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-stabilize-blocked",
+      "durationMs": 11,
       "conclusion": "稳定化判定已返回（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "BLOCKED",
         "context_revision": 2,
-        "checked_at": "2026-10-21T16:37:14.5805707Z",
+        "checked_at": "2026-10-21T17:19:48.5810283Z",
         "blocker_count": 5,
         "blockers": [
-          "impact_task_open:18107c86-a754-5f72-8fa7-3f4b2cacdf26",
-          "impact_task_open:f00fa622-5a61-5218-8598-7b09d55ddc31",
-          "impact_object_unconfirmed:10ac821e-6984-424c-af11-f442bfd61f1b",
+          "impact_task_open:9861a7e9-1a0a-5b62-b952-eab334acfe49",
+          "impact_task_open:b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
+          "impact_object_unconfirmed:e5470185-da74-445c-b74a-e137692fb55a",
           "rule:chapter-confirmed:chapter/method",
           "rule:chapter-confirmed:chapter/question"
         ],
@@ -998,109 +998,109 @@
         "error_code": ""
       },
       "index": 24,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-交付检查",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/checks",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/checks",
       "status": 200,
       "ok": true,
-      "durationMs": 17,
+      "durationMs": 12,
       "conclusion": "交付检查已完成（HTTP 200）",
       "details": {
-        "receipt_id": "acff3fcb-fb4c-4b0f-8bb3-12f431a0d798",
+        "receipt_id": "e92ae816-206f-4042-9843-4433ffe618dd",
         "status": "blocked",
         "project_version": 8,
         "issue_count": 2,
         "issues": [
-          "chapter-confirmed:blocking:vi-4b4b62a945117faa779a7a93",
-          "chapter-confirmed:blocking:vi-01648c3ff4223561d255a2b0"
+          "chapter-confirmed:blocking:vi-ff47e8a0fa18ffdac69cd082",
+          "chapter-confirmed:blocking:vi-8c46bd88b9e1d1e09882483a"
         ]
       },
       "index": 25,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-接受不处理规则问题",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/issues/vi-4b4b62a945117faa779a7a93/disposition",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/issues/vi-ff47e8a0fa18ffdac69cd082/disposition",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-dismiss-rule-issue",
-      "durationMs": 13,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-dismiss-rule-issue",
+      "durationMs": 10,
       "conclusion": "规则问题处置「dismiss」（HTTP 201）",
       "details": {
-        "issue_id": "vi-4b4b62a945117faa779a7a93",
+        "issue_id": "vi-ff47e8a0fa18ffdac69cd082",
         "action": "dismiss",
         "status_code": ""
       },
       "index": 26,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-处置规则问题",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/issues/vi-4b4b62a945117faa779a7a93/disposition",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/issues/vi-ff47e8a0fa18ffdac69cd082/disposition",
       "status": 422,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-resolve-rule-issue",
-      "durationMs": 12,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-resolve-rule-issue",
+      "durationMs": 9,
       "conclusion": "规则问题处置「resolve」（HTTP 422）",
       "details": {
-        "issue_id": "vi-4b4b62a945117faa779a7a93",
+        "issue_id": "vi-ff47e8a0fa18ffdac69cd082",
         "action": "resolve",
         "status_code": "invalid_state"
       },
       "index": 27,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946",
       "status": 200,
       "ok": true,
-      "durationMs": 5,
+      "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "active",
         "project_version": 8,
         "spec_revision": 2,
         "current_context_revision": 2
       },
       "index": 28,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重检交付检查",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/checks",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/checks",
       "status": 200,
       "ok": true,
-      "durationMs": 17,
+      "durationMs": 13,
       "conclusion": "交付检查已完成（HTTP 200）",
       "details": {
-        "receipt_id": "5a97394d-a04c-4544-bece-dd8956a225ed",
+        "receipt_id": "343bcf9b-7561-4303-a029-110d065e2c1c",
         "status": "blocked",
         "project_version": 8,
         "issue_count": 2,
         "issues": [
-          "chapter-confirmed:blocking:vi-4b4b62a945117faa779a7a93",
-          "chapter-confirmed:blocking:vi-01648c3ff4223561d255a2b0"
+          "chapter-confirmed:blocking:vi-ff47e8a0fa18ffdac69cd082",
+          "chapter-confirmed:blocking:vi-8c46bd88b9e1d1e09882483a"
         ]
       },
       "index": 29,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读影响任务",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 5,
+      "durationMs": 3,
       "conclusion": "影响任务已读回（HTTP 200）",
       "details": {
         "task_count": 3,
@@ -1111,46 +1111,46 @@
         ]
       },
       "index": 30,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-稳定化（规则问题处置后）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/stabilize",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/stabilize",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-stabilize-after-disposition",
-      "durationMs": 13,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-stabilize-after-disposition",
+      "durationMs": 10,
       "conclusion": "稳定化判定已返回（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "BLOCKED",
         "context_revision": 2,
-        "checked_at": "2026-10-21T16:37:14.66454Z",
+        "checked_at": "2026-10-21T17:19:48.6398633Z",
         "blocker_count": 4,
         "blockers": [
-          "impact_task_open:18107c86-a754-5f72-8fa7-3f4b2cacdf26",
-          "impact_task_open:f00fa622-5a61-5218-8598-7b09d55ddc31",
-          "impact_object_unconfirmed:10ac821e-6984-424c-af11-f442bfd61f1b",
+          "impact_task_open:9861a7e9-1a0a-5b62-b952-eab334acfe49",
+          "impact_task_open:b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
+          "impact_object_unconfirmed:e5470185-da74-445c-b74a-e137692fb55a",
           "rule:chapter-confirmed:chapter/method"
         ],
         "stale_task_ids": [],
         "error_code": ""
       },
       "index": 31,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-对阻断影响尝试接受不处理",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/18107c86-a754-5f72-8fa7-3f4b2cacdf26/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/9861a7e9-1a0a-5b62-b952-eab334acfe49/actions",
       "status": 422,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-dismiss-blocking-task",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-dismiss-blocking-task",
+      "durationMs": 6,
       "conclusion": "影响任务处置「dismiss」（HTTP 422）",
       "details": {
-        "task_id": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "task_id": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "dismiss",
         "status": "",
         "severity": "",
@@ -1162,19 +1162,19 @@
         "error_code": "invalid_state"
       },
       "index": 32,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-对非阻断影响接受不处理",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/a6f92af1-c0ac-5fa5-9dc8-7a1bbf02d581/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/9ee31413-64ff-549c-a9a2-544805e4b1d1/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-dismiss-non-blocking-task",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-dismiss-non-blocking-task",
       "durationMs": 6,
       "conclusion": "影响任务处置「dismiss」（HTTP 200）",
       "details": {
-        "task_id": "a6f92af1-c0ac-5fa5-9dc8-7a1bbf02d581",
+        "task_id": "9ee31413-64ff-549c-a9a2-544805e4b1d1",
         "action": "dismiss",
         "status": "DISMISSED",
         "severity": "info",
@@ -1186,23 +1186,23 @@
         "error_code": ""
       },
       "index": 33,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-指派影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/18107c86-a754-5f72-8fa7-3f4b2cacdf26/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/9861a7e9-1a0a-5b62-b952-eab334acfe49/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-assign-18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-assign-9861a7e9-1a0a-5b62-b952-eab334acfe49",
       "durationMs": 7,
       "conclusion": "影响任务处置「assign」（HTTP 200）",
       "details": {
-        "task_id": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "task_id": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "assign",
         "status": "OPEN",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 2,
         "disposition": "G3 验收台-6：把影响任务指派给当前操作者",
         "stale_reason": "",
@@ -1210,23 +1210,23 @@
         "error_code": ""
       },
       "index": 34,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-开始处置影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/18107c86-a754-5f72-8fa7-3f4b2cacdf26/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/9861a7e9-1a0a-5b62-b952-eab334acfe49/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-start-18107c86-a754-5f72-8fa7-3f4b2cacdf26",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-start-9861a7e9-1a0a-5b62-b952-eab334acfe49",
+      "durationMs": 5,
       "conclusion": "影响任务处置「start」（HTTP 200）",
       "details": {
-        "task_id": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "task_id": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "start",
         "status": "IN_PROGRESS",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 3,
         "disposition": "G3 验收台-6：开始处置影响任务",
         "stale_reason": "",
@@ -1234,23 +1234,23 @@
         "error_code": ""
       },
       "index": 35,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-指派影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/f00fa622-5a61-5218-8598-7b09d55ddc31/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/b1c775b6-e65d-5a48-b5a2-6e0f72052c1d/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-assign-f00fa622-5a61-5218-8598-7b09d55ddc31",
-      "durationMs": 1250,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-assign-b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
+      "durationMs": 6,
       "conclusion": "影响任务处置「assign」（HTTP 200）",
       "details": {
-        "task_id": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+        "task_id": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
         "action": "assign",
         "status": "OPEN",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 2,
         "disposition": "G3 验收台-6：把影响任务指派给当前操作者",
         "stale_reason": "",
@@ -1258,23 +1258,23 @@
         "error_code": ""
       },
       "index": 36,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-开始处置影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/f00fa622-5a61-5218-8598-7b09d55ddc31/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/b1c775b6-e65d-5a48-b5a2-6e0f72052c1d/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-start-f00fa622-5a61-5218-8598-7b09d55ddc31",
-      "durationMs": 55,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-start-b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
+      "durationMs": 319,
       "conclusion": "影响任务处置「start」（HTTP 200）",
       "details": {
-        "task_id": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+        "task_id": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
         "action": "start",
         "status": "IN_PROGRESS",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 3,
         "disposition": "G3 验收台-6：开始处置影响任务",
         "stale_reason": "",
@@ -1282,91 +1282,91 @@
         "error_code": ""
       },
       "index": 37,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-复写章节正文",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-rewrite-method",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-rewrite-method",
       "durationMs": 6,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 2",
       "details": {
-        "chapter_id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-        "current_version_id": "10cdaadf-f882-4ef7-bd74-1b242c262afd",
+        "chapter_id": "e5470185-da74-445c-b74a-e137692fb55a",
+        "current_version_id": "375213fc-1d52-4778-bd8a-42305ce5efa3",
         "confirmation_valid": false
       },
       "index": 38,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重新确认章节",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/confirmations",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/confirmations",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reconfirm-method",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reconfirm-method",
       "durationMs": 3,
-      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 10cdaadf-f882-4ef7-bd74-1b242c262afd · 规格修订 2",
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 375213fc-1d52-4778-bd8a-42305ce5efa3 · 规格修订 2",
       "details": {
-        "confirmation_id": "cd8931c2-e26a-4998-98c5-4065bf34f9b1",
-        "chapter_version_id": "10cdaadf-f882-4ef7-bd74-1b242c262afd",
+        "confirmation_id": "60fbd17e-f9a0-430b-a6ba-fccf8929bd6b",
+        "chapter_version_id": "375213fc-1d52-4778-bd8a-42305ce5efa3",
         "spec_revision": 2
       },
       "index": 39,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-复写章节正文",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/6bfd7944-6481-4b38-b315-8a31fde8e03c/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/6fe6243a-c432-44f8-94d1-a80c3379ab8b/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-rewrite-question",
-      "durationMs": 5,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-rewrite-question",
+      "durationMs": 4,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 2",
       "details": {
-        "chapter_id": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
-        "current_version_id": "d1311081-81fa-4594-86d6-7033d96c3a99",
+        "chapter_id": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
+        "current_version_id": "e100dd5f-00ac-4017-a91d-1d6affad0fa5",
         "confirmation_valid": false
       },
       "index": 40,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重新确认章节",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/6bfd7944-6481-4b38-b315-8a31fde8e03c/confirmations",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/6fe6243a-c432-44f8-94d1-a80c3379ab8b/confirmations",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reconfirm-question",
-      "durationMs": 4,
-      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 d1311081-81fa-4594-86d6-7033d96c3a99 · 规格修订 2",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reconfirm-question",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 e100dd5f-00ac-4017-a91d-1d6affad0fa5 · 规格修订 2",
       "details": {
-        "confirmation_id": "4dfd5db3-dacc-481e-b5a3-bb4032686001",
-        "chapter_version_id": "d1311081-81fa-4594-86d6-7033d96c3a99",
+        "confirmation_id": "7fe02b0a-dcef-4ddd-989f-035331605ac5",
+        "chapter_version_id": "e100dd5f-00ac-4017-a91d-1d6affad0fa5",
         "spec_revision": 2
       },
       "index": 41,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-完成影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/18107c86-a754-5f72-8fa7-3f4b2cacdf26/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/9861a7e9-1a0a-5b62-b952-eab334acfe49/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-complete-18107c86-a754-5f72-8fa7-3f4b2cacdf26",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-complete-9861a7e9-1a0a-5b62-b952-eab334acfe49",
+      "durationMs": 5,
       "conclusion": "影响任务处置「complete」（HTTP 200）",
       "details": {
-        "task_id": "18107c86-a754-5f72-8fa7-3f4b2cacdf26",
+        "task_id": "9861a7e9-1a0a-5b62-b952-eab334acfe49",
         "action": "complete",
         "status": "DONE",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 4,
         "disposition": "G3 验收台-6：已按当前规格修订复写并重新确认章节，提交闭环证据",
         "stale_reason": "",
@@ -1374,23 +1374,23 @@
         "error_code": ""
       },
       "index": 42,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-完成影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/f00fa622-5a61-5218-8598-7b09d55ddc31/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/b1c775b6-e65d-5a48-b5a2-6e0f72052c1d/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-complete-f00fa622-5a61-5218-8598-7b09d55ddc31",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-complete-b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
       "durationMs": 7,
       "conclusion": "影响任务处置「complete」（HTTP 200）",
       "details": {
-        "task_id": "f00fa622-5a61-5218-8598-7b09d55ddc31",
+        "task_id": "b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
         "action": "complete",
         "status": "DONE",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 4,
         "disposition": "G3 验收台-6：已按当前规格修订复写并重新确认章节，提交闭环证据",
         "stale_reason": "",
@@ -1398,123 +1398,123 @@
         "error_code": ""
       },
       "index": 43,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-稳定化（阻断项闭环后）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/stabilize",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/stabilize",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-stabilize-after-closure",
-      "durationMs": 14,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-stabilize-after-closure",
+      "durationMs": 11,
       "conclusion": "稳定化判定已返回（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "STABILIZED",
         "context_revision": 2,
-        "checked_at": "2026-10-21T16:37:16.0445571Z",
+        "checked_at": "2026-10-21T17:19:49.0299777Z",
         "blocker_count": 0,
         "blockers": [],
         "stale_task_ids": [],
         "error_code": ""
       },
       "index": 44,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-替换目标对象版本",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-replace-target",
-      "durationMs": 5,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-replace-target",
+      "durationMs": 4,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 2",
       "details": {
-        "chapter_id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-        "current_version_id": "456f1d26-cde7-4d30-863e-509e818629d6",
+        "chapter_id": "e5470185-da74-445c-b74a-e137692fb55a",
+        "current_version_id": "100f1969-fa74-4b5a-b9fd-5d3df6b97af0",
         "confirmation_valid": false
       },
       "index": 45,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-稳定化（版本不匹配）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/8b24fd67-1fbb-4db6-9515-c1baae594ca0/stabilize",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/dfcb9cd9-bf78-4246-9675-8b5516b55317/stabilize",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-stabilize-version-mismatch",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-stabilize-version-mismatch",
       "durationMs": 12,
       "conclusion": "稳定化判定已返回（HTTP 200）",
       "details": {
-        "change_set_id": "8b24fd67-1fbb-4db6-9515-c1baae594ca0",
+        "change_set_id": "dfcb9cd9-bf78-4246-9675-8b5516b55317",
         "status": "BLOCKED",
         "context_revision": 2,
-        "checked_at": "2026-10-21T16:37:16.0620196Z",
+        "checked_at": "2026-10-21T17:19:49.0449935Z",
         "blocker_count": 3,
         "blockers": [
-          "closure_stale:18107c86-a754-5f72-8fa7-3f4b2cacdf26",
-          "closure_stale:f00fa622-5a61-5218-8598-7b09d55ddc31",
+          "closure_stale:9861a7e9-1a0a-5b62-b952-eab334acfe49",
+          "closure_stale:b1c775b6-e65d-5a48-b5a2-6e0f72052c1d",
           "rule:chapter-confirmed:chapter/method"
         ],
         "stale_task_ids": [],
         "error_code": ""
       },
       "index": 46,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946",
       "status": 200,
       "ok": true,
       "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "active",
         "project_version": 13,
         "spec_revision": 2,
         "current_context_revision": 2
       },
       "index": 47,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重投变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-change-set",
-      "durationMs": 9,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-change-set",
+      "durationMs": 7,
       "conclusion": "变更集已创建（HTTP 201）：G3 验收台-6：目标对象版本已变化，按新基线重投影响任务",
       "details": {
-        "change_set_id": "4d2b417c-0386-47aa-8df1-82f049c20d27",
+        "change_set_id": "5ffaab75-e88d-4c95-afc2-7c87747ba807",
         "status": "assessed",
         "base_context_revision": 2,
         "base_spec_revision": 2,
         "affected_chapter_ids": [
-          "10ac821e-6984-424c-af11-f442bfd61f1b"
+          "e5470185-da74-445c-b74a-e137692fb55a"
         ]
       },
       "index": 48,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重投-建立依赖边",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/dependencies",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/dependencies",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-edge",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-edge",
+      "durationMs": 4,
       "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → ChapterVersion · spec_invalidates_method_again",
       "details": {
-        "edge_id": "3bfc77d7-b7f4-4eff-8459-0bda46f55d15",
+        "edge_id": "0bceb21f-58f1-4fea-b645-6f253cb78716",
         "status": "confirmed",
         "origin": "user",
         "action": "INVALIDATE_CONFIRMATION",
@@ -1523,68 +1523,68 @@
         "error_code": ""
       },
       "index": 49,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "评估变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/4d2b417c-0386-47aa-8df1-82f049c20d27/assess",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/5ffaab75-e88d-4c95-afc2-7c87747ba807/assess",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-assess-4d2b417c-0386-47aa-8df1-82f049c20d27",
-      "durationMs": 13,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-assess-5ffaab75-e88d-4c95-afc2-7c87747ba807",
+      "durationMs": 9,
       "conclusion": "变更集已评估（HTTP 200）",
       "details": {
-        "change_set_id": "4d2b417c-0386-47aa-8df1-82f049c20d27",
+        "change_set_id": "5ffaab75-e88d-4c95-afc2-7c87747ba807",
         "status": "assessed"
       },
       "index": 50,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重投-应用变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/4d2b417c-0386-47aa-8df1-82f049c20d27/apply",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/5ffaab75-e88d-4c95-afc2-7c87747ba807/apply",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-apply",
-      "durationMs": 13,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-apply",
+      "durationMs": 11,
       "conclusion": "变更集已应用（HTTP 200）",
       "details": {
-        "change_set_id": "4d2b417c-0386-47aa-8df1-82f049c20d27",
+        "change_set_id": "5ffaab75-e88d-4c95-afc2-7c87747ba807",
         "status": "applied",
         "target_context_revision": 3,
         "target_spec_revision": 3,
         "error_code": ""
       },
       "index": 51,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "0219e4b2-3d89-4f3a-960b-e9dc3633d318",
+        "project_id": "4d292444-fcde-43c9-b756-0f777d348946",
         "status": "active",
         "project_version": 14,
         "spec_revision": 3,
         "current_context_revision": 3
       },
       "index": 52,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读影响任务",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 5,
+      "durationMs": 4,
       "conclusion": "影响任务已读回（HTTP 200）",
       "details": {
         "task_count": 5,
@@ -1597,23 +1597,23 @@
         ]
       },
       "index": 53,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-指派影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/c0173db5-cd2e-5248-890f-e294befa610d/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/3265c189-2a34-5703-b7b3-e99beeaf9b66/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-assign-c0173db5-cd2e-5248-890f-e294befa610d",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-assign-3265c189-2a34-5703-b7b3-e99beeaf9b66",
       "durationMs": 7,
       "conclusion": "影响任务处置「assign」（HTTP 200）",
       "details": {
-        "task_id": "c0173db5-cd2e-5248-890f-e294befa610d",
+        "task_id": "3265c189-2a34-5703-b7b3-e99beeaf9b66",
         "action": "assign",
         "status": "OPEN",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 2,
         "disposition": "G3 验收台-6：重投任务的指派",
         "stale_reason": "",
@@ -1621,23 +1621,23 @@
         "error_code": ""
       },
       "index": 54,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-开始处置影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/c0173db5-cd2e-5248-890f-e294befa610d/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/3265c189-2a34-5703-b7b3-e99beeaf9b66/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-start-c0173db5-cd2e-5248-890f-e294befa610d",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-start-3265c189-2a34-5703-b7b3-e99beeaf9b66",
+      "durationMs": 5,
       "conclusion": "影响任务处置「start」（HTTP 200）",
       "details": {
-        "task_id": "c0173db5-cd2e-5248-890f-e294befa610d",
+        "task_id": "3265c189-2a34-5703-b7b3-e99beeaf9b66",
         "action": "start",
         "status": "IN_PROGRESS",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 3,
         "disposition": "G3 验收台-6：重投任务的开始处置",
         "stale_reason": "",
@@ -1645,91 +1645,91 @@
         "error_code": ""
       },
       "index": 55,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-复写章节正文",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-rewrite-method",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-rewrite-method",
       "durationMs": 4,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 3",
       "details": {
-        "chapter_id": "10ac821e-6984-424c-af11-f442bfd61f1b",
-        "current_version_id": "7c557a2a-65fd-4288-be59-0da0d73cb97c",
+        "chapter_id": "e5470185-da74-445c-b74a-e137692fb55a",
+        "current_version_id": "e3e56d9a-e541-4438-9a40-224152d8b5b1",
         "confirmation_valid": false
       },
       "index": 56,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重新确认章节",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/10ac821e-6984-424c-af11-f442bfd61f1b/confirmations",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/e5470185-da74-445c-b74a-e137692fb55a/confirmations",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-reconfirm-method",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-reconfirm-method",
       "durationMs": 3,
-      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 7c557a2a-65fd-4288-be59-0da0d73cb97c · 规格修订 3",
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 e3e56d9a-e541-4438-9a40-224152d8b5b1 · 规格修订 3",
       "details": {
-        "confirmation_id": "4d5dd869-0262-4f67-9714-12a8dd7b1948",
-        "chapter_version_id": "7c557a2a-65fd-4288-be59-0da0d73cb97c",
+        "confirmation_id": "13786b9d-b2c2-4202-a546-62a2a55b0952",
+        "chapter_version_id": "e3e56d9a-e541-4438-9a40-224152d8b5b1",
         "spec_revision": 3
       },
       "index": 57,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-复写章节正文",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/6bfd7944-6481-4b38-b315-8a31fde8e03c/versions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/6fe6243a-c432-44f8-94d1-a80c3379ab8b/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-rewrite-question",
-      "durationMs": 5,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-rewrite-question",
+      "durationMs": 4,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 3",
       "details": {
-        "chapter_id": "6bfd7944-6481-4b38-b315-8a31fde8e03c",
-        "current_version_id": "e9f81c72-2b60-4248-83d2-d38f90436e52",
+        "chapter_id": "6fe6243a-c432-44f8-94d1-a80c3379ab8b",
+        "current_version_id": "1a82f230-5407-49b4-be08-dfd659d1c4d8",
         "confirmation_valid": false
       },
       "index": 58,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-重新确认章节",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/chapters/6bfd7944-6481-4b38-b315-8a31fde8e03c/confirmations",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/chapters/6fe6243a-c432-44f8-94d1-a80c3379ab8b/confirmations",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-reconfirm-question",
-      "durationMs": 5,
-      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 e9f81c72-2b60-4248-83d2-d38f90436e52 · 规格修订 3",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-reconfirm-question",
+      "durationMs": 2,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 1a82f230-5407-49b4-be08-dfd659d1c4d8 · 规格修订 3",
       "details": {
-        "confirmation_id": "6a30d40b-393f-4d32-bcb9-65892360d9be",
-        "chapter_version_id": "e9f81c72-2b60-4248-83d2-d38f90436e52",
+        "confirmation_id": "c88e917a-3822-46e2-b45d-3f3d64d9b27e",
+        "chapter_version_id": "1a82f230-5407-49b4-be08-dfd659d1c4d8",
         "spec_revision": 3
       },
       "index": 59,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-完成影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/c0173db5-cd2e-5248-890f-e294befa610d/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/3265c189-2a34-5703-b7b3-e99beeaf9b66/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-complete-c0173db5-cd2e-5248-890f-e294befa610d",
-      "durationMs": 8,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-complete-3265c189-2a34-5703-b7b3-e99beeaf9b66",
+      "durationMs": 6,
       "conclusion": "影响任务处置「complete」（HTTP 200）",
       "details": {
-        "task_id": "c0173db5-cd2e-5248-890f-e294befa610d",
+        "task_id": "3265c189-2a34-5703-b7b3-e99beeaf9b66",
         "action": "complete",
         "status": "DONE",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 4,
         "disposition": "G3 验收台-6：重投任务以当前章节版本闭环",
         "stale_reason": "",
@@ -1737,23 +1737,23 @@
         "error_code": ""
       },
       "index": 60,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-指派影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/66821193-f9de-52c1-9ee4-d0411a5a231f/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/cdd744cd-1173-5667-946e-e094e140518a/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-assign-66821193-f9de-52c1-9ee4-d0411a5a231f",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-assign-cdd744cd-1173-5667-946e-e094e140518a",
+      "durationMs": 6,
       "conclusion": "影响任务处置「assign」（HTTP 200）",
       "details": {
-        "task_id": "66821193-f9de-52c1-9ee4-d0411a5a231f",
+        "task_id": "cdd744cd-1173-5667-946e-e094e140518a",
         "action": "assign",
         "status": "OPEN",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 2,
         "disposition": "G3 验收台-6：重投任务的指派",
         "stale_reason": "",
@@ -1761,23 +1761,23 @@
         "error_code": ""
       },
       "index": 61,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-开始处置影响任务",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks/66821193-f9de-52c1-9ee4-d0411a5a231f/actions",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks/cdd744cd-1173-5667-946e-e094e140518a/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-reissue-start-66821193-f9de-52c1-9ee4-d0411a5a231f",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-reissue-start-cdd744cd-1173-5667-946e-e094e140518a",
+      "durationMs": 5,
       "conclusion": "影响任务处置「start」（HTTP 200）",
       "details": {
-        "task_id": "66821193-f9de-52c1-9ee4-d0411a5a231f",
+        "task_id": "cdd744cd-1173-5667-946e-e094e140518a",
         "action": "start",
         "status": "STALE",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 3,
         "disposition": "G3 验收台-6：重投任务的指派",
         "stale_reason": "target_version_replaced",
@@ -1785,39 +1785,39 @@
         "error_code": ""
       },
       "index": 62,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-稳定化（重投闭环后）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/change-sets/4d2b417c-0386-47aa-8df1-82f049c20d27/stabilize",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/change-sets/5ffaab75-e88d-4c95-afc2-7c87747ba807/stabilize",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-stabilize-final",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-stabilize-final",
       "durationMs": 12,
       "conclusion": "稳定化判定已返回（HTTP 200）",
       "details": {
-        "change_set_id": "4d2b417c-0386-47aa-8df1-82f049c20d27",
+        "change_set_id": "5ffaab75-e88d-4c95-afc2-7c87747ba807",
         "status": "STABILIZED",
         "context_revision": 3,
-        "checked_at": "2026-10-21T16:37:16.1788161Z",
+        "checked_at": "2026-10-21T17:19:49.1401587Z",
         "blocker_count": 0,
         "blockers": [],
         "stale_task_ids": [
-          "66821193-f9de-52c1-9ee4-d0411a5a231f"
+          "cdd744cd-1173-5667-946e-e094e140518a"
         ],
         "error_code": ""
       },
       "index": 63,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读影响任务",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/0219e4b2-3d89-4f3a-960b-e9dc3633d318/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/4d292444-fcde-43c9-b756-0f777d348946/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 7,
+      "durationMs": 6,
       "conclusion": "影响任务已读回（HTTP 200）",
       "details": {
         "task_count": 5,
@@ -1830,7 +1830,7 @@
         ]
       },
       "index": 64,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "建项",
@@ -1838,11 +1838,11 @@
       "path": "/api/v1/lingdoc/projects",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-review-probe-create-project",
-      "durationMs": 4,
-      "conclusion": "项目已建立（HTTP 201）：G3 验收台-6 人工复核探针（运行 g3r-mvic4tr6-177c7519）",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-review-probe-create-project",
+      "durationMs": 3,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台-6 人工复核探针（运行 g3r-mvidnkh8-af346523）",
       "details": {
-        "project_id": "e079e02b-0dae-4579-8db5-27e78b677a58",
+        "project_id": "f4165101-6ba4-4f58-a507-2b42157647da",
         "status": "draft",
         "project_version": 1,
         "spec_revision": 0,
@@ -1850,16 +1850,16 @@
         "template_version": "1"
       },
       "index": 65,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "写规格",
       "method": "PUT",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/spec",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/spec",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-review-probe-save-spec",
-      "durationMs": 5,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-review-probe-save-spec",
+      "durationMs": 4,
       "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
       "details": {
         "spec_revision": 1,
@@ -1870,50 +1870,50 @@
         ]
       },
       "index": 66,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "登记立项阅读",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/activation-read",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/activation-read",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-review-probe-activation-read",
-      "durationMs": 2,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-review-probe-activation-read",
+      "durationMs": 1,
       "conclusion": "立项阅读已登记（HTTP 201）",
       "details": {
-        "activation_read_id": "8c51582e-27a3-4960-987b-ec8ba41c6aec",
+        "activation_read_id": "5de233f6-8d34-414d-907a-8284a87b390c",
         "project_version": 2,
         "spec_revision": 1
       },
       "index": 67,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "激活",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/activate",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/activate",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-review-probe-activate",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-review-probe-activate",
+      "durationMs": 5,
       "conclusion": "项目已激活（HTTP 200）",
       "details": {
         "status": "active",
         "project_version": 3,
         "current_context_revision": 1,
-        "baseline_confirmation_id": "1c994fbc-4103-4df1-a54e-03eb9bbfc38c"
+        "baseline_confirmation_id": "ec1aa3ff-ba35-438d-95cb-b601c82df642"
       },
       "index": 68,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "读章节列表",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/chapters",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/chapters",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 1,
       "conclusion": "章节列表已读回（HTTP 200）",
       "details": {
         "chapter_count": 2,
@@ -1923,54 +1923,54 @@
         ]
       },
       "index": 69,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da",
       "status": 200,
       "ok": true,
       "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "e079e02b-0dae-4579-8db5-27e78b677a58",
+        "project_id": "f4165101-6ba4-4f58-a507-2b42157647da",
         "status": "active",
         "project_version": 3,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 70,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-写入研究主张",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/research-claims",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/research-claims",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-claim",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-claim",
       "durationMs": 3,
       "conclusion": "研究主张已写入（HTTP 200）",
       "details": {
-        "claim_id": "0eb873b1-d0e3-4955-babc-bf74f1404489",
+        "claim_id": "b6333ae5-98de-4d66-9992-2f6e4c661b06",
         "version": 1,
         "status": "active"
       },
       "index": 71,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-建立依赖边",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/dependencies",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/dependencies",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-edge",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-edge",
+      "durationMs": 4,
       "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → ResearchClaim · spec_requires_claim_review",
       "details": {
-        "edge_id": "98ca0339-b375-4ddb-8206-a7d6fb3c6aa0",
+        "edge_id": "d9b4ec8e-8f97-4495-863a-8c24adccc30e",
         "status": "confirmed",
         "origin": "user",
         "action": "REVIEW_REQUIRED",
@@ -1979,71 +1979,71 @@
         "error_code": ""
       },
       "index": 72,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-创建变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/change-sets",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/change-sets",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-change-set",
-      "durationMs": 8,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-change-set",
+      "durationMs": 6,
       "conclusion": "变更集已创建（HTTP 201）：G3 验收台-6 人工复核探针：研究条件变化",
       "details": {
-        "change_set_id": "395c7935-db37-448b-abba-71c65ef521f4",
+        "change_set_id": "5d22b653-7da8-4f7e-95bd-ebe88a3d43a2",
         "status": "assessed",
         "base_context_revision": 1,
         "base_spec_revision": 1,
         "affected_chapter_ids": [
-          "0410ac80-1ed0-4af8-9f7e-6b5180eaa872"
+          "32e9265e-90df-42b0-abf3-3ec4ff1fa9f2"
         ]
       },
       "index": 73,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "评估变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/change-sets/395c7935-db37-448b-abba-71c65ef521f4/assess",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/change-sets/5d22b653-7da8-4f7e-95bd-ebe88a3d43a2/assess",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-assess-395c7935-db37-448b-abba-71c65ef521f4",
-      "durationMs": 11,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-assess-5d22b653-7da8-4f7e-95bd-ebe88a3d43a2",
+      "durationMs": 9,
       "conclusion": "变更集已评估（HTTP 200）",
       "details": {
-        "change_set_id": "395c7935-db37-448b-abba-71c65ef521f4",
+        "change_set_id": "5d22b653-7da8-4f7e-95bd-ebe88a3d43a2",
         "status": "assessed"
       },
       "index": 74,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-应用变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/change-sets/395c7935-db37-448b-abba-71c65ef521f4/apply",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/change-sets/5d22b653-7da8-4f7e-95bd-ebe88a3d43a2/apply",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-apply",
-      "durationMs": 12,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-apply",
+      "durationMs": 10,
       "conclusion": "变更集已应用（HTTP 200）",
       "details": {
-        "change_set_id": "395c7935-db37-448b-abba-71c65ef521f4",
+        "change_set_id": "5d22b653-7da8-4f7e-95bd-ebe88a3d43a2",
         "status": "applied",
         "target_context_revision": 2,
         "target_spec_revision": 2,
         "error_code": ""
       },
       "index": 75,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读影响任务",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "conclusion": "影响任务已读回（HTTP 200）",
       "details": {
         "task_count": 1,
@@ -2052,23 +2052,23 @@
         ]
       },
       "index": 76,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-指派",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/impact-tasks/4a83d952-c4b7-5331-b0e5-40be1352d76d/actions",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/impact-tasks/a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-assign",
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-assign",
       "durationMs": 6,
       "conclusion": "影响任务处置「assign」（HTTP 200）",
       "details": {
-        "task_id": "4a83d952-c4b7-5331-b0e5-40be1352d76d",
+        "task_id": "a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a",
         "action": "assign",
         "status": "OPEN",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 2,
         "disposition": "G3 验收台-6 人工复核探针：指派给当前操作者",
         "stale_reason": "",
@@ -2076,23 +2076,23 @@
         "error_code": ""
       },
       "index": 77,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-开始处置",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/impact-tasks/4a83d952-c4b7-5331-b0e5-40be1352d76d/actions",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/impact-tasks/a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-start",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-start",
+      "durationMs": 4,
       "conclusion": "影响任务处置「start」（HTTP 200）",
       "details": {
-        "task_id": "4a83d952-c4b7-5331-b0e5-40be1352d76d",
+        "task_id": "a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a",
         "action": "start",
         "status": "IN_PROGRESS",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 3,
         "disposition": "G3 验收台-6 人工复核探针：开始处置",
         "stale_reason": "",
@@ -2100,19 +2100,19 @@
         "error_code": ""
       },
       "index": 78,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-缺少人工复核完成",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/impact-tasks/4a83d952-c4b7-5331-b0e5-40be1352d76d/actions",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/impact-tasks/a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a/actions",
       "status": 422,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-complete-no-review",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-complete-no-review",
+      "durationMs": 5,
       "conclusion": "影响任务处置「complete」（HTTP 422）",
       "details": {
-        "task_id": "4a83d952-c4b7-5331-b0e5-40be1352d76d",
+        "task_id": "a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a",
         "action": "complete",
         "status": "",
         "severity": "",
@@ -2124,58 +2124,58 @@
         "error_code": "invalid_state"
       },
       "index": 79,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-读项目状态",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "e079e02b-0dae-4579-8db5-27e78b677a58",
+        "project_id": "f4165101-6ba4-4f58-a507-2b42157647da",
         "status": "active",
         "project_version": 4,
         "spec_revision": 2,
         "current_context_revision": 2
       },
       "index": 80,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-更新研究主张",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/research-claims",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/research-claims",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-claim-update",
-      "durationMs": 4,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-claim-update",
+      "durationMs": 2,
       "conclusion": "研究主张已写入（HTTP 200）",
       "details": {
-        "claim_id": "0eb873b1-d0e3-4955-babc-bf74f1404489",
+        "claim_id": "b6333ae5-98de-4d66-9992-2f6e4c661b06",
         "version": 2,
         "status": "active"
       },
       "index": 81,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     },
     {
       "name": "阻断-人工复核探针-带人工复核完成",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/e079e02b-0dae-4579-8db5-27e78b677a58/impact-tasks/4a83d952-c4b7-5331-b0e5-40be1352d76d/actions",
+      "path": "/api/v1/lingdoc/projects/f4165101-6ba4-4f58-a507-2b42157647da/impact-tasks/a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a/actions",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvic4tr6-177c7519-blocked-review-complete-with-review",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvidnkh8-af346523-blocked-review-complete-with-review",
+      "durationMs": 5,
       "conclusion": "影响任务处置「complete」（HTTP 200）",
       "details": {
-        "task_id": "4a83d952-c4b7-5331-b0e5-40be1352d76d",
+        "task_id": "a5a2e24d-ede9-5018-91d1-2b7c23cc9e2a",
         "action": "complete",
         "status": "DONE",
         "severity": "blocking",
-        "assignee_id": "fd6f2211-9847-4a58-a10e-f2d32d819e2b",
+        "assignee_id": "9dc3334f-f1d3-48dc-9f63-13150919a160",
         "version": 4,
         "disposition": "G3 验收台-6 人工复核探针：责任人已查看并复核",
         "stale_reason": "",
@@ -2183,7 +2183,7 @@
         "error_code": ""
       },
       "index": 82,
-      "runId": "g3r-mvic4tr6-177c7519"
+      "runId": "g3r-mvidnkh8-af346523"
     }
   ]
 }

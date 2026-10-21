@@ -1,7 +1,7 @@
 {
   "ticket": "G3 缺口收口-21：#324 的溯源口径修复、七条交付切片行接上实跑判定、外部检索渠道的实测与边界",
-  "head_at_evidence": "dd8dd097",
-  "head_note": "服务二进制由 dd8dd097 编译（-ldflags 注入 CommitID），八条链脚本取自同一 head 的工作区。**这个 head 在分支上**（是当前分支 head 的祖先，`git log` 可见；按完整 sha `dd8dd09765ec22465f0bfadb70bf03c9aaba68b5` 也能从远端单独取到），证据里的 `head.commitId` 就是它。上一轮实跑用的 9641707b 已被后续的变基改写，**不在任何分支上**（不是分支 head 的祖先，`git branch -a --contains` 为空）；按完整 sha `9641707bb810c5a267a02bf78b16ca23a8919494` 还能从 GitHub 取到那个对象，但评审人从分支上到不了它，落证与被审提交对不上；因此本轮在修完评审意见的提交上**重跑了两轮**，把证据重新落在分支内的提交上。本报告入库后只改证据与文档文件本身。",
+  "head_at_evidence": "5088e31b",
+  "head_note": "服务二进制由 5088e31b 编译（-ldflags 注入 CommitID），八条链脚本取自同一 head 的工作区。**这个 head 在分支上**（是本 PR head 的祖先，`git log` 可见；按完整 sha 也能从远端单独取到），证据里的 `head.commitId` 就是它。落证一共重跑了两次：第一次在 5088e31b 之前的那版代码 head 上（`dd8dd097`），随后 `main` 前移了 41 个提交（Spec #47 段三改了 `internal/lingdoc/workspace/**`，其中包含本 PR 改过的 `internal/lingdoc/workspace/delivery_input.go`），本分支变基到新的 main；复审又提出 3 个 Required 与 3 个 Suggestion，前端据此再改一版 ⇒ 在最终代码提交 5088e31b 上重跑第二次。本报告入库后只改证据与文档文件本身。",
   "mode": "real",
   "environment": {
     "os": "Windows 10.0.26200 x86_64",
@@ -9,7 +9,7 @@
     "python": "3.14.3",
     "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
     "sqlite_include": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（已确认存在）",
-    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=dd8dd097'\" -o .g3-server-r16.exe ./cmd/server",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=5088e31b'\" -o .g3-server-r16.exe ./cmd/server",
     "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库；本轮起它还跑稳定化 / 阻断 / 真实模型三条独立链）",
     "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r16.exe --out .acceptance-r16 --round2-chains 'fault' --with-dependency-chain --with-real-model"
   },
@@ -40,7 +40,9 @@
     {
       "item": "调研闭环脚本支持可选的外部检索渠道",
       "change": "环境变量 G3_WEB_SEARCH_PROVIDER / G3_WEB_SEARCH_PROVIDER_URL 设了，就给租户种一条检索来源行并让调研任务带 provider_id；没设就保持 #258 原来的行为。两种情况下报告都如实写命中数。",
-      "files": ["scripts/acceptance/lingdoc_research_closure.py"]
+      "files": [
+        "scripts/acceptance/lingdoc_research_closure.py"
+      ]
     }
   ],
   "rounds": [
@@ -82,24 +84,24 @@
   ],
   "re_run_at_fix_commit": {
     "why": "独立评审的 Blocker B2：上一轮落证的 head（`9641707b`）被后续变基改写，它**不在任何分支上**——被变基改写后成了孤立提交（`git branch -a --contains 9641707b` 为空、不是分支 head 的祖先），评审人从分支上到不了它，证据与被审提交无法对上。（按完整 sha 还能从 GitHub 取到那个对象，但那是「知道 sha 才能取」，不是「在分支上」。）同一评审的 Blocker B1 还发现，矩阵七行里有三个运行标识在任何证据文件里都不存在、一个 head 落在任何分支之外。",
-    "fix": "按评审意见把矩阵证据位改成「链脚本 + 判定卡 + 落证文件」（源码里不再硬编码运行标识与 sha），并在**修完之后的提交**上重跑两轮落证：服务二进制由该提交编译（`-ldflags` 注入 CommitID），证据里的 `head.commitId` 因此直接落在分支内可 fetch 的提交上。",
-    "head_at_evidence": "dd8dd097",
-    "head_is_fetchable": "**在分支上**：`git merge-base --is-ancestor dd8dd097 HEAD` 成立、`git log` 可见；按完整 sha `dd8dd09765ec22465f0bfadb70bf03c9aaba68b5` 也能从远端单独取到（`git fetch origin <完整 sha>`）。该提交与本分支 head 之间**没有 `.go` / `.ts` / `.vue` 的变动**（`git diff --name-only dd8dd097 HEAD -- '*.go' '*.ts' '*.vue'` 输出为空），落证与被审的代码是同一份。",
+    "fix": "按评审意见把矩阵证据位改成「链脚本 + 判定卡 + 落证文件」（源码里不再硬编码**本轮**的运行标识与 sha），并在**修完之后的提交**上重跑两轮落证：服务二进制由该提交编译（`-ldflags` 注入 CommitID），证据里的 `head.commitId` 因此直接落在分支内可取的提交上。第一次重跑之后 `main` 前移（Spec #47 段三改了 `internal/lingdoc/workspace/**`），本分支变基到新的 main，复审又提出 3 个 Required + 3 个 Suggestion，前端据此再改一版，因此**重跑了第二次**——最终落证的 head 是 5088e31b。",
+    "head_at_evidence": "5088e31b",
+    "head_is_fetchable": "**在分支上**：`git merge-base --is-ancestor 5088e31b HEAD` 成立、`git log` 可见。该提交与本 PR head 之间**没有 `.go` / `.ts` / `.vue` 的变动**（`git diff --name-only 5088e31b HEAD -- '*.go' '*.ts' '*.vue'` 输出为空），落证与被审的代码是同一份。",
     "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r16.exe --out .acceptance-r16 --round2-chains 'fault' --with-dependency-chain --with-real-model",
     "run_ids": {
       "round_1": {
-        "依赖图与影响任务链 (run-dependencies.ts)": "g3r-mvic4qtx-4beb3052",
-        "稳定化与交付闭环链 (run-stabilization.ts)": "g3r-mvic4s2c-85a330c4",
-        "阻断与恢复链 (run-blocked.ts)": "g3r-mvic4tr6-177c7519",
-        "真实模型链 (run-model.ts)": "g3r-mvic4vx6-e5653683",
-        "实时链路 / 证据导出 (run-evidence.ts)": "g3r-mvic5854-9c56c749"
+        "依赖图与影响任务链 (run-dependencies.ts)": "g3r-mvidnij8-fd2acea1",
+        "稳定化与交付闭环链 (run-stabilization.ts)": "g3r-mvidnjfj-9dc91544",
+        "阻断与恢复链 (run-blocked.ts)": "g3r-mvidnkh8-af346523",
+        "真实模型链 (run-model.ts)": "g3r-mvidnlqn-3f10f0cf",
+        "实时链路 / 证据导出 (run-evidence.ts)": "g3r-mvidnu6l-63468c6e"
       },
       "round_2": {
-        "依赖图与影响任务链 (run-dependencies.ts)": "g3r-mvic5fb9-225141f1",
-        "稳定化与交付闭环链 (run-stabilization.ts)": "g3r-mvic5got-7be998c3",
-        "阻断与恢复链 (run-blocked.ts)": "g3r-mvic5igk-20ce1ecf",
-        "真实模型链 (run-model.ts)": "g3r-mvic5kek-49397e95",
-        "实时链路 / 证据导出 (run-evidence.ts)": "g3r-mvic5shg-e0f85d46"
+        "依赖图与影响任务链 (run-dependencies.ts)": "g3r-mvidnyzc-b7495e80",
+        "稳定化与交付闭环链 (run-stabilization.ts)": "g3r-mvidnzx2-e4f7b110",
+        "阻断与恢复链 (run-blocked.ts)": "g3r-mvido0z0-a8ecbe30",
+        "真实模型链 (run-model.ts)": "g3r-mvido243-482aaab1",
+        "实时链路 / 证据导出 (run-evidence.ts)": "g3r-mvidoap3-7fa708c2"
       }
     },
     "evidence_files": {
@@ -120,14 +122,14 @@
         "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvic5shg-e0f85d46.json"
       ]
     },
-    "superseded_round": "上一轮（head `9641707b`）的证据文件 `G3-验收台-*-20261021-r*.json` **保留在仓内**：报告 19 / 20 的正文引用它们，而且它们是那一轮的真实运行记录。它们不是本轮的落证——本轮的落证是上表 `20261022` 那批。"
+    "superseded_round": "上一轮（head `9641707b`）的证据文件 `G3-验收台-*-20261021-r*.json` **保留在仓内**：报告 19 / 20 的正文引用它们，而且它们是那一轮的真实运行记录。它们不是本轮的落证——本轮的落证是 `20261022` 那批（head `5088e31b`）。"
   },
   "model_round_variance": {
     "rows": [
       "AC-G3-14",
       "AC-G3-15"
     ],
-    "fact": "两轮都跑了**真实模型**轮次（DeepSeek，凭据走环境变量 DEEPSEEK_API_KEY），模型的输出非确定性，因此两轮结论不同：轮 1 的助手轮次 status=completed、读回「确定受影响 1 条 / 可能受影响 0 条」；**轮 2 的助手模型轮次以 `provider_failure` 失败**（`AC-G3-14` 该轮记 `NOT RUN`），另有一次模型调用返回 0 条候选（模型侧 `AC-G3-15` 该轮记 `NOT RUN`）。",
+    "fact": "两轮都跑了**真实模型**轮次（DeepSeek，凭据走环境变量 DEEPSEEK_API_KEY），模型的输出非确定性，因此两轮结论不同：**轮 1** 三张模型侧判定卡全部成立（助手轮次 status=completed、读回「确定受影响 1 条 / 可能受影响 0 条」；模型侧 AC-G3-15 一次性给出 3 条候选依赖）；**轮 2** 的助手模型轮次以 `provider_failure` 失败（`AC-G3-14` 该轮记 `NOT RUN`），同轮的 `AC-G3-06`（旧异步结果）与 `AC-G3-15`（模型侧候选）仍然判定成立、记 `WARNING`。",
     "why_it_matters": "轮 2 的 `provider_failure` **复现了 #335 记的那一类缺陷**：provider 的真实失败原因在服务端不可见（既不返回也不落日志），台面只能看到 `provider_failure` 这个映射后的码。这条证据加强了 #335 的必要性，不改变它的范围。",
     "matrix_status": "矩阵这两行分别记 `WARNING`（AC-G3-14，依赖真实模型，不判 `PASS`）与 `PASS (follow-up)`（AC-G3-15，依赖图链的三态判定在两轮都成立；缺口清单 #246 未关闭前不判 `PASS`）。两行都不判 `PASS`。",
     "evidence": "docs/08-本轮实施方案/G3-验收台-7-真实模型验收证据-20261022-r1.json 与 -r2.json；docs/08-本轮实施方案/G3-验收台-8-整链证据-20261022-r1.json 与 -r2.json",
