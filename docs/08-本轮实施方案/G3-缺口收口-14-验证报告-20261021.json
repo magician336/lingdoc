@@ -1,0 +1,219 @@
+{
+  "ticket": "#310：装配受控故障注入后，SQLite 上的后续写操作被阻塞（疑似事务回滚后写锁未释放）",
+  "issue": "https://github.com/magician336/lingdoc/issues/310",
+  "head_at_evidence": "06206dc",
+  "head_note": "本报告的原始证据取自基线 0b6d8b4 + 当时的未提交工作区改动；实现已落库（实现提交 e0e8692，合入提交 6ce0085），并在当前 head 06206dc 上复验（见 reverification）。",
+  "implementation_commits": {
+    "实现提交": "e0e8692（fix(#310): 注入的租户作用域改由写端口自带，删除事务内读）",
+    "合入提交": "6ce0085（merge(#310): 注入作用域判定不再在写事务内读）"
+  },
+  "reverification": {
+    "head": "06206dc",
+    "note": "下面这些命令在**当前 head** 上实跑，输出是实跑结果，不是转述。",
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/ -run 'TestInjected' -count=1 -v",
+        "result": "PASS（5/5，ok 1.386s）：TestInjectedFaultErrorStatesItsOwnClientPresentation、TestInjectedImpactTaskWriteLeavesTheNextWriteRunnable、TestInjectedAuditWriteLeavesTheNextWriteRunnable、TestInjectedAuthorizationLeavesTheNextWriteAnswered、TestInjectedFaultWriterPerformsNoStorageAccess"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/... -count=1 -timeout 20m",
+        "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 33.086s；exit 0"
+      }
+    ],
+    "scope_note": "复验覆盖的是**本票的实现**（受控故障注入的作用域判定与事务边界）。票面记录的『挂住』现场**本轮仍未复现**——那不是本票实现的问题，本票修的是故障缝隙里另一个已定位的真实缺陷（见 root_cause.confirmed_defect）。"
+  },
+  "base": "integrate/g3-gap-closure-r3 @ 0b6d8b4",
+  "branch": "feat/issue-310-fault-write-block",
+  "worktree": "D:/code_warehouse/Projects/lingdoc/.worktrees/issue-310-fault-write-block",
+  "mode": "real",
+  "status": "PASS (follow-up)",
+  "status_note": "本票的实现已落地并在当前 head 上复验通过；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），本票的完成线记 PASS (follow-up)，跟进 Issue 为 #246。**本票完成 ≠ GitHub 关闭**：本票在 PR #323 合并且 main 的 CI 通过之后才关。",
+  "conclusion": "票面记录的现象（注入命中之后后续写全部挂住）**在本 head 上未能复现**：装配注入 → 注入命中（HTTP 503 + injected_fault）→ 紧跟着的 5 笔写（3 次建项目 + 2 次章节版本）**全部返回 HTTP 201**，读回全部 HTTP 200，SQLite 正常落盘。三个注入点（impact_task_write / audit_write / authorization）都如此。代码层面的三点核对结论是：**(1) 回滚是显式的**——apply 走 GORM 的 db.Transaction(...) 闭包，闭包返回注入错误时 GORM 立即 ROLLBACK 并把连接归还连接池；**(2) 三个注入点都成立**——注入错误没有被任何一层吞掉，回滚都覆盖 revision 推进、ImpactTask 与业务审计；**(3) 连接池没有被占满**——生产 SQLite 把连接池限成一条连接，注入命中之后紧跟着的写仍然能拿到这条连接。真正在故障缝隙里发现的缺陷是另一件事：**注入实现为了判定作用域，会在已经写过数据、已经握住写锁的写事务里再读一次项目行**（旧 faultInProjectScope），而这次读的错误被当成『不在作用域』吞掉——读一旦等锁，注入就从『一次干净的失败』变成『一个卡住的请求』，读失败时注入还会静默地不生效。本票把作用域判定改为**按写自己的租户判定**，故障缝隙因此**完全不做存储访问**，失败瞬时发生，回滚是唯一剩下的动作。",
+  "root_cause": {
+    "status": "NOT RUN",
+    "status_note": "票面记录的『挂住』在本 head 上未能复现，所以**它的根因没有成立**——按仓库门禁词表记 NOT RUN（本轮没有取得该根因的证据）。故障缝隙里**另有一个真实缺陷**已被定位并修复，见 confirmed_defect；它是一个独立的缺陷，但**本轮没有证据说它就是票面症状的成因**（见 mechanism_correction）。",
+    "status_note_scope": "本报告 acceptance_matrix 里「票面记录的『挂住』现场」那一行的状态同样是 NOT RUN，两处口径一致。",
+    "mechanism_correction": {
+      "claim_before": "本报告早先的版本把成因叙述成「故障缝隙里那次读会等锁 → 受控失败变成一个卡住的请求」。**这个叙述与代码不符，本轮已更正。**",
+      "why_it_does_not_hold": "旧实现 faultInProjectScope 调的 tx.Project 走的是 gormTransaction{db: tx}（internal/lingdoc/workspacecore/service.go:27、36），也就是**事务自己那条连接**。它不可能等连接池，也不可能等这条事务自己持有的写锁。所以「读等锁」这个机制在 SQLite 上不成立。",
+      "what_the_fix_still_is_worth": "去掉那次读仍然是对的：读的错误被当成「不在作用域」吞掉，注入会**静默地不生效**（apply 反而成功）。故障缝隙零存储访问把这条歧义去掉了，也顺带让受控失败瞬时发生。但它**不是**票面症状的成因证据。",
+      "reproduction_is_faithful": "票面实测的那个 head 是 a8fb69f；本报告早先用作「修复前」对照的基线是 0b6d8b4。两者在**服务端全部相关文件上逐字节相同**（fault_injection.go、service.go、container.go、lingdoc_fault_injection.go、impact_service.go、service_facade.go 全无差异；18 个差异文件里只有一个 Go 测试文件，其余是前端与文档）。所以「修复前」那次对照跑的就是票面那个 head 的服务端——**复现尝试是忠实的，症状在本机确实不复现**。",
+      "remaining_hypothesis": "票面记的症状是「第一个写就挂住、之后读也挂住、SQLite 文件 mtime 冻结」。这个形状更像**连接没归还 / 有别的进程占着同一个 SQLite 文件**，而不是「读等锁」。本轮在这台机器上确实发现过 15 个残留验收服务进程（它们各自占着数据目录）。要坐实这个假设，需要在**有残留进程占着数据目录**的环境里复跑，本轮没有那个环境。",
+      "harness_fix_in_this_round": "台面**浏览器侧**的 HTTP 客户端原本**没有**请求超时（node 脚本那份有 60 秒）。挂住的请求在页面上会永久挂着——正是票面「请求既不返回也不报错」那种表现。本轮给浏览器侧补上 60 秒超时并让超时变成一句可读的失败（g3HttpAdapter.ts），node 侧也把超时的异常改成可读失败（fetchClient.ts）。这一条把「挂住」从「无声无息」变成「明确的超时失败」。"
+    },
+    "confirmed_defect": {
+      "what": "受控故障注入的失败实现（faultImpactTaskWriter / faultBusinessAuditWriter）在判定『这次写是否属于演示租户』时，通过 tx.Project(fault.TenantID, projectID) 在**调用方的写事务里**读了一次项目行。",
+      "where": "internal/lingdoc/workspacecore/fault_injection.go:226-234（旧 faultInProjectScope），调用点 :162-168（faultImpactTaskWriter.WriteImpactTask）与 :179-186（faultBusinessAuditWriter.WriteBusinessAudit）",
+      "mechanism": [
+        "apply 的事务顺序是：先 tx.UpdateProject 推进项目 revision（service_facade.go:2450），再 store.UpdateChangeSet（:2465），**再** commitChangeImpactTasks → 写 ImpactTask（:2472-2476）。也就是说，故障缝隙里的那次项目读发生在事务**已经写过数据、已经握住 SQLite 写锁**之后。",
+        "那次读唯一的用途是租户作用域判定；读不到项目时旧实现一律 return false，把读错误与『不在作用域』混为一谈：注入会**静默地不生效**（apply 反而成功）。",
+        "（本报告早先还写过「读在等锁时把一次受控失败变成一个卡住的请求」。**这句已更正**：那次读走的是事务自己的连接，不会等锁也不会等池。见 root_cause.mechanism_correction。）",
+        "生产 SQLite 把连接池限成一条连接（internal/container/container.go:969-973 的 sqlite 分支 SetMaxOpenConns(1)），所以『事务里再读一次』是最容易把受控失败拖成请求挂起的地方。"
+      ],
+      "fix": "作用域改由**写自己的租户**判定：ImpactTaskWriter 的端口带上写事务的租户号（WriteImpactTask(tx, tenantID, task)），业务审计用 AuditEvent 自带的 TenantID。故障缝隙因此**零存储访问**，失败瞬时发生，剩下的事只有回滚。",
+      "equivalence": "apply 事务是租户作用域的（tx.Project(actor.TenantID, ...)），所以『写的事务所属租户』与『项目所属租户』是同一个值；作用域判定口径不变，跨租户不注入的既有结论（workspacecore/fault_injection_test.go:TestFaultInjectionDoesNotReachAnotherTenant、workspace/fault_injection_http_test.go:TestFaultInjectionDoesNotReachAnotherTenant）保持成立。"
+    },
+    "three_questions_answered": {
+      "1_显式回滚还是事务悬挂": "显式回滚。apply 走 internal/lingdoc/workspacecore/service.go:21-34 的 GORMRepository.Transaction → gorm.io/gorm v1.31.1 finisher_api.go:647-652：闭包返回错误时 defer 里立即 tx.Rollback()，连接随即归还连接池。注入错误没有被吞掉：impact_service.go:704 writeImpactTask 的错误 → commitChangeImpactTasks 返回 → service_facade.go:2474 返回 → 闭包返回错误 → 回滚。",
+      "2_回滚是否在所有注入点成立": "成立。impact_task_write 与 audit_write 在写事务内失败并整体回滚；authorization 在授权判定处失败（授权判定本身不触碰存储），事务同样回滚。三个注入点的用例见 internal/lingdoc/workspacecore/fault_injection_write_test.go，真实 HTTP seam 见 scripts/acceptance/lingdoc_fault_injection_write.py。",
+      "3_连接池是否被占满": "未观察到占满。生产 SQLite 的连接池被限成一条连接；注入命中之后紧跟着的 5 笔写（3 次建项目 + 2 次章节版本）全部 HTTP 201，说明那条连接已经被归还。"
+    },
+    "why_the_reported_hang_did_not_reproduce": [
+      "真实后端进程 + 真实 SQLite（CGO 驱动、WAL、busy_timeout=5000、SetMaxOpenConns(1)）+ 真实 HTTP 面，两阶段跑法与 scripts/acceptance/lingdoc_g3_acceptance_rounds.py 相同（同一账号、同一租户、同一 SQLite，阶段一不装注入把项目与变更集建好，阶段二装注入重启）。",
+      "额外试过：同一 SQLite 上重启后（阶段一做完多轮写再 TerminateProcess）再装注入，3 次建项目写仍然 HTTP 201。",
+      "本轮无法用验收台复现：frontend/scripts/g3demo/run-evidence.ts 在本 head 上直接报 `writeChapterVersion is not defined`（前端脚本缺陷，不在本票范围），因此台面链路跑不到注入那一步。",
+      "所以票面『挂住』的现场条件（哪一笔写先挂、当时连接池里剩下什么）在本轮没有观测到；本报告不把它写成已实测的 PASS。"
+    ]
+  },
+  "changes": [
+    "internal/lingdoc/workspacecore/fault_injection.go：ImpactTaskWriter 端口带上写事务的租户号（WriteImpactTask(Transaction, uint64, ImpactTask)）；两个失败实现改为按租户判定作用域，**删掉 tx.Project 的事务内读**（faultInProjectScope 整体删除）；BusinessAuditWriter 用 AuditEvent.TenantID 判定作用域。注入命中口径不变（503 + code=injected_fault）。",
+    "internal/lingdoc/workspacecore/impact_service.go：commitChangeImpactTasks / writeImpactTask 传递租户号；导出的 CommitChangeImpactTasks（无 writer 端口的包级 seam）保持原签名。",
+    "internal/lingdoc/workspacecore/service_facade.go：apply 路径把 actor.TenantID 传给 commitChangeImpactTasks；apply 的业务审计事件补上 TenantID（否则审计类注入无法判定作用域）。",
+    "internal/lingdoc/workspacecore/fault_injection_write_test.go（新增）：#310 的回归测试——注入命中之后紧接着的写必须完成（三个注入点），并钉住『故障缝隙不做存储访问』。",
+    "scripts/acceptance/lingdoc_fault_injection_write.py（新增）：真实 HTTP seam 的最小复现/验收 runner（注册 → 建项目与变更集 → 装注入重启 → 注入命中 → 紧跟着的 5 笔写 → 回滚读回），每笔请求带请求级超时。"
+  ],
+  "not_changed": [
+    "不新增产品端点、不改路由、不改共享错误映射表（注入失败仍由领域侧 InjectedFaultError.ClientForm() 自带 503 + injected_fault）。",
+    "不改验收台侧口径（frontend/src/views/lingdoc/g3demo/runner/faultInjection.ts 不在本票范围）。",
+    "不碰 internal/lingdoc/workspace/、internal/lingdoc/template/、internal/lingdoc/delivery/、docs/08-本轮实施方案/contracts/。"
+  ],
+  "acceptance_matrix": [
+    {
+      "验收项": "注入命中后仍能继续写",
+      "用户可见入口": "装配了注入的服务（POST /api/v1/lingdoc/projects、POST /api/v1/lingdoc/projects/{id}/chapters/{cid}/versions）",
+      "领域不变量/事务边界": "一次失败的事务不留下未回滚的写事务或未归还的连接；故障缝隙不触碰存储",
+      "成功": "注入命中后紧接着的一次写正常完成",
+      "失败/权限/恢复": "注入未命中时行为不变；授权类注入下的写以同样的注入失败**有答复**地结束，而不是挂住",
+      "持久化与并发": "连续写不阻塞（生产同款：连接池一条连接）",
+      "测试或运行证据": "internal/lingdoc/workspacecore/fault_injection_write_test.go（4 个用例）+ scripts/acceptance/lingdoc_fault_injection_write.py --live（三个注入点各一轮）；当前 head 06206dc 上的复验见 reverification.commands",
+      "状态": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），这一行记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "验收项": "回滚证据可读回",
+      "用户可见入口": "GET /api/v1/lingdoc/projects/{id}、/impact-tasks、/audit",
+      "领域不变量/事务边界": "注入命中时那笔事务整体未生效",
+      "成功": "项目 revision、模板引用、ImpactTask 集合、业务审计事件（project.change_set.apply）与注入前一致",
+      "失败/权限/恢复": "读回本身不超时（HTTP 200）",
+      "持久化与并发": "N/A",
+      "测试或运行证据": "同上的读回断言与 runner 的 rollback_readback 步骤；当前 head 06206dc 上的复验见 reverification.commands",
+      "状态": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "验收项": "故障缝隙不做存储访问",
+      "用户可见入口": "领域层（组合根装上的窄写入端口）",
+      "领域不变量/事务边界": "受控失败的实现不读存储：作用域按写自己的租户判定",
+      "成功": "注入在项目读不出来时仍然命中；失败实现一次存储访问都没有",
+      "失败/权限/恢复": "非演示租户仍然走真实写入路径",
+      "持久化与并发": "N/A",
+      "测试或运行证据": "internal/lingdoc/workspacecore/fault_injection_write_test.go:TestInjectedFaultWriterPerformsNoStorageAccess；当前 head 06206dc 上的复验见 reverification.commands",
+      "状态": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "验收项": "票面记录的『挂住』现场",
+      "用户可见入口": "装配注入后的真实服务",
+      "领域不变量/事务边界": "—",
+      "成功": "—",
+      "失败/权限/恢复": "—",
+      "持久化与并发": "—",
+      "测试或运行证据": "本 head 上未能复现挂住（两阶段真实服务实跑、三个注入点、5 笔后续写全部 201）；验收台链路因前端脚本缺陷 writeChapterVersion is not defined 跑不到注入那一步",
+      "状态": "NOT RUN"
+    },
+    {
+      "验收项": "PostgreSQL 下的同一断言",
+      "用户可见入口": "—",
+      "领域不变量/事务边界": "—",
+      "成功": "—",
+      "失败/权限/恢复": "—",
+      "持久化与并发": "—",
+      "测试或运行证据": "本轮没有隔离 PostgreSQL 实例；本票的修复与方言无关（作用域判定不再触碰存储），但 PostgreSQL 路径未实跑",
+      "状态": "NOT RUN"
+    }
+  ],
+  "validation": [
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/... -count=1 -timeout 30m",
+      "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 91.059s；exit 0"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/... ./internal/container/... -count=1",
+      "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 94.150s；ok github.com/Tencent/WeKnora/internal/container 4.900s；exit 0"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspace/ -run 'TestApplyFailsWithInjected|TestApplySucceedsWhenNoFault|TestFaultInjectionDoesNotReach' -count=1 -v",
+      "result": "PASS（5/5，8.014s）：既有 HTTP seam 的受控故障注入用例全部保持通过"
+    },
+    {
+      "command": "go test ./internal/lingdoc/workspacecore/ -run 'TestInjected' -count=1 -v",
+      "result": "PASS（5/5）：TestInjectedFaultErrorStatesItsOwnClientPresentation、TestInjectedImpactTaskWriteLeavesTheNextWriteRunnable、TestInjectedAuditWriteLeavesTheNextWriteRunnable、TestInjectedAuthorizationLeavesTheNextWriteAnswered、TestInjectedFaultWriterPerformsNoStorageAccess"
+    },
+    {
+      "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go build ./...",
+      "result": "PASS：exit 0，无输出"
+    },
+    {
+      "command": "go vet ./internal/lingdoc/workspacecore/... ./internal/container/...",
+      "result": "PASS：exit 0，无输出"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/workspacecore/ internal/container/",
+      "result": "PASS：无输出（格式合规）"
+    },
+    {
+      "command": "python scripts/acceptance/lingdoc_fault_injection_write.py --live --binary .acceptance-310/lingdoc-server.exe --repo-root . --point impact_task_write --timeout 20",
+      "result": "PASS：apply → HTTP 503 code=injected_fault（32.22ms，未超时）；rollback_readback 三项全 true（project / impact_tasks / business_audit）；writes_after_injection 5/5 → HTTP 201（建项目 ×3 + 章节版本 ×2），无 timed_out"
+    },
+    {
+      "command": "python scripts/acceptance/lingdoc_fault_injection_write.py --live --binary .acceptance-310/lingdoc-server.exe --repo-root . --point audit_write --fault-action project.change_set.apply --timeout 20",
+      "result": "PASS：apply → HTTP 503 code=injected_fault；rollback_readback 三项全 true；writes_after_injection 5/5 → HTTP 201"
+    },
+    {
+      "command": "python scripts/acceptance/lingdoc_fault_injection_write.py --live --binary .acceptance-310/lingdoc-server.exe --repo-root . --point authorization --fault-action manage --timeout 20",
+      "result": "PASS：apply → HTTP 503 code=injected_fault；rollback_readback 三项全 true；writes_after_injection 5/5 → HTTP 201"
+    },
+    {
+      "command": "python scripts/acceptance/lingdoc_fault_injection_write.py --live --binary <修复前二进制> --repo-root . --point impact_task_write --timeout 20",
+      "result": "PASS（对照）：修复前的二进制在同一 runner 下同样没有挂住——apply → 503 injected_fault，随后 5 笔写全部 201。这说明票面记录的挂住在本 head 上不能复现，修复前后行为在这一条链上没有差别（详见 root_cause.why_the_reported_hang_did_not_reproduce）"
+    }
+  ],
+  "before_after": {
+    "note": "「修复前」= 基线 0b6d8b4 编译出的二进制；「修复后」= 本票工作区编译出的二进制；同一 runner、同一参数、同一台机器。",
+    "before": {
+      "apply": "HTTP 503 · code=injected_fault · elapsed 32.22ms · timed_out=false",
+      "writes_after_injection": "create project #0/#1/#2 → HTTP 201；chapter version ×2 → HTTP 201（无 timed_out）",
+      "readback": "GET project / impact-tasks / audit → HTTP 200；ImpactTask 0 → 0；project.change_set.apply 业务审计 0 → 0"
+    },
+    "after": {
+      "apply": "HTTP 503 · code=injected_fault · elapsed 32.22ms · timed_out=false",
+      "writes_after_injection": "create project #0/#1/#2 → HTTP 201；chapter version ×2 → HTTP 201（无 timed_out）",
+      "readback": "GET project / impact-tasks / audit → HTTP 200；ImpactTask 0 → 0；project.change_set.apply 业务审计 0 → 0"
+    },
+    "difference": {
+      "http_level": "**没有差别**：票面记录的『注入命中之后写挂住』在本 head 上不能复现——修复前的二进制在同一 runner 下同样返回 201。本报告不把它写成『修复前挂住』，那会把没观测到的事实写成已实测。",
+      "code_level": "有差别，且可确定性验证：修复前，故障缝隙靠 `tx.Project(...)` 判定作用域——**读不到项目时注入会静默地不生效**（读错误被当成『不在作用域』吞掉）；修复后，作用域按写自己的租户判定，故障缝隙**零存储访问**，注入必然命中。",
+      "deterministic_evidence": "internal/lingdoc/workspacecore/fault_injection_write_test.go:TestInjectedFaultWriterPerformsNoStorageAccess 用一个『项目读会返回 ErrNotFound』的事务替身调用失败实现：修复后的实现返回注入失败（且事务替身记录到的读次数为 0）；修复前的实现会走真实写入路径，读次数为 1，且读不到项目时注入不生效。",
+      "why_it_matters": "读一旦在『事务已经推进 revision、已经握住写锁』的位置等锁，受控失败就从『一次干净的失败』变成『一个卡住的请求』；这正是票面怀疑的机制形状。修复把这次读从故障缝隙里彻底去掉。"
+    }
+  },
+  "rollback_evidence": {
+    "before_injection": "project_version=7 · spec_revision=1 · current_context_revision=1 · template_id=template-demo · template_version=1 · template_copy_version=1 · ImpactTask 0 条 · project.change_set.apply 业务审计 0 条",
+    "after_injection": "同上，逐项相同：project=true · impact_tasks=true · business_audit=true（runner 的 rollback_readback 步骤）",
+    "note": "授权决定审计（authorization.*）在 apply 的**读事务**里提交，它不属于失败的那一笔事务，因此回滚比较只对业务审计（project.change_set.apply）计数——口径与验收台 frontend/src/views/lingdoc/g3demo/runner/faultInjection.ts 一致。"
+  },
+  "risks": [
+    "端口签名变了：ImpactTaskWriter.WriteImpactTask 从 (Transaction, ImpactTask) 变成 (Transaction, uint64, ImpactTask)。仓内只有 workspacecore 实现与调用它，外部实现需要跟着改（本次改动是刻意的：它把租户作用域判定从存储读取里拿出来）。",
+    "apply 的业务审计事件现在带上 TenantID。审计表 lingdoc_project_audits 没有 tenant 列，事件里的 TenantID 不落库；它只用于作用域判定，不改变既有审计读回。",
+    "受控故障注入仍然是组合根级别的进程内夹具：环境变量一旦在非演示环境被误配，该租户的 apply 会持续失败。缓解不变：必须同时点名租户、未知注入点 fail-closed、装配时打 WARNING 日志。",
+    "票面记录的挂起现场没有被复现，本票没有拿到『挂住时的连接池/写锁现场』证据。若后续再遇到，需要现场证据（goroutine dump 或 SQLite 锁状态）才能进一步定位到具体等待点。"
+  ],
+  "notes": [
+    "本票没有新增任何产品 API 端点，也没有改动共享错误映射表：注入失败仍由领域侧 InjectedFaultError.ClientForm() 自带 503 + injected_fault 呈现（#256 已定的口径保持不变）。",
+    "本轮验证全部在独立 worktree（D:/code_warehouse/Projects/lingdoc/.worktrees/issue-310-fault-write-block，基线 integrate/g3-gap-closure-r3@0b6d8b4）执行。",
+    "验收台链路本轮跑不通是前端脚本缺陷（frontend/scripts/g3demo/run-evidence.ts: `writeChapterVersion is not defined`），与本票的后端改动无关，因此 AC-G3-03 的台面实跑仍需在 #295 侧重跑。"
+  ]
+}

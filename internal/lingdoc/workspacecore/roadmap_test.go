@@ -54,7 +54,7 @@ func roadmapTemplateCopy(t *testing.T, svc *Service, actor Actor, p Project) Pro
 	require.NoError(t, err)
 	definition.Fields = append(definition.Fields, lingdoctemplate.Field{ID: roadmapRequiredNodeID, Label: "技术路线 " + roadmapRequiredNodeID, Type: "text"})
 	definition.RequiredFields = append(definition.RequiredFields, roadmapRequiredNodeID)
-	definition.Rules = append(definition.Rules, lingdoctemplate.Rule{ID: "route-r7-required", Kind: "presence", Severity: lingdoctemplate.SeverityBlocking,
+	definition.Rules = append(definition.Rules, lingdoctemplate.Rule{ID: lingdoctemplate.RuleRouteNodeRequired, Kind: "presence", Severity: lingdoctemplate.SeverityBlocking,
 		Parameters: map[string]any{"target_kind": "field", "target_id": roadmapRequiredNodeID}})
 	definition, err = lingdoctemplate.WithHashes(definition)
 	require.NoError(t, err)

@@ -162,18 +162,24 @@ func (m *G2HostAgentModel) Reply(ctx context.Context, actor core.Actor, request 
 		if _, err := core.DecodeAgentChangeDraftSuggestion(candidate, request.Context.ContextRevision); err != nil {
 			return core.G2ModelReply{}, err
 		}
-		// A change draft always states which objects the assistant believes
-		// are affected and why. A reply that proposes a draft without the two
-		// explanation groups is refused, so the groups can never be missing
-		// from a draft the assistant produced.
-		groups, present := object["affected_explanation"]
-		if !present {
-			return core.G2ModelReply{}, core.ErrInvalidRequest
+		// The two explanation groups are the assistant's own reading of what
+		// the proposed change affects. The system prompt asks for them, but a
+		// model that proposes a draft without them is NOT refused: the draft
+		// is kept, the natural language reply is kept, and the missing groups
+		// are recorded as a fact about the assistant's answer ("助手未给两组说明")
+		// that the draft carries by having no affected_explanation at all.
+		// Refusing the whole reply would throw away a reviewable draft, and
+		// with it the assistant's own words, for a missing annotation.
+		//
+		// An explanation that IS stated must still be traceable: an entry that
+		// cannot cite a basis is refused, so an unsupported object never
+		// reaches either group.
+		if groups, present := object["affected_explanation"]; present && !core.AssistantAffectedExplanationAbsent(groups) {
+			if _, err := core.DecodeAssistantAffectedExplanation(groups); err != nil {
+				return core.G2ModelReply{}, err
+			}
 		}
-		if _, err := core.DecodeAssistantAffectedExplanation(groups); err != nil {
-			return core.G2ModelReply{}, err
-		}
-	} else if groups, present := object["affected_explanation"]; present {
+	} else if groups, present := object["affected_explanation"]; present && !core.AssistantAffectedExplanationAbsent(groups) {
 		// Even without a draft the assistant may explain what it believes is
 		// affected, but the explanation must still be traceable.
 		if request.Agent != "task_assistant" || request.Purpose != "conversation" {

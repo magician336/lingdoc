@@ -18,6 +18,7 @@ import {
 } from './g3Evidence'
 import { G3_MATRIX_ROWS } from './g3Matrix'
 import { G3_STATUS_VALUES } from './g3Status'
+import { gapIdsForRow, limitingGapIdsForRow } from './g3Gaps'
 import { G3_BLOCKED_STEPS } from './runner/blocked'
 import { G3_ASSISTANT_STEPS } from './runner/assistant'
 import { G3_CS_STEPS } from './runner/changeset'
@@ -163,10 +164,11 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-05'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-13'].status, 'PASS')
   // AC-G3-14 / AC-G3-15：助手两组说明与候选批次链**已实现并已接入台面**，
-  // 但本轮实跑的事实是「没有可读回的助手草稿」（NOT RUN）与
-  // 「候选对象引用与项目对齐的问题已修、未在当前 head 重跑出绿」（BLOCKED）。
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'NOT RUN')
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'BLOCKED')
+  // 本轮实跑也判定成立了。AC-G3-14 的结论**依赖真实模型**（非确定性），
+  // 按仓库口径记 WARNING，不写 PASS；AC-G3-15 是确定性判定，但带缺口，
+  // 按 #246 的规则记 PASS (follow-up)。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'WARNING')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'PASS (follow-up)')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
   // AC-G3-14 / AC-G3-15 的必需步骤必须挂在**助手链 / 候选批次链**上：
@@ -192,6 +194,25 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
     G3_ROW_EVIDENCE_RULES['AC-G3-08'].requires.includes(G3_ROADMAP_STEPS.compareVersions),
     'AC-G3-08 的必需步骤缺了前后比较',
   )
+  // 状态口径散在矩阵 / 缺口清单 / 规则表 / 镜像 / 报告五处，容易各说各话。
+  // **矩阵的静态状态**是「还没被实跑升格」的保守值，**规则表的 status** 是「判定成立
+  // 时这一行取什么状态」，两者本就可以不同（无缺口的行：矩阵 PASS (follow-up)、
+  // 规则表 PASS，实跑命中后行才升到 PASS）。
+  //
+  // 真正要守的是 #246 的硬规则：**本票所列缺口对应的验收行，在 #246 关闭前不得判 PASS。**
+  // 于是「有实现缺口的行，规则表不得写 PASS」——否则实跑命中时，矩阵行会被投影成
+  // 规则表的 status，直接违反那条规则（这正是本轮评审抓到的真缺陷）。
+  for (const [id, rule] of Object.entries(G3_ROW_EVIDENCE_RULES)) {
+    const hasGap =
+      gapIdsForRow(id).length > 0 || limitingGapIdsForRow(id).length > 0
+    if (hasGap) {
+      assert.notEqual(
+        rule.status,
+        'PASS',
+        `${id} 有实现缺口，规则表不得写 PASS（缺口清单 #246 关闭前不判 PASS）`,
+      )
+    }
+  }
   // 真实模型路径的结论是非确定性的：状态一律 WARNING，并保留缺口清单 #246。
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-06'].status, 'WARNING')
   for (const id of ['AC-G3-14', 'AC-G3-15']) {
@@ -293,7 +314,9 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
     )
   }
   // 规则表之外的行状态原样保留。
-  assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
+  // AC-G3-03 是**例外**：它在本轮已实跑判定成立（注入命中 + 回滚读回完整），
+  // 但行状态按缺口清单 #246 的规则保留 follow-up（#246 未关闭前不判 PASS）。
+  assert.equal(byId.get('AC-G3-03')?.status, 'PASS (follow-up)')
   assert.equal(byId.get('G3.1')?.status, 'TODO')
   assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
 })
@@ -522,9 +545,9 @@ test('真实模型链跑完后，三条非确定性结论标 WARNING 并与确�
   // 部分覆盖的两行仍然指向缺口清单 #246。
   assert.equal(byId.get('AC-G3-14')?.followUpIssue, 246)
   assert.equal(byId.get('AC-G3-15')?.followUpIssue, 246)
-  // 其余行状态原样保留。
+  // 其余行状态原样保留（AC-G3-03 已实跑判定成立，按 #246 规则保留 follow-up）。
   assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)')
-  assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
+  assert.equal(byId.get('AC-G3-03')?.status, 'PASS (follow-up)')
   // 判定卡的说明里带模型运行标识与耗时。
   assert.match(byId.get('AC-G3-06')?.note ?? '', /turn-1/)
   assert.match(byId.get('AC-G3-14')?.note ?? '', /4200|3800/)
@@ -614,12 +637,16 @@ test('跨段累计不串味：A 段的步骤不能配 B 段的判定', () => {
 test('跨段累计：确定性判定优先于模型侧判定', () => {
   // AC-G3-14 的确定性路径要求「创建变更草稿 + 读回草稿上的两组说明」两步。
   const deterministic = segmentRun('g3r-det', ['创建变更草稿', G3_ASSISTANT_STEPS.readChangeSet], ['AC-G3-14'])
+  // 判定卡自带状态时，投影取**判定自己的**状态（规则表主路径的状态是兜底）。
+  deterministic.verdicts = [
+    { id: 'AC-G3-14', title: 'AC-G3-14', holds: true, detail: '确定性路径', evidence: [], status: 'PASS (follow-up)' },
+  ]
   const model = segmentRun('g3r-model', ['模型-助手草稿-结论'], ['AC-G3-14'])
   model.verdicts = [{ id: 'AC-G3-14', title: 'AC-G3-14', holds: true, detail: '模型侧', evidence: [], status: 'WARNING', modelDependent: true }]
   const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, [deterministic, model])
   const byId = new Map(rows.map((row) => [row.id, row]))
-  // 确定性路径判成立：取确定性路径的状态（规则表主路径的状态），不取模型侧的 WARNING。
-  assert.equal(byId.get('AC-G3-14')?.status, G3_ROW_EVIDENCE_RULES['AC-G3-14'].status)
+  // 确定性路径判成立：取确定性路径的状态，不取模型侧的 WARNING。
+  assert.equal(byId.get('AC-G3-14')?.status, 'PASS (follow-up)')
   assert.notEqual(byId.get('AC-G3-14')?.status, 'WARNING', '模型侧的 WARNING 不该盖过确定性判定')
   const item = evidence.find((entry) => entry.rowId === 'AC-G3-14')
   assert.equal(item?.runId, 'g3r-det')
@@ -650,4 +677,97 @@ test('累计清单坏掉时读成空数组，不静默当成有历史', () => {
   assert.deepEqual(loadRunHistory(storage), [])
   storage.setItem(G3_RUN_HISTORY_STORAGE_KEY, JSON.stringify({ runId: 'x' }))
   assert.deepEqual(loadRunHistory(storage), [])
+})
+
+test('#246 的硬规则：带实现缺口的行，页面矩阵投影不得写成 PASS', () => {
+  // 缺口清单 #246 未关闭前，**它列出的缺口所对应的验收行一律不得判 PASS**
+  // （docs/agents/development-rules.md）。
+  //
+  // 这条规则必须在**投影处**兜住：判定卡自己会带 status，判定成立时常常就是
+  // PASS。只改静态声明不够——投影会把判定卡的状态盖回矩阵行。
+  // 这里用「一个判定成立、且自带 PASS 的判定卡」把每一行都推一遍：
+  // 带缺口的行必须被降级成 PASS (follow-up)，无缺口的行才允许 PASS。
+  const head: G3BackendHead = {
+    commitId: 'guard0000',
+    probedAt: '2026-10-21T00:00:00.000Z',
+    probePath: '/api/v1/version',
+    probeStatus: 401,
+  }
+  let checked = 0
+  for (const row of G3_MATRIX_ROWS) {
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    if (!rule?.verdictId) continue
+    const hasGap = gapIdsForRow(row.id).length > 0 || limitingGapIdsForRow(row.id).length > 0
+    const ctx: G3RunContext = {
+      runId: 'g3r-guard',
+      startedAt: '2026-10-21T00:00:00.000Z',
+      accountEmail: 'guard@example.com',
+      steps: rule.requires.map((name, index) => ({
+        index: index + 1,
+        name,
+        method: 'GET',
+        path: '/api/v1/lingdoc/guard',
+        status: 200,
+        ok: true,
+        durationMs: 1,
+        conclusion: '守护测试用的假步骤',
+      })),
+      head,
+      chapters: [],
+      stale: false,
+      verdicts: [
+        {
+          id: rule.verdictId,
+          title: '守护测试用的判定卡',
+          holds: true,
+          detail: '守护测试用的判定卡',
+          evidence: [],
+          status: 'PASS',
+        },
+      ],
+    }
+    const projected = applyRunEvidence(G3_MATRIX_ROWS, ctx).rows.find((item) => item.id === row.id)
+    assert.ok(projected, `${row.id} 没有投影出矩阵行`)
+    if (hasGap) {
+      assert.notEqual(
+        projected.status,
+        'PASS',
+        `${row.id} 带实现缺口，页面投影不得写成 PASS（缺口清单 #246 关闭前不判 PASS）`,
+      )
+    }
+    checked += 1
+  }
+  assert.ok(checked >= 10, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
+})
+
+test('#246 的硬规则：带缺口的 AC 行，规则表状态必须与矩阵行一致，且不得判 PASS', () => {
+  // 两处状态是**手工同步**的：`g3Matrix.ts` 的静态声明（这一行现在是什么状态）
+  // 与 `g3Evidence.ts` 的规则表（这一行被本轮判定之后取什么状态）。
+  // 同步一旦漂移，页面就会同时挂着两个说法：「声明的口径」与「跑出来的口径」。
+  //
+  // 口径只覆盖**带 #246 缺口的 AC 行**，理由写在这里，避免以后有人扩大或缩小它：
+  // - 切片行（G3.x）的静态状态是「未判定」（TODO / NOT RUN），它与规则表的
+  //   「判定成立后取什么状态」本就是两件事，不在同一条口径上；
+  // - 不带缺口的行（例如 followUpIssue 指向 #239 的行）由**别的** Issue 决定
+  //   它的 follow-up 形态，规则表写的是「判定成立后取什么状态」，两表不必相等。
+  let checked = 0
+  for (const row of G3_MATRIX_ROWS) {
+    if (row.group !== 'ac') continue
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    if (!rule) continue
+    const hasGap = gapIdsForRow(row.id).length > 0 || limitingGapIdsForRow(row.id).length > 0
+    if (!hasGap) continue
+    assert.equal(
+      rule.status,
+      row.status,
+      `${row.id} 带实现缺口：规则表状态必须与矩阵行一致（两处状态是手工同步的）`,
+    )
+    assert.notEqual(
+      rule.status,
+      'PASS',
+      `${row.id} 带实现缺口：缺口清单 #246 关闭前不得判 PASS`,
+    )
+    checked += 1
+  }
+  assert.ok(checked >= 8, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
 })

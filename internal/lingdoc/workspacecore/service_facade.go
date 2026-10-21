@@ -2245,7 +2245,7 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			chapterIDs = append(chapterIDs, impact.ChapterID)
 		}
 		if _, ok := tx.(impactTransaction); ok {
-			if err := s.commitChangeImpactTasks(featureTx, next, change); err != nil {
+			if err := s.commitChangeImpactTasks(featureTx, actor.TenantID, next, change); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}
@@ -2260,7 +2260,10 @@ func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, ch
 			if change.TemplateUpgrade != nil {
 				details["template_upgrade"] = templateUpgradeAuditDetails(change, next.TemplateCopy)
 			}
-			if err := s.writeBusinessAudit(featureTx, audit, AuditEvent{ID: uuid.NewString(), ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
+			// The tenant travels with the event so that a substituted
+			// BusinessAuditWriter can decide its scope without reading storage
+			// inside this write transaction (#310).
+			if err := s.writeBusinessAudit(featureTx, audit, AuditEvent{ID: uuid.NewString(), TenantID: actor.TenantID, ProjectID: projectID, ActorID: actor.UserID, Action: "project.change_set.apply", Target: change.ID, Details: details, Reason: change.Reason, CreatedAt: now}); err != nil {
 				return operationResult[ChangeSet]{}, err
 			}
 		}

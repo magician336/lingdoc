@@ -3,6 +3,7 @@ package delivery
 import (
 	"errors"
 	"reflect"
+	"slices"
 	"testing"
 
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
@@ -49,12 +50,39 @@ func TestFixedTemplateReaderRejectsUnknownOrUnversionedTemplate(t *testing.T) {
 	for _, request := range []struct{ id, version string }{
 		{id: "unknown", version: DemoTemplateVersion},
 		{id: DemoTemplateID, version: ""},
-		{id: DemoTemplateID, version: "2"},
+		{id: DemoTemplateID, version: "99"},
 	} {
 		_, err := reader.Get(request.id, request.version)
 		if !errors.Is(err, ErrTemplateNotFound) {
 			t.Errorf("Get(%q, %q) error = %v, want ErrTemplateNotFound", request.id, request.version, err)
 		}
+	}
+}
+
+// The demo catalog has two immutable versions. The published one is the
+// contract version; the second one declares the required route node. Both are
+// served, and each of them keeps its own identity.
+func TestFixedTemplateReaderServesBothDemoVersions(t *testing.T) {
+	reader := NewFixedTemplateReader()
+	published, err := reader.Get(DemoTemplateID, DemoTemplateVersion)
+	if err != nil {
+		t.Fatalf("Get(%q, %q) error = %v", DemoTemplateID, DemoTemplateVersion, err)
+	}
+	if published.Version != DemoTemplateVersion {
+		t.Fatalf("published version = %q, want %q", published.Version, DemoTemplateVersion)
+	}
+	route, err := reader.Get(DemoTemplateID, lingdoctemplate.DemoRouteTemplateVersion)
+	if err != nil {
+		t.Fatalf("Get(%q, %q) error = %v", DemoTemplateID, lingdoctemplate.DemoRouteTemplateVersion, err)
+	}
+	if route.Version != lingdoctemplate.DemoRouteTemplateVersion {
+		t.Fatalf("route version = %q, want %q", route.Version, lingdoctemplate.DemoRouteTemplateVersion)
+	}
+	if !slices.Contains(route.RequiredFields, lingdoctemplate.DemoRequiredRouteNodeID) {
+		t.Fatalf("the route template version must declare the required route node: %+v", route.RequiredFields)
+	}
+	if slices.Contains(published.RequiredFields, lingdoctemplate.DemoRequiredRouteNodeID) {
+		t.Fatalf("the published template version must not declare a route node: %+v", published.RequiredFields)
 	}
 }
 

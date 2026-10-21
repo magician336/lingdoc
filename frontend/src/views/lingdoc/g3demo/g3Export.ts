@@ -22,7 +22,7 @@
 import { G3_MATRIX_ROWS, formatAnchor, type G3MatrixRow } from './g3Matrix'
 import { G3_ROW_EVIDENCE_RULES, type G3RowEvidence } from './g3Evidence'
 import type { G3Status } from './g3Status'
-import { G3_GAP_LIST_ISSUE, G3_IMPLEMENTATION_GAPS, type G3ImplementationGap } from './g3Gaps'
+import { G3_GAP_LIST_ISSUE, G3_IMPLEMENTATION_GAPS, downgradeGapPass, type G3ImplementationGap } from './g3Gaps'
 import type { G3BackendHead, G3RunVerdict, G3StepRecord } from './runner/runContext'
 
 /** 结论来源：本次运行 / 历史快照 / 尚未判定。三者互斥。 */
@@ -238,21 +238,21 @@ export function resolveRowStatus(
   const held = deterministic.filter((verdict) => verdict.holds)
   if (held.length) {
     for (const verdict of held) {
-      if (verdict.status) return verdict.status
+      if (verdict.status) return downgradeGapPass(row.id, verdict.status)
     }
-    if (rule) return rule.status
-    return 'PASS'
+    if (rule) return downgradeGapPass(row.id, rule.status)
+    return downgradeGapPass(row.id, 'PASS')
   }
 
   // 判定卡不成立：状态由判定卡自己带（部分判定），没有就**不升格**。
   for (const verdict of verdicts) {
-    if (verdict.status) return verdict.status
+    if (verdict.status) return downgradeGapPass(row.id, verdict.status)
   }
 
   // 只有模型侧判定：状态一律不写 PASS。
   const modelHeld = verdicts.filter((verdict) => verdict.model_dependent && verdict.holds)
   if (modelHeld.length) {
-    if (rule) return rule.status === 'PASS' ? 'WARNING' : rule.status
+    if (rule) return downgradeGapPass(row.id, rule.status === 'PASS' ? 'WARNING' : rule.status)
     return 'WARNING'
   }
 
@@ -279,7 +279,21 @@ function rowSource(row: G3MatrixRow, verdicts: readonly G3ExportVerdict[]): G3Co
   return conclusionSourceOf(row, verdicts.length > 0)
 }
 
-/** 把判定转成导出体里的形态。 */
+/**
+ * 把判定转成导出体里的形态。
+ *
+ * `model_dependent` 分两层，**含义不同**：
+ * - **轮次级**（`runs[].model_dependent` / `evidence_sources`）：这一段**含**模型依赖的
+ *   结论。它是整段的属性，不是每一条判定的属性。
+ * - **判定级**（每条判定上的 `model_dependent`）：**这条**判定是不是模型依赖。
+ *
+ * 所以判定自己声明了标志时，**以判定为准**：一轮里只要有一条判定走了真实模型，
+ * 不等于这一轮里每一条判定都模型依赖。把轮次级标志摊到每条判定上，会让确定性
+ * 判定（AC-G3-01 那一类）在投影时被当成模型侧结论，`PASS` 被改写成 `WARNING`。
+ *
+ * 判定**没有**声明标志时，标志的来源要看**这份文件**：见
+ * `fileLevelModelDependent()`。
+ */
 function toExportVerdict(verdict: G3RunVerdict, runId: string, modelDependent: boolean): G3ExportVerdict {
   return {
     id: verdict.id,
@@ -288,9 +302,32 @@ function toExportVerdict(verdict: G3RunVerdict, runId: string, modelDependent: b
     detail: verdict.detail,
     evidence: [...verdict.evidence],
     status: verdict.status,
-    model_dependent: modelDependent || verdict.modelDependent === true,
+    model_dependent: verdict.modelDependent ?? modelDependent,
     run_id: runId,
   }
+}
+
+/**
+ * 这一份文件的轮次级标志，要不要摊到它那些**没有自己声明**标志的判定上。
+ *
+ * 两种文件要分开看：
+ * - **整份由一次模型轮次产出**的历史证据文件：它的判定一条都没声明过标志，
+ *   标志记在文件级（「这份证据的结论依赖真实模型」）。这时文件级标志就是每条判定
+ *   的标志，摊下去才对。
+ * - **一次运行里混着多条链**的文件（实时链）：模型依赖的判定自己声明了标志，
+ *   其余判定（确定性链）没声明。文件级在这里只表示「这一段含模型依赖的结论」，
+ *   摊下去会让确定性判定被误标成模型侧结论，它们的 `PASS` 在投影时被改写成
+ *   `WARNING`——那是假的口径。
+ *
+ * 判据：**只要这份文件里有任意一条判定自己声明过标志，就以判定为准**；
+ * 一条都没声明，才用文件级标志兜底。
+ */
+function fileLevelModelDependent(
+  verdicts: readonly G3RunVerdict[],
+  fileModelDependent: boolean,
+): boolean {
+  const anyVerdictDeclares = verdicts.some((verdict) => verdict.modelDependent !== undefined)
+  return anyVerdictDeclares ? false : fileModelDependent
 }
 
 /** 一次运行的导出体输入。 */
@@ -440,7 +477,11 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
   for (const file of input.files) {
     if (file.head?.commitId) heads.add(file.head.commitId)
     const fileVerdicts = file.verdicts.map((verdict) =>
-      toExportVerdict(verdict, file.runId, file.modelDependent),
+      toExportVerdict(
+        verdict,
+        file.runId,
+        fileLevelModelDependent(file.verdicts, file.modelDependent),
+      ),
     )
     verdicts.push(...fileVerdicts)
     runs.push({
@@ -590,7 +631,11 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
   for (const run of input.runs) {
     if (run.head?.commitId) heads.add(run.head.commitId)
     const runVerdicts = run.verdicts.map((verdict) =>
-      toExportVerdict(verdict, run.runId, run.modelDependent === true),
+      toExportVerdict(
+        verdict,
+        run.runId,
+        fileLevelModelDependent(run.verdicts, run.modelDependent === true),
+      ),
     )
     verdicts.push(...runVerdicts)
     runs.push({
@@ -630,7 +675,9 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
     // 状态以**投影结果**为权威（判定已在单次运行内做完一次，导出体不重判）；
     // 未判定的行回到矩阵原状态。
     const base = G3_MATRIX_ROWS.find((item) => item.id === row.id) ?? row
-    let status = decided ? row.status : base.status
+    // 同样过一遍 #246 的降级：这条路径的 `row.status` 可能来自上一次导出，
+    // 带着实现缺口的行不得在这里重新变成 PASS。
+    let status = downgradeGapPass(row.id, decided ? row.status : base.status)
     let note = evidence?.note ?? row.note ?? ''
     // 兜底：判定卡不成立时**不许**写 PASS —— 退回矩阵原状态并写明原因。
     if (status === 'PASS' && rowVerdicts.length > 0 && !rowVerdicts.some((verdict) => verdict.holds)) {

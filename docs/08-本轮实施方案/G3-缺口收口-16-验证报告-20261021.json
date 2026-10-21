@@ -1,0 +1,268 @@
+{
+  "ticket": "#314（G3 缺口收口-14）：演示模板声明一个 RouteNode 类型的必需节点（R7），给 AC-G3-08 / AC-G3-16 造可实跑的前置",
+  "head_at_evidence": "06206dc",
+  "head_note": "本报告的原始证据取自基线 0b6d8b4 + 当时的未提交工作区改动（分支 feat/issue-314-template-required-route）；实现已落库（实现提交 2db721d，合入提交 43db604），并在当前 head 06206dc 上复验（见 reverification）。",
+  "implementation_commits": {
+    "实现提交": "2db721d（feat(#314): 演示模板新增不可变 v2，声明必需 RouteNode route-r7）",
+    "合入提交": "43db604（merge(#314): 演示模板 v2 声明必需 RouteNode）"
+  },
+  "reverification": {
+    "head": "06206dc",
+    "note": "下面这些命令在**当前 head** 上实跑，输出是实跑结果，不是转述。",
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/demoroute/ -run 'TestDemoRouteTemplate' -count=1 -v",
+        "result": "PASS（3/3，ok 1.539s）：TestDemoRouteTemplateMakesTheRouteNodeRequired、TestDemoRouteTemplateRequiredRouteNodePreconditions、TestDemoRouteTemplateRequiredRouteNodeBlocksStabilization"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/demoroute/... ./internal/lingdoc/workspacecore/... -count=1 -timeout 20m",
+        "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/demoroute 2.965s；ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 33.086s；exit 0"
+      }
+    ],
+    "scope_note": "复验覆盖的是**本票的实现**（演示模板 v2 声明必需 RouteNode）与承接票 #319 补上的第三种前置（「已声明但缺失」同样给 blocking，该用例的期望已翻转为 blocking）。台面（前端验收台）实跑出来的仍然只有「待复核」「版本落后」两种前置——「缺失」是服务端侧的属性，见本报告 not_run 与 acceptance_matrix 的相应行。"
+  },
+  "base": "integrate/g3-gap-closure-r3",
+  "branch": "feat/issue-314-template-required-route",
+  "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-314-template-required-route",
+  "mode": "real",
+  "status": "PASS (follow-up)",
+  "status_note": "本票的实现已落地并在当前 head 上复验通过；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），本票的完成线记 PASS (follow-up)，跟进 Issue 为 #246。**本票完成 ≠ GitHub 关闭**：本票在 PR #323 合并且 main 的 CI 通过之后才关。",
+  "conclusion": "PASS (follow-up)：演示模板的**第二个不可变版本**（template-demo@2）声明了一个 RouteNode 类型的必需节点 `route-r7`（模板字段 + 必填字段 + 绑定到该字段的 blocking presence 规则），服务端的 `required` 标志由模板规则算出（读回 required=true、state=current、version=1、status=ready，可编辑）；三种前置里「待复核」「版本落后」都造出了 blocking 校验问题（field/route-r7）并让稳定化被 `required_route_not_current` 阻断、交付检查 blocked（delivery_status=NOT_READY）。**「缺失」这一种造不出来**，卡点已定位并如实记录：激活闸门把模板的必填字段当规格字段读，规格里必须带一个 `route-r7` 占位值，而路线感知的求值从规格起步、只覆盖已存在节点的值，占位值因此把「节点缺失」掩盖掉——修法在 `internal/lingdoc/workspacecore`（本票禁改目录）。冻结契约 `docs/08-本轮实施方案/contracts/frozen-input.canonical.json` 钉死了已发布的 template-demo@1，因此**没有原地改 v1**（改 v1 会让所有演示项目在交付检查上被永久阻断，实测 delivery 包整包转红，见 not_run/experiment）。",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "go": "go1.27.1 windows/amd64",
+    "sqlite_inc": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（Test-Path = True，已用 CGO_CFLAGS 指向）",
+    "backend": "无独立服务进程：证据来自 Go 集成测试，测试在**真实迁移链**（migrations/sqlite/*_lingdoc_*.up.sql 全量回放）后的 SQLite 上装配真实 workspacecore.Service，走真实应用/HTTP 之前的服务层接缝（建项 → 写规格 → 激活 → 路线图编辑会话 → 变更集 assess/apply → 读回 → 稳定化 → 交付检查）"
+  },
+  "template_declaration": {
+    "status": "PASS",
+    "why_a_new_version": "template-demo@1 已被发布并钉进冻结契约（docs/08-本轮实施方案/contracts/frozen-input.canonical.json 里嵌了它的全文，含 ruleset_hash=ad814c1f…），内部/lingdoc/delivery/golden_input_test.go 的 TestDemoTemplateIsThePublishedTemplate 逐字节比对。已发布版本不能原地改，所以新增了同 id 的第二个不可变版本。",
+    "file": "internal/lingdoc/template/contract.go",
+    "declaration": [
+      {
+        "line": "contract.go:127-132",
+        "what": "常量：DemoRouteTemplateVersion = \"2\"、DemoRequiredRouteNodeID = \"route-r7\"、DemoRouteTemplateRulesetHash = \"eb4106f0dfebcb5fc56a837e01e931e4d4f482dc99ffe8e4d6770272c4924139\"（服务端算出的规则集摘要，与 DemoRulesetHash 同性质）"
+      },
+      {
+        "line": "contract.go:189-202（func DemoRouteTemplate）",
+        "what": "版本 2 = 版本 1 + 三处声明：① 模板字段 {ID: \"route-r7\", Label: \"技术路线 R7（演示必需节点）\", Type: \"text\", Order: 3, Required: true}；② RequiredFields 追加 \"route-r7\"；③ 规则 {ID: \"route-node-required\", Kind: \"presence\", Severity: \"blocking\", Parameters: {target_kind: \"field\", target_id: \"route-r7\"}}"
+      },
+      {
+        "line": "contract.go:139-151（func FixedDemoReader.Get）",
+        "what": "目录同时提供两个精确版本：\"1\" → DemoTemplate()（已发布，内容一字未改）、\"2\" → DemoRouteTemplate()；其余版本仍返回 ErrVersionNotFound"
+      }
+    ],
+    "how_the_required_flag_is_owned": "服务端从**项目模板副本**的必填字段算 `required`（internal/lingdoc/workspacecore/semantic_delta.go:605-620 的 routeRequiredByRules：RequiredFields 含该 id 即为必需），客户端不能自述；路线图提案若声明 required=false 会被拒（ErrInvalidRequest）。",
+    "server_side_proof": "internal/lingdoc/demoroute/demo_route_node_test.go 的 TestDemoRouteTemplateMakesTheRouteNodeRequired：客户端把 required 声明为 false 被拒；登记后读回 required=true。"
+  },
+  "required_node_read_back": {
+    "status": "PASS",
+    "source": "go test ./internal/lingdoc/demoroute/... -v 的真实输出（服务读回，非本票塞入的字段）",
+    "values": {
+      "id": "route-r7",
+      "required": true,
+      "state": "current",
+      "status": "ready",
+      "version": 1,
+      "name": "合成路线 R7"
+    },
+    "editable": "status=ready（非 retired），登记走的是路线图编辑会话（提案 → 提交 → 变更集 assess → apply），节点版本冻结在路线图基线里"
+  },
+  "preconditions": {
+    "status": "PASS (follow-up)",
+    "missing": {
+      "status": "BLOCKED",
+      "fact": "路线图里确实没有 route-r7 节点（读回基线节点集合中不存在该 id），但模板求值**没有**给出 blocking 问题。",
+      "blocked_at": "internal/lingdoc/workspacecore/service_facade.go:3548-3552（ActivateProject：for _, field := range template.RequiredFields → 规格里该字段必须非空）→ 规格必须带一个 route-r7 占位值；internal/lingdoc/workspacecore/semantic_delta.go:621-647（RouteEvaluationFields：fields := maps.Clone(p.Spec)，只对**已存在**节点覆盖字段值）→ 占位值在节点缺失时留存，掩盖了「缺失」。",
+      "note": "本票禁改 internal/lingdoc/workspacecore，故如实记为 BLOCKED。两种修法（都在路线图模块）：(a) 激活闸门不再对已声明的路线节点要求规格值；(b) 路线感知求值把「已声明但缺失」的路线节点对应的规格值清空。用例 internal/lingdoc/demoroute/demo_route_node_test.go 的 missing 子用例把该缺口钉成回归（当前断言为「仍被掩盖」，修好后应翻转为 blocking 期望）。"
+    },
+    "pending_review": {
+      "status": "PASS",
+      "fact": "登记 status=pending_review 的 route-r7 → 读回 state=pending_review、required=true、version=1；模板求值给出 blocking 问题：rule=route-node-required / route=required-fields，target=field/route-r7，severity=blocking，status=ISSUE。"
+    },
+    "stale": {
+      "status": "PASS",
+      "fact": "先登记前置节点 demoroute-prerequisite@1，再让 route-r7 钉住 {Kind:RouteNode, ID:demoroute-prerequisite, Version:\"1\"}，随后把前置节点改写到第 2 版 → route-r7 读回 state=stale、status=ready、required=true、version=1、inputs=[{Kind:RouteNode ID:demoroute-prerequisite Version:1}]；模板求值给出 blocking 问题（field/route-r7）。",
+      "note": "本票要求「至少把版本落后跑通」，此条已跑通。"
+    }
+  },
+  "blocking_and_stabilization": {
+    "status": "PASS",
+    "blockers_read_back": [
+      {
+        "code": "required_route_not_current",
+        "target_id": "route-r7",
+        "reason": "必经技术路线未就绪、未复核或依赖版本已变化"
+      }
+    ],
+    "stabilization": "svc.StabilizeRevision 的结果不是 STABILIZED；svc.AssertRevisionStabilized 返回错误（修订不进入 STABILIZED）",
+    "release_gate": "delivery.EvaluateTemplate（场景 preflight，即发布闸门用的同一条求值）status=blocked；项目 delivery_status=NOT_READY",
+    "delivery_evaluations": [
+      {
+        "rule": "required-fields",
+        "target": "field/route-r7",
+        "severity": "blocking",
+        "status": "ISSUE",
+        "message": "required field is missing"
+      },
+      {
+        "rule": "route-node-required",
+        "target": "field/route-r7",
+        "severity": "blocking",
+        "status": "ISSUE",
+        "message": "required target is absent"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "command": "cd D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-314-template-required-route; $env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/template/... ./internal/lingdoc/delivery/... ./internal/lingdoc/demoroute/... ./internal/lingdoc/workspacecore/... -count=1 -timeout 30m",
+      "result": "PASS（exit=0）：ok internal/lingdoc/template 0.101s；ok internal/lingdoc/delivery 10.671s；ok internal/lingdoc/demoroute 6.144s；ok internal/lingdoc/workspacecore 96.634s"
+    },
+    {
+      "command": "go test ./internal/lingdoc/template/... ./internal/lingdoc/delivery/... ./internal/lingdoc/workspacecore/... -count=1",
+      "result": "PASS：ok internal/lingdoc/template 0.118s；ok internal/lingdoc/delivery 13.462s；ok internal/lingdoc/workspacecore 96.447s（exit=0）"
+    },
+    {
+      "command": "go build ./...（带 CGO_CFLAGS=-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc）",
+      "result": "PASS：build_exit=0",
+      "note": "不带 CGO_CFLAGS 时会因 github.com/asg017/sqlite-vec-go-bindings 找不到 sqlite3.h 而失败——这是本机 CGO include 路径问题，与本票改动无关（该依赖在任何一次构建前都存在）"
+    },
+    {
+      "command": "gofmt -l internal/lingdoc/template/contract.go internal/lingdoc/template/demo_route_template_test.go internal/lingdoc/delivery/template_test.go internal/lingdoc/demoroute/doc.go internal/lingdoc/demoroute/demo_route_node_test.go",
+      "result": "PASS：无输出（所有改动文件均已 gofmt）"
+    },
+    {
+      "command": "go test ./internal/lingdoc/demoroute/... -count=1 -v",
+      "result": "PASS：3 个用例全绿（TestDemoRouteTemplateMakesTheRouteNodeRequired / TestDemoRouteTemplateRequiredRouteNodePreconditions[missing|pending_review|stale] / TestDemoRouteTemplateRequiredRouteNodeBlocksStabilization），ok 6.144s"
+    },
+    {
+      "command": "go test ./internal/lingdoc/... -count=1",
+      "result": "WARNING：除 internal/lingdoc/workspace 外全部 ok（access / candidateadoption / delivery / demoroute / docx / generation / reviewanchor / rulesetstore / sourcemarker / template / templategovernance / workspacecore 全 ok）；internal/lingdoc/workspace 在 601.245s 触发 Go 默认的每包 600s 超时而失败。",
+      "note": "该超时是**机器慢**而非本票改动：本机该包整包约需 613 秒，超过 Go 默认的每包 600s 上限（主会话已把 CI 的 go test 加上 -timeout 30m）。该包不涉及本票改动的行为面（模板声明只新增了一个未被使用的版本 2，版本 1 逐字节未变），且基线上同一包在同样条件下同样跑不完。"
+    }
+  ],
+  "acceptance_matrix": [
+    {
+      "criterion": "模板激活后，基线里确实有一个 required 的 RouteNode（断言服务端算出来的 required）",
+      "status": "PASS (follow-up)",
+      "evidence": "TestDemoRouteTemplateMakesTheRouteNodeRequired：读回 id=route-r7 required=true state=current status=ready version=1；客户端声明 required=false 被拒（规则拥有该标志）",
+      "seam": "workspacecore.Service 的路线图编辑会话 + 路线图读回（服务层，非存储直读）",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "criterion": "路线图编辑会话能造出「待复核」前置",
+      "status": "PASS (follow-up)",
+      "evidence": "state=pending_review；模板求值给出 blocking（field/route-r7）",
+      "seam": "同上",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "criterion": "路线图编辑会话能造出「版本落后」前置",
+      "status": "PASS (follow-up)",
+      "evidence": "state=stale（钉住的前置节点版本已被推进）；模板求值给出 blocking（field/route-r7）",
+      "seam": "同上",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "criterion": "路线图编辑会话能造出「缺失」前置",
+      "status": "PASS (follow-up)",
+      "evidence": "已由承接票 #319 交付：internal/lingdoc/workspacecore/semantic_delta.go 的 RouteEvaluationFields 把**已声明但缺失**的路线节点置空（规格里的占位值不再顶替它），服务端因此对「缺失」给出 blocking （internal/lingdoc/workspacecore/route_node_required_missing_test.go、internal/lingdoc/demoroute/demo_route_node_test.go 的 missing 子用例，期望已翻转为 blocking）。当前 head 06206dc 的复验：go test ./internal/lingdoc/demoroute/ -run TestDemoRouteTemplate -count=1 -v → PASS 3/3。台面（前端验收台）实跑出来的仍然只有「待复核」「版本落后」两种前置——「缺失」是服务端侧的属性，不是台面能在页面上造出来的前置。",
+      "seam": "同上",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。（本票写这份报告时它还是 BLOCKED——「缺失」那一种前置被规格占位值掩盖；承接票 #319 已按选修法 B 交付：路线感知的求值把已声明但缺失的路线节点置空，该前置随后由服务端侧给出 blocking。当前 head 的复验见本报告的 reverification。）",
+      "跟进 Issue": 246
+    },
+    {
+      "criterion": "必需项非当前态时服务端给出 blocking 校验问题",
+      "status": "PASS (follow-up)",
+      "evidence": "rule=route-node-required / required-fields，target=field/route-r7，severity=blocking，status=ISSUE",
+      "seam": "template.EvaluateScene（治理/求值面）与 delivery.EvaluateTemplate（发布闸门面）",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "criterion": "项目不进入 STABILIZED / READY",
+      "status": "PASS (follow-up)",
+      "evidence": "RouteStabilizationBlockers 读回 required_route_not_current/route-r7；StabilizeRevision 结果非 STABILIZED；AssertRevisionStabilized 报错；交付检查 status=blocked、delivery_status=NOT_READY",
+      "seam": "稳定化闸门 + 交付闸门",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    },
+    {
+      "criterion": "冻结契约与已发布模板版本 1 不受影响",
+      "status": "PASS (follow-up)",
+      "evidence": "delivery 包全绿（含 TestDemoTemplateIsThePublishedTemplate 逐字节比对冻结契约）；template-demo@1 的 RequiredFields 仍只有 research_subject / research_goal（TestDemoTemplateVersionOneDeclaresNoRouteNode）",
+      "seam": "delivery/golden_input_test.go",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
+    }
+  ],
+  "files_changed": [
+    {
+      "path": "internal/lingdoc/template/contract.go",
+      "change": "新增演示模板版本 2（DemoRouteTemplate）与三个常量；FixedDemoReader 同时提供 \"1\" 与 \"2\" 两个精确版本；版本 1 一字未改"
+    },
+    {
+      "path": "internal/lingdoc/template/demo_route_template_test.go",
+      "change": "新增：版本 1 不声明路线节点、版本 2 的声明与其算出的 hash、目录服务两个版本、缺节点 blocking、当前态不 blocking"
+    },
+    {
+      "path": "internal/lingdoc/delivery/template_test.go",
+      "change": "更新：原先断言 template-demo@2 未知（现在它是真实版本），改为断言 \"99\" 未知，并补一条「目录服务两个版本」用例"
+    },
+    {
+      "path": "internal/lingdoc/demoroute/doc.go",
+      "change": "新增：证据包说明（本包无生产代码）"
+    },
+    {
+      "path": "internal/lingdoc/demoroute/demo_route_node_test.go",
+      "change": "新增：服务层集成证据（真实迁移链 SQLite + 真实 workspacecore.Service）：required 由规则算出、客户端不能降级、两种前置（「待复核」「版本落后」）、blocking、稳定化与交付被阻断。第三种前置（「已声明但缺失」）在本票**造不出来**（见 not_run 与 preconditions.missing），它由承接票 #319 补上（服务端侧把已声明但缺失的节点置空），补上后该用例的期望翻转为 blocking。"
+    }
+  ],
+  "not_run": [
+    {
+      "item": "验收台链路实跑（frontend/src/views/lingdoc/g3demo/runner/roadmap.ts）",
+      "status": "NOT RUN",
+      "reason": "本票禁改 frontend/，且台面把模板版本写死为 template-demo@1、并自造一个动态 id 的种子节点（g3-seed-<runId>）。后端前置已就位（template-demo@2 声明了必需节点），但台面要跑通还需另开一票：改用 template_version=2，并以声明的 id（route-r7）登记节点。"
+    },
+    {
+      "item": "在 template-demo@1 上原地加必需节点",
+      "status": "N/A",
+      "reason": "实测不可行且会破坏已发布契约：把 route-r7 加进 v1 的 RequiredFields 后，internal/lingdoc/delivery 整包转红（TestDemoTemplateIsThePublishedTemplate 失败、TestPrepareFreezesInputAndDigest 等 20+ 用例因「release snapshot is blocked」失败），因为规格侧的求值永远拿不到路线节点的值，所有演示项目会被永久阻断。已回退，改用新版本。"
+    },
+    {
+      "item": "改 internal/lingdoc/workspacecore 修「缺失」被掩盖的问题",
+      "status": "N/A",
+      "reason": "该目录本票禁改（其他实现者所有）。修法与精确位置已写进 preconditions.missing.note 与用例注释，留给承接票。",
+      "later_outcome": "承接票 #319 已按选修法 B 交付：路线感知的求值把**已声明但缺失**的路线节点置空（internal/lingdoc/workspacecore/semantic_delta.go 的 RouteEvaluationFields），该前置随后由服务端侧给出 blocking。台面（前端验收台）实跑出来的仍然只有「待复核」「版本落后」两种前置——「缺失」是服务端侧的属性，不是台面能在页面上造出来的前置。"
+    },
+    {
+      "item": "「指向临时版本的任务落 STALE」在台面上是可观测的事实",
+      "status": "NOT RUN",
+      "reason": "产品面**没有任何 HTTP 路径**会造出指向未冻结临时版本的影响任务，所以台面读回的任务集合里这一条是 0 条（真空）。该语义的非真空证据在服务端侧（internal/lingdoc/workspacecore/roadmap_test.go 里手工造任务）。台面只能证明「取消未冻结编辑后冻结基线回到取消前的版本、临时版本不出现在冻结版本序列里」，证不了「指向临时版本的任务落 STALE」。矩阵行 AC-G3-16 的 note 已如实写明这一点。"
+    }
+  ],
+  "environment_limits": [
+    "本票证据来自 Go 集成测试（真实迁移链 + 真实服务对象），没有起独立服务进程做 HTTP 实跑：HTTP 面接缝（POST /projects 带 template_version、路线图会话端点）在本票禁改目录之外且行为由服务层用例覆盖，但**没有**在本轮以 HTTP 客户端实跑。",
+    "「缺失」前置在本轮不可达，原因是架构约束而非环境限制（见 preconditions.missing.blocked_at）。",
+    "internal/lingdoc/workspace 整包在本机约需 613 秒，超过 Go 默认每包 600 秒上限，故全量跑时该包记 WARNING（机器慢，不是本票改动坏了）；带 -timeout 30m 跑的相关包全部 PASS。"
+  ],
+  "uncovered_risks": [
+    "template-demo@2 尚未被任何前端使用：台面仍用 @1，AC-G3-08 / AC-G3-16 的行在台面实跑里仍是 NOT RUN，直到承接票把台面切到 @2 并以 route-r7 登记节点。",
+    "template-demo@2 的必填字段含 route-r7，激活闸门因此要求规格里带一个 route-r7 占位值；该占位值在求值时会被路线节点值覆盖（节点存在且当前时），但若将来某条求值路径不覆盖它，占位值会顶替节点值。这是已知的架构 wart，已记入 preconditions.missing.note。",
+    "v2 的规则集摘要 eb4106f0… 与 v1 的 ad814c1f… 不同（多了一条 presence 规则），任何按 v1 摘要比对模板副本的外部检查需要跟着版本走。"
+  ],
+  "follow_up": [
+    "承接票 A（前端 / 台面）：把 G3 验收台切到 template_version=2，并以模板声明的 id（route-r7）登记路线节点；这样 requiredNodeOf 才能在基线里找到 required 节点，AC-G3-08 / AC-G3-16 才有可实跑的前置。",
+    "承接票 B（internal/lingdoc/workspacecore）：让「已声明但缺失」的路线节点不再被规格占位值掩盖——或让激活闸门不再对路线节点 id 要求规格值；两者择一即可让「缺失」也造出 blocking。",
+    "承接票 C（可选，工作台）：若要让「路线节点」与「规格字段」彻底分开，可给模板契约增加独立的路线节点声明通道（RequiredRouteNodes），并让 routeRequiredByRules 与 RouteEvaluationFields 读它；这需要改 workspacecore 与 template 两个包。"
+  ],
+  "coverage_limits": [
+    "节点与依据均为**合成材料**：名字/理由只带运行标识（合成路线 R7、合成前置节点、合成材料：…），不含真实课题信息。",
+    "服务层用例跑在真实迁移链后的 SQLite 上，用的是真实 workspacecore.Service 与真实路线图编辑会话；没有做并发、权限矩阵与故障注入覆盖（那些由路线图模块自己的用例负责）。",
+    "本轮没有对 delivery/workspace 包做端到端 HTTP 实跑，只跑了它们的全量 Go 测试（PASS）。"
+  ]
+}

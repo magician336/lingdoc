@@ -1,0 +1,2683 @@
+{
+  "generated_at": "2026-10-21T11:32:02.669Z",
+  "backend_base_url": "http://127.0.0.1:53653",
+  "run_id": "g3r-mvi18c2w-c035fac7",
+  "started_at": "2026-10-21T11:32:02.216Z",
+  "ticket": "G3 验收台-4：依赖图、影响任务与影响预览分组",
+  "demo_account": {
+    "username": "g3demo-c55ea15a47",
+    "email": "g3demo-c55ea15a47@example.com"
+  },
+  "account_reused": false,
+  "backend_head": {
+    "commitId": "06206dc",
+    "buildTime": "unknown",
+    "version": "unknown",
+    "probedAt": "2026-10-21T11:32:02.357Z",
+    "probePath": "/api/v1/version",
+    "probeStatus": 401
+  },
+  "identity": {
+    "userId": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+    "username": "g3demo-c55ea15a47",
+    "email": "g3demo-c55ea15a47@example.com",
+    "tenantId": "4"
+  },
+  "project": {
+    "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+    "name": "G3 验收台演示项目（运行 g3r-mvi18c2w-c035fac7）",
+    "status": "active",
+    "projectVersion": 3,
+    "specRevision": 1,
+    "currentContextRevision": 1,
+    "templateId": "template-demo",
+    "templateVersion": "1"
+  },
+  "chapters": [
+    {
+      "id": "9e642980-7e12-4df7-af9f-be140c583482",
+      "sectionId": "question",
+      "title": "研究问题",
+      "currentVersionId": null,
+      "bodyEmpty": true
+    },
+    {
+      "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+      "sectionId": "method",
+      "title": "研究方案",
+      "currentVersionId": null,
+      "bodyEmpty": true
+    }
+  ],
+  "change_set": {
+    "id": "21918d0b-a68c-4075-aa58-74869296c754",
+    "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+    "status": "assessed",
+    "reason": "G3 验收台-4：研究条件变化，验证多上游任务合并与建议边语义",
+    "baseContextRevision": 1,
+    "targetContextRevision": null,
+    "baseSpecRevision": 1,
+    "targetSpecRevision": null,
+    "createdBy": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+    "decisionBy": "",
+    "staleReason": "",
+    "reassessedFromId": "",
+    "reversesChangeSetId": "",
+    "fields": [
+      {
+        "key": "research_goal",
+        "old_value": "用演示模板自建隔离项目，走到两个章节就绪",
+        "new_value": "用演示模板自建隔离项目，走到两个章节就绪（G3 验收台-4 依赖图）"
+      }
+    ],
+    "impacts": [
+      {
+        "chapter_id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "chapter_version_id": "712f0a62-bf95-4ee1-856a-292e6566395f",
+        "title": "研究方案",
+        "reason": "研究条件变化，需要重新复核",
+        "status": "open"
+      }
+    ]
+  },
+  "change_draft": {
+    "id": "4234d7e7-f345-4f1d-876e-78d0acedfed9",
+    "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+    "status": "draft",
+    "reason": "G3 验收台-4：助手草稿生成（分组解释已实现，见缺口清单 #246 与 #295）",
+    "baseContextRevision": 1,
+    "targetContextRevision": null,
+    "baseSpecRevision": 1,
+    "targetSpecRevision": null,
+    "createdBy": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+    "decisionBy": "",
+    "staleReason": "",
+    "reassessedFromId": "",
+    "reversesChangeSetId": "",
+    "fields": [],
+    "impacts": []
+  },
+  "dependency_edges": [
+    {
+      "id": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "spec_regenerates_template",
+      "action": "REGENERATE",
+      "origin": "user",
+      "reason": "研究条件变化后需要重新生成模板派生内容",
+      "status": "confirmed",
+      "confidence": 1,
+      "version": 1,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    {
+      "id": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+      },
+      "relation": "spec_invalidates_method",
+      "action": "INVALIDATE_CONFIRMATION",
+      "origin": "user",
+      "reason": "研究条件变化使研究方案章节的确认失效",
+      "status": "confirmed",
+      "confidence": 1,
+      "version": 1,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    {
+      "id": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+      },
+      "relation": "template_invalidates_method",
+      "action": "INVALIDATE_CONFIRMATION",
+      "origin": "user",
+      "reason": "模板规则集变化同样使研究方案章节的确认失效",
+      "status": "confirmed",
+      "confidence": 1,
+      "version": 1,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    {
+      "id": "fdf20c68-40d7-4807-b538-786bf80b057c",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "9e642980-7e12-4df7-af9f-be140c583482",
+        "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+      },
+      "relation": "candidate_question_dependency",
+      "action": "REVIEW_REQUIRED",
+      "origin": "ai",
+      "reason": "模型提出的候选关系：研究问题可能依赖研究条件版本",
+      "status": "suggested",
+      "confidence": 0.6,
+      "version": 1,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    {
+      "id": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_a",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工确认：候选关系 A 成立",
+      "status": "confirmed",
+      "confidence": 0.4,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    {
+      "id": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_b_corrected",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected",
+      "status": "confirmed",
+      "confidence": 0.8,
+      "version": 2,
+      "supersededRelation": "candidate_b",
+      "supersededAction": "NO_ACTION"
+    },
+    {
+      "id": "5855b87e-fd51-4887-b271-c0fc0895fe39",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_c",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工拒绝：候选关系 C 不成立",
+      "status": "rejected",
+      "confidence": 0.3,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    }
+  ],
+  "impact_assessment": {
+    "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+    "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+    "contextRevision": 1,
+    "inputHash": "1ed8eca3d1dae400228ed1989d1cd6be2aee5bcde3c83c9d0cb582f317928006",
+    "objects": [
+      {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f",
+        "state": "CURRENT",
+        "confirmed": true,
+        "contextRevision": 1
+      },
+      {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1",
+        "state": "CURRENT",
+        "confirmed": true,
+        "contextRevision": 1
+      },
+      {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1",
+        "state": "CURRENT",
+        "confirmed": true,
+        "contextRevision": 1
+      }
+    ],
+    "impacts": [
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "action": "NO_ACTION",
+        "certainty": "definite",
+        "causes": [
+          {
+            "edgeId": "b0d7a645-4275-4289-a654-df9dd1a93f7e",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工确认：候选关系 A 成立"
+          },
+          {
+            "edgeId": "b815e3cc-a03d-4319-90e4-bdeb3cfd7a7f",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "action": "REVIEW_REQUIRED",
+        "certainty": "possible",
+        "causes": [
+          {
+            "edgeId": "fdf20c68-40d7-4807-b538-786bf80b057c",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "模型提出的候选关系：研究问题可能依赖研究条件版本"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+        },
+        "action": "INVALIDATE_CONFIRMATION",
+        "certainty": "definite",
+        "causes": [
+          {
+            "edgeId": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "研究条件变化使研究方案章节的确认失效"
+          },
+          {
+            "edgeId": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+            "source": {
+              "kind": "TemplateCopy",
+              "id": "template-demo",
+              "version": "1"
+            },
+            "reason": "模板规则集变化同样使研究方案章节的确认失效"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+        },
+        "action": "REVIEW_REQUIRED",
+        "certainty": "definite",
+        "causes": [
+          {
+            "edgeId": "explicit:21918d0b-a68c-4075-aa58-74869296c754",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "研究条件变化，需要重新复核"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "action": "NO_ACTION",
+        "certainty": "definite",
+        "causes": [
+          {
+            "edgeId": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工确认：候选关系 A 成立"
+          },
+          {
+            "edgeId": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "action": "REGENERATE",
+        "certainty": "definite",
+        "causes": [
+          {
+            "edgeId": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "研究条件变化后需要重新生成模板派生内容"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "id": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "relation": "candidate_b_corrected",
+        "action": "NO_ACTION",
+        "origin": "ai",
+        "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected",
+        "status": "confirmed",
+        "superseded_relation": "candidate_b",
+        "superseded_action": "NO_ACTION",
+        "confidence": 0.8,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 2,
+        "created_at": "2026-10-21T11:32:02.4388175Z",
+        "updated_at": "2026-10-21T11:32:02.4561158Z"
+      },
+      {
+        "id": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "relation": "spec_regenerates_template",
+        "action": "REGENERATE",
+        "origin": "user",
+        "reason": "研究条件变化后需要重新生成模板派生内容",
+        "status": "confirmed",
+        "confidence": 1,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 1,
+        "created_at": "2026-10-21T11:32:02.4067221Z",
+        "updated_at": "2026-10-21T11:32:02.4067221Z"
+      },
+      {
+        "id": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "relation": "candidate_a",
+        "action": "NO_ACTION",
+        "origin": "ai",
+        "reason": "人工确认：候选关系 A 成立",
+        "status": "confirmed",
+        "confidence": 0.4,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 2,
+        "created_at": "2026-10-21T11:32:02.4340309Z",
+        "updated_at": "2026-10-21T11:32:02.450443Z"
+      },
+      {
+        "id": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+        },
+        "relation": "template_invalidates_method",
+        "action": "INVALIDATE_CONFIRMATION",
+        "origin": "user",
+        "reason": "模板规则集变化同样使研究方案章节的确认失效",
+        "status": "confirmed",
+        "confidence": 1,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 1,
+        "created_at": "2026-10-21T11:32:02.4216846Z",
+        "updated_at": "2026-10-21T11:32:02.4216846Z"
+      },
+      {
+        "id": "b0d7a645-4275-4289-a654-df9dd1a93f7e",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "relation": "candidate_confirm",
+        "action": "NO_ACTION",
+        "origin": "ai",
+        "reason": "人工确认：候选关系 A 成立",
+        "status": "confirmed",
+        "confidence": 0.6,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 2,
+        "created_at": "2026-10-21T11:32:02.4884574Z",
+        "updated_at": "2026-10-21T11:32:02.4884574Z"
+      },
+      {
+        "id": "b815e3cc-a03d-4319-90e4-bdeb3cfd7a7f",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "relation": "candidate_b_corrected",
+        "action": "NO_ACTION",
+        "origin": "ai",
+        "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected",
+        "status": "confirmed",
+        "superseded_relation": "candidate_modify",
+        "superseded_action": "NO_ACTION",
+        "confidence": 0.8,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 2,
+        "created_at": "2026-10-21T11:32:02.4964656Z",
+        "updated_at": "2026-10-21T11:32:02.4964656Z"
+      },
+      {
+        "id": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+        },
+        "relation": "spec_invalidates_method",
+        "action": "INVALIDATE_CONFIRMATION",
+        "origin": "user",
+        "reason": "研究条件变化使研究方案章节的确认失效",
+        "status": "confirmed",
+        "confidence": 1,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 1,
+        "created_at": "2026-10-21T11:32:02.4153065Z",
+        "updated_at": "2026-10-21T11:32:02.4153065Z"
+      },
+      {
+        "id": "fdf20c68-40d7-4807-b538-786bf80b057c",
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "source": {
+          "kind": "ProjectSpec",
+          "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+          "version": "1"
+        },
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "relation": "candidate_question_dependency",
+        "action": "REVIEW_REQUIRED",
+        "origin": "ai",
+        "reason": "模型提出的候选关系：研究问题可能依赖研究条件版本",
+        "status": "suggested",
+        "confidence": 0.6,
+        "actor_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 1,
+        "created_at": "2026-10-21T11:32:02.428583Z",
+        "updated_at": "2026-10-21T11:32:02.428583Z"
+      }
+    ]
+  },
+  "impact_groups": {
+    "definite": [
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "action": "NO_ACTION",
+        "certainty": "definite",
+        "sources": [
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          }
+        ],
+        "causes": [
+          {
+            "edgeId": "b0d7a645-4275-4289-a654-df9dd1a93f7e",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工确认：候选关系 A 成立"
+          },
+          {
+            "edgeId": "b815e3cc-a03d-4319-90e4-bdeb3cfd7a7f",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+        },
+        "action": "INVALIDATE_CONFIRMATION",
+        "certainty": "definite",
+        "sources": [
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          {
+            "kind": "TemplateCopy",
+            "id": "template-demo",
+            "version": "1"
+          }
+        ],
+        "causes": [
+          {
+            "edgeId": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "研究条件变化使研究方案章节的确认失效"
+          },
+          {
+            "edgeId": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+            "source": {
+              "kind": "TemplateCopy",
+              "id": "template-demo",
+              "version": "1"
+            },
+            "reason": "模板规则集变化同样使研究方案章节的确认失效"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+        },
+        "action": "REVIEW_REQUIRED",
+        "certainty": "definite",
+        "sources": [
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          }
+        ],
+        "causes": [
+          {
+            "edgeId": "explicit:21918d0b-a68c-4075-aa58-74869296c754",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "研究条件变化，需要重新复核"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "action": "NO_ACTION",
+        "certainty": "definite",
+        "sources": [
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          }
+        ],
+        "causes": [
+          {
+            "edgeId": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工确认：候选关系 A 成立"
+          },
+          {
+            "edgeId": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected"
+          }
+        ]
+      },
+      {
+        "target": {
+          "kind": "TemplateCopy",
+          "id": "template-demo",
+          "version": "1"
+        },
+        "action": "REGENERATE",
+        "certainty": "definite",
+        "sources": [
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          }
+        ],
+        "causes": [
+          {
+            "edgeId": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "研究条件变化后需要重新生成模板派生内容"
+          }
+        ]
+      }
+    ],
+    "possible": [
+      {
+        "target": {
+          "kind": "ChapterVersion",
+          "id": "9e642980-7e12-4df7-af9f-be140c583482",
+          "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+        },
+        "action": "REVIEW_REQUIRED",
+        "certainty": "possible",
+        "sources": [
+          {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          }
+        ],
+        "causes": [
+          {
+            "edgeId": "fdf20c68-40d7-4807-b538-786bf80b057c",
+            "source": {
+              "kind": "ProjectSpec",
+              "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+              "version": "1"
+            },
+            "reason": "模型提出的候选关系：研究问题可能依赖研究条件版本"
+          }
+        ]
+      }
+    ],
+    "unaffected": [
+      {
+        "kind": "RuleSet",
+        "id": "template-demo",
+        "version": "ad709f6b87c1df0b6fae65c592118f23aff249e8d3d16df9f65623725adda1d5"
+      }
+    ],
+    "requiredObjects": [
+      {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f",
+        "state": "CURRENT",
+        "confirmed": true,
+        "contextRevision": 1
+      },
+      {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1",
+        "state": "CURRENT",
+        "confirmed": true,
+        "contextRevision": 1
+      },
+      {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1",
+        "state": "CURRENT",
+        "confirmed": true,
+        "contextRevision": 1
+      }
+    ]
+  },
+  "impact_tasks": [
+    {
+      "id": "ff30fee7-320a-53cb-b7a0-e353abd30261",
+      "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+      },
+      "targetRevision": 2,
+      "action": "INVALIDATE_CONFIRMATION",
+      "severity": "blocking",
+      "responsibilityDomain": "B",
+      "assigneeId": "",
+      "status": "OPEN",
+      "causes": [
+        {
+          "edgeId": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "reason": "研究条件变化使研究方案章节的确认失效"
+        },
+        {
+          "edgeId": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+          "source": {
+            "kind": "TemplateCopy",
+            "id": "template-demo",
+            "version": "1"
+          },
+          "reason": "模板规则集变化同样使研究方案章节的确认失效"
+        }
+      ],
+      "version": 1,
+      "disposition": "",
+      "humanDecision": "",
+      "closureEvidence": [],
+      "staleReason": "",
+      "staleAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "id": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+      "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+      },
+      "targetRevision": 2,
+      "action": "REVIEW_REQUIRED",
+      "severity": "blocking",
+      "responsibilityDomain": "B",
+      "assigneeId": "",
+      "status": "OPEN",
+      "causes": [
+        {
+          "edgeId": "explicit:21918d0b-a68c-4075-aa58-74869296c754",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "reason": "研究条件变化，需要重新复核"
+        }
+      ],
+      "version": 1,
+      "disposition": "",
+      "humanDecision": "",
+      "closureEvidence": [],
+      "staleReason": "",
+      "staleAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "id": "4679ce5c-3e16-562c-9953-2ec20587065c",
+      "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "targetRevision": 2,
+      "action": "REGENERATE",
+      "severity": "warning",
+      "responsibilityDomain": "B",
+      "assigneeId": "",
+      "status": "OPEN",
+      "causes": [
+        {
+          "edgeId": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "reason": "研究条件变化后需要重新生成模板派生内容"
+        }
+      ],
+      "version": 1,
+      "disposition": "",
+      "humanDecision": "",
+      "closureEvidence": [],
+      "staleReason": "",
+      "staleAt": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "impact_tasks_after_replay": [
+    {
+      "id": "ff30fee7-320a-53cb-b7a0-e353abd30261",
+      "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+      },
+      "targetRevision": 2,
+      "action": "INVALIDATE_CONFIRMATION",
+      "severity": "blocking",
+      "responsibilityDomain": "B",
+      "assigneeId": "",
+      "status": "OPEN",
+      "causes": [
+        {
+          "edgeId": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "reason": "研究条件变化使研究方案章节的确认失效"
+        },
+        {
+          "edgeId": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+          "source": {
+            "kind": "TemplateCopy",
+            "id": "template-demo",
+            "version": "1"
+          },
+          "reason": "模板规则集变化同样使研究方案章节的确认失效"
+        }
+      ],
+      "version": 1,
+      "disposition": "",
+      "humanDecision": "",
+      "closureEvidence": [],
+      "staleReason": "",
+      "staleAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "id": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+      "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+      "target": {
+        "kind": "ChapterVersion",
+        "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+      },
+      "targetRevision": 2,
+      "action": "REVIEW_REQUIRED",
+      "severity": "blocking",
+      "responsibilityDomain": "B",
+      "assigneeId": "",
+      "status": "OPEN",
+      "causes": [
+        {
+          "edgeId": "explicit:21918d0b-a68c-4075-aa58-74869296c754",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "reason": "研究条件变化，需要重新复核"
+        }
+      ],
+      "version": 1,
+      "disposition": "",
+      "humanDecision": "",
+      "closureEvidence": [],
+      "staleReason": "",
+      "staleAt": "0001-01-01T00:00:00Z"
+    },
+    {
+      "id": "4679ce5c-3e16-562c-9953-2ec20587065c",
+      "changeSetId": "21918d0b-a68c-4075-aa58-74869296c754",
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "targetRevision": 2,
+      "action": "REGENERATE",
+      "severity": "warning",
+      "responsibilityDomain": "B",
+      "assigneeId": "",
+      "status": "OPEN",
+      "causes": [
+        {
+          "edgeId": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "reason": "研究条件变化后需要重新生成模板派生内容"
+        }
+      ],
+      "version": 1,
+      "disposition": "",
+      "humanDecision": "",
+      "closureEvidence": [],
+      "staleReason": "",
+      "staleAt": "0001-01-01T00:00:00Z"
+    }
+  ],
+  "unassigned_completion": {
+    "status": 404,
+    "code": "not_found"
+  },
+  "task_transitions": [
+    {
+      "taskId": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+      "action": "assign",
+      "severity": "blocking",
+      "from": "OPEN",
+      "to": "OPEN",
+      "closureEvidence": [],
+      "note": "指派给当前操作者（assignee_id=c78cdd01-41a2-485e-953a-6fed3f7c1fd9）",
+      "status": 200,
+      "code": ""
+    },
+    {
+      "taskId": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+      "action": "start",
+      "severity": "blocking",
+      "from": "OPEN",
+      "to": "IN_PROGRESS",
+      "closureEvidence": [],
+      "note": "责任人开始处置",
+      "status": 200,
+      "code": ""
+    },
+    {
+      "taskId": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+      "action": "complete",
+      "severity": "blocking",
+      "from": "IN_PROGRESS",
+      "to": "DONE",
+      "closureEvidence": [
+        {
+          "kind": "ChapterVersion",
+          "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+          "version": "fa4b998a-00c5-4acd-b50b-6fe0df108932"
+        }
+      ],
+      "note": "以闭环证据完成：ChapterVersion/c164ffd4-9c1b-4c0a-bc12-51eab9260590@fa4b998a-00c5-4acd-b50b-6fe0df108932",
+      "status": 200,
+      "code": ""
+    },
+    {
+      "taskId": "ff30fee7-320a-53cb-b7a0-e353abd30261",
+      "action": "start",
+      "severity": "blocking",
+      "from": "OPEN",
+      "to": "STALE",
+      "closureEvidence": [],
+      "note": "失效原因：target_version_replaced",
+      "status": 200,
+      "code": ""
+    },
+    {
+      "taskId": "4679ce5c-3e16-562c-9953-2ec20587065c",
+      "action": "assign",
+      "severity": "warning",
+      "from": "OPEN",
+      "to": "OPEN",
+      "closureEvidence": [],
+      "note": "指派给当前操作者（assignee_id=c78cdd01-41a2-485e-953a-6fed3f7c1fd9）",
+      "status": 200,
+      "code": ""
+    },
+    {
+      "taskId": "4679ce5c-3e16-562c-9953-2ec20587065c",
+      "action": "dismiss",
+      "severity": "warning",
+      "from": "OPEN",
+      "to": "DISMISSED",
+      "closureEvidence": [],
+      "note": "G3 验收台-4：本次不处理该非阻断影响（已说明理由）",
+      "status": 200,
+      "code": ""
+    }
+  ],
+  "dependency_decisions": {
+    "confirm": {
+      "id": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_a",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工确认：候选关系 A 成立",
+      "status": "confirmed",
+      "confidence": 0.4,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    "modify": {
+      "id": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_b_corrected",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工修改：候选关系 B 的关系名改为 candidate_b_corrected",
+      "status": "confirmed",
+      "confidence": 0.8,
+      "version": 2,
+      "supersededRelation": "candidate_b",
+      "supersededAction": "NO_ACTION"
+    },
+    "reject": {
+      "id": "5855b87e-fd51-4887-b271-c0fc0895fe39",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_c",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工拒绝：候选关系 C 不成立",
+      "status": "rejected",
+      "confidence": 0.3,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    "reproposed": {
+      "id": "5855b87e-fd51-4887-b271-c0fc0895fe39",
+      "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "source": {
+        "kind": "ProjectSpec",
+        "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "version": "1"
+      },
+      "target": {
+        "kind": "TemplateCopy",
+        "id": "template-demo",
+        "version": "1"
+      },
+      "relation": "candidate_c",
+      "action": "NO_ACTION",
+      "origin": "ai",
+      "reason": "人工拒绝：候选关系 C 不成立",
+      "status": "rejected",
+      "confidence": 0.3,
+      "version": 2,
+      "supersededRelation": "",
+      "supersededAction": ""
+    }
+  },
+  "dependency_candidates": {
+    "batch": {
+      "id": "f3a5dcd3-3a4e-4252-b72d-8d816924f0f4",
+      "status": "proposed",
+      "projectVersion": 7,
+      "contextRevision": 1,
+      "candidates": [
+        {
+          "id": "5d332d98-27f0-4e88-8aab-47fc669ed84c",
+          "batchId": "f3a5dcd3-3a4e-4252-b72d-8d816924f0f4",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "target": {
+            "kind": "ChapterVersion",
+            "id": "9e642980-7e12-4df7-af9f-be140c583482",
+            "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+          },
+          "relation": "candidate_confirm",
+          "action": "NO_ACTION",
+          "evidence": "合成依据片段：研究条件修订 1 与研究问题章节的对应关系",
+          "reason": "候选关系 A：待人工判断是否成立",
+          "confidence": 0.6,
+          "status": "proposed",
+          "decision": "",
+          "supersededRelation": "",
+          "supersededAction": "",
+          "version": 1,
+          "projectVersion": 7,
+          "edgeId": ""
+        },
+        {
+          "id": "6c651d5c-2b9b-4701-9e21-8cae6205f5fd",
+          "batchId": "f3a5dcd3-3a4e-4252-b72d-8d816924f0f4",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "target": {
+            "kind": "ChapterVersion",
+            "id": "9e642980-7e12-4df7-af9f-be140c583482",
+            "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+          },
+          "relation": "candidate_modify",
+          "action": "NO_ACTION",
+          "evidence": "合成依据片段：研究方法章节引用了被改条件，关系名需要人工修正",
+          "reason": "候选关系 B：待人工判断是否成立",
+          "confidence": 0.5,
+          "status": "proposed",
+          "decision": "",
+          "supersededRelation": "",
+          "supersededAction": "",
+          "version": 1,
+          "projectVersion": 7,
+          "edgeId": ""
+        },
+        {
+          "id": "cb7daacc-157b-4e7e-a338-da97c5876c96",
+          "batchId": "f3a5dcd3-3a4e-4252-b72d-8d816924f0f4",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "target": {
+            "kind": "ChapterVersion",
+            "id": "9e642980-7e12-4df7-af9f-be140c583482",
+            "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+          },
+          "relation": "candidate_reject",
+          "action": "NO_ACTION",
+          "evidence": "合成依据片段：模型猜测，没有正文依据可核对",
+          "reason": "候选关系 C：待人工判断是否成立",
+          "confidence": 0.3,
+          "status": "proposed",
+          "decision": "",
+          "supersededRelation": "",
+          "supersededAction": "",
+          "version": 1,
+          "projectVersion": 7,
+          "edgeId": ""
+        },
+        {
+          "id": "128870cd-ab66-493b-9e9c-81af1a7bf1bc",
+          "batchId": "f3a5dcd3-3a4e-4252-b72d-8d816924f0f4",
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "target": {
+            "kind": "ChapterVersion",
+            "id": "9e642980-7e12-4df7-af9f-be140c583482",
+            "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+          },
+          "relation": "candidate_stale",
+          "action": "NO_ACTION",
+          "evidence": "合成依据片段：提出时引用的规格修订会在本轮被替换",
+          "reason": "候选关系 D：待人工判断是否成立（依据版本随后会变更）",
+          "confidence": 0.4,
+          "status": "proposed",
+          "decision": "",
+          "supersededRelation": "",
+          "supersededAction": "",
+          "version": 1,
+          "projectVersion": 7,
+          "edgeId": ""
+        }
+      ],
+      "suppressed": []
+    },
+    "decisions": [
+      {
+        "candidateId": "5d332d98-27f0-4e88-8aab-47fc669ed84c",
+        "decision": "confirm",
+        "status": "confirmed",
+        "httpStatus": 200,
+        "code": "",
+        "edgeId": "b0d7a645-4275-4289-a654-df9dd1a93f7e",
+        "relation": "candidate_confirm",
+        "action": "NO_ACTION",
+        "supersededRelation": "",
+        "supersededAction": ""
+      },
+      {
+        "candidateId": "6c651d5c-2b9b-4701-9e21-8cae6205f5fd",
+        "decision": "modify",
+        "status": "modified",
+        "httpStatus": 200,
+        "code": "",
+        "edgeId": "b815e3cc-a03d-4319-90e4-bdeb3cfd7a7f",
+        "relation": "candidate_modify",
+        "action": "NO_ACTION",
+        "supersededRelation": "candidate_modify",
+        "supersededAction": "NO_ACTION"
+      },
+      {
+        "candidateId": "cb7daacc-157b-4e7e-a338-da97c5876c96",
+        "decision": "reject",
+        "status": "rejected",
+        "httpStatus": 200,
+        "code": "",
+        "edgeId": "",
+        "relation": "candidate_reject",
+        "action": "NO_ACTION",
+        "supersededRelation": "",
+        "supersededAction": ""
+      }
+    ],
+    "reproposal": {
+      "id": "03b13aab-153e-4eba-9d06-c4b758412330",
+      "status": "proposed",
+      "projectVersion": 7,
+      "contextRevision": 1,
+      "candidates": [],
+      "suppressed": [
+        {
+          "source": {
+            "kind": "ProjectSpec",
+            "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+            "version": "1"
+          },
+          "target": {
+            "kind": "ChapterVersion",
+            "id": "9e642980-7e12-4df7-af9f-be140c583482",
+            "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+          },
+          "relation": "candidate_reject",
+          "action": "NO_ACTION",
+          "reason": "rejected_in_same_version",
+          "previousCandidateId": "cb7daacc-157b-4e7e-a338-da97c5876c96",
+          "previousStatus": "rejected"
+        }
+      ]
+    },
+    "staleConfirmation": {
+      "candidateId": "128870cd-ab66-493b-9e9c-81af1a7bf1bc",
+      "decision": "confirm",
+      "status": "",
+      "httpStatus": 409,
+      "code": "dependency_candidate_requires_reevaluation",
+      "edgeId": "",
+      "relation": "",
+      "action": "",
+      "supersededRelation": "",
+      "supersededAction": ""
+    },
+    "edgesBeforeDecisions": 7,
+    "edgesAfterDecisions": 9
+  },
+  "suggested_edge": {
+    "id": "fdf20c68-40d7-4807-b538-786bf80b057c",
+    "projectId": "5fad43a1-74e7-4002-9231-a41bff92b492",
+    "source": {
+      "kind": "ProjectSpec",
+      "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "version": "1"
+    },
+    "target": {
+      "kind": "ChapterVersion",
+      "id": "9e642980-7e12-4df7-af9f-be140c583482",
+      "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+    },
+    "relation": "candidate_question_dependency",
+    "action": "REVIEW_REQUIRED",
+    "origin": "ai",
+    "reason": "模型提出的候选关系：研究问题可能依赖研究条件版本",
+    "status": "suggested",
+    "confidence": 0.6,
+    "version": 1,
+    "supersededRelation": "",
+    "supersededAction": ""
+  },
+  "suggested_target_version_confirmation_valid": true,
+  "known_objects": [
+    {
+      "kind": "ProjectSpec",
+      "id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+      "version": "1"
+    },
+    {
+      "kind": "TemplateCopy",
+      "id": "template-demo",
+      "version": "1"
+    },
+    {
+      "kind": "ChapterVersion",
+      "id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+      "version": "712f0a62-bf95-4ee1-856a-292e6566395f"
+    },
+    {
+      "kind": "ChapterVersion",
+      "id": "9e642980-7e12-4df7-af9f-be140c583482",
+      "version": "0842c004-b1ce-4ffc-b07b-e63164f5c61c"
+    },
+    {
+      "kind": "RuleSet",
+      "id": "template-demo",
+      "version": "ad709f6b87c1df0b6fae65c592118f23aff249e8d3d16df9f65623725adda1d5"
+    }
+  ],
+  "verdicts": [
+    {
+      "id": "AC-G3-05",
+      "title": "多上游任务合并",
+      "holds": true,
+      "detail": "同一目标（ChapterVersion/c164ffd4-9c1b-4c0a-bc12-51eab9260590）的同一动作被合并成一条逻辑 ImpactTask，causes 保留 2 条上游原因（ProjectSpec/5fad43a1-74e7-4002-9231-a41bff92b492、TemplateCopy/template-demo）；重复应用同一变更集后影响任务数量仍为 3，没有产生第二条任务。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/dependencies → HTTP 201 · 两条来源边指向同一目标、动作相同",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/21918d0b-a68c-4075-aa58-74869296c754/impact-assessment → HTTP 200 · 多原因影响条数=3（其中产生任务的 1 条）· 合并影响 causes 数量=2",
+        "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 任务数=3 · 多原因任务=1 · 任务 id=ff30fee7-320a-53cb-b7a0-e353abd30261",
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/21918d0b-a68c-4075-aa58-74869296c754/apply（重复）→ HTTP 200 · 重复应用后任务数=3"
+      ]
+    },
+    {
+      "id": "AC-G3-13",
+      "title": "建议依赖边",
+      "holds": true,
+      "detail": "建议边（status=suggested）只产生 1 条「可能受影响」影响，没有为它的目标章节产生任何影响任务（任务数=0）；该章节的版本级确认标记仍为 true，即建议边没有单独使章节失效。没有未闭环的阻断任务，它就不构成导出阻断项。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/dependencies → HTTP 201 · edge_id=fdf20c68-40d7-4807-b538-786bf80b057c · status=suggested · origin=ai · target=ChapterVersion/9e642980-7e12-4df7-af9f-be140c583482",
+        "GET /api/v1/lingdoc/projects/{projectId}/change-sets/21918d0b-a68c-4075-aa58-74869296c754/impact-assessment → HTTP 200 · possible 影响=1 · 确定性取值来自服务端 certainty",
+        "GET /api/v1/lingdoc/projects/{projectId}/impact-tasks → HTTP 200 · 针对建议边目标任务的任务数=0",
+        "GET /api/v1/lingdoc/projects/{projectId}/chapters/{questionId}/versions → HTTP 200 · confirmation_valid=true（版本级口径）"
+      ]
+    },
+    {
+      "id": "DRAFT-CREATED",
+      "title": "变更草稿生成（本链路的交付面，不对应某条 AC 行）",
+      "holds": true,
+      "detail": "变更草稿已生成（change_set_id=4234d7e7-f345-4f1d-876e-78d0acedfed9 · status=draft），候选批次在这条草稿上提交。**这条草稿不是助手草稿**：它没有「确定受影响 / 可能受影响」两组说明，那一半由助手链负责（自然语言 → 真实模型轮次 → 人工确认落草稿 → 读回两组说明），对应 AC-G3-14；工作台那个分组是影响解析结果，不可互替。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/change-sets/drafts → HTTP 201 · change_set_id=4234d7e7-f345-4f1d-876e-78d0acedfed9 · status=draft",
+        "AC-G3-14 的两组说明读回由助手链负责（#320）；缺口清单见 #246。"
+      ]
+    },
+    {
+      "id": "AC-G3-15",
+      "title": "AI 批量导入依赖：候选批次的三态决策与三条语义",
+      "holds": true,
+      "detail": "候选批次三态都跑通：确认（status=confirmed，产生边 b0d7a645-4275-4289-a654-df9dd1a93f7e）、修改（status=modified，记住被替换元组 candidate_modify/NO_ACTION）、拒绝（status=rejected，**没有**产生边）；依赖边在三次决策前后从 7 条变成 9 条（只有确认与修改各产生一条）；同一版本里重投被拒的元组，服务端记为抑制（新建 0 条 · 抑制 1 条，原因 rejected_in_same_version），没有再推荐；依据版本已变更的候选在确认时被复检拦下（HTTP 409，code=dependency_candidate_requires_reevaluation），不会被静默确认。候选与已确认边**分表**存放：「候选不是边」是物理保证，只有确认 / 修改才产生边。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates → HTTP 200 · batch_id=f3a5dcd3-3a4e-4252-b72d-8d816924f0f4 · 候选 4 条 · 抑制 0 条",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision → HTTP 200 · decision=confirm · status=confirmed · edge_id=b0d7a645-4275-4289-a654-df9dd1a93f7e",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision → HTTP 200 · decision=modify · status=modified · superseded=candidate_modify/NO_ACTION · edge_id=b815e3cc-a03d-4319-90e4-bdeb3cfd7a7f",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision → HTTP 200 · decision=reject · status=rejected · 产生边=（无）（拒绝不产生边）",
+        "GET /api/v1/lingdoc/projects/{projectId}/dependencies（候选决策前后）→ HTTP 200 · 边数 7 → 9",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates（重投被拒元组）→ HTTP 200 · 新建 0 条 · 抑制 1 条（原因 rejected_in_same_version）",
+        "POST /api/v1/lingdoc/projects/{projectId}/dependency-candidates/{candidateId}/decision（依据版本已变更）→ HTTP 409 · code=dependency_candidate_requires_reevaluation"
+      ],
+      "status": "PASS"
+    },
+    {
+      "id": "TASK-CLOSURE",
+      "title": "影响任务闭环与状态迁移",
+      "holds": true,
+      "detail": "未指派直接完成被服务端按 404 拒掉；指派 → 开始 → 以闭环证据完成（DONE）、非阻断任务「接受本次不处理」（DISMISSED）、依据版本被替换的任务落为失效（STALE，终态但不算闭环）。",
+      "evidence": [
+        "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions → HTTP 200 · action=assign · OPEN → OPEN",
+        "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions → HTTP 200 · action=start · OPEN → IN_PROGRESS",
+        "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions → HTTP 200 · action=complete · IN_PROGRESS → DONE",
+        "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/ff30fee7-320a-53cb-b7a0-e353abd30261/actions → HTTP 200 · action=start · OPEN → STALE",
+        "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/4679ce5c-3e16-562c-9953-2ec20587065c/actions → HTTP 200 · action=assign · OPEN → OPEN",
+        "POST /api/v1/lingdoc/projects/{projectId}/impact-tasks/4679ce5c-3e16-562c-9953-2ec20587065c/actions → HTTP 200 · action=dismiss · OPEN → DISMISSED"
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "name": "后端存活探针",
+      "method": "GET",
+      "path": "/api/v1/version",
+      "status": 401,
+      "ok": false,
+      "durationMs": 27,
+      "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
+      "index": 1,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "注册演示账号",
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "status": 201,
+      "ok": true,
+      "durationMs": 57,
+      "conclusion": "注册成功（HTTP 201）：g3demo-c55ea15a47@example.com",
+      "details": {
+        "user_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "username": "g3demo-c55ea15a47",
+        "email": "g3demo-c55ea15a47@example.com",
+        "tenant_id": 4
+      },
+      "index": 2,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "登录",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "status": 200,
+      "ok": true,
+      "durationMs": 51,
+      "conclusion": "登录成功（HTTP 200）：g3demo-c55ea15a47@example.com",
+      "details": {
+        "user_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "email": "g3demo-c55ea15a47@example.com",
+        "tenant_id": 4
+      },
+      "index": 3,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读取当前身份",
+      "method": "GET",
+      "path": "/api/v1/auth/validate",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "令牌有效（HTTP 200）",
+      "index": 4,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读取后端 head",
+      "method": "GET",
+      "path": "/api/v1/system/info",
+      "status": 200,
+      "ok": true,
+      "durationMs": 1,
+      "conclusion": "读取后端 head 成功（HTTP 200）",
+      "index": 5,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建项",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-create-project",
+      "durationMs": 5,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvi18c2w-c035fac7）",
+      "details": {
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "status": "draft",
+        "project_version": 1,
+        "spec_revision": 0,
+        "template_id": "template-demo",
+        "template_version": "1"
+      },
+      "index": 6,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "写规格",
+      "method": "PUT",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/spec",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-save-spec",
+      "durationMs": 5,
+      "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
+      "details": {
+        "spec_revision": 1,
+        "project_version": 2,
+        "spec_fields": [
+          "research_goal",
+          "research_subject"
+        ]
+      },
+      "index": 7,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "登记立项阅读",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/activation-read",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-activation-read",
+      "durationMs": 2,
+      "conclusion": "立项阅读已登记（HTTP 201）",
+      "details": {
+        "activation_read_id": "e906a026-d459-4e0f-bdac-110691e1a0f0",
+        "project_version": 2,
+        "spec_revision": 1
+      },
+      "index": 8,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "激活",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/activate",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-activate",
+      "durationMs": 7,
+      "conclusion": "项目已激活（HTTP 200）",
+      "details": {
+        "status": "active",
+        "project_version": 3,
+        "current_context_revision": 1,
+        "baseline_confirmation_id": "e436bb9b-0852-47fe-bf08-4579b225e345"
+      },
+      "index": 9,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "section_ids": [
+          "question",
+          "method"
+        ]
+      },
+      "index": 10,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "status": "active",
+        "project_version": 3,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 11,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/9e642980-7e12-4df7-af9f-be140c583482/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-chapter-body-question",
+      "durationMs": 5,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
+      "details": {
+        "chapter_id": "9e642980-7e12-4df7-af9f-be140c583482",
+        "current_version_id": "0842c004-b1ce-4ffc-b07b-e63164f5c61c",
+        "confirmation_valid": false
+      },
+      "index": 12,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/9e642980-7e12-4df7-af9f-be140c583482/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-confirm-question",
+      "durationMs": 4,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 0842c004-b1ce-4ffc-b07b-e63164f5c61c · 规格修订 1",
+      "details": {
+        "confirmation_id": "c4ff7330-1a48-405a-8f4b-ac756cc27e5c",
+        "chapter_version_id": "0842c004-b1ce-4ffc-b07b-e63164f5c61c",
+        "spec_revision": 1
+      },
+      "index": 13,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "写入章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/c164ffd4-9c1b-4c0a-bc12-51eab9260590/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-chapter-body-method",
+      "durationMs": 5,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
+      "details": {
+        "chapter_id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "current_version_id": "712f0a62-bf95-4ee1-856a-292e6566395f",
+        "confirmation_valid": false
+      },
+      "index": 14,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/c164ffd4-9c1b-4c0a-bc12-51eab9260590/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-confirm-method",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 712f0a62-bf95-4ee1-856a-292e6566395f · 规格修订 1",
+      "details": {
+        "confirmation_id": "277b4497-912d-4a6c-a956-21dbd09ce0ea",
+        "chapter_version_id": "712f0a62-bf95-4ee1-856a-292e6566395f",
+        "spec_revision": 1
+      },
+      "index": 15,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立已确认依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-spec-template",
+      "durationMs": 6,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → TemplateCopy · spec_regenerates_template",
+      "details": {
+        "edge_id": "3eeb9d2a-ed59-4ed4-8117-dd89800deee2",
+        "status": "confirmed",
+        "origin": "user",
+        "action": "REGENERATE",
+        "relation": "spec_regenerates_template",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 16,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立已确认依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-spec-method",
+      "durationMs": 9,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → ChapterVersion · spec_invalidates_method",
+      "details": {
+        "edge_id": "f0ff5960-9eb8-4d57-81cf-67c32a53594f",
+        "status": "confirmed",
+        "origin": "user",
+        "action": "INVALIDATE_CONFIRMATION",
+        "relation": "spec_invalidates_method",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 17,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立已确认依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-template-method",
+      "durationMs": 6,
+      "conclusion": "依赖边已建立（HTTP 201）：TemplateCopy → ChapterVersion · template_invalidates_method",
+      "details": {
+        "edge_id": "8c7fae44-258f-4d2e-8cf6-0c82878bf2d5",
+        "status": "confirmed",
+        "origin": "user",
+        "action": "INVALIDATE_CONFIRMATION",
+        "relation": "template_invalidates_method",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 18,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立建议依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-suggested-question",
+      "durationMs": 6,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → ChapterVersion · candidate_question_dependency",
+      "details": {
+        "edge_id": "fdf20c68-40d7-4807-b538-786bf80b057c",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "REVIEW_REQUIRED",
+        "relation": "candidate_question_dependency",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 19,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立建议依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-candidate-a",
+      "durationMs": 5,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → TemplateCopy · candidate_a",
+      "details": {
+        "edge_id": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "NO_ACTION",
+        "relation": "candidate_a",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 20,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立建议依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-candidate-b",
+      "durationMs": 5,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → TemplateCopy · candidate_b",
+      "details": {
+        "edge_id": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "NO_ACTION",
+        "relation": "candidate_b",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 21,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "建立建议依赖边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-edge-candidate-c",
+      "durationMs": 6,
+      "conclusion": "依赖边已建立（HTTP 201）：ProjectSpec → TemplateCopy · candidate_c",
+      "details": {
+        "edge_id": "5855b87e-fd51-4887-b271-c0fc0895fe39",
+        "status": "suggested",
+        "origin": "ai",
+        "action": "NO_ACTION",
+        "relation": "candidate_c",
+        "version": 1,
+        "error_code": ""
+      },
+      "index": 22,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "裁决依赖边-确认",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies/4ed6d730-7e9d-45ca-82b9-7728c2084829/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-decide-confirm",
+      "durationMs": 6,
+      "conclusion": "依赖边裁决「confirm」已提交（HTTP 200）",
+      "details": {
+        "edge_id": "4ed6d730-7e9d-45ca-82b9-7728c2084829",
+        "decision": "confirm",
+        "status": "confirmed",
+        "relation": "candidate_a",
+        "action": "NO_ACTION",
+        "confidence": 0.4,
+        "version": 2,
+        "superseded_relation": "",
+        "superseded_action": "",
+        "error_code": ""
+      },
+      "index": 23,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "裁决依赖边-修改",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies/1b5b9d8c-2722-49cf-a18d-ac68418bf383/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-decide-modify",
+      "durationMs": 5,
+      "conclusion": "依赖边裁决「modify」已提交（HTTP 200）",
+      "details": {
+        "edge_id": "1b5b9d8c-2722-49cf-a18d-ac68418bf383",
+        "decision": "modify",
+        "status": "confirmed",
+        "relation": "candidate_b_corrected",
+        "action": "NO_ACTION",
+        "confidence": 0.8,
+        "version": 2,
+        "superseded_relation": "candidate_b",
+        "superseded_action": "NO_ACTION",
+        "error_code": ""
+      },
+      "index": 24,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "裁决依赖边-拒绝",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies/5855b87e-fd51-4887-b271-c0fc0895fe39/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-decide-reject",
+      "durationMs": 5,
+      "conclusion": "依赖边裁决「reject」已提交（HTTP 200）",
+      "details": {
+        "edge_id": "5855b87e-fd51-4887-b271-c0fc0895fe39",
+        "decision": "reject",
+        "status": "rejected",
+        "relation": "candidate_c",
+        "action": "NO_ACTION",
+        "confidence": 0.3,
+        "version": 2,
+        "superseded_relation": "",
+        "superseded_action": "",
+        "error_code": ""
+      },
+      "index": 25,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "重投被拒绝的候选边",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-repropose-rejected",
+      "durationMs": 4,
+      "conclusion": "依赖边已建立（HTTP 200）：ProjectSpec → TemplateCopy · candidate_c",
+      "details": {
+        "edge_id": "5855b87e-fd51-4887-b271-c0fc0895fe39",
+        "status": "rejected",
+        "origin": "ai",
+        "action": "NO_ACTION",
+        "relation": "candidate_c",
+        "version": 2,
+        "error_code": ""
+      },
+      "index": 26,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读依赖边列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "依赖边已读回（HTTP 200）",
+      "details": {
+        "edge_count": 7,
+        "edges": [
+          "spec_regenerates_template:confirmed",
+          "spec_invalidates_method:confirmed",
+          "template_invalidates_method:confirmed",
+          "candidate_question_dependency:suggested",
+          "candidate_a:confirmed",
+          "candidate_b_corrected:confirmed",
+          "candidate_c:rejected"
+        ]
+      },
+      "index": 27,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读项目状态（候选批次前）",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "status": "active",
+        "project_version": 7,
+        "spec_revision": 1,
+        "current_context_revision": 1
+      },
+      "index": 28,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "助手-提交候选批次",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependency-candidates",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-candidates",
+      "durationMs": 9,
+      "conclusion": "候选依赖批次已提交（HTTP 201）",
+      "details": {
+        "batch_id": "f3a5dcd3-3a4e-4252-b72d-8d816924f0f4",
+        "status": "proposed",
+        "candidate_count": 4,
+        "suppressed_count": 0,
+        "error_code": ""
+      },
+      "index": 29,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "助手-候选决策-确认",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependency-candidates/5d332d98-27f0-4e88-8aab-47fc669ed84c/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-candidate-confirm",
+      "durationMs": 7,
+      "conclusion": "候选决策「confirm」已提交（HTTP 200）",
+      "details": {
+        "candidate_id": "5d332d98-27f0-4e88-8aab-47fc669ed84c",
+        "status": "confirmed",
+        "decision": "confirm",
+        "edge_id": "b0d7a645-4275-4289-a654-df9dd1a93f7e",
+        "error_code": ""
+      },
+      "index": 30,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "助手-候选决策-修改",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependency-candidates/6c651d5c-2b9b-4701-9e21-8cae6205f5fd/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-candidate-modify",
+      "durationMs": 8,
+      "conclusion": "候选决策「modify」已提交（HTTP 200）",
+      "details": {
+        "candidate_id": "6c651d5c-2b9b-4701-9e21-8cae6205f5fd",
+        "status": "modified",
+        "decision": "modify",
+        "edge_id": "b815e3cc-a03d-4319-90e4-bdeb3cfd7a7f",
+        "superseded_relation": "candidate_modify",
+        "superseded_action": "NO_ACTION",
+        "error_code": ""
+      },
+      "index": 31,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "助手-候选决策-拒绝",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependency-candidates/cb7daacc-157b-4e7e-a338-da97c5876c96/decision",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-candidate-reject",
+      "durationMs": 8,
+      "conclusion": "候选决策「reject」已提交（HTTP 200）",
+      "details": {
+        "candidate_id": "cb7daacc-157b-4e7e-a338-da97c5876c96",
+        "status": "rejected",
+        "decision": "reject",
+        "error_code": ""
+      },
+      "index": 32,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读依赖边列表（候选决策后）",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependencies",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "依赖边已读回（HTTP 200）",
+      "details": {
+        "edge_count": 9,
+        "edges": [
+          "spec_regenerates_template:confirmed",
+          "spec_invalidates_method:confirmed",
+          "template_invalidates_method:confirmed",
+          "candidate_question_dependency:suggested",
+          "candidate_a:confirmed",
+          "candidate_b_corrected:confirmed",
+          "candidate_c:rejected",
+          "candidate_confirm:confirmed",
+          "candidate_b_corrected:confirmed"
+        ]
+      },
+      "index": 33,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "助手-重投被拒候选",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependency-candidates",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-candidates-repropose",
+      "durationMs": 6,
+      "conclusion": "候选依赖批次已提交（HTTP 201）",
+      "details": {
+        "batch_id": "03b13aab-153e-4eba-9d06-c4b758412330",
+        "status": "proposed",
+        "candidate_count": 0,
+        "suppressed_count": 1,
+        "error_code": ""
+      },
+      "index": 34,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "创建变更草稿",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/change-sets/drafts",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-change-draft",
+      "durationMs": 22,
+      "conclusion": "变更草稿已生成（HTTP 201）",
+      "details": {
+        "change_set_id": "4234d7e7-f345-4f1d-876e-78d0acedfed9",
+        "status": "draft",
+        "base_context_revision": 1,
+        "affected_chapter_ids": [
+          "c164ffd4-9c1b-4c0a-bc12-51eab9260590"
+        ]
+      },
+      "index": 35,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "创建变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/change-sets",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-change-set",
+      "durationMs": 14,
+      "conclusion": "变更集已创建（HTTP 201）：G3 验收台-4：研究条件变化，验证多上游任务合并与建议边语义",
+      "details": {
+        "change_set_id": "21918d0b-a68c-4075-aa58-74869296c754",
+        "status": "assessed",
+        "base_context_revision": 1,
+        "base_spec_revision": 1,
+        "affected_chapter_ids": [
+          "c164ffd4-9c1b-4c0a-bc12-51eab9260590"
+        ]
+      },
+      "index": 36,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "评估变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/change-sets/21918d0b-a68c-4075-aa58-74869296c754/assess",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-assess-21918d0b-a68c-4075-aa58-74869296c754",
+      "durationMs": 16,
+      "conclusion": "变更集已评估（HTTP 200）",
+      "details": {
+        "change_set_id": "21918d0b-a68c-4075-aa58-74869296c754",
+        "status": "assessed"
+      },
+      "index": 37,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读影响评估",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/change-sets/21918d0b-a68c-4075-aa58-74869296c754/impact-assessment",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "影响评估已读回（HTTP 200）",
+      "details": {
+        "change_set_id": "21918d0b-a68c-4075-aa58-74869296c754",
+        "context_revision": 1,
+        "object_count": 3,
+        "impact_count": 6
+      },
+      "index": 38,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "应用变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/change-sets/21918d0b-a68c-4075-aa58-74869296c754/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-apply-21918d0b-a68c-4075-aa58-74869296c754",
+      "durationMs": 13,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "21918d0b-a68c-4075-aa58-74869296c754",
+        "status": "applied",
+        "target_context_revision": 2,
+        "target_spec_revision": 2,
+        "error_code": ""
+      },
+      "index": 39,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读项目状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "项目状态已读回（HTTP 200）",
+      "details": {
+        "project_id": "5fad43a1-74e7-4002-9231-a41bff92b492",
+        "status": "active",
+        "project_version": 8,
+        "spec_revision": 2,
+        "current_context_revision": 2
+      },
+      "index": 40,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 3,
+        "tasks": [
+          "INVALIDATE_CONFIRMATION:blocking:OPEN:causes=2",
+          "REVIEW_REQUIRED:blocking:OPEN:causes=1",
+          "REGENERATE:warning:OPEN:causes=1"
+        ]
+      },
+      "index": 41,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "助手-确认版本已变更的候选",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/dependency-candidates/128870cd-ab66-493b-9e9c-81af1a7bf1bc/decision",
+      "status": 409,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-candidate-stale",
+      "durationMs": 3,
+      "conclusion": "候选决策「confirm」已提交（HTTP 409）",
+      "details": {
+        "error_code": "dependency_candidate_requires_reevaluation"
+      },
+      "index": 42,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "重复应用变更集",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/change-sets/21918d0b-a68c-4075-aa58-74869296c754/apply",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-apply-replay",
+      "durationMs": 10,
+      "conclusion": "变更集已应用（HTTP 200）",
+      "details": {
+        "change_set_id": "21918d0b-a68c-4075-aa58-74869296c754",
+        "status": "applied",
+        "target_context_revision": 2,
+        "target_spec_revision": 2,
+        "error_code": ""
+      },
+      "index": 43,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读影响任务",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 4,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 3,
+        "tasks": [
+          "INVALIDATE_CONFIRMATION:blocking:OPEN:causes=2",
+          "REVIEW_REQUIRED:blocking:OPEN:causes=1",
+          "REGENERATE:warning:OPEN:causes=1"
+        ]
+      },
+      "index": 44,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "未指派直接完成",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions",
+      "status": 404,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-complete-without-assign",
+      "durationMs": 6,
+      "conclusion": "影响任务处置「complete」（HTTP 404）",
+      "details": {
+        "task_id": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+        "action": "complete",
+        "status": "",
+        "severity": "",
+        "assignee_id": "",
+        "version": 0,
+        "disposition": "",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": "not_found"
+      },
+      "index": 45,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "指派影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-assign",
+      "durationMs": 7,
+      "conclusion": "影响任务处置「assign」（HTTP 200）",
+      "details": {
+        "task_id": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+        "action": "assign",
+        "status": "OPEN",
+        "severity": "blocking",
+        "assignee_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 2,
+        "disposition": "G3 验收台-4：把影响任务指派给当前操作者",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 46,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "开始处置影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-start",
+      "durationMs": 6,
+      "conclusion": "影响任务处置「start」（HTTP 200）",
+      "details": {
+        "task_id": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+        "action": "start",
+        "status": "IN_PROGRESS",
+        "severity": "blocking",
+        "assignee_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 3,
+        "disposition": "G3 验收台-4：开始处置影响任务",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 47,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "复写章节正文",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/c164ffd4-9c1b-4c0a-bc12-51eab9260590/versions",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-rewrite-method",
+      "durationMs": 4,
+      "conclusion": "章节正文已保存（HTTP 201）：规格修订 2",
+      "details": {
+        "chapter_id": "c164ffd4-9c1b-4c0a-bc12-51eab9260590",
+        "current_version_id": "fa4b998a-00c5-4acd-b50b-6fe0df108932",
+        "confirmation_valid": false
+      },
+      "index": 48,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "重新确认章节",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/c164ffd4-9c1b-4c0a-bc12-51eab9260590/confirmations",
+      "status": 201,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-reconfirm-method",
+      "durationMs": 3,
+      "conclusion": "章节已确认（HTTP 201）：绑定章节版本 fa4b998a-00c5-4acd-b50b-6fe0df108932 · 规格修订 2",
+      "details": {
+        "confirmation_id": "ded968af-a3d2-48df-a7a8-d4de6876e0a1",
+        "chapter_version_id": "fa4b998a-00c5-4acd-b50b-6fe0df108932",
+        "spec_revision": 2
+      },
+      "index": 49,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "完成影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/b58ce08c-f1de-5b68-9ae2-d15705442f16/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-complete",
+      "durationMs": 7,
+      "conclusion": "影响任务处置「complete」（HTTP 200）",
+      "details": {
+        "task_id": "b58ce08c-f1de-5b68-9ae2-d15705442f16",
+        "action": "complete",
+        "status": "DONE",
+        "severity": "blocking",
+        "assignee_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 4,
+        "disposition": "G3 验收台-4：已按当前规格修订复写并重新确认章节，提交闭环证据",
+        "stale_reason": "",
+        "closure_evidence_count": 1,
+        "error_code": ""
+      },
+      "index": 50,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "触发任务失效",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/ff30fee7-320a-53cb-b7a0-e353abd30261/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-stale",
+      "durationMs": 5,
+      "conclusion": "影响任务处置「start」（HTTP 200）",
+      "details": {
+        "task_id": "ff30fee7-320a-53cb-b7a0-e353abd30261",
+        "action": "start",
+        "status": "STALE",
+        "severity": "blocking",
+        "assignee_id": "",
+        "version": 2,
+        "disposition": "",
+        "stale_reason": "target_version_replaced",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 51,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "指派影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/4679ce5c-3e16-562c-9953-2ec20587065c/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-assign-dismiss",
+      "durationMs": 6,
+      "conclusion": "影响任务处置「assign」（HTTP 200）",
+      "details": {
+        "task_id": "4679ce5c-3e16-562c-9953-2ec20587065c",
+        "action": "assign",
+        "status": "OPEN",
+        "severity": "warning",
+        "assignee_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 2,
+        "disposition": "G3 验收台-4：把非阻断影响任务指派给当前操作者",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 52,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "接受不处理影响任务",
+      "method": "POST",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks/4679ce5c-3e16-562c-9953-2ec20587065c/actions",
+      "status": 200,
+      "ok": true,
+      "idempotencyKey": "g3-g3r-mvi18c2w-c035fac7-dep-dismiss",
+      "durationMs": 5,
+      "conclusion": "影响任务处置「dismiss」（HTTP 200）",
+      "details": {
+        "task_id": "4679ce5c-3e16-562c-9953-2ec20587065c",
+        "action": "dismiss",
+        "status": "DISMISSED",
+        "severity": "warning",
+        "assignee_id": "c78cdd01-41a2-485e-953a-6fed3f7c1fd9",
+        "version": 3,
+        "disposition": "G3 验收台-4：本次不处理该非阻断影响（已说明理由）",
+        "stale_reason": "",
+        "closure_evidence_count": 0,
+        "error_code": ""
+      },
+      "index": 53,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读回影响任务状态",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/impact-tasks",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "影响任务已读回（HTTP 200）",
+      "details": {
+        "task_count": 3,
+        "tasks": [
+          "INVALIDATE_CONFIRMATION:blocking:STALE:causes=2",
+          "REVIEW_REQUIRED:blocking:DONE:causes=1",
+          "REGENERATE:warning:DISMISSED:causes=1"
+        ]
+      },
+      "index": 54,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读回章节列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节列表已读回（HTTP 200）",
+      "details": {
+        "chapter_count": 2,
+        "chapters": [
+          "question:confirmation_valid=false",
+          "method:confirmation_valid=true"
+        ]
+      },
+      "index": 55,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读章节版本列表",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/9e642980-7e12-4df7-af9f-be140c583482/versions",
+      "status": 200,
+      "ok": true,
+      "durationMs": 2,
+      "conclusion": "章节版本已读回（HTTP 200）",
+      "details": {
+        "version_count": 1,
+        "versions": [
+          "0842c004-b1ce-4ffc-b07b-e63164f5c61c:spec=1:confirmation_valid=true"
+        ]
+      },
+      "index": 56,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    },
+    {
+      "name": "读当前确认",
+      "method": "GET",
+      "path": "/api/v1/lingdoc/projects/5fad43a1-74e7-4002-9231-a41bff92b492/chapters/9e642980-7e12-4df7-af9f-be140c583482/confirmations/current",
+      "status": 200,
+      "ok": true,
+      "durationMs": 3,
+      "conclusion": "当前确认已读回（HTTP 200）",
+      "details": {
+        "confirmation_id": "（无当前确认）"
+      },
+      "index": 57,
+      "runId": "g3r-mvi18c2w-c035fac7"
+    }
+  ]
+}

@@ -33,13 +33,24 @@ import {
 } from '../../src/views/lingdoc/g3demo/g3Export'
 import { applyRunEvidence } from '../../src/views/lingdoc/g3demo/g3Evidence'
 import { G3_MATRIX_ROWS } from '../../src/views/lingdoc/g3demo/g3Matrix'
-import { readProjectState, runChangeSetChain } from '../../src/views/lingdoc/g3demo/runner/changeset'
+import {
+  readProjectState,
+  runChangeSetChain,
+  writeChapterVersion,
+} from '../../src/views/lingdoc/g3demo/runner/changeset'
 import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
 import { runRoadmapChain } from '../../src/views/lingdoc/g3demo/runner/roadmap'
 import { runFaultInjectionChain } from '../../src/views/lingdoc/g3demo/runner/faultInjection'
-import { runAssistantChain } from '../../src/views/lingdoc/g3demo/runner/assistant'
+import {
+  G3_ASSISTANT_DRAFT_USER_INPUT,
+  runAssistantChain,
+} from '../../src/views/lingdoc/g3demo/runner/assistant'
 import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
-import { runProjectChain } from '../../src/views/lingdoc/g3demo/runner/project'
+import {
+  G3_DEMO_REQUIRED_ROUTE_NODE_ID,
+  G3_DEMO_ROUTE_TEMPLATE_VERSION,
+  runProjectChain,
+} from '../../src/views/lingdoc/g3demo/runner/project'
 import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import type { G3BackendHead, G3RunContext, G3RunVerdict, G3StepRecord } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import { createFetchClient } from './fetchClient'
@@ -73,10 +84,27 @@ const OUT_PATH = outArg
 /** 从一份证据文件里取出判定（顶层或一层嵌套的 `verdicts`）。 */
 function verdictsOf(raw: Record<string, unknown>): G3RunVerdict[] {
   const top = raw.verdicts
-  if (Array.isArray(top)) return top as G3RunVerdict[]
+  const list = Array.isArray(top)
+    ? (top as (G3RunVerdict & { model_dependent?: boolean })[])
+    : nestedVerdictsOf(raw)
+  return list.map((verdict) => ({
+    ...verdict,
+    // 导出体里判定级的标志叫 `model_dependent`，代码里的类型叫 `modelDependent`。
+    // 读回来时必须对上：否则每条判定都变成「没声明」，于是「本段含模型依赖」被
+    // 当成「每条判定都模型依赖」，确定性判定的 `PASS` 在投影时被改写成 `WARNING`。
+    //
+    // 两边都没有时保持「没声明」（`undefined`），让轮次级标志兜底——历史证据文件
+    // 就是那样：整份由一次模型轮次产出，标志记在文件级。
+    modelDependent:
+      verdict.modelDependent ?? (verdict.model_dependent === undefined ? undefined : verdict.model_dependent),
+  }))
+}
+
+/** 一层嵌套里带 `verdicts` 的那份（证据文件把判定放在 `verdicts` 或某个子对象里）。 */
+function nestedVerdictsOf(raw: Record<string, unknown>): (G3RunVerdict & { model_dependent?: boolean })[] {
   for (const value of Object.values(raw)) {
     if (value && typeof value === 'object' && Array.isArray((value as { verdicts?: unknown }).verdicts)) {
-      return (value as { verdicts: G3RunVerdict[] }).verdicts
+      return (value as { verdicts: (G3RunVerdict & { model_dependent?: boolean })[] }).verdicts
     }
   }
   return []
@@ -199,6 +227,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
 
   const newProject = async (
     label: string,
+    options: { templateVersion?: string; fields?: Record<string, string> } = {},
   ): Promise<{ projectId: string; chapters: { id: string; currentVersionId: string | null }[] }> => {
     const created = await runProjectChain(chain.ctx, client, chain.token, {
       projectName: `G3 验收台演示项目（${label} · 运行 ${chain.ctx.runId}）`,
@@ -206,6 +235,8 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       // 服务端会按 409 `idempotency_conflict` 拒掉。前缀用 ASCII：中文进到幂等键里
       // 会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键。
       idemPrefix: `g3-${label}`,
+      templateVersion: options.templateVersion,
+      fields: options.fields,
     })
     // 章节要**有一版正文**才有 currentVersionId；后续链路要拿它当对象引用
     // （候选的 target 就是章节版本）。模板激活后的章节正文是空的。
@@ -245,7 +276,20 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     )
   }
   if (wants('roadmap')) {
-    const roadmapProject = await newProject('roadmap')
+    // 路线图链要用**演示模板 v2**：只有 v2 声明了必需 RouteNode `route-r7`，
+    // 服务端才会按模板规则算出 required=true（#314）。
+    //
+    // v2 的必填字段多了 `route-r7`，而激活闸门把模板必填字段当规格字段读
+    // （`workspacecore/service_facade.go` 的激活闸门），所以规格里**必须**带上
+    // 占位值，否则项目激活不了。这个占位值随后会被路线图登记的节点值覆盖。
+    const roadmapProject = await newProject('roadmap', {
+      templateVersion: G3_DEMO_ROUTE_TEMPLATE_VERSION,
+      fields: {
+        research_subject: `G3 验收台演示对象（路线图 · 运行 ${chain.ctx.runId}）`,
+        research_goal: '用演示模板 v2 自建隔离项目，造出必需路线节点的前置',
+        [G3_DEMO_REQUIRED_ROUTE_NODE_ID]: '（占位：路线节点的值由路线图登记覆盖）',
+      },
+    })
     await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
       runRoadmapChain(chain.ctx, client, chain.token, {
         projectId: roadmapProject.projectId,
@@ -295,6 +339,21 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       }
       return runAssistantChain(chain.ctx, client, chain.token, {
         projectId: assistantProject.projectId,
+        // #320：台面自己造一条**真实助手草稿**——用自然语言提出一次研究条件修改，
+        // 走「助手轮次 → 变更提案 → 人工确认 → 读回两组说明 → 正式评估」，
+        // 让 AC-G3-14 有判定可依（模型不可用时如实记 NOT RUN 并写明缺什么）。
+        //
+        // 受影响章节是**人工选定**的（模型给的是候选，勾选是人的动作）：
+        // 服务端要求 `affected_chapter_ids` 非空（`validateChangeSetInput`）。
+        draft: {
+          projectId: assistantProject.projectId,
+          project: projectState,
+          userInput: G3_ASSISTANT_DRAFT_USER_INPUT,
+          affectedChapterIds: assistantProject.chapters.map((item) => item.id),
+          // 这一轮挂在**一个真实章节**上：助手只能引用上下文给出的对象，
+          // 挂着章节它才有 `object_version` 依据可引（模型不能编造来源）。
+          chapterId: chapter?.id ?? '',
+        },
         candidates,
         expectedContextRevision: projectState.currentContextRevision,
       })
@@ -314,7 +373,10 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       head: chain.ctx.head,
       steps: chain.ctx.steps,
       verdicts,
-      modelDependent: false,
+      // 本轮有没有**依赖真实模型**的判定：由判定卡自己说（AC-G3-14 的助手草稿
+      // 路径跑的是真实模型轮次 → 那条判定标成 model_dependent）。
+      // 写死 false 会让读者以为这一轮全是确定性结论。
+      modelDependent: verdicts.some((item) => item.modelDependent === true),
     },
     ctx: chain.ctx,
   }
