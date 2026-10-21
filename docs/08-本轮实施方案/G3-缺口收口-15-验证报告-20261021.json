@@ -1,11 +1,31 @@
 {
   "ticket": "#306（G3 缺口收口-15）：research-task 指定不存在的 provider_id 返回 500 internal_error",
-  "head_at_evidence": "0b6d8b4",
-  "head_note": "本票未提交：改动留在工作区（分支 feat/issue-306-provider-not-found，基线 integrate/g3-gap-closure-r3 = 0b6d8b4）。以下证据取自该工作区的当前状态。",
+  "head_at_evidence": "06206dc",
+  "head_note": "本报告的原始证据取自基线 0b6d8b4 + 当时的未提交工作区改动（分支 feat/issue-306-provider-not-found）；实现已落库（实现提交 91fb38e，合入提交 c7e7c06），并在当前 head 06206dc 上复验（见 reverification）。",
+  "implementation_commits": {
+    "实现提交": "91fb38e（fix(#306): provider 不存在或属他租户时返回可读 4xx，不再 500）",
+    "合入提交": "c7e7c06（merge(#306): provider 无效时返回可读 4xx）"
+  },
+  "reverification": {
+    "head": "06206dc",
+    "note": "下面这些命令在**当前 head** 上实跑，输出是实跑结果，不是转述。",
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/ -run 'TestSaveResearchTaskWith' -count=1 -v",
+        "result": "PASS（4/4，ok 0.851s）：TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError、TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown、TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest、TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspace/... -count=1 -timeout 20m",
+        "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspace 175.529s；exit 0（合并 main 后该包从 613s 降到 175.5s，默认每包 600s 的上限够用，所以 CI 里那条 `-timeout 20m` 的放宽已撤销）"
+      }
+    ]
+  },
   "base": "integrate/g3-gap-closure-r3",
   "branch": "feat/issue-306-provider-not-found",
   "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-306-provider-not-found",
   "mode": "real",
+  "status": "PASS (follow-up)",
+  "status_note": "本票的实现已落地并在当前 head 上复验通过；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），本票的完成线记 PASS (follow-up)，跟进 Issue 为 #246。**本票完成 ≠ GitHub 关闭**：本票在 PR #323 合并且 main 的 CI 通过之后才关。",
   "conclusion": "缺陷已修复并通过真实 HTTP seam 回归。research-task 指定一个当前租户用不了的 provider_id（不存在，或属于别的租户）时，服务端现在返回 400 `invalid_provider`，而不是 500 `internal_error`；两种情况的响应体逐字节相同，跨租户存在性不泄露。既有行为未改动：既不给 asset_ids 也不给 provider_id 仍然是 400 `invalid_request`。",
   "root_cause": {
     "status": "PASS",
@@ -153,7 +173,9 @@
       "success": "400 invalid_provider",
       "failure": "500 internal_error（修复前）",
       "evidence": "internal/lingdoc/workspace/research_provider_http_test.go TestSaveResearchTaskWithUnknownProviderIsRejectedWithReadableClientError",
-      "status": "PASS"
+      "status": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "item": "他租户 provider_id 与不存在 provider_id 对外形态一致（不泄露跨租户存在性）",
@@ -162,7 +184,9 @@
       "success": "两条响应状态码与 error 结构逐项相等",
       "failure": "任何可区分两者的字段",
       "evidence": "TestSaveResearchTaskWithAnotherTenantProviderIsIndistinguishableFromUnknown",
-      "status": "PASS"
+      "status": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "item": "既无 asset_ids 又无 provider_id 的既有 400 invalid_request 行为不变",
@@ -171,7 +195,9 @@
       "success": "400 invalid_request",
       "failure": "变成 500 或换成别的错误码",
       "evidence": "TestSaveResearchTaskWithoutProviderOrAssetsKeepsInvalidRequest（修复前后同为 400 invalid_request）",
-      "status": "PASS"
+      "status": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "item": "同一族的第二处未映射「记录未找到」（tenants 行缺失）不再落 500",
@@ -180,7 +206,9 @@
       "success": "503 dependency_unavailable",
       "failure": "500 internal_error（修复前）",
       "evidence": "TestSaveResearchTaskWithMissingTenantRowIsNotAnInternalError",
-      "status": "PASS"
+      "status": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "item": "对外形态契约登记",
@@ -189,7 +217,9 @@
       "success": "新错误已登记，TestBusinessErrorsDeclareTheirOwnClientForm 通过",
       "failure": "契约表缺行",
       "evidence": "go test ./internal/lingdoc/workspace/... -count=1 全绿",
-      "status": "PASS"
+      "status": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "item": "OpenAPI 契约同步",

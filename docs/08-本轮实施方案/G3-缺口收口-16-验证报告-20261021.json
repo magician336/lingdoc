@@ -1,10 +1,32 @@
 {
   "ticket": "#314（G3 缺口收口-14）：演示模板声明一个 RouteNode 类型的必需节点（R7），给 AC-G3-08 / AC-G3-16 造可实跑的前置",
-  "head_at_evidence": "0b6d8b4（工作区未提交：改动都在工作树里，未 commit、未 push）",
+  "head_at_evidence": "06206dc",
+  "head_note": "本报告的原始证据取自基线 0b6d8b4 + 当时的未提交工作区改动（分支 feat/issue-314-template-required-route）；实现已落库（实现提交 2db721d，合入提交 43db604），并在当前 head 06206dc 上复验（见 reverification）。",
+  "implementation_commits": {
+    "实现提交": "2db721d（feat(#314): 演示模板新增不可变 v2，声明必需 RouteNode route-r7）",
+    "合入提交": "43db604（merge(#314): 演示模板 v2 声明必需 RouteNode）"
+  },
+  "reverification": {
+    "head": "06206dc",
+    "note": "下面这些命令在**当前 head** 上实跑，输出是实跑结果，不是转述。",
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/demoroute/ -run 'TestDemoRouteTemplate' -count=1 -v",
+        "result": "PASS（3/3，ok 1.539s）：TestDemoRouteTemplateMakesTheRouteNodeRequired、TestDemoRouteTemplateRequiredRouteNodePreconditions、TestDemoRouteTemplateRequiredRouteNodeBlocksStabilization"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/demoroute/... ./internal/lingdoc/workspacecore/... -count=1 -timeout 20m",
+        "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/demoroute 2.965s；ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 33.086s；exit 0"
+      }
+    ],
+    "scope_note": "复验覆盖的是**本票的实现**（演示模板 v2 声明必需 RouteNode）与承接票 #319 补上的第三种前置（「已声明但缺失」同样给 blocking，该用例的期望已翻转为 blocking）。台面（前端验收台）实跑出来的仍然只有「待复核」「版本落后」两种前置——「缺失」是服务端侧的属性，见本报告 not_run 与 acceptance_matrix 的相应行。"
+  },
   "base": "integrate/g3-gap-closure-r3",
   "branch": "feat/issue-314-template-required-route",
   "worktree": "D:\\code_warehouse\\Projects\\lingdoc\\.worktrees\\issue-314-template-required-route",
   "mode": "real",
+  "status": "PASS (follow-up)",
+  "status_note": "本票的实现已落地并在当前 head 上复验通过；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），本票的完成线记 PASS (follow-up)，跟进 Issue 为 #246。**本票完成 ≠ GitHub 关闭**：本票在 PR #323 合并且 main 的 CI 通过之后才关。",
   "conclusion": "PASS (follow-up)：演示模板的**第二个不可变版本**（template-demo@2）声明了一个 RouteNode 类型的必需节点 `route-r7`（模板字段 + 必填字段 + 绑定到该字段的 blocking presence 规则），服务端的 `required` 标志由模板规则算出（读回 required=true、state=current、version=1、status=ready，可编辑）；三种前置里「待复核」「版本落后」都造出了 blocking 校验问题（field/route-r7）并让稳定化被 `required_route_not_current` 阻断、交付检查 blocked（delivery_status=NOT_READY）。**「缺失」这一种造不出来**，卡点已定位并如实记录：激活闸门把模板的必填字段当规格字段读，规格里必须带一个 `route-r7` 占位值，而路线感知的求值从规格起步、只覆盖已存在节点的值，占位值因此把「节点缺失」掩盖掉——修法在 `internal/lingdoc/workspacecore`（本票禁改目录）。冻结契约 `docs/08-本轮实施方案/contracts/frozen-input.canonical.json` 钉死了已发布的 template-demo@1，因此**没有原地改 v1**（改 v1 会让所有演示项目在交付检查上被永久阻断，实测 delivery 包整包转红，见 not_run/experiment）。",
   "environment": {
     "os": "Windows 10.0.26200 x86_64",
@@ -123,45 +145,59 @@
   "acceptance_matrix": [
     {
       "criterion": "模板激活后，基线里确实有一个 required 的 RouteNode（断言服务端算出来的 required）",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "evidence": "TestDemoRouteTemplateMakesTheRouteNodeRequired：读回 id=route-r7 required=true state=current status=ready version=1；客户端声明 required=false 被拒（规则拥有该标志）",
-      "seam": "workspacecore.Service 的路线图编辑会话 + 路线图读回（服务层，非存储直读）"
+      "seam": "workspacecore.Service 的路线图编辑会话 + 路线图读回（服务层，非存储直读）",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "criterion": "路线图编辑会话能造出「待复核」前置",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "evidence": "state=pending_review；模板求值给出 blocking（field/route-r7）",
-      "seam": "同上"
+      "seam": "同上",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "criterion": "路线图编辑会话能造出「版本落后」前置",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "evidence": "state=stale（钉住的前置节点版本已被推进）；模板求值给出 blocking（field/route-r7）",
-      "seam": "同上"
+      "seam": "同上",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "criterion": "路线图编辑会话能造出「缺失」前置",
-      "status": "BLOCKED",
-      "evidence": "路线图里确实没有该节点，但模板求值不报 blocking：激活闸门要求规格带 route-r7 占位值，占位值在节点缺失时留存并掩盖「缺失」。卡点位置与两种修法见 preconditions.missing.note",
-      "seam": "同上"
+      "status": "PASS (follow-up)",
+      "evidence": "已由承接票 #319 交付：internal/lingdoc/workspacecore/semantic_delta.go 的 RouteEvaluationFields 把**已声明但缺失**的路线节点置空（规格里的占位值不再顶替它），服务端因此对「缺失」给出 blocking （internal/lingdoc/workspacecore/route_node_required_missing_test.go、internal/lingdoc/demoroute/demo_route_node_test.go 的 missing 子用例，期望已翻转为 blocking）。当前 head 06206dc 的复验：go test ./internal/lingdoc/demoroute/ -run TestDemoRouteTemplate -count=1 -v → PASS 3/3。台面（前端验收台）实跑出来的仍然只有「待复核」「版本落后」两种前置——「缺失」是服务端侧的属性，不是台面能在页面上造出来的前置。",
+      "seam": "同上",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。（本票写这份报告时它还是 BLOCKED——「缺失」那一种前置被规格占位值掩盖；承接票 #319 已按选修法 B 交付：路线感知的求值把已声明但缺失的路线节点置空，该前置随后由服务端侧给出 blocking。当前 head 的复验见本报告的 reverification。）",
+      "跟进 Issue": 246
     },
     {
       "criterion": "必需项非当前态时服务端给出 blocking 校验问题",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "evidence": "rule=route-node-required / required-fields，target=field/route-r7，severity=blocking，status=ISSUE",
-      "seam": "template.EvaluateScene（治理/求值面）与 delivery.EvaluateTemplate（发布闸门面）"
+      "seam": "template.EvaluateScene（治理/求值面）与 delivery.EvaluateTemplate（发布闸门面）",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "criterion": "项目不进入 STABILIZED / READY",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "evidence": "RouteStabilizationBlockers 读回 required_route_not_current/route-r7；StabilizeRevision 结果非 STABILIZED；AssertRevisionStabilized 报错；交付检查 status=blocked、delivery_status=NOT_READY",
-      "seam": "稳定化闸门 + 交付闸门"
+      "seam": "稳定化闸门 + 交付闸门",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "criterion": "冻结契约与已发布模板版本 1 不受影响",
-      "status": "PASS",
+      "status": "PASS (follow-up)",
       "evidence": "delivery 包全绿（含 TestDemoTemplateIsThePublishedTemplate 逐字节比对冻结契约）；template-demo@1 的 RequiredFields 仍只有 research_subject / research_goal（TestDemoTemplateVersionOneDeclaresNoRouteNode）",
-      "seam": "delivery/golden_input_test.go"
+      "seam": "delivery/golden_input_test.go",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     }
   ],
   "files_changed": [

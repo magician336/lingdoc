@@ -1,14 +1,38 @@
 {
   "ticket": "#310：装配受控故障注入后，SQLite 上的后续写操作被阻塞（疑似事务回滚后写锁未释放）",
   "issue": "https://github.com/magician336/lingdoc/issues/310",
-  "head_at_evidence": "0b6d8b4（基线 integrate/g3-gap-closure-r3）+ 本票未提交的工作区改动",
+  "head_at_evidence": "06206dc",
+  "head_note": "本报告的原始证据取自基线 0b6d8b4 + 当时的未提交工作区改动；实现已落库（实现提交 e0e8692，合入提交 6ce0085），并在当前 head 06206dc 上复验（见 reverification）。",
+  "implementation_commits": {
+    "实现提交": "e0e8692（fix(#310): 注入的租户作用域改由写端口自带，删除事务内读）",
+    "合入提交": "6ce0085（merge(#310): 注入作用域判定不再在写事务内读）"
+  },
+  "reverification": {
+    "head": "06206dc",
+    "note": "下面这些命令在**当前 head** 上实跑，输出是实跑结果，不是转述。",
+    "commands": [
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/ -run 'TestInjected' -count=1 -v",
+        "result": "PASS（5/5，ok 1.386s）：TestInjectedFaultErrorStatesItsOwnClientPresentation、TestInjectedImpactTaskWriteLeavesTheNextWriteRunnable、TestInjectedAuditWriteLeavesTheNextWriteRunnable、TestInjectedAuthorizationLeavesTheNextWriteAnswered、TestInjectedFaultWriterPerformsNoStorageAccess"
+      },
+      {
+        "command": "$env:CGO_CFLAGS='-I C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc'; go test ./internal/lingdoc/workspacecore/... -count=1 -timeout 20m",
+        "result": "PASS：ok github.com/Tencent/WeKnora/internal/lingdoc/workspacecore 33.086s；exit 0"
+      }
+    ],
+    "scope_note": "复验覆盖的是**本票的实现**（受控故障注入的作用域判定与事务边界）。票面记录的『挂住』现场**本轮仍未复现**——那不是本票实现的问题，本票修的是故障缝隙里另一个已定位的真实缺陷（见 root_cause.confirmed_defect）。"
+  },
   "base": "integrate/g3-gap-closure-r3 @ 0b6d8b4",
   "branch": "feat/issue-310-fault-write-block",
   "worktree": "D:/code_warehouse/Projects/lingdoc/.worktrees/issue-310-fault-write-block",
   "mode": "real",
+  "status": "PASS (follow-up)",
+  "status_note": "本票的实现已落地并在当前 head 上复验通过；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），本票的完成线记 PASS (follow-up)，跟进 Issue 为 #246。**本票完成 ≠ GitHub 关闭**：本票在 PR #323 合并且 main 的 CI 通过之后才关。",
   "conclusion": "票面记录的现象（注入命中之后后续写全部挂住）**在本 head 上未能复现**：装配注入 → 注入命中（HTTP 503 + injected_fault）→ 紧跟着的 5 笔写（3 次建项目 + 2 次章节版本）**全部返回 HTTP 201**，读回全部 HTTP 200，SQLite 正常落盘。三个注入点（impact_task_write / audit_write / authorization）都如此。代码层面的三点核对结论是：**(1) 回滚是显式的**——apply 走 GORM 的 db.Transaction(...) 闭包，闭包返回注入错误时 GORM 立即 ROLLBACK 并把连接归还连接池；**(2) 三个注入点都成立**——注入错误没有被任何一层吞掉，回滚都覆盖 revision 推进、ImpactTask 与业务审计；**(3) 连接池没有被占满**——生产 SQLite 把连接池限成一条连接，注入命中之后紧跟着的写仍然能拿到这条连接。真正在故障缝隙里发现的缺陷是另一件事：**注入实现为了判定作用域，会在已经写过数据、已经握住写锁的写事务里再读一次项目行**（旧 faultInProjectScope），而这次读的错误被当成『不在作用域』吞掉——读一旦等锁，注入就从『一次干净的失败』变成『一个卡住的请求』，读失败时注入还会静默地不生效。本票把作用域判定改为**按写自己的租户判定**，故障缝隙因此**完全不做存储访问**，失败瞬时发生，回滚是唯一剩下的动作。",
   "root_cause": {
-    "status": "PARTIAL（已定位到故障缝隙里的真实缺陷；票面记录的『挂住』本身未能在本 head 复现）",
+    "status": "NOT RUN",
+    "status_note": "票面记录的『挂住』在本 head 上未能复现，所以**它的根因没有成立**——按仓库门禁词表记 NOT RUN（本轮没有取得该根因的证据）。故障缝隙里**另有一个真实缺陷**已被定位并修复，见 confirmed_defect：它的机制形状与票面症状一致，但本轮没有观测到票面症状本身，所以不把它写成票面的根因。",
+    "status_note_scope": "本报告 acceptance_matrix 里「票面记录的『挂住』现场」那一行的状态同样是 NOT RUN，两处口径一致。",
     "confirmed_defect": {
       "what": "受控故障注入的失败实现（faultImpactTaskWriter / faultBusinessAuditWriter）在判定『这次写是否属于演示租户』时，通过 tx.Project(fault.TenantID, projectID) 在**调用方的写事务里**读了一次项目行。",
       "where": "internal/lingdoc/workspacecore/fault_injection.go:226-234（旧 faultInProjectScope），调用点 :162-168（faultImpactTaskWriter.WriteImpactTask）与 :179-186（faultBusinessAuditWriter.WriteBusinessAudit）",
@@ -52,8 +76,10 @@
       "成功": "注入命中后紧接着的一次写正常完成",
       "失败/权限/恢复": "注入未命中时行为不变；授权类注入下的写以同样的注入失败**有答复**地结束，而不是挂住",
       "持久化与并发": "连续写不阻塞（生产同款：连接池一条连接）",
-      "测试或运行证据": "internal/lingdoc/workspacecore/fault_injection_write_test.go（4 个用例）+ scripts/acceptance/lingdoc_fault_injection_write.py --live（三个注入点各一轮）",
-      "状态": "PASS"
+      "测试或运行证据": "internal/lingdoc/workspacecore/fault_injection_write_test.go（4 个用例）+ scripts/acceptance/lingdoc_fault_injection_write.py --live（三个注入点各一轮）；当前 head 06206dc 上的复验见 reverification.commands",
+      "状态": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则（缺口关闭前，缺口对应的验收行不判 PASS），这一行记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "验收项": "回滚证据可读回",
@@ -62,8 +88,10 @@
       "成功": "项目 revision、模板引用、ImpactTask 集合、业务审计事件（project.change_set.apply）与注入前一致",
       "失败/权限/恢复": "读回本身不超时（HTTP 200）",
       "持久化与并发": "N/A",
-      "测试或运行证据": "同上的读回断言与 runner 的 rollback_readback 步骤",
-      "状态": "PASS"
+      "测试或运行证据": "同上的读回断言与 runner 的 rollback_readback 步骤；当前 head 06206dc 上的复验见 reverification.commands",
+      "状态": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "验收项": "故障缝隙不做存储访问",
@@ -72,8 +100,10 @@
       "成功": "注入在项目读不出来时仍然命中；失败实现一次存储访问都没有",
       "失败/权限/恢复": "非演示租户仍然走真实写入路径",
       "持久化与并发": "N/A",
-      "测试或运行证据": "internal/lingdoc/workspacecore/fault_injection_write_test.go:TestInjectedFaultWriterPerformsNoStorageAccess",
-      "状态": "PASS"
+      "测试或运行证据": "internal/lingdoc/workspacecore/fault_injection_write_test.go:TestInjectedFaultWriterPerformsNoStorageAccess；当前 head 06206dc 上的复验见 reverification.commands",
+      "状态": "PASS (follow-up)",
+      "状态口径": "本行的验收项本身已达成；按缺口清单 #246 的规则记 PASS (follow-up)，跟进 Issue 为 #246。",
+      "跟进 Issue": 246
     },
     {
       "验收项": "票面记录的『挂住』现场",
