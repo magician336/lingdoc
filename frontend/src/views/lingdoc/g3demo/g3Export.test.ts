@@ -96,7 +96,9 @@ test('未实跑、豁免、缺能力、依赖真实模型的行，状态一律�
   const ac06 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-06')
   assert.equal(ac06?.status, 'WARNING')
   const ac03 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-03')
-  assert.equal(ac03?.status, 'BLOCKED')
+  // AC-G3-03 本轮已实跑判定成立（注入命中 + 回滚读回完整），行状态按缺口清单
+  // #246 的规则保留 follow-up（#246 未关闭前，有实现缺口的行不判 PASS）。
+  assert.equal(ac03?.status, 'PASS (follow-up)')
   assert.deepEqual(ac03?.gap_ids, ['G3-GAP-01'])
 })
 

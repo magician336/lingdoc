@@ -357,7 +357,7 @@ test('承接票登记表守护：镜像的承接票清单与代码登记表逐�
   )
 
   // 4. 解除条件 / 派生缺陷票必须登记完整（不能只登记子票）。
-  for (const ticket of [306, 310, 314, 315]) {
+  for (const ticket of [306, 310, 314, 315, 318, 319, 320, 321]) {
     assert.ok(mirrorCounts.has(ticket), `镜像的「承接票清单」缺解除条件票 #${ticket}`)
     assert.ok(registryCounts.has(ticket), `承接票登记表缺解除条件票 #${ticket}`)
   }

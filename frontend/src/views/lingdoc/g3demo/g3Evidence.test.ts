@@ -293,7 +293,9 @@ test('跑完本票步骤后，被覆盖的行被本轮证据驱动', () => {
     )
   }
   // 规则表之外的行状态原样保留。
-  assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
+  // AC-G3-03 是**例外**：它在本轮已实跑判定成立（注入命中 + 回滚读回完整），
+  // 但行状态按缺口清单 #246 的规则保留 follow-up（#246 未关闭前不判 PASS）。
+  assert.equal(byId.get('AC-G3-03')?.status, 'PASS (follow-up)')
   assert.equal(byId.get('G3.1')?.status, 'TODO')
   assert.equal(byId.get('AC-G3-10')?.followUpIssue, 239, '没被本轮判定的行要保留跟进 Issue')
 })
@@ -522,9 +524,9 @@ test('真实模型链跑完后，三条非确定性结论标 WARNING 并与确�
   // 部分覆盖的两行仍然指向缺口清单 #246。
   assert.equal(byId.get('AC-G3-14')?.followUpIssue, 246)
   assert.equal(byId.get('AC-G3-15')?.followUpIssue, 246)
-  // 其余行状态原样保留。
+  // 其余行状态原样保留（AC-G3-03 已实跑判定成立，按 #246 规则保留 follow-up）。
   assert.equal(byId.get('AC-G3-01')?.status, 'PASS (follow-up)')
-  assert.equal(byId.get('AC-G3-03')?.status, 'BLOCKED')
+  assert.equal(byId.get('AC-G3-03')?.status, 'PASS (follow-up)')
   // 判定卡的说明里带模型运行标识与耗时。
   assert.match(byId.get('AC-G3-06')?.note ?? '', /turn-1/)
   assert.match(byId.get('AC-G3-14')?.note ?? '', /4200|3800/)

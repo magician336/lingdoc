@@ -224,10 +224,14 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '应用过程中任务写入失败或权限失效。项目仍保持原 revision 和旧模板引用，不能出现新 revision 已存在但 ImpactTask 不完整的状态。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 358, end: 360 },
-    status: 'BLOCKED',
-    evidence: '实现缺口 · 缺口清单 #246',
+    status: 'PASS (follow-up)',
+    evidence:
+      'docs/08-本轮实施方案/G3-缺口收口-18-验证报告-20261021.json（当前 head 的两轮实跑）',
     note:
-      '需要任务 / 审计写入失败的故障注入能力，产品 API 无此开关；当前仅由后端集成测试覆盖。' +
+      '本轮实跑判定成立：装配受控故障注入后 apply 返回 503 + injected_fault，' +
+      '读回证明项目 revision、模板引用与 ImpactTask 集合均未变、变更集未变成 applied。' +
+      '行状态记 PASS (follow-up) 而不是 PASS：缺口清单 #246 仍未关闭，' +
+      '按仓库规则本票所列缺口对应的行在关闭前不判 PASS。' +
       '解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
     domain: 'B',

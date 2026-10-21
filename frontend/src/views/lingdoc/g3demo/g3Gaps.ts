@@ -94,21 +94,21 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '现在缺的是**注入命中之后能读回完整回滚证据**——命中之后后端的写操作被阻塞。',
     specAnchor: anchor(358, 360),
     unblockCondition:
-      '修掉 #310（装配注入后仍能继续写），在当前 head 重跑两轮实跑，' +
-      '拿到完整回滚读回证据（项目 revision 未变、模板引用未变、ImpactTask 集合完整、' +
-      '业务审计事件未变）；`AC-G3-03` 才能离开 `BLOCKED`。',
+      '本轮已达成（#310 已修、实跑已判成立）。行状态按缺口清单 #246 的规则保留 ' +
+      '`PASS (follow-up)`：本票所列缺口对应的行在 #246 关闭前不判 `PASS`。' +
+      '彻底收口要等 #246 关闭（其余十行各自补齐）。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 256,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'PASS (follow-up)',
     fact:
       '受控故障注入**已实现**（受控、默认关闭、只对测试 / 演示租户开放；' +
       '由组合根按环境变量与演示租户校验装配会失败的窄 port，' +
       'HTTP 路由与产品契约零新增端点，`apply` 走真事务、失败真发生）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json`（#256）。' +
-      '本轮实跑：未装配注入时 apply 返回 HTTP 200，链路完整跑通并按口径记 `NOT RUN`；' +
-      '装配注入后 apply 返回 503 + `injected_fault`（注入命中已观测到），' +
-      '但命中后的回滚读回被后端写阻塞挡住（#310）。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
+      '**本轮实跑判定成立**（head `cd69d7c`）：轮 1 未装配注入 → apply 返回 200，该行按口径记 `NOT RUN`；' +
+      '轮 2 装配注入 → apply 返回 503 + `injected_fault`，读回证明项目 revision 与模板引用未变、' +
+      'ImpactTask 集合未变、变更集未变成 applied。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-18-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json',
   },
@@ -463,4 +463,8 @@ export const G3_GAP_TICKET_REGISTRY: readonly G3GapTicketRegistryEntry[] = Objec
   { ticket: 310, kind: 'unblock', gaps: ['G3-GAP-01'] },
   { ticket: 314, kind: 'unblock', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
   { ticket: 315, kind: 'unblock', gaps: ['G3-GAP-04'] },
+  { ticket: 318, kind: 'unblock', gaps: ['G3-GAP-02', 'G3-GAP-03'] },
+  { ticket: 319, kind: 'unblock', gaps: ['G3-GAP-02'] },
+  { ticket: 320, kind: 'unblock', gaps: ['G3-GAP-04'] },
+  { ticket: 321, kind: 'unblock', gaps: ['G3-GAP-05'] },
 ])

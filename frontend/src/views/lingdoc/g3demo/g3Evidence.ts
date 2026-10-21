@@ -183,8 +183,10 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '本轮的判定取自「故障注入-应用变更集」这一步的**真实响应**：' +
       '受控故障注入是组合根按环境变量装配的夹具（LINGDOC_FAULT_INJECTION + ' +
       'LINGDOC_FAULT_TENANT_ID，缺一不装配），**不是产品端点**，页面无法触发，只能观测。' +
-      '命中注入时服务端返回 503 + injected_fault，此时读回证明项目 revision、模板引用、' +
-      'ImpactTask 集合与业务审计事件均未变，这一行才成立；' +
+      '命中注入时服务端返回 503 + injected_fault，此时读回证明项目 revision、模板引用与 ' +
+      'ImpactTask 集合均未变、变更集未变成 applied，这一行才成立；' +
+      '（**业务审计事件集合格不作为判据**：被拒绝的操作本来就该留一条审计，' +
+      '那是可观测性要求，不是「这次写没生效」的证据）；' +
       '**后端未装配注入时这一行记 NOT RUN，不得判 PASS**（未观测到写入失败就没有原子性证据），' +
       '夹具的实跑证据见 docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json。',
   },

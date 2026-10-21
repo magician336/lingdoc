@@ -144,7 +144,7 @@ test('当前无法实跑的验收项标为阻塞并写明缺口', () => {
   // 而不是 BLOCKED（两者语义不同）；BLOCKED 只留给「被缺陷挡住」的行。
   assert.deepEqual(
     blocked.map((row) => row.id),
-    ['AC-G3-03', 'AC-G3-15', 'AC-G3-16'],
+    ['AC-G3-15', 'AC-G3-16'],
   )
   for (const row of blocked) {
     assert.ok(row.note && row.note.length > 0, `${row.id} 缺缺口说明`)
@@ -153,8 +153,18 @@ test('当前无法实跑的验收项标为阻塞并写明缺口', () => {
 
 test('可实跑但本票未实跑的验收项走 follow-up 且必须挂独立 Issue', () => {
   const followUps = G3_AC_ROWS.filter((row) => row.status === 'PASS (follow-up)')
-  assert.equal(followUps.length, 11)
+  assert.equal(followUps.length, 12)
+  // AC-G3-03 是**例外**：它已在本轮实跑判定成立（注入命中 + 回滚读回完整），
+  // 行状态按缺口清单 #246 的规则保留 follow-up（#246 未关闭前不判 PASS），
+  // 所以它不适用「follow-up 必须写明未实跑」这一条。
+  const judged = followUps.filter((row) => row.id === 'AC-G3-03')
+  assert.equal(judged.length, 1, 'AC-G3-03 应是唯一一个已实跑但保留 follow-up 的行')
+  assert.ok(
+    judged[0].note?.includes('实跑') && judged[0].note?.includes('#246'),
+    'AC-G3-03 的说明必须写明已实跑、且状态保留 follow-up 的理由',
+  )
   for (const row of followUps) {
+    if (row.id === 'AC-G3-03') continue
     assert.ok(row.followUpIssue, `${row.id} 的 follow-up 缺 Issue 号`)
     assert.ok(row.followUpIssue > 0)
     assert.ok(row.note && row.note.includes('未实跑'), `${row.id} 的 follow-up 必须写明未实跑`)
@@ -178,8 +188,8 @@ test('状态计数覆盖全部七种状态', () => {
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)
-  assert.equal(counts['BLOCKED'], 3)
-  assert.equal(counts['PASS (follow-up)'], 11)
+  assert.equal(counts['BLOCKED'], 2)
+  assert.equal(counts['PASS (follow-up)'], 12)
   assert.equal(counts['TODO'], 6)
   assert.equal(counts['NOT RUN'], 3)
 })
