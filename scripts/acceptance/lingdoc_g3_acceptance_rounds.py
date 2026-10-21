@@ -171,8 +171,57 @@ def register_account(base_url: str, db_path: Path) -> tuple[str, str, int]:
     return email, password, tenant_id
 
 
-def start_server(binary: Path, data_dir: Path, port: int, fault: tuple[str, int] | None):
+def write_builtin_models_yaml(data_dir: Path) -> Path:
+    """写一份**只含占位符**的模型登记文件（仓库外，随临时目录一起消失）。
+
+    服务端启动时把 ``${DEEPSEEK_API_KEY}`` 从环境变量插值后 upsert 成模型行
+    （``internal/types/builtin_models_config.go`` 的 ``LoadBuiltinModelsConfig``）。
+    **这份文件里没有凭据本身**：凭据只从环境变量读，插值发生在服务端进程内。
+
+    行的形状：``name=deepseek-flash`` / ``type=KnowledgeQA`` / ``source=remote`` /
+    ``status=active`` / ``is_default=true`` / ``provider=generic`` /
+    ``base_url=https://api.deepseek.com`` /
+    ``extra_config.thinking_control=thinking_type``，
+    真正发出去的模型名用 ``extra_config.remote_model_name=deepseek-chat``。
+    ``is_default=true`` 是让助手链选到它的关键（``defaultGenerationModel``）。
+    """
+    path = data_dir / "builtin_models.yaml"
+    path.write_text(
+        "builtin_models:\n"
+        "  - id: g3-acceptance-deepseek\n"
+        "    name: deepseek-flash\n"
+        "    type: KnowledgeQA\n"
+        "    source: remote\n"
+        "    status: active\n"
+        "    is_default: true\n"
+        "    parameters:\n"
+        "      provider: generic\n"
+        "      base_url: https://api.deepseek.com\n"
+        '      api_key: "${DEEPSEEK_API_KEY}"\n'
+        "      extra_config:\n"
+        "        thinking_control: thinking_type\n"
+        "        remote_model_name: deepseek-chat\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def start_server(
+    binary: Path,
+    data_dir: Path,
+    port: int,
+    fault: tuple[str, int] | None,
+    model_config: Path | None = None,
+):
     env = base.server_environment(data_dir, port)
+    if model_config is not None:
+        # `server_environment` 只透传一份白名单环境变量，凭据不在白名单里，
+        # 所以要跑真实模型轮次时得**显式**把它交给服务端进程。
+        key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        if not key:
+            raise SystemExit("要跑真实模型轮次，环境变量 DEEPSEEK_API_KEY 必须有值")
+        env["BUILTIN_MODELS_CONFIG"] = str(model_config)
+        env["DEEPSEEK_API_KEY"] = key
     if fault is not None:
         point, tenant_id = fault
         env["LINGDOC_FAULT_INJECTION"] = point
@@ -208,6 +257,11 @@ def main() -> int:
         action="store_true",
         help="两轮都跑依赖候选链（它的判定要进整链证据，见 run_dependency_chain）",
     )
+    parser.add_argument(
+        "--with-real-model",
+        action="store_true",
+        help="装配真实模型（凭据从环境变量 DEEPSEEK_API_KEY 读，登记文件只含占位符）",
+    )
     args = parser.parse_args()
 
     binary = Path(args.binary).resolve()
@@ -225,7 +279,8 @@ def main() -> int:
     print(f"base_url={base_url}")
 
     # —— 轮 1：不装配注入 ——
-    proc = start_server(binary, data_dir, port, None)
+    model_config = write_builtin_models_yaml(data_dir) if args.with_real_model else None
+    proc = start_server(binary, data_dir, port, None, model_config)
     print("round1: healthy (no fault injection)")
     email, password, tenant_id = register_account(base_url, data_dir / "lingdoc.sqlite")
     print(f"round1: registered {email} · tenant_id={tenant_id}")
@@ -238,7 +293,7 @@ def main() -> int:
     print(f"round1: server stopped, exit code={code1} (Windows TerminateProcess 期望 1)")
 
     # —— 轮 2：装配注入 ——
-    proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id))
+    proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id), model_config)
     print(f"round2: healthy (fault injection armed for tenant {tenant_id})")
     if args.with_dependency_chain:
         run_dependency_chain(base_url, out_dir / "round2", date)
