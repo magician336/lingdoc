@@ -142,7 +142,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '**本轮实跑判定成立**：台面造出「待复核」与「版本落后」两种前置，' +
       '稳定化给出 required_route_not_current 阻断，项目没有进入 STABILIZED / READY；' +
       '「缺失」那一种前置由服务端侧保证（#319）。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json',
   },
@@ -171,7 +171,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '（与 G3-GAP-02 同因，同一批修复解掉）。' +
       '**本轮实跑判定成立**：取消未冻结编辑后冻结基线版本回到取消前的版本，' +
       '被取消会话占用的临时版本不出现在冻结版本序列里。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json',
   },
@@ -207,7 +207,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '**本轮实跑判定成立**（#320）：台面走「自然语言 → 真实模型轮次 → 变更提案 → 人工确认落草稿 → ' +
       '读回两组说明 → 进入正式评估」，读回「确定受影响」1 条，每条带可追溯依据。' +
       '结论依赖真实模型（非确定性），行状态记 `WARNING`，不写 `PASS`。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json',
   },
@@ -237,7 +237,7 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），拒绝不产生边、' +
       '同版本重投被抑制（`rejected_in_same_version`）、' +
       '确认时版本复检被服务端按 409 `dependency_candidate_requires_reevaluation` 拒掉。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json',
   },

@@ -183,7 +183,7 @@
     },
     {
       "path": "internal/lingdoc/demoroute/demo_route_node_test.go",
-      "change": "新增：服务层集成证据（真实迁移链 SQLite + 真实 workspacecore.Service）：required 由规则算出、客户端不能降级、三种前置、blocking、稳定化与交付被阻断"
+      "change": "新增：服务层集成证据（真实迁移链 SQLite + 真实 workspacecore.Service）：required 由规则算出、客户端不能降级、两种前置（「待复核」「版本落后」）、blocking、稳定化与交付被阻断。第三种前置（「已声明但缺失」）在本票**造不出来**（见 not_run 与 preconditions.missing），它由承接票 #319 补上（服务端侧把已声明但缺失的节点置空），补上后该用例的期望翻转为 blocking。"
     }
   ],
   "not_run": [
@@ -200,7 +200,13 @@
     {
       "item": "改 internal/lingdoc/workspacecore 修「缺失」被掩盖的问题",
       "status": "N/A",
-      "reason": "该目录本票禁改（其他实现者所有）。修法与精确位置已写进 preconditions.missing.note 与用例注释，留给承接票。"
+      "reason": "该目录本票禁改（其他实现者所有）。修法与精确位置已写进 preconditions.missing.note 与用例注释，留给承接票。",
+      "later_outcome": "承接票 #319 已按选修法 B 交付：路线感知的求值把**已声明但缺失**的路线节点置空（internal/lingdoc/workspacecore/semantic_delta.go 的 RouteEvaluationFields），该前置随后由服务端侧给出 blocking。台面（前端验收台）实跑出来的仍然只有「待复核」「版本落后」两种前置——「缺失」是服务端侧的属性，不是台面能在页面上造出来的前置。"
+    },
+    {
+      "item": "「指向临时版本的任务落 STALE」在台面上是可观测的事实",
+      "status": "NOT RUN",
+      "reason": "产品面**没有任何 HTTP 路径**会造出指向未冻结临时版本的影响任务，所以台面读回的任务集合里这一条是 0 条（真空）。该语义的非真空证据在服务端侧（internal/lingdoc/workspacecore/roadmap_test.go 里手工造任务）。台面只能证明「取消未冻结编辑后冻结基线回到取消前的版本、临时版本不出现在冻结版本序列里」，证不了「指向临时版本的任务落 STALE」。矩阵行 AC-G3-16 的 note 已如实写明这一点。"
     }
   ],
   "environment_limits": [

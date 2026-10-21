@@ -739,3 +739,35 @@ test('#246 的硬规则：带实现缺口的行，页面矩阵投影不得写成
   }
   assert.ok(checked >= 10, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
 })
+
+test('#246 的硬规则：带缺口的 AC 行，规则表状态必须与矩阵行一致，且不得判 PASS', () => {
+  // 两处状态是**手工同步**的：`g3Matrix.ts` 的静态声明（这一行现在是什么状态）
+  // 与 `g3Evidence.ts` 的规则表（这一行被本轮判定之后取什么状态）。
+  // 同步一旦漂移，页面就会同时挂着两个说法：「声明的口径」与「跑出来的口径」。
+  //
+  // 口径只覆盖**带 #246 缺口的 AC 行**，理由写在这里，避免以后有人扩大或缩小它：
+  // - 切片行（G3.x）的静态状态是「未判定」（TODO / NOT RUN），它与规则表的
+  //   「判定成立后取什么状态」本就是两件事，不在同一条口径上；
+  // - 不带缺口的行（例如 followUpIssue 指向 #239 的行）由**别的** Issue 决定
+  //   它的 follow-up 形态，规则表写的是「判定成立后取什么状态」，两表不必相等。
+  let checked = 0
+  for (const row of G3_MATRIX_ROWS) {
+    if (row.group !== 'ac') continue
+    const rule = G3_ROW_EVIDENCE_RULES[row.id]
+    if (!rule) continue
+    const hasGap = gapIdsForRow(row.id).length > 0 || limitingGapIdsForRow(row.id).length > 0
+    if (!hasGap) continue
+    assert.equal(
+      rule.status,
+      row.status,
+      `${row.id} 带实现缺口：规则表状态必须与矩阵行一致（两处状态是手工同步的）`,
+    )
+    assert.notEqual(
+      rule.status,
+      'PASS',
+      `${row.id} 带实现缺口：缺口清单 #246 关闭前不得判 PASS`,
+    )
+    checked += 1
+  }
+  assert.ok(checked >= 8, `守护测试只覆盖到 ${checked} 行，覆盖面不足`)
+})

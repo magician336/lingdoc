@@ -144,12 +144,7 @@ jobs:
         run: |
           mapfile -t pkgs < <(go list ./... | grep -v '/docreader/')
           go vet "${pkgs[@]}"
-          # `-timeout` 必须显式放宽：Go 的默认是**每个包** 10 分钟，而
-          # `internal/lingdoc/workspace` 这个包在慢机器上已经贴到 10 分钟边缘
-          # （本机实测整包 613s，默认 600s 时会触发 panic 式的超时失败）。
-          # 那是**机器速度**问题，不是测试失败——包级超时应当给足余量。
-          # 20m：比实测最慢的包（10.2 分钟）留一倍余量，又不至于把门禁放得没边。
-          go test -timeout 20m "${pkgs[@]}"
+          go test "${pkgs[@]}"
 
       - name: Build server
         run: go build ./cmd/server

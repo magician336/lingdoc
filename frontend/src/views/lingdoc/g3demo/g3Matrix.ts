@@ -226,10 +226,11 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 358, end: 360 },
     status: 'PASS (follow-up)',
     evidence:
-      'docs/08-本轮实施方案/G3-缺口收口-18-验证报告-20261021.json（当前 head 的两轮实跑）',
+      'docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json（当前 head 的两轮实跑）',
     note:
-      '本轮实跑判定成立：装配受控故障注入后 apply 返回 503 + injected_fault，' +
+      '本轮实跑判定成立（轮 2 装配了受控故障注入）：apply 返回 503 + injected_fault，' +
       '读回证明项目 revision、模板引用与 ImpactTask 集合均未变、变更集未变成 applied。' +
+      '轮 1（未装配注入）apply 返回 HTTP 200，未观测到写入失败，该轮按口径记 NOT RUN、不判 PASS。' +
       '行状态记 PASS (follow-up) 而不是 PASS：缺口清单 #246 仍未关闭，' +
       '按仓库规则本票所列缺口对应的行在关闭前不判 PASS。' +
       '解除条件与 Spec 位置见缺口清单 #246。',
