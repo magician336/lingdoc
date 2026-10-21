@@ -1,7 +1,7 @@
 {
   "mode": "real",
   "note": "47.10 组合根缺能力 fail-closed。NewHandler 改 (*Handler, error)：projects / members / chapters / templates / change sets / sources 六个必需端口缺一个就在启动期失败并指名缺哪个；生产入口 NewLingDocWorkspaceHandler 把这个错误上抛，服务不启动。端口推断从三处收敛到 resolvePorts 一处，并消除了被丢弃的类型断言结果（machineReads, _ := readExtension.(machineReadApplication)）。三个可选能力（改写端点、机器读、评审锚点）改由 HandlerDependencies 的 WithSelectedRewrites / WithMachineReads / WithReviewAnchors 显式开启，三个字段改为私有，With... 是唯一的开启方式；端点存在 ⟺ 能力存在——评审锚点的读写两个端点不再无条件注册。路由面做了 base(28a76a5)/head 同树对照：生产装配 48 = 48，能力齐全的路由树 70 = 70，说明「从推断改成点名」没有增删任何端点。口径变化第 13 项：组合根缺必需端口时启动失败，而不是启动成功、运行期才崩；影响面仅限装配不完整的部署，生产装配不受影响。",
-  "head": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
   "base": "28a76a5",
   "passed": [
     {
@@ -57,5 +57,7 @@
       "status": "not_run",
       "reason": "本票不触碰持久化方言；全量轮未设 LINGDOC_TEST_POSTGRES_DSN（按仓内约定 SKIP），PG 轮属 47.03/47.06 的取证范围"
     }
-  ]
+  ],
+  "head_47_10_commit": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "reverification_after_baseline_merge": "路由面基线在 6e88ec5 上测得；随后并入前移的 origin/main（基线 e655bc6），在合并后的 9c83f43 上复验：生产装配仍是 48 条、能力齐全的路由树仍是 70 条，断言与测试全部复跑通过。"
 }

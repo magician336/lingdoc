@@ -46,5 +46,7 @@
       "status": "not_run",
       "reason": "本轮不设 LINGDOC_TEST_POSTGRES_DSN，按仓内约定 PG 用例 SKIP；需要 PG 证据时单独一轮轻负载跑（隔离实例，autovacuum=off）"
     }
-  ]
+  ],
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
+  "head_47_10_commit": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8"
 }

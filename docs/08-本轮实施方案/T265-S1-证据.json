@@ -2,7 +2,7 @@
   "mode": "real",
   "issue": "https://github.com/magician336/lingdoc/issues/265",
   "ticket": "47.10 组合根缺能力 fail-closed",
-  "head": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
   "base": "28a76a5",
   "environment": {
     "os": "windows/amd64",
@@ -130,5 +130,7 @@
   "environment_limits": [
     "同机上另有两个兄弟会话在各自工作树里并行跑 Go 测试，CPU 有竞争；本票所有断言均单独复跑过，未把并发噪声当成业务失败。",
     "GitHub CI 上 head 6876a61 的 app 工作流「Vet and test」失败，失败用例是宿主层的 TestInstallSkillRetriesAFailedSkillWithTheSameArchive（internal/application/service/tenant_skill_install_test.go）。判定为宿主层偶发：本 PR 范围（28a76a5..HEAD）未改 internal/application/，该用例在 head 与 base 工作树本地各跑 5 次全绿，main 的 app 工作流在 2026-10-21 06:43 成功。"
-  ]
+  ],
+  "head_47_10_commit": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "reverification_after_baseline_merge": "路由面基线在 6e88ec5 上测得；随后并入前移的 origin/main（基线 e655bc6），在合并后的 9c83f43 上复验：生产装配仍是 48 条、能力齐全的路由树仍是 70 条，断言与测试全部复跑通过。"
 }

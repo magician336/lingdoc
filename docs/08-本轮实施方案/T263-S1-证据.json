@@ -2,7 +2,7 @@
   "mode": "real",
   "issue": "https://github.com/magician336/lingdoc/issues/263",
   "ticket": "47.07 旧错误平表 contract + 结构断言",
-  "head": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
   "what_this_ticket_closes": [
     "旧平表删除，传输层映射器只保留未知错误的兜底分支（随 47.06 / #262 落地）",
     "结构断言：传输层不得出现按业务错误逐个分支的映射表（随 47.06 / #262 落地）",
@@ -70,9 +70,24 @@
     "bound_code_state": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
     "r2_verdict": "已闭合——42 个共享 case errors.Is(...) 全部清零；「新增业务错误不再改动映射器」已是可执行保证",
     "scores": {
-      "H_L": {"before": 52.0, "after": 54.8, "delta": 2.8, "confidence": "B"},
-      "F_R": {"before": 56.6, "after": 59.4, "delta": 2.8, "confidence": "B"},
-      "dashboard_0.7HL_0.3FR": {"before": 53.4, "after": 56.2, "delta": 2.8, "confidence": "B"}
+      "H_L": {
+        "before": 52.0,
+        "after": 54.8,
+        "delta": 2.8,
+        "confidence": "B"
+      },
+      "F_R": {
+        "before": 56.6,
+        "after": 59.4,
+        "delta": 2.8,
+        "confidence": "B"
+      },
+      "dashboard_0.7HL_0.3FR": {
+        "before": 53.4,
+        "after": 56.2,
+        "delta": 2.8,
+        "confidence": "B"
+      }
     },
     "rows_changed": {
       "C3 特例与信息泄漏": "2 → 3（① g5_policy.go 的逐 action 特例与 ③ 缺口清单三处重复本轮未重判，仍在）",
@@ -91,5 +106,7 @@
     "leftover_2_closed": "共享错误映射表仍有 42 个 case errors.Is(...)（健康度评分 R2）——随 #262 / #263 关闭",
     "leftover_1_open": "SQLite 与 PostgreSQL 的审计表列宽不一致（TEXT vs varchar(64)）——由 #276 独立承担，不随本票关闭"
   },
-  "not_run": []
+  "not_run": [],
+  "head_47_10_commit": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "reverification_after_baseline_merge": "路由面基线在 6e88ec5 上测得；随后并入前移的 origin/main（基线 e655bc6），在合并后的 9c83f43 上复验：生产装配仍是 48 条、能力齐全的路由树仍是 70 条，断言与测试全部复跑通过。"
 }
