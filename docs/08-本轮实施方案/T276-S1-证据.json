@@ -1,6 +1,6 @@
 {
   "ticket": "#276 G3 缺口收口-4-A：审计分类列在两种方言上都强制有界",
-  "head": "bbe6459a",
+  "head": "70ce053b",
   "base": "058637c4",
   "environment": {
     "go": "go1.27.1 windows/amd64",
@@ -58,7 +58,76 @@
         "project.change_set.apply x133",
         "impact_task.assign x104",
         "change_set.assess x101"
-      ]
+      ],
+      "rows_at_exactly_64_listing": [
+        {
+          "project_id": "ba75f13f-177b-4b8e-8559-18533fb2481e",
+          "created_at": "2026-10-19 20:11:50",
+          "action": "authorization.issue-resolve:962c700d-2c03-453c-8c89-1243f20402c5",
+          "length": 64
+        },
+        {
+          "project_id": "4d2e576b-2ab0-4c7b-b48a-994e6d3a08c0",
+          "created_at": "2026-10-19 20:13:51",
+          "action": "authorization.issue-resolve:a9826386-9ab2-434b-a23b-9f48017376bb",
+          "length": 64
+        },
+        {
+          "project_id": "c1bf332a-cdbe-4036-ace0-719134a39190",
+          "created_at": "2026-10-19 20:16:43",
+          "action": "authorization.issue-resolve:902d80b0-d48f-4de5-96ec-c7a2a3d9f0f1",
+          "length": 64
+        },
+        {
+          "project_id": "a17376c2-90d0-43df-9372-d3b0cd516f04",
+          "created_at": "2026-10-19 20:19:11",
+          "action": "authorization.issue-resolve:98bdc403-9a24-4ca9-81da-83510658cd78",
+          "length": 64
+        },
+        {
+          "project_id": "b108a566-7bc3-48b9-b11f-b7d1aea92b1d",
+          "created_at": "2026-10-19 20:20:07",
+          "action": "authorization.issue-resolve:e6ca1502-d8a5-45ba-8490-c81f94bf9fb1",
+          "length": 64
+        },
+        {
+          "project_id": "583ca4ec-c6f1-44a0-8ed4-ea93393c91c8",
+          "created_at": "2026-10-19 20:23:54",
+          "action": "authorization.issue-resolve:d629c53b-0954-4410-8d19-013a7bf08b4c",
+          "length": 64
+        },
+        {
+          "project_id": "f7c49910-9121-46fa-98f8-5e56719d7676",
+          "created_at": "2026-10-19 20:33:09",
+          "action": "authorization.issue-resolve:6d024e7a-4f7f-4fdc-8627-1cec451736f4",
+          "length": 64
+        },
+        {
+          "project_id": "205ba905-3700-4287-83b9-f8bc2a62be2a",
+          "created_at": "2026-10-19 20:53:37",
+          "action": "authorization.issue-resolve:5013efc8-24f7-4983-b853-3e8b53329acd",
+          "length": 64
+        },
+        {
+          "project_id": "b9b98314-e726-407b-8a5b-578a6c324705",
+          "created_at": "2026-10-19 21:02:14",
+          "action": "authorization.issue-resolve:0b964d92-c857-4cee-a7d7-64500205aba0",
+          "length": 64
+        },
+        {
+          "project_id": "bc72a354-1200-4f00-aaa0-7086daa1a7f5",
+          "created_at": "2026-10-20 00:19:58",
+          "action": "authorization.issue-resolve:cf8a38fa-b40a-484b-8281-77c7a35e62dd",
+          "length": 64
+        },
+        {
+          "project_id": "4819bdbd-f2cb-42a7-917f-aacadbccbde4",
+          "created_at": "2026-10-20 12:59:05",
+          "action": "authorization.issue-resolve:774d6458-c91d-450f-bf8e-2a683811d0fb",
+          "length": 64
+        }
+      ],
+      "listing_note": "盘点口径演练：两端的超 64 行都是 0 行，所以「列出所有超过 64 字符的行（含项目与时间）」在本次是空集。为了证明这个口径本身可用（能给出项目与时间），这里把**压线**的行（长度恰好 64，共 11 行）按项目与时间列出来 —— 它们正是边界取值必须含 64 的那批行。"
     },
     "sqlite": {
       "source": "本机验收跑出来的真实库 .acceptance-257/lingdoc-41234.sqlite",
@@ -150,6 +219,7 @@
     "SQLite 的表重建走仓内既有模板（migrations/sqlite/000043_lingdoc_satisfied_change_sets.up.sql），不是自研写法。",
     "生产迁移执行器（internal/database/migration.go）用 golang-migrate v4，SQLite 驱动带事务（NoTxWrap 未开）⇒ 迁移失败时整个迁移回滚，不会留下半张表。",
     "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
-    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。"
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。",
+    "规格轴评审的加强项已落实：① PG 侧补了「处置审计照常落库」的断言（`internal/lingdoc/workspacecore/postgres_issue_disposition_test.go`）——授权审计与处置审计是同一列上的两条写入路径，两条都要在 PostgreSQL 上落库；SQLite 侧由既有 `g4_issue_disposition_test.go` 的「disposition audit count = 1」覆盖。② 盘点口径演练：两端的超 64 行都是 0 行，所以「列出所有超过 64 字符的行（含项目与时间）」在本次是空集；为了让这个口径本身可核对，证据里把**压线**的 11 行（长度恰好 64）按项目与时间列了出来 —— 它们正是边界取值必须含 64 的那批行。③ 生产库盘点按门禁词表改记 **N/A**（没有真实生产数据库 ⇒ 验收前提不存在，记 NOT RUN 会挡住 Ready）。复跑：go test 四包 ok（37.877s / 0.854s / 2.465s / 3.617s，含真实 PostgreSQL）、go test -race 三包 ok、go vet exit 0、gofmt 干净。"
   ]
 }

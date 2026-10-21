@@ -1,7 +1,7 @@
 {
   "mode": "real",
   "note": "#282 G3 缺口收口-4-G：审计动作新旧格式并存的读侧保证。审计动作列有两种形状——旧形状 authorization.<种类>:<资源>（#253 修复前的写入方把完整能力写进了分类列）与新形状 authorization.<种类>（资源留在 details_json.capability）。本轮把「已知无影响」升级成有保证：读侧的全量盘点落到 ADR 0010，规则写清楚（按动作种类匹配，不按完整动作串匹配），并用守护测试钉住「两种形状的行都从读侧回来且 action 原样透传」。盘点结论：生产代码里没有任何读侧按完整动作串过滤授权族，所以本轮不需要改生产代码；两处按动作串等值匹配的地方属于另一个从不带资源的动作族（validation_issue.disposition），与形状变化无关。",
-  "head": "bbe6459a",
+  "head": "70ce053b",
   "base": "058637c4",
   "passed": [
     {
@@ -60,6 +60,7 @@
   ],
   "notes": [
     "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
-    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。"
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。",
+    "规格轴评审的加强项已落实：① PG 侧补了「处置审计照常落库」的断言（`internal/lingdoc/workspacecore/postgres_issue_disposition_test.go`）——授权审计与处置审计是同一列上的两条写入路径，两条都要在 PostgreSQL 上落库；SQLite 侧由既有 `g4_issue_disposition_test.go` 的「disposition audit count = 1」覆盖。② 盘点口径演练：两端的超 64 行都是 0 行，所以「列出所有超过 64 字符的行（含项目与时间）」在本次是空集；为了让这个口径本身可核对，证据里把**压线**的 11 行（长度恰好 64）按项目与时间列了出来 —— 它们正是边界取值必须含 64 的那批行。③ 生产库盘点按门禁词表改记 **N/A**（没有真实生产数据库 ⇒ 验收前提不存在，记 NOT RUN 会挡住 Ready）。复跑：go test 四包 ok（37.877s / 0.854s / 2.465s / 3.617s，含真实 PostgreSQL）、go test -race 三包 ok、go vet exit 0、gofmt 干净。"
   ]
 }
