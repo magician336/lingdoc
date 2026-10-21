@@ -45,7 +45,7 @@ func revocationRewriteFixture(t *testing.T, model SelectedRewriteModel) (*Select
 	service := NewSelectedRewriteService(db, workspace, sources, model)
 	require.NoError(t, service.store.AutoMigrate(context.Background()))
 	input := SelectedRewriteRequest{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1,
-		Selection: RewriteSelection{EndUTF16: len(utf16.Encode([]rune(selected))), SelectedText: selected},
+		Selection:   RewriteSelection{EndUTF16: len(utf16.Encode([]rune(selected))), SelectedText: selected},
 		Instruction: "polish", SourceIDs: []string{}}
 	return service, workspace, sources, input
 }
