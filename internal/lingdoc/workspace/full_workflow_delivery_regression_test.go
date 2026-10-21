@@ -76,9 +76,9 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(raw, &p))
 	} else {
-		p = g4ActivateProject(t, governance, actor, p, ctx)
+		p = g4ActivateProject(t, projects, actor, p, ctx)
 	}
-	chapters := g4WriteConfirmedChapters(t, governance, db, actor, p, ctx)
+	chapters := g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
 	if withSource {
 		_, ref := g4AdapterSource(t, governance, db, p, actor)
 		chapter := chapters[0]

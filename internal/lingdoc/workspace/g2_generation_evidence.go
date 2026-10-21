@@ -28,7 +28,16 @@ func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 	}
 	return out
 }
-func g2SelectFormal(ctx context.Context, workspace ApplicationService, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
+
+// g2SelectFormal resolves the optional formal-evidence selector.
+//
+// The parameter is deliberately `any`. The selector is an optional capability
+// resolved at run time, and a workspace that does not implement it has to keep
+// failing as a missing dependency (the 503-shaped generation.ErrDependencyUnavailable).
+// Narrowing this parameter to g2EvidenceSelector would turn that observable
+// behaviour into a compile error, so the loss of compile-time typing here is
+// the price of keeping the response identical.
+func g2SelectFormal(ctx context.Context, workspace any, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
 	port, ok := workspace.(g2EvidenceSelector)
 	if !ok {
 		return core.G2EvidenceSelection{}, generation.ErrDependencyUnavailable

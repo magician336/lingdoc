@@ -11,8 +11,8 @@ import (
 )
 
 func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t *testing.T) {
-	runtime, db, actor, p, ctx := g4AdapterFixture(t)
-	p = g4ActivateProject(t, runtime, actor, p, ctx)
+	_, projects, db, actor, p, ctx := g4AdapterFixtureWithProjects(t)
+	p = g4ActivateProject(t, projects, actor, p, ctx)
 	version := g4RuntimeDemoVersion(t)
 	if p.TemplateCopy == nil {
 		t.Fatal("actual project copy unavailable")
@@ -35,7 +35,7 @@ func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t 
 	if err := db.Exec("INSERT INTO lingdoc_g5_records(project_id,kind,id,version,payload_json) VALUES(?,'template_binding',?,1,?)", p.ID, copy.ID, string(raw)).Error; err != nil {
 		t.Fatal(err)
 	}
-	g4WriteConfirmedChapters(t, runtime, db, actor, p, ctx)
+	g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
 	reader := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
 	input, err := reader.ReadDeliveryInput(ctx, p.ID)
 	if err != nil {
@@ -44,7 +44,7 @@ func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t 
 	if input.RuleSetSnapshot == nil || input.TemplateCopyRulesetHash == input.TemplateDefinition.RulesetHash || input.SourcePolicyHash != version.PolicyHash {
 		t.Fatal("candidate reader collapsed independent source identity")
 	}
-	sourceRuntime := NewGORMSourceRuntime(db, runtime.projects, nil, nil, delivery.NewFixedTemplateReader())
+	sourceRuntime := NewGORMSourceRuntime(db, projects, nil, nil, delivery.NewFixedTemplateReader())
 	assembler := sourceRuntime.DeliveryInputBuilder()
 	frozen, err := assembler.Build(g4CallerContext(ctx, actor), actor.UserID, input)
 	if err != nil {
