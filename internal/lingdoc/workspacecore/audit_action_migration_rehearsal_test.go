@@ -100,6 +100,46 @@ func TestSQLiteAuditBoundMigrationNormalizesLegacyRows(t *testing.T) {
 	); err == nil {
 		t.Fatal("the bound migration did not bound the column")
 	}
+
+	// The down migration widens the column again, and the up migration puts
+	// the bound back: the pair is a round trip.
+	down, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite",
+		strings.TrimSuffix(last, ".up.sql")+".down.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), string(down)); err != nil {
+		t.Fatalf("%s (down): %v", last, err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00",
+	); err != nil {
+		t.Fatalf("the down migration did not widen the column: %v", err)
+	}
+	// The operator's action before re-applying the bound: the over-long row
+	// has to go (or be normalized) first — that is the whole reason #276 asks
+	// for the inventory to run before the constraint is added.
+	if _, err := db.Exec("DELETE FROM lingdoc_project_audits WHERE id = ?", "over-long-row"); err != nil {
+		t.Fatal(err)
+	}
+	up, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", last))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), string(up)); err != nil {
+		t.Fatalf("%s (up again): %v", last, err)
+	}
+	if _, err := db.Exec(
+		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00",
+	); err == nil {
+		t.Fatal("the up migration did not restore the bound")
+	}
 }
 
 // The PostgreSQL side of the same rehearsal: the legacy shape never fitted
@@ -188,5 +228,83 @@ func TestPostgresAuditBoundMigrationAddsTheExplicitConstraint(t *testing.T) {
 	}
 	if definition == "" {
 		t.Fatal("the explicit audit category constraint is missing after the migration")
+	}
+
+	// The down migration drops the explicit constraint. The column type
+	// varchar(64) stays, so PostgreSQL still refuses an over-long category:
+	// the type bound was there before this ticket and does not depend on it.
+	down, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "versioned",
+		strings.TrimSuffix(last, ".up.sql")+".down.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sqlDB.ExecContext(context.Background(), string(down)); err != nil {
+		t.Fatalf("%s (down): %v", last, err)
+	}
+	var afterDown string
+	if err := db.Raw(
+		"SELECT coalesce(max(pg_get_constraintdef(oid)), '') FROM pg_constraint " +
+			"WHERE conrelid = 'lingdoc_project_audits'::regclass AND conname = ?",
+		"ck_lingdoc_project_audits_action_len").Scan(&afterDown).Error; err != nil {
+		t.Fatal(err)
+	}
+	if afterDown != "" {
+		t.Fatalf("the down migration left the explicit constraint behind: %q", afterDown)
+	}
+	if err := db.Exec(
+		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"over-long-row", "project-legacy", "owner", strings.Repeat("x", auditCategoryWidth+1),
+		"project-legacy", "{}", time.Now().UTC(),
+	); err == nil {
+		t.Fatal("PostgreSQL accepted an over-long category after the down migration; the varchar(64) bound is gone")
+	}
+}
+
+// An over-long row that the operator did not handle makes the bound
+// migration fail loudly. It must not be truncated silently: the audit history
+// keeps its values, and the operator gets an error that names the rule.
+//
+// The production runner applies each migration inside a transaction, so a
+// failed migration leaves the database on the previous version. This test
+// replays the script the way the fixture does, which is why it builds its own
+// database.
+func TestSQLiteAuditBoundMigrationRefusesUnhandledOverLongRows(t *testing.T) {
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "unhandled-audit.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	files := productionLingDocMigrationNames(t, "sqlite")
+	last := files[len(files)-1]
+	for _, file := range files[:len(files)-1] {
+		raw, readErr := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", file))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if _, execErr := db.ExecContext(context.Background(), string(raw)); execErr != nil {
+			t.Fatalf("%s: %v", file, execErr)
+		}
+	}
+
+	// A row the migration cannot normalize: not the old authorization shape.
+	if _, err := db.Exec(
+		"INSERT INTO lingdoc_project_audits (id, project_id, actor_id, action, target, details_json, created_at) "+
+			"VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"odd-row", "project-legacy", "owner", strings.Repeat("y", auditCategoryWidth+1),
+		"project-legacy", "{}", "2026-01-01 00:00:00",
+	); err != nil {
+		t.Fatalf("the unbounded column must accept the row first: %v", err)
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "migrations", "sqlite", last))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(context.Background(), string(raw)); err == nil {
+		t.Fatal("the bound migration accepted an over-long row it could not normalize")
+	} else if !strings.Contains(err.Error(), "CHECK constraint failed") {
+		t.Fatalf("the bound migration failed for the wrong reason: %v", err)
 	}
 }
