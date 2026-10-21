@@ -931,7 +931,7 @@ export async function runDependencyChain(
       },
     },
     affectedChapterIds: [method.id],
-    reason: 'G3 验收台-4：助手草稿生成（分组解释那半段未实现，见缺口清单 #246）',
+    reason: 'G3 验收台-4：助手草稿生成（分组解释已实现，见缺口清单 #246 与 #295）',
   })
 
   // —— 变更集 → 评估 → 读影响评估（必须早于应用）——
@@ -1254,7 +1254,7 @@ export function verdictAcG313(result: G3DependencyChainResult): G3Verdict {
   }
 }
 
-/** AC-G3-14 的判定（部分）：变更草稿生成实跑；分组解释未实现。 */
+/** AC-G3-14 的判定（部分）：变更草稿生成实跑；分组解释**已实现**，本链路未覆盖读侧。 */
 export function verdictAcG314(result: G3DependencyChainResult): G3Verdict {
   const draftCreated = result.draft.id !== '' && result.draft.status === 'draft'
   const holds = draftCreated
@@ -1264,17 +1264,20 @@ export function verdictAcG314(result: G3DependencyChainResult): G3Verdict {
     holds,
     detail: holds
       ? `实跑那半段成立：助手草稿已生成（change_set_id=${result.draft.id} · status=${result.draft.status}）。` +
-        `**未实现那半段**：草稿里的「确定受影响 / 可能受影响」分组解释没有实现（工作台那个分组是影响解析结果，不可互替），` +
+        `**本链路未覆盖那半段**：草稿里的「确定受影响 / 可能受影响」分组解释**已经实现**` +
+      `（见缺口清单 #246 与 #295）；本链路只跑到「草稿已生成」，读回那半段由助手链负责，` +
+      `（工作台那个分组是影响解析结果，不可互替），` +
         `缺口清单见 #246。`
       : `不成立：草稿未生成（change_set_id=${result.draft.id} · status=${result.draft.status}）`,
     evidence: [
       `POST /api/v1/lingdoc/projects/{projectId}/change-sets/drafts → HTTP 201 · change_set_id=${result.draft.id} · status=${result.draft.status}`,
-      '未实现部分：草稿的分组解释无端点，缺口清单 #246（AC-G3-14 的「确定受影响 / 可能受影响」解释分组）',
+      '草稿的分组解释已实现，缺口清单 #246（AC-G3-14 的「确定受影响 / 可能受影响」解释分组）；' +
+      '本链路未覆盖读侧，读回见 #295。',
     ],
   }
 }
 
-/** AC-G3-15 的判定（部分）：三态裁决实跑；AI 批量提出候选未实现。 */
+/** AC-G3-15 的判定（部分）：三态裁决实跑；AI 批量提出候选**已实现**，本链路未覆盖读侧。 */
 export function verdictAcG315(result: G3DependencyChainResult): G3Verdict {
   const { confirm, modify, reject, reproposed } = result.decisions
   const threeStates =
@@ -1291,14 +1294,15 @@ export function verdictAcG315(result: G3DependencyChainResult): G3Verdict {
     detail: holds
       ? `实跑那半段成立：确认（${confirm.status}）、修改（${modify.status}，关系 ${modify.relation}）、` +
         `拒绝（${reject.status}）三态都跑通；被拒绝的候选在同一版本里再投一次，服务端返回的是同一条边` +
-        `（edge_id=${reproposed.id}），没有新建。**未实现那半段**：AI 批量提出候选依赖没有端点，缺口清单见 #246。`
+        `（edge_id=${reproposed.id}），没有新建。**本链路未覆盖那半段**：AI 批量提出候选依赖**已经实现**` +
+      `（缺口清单 #246 与 #295）；读回那半段由候选批次链负责。`
       : `不成立：确认=${confirm.status}，修改=${modify.status}，拒绝=${reject.status}，重投未新建=${notReproposed}`,
     evidence: [
       `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → HTTP 200 · decision=confirm · status=${confirm.status}`,
       `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → HTTP 200 · decision=modify · relation=${modify.relation} · superseded=${modify.supersededRelation}`,
       `POST /api/v1/lingdoc/projects/{projectId}/dependencies/{edgeId}/decision → HTTP 200 · decision=reject · status=${reject.status}`,
       `POST /api/v1/lingdoc/projects/{projectId}/dependencies（重投被拒候选）→ HTTP 200 · edge_id=${reproposed.id}（与被拒那条相同）`,
-      '未实现部分：AI 批量提出候选依赖无端点，缺口清单 #246',
+      'AI 批量提出候选依赖已实现，缺口清单 #246；本链路未覆盖读侧，读回见 #295。',
     ],
   }
 }

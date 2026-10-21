@@ -1,0 +1,267 @@
+{
+  "ticket": "#295（G3 缺口收口-11）：给 G3 验收台补三条链路",
+  "gap": [
+    "G3-GAP-01",
+    "G3-GAP-02",
+    "G3-GAP-03",
+    "G3-GAP-04",
+    "G3-GAP-05"
+  ],
+  "head_at_evidence": "6015934",
+  "head_note": "基线为 integrate/g3-gap-closure-r2（6015934，即 main 的合并提交）。本票的实跑由主会话在合并后执行；本报告记录的是实现接缝、单测证据与未实跑声明。",
+  "branch": "feat/issue-295-acceptance-links",
+  "base": "integrate/g3-gap-closure-r2@6015934",
+  "mode": "implementation",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "node": "v24.14.1",
+    "python": "3.14.3",
+    "frontend": "frontend/（npm ci 后 npm run type-check 与 npm test）",
+    "worktree": "D:/code_warehouse/Projects/lingdoc/.worktrees/issue-295-acceptance-links"
+  },
+  "problem": {
+    "summary": "AC-G3-03 / AC-G3-08 / AC-G3-16 三行此前是 BLOCKED，原因是「台面缺链路」：验收台的执行器（frontend/src/views/lingdoc/g3demo/runner/）里没有可执行这三行的步骤。AC-G3-14 / AC-G3-15 的服务端实现已就位（助手两组说明、依赖候选批次），但验收台没有读回它们。",
+    "code_seams": [
+      "internal/lingdoc/workspace/roadmap_routes.go：12 条路线图路由（建会话 / 节点提案 / 边提案 / 提交 / 取消 / 读基线 / 读会话 / 读版本序列 / 前后比较）",
+      "internal/lingdoc/workspacecore/roadmap_model.go：RoadmapEditSession / RoadmapNodeProposal / RoadmapCommitResult 等结构体的 json tag",
+      "internal/lingdoc/workspacecore/fault_injection.go：FaultPoint / InjectedFaultError（503 + code=injected_fault）",
+      "internal/lingdoc/workspacecore/g2_assistant_explanation.go：助手两组说明的落库与从已落库 turn 重新推导",
+      "internal/lingdoc/workspacecore/impact_dependency_candidate.go：依赖候选批次与三态决策",
+      "internal/lingdoc/workspace/impact_dependency_candidate_routes.go：候选批次的提交 / 读回 / 决策三条路由"
+    ]
+  },
+  "chains": [
+    {
+      "id": "链路一 · 路线图编辑会话",
+      "files": [
+        "frontend/src/views/lingdoc/g3demo/runner/roadmap.ts（新增）",
+        "frontend/src/views/lingdoc/g3demo/runner/roadmap.test.ts（新增）"
+      ],
+      "seam": "真实 HTTP 面：POST /projects/{id}/roadmap/edits、POST .../nodes、POST .../commit、POST .../cancel、GET /projects/{id}/roadmap、GET .../roadmap/edits/{sessionId}、GET .../roadmap/nodes/{nodeId}/versions、GET .../roadmap/nodes/{nodeId}/compare、POST /projects/{id}/checks、GET .../impact-tasks。",
+      "steps": "建会话 → 提案节点（版本落后前置：前置引用指向旧版本）→ 提交（语义路径给变更集 / 冻结路径给新版本）→ 新增节点提案（必需项缺失前置）→ 提交 → 交付检查 → 读版本序列 → 前后比较 → 再建会话 → 提案 → 取消 → 读回基线 → 读影响任务。",
+      "verdicts": [
+        {
+          "id": "AC-G3-08",
+          "title": "RouteNode 必需项：缺失或版本落后时阻断稳定化",
+          "holds_when": "基线里有模板声明的必需 RouteNode（服务端按规则算出的 required 标志）且它不是 current 态；服务端交付检查给出至少一条 severity=blocking 的规则问题；项目未进入 STABILIZED。",
+          "reads": "服务端返回的节点 state / state_reason、交付检查的 issues[].severity、稳定化结论。页面不自行推算确定性。"
+        },
+        {
+          "id": "AC-G3-16",
+          "title": "路线图版本恢复：取消未冻结编辑后回到上一个冻结版本",
+          "holds_when": "会话状态为 cancelled；取消后冻结基线版本与取消前一致；节点版本全部回到提交后的版本；被取消会话占用的临时版本不出现在冻结版本序列里；指向临时版本的任务全部为 STALE（失效任务）。",
+          "reads": "GET /roadmap 的冻结基线与 GET /impact-tasks 的任务状态。"
+        }
+      ]
+    },
+    {
+      "id": "链路二 · 受控故障注入的可观测口径",
+      "files": [
+        "frontend/src/views/lingdoc/g3demo/runner/faultInjection.ts（新增）",
+        "frontend/src/views/lingdoc/g3demo/runner/faultInjection.test.ts（新增）"
+      ],
+      "seam": "真实 HTTP 面：POST /projects/{id}/change-sets、POST .../assess、GET .../impact-assessment、POST .../apply、GET /projects/{id}、GET .../impact-tasks、GET .../audit。",
+      "constraint": "注入是组合根按环境变量装配的夹具（LINGDOC_FAULT_INJECTION + LINGDOC_FAULT_TENANT_ID，缺一即不装配），不是产品端点。**禁止**为了探测它新增任何产品端点；台面只能从 apply 的真实响应里判断后端是否装配了注入（命中时服务端返回 503 且错误码是 injected_fault）。",
+      "verdicts": [
+        {
+          "id": "AC-G3-03",
+          "title": "应用原子性：写入失败或权限失效时项目保持原 revision 与旧模板引用",
+          "holds_when": "本轮后端装配了注入（apply 返回 503 + injected_fault）且回滚证据完整：项目 revision / 模板引用 / ImpactTask 集合 / 业务审计事件均未变。",
+          "not_run_when": "本轮后端**未装配**注入时，该行记 NOT RUN 并指向夹具证据文件 docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json，**不得判 PASS**（未观测到写入失败就没有原子性证据）。",
+          "reads": "apply 的 HTTP 状态码与错误码，加上四组读回快照（项目状态、影响任务集合、业务审计事件集合）。"
+        }
+      ]
+    },
+    {
+      "id": "链路三 · 助手两组说明与依赖候选批次的读回",
+      "files": [
+        "frontend/src/views/lingdoc/g3demo/runner/assistant.ts（新增）",
+        "frontend/src/views/lingdoc/g3demo/runner/assistant.test.ts（新增）"
+      ],
+      "seam": "真实 HTTP 面：GET /projects/{id}/change-sets/{changeSetId}（草稿上的 affected_explanation）、GET /projects/{id}/dependency-candidates、POST /projects/{id}/dependency-candidates、POST .../dependency-candidates/{candidateId}/decision。",
+      "known_risk": "internal/lingdoc/workspace/agent_model.go 的 change_draft 分支收紧了模型边界：模型给 change_draft 必须同时给 affected_explanation，否则整条回包被拒。台面读回时**必须容忍缺 affected_explanation 的草稿**（记「助手未给两组说明」而不是崩掉），并把这一点写进链路结论。",
+      "terminology": "助手影响说明 = 「确定受影响」+「可能受影响」两组，字段名 affected_explanation，与求值器的影响确定性（ImpactAssessment.impacts[].certainty）**不是同一回事**，两边不可互替。",
+      "verdicts": [
+        {
+          "id": "AC-G3-14",
+          "title": "G3 影响助手：草稿随附「确定受影响 / 可能受影响」两组说明",
+          "holds_when": "草稿上读得到 affected_explanation，两组都存在，且每条都带对象引用、原因与可追溯依据（依据类型取自 change_set / dependency_edge / ruleset / impact_task / object_version）。",
+          "not_holds_when": "草稿存在但读不到 affected_explanation → 记「助手未给两组说明」，不崩掉、不判成立。",
+          "matrix_note": "AC-G3-14 的矩阵行状态**不由本票改**（实跑后由主会话统一改）。本票只交链路与判定函数。"
+        },
+        {
+          "id": "AC-G3-15",
+          "title": "AI 批量导入依赖：候选批次的三态决策与同版本不再重提",
+          "holds_when": "确认（confirmed 且产生边）、修改（modified 且记住被替换元组）、拒绝（rejected 且**不产生**边）三态齐备；同一版本里重投被拒元组被服务端抑制（不新建候选）；依据对象版本已变更的候选在确认时被拒（HTTP >= 400）。",
+          "matrix_note": "AC-G3-15 的矩阵行状态**不由本票改**（实跑后由主会话统一改）。本票只交链路与判定函数。"
+        }
+      ]
+    }
+  ],
+  "page_wiring": {
+    "files": [
+      "frontend/src/views/lingdoc/g3demo/G3Demo.vue"
+    ],
+    "what": "新增「缺口收口 · 三条新链路」区块：三个按钮分别跑路线图链 / 故障注入观测链 / 助手读回链；每条链的判定卡按 verdict id 渲染；矩阵投影仍走同一套 g3Evidence 规则表。",
+    "note": "每段链各跑在自己的隔离项目上，结论逐段判，不跨项目串味。"
+  },
+  "evidence_rules": {
+    "files": [
+      "frontend/src/views/lingdoc/g3demo/g3Evidence.ts",
+      "frontend/src/views/lingdoc/g3demo/g3Evidence.test.ts"
+    ],
+    "what": "规则表补 AC-G3-03 / AC-G3-08 / AC-G3-16 三条（requires 指向本票新链路的步骤名，verdictId 指向对应判定卡），并把这三组新步骤名纳入「规则表引用的步骤名都真实存在」的断言。",
+    "not_changed": "g3Matrix.ts 的行状态本票**不改**（由主会话在实跑后统一改）；g3Gaps.ts / g3Gaps.test.ts 未触碰。"
+  },
+  "platform_assumption": {
+    "file": "scripts/acceptance/lingdoc_full_server_restart.py",
+    "problem": "stop_server 原先断言关停退出码为 0，这是 POSIX 优雅关停的期望。Windows 的 Popen.terminate() 是 TerminateProcess（立即杀进程），退出码为 1，于是该场景在 Windows 上永远红——但功能面（同一 SQLite、同一令牌、同一项目读回）是成立的，失败只在退出码期望。",
+    "fix": "改成按平台区分：POSIX 仍期望退出码 0；Windows 接受 0 或 1，并在输出里写明用的是哪种终止语义。**没有**简单删掉断言——退出码既非 0 也非 1 仍然报错。",
+    "verification": "python scripts/acceptance/lingdoc_full_server_restart.py --help 跑通（本票不为它起数据库）。"
+  },
+  "commands": [
+    {
+      "command": "cd frontend && npm run type-check",
+      "result": "PASS（vue-tsc --build，exit 0，无输出）"
+    },
+    {
+      "command": "cd frontend && npm test",
+      "result": "PASS（tests 1500 / pass 1499 / fail 0 / skipped 1；skipped 1 是仓库既有的跳过项，与本票无关）"
+    },
+    {
+      "command": "cd frontend && npx tsx --test src/views/lingdoc/g3demo/runner/roadmap.test.ts src/views/lingdoc/g3demo/runner/assistant.test.ts src/views/lingdoc/g3demo/runner/faultInjection.test.ts",
+      "result": "PASS（tests 27 / pass 27 / fail 0）——本票新增的三组单测单独跑的结果"
+    },
+    {
+      "command": "python scripts/acceptance/lingdoc_full_server_restart.py --help",
+      "result": "PASS（打印用法：--binary / --repo-root / --output-dir，exit 0）"
+    }
+  ],
+  "new_unit_test_coverage": {
+    "roadmap.test.ts": [
+      "会话事实按服务端 json tag 读：临时版本号是提案自己的版本（成功路径）",
+      "AC-G3-16：取消后回到上一个冻结版本、临时版本被释放、指向它的任务落 STALE 时成立（成功路径）",
+      "AC-G3-16：取消后基线版本没有回去就不成立（失败路径：版本冲突）",
+      "AC-G3-16：指向临时版本的任务不是 STALE 时不成立（失败路径：任务未失效）",
+      "AC-G3-08：必需节点非当前态 + 服务端给出 blocking 校验问题 + 未稳定化时成立（成功路径）",
+      "AC-G3-08：没有 blocking 校验问题就不能判成立（失败路径）",
+      "AC-G3-08：稳定化已放行时不成立（失败路径：项目进入了 STABILIZED）",
+      "路线图链：真实 HTTP 面走完建会话 → 提案 → 提交 → 取消 → 读版本序列与前后比较（成功路径 + 幂等键策略断言）",
+      "路线图链：写路由的人工确认守卫被拒时，执行器给出可读的权限说明（权限路径）",
+      "路线图链：写路由缺幂等键时执行器拒绝发出请求（守卫路径：不产生半发请求）"
+    ],
+    "faultInjection.test.ts": [
+      "注入命中口径：503 + injected_fault 才是注入",
+      "项目快照比对：revision 与模板引用逐项相同才算未变",
+      "AC-G3-03：装配了注入且回滚证据完整时判定成立（成功路径）",
+      "AC-G3-03：回滚证据不完整时不成立（失败路径）",
+      "AC-G3-03：未装配注入时记 NOT RUN、不得判 PASS，并指向夹具证据文件（失败路径）",
+      "故障注入链：装配了注入时 apply 返回 503 + injected_fault，读回证明未变（成功路径）",
+      "故障注入链：未装配注入时 apply 成功，本轮记 NOT RUN 而不是 PASS（失败路径）"
+    ],
+    "assistant.test.ts": [
+      "助手说明按服务端 json tag 读：两组各自成列（成功路径）",
+      "草稿上没有 affected_explanation 时读成 null（不是空两组）",
+      "依据必须指回一条真实记录：类型在词表内且 source_id 非空（失败路径：依据不可追溯）",
+      "AC-G3-14：草稿带两组说明且每条依据可追溯时成立（成功路径）",
+      "AC-G3-14：草稿缺 affected_explanation 时记「助手未给两组说明」，不崩掉也不判成立（失败路径：模型边界收紧的容错）",
+      "AC-G3-15：三态齐备 + 拒绝不产生边 + 同版本不再重提 + 版本复检拒绝时成立（成功路径）",
+      "AC-G3-15：被拒的候选同版本重投又新建了一条就不成立（失败路径：同版本重复推荐）",
+      "AC-G3-15：依据版本已变更的候选被静默确认了就不成立（失败路径：版本复检缺失）",
+      "助手链：读回草稿与候选批次，写路由带幂等键、GET 不带（成功路径 + 幂等键策略断言）"
+    ]
+  },
+  "not_run": [
+    {
+      "item": "三条链路的页面实跑（/demo/g3）",
+      "status": "NOT RUN",
+      "reason": "**本票未做页面实跑，实跑由主会话在合并后执行。**本票交付的是链路、判定函数与单测；链路要对着真实后端跑通，需要主会话在合并后执行（`frontend/scripts/g3demo/run-evidence.ts --live` 或页面按钮）。"
+    },
+    {
+      "item": "AC-G3-03 的注入命中实跑",
+      "status": "NOT RUN",
+      "reason": "受控故障注入需要后端进程按 LINGDOC_FAULT_INJECTION + LINGDOC_FAULT_TENANT_ID 装配夹具。本票没有起带注入的后端进程，因此**未观测到**注入命中；按本票的口径，AC-G3-03 在未装配注入时记 NOT RUN，不得判 PASS。已落证的夹具实跑事实见 docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json。"
+    },
+    {
+      "item": "AC-G3-14 / AC-G3-15 的矩阵行状态",
+      "status": "NOT RUN",
+      "reason": "行状态由主会话在实跑后统一改。本票只交链路与判定函数（g3Matrix.ts 未触碰）。"
+    },
+    {
+      "item": "full_server_restart 场景的完整实跑（真起服务与数据库）",
+      "status": "NOT RUN",
+      "reason": "按本票范围，只验证该脚本的用法入口（--help）可跑通，并修正它的关停退出码口径。功能面的实跑由主会话在合并后执行。"
+    }
+  ],
+  "risks": [
+    "路线图链的「必需 RouteNode」依赖模板规则声明必需节点。演示模板（template-demo）的必需字段是 research_subject / research_goal，未必声明了 RouteNode 类型的必需节点；若基线里没有必需 RouteNode，AC-G3-08 的判定会**如实不成立**（记 NOT RUN），并在结论里写明「本轮基线里没有模板声明的必需 RouteNode」。这是事实陈述，不是缺陷。",
+    "路线图链需要基线里**已有一个可编辑的冻结节点**（改写路径要求节点已存在；新增节点走语义路径，只产出变更集）。基线为空时链会抛可读错误而不是伪造事实。",
+    "AC-G3-08 的「项目不进入 STABILIZED / READY」这半段需要一次稳定化调用，而稳定化要求有一个**已应用**的变更集。本票的链路里稳定化事实是可选字段（`stabilization: null`），判定在缺它时**不成立**（记 NOT RUN）。主会话实跑时若需要这半段，应在链路里补一次「建变更集 → 评估 → 应用 → 稳定化」。",
+    "链路三读回助手草稿需要一个草稿 id（`draftChangeSetId`）。助手草稿由真实模型轮次产生，本票的链路**不自己造**模型轮次；没有草稿 id 时该行记「本轮没有读回助手草稿」，不成立。"
+  ],
+  "follow_up": [
+    "主会话在合并后跑三条链路的页面实跑，按实跑结果统一改 AC-G3-03 / AC-G3-08 / AC-G3-16 的矩阵行状态。",
+    "若 AC-G3-08 需要「项目不进入 STABILIZED / READY」这半段，在路线图链里补一次「建变更集 → 评估 → 应用 → 稳定化」，把稳定化事实接进判定。",
+    "若演示模板需要声明一个 RouteNode 类型的必需节点，需要在模板侧确认（不在本票范围：禁止改后端业务代码）。",
+    "把 full_server_restart 场景在 Windows 上实跑一遍，确认新的关停退出码口径生效。"
+  ],
+  "notes": [
+    "本票没有新增任何后端产品端点，也没有改任何后端业务代码：三个 runner 文件与页面接线全部在前端验收台侧。",
+    "注入是夹具、不是端点这条口径同时写进了代码注释（faultInjection.ts 文件头）与本报告，未装配时一律记 NOT RUN。",
+    "本票的判定函数沿用 runner/changeset.ts 的 G3Verdict（= runner/runContext.ts 的 G3RunVerdict），未自创结构。"
+  ],
+  "follow_up_implemented_by_main_session": {
+    "note": "本票实现者自报的四条 follow-up，由主会话在合并后补齐。补齐过程中又撞出三处真实接口使用问题，一并记在这里。",
+    "items": [
+      {
+        "item": "实跑入口接上三条新链路",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "run-evidence.ts 的 --live 原来只跑前置链与变更集链；现在把路线图 / 故障注入 / 助手候选三条链都接进去，并把它们的判定并入同一次运行的导出。任一条链失败不中断整轮——失败本身是真实事实，要落进证据。"
+      },
+      {
+        "item": "复用已注册账号的入口",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "受控故障注入按**租户**限定，页面每次新建随机账号会落到别的租户去，注入永远不命中。新增 G3_ACCOUNT_EMAIL / G3_ACCOUNT_PASSWORD 环境变量入口：给了就用它登录（registerFirst=false），没给才自建账号。"
+      },
+      {
+        "item": "路线图链自造前置",
+        "file": "frontend/src/views/lingdoc/g3demo/runner/roadmap.ts",
+        "what": "基线里一个节点都没有时，台面自己造一个：新增节点走语义路径 → 得到变更集 → 评估 → 应用 → 重读基线。没有这一步，AC-G3-16 这类判据就没有可编辑的对象，台面只能永远记 BLOCKED。造出来的节点是合成材料（名字与理由只带运行标识）。"
+      },
+      {
+        "item": "候选批次按 roots 语义提交",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "影响评估从变更集 roots 出发遍历依赖边，边的 source 不是那个 ProjectSpec ref 时 action 不会传播；target 必须是**本项目**的章节版本（拿别的项目的对象引用会被 404 拒掉）。另外三条链各建各的项目：链路自己会 apply 变更集从而推进上下文修订，共用项目时后一条链会撞 409「基线已漂移」。"
+      },
+      {
+        "item": "同轮建多个项目时给不同幂等键前缀",
+        "file": "frontend/scripts/g3demo/run-evidence.ts",
+        "what": "runProjectChain 的 idemPrefix 入口本来就为「同一次运行建两个项目」准备；前缀用 ASCII——中文进到幂等键里会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键，服务端按 409 idempotency_conflict 拒掉。"
+      },
+      {
+        "item": "变更集同时提交两个必填字段",
+        "file": "frontend/src/views/lingdoc/g3demo/runner/faultInjection.ts",
+        "what": "演示模板把 research_subject 与 research_goal 都声明成必填，只提交一个会被按 400 invalid_request 拒掉。变更集的 affected_chapter_ids 也要指向**本项目**的章节，空列表同样被拒。"
+      },
+      {
+        "item": "HTTP 客户端加请求超时",
+        "file": "frontend/scripts/g3demo/fetchClient.ts",
+        "what": "没有超时的话，一个挂住的请求会把整轮实跑永久卡死——看上去像跑得慢，实际上什么结论都没有。带上超时之后，挂住会变成一次可读的失败：链路记成「本条链没有跑完：<真实原因>」，其余链路照跑。"
+      },
+      {
+        "item": "两轮实跑编排入库",
+        "file": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py",
+        "what": "轮 1 不装配注入、轮 2 装配同一个租户的注入，用同一个账号 / 同一个租户 / 同一个 SQLite。支持按链过滤（G3_ONLY_CHAINS）与跳过前置变更集链（G3_SKIP_LIFECYCLE，注入轮里 apply 返回 503 会把前置链带崩）。"
+      }
+    ],
+    "real_run_evidence": "docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json",
+    "real_run_head": "a8fb69f",
+    "real_run_conclusion": "三条链都已接入实跑入口并在真实后端上跑过：未装配注入时 AC-G3-03 按口径记 NOT RUN（链路本身完整跑通，附读回证据）；装配后注入命中（503 + injected_fault）已观测到，但命中后的回滚读回被后端写阻塞挡住（缺陷票 #310），因此该行仍不得判 PASS。AC-G3-08 / 14 / 15 / 16 的前置（模板声明必需 RouteNode、真实模型草稿、候选批次对象引用）本轮不具备，如实记 NOT RUN / BLOCKED 并写明解除条件。",
+    "new_defects": [
+      {
+        "issue": "#310",
+        "summary": "装配受控故障注入后 SQLite 上的后续写操作被阻塞。这是本轮实跑暴露的**新**缺陷，与本票的实现无关。"
+      }
+    ]
+  }
+}
