@@ -25,6 +25,19 @@ class ContractParityError(ValueError):
     pass
 
 
+# Routes whose response shape cannot be taken from either the closure's return
+# type or the read method the closure calls. Each entry says why, so an
+# exemption is a stated fact rather than a way to make the gate quiet.
+# Only read routes are covered by this rule: a write route's shape comes from
+# the contract and the request DTO, not from the method it calls.
+SHAPE_SOURCE_EXEMPTIONS = {
+    "GET /projects/{}/evidence-cards/{}":
+        "the handler returns one element of a list (a card), so neither the list's "
+        "return type nor a single read method describes the response shape; the "
+        "card DTO in the contract is the source",
+}
+
+
 def require(condition, message):
     if not condition:
         raise ContractParityError(message)
@@ -425,6 +438,16 @@ def check_document(spec, route_sources, client_sources, type_sources):
     for text in type_sources.values():
         for match in re.finditer(r'^func \(s \*Service\) (\w+)\([^\n]*\) \((\[\])?(\w+), error\)', text, re.M):
             read_types[match.group(1)] = (bool(match.group(2)), match.group(3))
+    # The read method is extracted from the route's own source, so the
+    # extraction can also pick up a call that is not a read at all - a
+    # `return err.Error()` looks exactly like `return service.ListTasks(` to
+    # the pattern. A name that is not a read method is not a shape source:
+    # keeping it would let `read_types.get(name)` answer None and skip the
+    # shape check without saying so.
+    for route in routes.values():
+        method = route.get("read_method")
+        if method and method not in read_types:
+            route["read_method"] = None
     operations = {}
     for path, item in spec.get("paths", {}).items():
         for method, operation in item.items():
@@ -483,6 +506,18 @@ def check_document(spec, route_sources, client_sources, type_sources):
             if typed:
                 match = re.search(r'(\[\])?core\.(\w+)', typed)
                 expected_response = (bool(match.group(1)), match.group(2))
+            method_name = key.split(" ", 1)[0]
+            if (expected_response is None and not typed and route["read_method"] is None
+                    and method_name in ("GET", "HEAD")):
+                # A read route whose shape source cannot be resolved would
+                # lose its shape check silently. Either the closure names the
+                # type it returns, or it names the read method it calls -
+                # one of them has to be there.
+                require(key in SHAPE_SOURCE_EXEMPTIONS,
+                        key + ": the response shape source cannot be resolved; the closure must "
+                               "return a concrete core type or call a read method whose return type "
+                               "is known (add an entry to SHAPE_SOURCE_EXEMPTIONS if the shape "
+                               "truly cannot come from either)")
             if expected_response:
                 array, name = expected_response
                 require((data_schema.get("type") == "array") == array, key + ": response array/object shape disagrees with Go")

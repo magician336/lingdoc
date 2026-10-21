@@ -278,6 +278,41 @@ class LingDocRouteParity(unittest.TestCase):
         with self.assertRaisesRegex(parity.ContractParityError, "response schema omits Go JSON fields"):
             self.check(document=bad, routes=moved)
 
+    def test_a_read_route_whose_shape_source_is_unknown_is_rejected(self):
+        """A read route must have a shape source, or the check is silently skipped.
+
+        The read method is extracted from the route's own source. When the
+        extraction picks up a call that is not a read - ``return err.Error()``
+        looks exactly like ``return service.ListTasks(`` to the pattern - the
+        name resolves to nothing, and looking up nothing used to mean "no
+        shape check", quietly.
+
+        This test requires that a read route whose shape source cannot be
+        resolved is reported instead of skipped.
+        """
+        file = "internal/lingdoc/workspace/g2_full_http.go"
+        source = self.routes[file]
+        original = "return ports.Research.ListResearchTasks("
+        self.assertIn(original, source)
+
+        # A call that is not a read: the extracted name resolves to nothing.
+        not_a_read = dict(self.routes)
+        not_a_read[file] = source.replace(original, "return err.Error(", 1)
+        with self.assertRaisesRegex(parity.ContractParityError,
+                                    "the response shape source cannot be resolved"):
+            self.check(routes=not_a_read)
+
+        # The same route with its read method intact still passes.
+        self.check()
+
+    def test_a_write_route_needs_no_read_shape_source(self):
+        """A write route's shape comes from the contract and the request DTO.
+
+        Requiring a read shape source there would reject every write route, so
+        the rule is scoped to reads.
+        """
+        self.check()
+
     def validator_for_request(self, document, path, method):
         normalized = parity.normalize_openapi_schema(document)
         body = normalized["paths"][path][method]["requestBody"]["content"]["application/json"]["schema"]

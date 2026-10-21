@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -32,6 +33,10 @@ import (
 // whitelist below.
 
 const workspaceCoreImportPath = "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+
+// aggregateMethodCount is the surface the aggregate offers; it is quoted in
+// the failure message so the reader sees what an alias would hand over.
+const aggregateMethodCount = 279
 
 // aggregateHolders lists the files in this package that still name the
 // aggregate concrete type, each with the ticket that owns its migration.
@@ -142,23 +147,26 @@ func collectAggregateReferences(fset *token.FileSet, path string, file *ast.File
 		}
 	}
 
-	for _, decl := range file.Decls {
-		switch d := decl.(type) {
-		case *ast.FuncDecl:
-			visitType(d.Type)
-		case *ast.GenDecl:
-			for _, spec := range d.Specs {
-				switch s := spec.(type) {
-				case *ast.TypeSpec:
-					visitType(s.Type)
-				case *ast.ValueSpec:
-					visitType(s.Type)
-				}
-			}
-		}
-	}
+	// One walk over the whole file, so that a type named **inside a function
+	// body** is seen too. A function-local variable of the aggregate type, a
+	// function-local struct that embeds it, and a local slice of it are all
+	// ways to reach the aggregate without naming it in a declaration.
 	ast.Inspect(file, func(node ast.Node) bool {
 		switch n := node.(type) {
+		case *ast.FuncDecl:
+			visitType(n.Type)
+		case *ast.FuncType:
+			visitFieldList(n.Params)
+			visitFieldList(n.Results)
+		case *ast.ValueSpec:
+			// A local `var svc *core.Service`.
+			visitType(n.Type)
+		case *ast.TypeSpec:
+			// A local `type svc struct{ *core.Service }`.
+			visitType(n.Type)
+		case *ast.Field:
+			// A struct field, including an embedded aggregate.
+			visitType(n.Type)
 		case *ast.CompositeLit:
 			visitType(n.Type)
 		case *ast.TypeAssertExpr:
@@ -171,7 +179,19 @@ func collectAggregateReferences(fset *token.FileSet, path string, file *ast.File
 		}
 		return true
 	})
-	return references
+	// The same expression can be reached twice (a field is visited both as
+	// part of a struct type and as a node of its own). One place is one fact.
+	seen := map[string]bool{}
+	unique := references[:0]
+	for _, reference := range references {
+		key := fmt.Sprintf("%d|%s", reference.line, reference.text)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, reference)
+	}
+	return unique
 }
 
 // aggregateReferencesInFile parses one file and returns its aggregate references.
@@ -243,6 +263,98 @@ func TestTheNarrowPortSurfacesHoldNoAggregateType(t *testing.T) {
 				name, reference.line, reference.text)
 		}
 	}
+}
+
+// TestNoPackageOutsideTheAggregateAliasesIt is the other half of the
+// transport assertion.
+//
+// A package that declares `type Aggregate = core.Service` re-exports the
+// whole aggregate surface under a new name. The transport assertion reads
+// this package's own files, so it cannot see that name - and a transport
+// that holds such an alias holds all 279 methods just the same. The alias has
+// to be refused where it is declared.
+//
+// The aggregate's own package is allowed to name itself; everything else is
+// not.
+func TestNoPackageOutsideTheAggregateAliasesIt(t *testing.T) {
+	root := repositoryRoot(t)
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			name := entry.Name()
+			if name == ".git" || name == "node_modules" || name == "vendor" || name == ".scratch" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		relative, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		if strings.HasPrefix(relative, "internal"+string(filepath.Separator)+"lingdoc"+string(filepath.Separator)+"workspacecore"+string(filepath.Separator)) {
+			return nil
+		}
+		fset := token.NewFileSet()
+		file, parseErr := parser.ParseFile(fset, path, nil, 0)
+		if parseErr != nil {
+			return parseErr
+		}
+		aliases := map[string]bool{}
+		for _, spec := range file.Imports {
+			value, unquoteErr := strconv.Unquote(spec.Path.Value)
+			if unquoteErr != nil || value != workspaceCoreImportPath {
+				continue
+			}
+			if spec.Name != nil {
+				aliases[spec.Name.Name] = true
+				continue
+			}
+			aliases["workspacecore"] = true
+		}
+		for _, declaration := range file.Decls {
+			generic, ok := declaration.(*ast.GenDecl)
+			if !ok || generic.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range generic.Specs {
+				typed, ok := spec.(*ast.TypeSpec)
+				if !ok || typed.Assign == 0 {
+					// Not an alias: a named type is a new type.
+					continue
+				}
+				selector, ok := typed.Type.(*ast.SelectorExpr)
+				if !ok || selector.Sel == nil || selector.Sel.Name != "Service" {
+					continue
+				}
+				ident, ok := selector.X.(*ast.Ident)
+				if !ok || !aliases[ident.Name] {
+					continue
+				}
+				t.Errorf("%s:%d declares %s as an alias of the aggregate; a package outside the aggregate's own must not re-export it, or the transport can reach all %d methods through the new name",
+					relative, fset.Position(typed.Pos()).Line, typed.Name.Name, aggregateMethodCount)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk the repository: %v", err)
+	}
+}
+
+// repositoryRoot returns the repository root, derived from this file's
+// location (internal/lingdoc/workspace).
+func repositoryRoot(t *testing.T) string {
+	t.Helper()
+	directory := packageDirectory(t)
+	for range 3 {
+		directory = filepath.Dir(directory)
+	}
+	return directory
 }
 
 // packageDirectory returns the directory of this source file.
