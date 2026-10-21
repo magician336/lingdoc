@@ -268,6 +268,36 @@ type Service struct { /* 协作者集合 */ }
 - #266 允许把 `g2SelectFormal` 的参数从 `ApplicationService` 改成 `any`，**保留函数体内那句运行时断言**。理由：断言失败返回 `ErrDependencyUnavailable` 是**可观测行为**（依赖缺失时的 503 形态）；若把参数类型收窄成 `g2EvidenceSelector`，未实现选择器的替身就变成**编译期错误**，那是行为变化。`any` 保住行为逐字不变，代价是这一处失去了编译期类型，**必须用注释写明这是为了保住可观测的降级行为**。
 - `g2GenerationEvidenceValidator.workspace`（宽口字段）的收窄属 **#269** 的范围，本段不动。
 
+### 迁移前基线（同一 head 上先跑出来）
+
+Spec 测试决策 3：「行为基线先于改动」——每段开工前先在同一 head 上跑出基线，改动后用同一命令对照，差异必须为零。
+
+**基线 head = `633ba34`（main，段二合并后的状态）**，在独立对照工作树 `base-633ba34` 上跑：
+
+```
+go test -p 1 -count=1 ./internal/lingdoc/... ./internal/router/ ./internal/container/
+```
+
+| 包 | 结果 | 耗时 |
+| --- | --- | --- |
+| `internal/lingdoc/access` | ok | 0.205s |
+| `internal/lingdoc/candidateadoption` | ok | 0.887s |
+| `internal/lingdoc/delivery` | ok | 3.513s |
+| `internal/lingdoc/docx` | ok | 0.053s |
+| `internal/lingdoc/generation` | ok | 0.758s |
+| `internal/lingdoc/operationcore` | ok | 0.824s |
+| `internal/lingdoc/reviewanchor` | ok | 0.015s |
+| `internal/lingdoc/rulesetstore` | ok | 2.833s |
+| `internal/lingdoc/sourcemarker` | ok | 0.092s |
+| `internal/lingdoc/template` | ok | 0.111s |
+| `internal/lingdoc/templategovernance` | ok | 2.742s |
+| `internal/lingdoc/workspace` | ok | 167.934s |
+| `internal/lingdoc/workspacecore` | ok | 33.342s |
+| `internal/router` | ok | 1.629s |
+| `internal/container` | ok | 2.749s |
+
+**全绿，零失败。** 这张表是段三每一张票改动后的对照基准。
+
 ### 已知风险：契约一致性脚本会因接收者改名而红
 
 `scripts/ci/check_lingdoc_routes.py:144` 的读方法提取写死了接收者名：
