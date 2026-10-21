@@ -12,13 +12,14 @@ type FullWorkflowDependencies struct {
 	Core       *core.Service
 	Governance *TemplateGovernanceRuntime
 	Impact     ImpactRoutePorts
+	G2         G2RoutePorts
 }
 
 func (h *Handler) RegisterFullRoutes(group *gin.RouterGroup) {
 	if h.full == nil || h.full.Core == nil || group == nil {
 		return
 	}
-	RegisterG2FullRoutes(group, h.full.Core)
+	RegisterG2FullRoutes(group, h.full.G2)
 	RegisterImpactRoutes(group, h.full.Impact)
 	RegisterRoadmapRoutes(group, h.full.Impact)
 	RegisterG4FullRoutes(group, h.full.Governance)

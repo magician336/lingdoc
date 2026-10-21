@@ -33,7 +33,7 @@ func r26OperationHTTP(t *testing.T, f deliveryGuardFixture, method, path, key st
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	RegisterG2FullRoutes(engine.Group("/api"), f.projects)
+	RegisterG2FullRoutes(engine.Group("/api"), g2PortsFor(f.projects))
 	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(f.projects))
 	body, err := json.Marshal(input)
 	require.NoError(t, err)
