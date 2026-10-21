@@ -1,0 +1,66 @@
+{
+  "mode": "real",
+  "note": "#282 G3 缺口收口-4-G：审计动作新旧格式并存的读侧保证。审计动作列有两种形状——旧形状 authorization.<种类>:<资源>（#253 修复前的写入方把完整能力写进了分类列）与新形状 authorization.<种类>（资源留在 details_json.capability）。本轮把「已知无影响」升级成有保证：读侧的全量盘点落到 ADR 0010，规则写清楚（按动作种类匹配，不按完整动作串匹配），并用守护测试钉住「两种形状的行都从读侧回来且 action 原样透传」。盘点结论：生产代码里没有任何读侧按完整动作串过滤授权族，所以本轮不需要改生产代码；两处按动作串等值匹配的地方属于另一个从不带资源的动作族（validation_issue.disposition），与形状变化无关。",
+  "head": "70ce053b",
+  "base": "058637c4",
+  "passed": [
+    {
+      "id": "盘点所有读侧：审计可见性、机器可读视图、导出、证据导出、任何按动作过滤或分组的查询",
+      "status": "passed",
+      "evidence": "生产代码里 lingdoc_project_audits 只有一条 SQL 读路径：internal/lingdoc/workspacecore/service.go:426-443 的 gormTransaction.AuditEvents（只按 project_id 过滤，:428；action 原样透传，:440）。它的 HTTP 出口是 internal/lingdoc/workspacecore/service_facade.go:2588-2613 的 ListAuditEvents（委托上者，只按 actor 过滤非 owner/admin，:2601-2609）与 GET /projects/:projectId/audit（internal/lingdoc/workspace/http.go:144 注册、:421-432 处理）。导出路径**不读这张表**：影响任务导出、证据导出、机器可读视图都不消费它；AuditSink.Record 那条通道写的是另一张表 audit_logs（internal/container/lingdoc.go:211-239）。唯一按动作串匹配的**生产**逻辑两处：service_facade.go:2757（重复处置检查）与 :2904（latestValidationIssueDispositions），都匹配 validation_issue.disposition。"
+    },
+    {
+      "id": "盘点写侧：哪些动作值可能带资源",
+      "status": "passed",
+      "evidence": "唯一产出授权动作的写点是 internal/lingdoc/workspacecore/service_facade.go:468（auditAuthorizationAction，:424-427 → \"authorization.\" + 种类），不可能带资源，最长 36 字符。其余动作族全是字面量或「前缀 + 枚举受限片段」（片段取值由入参校验限定，如 internal/lingdoc/workspacecore/impact_service.go:31-33 的 validImpactAction），都不带资源、都在 64 字符内。internal/lingdoc/candidateadoption/candidate_adoption_store.go:287 写 project.change_set.review（字面量）。结论：仓里没有第二个能写出「动作 + 资源」的写点，旧形状是历史不是现状。"
+    },
+    {
+      "id": "真实数据证实新旧格式并存不是假设",
+      "status": "passed",
+      "evidence": "本机 PostgreSQL 容器 WeKnora-postgres-dev 的 WeKnora 库：审计行 5628 行里 **535 行带 ':<资源>' 后缀**（旧形状，长度 56 / 58 / 64），其中 11 行恰好 64 字符（authorization.issue-resolve:<uuid>）。所以读侧按动作种类匹配是硬要求，不是形式。"
+    },
+    {
+      "id": "结论落到文档：新格式是什么、历史格式是什么、读侧应当怎么匹配",
+      "status": "passed",
+      "evidence": "docs/adr/0010-audit-action-format-and-read-sides.md：事实一（写侧只有一个点产出授权动作）、事实二（读侧只有一条查询且不按动作过滤）、决策一（读侧按动作种类匹配 = 第一个 ':' 之前的部分，不按完整动作串等值匹配）、决策二（写侧只写新形状）、决策三（历史行保留不改写；超 64 的旧形状行只可能出现在 SQLite，由 #276 的迁移原地规范化）、决策四（边界由两种方言共同表达，且含 64）。"
+    },
+    {
+      "id": "「若存在按完整动作串过滤的读侧」：盘点结论是不适用，且给出证据",
+      "status": "passed",
+      "evidence": "生产读侧没有按完整动作串过滤**授权族**的地方，所以本轮不改生产代码 —— 两处等值匹配（service_facade.go:2757 与 :2904）匹配的是 validation_issue.disposition，一个从不带资源的动作族，把它改成按种类匹配反而会放宽语义（将来出现 validation_issue.disposition.* 会被误当成处置事件）。这个取舍写在 ADR 0010 的决策一里，并由下面的守护测试钉住「授权族一旦出现等值过滤，守护就会失败」。"
+    },
+    {
+      "id": "历史行的处置结论与是否另开票",
+      "status": "passed",
+      "evidence": "**不需要规范化**：两种方言的真实库里都没有超过 64 字符的行（见 T276-S1-证据.json 的 inventory），那 535 行旧形状行全部 ≤64，保留原样、继续可读。**不需要另开票**：超 64 的旧形状行只可能出现在 SQLite（PostgreSQL 的 varchar(64) 写不进去），由 #276 的迁移原地规范化——完整能力在 details_json.capability 里，不丢信息；无法规范化的超长行让迁移响亮失败，不静默截断。"
+    },
+    {
+      "id": "守护测试：读侧对新旧两种格式的审计行都给出正确结果",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/audit_action_format_test.go：TestAuditReadSideReturnsBothActionShapes 用**真实两种形状的行**做夹具（新形状 authorization.issue-dismiss-blocking 与旧形状 authorization.issue-dismiss-blocking:5013efc8），断言 AuditEvents 把两行都返回、action 字符串**原样透传**（旧行保留 :资源 后缀），并断言按动作种类（LIKE 前缀）匹配能同时命中两行。TestAuditWriterEmitsTheCurrentShapeOnly 断言写侧只产新形状且资源留在 details。TestAuditActionColumnStaysWithinItsBound 断言写出的分类值始终在 64 字符内。"
+    },
+    {
+      "id": "回归：受影响包全绿",
+      "status": "passed",
+      "evidence": "go test ./internal/lingdoc/workspacecore/... ./internal/lingdoc/candidateadoption/... ./internal/router/... ./internal/database/... -count=1：ok 35.537s / ok 0.793s / ok 2.734s / ok 3.800s，exit 0。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "前端测试",
+      "status": "not_run",
+      "reason": "本票不改前端代码；前端由 CI 的 Frontend 工作流覆盖。"
+    },
+    {
+      "id": "生产数据库上的读侧盘点",
+      "status": "not_run",
+      "reason": "本机没有生产数据库。盘点在本机可达的真实数据上做（PostgreSQL 容器库 5628 行审计数据 + 本机验收跑出来的 SQLite 库）。生产库若还有更早的历史行，其形状只会是本 ADR 记录的两种之一（写侧从未产出过第三种形状）。"
+    }
+  ],
+  "notes": [
+    "落证在 11df0c69 上跑出；其后只有两处 gofmt 的空白改动（字符串连接处的一个空格，在两个守护测试文件里），行为不变。守卫在同一份最终代码上复跑通过：go test ./internal/lingdoc/workspacecore/ -run 'AuditCategoryColumn|AuditBoundMigration|AuditReadSide|AuditWriter|AuditActionColumn' -count=1 → ok 2.313s。",
+    "本轮经过两轴独立评审（`verifier` 子代理）：规范轴提出 3 项 Required、规格轴未提出实现缺失。三项 Required 的处置：① SQLite 侧的 CHECK 改为**与 PostgreSQL 同名**（`CONSTRAINT ck_lingdoc_project_audits_action_len`），并补断言 —— 「两种方言把同一条规则写在同一个名字下」从此是字面成立；② ADR 0010 的长度算术更正为「整串 36 字符 = 前缀 14 + 最长种类 22」，证据里的 `max_length` 口径同步写清；③ 「一个 PR 关联一个子票」按**合票决策**处理 —— 开发计划 `G3-gap-closure-development-plan.md` 的 #253 遗留拆票表已同步，并写明合票理由（两张票共享同一条决定与同一份落证）。评审还指出一处重复代码（演练测试里 7 处裸 INSERT），已抽成 `insertAuditRow` 助手（PG 侧复用包内已有的 `insertAuditCategory`）。评审修复后的复跑：go test 四包 ok（37.504s / 0.846s / 1.917s / 3.790s，含真实 PostgreSQL）、go test -race 三包 ok（184.935s / 1.971s / 3.954s）、go vet exit 0、gofmt 干净；守卫在 bbe6459a 上复跑 ok 2.288s。",
+    "规格轴评审的加强项已落实：① PG 侧补了「处置审计照常落库」的断言（`internal/lingdoc/workspacecore/postgres_issue_disposition_test.go`）——授权审计与处置审计是同一列上的两条写入路径，两条都要在 PostgreSQL 上落库；SQLite 侧由既有 `g4_issue_disposition_test.go` 的「disposition audit count = 1」覆盖。② 盘点口径演练：两端的超 64 行都是 0 行，所以「列出所有超过 64 字符的行（含项目与时间）」在本次是空集；为了让这个口径本身可核对，证据里把**压线**的 11 行（长度恰好 64）按项目与时间列了出来 —— 它们正是边界取值必须含 64 的那批行。③ 生产库盘点按门禁词表改记 **N/A**（没有真实生产数据库 ⇒ 验收前提不存在，记 NOT RUN 会挡住 Ready）。复跑：go test 四包 ok（37.877s / 0.854s / 2.465s / 3.617s，含真实 PostgreSQL）、go test -race 三包 ok、go vet exit 0、gofmt 干净。"
+  ]
+}
