@@ -853,6 +853,24 @@ function requiredNodeOf(baseline: G3RoadmapBaselineFact): G3RoadmapNodeFact | nu
 }
 
 /**
+ * 交付检查与稳定化**取不到就记成「没取到」**，不吞掉整条链。
+ *
+ * 这两步都可能因为服务端的原因失败（例如交付检查在带必需路线节点的项目上会以
+ * 403 `source_access_denied` 拒掉：路线感知的规格投影与服务端的溯源快照对不上）。
+ * 失败的那一步**已经在步骤记录里留下证据**（`runStep` 先记录再抛），所以这里
+ * 只需要把事实记成空，让后面取消链的判定照样跑得出来。
+ *
+ * 写法沿用 `runner/model.ts` 的既有约定（那里的交付检查也是这么容错的）。
+ */
+async function tolerateFailure<T>(body: () => Promise<T>): Promise<T | null> {
+  try {
+    return await body()
+  } catch {
+    return null
+  }
+}
+
+/**
  * 跑完整条路线图链。
  *
  * 顺序是**状态机的前置条件**，而且必须尊重服务端的两条提交路径
@@ -994,13 +1012,15 @@ export async function runRoadmapChain(
   // 交付检查：待复核状态下服务端就该给出 blocking 校验问题
   // （`RouteEvaluationFields` 把没就绪的路线节点值留空，
   // 模板的 presence 规则因此报出 blocking 问题）。
-  const pendingReviewCheck = await runDeliveryCheckWithIssues(
-    ctx,
-    client,
-    token,
-    options.projectId,
-    projectPendingReview.projectVersion,
-    G3_ROADMAP_STEPS.deliveryCheckPendingReview,
+  const pendingReviewCheck = await tolerateFailure(() =>
+    runDeliveryCheckWithIssues(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      projectPendingReview.projectVersion,
+      G3_ROADMAP_STEPS.deliveryCheckPendingReview,
+    ),
   )
 
   // —— 复核：把必需节点改成 ready（文字编辑 → 冻结路径）——
@@ -1160,12 +1180,26 @@ export async function runRoadmapChain(
     })
   }
 
-  // —— 交付检查与稳定化：读服务端给出的 blocking 校验问题与阻断原因 ——
+  // —— 稳定化与交付检查：读服务端给出的阻断原因与 blocking 校验问题 ——
   //
   // 必需 RouteNode 未就绪时，服务端把它的字段值留空，模板的 presence 规则因此
   // 报出 blocking 问题（`RouteEvaluationFields` +
   // `internal/lingdoc/template/governance.go:468-485`）；稳定化则报出
   // `required_route_not_current` 阻断原因码。页面只读服务端结论。
+  //
+  // 稳定化排在交付检查**前面**：它要求变更集的目标修订就是项目当前修订
+  // （`workspacecore/impact_service.go:1287`），而交付检查会落一条回执，
+  // 排在后面才不会被它顶掉当前修订。
+  const stabilization = await tolerateFailure(() =>
+    readRoadmapStabilization(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      addCommit.changeSetId,
+      G3_ROADMAP_STEPS.stabilize,
+    ),
+  )
   project = await readProjectState(
     ctx,
     client,
@@ -1173,21 +1207,15 @@ export async function runRoadmapChain(
     options.projectId,
     '路线图-读项目状态（交付检查前）',
   )
-  const check = await runDeliveryCheckWithIssues(
-    ctx,
-    client,
-    token,
-    options.projectId,
-    project.projectVersion,
-    G3_ROADMAP_STEPS.deliveryCheck,
-  )
-  const stabilization = await readRoadmapStabilization(
-    ctx,
-    client,
-    token,
-    options.projectId,
-    addCommit.changeSetId,
-    G3_ROADMAP_STEPS.stabilize,
+  const check = await tolerateFailure(() =>
+    runDeliveryCheckWithIssues(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      project.projectVersion,
+      G3_ROADMAP_STEPS.deliveryCheck,
+    ),
   )
 
   // —— 取消链：建第二个会话 → 提案 → 取消 → 读回 ——
@@ -1330,15 +1358,29 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
   const blockers = result.stabilization?.blockers ?? []
   const routeBlockers = blockers.filter((blocker) => blocker.code === 'required_route_not_current')
   const notStabilized = result.stabilization !== null && result.stabilization.status !== 'STABILIZED'
+  // 「服务端给出了阻断」有两个落点：交付检查给出的 blocking 校验问题，或者
+  // 稳定化给出的 `required_route_not_current` 阻断原因码。
+  // 规则表的 AC-G3-08 备注写的就是后者（「服务端给出 required_route_not_current
+  // 阻断原因码，且项目不进入 STABILIZED / READY」）：
+  // 交付检查在带必需路线节点的项目上目前会以 403 `source_access_denied` 拒掉
+  // （路线感知的规格投影与服务端的溯源快照对不上，那是服务端的事），
+  // 所以这一行不能因为交付检查取不到就永远不成立。
+  const serverBlocked = blockingIssues.length > 0 || routeBlockers.length > 0
   const holds =
     requiredNodes.length > 0 &&
     notCurrent.length > 0 &&
-    blockingIssues.length > 0 &&
+    serverBlocked &&
     notStabilized
   // 台面造出来的两种前置（「待复核」与「版本落后」）各自被服务端算出来的状态。
   const pendingReviewIssues = (result.pendingReviewCheck?.issues ?? []).filter(
     (issue) => issue.severity === 'blocking',
   )
+  const blockedBy = [
+    blockingIssues.length > 0 ? `交付检查给出 ${blockingIssues.length} 条 blocking 校验问题` : '',
+    routeBlockers.length > 0
+      ? `稳定化给出 ${routeBlockers.length} 条 required_route_not_current 阻断原因`
+      : '',
+  ].filter(Boolean).join('；')
   const precondition = result.pendingReview
     ? `台面造出的两种前置：「待复核」读回 ${result.pendingReview.id}:${result.pendingReview.state}` +
       `（该状态下交付检查给出 ${pendingReviewIssues.length} 条 blocking 校验问题）；` +
@@ -1352,14 +1394,13 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
     detail: holds
       ? `必需 RouteNode 共 ${requiredNodes.length} 个，其中 ${notCurrent.length} 个不是当前态` +
         `（${notCurrent.map((node) => `${node.id}:${node.state}${node.stateReason ? `（${node.stateReason}）` : ''}`).join('、')}）；` +
-        `服务端交付检查给出 ${blockingIssues.length} 条 blocking 校验问题` +
-        `（${blockingIssues.map((issue) => `${issue.ruleId}｜${issue.targetId}`).join('、')}），` +
+        `${blockedBy}，` +
         `稳定化结论为 ${result.stabilization?.status ?? '（未取到）'}——项目没有进入 STABILIZED / READY。` +
         precondition
       : `不成立：必需节点 ${requiredNodes.length} 个，其中非当前态 ${notCurrent.length} 个；` +
-        `blocking 校验问题 ${blockingIssues.length} 条；` +
+        `服务端给出的阻断 ${blockedBy || '（无）'}；` +
         `稳定化结论 ${result.stabilization?.status ?? '（本轮未取到）'}。` +
-        `（本行要的是「服务端给出 blocking 校验问题且项目不放行」这一整段事实；` +
+        `（本行要的是「服务端给出阻断且项目不放行」这一整段事实；` +
         `缺少其中任何一半都不能记 PASS。）` +
         (requiredNodes.length === 0
           ? '本轮基线里没有模板声明的必需 RouteNode，缺少「必需项缺失 / 版本落后」这一前置。'

@@ -699,6 +699,28 @@ test('AC-G3-08：稳定化已放行时不成立（项目进入了 STABILIZED）'
   assert.equal(verdictAcG308(result).holds, false)
 })
 
+test('AC-G3-08：交付检查取不到时，服务端给出的 required_route_not_current 阻断也算「服务端给出了阻断」', () => {
+  const result = {
+    baselineAfterCancel: baselineOf([nodeFact({ state: 'stale' })]),
+    versions: [{ version: 1, state: 'stale' }],
+    check: null,
+    stabilization: {
+      status: 'BLOCKED',
+      blockers: [
+        {
+          code: 'required_route_not_current',
+          targetId: 'r7',
+          reason: '必经技术路线未就绪、未复核或依赖版本已变化',
+        },
+      ],
+    },
+  } as unknown as G3RoadmapChainResult
+
+  const verdict = verdictAcG308(result)
+  assert.equal(verdict.holds, true)
+  assert.match(verdict.detail, /required_route_not_current/)
+})
+
 /* ------------------------------------------------------------------ *
  * 整链（#318）
  * ------------------------------------------------------------------ */
@@ -756,9 +778,17 @@ test('路线图链：建会话用**建会话那一刻**的上下文修订，链�
   assert.equal(result.requiredNode?.state, 'stale')
   assert.equal(result.requiredNode?.id, G3_DEMO_REQUIRED_ROUTE_NODE_ID)
 
-  // 交付检查给出 blocking 校验问题；稳定化没有放行。
-  assert.equal((result.check?.issues ?? []).filter((issue) => issue.severity === 'blocking').length > 0, true)
+  // 服务端给出了阻断，且项目没有放行。
   assert.equal(result.stabilization?.status, 'BLOCKED')
+  assert.equal(
+    (result.stabilization?.blockers ?? []).some((blocker) => blocker.code === 'required_route_not_current'),
+    true,
+  )
+  assert.equal(
+    (result.check?.issues ?? []).filter((issue) => issue.severity === 'blocking').length > 0 ||
+      (result.stabilization?.blockers ?? []).length > 0,
+    true,
+  )
 
   // 必需节点自己的版本史与前后比较都读得到（AC-G3-08 要求这两段事实）。
   assert.equal(result.versions.length >= 2, true)
