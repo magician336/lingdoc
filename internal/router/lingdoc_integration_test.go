@@ -151,7 +151,14 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	deps := workspace.HandlerDependencies{Read: projects, Write: projects, Sources: sources}
+	deps := workspace.HandlerDependencies{
+		Projects:    projects,
+		Members:     projects,
+		Chapters:    projects,
+		TemplateApp: projects,
+		ChangeSets:  projects,
+		Sources:     sources,
+	}
 	// The capabilities the project service provides are named by the caller.
 	deps.WithMachineReads(projects)
 	deps.WithReviewAnchors(projects, projects)
@@ -350,9 +357,9 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	shares := &integrationShares{allowed: true}
-	runtime := workspace.NewGORMSourceRuntime(db, nil, shares, integrationKnowledge{}, delivery.NewFixedTemplateReader())
+	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, shares, integrationKnowledge{}, delivery.NewFixedTemplateReader())
 	projects := workspacecore.NewServiceWithSources(workspacecore.NewGORMRepository(db), workspacecore.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
 	engine := gin.New()
 	engine.Use(middleware.Auth(integrationTenant{}, authUsers, members, keys, cfg))
@@ -367,7 +374,8 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	deps := workspace.HandlerDependencies{Service: projects,
+	deps := workspace.HandlerDependencies{Projects: projects, Members: projects,
+		Chapters: projects, TemplateApp: projects, ChangeSets: projects,
 		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{
 			Impact: workspace.ImpactRoutePorts{ChangeSets: projects, Impact: projects, Dependency: projects,
 				Runtime: projects, Trials: projects, Roadmap: projects},

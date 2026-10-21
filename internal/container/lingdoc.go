@@ -21,12 +21,18 @@ import (
 // NewLingDocWorkspaceHandler is the composition root for LingDoc workspace
 // application services and their production adapters. The HTTP handler itself
 // receives only application ports and has no knowledge of GORM construction.
+//
+// The project side is handed over as three narrow ports, one per context, and
+// all three carry the same project service: the composition root is the only
+// injection point for each capability (Spec #47 决策 37).
 type LingDocWorkspace struct {
 	dig.Out
 	Guard              *workspace.FullWorkflowGuard
 	Handler            *workspace.Handler
 	RuleSets           *rulesetstore.HTTPHandler
-	Projects           workspace.ApplicationService
+	Authorizer         workspacecore.CapabilityAuthorizer
+	Projects           workspacecore.ProjectApplication
+	GenerationContext  workspacecore.GenerationContextApplication
 	Integration        workspace.WorkspaceIntegration
 	Runtime            *workspace.SourceRuntime
 	Audit              workspacecore.AuditSink
@@ -47,7 +53,7 @@ func NewLingDocWorkspaceHandler(
 		return LingDocWorkspace{}, fmt.Errorf("lingdoc template catalog is required")
 	}
 	auditSink := workspaceAuditSink{service: audit}
-	runtime := workspace.NewGORMSourceRuntime(db, nil, kbShares, knowledge, templates, auditSink)
+	runtime := workspace.NewGORMSourceRuntime(db, workspace.ProjectPorts{}, kbShares, knowledge, templates, auditSink)
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	// 受控故障注入只在环境变量显式点名注入点与演示租户时装配（#256）。未装配
 	// 时，下面的策略与写入端口与本票之前完全一致。
@@ -59,7 +65,7 @@ func NewLingDocWorkspaceHandler(
 	projectService := workspacecore.NewServiceWithAuthorizationPolicy(workspacecore.NewGORMRepository(db), templates, runtime.WorkspaceSourcePolicy(), authorizationPolicy, auditSink, workspacecore.AuthorizationModeEnforce)
 	projectService.InstallFaultInjection(fault)
 	projectService.WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
-	runtime.ConnectProjects(projectService)
+	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Projects: projectService, Context: projectService})
 	runtime.EnableFullWorkflowPolicy()
 	projectService.RequireActivationRead(true)
 	projectService.SetRuntimeMode("real")
@@ -113,8 +119,6 @@ func NewLingDocWorkspaceHandler(
 		Chapters:    projectService,
 		TemplateApp: projectService,
 		ChangeSets:  projectService,
-		Read:        projectService,
-		Write:       projectService,
 		Sources:     runtime,
 		Integration: runtime,
 		Templates:   templates,
@@ -131,7 +135,7 @@ func NewLingDocWorkspaceHandler(
 		return LingDocWorkspace{}, err
 	}
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
-	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
+	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Authorizer: projectService, Projects: projectService, GenerationContext: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
 }
 
 type workspaceRuleSetSnapshotReader struct{ store *rulesetstore.Store }

@@ -169,11 +169,15 @@ func TestG2GenerationUsesProjectCopyAndIndependentRuleHashForCurrentness(t *test
 }
 
 type g2GenerationCurrentWorkspace struct {
-	ApplicationService
+	ProjectApplication
+	core.GenerationContextApplication
 	project Project
 	context core.GenerationContext
 }
 
+func (w *g2GenerationCurrentWorkspace) Authorize(context.Context, Actor, string, string) error {
+	return nil
+}
 func (w *g2GenerationCurrentWorkspace) GenerationContext(context.Context, Actor, string, string) (core.GenerationContext, error) {
 	return w.context, nil
 }

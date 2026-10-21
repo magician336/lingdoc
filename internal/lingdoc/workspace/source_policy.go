@@ -34,7 +34,7 @@ func (h *SourceRuntime) CandidateAdoptionSourcePolicy() candidateadoption.Source
 	if h == nil || h.db == nil || h.bindings == nil || h.gateway == nil {
 		return nil
 	}
-	return &candidateAdoptionSourcePolicy{reviewer: h.sourceRevalidator(), service: h.service}
+	return &candidateAdoptionSourcePolicy{reviewer: h.sourceRevalidator(), service: h.authorizer}
 }
 
 // WorkspaceSourcePolicy 把同一台判定器接到 T08（章节保存）上。
@@ -205,7 +205,11 @@ func (h *SourceRuntime) sourceReviewerForGateway(gateway evidence.AssetGateway) 
 // 给确认记录钉住——确认之后资料再前进就该判失效，而不是静默沿用旧坐标。
 type candidateAdoptionSourcePolicy struct {
 	reviewer sourcepolicy.Reviewer
-	service  ApplicationService
+	// service stays an interface type: the evidence selectors below are
+	// optional capabilities resolved at run time, and the value that carries
+	// them must keep its dynamic type for those assertions to answer the same
+	// way they did before the legacy wide port was retired.
+	service workspacecore.CapabilityAuthorizer
 }
 
 // 装配处靠类型断言才能把复核接给确认服务（candidate_adoption_http.go:26），而断言失败是
@@ -387,7 +391,7 @@ type sourceRead struct {
 // 返回的全是既有 sentinel（ErrNotFound / ErrSourceUnavailable / 上游 error），
 // 不含任何 HTTP 概念：两个端点走同一个 sendError，状态码不会分叉。
 func (h *SourceRuntime) readSource(ctx context.Context, actor Actor, projectID, sourceID string) (sourceRead, error) {
-	if err := h.service.Authorize(ctx, actor, projectID, "read"); err != nil {
+	if err := h.authorizer.Authorize(ctx, actor, projectID, "read"); err != nil {
 		return sourceRead{}, err
 	}
 	revalidator := h.sourceRevalidator()

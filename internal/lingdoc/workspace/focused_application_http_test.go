@@ -40,7 +40,14 @@ func TestFocusedChangeSetReassessKeepsTypedHTTPContract(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			app := &focusedReassessApplication{result: ChangeSetMutationResult{ChangeSet: ChangeSet{ID: "reassessed-1"}, Replayed: test.replayed}, err: test.err}
-			handler, err := NewHandler(HandlerDependencies{ChangeSets: app, Sources: emptySourcesStub{}, Service: &applicationServiceStub{}})
+			handler, err := NewHandler(HandlerDependencies{
+				Projects:    &focusedProjectPortStub{},
+				Members:     &focusedMembershipPortStub{},
+				Chapters:    &focusedChapterPortStub{},
+				TemplateApp: &focusedTemplatePortStub{},
+				ChangeSets:  app,
+				Sources:     emptySourcesStub{},
+			})
 			if err != nil {
 				t.Fatalf("assemble the workspace handler: %v", err)
 			}
@@ -87,7 +94,14 @@ func TestFocusedChangeSetReassessKeepsTypedHTTPContract(t *testing.T) {
 func TestFocusedPortsRetainG5G7CompatibilityBridge(t *testing.T) {
 	legacy := &machineHTTPTestApplication{}
 	projects := &focusedProjectPortStub{}
-	deps := HandlerDependencies{Service: legacy, Projects: projects, Sources: emptySourcesStub{}}
+	deps := HandlerDependencies{
+		Projects:    projects,
+		Members:     &focusedMembershipPortStub{},
+		Chapters:    &focusedChapterPortStub{},
+		TemplateApp: &focusedTemplatePortStub{},
+		ChangeSets:  &focusedChangeSetPortStub{},
+		Sources:     emptySourcesStub{},
+	}
 	// The machine read capability is named by the caller, not inferred from
 	// the broad service.
 	deps.WithMachineReads(legacy)
@@ -100,8 +114,8 @@ func TestFocusedPortsRetainG5G7CompatibilityBridge(t *testing.T) {
 	}
 }
 
-// Both instances deliberately satisfy the broad compatibility interface: the
-// transport must still send reads and writes to the separately injected ports.
+// The service double below satisfies the five context ports. The legacy wide
+// compatibility interface is gone: the ports are named per context now.
 type splitRoutingApplication struct {
 	applicationServiceStub
 	writes            []string
@@ -130,15 +144,27 @@ func (s *splitRoutingApplication) ReassessChangeSetResult(context.Context, Actor
 	return ChangeSetMutationResult{ChangeSet: ChangeSet{ID: "changes-1", ProjectID: s.project.ID}}, nil
 }
 
-func TestSplitApplicationPortsDoNotRouteWritesThroughRead(t *testing.T) {
+// Each context port serves the routes of its own context, and a write of one
+// context never reaches the port of another.
+//
+// The legacy read/write split is retired. The ports are per context now, so
+// the guarantee is the same one level up: an operation reaches the port of
+// the context that owns it, and no other.
+func TestEachContextPortServesOnlyItsOwnFamily(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	read := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "read-project"}}}
-	write := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "write-project"}}}
-	deps := HandlerDependencies{Read: read, Write: write, Sources: emptySourcesStub{}}
-	// The read port serves the machine reads and the anchor reads; the write
-	// port serves the anchor writes.
-	deps.WithMachineReads(read)
-	deps.WithReviewAnchors(read, write)
+	projects := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "project-1"}}}
+	members := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "member-project"}}}
+	chapters := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "chapter-project"}}}
+	templates := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "template-project"}}}
+	changeSets := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "changeset-project"}}}
+	deps := HandlerDependencies{
+		Projects:    projects,
+		Members:     members,
+		Chapters:    chapters,
+		TemplateApp: templates,
+		ChangeSets:  changeSets,
+		Sources:     emptySourcesStub{},
+	}
 	handler, err := NewHandler(deps)
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
@@ -147,19 +173,25 @@ func TestSplitApplicationPortsDoNotRouteWritesThroughRead(t *testing.T) {
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-1")
 	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	ports := []*splitRoutingApplication{projects, members, chapters, templates, changeSets}
 	for _, test := range []struct {
 		name, method, path, body string
 		status                   int
+		port                     *splitRoutingApplication
+		marker                   string
 	}{
-		{"read", http.MethodGet, "/api/projects", "", http.StatusOK},
-		{"project", http.MethodPost, "/api/projects", `{"name":"split project","template_id":"template-demo"}`, http.StatusCreated},
-		{"members", http.MethodPut, "/api/projects/project-1/members", `{"expected_project_version":1,"members":[]}`, http.StatusOK},
-		{"chapter", http.MethodPost, "/api/projects/project-1/chapters/chapter-1/versions", `{"expected_spec_revision":1,"body_markdown":"draft","source_ids":[]}`, http.StatusCreated},
-		{"template", http.MethodPut, "/api/projects/project-1/template-copy", `{"expected_project_version":1,"expected_template_copy_version":1,"fields":[],"sections":[],"terms":[],"required_fields":[],"rules":[]}`, http.StatusOK},
-		{"change-set", http.MethodPost, "/api/projects/project-1/change-sets/changes-1/reassess", "", http.StatusCreated},
+		{"read", http.MethodGet, "/api/projects", "", http.StatusOK, projects, "project-1"},
+		{"project", http.MethodPost, "/api/projects", `{"name":"split project","template_id":"template-demo"}`, http.StatusCreated, projects, "project-1"},
+		{"members", http.MethodPut, "/api/projects/project-1/members", `{"expected_project_version":1,"members":[]}`, http.StatusOK, members, "member-project"},
+		{"chapter", http.MethodPost, "/api/projects/project-1/chapters/chapter-1/versions", `{"expected_spec_revision":1,"body_markdown":"draft","source_ids":[]}`, http.StatusCreated, chapters, "chapter-project"},
+		{"template", http.MethodPut, "/api/projects/project-1/template-copy", `{"expected_project_version":1,"expected_template_copy_version":1,"fields":[],"sections":[],"terms":[],"required_fields":[],"rules":[]}`, http.StatusOK, templates, "template-project"},
+		{"change-set", http.MethodPost, "/api/projects/project-1/change-sets/changes-1/reassess", "", http.StatusCreated, changeSets, "changeset-project"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			before := len(write.writes)
+			before := map[*splitRoutingApplication]int{}
+			for _, port := range ports {
+				before[port] = len(port.writes)
+			}
 			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)).WithContext(ctx)
 			request.Header.Set("Idempotency-Key", "split-"+test.name)
 			response := httptest.NewRecorder()
@@ -167,29 +199,46 @@ func TestSplitApplicationPortsDoNotRouteWritesThroughRead(t *testing.T) {
 			if response.Code != test.status {
 				t.Fatalf("status=%d want=%d body=%s", response.Code, test.status, response.Body.String())
 			}
-			if len(read.writes) != 0 {
-				t.Fatalf("a write was dispatched through Read: %v", read.writes)
+			for _, port := range ports {
+				grew := len(port.writes) - before[port]
+				want := 0
+				if port == test.port && test.name != "read" {
+					want = 1
+				}
+				if grew != want {
+					t.Fatalf("the %s route reached the wrong context port: writes=%v", test.name, port.writes)
+				}
 			}
 			if test.name == "read" {
-				if !read.called || write.called || !strings.Contains(response.Body.String(), "read-project") {
-					t.Fatalf("read did not use the Read instance: %s", response.Body.String())
+				if !projects.called || !strings.Contains(response.Body.String(), test.marker) {
+					t.Fatalf("read did not use the project port: %s", response.Body.String())
 				}
-			} else if len(write.writes) != before+1 || write.writes[before] != test.name || !strings.Contains(response.Body.String(), "write-project") {
-				t.Fatalf("write did not reach the intended Write instance: calls=%v body=%s", write.writes, response.Body.String())
+				return
+			}
+			if !strings.Contains(response.Body.String(), test.marker) {
+				t.Fatalf("the %s route did not answer from its own context port: %s", test.name, response.Body.String())
 			}
 		})
 	}
 }
 
-func TestExplicitProjectPortPrecedesLegacyAndSplitDependencies(t *testing.T) {
+// The explicitly supplied project port is the one that serves the project
+// routes; the other context ports are not consulted for them.
+func TestExplicitProjectPortServesTheProjectRoutes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	explicit := &createProjectApplicationStub{result: CreateProjectResult{Project: Project{ID: "explicit-project"}}}
-	legacy, read, write := &splitRoutingApplication{}, &splitRoutingApplication{}, &splitRoutingApplication{}
-	deps := HandlerDependencies{Projects: explicit, Service: legacy, Read: read, Write: write, Sources: emptySourcesStub{}}
-	// The compatibility service serves the optional capabilities when it is
-	// the one the caller named.
-	deps.WithMachineReads(legacy)
-	deps.WithReviewAnchors(legacy, legacy)
+	others := &splitRoutingApplication{}
+	deps := HandlerDependencies{
+		Projects:    explicit,
+		Members:     others,
+		Chapters:    others,
+		TemplateApp: others,
+		ChangeSets:  others,
+		Sources:     emptySourcesStub{},
+	}
+	// The optional capabilities are named by the caller.
+	deps.WithMachineReads(others)
+	deps.WithReviewAnchors(others, others)
 	handler, err := NewHandler(deps)
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
@@ -202,7 +251,7 @@ func TestExplicitProjectPortPrecedesLegacyAndSplitDependencies(t *testing.T) {
 	request.Header.Set("Idempotency-Key", "explicit-project")
 	response := httptest.NewRecorder()
 	engine.ServeHTTP(response, request)
-	if response.Code != http.StatusCreated || !explicit.called || len(legacy.writes)+len(read.writes)+len(write.writes) != 0 || !strings.Contains(response.Body.String(), "explicit-project") {
+	if response.Code != http.StatusCreated || !explicit.called || len(others.writes) != 0 || !strings.Contains(response.Body.String(), "explicit-project") {
 		t.Fatalf("explicit project port was replaced: status=%d body=%s", response.Code, response.Body.String())
 	}
 }
@@ -225,69 +274,57 @@ func (s *splitRoutingApplication) ReadMachineChapter(context.Context, string, st
 	return core.MachineChapterView{ProjectID: s.project.ID}, nil
 }
 
-func TestSplitExtensionPortsKeepAnchorWritesAndMachineReadsSeparate(t *testing.T) {
+// The review anchor and machine read capabilities keep their own read and
+// write ports: the anchor write goes to the write port, the anchor read and
+// the machine reads go to the read port.
+func TestExtensionPortsKeepAnchorWritesAndMachineReadsSeparate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	for _, explicitLegacy := range []bool{false, true} {
-		t.Run(map[bool]string{false: "split ports", true: "explicit compatibility service"}[explicitLegacy], func(t *testing.T) {
-			read := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "read-project"}}}
-			write := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "write-project"}}}
-			legacy := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "legacy-project"}}}
-			deps := HandlerDependencies{Read: read, Write: write}
-			if explicitLegacy {
-				deps.Service = legacy
-			}
-			deps.Sources = emptySourcesStub{}
-			// The anchor and machine read capabilities are named by the
-			// caller. The anchor write goes to the write port and the
-			// anchor read and the machine reads go to the read port, which
-			// is what this test pins. When the caller supplies a
-			// compatibility service, it is the one that serves them.
-			deps.WithReviewAnchors(read, write)
-			deps.WithMachineReads(read)
-			if explicitLegacy {
-				deps.WithReviewAnchors(legacy, legacy)
-				deps.WithMachineReads(legacy)
-			}
-			handler, err := NewHandler(deps)
-			if err != nil {
-				t.Fatalf("assemble the workspace handler: %v", err)
-			}
-			engine := gin.New()
-			handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
-			handler.RegisterMachineReadRoutes(engine.Group("/machine"))
-			ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-1")
-			ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
-			for _, test := range []struct {
-				method, path, body string
-				write              bool
-			}{
-				{http.MethodPut, "/api/projects/p/chapters/c/working-copy/review-items/item/anchor", `{"anchor":null}`, true},
-				{http.MethodGet, "/api/projects/p/chapters/c/confirmations/current", "", false},
-				{http.MethodGet, "/machine/projects/p/machine-read", "", false},
-				{http.MethodGet, "/machine/projects/p/chapters/c/machine-read", "", false},
-			} {
-				request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)).WithContext(ctx)
-				request.Header.Set("Idempotency-Key", "anchor-split")
-				response := httptest.NewRecorder()
-				engine.ServeHTTP(response, request)
-				want := "read-project"
-				if test.write {
-					want = "write-project"
-				}
-				if explicitLegacy {
-					want = "legacy-project"
-				}
-				if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), want) {
-					t.Fatalf("%s %s: wrong extension dependency, status=%d body=%s", test.method, test.path, response.Code, response.Body.String())
-				}
-			}
-			if explicitLegacy {
-				if len(legacy.writes) != 1 || legacy.confirmationReads != 1 || legacy.machineReads != 2 || len(read.writes)+len(write.writes)+read.confirmationReads+write.confirmationReads+read.machineReads+write.machineReads != 0 {
-					t.Fatalf("explicit legacy extension calls were not preserved: read=%+v write=%+v legacy=%+v", read, write, legacy)
-				}
-			} else if len(read.writes) != 0 || len(write.writes) != 1 || write.writes[0] != "anchor" || read.confirmationReads != 1 || write.confirmationReads != 0 || read.machineReads != 2 || write.machineReads != 0 {
-				t.Fatalf("extension reads/writes crossed injected services: read=%+v write=%+v", read, write)
-			}
-		})
+	read := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "read-project"}}}
+	write := &splitRoutingApplication{applicationServiceStub: applicationServiceStub{project: Project{ID: "write-project"}}}
+	deps := HandlerDependencies{
+		Projects:    read,
+		Members:     read,
+		Chapters:    read,
+		TemplateApp: read,
+		ChangeSets:  read,
+		Sources:     emptySourcesStub{},
+	}
+	// The anchor and machine read capabilities are named by the caller. The
+	// anchor write goes to the write port and the anchor read and the
+	// machine reads go to the read port, which is what this test pins.
+	deps.WithReviewAnchors(read, write)
+	deps.WithMachineReads(read)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	engine := gin.New()
+	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
+	handler.RegisterMachineReadRoutes(engine.Group("/machine"))
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-1")
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, uint64(42))
+	for _, test := range []struct {
+		method, path, body string
+		write              bool
+	}{
+		{http.MethodPut, "/api/projects/p/chapters/c/working-copy/review-items/item/anchor", `{"anchor":null}`, true},
+		{http.MethodGet, "/api/projects/p/chapters/c/confirmations/current", "", false},
+		{http.MethodGet, "/machine/projects/p/machine-read", "", false},
+		{http.MethodGet, "/machine/projects/p/chapters/c/machine-read", "", false},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body)).WithContext(ctx)
+		request.Header.Set("Idempotency-Key", "anchor-split")
+		response := httptest.NewRecorder()
+		engine.ServeHTTP(response, request)
+		want := "read-project"
+		if test.write {
+			want = "write-project"
+		}
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("%s %s: wrong extension dependency, status=%d body=%s", test.method, test.path, response.Code, response.Body.String())
+		}
+	}
+	if len(read.writes) != 0 || len(write.writes) != 1 || write.writes[0] != "anchor" || read.confirmationReads != 1 || write.confirmationReads != 0 || read.machineReads != 2 || write.machineReads != 0 {
+		t.Fatalf("extension reads/writes crossed injected services: read=%+v write=%+v", read, write)
 	}
 }

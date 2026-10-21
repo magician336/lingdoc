@@ -58,6 +58,37 @@ type ChangeSetApplication interface {
 	RejectChangeSetResult(context.Context, Actor, string, string, string) (ChangeSetMutationResult, error)
 }
 
+// CapabilityAuthorizer 授权一个能力。
+//
+// 它是「授权」这一门语言里最窄的那一形态：给一个主体对一个项目授权一个能力。
+// 聚合体上的同名方法签名逐字照抄。
+//
+// 注意它与 core.ProjectAuthorizer 不是同一个口：后者是事务型的两方法口
+// （AuthorizeTenant / AuthorizeProject），给的是事务边界上的判定；这个口给的是
+// 传输层与运行时直接问的那一句「这个人此刻能不能做这件事」。
+type CapabilityAuthorizer interface {
+	Authorize(ctx context.Context, actor Actor, projectID, capability string) error
+}
+
+// GenerationContextApplication 读回一个章节的生成上下文。
+//
+// 它只带一个操作：生成这一门语言里，生成输入的组装只需要「章节此刻的生成上下文」。
+type GenerationContextApplication interface {
+	GenerationContext(ctx context.Context, actor Actor, projectID, chapterID string) (GenerationContext, error)
+}
+
+// ValidationIssueDispositionApplication 是校验问题处置这一门语言的窄口：
+// 处置的写入、处置结果的重放，以及处置的读回投影。
+//
+// 它原本声明在传输层（internal/lingdoc/workspace/delivery_contracts.go）。按
+// Spec #47 决策 33，端口由它所描述的那门语言的拥有者声明，所以随实现迁到这里；
+// 迁移只搬声明，方法集合与方法签名逐字不变，传输层那边留了类型别名。
+type ValidationIssueDispositionApplication interface {
+	ReplayValidationIssueDispositionResult(context.Context, Actor, string, string, string, string, string, int64) (ValidationIssueDispositionReplayResult, error)
+	RecordValidationIssueDispositionResult(context.Context, Actor, string, string, ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error)
+	ValidationIssueDispositions(context.Context, Actor, string, []ValidationIssueBinding) (map[string]ValidationIssueDisposition, error)
+}
+
 // ProjectLifecycleApplication 是项目上下文里的两个操作：弃用项目列表与激活读回执。
 //
 // 它们**不进** ProjectApplication：ProjectApplication 是主路由用的项目生命周期口，
@@ -72,9 +103,12 @@ type ProjectLifecycleApplication interface {
 }
 
 var (
-	_ ProjectApplication          = (*Service)(nil)
-	_ ChapterApplication          = (*Service)(nil)
-	_ TemplateApplication         = (*Service)(nil)
-	_ ChangeSetApplication        = (*Service)(nil)
-	_ ProjectLifecycleApplication = (*Service)(nil)
+	_ ProjectApplication                    = (*Service)(nil)
+	_ ChapterApplication                    = (*Service)(nil)
+	_ TemplateApplication                   = (*Service)(nil)
+	_ ChangeSetApplication                  = (*Service)(nil)
+	_ ProjectLifecycleApplication           = (*Service)(nil)
+	_ CapabilityAuthorizer                  = (*Service)(nil)
+	_ GenerationContextApplication          = (*Service)(nil)
+	_ ValidationIssueDispositionApplication = (*Service)(nil)
 )

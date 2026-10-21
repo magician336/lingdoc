@@ -44,7 +44,7 @@ func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t 
 	if input.RuleSetSnapshot == nil || input.TemplateCopyRulesetHash == input.TemplateDefinition.RulesetHash || input.SourcePolicyHash != version.PolicyHash {
 		t.Fatal("candidate reader collapsed independent source identity")
 	}
-	sourceRuntime := NewGORMSourceRuntime(db, projects, nil, nil, delivery.NewFixedTemplateReader())
+	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Projects: projects, Context: projects}, nil, nil, delivery.NewFixedTemplateReader())
 	assembler := sourceRuntime.DeliveryInputBuilder()
 	frozen, err := assembler.Build(g4CallerContext(ctx, actor), actor.UserID, input)
 	if err != nil {

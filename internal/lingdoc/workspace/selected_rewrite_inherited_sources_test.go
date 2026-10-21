@@ -13,7 +13,9 @@ import (
 )
 
 type inheritedRewriteWorkspace struct {
-	ApplicationService
+	// The rewrite port needs the working-copy write; the chapter context
+	// port is where that operation lives.
+	ChapterApplication
 	copy WorkingCopy
 }
 

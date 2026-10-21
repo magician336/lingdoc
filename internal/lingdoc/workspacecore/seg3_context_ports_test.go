@@ -209,6 +209,17 @@ var narrowPortMethods = map[string][]string{
 		"ListDiscardedProjects",
 		"RecordActivationRead",
 	},
+	"CapabilityAuthorizer": {
+		"Authorize",
+	},
+	"GenerationContextApplication": {
+		"GenerationContext",
+	},
+	"ValidationIssueDispositionApplication": {
+		"RecordValidationIssueDispositionResult",
+		"ReplayValidationIssueDispositionResult",
+		"ValidationIssueDispositions",
+	},
 	"RuntimeCompositionApplication": {
 		"SetG2ActionExecutor",
 		"SetImpactPreflightChecker",
@@ -225,6 +236,7 @@ var crossContextOperations = map[string]string{
 	"AuthorizeInTransaction":       "授权上下文，同时被治理与影响使用",
 	"ReadImpactComputationReceipt": "影响上下文，同时被影响中心与守卫使用",
 	"GetProjectAssetPolicy":        "项目资料策略，G2 与治理运行时共用",
+	"Authorize":                    "授权上下文，同时被项目、资料、生成与调研使用",
 }
 
 // TestEveryNarrowPortMethodMatchesTheAggregateMethodVerbatim is the promise

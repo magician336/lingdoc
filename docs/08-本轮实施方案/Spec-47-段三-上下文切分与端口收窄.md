@@ -482,17 +482,26 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 | #275（47.14 G2 路由 + 智能体上下文） | **PASS** | `c71eb5c` | `T275-验证报告.json`；删掉死代码 `G2Application` |
 | 切片 0b（已有窄口归位 + membership 包） | **PASS** | `34b0a0f` | 5 个口迁到 workspacecore；新建 `internal/lingdoc/membership` |
 | #274（47.12 全流程路由 + 守卫） | **PASS** | `9e40552` | `T274-验证报告.json`；**传输层再无聚合体具体类型** |
-| #269（47.16 三个宽口退役） | 进行中 | — | — |
+| #269（47.16 三个宽口退役） | **PASS** | `（见下方提交）` | `T269-验证报告.json`；三个宽口从代码里清零，白名单清空 |
 | #268（47.15 成员与 Owner 切出） | 未开始（等 #149） | — | — |
 
-**八条直连面已全部收口**（#266 的两条 + #266 的审阅锚点已合规 + #274 的两条 + #267 的一条 + #275 的两条），
-结构断言的白名单从 10 条缩到 3 条，且这 3 条全部属 #269：
+**八条直连面已全部收口**（#266 的两条 + #266 的审阅锚点已合规 + #274 的两条 + #267 的一条 + #275 的两条）。
 
-| 白名单条目 | 是什么 | 归哪张票 |
+**#269 之后，结构断言的白名单清空了**——传输层不再有任何聚合体具体类型引用：
+`aggregateHolders` 现在是空表。三个宽口（`ApplicationService` 37 / `WorkspaceReadApplication` 12 /
+`WorkspaceWriteApplication` 22）从**代码**里清零（剩下的命中全在注释里，是历史说明，保留）。
+
+| 曾经的白名单条目 | 是什么 | 处置 |
 | --- | --- | --- |
-| `core_alias.go` | `type Service = core.Service` 别名 + 4 个 `NewService*` 工厂 | #269（全仓无人使用，可整段删） |
-| `contracts.go` | 宽口层的 `(*Service)(nil)` 编译期证明 | #269（真实证明已在 workspacecore / membership） |
-| `delivery_contracts.go` | 交付侧窄口的 `(*Service)(nil)` 证明 | #269 |
+| `core_alias.go` | `type Service = core.Service` 别名 + 4 个 `NewService*` 工厂 | 删除（实测全仓无人使用） |
+| `contracts.go` | 宽口层的 `(*Service)(nil)` 编译期证明 | 删除（真实证明已在 workspacecore / membership） |
+| `delivery_contracts.go` | 交付侧窄口的 `(*Service)(nil)` 证明 | 删除（真实证明已迁到拥有者模块） |
+
+**#269 的一处口径变化（装配契约，不是 HTTP 行为）**：组合根不再从 `Service` / `Read` / `Write`
+推断上下文口。以前只给 `Service` 也能装配出 handler；删除推断后必须显式给齐 5 个上下文口 +
+`Sources`，否则**启动期失败并指名缺哪个**（沿用段二的 fail-closed 规矩）。受影响的消费者是
+`internal/router/lingdoc_routes_test.go`、`internal/container/lingdoc_test.go`、
+`internal/lingdoc/workspace/composition_test.go`（装配方式改了，断言期望值一字未动）。
 
 ## 切片顺序
 

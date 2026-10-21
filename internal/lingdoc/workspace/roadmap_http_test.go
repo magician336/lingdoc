@@ -79,9 +79,9 @@ func newRoadmapHTTPFixture(t *testing.T) roadmapHTTPFixture {
 		t.Fatalf("seed context revision: %v", err)
 	}
 	seedDeliveryBoundTemplateCopy(t, db, "roadmap-http-copy")
-	service, ok := testRuntime(handler).service.(*Service)
+	service, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace handler service = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	engine := gin.New()
 	RegisterRoadmapRoutes(engine.Group("/api"), impactPortsFor(service))

@@ -86,9 +86,9 @@ func candidateFixtureEngine(t *testing.T) (*gin.Engine, *gorm.DB, core.ObjectVer
 		t.Fatalf("seed context revision: %v", err)
 	}
 	seedDeliveryBoundTemplateCopy(t, db, "change-http-copy")
-	service, ok := testRuntime(handler).service.(*Service)
+	service, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace handler service = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	actor := Actor{TenantID: 7, UserID: deliveryActorID}
 	project, err := service.GetProject(policyContext(), actor, "project-1")

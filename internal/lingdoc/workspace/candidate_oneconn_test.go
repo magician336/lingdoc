@@ -126,9 +126,9 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	// A second, genuinely bound asset is deliberately excluded from generation.
 	require.NoError(t, db.Exec(`INSERT INTO knowledges(id,tenant_id,knowledge_base_id,type,title,file_type,file_size,file_hash,file_path,parse_status) VALUES(?,?,?,?,?,?,?,?,?,?)`, "unused-knowledge", 7, "kb-1", "file", "Unused synthetic", "txt", 0, "unused-hash", "", "completed").Error)
 	shares := candidateOneConnShares{}
-	runtime := NewGORMSourceRuntime(db, nil, shares, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, shares, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewG2ResearchAdapter(db, projects, runtime, shares, nil, nil)
 	projects.ConfigureG2(core.G2Runtime{Sources: adapter})

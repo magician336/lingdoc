@@ -14,7 +14,11 @@ import (
 )
 
 type machineHTTPTestApplication struct {
-	ApplicationService
+	ProjectApplication
+	MembershipApplication
+	ChapterApplication
+	TemplateApplication
+	ChangeSetApplication
 	seen       types.Principal
 	seenCaller types.Caller
 }
@@ -46,7 +50,7 @@ func TestMachineReadHTTPPreservesAuthenticatedPrincipalAndMinimalShape(t *testin
 		ctx = types.WithCaller(ctx, types.Caller{TenantID: 1, UserID: "legacy-compatibility-alias", Role: types.TenantRoleViewer})
 		c.Request = c.Request.WithContext(ctx)
 	})
-	deps := HandlerDependencies{Service: app, Sources: emptySourcesStub{}}
+	deps := contextPorts(app, emptySourcesStub{})
 	// The machine read capability is named by the caller.
 	deps.WithMachineReads(app)
 	handler, err := NewHandler(deps)

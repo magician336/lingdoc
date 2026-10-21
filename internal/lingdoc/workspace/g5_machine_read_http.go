@@ -18,7 +18,7 @@ var _ core.MachineReadSourcePolicy = workspaceSourcePolicy{}
 func (p workspaceSourcePolicy) ValidateMachineRead(ctx context.Context, a core.MachineReadAuthorization) error {
 	r := p.handler
 	if r == nil || r.db == nil || r.bindings == nil || r.gateway == nil ||
-		r.kbShares == nil || r.knowledge == nil || r.service == nil {
+		r.kbShares == nil || r.knowledge == nil || r.authorizer == nil {
 		return core.ErrMachineReadDependency
 	}
 	if !a.MatchesContext(ctx) {

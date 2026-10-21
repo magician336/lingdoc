@@ -35,7 +35,11 @@ type DeliveryInputBuilder struct {
 	reviewer  sourcepolicy.Reviewer
 	gateway   evidence.AssetGateway
 	templates delivery.TemplateReader
-	projects  ApplicationService
+	// projects is the project-side port. It stays an interface type on purpose:
+	// the provenance core below is an optional capability resolved at run time,
+	// and a contract fixture without a full-workflow core must keep skipping the
+	// provenance checks instead of failing to compile.
+	projects core.ProjectApplication
 }
 
 func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
@@ -122,12 +126,12 @@ func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 		return nil
 	}
 	// 交付侧另有一份带 rules 的模板（lingdoctemplate.Template）。工作区自己那份
-	// ContractDemoTemplate 是 workspacecore.Template，**没有 Rules**——拿它来冻结，
+	// ContractDemoTemplate 是 core.Template，**没有 Rules**——拿它来冻结，
 	// T13 会因为没有规则声明把每一次检查都判成 not_evaluated。
 	if h.templates == nil {
 		return nil
 	}
-	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), gateway: h.gateway, templates: h.templates, projects: h.service}
+	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), gateway: h.gateway, templates: h.templates, projects: h.projects}
 }
 
 // Build 把 T12 的交付输入补成 T13 的冻结输入。

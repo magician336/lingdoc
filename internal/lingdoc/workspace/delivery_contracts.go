@@ -5,6 +5,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 )
 
 type DeliveryInputAssembler interface {
@@ -26,11 +27,12 @@ type ReleaseApplication interface {
 
 // ValidationIssueDispositionApplication is the transport-neutral port for
 // persisted issue decisions and their read-side projection.
-type ValidationIssueDispositionApplication interface {
-	ReplayValidationIssueDispositionResult(context.Context, Actor, string, string, string, string, string, int64) (ValidationIssueDispositionReplayResult, error)
-	RecordValidationIssueDispositionResult(context.Context, Actor, string, string, ValidationIssueDispositionInput) (ValidationIssueDispositionResult, error)
-	ValidationIssueDispositions(context.Context, Actor, string, []ValidationIssueBinding) (map[string]ValidationIssueDisposition, error)
-}
+//
+// The port is declared by the owner of the language it describes (the
+// workspace core), and this alias keeps the transport's own name for it. The
+// compile-time proof that the core satisfies it lives there too, next to the
+// aggregate it is about.
+type ValidationIssueDispositionApplication = core.ValidationIssueDispositionApplication
 
 type IssueDispositionRequest struct {
 	ExpectedProjectVersion int64  `json:"expected_project_version"`
@@ -57,4 +59,3 @@ type ExportApplication interface {
 var _ ReleaseApplication = (*DeliveryReleaseService)(nil)
 var _ TemplateCheckApplication = (*DeliveryReleaseService)(nil)
 var _ ExportApplication = (*DeliveryExportService)(nil)
-var _ ValidationIssueDispositionApplication = (*Service)(nil)

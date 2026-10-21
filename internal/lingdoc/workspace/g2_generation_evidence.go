@@ -57,10 +57,15 @@ func g2SelectFormal(ctx context.Context, workspace any, actor Actor, projectID, 
 	return selected, nil
 }
 
-type g2GenerationEvidenceValidator struct{ workspace ApplicationService }
+// g2GenerationEvidenceValidator resolves the optional formal-evidence selector.
+//
+// The port it carries stays an interface type: the selector is an optional
+// capability, and a workspace that does not implement it must keep failing as a
+// missing dependency (the 503-shaped generation.ErrDependencyUnavailable).
+type g2GenerationEvidenceValidator struct{ authorizer core.CapabilityAuthorizer }
 
 func (v g2GenerationEvidenceValidator) ValidateGenerationEvidence(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, sources []generation.Source) error {
-	selected, err := g2SelectFormal(ctx, v.workspace, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
+	selected, err := g2SelectFormal(ctx, v.authorizer, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
 	if err != nil {
 		return err
 	}
@@ -108,7 +113,7 @@ func (a generationWorkspaceAuthorizer) AuthorizeGenerationChapter(ctx context.Co
 	if chapterID == "" {
 		return generation.ErrInvalidRequest
 	}
-	err := a.workspace.Authorize(ctx, generationWorkspaceActor(ctx, actor), projectID, "write:"+chapterID)
+	err := a.authorizer.Authorize(ctx, generationWorkspaceActor(ctx, actor), projectID, "write:"+chapterID)
 	if err != nil {
 		return generation.ErrNotFound
 	}
@@ -324,7 +329,7 @@ func g2EvidenceConstraints(selected core.G2EvidenceSelection, refs []generation.
 	return constraints, nil
 }
 func (v g2GenerationEvidenceValidator) ValidateGenerationEvidenceConstraints(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, saved []generation.EvidenceConstraint) error {
-	selected, err := g2SelectFormal(ctx, v.workspace, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
+	selected, err := g2SelectFormal(ctx, v.authorizer, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
 	if err != nil {
 		return err
 	}
