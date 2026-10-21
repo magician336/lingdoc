@@ -295,13 +295,19 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '模板声明 RouteNode.R7 为必需。R7 缺失、待复核或版本落后时，C 产生 blocking ValidationIssue；即使其他任务已完成，revision 也不能 STABILIZED 或 READY。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 378, end: 380 },
-    // #314 的完成线要求：本票完成前，AC-G3-08 / AC-G3-16 在缺口清单里保持 BLOCKED。
-    status: 'BLOCKED',
+    // 本轮实跑判定成立（#318 / #319）：台面造出「待复核」与「版本落后」两种前置，
+    // 服务端给出 required_route_not_current 阻断，项目没有进入 STABILIZED / READY。
+    // 行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。
+    status: 'PASS (follow-up)',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
       '路线图的版本化编辑会话与节点写入**已实现**，验收台链路也已补上（#295）；' +
-      '本轮实跑 `NOT RUN`：演示模板不声明任何 RouteNode，基线路线图为空，' +
-      '造不出「必需节点缺失」与「版本落后」两种前置。' +
+      '演示模板新增不可变 v2 并声明 `route-r7` 为必需节点（#314），服务端按模板规则算出 required=true。' +
+      '**本轮实跑判定成立**：台面造出「待复核」与「版本落后」两种前置，' +
+      '稳定化给出 required_route_not_current 阻断，项目没有进入 STABILIZED / READY' +
+      '（#318 修掉了链内 409「基线已漂移」）。' +
+      '「缺失」那一种前置由服务端侧保证（#319：已声明但缺失的路线节点同样给 blocking）。' +
+      '行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。' +
       '解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
     domain: 'C',
@@ -376,13 +382,16 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用“确定受影响”和“可能受影响”两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 402, end: 404 },
-    status: 'BLOCKED',
+    // 本轮实跑判定成立（#320）：台面自己跑出真实模型轮次并读回两组说明。
+    // 结论**依赖真实模型**（非确定性），按仓库口径记 WARNING，不写 PASS。
+    status: 'WARNING',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
       '助手草稿里的「确定受影响 / 可能受影响」**解释分组已实现**，验收台读回链路也已补上（#295）；' +
       '模型边界已放宽（#315：缺两组说明时不再整条拒，改为如实标注「缺说明」）。' +
-      '**行状态按 #315 的完成线保持 `BLOCKED`**：这一行的判定要由验收台在当前 head 实跑得出，' +
-      '而本轮没有可读回的助手草稿（需要一条真实模型轮次 → #320）；' +
+      '**本轮实跑判定成立**（#320）：台面走「自然语言 → 真实模型轮次 → 变更提案 → 人工确认落草稿 → ' +
+      '读回两组说明 → 进入正式评估」，读回「确定受影响」1 条，每条带可追溯依据。' +
+      '结论**依赖真实模型**（非确定性），按仓库口径记 `WARNING`，不写 `PASS`；' +
       '工作台那个分组是影响解析结果，不可互替。解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
   },
@@ -393,10 +402,16 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '用户选择“研究条件、证据卡和第 2–4 章”作为范围。AI 提出若干候选依赖，并显示对象版本、依据片段和建议理由；用户确认其中一部分、修改一部分、拒绝一部分。只有确认的关系进入正式依赖图，拒绝记录不会在同一版本中反复推荐。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 406, end: 408 },
-    status: 'BLOCKED',
+    // 本轮实跑判定成立（#321）：三态齐备 + 三条语义都有事实。
+    // 行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。
+    status: 'PASS (follow-up)',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
-      '依赖边的确认 / 修改 / 拒绝三态有端点，依赖候选的批量提出无端点。' +
+      '依赖边的确认 / 修改 / 拒绝三态有端点，依赖候选的批量提出也已实现（#252）。' +
+      '**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），' +
+      '拒绝不产生边、同版本重投被抑制（`rejected_in_same_version`）、' +
+      '确认时版本复检被服务端按 409 `dependency_candidate_requires_reevaluation` 拒掉。' +
+      '行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。' +
       '解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
   },
@@ -407,10 +422,17 @@ export const G3_AC_ROWS: readonly G3MatrixRow[] = [
     criterion:
       '用户编辑未冻结路线图后取消编辑。系统恢复到上一个 RouteNode/RouteEdge 版本，关联任务和章节引用不指向被取消的临时版本。',
     anchor: { path: G3_MAIN_BASELINE_PATH, start: 410, end: 412 },
-    status: 'BLOCKED',
+    // 本轮实跑判定成立（#318）：取消未冻结编辑后回到上一个冻结版本，临时版本被释放。
+    // 行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。
+    status: 'PASS (follow-up)',
     evidence: '实现缺口 · 缺口清单 #246',
     note:
-      '同样缺技术路线节点的写入与取消未冻结编辑端点。' +
+      '路线图的版本化编辑会话与节点写入**已实现**（#250），台面链路已补上（#295）。' +
+      '**本轮实跑判定成立**（#318）：取消未冻结编辑后冻结基线版本回到取消前的版本，' +
+      '被取消会话占用的临时版本不出现在冻结版本序列里；' +
+      '本轮没有指向临时版本的任务（产品面上没有造出这种任务的路径，' +
+      '任务落 STALE 的非真空证据在服务端侧）。' +
+      '行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带缺口的行不判 PASS。' +
       '解除条件与 Spec 位置见缺口清单 #246。',
     followUpIssue: 246,
     domain: 'C',

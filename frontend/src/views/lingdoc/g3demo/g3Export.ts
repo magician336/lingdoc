@@ -279,7 +279,21 @@ function rowSource(row: G3MatrixRow, verdicts: readonly G3ExportVerdict[]): G3Co
   return conclusionSourceOf(row, verdicts.length > 0)
 }
 
-/** 把判定转成导出体里的形态。 */
+/**
+ * 把判定转成导出体里的形态。
+ *
+ * `model_dependent` 分两层，**含义不同**：
+ * - **轮次级**（`runs[].model_dependent` / `evidence_sources`）：这一段**含**模型依赖的
+ *   结论。它是整段的属性，不是每一条判定的属性。
+ * - **判定级**（每条判定上的 `model_dependent`）：**这条**判定是不是模型依赖。
+ *
+ * 所以判定自己声明了标志时，**以判定为准**：一轮里只要有一条判定走了真实模型，
+ * 不等于这一轮里每一条判定都模型依赖。把轮次级标志摊到每条判定上，会让确定性
+ * 判定（AC-G3-01 那一类）在投影时被当成模型侧结论，`PASS` 被改写成 `WARNING`。
+ *
+ * 判定**没有**声明标志时（历史证据文件里的判定就是这样：整份文件由一次模型轮次
+ * 产出，标志记在文件级），才用轮次级标志兜底。
+ */
 function toExportVerdict(verdict: G3RunVerdict, runId: string, modelDependent: boolean): G3ExportVerdict {
   return {
     id: verdict.id,
@@ -288,7 +302,7 @@ function toExportVerdict(verdict: G3RunVerdict, runId: string, modelDependent: b
     detail: verdict.detail,
     evidence: [...verdict.evidence],
     status: verdict.status,
-    model_dependent: modelDependent || verdict.modelDependent === true,
+    model_dependent: verdict.modelDependent ?? modelDependent,
     run_id: runId,
   }
 }

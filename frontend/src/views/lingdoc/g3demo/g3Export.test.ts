@@ -117,6 +117,44 @@ test('只有依赖真实模型的判定时，规则里的 PASS 不得被照抄',
   assert.equal(resolveRowStatus(row, [modelVerdict]), 'WARNING')
 })
 
+test('轮次级「本段含模型依赖」不得摊到每条判定上', () => {
+  // 一轮里只要**有一条**判定走了真实模型，不等于这一轮里每条判定都模型依赖。
+  // 把轮次级标志摊到每条判定上，确定性判定（变更集链那几条）在投影时会被当成
+  // 模型侧结论，它们的 `PASS` 被改写成 `WARNING`——那是假的口径。
+  const files: G3EvidenceFileInput[] = [
+    {
+      file: '本次运行.json',
+      ticket: 'G3 验收台-8',
+      runId: 'g3r-live',
+      startedAt: '2026-10-21T00:00:00.000Z',
+      head: head('abcdef0'),
+      steps: [step('助手-发送轮次')],
+      // 这一段**含**模型依赖的结论（助手链走了真实模型）。
+      modelDependent: true,
+      verdicts: [
+        // 变更集链的判定是确定性的：它自己声明了「不是模型依赖」。
+        verdict('AC-G3-01', { status: 'PASS', modelDependent: false }),
+        // 助手链的判定是模型依赖的。
+        verdict('AC-G3-14', { status: 'WARNING', modelDependent: true }),
+      ],
+    },
+  ]
+  const exportBody = buildAggregateEvidenceExport({
+    files,
+    generatedAt: '2026-10-21T00:01:00.000Z',
+    dateStamp: '20261021',
+    runId: 'aggregate-20261021',
+  })
+  const ac01 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-01')
+  assert.equal(ac01?.verdicts[0]?.model_dependent, false, '确定性判定被轮次级标志污染了')
+  assert.equal(ac01?.status, 'PASS', '确定性判定的 PASS 被改写成了模型侧的 WARNING')
+  const ac14 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-14')
+  assert.equal(ac14?.verdicts[0]?.model_dependent, true, '模型侧判定必须仍是模型依赖')
+  assert.equal(ac14?.status, 'WARNING', '模型侧判定不写 PASS')
+  // 轮次级标志本身仍要如实记在那一段上。
+  assert.equal(exportBody.runs?.[0]?.model_dependent, true)
+})
+
 test('#246 的硬规则：带实现缺口的行，导出投影不得写成 PASS', () => {
   // 判定卡**自带** status 时，投影优先用判定卡的状态（这是「判定成立」的口径）。
   // 但缺口清单 #246 未关闭前，它列出的缺口所对应的验收行**一律不得判 PASS**。

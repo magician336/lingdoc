@@ -84,10 +84,27 @@ const OUT_PATH = outArg
 /** 从一份证据文件里取出判定（顶层或一层嵌套的 `verdicts`）。 */
 function verdictsOf(raw: Record<string, unknown>): G3RunVerdict[] {
   const top = raw.verdicts
-  if (Array.isArray(top)) return top as G3RunVerdict[]
+  const list = Array.isArray(top)
+    ? (top as (G3RunVerdict & { model_dependent?: boolean })[])
+    : nestedVerdictsOf(raw)
+  return list.map((verdict) => ({
+    ...verdict,
+    // 导出体里判定级的标志叫 `model_dependent`，代码里的类型叫 `modelDependent`。
+    // 读回来时必须对上：否则每条判定都变成「没声明」，于是「本段含模型依赖」被
+    // 当成「每条判定都模型依赖」，确定性判定的 `PASS` 在投影时被改写成 `WARNING`。
+    //
+    // 两边都没有时保持「没声明」（`undefined`），让轮次级标志兜底——历史证据文件
+    // 就是那样：整份由一次模型轮次产出，标志记在文件级。
+    modelDependent:
+      verdict.modelDependent ?? (verdict.model_dependent === undefined ? undefined : verdict.model_dependent),
+  }))
+}
+
+/** 一层嵌套里带 `verdicts` 的那份（证据文件把判定放在 `verdicts` 或某个子对象里）。 */
+function nestedVerdictsOf(raw: Record<string, unknown>): (G3RunVerdict & { model_dependent?: boolean })[] {
   for (const value of Object.values(raw)) {
     if (value && typeof value === 'object' && Array.isArray((value as { verdicts?: unknown }).verdicts)) {
-      return (value as { verdicts: G3RunVerdict[] }).verdicts
+      return (value as { verdicts: (G3RunVerdict & { model_dependent?: boolean })[] }).verdicts
     }
   }
   return []

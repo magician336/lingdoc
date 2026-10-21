@@ -164,10 +164,11 @@ test('规则表只覆盖已被实跑判定的行，状态取门禁词表内的�
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-05'].status, 'PASS')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-13'].status, 'PASS')
   // AC-G3-14 / AC-G3-15：助手两组说明与候选批次链**已实现并已接入台面**，
-  // 但本轮实跑的事实是「没有可读回的助手草稿」（NOT RUN）与
-  // 「候选对象引用与项目对齐的问题已修、未在当前 head 重跑出绿」（BLOCKED）。
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'BLOCKED')
-  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'BLOCKED')
+  // 本轮实跑也判定成立了。AC-G3-14 的结论**依赖真实模型**（非确定性），
+  // 按仓库口径记 WARNING，不写 PASS；AC-G3-15 是确定性判定，但带缺口，
+  // 按 #246 的规则记 PASS (follow-up)。
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].status, 'WARNING')
+  assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].status, 'PASS (follow-up)')
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-14'].followUpIssue, 246)
   assert.equal(G3_ROW_EVIDENCE_RULES['AC-G3-15'].followUpIssue, 246)
   // AC-G3-14 / AC-G3-15 的必需步骤必须挂在**助手链 / 候选批次链**上：
@@ -636,12 +637,16 @@ test('跨段累计不串味：A 段的步骤不能配 B 段的判定', () => {
 test('跨段累计：确定性判定优先于模型侧判定', () => {
   // AC-G3-14 的确定性路径要求「创建变更草稿 + 读回草稿上的两组说明」两步。
   const deterministic = segmentRun('g3r-det', ['创建变更草稿', G3_ASSISTANT_STEPS.readChangeSet], ['AC-G3-14'])
+  // 判定卡自带状态时，投影取**判定自己的**状态（规则表主路径的状态是兜底）。
+  deterministic.verdicts = [
+    { id: 'AC-G3-14', title: 'AC-G3-14', holds: true, detail: '确定性路径', evidence: [], status: 'PASS (follow-up)' },
+  ]
   const model = segmentRun('g3r-model', ['模型-助手草稿-结论'], ['AC-G3-14'])
   model.verdicts = [{ id: 'AC-G3-14', title: 'AC-G3-14', holds: true, detail: '模型侧', evidence: [], status: 'WARNING', modelDependent: true }]
   const { rows, evidence } = applyRunEvidence(G3_MATRIX_ROWS, [deterministic, model])
   const byId = new Map(rows.map((row) => [row.id, row]))
-  // 确定性路径判成立：取确定性路径的状态（规则表主路径的状态），不取模型侧的 WARNING。
-  assert.equal(byId.get('AC-G3-14')?.status, G3_ROW_EVIDENCE_RULES['AC-G3-14'].status)
+  // 确定性路径判成立：取确定性路径的状态，不取模型侧的 WARNING。
+  assert.equal(byId.get('AC-G3-14')?.status, 'PASS (follow-up)')
   assert.notEqual(byId.get('AC-G3-14')?.status, 'WARNING', '模型侧的 WARNING 不该盖过确定性判定')
   const item = evidence.find((entry) => entry.rowId === 'AC-G3-14')
   assert.equal(item?.runId, 'g3r-det')

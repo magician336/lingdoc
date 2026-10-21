@@ -1635,7 +1635,7 @@ export async function runDependencyChain(
   result.verdicts = [
     verdictAcG305(result),
     verdictAcG313(result),
-    verdictAcG314(result),
+    verdictDraftCreated(result),
     verdictAcG315(result),
     verdictTaskClosure(result),
   ]
@@ -1723,25 +1723,36 @@ export function verdictAcG313(result: G3DependencyChainResult): G3Verdict {
   }
 }
 
-/** AC-G3-14 的判定（部分）：变更草稿生成实跑；分组解释**已实现**，本链路未覆盖读侧。 */
-export function verdictAcG314(result: G3DependencyChainResult): G3Verdict {
+/**
+ * 变更草稿生成（本链路的**交付面**，不对应某条 AC 行）。
+ *
+ * 为什么不用 `AC-G3-14` 这个编号：AC-G3-14 的判据是「**助手草稿**带『确定受影响 /
+ * 可能受影响』两组说明」，那条判定由**助手链**给出（`runner/assistant.ts` 的
+ * `verdictAcG314`：自然语言 → 真实模型轮次 → 变更提案 → 人工确认落草稿 → 读回两组
+ * 说明）。本链路造的是一条**普通变更草稿**（`POST /change-sets/drafts`），它没有
+ * 助手的两组说明。挂着 AC-G3-14 的编号会**抢走**助手链那条判定的投影位——投影取
+ * 第一条「成立且确定性」的判定，于是助手的真实判定被这条半截判定盖住，整行退回到
+ * 规则表里的保守状态。
+ *
+ * 交付面编号沿用既有先例（`TASK-CLOSURE`）。
+ */
+export function verdictDraftCreated(result: G3DependencyChainResult): G3Verdict {
   const draftCreated = result.draft.id !== '' && result.draft.status === 'draft'
   const holds = draftCreated
   return {
-    id: 'AC-G3-14',
-    title: 'G3 影响助手（部分判定）',
+    id: 'DRAFT-CREATED',
+    title: '变更草稿生成（本链路的交付面，不对应某条 AC 行）',
     holds,
     detail: holds
-      ? `实跑那半段成立：助手草稿已生成（change_set_id=${result.draft.id} · status=${result.draft.status}）。` +
-        `**本链路未覆盖那半段**：草稿里的「确定受影响 / 可能受影响」分组解释**已经实现**` +
-      `（见缺口清单 #246 与 #295）；本链路只跑到「草稿已生成」，读回那半段由助手链负责，` +
-      `（工作台那个分组是影响解析结果，不可互替），` +
-        `缺口清单见 #246。`
+      ? `变更草稿已生成（change_set_id=${result.draft.id} · status=${result.draft.status}），` +
+        `候选批次在这条草稿上提交。` +
+        `**这条草稿不是助手草稿**：它没有「确定受影响 / 可能受影响」两组说明，` +
+        `那一半由助手链负责（自然语言 → 真实模型轮次 → 人工确认落草稿 → 读回两组说明），` +
+        `对应 AC-G3-14；工作台那个分组是影响解析结果，不可互替。`
       : `不成立：草稿未生成（change_set_id=${result.draft.id} · status=${result.draft.status}）`,
     evidence: [
       `POST /api/v1/lingdoc/projects/{projectId}/change-sets/drafts → HTTP 201 · change_set_id=${result.draft.id} · status=${result.draft.status}`,
-      '草稿的分组解释已实现，缺口清单 #246（AC-G3-14 的「确定受影响 / 可能受影响」解释分组）；' +
-      '本链路未覆盖读侧，读回见 #295。',
+      'AC-G3-14 的两组说明读回由助手链负责（#320）；缺口清单见 #246。',
     ],
   }
 }

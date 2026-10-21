@@ -123,20 +123,26 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '现在缺的是**本轮基线具备前置**——演示模板不声明任何 RouteNode，基线路线图为空。',
     specAnchor: anchor(378, 380),
     unblockCondition:
-      '模板侧声明一个 RouteNode 类型的必需节点（R7），并在当前 head 重跑实跑落证；' +
-      '`AC-G3-08` 才能离开 `NOT RUN`。',
+      '本轮已达成：模板侧声明了必需节点（#314），台面造前置的 409 也修掉了（#318），' +
+      '「缺失」那一种前置由服务端侧给 blocking（#319）。' +
+      '`AC-G3-08` 彻底收口要等缺口清单 #246 关闭。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 250,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'PASS (follow-up)',
     fact:
       '路线图版本化编辑会话**已实现**（提案不进冻结路线图、提交冻结新版本并产生复核任务、' +
       '取消恢复基线并释放临时引用、版本序列与比较、' +
       '三种必需节点前置给出 blocking ValidationIssue）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。' +
       '原先「只有只读端点」的旧事实已作废；' +
-      '本轮实跑 `NOT RUN`：演示模板不声明任何 RouteNode，基线路线图为空；' +
-      '台面自造前置（新增节点 → 变更集 → 应用）后，后续会话撞 409「基线已漂移」。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
+      '原先「本轮实跑 NOT RUN：演示模板不声明任何 RouteNode」与「台面自造前置后撞 409' +
+      '『基线已漂移』」两条旧事实已作废：' +
+      '模板侧新增不可变 v2 声明 `route-r7` 为必需节点（#314），' +
+      '台面建会话改用**建会话那一刻**的上下文修订，不再用链首的旧快照（#318）。' +
+      '**本轮实跑判定成立**：台面造出「待复核」与「版本落后」两种前置，' +
+      '稳定化给出 required_route_not_current 阻断，项目没有进入 STABILIZED / READY；' +
+      '「缺失」那一种前置由服务端侧保证（#319）。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json',
   },
@@ -151,18 +157,21 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '现在缺的是**本轮基线里有一个可编辑的冻结节点**——基线路线图为空。',
     specAnchor: anchor(410, 412),
     unblockCondition:
-      '同 G3-GAP-02（模板侧声明必需 RouteNode），并在当前 head 重跑实跑落证；' +
-      '`AC-G3-16` 才能离开 `BLOCKED`。',
+      '本轮已达成（同 G3-GAP-02：模板侧声明必需 RouteNode + 台面 409 修掉 + 当前 head 重跑落证）。' +
+      '`AC-G3-16` 彻底收口要等缺口清单 #246 关闭。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 250,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'PASS (follow-up)',
     fact:
       'RouteNode 写入与「取消未冻结编辑」**已实现**（同一项目只允许一个未冻结会话；' +
       '取消恢复基线并释放临时版本引用）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。' +
       '原先「没有写入端点」的旧事实已作废；' +
-      '本轮实跑 `BLOCKED`：基线里没有可编辑的冻结节点（与 G3-GAP-02 同因）。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
+      '原先「本轮实跑 BLOCKED：基线里没有可编辑的冻结节点」这条旧事实已作废' +
+      '（与 G3-GAP-02 同因，同一批修复解掉）。' +
+      '**本轮实跑判定成立**：取消未冻结编辑后冻结基线版本回到取消前的版本，' +
+      '被取消会话占用的临时版本不出现在冻结版本序列里。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json',
   },
@@ -178,11 +187,11 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '现在缺的是**一条带两组说明的助手草稿**——草稿由真实模型轮次产生。',
     specAnchor: anchor(402, 404),
     unblockCondition:
-      '提供可用的模型凭据跑出一条带两组说明的助手草稿，并在当前 head 重跑实跑落证；' +
-      '`AC-G3-14` 才能离开 `BLOCKED`。',
+      '本轮已达成：模型凭据从环境变量读，台面自己跑真实模型轮次并读回两组说明（#320）。' +
+      '`AC-G3-14` 彻底收口要等缺口清单 #246 关闭。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 251,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'WARNING',
     fact:
       '助手两组说明**已实现**（助手侧用 `definite_affected` / `possible_affected`，' +
       '服务端从已落库的助手 turn 重新推导，每条说明必须同时有对象引用、原因与依据）。' +
@@ -191,12 +200,14 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '须经**人工确认**后才进入正式评估。' +
       '工作台 `ImpactOpsPanel.vue` 的分组是**影响解析结果**的分组（`impacts[].certainty`），' +
       '**不是** AC-G3-14 要求的**助手草稿解释分组**，两者不可互替。' +
-      '本轮实跑 `NOT RUN`：没有可读回的助手草稿（台面不自己造模型轮次）。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。' +
-      '**行状态按 #315 的完成线保持 `BLOCKED`**：该行要等一条真实模型草稿（#320）' +
-      '在当前 head 实跑判定，才能离开 `BLOCKED`；在此之前不判 `PASS`。' +
+      '原先「本轮实跑 NOT RUN：没有可读回的助手草稿」与「行状态按 #315 的完成线保持 BLOCKED」' +
+      '两条旧事实已作废。' +
       '模型边界已放宽（#315：缺两组说明时不再整条拒，而是如实标注「缺说明」），' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-17-验证报告-20261021.json`。',
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-17-验证报告-20261021.json`。' +
+      '**本轮实跑判定成立**（#320）：台面走「自然语言 → 真实模型轮次 → 变更提案 → 人工确认落草稿 → ' +
+      '读回两组说明 → 进入正式评估」，读回「确定受影响」1 条，每条带可追溯依据。' +
+      '结论依赖真实模型（非确定性），行状态记 `WARNING`，不写 `PASS`。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json',
   },
@@ -212,19 +223,21 @@ export const G3_IMPLEMENTATION_GAPS: readonly G3ImplementationGap[] = Object.fre
       '尚未重跑。',
     specAnchor: anchor(406, 408),
     unblockCondition:
-      '在当前 head 重跑实跑，拿到三态决策（确认 / 修改 / 拒绝）、同版本不再重提、' +
-      '确认时版本复检的完整证据；`AC-G3-15` 才能离开 `BLOCKED`。',
+      '本轮已达成：在当前 head 重跑实跑，拿到三态决策（确认 / 修改 / 拒绝）、同版本不再重提、' +
+      '确认时版本复检的完整证据。`AC-G3-15` 彻底收口要等缺口清单 #246 关闭。',
     issue: G3_GAP_LIST_ISSUE,
     ticket: 252,
-    rowStatus: 'BLOCKED',
+    rowStatus: 'PASS (follow-up)',
     fact:
       '依赖候选批量提出**已实现**（一次提出若干候选依赖，候选与已确认边**分表存放**，' +
       '候选带对象版本、依据片段与建议理由，可与既有 `decision` 三态对接）。' +
       '落证：`docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json`（#252）。' +
-      '本轮实跑 `BLOCKED`：候选的 source 必须是变更集 roots 里的 ProjectSpec ref、' +
-      'target 必须是本项目的章节版本（跨项目引用会被 404 拒掉），' +
-      '且三条链需各建各的项目（否则撞 409「基线已漂移」）；这些已修，未在当前 head 重跑出绿。' +
-      '落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。',
+      '原先「本轮实跑 BLOCKED：候选的 source / target 约束已修但未在当前 head 重跑出绿」' +
+      '这条旧事实已作废。' +
+      '**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），拒绝不产生边、' +
+      '同版本重投被抑制（`rejected_in_same_version`）、' +
+      '确认时版本复检被服务端按 409 `dependency_candidate_requires_reevaluation` 拒掉。' +
+      '落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。',
     implemented: true,
     evidence: 'docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json',
   },

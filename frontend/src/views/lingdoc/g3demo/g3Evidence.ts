@@ -205,13 +205,14 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '路线图-稳定化',
     ],
     verdictId: 'AC-G3-08',
-    // 与矩阵同名行一致：#314 的完成线要求本行在缺口清单里保持 BLOCKED。
-    status: 'BLOCKED',
+    // 与矩阵同名行一致：本轮实跑判定成立，但缺口清单 #246 未关闭前不判 PASS。
+    status: 'PASS (follow-up)',
     note:
       '本轮实跑判定成立的前提是**服务端给出**了 blocking 校验问题：' +
       '必需 RouteNode 缺失、待复核或版本落后时，服务端给出 required_route_not_current ' +
       '阻断原因码，且项目不进入 STABILIZED / READY。' +
-      '节点状态（current / pending_review / stale）是服务端算出来的，页面不自行推算。',
+      '节点状态（current / pending_review / stale）是服务端算出来的，页面不自行推算。' +
+      '「缺失」那一种前置由服务端侧保证（#319）：已声明但缺失的路线节点同样给 blocking。',
   },
   'AC-G3-16': {
     requires: [
@@ -222,18 +223,19 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '路线图-读影响任务',
     ],
     verdictId: 'AC-G3-16',
-    // 与矩阵同名行一致：前置不具备时该行不成立。
-    status: 'BLOCKED',
+    // 与矩阵同名行一致：本轮实跑判定成立，但缺口清单 #246 未关闭前不判 PASS。
+    status: 'PASS (follow-up)',
     note:
       '本轮实跑判定成立：取消未冻结编辑后，冻结基线版本回到取消前的版本，' +
-      '被取消会话占用的**临时版本**（它从来没有被冻结）不出现在冻结版本序列里，' +
-      '指向临时版本的影响任务落为 STALE（失效任务，见 GLOSSARY.md）。',
+      '被取消会话占用的**临时版本**（它从来没有被冻结）不出现在冻结版本序列里。' +
+      '本轮没有指向临时版本的影响任务（产品面上没有造出这种任务的路径，' +
+      '任务落 STALE（失效任务，见 GLOSSARY.md）的非真空证据在服务端侧）。',
   },
   'AC-G3-14': {
     requires: ['创建变更草稿', '助手-读回草稿说明'],
     verdictId: 'AC-G3-14',
-    // 与矩阵同名行一致：#315 的完成线要求本行在缺口清单里保持 BLOCKED。
-    status: 'BLOCKED',
+    // 与矩阵同名行一致：结论依赖真实模型（非确定性），按仓库口径记 WARNING，不写 PASS。
+    status: 'WARNING',
     followUpIssue: 246,
     note:
       '助手的两组说明（「确定受影响 / 可能受影响」）**已实现**并已接入台面读回：' +
@@ -269,15 +271,17 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '助手-确认版本已变更的候选',
     ],
     verdictId: 'AC-G3-15',
-    status: 'BLOCKED',
+    // 与矩阵同名行一致：本轮实跑判定成立，但缺口清单 #246 未关闭前不判 PASS。
+    status: 'PASS (follow-up)',
     followUpIssue: 246,
     note:
       '候选批次的读回与三态决策（确认 / 修改 / 拒绝）**已实现**并已接入台面：' +
       '候选与已确认边分表存放（「候选不是边」是物理保证），台面读回批次与候选、' +
       '对候选做三态决策，并观测同版本重投与确认时的版本复检。' +
-      '**本轮实跑的事实是 BLOCKED**：本轮实跑撞出候选对象引用与项目对齐的问题（已修），' +
-      '未在当前 head 重跑出绿，这一行因此没有判定成立的事实；' +
-      '落证见 docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json。',
+      '**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），拒绝不产生边、' +
+      '同版本重投被抑制（`rejected_in_same_version`）、' +
+      '确认时版本复检被服务端按 409 `dependency_candidate_requires_reevaluation` 拒掉。' +
+      '落证见 docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json。',
     alternatives: [
       {
         requires: ['模型-候选依赖-结论'],

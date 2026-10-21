@@ -138,42 +138,47 @@ test('验收场景行锚定主基准 §13 的逐条标题', () => {
   }
 })
 
-test('当前无法实跑的验收项标为阻塞并写明缺口', () => {
+test('验收行不再有 BLOCKED：四张解除条件票的完成线都已达成', () => {
   const blocked = G3_AC_ROWS.filter((row) => row.status === 'BLOCKED')
-  // 这四行的状态由**各自解除条件票的完成线**钉住：
-  // - AC-G3-08 / AC-G3-16：#314 的完成线要求本票完成前保持 `BLOCKED`；
-  // - AC-G3-14：#315 的完成线要求本票完成前保持 `BLOCKED`；
-  // - AC-G3-15：依赖候选三态要在当前 head 跑出绿（#321），在此之前被挡住。
+  // 曾经有四行被各自的解除条件票的完成线钉在 `BLOCKED` 上：
+  // AC-G3-08 / AC-G3-16（#314）、AC-G3-14（#315）、AC-G3-15（#321 的承接票）。
+  // 这四张票的完成线都已达成（判定由验收台在当前 head 实跑得出），
+  // 行状态因此离开 `BLOCKED`。
   //
   // `NOT RUN` 与 `BLOCKED` 语义不同，不能混用：
   // `NOT RUN` 是「本轮没观测到判定所需的事实」（例如未装配故障注入时的 AC-G3-03 判定、
   // 影响中心的 G3.7），`BLOCKED` 是「这件事被一个未完成的前置/缺陷挡住」。
-  // 这五行原本在骨架里全是 `BLOCKED`，是实跑校准把它们改成了 `NOT RUN`，
-  // 那次改动**违反了两张解除条件票的完成线**（见 #314 / #315 的完成线），
-  // 因此按完成线恢复成 `BLOCKED`。
+  // 现在两者都不该出现在 AC 行上——前者只留在切片行（G3.7），后者一条都不剩。
   assert.deepEqual(
     blocked.map((row) => row.id),
-    ['AC-G3-08', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16'],
+    [],
+    `还有行停在 BLOCKED：${blocked.map((row) => row.id).join('、')}`,
   )
-  for (const row of blocked) {
-    assert.ok(row.note && row.note.length > 0, `${row.id} 缺缺口说明`)
+  // 这四行都要有自己的判定与说明，不能只把状态改了。
+  for (const id of ['AC-G3-08', 'AC-G3-14', 'AC-G3-15', 'AC-G3-16']) {
+    const row = G3_AC_ROWS.find((item) => item.id === id)!
+    assert.notEqual(row.status, 'BLOCKED', `${id} 仍停在 BLOCKED`)
+    assert.ok(row.note && row.note.includes('实跑'), `${id} 的说明必须写明实跑判定`)
   }
 })
 
 test('可实跑但本票未实跑的验收项走 follow-up 且必须挂独立 Issue', () => {
   const followUps = G3_AC_ROWS.filter((row) => row.status === 'PASS (follow-up)')
-  assert.equal(followUps.length, 12)
-  // AC-G3-03 是**例外**：它已在本轮实跑判定成立（注入命中 + 回滚读回完整），
-  // 行状态按缺口清单 #246 的规则保留 follow-up（#246 未关闭前不判 PASS），
-  // 所以它不适用「follow-up 必须写明未实跑」这一条。
-  const judged = followUps.filter((row) => row.id === 'AC-G3-03')
-  assert.equal(judged.length, 1, 'AC-G3-03 应是唯一一个已实跑但保留 follow-up 的行')
-  assert.ok(
-    judged[0].note?.includes('实跑') && judged[0].note?.includes('#246'),
-    'AC-G3-03 的说明必须写明已实跑、且状态保留 follow-up 的理由',
-  )
+  assert.equal(followUps.length, 15)
+  // 这些是**例外**：它们已在本轮实跑判定成立，行状态按缺口清单 #246 的规则保留
+  // follow-up（#246 未关闭前，带缺口的行不判 PASS），所以它们不适用
+  // 「follow-up 必须写明未实跑」这一条。
+  const judgedIds = ['AC-G3-03', 'AC-G3-08', 'AC-G3-15', 'AC-G3-16']
+  const judged = followUps.filter((row) => judgedIds.includes(row.id))
+  assert.equal(judged.length, judgedIds.length, '已实跑但保留 follow-up 的行不齐')
+  for (const row of judged) {
+    assert.ok(
+      row.note?.includes('实跑') && row.note?.includes('#246'),
+      `${row.id} 的说明必须写明已实跑、且状态保留 follow-up 的理由`,
+    )
+  }
   for (const row of followUps) {
-    if (row.id === 'AC-G3-03') continue
+    if (judgedIds.includes(row.id)) continue
     assert.ok(row.followUpIssue, `${row.id} 的 follow-up 缺 Issue 号`)
     assert.ok(row.followUpIssue > 0)
     assert.ok(row.note && row.note.includes('未实跑'), `${row.id} 的 follow-up 必须写明未实跑`)
@@ -197,10 +202,15 @@ test('状态计数覆盖全部七种状态', () => {
   assert.equal(Object.keys(counts).length, 7)
   const total = Object.values(counts).reduce((sum, value) => sum + value, 0)
   assert.equal(total, 23)
-  assert.equal(counts['BLOCKED'], 4)
-  assert.equal(counts['PASS (follow-up)'], 12)
+  assert.equal(counts['BLOCKED'], 0)
+  assert.equal(counts['PASS (follow-up)'], 15)
   assert.equal(counts['TODO'], 6)
   assert.equal(counts['NOT RUN'], 1)
+  // AC-G3-14 的结论依赖真实模型（非确定性），按仓库口径记 WARNING，不写 PASS。
+  assert.equal(counts['WARNING'], 1)
+  // 静态矩阵里**没有**任何一行写 PASS：它记的是「当前 head 实跑得到（或最后已知）
+  // 的值」，而带实现缺口的行在 #246 关闭前一律不判 PASS。
+  assert.equal(counts['PASS'], 0)
 })
 
 test('ChangeSet 状态集合的三种读法都被标出位置，且以主基准为准', () => {
