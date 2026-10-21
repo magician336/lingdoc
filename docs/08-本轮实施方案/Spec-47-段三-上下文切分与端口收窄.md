@@ -421,6 +421,41 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 已与 #248 的负责会话对齐：它确认「不为段三 rebase」，并在复审时按「行为等价 +
 证据绑定」两项核对；若它发现是语义变化而非形态变化，会第一时间反馈。
 
+### #268 的前置比预想的大：段二的共享管道本身依赖聚合体的 13 个成员
+
+票 #268 要求「成员与 Owner 上下文的端口、实现与不变量迁到拥有它的模块；聚合体不再实现该端口」。
+实测：成员用例的实现**搬不走**，除非先把段二的共享操作管道从聚合体上解耦。
+
+`runOperationThroughPipeline`（`workspacecore/operation_pipeline.go`）直接使用聚合体的：
+
+| 成员 | 形态 |
+| --- | --- |
+| `repository` | 字段（开事务） |
+| `authorizeTenant` / `authorizeProject` | 私有方法（授权） |
+| `recordAuditInTransaction` | 私有方法（审计写入） |
+| `checkSources` | 私有方法（来源复核） |
+| `g1PrepareCachedChangeOperation` / `g1PrepareOperation` / `g1ValidateOperation` / `g1StoreOperationPins` / `g1OperationProjection` | 私有方法（G1 溯源接缝） |
+| `runtimeMode` | **字段**（运行模式，参与闸门判定） |
+| `afterOperationWrite` / `observeOperationFailure` / `ObserveRuntime` | 私有方法（写后与失败观察） |
+
+而 `runOperation` 在 `workspacecore` 里有 **57 个调用点**，分布在 15 个文件
+（`service_facade.go` 19 个、`g6_trial.go` 6、`roadmap_service.go` 5、`working_copy.go` 4…）。
+
+⇒ **要解耦就得给管道一个协作口，而这个口会是 13 个方法——比我们要消灭的宽口还宽。**
+所以「先解耦管道」这件事本身就该是**收窄**（拆成几个窄的协作口），不是「换个宽口」。
+
+⇒ **这已经不是段三的形状了。** 三个选项：
+
+1. **#268 连带把段二的管道也收窄**（本段做）：改动面是 `operation_pipeline.go` +
+   `service_facade.go` + 15 个调用点文件 + 聚合体私有成员的重排。冲突面极大
+   （`service_facade.go` 正是 PR #149 在改的文件之一），且动的是段二刚落地的共享核心。
+2. **#268 延到下一段**，本段交五张票（#266 / #267 / #274 / #275 / #269），#268 作为
+   「段三遗留项」与段四一起做。段三的 PR body 显式写明这一点，父票 #259 保持 open。
+3. **#268 只搬端口与不变量，实现暂留聚合体**——这**违反**票面的「聚合体不再实现该端口」，
+   除非用「反向编译期断言」把「聚合体不实现」变成可测的约束。**不推荐**：它把验收标准降级了。
+
+**待用户裁决。** 在裁决之前，#268 不开工。
+
 ## 切片进度
 
 | 切片 | 状态 | head | 证据 |
