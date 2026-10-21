@@ -49,6 +49,32 @@ Terms
     dependency it does not own.
     ``done`` -- the face has landed; its paths are part of ``main``.
 
+Shared maintenance points
+-------------------------
+Some files are not owned by any face because *every* face legitimately has
+to change them.  They are not reserved paths (a reserved path is an
+integration point, integrated in one explicit step); they are shared
+maintenance points, and they are deliberately left out of every face's path
+set:
+
+* ``internal/lingdoc/operationcore/ownership_test.go`` -- the guard that
+  keeps the idempotency-key rule and the request-digest rule in one place.
+  A face that adds a second digest or a second key rule edits it.
+* ``internal/database/migration_sqlite_versioned_schema_test.go`` -- holds
+  the single ``expectedSQLiteMigrationVersion`` constant.
+* ``internal/router/lingdoc_integration_test.go`` -- holds the migration
+  file list.
+* ``migrations/`` -- the migration files themselves.  **The version number
+  is a shared serial resource: whoever merges first takes the next number.**
+  A face that adds a migration must rebase onto the integration branch tip
+  and re-allocate its version number if the slot it picked was taken.
+
+The path-overlap check cannot catch this kind of contention, because it is a
+race for a *sequence*, not for a path.  It shows up as an explicit merge
+conflict -- loud, not silent.  Do not register these files into a face's
+path set: doing so would forbid the other faces from changing files they
+must change.
+
 How to add a face
 -----------------
 1. Open a tracker issue for the face and note its number -- the face's ticket
