@@ -373,6 +373,24 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
     5 种扰动全部被断言抓到；还原后 exit 0
 ```
 
+### 已知前向影响：PR #248 落地后治理窄口要多一个方法
+
+在途 PR #248（G4 模板目录与版本治理）本轮**新引入**了一个聚合体方法
+`TenantPermissionInTransaction`（在 `internal/lingdoc/workspacecore/core_governance_ports.go`），
+它在 `template_governance_runtime.go` 的 `CanManageTemplateCatalog` 里被调用（租户角色判定）。
+
+票 #266 已经把治理运行时的 `projects *core.Service` 换成了窄口
+`core.GovernanceReviewApplication`（只含 `AuthorizeInTransaction` 与
+`ValidationIssueDispositionsInTransaction`）。**该方法在 main 上不存在**，所以段三此刻
+无法把它加进窄口（加了编译不过）。
+
+⇒ **#248 合入后需要一处适配**：给 `core.GovernanceReviewApplication` 补上
+`TenantPermissionInTransaction`，并在 `seg3_context_ports_test.go` 的登记表里登记。
+这一步在 #248 的 rebase 里做即可，段三这边不需要提前改。
+
+已与 #248 的负责会话对齐：它确认「不为段三 rebase」，并在复审时按「行为等价 +
+证据绑定」两项核对；若它发现是语义变化而非形态变化，会第一时间反馈。
+
 ## 切片进度
 
 | 切片 | 状态 | head | 证据 |
