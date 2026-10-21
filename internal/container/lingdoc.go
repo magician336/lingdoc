@@ -66,6 +66,17 @@ func NewLingDocWorkspaceHandler(
 	projectService.InstallFaultInjection(fault)
 	projectService.WithRuleSetSnapshotReader(workspaceRuleSetSnapshotReader{store: ruleSetStore})
 	runtime.ConnectProjects(workspace.ProjectPorts{Authorizer: projectService, Projects: projectService, Context: projectService})
+	// The four optional capabilities are the aggregate's own. They used to be
+	// found by the transport with a run-time type assertion on the project
+	// service, which was a back door: the assertion could hand back any
+	// operation of the aggregate, not only the ones the narrow port names.
+	// The composition root hands them over explicitly instead.
+	runtime.ConnectOptionalCapabilities(workspace.OptionalCapabilities{
+		Provenance:                     projectService,
+		EvidenceSelection:              projectService,
+		EvidenceSelectionInTransaction: projectService,
+		EvidenceProofPreparation:       projectService,
+	})
 	runtime.EnableFullWorkflowPolicy()
 	projectService.RequireActivationRead(true)
 	projectService.SetRuntimeMode("real")
@@ -123,7 +134,7 @@ func NewLingDocWorkspaceHandler(
 		Integration: runtime,
 		Templates:   templates,
 	}
-	deps.WithSelectedRewrites(workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink))
+	deps.WithSelectedRewrites(workspace.NewSelectedRewriteService(db, projectService, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink))
 	// The machine read and the review anchor endpoints are capabilities the
 	// caller asks for by name. The project service provides them; saying so
 	// here keeps their presence a decision rather than an accident of which

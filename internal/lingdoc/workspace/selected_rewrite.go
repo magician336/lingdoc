@@ -258,18 +258,23 @@ func (s *GORMSelectedRewriteStore) claimApply(ctx context.Context, row selectedR
 type SelectedRewriteService struct {
 	store     *GORMSelectedRewriteStore
 	workspace RewriteWorkspaceApplication
-	sources   SourceApplicationService
-	model     SelectedRewriteModel
-	audit     AuditSink
-	now       func() time.Time
+	// selector is the optional formal-evidence capability. It is a port of its
+	// own: the rewrite workspace port does not name the selection, and
+	// discovering it by asserting that port would let the transport reach
+	// past what the port declares.
+	selector core.EvidenceSelectionApplication
+	sources  SourceApplicationService
+	model    SelectedRewriteModel
+	audit    AuditSink
+	now      func() time.Time
 }
 
-func NewSelectedRewriteService(db *gorm.DB, workspace RewriteWorkspaceApplication, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
+func NewSelectedRewriteService(db *gorm.DB, workspace RewriteWorkspaceApplication, selector core.EvidenceSelectionApplication, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
 	var audit AuditSink
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
+	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, selector: selector, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
 }
 
 func (s *SelectedRewriteService) recordAudit(ctx context.Context, actor Actor, projectID, capability, decision, reason string, details map[string]any) {
@@ -306,7 +311,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
 	var evidenceConstraints []generation.EvidenceConstraint
 	if len(input.EvidenceCardRefs) > 0 {
-		selected, selectErr := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
+		selected, selectErr := g2SelectFormal(ctx, s.selector, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}

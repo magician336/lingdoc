@@ -38,6 +38,7 @@ func g1NativeProvenanceFixture(t *testing.T) g1NativeFixture {
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil), Actions: NewG2ActionExecutor(projects, runtime, nil)})
 	governance, err := NewTemplateGovernanceRuntime(db, projects, runtime, nil)

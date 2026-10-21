@@ -70,7 +70,10 @@ func inheritedRewriteFixture(t *testing.T) (*SelectedRewriteService, *inheritedR
 	workspace := &inheritedRewriteWorkspace{copy: WorkingCopy{ProjectID: "project", ChapterID: "chapter", SpecRevision: 1, WorkingCopyRevision: 1, BodyMarkdown: selected + " context [[source:outside]]", SourceIDs: []string{"existing", "outside"}}}
 	sources := &inheritedRewriteSources{}
 	model := &inheritedRewriteModel{}
-	service := NewSelectedRewriteService(db, workspace, sources, model)
+	// The fake workspace never satisfied the formal-evidence selector, so the
+	// selector port stays nil: a nil port and a failed assertion both answer
+	// "the dependency is unavailable".
+	service := NewSelectedRewriteService(db, workspace, nil, sources, model)
 	require.NoError(t, service.store.AutoMigrate(context.Background()))
 	input := SelectedRewriteRequest{ExpectedSpecRevision: 1, ExpectedWorkingCopyRevision: 1, Selection: RewriteSelection{EndUTF16: len(utf16.Encode([]rune(selected))), SelectedText: selected}, Instruction: "polish", SourceIDs: []string{}}
 	return service, workspace, sources, model, input

@@ -110,6 +110,7 @@ func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *co
 	}
 	shares := g4AdapterShares{}
 	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Projects: projects, Context: projects}, shares, nil, delivery.NewFixedTemplateReader())
+	connectAggregateCapabilities(sourceRuntime, projects)
 	sourceRuntime.EnableFullWorkflowPolicy()
 	research := NewG2ResearchAdapter(db, projects, sourceRuntime, shares, nil, nil)
 	projects.ConfigureG2(core.G2Runtime{Sources: research})

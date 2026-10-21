@@ -225,6 +225,20 @@ var narrowPortMethods = map[string][]string{
 		"SetImpactPreflightChecker",
 		"SetRuntimeRecoveryChecker",
 	},
+	"ProjectProvenanceApplication": {
+		"AssertFrozenProjectProvenance",
+		"PrepareProjectProvenance",
+		"ValidateProjectProvenanceSnapshot",
+	},
+	"EvidenceSelectionApplication": {
+		"SelectGenerationEvidence",
+	},
+	"EvidenceSelectionTransactionApplication": {
+		"SelectGenerationEvidenceInTransaction",
+	},
+	"EvidenceProofPreparationApplication": {
+		"PrepareCandidateGenerationEvidence",
+	},
 }
 
 // A narrow port may only name operations that belong to one context. The

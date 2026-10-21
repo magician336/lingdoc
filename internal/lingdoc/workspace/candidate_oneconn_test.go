@@ -129,6 +129,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, shares, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewG2ResearchAdapter(db, projects, runtime, shares, nil, nil)
 	projects.ConfigureG2(core.G2Runtime{Sources: adapter})

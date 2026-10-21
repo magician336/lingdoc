@@ -34,6 +34,7 @@ func newFaultInjectionHandler(t *testing.T, db *gorm.DB, fault core.FaultInjecti
 	service := core.NewServiceWithAuthorizationPolicy(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy(), policy, nil, core.AuthorizationModeEnforce)
 	service.InstallFaultInjection(fault)
 	runtime.ConnectProjects(ProjectPorts{Authorizer: service, Projects: service, Context: service})
+	connectAggregateCapabilities(runtime, service)
 	handler, err := NewHandler(HandlerDependencies{Projects: service, Members: service, Chapters: service, TemplateApp: service, ChangeSets: service, Sources: runtime, Integration: runtime})
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)

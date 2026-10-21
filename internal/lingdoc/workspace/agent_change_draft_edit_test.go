@@ -52,6 +52,7 @@ func agentReopenDraftService(t *testing.T, f deliveryGuardFixture) *core.Service
 	runtime := NewGORMSourceRuntime(f.db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(f.db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(f.db, projects, runtime, g4AdapterShares{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(f.db, projects, runtime, nil)

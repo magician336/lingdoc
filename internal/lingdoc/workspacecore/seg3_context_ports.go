@@ -247,6 +247,33 @@ type RuntimeCompositionApplication interface {
 	SetRuntimeRecoveryChecker(checker RuntimeRecoveryChecker)
 }
 
+// ProjectProvenanceApplication 是项目溯源的那三项能力：准备溯源、复核溯源快照、
+// 断言冻结项目的溯源。
+// 消费方：交付输入构建器。
+type ProjectProvenanceApplication interface {
+	PrepareProjectProvenance(ctx context.Context, actor Actor, pid string, forModel bool) (context.Context, ProjectProvenanceSnapshot, error)
+	ValidateProjectProvenanceSnapshot(ctx context.Context, actor Actor, pid string, spec map[string]string, snapshot ProjectProvenanceSnapshot, forModel bool) error
+	AssertFrozenProjectProvenance(ctx context.Context, actor Actor, pid string, spec map[string]string, snapshot ProjectProvenanceSnapshot, forModel bool) error
+}
+
+// EvidenceSelectionApplication 是「选一条生成证据」这一项能力。
+// 消费方：生成输入解析、生成证据校验器、选区改写。
+type EvidenceSelectionApplication interface {
+	SelectGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, cardRefs []G2VersionRef, formal bool) (G2EvidenceSelection, error)
+}
+
+// EvidenceSelectionTransactionApplication 是同一个选择在事务里的形态。
+// 消费方：候选采纳的来源策略。
+type EvidenceSelectionTransactionApplication interface {
+	SelectGenerationEvidenceInTransaction(ctx context.Context, tx Transaction, actor Actor, projectID, chapterID string, refs []G2VersionRef, formal bool, usedSourceIDs []string) (G2EvidenceSelection, error)
+}
+
+// EvidenceProofPreparationApplication 是「为候选准备生成证据证明」这一项能力。
+// 消费方：候选采纳的来源策略。
+type EvidenceProofPreparationApplication interface {
+	PrepareCandidateGenerationEvidence(ctx context.Context, actor Actor, projectID, chapterID string, refs []G2VersionRef, usedSourceIDs []string) (context.Context, G2EvidenceSelection, error)
+}
+
 var (
 	_ RuntimeCompositionApplication = (*Service)(nil)
 	_ AgentActionApplication        = (*Service)(nil)
@@ -289,4 +316,12 @@ var (
 	_ ImpactGuardApplication = (*Service)(nil)
 
 	_ RuntimeGuardApplication = (*Service)(nil)
+
+	_ ProjectProvenanceApplication = (*Service)(nil)
+
+	_ EvidenceSelectionApplication = (*Service)(nil)
+
+	_ EvidenceSelectionTransactionApplication = (*Service)(nil)
+
+	_ EvidenceProofPreparationApplication = (*Service)(nil)
 )

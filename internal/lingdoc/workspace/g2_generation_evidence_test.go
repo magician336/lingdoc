@@ -67,6 +67,9 @@ func g2FormalRewriteFixture(t *testing.T) (*SelectedRewriteService, *g2RewriteWo
 	s, w, _, model, input := inheritedRewriteFixture(t)
 	port := &g2RewriteWorkspace{inheritedRewriteWorkspace: w, modelAllowed: true}
 	s.workspace = port
+	// The fake answers the formal-evidence selection too. It used to be found
+	// by asserting the workspace port; the selector is its own port now.
+	s.selector = port
 	input.EvidenceCardRefs = []generation.EvidenceCardRef{{ID: "card", Version: 2}}
 	return s, port, model, input
 }
