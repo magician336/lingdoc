@@ -483,6 +483,34 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 
 ⇒ **段三的 PR 交付五张票，#268 作为遗留项写进 PR body 与本方案文档。**
 
+## 独立评审与闭环
+
+段三做了一次独立评审（verifier 子代理，范围 `633ba34..75d03d6a`），报告在
+`D:\code_warehouse\lingdoc-notes\seg3\review-seg3.md`。结论 **PARTIAL**：行为零变化
+成立且被独立复现，但「传输层不再持有聚合体」这个目标**没有真正达成**——段三把聚合体
+藏进了窄口后面，动态类型仍是 `*core.Service`，决策 35 在**可达性**上没有前进。
+
+### 三个必改项与处置
+
+| # | 问题 | 处置 |
+| --- | --- | --- |
+| B-1 | 传输层用**运行期类型断言**把窄口变回宽能力。实测 11 处断言，4 个目标是真后门（`deliveryProvenanceCore` / `g2EvidenceSelector` / `candidateEvidenceTransactionSelector` / `candidateEvidenceProofPreparer`），它们的 6 个方法**不在任何窄口里** | **进行中**：把「断言成功/失败」换成「可 nil 的显式窄口字段」——4 个能力升格为 `workspacecore` 的正式窄口，传输层不再做断言。断言失败 ⇒ 端口为 nil ⇒ 走**同一个**错误/跳过分支，行为逐字不变 |
+| B-2 | 结构断言有三条绕过路径：函数体内的局部变量、局部结构体嵌入、跨包类型别名——**断言全绿** | **已修**（`be7e4183`）：断言改成一遍走完整个文件（类型位置一律看），并新增 `TestNoPackageOutsideTheAggregateAliasesIt` 扫全仓拒绝跨包别名。阴性验证：三条绕过路径逐一注入，全部被抓住 |
+| B-3 | 契约脚本的 `read_method` 提取把 `return err.Error()` 也当成读方法 ⇒ 形状校验被**静默跳过** | **已修**（`be7e4183`）：提取结果与 `read_types` 交叉验证；读路由的形状来源必须能解析出来，解析不出来就报失败（唯一例外写进 `SHAPE_SOURCE_EXEMPTIONS` 并说明理由）。新增两条守护用例 |
+
+### 评审还纠正了我两处
+
+- 评审原写的「#248 会引入并行授权来源」被评审后的提交证伪，已撤回——那段推理不成立。
+- 评审的方案文档只记了 1 处与在途 PR 的冲突面，实测是 #149 交集 8 个文件（含语义冲突）、
+  #248 交集 2 个、#323 交集 1 个。已按实测更新。
+
+### 评审的独立证据
+
+- 路由面 base/head 各 94 条，逐属性差异 **0 条**；`read_method` 承重 14 条前后一致。
+- 核心包测试全绿；契约脚本 PASS。
+- 窄口归属：32 个口（`workspacecore` 30 + `membership` 2），无「换名的宽口」，最宽 12 个方法；
+  `ProjectPorts` 是三个窄口装进结构体（不是撑宽的口）。
+
 ## 切片进度
 
 | 切片 | 状态 | head | 证据 |
