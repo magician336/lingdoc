@@ -1,0 +1,63 @@
+{
+  "mode": "real",
+  "note": "47.10 组合根缺能力 fail-closed。NewHandler 改 (*Handler, error)：projects / members / chapters / templates / change sets / sources 六个必需端口缺一个就在启动期失败并指名缺哪个；生产入口 NewLingDocWorkspaceHandler 把这个错误上抛，服务不启动。端口推断从三处收敛到 resolvePorts 一处，并消除了被丢弃的类型断言结果（machineReads, _ := readExtension.(machineReadApplication)）。三个可选能力（改写端点、机器读、评审锚点）改由 HandlerDependencies 的 WithSelectedRewrites / WithMachineReads / WithReviewAnchors 显式开启，三个字段改为私有，With... 是唯一的开启方式；端点存在 ⟺ 能力存在——评审锚点的读写两个端点不再无条件注册。路由面做了 base(28a76a5)/head 同树对照：生产装配 48 = 48，能力齐全的路由树 70 = 70，说明「从推断改成点名」没有增删任何端点。口径变化第 13 项：组合根缺必需端口时启动失败，而不是启动成功、运行期才崩；影响面仅限装配不完整的部署，生产装配不受影响。",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
+  "base": "28a76a5",
+  "passed": [
+    {
+      "id": "六个必需端口缺失即启动失败，并指名缺哪个",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/composition_test.go 的 TestNewHandlerRefusesToAssembleWithoutARequiredPort（三个子用例：缺 sources / 缺全部应用端口 / 有 legacy 服务但缺 sources）"
+    },
+    {
+      "id": "正常装配启动成功",
+      "status": "passed",
+      "evidence": "同一断言的「完整装配」子用例 + internal/container/lingdoc_test.go 的 TestLingDocWorkspaceCompositionRequiresEveryPortTheRoutesNeed"
+    },
+    {
+      "id": "端口推断收敛到一处，消除被丢弃的类型断言结果",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspace/http.go 的 resolvePorts 是唯一推断点；原 machineReads, _ := readExtension.(machineReadApplication) 等三处丢弃断言已删除"
+    },
+    {
+      "id": "可选能力由调用方显式声明；端点存在 ⟺ 能力存在",
+      "status": "passed",
+      "evidence": "TestTheRewriteEndpointsExistOnlyWhenTheCallerAsksForThem + TestTheOptionalCapabilitiesDecideWhichRoutesExist（逐条比对两条装配的路由集合，差异恰为锚点写、当前确认读、机器读两条）"
+    },
+    {
+      "id": "路由面零变化（base/head 同树对照）",
+      "status": "passed",
+      "evidence": "生产装配 48 = 48；能力齐全的路由树 70 = 70（base 侧用 base-28a76a5 对照工作树实测，见 T265-S1-证据.json）"
+    },
+    {
+      "id": "阴性验证：破坏 fail-closed 检查 → 精确报出缺哪个端口",
+      "status": "passed",
+      "evidence": "把 ports.X != nil 的检查改成恒真后，三个子用例各报一条并指名缺失的端口；回滚后复跑通过"
+    },
+    {
+      "id": "阴性验证：破坏「端点存在 ⟺ 能力存在」→ 精确报出哪条路由",
+      "status": "passed",
+      "evidence": "把 getCurrentConfirmation 的能力条件改成恒真后，TestTheOptionalCapabilitiesDecideWhichRoutesExist 报出「GET /api/projects/:projectId/chapters/:chapterId/confirmations/current exists although the capability was not asked for」；回滚后复跑通过"
+    },
+    {
+      "id": "全量定向测试通过",
+      "status": "passed",
+      "evidence": "go test -p 1 -count=1 ./internal/lingdoc/... → 13 包全绿 exit 0；go test ./internal/router/、./internal/container/ 全绿；go vet ./internal/... exit 0；gofmt -l internal/ 无输出"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "真实服务链路（外部模型 / 真实模型调用）",
+      "status": "not_run",
+      "reason": "本票不涉及外部服务；记 N/A"
+    },
+    {
+      "id": "隔离 PostgreSQL 用例",
+      "status": "not_run",
+      "reason": "本票不触碰持久化方言；全量轮未设 LINGDOC_TEST_POSTGRES_DSN（按仓内约定 SKIP），PG 轮属 47.03/47.06 的取证范围"
+    }
+  ],
+  "head_47_10_commit": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "reverification_after_baseline_merge": "路由面基线在 6e88ec5 上测得；随后并入前移的 origin/main（基线 e655bc6），在合并后的 9c83f43 上复验：生产装配仍是 48 条、能力齐全的路由树仍是 70 条，断言与测试全部复跑通过。"
+}

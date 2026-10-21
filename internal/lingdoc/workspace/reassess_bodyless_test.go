@@ -36,7 +36,10 @@ func TestReassessChangeSetValidatesActualBodyNotLengthHint(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &applicationServiceStub{}
-			handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+			handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+			if err != nil {
+				t.Fatalf("assemble the workspace handler: %v", err)
+			}
 			engine := gin.New()
 			handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 			ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")

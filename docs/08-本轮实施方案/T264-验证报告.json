@@ -1,0 +1,76 @@
+{
+  "mode": "real",
+  "note": "47.09 调研域并入共享管道。调研域原来有自己的管道 g2Operation，自己实现幂等键检查、请求体摘要、只读复核、来源重查、授权、幂等记录读写、业务写入、投影；第二套幂等/重放/审计实现没有了——域内 19 个调用点（g2_service.go 18 个 + g2_action_proposal_replay.go 1 个）全部走共享管道。人工决策门改成声明式：共享核心新增三态枚举 HumanGate，零值是「未声明」（管道遇未声明即拒绝），共享核心不再持有按操作名判门的名单。口径变化第 10、11、12、14 项。",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
+  "issue": "https://github.com/magician336/lingdoc/issues/264",
+  "ticket": "47.09 调研域并入共享管道",
+  "passed": [
+    {
+      "id": "五处行为逐条等价：幂等键冲突、请求体哈希、重放顺序、来源重查、人类决策门",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/g2_shared_pipeline_test.go::TestResearchDomainBehavesLikeTheSharedPipeline"
+    },
+    {
+      "id": "同一个机器身份，走门的操作被门拒、不走门的操作不被门拒",
+      "status": "passed",
+      "evidence": "g2_shared_pipeline_test.go::TestTheResearchDomainDeclaresItsGatePerCall"
+    },
+    {
+      "id": "门确实拒绝机器身份（证明拒绝来自门而不是授权）",
+      "status": "passed",
+      "evidence": "g2_shared_pipeline_test.go::TestTheGateRefusesAMachineIdentityOnAnOtherwiseValidRequest"
+    },
+    {
+      "id": "共享核心不得再持有按操作名判门的名单（结构断言）",
+      "status": "passed",
+      "evidence": "g2_shared_pipeline_test.go::TestThePipelineHasNoCopyOfTheGateOperationList"
+    },
+    {
+      "id": "每个调研域操作声明了哪个门，逐条钉住从基线读出的决定",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/g2_gate_declaration_test.go::TestTheResearchDomainDeclaresTheGateItUsedToEnforce —— 用 go/ast 解析 g2_service.go 与 g2_action_proposal_replay.go 的每一个 s.g2Operation 调用点，读出第 10 个参数（门），与 declaredGates 表逐条比对；调用点数（19）与分布（10 必门 + 8 不要门 + 1 条件门）也钉住"
+    },
+    {
+      "id": "三态的零值是「未声明」，管道遇未声明即拒绝",
+      "status": "passed",
+      "evidence": "internal/lingdoc/operationcore/operationcore_test.go::TestHumanGateTreatsAnUndeclaredGateAsRefused / TestRunRefusesAnUndeclaredGate"
+    },
+    {
+      "id": "19 个调用点的门要求与基线逐条一致（机械扫描）",
+      "status": "passed",
+      "evidence": "从基线代码（28a76a5）读出每个方法自己是否调用 RequireHumanDecision（以及在什么条件下调用），与归一后的声明逐条比对：19 个调用点，0 处变化。归一后分布为 10 个必门 + 8 个不要门 + 1 个条件门（SendAgentTurn：g2AgentTurnGate(input) 按 input.SensitiveContextConfirmed 决定，与基线 if input.SensitiveContextConfirmed { RequireHumanDecision(ctx) } 同义）"
+    },
+    {
+      "id": "幂等记录格式与写入时序不变",
+      "status": "passed",
+      "evidence": "TestResearchDomainBehavesLikeTheSharedPipeline 的幂等键冲突与重放顺序两处断言"
+    }
+  ],
+  "negative_validation": [
+    {
+      "assertion": "TestThePipelineHasNoCopyOfTheGateOperationList",
+      "injected": "在 operationcore 注入 RequiresHumanDecision(operation)",
+      "reported": "zz_negative_probe.go: RequiresHumanDecision decides the gate from the operation name: the caller declares it",
+      "rolled_back": true
+    },
+    {
+      "assertion": "TestTheResearchDomainDeclaresTheGateItUsedToEnforce",
+      "injected": "把 approveResearchTask 的门声明从 operationcore.HumanGateRequired 改成 operationcore.HumanGateNotRequired",
+      "reported": "g2_gate_declaration_test.go:103: approveResearchTask declares NotRequired, want Required (the baseline enforced Required)",
+      "rolled_back": true
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "隔离 PostgreSQL 轮",
+      "status": "not_run",
+      "reason": "全量轮未设 LINGDOC_TEST_POSTGRES_DSN，按仓内约定 PG 用例 SKIP"
+    },
+    {
+      "id": "真实服务链路",
+      "status": "not_run",
+      "reason": "本票不涉及外部服务；记 N/A"
+    }
+  ]
+}

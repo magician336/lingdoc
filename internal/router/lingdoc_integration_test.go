@@ -151,7 +151,15 @@ func TestLingDocRealAPIThroughMainRegistration(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{Read: projects, Write: projects, Sources: sources}))
+	deps := workspace.HandlerDependencies{Read: projects, Write: projects, Sources: sources}
+	// The capabilities the project service provides are named by the caller.
+	deps.WithMachineReads(projects)
+	deps.WithReviewAnchors(projects, projects)
+	lingdocHandler, err := workspace.NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	registerLingDocWorkspaceRoutes(v1, guards, lingdocHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 	request := func(method, path, body, key, identity string, apiKey bool, want int) *httptest.ResponseRecorder {
 		t.Helper()
@@ -359,8 +367,16 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 	v1 := engine.Group("/api/v1")
 	guards := &rbacGuards{cfg: cfg, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{Service: projects,
-		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{Core: projects}}))
+	deps := workspace.HandlerDependencies{Service: projects,
+		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{Core: projects}}
+	// The capabilities the project service provides are named by the caller.
+	deps.WithMachineReads(projects)
+	deps.WithReviewAnchors(projects, projects)
+	lingdocHandler, err := workspace.NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	registerLingDocWorkspaceRoutes(v1, guards, lingdocHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 	request := func(runT *testing.T, method, path string, body any, key, credential string, machine bool, want int) *httptest.ResponseRecorder {
 		runT.Helper()

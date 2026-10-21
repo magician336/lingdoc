@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/gin-gonic/gin"
 )
 
@@ -49,16 +50,16 @@ func (h *Handler) Start(c *gin.Context) {
 	}
 	var req Request
 	if decodeGenerationRequest(c.Request.Body, &req) != nil {
-		writeGenerationError(c, requestID, http.StatusBadRequest, ErrInvalidRequest)
+		writeGenerationError(c, requestID, ErrInvalidRequest)
 		return
 	}
 	if h.Service == nil {
-		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		writeGenerationError(c, requestID, ErrDependencyUnavailable)
 		return
 	}
 	run, err := h.Service.Start(c.Request.Context(), actor, c.Param("projectId"), strings.TrimSpace(c.GetHeader("Idempotency-Key")), req)
 	if err != nil {
-		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		writeGenerationError(c, requestID, err)
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"data": run, "request_id": requestID, "meta": gin.H{"replayed": run.Replayed, "refresh_required": run.Replayed}})
@@ -104,12 +105,12 @@ func (h *Handler) Get(c *gin.Context) {
 		return
 	}
 	if h.Service == nil {
-		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		writeGenerationError(c, requestID, ErrDependencyUnavailable)
 		return
 	}
 	run, err := h.Service.Get(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"))
 	if err != nil {
-		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		writeGenerationError(c, requestID, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": run, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
@@ -122,12 +123,12 @@ func (h *Handler) Cancel(c *gin.Context) {
 		return
 	}
 	if h.Service == nil {
-		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		writeGenerationError(c, requestID, ErrDependencyUnavailable)
 		return
 	}
 	run, err := h.Service.Cancel(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"))
 	if err != nil {
-		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		writeGenerationError(c, requestID, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": run, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
@@ -140,12 +141,12 @@ func (h *Handler) ListCandidates(c *gin.Context) {
 		return
 	}
 	if h.Service == nil {
-		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		writeGenerationError(c, requestID, ErrDependencyUnavailable)
 		return
 	}
 	candidates, err := h.Service.ListCandidates(c.Request.Context(), actor, c.Param("projectId"), c.Param("chapterId"))
 	if err != nil {
-		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		writeGenerationError(c, requestID, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": candidates, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
@@ -158,12 +159,12 @@ func (h *Handler) GetCandidate(c *gin.Context) {
 		return
 	}
 	if h.Service == nil {
-		writeGenerationError(c, requestID, http.StatusServiceUnavailable, ErrDependencyUnavailable)
+		writeGenerationError(c, requestID, ErrDependencyUnavailable)
 		return
 	}
 	candidate, err := h.Service.GetCandidate(c.Request.Context(), actor, c.Param("projectId"), c.Param("runId"))
 	if err != nil {
-		writeGenerationError(c, requestID, generationHTTPStatus(err), err)
+		writeGenerationError(c, requestID, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"data": candidate, "request_id": requestID, "meta": gin.H{"replayed": false, "refresh_required": false}})
@@ -171,12 +172,12 @@ func (h *Handler) GetCandidate(c *gin.Context) {
 
 func (h *Handler) actor(c *gin.Context, requestID string) (Actor, bool) {
 	if h.ResolveActor == nil {
-		writeGenerationError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
+		writeGenerationError(c, requestID, ErrUnauthenticated)
 		return Actor{}, false
 	}
 	actor, ok := h.ResolveActor(c)
 	if !ok || actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" {
-		writeGenerationError(c, requestID, http.StatusUnauthorized, errors.New("unauthenticated"))
+		writeGenerationError(c, requestID, ErrUnauthenticated)
 		return Actor{}, false
 	}
 	return actor, true
@@ -193,69 +194,37 @@ func generationRequestID(c *gin.Context) string {
 	return id
 }
 
-func generationHTTPStatus(err error) int {
-	switch {
-	case errors.Is(err, ErrInvalidRequest):
-		return http.StatusBadRequest
-	case errors.Is(err, ErrInsufficientEvidence), errors.Is(err, ErrAssetNotReady),
-		errors.Is(err, ErrPreflightBlocked), errors.Is(err, ErrInvalidState),
-		errors.Is(err, ErrAssetNotAuthorized):
-		return http.StatusUnprocessableEntity
-	case errors.Is(err, ErrNotFound):
-		return http.StatusNotFound
-	case errors.Is(err, ErrForbidden), errors.Is(err, ErrSourceAccessDenied):
-		return http.StatusForbidden
-	case errors.Is(err, ErrVersionConflict), errors.Is(err, ErrStaleInput), errors.Is(err, ErrIdempotencyConflict):
-		return http.StatusConflict
-	case errors.Is(err, ErrDependencyUnavailable):
-		return http.StatusServiceUnavailable
-	default:
-		return http.StatusInternalServerError
+// writeGenerationError renders a business failure.
+//
+// The outward shape of a failure is declared by the error itself, at the place
+// where that fact is known. This mapper therefore holds no table of business
+// errors: it renders what the error declares, and falls back to a generic
+// internal error for the failures that declare nothing.
+//
+// The denied asset list is the one thing this surface still adds: it is part
+// of the answer for an unauthorized asset, not a separate classification.
+func writeGenerationError(c *gin.Context, requestID string, err error) {
+	form, ok := clienterror.FormOf(err)
+	if !ok {
+		form = clienterror.InternalError
 	}
-}
-
-func writeGenerationError(c *gin.Context, requestID string, status int, err error) {
-	code, message := "internal_error", "服务器暂时无法完成请求。"
-	var details any
-	switch {
-	case errors.Is(err, ErrInvalidRequest):
-		code, message = "invalid_request", "请求字段不符合约定。"
-	case errors.Is(err, ErrInsufficientEvidence):
-		code, message = "insufficient_evidence", "允许资料不足以生成该章节。"
-	case errors.Is(err, ErrAssetNotReady):
-		code, message = "asset_not_ready", "资料尚未处理完成。"
-	case errors.Is(err, ErrPreflightBlocked):
-		code, message = "preflight_blocked", "请先处理交付阻断项。"
-	case errors.Is(err, ErrInvalidState):
-		code, message = "invalid_state", "当前阶段不能执行该动作。"
-	case errors.Is(err, ErrAssetNotAuthorized):
-		code, message = "asset_not_authorized", "请求中存在未获授权的资料，未开始处理。"
-		var denied *AssetNotAuthorizedError
-		if errors.As(err, &denied) {
-			items := make([]map[string]string, 0, len(denied.Denied))
-			for _, item := range denied.Denied {
-				items = append(items, map[string]string{"asset_id": item.AssetID, "reason": item.Reason})
-			}
-			details = map[string]any{"denied": items}
-		}
-	case errors.Is(err, ErrNotFound):
-		code, message = "not_found", "资源不存在或不可访问。"
-	case errors.Is(err, ErrForbidden):
-		code, message = "forbidden", "无权执行该动作。"
-	case errors.Is(err, ErrSourceAccessDenied):
-		code, message = "source_access_denied", "资料授权已不可用。"
-	case errors.Is(err, ErrVersionConflict):
-		code, message = "version_conflict", "输入版本已变化，请重新读取。"
-	case errors.Is(err, ErrIdempotencyConflict):
-		code, message = "idempotency_conflict", "同一幂等键对应不同请求。"
-	case errors.Is(err, ErrDependencyUnavailable):
-		code, message = "dependency_unavailable", "依赖暂时不可用。"
-	case status == http.StatusUnauthorized:
-		code, message = "unauthenticated", "请登录后重试。"
-	}
-	errorBody := gin.H{"code": code, "message": message, "retryable": status >= 500}
-	if details != nil {
+	errorBody := gin.H{"code": form.Code, "message": form.Message, "retryable": form.Retryable}
+	if details := deniedAssetDetails(err); details != nil {
 		errorBody["details"] = details
 	}
-	c.JSON(status, gin.H{"error": errorBody, "request_id": requestID})
+	c.JSON(form.Status, gin.H{"error": errorBody, "request_id": requestID})
+}
+
+// deniedAssetDetails reports the assets that were not authorized, when the
+// failure carries them.
+func deniedAssetDetails(err error) any {
+	var denied *AssetNotAuthorizedError
+	if !errors.As(err, &denied) {
+		return nil
+	}
+	items := make([]map[string]string, 0, len(denied.Denied))
+	for _, item := range denied.Denied {
+		items = append(items, map[string]string{"asset_id": item.AssetID, "reason": item.Reason})
+	}
+	return map[string]any{"denied": items}
 }

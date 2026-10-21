@@ -9,12 +9,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
-var ErrInvalidRuleSetUseAudit = errors.New("invalid ruleset use audit event")
+// ErrInvalidRuleSetUseAudit is a rule set use audit query whose range is not
+// usable. It states its own outward form.
+var ErrInvalidRuleSetUseAudit = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "规则集使用审计查询范围无效。", Retryable: false}, "invalid ruleset use audit event")
 
 const (
 	RuleSetUseAuditDefaultLimit = 50

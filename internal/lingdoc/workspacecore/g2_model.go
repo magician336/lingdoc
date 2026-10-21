@@ -3,6 +3,7 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
@@ -46,6 +47,19 @@ type G2Basis struct {
 	AssetVersions        []G2AssetVersion `json:"asset_versions"`
 	SourceCatalogVersion string           `json:"source_catalog_version"`
 }
+
+// String is the comparable form of the basis.
+//
+// It encodes exactly the fields that decide whether a basis still holds: the
+// project version, the research-conditions revision and the context revision.
+// The other fields describe what the basis was collected for, not whether it
+// is still current, so they stay out of the comparison.
+func (b G2Basis) String() string {
+	return strconv.FormatInt(b.ProjectVersion, 10) + ":" +
+		strconv.FormatInt(b.SpecRevision, 10) + ":" +
+		strconv.FormatInt(b.ContextRevision, 10)
+}
+
 type G2AssetVersion struct {
 	AssetID       string `json:"asset_id"`
 	AssetRevision int    `json:"asset_revision"`

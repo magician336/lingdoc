@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -19,7 +20,9 @@ const (
 	MetricTransactionalCapability = "transactional_capability"
 )
 
-var ErrRuleSetMetricsUnavailable = errors.New("ruleset metrics storage unavailable")
+// ErrRuleSetMetricsUnavailable is a rule set metrics storage that could not
+// be read. It states its own outward form.
+var ErrRuleSetMetricsUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "metrics_unavailable", Message: "规则集运行指标暂不可用，请稍后再试。", Retryable: true}, "ruleset metrics storage unavailable")
 
 // RuleSetMetricsQuery bounds the persisted operational evidence read. The
 // project authorization check is performed before any metric row is queried.

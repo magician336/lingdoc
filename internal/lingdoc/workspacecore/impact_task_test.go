@@ -474,8 +474,10 @@ func confirmChapterAtSpecRevision(t *testing.T, svc *Service, actor Actor, proje
 		t.Fatal("chapter has no current version")
 	}
 	id := "impact-confirmation"
-	details, err := json.Marshal(chapterConfirmationDetails{ID: id, ChapterVersionID: *chapter.CurrentVersionID,
-		SpecRevision: p.SpecRevision, TemplateVersion: p.TemplateVersion, Valid: true})
+	details, err := json.Marshal(chapterConfirmationDetails{ID: id, ChapterID: chapter.ID,
+		ChapterVersionID: *chapter.CurrentVersionID, SpecRevision: p.SpecRevision,
+		TemplateVersion: p.TemplateVersion, ActorUserID: actor.UserID,
+		CreatedAt: time.Now().UTC(), Valid: true})
 	if err != nil {
 		t.Fatal(err)
 	}

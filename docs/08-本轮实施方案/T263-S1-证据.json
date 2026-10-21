@@ -1,0 +1,112 @@
+{
+  "mode": "real",
+  "issue": "https://github.com/magician336/lingdoc/issues/263",
+  "ticket": "47.07 旧错误平表 contract + 结构断言",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
+  "what_this_ticket_closes": [
+    "旧平表删除，传输层映射器只保留未知错误的兜底分支（随 47.06 / #262 落地）",
+    "结构断言：传输层不得出现按业务错误逐个分支的映射表（随 47.06 / #262 落地）",
+    "兜底仍为内部错误且不泄漏内部机制",
+    "守护测试：新增一个业务错误并给它一个专属形态，不需要改动共享映射表就能得到正确的对外形态",
+    "全量错误码与文案契约测试：迁移前后的对外形态对照表（状态码 / 错误码 / 文案 / 响应头 / 信封字段集）",
+    "文档更新：错误形态的归属判据、共享形态目录、兜底语义写进仓库文档",
+    "健康度评分卡的 R2 项更新（分数与差值）",
+    "回写 #253：R2 遗留项关闭"
+  ],
+  "structural_guards": [
+    {
+      "name": "TestTransportFilesHoldNoBusinessErrorBranch",
+      "file": "internal/lingdoc/workspace/client_form_convergence_test.go",
+      "covers": "五个传输文件内不得有按业务错误分支的 switch/条件，不得有按业务错误判断的 errors.Is/As（唯一豁免是合法携带 details 的路径）"
+    },
+    {
+      "name": "TestTransportMappersOnlyFallBack",
+      "file": "internal/lingdoc/workspace/client_form_convergence_test.go",
+      "covers": "六个渲染器内不得有 switch、不得有业务错误判断"
+    },
+    {
+      "name": "TestConvergedFailuresDeclareTheirOwnForm",
+      "file": "internal/lingdoc/workspace/client_form_convergence_test.go",
+      "covers": "新增一个业务错误并给它专属形态，不改任何映射表即得到正确的对外形态——这是 ADR 0003 §六「新增业务错误不再改动映射器」变成可执行保证的地方"
+    },
+    {
+      "name": "TestUnknownFailureFallsBackWithoutLeaking",
+      "file": "internal/lingdoc/workspace/client_form_convergence_test.go",
+      "covers": "未映射错误仍答 500 internal_error，响应里不出现原始数据库错误、SQLSTATE 或包名"
+    },
+    {
+      "name": "http_fallback_test.go × 3（三个包内各一份）",
+      "covers": "规则集存储面、候选采纳面、生成面的兜底语义"
+    }
+  ],
+  "negative_validation": [
+    {
+      "assertion": "TestTransportFilesHoldNoBusinessErrorBranch",
+      "injected": "向 internal/lingdoc/rulesetstore/http.go 注入 if errors.Is(err, ErrRuleSetNotFound)",
+      "reported": "精确报出该文件与行号",
+      "rolled_back": true
+    },
+    {
+      "assertion": "TestTransportMappersOnlyFallBack",
+      "injected": "向 internal/lingdoc/generation/http.go 注入 switch { case errors.Is(err, ErrNotFound) }",
+      "reported": "报出「分支按业务错误选择结果」与「还在按业务错误分支」",
+      "rolled_back": true
+    }
+  ],
+  "form_table": {
+    "path": "docs/08-本轮实施方案/47.06-错误形态对照表.md",
+    "generated": "由脚本从 2ad3bc5 解析旧平表，与工作树的声明逐条比对，五维（状态码 / 错误码 / 文案 / retryable / 信封字段集）",
+    "rows": 67,
+    "identical": 33,
+    "differing": 34,
+    "dimension_level_rows": 42,
+    "unauthorized_differences": 0,
+    "script_conclusion": "all differences are approved"
+  },
+  "health_r2_reread": {
+    "document": "docs/08-本轮实施方案/G3-缺口收口-健康度评分-20261020.md",
+    "section": "R2 项的局部复评（2026-10-21，Spec #47 段二）",
+    "kind": "局部复评（只覆盖 R2 项与其直接影响的三行评分，其余 17 行读数沿用 2026-10-20 在 5eab412 上的读数）",
+    "bound_code_state": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+    "r2_verdict": "已闭合——42 个共享 case errors.Is(...) 全部清零；「新增业务错误不再改动映射器」已是可执行保证",
+    "scores": {
+      "H_L": {
+        "before": 52.0,
+        "after": 54.8,
+        "delta": 2.8,
+        "confidence": "B"
+      },
+      "F_R": {
+        "before": 56.6,
+        "after": 59.4,
+        "delta": 2.8,
+        "confidence": "B"
+      },
+      "dashboard_0.7HL_0.3FR": {
+        "before": 53.4,
+        "after": 56.2,
+        "delta": 2.8,
+        "confidence": "B"
+      }
+    },
+    "rows_changed": {
+      "C3 特例与信息泄漏": "2 → 3（① g5_policy.go 的逐 action 特例与 ③ 缺口清单三处重复本轮未重判，仍在）",
+      "E3 持续重构": "2 → 3（承诺已兑现且有守护；段二另把错误映射与两套操作管道收敛为共享核心 operationcore）",
+      "K3 代码语义一致性": "2 → 3（① 错误语义双轨已消；② delivery_http_test.go:205-207 仍与 Spec AC-G3-09 相反，属 #254；③ 缺口清单副本仍靠人工同步，属 R4）"
+    },
+    "not_covered": [
+      "G3 规则问题线（R1）、路线图线（R3）、处置/求值接缝（R5）、稳定化 revision 双判（R6）、CI 与真实服务链路",
+      "C3 的 ① g5_policy.go 逐 action 特例未重新取证（#253 的根因是审计分类列宽，与该特例不是同一件事）",
+      "段三（47.11–47.16）未开始"
+    ]
+  },
+  "issue_253_writeback": {
+    "issue": "https://github.com/magician336/lingdoc/issues/253",
+    "state": "CLOSED",
+    "leftover_2_closed": "共享错误映射表仍有 42 个 case errors.Is(...)（健康度评分 R2）——随 #262 / #263 关闭",
+    "leftover_1_open": "SQLite 与 PostgreSQL 的审计表列宽不一致（TEXT vs varchar(64)）——由 #276 独立承担，不随本票关闭"
+  },
+  "not_run": [],
+  "head_47_10_commit": "6e88ec54e5be3fcb7d0784b72a4473ca325224b1",
+  "reverification_after_baseline_merge": "路由面基线在 6e88ec5 上测得；随后并入前移的 origin/main（基线 e655bc6），在合并后的 9c83f43 上复验：生产装配仍是 48 条、能力齐全的路由树仍是 70 条，断言与测试全部复跑通过。"
+}

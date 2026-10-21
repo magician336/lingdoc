@@ -1,0 +1,80 @@
+{
+  "mode": "real",
+  "note": "47.03 章节「已确认」单一谓词。「章节是否已确认」此前由稳定化的影响解析、规则治理的影响阻断判定、交付预检三处各判各的；现在共用 workspacecore.ChapterConfirmed / ChapterConfirmationOf，确认事实的唯一来源随冻结输入搬运到交付侧，确认失效也收口到一个写入点。口径变化第 8 项：稳定化的影响解析不再附加「章节版本的创建修订 == 项目当前修订」这一条额外判断——三处消费者必须同答，确认记录才是「针对哪版研究条件做的确认」的权威。",
+  "head": "9c83f43c8c543ae3aba209e2048d5be6f641f0f8",
+  "issue": "https://github.com/magician336/lingdoc/issues/271",
+  "ticket": "47.03 章节「已确认」单一谓词",
+  "passed": [
+    {
+      "id": "谓词本身：接受完整且匹配的记录",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/chapter_confirmation_test.go::TestChapterConfirmedAcceptsACompleteMatchingRecord"
+    },
+    {
+      "id": "谓词本身：逐条拒绝不完整或过期的记录",
+      "status": "passed",
+      "evidence": "chapter_confirmation_test.go::TestChapterConfirmedRejectsEachIncompleteOrStaleRecord"
+    },
+    {
+      "id": "空章节标识不被接受（DR-47-01 收紧为相等）",
+      "status": "passed",
+      "evidence": "chapter_confirmation_test.go::TestChapterConfirmedRejectsAnEmptyBasis"
+    },
+    {
+      "id": "「没有记录」与「记录不匹配」分开判定",
+      "status": "passed",
+      "evidence": "chapter_confirmation_test.go::TestChapterConfirmedDistinguishesNoRecordFromAMismatchedOne"
+    },
+    {
+      "id": "当前记录与过期记录并存时取当前那条",
+      "status": "passed",
+      "evidence": "chapter_confirmation_test.go::TestChapterConfirmedAcceptsACurrentRecordBesideAStaleOne"
+    },
+    {
+      "id": "两个入口给出同一结论",
+      "status": "passed",
+      "evidence": "chapter_confirmation_test.go::TestChapterConfirmationOfAgreesWithChapterConfirmed"
+    },
+    {
+      "id": "确认失效只有一个写入点（结构断言）",
+      "status": "passed",
+      "evidence": "chapter_confirmation_ownership_test.go::TestChapterConfirmationFlagHasOneWritePoint / TestChapterConfirmationWritePointExists / TestChapterConfirmationAssertionReadsThePackageItself"
+    },
+    {
+      "id": "三处消费者同答（两处走真实存储与真实接缝，第三处用源码断言钉住同一个谓词）",
+      "status": "passed",
+      "evidence": "chapter_confirmation_consistency_test.go::TestConfirmationConsumersAgreeOnTheSameChapter / TestRulesGovernanceRuntimeAsksTheSamePredicate"
+    },
+    {
+      "id": "交付侧不再自行判定（有效性随冻结输入搬运）",
+      "status": "passed",
+      "evidence": "internal/lingdoc/delivery/confirmation_validity_test.go::TestConfirmationValidDistinguishesRecordedFromUnrecorded / TestConfirmationWithoutValidityIsNotAssumedValid"
+    },
+    {
+      "id": "数据核查：不需要数据迁移",
+      "status": "passed",
+      "evidence": "schema 证据：SQLite 与 PostgreSQL 两个库上 chapter_id 都非空且带外键"
+    }
+  ],
+  "negative_validation": [
+    {
+      "assertion": "TestChapterConfirmationFlagHasOneWritePoint",
+      "injected": "探针函数直接写 ConfirmationValid",
+      "reported": "zz_negative_probe.go:7",
+      "rolled_back": true
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "隔离 PostgreSQL 轮",
+      "status": "not_run",
+      "reason": "全量轮未设 LINGDOC_TEST_POSTGRES_DSN，按仓内约定 PG 用例 SKIP"
+    },
+    {
+      "id": "真实服务链路",
+      "status": "not_run",
+      "reason": "本票不涉及外部服务；记 N/A"
+    }
+  ]
+}

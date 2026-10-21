@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"io"
 	"net/http"
 	"strconv"
@@ -22,9 +23,9 @@ type Handler struct {
 	full *FullWorkflowDependencies
 	// Optional G5/G7 extensions follow the transport direction as well; a
 	// read dependency must never become the implicit review-anchor writer.
-	machineReads       machineReadApplication
-	reviewAnchorsRead  reviewAnchorReadApplication
-	reviewAnchorsWrite reviewAnchorWriteApplication
+	machineReads       MachineReadApplication
+	reviewAnchorsRead  ReviewAnchorReadApplication
+	reviewAnchorsWrite ReviewAnchorWriteApplication
 	projects           ProjectApplication
 	members            MembershipApplication
 	chapters           ChapterApplication
@@ -36,12 +37,66 @@ type Handler struct {
 	templates          delivery.TemplateReader
 }
 
-func NewHandler(deps HandlerDependencies) *Handler {
+// NewHandler composes the workspace transport.
+//
+// It fails when a required port is missing. A required port backs a family of
+// routes that cannot answer without it, so a handler assembled without one
+// would answer a request with a nil dereference. Failing here turns that into
+// a startup error that names the missing port.
+//
+// The optional capabilities are the ones the caller asked for by name: see the
+// With... methods on HandlerDependencies. A capability that was not asked for
+// is not registered, and that is a decision the caller made by not writing the
+// line.
+func NewHandler(deps HandlerDependencies) (*Handler, error) {
 	templates := deps.Templates
 	if templates == nil {
 		templates = delivery.NewFixedTemplateReader()
 	}
-	projects, members, chapters, templatesApp, changeSets := deps.Projects, deps.Members, deps.Chapters, deps.TemplateApp, deps.ChangeSets
+
+	ports, err := resolvePorts(deps)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Handler{
+		full: deps.FullWorkflow, machineReads: deps.machineReads,
+		reviewAnchorsRead: deps.anchorsRead, reviewAnchorsWrite: deps.anchorsWrite,
+		projects: ports.projects, members: ports.members, chapters: ports.chapters,
+		templatesApp: ports.templatesApp, changeSets: ports.changeSets,
+		sources: deps.Sources, integration: deps.Integration,
+		rewrites: deps.selectedRewrites, templates: templates,
+	}, nil
+}
+
+// requiredPorts are the ports the registered routes cannot work without.
+//
+// Each one is named here rather than inferred from the handler's fields, so
+// the list of what a workspace needs is written down once.
+type requiredPorts struct {
+	projects     ProjectApplication
+	members      MembershipApplication
+	chapters     ChapterApplication
+	templatesApp TemplateApplication
+	changeSets   ChangeSetApplication
+	sources      SourceApplicationService
+}
+
+// resolvePorts finds the port each route family needs.
+//
+// The inference lives here and nowhere else: a caller that supplies one
+// broad application service, or a split read and write pair, gets the same
+// ports either way. Doing the inference in one place is what keeps the
+// routes from depending on how the caller happened to inject them.
+func resolvePorts(deps HandlerDependencies) (requiredPorts, error) {
+	var ports requiredPorts
+	ports.projects = deps.Projects
+	ports.members = deps.Members
+	ports.chapters = deps.Chapters
+	ports.templatesApp = deps.TemplateApp
+	ports.changeSets = deps.ChangeSets
+	ports.sources = deps.Sources
+
 	// ApplicationService is a compatibility edge for older composition roots.
 	// New callers should inject the focused ports above; this adapter is the only
 	// place where the legacy cross-use-case surface is widened again.
@@ -60,57 +115,57 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	// from one side when explicit read/write dependencies were supplied.
 	if legacy != nil && (deps.Service != nil || deps.Read == nil || deps.Write == nil) {
 		adapter := legacyApplicationAdapter{ApplicationService: legacy}
-		if projects == nil {
-			projects = adapter
+		if ports.projects == nil {
+			ports.projects = adapter
 		}
-		if members == nil {
-			members = adapter
+		if ports.members == nil {
+			ports.members = adapter
 		}
-		if chapters == nil {
-			chapters = adapter
+		if ports.chapters == nil {
+			ports.chapters = adapter
 		}
-		if templatesApp == nil {
-			templatesApp = adapter
+		if ports.templatesApp == nil {
+			ports.templatesApp = adapter
 		}
-		if changeSets == nil {
-			changeSets = adapter
+		if ports.changeSets == nil {
+			ports.changeSets = adapter
 		}
 	}
 	// A focused test double may implement one port without carrying the legacy
 	// interface. With both read/write ports present, use the split adapters below
 	// rather than a broad interface inferred from just one dependency.
 	if deps.Read == nil || deps.Write == nil {
-		if projects == nil {
+		if ports.projects == nil {
 			if candidate, ok := any(deps.Read).(ProjectApplication); ok {
-				projects = candidate
+				ports.projects = candidate
 			} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
-				projects = candidate
+				ports.projects = candidate
 			}
 		}
-		if members == nil {
+		if ports.members == nil {
 			if candidate, ok := any(deps.Write).(MembershipApplication); ok {
-				members = candidate
+				ports.members = candidate
 			}
 		}
-		if chapters == nil {
+		if ports.chapters == nil {
 			if candidate, ok := any(deps.Read).(ChapterApplication); ok {
-				chapters = candidate
+				ports.chapters = candidate
 			} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
-				chapters = candidate
+				ports.chapters = candidate
 			}
 		}
-		if templatesApp == nil {
+		if ports.templatesApp == nil {
 			if candidate, ok := any(deps.Read).(TemplateApplication); ok {
-				templatesApp = candidate
+				ports.templatesApp = candidate
 			} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
-				templatesApp = candidate
+				ports.templatesApp = candidate
 			}
 		}
-		if changeSets == nil {
+		if ports.changeSets == nil {
 			if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
-				changeSets = candidate
+				ports.changeSets = candidate
 			} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
-				changeSets = candidate
+				ports.changeSets = candidate
 			}
 		}
 	}
@@ -120,44 +175,43 @@ func NewHandler(deps HandlerDependencies) *Handler {
 	// route has a non-nil dependency and the handler never widens the contract
 	// again just to make a route work.
 	if deps.Read != nil && deps.Write != nil {
-		if projects == nil {
-			projects = splitProjectApplication{read: deps.Read, write: deps.Write}
+		if ports.projects == nil {
+			ports.projects = splitProjectApplication{read: deps.Read, write: deps.Write}
 		}
-		if members == nil {
-			members = splitMembershipApplication{write: deps.Write}
+		if ports.members == nil {
+			ports.members = splitMembershipApplication{write: deps.Write}
 		}
-		if chapters == nil {
-			chapters = splitChapterApplication{read: deps.Read, write: deps.Write}
+		if ports.chapters == nil {
+			ports.chapters = splitChapterApplication{read: deps.Read, write: deps.Write}
 		}
-		if templatesApp == nil {
-			templatesApp = splitTemplateApplication{read: deps.Read, write: deps.Write}
+		if ports.templatesApp == nil {
+			ports.templatesApp = splitTemplateApplication{read: deps.Read, write: deps.Write}
 		}
-		if changeSets == nil {
-			changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
-		}
-	}
-	// Explicit compatibility injection remains supported. Otherwise resolve
-	// optional extensions independently so distinct read/write services stay split.
-	var readExtension, writeExtension any = deps.Service, deps.Service
-	if deps.Service == nil {
-		readExtension, writeExtension = deps.Read, deps.Write
-		if readExtension == nil {
-			readExtension = deps.Write
-		}
-		if writeExtension == nil {
-			writeExtension = deps.Read
+		if ports.changeSets == nil {
+			ports.changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
 		}
 	}
-	machineReads, _ := readExtension.(machineReadApplication)
-	anchorReads, _ := readExtension.(reviewAnchorReadApplication)
-	anchorWrites, _ := writeExtension.(reviewAnchorWriteApplication)
-	return &Handler{
-		full: deps.FullWorkflow, machineReads: machineReads,
-		reviewAnchorsRead: anchorReads, reviewAnchorsWrite: anchorWrites,
-		projects: projects, members: members, chapters: chapters, templatesApp: templatesApp, changeSets: changeSets,
-		sources: deps.Sources, integration: deps.Integration,
-		rewrites: deps.SelectedRewrites, templates: templates,
+
+	// Every port below backs a family of routes that cannot answer without it.
+	// A handler assembled without one would answer a request with a nil
+	// dereference, so the assembly fails here instead: the missing port is
+	// named, and the service does not start.
+	for _, required := range []struct {
+		name string
+		held bool
+	}{
+		{"projects", ports.projects != nil},
+		{"members", ports.members != nil},
+		{"chapters", ports.chapters != nil},
+		{"templates", ports.templatesApp != nil},
+		{"change sets", ports.changeSets != nil},
+		{"sources", ports.sources != nil},
+	} {
+		if !required.held {
+			return requiredPorts{}, fmt.Errorf("lingdoc workspace handler: the %s port is required", required.name)
+		}
 	}
+	return ports, nil
 }
 
 // legacyApplicationAdapter makes the migration boundary explicit in the
@@ -298,6 +352,13 @@ func (a splitChangeSetApplication) ReassessChangeSetResult(ctx context.Context, 
 	return a.write.ReassessChangeSetResult(ctx, actor, projectID, changeSetID, key)
 }
 
+// Register registers the workspace's routes.
+//
+// The core families are always registered: the ports behind them are
+// required, so a handler that exists has them. The optional families are
+// registered only when the caller asked for the capability - see the With...
+// methods on HandlerDependencies. An endpoint's absence is then a decision
+// the caller made, not an accident of which field happened to be filled in.
 func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/templates/:templateId", h.getTemplate)
 	routes.Read.GET("/projects", h.listProjects)
@@ -329,7 +390,9 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.PUT("/projects/:projectId/members", h.saveMembers)
 	routes.Read.GET("/projects/:projectId/chapters", h.listChapters)
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/working-copy", h.getWorkingCopy)
-	routes.Read.GET("/projects/:projectId/chapters/:chapterId/confirmations/current", h.getCurrentConfirmation)
+	if h.reviewAnchorsRead != nil {
+		routes.Read.GET("/projects/:projectId/chapters/:chapterId/confirmations/current", h.getCurrentConfirmation)
+	}
 	routes.Read.GET("/projects/:projectId/chapters/:chapterId/versions", h.listChapterVersions)
 	routes.Read.GET("/projects/:projectId/assets", h.listAssets)
 	routes.Write.POST("/projects/:projectId/assets", h.bindAsset)
@@ -338,10 +401,16 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Read.GET("/projects/:projectId/sources/:sourceId/context", h.getSourceContext)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/versions", h.saveChapter)
 	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy", h.saveWorkingCopy)
-	routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor", h.setReviewAnchor)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
+	// The review anchor and the rewrite endpoints exist because the caller
+	// asked for them. A capability that was not asked for has no route, and
+	// that is the caller's decision rather than an accident of which field
+	// happened to be filled in.
+	if h.reviewAnchorsWrite != nil {
+		routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor", h.setReviewAnchor)
+	}
 	if h.rewrites != nil {
 		routes.Read.GET("/projects/:projectId/rewrite-candidates/:candidateId", h.getSelectedRewrite)
 		routes.Write.POST("/projects/:projectId/chapters/:chapterId/rewrite-candidates", h.createSelectedRewrite)
@@ -388,8 +457,11 @@ func sendError(c *gin.Context, err error) {
 			"retryable": form.Retryable}, "request_id": requestID(c)})
 		return
 	}
+	// The fallback is a 5xx, so it is retryable (DR-47-03: 4xx is not, 5xx is).
+	// Every surface answers an unknown failure the same way, and the same
+	// semantic must not answer differently depending on the route.
 	c.JSON(500, gin.H{"error": gin.H{"code": "internal_error", "message": "操作失败，请稍后再试。",
-		"retryable": false}, "request_id": requestID(c)})
+		"retryable": true}, "request_id": requestID(c)})
 }
 
 func sendErrorDetails(c *gin.Context, status int, code, message string, details any) {
@@ -434,7 +506,7 @@ func decodeBody(c *gin.Context, dst any) bool {
 
 func idempotencyKey(c *gin.Context) (string, bool) {
 	key := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
-	if len(key) < 8 || len(key) > 128 {
+	if !operationcore.ValidKey(key) {
 		sendError(c, ErrInvalidRequest)
 		return "", false
 	}

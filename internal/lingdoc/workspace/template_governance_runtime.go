@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
@@ -355,7 +356,10 @@ func (r *TemplateGovernanceRuntime) VerifyTemplateSourcesInTransaction(ctx conte
 	return nil
 }
 
-var ErrG4CrossTenantSourceUnsupported = errors.New("template_governance: cross-tenant shared sources require a transaction-safe grant reader and are unavailable in this first pass")
+// ErrG4CrossTenantSourceUnsupported is a cross-tenant shared source that the
+// governance flow cannot recheck inside one transaction. It states its own
+// outward form.
+var ErrG4CrossTenantSourceUnsupported = clienterror.New(clienterror.Form{Status: 422, Code: "cross_tenant_source_unsupported", Message: "当前目录流程无法在同一事务复核跨租户共享授权。", Retryable: false}, "template_governance: cross-tenant shared sources require a transaction-safe grant reader and are unavailable in this first pass")
 
 // g4ReadOnlyBindings hides CurrentAssetRefresher: parent transactions recheck
 // the actual stored active revision and fingerprint rather than auto-advancing
@@ -793,14 +797,42 @@ func (r *TemplateGovernanceRuntime) Check(tx core.Transaction, expected core.Pro
 			if err := db.Table("lingdoc_chapter_confirmations").Select("id,details_json").Where("chapter_id=? AND chapter_version_id=? AND valid=?", chapter.ID, version, true).Order("created_at DESC").Find(&rows).Error; err != nil {
 				return nil, err
 			}
+			// The confirmation question is owned by one predicate
+			// (core.ChapterConfirmed), so this surface cannot drift away from
+			// the delivery preflight and the stabilization gate.
+			facts := make([]core.ChapterConfirmationFact, 0, len(rows))
+			parsed := make([]candidateadoption.Confirmation, 0, len(rows))
 			for _, row := range rows {
 				var c candidateadoption.Confirmation
 				if err := json.Unmarshal([]byte(row.DetailsJSON), &c); err != nil {
 					return nil, err
 				}
-				if c.Valid && c.ID == row.ID && c.ChapterVersionID == version && int64(c.SpecRevision) == p.SpecRevision && c.TemplateVersion == p.TemplateVersion && (c.ChapterID == "" || c.ChapterID == chapter.ID) {
-					confirmation = &c
-					break
+				if c.ID != row.ID {
+					continue
+				}
+				parsed = append(parsed, c)
+				facts = append(facts, core.ChapterConfirmationFact{
+					ID:               c.ID,
+					ChapterID:        c.ChapterID,
+					ChapterVersionID: c.ChapterVersionID,
+					SpecRevision:     int64(c.SpecRevision),
+					TemplateVersion:  c.TemplateVersion,
+					ConfirmerID:      c.ActorUserID,
+					ConfirmedAt:      c.CreatedAt,
+					Valid:            c.Valid,
+				})
+			}
+			if match, ok := core.ChapterConfirmationOf(core.ChapterConfirmationBasis{
+				ChapterID:        chapter.ID,
+				ChapterVersionID: version,
+				SpecRevision:     p.SpecRevision,
+				TemplateVersion:  p.TemplateVersion,
+			}, facts); ok {
+				for i := range parsed {
+					if parsed[i].ID == match.ID {
+						confirmation = &parsed[i]
+						break
+					}
 				}
 			}
 		}

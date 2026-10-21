@@ -1,9 +1,7 @@
 package workspace
 
 import (
-	"errors"
-
-	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -44,7 +42,9 @@ func RegisterG4FullRoutes(group *gin.RouterGroup, runtime *TemplateGovernanceRun
 
 type g4FullHTTP struct{ runtime *TemplateGovernanceRuntime }
 
-var ErrG4HumanDecisionRequired = errors.New("template_governance_human_decision_required")
+// ErrG4HumanDecisionRequired is a governance decision that has to be made by a
+// human account. It states its own outward form.
+var ErrG4HumanDecisionRequired = clienterror.New(clienterror.Form{Status: 403, Code: "human_decision_required", Message: "请使用当前人工账号复核并提交。", Retryable: false}, "template_governance_human_decision_required")
 
 func (h g4FullHTTP) actor(c *gin.Context, human bool) (governance.Actor, bool) {
 	actor, ok := caller(c)
@@ -404,46 +404,29 @@ func (h g4FullHTTP) rejectSuggestion(c *gin.Context) {
 	sendG4OK(c, 200, out, false)
 }
 
-// G4ErrorStatus is additive to the shared transport mapper. Unknown/core errors
-// continue through sendError, preserving existing source and workspace codes.
-func G4ErrorStatus(err error) (int, string, string, bool) {
-	switch {
-	case errors.Is(err, ErrG4HumanDecisionRequired):
-		return 403, "human_decision_required", "请使用当前人工账号复核并提交。", true
-	case errors.Is(err, ErrG4CrossTenantSourceUnsupported):
-		return 422, "cross_tenant_source_unsupported", "当前目录流程无法在同一事务复核跨租户共享授权。", true
-	case errors.Is(err, governance.ErrUnauthorized):
-		return 403, "template_governance_authorization_unavailable", "目录治理授权不可用。", true
-	case errors.Is(err, governance.ErrSourceUnavailable):
-		return 403, "source_access_denied", "来源已不可用或无当前授权。", true
-	case errors.Is(err, governance.ErrUnavailable), errors.Is(err, governance.ErrModelUnavailable):
-		return 503, "template_governance_unavailable", "目录或规则建议服务尚未配置。", true
-	case errors.Is(err, governance.ErrNotFound), errors.Is(err, rulesetstore.ErrRuleSetNotFound):
-		return 404, "not_found", "资源不存在或不可访问。", true
-	case errors.Is(err, governance.ErrIdempotencyConflict):
-		return 409, "idempotency_conflict", "同一个操作键对应不同请求。", true
-	case errors.Is(err, governance.ErrVersionConflict), errors.Is(err, governance.ErrStale), errors.Is(err, rulesetstore.ErrRuleSetVersionExists), errors.Is(err, rulesetstore.ErrRuleSetStateConflict):
-		return 409, "version_conflict", "内容或基线已变化，请先读取当前版本。", true
-	case errors.Is(err, governance.ErrInvalidState), errors.Is(err, template.ErrRuleSetNotDraft), errors.Is(err, template.ErrRuleSetNotPublished):
-		return 409, "invalid_state", "当前版本状态不允许此操作。", true
-	case errors.Is(err, governance.ErrReplayRequired):
-		return 422, "template_replay_required", "须用服务器注册且绑定当前版本的正反例完成回放。", true
-	case errors.Is(err, governance.ErrInvalidOutput):
-		return 502, "invalid_model_output", "模型输出不符合当前目标和规则约束。", true
-	case errors.Is(err, governance.ErrInvalidRequest), errors.Is(err, template.ErrInvalidDefinition), errors.Is(err, template.ErrInvalidRuleSet), errors.Is(err, rulesetstore.ErrDraftHashMustBeEmpty):
-		return 400, "invalid_request", "请求字段不符合约定。", true
+// sendG4Error renders a business failure of the rule governance surface.
+//
+// The outward shape of a failure is declared by the error itself, at the place
+// where that fact is known. This mapper therefore holds no table of business
+// errors: it renders what the error declares, and falls back to a generic
+// internal error for the failures that declare nothing.
+//
+// A failure that carries no form of its own keeps the shared workspace
+// answers, including the denied asset list.
+func sendG4Error(c *gin.Context, err error) {
+	if form, ok := clienterror.FormOf(err); ok {
+		c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message,
+			"retryable": form.Retryable}, "request_id": requestID(c)})
+		return
 	}
-	return 0, "", "", false
+	if status, code, message, details, ok := sourceErrorStatus(err); ok {
+		sendErrorDetails(c, status, code, message, details)
+		return
+	}
+	c.JSON(500, gin.H{"error": gin.H{"code": "internal_error", "message": "操作失败，请稍后再试。",
+		"retryable": true}, "request_id": requestID(c)})
 }
 func sendG4OK(c *gin.Context, status int, data any, _ bool) {
 	replayed, _ := c.Get("g4_operation_replayed")
 	sendOK(c, status, data, replayed == true)
-}
-
-func sendG4Error(c *gin.Context, err error) {
-	if status, code, message, ok := G4ErrorStatus(err); ok {
-		sendErrorDetails(c, status, code, message, nil)
-		return
-	}
-	sendError(c, err)
 }

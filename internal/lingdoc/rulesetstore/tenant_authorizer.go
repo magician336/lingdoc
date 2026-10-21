@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 )
 
-var ErrRuleSetAccessDenied = errors.New("ruleset access denied")
+// ErrRuleSetAccessDenied is a member of the tenant that may not perform this
+// rule set operation. It states its own outward form.
+var ErrRuleSetAccessDenied = clienterror.New(clienterror.Form{Status: 403, Code: "forbidden", Message: "当前租户成员无权执行此规则集操作。", Retryable: false}, "ruleset access denied")
 
 // TenantMembershipAuthorizer rechecks the active tenant membership inside the
 // RuleSet transaction. Reads are available to active members; governance writes

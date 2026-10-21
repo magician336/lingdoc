@@ -2,12 +2,11 @@ package workspacecore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/sourcemarker"
 	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
@@ -186,25 +185,20 @@ func adaptMutationResult[T any](invoke func() (json.RawMessage, int, bool, error
 	return value, replayed, nil
 }
 
-// replayPayloadDecodeError marks a persisted replay body that could not be
+// markReplayPayloadDecodeError marks a persisted replay body that could not be
 // decoded during source-sensitive preflight. The operation result must expose
 // this as a replay attempt while ordinary authorization, version and storage
 // errors remain non-replayed.
-type replayPayloadDecodeError struct{ err error }
-
-func (e replayPayloadDecodeError) Error() string { return e.err.Error() }
-func (e replayPayloadDecodeError) Unwrap() error { return e.err }
-
+//
+// The marker itself belongs to the shared pipeline, because the pipeline is
+// what has to recognise it. The workspace marks and recognises the same
+// marker, so a body that failed to decode reads as a replay here and there.
 func markReplayPayloadDecodeError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return replayPayloadDecodeError{err: err}
+	return operationcore.MarkReplayPayloadDecodeError(err)
 }
 
 func isReplayPayloadDecodeError(err error) bool {
-	var target replayPayloadDecodeError
-	return errors.As(err, &target)
+	return operationcore.IsReplayPayloadDecodeError(err)
 }
 
 // Service owns validation, permissions, version expectations and replay order.
@@ -705,231 +699,12 @@ func (s *Service) RestoreProjectResult(ctx context.Context, actor Actor, project
 
 // Current authorization precedes replay; only new operations check expected
 // versions. Exact response and domain mutation commit together.
+//
+// The pipeline that enforces this belongs to `operationcore`. This function
+// declares what the operation is and fills the seams the pipeline runs on; it
+// decides nothing about the order of the steps.
 func runOperation[T any, I any, R any](s *Service, ctx context.Context, actor Actor, operation operationDescriptor[I], port func(Transaction) (T, error), write func(T, Project) (operationResult[R], error)) (json.RawMessage, int, bool, error) {
-	op, target, key := string(operation.Name), operation.Target, operation.Key
-	body, projectID, capability := operation.Input, operation.Request.ProjectID, operation.Request.capability()
-
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
-		return nil, 0, false, ErrInvalidRequest
-	}
-	if err := requireInverseCaller(ctx, body); err != nil {
-		return nil, 0, false, err
-	}
-	if requiresHumanOperation(op) {
-		if err := RequireHumanDecision(ctx); err != nil {
-			return nil, 0, false, err
-		}
-	}
-	started := time.Now()
-	encoded, err := json.Marshal(body)
-	if err != nil {
-		return nil, 0, false, ErrInvalidRequest
-	}
-	hash := sha256.Sum256(encoded)
-	hashString := hex.EncodeToString(hash[:])
-	id := OperationIdentity{Actor: actor, Operation: op, Target: target, Key: key}
-	prepared, cached, err := s.g1PrepareCachedChangeOperation(ctx, actor, operation.Request, id, body)
-	if err != nil {
-		return nil, 0, isReplayPayloadDecodeError(err), err
-	}
-	ctx = prepared
-	if !cached {
-		ctx, err = s.g1PrepareOperation(ctx, actor, op, target, projectID, body)
-		if err != nil {
-			return nil, 0, false, err
-		}
-	}
-	var result OperationResult
-	var replayed bool
-	sourceSensitive := operation.SourceIDs != nil
-	var checkedProject Project
-	var checkedSources []string
-	var checkedFound bool
-	if sourceSensitive {
-		// Source policies may query the same single-connection SQLite pool.
-		// Release this snapshot before calling them, then revalidate its basis
-		// in the final write transaction. Never hold a transaction across policy IO.
-		err = s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-			operations, portErr := mutationPort[OperationTransaction](tx)
-			if portErr != nil {
-				return portErr
-			}
-			var err error
-			checkedProject, err = s.authorizeProject(ctx, tx, operation.Request)
-			if err != nil {
-				return err
-			}
-			if operation.CheckProject != nil {
-				if err := operation.CheckProject(checkedProject); err != nil {
-					return err
-				}
-			}
-			previous, found, err := operations.Operation(id)
-			if err != nil {
-				return err
-			}
-			if found && previous.BodyHash != hashString {
-				return ErrIdempotencyConflict
-			}
-			checkedFound = found
-			checkedSources, err = operationSourceIDs(tx, operation, previous, found)
-			if isReplayPayloadDecodeError(err) {
-				replayed = true
-			}
-			return err
-		})
-		if err != nil {
-			return nil, 0, replayed, err
-		}
-		// Replays reuse the saved result, not the old authorization decision:
-		// revocation must reject a replay before any cached body is returned.
-		// Denial preserves the record, so reauthorization can replay it unchanged.
-		if err := s.checkSources(ctx, actor, projectID, checkedSources); err != nil {
-			return nil, 0, false, err
-		}
-	}
-	err = s.repository.Transaction(ctx, TransactionOptions{RetryLocks: operation.Name == operationSaveSpec || operation.Name == operationCreateProject || operation.Name == operationSaveTemplateCopy || operation.Name == operationBindTemplateCopyRuleSet || operation.Name == operationReverseChangeSet}, func(tx Transaction) error {
-		operations, portErr := mutationPort[OperationTransaction](tx)
-		if portErr != nil {
-			return portErr
-		}
-		var p Project
-		if projectID == "" {
-			if authErr := s.authorizeTenant(ctx, tx, operation.Request); authErr != nil {
-				_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
-				return authErr
-			}
-		} else {
-			var authErr error
-			p, authErr = s.authorizeProject(ctx, tx, operation.Request)
-			if authErr != nil {
-				_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
-				return authErr
-			}
-		}
-		if operation.CheckProject != nil {
-			if err := operation.CheckProject(p); err != nil {
-				return err
-			}
-		}
-		if err := s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, nil); err != nil {
-			// The audit row is part of the operation's atomic boundary, so a
-			// failed audit write fails the operation (fail-closed) — but it must
-			// not escape as a raw storage error, because the shared transport
-			// mapper would answer a valid request with a bare 500.
-			return auditWriteFailed(err)
-		}
-		if s.runtimeMode != "" {
-			if err := RuntimeGate(tx, actor, p, op, s.runtimeMode); err != nil {
-				return err
-			}
-		}
-		previous, found, err := operations.Operation(id)
-		if err != nil {
-			return err
-		}
-		if found && previous.BodyHash != hashString {
-			return ErrIdempotencyConflict
-		}
-		if err := s.g1ValidateOperation(ctx, tx, actor, p, op); err != nil {
-			return err
-		}
-		if sourceSensitive {
-			sourceIDs, err := operationSourceIDs(tx, operation, previous, found)
-			if isReplayPayloadDecodeError(err) {
-				replayed = true
-			}
-			if err != nil {
-				return err
-			}
-			if p.ProjectVersion != checkedProject.ProjectVersion || p.SpecRevision != checkedProject.SpecRevision ||
-				found != checkedFound || !slices.Equal(sourceIDs, checkedSources) {
-				return ErrVersionConflict
-			}
-		}
-
-		if found {
-			result, replayed = previous, true
-			return nil
-		}
-		if err := s.g1StoreOperationPins(ctx, tx, projectID); err != nil {
-			return err
-		}
-		mutation, err := port(tx)
-		if err != nil {
-			return err
-		}
-		written, err := write(mutation, p)
-		if err != nil {
-			return err
-		}
-		output := written.Output
-		if output == "" {
-			output = operation.Output
-		}
-		if output != operation.Output {
-			return ErrInvalidState
-		}
-		value, code := written.Value, written.Status.HTTPStatus()
-		if err := g1StoreReverseSources(ctx, tx, value); err != nil {
-			return err
-		}
-		raw, err := json.Marshal(value)
-		if err != nil {
-			return err
-		}
-		result = OperationResult{BodyHash: hashString, Body: raw, Status: code, Output: output}
-		if err := g1StoreOperationProvenance(tx, id, result, value); err != nil {
-			return err
-		}
-		if _, ok := tx.(gormTransaction); ok && projectID != "" {
-			current, err := tx.Project(actor.TenantID, projectID)
-			if err != nil {
-				return err
-			}
-			if requiresGenericCriticalAudit(op) {
-				if err := g5Audit(tx, actor, projectID, "workspace."+op, target, ""); err != nil {
-					return err
-				}
-			}
-			if s.runtimeMode != "" {
-				trace := RuntimeTraceFromContext(ctx)
-				trace.RuntimeMode = s.runtimeMode
-				status := "success"
-				if code == 409 {
-					status = "conflict"
-				} else if code >= 400 {
-					status = "rejected"
-				}
-				if err := RecordRuntimeOperationContext(WithRuntimeTrace(ctx, trace), tx, actor, current, op, status, time.Since(started).Milliseconds()); err != nil {
-					return err
-				}
-			}
-		}
-		return operations.SaveOperation(id, result)
-	})
-	if err != nil {
-		if s.runtimeMode != "" && projectID != "" {
-			status, code := "failed", "operation_failed"
-			switch {
-			case errors.Is(err, ErrVersionConflict):
-				status, code = "conflict", "version_conflict"
-			case errors.Is(err, ErrSourceUnavailable):
-				status, code = "revoked", "source_access_denied"
-			case errors.Is(err, ErrNotFound):
-				status, code = "rejected", "access_denied"
-			}
-			trace := RuntimeTraceFromContext(ctx)
-			trace.ErrorCode = code
-			_ = s.ObserveRuntime(WithRuntimeTrace(ctx, trace), actor, projectID, op, status, time.Since(started).Milliseconds())
-		}
-		return nil, 0, replayed, err
-	}
-	visible, err := s.g1OperationProjection(ctx, actor, op, projectID, result.Body)
-	if err != nil {
-		return nil, 0, false, err
-	}
-	return visible, result.Status, replayed, nil
+	return runOperationThroughPipeline(s, ctx, actor, operation, port, write)
 }
 
 // operationSourceIDs resolves exactly the references checked for a new write or
@@ -1412,7 +1187,7 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 	if input.ExpectedProjectVersion < 1 || input.ExpectedTemplateCopyVersion < 1 || input.RuleSetID == "" || input.RuleSetVersion == "" || len(input.RuleSetID) > 64 || len(input.RuleSetVersion) > 64 {
 		return nil, 0, false, ErrInvalidRequest
 	}
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+	if !validActor(actor) || !operationcore.ValidKey(key) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	if s.ruleSets == nil {
@@ -1442,7 +1217,7 @@ func (s *Service) BindTemplateCopyRuleSet(ctx context.Context, actor Actor, proj
 			}
 			if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
 				if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-					return operationResult[Project]{}, ErrInvalidState
+					return operationResult[Project]{}, ErrRuleSetStateNotAllowed
 				}
 				return operationResult[Project]{}, ErrInvalidRequest
 			}
@@ -1951,7 +1726,7 @@ func (s *Service) bindUpgradeRuleSet(ctx context.Context, tx any, actor Actor, c
 	}
 	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
 		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-			return lingdoctemplate.Template{}, ErrInvalidState
+			return lingdoctemplate.Template{}, ErrRuleSetStateNotAllowed
 		}
 		return lingdoctemplate.Template{}, ErrInvalidRequest
 	}
@@ -2032,7 +1807,7 @@ func (s *Service) recheckTemplateUpgradeRuleSet(ctx context.Context, tx any, act
 	}
 	if err := lingdoctemplate.CanBindRuleSet(set); err != nil {
 		if errors.Is(err, lingdoctemplate.ErrRuleSetNotPublished) {
-			return ErrInvalidState
+			return ErrRuleSetStateNotAllowed
 		}
 		return fmt.Errorf("%w: current RuleSet snapshot is invalid", ErrInvalidState)
 	}
@@ -2884,7 +2659,7 @@ func sameValidationIssueTargetVersion(left, right ValidationIssueBinding) bool {
 func (s *Service) ReplayValidationIssueDisposition(ctx context.Context, actor Actor, projectID, issueID, key, action, reason string, expectedProjectVersion int64) (json.RawMessage, int, bool, bool, error) {
 	action, reason = strings.ToLower(strings.TrimSpace(action)), strings.TrimSpace(reason)
 	if !validActor(actor) || strings.TrimSpace(projectID) == "" || strings.TrimSpace(issueID) == "" ||
-		len(key) < 8 || len(key) > 128 || (action != "resolve" && action != "dismiss" && action != "waive") ||
+		!operationcore.ValidKey(key) || (action != "resolve" && action != "dismiss" && action != "waive") ||
 		reason == "" || len([]rune(reason)) > 2000 || expectedProjectVersion < 1 {
 		return nil, 0, false, false, ErrInvalidRequest
 	}
@@ -3669,7 +3444,7 @@ func (s *Service) ListChapters(ctx context.Context, actor Actor, projectID strin
 				if redact {
 					result[i].BodyMarkdown = ""
 					result[i].CitationUsages = []CitationUsage{}
-					result[i].ConfirmationValid = false
+					markChapterUnconfirmed(&result[i])
 				}
 			}
 			return result, nil
@@ -3772,7 +3547,7 @@ func (s *Service) SaveChapter(ctx context.Context, actor Actor, projectID, chapt
 		next.BodyMarkdown = input.BodyMarkdown
 		next.SourceIDs = declared
 		next.CitationUsages = usages
-		next.ConfirmationValid = false
+		markChapterUnconfirmed(&next)
 		next.ReviewItems = rebaseReviewItems(old.BodyMarkdown, input.BodyMarkdown, old.ReviewItems, workingCopy.WorkingCopyRevision+1, &id)
 		if err := tx.AppendChapter(old, next, p.SpecRevision); err != nil {
 			return operationResult[Chapter]{}, err

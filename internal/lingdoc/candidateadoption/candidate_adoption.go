@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -30,7 +29,7 @@ import (
 var (
 	ErrInvalidRequest        = clienterror.New(clienterror.Form{Status: 400, Code: "invalid_request", Message: "请求字段不符合约定。", Retryable: false}, "invalid_request")
 	ErrNotFound              = clienterror.New(clienterror.Form{Status: 404, Code: "not_found", Message: "资源不存在或不可访问。", Retryable: false}, "not_found")
-	ErrForbidden             = errors.New("forbidden")
+	ErrForbidden             = clienterror.New(clienterror.Forbidden, "forbidden")
 	ErrSourceAccessDenied    = clienterror.New(clienterror.Form{Status: 403, Code: "source_access_denied", Message: "资料授权已不可用。", Retryable: false}, "source_access_denied")
 	ErrStaleInput            = clienterror.New(clienterror.Form{Status: 409, Code: "stale_input", Message: "快照基于的输入已变化，请重新准备。", Retryable: false}, "stale_input")
 	ErrVersionConflict       = clienterror.New(clienterror.Form{Status: 409, Code: "version_conflict", Message: "内容已变化，请先读取当前版本。", Retryable: false}, "version_conflict")

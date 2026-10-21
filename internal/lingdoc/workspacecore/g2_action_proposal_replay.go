@@ -3,13 +3,14 @@ package workspacecore
 import (
 	"context"
 	"encoding/json"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 )
 
 // Only a completed creation operation may skip today's optimistic version
 // checks. Reconstruct its server-canonical origin/source set, then let the
 // existing G2 engine compare the original hash and reauthorize the receipt.
 func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Actor, projectID, key string, input CreateActionProposalInput) (json.RawMessage, int, bool, error) {
-	if !validActor(actor) || len(key) < 8 || len(key) > 128 {
+	if !validActor(actor) || !operationcore.ValidKey(key) {
 		return nil, 0, false, ErrInvalidRequest
 	}
 	request, err := DecodeAgentChangeDraftInput(projectID, input.TargetID, input.ExpectedContextRevision, input.Input)
@@ -53,7 +54,7 @@ func (s *Service) replayAgentChangeDraftProposal(ctx context.Context, actor Acto
 	// force the receipt's source union onto a changed incoming payload; the
 	// existing G2 engine separately rechecks the receipt's historical sources.
 	input.SourceIDs = g2IDs(append(input.SourceIDs, sourceIDs...))
-	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", identity.Target, key, input, input.SourceIDs, func(Transaction, Project) (any, int, error) {
+	return s.g2Operation(ctx, actor, projectID, "agent", "createActionProposal", identity.Target, key, input, input.SourceIDs, operationcore.HumanGateNotRequired, func(Transaction, Project) (any, int, error) {
 		// If the previously observed operation disappeared, this is no longer
 		// a replay. Never execute an old request against a new baseline here.
 		return nil, 0, ErrVersionConflict

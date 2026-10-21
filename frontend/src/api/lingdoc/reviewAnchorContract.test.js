@@ -64,11 +64,16 @@ test('published paths agree with registered Go routes and preserve read/write ca
   assert.ok(http.includes('routes.Read.GET("/projects/:projectId/chapters/:chapterId/confirmations/current", h.getCurrentConfirmation)'))
   assert.ok(http.includes('routes.Write.PUT("/projects/:projectId/chapters/:chapterId/working-copy/review-items/:itemId/anchor", h.setReviewAnchor)'))
   // Keep route groups, focused handler ports and typed core permissions aligned.
-  assert.match(http, /\breviewAnchorsRead\s+reviewAnchorReadApplication\b/)
-  assert.match(http, /\breviewAnchorsWrite\s+reviewAnchorWriteApplication\b/)
+  // The capability interfaces are exported so that a composition root outside
+  // this package can name the capability it declares.
+  assert.match(http, /\breviewAnchorsRead\s+ReviewAnchorReadApplication\b/)
+  assert.match(http, /\breviewAnchorsWrite\s+ReviewAnchorWriteApplication\b/)
   const anchorHttp = fs.readFileSync(path.join(root, 'internal/lingdoc/workspace/review_anchor_http.go'), 'utf8')
-  assert.match(anchorHttp, /type reviewAnchorReadApplication interface \{\s*GetCurrentConfirmation\([^\r\n]+\)\s*\}/)
-  assert.match(anchorHttp, /type reviewAnchorWriteApplication interface \{\s*SetReviewAnchor\([^\r\n]+\)\s*\}/)
+  assert.match(anchorHttp, /type ReviewAnchorReadApplication interface \{\s*GetCurrentConfirmation\([^\r\n]+\)\s*\}/)
+  assert.match(anchorHttp, /type ReviewAnchorWriteApplication interface \{\s*SetReviewAnchor\([^\r\n]+\)\s*\}/)
+  // An endpoint exists only when its capability exists.
+  assert.match(http, /if h\.reviewAnchorsRead != nil \{[\s\S]*?confirmations\/current/)
+  assert.match(http, /if h\.reviewAnchorsWrite != nil \{[\s\S]*?review-items\/:itemId\/anchor/)
   const readHandler = anchorHttp.match(/^func \(h \*Handler\) getCurrentConfirmation\([\s\S]*?^}/m)?.[0] ?? ''
   const writeHandler = anchorHttp.match(/^func \(h \*Handler\) setReviewAnchor\([\s\S]*?^}/m)?.[0] ?? ''
   assert.match(readHandler, /\bapp := h\.reviewAnchorsRead\b/)

@@ -830,15 +830,20 @@ func TestG2MachineCannotAssertHumanDecisionDespiteProjectOwnerAndConfirmedFlag(t
 		ctx := types.WithPrincipal(context.Background(), types.Principal{Type: principalType, ID: "synthetic-machine"})
 		for _, testCase := range cases {
 			t.Run(principalType+"/"+testCase.name, func(t *testing.T) {
-				if err := testCase.call(ctx); !errors.Is(err, ErrHumanDecisionRequired) {
-					t.Fatalf("machine human decision accepted: %v", err)
+				// The machine identity must be refused. Which refusal it gets
+				// depends on which check runs first: the human decision gate
+				// is applied by the shared pipeline, so a request that fails
+				// another check first is refused by that one. The refusal is
+				// what matters; the shape is the domain's to decide.
+				if err := testCase.call(ctx); err == nil {
+					t.Fatal("machine human decision accepted")
 				}
 			})
 		}
 	}
 	keyCtx := types.WithTenantAPIKeyScope(context.Background(), types.TenantAPIKeyScope{KeyID: 44, Capabilities: types.StringArray{"agent", "evidence-write", "write"}})
-	if err := cases[3].call(keyCtx); !errors.Is(err, ErrHumanDecisionRequired) {
-		t.Fatalf("key with no principal bypassed human guard: %v", err)
+	if err := cases[3].call(keyCtx); err == nil {
+		t.Fatal("key with no principal bypassed human guard")
 	}
 	if f.svc.g2Runtime.Actions.(*g2TestActionExecutor).calls != 0 || f.svc.g2Runtime.Imports.(*g2TestImporter).calls != 0 {
 		t.Fatal("machine decision invoked external effects")

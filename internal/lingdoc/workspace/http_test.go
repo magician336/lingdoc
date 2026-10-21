@@ -175,6 +175,13 @@ func (s *chapterMutationApplicationStub) RejectChangeSetResult(context.Context, 
 	return ChangeSetMutationResult{ChangeSet: s.changeSet}, nil
 }
 
+// emptySourcesStub stands in for the sources port when a test does not
+// exercise the source routes. The port is required, so a handler assembled
+// without it would fail at startup; this keeps the other routes usable.
+type emptySourcesStub struct {
+	SourceApplicationService
+}
+
 type sourceApplicationServiceStub struct {
 	SourceApplicationService
 	actor     Actor
@@ -263,7 +270,10 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 	sources := &sourceApplicationServiceStub{err: &DeniedAssetsError{
 		Denied: []evidence.DeniedAsset{{AssetID: "asset-private", Reason: evidence.DenyNotAuthorized}},
 	}}
-	handler := NewHandler(HandlerDependencies{Sources: sources})
+	handler, err := NewHandler(HandlerDependencies{Sources: sources, Service: &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api/lingdoc"), Write: engine.Group("/api/lingdoc")})
 
@@ -301,7 +311,10 @@ func TestHandlerDelegatesSourceUseCaseAndMapsDeniedDetails(t *testing.T) {
 func TestHandlerUsesInjectedApplicationService(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}
-	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 
@@ -325,7 +338,10 @@ func TestHandlerMapsTransportNeutralSaveSpecResult(t *testing.T) {
 		Project:  Project{ID: "project-1", SpecRevision: 1, ProjectVersion: 2},
 		Replayed: true,
 	}}
-	handler := NewHandler(HandlerDependencies{Write: service})
+	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -360,7 +376,10 @@ func TestHandlerMapsTransportNeutralCreateProjectResult(t *testing.T) {
 	service := &createProjectApplicationStub{result: CreateProjectResult{
 		Project: Project{ID: "project-1", Name: "typed project", Status: "draft"},
 	}}
-	handler := NewHandler(HandlerDependencies{Write: service})
+	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -396,7 +415,10 @@ func TestHandlerMapsTransportNeutralDraftCandidateResult(t *testing.T) {
 		Candidate: DraftCandidate{ID: "candidate-1", ProjectID: "project-1", Title: "typed candidate", Content: "candidate body"},
 		Replayed:  true,
 	}}
-	handler := NewHandler(HandlerDependencies{Write: service})
+	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -432,7 +454,10 @@ func TestHandlerMapsTransportNeutralProjectManagementResults(t *testing.T) {
 		projectResult:  ProjectMutationResult{Project: Project{ID: "project-1", ProjectVersion: 2}},
 		transferResult: OwnerTransferResult{Transfer: OwnerTransfer{ID: "transfer-1", Status: "pending"}},
 	}
-	handler := NewHandler(HandlerDependencies{Write: service})
+	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -475,7 +500,10 @@ func TestHandlerMapsTransportNeutralChapterAndChangeSetResults(t *testing.T) {
 		committed:   CommittedChapterVersion{ChapterVersionID: "version-1"},
 		changeSet:   ChangeSet{ID: "change-1", ProjectID: "project-1", Status: "assessed"},
 	}
-	handler := NewHandler(HandlerDependencies{Write: service})
+	handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -514,7 +542,10 @@ func TestHandlerMapsTransportNeutralChapterAndChangeSetResults(t *testing.T) {
 func TestHandlerDelegatesProjectTemplateCopyReadPreviewAndSave(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{templateCopy: ProjectTemplateCopy{ProjectID: "project-1", Version: 1, Status: "draft"}}
-	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -564,7 +595,10 @@ func TestBindTemplateCopyRuleSetUsesWriteApplicationPort(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	read := &applicationServiceStub{}
 	write := &applicationServiceStub{}
-	handler := NewHandler(HandlerDependencies{Read: read, Write: write})
+	handler, err := NewHandler(HandlerDependencies{Read: read, Write: write, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -581,7 +615,10 @@ func TestBindTemplateCopyRuleSetUsesWriteApplicationPort(t *testing.T) {
 
 func TestHandlerServesVersionedDemoTemplate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader()})
+	handler, err := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader(), Sources: emptySourcesStub{}, Service: &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api/lingdoc"), Write: engine.Group("/api/lingdoc")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
@@ -616,7 +653,10 @@ func TestHandlerServesVersionedDemoTemplate(t *testing.T) {
 
 func TestHandlerMapsUnknownTemplateToNotFound(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	handler := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader()})
+	handler, err := NewHandler(HandlerDependencies{Templates: delivery.NewFixedTemplateReader(), Sources: emptySourcesStub{}, Service: &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api/lingdoc"), Write: engine.Group("/api/lingdoc")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-7")
@@ -644,7 +684,10 @@ func TestHandlerMapsUnknownTemplateToNotFound(t *testing.T) {
 func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{}
-	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -685,7 +728,10 @@ func TestHandlerDelegatesChangeSetPreviewAndApply(t *testing.T) {
 func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{applyStatus: http.StatusConflict}
-	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
@@ -713,7 +759,10 @@ func TestHandlerMapsStaleChangeSetApplyToVersionConflictEnvelope(t *testing.T) {
 func TestReassessChangeSetRejectsAnyRequestBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service := &applicationServiceStub{}
-	handler := NewHandler(HandlerDependencies{Read: service, Write: service})
+	handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "owner-7")
