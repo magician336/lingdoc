@@ -1,0 +1,127 @@
+{
+  "ticket": "G3 缺口收口-21：#324 的溯源口径修复、七条交付切片行接上实跑判定、外部检索渠道的实测与边界",
+  "head_at_evidence": "5ac48870",
+  "head_note": "服务二进制由 5ac48870 编译（-ldflags 注入 CommitID），六条链脚本取自同一 head 的工作区。本报告入库后只改证据文件本身。",
+  "mode": "real",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "node": "v24.14.1",
+    "python": "3.14.3",
+    "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
+    "sqlite_include": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（已确认存在）",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=5ac48870'\" -o .g3-server-r14.exe ./cmd/server",
+    "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库；本轮起它还跑稳定化 / 阻断 / 真实模型三条独立链）",
+    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r14.exe --out .acceptance-r14 --round2-chains 'fault' --with-dependency-chain --with-real-model"
+  },
+  "what_this_round_did": [
+    {
+      "item": "#324 的溯源口径修复（已落地）",
+      "change": "交付输入的 Spec 被路线感知投影覆写后，**原始规格值丢失**；溯源校验拿投影值去比对规格溯源快照（快照记的是规格里的占位值），对路线节点字段必然对不上 ⇒ 403 source_access_denied。修法：原始规格单独留一份给溯源校验，求值仍读路线感知投影（#319 的语义不回退）。",
+      "files": [
+        "internal/lingdoc/candidateadoption/delivery_input.go（WorkspaceDeliveryInput 增 SpecSource，覆写前先存原始规格）",
+        "internal/lingdoc/workspace/delivery_input.go（Build 的溯源校验改用原始规格）"
+      ],
+      "red_light": "internal/lingdoc/workspace/delivery_route_node_test.go：POST checks = 403, want 200（改实现前）",
+      "green": "同一条用例改实现后 PASS；go test ./internal/lingdoc/candidateadoption/... ./internal/lingdoc/workspace/... 全绿（0.714s / 182.986s）"
+    },
+    {
+      "item": "七条交付切片行接上实跑判定",
+      "change": "矩阵行 G3.1–G3.7 原先是「尚未判定」。本轮为它们各写了判定卡、规则表条目与矩阵状态，并让编排器把稳定化 / 阻断 / 真实模型三条独立链也跑起来（此前编排器只跑变更集 / 故障注入 / 路线图 / 助手与依赖图五条链）。",
+      "files": [
+        "frontend/src/views/lingdoc/g3demo/runner/{dependencies,changeset,blocked,roadmap}.ts（新增 verdictG32 / G33 / G34 / G35 / G37）",
+        "frontend/src/views/lingdoc/g3demo/g3Evidence.ts（规则表新增 G3.2 / G3.3 / G3.4 / G3.5 / G3.7）",
+        "frontend/src/views/lingdoc/g3demo/g3Matrix.ts（七条切片行的状态 / 证据位 / 说明）",
+        "frontend/src/views/lingdoc/g3demo/g3Gaps.ts（G3-GAP-06 / 07 的登记）",
+        "frontend/src/views/lingdoc/g3demo/g3Export.ts（结论来源：切片行的静态状态是上一次真实运行的判定，不是「尚未判定」）",
+        "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（CHAIN_SCRIPTS：两轮都跑三条独立链脚本）"
+      ],
+      "guard": "新增守护：七条切片行的规则表状态必须等于矩阵行状态"
+    },
+    {
+      "item": "调研闭环脚本支持可选的外部检索渠道",
+      "change": "环境变量 G3_WEB_SEARCH_PROVIDER / G3_WEB_SEARCH_PROVIDER_URL 设了，就给租户种一条检索来源行并让调研任务带 provider_id；没设就保持 #258 原来的行为。两种情况下报告都如实写命中数。",
+      "files": ["scripts/acceptance/lingdoc_research_closure.py"]
+    }
+  ],
+  "rounds": [
+    {
+      "round": "轮 1 · 后端未装配受控故障注入",
+      "runs": {
+        "依赖图与影响任务": "g3r-mvi8aiyu-3e414039",
+        "稳定化与交付闭环": "g3r-mvi8ajq2-0906fa0f",
+        "稳定化阻断与恢复路径": "g3r-mvi8akin-8a439224",
+        "依赖真实模型的验收项": "g3r-mvi8alcs-f08cfe48",
+        "证据导出与实现缺口标注": "g3r-mvi8aujj-3e07cd30"
+      },
+      "row_status_distribution": "TODO 0 / NOT RUN 2 / PASS 9 / PASS (follow-up) 9 / WARNING 3",
+      "slice_rows": {
+        "G3.1": "PASS —— 同基线第二个变更集 apply → 409 version_conflict，变更集落 stale；上下文修订 2→2、影响任务 4→4，没有半完成写入",
+        "G3.2": "PASS —— 6 条影响全部可追溯到来源边；两条来源边指向同一目标合并成 1 条逻辑任务（causes 保留 2 条来源）；建议边只进「可能受影响」、目标任务 0 条",
+        "G3.3": "PASS —— 集合外任务 0 条；无关章节不在评估对象 / 影响里、无任务，版本级确认应用前后都有效",
+        "G3.4": "PASS —— 目标被新版本替换后稳定化 200 + BLOCKED（没放行），旧任务落 STALE（target_version_replaced）；复核任务缺 human_decision → 422，带上 → 200 闭环",
+        "G3.5": "WARNING —— 可比较 / 可恢复 / 必需项不满足时阻断三段成立；**缺「必需项已声明但缺失」那一种前置的落点**（台面造不出，由服务端侧保证 #319）",
+        "G3.6": "WARNING —— 阻断态 200 + 7 条阻断原因、冻结被 422 context_unstable 拒掉、闭环后 STABILIZED；**缺 RETRIEVE_CANDIDATES 的真实调研回执**（G3-GAP-08）",
+        "G3.7": "PASS (follow-up) —— 必需对象集合 3 个逐字段核对齐全、6 条影响来源与原因齐全（缺 0）、确定 5 + 可能 1 = 全部影响、任务 3 条其中 2 条带责任域与指派人；**页面渲染那半段**沿用 #257 在 head a87459f 的落证（headless 驱动不到验收台页面），且 #246 未关闭 ⇒ 不判 PASS"
+      }
+    },
+    {
+      "round": "轮 2 · 后端装配了受控故障注入（同一租户）",
+      "runs": {
+        "依赖图与影响任务": "g3r-mvi8aysd-6acfd155",
+        "稳定化与交付闭环": "g3r-mvi8azoj-d0c59361",
+        "稳定化阻断与恢复路径": "g3r-mvi8b0lj-782bbe1e",
+        "依赖真实模型的验收项": "g3r-mvi8b1kn-3a726c3a",
+        "证据导出与实现缺口标注": "g3r-mvi8bb2i-7afec66a"
+      },
+      "row_status_distribution": "TODO 0 / NOT RUN 0 / PASS 6 / PASS (follow-up) 13 / WARNING 4",
+      "notes": [
+        "AC-G3-03：轮 1 未装配注入 → NOT RUN（口径如此）；轮 2 注入命中 → 判定成立。",
+        "AC-G3-14：轮 1 的模型轮次失败（provider_failure）→ 该行 NOT RUN；轮 2 的模型轮次 status=completed / run_mode=real，读回「确定受影响 1 条 / 可能受影响 0 条」⇒ WARNING。模型侧结论不写 PASS。"
+      ]
+    }
+  ],
+  "delivery_check_403": {
+    "status": "PARTIALLY FIXED",
+    "fixed_case": "交付闭环链与阻断链的交付检查现在**返回 200**：POST /projects/{id}/checks → HTTP 200 · status=passed · receipt_id=852c4045-…（阻断链那次是 status=blocked，带 blocking 校验问题）。403 source_access_denied 在这两条链上**消失了**。",
+    "still_failing_case": "路线图链那个项目仍取不到交付检查：主路径 HTTP 409 version_conflict（台面带的 expected_project_version 已过期），「待复核」那一次 HTTP 403 source_access_denied。",
+    "why_it_is_a_different_cause": "溯源校验在 ValidateProjectProvenanceInTransaction（internal/lingdoc/workspacecore/g1_provenance_service.go:509）里有一条独立的拒绝条件：证明与当前项目状态不一致（g1ProjectHash / snapshot 摘要不等）时**直接给 ErrSourceUnavailable**，而不是版本冲突。路线图链的项目刚被多次变更集应用改写过，规格与项目状态都动过，落在这条条件上。",
+    "next_step": "#324 保持开放，范围收窄成「变更集应用之后再做交付检查仍 403」。本轮不在此继续（用户决定不修了）。"
+  },
+  "external_search_channel": {
+    "status": "PROVEN REACHABLE, BUT NOT REACHABLE FROM THE PRODUCT",
+    "channel_that_works": "本机自托管 SearXNG（经代理出网，settings.yml 开 formats: [html, json]）：中文通用查询返回 **38~40 条真实命中**（来源含真实站点：高校学报、知网、CSDN、中科院软件所），**不需要任何 API key**。",
+    "channel_that_does_not_work": "免 key 的 DuckDuckGo Instant Answer API 经代理可用（英文查询有真实命中，中文查询 0 命中）；DuckDuckGo 的 HTML / lite 端点返**反爬挑战页**（status=202、challenge_marker_count=13）；本机直连全部超时（WinError 10060），一切外部访问必须经代理 http://127.0.0.1:7890。",
+    "why_the_product_cannot_use_it": "调研任务指名了 provider（轮次的 provider 身份是 `weknora_hybrid;web_search:<id>:searxng`，产品认得这个渠道），但轮次仍以 provider_failure 结束、服务端日志里没有 provider 的任何一行：① SearchResearch（internal/lingdoc/workspace/research_adapter.go:164）**先**跑项目资料检索，那条路径返回错误时函数直接 return，外部 provider 那条路走不到；② g2_service.go:564-571 把 provider 的真实错误映射成 provider_failure，**既不返回也不记录**，于是渠道没配 / URL 被 SSRF 拒了 / provider 自己失败，在实测里完全不可区分。",
+    "ticket": "#335（本轮新开）",
+    "what_did_not_change": "G3-GAP-08 仍记 **WARNING**：外部渠道**可用**这件事本身已经测到，但「产品走不到它」是产品缺陷，不是环境限制——按缺口清单的口径，这一项在产品能真正用上渠道之前不解除。"
+  },
+  "row_status_audit": {
+    "rule": "缺口清单 #246 未关闭前，它列出的缺口所对应的验收行一律不得判 PASS（docs/agents/development-rules.md）。",
+    "checked": "两轮导出体的 23 行逐行核对：带缺口的行（G3.7 / AC-G3-03 / AC-G3-04 / AC-G3-08 / AC-G3-09 / AC-G3-12 / AC-G3-14 / AC-G3-15 / AC-G3-16）**没有一行是 PASS**；矩阵里**没有 TODO 行**了。",
+    "static_matrix": "TODO 0 / NOT RUN 0 / PASS 4（G3.1–G3.4，不挂缺口）/ WARNING 3（G3.5 / G3.6 / AC-G3-14）/ PASS (follow-up) 16"
+  },
+  "verification_commands": [
+    "cd frontend && npm run type-check   # exit 0",
+    "cd frontend && npm test            # 1547 tests / 1546 pass / 0 fail / 1 skipped",
+    "go test ./internal/lingdoc/candidateadoption/... ./internal/lingdoc/workspace/... -count=1 -timeout 20m   # ok（0.714s / 182.986s）",
+    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r14.exe --out .acceptance-r14 --round2-chains 'fault' --with-dependency-chain --with-real-model   # 六条链脚本全部 ok"
+  ],
+  "honest_boundaries": [
+    {
+      "item": "「指向临时版本的任务落 STALE」在台面上仍是真空的",
+      "status": "NOT RUN",
+      "fact": "产品面没有任何 HTTP 路径会造出指向未冻结临时版本的影响任务：任务的 Target 永远是冻结版本，影响求值只看得到冻结对象，而 releaseRoadmapTemporaryRefs 只认 Target 与 ClosureEvidence。台面能证明「取消未冻结编辑后冻结基线回到取消前的版本、临时版本不在冻结版本序列里」，证不了「落 STALE」这一半；非真空证据在服务端侧（workspacecore/roadmap_test.go 手工造任务）。"
+    },
+    {
+      "item": "G3.7 的页面渲染那半段没在当前 head 重跑",
+      "status": "WARNING",
+      "fact": "headless 实跑驱动不到验收台页面，本轮只核对了数据面；页面渲染那半段沿用 #257 在 head a87459f 的落证。行状态记 PASS (follow-up)。"
+    },
+    {
+      "item": "G3.5 的「必需项已声明但缺失」那一种前置没有落点",
+      "status": "WARNING",
+      "fact": "台面造不出这一种前置（它由服务端侧保证，#319）；不用「等价前置」冒充「缺失」。"
+    }
+  ],
+  "status": "PASS (follow-up)"
+}
