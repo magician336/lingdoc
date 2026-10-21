@@ -494,9 +494,23 @@ python .scratch/lingdoc-arch-20261021/seg3/negative_verify_ports.py
 
 | # | 问题 | 处置 |
 | --- | --- | --- |
-| B-1 | 传输层用**运行期类型断言**把窄口变回宽能力。实测 11 处断言，4 个目标是真后门（`deliveryProvenanceCore` / `g2EvidenceSelector` / `candidateEvidenceTransactionSelector` / `candidateEvidenceProofPreparer`），它们的 6 个方法**不在任何窄口里** | **进行中**：把「断言成功/失败」换成「可 nil 的显式窄口字段」——4 个能力升格为 `workspacecore` 的正式窄口，传输层不再做断言。断言失败 ⇒ 端口为 nil ⇒ 走**同一个**错误/跳过分支，行为逐字不变 |
+| B-1 | 传输层用**运行期类型断言**把窄口变回宽能力。实测传输层共 14 处断言，其中 **4 个目标是真后门**（`deliveryProvenanceCore` / `g2EvidenceSelector` / `candidateEvidenceTransactionSelector` / `candidateEvidenceProofPreparer`），6 处站点、6 个方法**不在任何窄口里** | **已修**（`43a7721b`）：把「断言成功/失败」换成「可 nil 的显式窄口字段」——4 个能力升格为 `workspacecore` 的正式窄口，传输层不再做断言。断言失败 ⇒ 端口为 nil ⇒ 走**同一个**错误/跳过分支，行为逐字不变。新增守护断言 `seg3_no_backdoor_test.go` + 阴性验证 |
 | B-2 | 结构断言有三条绕过路径：函数体内的局部变量、局部结构体嵌入、跨包类型别名——**断言全绿** | **已修**（`be7e4183`）：断言改成一遍走完整个文件（类型位置一律看），并新增 `TestNoPackageOutsideTheAggregateAliasesIt` 扫全仓拒绝跨包别名。阴性验证：三条绕过路径逐一注入，全部被抓住 |
 | B-3 | 契约脚本的 `read_method` 提取把 `return err.Error()` 也当成读方法 ⇒ 形状校验被**静默跳过** | **已修**（`be7e4183`）：提取结果与 `read_types` 交叉验证；读路由的形状来源必须能解析出来，解析不出来就报失败（唯一例外写进 `SHAPE_SOURCE_EXEMPTIONS` 并说明理由）。新增两条守护用例 |
+
+### 基线前移：main 走了 50 个提交
+
+段三合并 main 时，base 从 `633ba34` 走到 `6e88ce08`（含 PR #333 并行面登记、#334 G3 票面同步等）。
+PR 的 CI 检出的是**新 main + 我的头**的合并结果，而新 main 带进了一个用旧签名调
+`NewGORMSourceRuntime` / `RegisterG2FullRoutes` 的新测试文件 ⇒ 合并结果编译不过。
+
+处置：合并 main（**无冲突**）+ 适配那个文件的装配方式（断言期望值一字未动），
+然后**以新 main 为基线**重做全部对照：94 = 94、摘掉行号后差异 0 条、
+只靠 `read_method` 定形状的 63 条路由里可解析的仍为 14 条（一条没丢）。
+
+**踩到的坑**：base/head 对照脚本原先让 base 侧跑 base 工作树里的旧脚本、head 侧跑新脚本，
+脚本改过之后两边报告口径不同 ⇒ 恒报 `routes DIFF`。那是脚本版本差异，不是源码差异。
+对照脚本已改成**两侧用同一份脚本**（`.scratch/lingdoc-arch-20261021/seg3/compare_parity_same_script.py`）。
 
 ### 评审还纠正了我两处
 
