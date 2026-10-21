@@ -1,0 +1,91 @@
+{
+  "mode": "real",
+  "note": "47.15 上下文切出第一例：成员与 Owner 上下文。19 个方法（15 个端口方法 + 4 个同族变体）从聚合体 *core.Service 迁到 internal/lingdoc/membership 的独立类型；聚合体不再实现 membership.Application 与 membership.MemberLifecycleApplication。对外契约零变化：路由、信封、状态码、错误码、文案、重放元数据、数据库 schema、幂等记录格式逐字不变。",
+  "head": "37d6ffda",
+  "base": "db5a9594",
+  "passed": [
+    {
+      "id": "成员与 Owner 上下文的实现已切出聚合体",
+      "status": "passed",
+      "evidence": "internal/lingdoc/membership/ 下 5 个生产文件（ext.go / lifecycle.go / policy.go / results.go / service.go）持有 19 个方法；internal/lingdoc/workspacecore/ 的 6 个文件净减 1093 行（19 个方法 + 5 个私有符号删除）。全仓活代码对这 19 个方法的引用数为 0 —— workspace 的 15 处生产调用点早已通过 routes.Members.* / h.members.* 窄口消费。"
+    },
+    {
+      "id": "聚合体不再实现成员与 Owner 两个端口",
+      "status": "passed",
+      "evidence": "internal/lingdoc/membership/ports.go 的编译期证明从 (*core.Service) 翻转为 (*Service)；internal/lingdoc/membership/ports_test.go 的 TestTheAggregateNoLongerImplementsTheMemberAndOwnerPorts 在运行期把聚合体交给两个端口，端口拒绝它。**已做阴性验证**：人为把 Application 的 4 个方法补回聚合体 ⇒ 断言失败并指名『the aggregate still implements the member and owner port; the context has not left it』；移除后恢复通过。（探针必须补齐整个口：断言问的是『是否满足这个接口』，只补一个方法时它照样通过。）"
+    },
+    {
+      "id": "端口方法集合与语义不变",
+      "status": "passed",
+      "evidence": "internal/lingdoc/membership/ports_test.go 的 TestTheMemberAndOwnerPortsMatchTheServiceVerbatim：15 个端口方法的签名逐字等于 membership.Service 的同名方法。"
+    },
+    {
+      "id": "管道机制不变（53 个现有调用点零改动）",
+      "status": "passed",
+      "evidence": "internal/lingdoc/workspacecore/operation_pipeline.go 把接线抽成非泛型的 runOperationCore，原泛型 runOperationThroughPipeline 降为薄包装（只做类型适配）⇒ 53 个现有调用点与 10 个 source decoder 实现一字未改。operationcore 的接缝签名本来就是 any（Write/StoreReverseSources/StoreProvenance/AfterWrite 全收 any，管道对 value 只做 json.Marshal，无类型分派）⇒ operationResult[T].Value 擦成 any 零成本。"
+    },
+    {
+      "id": "管道知识零复制（唯一副本留在 workspacecore）",
+      "status": "passed",
+      "evidence": "membership 通过 core.OperationRunner（**1 个方法**的深窄口）跑写操作，13 个管道接缝（repository / authorizeTenant / authorizeProject / recordAuditInTransaction / checkSources / G1 溯源 5 个 / afterOperationWrite / observeOperationFailure / runtimeMode）的唯一副本留在 workspacecore。"
+    },
+    {
+      "id": "存储知识零泄漏（表结构与 gorm 不外泄）",
+      "status": "passed",
+      "evidence": "6 个成员方法原本直接用 gorm 查表（ProjectMemberDirectory / SetMemberAssignment / SaveProjectAPIKeyGrant / ListMyProjectInvitations / ListOwnerTransfers / RejectOwnerTransfer）。现在由 internal/lingdoc/workspacecore/member_records.go 的 5 个**领域形态**存储口承接（MemberRecords / MemberDirectoryReader / OwnerTransferRecords / TenantAPIKeyReader / ProjectResourceReader），core.MemberStorage 一个值满足全部 5 个口；g5RecordRow / ownerTransferRow / gorm 查询仍留在 workspacecore。"
+    },
+    {
+      "id": "工作区级判定留在 workspacecore（未造成导入环）",
+      "status": "passed",
+      "evidence": "projectMember（18 处使用）/ governanceRole（12 处）/ projectOwner（16 处）/ ownerCurrentlyAvailable（g6_delivery_guard 在用）被 workspacecore 大量使用 ⇒ 留在原处，导出为纯函数 core.ProjectMember / core.GovernanceRole / core.ProjectOwner / core.OwnerCurrentlyAvailable。最初两处副本（currentTenantRole、ownerCurrentlyAvailable）已消除。"
+    },
+    {
+      "id": "聚合体级事实走必填口（不是运行期断言）",
+      "status": "passed",
+      "evidence": "core.WorkspacePolicy（4 方法：授权模式 / 激活要求 / 审计事件 / 事务外授权）由 workspacecore 内部类型实现，membership.Service 把它作为**必填字段**持有⇒ 不存在「口不携带就运行时失败」的情况。"
+    },
+    {
+      "id": "行为零变化（HTTP 契约面）",
+      "status": "passed",
+      "evidence": "base/head 契约面对照（base db5a9594 vs head，两侧同一份脚本）：路由 **94 = 94**、base 独有签名 0、head 独有签名 0、摘掉源文件行号后差异 **0 条**、有差异的位点 0、只靠 read_method 定形状的路由 base 63 条可解析的 14 条 / head 63 条可解析的 14 条、base 与 head 的可解析承重路由无差异 ⇒ **完全一致**。scripts/ci/check_lingdoc_routes.py：result=PASS，registered_operations=94 = frontend_calls=94。"
+    },
+    {
+      "id": "行为零变化（领域面：31 个迁移测试的断言一字未改）",
+      "status": "passed",
+      "evidence": "31 个成员测试函数从 internal/lingdoc/workspacecore/ 迁到 internal/lingdoc/membership/（14 个新文件）；机器核对：归一化（宿主 / DB 句柄 / core. 前缀 / 夹具句柄 / 局部改名）后逐字比对 ⇒ **31/31 函数 0 处差异**。workspace 与 router 的 fixture 改为注入 *membership.Service，diff 逐行核对只有宿主替换。"
+    },
+    {
+      "id": "组合根改注入",
+      "status": "passed",
+      "evidence": "internal/container/lingdoc.go 造 membership.NewService（9 个窄口），注入 HandlerDependencies.Members 与 FullWorkflowRoutePorts.Members 两处；internal/container 包测试全绿。"
+    },
+    {
+      "id": "门禁与全量验证",
+      "status": "passed",
+      "evidence": "gofmt -l internal/ 无输出；go build ./internal/... ./cmd/... exit 0；go vet ./internal/lingdoc/... ./internal/router/ ./internal/container/ 干净；golangci-lint run --new-from-rev=db5a9594 ./internal/... ⇒ **0 issues**（本分支引入 176 处全部清零）；python -m unittest discover -s scripts/ci -p 'test_lingdoc_*.py' ⇒ 231 tests OK；go test ./internal/lingdoc/... ./internal/router/ ./internal/container/ ⇒ 17 个包全绿。"
+    },
+    {
+      "id": "基线前移后全量重测",
+      "status": "passed",
+      "evidence": "PR 落库时 main 从 d9262114 前移到 db5a9594（17 个新文件），与本票 53 个改动文件**交集 = 0**；已合入 main（merge commit 5a4c2a2）并以新基线重跑：对照 94 = 94 且差异 0 条、契约脚本 PASS、lint 0 issues、build/gofmt/vet 干净、全量测试全绿。"
+    }
+  ],
+  "failed": [],
+  "not_run": [
+    {
+      "id": "隔离 PostgreSQL 轮",
+      "status": "not_run",
+      "evidence": "需单独轻负载（隔离实例 55433）。本票不改持久化路径、不改 schema、不改幂等记录格式。"
+    },
+    {
+      "id": "go test -race",
+      "status": "not_run",
+      "evidence": "本机兄弟会话并行，资源冲突。若 CI 有 -race 门禁需在 PR 前补跑 go test -race ./internal/lingdoc/membership/。"
+    },
+    {
+      "id": "与在途 PR #149 的 rebase",
+      "status": "not_run",
+      "evidence": "#268 先落，#149 之后 rebase 到 #268 之上。交集 6 个文件、实际冲突面 3 个（g5_policy.go / g5_auth_review_regression_test.go / service_facade_test.go）；另 3 个（typed_contracts.go / seg3_migrated_ports.go / seg3_context_ports_test.go）本票刻意避开。已给 #149 会话发事实通知与三条 rebase 提示。"
+    }
+  ]
+}
