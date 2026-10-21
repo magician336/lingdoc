@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"testing"
@@ -88,11 +89,15 @@ func (f *fixture) createAndActivate(t *testing.T, templateVersion string) core.P
 	// The template's required fields are the spec's vocabulary, and the
 	// activation gate requires every one of them to carry a value
 	// (workspacecore/service_facade.go). The route node id is one of them, so
-	// the spec carries a placeholder for it. The placeholder is not what the
-	// template evaluates: the route-aware evaluation overwrites it with the
-	// route node's value, and with an empty value while the node is missing,
-	// not reviewed, or behind. That overwrite is what makes the three
-	// preconditions of AC-G3-08 observable.
+	// the spec carries a placeholder for it.
+	//
+	// The placeholder is not what the template evaluates. The route aware
+	// evaluation lets the roadmap speak for a route node id: it carries the
+	// node's value while the node is ready and current, and no value at all
+	// while the node is missing, not reviewed, or behind (issue #319). That is
+	// what makes the three preconditions of AC-G3-08 observable, and the
+	// placeholder left in the spec on purpose shows that the server does not
+	// take the spec's word for a route node.
 	raw, _, _, err = f.svc.SaveSpec(ctx, f.actor, project.ID, "demoroute-spec", core.SaveSpecInput{
 		ExpectedSpecRevision: 0,
 		Fields: map[string]string{
@@ -308,10 +313,11 @@ func TestDemoRouteTemplateMakesTheRouteNodeRequired(t *testing.T) {
 // The three preconditions of AC-G3-08: a required route node that is missing,
 // one that has not been reviewed, and one that is behind its baseline.
 //
-// The two states that exist as a node leave the required field without a
-// value, which is what the template evaluator turns into a blocking
-// validation issue. The missing state does not reach the evaluation yet; the
-// case records where it is blocked and why.
+// All three leave the required field without a value, which is what the
+// template evaluator turns into a blocking validation issue. The missing state
+// reaches the evaluation the same way as the other two, because the route
+// aware evaluation lets the roadmap speak for a route node id that the
+// template declares but the roadmap does not hold yet (issue #319).
 func TestDemoRouteTemplateRequiredRouteNodePreconditions(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		// The required node does not exist yet: the roadmap has no node with
@@ -326,25 +332,27 @@ func TestDemoRouteTemplateRequiredRouteNodePreconditions(t *testing.T) {
 				t.Fatalf("the required route node must not exist yet: %+v", node)
 			}
 		}
-		// KNOWN GAP (issue #314 follow-up): the missing state does not reach
-		// the template evaluation. The activation gate reads the template's
-		// required fields as spec fields
-		// (workspacecore/service_facade.go, ActivateProject: "for _, field :=
-		// range template.RequiredFields"), so the project can only be activated
-		// when the spec carries a value under the route node id. The route
-		// aware evaluation starts from the spec and only overwrites the value
-		// of nodes that exist (workspacecore/semantic_delta.go,
-		// RouteEvaluationFields), so that placeholder survives and hides the
-		// missing node.
+		// FIXED (issue #319): the missing state now reaches the template
+		// evaluation and produces the same blocking issue as the other two
+		// preconditions.
 		//
-		// The fix belongs to the roadmap module: either the activation gate
-		// stops demanding a spec value for a declared route node, or the route
-		// aware evaluation blanks the spec value of a declared but missing
-		// route node. This case records the gap as it stands; it has to be
-		// flipped to the blocking expectation once that is fixed.
+		// The gap was that the route aware evaluation started from the spec
+		// and only overwrote the value of the route nodes that exist
+		// (workspacecore/semantic_delta.go, RouteEvaluationFields), so the
+		// activation placeholder under the route node id survived and stood
+		// in for a node the roadmap does not hold. The route aware evaluation
+		// now lets the roadmap speak for every route node id the template
+		// declares as required: a declared node that the roadmap does not hold
+		// has no value, so the presence rule of the template reports it.
 		evaluated := f.routeIssues(t, f.current(t))
-		if hasBlockingRouteIssue(evaluated, lingdoctemplate.DemoRequiredRouteNodeID) {
-			t.Fatal("the missing route node is expected to stay masked by the activation placeholder until the roadmap module is fixed")
+		blocking := hasBlockingRouteIssue(evaluated, lingdoctemplate.DemoRequiredRouteNodeID)
+		project := f.current(t)
+		t.Logf("missing precondition: id=%s node=absent in the frozen roadmap required-by-the-rules=%v state=absent status=absent version=absent blocking=%v",
+			lingdoctemplate.DemoRequiredRouteNodeID,
+			slices.Contains(project.TemplateCopy.Definition.RequiredFields, lingdoctemplate.DemoRequiredRouteNodeID),
+			blocking)
+		if !blocking {
+			t.Fatalf("a missing required route node must produce a blocking issue: %+v", evaluated)
 		}
 	})
 
