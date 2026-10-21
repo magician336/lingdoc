@@ -289,7 +289,7 @@ export interface SelectedRewriteCandidate {
   project_id: string
   chapter_id: string
   status: 'queued' | 'ready' | 'applying' | 'failed' | 'stale'
-  run_mode: 'mock' | 'real_api_fake_model' | 'real'
+  run_mode: 'real' | 'mock' | 'real_api_fake_model'
   base_chapter_version_id: string | null
   spec_revision: number
   working_copy_revision: number
@@ -307,6 +307,10 @@ export interface SelectedRewriteCandidate {
   review_items: ReviewItem[]
   error_code: string
   created_at: string
+  /** 产生这个候选的动作。旧路径没有动作，字段不出现。 */
+  writing_action?: string
+  /** 候选正文的来源。旧路径没有来源标注，字段不出现。 */
+  origin?: 'human' | 'ai_generated' | 'ai_assisted_human'
 }
 
 export interface Asset {
@@ -456,6 +460,10 @@ export const createSelectedRewrite = (projectId: string, chapterId: string, inpu
   selection: { start_utf16: number; end_utf16: number; selected_text: string }
   instruction: string
   source_ids: string[]
+  /** 这次请求按动作发起。三个字段都不给就是旧路径。 */
+  writing_action?: string
+  output_params?: { length?: string; tone?: string; ratio?: number; transform?: { mode?: string; target_language?: string; audience?: string } }
+  scope?: 'chapter' | 'section'
 }, key: string) => post<Result<SelectedRewriteCandidate>>(
   `${base}/${segment(projectId)}/chapters/${segment(chapterId)}/rewrite-candidates`, input, keyHeader(key),
 )
