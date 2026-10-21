@@ -72,7 +72,7 @@ var versionedSQLiteTables = []string{
 var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_export_artifacts":        {"ruleset_ref_json"},                                                                                              // SQLite 000039 / PostgreSQL 000118
 	"lingdoc_project_template_copies": {"ruleset_ref_json"},                                                                                              // SQLite 000041 / PostgreSQL 000120
-	"lingdoc_selected_rewrites":       {"evidence_card_refs_json", "template_basis_json", "evidence_constraints_json"},                                   // SQLite 000037
+	"lingdoc_selected_rewrites":       {"evidence_card_refs_json", "template_basis_json", "evidence_constraints_json", "writing_action", "origin"},                    // SQLite 000037 / 000047
 	"memory_subjects":                 {"extraction_state"},                                                                                              // 000094
 	"memory_items":                    {"replaces_id"},                                                                                                   // 000094
 	"tenants":                         {"api_principal_config"},                                                                                          // 000064
@@ -90,7 +90,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_candidate_adoptions":     {"digest_version"},                                                                                                // 000125
 }
 
-const expectedSQLiteMigrationVersion = 46
+const expectedSQLiteMigrationVersion = 47
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

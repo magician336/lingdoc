@@ -82,14 +82,15 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 		return SelectedRewriteOutput{}, err
 	}
 	input, err := json.Marshal(struct {
-		TemplateBasis g2RewriteTemplateBasis          `json:"template_basis,omitempty"`
-		Selection     RewriteSelection                `json:"selection"`
-		Instruction   string                          `json:"instruction"`
-		ContextBefore string                          `json:"context_before"`
-		ContextAfter  string                          `json:"context_after"`
-		Sources       []sourcePrompt                  `json:"sources"`
-		EvidenceCards []generation.EvidenceConstraint `json:"evidence_cards,omitempty"`
-	}{prompt.TemplateBasis, prompt.Selection, prompt.Instruction, prompt.ContextBefore, prompt.ContextAfter, sources, cards})
+		TemplateBasis     g2RewriteTemplateBasis          `json:"template_basis,omitempty"`
+		Selection         RewriteSelection                `json:"selection"`
+		Instruction       string                          `json:"instruction"`
+		SupplementaryNote string                          `json:"supplementary_note,omitempty"`
+		ContextBefore     string                          `json:"context_before"`
+		ContextAfter      string                          `json:"context_after"`
+		Sources           []sourcePrompt                  `json:"sources"`
+		EvidenceCards     []generation.EvidenceConstraint `json:"evidence_cards,omitempty"`
+	}{prompt.TemplateBasis, prompt.Selection, prompt.Instruction, prompt.SupplementaryNote, prompt.ContextBefore, prompt.ContextAfter, sources, cards})
 	if err != nil {
 		return SelectedRewriteOutput{}, err
 	}

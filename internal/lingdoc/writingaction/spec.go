@@ -40,6 +40,11 @@ type Plan struct {
 	Targets []AdoptionTarget
 	// Instruction 是该动作专属的指令片段。
 	Instruction InstructionTemplate
+	// OutputParams 是这次执行已经解析好的产出条件。
+	//
+	// 它挂在计划上而不是让执行方自己留着：执行方只读计划，不解释产出参数
+	// （开发计划 D10 / A33）。渲染动作指令时由词汇包把它写进指令文本。
+	OutputParams OutputParams
 }
 
 // actionSpec 是一个动作的包内规格。
@@ -176,12 +181,13 @@ func PlanFor(a Action, scope Scope, p OutputParams) (Plan, error) {
 	}
 	required, forbidden := spec.contextFor(scope)
 	return Plan{
-		Action:      spec.action,
-		Scope:       scope,
-		Produce:     spec.produce,
-		Context:     ContextPolicy{Required: required, Forbidden: forbidden},
-		Targets:     spec.targets,
-		Instruction: spec.instruction,
+		Action:       spec.action,
+		Scope:        scope,
+		Produce:      spec.produce,
+		Context:      ContextPolicy{Required: required, Forbidden: forbidden},
+		Targets:      spec.targets,
+		Instruction:  spec.instruction,
+		OutputParams: p,
 	}, nil
 }
 

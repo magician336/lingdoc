@@ -15,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -404,6 +405,9 @@ func (h *Handler) Register(routes RouteGroups) {
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/commit", h.commitWorkingCopy)
 	routes.Write.POST("/projects/:projectId/chapters/:chapterId/working-copy/restore", h.restoreWorkingCopy)
 	routes.Read.GET("/projects/:projectId/access-status", h.accessStatus)
+	// The writing action table is static: it belongs to the vocabulary package,
+	// so the panel reads it instead of keeping a second copy of the actions.
+	routes.Read.GET("/projects/:projectId/writing-actions", h.listWritingActions)
 	// The review anchor and the rewrite endpoints exist because the caller
 	// asked for them. A capability that was not asked for has no route, and
 	// that is the caller's decision rather than an accident of which field
@@ -1055,6 +1059,27 @@ func (h *Handler) getWorkingCopy(c *gin.Context) {
 		return
 	}
 	sendOK(c, http.StatusOK, workingCopy, false)
+}
+
+// listWritingActions returns the writing actions available for a target scope.
+//
+// The action table belongs to the vocabulary package: the panel reads it from
+// here instead of keeping a second copy of the actions. The scope is optional
+// and defaults to the selection scope; an unknown scope is refused rather
+// than silently answered with an empty table.
+func (h *Handler) listWritingActions(c *gin.Context) {
+	if _, ok := identity(c); !ok {
+		return
+	}
+	scope := writingaction.Scope(c.Query("scope"))
+	if scope == "" {
+		scope = writingaction.ScopeSection
+	}
+	if scope != writingaction.ScopeSection && scope != writingaction.ScopeChapter {
+		sendError(c, writingaction.ErrScopeNotAllowed)
+		return
+	}
+	sendOK(c, http.StatusOK, writingaction.Describe(scope), false)
 }
 
 func (h *Handler) createSelectedRewrite(c *gin.Context) {

@@ -6,13 +6,13 @@ package writingaction
 // 完全不给：不允许把零值当成默认值，也不允许把该动作不用的参数带进来。
 type OutputParams struct {
 	// Length 是产出长度：short / medium / long。
-	Length Length
+	Length Length `json:"length,omitempty"`
 	// Tone 是产出语气：neutral / formal / academic / plain。
-	Tone Tone
+	Tone Tone `json:"tone,omitempty"`
 	// Ratio 是压缩或扩展的目标百分比，取 10..90 的整数。
-	Ratio int
+	Ratio int `json:"ratio,omitempty"`
 	// Transform 是转写动作的子参数。
-	Transform *TransformParams
+	Transform *TransformParams `json:"transform,omitempty"`
 }
 
 // TransformParams 是转写动作的子参数。
@@ -21,11 +21,11 @@ type OutputParams struct {
 // 两者互斥。这里不使用自由文本字段——那等于把写作要求换个名字请回来。
 type TransformParams struct {
 	// Mode 是转写子模式：translate / explain。
-	Mode TransformMode
+	Mode TransformMode `json:"mode,omitempty"`
 	// TargetLanguage 是 translate 模式的目标语言。
-	TargetLanguage *TargetLanguage
+	TargetLanguage *TargetLanguage `json:"target_language,omitempty"`
 	// Audience 是 explain 模式的读者层次。
-	Audience *Audience
+	Audience *Audience `json:"audience,omitempty"`
 }
 
 // TransformMode 是转写动作的子模式。

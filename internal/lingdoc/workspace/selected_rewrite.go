@@ -18,9 +18,11 @@ import (
 	"unicode/utf16"
 
 	"github.com/Tencent/WeKnora/internal/evidence"
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/docx"
 	"github.com/Tencent/WeKnora/internal/lingdoc/generation"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
+	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -50,6 +52,24 @@ type SelectedRewriteRequest struct {
 	Selection                   RewriteSelection             `json:"selection"`
 	Instruction                 string                       `json:"instruction"`
 	SourceIDs                   []string                     `json:"source_ids"`
+
+	// 下面三个字段把这次请求从「自由文本说明」变成「按动作发起」。
+	//
+	// 它们都是**指针**加 omitempty：指针为 nil 时字段整个不出现，请求的 JSON
+	// 与它的摘要值逐字不变——历史幂等键的重放语义不能被这次改动碰坏。
+	// 用非指针的结构体字段做不到这一点：omitempty 对结构体不起作用，旧请求
+	// 会多出一个 "output_params":{...}，摘要全变，重试从「重放」变成「冲突」。
+	//
+	// 三个字段全部缺省 ⇒ 旧路径：自由文本说明驱动，不记录动作。
+	// 任一字段出现 ⇒ 动作路径：动作与产出参数必齐，缺一即拒。
+	WritingAction *writingaction.Action       `json:"writing_action,omitempty"`
+	OutputParams  *writingaction.OutputParams `json:"output_params,omitempty"`
+	Scope         *writingaction.Scope        `json:"scope,omitempty"`
+}
+
+// isLegacyPath 判定这次请求是不是旧路径。
+func (r SelectedRewriteRequest) isLegacyPath() bool {
+	return r.WritingAction == nil && r.OutputParams == nil && r.Scope == nil
 }
 
 type RewriteSourceSnapshot struct {
@@ -67,7 +87,7 @@ type SelectedRewriteCandidate struct {
 	ProjectID            string                       `json:"project_id"`
 	ChapterID            string                       `json:"chapter_id"`
 	Status               string                       `json:"status"`
-	RunMode              string                       `json:"run_mode"`
+	RunMode              candidateadoption.RunMode    `json:"run_mode"`
 	BaseChapterVersionID *string                      `json:"base_chapter_version_id"`
 	SpecRevision         int64                        `json:"spec_revision"`
 	WorkingCopyRevision  int64                        `json:"working_copy_revision"`
@@ -78,6 +98,13 @@ type SelectedRewriteCandidate struct {
 	ReviewItems          []core.ReviewItem            `json:"review_items"`
 	ErrorCode            string                       `json:"error_code"`
 	CreatedAt            time.Time                    `json:"created_at"`
+	// WritingAction 是产生这个候选的动作。旧路径没有动作，字段为空。
+	//
+	// 它挂在结构体末尾并带 omitempty：旧路径的候选 JSON 逐字不变。
+	WritingAction writingaction.Action `json:"writing_action,omitempty"`
+	// Origin 是候选正文的来源。改写是模型产出，所以是 ai_generated；
+	// 旧路径没有来源标注，字段为空。
+	Origin writingaction.Origin `json:"origin,omitempty"`
 }
 
 type SelectedRewritePrompt struct {
@@ -85,10 +112,15 @@ type SelectedRewritePrompt struct {
 	EvidenceCardRefs    []generation.EvidenceCardRef
 	EvidenceConstraints []generation.EvidenceConstraint
 	Selection           RewriteSelection
-	Instruction         string
-	ContextBefore       string
-	ContextAfter        string
-	Sources             []evidence.Source
+	// Instruction 是给模型的动作指令。旧路径下它是客户端原文，逐字不变；
+	// 动作路径下它由执行计划渲染。
+	Instruction string
+	// SupplementaryNote 是客户端的补充说明。旧路径恒为空；动作路径下它不参与
+	// 动作判定，也不与动作指令混成一段。
+	SupplementaryNote string
+	ContextBefore     string
+	ContextAfter      string
+	Sources           []evidence.Source
 }
 
 type SelectedRewriteOutput struct {
@@ -139,6 +171,8 @@ type selectedRewriteRow struct {
 	SourceIDsJSON           string  `gorm:"not null;type:text"`
 	AuthorizedSourcesJSON   string  `gorm:"not null;type:text"`
 	ReviewItemsJSON         string  `gorm:"not null;type:text"`
+	WritingAction           string  `gorm:"not null;size:64;default:''"`
+	Origin                  string  `gorm:"not null;size:32;default:''"`
 	ErrorCode               string  `gorm:"not null;size:64;default:''"`
 	AppliedKey              string  `gorm:"not null;size:128;default:''"`
 	AppliedResponseJSON     string  `gorm:"not null;type:text;default:''"`
@@ -289,6 +323,13 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
+	// 动作路径的声明先解析、再干活：产出参数与目标范围在模型调用之前就被拒，
+	// 非法声明不产生 run，也不产生候选行（开发计划 I-2）。
+	plan, err := resolveRewritePlan(input)
+	if err != nil {
+		auditDecision, auditReason = "deny", err.Error()
+		return SelectedRewriteCandidate{}, err
+	}
 	input.Instruction = strings.TrimSpace(input.Instruction)
 	input.SourceIDs = slices.Clone(input.SourceIDs)
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
@@ -374,7 +415,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
-	seed, err := s.createRow(actor, projectID, chapterID, key, input, hash, snapshots)
+	seed, err := s.createRow(actor, projectID, chapterID, key, input, hash, snapshots, plan)
 	if err != nil {
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
@@ -424,11 +465,12 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		before = ""
 		after = ""
 	}
-	output, modelErr := s.model.RewriteSelected(ctx, actor, SelectedRewritePrompt{
-		TemplateBasis:    templateBasis,
-		EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: evidenceConstraints,
-		Selection: input.Selection, Instruction: input.Instruction, ContextBefore: before, ContextAfter: after, Sources: sources,
-	})
+	prompt, promptErr := rewritePrompt(input, plan, templateBasis, evidenceConstraints, before, after, sources)
+	if promptErr != nil {
+		auditDecision, auditReason = "deny", promptErr.Error()
+		return SelectedRewriteCandidate{}, promptErr
+	}
+	output, modelErr := s.model.RewriteSelected(ctx, actor, prompt)
 	if modelErr != nil {
 		row.Status, row.ErrorCode, row.ReplacementMarkdown = "failed", "rewrite_failed", ""
 		auditDecision, auditReason = "deny", row.ErrorCode
@@ -697,11 +739,12 @@ func selectedRewriteView(row selectedRewriteRow) (SelectedRewriteCandidate, erro
 		status = "applying"
 	}
 	return SelectedRewriteCandidate{EvidenceCardRefs: evidenceRefs, CandidateID: row.ID, ProjectID: row.ProjectID, ChapterID: row.ChapterID,
-		Status: status, RunMode: row.RunMode, BaseChapterVersionID: row.BaseChapterVersionID,
+		Status: status, RunMode: candidateadoption.RunMode(row.RunMode), BaseChapterVersionID: row.BaseChapterVersionID,
 		SpecRevision: row.SpecRevision, WorkingCopyRevision: row.WorkingCopyRevision,
 		Selection:           RewriteSelection{StartUTF16: row.StartUTF16, EndUTF16: row.EndUTF16, SelectedText: row.SelectedText},
 		ReplacementMarkdown: row.ReplacementMarkdown, SourceIDs: sourceIDs, AuthorizedSources: snapshots,
-		ReviewItems: reviewItems, ErrorCode: row.ErrorCode, CreatedAt: row.CreatedAt}, nil
+		ReviewItems: reviewItems, ErrorCode: row.ErrorCode, CreatedAt: row.CreatedAt,
+		WritingAction: writingaction.Action(row.WritingAction), Origin: writingaction.Origin(row.Origin)}, nil
 }
 
 func stringSet(values []string) []string {
@@ -853,17 +896,23 @@ func (s *SelectedRewriteService) staleIfNeeded(ctx context.Context, actor Actor,
 	return row, nil
 }
 
-func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest, hash string, sources []RewriteSourceSnapshot) (selectedRewriteRow, error) {
+func (s *SelectedRewriteService) createRow(actor Actor, projectID, chapterID, key string, input SelectedRewriteRequest, hash string, sources []RewriteSourceSnapshot, plan *writingaction.Plan) (selectedRewriteRow, error) {
 	sourceJSON, _ := json.Marshal(input.SourceIDs)
 	evidenceJSON, _ := json.Marshal(input.EvidenceCardRefs)
 	snapshotJSON, _ := json.Marshal(sources)
+	writingAction, origin := "", ""
+	if plan != nil {
+		writingAction = string(plan.Action)
+		// 改写是模型产出：候选正文的来源是 AI 生成。
+		origin = string(writingaction.OriginGenerated)
+	}
 	row := selectedRewriteRow{ID: uuid.NewString(), TenantID: actor.TenantID, ActorID: actor.UserID,
 		ProjectID: projectID, ChapterID: chapterID, IdempotencyKey: key, RequestHash: hash,
 		Status: "queued", RunMode: "", BaseChapterVersionID: input.BaseChapterVersionID,
 		SpecRevision: input.ExpectedSpecRevision, WorkingCopyRevision: input.ExpectedWorkingCopyRevision,
 		StartUTF16: input.Selection.StartUTF16, EndUTF16: input.Selection.EndUTF16, SelectedText: input.Selection.SelectedText,
 		EvidenceCardRefsJSON: string(evidenceJSON), Instruction: input.Instruction, SourceIDsJSON: string(sourceJSON), AuthorizedSourcesJSON: string(snapshotJSON),
-		ReviewItemsJSON: "[]", CreatedAt: s.now(), UpdatedAt: s.now()}
+		ReviewItemsJSON: "[]", WritingAction: writingAction, Origin: origin, CreatedAt: s.now(), UpdatedAt: s.now()}
 	return row, nil
 }
 
@@ -968,8 +1017,13 @@ func selectedRewriteContextError(err error) error {
 
 func validateSelectedRewriteInput(key string, in SelectedRewriteRequest) error {
 	if !operationcore.ValidKey(key) || in.ExpectedSpecRevision < 0 || in.ExpectedWorkingCopyRevision < 1 ||
-		strings.TrimSpace(in.Instruction) == "" || len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 || !validRewriteEvidenceRefs(in.EvidenceCardRefs) ||
+		len([]rune(in.Instruction)) > 2000 || len(in.SourceIDs) > 12 || !validRewriteEvidenceRefs(in.EvidenceCardRefs) ||
 		in.Selection.EndUTF16 <= in.Selection.StartUTF16 || in.Selection.StartUTF16 < 0 || in.Selection.SelectedText == "" {
+		return ErrRewriteInvalidRequest
+	}
+	// 旧路径的说明是必填的自由文本；动作路径的说明只是补充说明，必填的是
+	// 动作与产出参数（由执行计划校验），所以这里不为动作路径要求它。
+	if in.isLegacyPath() && strings.TrimSpace(in.Instruction) == "" {
 		return ErrRewriteInvalidRequest
 	}
 	ids := slices.Clone(in.SourceIDs)
@@ -987,6 +1041,105 @@ func validateSelectedRewriteInput(key string, in SelectedRewriteRequest) error {
 func operationKeyForApply(key, candidateID string) string {
 	digest := sha256.Sum256([]byte(candidateID + "\x00" + key))
 	return "g7-apply-" + hex.EncodeToString(digest[:])
+}
+
+// resolveRewritePlan 判定这次请求走哪条路径，并解析动作路径的执行计划。
+//
+// 三个新字段全部缺省 ⇒ 旧路径（plan 为 nil）：自由文本说明驱动，不记录动作。
+// 任一字段出现 ⇒ 动作路径：动作必填、产出参数必齐、范围只能是选区。
+//
+// 动作语义一律由 writingaction.PlanFor 解析：执行方不按动作名分支，也不自己
+// 解释产出参数。
+func resolveRewritePlan(input SelectedRewriteRequest) (*writingaction.Plan, error) {
+	if input.isLegacyPath() {
+		return nil, nil
+	}
+	if input.WritingAction == nil {
+		return nil, ErrRewriteInvalidRequest
+	}
+	scope := writingaction.ScopeSection
+	if input.Scope != nil {
+		scope = *input.Scope
+	}
+	params := writingaction.OutputParams{}
+	if input.OutputParams != nil {
+		params = *input.OutputParams
+	}
+	plan, err := writingaction.PlanFor(*input.WritingAction, scope, params)
+	if err != nil {
+		return nil, err
+	}
+	// 这个端点只实现改写。别的已知动作由它们自己的端点负责。动作身份引用
+	// 常量，不写字符串字面量。
+	if plan.Action != writingaction.ActionRewrite {
+		return nil, ErrRewriteInvalidRequest
+	}
+	return &plan, nil
+}
+
+// rewritePrompt 按路径组装给模型的提示。
+//
+// 它自己不组装提示：两条路径各自组装，所以写给模型的指令只有一个来源。
+func rewritePrompt(input SelectedRewriteRequest, plan *writingaction.Plan, basis g2RewriteTemplateBasis,
+	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) (SelectedRewritePrompt, error) {
+	if plan != nil {
+		return actionRewritePrompt(input, *plan, basis, constraints, before, after, sources)
+	}
+	return legacyRewritePrompt(input, basis, constraints, before, after, sources), nil
+}
+
+// actionRewritePrompt 组装动作路径的提示。
+//
+// 指令只来自执行计划：执行方按 Plan.Context 声明的类别组装上下文，把渲染
+// 出来的动作指令交给模型。它不按动作名分支，也不自己解释产出参数。
+//
+// 客户端的补充说明单独放一个字段：它不参与动作判定，也不与动作指令混成一段。
+func actionRewritePrompt(input SelectedRewriteRequest, plan writingaction.Plan, basis g2RewriteTemplateBasis,
+	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) (SelectedRewritePrompt, error) {
+	instruction, err := writingaction.RenderInstruction(plan, writingaction.RenderContext{
+		Section:  selectedRewriteSectionContext(input.Selection, before, after),
+		Template: selectedRewriteTemplateContext(basis),
+	})
+	if err != nil {
+		return SelectedRewritePrompt{}, err
+	}
+	return SelectedRewritePrompt{
+		TemplateBasis: basis, EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: constraints,
+		Selection: input.Selection, Instruction: instruction, SupplementaryNote: input.Instruction,
+		ContextBefore: before, ContextAfter: after, Sources: sources,
+	}, nil
+}
+
+// legacyRewritePrompt 组装旧路径的提示。
+//
+// 客户端的自由文本说明原样作为指令：旧路径的行为逐字不变。
+func legacyRewritePrompt(input SelectedRewriteRequest, basis g2RewriteTemplateBasis,
+	constraints []generation.EvidenceConstraint, before, after string, sources []evidence.Source) SelectedRewritePrompt {
+	return SelectedRewritePrompt{
+		TemplateBasis: basis, EvidenceCardRefs: input.EvidenceCardRefs, EvidenceConstraints: constraints,
+		Selection: input.Selection, Instruction: input.Instruction,
+		ContextBefore: before, ContextAfter: after, Sources: sources,
+	}
+}
+
+// selectedRewriteSectionContext 渲染「目标选区及其上下文」这一类上下文。
+//
+// 它是**上下文**，不是动作语义：动作说什么由词汇包渲染，这里只回答
+// 「有没有选区上下文」。
+func selectedRewriteSectionContext(selection RewriteSelection, before, after string) string {
+	return strings.TrimSpace(selection.SelectedText + "\n" + before + "\n" + after)
+}
+
+// selectedRewriteTemplateContext 渲染「模板与规则」这一类上下文。
+//
+// 「没有绑定模板」也是一个事实——它告诉模型这次改写不受项目模板约束——
+// 所以这一槽永远非空：否则「缺少必需上下文」与「没有模板」会分不开。
+func selectedRewriteTemplateContext(basis g2RewriteTemplateBasis) string {
+	if basis.CopyID == "" {
+		return "本项目未绑定模板，改写不受项目模板约束。"
+	}
+	return fmt.Sprintf("模板副本 %s@%d，内容哈希 %s，规则集哈希 %s，上下文修订号 %d。",
+		basis.CopyID, basis.CopyVersion, basis.ContentHash, basis.RulesetHash, basis.ContextRevision)
 }
 
 func selectedRewriteContextWindow(body string, selection RewriteSelection) (int, int, string, string, bool) {
