@@ -218,7 +218,26 @@ type RuntimeGuardApplication interface {
 	ObserveDeliveryRuntime(ctx context.Context, actor Actor, projectID, operation, status string, durationMS int64, objects DeliveryRuntimeObjects) error
 }
 
+// AgentActionApplication 是智能体行动执行器可以执行的那几种操作。
+//
+// 行动提案的种类（save_spec / create_evidence_card / create_change_set /
+// apply_change_set / commit_working_copy …）由 core.ActionProposal 声明，
+// 所以这套语言属于 workspacecore，口也在这里声明。
+//
+// 这里的七个方法都是**原始操作**形态（返回 json.RawMessage 与重放位），
+// 不是 Result 形态的封装；已有的上下文口给的是封装形态，两者不可互换。
+type AgentActionApplication interface {
+	SaveSpec(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (json.RawMessage, int, bool, error)
+	SaveEvidenceCard(ctx context.Context, actor Actor, projectID, key string, input SaveEvidenceCardInput) (json.RawMessage, int, bool, error)
+	ConfirmEvidenceCard(ctx context.Context, actor Actor, projectID, cardID, key string, input G2ConfirmedInput) (json.RawMessage, int, bool, error)
+	CreateChangeDraft(ctx context.Context, actor Actor, projectID, key string, input ExtendedChangeSetInput) (json.RawMessage, int, bool, error)
+	PrepareAgentChangeDraft(ctx context.Context, actor Actor, proposal ActionProposal, input AgentChangeDraftInput) (context.Context, error)
+	ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error)
+	CommitWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (json.RawMessage, int, bool, error)
+}
+
 var (
+	_ AgentActionApplication      = (*Service)(nil)
 	_ GovernanceReviewApplication = (*Service)(nil)
 
 	_ AgentContextApplication = (*Service)(nil)

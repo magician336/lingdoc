@@ -22,6 +22,15 @@ import (
 // decided that the context owns another operation; that decision has to be
 // written down here, and it has to come with the aggregate method it names.
 var narrowPortMethods = map[string][]string{
+	"AgentActionApplication": {
+		"ApplyChangeSet",
+		"CommitWorkingCopy",
+		"ConfirmEvidenceCard",
+		"CreateChangeDraft",
+		"PrepareAgentChangeDraft",
+		"SaveEvidenceCard",
+		"SaveSpec",
+	},
 	"GovernanceReviewApplication": {
 		"AuthorizeInTransaction",
 		"ValidationIssueDispositionsInTransaction",
