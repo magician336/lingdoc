@@ -239,6 +239,55 @@ type Service struct { /* 协作者集合 */ }
 | 影响中心与 #246 对齐 | 影响中心路由 | I-4 | 响应形状逐字未变 | G3.7 仍是 `NOT RUN` | base/head 响应形状对照 | TODO |
 | 隔离 PostgreSQL 轮 | PG 路径 | — | 单独轻负载跑一轮 | — | 隔离实例 55433 | NOT RUN（环境待安排） |
 
+## 验证口径：行为零变化怎么证
+
+段三改的是接缝，不是行为。仓库里已经有三道现成的守卫，本段必须让它们**在不改断言的前提下继续绿**——这比新写对照脚本更有说服力。
+
+| 守卫 | 位置 | 它证明什么 | 段三为什么必须让它继续绿 |
+| --- | --- | --- | --- |
+| 能力齐全的路由树 = 70 | `internal/router/lingdoc_routes_test.go:54` | 六必需端口 + 机器读 + 审阅锚点装配出的完整路由面 | 段三换接缝不换端点；改一个端点或漏一个端点，这里立刻红 |
+| 生产装配的路由面 = 48 | `internal/container/lingdoc_test.go:100` | 生产组合根实际服务的路由集合（含 7 条可选能力路由） | 段三改组合根的注入形态（决策 37），但端点集合必须一字不变 |
+| 契约与 Go 路由面一致 | `scripts/ci/check_lingdoc_routes.py` | 三条全流程注册器与 OpenAPI/前端契约逐条对齐 | 见下面的已知风险 |
+
+外加两条本段自带的：
+
+- 窄口契约断言（切片 0）——窄口方法集与签名逐字不变。
+- 传输层无聚合体具体类型的结构断言（每张票自带）。
+
+### 已知耦合：选区改写与宽口之间有一条隐藏通路
+
+`internal/lingdoc/workspace/g2_generation_evidence.go` 是 37 方法宽口 `ApplicationService` 的**隐藏持有者**：
+
+- `g2SelectFormal(ctx, workspace ApplicationService, ...)`（`:31`）——参数是宽口，函数体第一件事却是把它断言成 1 方法的窄口 `g2EvidenceSelector`（`:20`、`:32`），断言失败返回 `generation.ErrDependencyUnavailable`。
+- `g2GenerationEvidenceValidator{workspace ApplicationService}`（`:51`）——结构体字段直接是宽口。
+- 选区改写路径 `selected_rewrite.go:164`、`:357` 把自己的 `s.workspace` 传进 `g2SelectFormal`。
+
+**后果**：#266 把 `SelectedRewriteService.workspace` 收窄成 4 方法窄口之后，这条调用链要传的就不是宽口了。`g2SelectFormal` 的参数类型必须变。
+
+**处置**：
+- #266 允许把 `g2SelectFormal` 的参数从 `ApplicationService` 改成 `any`，**保留函数体内那句运行时断言**。理由：断言失败返回 `ErrDependencyUnavailable` 是**可观测行为**（依赖缺失时的 503 形态）；若把参数类型收窄成 `g2EvidenceSelector`，未实现选择器的替身就变成**编译期错误**，那是行为变化。`any` 保住行为逐字不变，代价是这一处失去了编译期类型，**必须用注释写明这是为了保住可观测的降级行为**。
+- `g2GenerationEvidenceValidator.workspace`（宽口字段）的收窄属 **#269** 的范围，本段不动。
+
+### 已知风险：契约一致性脚本会因接收者改名而红
+
+`scripts/ci/check_lingdoc_routes.py:144` 的读方法提取写死了接收者名：
+
+```python
+"read_method": (re.search(r'\breturn\s+(?:service|s)\.(\w+)\(', block).group(1)
+                if re.search(r'\breturn\s+(?:service|s)\.(\w+)\(', block) else None),
+```
+
+段三把 `service *core.Service` 换成按上下文的窄口之后，注册器里的接收者名会变（例如 `ports.Impact.GetImpactAssessment`），这条正则就匹配不上，`read_method` 变成 `None`。该字段是 `typed_response` 缺失时的兜底（`check_lingdoc_routes.py:478`），受影响的那几条路由会失去形状校验。
+
+**这不是假想风险，已量化**（脚本 `.scratch/lingdoc-arch-20261021/seg3/check_readmethod_weight.py`）：当前 94 条路由里，**14 条读路由的响应形状只靠 `read_method` 承重**——G2 的读路由声明为 `g2FullRead(func(...) (any, error))`，闭包的返回类型给不出形状，只能从「这条路由调了哪个方法」推。接收者名一改，这 14 条的形状校验会**无声**消失（`read_types.get(None)` 返回 `None`，检查被跳过），而门禁照样 PASS。
+
+**处置（已完成，提交 `d226090`）**：
+1. 正则**泛化**为 `return <任意接收者链>.<方法>(`，而不是加一个具体名字白名单——泛化后对任何接缝形态都成立。
+2. 补一条 `scripts/ci/test_lingdoc_routes.py` 的守护用例：把 G2 research-tasks 的调用挪到 bundle 字段（`return ports.Research.ListResearchTasks(`）上，再让契约少一个 Go 字段，检查必须仍然报 `response schema omits Go JSON fields`。
+3. **阴性验证**：把正则改回写死接收者的版本，守护用例失败（`ContractParityError not raised`），还原后恢复 PASS。`scripts/ci/test_lingdoc_routes.py` 29 → 30 个用例全绿。
+
+**仍需在每张票之后跑**：`python scripts/ci/check_lingdoc_routes.py` 必须仍 PASS——泛化只是让脚本对新的接收者名不失效，**不代表**段三没改坏路由。
+
 ## 切片 0：窄口契约（先写接口）
 
 **目的**：在任何传输面改动之前，先把 20 个上下文窄口的**接口契约**写下来并钉住。收窄只发生在「哪些方法分到哪个口」，方法本身逐字不动；这条承诺由机器断言守住。
