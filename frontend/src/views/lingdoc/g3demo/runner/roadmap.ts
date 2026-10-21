@@ -1542,7 +1542,12 @@ export function verdictAcG316(result: G3RoadmapChainResult): G3Verdict {
         `冻结基线版本回到 ${result.baselineAfterCancel.version}（与取消前一致），` +
         `节点版本全部回到提交后的版本；被取消会话占用的临时版本 ` +
         `${result.temporaryRefs.map((ref) => `${ref.kind}/${ref.id}@v${ref.version}`).join('、') || '（无）'} ` +
-        `没有出现在冻结版本序列里；指向临时版本的任务 ${pointingAtTemporary.length} 条，全部为 STALE。`
+        `没有出现在冻结版本序列里；` +
+        (pointingAtTemporary.length === 0
+          ? `指向临时版本的任务 ${pointingAtTemporary.length} 条——**这一条是真空的**：` +
+            `产品面上没有任何路径会造出指向未冻结临时版本的任务，所以台面证不了「落 STALE」这一半，` +
+            `它的非真空证据在服务端侧。`
+          : `指向临时版本的任务 ${pointingAtTemporary.length} 条，全部为 STALE。`)
       : `不成立：会话状态 ${result.cancelledSession.status || '（未取到）'}；` +
         `基线版本 ${result.baselineAfterCommit.version} → ${result.baselineAfterCancel.version}（未恢复=${!versionRestored}）；` +
         `节点版本未恢复=${!nodeRestored}；临时版本出现在冻结序列=${temporaryVersionInSequence}；` +
