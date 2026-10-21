@@ -41,6 +41,12 @@ sys.path.insert(0, str(ROOT / "scripts" / "acceptance"))
 import lingdoc_research_closure as base  # noqa: E402
 
 
+def date_stamp() -> str:
+    """证据文件名里的日期戳（与前端 ``dateStamp()`` 同一形状）。"""
+    now = time.localtime()
+    return f"{now.tm_year}{now.tm_mon:02d}{now.tm_mday:02d}"
+
+
 def run_evidence(
     base_url: str,
     account_email: str,
@@ -85,6 +91,54 @@ def run_evidence(
         "elapsed_seconds": elapsed,
         "files": sorted(p.name for p in out_dir.glob("*.json")),
     }
+
+
+def run_dependency_chain(
+    base_url: str,
+    out_dir: Path,
+    date_stamp: str,
+    timeout: int = 900,
+) -> dict[str, object]:
+    """跑依赖候选链（独立脚本），把「验收台-4」形态的证据落进本轮目录。
+
+    整链导出（``run-evidence.ts`` 的 ``buildAggregateEvidenceExport``）汇总的是
+    **证据目录里所有 ``G3-验收台-*`` 文件**。依赖候选链的判定（AC-G3-15）住在
+    它自己的证据文件里，所以这一步必须**先**跑，文件落进同一个目录，整链导出
+    才带得上它的判定。
+
+    它有**自己的账号与自己的项目**：候选的 ``target`` 必须是本项目的章节版本，
+    复用别的链的项目会撞 409「基线已漂移」。
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    npx = shutil.which("npx.cmd") or shutil.which("npx")
+    if not npx:
+        raise SystemExit("npx not found on PATH")
+    out_path = out_dir / f"G3-验收台-4-依赖图与影响任务证据-{date_stamp}.json"
+    started = time.monotonic()
+    proc = subprocess.run(
+        [
+            npx,
+            "tsx",
+            "scripts/g3demo/run-dependencies.ts",
+            "--base",
+            base_url,
+            "--out",
+            str(out_path),
+        ],
+        cwd=str(ROOT / "frontend"),
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+    elapsed = round(time.monotonic() - started, 1)
+    print(proc.stdout[-4000:])
+    if proc.returncode != 0:
+        print(proc.stderr[-4000:], file=sys.stderr)
+        raise SystemExit(f"run-dependencies failed rc={proc.returncode}")
+    return {"elapsed_seconds": elapsed, "file": out_path.name}
 
 
 def register_account(base_url: str, db_path: Path) -> tuple[str, str, int]:
@@ -149,6 +203,11 @@ def main() -> int:
         default="",
         help="轮 1 跑哪几条链（空 = 三条全跑）",
     )
+    parser.add_argument(
+        "--with-dependency-chain",
+        action="store_true",
+        help="两轮都跑依赖候选链（它的判定要进整链证据，见 run_dependency_chain）",
+    )
     args = parser.parse_args()
 
     binary = Path(args.binary).resolve()
@@ -170,6 +229,10 @@ def main() -> int:
     print("round1: healthy (no fault injection)")
     email, password, tenant_id = register_account(base_url, data_dir / "lingdoc.sqlite")
     print(f"round1: registered {email} · tenant_id={tenant_id}")
+    date = date_stamp()
+    if args.with_dependency_chain:
+        # 依赖候选链先跑：整链导出汇总的是目录里已有的 `G3-验收台-*` 文件。
+        run_dependency_chain(base_url, out_dir / "round1", date)
     round1 = run_evidence(base_url, email, password, out_dir / "round1", args.round1_chains)
     code1 = base.stop_process(proc)
     print(f"round1: server stopped, exit code={code1} (Windows TerminateProcess 期望 1)")
@@ -177,6 +240,8 @@ def main() -> int:
     # —— 轮 2：装配注入 ——
     proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id))
     print(f"round2: healthy (fault injection armed for tenant {tenant_id})")
+    if args.with_dependency_chain:
+        run_dependency_chain(base_url, out_dir / "round2", date)
     round2 = run_evidence(
         base_url,
         email,
