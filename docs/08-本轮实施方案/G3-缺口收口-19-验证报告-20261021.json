@@ -1,0 +1,109 @@
+{
+  "ticket": "G3 缺口收口-19：当前 head 的验收台两轮实跑落证（修复「缺口行被投影成 PASS」与 AC-G3-14 状态口径之后）",
+  "issue": "https://github.com/magician336/lingdoc/issues/310",
+  "head_at_evidence": "c69418d",
+  "superseded_by": "docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json（head 3f82d04）",
+  "superseded_note": "本报告记录的是**四张承接票（#318 / #319 / #320 / #321）落地之前**的那一轮实跑。承接票落地后按新 head 重跑，落证见 20 号报告。",
+  "head_note": "服务二进制由 c69418d 编译（-ldflags 注入 CommitID），前端验收台脚本取自同一 head 的工作区。本报告入库后只有证据文件本身发生变化，不再改动任何代码。",
+  "mode": "real",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "node": "v24.14.1",
+    "python": "3.14.3",
+    "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=c69418d'\" -o .g3-server-r7.exe ./cmd/server",
+    "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库）",
+    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r7.exe --out .acceptance-r7 --round2-chains 'fault'"
+  },
+  "why_this_report_exists": "本报告是本轮收口（#306 / #310 / #314 / #315）的最终落证，取代 18 号报告（同一条工作线在更早 head 上的那一版）。18 号报告暴露过一个真实缺陷：导出体把 AC-G3-03 写成了 PASS，而它仍带 G3-GAP-01，违反「缺口清单 #246 未关闭前，缺口对应的验收行一律不得判 PASS」。根因是投影处照搬判定卡自带的状态。修复（8a89aa8）之后又校准了 AC-G3-14 的状态口径（c69418d），因此按最终 head 重跑并重新落证。",
+  "why_two_rounds": "受控故障注入是组合根按环境变量装配的夹具，按租户限定。轮 1 不装配注入，按 #295 的口径该行必须记 NOT RUN；轮 2 装配同一租户的注入，才能观测到原子性边界。",
+  "rounds": [
+    {
+      "round": "轮 1 · 后端未装配受控故障注入",
+      "run_id": "g3r-mvhv5jku-43489dcf",
+      "evidence_file": "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvhv5jku-43489dcf.json",
+      "aggregate_evidence_file": "docs/08-本轮实施方案/G3-验收台-8-整链证据-20261021-r1.json",
+      "head": "c69418d",
+      "head_stale": false,
+      "ac_g3_03": {
+        "status": "NOT RUN",
+        "fact": "apply 返回 HTTP 200（没有观测到写入失败），该行按口径记 NOT RUN，不判 PASS。",
+        "evidence": "整链证据 ac_rows[AC-G3-03]：status=NOT RUN，source=this_run，verdict.holds=false，detail 明写「本轮后端未装配受控故障注入」。"
+      },
+      "other_rows": {
+        "AC-G3-08": "NOT RUN（本轮链路跑了但前置不具备：路线图链在 v2 模板下仍撞 409「基线已漂移」→ #318 / #319）",
+        "AC-G3-14": "NOT RUN（本轮助手链跑了但没有可读回的助手草稿 → #320）",
+        "AC-G3-15": "NOT RUN（候选批次三态未跑出绿 → #321）",
+        "AC-G3-16": "BLOCKED",
+        "AC-G3-01 / AC-G3-02 / AC-G3-11": "PASS（本轮判定成立，且这三行不带任何缺口编号）"
+      }
+    },
+    {
+      "round": "轮 2 · 后端装配了受控故障注入（同一租户）",
+      "run_id": "g3r-mvhv5lgf-24974133",
+      "evidence_file": "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvhv5lgf-24974133.json",
+      "aggregate_evidence_file": "docs/08-本轮实施方案/G3-验收台-8-整链证据-20261021-r2.json",
+      "head": "c69418d",
+      "head_stale": false,
+      "ac_g3_03": {
+        "status": "PASS (follow-up)",
+        "row_status_note": "行状态记 PASS (follow-up) 而不是 PASS：缺口清单 #246 仍未关闭，按 docs/agents/development-rules.md，本票所列缺口对应的验收行在 #246 关闭前一律不判 PASS。verdict 的 holds=true 与行状态不冲突：前者是「判据成立」，后者是「矩阵投影的状态」。",
+        "injection_hit": "apply → HTTP 503 · code=injected_fault（受控故障注入已生效，本次操作整体未生效）",
+        "rollback_read_back": {
+          "项目未变": true,
+          "项目未变_读数": "current_context_revision 1 → 1 · project_version 4 → 4 · spec_revision 1 → 1",
+          "模板引用未变": true,
+          "模板引用未变_读数": "template-demo@v1 → template-demo@v1",
+          "ImpactTask 集合未变": true,
+          "ImpactTask 集合未变_读数": "0 → 0 条",
+          "变更集未变成 applied": true,
+          "变更集未变成 applied_读数": "status=assessed",
+          "业务审计事件": "13 → 20 条（读回的是项目全部业务审计事件，里面混着与本次 apply 无关的授权类事件，所以「集合相等」不是原子性的判据；「这次 apply 的业务审计没有留下」由服务端事务回滚保证，见 workspacecore 的故障注入回归测试）"
+        },
+        "conclusion": "AC-G3-03 的判据原文是「项目仍保持原 revision 和旧模板引用，不能出现新 revision 已存在但 ImpactTask 不完整的状态」——三项读回全部成立，判定成立。"
+      },
+      "other_rows": {
+        "AC-G3-08": "BLOCKED（按 #314 的完成线保持 BLOCKED）",
+        "AC-G3-14": "BLOCKED（按 #315 的完成线保持 BLOCKED）",
+        "AC-G3-15": "BLOCKED",
+        "AC-G3-16": "BLOCKED"
+      }
+    }
+  ],
+  "row_status_audit": {
+    "rule": "缺口清单 #246 未关闭前，它列出的缺口所对应的验收行一律不得判 PASS（docs/agents/development-rules.md）。",
+    "checked": "两轮导出体的 23 行逐行核对：凡 gap_ids 或 limiting_gap_ids 非空的行，status 均不为 PASS。",
+    "rows_with_gap": {
+      "G3.6": "TODO（limiting G3-GAP-08）",
+      "G3.7": "NOT RUN（G3-GAP-06 / G3-GAP-07）",
+      "AC-G3-03": "NOT RUN（轮 1）/ PASS (follow-up)（轮 2）· G3-GAP-01",
+      "AC-G3-04": "PASS (follow-up) · limiting G3-GAP-06 / G3-GAP-07",
+      "AC-G3-08": "NOT RUN（轮 1）/ BLOCKED（轮 2）· G3-GAP-02",
+      "AC-G3-09": "PASS (follow-up) · G3-GAP-09 / G3-GAP-10",
+      "AC-G3-12": "PASS (follow-up) · limiting G3-GAP-11",
+      "AC-G3-14": "NOT RUN（轮 1）/ BLOCKED（轮 2）· G3-GAP-04",
+      "AC-G3-15": "NOT RUN（轮 1）/ BLOCKED（轮 2）· G3-GAP-05",
+      "AC-G3-16": "BLOCKED · G3-GAP-03"
+    },
+    "rows_without_gap": "AC-G3-01 / AC-G3-02 / AC-G3-11 在轮 1 判定成立且不带缺口编号，记 PASS——规则不约束它们。",
+    "mechanism": "新增 frontend/src/views/lingdoc/g3demo/g3Gaps.ts 的 downgradeGapPass：三处投影（g3Export.ts 的两条导出路径、g3Evidence.ts 的页面矩阵投影）共用它，带缺口的行遇到 PASS 一律降级成 PASS (follow-up)。守护测试见 g3Export.test.ts 与 g3Evidence.test.ts。"
+  },
+  "status_vocabulary_note": {
+    "issue": "实跑校准曾把 AC-G3-08 / AC-G3-14 从 BLOCKED 改成 NOT RUN，这与 #314 / #315 的完成线（「本票完成前，这两行 / 这一行在缺口清单里保持 BLOCKED」）直接冲突。这五行在骨架提交 fb56a7f 里原本全是 BLOCKED；镜像的 G3-GAP-04 细节段也一直写着「行 AC-G3-14 仍为 BLOCKED」——漂移的只是表格那一行。",
+    "resolution": "按两张票的完成线把 AC-G3-08 与 AC-G3-14 恢复成 BLOCKED（提交 c69418d），并同步矩阵行、缺口登记、规则表、镜像与守护断言。",
+    "semantics_kept": "NOT RUN 与 BLOCKED 仍然分工明确：NOT RUN 是「本轮没观测到判定所需的事实」（G3.7，以及未装配故障注入那一轮 AC-G3-03 的判定卡自带状态），BLOCKED 是「被未完成的前置/缺陷挡住」。轮 1 里 AC-G3-08 / AC-G3-14 记 NOT RUN 是**本轮判定卡自带的状态**（链路跑了但前置不具备），静态矩阵与缺口表仍是 BLOCKED。"
+  },
+  "open_follow_ups": [
+    "AC-G3-08 / AC-G3-16：台面接上演示模板 v2 与 route-r7 之后，路线图链仍撞 409「基线已漂移」——上下文修订与路线图基线版本要对齐（#318）。",
+    "AC-G3-08 的「缺失」前置：激活闸门把模板必填字段当规格字段读，规格里的占位值会掩盖「已声明但缺失」（#319）。",
+    "AC-G3-14：台面要读回真实助手草稿，需要一条真实模型轮次（模型凭据 + 台面接）（#320）。",
+    "AC-G3-15：候选批次三态决策要在当前 head 跑出绿（#321）。"
+  ],
+  "verification_commands": [
+    "cd frontend && npm run type-check   # exit 0",
+    "cd frontend && npm test            # 1506 tests / 0 fail / 1 skipped",
+    "go test -timeout 20m ./internal/lingdoc/workspacecore/...   # ok 37.191s",
+    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r7.exe --out .acceptance-r7 --round2-chains 'fault'   # 两轮实跑完成"
+  ],
+  "status": "PASS (follow-up)"
+}

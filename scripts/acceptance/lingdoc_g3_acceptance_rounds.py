@@ -41,6 +41,12 @@ sys.path.insert(0, str(ROOT / "scripts" / "acceptance"))
 import lingdoc_research_closure as base  # noqa: E402
 
 
+def date_stamp() -> str:
+    """证据文件名里的日期戳（与前端 ``dateStamp()`` 同一形状）。"""
+    now = time.localtime()
+    return f"{now.tm_year}{now.tm_mon:02d}{now.tm_mday:02d}"
+
+
 def run_evidence(
     base_url: str,
     account_email: str,
@@ -87,6 +93,58 @@ def run_evidence(
     }
 
 
+def run_dependency_chain(
+    base_url: str,
+    out_dir: Path,
+    date_stamp: str,
+    round_label: str,
+    timeout: int = 900,
+) -> dict[str, object]:
+    """跑依赖候选链（独立脚本），把「验收台-4」形态的证据落进本轮目录。
+
+    整链导出（``run-evidence.ts`` 的 ``buildAggregateEvidenceExport``）汇总的是
+    **证据目录里所有 ``G3-验收台-*`` 文件**。依赖候选链的判定（AC-G3-15）住在
+    它自己的证据文件里，所以这一步必须**先**跑，文件落进同一个目录，整链导出
+    才带得上它的判定。
+
+    它有**自己的账号与自己的项目**：候选的 ``target`` 必须是本项目的章节版本，
+    复用别的链的项目会撞 409「基线已漂移」。
+
+    文件名带轮次后缀（``-r1`` / ``-r2``）：两轮是**两次不同的运行**，同名的话
+    整链证据里那条 ``runs[].file`` 引用会指到另一轮的文件上。
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    npx = shutil.which("npx.cmd") or shutil.which("npx")
+    if not npx:
+        raise SystemExit("npx not found on PATH")
+    out_path = out_dir / f"G3-验收台-4-依赖图与影响任务证据-{date_stamp}-{round_label}.json"
+    started = time.monotonic()
+    proc = subprocess.run(
+        [
+            npx,
+            "tsx",
+            "scripts/g3demo/run-dependencies.ts",
+            "--base",
+            base_url,
+            "--out",
+            str(out_path),
+        ],
+        cwd=str(ROOT / "frontend"),
+        env=os.environ.copy(),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
+    elapsed = round(time.monotonic() - started, 1)
+    print(proc.stdout[-4000:])
+    if proc.returncode != 0:
+        print(proc.stderr[-4000:], file=sys.stderr)
+        raise SystemExit(f"run-dependencies failed rc={proc.returncode}")
+    return {"elapsed_seconds": elapsed, "file": out_path.name}
+
+
 def register_account(base_url: str, db_path: Path) -> tuple[str, str, int]:
     """注册一个合成演示账号，返回 (email, password, tenant_id)。
 
@@ -117,8 +175,57 @@ def register_account(base_url: str, db_path: Path) -> tuple[str, str, int]:
     return email, password, tenant_id
 
 
-def start_server(binary: Path, data_dir: Path, port: int, fault: tuple[str, int] | None):
+def write_builtin_models_yaml(data_dir: Path) -> Path:
+    """写一份**只含占位符**的模型登记文件（仓库外，随临时目录一起消失）。
+
+    服务端启动时把 ``${DEEPSEEK_API_KEY}`` 从环境变量插值后 upsert 成模型行
+    （``internal/types/builtin_models_config.go`` 的 ``LoadBuiltinModelsConfig``）。
+    **这份文件里没有凭据本身**：凭据只从环境变量读，插值发生在服务端进程内。
+
+    行的形状：``name=deepseek-flash`` / ``type=KnowledgeQA`` / ``source=remote`` /
+    ``status=active`` / ``is_default=true`` / ``provider=generic`` /
+    ``base_url=https://api.deepseek.com`` /
+    ``extra_config.thinking_control=thinking_type``，
+    真正发出去的模型名用 ``extra_config.remote_model_name=deepseek-chat``。
+    ``is_default=true`` 是让助手链选到它的关键（``defaultGenerationModel``）。
+    """
+    path = data_dir / "builtin_models.yaml"
+    path.write_text(
+        "builtin_models:\n"
+        "  - id: g3-acceptance-deepseek\n"
+        "    name: deepseek-flash\n"
+        "    type: KnowledgeQA\n"
+        "    source: remote\n"
+        "    status: active\n"
+        "    is_default: true\n"
+        "    parameters:\n"
+        "      provider: generic\n"
+        "      base_url: https://api.deepseek.com\n"
+        '      api_key: "${DEEPSEEK_API_KEY}"\n'
+        "      extra_config:\n"
+        "        thinking_control: thinking_type\n"
+        "        remote_model_name: deepseek-chat\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def start_server(
+    binary: Path,
+    data_dir: Path,
+    port: int,
+    fault: tuple[str, int] | None,
+    model_config: Path | None = None,
+):
     env = base.server_environment(data_dir, port)
+    if model_config is not None:
+        # `server_environment` 只透传一份白名单环境变量，凭据不在白名单里，
+        # 所以要跑真实模型轮次时得**显式**把它交给服务端进程。
+        key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        if not key:
+            raise SystemExit("要跑真实模型轮次，环境变量 DEEPSEEK_API_KEY 必须有值")
+        env["BUILTIN_MODELS_CONFIG"] = str(model_config)
+        env["DEEPSEEK_API_KEY"] = key
     if fault is not None:
         point, tenant_id = fault
         env["LINGDOC_FAULT_INJECTION"] = point
@@ -149,6 +256,16 @@ def main() -> int:
         default="",
         help="轮 1 跑哪几条链（空 = 三条全跑）",
     )
+    parser.add_argument(
+        "--with-dependency-chain",
+        action="store_true",
+        help="两轮都跑依赖候选链（它的判定要进整链证据，见 run_dependency_chain）",
+    )
+    parser.add_argument(
+        "--with-real-model",
+        action="store_true",
+        help="装配真实模型（凭据从环境变量 DEEPSEEK_API_KEY 读，登记文件只含占位符）",
+    )
     args = parser.parse_args()
 
     binary = Path(args.binary).resolve()
@@ -166,17 +283,24 @@ def main() -> int:
     print(f"base_url={base_url}")
 
     # —— 轮 1：不装配注入 ——
-    proc = start_server(binary, data_dir, port, None)
+    model_config = write_builtin_models_yaml(data_dir) if args.with_real_model else None
+    proc = start_server(binary, data_dir, port, None, model_config)
     print("round1: healthy (no fault injection)")
     email, password, tenant_id = register_account(base_url, data_dir / "lingdoc.sqlite")
     print(f"round1: registered {email} · tenant_id={tenant_id}")
+    date = date_stamp()
+    if args.with_dependency_chain:
+        # 依赖候选链先跑：整链导出汇总的是目录里已有的 `G3-验收台-*` 文件。
+        run_dependency_chain(base_url, out_dir / "round1", date, "r1")
     round1 = run_evidence(base_url, email, password, out_dir / "round1", args.round1_chains)
     code1 = base.stop_process(proc)
     print(f"round1: server stopped, exit code={code1} (Windows TerminateProcess 期望 1)")
 
     # —— 轮 2：装配注入 ——
-    proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id))
+    proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id), model_config)
     print(f"round2: healthy (fault injection armed for tenant {tenant_id})")
+    if args.with_dependency_chain:
+        run_dependency_chain(base_url, out_dir / "round2", date, "r2")
     round2 = run_evidence(
         base_url,
         email,

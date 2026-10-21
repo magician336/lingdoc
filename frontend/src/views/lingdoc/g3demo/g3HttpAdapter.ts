@@ -13,6 +13,26 @@
 import { del, get, post, postNoBody, put } from '@/utils/request'
 import type { G3HttpClient, G3HttpResponse } from './runner/httpClient'
 
+/**
+ * 单个请求的超时（毫秒）。
+ *
+ * 没有超时的话，一个**挂住**的请求会把整轮实跑永久卡死：页面上表现为「点了没反应」，
+ * 看上去像跑得慢，实际上什么结论都没有。带上超时之后，挂住会变成一次可读的失败——
+ * 链路把它记成「本条链没有跑完：请求超时」，其余链路照跑。
+ *
+ * 口径与 node 脚本那份客户端一致（`frontend/scripts/g3demo/fetchClient.ts`）：
+ * 同一份执行器契约，两边的超时口径不能不一样。
+ */
+const REQUEST_TIMEOUT_MS = 60_000
+
+/** 读出「这一次是超时」的判定。axios 报 ECONNABORTED/ETIMEDOUT，fetch 报 TimeoutError。 */
+function isTimeoutError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const code = (error as { code?: unknown }).code
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT') return true
+  return (error as { name?: unknown }).name === 'TimeoutError'
+}
+
 /** 从响应体里读出状态码。axios 响应拦截器把它挂在非枚举属性 `$httpStatus` 上。 */
 function statusOf(payload: unknown): number {
   if (payload && typeof payload === 'object' && '$httpStatus' in payload) {
@@ -48,7 +68,11 @@ export function createRequestClient(): G3HttpClient {
     const started = performance.now()
 
     if (request.anonymous) {
-      const response = await fetch(request.path, { method: request.method, headers: { Accept: 'application/json' } })
+      const response = await fetch(request.path, {
+        method: request.method,
+        headers: { Accept: 'application/json' },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
       const text = await response.text()
       let body: unknown = text
       try {
@@ -68,7 +92,9 @@ export function createRequestClient(): G3HttpClient {
     if (request.idempotencyKey) {
       headers['Idempotency-Key'] = request.idempotencyKey
     }
-    const config = Object.keys(headers).length > 0 ? { headers } : undefined
+    const config = Object.keys(headers).length > 0
+      ? { headers, timeout: REQUEST_TIMEOUT_MS }
+      : { timeout: REQUEST_TIMEOUT_MS }
     const method = request.method.toUpperCase()
 
     try {
@@ -99,6 +125,16 @@ export function createRequestClient(): G3HttpClient {
         durationMs: performance.now() - started,
       }
     } catch (error) {
+      // 超时要有一句人读得懂的话：原始的 axios/fetch 异常在证据里只会显示
+      // 「请求失败（HTTP 0）」，看不出是「服务端挂住」还是「网络断了」。
+      if (isTimeoutError(error)) {
+        return {
+          status: 0,
+          ok: false,
+          body: { error: `请求超时：服务端在 ${REQUEST_TIMEOUT_MS / 1000} 秒内没有返回。` },
+          durationMs: performance.now() - started,
+        }
+      }
       return {
         status: statusOfError(error),
         ok: false,

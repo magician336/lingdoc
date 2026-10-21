@@ -93,7 +93,9 @@ test('AC-G3-03：装配了注入且回滚证据完整时判定成立', () => {
 test('AC-G3-03：回滚证据不完整时不成立', () => {
   const verdict = verdictAcG303(resultOf({ tasksUnchanged: false }))
   assert.equal(verdict.holds, false)
-  assert.equal(verdict.status, 'NOT RUN')
+  // 已装配注入（观测到了写入失败）但回滚没读全 → **TODO**（这一轮没判定成）。
+  // NOT RUN 的口径是「本轮没观测到写入失败」，那是**未装配注入**时的状态。
+  assert.equal(verdict.status, 'TODO')
 })
 
 test('AC-G3-03：未装配注入时记 NOT RUN、不得判 PASS，并指向夹具证据文件', () => {

@@ -14,6 +14,16 @@ import { makeIdempotencyKey, runStep, type G3ChapterFact, type G3RunContext } fr
 /** 演示模板。 */
 export const G3_DEMO_TEMPLATE_ID = 'template-demo'
 export const G3_DEMO_TEMPLATE_VERSION = '1'
+/**
+ * 演示模板的**第二个不可变版本**（#314）：它声明一个 RouteNode 类型的必需节点
+ * `route-r7`，服务端按模板规则算出 `required=true`。
+ *
+ * 为什么不是改 v1：v1 已被逐字节钉进冻结契约（`contracts/frozen-input.canonical.json`），
+ * 原地加必填字段会让所有演示项目被永久阻断。
+ */
+export const G3_DEMO_ROUTE_TEMPLATE_VERSION = '2'
+/** v2 声明的必需路线节点 id（与后端 `template.DemoRequiredRouteNodeID` 一致）。 */
+export const G3_DEMO_REQUIRED_ROUTE_NODE_ID = 'route-r7'
 
 /** 演示模板的必填字段。 */
 export const G3_DEMO_REQUIRED_FIELDS = ['research_subject', 'research_goal'] as const
@@ -244,6 +254,13 @@ export interface G3ProjectChainOptions {
    * 服务端会按 409 `idempotency_conflict` 拒掉。
    */
   idemPrefix?: string
+  /**
+   * 模板版本。默认用 v1。
+   *
+   * 路线图链要用 v2（它才声明必需 RouteNode）；此时规格里**必须**带上
+   * `route-r7` 的占位值——激活闸门把模板必填字段当规格字段读，缺了就激活不了。
+   */
+  templateVersion?: string
 }
 
 /** 跑完「建项 → 写规格 → 登记立项阅读 → 激活 → 章节就绪」整条链。 */
@@ -261,6 +278,7 @@ export async function runProjectChain(
   const created = await createProject(ctx, client, token, {
     name: options.projectName,
     idemPrefix: options.idemPrefix,
+    templateVersion: options.templateVersion,
   })
   const speced = await saveProjectSpec(ctx, client, token, created.id, {
     expectedSpecRevision: created.specRevision,

@@ -1,0 +1,171 @@
+{
+  "ticket": "G3 缺口收口-20：四张承接票（#318 / #319 / #320 / #321）在当前 head 的两轮实跑落证",
+  "issue": "https://github.com/magician336/lingdoc/issues/318",
+  "head_at_evidence": "06206dc",
+  "head_note": "服务二进制由 06206dc 编译（-ldflags 注入 CommitID），前端验收台脚本取自同一 head 的工作区。本报告入库后只有证据文件本身发生变化，不再改动任何代码。",
+  "mode": "real",
+  "environment": {
+    "os": "Windows 10.0.26200 x86_64",
+    "node": "v24.14.1",
+    "python": "3.14.3",
+    "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
+    "sqlite_include": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（已确认存在）",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=06206dc'\" -o .g3-server-r13.exe ./cmd/server",
+    "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库）",
+    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r13.exe --out .acceptance-r13 --round2-chains 'fault' --with-dependency-chain --with-real-model"
+  },
+  "tickets": {
+    "#318": "路线图链在演示模板 v2 下撞 409「基线已漂移」——对齐上下文修订与路线图基线版本（AC-G3-08 / AC-G3-16）",
+    "#319": "已声明但缺失的路线节点不产生 blocking——激活闸门的规格占位值掩盖了「缺失」（AC-G3-08 第三种前置）",
+    "#320": "验收台要读回一条真实助手草稿（AC-G3-14 的前置：模型凭据 + 台面接）",
+    "#321": "依赖候选三态决策要在当前 head 跑出绿（AC-G3-15）"
+  },
+  "rounds": [
+    {
+      "round": "轮 1 · 后端未装配受控故障注入",
+      "live_run_id": "g3r-mvi187xt-b43530f5",
+      "live_evidence_file": "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvi187xt-b43530f5.json",
+      "aggregate_evidence_file": "docs/08-本轮实施方案/G3-验收台-8-整链证据-20261021-r1.json",
+      "dependency_run_id": "g3r-mvi186y7-feadb403",
+      "dependency_evidence_file": "docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-20261021-r1.json",
+      "head": "06206dc",
+      "head_stale": false,
+      "ac_g3_03": {
+        "status": "NOT RUN",
+        "fact": "apply 返回 HTTP 200（没有观测到写入失败），该行按口径记 NOT RUN，不判 PASS。"
+      },
+      "ac_g3_08": {
+        "status": "PASS (follow-up)",
+        "verdict_holds": true,
+        "fact": "台面造出「待复核」与「版本落后」两种前置：必需节点 route-r7 读回 pending_review，推进其钉住的前置节点后读回 stale；稳定化给出 required_route_not_current 阻断原因码，项目没有进入 STABILIZED / READY。",
+        "delivery_check_note": "**交付检查这两步本轮都没取到，证据行照实写了真实状态码**：「待复核」那一次是 HTTP 403 `source_access_denied`（服务端的问题，见 #324），主路径那一次是 HTTP 409 `version_conflict`。这一行成立靠的是服务端给出的 required_route_not_current 阻断原因码，不靠交付检查——交付检查取不到时这一行照样成立。",
+        "row_status_note": "行状态记 PASS (follow-up)：缺口清单 #246 未关闭前，带实现缺口的行不判 PASS。"
+      },
+      "ac_g3_14": {
+        "status": "WARNING",
+        "verdict_holds": true,
+        "fact": "台面走「自然语言 → 真实模型轮次（g3-acceptance-deepseek，run_mode=real）→ 变更提案 → 人工确认落草稿 → 读回两组说明 → 进入正式评估（状态 assessed）」，读回两组状态=present：确定受影响 1 条、可能受影响 0 条，每条带对象引用、原因与可追溯依据。助手未触达应用 / 任务处置 / 导出 / 放行端点 0 次。",
+        "row_status_note": "结论**依赖真实模型**（非确定性），按仓库口径记 WARNING，不写 PASS。"
+      },
+      "ac_g3_15": {
+        "status": "PASS (follow-up)",
+        "verdict_holds": true,
+        "fact": "候选批次三态都跑通：确认（status=confirmed，产生边）、修改（status=modified，记住被替换元组 candidate_modify/NO_ACTION）、拒绝（status=rejected，**没有**产生边）；依赖边在三次决策前后从 7 条变成 9 条（只有确认与修改各产生一条）；同一版本里重投被拒的元组，服务端记为抑制（新建 0 条 · 抑制 1 条，原因 rejected_in_same_version）；依据版本已变更的候选在确认时被复检拦下（HTTP 409，code=dependency_candidate_requires_reevaluation）。"
+      },
+      "ac_g3_16": {
+        "status": "PASS (follow-up)",
+        "verdict_holds": true,
+        "fact": "取消未冻结编辑后冻结基线版本回到取消前的版本，被取消会话占用的临时版本不出现在冻结版本序列里。**「指向临时版本的任务落 STALE」这一半在台面上是真空的（0 条）**——产品面没有造出这种任务的路径，台面证不了这一半，它的非真空证据在服务端侧。判定卡现在如实写明了这一点。"
+      }
+    },
+    {
+      "round": "轮 2 · 后端装配了受控故障注入（同一租户）",
+      "live_run_id": "g3r-mvi18d0v-45c70df4",
+      "live_evidence_file": "docs/08-本轮实施方案/G3-验收台-8-证据-g3r-mvi18d0v-45c70df4.json",
+      "aggregate_evidence_file": "docs/08-本轮实施方案/G3-验收台-8-整链证据-20261021-r2.json",
+      "dependency_run_id": "g3r-mvi18c2w-c035fac7",
+      "dependency_evidence_file": "docs/08-本轮实施方案/G3-验收台-4-依赖图与影响任务证据-20261021-r2.json",
+      "head": "06206dc",
+      "head_stale": false,
+      "ac_g3_03": {
+        "status": "PASS (follow-up)",
+        "verdict_holds": true,
+        "injection_hit": "apply → HTTP 503 · code=injected_fault（受控故障注入已生效，本次操作整体未生效）",
+        "rollback_read_back": {
+          "项目未变": "current_context_revision 1 → 1 · project_version 4 → 4 · spec_revision 1 → 1",
+          "模板引用未变": "template-demo@v1 → template-demo@v1",
+          "ImpactTask 集合未变": "0 → 0 条",
+          "变更集未变成 applied": "status=assessed",
+          "业务审计事件": "13 → 20 条（读回的是项目全部业务审计事件，混着与本次 apply 无关的授权类事件，所以「集合相等」不是原子性的判据；「这次 apply 的业务审计没有留下」由服务端事务回滚保证）"
+        }
+      }
+    }
+  ],
+  "row_status_audit": {
+    "rule": "缺口清单 #246 未关闭前，它列出的缺口所对应的验收行一律不得判 PASS（docs/agents/development-rules.md）。",
+    "checked": "两轮导出体的 23 行逐行核对（脚本核对两轮的 gap_ids / limiting_gap_ids 与 status）：凡 gap_ids 或 limiting_gap_ids 非空的行，status 均不为 PASS。轮 1 的行状态分布 TODO 6 / NOT RUN 2 / PASS 5 / PASS (follow-up) 9 / WARNING 1；轮 2 是 TODO 6 / NOT RUN 1 / PASS 2 / PASS (follow-up) 13 / WARNING 1。",
+    "rows_with_gap": {
+      "G3.6": "TODO（limiting G3-GAP-08）",
+      "G3.7": "NOT RUN（G3-GAP-06 / G3-GAP-07）",
+      "AC-G3-03": "NOT RUN（轮 1）/ PASS (follow-up)（轮 2）· G3-GAP-01",
+      "AC-G3-04": "PASS (follow-up) · limiting G3-GAP-06 / G3-GAP-07",
+      "AC-G3-08": "PASS (follow-up) · G3-GAP-02",
+      "AC-G3-09": "PASS (follow-up) · G3-GAP-09 / G3-GAP-10",
+      "AC-G3-12": "PASS (follow-up) · limiting G3-GAP-11",
+      "AC-G3-14": "WARNING · G3-GAP-04",
+      "AC-G3-15": "PASS (follow-up) · G3-GAP-05",
+      "AC-G3-16": "PASS (follow-up) · G3-GAP-03"
+    },
+    "mechanism": "frontend/src/views/lingdoc/g3demo/g3Gaps.ts 的 downgradeGapPass：三处投影（g3Export.ts 的两条导出路径、g3Evidence.ts 的页面矩阵投影）共用它，带缺口的行遇到 PASS 一律降级成 PASS (follow-up)。",
+    "static_matrix_audit": "矩阵静态声明（frontend/src/views/lingdoc/g3demo/g3Matrix.ts）逐行核对：TODO 6（G3.1–G3.6）/ NOT RUN 1（G3.7）/ PASS (follow-up) 15 / WARNING 1（AC-G3-14）/ PASS 0，共 23 行——**没有一行是 PASS**。守护测试见 frontend/src/views/lingdoc/g3demo/g3Evidence.test.ts：带 #246 缺口的 AC 行，规则表状态必须与矩阵行状态一致且不得判 PASS。"
+  },
+  "defects_found_and_fixed_in_this_round": [
+    {
+      "id": "轮次级「本段含模型依赖」被摊到了每条判定上",
+      "symptom": "导出体里 AC-G3-01 / 02 / 11 变成 WARNING：它们的判定是确定性的（变更集链），本轮 PASS 却被当成模型侧结论改写。",
+      "root_cause": "一轮里只要有一条判定走了真实模型（助手链），整轮每条判定都被标成 model_dependent。轮次级标志是**整段的属性**（「这一段含不含模型依赖」），判定级才是**这条判定**的属性；导出体里判定级的字段叫 model_dependent，代码类型叫 modelDependent，读回时没对上。",
+      "fix": "判定自己声明了标志就以判定为准；一份文件里的判定**一条都没声明**（整份由一次模型轮次产出的历史证据文件）才用文件级兜底。守护测试见 g3Export.test.ts。"
+    },
+    {
+      "id": "依赖候选链的「变更草稿生成」判定抢占了 AC-G3-14 的编号",
+      "symptom": "AC-G3-14 整行退回到 BLOCKED，尽管助手链真的跑出了带两组说明的草稿。",
+      "root_cause": "依赖链造的是一条**普通变更草稿**（POST /change-sets/drafts），没有助手的两组说明，却挂着 AC-G3-14 的编号。两条判定同号时，投影取第一条「成立且确定性」的，助手的真实判定被这条半截判定盖住。",
+      "fix": "改成交付面编号 DRAFT-CREATED（沿用 TASK-CLOSURE 的先例），措辞改成「变更草稿」而不是「助手草稿」。"
+    },
+    {
+      "id": "路线图链的证据行把交付检查的状态写死 200",
+      "symptom": "证据行写「POST /checks → HTTP 200」，同一行里却又写「status=（本轮未取到）」——自相矛盾：交付检查其实**没取到**。",
+      "root_cause": "runner/roadmap.ts 的 tolerateFailure 把失败吞成 null，证据行只有成功路径，于是把「取到了」写死成 200。真实的失败是：主路径 HTTP 409 `version_conflict`，「待复核」路径 HTTP 403 `source_access_denied`（服务端的问题，见 #324）。",
+      "fix": "tolerateFailure 现在把真实的失败（状态码 + 原因码）带出来，证据行照实写。判定条件不变（AC-G3-08 靠服务端给出的 required_route_not_current 阻断成立，不靠交付检查）。"
+    },
+    {
+      "id": "助手链的候选三态判定占用 AC-G3-15 编号",
+      "symptom": "AC-G3-15 这一行的判定卡列表里同时挂着依赖候选链那条（成立）与助手链那条（恒不成立）。",
+      "root_cause": "助手链只提交候选批次、不做三态裁决，它那条 AC-G3-15 判定**恒为空转**；投影按 id 取**第一条**（g3Evidence.ts 的 evaluateGroups），同号时助手链那条会盖住依赖链的真实判定。",
+      "fix": "改成交付面编号 CANDIDATE-BATCH-SUBMITTED（沿用 TASK-CLOSURE / DRAFT-CREATED 的先例），并在测试里钉住「助手链不产出 AC-G3-15 判定」。"
+    },
+    {
+      "id": "AC-G3-16 的判定卡把一句空集上的全称命题写得像观测到的事实",
+      "symptom": "判定卡写「指向临时版本的任务 0 条，全部为 STALE」。",
+      "root_cause": "产品面没有任何路径会造出指向未冻结临时版本的任务，台面读回恒为 0 条；「全部为 STALE」在空集上恒真。",
+      "fix": "判定卡如实写明这一半是真空的、台面证不了，非真空证据在服务端侧。判定条件不变（AC-G3-16 靠「取消后回到上一个冻结版本、临时版本不在冻结序列里」成立）。"
+    }
+  ],
+  "honest_boundaries": [
+    {
+      "item": "交付检查 /checks 在带必需路线节点的项目上取不到",
+      "status": "NOT RUN",
+      "fact": "两次调用各有一个真实原因：「待复核」那一次是 403 `source_access_denied`（路线感知的规格投影与服务端的溯源快照对不上：workspacecore/g1_provenance.go 与 candidateadoption/delivery_input.go，服务端的问题，见 #324）；主路径那一次是 409 `version_conflict`（台面带的 expected_project_version 与服务端当前值不一致）。台面因此拿不到 /checks 的 ValidationIssue；同一批规则问题在**稳定化结果**里读得到（rule:route-node-required:field/route-r7）。AC-G3-08 这一行靠稳定化的阻断原因码成立，不靠交付检查。",
+      "owner": "服务端，本轮未改（不在 #318–#321 的文件所有权内）"
+    },
+    {
+      "item": "「指向临时版本的任务落 STALE」在台面上是真空的（0 条）",
+      "status": "NOT RUN",
+      "fact": "产品面没有任何 HTTP 路径会造出指向**未冻结**临时版本的影响任务。服务端那条非真空证据是手工造任务的 workspacecore/roadmap_test.go。台面只能证明「取消未冻结编辑后冻结基线回到取消前的版本、临时版本不出现在冻结版本序列里」，证不了「落 STALE」。矩阵行 AC-G3-16 的 note 与判定卡都如实写明了这一点。",
+      "owner": "服务端，本轮未改"
+    },
+    {
+      "item": "模型是非确定性的：不是每一轮都能拿到非空的两组说明",
+      "status": "WARNING",
+      "fact": "本轮拿到「确定受影响 1 条」；前几轮里出现过「可能受影响 1 条」、两组**全空**、以及模型先反问不给候选三种情况。台面把这三种都**如实记成 NOT RUN** 并写明缺什么（「两组都是空的」与「助手未给两组说明」是两个不同事实）。",
+      "owner": "台面已如实记录；要「每轮都非空」需要服务端或提示词侧让候选产出更稳"
+    },
+    {
+      "item": "凭据的落盘形态",
+      "status": "PASS",
+      "fact": "凭据只从环境变量 DEEPSEEK_API_KEY 读。服务端启动时用 BUILTIN_MODELS_CONFIG 指向的那份登记文件把 ${DEEPSEEK_API_KEY} 插值成模型行——**登记文件本身只有占位符，在仓库外的临时数据目录里**。插值后的凭据落在这轮实跑的**临时 SQLite**（仓库外，随临时目录一起消失）。它没有进仓库、提交信息、报告、证据、控制台输出或服务日志。",
+      "unblock_condition": "不能写成「从未落盘」：它确实进过这轮的临时数据库文件。"
+    }
+  ],
+  "verification_commands": [
+    "cd frontend && npm run type-check   # exit 0",
+    "cd frontend && npm test            # 1528 tests / 1527 pass / 0 fail / 1 skipped",
+    "go test -count=1 -timeout 20m ./internal/lingdoc/workspacecore/... ./internal/lingdoc/demoroute/...   # ok（33.086s / 2.965s）",
+    "go test ./internal/lingdoc/workspace/... -count=1 -timeout 20m   # ok（175.529s）",
+    "go test ./internal/lingdoc/workspacecore/ -run 'TestInjected' -count=1 -v   # PASS 5/5（1.386s）",
+    "go test ./internal/lingdoc/workspace/ -run 'TestSaveResearchTaskWith' -count=1 -v   # PASS 4/4（0.851s）",
+    "go test ./internal/lingdoc/demoroute/ -run 'TestDemoRouteTemplate' -count=1 -v   # PASS 3/3（1.539s）",
+    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r13.exe --out .acceptance-r13 --round2-chains 'fault' --with-dependency-chain --with-real-model   # 两轮实跑完成（exit 0）"
+  ],
+  "status": "PASS (follow-up)"
+}

@@ -14,6 +14,7 @@
  */
 
 import type { G3MatrixRow } from './g3Matrix'
+import { downgradeGapPass } from './g3Gaps'
 import type { G3Status } from './g3Status'
 import type { G3BlockedSnapshot } from './runner/blocked'
 import type { G3LifecycleSnapshot } from './runner/changeset'
@@ -178,13 +179,17 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '故障注入-读回变更集',
     ],
     verdictId: 'AC-G3-03',
-    status: 'PASS',
+    // 行状态必须与 g3Matrix.ts 的同名行一致：缺口清单 #246 未关闭前，
+    // 本票所列缺口对应的行一律不判 PASS（见 development-rules.md）。
+    status: 'PASS (follow-up)',
     note:
       '本轮的判定取自「故障注入-应用变更集」这一步的**真实响应**：' +
       '受控故障注入是组合根按环境变量装配的夹具（LINGDOC_FAULT_INJECTION + ' +
       'LINGDOC_FAULT_TENANT_ID，缺一不装配），**不是产品端点**，页面无法触发，只能观测。' +
-      '命中注入时服务端返回 503 + injected_fault，此时读回证明项目 revision、模板引用、' +
-      'ImpactTask 集合与业务审计事件均未变，这一行才成立；' +
+      '命中注入时服务端返回 503 + injected_fault，此时读回证明项目 revision、模板引用与 ' +
+      'ImpactTask 集合均未变、变更集未变成 applied，这一行才成立；' +
+      '（**业务审计事件集合格不作为判据**：被拒绝的操作本来就该留一条审计，' +
+      '那是可观测性要求，不是「这次写没生效」的证据）；' +
       '**后端未装配注入时这一行记 NOT RUN，不得判 PASS**（未观测到写入失败就没有原子性证据），' +
       '夹具的实跑证据见 docs/08-本轮实施方案/G3-缺口收口-7-验证报告-20261020.json。',
   },
@@ -200,12 +205,14 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '路线图-稳定化',
     ],
     verdictId: 'AC-G3-08',
-    status: 'PASS',
+    // 与矩阵同名行一致：本轮实跑判定成立，但缺口清单 #246 未关闭前不判 PASS。
+    status: 'PASS (follow-up)',
     note:
       '本轮实跑判定成立的前提是**服务端给出**了 blocking 校验问题：' +
       '必需 RouteNode 缺失、待复核或版本落后时，服务端给出 required_route_not_current ' +
       '阻断原因码，且项目不进入 STABILIZED / READY。' +
-      '节点状态（current / pending_review / stale）是服务端算出来的，页面不自行推算。',
+      '节点状态（current / pending_review / stale）是服务端算出来的，页面不自行推算。' +
+      '「缺失」那一种前置由服务端侧保证（#319）：已声明但缺失的路线节点同样给 blocking。',
   },
   'AC-G3-16': {
     requires: [
@@ -216,25 +223,30 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '路线图-读影响任务',
     ],
     verdictId: 'AC-G3-16',
-    status: 'PASS',
+    // 与矩阵同名行一致：本轮实跑判定成立，但缺口清单 #246 未关闭前不判 PASS。
+    status: 'PASS (follow-up)',
     note:
       '本轮实跑判定成立：取消未冻结编辑后，冻结基线版本回到取消前的版本，' +
-      '被取消会话占用的**临时版本**（它从来没有被冻结）不出现在冻结版本序列里，' +
-      '指向临时版本的影响任务落为 STALE（失效任务，见 GLOSSARY.md）。',
+      '被取消会话占用的**临时版本**（它从来没有被冻结）不出现在冻结版本序列里。' +
+      '本轮没有指向临时版本的影响任务（产品面上没有造出这种任务的路径，' +
+      '任务落 STALE（失效任务，见 GLOSSARY.md）的非真空证据在服务端侧）。',
   },
   'AC-G3-14': {
     requires: ['创建变更草稿', '助手-读回草稿说明'],
     verdictId: 'AC-G3-14',
-    status: 'NOT RUN',
+    // 与矩阵同名行一致：结论依赖真实模型（非确定性），按仓库口径记 WARNING，不写 PASS。
+    status: 'WARNING',
     followUpIssue: 246,
     note:
       '助手的两组说明（「确定受影响 / 可能受影响」）**已实现**并已接入台面读回：' +
       '服务端从已落库的助手轮次重新推导说明并随草稿落库，台面从变更集读回这两组说明' +
       '（与求值器的影响确定性字段不是同一回事，不可互替）。' +
-      '**本轮实跑的事实是 NOT RUN**：助手草稿要由真实模型轮次产生，台面不自己造模型轮次，' +
-      '所以本轮没有可读回的助手草稿，这一行没有判定成立的事实。' +
-      '解除条件：需要一条带两组说明的真实模型草稿（见 #315）；' +
-      '落证见 docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json。',
+      '**本轮实跑已读回一条带两组说明的真实模型草稿**（#320 接的路径：' +
+      '自然语言 → 真实模型轮次 → 变更提案 → 人工确认落草稿 → 读回两组说明 → 进入正式评估），' +
+      '读回两组状态=present，「确定受影响」1 条、「可能受影响」0 条。' +
+      '结论**依赖真实模型**（非确定性），行状态记 WARNING，不写 PASS。' +
+      '解除条件见 #315 / #320；' +
+      '落证见 docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json。',
     alternatives: [
       {
         requires: ['模型-助手草稿-结论'],
@@ -244,10 +256,13 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
         note:
           '本轮由**真实模型**判定（模型侧，非确定性）：助手把自然语言整理成变更草稿（status=draft），' +
           '并且有**否定性证据**——没有直接应用变更、没有关闭人工任务、没有放行导出。' +
-          '助手草稿里的「确定受影响 / 可能受影响」解释分组**已实现但本轮未覆盖**：' +
-          '能力与台面读回都已接上，但本轮没有带两组说明的真实模型草稿可读回' +
-          '（缺口清单见 #246，解除条件见 #315）。结论依赖真实模型，状态记为 WARNING，' +
-          '与确定性结论分列展示；模型运行标识与耗时见判定卡。',
+          '助手草稿里的「确定受影响 / 可能受影响」解释分组**本轮已覆盖**：' +
+          '本轮读回了一条带两组说明的真实模型草稿（两组状态=present，' +
+          '「确定受影响」1 条、「可能受影响」0 条）。' +
+          '结论依赖真实模型，状态记为 WARNING，' +
+          '与确定性结论分列展示；模型运行标识与耗时见判定卡。' +
+          '（缺口清单见 #246，解除条件见 #315 / #320；' +
+          '落证见 docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json。）',
       },
     ],
   },
@@ -261,15 +276,17 @@ export const G3_ROW_EVIDENCE_RULES: Readonly<Record<string, G3RowEvidenceRule>> 
       '助手-确认版本已变更的候选',
     ],
     verdictId: 'AC-G3-15',
-    status: 'BLOCKED',
+    // 与矩阵同名行一致：本轮实跑判定成立，但缺口清单 #246 未关闭前不判 PASS。
+    status: 'PASS (follow-up)',
     followUpIssue: 246,
     note:
       '候选批次的读回与三态决策（确认 / 修改 / 拒绝）**已实现**并已接入台面：' +
       '候选与已确认边分表存放（「候选不是边」是物理保证），台面读回批次与候选、' +
       '对候选做三态决策，并观测同版本重投与确认时的版本复检。' +
-      '**本轮实跑的事实是 BLOCKED**：本轮实跑撞出候选对象引用与项目对齐的问题（已修），' +
-      '未在当前 head 重跑出绿，这一行因此没有判定成立的事实；' +
-      '落证见 docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json。',
+      '**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），拒绝不产生边、' +
+      '同版本重投被抑制（`rejected_in_same_version`）、' +
+      '确认时版本复检被服务端按 409 `dependency_candidate_requires_reevaluation` 拒掉。' +
+      '落证见 docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json。',
     alternatives: [
       {
         requires: ['模型-候选依赖-结论'],
@@ -643,7 +660,12 @@ export function applyRunEvidence(
     }
     const hit = projection.hit
     // 状态：判定卡自带状态时以判定卡为准，否则取命中路径的状态。
-    const status = hit.evaluation.verdict?.status ?? hit.evaluation.group.status
+    // 但都要过一遍 #246 的降级：**带实现缺口的行不得判 `PASS`**
+    // （缺口清单 #246 未关闭前，缺口对应的验收行一律不判 PASS）。
+    const status = downgradeGapPass(
+      row.id,
+      hit.evaluation.verdict?.status ?? hit.evaluation.group.status,
+    )
     return {
       ...row,
       status,

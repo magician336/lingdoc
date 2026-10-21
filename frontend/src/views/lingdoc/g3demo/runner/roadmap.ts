@@ -25,7 +25,7 @@
  * 不自创结构。
  */
 
-import { errorCodeOf, type G3HttpClient } from './httpClient'
+import { G3ChainError, errorCodeOf, type G3HttpClient } from './httpClient'
 import { bool, num, objectOf, projectPath, refOf, str } from './factHelpers'
 import {
   assessChangeSet,
@@ -42,6 +42,7 @@ import {
   runStep,
   type G3RunContext,
 } from './runContext'
+import { G3_DEMO_REQUIRED_ROUTE_NODE_ID } from './project'
 import type { G3Verdict } from './changeset'
 
 /** 步骤名。矩阵规则表按这些名字认「这一行跑到了没有」。 */
@@ -67,6 +68,12 @@ export const G3_ROADMAP_STEPS = {
   readTasks: '路线图-读影响任务',
   deliveryCheck: '路线图-交付检查',
   stabilize: '路线图-稳定化',
+  // #318：建会话前实时读上下文修订，以及两种前置各自的读回。
+  readRevisionBeforeSession: '路线图-读上下文修订（建会话前）',
+  readBaselinePendingReview: '路线图-读冻结基线（待复核前置）',
+  deliveryCheckPendingReview: '路线图-交付检查（待复核前置）',
+  readBaselineStale: '路线图-读冻结基线（版本落后前置）',
+  deliveryCheckStale: '路线图-交付检查（版本落后前置）',
 } as const
 
 /** 路线图基线（`core.RoadmapBaseline`）。 */
@@ -327,7 +334,43 @@ export async function readRoadmapBaseline(
   return readRoadmapBaselineFact(data)
 }
 
-/** 建一个未冻结的编辑会话。 */
+/**
+ * 读回项目**此刻**的上下文修订。
+ *
+ * 这是建会话请求体里 `expected_context_revision` 的**唯一来源**：现读现用，
+ * 不复用链首读到的旧值。
+ *
+ * 路线图有**两套编号**，各管一件事，不能混用：
+ * - **项目上下文修订**（`expected_context_revision`）：建会话时的乐观并发闸门，
+ *   服务端要求它等于项目当前的上下文修订
+ *   （`internal/lingdoc/workspacecore/roadmap_service.go:60`）；
+ * - **路线图基线版本**（`expected_baseline_version`）：提交 / 取消时的闸门，
+ *   服务端要求它等于会话自己绑定的那个基线版本
+ *   （`roadmap_service.go:211` / `roadmap_service.go:406`）。
+ *
+ * 上下文修订会被**冻结路径的提交**推进一格（`roadmap_service.go:309-311`），
+ * 所以链首读到的那个值到建会话那一刻往往已经过期 —— 那正是 409「基线已漂移」
+ * 的来源（实跑证据：`docs/08-本轮实施方案/G3-验收台-8-整链证据-20261021-r1.json`
+ * 的「路线图-建编辑会话（文字编辑）」HTTP 409）。
+ */
+export async function currentContextRevisionOf(
+  ctx: G3RunContext,
+  client: G3HttpClient,
+  token: string,
+  projectId: string,
+  stepName: string = G3_ROADMAP_STEPS.readRevisionBeforeSession,
+): Promise<number> {
+  const project = await readProjectState(ctx, client, token, projectId, stepName)
+  return project.currentContextRevision
+}
+
+/**
+ * 建一个未冻结的编辑会话。
+ *
+ * 请求体里的 `expected_context_revision` 取的是**建会话这一刻**读到的项目上下文
+ * 修订（`currentContextRevisionOf`），调用方没有机会传一个过期的修订号进来：
+ * 链里的任何一次冻结路径提交都会把修订推进一格，复用旧值必然撞 409。
+ */
 export async function beginRoadmapEdit(
   ctx: G3RunContext,
   client: G3HttpClient,
@@ -336,10 +379,10 @@ export async function beginRoadmapEdit(
   options: {
     stepName: string
     idemLabel: string
-    expectedContextRevision: number
     reason: string
   },
 ): Promise<G3RoadmapSessionFact> {
+  const expectedContextRevision = await currentContextRevisionOf(ctx, client, token, projectId)
   const { data } = await runStep(ctx, client, {
     name: options.stepName,
     method: 'POST',
@@ -347,7 +390,7 @@ export async function beginRoadmapEdit(
     token,
     idempotencyKey: makeIdempotencyKey(ctx.runId, options.idemLabel),
     body: {
-      expected_context_revision: options.expectedContextRevision,
+      expected_context_revision: expectedContextRevision,
       reason: options.reason,
     },
     conclusion: '未冻结编辑会话已建立（HTTP {status}）',
@@ -357,6 +400,7 @@ export async function beginRoadmapEdit(
         session_id: session.id,
         status: session.status,
         baseline_version: session.baseline.version,
+        expected_context_revision: expectedContextRevision,
       }
     },
   })
@@ -749,11 +793,14 @@ export interface G3RoadmapChainOptions {
   /** 当前操作者。 */
   operatorId: string
   /**
-   * 供「版本落后」前置用的旧版本引用。
+   * 可选：直接钉住这个版本引用来造「版本落后」前置。
    *
-   * 节点提案的 `inputs` 必须是**当前可读**的对象版本，否则服务端按 400 拒掉
-   * （`roadmap_service.go:723-730`）。传一个**旧版本**引用正是本链要的
-   * 「版本落后」前置：服务端在提交时把这种改动判成语义改动。
+   * 不给的话，台面自己造一个**合成前置节点**，让必需节点钉住它、之后再把它推进
+   * 一版 —— 那是「版本落后」最干净的造法（服务端口径见
+   * `internal/lingdoc/workspacecore/roadmap_service.go:995-1013`）。
+   *
+   * 给了的话，必需节点就钉住这个引用；引用必须**当前可读**
+   * （否则变更集应用会被服务端按 400 拒掉）。
    */
   staleReference?: G3RoadmapRefFact
 }
@@ -777,26 +824,80 @@ export interface G3RoadmapChainResult {
   addCommit: G3RoadmapCommitFact
   /** 模板声明的必需节点（服务端按规则算出的 `required` 标志）。 */
   requiredNode: G3RoadmapNodeFact | null
+  /**
+   * 「待复核」前置的读回：必需节点登记了但还没复核时的服务端状态。
+   *
+   * 状态是服务端算出来的（`current` / `pending_review` / `stale`），
+   * 页面不自行推算。
+   */
+  pendingReview: G3RoadmapNodeFact | null
+  /** 「待复核」阶段的交付检查（读服务端给出的 blocking 校验问题）。 */
+  pendingReviewCheck: G3CheckWithIssuesFact | null
+  /** 「待复核」阶段的交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  pendingReviewCheckFailure: G3ToleratedFailure | null
+  /** 合成前置节点（被必需节点钉住、被推进一版的那个）。 */
+  prerequisiteNode: G3RoadmapNodeFact | null
   /** 冻结版本序列（读到的那一个节点）。 */
   versions: G3RoadmapVersionFact[]
   comparison: G3RoadmapComparisonFact | null
   tasks: G3RoadmapTaskFact[]
   /** 交付检查：读服务端给出的 blocking 校验问题。 */
   check: G3CheckWithIssuesFact | null
+  /** 交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  deliveryCheckFailure: G3ToleratedFailure | null
   stabilization: G3RoadmapStabilizeFact | null
+  /** 稳定化没取到时的真实失败（状态码 + 原因码）。 */
+  stabilizationFailure: G3ToleratedFailure | null
   /** 被取消会话占用过的临时版本引用。 */
   temporaryRefs: G3RoadmapRefFact[]
   verdicts: G3Verdict[]
 }
 
-/** 找一个「非必需」的可编辑节点：必需节点不能被删，删了会得到 409。 */
-function editableNodeOf(baseline: G3RoadmapBaselineFact): G3RoadmapNodeFact | null {
-  return baseline.nodes.find((node) => node.state !== 'retired') ?? null
-}
-
 /** 找模板声明的必需节点（`required` 标志由服务端按模板规则算出）。 */
 function requiredNodeOf(baseline: G3RoadmapBaselineFact): G3RoadmapNodeFact | null {
   return baseline.nodes.find((node) => node.required) ?? null
+}
+
+/**
+ * 一步没取到时的**真实失败**：HTTP 状态码与原因码。
+ *
+ * 交付检查在带必需路线节点的项目上会以 403 `source_access_denied` 拒掉
+ * （服务端的问题，见 #324）。这属于「没取到」，但**必须原样记下来**——
+ * 把它写成 HTTP 200 会把没观测到的事实写成已观测。
+ */
+export interface G3ToleratedFailure {
+  /** 真实的状态码。 */
+  status: number
+  /** 真实的错误码（例如 `source_access_denied`）。 */
+  code: string
+}
+
+/** 一步的结果：取到了什么，或者为什么没取到。 */
+export interface G3Tolerated<T> {
+  value: T | null
+  failure: G3ToleratedFailure | null
+}
+
+/**
+ * 交付检查与稳定化**取不到就记成「没取到」**，不吞掉整条链。
+ *
+ * 这两步都可能因为服务端的原因失败（例如交付检查在带必需路线节点的项目上会以
+ * 403 `source_access_denied` 拒掉：路线感知的规格投影与服务端的溯源快照对不上）。
+ * 失败的那一步**已经在步骤记录里留下证据**（`runStep` 先记录再抛），所以这里
+ * 只需要把事实记成空，让后面取消链的判定照样跑得出来。
+ *
+ * 写法沿用 `runner/model.ts` 的既有约定（那里的交付检查也是这么容错的）。
+ * 差别在于：失败时**额外把状态码与原因码带出来**，证据行照实写，不写死 200。
+ */
+async function tolerateFailure<T>(body: () => Promise<T>): Promise<G3Tolerated<T>> {
+  try {
+    return { value: await body(), failure: null }
+  } catch (err) {
+    if (err instanceof G3ChainError) {
+      return { value: null, failure: { status: err.status, code: err.code } }
+    }
+    return { value: null, failure: null }
+  }
 }
 
 /**
@@ -808,13 +909,18 @@ function requiredNodeOf(baseline: G3RoadmapBaselineFact): G3RoadmapNodeFact | nu
  * 1. **冻结路径**（改写已有节点的文字，前置关系不变）→ 提交后**冻结**一个新版本，
  *    版本序列与前后比较才读得到东西；
  * 2. **语义路径**（新增 / 删除节点、改前置关系、动边）→ 提交后服务端给的是**变更集**，
- *    路线图本身不被直接改写；
+ *    路线图本身不被直接改写，变更集**被应用后**改动才落进冻结路线图；
  * 3. 再建一个会话 → 提案 → 取消 → 读回（必须回到上一个冻结版本，临时版本被释放）。
  *
- * 链里的**两个节点提案前置**（对应 AC-G3-08 的「必需项缺失 / 版本落后」）：
- * - 必需项缺失：新增一个节点（语义路径），它不会立刻进冻结路线图；
- * - 版本落后：改写已有节点的前置引用，让它指向一个旧版本。
- * 两者都由服务端判定，本页不自行推算。
+ * 链里造出 AC-G3-08 的两种前置（都由服务端判定，页面不自行推算）：
+ * - **待复核**：必需 RouteNode 登记后不复核（存储状态不是 `ready`），
+ *   服务端把它的状态算成 `pending_review`；
+ * - **版本落后**：必需 RouteNode 钉住某个前置对象的**旧版本**，而那个对象后来
+ *   推进了一版，服务端把它的状态算成 `stale`
+ *   （`roadmap_service.go:995-1013`）。
+ *
+ * #318：建会话一律用**建会话那一刻**读到的上下文修订
+ * （`currentContextRevisionOf`），不再复用链首的旧值 —— 那正是 409 的来源。
  */
 export async function runRoadmapChain(
   ctx: G3RunContext,
@@ -823,144 +929,220 @@ export async function runRoadmapChain(
   options: G3RoadmapChainOptions,
 ): Promise<G3RoadmapChainResult> {
   let project = await readProjectState(ctx, client, token, options.projectId, '路线图-读项目状态')
-
-  // —— 前置链：读冻结基线 → （必要时先造一个可编辑节点）→ 建会话 → 提案 → 提交 ——
   let baselineBefore = await readRoadmapBaseline(ctx, client, token, options.projectId)
-  let editable = editableNodeOf(baselineBefore)
 
-  if (!editable) {
-    // 基线里**一个节点都没有**时，台面自己造一个。
-    //
+  // —— 前置一：合成前置节点 ——
+  //
+  // 「版本落后」要有一个**被推进过的旧版本**当钉子。台面自己造一个合成前置节点，
+  // 让必需 RouteNode 钉住它、之后再把它推进一版 —— 那是这条前置最干净的造法。
+  // 造出来的节点是**合成材料**：名字与理由里只带运行标识，不含真实课题信息。
+  const prerequisiteId = `g3-route-prereq-${ctx.runId}`
+  let prerequisite = baselineBefore.nodes.find((node) => node.id === prerequisiteId) ?? null
+  if (!prerequisite) {
     // 新增节点走的是**语义路径**：服务端给的是变更集，路线图本身不被直接改写，
     // 变更集应用后节点才落到冻结路线图里（`roadmap_service.go:804-861`）。
-    // 没有这一步，「取消未冻结编辑后回到上一版本」这类判据就没有可编辑的对象，
-    // 台面只能永远记 BLOCKED —— 所以这里把造前置也做进链路。
-    //
-    // 造出来的节点是**合成材料**：名字与理由里只带运行标识，不含真实课题信息。
     const seedSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
       stepName: G3_ROADMAP_STEPS.beginSession,
-      idemLabel: 'roadmap-begin-seed',
-      expectedContextRevision: project.currentContextRevision,
-      reason: `G3 验收台-11：登记一个合成路线节点（运行 ${ctx.runId}）`,
+      idemLabel: 'roadmap-begin-prerequisite',
+      reason: `G3 验收台-11：登记一个合成前置路线节点（运行 ${ctx.runId}）`,
     })
     await proposeRoadmapNode(ctx, client, token, options.projectId, seedSession.id, {
       stepName: G3_ROADMAP_STEPS.proposeNode,
-      idemLabel: 'roadmap-propose-seed',
-      nodeId: `g3-seed-${ctx.runId}`,
+      idemLabel: 'roadmap-propose-prerequisite',
+      nodeId: prerequisiteId,
       kind: 'add',
-      name: `G3 验收台-11 合成路线节点 ${ctx.runId}`,
-      status: 'planned',
+      name: `G3 验收台-11 合成前置节点 ${ctx.runId}`,
+      status: 'ready',
       inputs: [],
       targets: [],
-      reason: 'G3 验收台-11：基线为空，先造一个可编辑节点（合成，不含真实课题信息）',
+      reason: 'G3 验收台-11：登记一个合成前置节点（版本落后前置的钉子，不含真实课题信息）',
     })
     const seedCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, seedSession.id, {
       stepName: G3_ROADMAP_STEPS.commit,
-      idemLabel: 'roadmap-commit-seed',
+      idemLabel: 'roadmap-commit-prerequisite',
       expectedBaselineVersion: seedSession.baseline.version,
-      reason: 'G3 验收台-11：提交合成节点提案',
+      reason: 'G3 验收台-11：提交合成前置节点提案',
     })
     if (!seedCommit.changeSetId) {
-      throw new Error('新增节点提案没有给出变更集，无法把节点落到冻结路线图里')
+      throw new Error('新增前置节点提案没有给出变更集，无法把节点落到冻结路线图里')
     }
     await assessChangeSet(ctx, client, token, options.projectId, seedCommit.changeSetId)
-    await applyChangeSet(ctx, client, token, options.projectId, seedCommit.changeSetId)
+    await applyChangeSet(ctx, client, token, options.projectId, seedCommit.changeSetId, {
+      stepName: G3_ROADMAP_STEPS.applyChangeSet,
+    })
     baselineBefore = await readRoadmapBaseline(ctx, client, token, options.projectId)
-    project = await readProjectState(ctx, client, token, options.projectId, '路线图-读项目状态（造节点后）')
-    editable = editableNodeOf(baselineBefore)
+    prerequisite = baselineBefore.nodes.find((node) => node.id === prerequisiteId) ?? null
+  }
+  if (!prerequisite) {
+    throw new Error('路线图链需要一个合成前置节点（它没进冻结路线图）')
   }
 
-  const session = await beginRoadmapEdit(ctx, client, token, options.projectId, {
+  // —— 前置二：模板声明的必需 RouteNode ——
+  //
+  // 节点 id 必须用**模板声明的那个**（`route-r7`），不能是运行期随机 id：
+  // 必需性由模板规则按**字段 id**判定，id 对不上就没有 required 节点可找。
+  // （#314：演示模板 v2 声明 `route-r7` 为必需 RouteNode。）
+  //
+  // 登记时的存储状态是 `pending_review`：**待复核**前置由此而来
+  // （服务端把「不是 ready」的节点算成 `pending_review`）。
+  const pinnedInputs: G3RoadmapRefFact[] = options.staleReference
+    ? [options.staleReference]
+    : [{ kind: 'RouteNode', id: prerequisite.id, version: String(prerequisite.version) }]
+  if (!baselineBefore.nodes.some((node) => node.id === G3_DEMO_REQUIRED_ROUTE_NODE_ID)) {
+    const requiredSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
+      stepName: G3_ROADMAP_STEPS.beginSession,
+      idemLabel: 'roadmap-begin-required',
+      reason: `G3 验收台-11：登记模板声明的必需路线节点（运行 ${ctx.runId}）`,
+    })
+    await proposeRoadmapNode(ctx, client, token, options.projectId, requiredSession.id, {
+      stepName: G3_ROADMAP_STEPS.proposeNode,
+      idemLabel: 'roadmap-propose-required',
+      nodeId: G3_DEMO_REQUIRED_ROUTE_NODE_ID,
+      kind: 'add',
+      name: `G3 验收台-11 合成路线 R7 ${ctx.runId}`,
+      status: 'pending_review',
+      inputs: pinnedInputs,
+      targets: [],
+      reason: 'G3 验收台-11：登记模板声明的必需路线节点（待复核前置，合成，不含真实课题信息）',
+    })
+    const requiredCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, requiredSession.id, {
+      stepName: G3_ROADMAP_STEPS.commit,
+      idemLabel: 'roadmap-commit-required',
+      expectedBaselineVersion: requiredSession.baseline.version,
+      reason: 'G3 验收台-11：提交必需路线节点提案',
+    })
+    if (!requiredCommit.changeSetId) {
+      throw new Error('新增必需路线节点提案没有给出变更集，无法把节点落到冻结路线图里')
+    }
+    await assessChangeSet(ctx, client, token, options.projectId, requiredCommit.changeSetId)
+    await applyChangeSet(ctx, client, token, options.projectId, requiredCommit.changeSetId, {
+      stepName: G3_ROADMAP_STEPS.applyChangeSet,
+    })
+    baselineBefore = await readRoadmapBaseline(ctx, client, token, options.projectId)
+  }
+
+  // —— 「待复核」前置的读回 ——
+  const pendingReviewBaseline = await readRoadmapBaseline(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    G3_ROADMAP_STEPS.readBaselinePendingReview,
+  )
+  const pendingReview = pendingReviewBaseline.nodes.find(
+    (node) => node.id === G3_DEMO_REQUIRED_ROUTE_NODE_ID,
+  ) ?? null
+  const projectPendingReview = await readProjectState(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    '路线图-读项目状态（待复核前置）',
+  )
+  // 交付检查：待复核状态下服务端就该给出 blocking 校验问题
+  // （`RouteEvaluationFields` 把没就绪的路线节点值留空，
+  // 模板的 presence 规则因此报出 blocking 问题）。
+  const pendingReviewCheckResult = await tolerateFailure(() =>
+    runDeliveryCheckWithIssues(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      projectPendingReview.projectVersion,
+      G3_ROADMAP_STEPS.deliveryCheckPendingReview,
+    ),
+  )
+  const pendingReviewCheck = pendingReviewCheckResult.value
+
+  // —— 复核：把必需节点改成 ready（文字编辑 → 冻结路径）——
+  //
+  // 前置关系**不动**，所以这次提交走冻结路径：当场冻结一个新版本，
+  // 并把项目上下文修订推进一格（`roadmap_service.go:309-311`）。
+  const required = pendingReview ?? requiredNodeOf(baselineBefore)
+  if (!required) {
+    throw new Error('路线图链找不到模板声明的必需 RouteNode')
+  }
+  const reviewSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
     stepName: G3_ROADMAP_STEPS.beginSession,
-    idemLabel: 'roadmap-begin',
-    expectedContextRevision: project.currentContextRevision,
-    reason: `G3 验收台-11：编辑技术路线（运行 ${ctx.runId}）`,
+    idemLabel: 'roadmap-begin-review',
+    reason: `G3 验收台-11：复核必需路线节点（运行 ${ctx.runId}）`,
   })
-
-  if (!editable) {
-    throw new Error('路线图链需要一个可编辑的冻结节点（当前基线里没有节点）')
-  }
-
-  // 提案一：**版本落后**前置——改写节点的前置引用，指向一个旧版本的对象。
-  // 服务端会在提交时把这类改动判成语义改动（给变更集），路线图不被直接改写。
-  const staleInput = options.staleReference
-  const proposedInputs = staleInput
-    ? [staleInput]
-    : editable.inputs
-  await proposeRoadmapNode(ctx, client, token, options.projectId, session.id, {
+  await proposeRoadmapNode(ctx, client, token, options.projectId, reviewSession.id, {
     stepName: G3_ROADMAP_STEPS.proposeNode,
-    idemLabel: 'roadmap-propose-node',
-    nodeId: editable.id,
+    idemLabel: 'roadmap-propose-review',
+    nodeId: required.id,
     kind: 'update',
-    name: `${editable.name}（G3 验收台-11 改写）`,
-    status: editable.status === '' ? 'planned' : editable.status,
-    inputs: proposedInputs,
-    targets: editable.targets,
-    reason: 'G3 验收台-11：改写节点（前置引用指向旧版本 = 版本落后前置）',
+    name: `${required.name}（已复核）`,
+    status: 'ready',
+    // 前置关系保持不变：变了就变成语义改动，走不到冻结路径。
+    inputs: required.inputs,
+    targets: required.targets,
+    reason: 'G3 验收台-11：复核必需路线节点（文字编辑，冻结新版本）',
   })
-
-  const commit = await commitRoadmapEdit(ctx, client, token, options.projectId, session.id, {
+  const reviewCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, reviewSession.id, {
     stepName: G3_ROADMAP_STEPS.commit,
-    idemLabel: 'roadmap-commit',
-    expectedBaselineVersion: session.baseline.version,
-    reason: 'G3 验收台-11：提交路线图编辑',
+    idemLabel: 'roadmap-commit-review',
+    expectedBaselineVersion: reviewSession.baseline.version,
+    reason: 'G3 验收台-11：提交必需路线节点的复核',
   })
+  if (reviewCommit.changeSetId) {
+    throw new Error('复核是文字编辑，不该产出变更集（前置关系被改了？）')
+  }
   const committedSession = await readRoadmapSession(
     ctx,
     client,
     token,
     options.projectId,
-    session.id,
+    reviewSession.id,
     G3_ROADMAP_STEPS.readSession,
   )
-  const baselineAfterCommit = await readRoadmapBaseline(
-    ctx,
-    client,
-    token,
-    options.projectId,
-    G3_ROADMAP_STEPS.readBaselineAfterNode,
-  )
 
-  const versions = await readRoadmapNodeVersions(
-    ctx,
-    client,
-    token,
-    options.projectId,
-    editable.id,
-  )
-  let comparison: G3RoadmapComparisonFact | null = null
-  if (versions.length >= 2) {
-    comparison = await compareRoadmapNodeVersions(
-      ctx,
-      client,
-      token,
-      options.projectId,
-      editable.id,
-      versions[0].version,
-      versions[versions.length - 1].version,
-    )
-  } else {
-    ctx.steps.push({
-      index: ctx.steps.length + 1,
-      runId: ctx.runId,
-      name: G3_ROADMAP_STEPS.compareVersions,
-      method: 'GET',
-      path: projectPath(options.projectId, `/roadmap/nodes/${editable.id}/compare`),
-      status: 0,
-      ok: true,
-      durationMs: 0,
-      conclusion: `冻结版本只有 ${versions.length} 个，前后比较未执行`,
-    })
+  // —— 推进前置节点一版：必需节点钉住的就是旧版本 → 「版本落后」——
+  const advanceSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
+    stepName: G3_ROADMAP_STEPS.beginSession,
+    idemLabel: 'roadmap-begin-advance',
+    reason: `G3 验收台-11：推进合成前置节点一版（运行 ${ctx.runId}）`,
+  })
+  await proposeRoadmapNode(ctx, client, token, options.projectId, advanceSession.id, {
+    stepName: G3_ROADMAP_STEPS.proposeNode,
+    idemLabel: 'roadmap-propose-advance',
+    nodeId: prerequisite.id,
+    kind: 'update',
+    name: `${prerequisite.name}（推进一版）`,
+    status: 'ready',
+    inputs: prerequisite.inputs,
+    targets: prerequisite.targets,
+    reason: 'G3 验收台-11：把前置节点推进一版（必需节点因此版本落后）',
+  })
+  const advanceCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, advanceSession.id, {
+    stepName: G3_ROADMAP_STEPS.commit,
+    idemLabel: 'roadmap-commit-advance',
+    expectedBaselineVersion: advanceSession.baseline.version,
+    reason: 'G3 验收台-11：提交前置节点的推进',
+  })
+  if (advanceCommit.changeSetId) {
+    throw new Error('推进前置节点是文字编辑，不该产出变更集（前置关系被改了？）')
   }
 
-  // —— 提案二：**必需项缺失**前置——新增一个节点（语义路径）——
-  // 新增节点是语义改动：提交后服务端给的是变更集，冻结路线图不被直接改写。
-  const requiredNode = requiredNodeOf(baselineAfterCommit)
+  // —— 「版本落后」前置的读回 ——
+  const staleBaseline = await readRoadmapBaseline(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    G3_ROADMAP_STEPS.readBaselineStale,
+  )
+  const staleNode = staleBaseline.nodes.find((node) => node.id === G3_DEMO_REQUIRED_ROUTE_NODE_ID) ?? null
+
+  // —— 新增一个节点（语义路径）：给稳定化判定一个「当前修订上已应用」的变更集 ——
+  //
+  // 稳定化要求变更集已应用、且它的目标修订就是项目当前修订
+  // （`workspacecore/impact_service.go:1287`），所以这一步必须**最后**做一次
+  // 语义提交并把变更集应用掉。
   const addSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
     stepName: G3_ROADMAP_STEPS.beginEditSession,
     idemLabel: 'roadmap-begin-add',
-    expectedContextRevision: project.currentContextRevision,
-    reason: 'G3 验收台-11：新增技术路线节点（必需项缺失前置）',
+    reason: 'G3 验收台-11：新增一个合成路线节点（给稳定化判定一个已应用的变更集）',
   })
   await proposeRoadmapNode(ctx, client, token, options.projectId, addSession.id, {
     stepName: G3_ROADMAP_STEPS.proposeEditNode,
@@ -971,7 +1153,7 @@ export async function runRoadmapChain(
     status: 'planned',
     inputs: [],
     targets: [],
-    reason: 'G3 验收台-11：登记一个新增节点提案（必需项缺失前置）',
+    reason: 'G3 验收台-11：登记一个新增节点提案（合成，不含真实课题信息）',
   })
   const addCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, addSession.id, {
     stepName: G3_ROADMAP_STEPS.commitEdit,
@@ -979,30 +1161,111 @@ export async function runRoadmapChain(
     expectedBaselineVersion: addSession.baseline.version,
     reason: 'G3 验收台-11：提交新增节点提案',
   })
+  if (!addCommit.changeSetId) {
+    throw new Error('新增节点提案没有给出变更集，无法把节点落到冻结路线图里')
+  }
+  await assessChangeSet(ctx, client, token, options.projectId, addCommit.changeSetId)
+  await applyChangeSet(ctx, client, token, options.projectId, addCommit.changeSetId, {
+    stepName: G3_ROADMAP_STEPS.applyChangeSet,
+  })
 
-  // —— 取消链：建第二个会话 → 提案 → 取消 → 读回 ——
-  const projectAfterCommit = await readProjectState(
+  const baselineAfterCommit = await readRoadmapBaseline(
     ctx,
     client,
     token,
     options.projectId,
-    '路线图-读项目状态（提交后）',
+    G3_ROADMAP_STEPS.readBaselineAfterNode,
   )
+  const requiredNode = staleNode ?? requiredNodeOf(baselineAfterCommit)
+
+  // —— 版本序列与前后比较（读必需节点自己的版本史）——
+  const versions = await readRoadmapNodeVersions(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    G3_DEMO_REQUIRED_ROUTE_NODE_ID,
+  )
+  let comparison: G3RoadmapComparisonFact | null = null
+  if (versions.length >= 2) {
+    comparison = await compareRoadmapNodeVersions(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      G3_DEMO_REQUIRED_ROUTE_NODE_ID,
+      versions[0].version,
+      versions[versions.length - 1].version,
+    )
+  } else {
+    ctx.steps.push({
+      index: ctx.steps.length + 1,
+      runId: ctx.runId,
+      name: G3_ROADMAP_STEPS.compareVersions,
+      method: 'GET',
+      path: projectPath(options.projectId, `/roadmap/nodes/${G3_DEMO_REQUIRED_ROUTE_NODE_ID}/compare`),
+      status: 0,
+      ok: true,
+      durationMs: 0,
+      conclusion: `冻结版本只有 ${versions.length} 个，前后比较未执行`,
+    })
+  }
+
+  // —— 稳定化与交付检查：读服务端给出的阻断原因与 blocking 校验问题 ——
+  //
+  // 必需 RouteNode 未就绪时，服务端把它的字段值留空，模板的 presence 规则因此
+  // 报出 blocking 问题（`RouteEvaluationFields` +
+  // `internal/lingdoc/template/governance.go:468-485`）；稳定化则报出
+  // `required_route_not_current` 阻断原因码。页面只读服务端结论。
+  //
+  // 稳定化排在交付检查**前面**：它要求变更集的目标修订就是项目当前修订
+  // （`workspacecore/impact_service.go:1287`），而交付检查会落一条回执，
+  // 排在后面才不会被它顶掉当前修订。
+  const stabilizationResult = await tolerateFailure(() =>
+    readRoadmapStabilization(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      addCommit.changeSetId,
+      G3_ROADMAP_STEPS.stabilize,
+    ),
+  )
+  const stabilization = stabilizationResult.value
+  project = await readProjectState(
+    ctx,
+    client,
+    token,
+    options.projectId,
+    '路线图-读项目状态（交付检查前）',
+  )
+  const checkResult = await tolerateFailure(() =>
+    runDeliveryCheckWithIssues(
+      ctx,
+      client,
+      token,
+      options.projectId,
+      project.projectVersion,
+      G3_ROADMAP_STEPS.deliveryCheck,
+    ),
+  )
+  const check = checkResult.value
+
+  // —— 取消链：建第二个会话 → 提案 → 取消 → 读回 ——
   const cancelSession = await beginRoadmapEdit(ctx, client, token, options.projectId, {
     stepName: G3_ROADMAP_STEPS.beginCancelSession,
     idemLabel: 'roadmap-begin-cancel',
-    expectedContextRevision: projectAfterCommit.currentContextRevision,
     reason: 'G3 验收台-11：编辑未冻结路线图（随后取消）',
   })
   await proposeRoadmapNode(ctx, client, token, options.projectId, cancelSession.id, {
     stepName: G3_ROADMAP_STEPS.proposeCancelNode,
     idemLabel: 'roadmap-propose-cancel',
-    nodeId: editable.id,
+    nodeId: G3_DEMO_REQUIRED_ROUTE_NODE_ID,
     kind: 'update',
-    name: `${editable.name}（G3 验收台-11 待取消）`,
-    status: editable.status === '' ? 'planned' : editable.status,
-    inputs: editable.inputs,
-    targets: editable.targets,
+    name: `${requiredNode?.name ?? '路线节点'}（G3 验收台-11 待取消）`,
+    status: requiredNode?.status === '' ? 'planned' : (requiredNode?.status ?? 'planned'),
+    inputs: requiredNode?.inputs ?? [],
+    targets: requiredNode?.targets ?? [],
     reason: 'G3 验收台-11：登记一个将被取消的未冻结提案',
   })
   const cancelledSession = await cancelRoadmapEdit(ctx, client, token, options.projectId, cancelSession.id, {
@@ -1019,20 +1282,6 @@ export async function runRoadmapChain(
     G3_ROADMAP_STEPS.readAfterCancel,
   )
   const tasks = await readRoadmapImpactTasks(ctx, client, token, options.projectId)
-
-  // —— 交付检查：读服务端给出的 blocking 校验问题（AC-G3-08 要的那段事实）——
-  // 必需 RouteNode 未就绪时，服务端把它的字段值留空，模板的 required_fields
-  // 规则因此报出 blocking 问题（`RouteEvaluationFields` +
-  // `internal/lingdoc/template/governance.go:468-485`）。页面只读服务端结论。
-  const check = await runDeliveryCheckWithIssues(
-    ctx,
-    client,
-    token,
-    options.projectId,
-    projectAfterCommit.projectVersion,
-    G3_ROADMAP_STEPS.deliveryCheck,
-  )
-  const blockingIssues = check.issues.filter((issue) => issue.severity === 'blocking')
 
   // 被取消会话占用过的临时版本：它们**永远不会**被冻结。
   const temporaryRefs: G3RoadmapRefFact[] = [
@@ -1055,14 +1304,20 @@ export async function runRoadmapChain(
     baselineAfterCancel,
     committedSession,
     cancelledSession,
-    commit,
+    commit: reviewCommit,
     addCommit,
     requiredNode,
+    pendingReview,
+    pendingReviewCheck,
+    pendingReviewCheckFailure: pendingReviewCheckResult.failure,
+    prerequisiteNode: prerequisite,
     versions,
     comparison,
     tasks,
     check,
-    stabilization: null,
+    deliveryCheckFailure: checkResult.failure,
+    stabilization,
+    stabilizationFailure: stabilizationResult.failure,
     temporaryRefs,
     verdicts: [],
   }
@@ -1083,6 +1338,18 @@ export interface G3RoadmapSnapshot {
   commit: G3RoadmapCommitFact
   addCommit: G3RoadmapCommitFact
   requiredNode: G3RoadmapNodeFact | null
+  /** 「待复核」前置：必需节点登记后但还没复核时的服务端状态。 */
+  pendingReview: G3RoadmapNodeFact | null
+  /** 「待复核」阶段的交付检查。 */
+  pendingReviewCheck: G3CheckWithIssuesFact | null
+  /** 「待复核」阶段的交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  pendingReviewCheckFailure: G3ToleratedFailure | null
+  /** 交付检查没取到时的真实失败（状态码 + 原因码）。 */
+  deliveryCheckFailure: G3ToleratedFailure | null
+  /** 稳定化没取到时的真实失败（状态码 + 原因码）。 */
+  stabilizationFailure: G3ToleratedFailure | null
+  /** 合成前置节点（被必需节点钉住、被推进一版的那个）。 */
+  prerequisiteNode: G3RoadmapNodeFact | null
   versions: G3RoadmapVersionFact[]
   comparison: G3RoadmapComparisonFact | null
   tasks: G3RoadmapTaskFact[]
@@ -1101,9 +1368,15 @@ export function toRoadmapSnapshot(result: G3RoadmapChainResult): G3RoadmapSnapsh
     commit: result.commit,
     addCommit: result.addCommit,
     requiredNode: result.requiredNode,
+    pendingReview: result.pendingReview,
+    pendingReviewCheck: result.pendingReviewCheck,
+    pendingReviewCheckFailure: result.pendingReviewCheckFailure,
+    prerequisiteNode: result.prerequisiteNode,
     versions: result.versions,
     comparison: result.comparison,
     tasks: result.tasks,
+    deliveryCheckFailure: result.deliveryCheckFailure,
+    stabilizationFailure: result.stabilizationFailure,
     temporaryRefs: result.temporaryRefs,
     requiredNodes: result.baselineAfterCancel.nodes.filter((node) => node.required),
   }
@@ -1130,11 +1403,50 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
   const blockers = result.stabilization?.blockers ?? []
   const routeBlockers = blockers.filter((blocker) => blocker.code === 'required_route_not_current')
   const notStabilized = result.stabilization !== null && result.stabilization.status !== 'STABILIZED'
+  // 「服务端给出了阻断」有两个落点：交付检查给出的 blocking 校验问题，或者
+  // 稳定化给出的 `required_route_not_current` 阻断原因码。
+  // 规则表的 AC-G3-08 备注写的就是后者（「服务端给出 required_route_not_current
+  // 阻断原因码，且项目不进入 STABILIZED / READY」）：
+  // 交付检查在带必需路线节点的项目上目前会以 403 `source_access_denied` 拒掉
+  // （路线感知的规格投影与服务端的溯源快照对不上，那是服务端的事），
+  // 所以这一行不能因为交付检查取不到就永远不成立。
+  const serverBlocked = blockingIssues.length > 0 || routeBlockers.length > 0
   const holds =
     requiredNodes.length > 0 &&
     notCurrent.length > 0 &&
-    blockingIssues.length > 0 &&
+    serverBlocked &&
     notStabilized
+  // 台面造出来的两种前置（「待复核」与「版本落后」）各自被服务端算出来的状态。
+  const pendingReviewIssues = (result.pendingReviewCheck?.issues ?? []).filter(
+    (issue) => issue.severity === 'blocking',
+  )
+  const blockedBy = [
+    blockingIssues.length > 0 ? `交付检查给出 ${blockingIssues.length} 条 blocking 校验问题` : '',
+    routeBlockers.length > 0
+      ? `稳定化给出 ${routeBlockers.length} 条 required_route_not_current 阻断原因`
+      : '',
+  ].filter(Boolean).join('；')
+  // 交付检查的**真实**状态码：取到了就是 200，没取到就照实写失败状态与原因码。
+  // 写死 200 会把「服务端以 403 拒掉」写成「交付检查跑过了」——那是把没观测到
+  // 的事实写成已观测（实测踩过：交付检查在带必需路线节点的项目上 403
+  // `source_access_denied`，服务端的问题，见 #324）。
+  const deliveryCheckStatus = result.check
+    ? '200'
+    : result.deliveryCheckFailure
+      ? `${result.deliveryCheckFailure.status}${result.deliveryCheckFailure.code ? ` ${result.deliveryCheckFailure.code}` : ''}`
+      : '（本轮未取到）'
+  // 稳定化同理：取到了就是 200，没取到照实写失败状态与原因码。
+  const stabilizationStatus = result.stabilization
+    ? '200'
+    : result.stabilizationFailure
+      ? `${result.stabilizationFailure.status}${result.stabilizationFailure.code ? ` ${result.stabilizationFailure.code}` : ''}`
+      : '（本轮未取到）'
+  const precondition = result.pendingReview
+    ? `台面造出的两种前置：「待复核」读回 ${result.pendingReview.id}:${result.pendingReview.state}` +
+      `（该状态下交付检查给出 ${pendingReviewIssues.length} 条 blocking 校验问题` +
+      `${result.pendingReviewCheckFailure ? `；该次交付检查未取到：HTTP ${result.pendingReviewCheckFailure.status} ${result.pendingReviewCheckFailure.code}` : ''}）；` +
+      `「版本落后」读回 ${notCurrent.map((node) => `${node.id}:${node.state}`).join('、') || '（无）'}。`
+    : '本轮没有读回「待复核」前置的节点状态。'
 
   return {
     id: 'AC-G3-08',
@@ -1143,13 +1455,13 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
     detail: holds
       ? `必需 RouteNode 共 ${requiredNodes.length} 个，其中 ${notCurrent.length} 个不是当前态` +
         `（${notCurrent.map((node) => `${node.id}:${node.state}${node.stateReason ? `（${node.stateReason}）` : ''}`).join('、')}）；` +
-        `服务端交付检查给出 ${blockingIssues.length} 条 blocking 校验问题` +
-        `（${blockingIssues.map((issue) => `${issue.ruleId}｜${issue.targetId}`).join('、')}），` +
-        `稳定化结论为 ${result.stabilization?.status ?? '（未取到）'}——项目没有进入 STABILIZED / READY。`
+        `${blockedBy}，` +
+        `稳定化结论为 ${result.stabilization?.status ?? '（未取到）'}——项目没有进入 STABILIZED / READY。` +
+        precondition
       : `不成立：必需节点 ${requiredNodes.length} 个，其中非当前态 ${notCurrent.length} 个；` +
-        `blocking 校验问题 ${blockingIssues.length} 条；` +
+        `服务端给出的阻断 ${blockedBy || '（无）'}；` +
         `稳定化结论 ${result.stabilization?.status ?? '（本轮未取到）'}。` +
-        `（本行要的是「服务端给出 blocking 校验问题且项目不放行」这一整段事实；` +
+        `（本行要的是「服务端给出阻断且项目不放行」这一整段事实；` +
         `缺少其中任何一半都不能记 PASS。）` +
         (requiredNodes.length === 0
           ? '本轮基线里没有模板声明的必需 RouteNode，缺少「必需项缺失 / 版本落后」这一前置。'
@@ -1157,7 +1469,7 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
     evidence: [
       `GET /api/v1/lingdoc/projects/{projectId}/roadmap → HTTP 200 · 必需节点 ${requiredNodes.length} 个 · ` +
         `非当前态 ${notCurrent.length} 个（${notCurrent.map((node) => `${node.id}:${node.state}`).join('、') || '（无）'}）`,
-      `POST /api/v1/lingdoc/projects/{projectId}/checks → HTTP 200 · ` +
+      `POST /api/v1/lingdoc/projects/{projectId}/checks → HTTP ${deliveryCheckStatus} · ` +
         `status=${result.check?.status ?? '（本轮未取到）'} · ` +
         `blocking 问题 ${blockingIssues.length} 条` +
         `（${blockingIssues.map((issue) => `${issue.ruleId}:${issue.targetId}`).join('、') || '（无）'}）`,
@@ -1166,6 +1478,10 @@ export function verdictAcG308(result: G3RoadmapChainResult): G3Verdict {
       `POST /api/v1/lingdoc/projects/{projectId}/roadmap/edits/{sessionId}/commit（新增节点）→ HTTP 200 · ` +
         `semantic=${result.addCommit?.semantic ?? false} · change_set_id=${result.addCommit?.changeSetId || '（无）'}` +
         `（新增节点是语义改动，冻结路线图不被直接改写）`,
+      `POST /api/v1/lingdoc/projects/{projectId}/change-sets/{changeSetId}/stabilize → HTTP ${stabilizationStatus} · ` +
+        `status=${result.stabilization?.status ?? '（本轮未取到）'} · ` +
+        `route 阻断 ${routeBlockers.length} 条` +
+        `（${routeBlockers.map((blocker) => `${blocker.code}:${blocker.targetId}`).join('、') || '（无）'}）`,
     ],
     status: holds ? 'PASS' : 'NOT RUN',
   }
@@ -1226,7 +1542,12 @@ export function verdictAcG316(result: G3RoadmapChainResult): G3Verdict {
         `冻结基线版本回到 ${result.baselineAfterCancel.version}（与取消前一致），` +
         `节点版本全部回到提交后的版本；被取消会话占用的临时版本 ` +
         `${result.temporaryRefs.map((ref) => `${ref.kind}/${ref.id}@v${ref.version}`).join('、') || '（无）'} ` +
-        `没有出现在冻结版本序列里；指向临时版本的任务 ${pointingAtTemporary.length} 条，全部为 STALE。`
+        `没有出现在冻结版本序列里；` +
+        (pointingAtTemporary.length === 0
+          ? `指向临时版本的任务 ${pointingAtTemporary.length} 条——**这一条是真空的**：` +
+            `产品面上没有任何路径会造出指向未冻结临时版本的任务，所以台面证不了「落 STALE」这一半，` +
+            `它的非真空证据在服务端侧。`
+          : `指向临时版本的任务 ${pointingAtTemporary.length} 条，全部为 STALE。`)
       : `不成立：会话状态 ${result.cancelledSession.status || '（未取到）'}；` +
         `基线版本 ${result.baselineAfterCommit.version} → ${result.baselineAfterCancel.version}（未恢复=${!versionRestored}）；` +
         `节点版本未恢复=${!nodeRestored}；临时版本出现在冻结序列=${temporaryVersionInSequence}；` +

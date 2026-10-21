@@ -128,3 +128,67 @@ func TestAssistantAffectedExplanationFromTurnRejectsUnbasedEntry(t *testing.T) {
 		t.Fatal("unbased explanation accepted from a stored turn")
 	}
 }
+
+// Issue #315: the assistant's answer about what a change affects has three
+// states, and "the assistant gave no two groups" is one of them - a fact that
+// is recorded, not a reason to drop the draft.
+func TestAssistantAffectedStateForTurnTellsPresentFromMissing(t *testing.T) {
+	withGroups := AgentTurn{ID: "turn-1", ProjectID: "project-1", Agent: "task_assistant",
+		Suggestions: json.RawMessage(`{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"调整条件","fields":{"research_goal":"新条件"}},"affected_explanation":{"definite_affected":[{"object":{"kind":"ChapterVersion","id":"chapter-1","version":"v3"},"reason":"引用了被改条件","basis":{"source_type":"dependency_edge","source_id":"edge-1"}}],"possible_affected":[]}}`)}
+	state, err := AssistantAffectedStateForTurn(withGroups)
+	if err != nil {
+		t.Fatalf("state of a turn with groups: %v", err)
+	}
+	if state != AssistantAffectedStatePresent {
+		t.Fatalf("turn with groups reported as %s", state)
+	}
+
+	// The assistant proposed a change but gave no two groups.
+	withoutGroups := AgentTurn{ID: "turn-2", ProjectID: "project-1", Agent: "task_assistant",
+		Suggestions: json.RawMessage(`{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"调整条件","fields":{"research_goal":"新条件"}}}`)}
+	state, err = AssistantAffectedStateForTurn(withoutGroups)
+	if err != nil {
+		t.Fatalf("state of a turn without groups: %v", err)
+	}
+	if state != AssistantAffectedStateMissing {
+		t.Fatalf("turn without groups reported as %s", state)
+	}
+
+	// No draft at all: no group was due.
+	plain := AgentTurn{ID: "turn-3", ProjectID: "project-1", Agent: "task_assistant",
+		Suggestions: json.RawMessage(`{"reply":"只有自然语言回复"}`)}
+	state, err = AssistantAffectedStateForTurn(plain)
+	if err != nil {
+		t.Fatalf("state of a plain turn: %v", err)
+	}
+	if state != AssistantAffectedStateNotApplicable {
+		t.Fatalf("plain turn reported as %s", state)
+	}
+}
+
+// A turn whose explanation cannot cite a basis is refused, not reported as
+// missing: missing is about the assistant having said nothing.
+func TestAssistantAffectedStateForTurnRefusesUnbasedEntry(t *testing.T) {
+	turn := AgentTurn{ID: "turn-1", ProjectID: "project-1", Agent: "task_assistant",
+		Suggestions: json.RawMessage(`{"reply":"候选","change_draft":{"expected_context_revision":1,"reason":"调整条件","fields":{"research_goal":"新条件"}},"affected_explanation":{"definite_affected":[{"object":{"kind":"ChapterVersion","id":"chapter-1","version":"v3"},"reason":"引用了被改条件"}],"possible_affected":[]}}`)}
+	if _, err := AssistantAffectedStateForTurn(turn); err == nil {
+		t.Fatal("unbased explanation accepted as a state")
+	}
+}
+
+// "Absent" means the assistant said nothing about the two groups: the key is
+// missing or null. A stated but invalid explanation is not absent.
+func TestAssistantAffectedExplanationAbsentOnlyCoversSilence(t *testing.T) {
+	if !AssistantAffectedExplanationAbsent(nil) {
+		t.Fatal("a missing key is not absent")
+	}
+	if !AssistantAffectedExplanationAbsent(json.RawMessage("null")) {
+		t.Fatal("a null value is not absent")
+	}
+	if AssistantAffectedExplanationAbsent(json.RawMessage(`{"definite_affected":[],"possible_affected":[]}`)) {
+		t.Fatal("a stated explanation is absent")
+	}
+	if AssistantAffectedExplanationAbsent(json.RawMessage(`{"definite_affected":[{"object":{"kind":"ChapterVersion","id":"c1","version":"v1"},"reason":"r"}]}`)) {
+		t.Fatal("an invalid explanation is absent")
+	}
+}
