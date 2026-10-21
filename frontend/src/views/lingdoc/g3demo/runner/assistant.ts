@@ -592,9 +592,11 @@ export function verdictAcG314(result: G3AssistantChainResult): G3Verdict {
       ? '本轮没有读回助手草稿：没有可读回的草稿 id，这一行不成立。'
       : explanation === null
         ? `草稿 ${draft.changeSetId}（状态 ${draft.status}）存在，但**助手未给两组说明**` +
-          `（草稿上读不到 affected_explanation）。这正是模型边界收紧后的容错情形：` +
-          `模型给 change_draft 必须同时给 affected_explanation，否则整条回包被拒` +
-          `（internal/lingdoc/workspace/agent_model.go）。台面如实记「助手未给两组说明」，不崩掉。`
+          `（草稿上读不到 affected_explanation）。这是模型未遵守 system prompt 时的容错情形：` +
+          `服务端**不再因为缺说明就丢掉整条回包**，草稿照常写出、说明位缺席并被如实标注` +
+          `（internal/lingdoc/workspace/agent_model.go 与 workspacecore/g2_assistant_explanation.go，` +
+          `三态 present / missing / not_applicable）。台面如实记「助手未给两组说明」，不崩掉、` +
+          `也不假装有。`
         : holds
           ? `草稿 ${draft.changeSetId}（状态 ${draft.status}）带两组说明：` +
             `「确定受影响」${definite.length} 条、「可能受影响」${possible.length} 条，` +

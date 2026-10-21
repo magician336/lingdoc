@@ -33,13 +33,21 @@ import {
 } from '../../src/views/lingdoc/g3demo/g3Export'
 import { applyRunEvidence } from '../../src/views/lingdoc/g3demo/g3Evidence'
 import { G3_MATRIX_ROWS } from '../../src/views/lingdoc/g3demo/g3Matrix'
-import { readProjectState, runChangeSetChain } from '../../src/views/lingdoc/g3demo/runner/changeset'
+import {
+  readProjectState,
+  runChangeSetChain,
+  writeChapterVersion,
+} from '../../src/views/lingdoc/g3demo/runner/changeset'
 import { runChain } from '../../src/views/lingdoc/g3demo/runner/chain'
 import { runRoadmapChain } from '../../src/views/lingdoc/g3demo/runner/roadmap'
 import { runFaultInjectionChain } from '../../src/views/lingdoc/g3demo/runner/faultInjection'
 import { runAssistantChain } from '../../src/views/lingdoc/g3demo/runner/assistant'
 import { createDemoAccount, type G3DemoAccount } from '../../src/views/lingdoc/g3demo/runner/identity'
-import { runProjectChain } from '../../src/views/lingdoc/g3demo/runner/project'
+import {
+  G3_DEMO_REQUIRED_ROUTE_NODE_ID,
+  G3_DEMO_ROUTE_TEMPLATE_VERSION,
+  runProjectChain,
+} from '../../src/views/lingdoc/g3demo/runner/project'
 import { createRunId } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import type { G3BackendHead, G3RunContext, G3RunVerdict, G3StepRecord } from '../../src/views/lingdoc/g3demo/runner/runContext'
 import { createFetchClient } from './fetchClient'
@@ -199,6 +207,7 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
 
   const newProject = async (
     label: string,
+    options: { templateVersion?: string; fields?: Record<string, string> } = {},
   ): Promise<{ projectId: string; chapters: { id: string; currentVersionId: string | null }[] }> => {
     const created = await runProjectChain(chain.ctx, client, chain.token, {
       projectName: `G3 验收台演示项目（${label} · 运行 ${chain.ctx.runId}）`,
@@ -206,6 +215,8 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
       // 服务端会按 409 `idempotency_conflict` 拒掉。前缀用 ASCII：中文进到幂等键里
       // 会被服务端的键长度上限截断，截断后不同前缀会撞成同一个键。
       idemPrefix: `g3-${label}`,
+      templateVersion: options.templateVersion,
+      fields: options.fields,
     })
     // 章节要**有一版正文**才有 currentVersionId；后续链路要拿它当对象引用
     // （候选的 target 就是章节版本）。模板激活后的章节正文是空的。
@@ -245,7 +256,20 @@ async function runLiveChain(): Promise<{ input: G3EvidenceFileInput; ctx: G3RunC
     )
   }
   if (wants('roadmap')) {
-    const roadmapProject = await newProject('roadmap')
+    // 路线图链要用**演示模板 v2**：只有 v2 声明了必需 RouteNode `route-r7`，
+    // 服务端才会按模板规则算出 required=true（#314）。
+    //
+    // v2 的必填字段多了 `route-r7`，而激活闸门把模板必填字段当规格字段读
+    // （`workspacecore/service_facade.go` 的激活闸门），所以规格里**必须**带上
+    // 占位值，否则项目激活不了。这个占位值随后会被路线图登记的节点值覆盖。
+    const roadmapProject = await newProject('roadmap', {
+      templateVersion: G3_DEMO_ROUTE_TEMPLATE_VERSION,
+      fields: {
+        research_subject: `G3 验收台演示对象（路线图 · 运行 ${chain.ctx.runId}）`,
+        research_goal: '用演示模板 v2 自建隔离项目，造出必需路线节点的前置',
+        [G3_DEMO_REQUIRED_ROUTE_NODE_ID]: '（占位：路线节点的值由路线图登记覆盖）',
+      },
+    })
     await guard('AC-G3-08', 'G3 路线图必需项：阻断稳定化', async () =>
       runRoadmapChain(chain.ctx, client, chain.token, {
         projectId: roadmapProject.projectId,

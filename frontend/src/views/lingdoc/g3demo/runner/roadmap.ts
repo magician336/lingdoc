@@ -42,6 +42,7 @@ import {
   runStep,
   type G3RunContext,
 } from './runContext'
+import { G3_DEMO_REQUIRED_ROUTE_NODE_ID } from './project'
 import type { G3Verdict } from './changeset'
 
 /** 步骤名。矩阵规则表按这些名字认「这一行跑到了没有」。 */
@@ -846,13 +847,16 @@ export async function runRoadmapChain(
     await proposeRoadmapNode(ctx, client, token, options.projectId, seedSession.id, {
       stepName: G3_ROADMAP_STEPS.proposeNode,
       idemLabel: 'roadmap-propose-seed',
-      nodeId: `g3-seed-${ctx.runId}`,
+      // 节点 id 必须用**模板声明的那个**（`route-r7`），不能是运行期随机 id：
+      // 必需性由模板规则按**字段 id**判定，id 对不上就没有 required 节点可找。
+      // （#314：演示模板 v2 声明 `route-r7` 为必需 RouteNode。）
+      nodeId: G3_DEMO_REQUIRED_ROUTE_NODE_ID,
       kind: 'add',
       name: `G3 验收台-11 合成路线节点 ${ctx.runId}`,
       status: 'planned',
       inputs: [],
       targets: [],
-      reason: 'G3 验收台-11：基线为空，先造一个可编辑节点（合成，不含真实课题信息）',
+      reason: 'G3 验收台-11：登记模板声明的必需路线节点（合成，不含真实课题信息）',
     })
     const seedCommit = await commitRoadmapEdit(ctx, client, token, options.projectId, seedSession.id, {
       stepName: G3_ROADMAP_STEPS.commit,
