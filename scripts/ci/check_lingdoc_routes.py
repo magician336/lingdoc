@@ -141,8 +141,12 @@ def read_routes(sources):
                                              if re.search(r'\bsendOK\(c,\s*(2\d\d),', block) else None),
                            "typed_response": (re.search(r'\)\s*\((\[\])?core\.(\w+),\s*error\)', block).group(0)
                                               if re.search(r'\)\s*\((\[\])?core\.(\w+),\s*error\)', block) else None),
-                           "read_method": (re.search(r'\breturn\s+(?:service|s)\.(\w+)\(', block).group(1)
-                                           if re.search(r'\breturn\s+(?:service|s)\.(\w+)\(', block) else None),
+                           # The receiver is whatever the transport holds now: the
+                           # aggregate, a narrow context port, or a bundle field.
+                           # Pinning a receiver name would silently drop the shape
+                           # check for every read route that returns (any, error).
+                           "read_method": (re.search(r'\breturn\s+[\w.]+\.(\w+)\(', block).group(1)
+                                           if re.search(r'\breturn\s+[\w.]+\.(\w+)\(', block) else None),
                            "idempotent": bool(re.search(r'\b(?:g2FullWrite|g3g6Write|impactRouteWrite)\(', block))}
     return routes
 

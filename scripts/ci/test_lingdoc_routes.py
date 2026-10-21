@@ -229,6 +229,40 @@ class LingDocRouteParity(unittest.TestCase):
             self.check(routes=bad)
 
 
+    def test_read_method_extraction_survives_a_narrow_port_receiver(self):
+        """A read route that returns (any, error) has one shape source: the method it calls.
+
+        The G2 read routes are declared as ``g2FullRead(func(...) (any, error))``,
+        so the response shape is taken from the method the route calls, not from
+        the closure's return type. That extraction used to pin the receiver
+        name, and a transport that holds a narrow context port instead of the
+        aggregate would have lost the shape check for those routes *silently* -
+        the parity gate would still pass, with less coverage.
+
+        This test moves the call onto a bundle field and requires the shape
+        drift to still be caught.
+        """
+        file = "internal/lingdoc/workspace/g2_full_http.go"
+        source = self.routes[file]
+        original = "return service.ListResearchTasks("
+        self.assertIn(original, source, "the G2 research task read route must call the aggregate today")
+        moved = dict(self.routes)
+        moved[file] = source.replace(original, "return ports.Research.ListResearchTasks(", 1)
+
+        bad = copy.deepcopy(self.document)
+        response = next(v for k, v in bad["paths"][self.path]["get"]["responses"].items() if k.startswith("2"))
+        media = response["content"]["application/json"]
+        envelope = copy.deepcopy(parity.resolve(bad, media["schema"]))
+        data = copy.deepcopy(parity.resolve(bad, envelope["properties"]["data"]))
+        item = copy.deepcopy(parity.resolve(bad, data["items"]))
+        self.assertIn("goal", item["properties"])
+        del item["properties"]["goal"]
+        data["items"] = item
+        envelope["properties"]["data"] = data
+        media["schema"] = envelope
+        with self.assertRaisesRegex(parity.ContractParityError, "response schema omits Go JSON fields"):
+            self.check(document=bad, routes=moved)
+
     def validator_for_request(self, document, path, method):
         normalized = parity.normalize_openapi_schema(document)
         body = normalized["paths"][path][method]["requestBody"]["content"]["application/json"]["schema"]
