@@ -46,3 +46,32 @@ export function keyForAttempt(
   if (attempt?.signature === signature) return attempt
   return { signature, key: mint() }
 }
+
+/**
+ * 工作副本正文的摘要。
+ *
+ * 算法是契约的一部分：**正文的 UTF-8 字节的 SHA-256，小写十六进制、64 个
+ * 字符**。服务端算的是同一个值（`candidateadoption.workingCopyBodyHash`），
+ * 两边算不出同一个值，这一声明就白声明了。
+ *
+ * 用 Web Crypto 而不是自己写一份 SHA-256：前者是浏览器与 Node 都有的标准
+ * 实现，后者是第二份需要维护的密码学代码。
+ */
+export async function workingCopyBodyHash(body: string): Promise<string> {
+  const bytes = new TextEncoder().encode(body)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest)).map(byte => byte.toString(16).padStart(2, '0')).join('')
+}
+
+/**
+ * 铸一个快照标识。
+ *
+ * 它是「带快照的替换」的一次性标记：服务端把它与替换前的工作副本正文一起
+ * 记进审计详情，人工据此可以恢复。
+ */
+export function newSnapshotId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `candidate-adoption-snapshot-${crypto.randomUUID()}`
+  }
+  return `candidate-adoption-snapshot-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}

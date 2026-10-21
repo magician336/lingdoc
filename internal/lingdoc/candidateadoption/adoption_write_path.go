@@ -319,6 +319,11 @@ func (s *SQLiteCandidateAdoptionStore) acceptIntoWorkingCopy(
 	if !sameOptionalString(workingCopy.BaseChapterVersionID, current.CurrentVersionID) {
 		return ErrVersionConflict
 	}
+	// 四元 CAS 里的「研究条件版本」这一项：草稿是在哪一版研究条件下写的，
+	// 客户端就必须看到哪一版。对不上说明草稿已经过时，请重新读取。
+	if workingCopy.SpecRevision != int64(in.ExpectedSpecRevision) {
+		return ErrVersionConflict
+	}
 	oldBody := workingCopy.BodyMarkdown
 	newBody := candidate.BodyMarkdown
 	offset := 0
@@ -339,7 +344,9 @@ func (s *SQLiteCandidateAdoptionStore) acceptIntoWorkingCopy(
 	if err := sourcemarker.Validate(newBody); err != nil {
 		return ErrInvalidRequest
 	}
-	sourceIDs := normalizeIDs(sourcemarker.IDs(newBody))
+	// 工作副本声明的来源就是正文里那些标记：候选正文拼进来以后，正文里既有
+	// 旧片段的来源，也有候选的来源。去重排序，与工作副本侧的口径一致。
+	sourceIDs := slices.Compact(normalizeIDs(sourcemarker.IDs(newBody)))
 	var previousItems []ReviewItem
 	if workingCopy.ReviewItemsJSON != "" {
 		if err := json.Unmarshal([]byte(workingCopy.ReviewItemsJSON), &previousItems); err != nil {
