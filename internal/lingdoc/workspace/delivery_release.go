@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"strconv"
 	"strings"
 
@@ -147,7 +148,7 @@ func (s *DeliveryReleaseService) Prepare(ctx context.Context, actorID, projectID
 		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
 	}
 	key = strings.TrimSpace(key)
-	if len(key) < 8 || len(key) > 128 {
+	if !operationcore.ValidKey(key) {
 		return delivery.ReleaseSnapshot{}, false, candidateadoption.ErrInvalidRequest
 	}
 	// 1. 身份与项目能力。撤权之后不能从「这个键做过」里把旧快照交出去。

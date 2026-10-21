@@ -46,7 +46,14 @@ func TestMachineReadHTTPPreservesAuthenticatedPrincipalAndMinimalShape(t *testin
 		ctx = types.WithCaller(ctx, types.Caller{TenantID: 1, UserID: "legacy-compatibility-alias", Role: types.TenantRoleViewer})
 		c.Request = c.Request.WithContext(ctx)
 	})
-	NewHandler(HandlerDependencies{Service: app}).RegisterMachineReadRoutes(engine.Group("/lingdoc"))
+	deps := HandlerDependencies{Service: app, Sources: emptySourcesStub{}}
+	// The machine read capability is named by the caller.
+	deps.WithMachineReads(app)
+	handler, err := NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	handler.RegisterMachineReadRoutes(engine.Group("/lingdoc"))
 	for _, path := range []string{"/lingdoc/projects/p/machine-read", "/lingdoc/projects/p/chapters/c/machine-read"} {
 		response := httptest.NewRecorder()
 		engine.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))

@@ -2,6 +2,7 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/lingdoc/rulesetstore"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/workspace"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
@@ -25,15 +27,32 @@ func TestAllLingDocRoutesDeclareAPIKeyPolicies(t *testing.T) {
 	enabled := true
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}}
 	routes := newLingDocRegistrar(v1, guards)
-	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
+	service := &lingDocRouteServiceStub{}
+	deps := workspace.HandlerDependencies{Service: service, Sources: routeSourcesStub{}}
+	// The machine read and the review anchor endpoints are capabilities the
+	// caller names, so their presence is a decision rather than an accident.
+	deps.WithMachineReads(service)
+	deps.WithReviewAnchors(service, service)
+	lingdocHandler, err := workspace.NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	registerLingDocWorkspaceRoutes(v1, guards, lingdocHandler)
 	registerLingDocRuleSetRoutes(v1, guards, rulesetstore.NewHTTPHandler(rulesetstore.NewStore(nil, nil), testRuleSetRequestInfo))
 	workspace.RegisterDeliveryRoutesWithGroups(routes.groups(), &workspace.DeliveryHandler{})
 	workspace.RegisterDeliveryExportRoutes(routes.write, &workspace.DeliveryExportHandler{})
 	candidateadoption.RegisterRoutes(routes.write, candidateadoption.NewCandidateAdoptionHandler(nil, nil, nil))
 	generation.RegisterRoutes(routes.write, generation.NewHandler(nil, nil))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
-	if got := len(engine.Routes()); got != 68 {
-		t.Fatalf("registered %d LingDoc routes, want 68", got)
+	// The baseline is the route surface a fully-capable composition root
+	// serves: the six required ports plus the machine read and the review
+	// anchor capabilities. The base tree measured the same 70 routes with the
+	// same capability set, so the surface did not change. The older 68 came
+	// from a handler assembled with no ports at all, which never had the
+	// machine read endpoints - the production composition root always had
+	// them.
+	if got := len(engine.Routes()); got != 70 {
+		t.Fatalf("registered %d LingDoc routes, want 70", got)
 	}
 	for _, route := range engine.Routes() {
 		policy, ok := guards.apiKeyAuthorizer.Lookup(route.Method, route.Path)
@@ -49,6 +68,28 @@ type lingDocRouteServiceStub struct {
 	listCalls   int
 }
 
+// routeSourcesStub stands in for the sources port when a test does not
+// exercise the source routes. The port is required, so a handler assembled
+// without it would fail at startup; this keeps the other routes usable.
+type routeSourcesStub struct {
+	workspace.SourceApplicationService
+}
+
+// The machine read and the review anchor capabilities are named by the
+// caller, so the stub carries them: the route surface this test snapshots
+// is the one a fully-capable composition root serves.
+func (s *lingDocRouteServiceStub) ReadMachineProjectSummary(context.Context, string) (core.MachineProjectSummary, error) {
+	return core.MachineProjectSummary{ID: "p1", Name: "demo"}, nil
+}
+func (s *lingDocRouteServiceStub) ReadMachineChapter(context.Context, string, string) (core.MachineChapterView, error) {
+	return core.MachineChapterView{ID: "c1", ProjectID: "p1"}, nil
+}
+func (s *lingDocRouteServiceStub) SetReviewAnchor(context.Context, workspace.Actor, string, string, string, string, core.SetReviewAnchorInput) (json.RawMessage, int, bool, error) {
+	return json.RawMessage(`{"project_id":"p1"}`), http.StatusOK, false, nil
+}
+func (s *lingDocRouteServiceStub) GetCurrentConfirmation(context.Context, workspace.Actor, string, string) (json.RawMessage, error) {
+	return json.RawMessage(`null`), nil
+}
 func (s *lingDocRouteServiceStub) ListProjects(context.Context, workspace.Actor) ([]workspace.Project, bool, error) {
 	s.listCalls++
 	return []workspace.Project{{ID: "p1", Name: "demo"}}, false, nil
@@ -66,7 +107,17 @@ func TestLingDocRoutesDeclareRoleAndAPIKeyPolicies(t *testing.T) {
 	enabled := true
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
-	registerLingDocWorkspaceRoutes(v1, guards, workspace.NewHandler(workspace.HandlerDependencies{}))
+	service := &lingDocRouteServiceStub{}
+	deps := workspace.HandlerDependencies{Service: service, Sources: routeSourcesStub{}}
+	// The machine read and the review anchor endpoints are capabilities the
+	// caller names, so their presence is a decision rather than an accident.
+	deps.WithMachineReads(service)
+	deps.WithReviewAnchors(service, service)
+	lingdocHandler, err := workspace.NewHandler(deps)
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	registerLingDocWorkspaceRoutes(v1, guards, lingdocHandler)
 	registerLingDocRuleSetRoutes(v1, guards, rulesetstore.NewHTTPHandler(rulesetstore.NewStore(nil, nil), testRuleSetRequestInfo))
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 
@@ -193,7 +244,10 @@ func TestLingDocWorkspaceRouteRunsThroughRouterRoleGuards(t *testing.T) {
 	guards := &rbacGuards{cfg: &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &enabled}}, apiKeyAuthorizer: middleware.NewAPIKeyRouteAuthorizer()}
 	v1.Use(guards.apiKeyAuthorizer.Middleware())
 	service := &lingDocRouteServiceStub{}
-	workspaceHandler := workspace.NewHandler(workspace.HandlerDependencies{Read: service, Write: service})
+	workspaceHandler, err := workspace.NewHandler(workspace.HandlerDependencies{Read: service, Write: service, Sources: routeSourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	registerLingDocWorkspaceRoutes(v1, guards, workspaceHandler)
 	guards.assertAPIKeyPoliciesMatchRoutes(engine)
 

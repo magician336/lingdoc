@@ -2,11 +2,10 @@ package workspacecore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"github.com/Tencent/WeKnora/internal/clienterror"
+	"github.com/Tencent/WeKnora/internal/lingdoc/operationcore"
 	"github.com/google/uuid"
 	"math"
 	"slices"
@@ -77,11 +76,18 @@ func readImpactObjectState(tx Transaction, p Project, ref ObjectVersionRef) (Imp
 			return state, ErrInvalidState
 		}
 		state.Ref.Version = *chapter.CurrentVersionID
-		version, err := tx.ChapterVersion(p.ID, ref.ID, *chapter.CurrentVersionID)
-		if err != nil {
+		if _, err := tx.ChapterVersion(p.ID, ref.ID, *chapter.CurrentVersionID); err != nil {
 			return state, err
 		}
-		state.Confirmed = chapter.ConfirmationValid && version.SpecRevision == p.SpecRevision
+		// The chapter view carries the answer of the one confirmation predicate
+		// (ChapterConfirmed), so this consumer no longer judges the same fact a
+		// second way. The version's own spec revision says when the version was
+		// created; the confirmation record says which research-conditions basis
+		// the confirmation was made on. A chapter re-confirmed under a newer
+		// revision has an older creation revision, and judging it by the
+		// creation revision made this gate disagree with the delivery preflight
+		// about the same chapter.
+		state.Confirmed = chapter.ConfirmationValid
 		state.SourceIDs = append(state.SourceIDs, chapter.SourceIDs...)
 		state.ContextRevision = p.CurrentContextRevision
 	case "ResearchRun", "ComputationReceipt":
@@ -144,9 +150,7 @@ func readImpactObjectState(tx Transaction, p Project, ref ObjectVersionRef) (Imp
 	return state, nil
 }
 func hashImpactValue(value any) string {
-	raw, _ := json.Marshal(value)
-	hash := sha256.Sum256(raw)
-	return hex.EncodeToString(hash[:])
+	return operationcore.ValueHash(value)
 }
 
 // impactTaskSourceUnavailable is what acting on an impact task looks like when

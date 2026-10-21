@@ -320,7 +320,7 @@ func (s *Service) CommitWorkingCopy(ctx context.Context, actor Actor, projectID,
 		nextChapter.SourceIDs = slices.Clone(workingCopy.SourceIDs)
 		nextChapter.CitationUsages = slices.Clone(workingCopy.CitationUsages)
 		nextChapter.ReviewItems = rebaseReviewItems(workingCopy.BodyMarkdown, workingCopy.BodyMarkdown, workingCopy.ReviewItems, workingCopy.WorkingCopyRevision, &id)
-		nextChapter.ConfirmationValid = false
+		markChapterUnconfirmed(&nextChapter)
 		nextProject := p
 		nextProject.ProjectVersion++
 		if err := tx.UpdateProject(actor.TenantID, p, nextProject); err != nil {

@@ -15,19 +15,35 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
 
+// The failures of this package state their own outward form.
+//
+// The rule set storage surface and the rule governance surface report some of
+// the same failures, and each surface keeps its own wording. A sentinel that
+// another surface words differently is not edited here: that surface wraps it
+// in a named scenario value instead.
 var (
-	ErrActorRequired         = errors.New("ruleset actor is required")
-	ErrAuthorizerUnavailable = errors.New("ruleset authorizer is unavailable")
-	ErrRuleSetVersionExists  = errors.New("ruleset version already exists")
-	ErrRuleSetNotFound       = errors.New("ruleset version not found")
-	ErrRuleSetStateConflict  = errors.New("ruleset state changed concurrently")
-	ErrDraftHashMustBeEmpty  = errors.New("draft ruleset hash is server managed")
-	ErrRuleSetTenantRequired = errors.New("ruleset tenant is required")
+	// ErrActorRequired is a request without a usable actor.
+	ErrActorRequired = clienterror.New(clienterror.Form{Status: 401, Code: "unauthenticated", Message: "需要有效的租户身份。", Retryable: false}, "ruleset actor is required")
+	// ErrRuleSetTenantRequired is a request without a usable tenant.
+	ErrRuleSetTenantRequired = clienterror.New(clienterror.Form{Status: 401, Code: "unauthenticated", Message: "需要有效的租户身份。", Retryable: false}, "ruleset tenant is required")
+	// ErrAuthorizerUnavailable is a rule set authorization that could not be
+	// established because the authorizer is down.
+	ErrAuthorizerUnavailable = clienterror.New(clienterror.Form{Status: 503, Code: "authorization_unavailable", Message: "授权服务暂不可用，请稍后重试。", Retryable: true}, "ruleset authorizer is unavailable")
+	// ErrRuleSetVersionExists is a rule set version that already exists.
+	ErrRuleSetVersionExists = clienterror.New(clienterror.BaselineConflict, "ruleset version already exists")
+	// ErrRuleSetStateConflict is a rule set whose state changed concurrently.
+	ErrRuleSetStateConflict = clienterror.New(clienterror.BaselineConflict, "ruleset state changed concurrently")
+	// ErrRuleSetNotFound is a rule set version that does not exist.
+	ErrRuleSetNotFound = clienterror.New(clienterror.NotFound, "ruleset version not found")
+	// ErrDraftHashMustBeEmpty is a draft that carries the server-managed hash.
+	// The rule set storage surface wraps it in its own scenario value.
+	ErrDraftHashMustBeEmpty = clienterror.New(clienterror.InvalidRequest, "draft ruleset hash is server managed")
 )
 
 type Action string

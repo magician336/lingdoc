@@ -93,7 +93,12 @@ func (g machineDelegatedAssetAuthorizer) CanAccessAsset(ctx context.Context, act
 	return err == nil && shared && role.IsValid() && role.HasPermission(types.OrgRoleViewer), err
 }
 
-type machineReadApplication interface {
+// MachineReadApplication is the machine read capability.
+//
+// It is optional: the caller declares it by calling
+// HandlerDependencies.WithMachineReads, and the endpoints exist only when it
+// was asked for.
+type MachineReadApplication interface {
 	ReadMachineProjectSummary(context.Context, string) (core.MachineProjectSummary, error)
 	ReadMachineChapter(context.Context, string, string) (core.MachineChapterView, error)
 }
@@ -101,7 +106,11 @@ type MachineReadGetRegistrar interface {
 	GET(string, ...gin.HandlerFunc) gin.IRoutes
 }
 
-// Registration has no effects for legacy/stub handlers without the actual seam.
+// RegisterMachineReadRoutes registers the machine read endpoints.
+//
+// The endpoints exist because the caller asked for the machine read
+// capability. Without that choice there is no route, and the absence is the
+// caller's decision rather than an accident.
 func (h *Handler) RegisterMachineReadRoutes(group MachineReadGetRegistrar) {
 	service := h.machineReads
 	if service == nil || group == nil {

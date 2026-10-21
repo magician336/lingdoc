@@ -2,26 +2,25 @@ package workspace
 
 import (
 	"encoding/json"
-	"errors"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/gin-gonic/gin"
 )
 
+// g2FullError renders a business failure of the G2 surface.
+//
+// The outward shape of a failure is declared by the error itself, at the place
+// where that fact is known. This mapper therefore holds no table of business
+// errors: it renders what the error declares, and leaves the failures that
+// declare nothing to the shared workspace mapper.
 func g2FullError(c *gin.Context, err error) {
-	switch {
-	case errors.Is(err, core.ErrFormalChangeRequired):
-		sendErrorDetails(c, 422, "invalid_state", "该对象已确认或进入正式依据，请在“正式变更”中建立草稿，评估后由 Owner 应用。", nil)
-	case errors.Is(err, core.ErrG2ConsentRequired):
-		sendErrorDetails(c, 422, "confirmation_required", "请明确核对范围并确认该操作。", nil)
-	case errors.Is(err, core.ErrG2EvidenceIncomplete):
-		sendErrorDetails(c, 422, "evidence_incomplete", "定位、来源、主张或当前版本尚未满足证据要求。", nil)
-	case errors.Is(err, core.ErrG2OutcomeUnknown):
-		sendErrorDetails(c, 409, "outcome_unknown", "操作结果尚待核对，请读取已有回执，不要重复执行。", nil)
-	case errors.Is(err, core.ErrG2Unavailable):
-		sendErrorDetails(c, 503, "dependency_unavailable", "所需资料、搜索或模型能力暂不可用。", nil)
-	default:
-		sendError(c, err)
+	if form, ok := clienterror.FormOf(err); ok {
+		c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message,
+			"retryable": form.Retryable}, "request_id": requestID(c)})
+		return
 	}
+	sendError(c, err)
 }
 func g2FullRead(call func(*gin.Context, Actor) (any, error)) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -31,7 +30,7 @@ func g2FullRead(call func(*gin.Context, Actor) (any, error)) gin.HandlerFunc {
 		}
 		value, err := call(c, actor)
 		if err != nil {
-			g2FullError(c, err)
+			g2FullError(c, g2SurfaceError(err))
 			return
 		}
 		sendOK(c, 200, value, false)
@@ -53,7 +52,7 @@ func g2FullWrite[I any](call func(*gin.Context, Actor, string, I) (json.RawMessa
 		}
 		value, status, replayed, err := call(c, actor, key, input)
 		if err != nil {
-			g2FullError(c, err)
+			g2FullError(c, g2SurfaceError(err))
 			return
 		}
 		sendOK(c, status, value, replayed)
@@ -71,7 +70,7 @@ func g2FullPostRead[I any](call func(*gin.Context, Actor, I) (any, error)) gin.H
 		}
 		value, err := call(c, actor, input)
 		if err != nil {
-			g2FullError(c, err)
+			g2FullError(c, g2SurfaceError(err))
 			return
 		}
 		sendOK(c, 200, value, false)

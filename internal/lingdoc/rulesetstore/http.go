@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/gin-gonic/gin"
 )
@@ -53,7 +54,7 @@ type HTTPHandler struct {
 }
 
 func NewHTTPHandler(application Application, requestInfo RequestInfo) *HTTPHandler {
-	return &HTTPHandler{application: application, requestInfo: requestInfo}
+	return &HTTPHandler{application: newSurfaceApplication(application), requestInfo: requestInfo}
 }
 
 // Register keeps catalog reads behind the LingDoc viewer policy and all
@@ -83,7 +84,7 @@ func (h *HTTPHandler) identity(c *gin.Context) (Actor, string, bool) {
 func (h *HTTPHandler) listDefinitions(c *gin.Context) {
 	_, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	writeSuccess(c, http.StatusOK, gin.H{"items": template.RuleDefinitions()}, requestID)
@@ -92,7 +93,7 @@ func (h *HTTPHandler) listDefinitions(c *gin.Context) {
 func (h *HTTPHandler) listVersions(c *gin.Context) {
 	actor, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	versions, err := h.application.ListVersions(c.Request.Context(), actor, c.Param("ruleSetID"))
@@ -106,7 +107,7 @@ func (h *HTTPHandler) listVersions(c *gin.Context) {
 func (h *HTTPHandler) getVersion(c *gin.Context) {
 	actor, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	version, err := h.application.GetVersion(c.Request.Context(), actor, c.Param("ruleSetID"), c.Param("version"))
@@ -120,7 +121,7 @@ func (h *HTTPHandler) getVersion(c *gin.Context) {
 func (h *HTTPHandler) listRuleSetUseAudits(c *gin.Context) {
 	actor, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	query, err := parseRuleSetUseAuditQuery(c)
@@ -156,7 +157,7 @@ func (h *HTTPHandler) listRuleSetUseAudits(c *gin.Context) {
 func (h *HTTPHandler) readRuleSetMetrics(c *gin.Context) {
 	actor, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	metrics, ok := h.application.(MetricsApplication)
@@ -242,7 +243,7 @@ func parseRuleSetUseAuditQuery(c *gin.Context) (RuleSetUseAuditQuery, error) {
 func (h *HTTPHandler) createDraft(c *gin.Context) {
 	actor, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	var draft template.RuleSet
@@ -250,7 +251,7 @@ func (h *HTTPHandler) createDraft(c *gin.Context) {
 		return
 	}
 	if draft.State != "" && draft.State != template.RuleSetDraft {
-		writeError(c, http.StatusBadRequest, "invalid_request", "只能创建草稿规则集版本。", requestID)
+		writeError(c, ErrDraftStateRequired, requestID)
 		return
 	}
 	draft.State = template.RuleSetDraft
@@ -276,7 +277,7 @@ func (h *HTTPHandler) recall(c *gin.Context) {
 func (h *HTTPHandler) transition(c *gin.Context, apply func(context.Context, Actor, string, string) (template.RuleSet, error)) {
 	actor, requestID, ok := h.identity(c)
 	if !ok {
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
+		writeError(c, ErrActorRequired, requestID)
 		return
 	}
 	version, err := apply(c.Request.Context(), actor, c.Param("ruleSetID"), c.Param("version"))
@@ -291,12 +292,12 @@ func decodeRequest(c *gin.Context, target any, requestID string) bool {
 	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 1<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
-		writeError(c, http.StatusBadRequest, "invalid_request", "请求字段不符合约定。", requestID)
+		writeError(c, ErrInvalidRequest, requestID)
 		return false
 	}
 	var trailing any
 	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		writeError(c, http.StatusBadRequest, "invalid_request", "请求字段不符合约定。", requestID)
+		writeError(c, ErrInvalidRequest, requestID)
 		return false
 	}
 	return true
@@ -307,29 +308,21 @@ func writeSuccess(c *gin.Context, status int, data any, requestID string) {
 		"meta": gin.H{"replayed": false, "refresh_required": false}})
 }
 
+// writeApplicationError renders a business failure.
 func writeApplicationError(c *gin.Context, err error, requestID string) {
-	switch {
-	case errors.Is(err, ErrActorRequired), errors.Is(err, ErrRuleSetTenantRequired):
-		writeError(c, http.StatusUnauthorized, "unauthenticated", "需要有效的租户身份。", requestID)
-	case errors.Is(err, ErrRuleSetAccessDenied):
-		writeError(c, http.StatusForbidden, "forbidden", "当前租户成员无权执行此规则集操作。", requestID)
-	case errors.Is(err, ErrRuleSetNotFound):
-		writeError(c, http.StatusNotFound, "not_found", "资源不存在或不可访问。", requestID)
-	case errors.Is(err, ErrRuleSetVersionExists), errors.Is(err, ErrRuleSetStateConflict), errors.Is(err, template.ErrRuleSetNotDraft), errors.Is(err, template.ErrRuleSetNotPublished):
-		writeError(c, http.StatusConflict, "state_conflict", "规则集版本状态已变化，请重新读取。", requestID)
-	case errors.Is(err, ErrAuthorizerUnavailable):
-		writeError(c, http.StatusServiceUnavailable, "authorization_unavailable", "授权服务暂不可用，请稍后重试。", requestID)
-	case errors.Is(err, ErrDraftHashMustBeEmpty), errors.Is(err, template.ErrInvalidRuleSet):
-		writeError(c, http.StatusBadRequest, "invalid_request", "规则集不符合安全约束。", requestID)
-	case errors.Is(err, ErrInvalidRuleSetUseAudit):
-		writeError(c, http.StatusBadRequest, "invalid_request", "规则集使用审计查询范围无效。", requestID)
-	case errors.Is(err, ErrRuleSetMetricsUnavailable):
-		writeError(c, http.StatusServiceUnavailable, "metrics_unavailable", "规则集运行指标暂不可用，请稍后再试。", requestID)
-	default:
-		writeError(c, http.StatusInternalServerError, "internal_error", "操作失败，请稍后再试。", requestID)
-	}
+	writeError(c, err, requestID)
 }
 
-func writeError(c *gin.Context, status int, code, message, requestID string) {
-	c.JSON(status, gin.H{"error": gin.H{"code": code, "message": message, "retryable": status >= http.StatusInternalServerError}, "request_id": requestID})
+// writeError renders the outward form the error declares.
+//
+// The outward shape of a failure is declared by the error itself, at the place
+// where that fact is known. This mapper therefore holds no table of business
+// errors: it renders what the error declares, and falls back to a generic
+// internal error for the failures that declare nothing.
+func writeError(c *gin.Context, err error, requestID string) {
+	form, ok := clienterror.FormOf(err)
+	if !ok {
+		form = clienterror.OperationFailed
+	}
+	c.JSON(form.Status, gin.H{"error": gin.H{"code": form.Code, "message": form.Message, "retryable": form.Retryable}, "request_id": requestID})
 }

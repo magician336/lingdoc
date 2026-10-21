@@ -73,20 +73,30 @@ func NewLingDocWorkspaceHandler(
 	projectService.SetTemplateCatalogResolver(governance)
 	projectService.SetImpactRuleChecker(governance.ImpactRuleChecker())
 	guard := workspace.NewFullWorkflowGuard(projectService, runtime)
-	handler := workspace.NewHandler(workspace.HandlerDependencies{
-		FullWorkflow:     &workspace.FullWorkflowDependencies{Core: projectService, Governance: governance},
-		Projects:         projectService,
-		Members:          projectService,
-		Chapters:         projectService,
-		TemplateApp:      projectService,
-		ChangeSets:       projectService,
-		Read:             projectService,
-		Write:            projectService,
-		Sources:          runtime,
-		Integration:      runtime,
-		Templates:        templates,
-		SelectedRewrites: workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink),
-	})
+	deps := workspace.HandlerDependencies{
+		FullWorkflow: &workspace.FullWorkflowDependencies{Core: projectService, Governance: governance},
+		Projects:     projectService,
+		Members:      projectService,
+		Chapters:     projectService,
+		TemplateApp:  projectService,
+		ChangeSets:   projectService,
+		Read:         projectService,
+		Write:        projectService,
+		Sources:      runtime,
+		Integration:  runtime,
+		Templates:    templates,
+	}
+	deps.WithSelectedRewrites(workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink))
+	// The machine read and the review anchor endpoints are capabilities the
+	// caller asks for by name. The project service provides them; saying so
+	// here keeps their presence a decision rather than an accident of which
+	// field was filled in.
+	deps.WithMachineReads(projectService)
+	deps.WithReviewAnchors(projectService, projectService)
+	handler, err := workspace.NewHandler(deps)
+	if err != nil {
+		return LingDocWorkspace{}, err
+	}
 	ruleSets := rulesetstore.NewHTTPHandler(ruleSetStore, lingDocRuleSetRequestInfo)
 	return LingDocWorkspace{Guard: guard, Handler: handler, RuleSets: ruleSets, Projects: projectService, Integration: runtime, Runtime: runtime, Audit: auditSink, CapabilityObserver: ruleSetStore}, nil
 }

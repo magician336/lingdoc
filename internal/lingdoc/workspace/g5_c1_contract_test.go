@@ -21,10 +21,13 @@ type g5C5ReadPortStub struct{ WorkspaceReadApplication }
 type g5C5WritePortStub struct{ WorkspaceWriteApplication }
 
 func TestG5C5HandlerComposesSplitApplicationPorts(t *testing.T) {
-	handler := NewHandler(HandlerDependencies{
-		Read:  g5C5ReadPortStub{},
-		Write: g5C5WritePortStub{},
+	handler, err := NewHandler(HandlerDependencies{Read: g5C5ReadPortStub{},
+		Write:   g5C5WritePortStub{},
+		Sources: emptySourcesStub{},
 	})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
 	if handler.projects == nil || handler.members == nil || handler.chapters == nil ||
 		handler.templatesApp == nil || handler.changeSets == nil {
 		t.Fatalf("split read/write composition left focused route port nil: projects=%T members=%T chapters=%T templates=%T changeSets=%T", handler.projects, handler.members, handler.chapters, handler.templatesApp, handler.changeSets)
@@ -48,7 +51,10 @@ func TestG5C1RepresentativeHTTPSpecContract(t *testing.T) {
 			Project:  Project{ID: "project-1", SpecRevision: 1, ProjectVersion: 2},
 			Replayed: true,
 		}}
-		handler := NewHandler(HandlerDependencies{Write: service})
+		handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+		if err != nil {
+			t.Fatalf("assemble the workspace handler: %v", err)
+		}
 		engine := gin.New()
 		handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 
@@ -77,7 +83,10 @@ func TestG5C1RepresentativeHTTPSpecContract(t *testing.T) {
 
 	t.Run("version conflict remains a domain error mapping", func(t *testing.T) {
 		service := &g5C1SaveSpecErrorStub{err: ErrVersionConflict}
-		handler := NewHandler(HandlerDependencies{Write: service})
+		handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+		if err != nil {
+			t.Fatalf("assemble the workspace handler: %v", err)
+		}
 		engine := gin.New()
 		handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 

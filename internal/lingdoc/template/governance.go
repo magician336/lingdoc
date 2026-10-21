@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -12,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/Tencent/WeKnora/internal/clienterror"
 )
 
 const EvaluatorVersion = "lingdoc-rules/1"
@@ -25,7 +26,9 @@ const (
 	EvaluationNotApplicable EvaluationStatus = "NOT_APPLICABLE"
 )
 
-var ErrInvalidDefinition = errors.New("invalid template or rule definition")
+// ErrInvalidDefinition is a template or rule definition that does not satisfy
+// its contract. It states its own outward form.
+var ErrInvalidDefinition = clienterror.New(clienterror.InvalidRequest, "invalid template or rule definition")
 
 type ChapterInput struct {
 	ID        string

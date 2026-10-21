@@ -9,6 +9,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// candidateAdoptionSourcesStub stands in for the sources port when a test
+// does not exercise the source routes. The port is required, so a handler
+// assembled without it would fail at startup; this keeps the other routes
+// usable.
+type candidateAdoptionSourcesStub struct {
+	workspace.SourceApplicationService
+}
+
+// candidateAdoptionServiceStub stands in for the application ports. The test
+// only checks which routes the workspace registers, so none of the methods
+// are called.
+type candidateAdoptionServiceStub struct {
+	workspace.ApplicationService
+}
+
 func TestRegisterRoutesLeavesChapterListingToWorkspaceOwner(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
@@ -24,7 +39,11 @@ func TestRegisterRoutesComposesWithWorkspaceWithoutDuplicateChapterListing(t *te
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	v1 := r.Group("/api/v1")
-	workspace.NewHandler(workspace.HandlerDependencies{}).Register(workspace.RouteGroups{Read: v1.Group("/lingdoc"), Write: v1.Group("/lingdoc")})
+	workspaceHandler, err := workspace.NewHandler(workspace.HandlerDependencies{Service: &candidateAdoptionServiceStub{}, Sources: candidateAdoptionSourcesStub{}})
+	if err != nil {
+		t.Fatalf("assemble the workspace handler: %v", err)
+	}
+	workspaceHandler.Register(workspace.RouteGroups{Read: v1.Group("/lingdoc"), Write: v1.Group("/lingdoc")})
 	candidateadoption.RegisterRoutes(v1.Group("/lingdoc"), &candidateadoption.CandidateAdoptionHandler{})
 
 	count := 0
