@@ -21,6 +21,8 @@ import (
 
 type faultModelFunc func(context.Context, Input) (Draft, error)
 
+func (f faultModelFunc) RunMode() string { return "mock" }
+
 func (f faultModelFunc) Generate(ctx context.Context, input Input) (Draft, error) {
 	return f(ctx, input)
 }

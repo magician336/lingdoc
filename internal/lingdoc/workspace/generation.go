@@ -353,6 +353,12 @@ type generatedDraftPayload struct {
 	ReviewItems  []string `json:"review_items"`
 }
 
+// RunMode 说这个适配器会不会真的调用 provider。
+//
+// 它是候选上 run_mode 的来源：找不到模型时按「没有 provider」处理，不冒充
+// 真实证据（开发计划 A27）。
+func (m generationHostModel) RunMode() string { return "real" }
+
 func (m generationHostModel) Generate(ctx context.Context, input generation.Input) (generation.Draft, error) {
 	if m.acceptanceConfigErr != nil {
 		return generation.Draft{}, generation.ErrAcceptanceBudgetUnavailable
@@ -422,18 +428,24 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 	if err != nil {
 		return generation.Draft{}, err
 	}
+	// 写给模型的指令只有一个来源：旧路径是客户端的自由文本，动作路径是执行
+	// 计划渲染出来的动作指令。补充说明单独一个字段，它不与动作指令混成一段。
+	//
+	// supplementary_note 带 omitempty：旧路径下它恒为空，发给模型的 JSON 逐字
+	// 不变。
 	userInput := struct {
-		ProjectSpec     map[string]string               `json:"project_spec"`
-		TemplateID      string                          `json:"template_id"`
-		TemplateVersion string                          `json:"template_version"`
-		SectionTitle    string                          `json:"section_title"`
-		ChapterTitle    string                          `json:"chapter_title"`
-		ExistingDraft   string                          `json:"existing_draft"`
-		Instruction     string                          `json:"instruction"`
-		Sources         []map[string]string             `json:"sources"`
-		EvidenceCards   []generation.EvidenceConstraint `json:"evidence_cards,omitempty"`
+		ProjectSpec       map[string]string               `json:"project_spec"`
+		TemplateID        string                          `json:"template_id"`
+		TemplateVersion   string                          `json:"template_version"`
+		SectionTitle      string                          `json:"section_title"`
+		ChapterTitle      string                          `json:"chapter_title"`
+		ExistingDraft     string                          `json:"existing_draft"`
+		Instruction       string                          `json:"instruction"`
+		SupplementaryNote string                          `json:"supplementary_note,omitempty"`
+		Sources           []map[string]string             `json:"sources"`
+		EvidenceCards     []generation.EvidenceConstraint `json:"evidence_cards,omitempty"`
 	}{input.ProjectSpec, input.Basis.TemplateID, input.Basis.TemplateVersion, section.Title,
-		chapters.Title, chapters.BodyMarkdown, input.Request.Instruction, sourceContext, cards}
+		chapters.Title, chapters.BodyMarkdown, input.Instruction, input.SupplementaryNote, sourceContext, cards}
 	encoded, err := json.Marshal(userInput)
 	if err != nil {
 		return generation.Draft{}, err
@@ -539,7 +551,8 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 	for _, statement := range payload.ReviewItems {
 		reviewItems = append(reviewItems, candidateadoption.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement)})
 	}
-	return generation.Draft{BodyMarkdown: payload.BodyMarkdown, Sources: used, ReviewItems: reviewItems}, nil
+	return generation.Draft{BodyMarkdown: payload.BodyMarkdown, Sources: used, ReviewItems: reviewItems,
+		RunMode: candidateadoption.RunMode(modelRunMode(models, modelID, "mock"))}, nil
 }
 
 func defaultGenerationModel(models []*types.Model) string {

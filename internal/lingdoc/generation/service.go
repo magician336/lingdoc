@@ -44,8 +44,14 @@ var (
 	// ErrStaleInput is an input basis that changed before the run started.
 	// It used to fall through the transport's error table and be answered
 	// with a generic internal error; it now states the stale input form.
-	ErrStaleInput                  = clienterror.New(clienterror.CandidateStaleInput, "stale_input")
-	ErrIdempotencyConflict         = clienterror.New(clienterror.IdempotencyKeyConflict, "idempotency_conflict")
+	ErrStaleInput          = clienterror.New(clienterror.CandidateStaleInput, "stale_input")
+	ErrIdempotencyConflict = clienterror.New(clienterror.IdempotencyKeyConflict, "idempotency_conflict")
+	// ErrIdempotencyKeyExpired 说这个幂等键属于旧版摘要规则。
+	//
+	// 它与 ErrIdempotencyConflict 是两件事：前者的请求本身没问题，是键属于这个
+	// build 已经不说的规则——调用方换一个新键重试；后者是同一个键带了两份不同的
+	// 请求——调用方要找的是一份根本没变过的请求。
+	ErrIdempotencyKeyExpired       = clienterror.New(clienterror.IdempotencyKeyExpired, "idempotency_key_expired")
 	ErrRunUnavailable              = errors.New("generation_run_unavailable")
 	ErrGenerationCancelled         = errors.New("generation_cancelled")
 	ErrDependencyUnavailable       = clienterror.New(clienterror.DependencyUnavailable, "dependency_unavailable")
@@ -109,10 +115,16 @@ type Run struct {
 	// service handing out the raw instruction again. It is absent only when
 	// the stored input cannot be read at all.
 	InputSummary *RunInputSummary `json:"input_summary,omitempty"`
-	CreatedAt    time.Time        `json:"-"`
-	UpdatedAt    time.Time        `json:"-"`
-	Replayed     bool             `json:"-"`
-	ClaimToken   string           `json:"-"`
+	// DroppedContext is the optional context the user selected that did not
+	// enter the model request.
+	//
+	// It is reported on the response that starts the run: a silent drop would
+	// let the user believe the context was used.
+	DroppedContext []DroppedContextItem `json:"dropped_context,omitempty"`
+	CreatedAt      time.Time            `json:"-"`
+	UpdatedAt      time.Time            `json:"-"`
+	Replayed       bool                 `json:"-"`
+	ClaimToken     string               `json:"-"`
 }
 
 // Actor is the authenticated owner identity passed from the HTTP boundary.
@@ -145,6 +157,24 @@ type Request struct {
 	Instruction              string            `json:"instruction"`
 	ExpectedSpecRevision     int               `json:"expected_spec_revision"`
 	ExpectedChapterVersionID *string           `json:"expected_chapter_version_id"`
+
+	// 下面四个字段把这次请求从「自由文本说明」变成「按动作发起」。
+	//
+	// 它们都是**指针**加 omitempty：指针为 nil 时字段整个不出现，请求的 JSON
+	// 与它的摘要值逐字不变——历史幂等键的重放语义不能被这次改动碰坏。用非指针
+	// 的结构体字段做不到这一点：omitempty 对结构体不起作用，旧请求会多出一个
+	// "output_params":{...}，摘要全变，重试从「重放」变成「冲突」。
+	//
+	// 四个字段全部缺省 ⇒ 旧路径：自由文本说明驱动，行为逐字不变。
+	// 任一字段出现 ⇒ 动作路径：动作与产出参数必齐，缺一即拒。
+	WritingAction *writingaction.Action       `json:"writing_action,omitempty"`
+	OutputParams  *writingaction.OutputParams `json:"output_params,omitempty"`
+	Scope         *writingaction.Scope        `json:"scope,omitempty"`
+	// Context 是用户对这次执行要纳入的可选上下文的选择。
+	//
+	// 它是**指针**加 omitempty：缺省即「没选」，旧请求的 JSON 与它的摘要值逐字
+	// 不变。它只在动作路径下有意义——旧路径带上它会被拒。
+	Context *GenerationContextSelection `json:"context,omitempty"`
 }
 
 // Input is the immutable, server-resolved generation basis captured before
@@ -160,12 +190,27 @@ type Input struct {
 	ProjectSpec         map[string]string                   `json:"project_spec"`
 	Sources             []Source                            `json:"sources"`
 	Request             Request                             `json:"request"`
+	// Instruction 是写给模型的指令。
+	//
+	// 旧路径下它是客户端的自由文本，逐字不变；动作路径下它是执行计划渲染出来
+	// 的动作指令。写给模型的指令只有这一个来源。
+	Instruction string `json:"instruction,omitempty"`
+	// SupplementaryNote 是客户端的补充说明。
+	//
+	// 旧路径恒为空：旧路径的说明本身就是指令。动作路径下它不参与动作判定，
+	// 也不与动作指令混成一段。
+	SupplementaryNote string `json:"supplementary_note,omitempty"`
 }
 
 type Draft struct {
 	BodyMarkdown string                         `json:"body_markdown"`
 	Sources      []Source                       `json:"sources"`
 	ReviewItems  []candidateadoption.ReviewItem `json:"review_items"`
+	// RunMode 说这一稿是怎么到模型面前的。
+	//
+	// 它由模型适配器给出：适配器知道这一次到底有没有真的调用 provider。空值
+	// 表示适配器没有报告，服务端按「没有 provider」处理。
+	RunMode candidateadoption.RunMode `json:"run_mode,omitempty"`
 }
 
 type InputResolver interface {
@@ -187,6 +232,11 @@ type CurrentnessChecker interface {
 }
 
 type ModelAdapter interface {
+	// RunMode 说这个适配器会不会真的调用 provider。
+	//
+	// 它是候选上 run_mode 的来源：没有 provider 的适配器必须报「mock」，不
+	// 允许冒充真实证据（开发计划 A27）。
+	RunMode() string
 	Generate(context.Context, Input) (Draft, error)
 }
 
@@ -247,11 +297,31 @@ func NewServiceWithAccessPolicy(policy lingdocaccess.Policy, inputs InputResolve
 func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string, request Request) (Run, error) {
 	if actor.TenantID == 0 || strings.TrimSpace(actor.UserID) == "" || strings.TrimSpace(projectID) == "" ||
 		!operationcore.ValidKey(key) || strings.TrimSpace(request.ChapterID) == "" ||
-		strings.TrimSpace(request.Instruction) == "" || request.ExpectedSpecRevision < 0 || len(request.AssetIDs) == 0 && len(request.EvidenceCardRefs) == 0 {
+		request.ExpectedSpecRevision < 0 {
+		return Run{}, ErrInvalidRequest
+	}
+	// 旧路径的说明是必填的自由文本；动作路径的说明只是补充说明，必填的是动作
+	// 与产出参数（由执行计划校验），所以这里不为动作路径要求它。
+	if request.isLegacyPath() && strings.TrimSpace(request.Instruction) == "" {
 		return Run{}, ErrInvalidRequest
 	}
 	if !validEvidenceCardRefs(request.EvidenceCardRefs) {
 		return Run{}, ErrInvalidRequest
+	}
+	// 动作路径的声明先解析、再干活：产出参数与目标范围在模型调用之前就被拒，
+	// 非法声明不产生 run，也不产生候选行。
+	plan, err := resolveGenerationPlan(request)
+	if err != nil {
+		return Run{}, err
+	}
+	// 用户对可选上下文的选择先解析：类别越过策略的请求被拒；用户剔除的条目
+	// 不进模型请求，并被点名。
+	var droppedContext []DroppedContextItem
+	if plan != nil && request.Context != nil {
+		request, droppedContext, err = applyContextSelection(*plan, *request.Context, request)
+		if err != nil {
+			return Run{}, err
+		}
 	}
 	request.EvidenceCardRefs = append([]EvidenceCardRef(nil), request.EvidenceCardRefs...)
 	request.AssetIDs = normalizeIDs(request.AssetIDs)
@@ -321,6 +391,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 				return Run{}, ErrDependencyUnavailable
 			}
 		}
+		run.DroppedContext = droppedContext
 		return run, nil
 	}
 	var input Input
@@ -352,6 +423,11 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 	if err := s.validateEvidence(ctx, actor, projectID, request.ChapterID, input); err != nil {
 		return Run{}, err
 	}
+	// 写给模型的指令在这里定下来：旧路径用客户端的自由文本，动作路径用执行
+	// 计划渲染出来的动作指令。执行方不自己写动作指令。
+	if err := applyGenerationInstruction(&input, request, plan); err != nil {
+		return Run{}, err
+	}
 	run, err := s.Repository.CreateOrReplay(ctx, actor, projectID, key, requestHash, input)
 	if err != nil {
 		return Run{}, err
@@ -363,6 +439,7 @@ func (s *Service) Start(ctx context.Context, actor Actor, projectID, key string,
 			return Run{}, ErrDependencyUnavailable
 		}
 	}
+	run.DroppedContext = droppedContext
 	return run, nil
 }
 
@@ -424,6 +501,14 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	if !current {
 		return s.failBeforeModel(ctx, run, ErrStaleInput)
 	}
+	// 运行模式在模型调用之前就问一次：适配器报告不了模式时，候选不得冒充
+	// 真实证据。
+	runMode, modeErr := generationRunMode(s.Model.RunMode())
+	if modeErr != nil {
+		failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed,
+			RunError{Code: "invalid_run_mode", Message: "模型适配器报告了未知的运行模式。", Retryable: false})
+		return failed, failErr
+	}
 	draft, generateErr := s.Model.Generate(workCtx, input)
 	if generateErr != nil {
 		status := StatusFailed
@@ -457,6 +542,16 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 	if strings.TrimSpace(draft.BodyMarkdown) == "" {
 		failed, err := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed, RunError{Code: "empty_candidate", Message: "生成结果为空。", Retryable: false})
 		return failed, err
+	}
+	// 适配器在这一次调用里知道的模式更准：它知道这一次到底调了哪个 provider。
+	if draft.RunMode != "" {
+		reported, reportedErr := generationRunMode(string(draft.RunMode))
+		if reportedErr != nil {
+			failed, failErr := s.Repository.Fail(context.WithoutCancel(ctx), runID, run.ClaimToken, StatusFailed,
+				RunError{Code: "invalid_run_mode", Message: "模型适配器报告了未知的运行模式。", Retryable: false})
+			return failed, failErr
+		}
+		runMode = reported
 	}
 	selectedAssets := make(map[string]int, len(input.Basis.AssetVersions))
 	for _, asset := range input.Basis.AssetVersions {
@@ -555,10 +650,12 @@ func (s *Service) Execute(ctx context.Context, runID string) (Run, error) {
 		// 来源是 AI 生成。候选必须记下自己是怎么来的：采纳是一次显式确认，
 		// 确认载荷要能拿它和候选对上。动作与来源的词表归 writingaction 所有。
 		//
-		// #341 会把动作改成请求显式声明的那一个，并补上产出参数与 run_mode；
-		// 这里先不让「候选没记动作」成为常态。
-		WritingAction: writingaction.ActionGenerate,
+		// 动作路径下是请求显式声明的那一个；旧路径下是这个端点实现的那个动作。
+		WritingAction: candidateAction(input.Request),
 		Origin:        writingaction.OriginGenerated,
+		// 运行模式由模型适配器报告：没有 provider 的适配器报 mock，不冒充
+		// 真实证据（开发计划 A27）。
+		RunMode: runMode,
 	}
 	completed, err := s.Repository.Complete(workCtx, run.ID, run.ClaimToken, candidate)
 	if errors.Is(err, ErrGenerationCancelled) {
