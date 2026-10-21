@@ -1,7 +1,7 @@
 {
  "mode": "real",
  "note": "47.14 直连收口④：G2 路由 + 智能体上下文。G2 路由改由九个上下文窄口驱动（ResearchTask / ImportCandidate / EvidenceCard / ResearchClaim / SourceAnchor / AgentSession / ActionProposal / AgentContext / ChangeSetDraft）；智能体上下文的行动执行器改持 core.AgentActionApplication（七个原始操作形态）。同时删掉 G2Application——实测它是死代码：全仓只有它自己的声明与一条编译期证明提到它，G2 路由从来就没消费过这个 31 方法的口。注册期守卫逐口译回旧形态：迁移前是 service == nil 时 panic(\"lingdoc G2 routes require core service\")，现在是九门语言逐口 nilPort 检查，panic 文案逐字未动。口径变化：本票无对外变化——路由、信封、状态码、错误码、文案逐字不变，契约面 base/head 逐字段对照后 94 = 94、签名集完全相同、摘掉源文件行号后差异 0 条。",
- "head": "pending-commit",
+ "head": "c71eb5c",
  "base": "633ba34",
  "passed": [
   {
