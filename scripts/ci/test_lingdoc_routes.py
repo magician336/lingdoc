@@ -239,15 +239,22 @@ class LingDocRouteParity(unittest.TestCase):
         aggregate would have lost the shape check for those routes *silently* -
         the parity gate would still pass, with less coverage.
 
-        This test moves the call onto a bundle field and requires the shape
-        drift to still be caught.
+        The G2 surface now reaches the workspace through a bundle of narrow
+        context ports, so the real source already calls the read method on a
+        receiver that is neither ``service`` nor ``s``. This test pins that real
+        shape: the extraction must still find the method, and the shape drift
+        must still be caught. It then moves the call onto a third receiver name
+        to prove the extraction is not tied to any particular spelling.
         """
         file = "internal/lingdoc/workspace/g2_full_http.go"
         source = self.routes[file]
-        original = "return service.ListResearchTasks("
-        self.assertIn(original, source, "the G2 research task read route must call the aggregate today")
-        moved = dict(self.routes)
-        moved[file] = source.replace(original, "return ports.Research.ListResearchTasks(", 1)
+        original = "return ports.Research.ListResearchTasks("
+        self.assertIn(original, source,
+                      "the G2 research task read route must call the read method through a narrow port")
+        table = parity.read_routes({file: source})
+        extracted = [route.get("read_method") for route in table.values()]
+        self.assertIn("ListResearchTasks", extracted,
+                      "the read method must still be extracted from a narrow-port receiver")
 
         bad = copy.deepcopy(self.document)
         response = next(v for k, v in bad["paths"][self.path]["get"]["responses"].items() if k.startswith("2"))
@@ -260,6 +267,14 @@ class LingDocRouteParity(unittest.TestCase):
         data["items"] = item
         envelope["properties"]["data"] = data
         media["schema"] = envelope
+
+        # The real source: the shape drift must be caught as it stands.
+        with self.assertRaisesRegex(parity.ContractParityError, "response schema omits Go JSON fields"):
+            self.check(document=bad)
+
+        # A third receiver spelling: the extraction must not be tied to a name.
+        moved = dict(self.routes)
+        moved[file] = source.replace(original, "return somethingElse.ListResearchTasks(", 1)
         with self.assertRaisesRegex(parity.ContractParityError, "response schema omits Go JSON fields"):
             self.check(document=bad, routes=moved)
 

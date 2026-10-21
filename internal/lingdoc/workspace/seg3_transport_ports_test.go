@@ -91,8 +91,7 @@ func collectAggregateReferences(fset *token.FileSet, path string, file *ast.File
 	}
 
 	var visitType func(expr ast.Expr)
-	var visitFieldList func(list *ast.FieldList)
-	visitFieldList = func(list *ast.FieldList) {
+	visitFieldList := func(list *ast.FieldList) {
 		if list == nil {
 			return
 		}
