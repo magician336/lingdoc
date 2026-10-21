@@ -2,6 +2,8 @@
   "ticket": "G3 缺口收口-19：当前 head 的验收台两轮实跑落证（修复「缺口行被投影成 PASS」与 AC-G3-14 状态口径之后）",
   "issue": "https://github.com/magician336/lingdoc/issues/310",
   "head_at_evidence": "c69418d",
+  "superseded_by": "docs/08-本轮实施方案/G3-缺口收口-20-验证报告-20261021.json（head 3f82d04）",
+  "superseded_note": "本报告记录的是**四张承接票（#318 / #319 / #320 / #321）落地之前**的那一轮实跑。承接票落地后按新 head 重跑，落证见 20 号报告。",
   "head_note": "服务二进制由 c69418d 编译（-ldflags 注入 CommitID），前端验收台脚本取自同一 head 的工作区。本报告入库后只有证据文件本身发生变化，不再改动任何代码。",
   "mode": "real",
   "environment": {

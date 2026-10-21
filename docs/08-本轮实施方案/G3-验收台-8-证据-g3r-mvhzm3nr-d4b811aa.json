@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-10-21T08:41:56.903Z",
+  "generated_at": "2026-10-21T10:46:45.496Z",
   "ticket": "G3 验收台-8：证据导出与实现缺口标注",
-  "run_id": "g3r-mvhv5lgf-24974133",
-  "started_at": "2026-10-21T08:41:56.703Z",
+  "run_id": "g3r-mvhzm3nr-d4b811aa",
+  "started_at": "2026-10-21T10:46:45.255Z",
   "head": {
-    "commitId": "c69418d",
+    "commitId": "3f82d04",
     "buildTime": "unknown",
     "version": "unknown",
-    "probedAt": "2026-10-21T08:41:56.800Z",
+    "probedAt": "2026-10-21T10:46:45.357Z",
     "probePath": "/api/v1/version",
     "probeStatus": 401
   },
@@ -19,8 +19,8 @@
       "kind": "this_run",
       "label": "本次运行得出",
       "note": "本次运行真实调用得出的结论：绑定本次运行标识与后端 head。",
-      "run_id": "g3r-mvhv5lgf-24974133",
-      "head": "c69418d",
+      "run_id": "g3r-mvhzm3nr-d4b811aa",
+      "head": "3f82d04",
       "steps": 26
     },
     {
@@ -51,10 +51,10 @@
       "path": "/api/v1/version",
       "status": 401,
       "ok": false,
-      "durationMs": 32,
+      "durationMs": 30,
       "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
       "index": 1,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "登录",
@@ -62,15 +62,15 @@
       "path": "/api/v1/auth/login",
       "status": 200,
       "ok": true,
-      "durationMs": 60,
-      "conclusion": "登录成功（HTTP 200）：g3acceptance-68bf4e73192c@example.com",
+      "durationMs": 66,
+      "conclusion": "登录成功（HTTP 200）：g3acceptance-50fa85158e41@example.com",
       "details": {
-        "user_id": "6f1359e3-ee0b-4862-a5ab-d2dbad8d069f",
-        "email": "g3acceptance-68bf4e73192c@example.com",
+        "user_id": "5bb09947-3e9c-470f-b582-027578a4d7b0",
+        "email": "g3acceptance-50fa85158e41@example.com",
         "tenant_id": 1
       },
       "index": 2,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "读取当前身份",
@@ -81,7 +81,7 @@
       "durationMs": 2,
       "conclusion": "令牌有效（HTTP 200）",
       "index": 3,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "读取后端 head",
@@ -92,7 +92,7 @@
       "durationMs": 2,
       "conclusion": "读取后端 head 成功（HTTP 200）",
       "index": 4,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "建项",
@@ -100,11 +100,11 @@
       "path": "/api/v1/lingdoc/projects",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-create-project",
-      "durationMs": 8,
-      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvhv5lgf-24974133）",
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-create-project",
+      "durationMs": 7,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvhzm3nr-d4b811aa）",
       "details": {
-        "project_id": "586f19b3-9a08-4fae-9d79-f5d4f31e4db0",
+        "project_id": "85cddbb2-89f9-465e-863a-0df68d4f05ea",
         "status": "draft",
         "project_version": 1,
         "spec_revision": 0,
@@ -112,16 +112,16 @@
         "template_version": "1"
       },
       "index": 5,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "写规格",
       "method": "PUT",
-      "path": "/api/v1/lingdoc/projects/586f19b3-9a08-4fae-9d79-f5d4f31e4db0/spec",
+      "path": "/api/v1/lingdoc/projects/85cddbb2-89f9-465e-863a-0df68d4f05ea/spec",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-save-spec",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-save-spec",
+      "durationMs": 8,
       "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
       "details": {
         "spec_revision": 1,
@@ -132,50 +132,50 @@
         ]
       },
       "index": 6,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "登记立项阅读",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/586f19b3-9a08-4fae-9d79-f5d4f31e4db0/activation-read",
+      "path": "/api/v1/lingdoc/projects/85cddbb2-89f9-465e-863a-0df68d4f05ea/activation-read",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-activation-read",
-      "durationMs": 2,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-activation-read",
+      "durationMs": 4,
       "conclusion": "立项阅读已登记（HTTP 201）",
       "details": {
-        "activation_read_id": "02e5ddc2-8cdc-42f5-8832-214ccd3c6ea8",
+        "activation_read_id": "38210e74-8421-468a-ae26-96f20fedc5ba",
         "project_version": 2,
         "spec_revision": 1
       },
       "index": 7,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "激活",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/586f19b3-9a08-4fae-9d79-f5d4f31e4db0/activate",
+      "path": "/api/v1/lingdoc/projects/85cddbb2-89f9-465e-863a-0df68d4f05ea/activate",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-activate",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-activate",
+      "durationMs": 10,
       "conclusion": "项目已激活（HTTP 200）",
       "details": {
         "status": "active",
         "project_version": 3,
         "current_context_revision": 1,
-        "baseline_confirmation_id": "699ffd13-2292-4549-b0eb-d9ca029ab3ae"
+        "baseline_confirmation_id": "00969ae7-7bad-403a-9490-bebe77007a79"
       },
       "index": 8,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "读章节列表",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/586f19b3-9a08-4fae-9d79-f5d4f31e4db0/chapters",
+      "path": "/api/v1/lingdoc/projects/85cddbb2-89f9-465e-863a-0df68d4f05ea/chapters",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 3,
       "conclusion": "章节列表已读回（HTTP 200）",
       "details": {
         "chapter_count": 2,
@@ -185,7 +185,7 @@
         ]
       },
       "index": 9,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "建项",
@@ -193,11 +193,11 @@
       "path": "/api/v1/lingdoc/projects",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-g3-faultcreate-project",
-      "durationMs": 4,
-      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（fault · 运行 g3r-mvhv5lgf-24974133）",
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-g3-faultcreate-project",
+      "durationMs": 5,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（fault · 运行 g3r-mvhzm3nr-d4b811aa）",
       "details": {
-        "project_id": "8423b15a-c4ab-4eed-8c0e-62290e6a248d",
+        "project_id": "c1fb87e1-e3e1-4edb-9de2-15863ab078ab",
         "status": "draft",
         "project_version": 1,
         "spec_revision": 0,
@@ -205,16 +205,16 @@
         "template_version": "1"
       },
       "index": 10,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "写规格",
       "method": "PUT",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/spec",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/spec",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-g3-faultsave-spec",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-g3-faultsave-spec",
+      "durationMs": 7,
       "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
       "details": {
         "spec_revision": 1,
@@ -225,47 +225,47 @@
         ]
       },
       "index": 11,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "登记立项阅读",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/activation-read",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/activation-read",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-g3-faultactivation-read",
-      "durationMs": 4,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-g3-faultactivation-read",
+      "durationMs": 3,
       "conclusion": "立项阅读已登记（HTTP 201）",
       "details": {
-        "activation_read_id": "67d47b82-40c1-4b1d-82be-d5cf145c1684",
+        "activation_read_id": "115b5a76-e16d-465f-98bd-024df7e2a077",
         "project_version": 2,
         "spec_revision": 1
       },
       "index": 12,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "激活",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/activate",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/activate",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-g3-faultactivate",
-      "durationMs": 6,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-g3-faultactivate",
+      "durationMs": 9,
       "conclusion": "项目已激活（HTTP 200）",
       "details": {
         "status": "active",
         "project_version": 3,
         "current_context_revision": 1,
-        "baseline_confirmation_id": "c7ac119d-2f58-4bf4-828f-a7c50606a248"
+        "baseline_confirmation_id": "f065b683-a42b-44c1-bbaa-2bbae42591f9"
       },
       "index": 13,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "读章节列表",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/chapters",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/chapters",
       "status": 200,
       "ok": true,
       "durationMs": 2,
@@ -278,64 +278,64 @@
         ]
       },
       "index": 14,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "写章节正文（fault）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/chapters/e68cfa05-7115-4c61-8c20-02d737991c98/versions",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/chapters/8cd854bd-9ad1-465b-910a-4eb27ab78d67/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-g3-fault-chapter-body",
-      "durationMs": 4,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-g3-fault-chapter-body",
+      "durationMs": 7,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
       "details": {
-        "chapter_id": "e68cfa05-7115-4c61-8c20-02d737991c98",
-        "current_version_id": "72a3c845-4c68-424d-8e1d-d2f7051c39d1",
+        "chapter_id": "8cd854bd-9ad1-465b-910a-4eb27ab78d67",
+        "current_version_id": "4e35839a-17c0-4df7-bd37-8ee76199da07",
         "confirmation_valid": false
       },
       "index": 15,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读项目（前）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 5,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "8423b15a-c4ab-4eed-8c0e-62290e6a248d",
+        "project_id": "c1fb87e1-e3e1-4edb-9de2-15863ab078ab",
         "status": "active",
         "project_version": 4,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 16,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读影响任务（前）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 1,
+      "durationMs": 3,
       "conclusion": "影响任务集合已读回（HTTP 200）",
       "details": {
         "task_count": 0
       },
       "index": 17,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读审计（前）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/audit",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/audit",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 3,
       "conclusion": "业务审计事件已读回（HTTP 200）",
       "details": {
         "event_count": 13,
@@ -356,117 +356,117 @@
         ]
       },
       "index": 18,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-建变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/change-sets",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/change-sets",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-fault-change-set",
-      "durationMs": 11,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-fault-change-set",
+      "durationMs": 12,
       "conclusion": "变更集已创建（HTTP 201）：G3 验收台-11：观测受控故障注入是否装配（应用原子性）",
       "details": {
-        "change_set_id": "647e982b-8fc3-4f81-a83e-085b7da0462d",
+        "change_set_id": "74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
         "status": "assessed",
         "base_context_revision": 1,
         "base_spec_revision": 1,
         "affected_chapter_ids": [
-          "e68cfa05-7115-4c61-8c20-02d737991c98",
-          "1b55c687-1190-4159-9265-f3e39d646155"
+          "8cd854bd-9ad1-465b-910a-4eb27ab78d67",
+          "6a90d9ca-6017-4ba3-9910-8636701db7af"
         ]
       },
       "index": 19,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "评估变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/change-sets/647e982b-8fc3-4f81-a83e-085b7da0462d/assess",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/change-sets/74de5bb0-2ae2-4cb1-9e77-bf2358736e9e/assess",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-assess-647e982b-8fc3-4f81-a83e-085b7da0462d",
-      "durationMs": 10,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-assess-74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
+      "durationMs": 13,
       "conclusion": "变更集已评估（HTTP 200）",
       "details": {
-        "change_set_id": "647e982b-8fc3-4f81-a83e-085b7da0462d",
+        "change_set_id": "74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
         "status": "assessed"
       },
       "index": 20,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读影响评估",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/change-sets/647e982b-8fc3-4f81-a83e-085b7da0462d/impact-assessment",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/change-sets/74de5bb0-2ae2-4cb1-9e77-bf2358736e9e/impact-assessment",
       "status": 200,
       "ok": true,
       "durationMs": 2,
       "conclusion": "影响评估已读回（HTTP 200）",
       "details": {
-        "change_set_id": "647e982b-8fc3-4f81-a83e-085b7da0462d",
+        "change_set_id": "74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
         "context_revision": 1,
         "object_count": 2,
         "impact_count": 1
       },
       "index": 21,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-应用变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/change-sets/647e982b-8fc3-4f81-a83e-085b7da0462d/apply",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/change-sets/74de5bb0-2ae2-4cb1-9e77-bf2358736e9e/apply",
       "status": 503,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvhv5lgf-24974133-fault-apply-647e982b-8fc3-4f81-a83e-085b7da0462d",
-      "durationMs": 8,
+      "idempotencyKey": "g3-g3r-mvhzm3nr-d4b811aa-fault-apply-74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
+      "durationMs": 15,
       "conclusion": "应用变更集已完成（HTTP 503）：注入是组合根夹具，命中时服务端返回 503 + injected_fault",
       "details": {
         "error_code": "injected_fault"
       },
       "index": 22,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读项目（后）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 6,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "8423b15a-c4ab-4eed-8c0e-62290e6a248d",
+        "project_id": "c1fb87e1-e3e1-4edb-9de2-15863ab078ab",
         "status": "active",
         "project_version": 4,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 23,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读影响任务（后）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 1,
+      "durationMs": 2,
       "conclusion": "影响任务集合已读回（HTTP 200）",
       "details": {
         "task_count": 0
       },
       "index": 24,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读审计（后）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/audit",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/audit",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 3,
       "conclusion": "业务审计事件已读回（HTTP 200）",
       "details": {
         "event_count": 20,
@@ -494,25 +494,25 @@
         ]
       },
       "index": 25,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     },
     {
       "name": "故障注入-读回变更集",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/8423b15a-c4ab-4eed-8c0e-62290e6a248d/change-sets/647e982b-8fc3-4f81-a83e-085b7da0462d",
+      "path": "/api/v1/lingdoc/projects/c1fb87e1-e3e1-4edb-9de2-15863ab078ab/change-sets/74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 4,
       "conclusion": "变更集已读回（HTTP 200）",
       "details": {
-        "change_set_id": "647e982b-8fc3-4f81-a83e-085b7da0462d",
+        "change_set_id": "74de5bb0-2ae2-4cb1-9e77-bf2358736e9e",
         "status": "assessed",
         "stale_reason": "",
         "reassessed_from_id": "",
         "reverses_change_set_id": ""
       },
       "index": 26,
-      "runId": "g3r-mvhv5lgf-24974133"
+      "runId": "g3r-mvhzm3nr-d4b811aa"
     }
   ],
   "ac_rows": [
@@ -679,7 +679,7 @@
           ],
           "status": "PASS",
           "model_dependent": false,
-          "run_id": "g3r-mvhv5lgf-24974133"
+          "run_id": "g3r-mvhzm3nr-d4b811aa"
         }
       ],
       "stale": false
@@ -751,7 +751,7 @@
       "id": "AC-G3-08",
       "name": "RouteNode 必需项",
       "criterion": "模板声明 RouteNode.R7 为必需。R7 缺失、待复核或版本落后时，C 产生 blocking ValidationIssue；即使其他任务已完成，revision 也不能 STABILIZED 或 READY。",
-      "status": "BLOCKED",
+      "status": "PASS (follow-up)",
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
@@ -848,7 +848,7 @@
       "id": "AC-G3-14",
       "name": "G3 影响助手",
       "criterion": "用户用自然语言提出修改。助手生成 ChangeSet 草稿，并用“确定受影响”和“可能受影响”两组说明解释原因；用户确认后才进入正式评估。助手不能直接应用变更、关闭任务或放行导出。",
-      "status": "BLOCKED",
+      "status": "WARNING",
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
@@ -865,7 +865,7 @@
       "id": "AC-G3-15",
       "name": "AI 批量导入依赖",
       "criterion": "用户选择“研究条件、证据卡和第 2–4 章”作为范围。AI 提出若干候选依赖，并显示对象版本、依据片段和建议理由；用户确认其中一部分、修改一部分、拒绝一部分。只有确认的关系进入正式依赖图，拒绝记录不会在同一版本中反复推荐。",
-      "status": "BLOCKED",
+      "status": "PASS (follow-up)",
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
@@ -882,7 +882,7 @@
       "id": "AC-G3-16",
       "name": "路线图版本恢复",
       "criterion": "用户编辑未冻结路线图后取消编辑。系统恢复到上一个 RouteNode/RouteEdge 版本，关联任务和章节引用不指向被取消的临时版本。",
-      "status": "BLOCKED",
+      "status": "PASS (follow-up)",
       "source": "not_judged",
       "source_label": "尚未判定",
       "decided": false,
@@ -912,7 +912,7 @@
       ],
       "status": "PASS",
       "model_dependent": false,
-      "run_id": "g3r-mvhv5lgf-24974133"
+      "run_id": "g3r-mvhzm3nr-d4b811aa"
     }
   ],
   "gaps": [
@@ -951,11 +951,11 @@
         "start": 378,
         "end": 380
       },
-      "unblockCondition": "模板侧声明一个 RouteNode 类型的必需节点（R7），并在当前 head 重跑实跑落证；`AC-G3-08` 才能离开 `NOT RUN`。",
+      "unblockCondition": "本轮已达成：模板侧声明了必需节点（#314），台面造前置的 409 也修掉了（#318），「缺失」那一种前置由服务端侧给 blocking（#319）。`AC-G3-08` 彻底收口要等缺口清单 #246 关闭。",
       "issue": 246,
       "ticket": 250,
-      "rowStatus": "BLOCKED",
-      "fact": "路线图版本化编辑会话**已实现**（提案不进冻结路线图、提交冻结新版本并产生复核任务、取消恢复基线并释放临时引用、版本序列与比较、三种必需节点前置给出 blocking ValidationIssue）。落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。原先「只有只读端点」的旧事实已作废；本轮实跑 `NOT RUN`：演示模板不声明任何 RouteNode，基线路线图为空；台面自造前置（新增节点 → 变更集 → 应用）后，后续会话撞 409「基线已漂移」。落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。",
+      "rowStatus": "PASS (follow-up)",
+      "fact": "路线图版本化编辑会话**已实现**（提案不进冻结路线图、提交冻结新版本并产生复核任务、取消恢复基线并释放临时引用、版本序列与比较、三种必需节点前置给出 blocking ValidationIssue）。落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。原先「只有只读端点」的旧事实已作废；原先「本轮实跑 NOT RUN：演示模板不声明任何 RouteNode」与「台面自造前置后撞 409『基线已漂移』」两条旧事实已作废：模板侧新增不可变 v2 声明 `route-r7` 为必需节点（#314），台面建会话改用**建会话那一刻**的上下文修订，不再用链首的旧快照（#318）。**本轮实跑判定成立**：台面造出「待复核」与「版本落后」两种前置，稳定化给出 required_route_not_current 阻断，项目没有进入 STABILIZED / READY；「缺失」那一种前置由服务端侧保证（#319）。落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。",
       "implemented": true,
       "evidence": "docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json",
       "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:378-380"
@@ -973,11 +973,11 @@
         "start": 410,
         "end": 412
       },
-      "unblockCondition": "同 G3-GAP-02（模板侧声明必需 RouteNode），并在当前 head 重跑实跑落证；`AC-G3-16` 才能离开 `BLOCKED`。",
+      "unblockCondition": "本轮已达成（同 G3-GAP-02：模板侧声明必需 RouteNode + 台面 409 修掉 + 当前 head 重跑落证）。`AC-G3-16` 彻底收口要等缺口清单 #246 关闭。",
       "issue": 246,
       "ticket": 250,
-      "rowStatus": "BLOCKED",
-      "fact": "RouteNode 写入与「取消未冻结编辑」**已实现**（同一项目只允许一个未冻结会话；取消恢复基线并释放临时版本引用）。落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。原先「没有写入端点」的旧事实已作废；本轮实跑 `BLOCKED`：基线里没有可编辑的冻结节点（与 G3-GAP-02 同因）。落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。",
+      "rowStatus": "PASS (follow-up)",
+      "fact": "RouteNode 写入与「取消未冻结编辑」**已实现**（同一项目只允许一个未冻结会话；取消恢复基线并释放临时版本引用）。落证：`docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json`（#250）。原先「没有写入端点」的旧事实已作废；原先「本轮实跑 BLOCKED：基线里没有可编辑的冻结节点」这条旧事实已作废（与 G3-GAP-02 同因，同一批修复解掉）。**本轮实跑判定成立**：取消未冻结编辑后冻结基线版本回到取消前的版本，被取消会话占用的临时版本不出现在冻结版本序列里。落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。",
       "implemented": true,
       "evidence": "docs/08-本轮实施方案/G3-缺口收口-1-验证报告-20261020.json",
       "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:410-412"
@@ -995,11 +995,11 @@
         "start": 402,
         "end": 404
       },
-      "unblockCondition": "提供可用的模型凭据跑出一条带两组说明的助手草稿，并在当前 head 重跑实跑落证；`AC-G3-14` 才能离开 `BLOCKED`。",
+      "unblockCondition": "本轮已达成：模型凭据从环境变量读，台面自己跑真实模型轮次并读回两组说明（#320）。`AC-G3-14` 彻底收口要等缺口清单 #246 关闭。",
       "issue": 246,
       "ticket": 251,
-      "rowStatus": "BLOCKED",
-      "fact": "助手两组说明**已实现**（助手侧用 `definite_affected` / `possible_affected`，服务端从已落库的助手 turn 重新推导，每条说明必须同时有对象引用、原因与依据）。落证：`docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json`（#251）。按 `GLOSSARY.md`：助手的影响说明只是**助手的解读**，始终随草稿存在，须经**人工确认**后才进入正式评估。工作台 `ImpactOpsPanel.vue` 的分组是**影响解析结果**的分组（`impacts[].certainty`），**不是** AC-G3-14 要求的**助手草稿解释分组**，两者不可互替。本轮实跑 `NOT RUN`：没有可读回的助手草稿（台面不自己造模型轮次）。落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。**行状态按 #315 的完成线保持 `BLOCKED`**：该行要等一条真实模型草稿（#320）在当前 head 实跑判定，才能离开 `BLOCKED`；在此之前不判 `PASS`。模型边界已放宽（#315：缺两组说明时不再整条拒，而是如实标注「缺说明」），落证：`docs/08-本轮实施方案/G3-缺口收口-17-验证报告-20261021.json`。",
+      "rowStatus": "WARNING",
+      "fact": "助手两组说明**已实现**（助手侧用 `definite_affected` / `possible_affected`，服务端从已落库的助手 turn 重新推导，每条说明必须同时有对象引用、原因与依据）。落证：`docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json`（#251）。按 `GLOSSARY.md`：助手的影响说明只是**助手的解读**，始终随草稿存在，须经**人工确认**后才进入正式评估。工作台 `ImpactOpsPanel.vue` 的分组是**影响解析结果**的分组（`impacts[].certainty`），**不是** AC-G3-14 要求的**助手草稿解释分组**，两者不可互替。原先「本轮实跑 NOT RUN：没有可读回的助手草稿」与「行状态按 #315 的完成线保持 BLOCKED」两条旧事实已作废。模型边界已放宽（#315：缺两组说明时不再整条拒，而是如实标注「缺说明」），落证：`docs/08-本轮实施方案/G3-缺口收口-17-验证报告-20261021.json`。**本轮实跑判定成立**（#320）：台面走「自然语言 → 真实模型轮次 → 变更提案 → 人工确认落草稿 → 读回两组说明 → 进入正式评估」，读回「确定受影响」1 条，每条带可追溯依据。结论依赖真实模型（非确定性），行状态记 `WARNING`，不写 `PASS`。落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。",
       "implemented": true,
       "evidence": "docs/08-本轮实施方案/G3-缺口收口-8-验证报告-20261020.json",
       "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:402-404"
@@ -1017,11 +1017,11 @@
         "start": 406,
         "end": 408
       },
-      "unblockCondition": "在当前 head 重跑实跑，拿到三态决策（确认 / 修改 / 拒绝）、同版本不再重提、确认时版本复检的完整证据；`AC-G3-15` 才能离开 `BLOCKED`。",
+      "unblockCondition": "本轮已达成：在当前 head 重跑实跑，拿到三态决策（确认 / 修改 / 拒绝）、同版本不再重提、确认时版本复检的完整证据。`AC-G3-15` 彻底收口要等缺口清单 #246 关闭。",
       "issue": 246,
       "ticket": 252,
-      "rowStatus": "BLOCKED",
-      "fact": "依赖候选批量提出**已实现**（一次提出若干候选依赖，候选与已确认边**分表存放**，候选带对象版本、依据片段与建议理由，可与既有 `decision` 三态对接）。落证：`docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json`（#252）。本轮实跑 `BLOCKED`：候选的 source 必须是变更集 roots 里的 ProjectSpec ref、target 必须是本项目的章节版本（跨项目引用会被 404 拒掉），且三条链需各建各的项目（否则撞 409「基线已漂移」）；这些已修，未在当前 head 重跑出绿。落证：`docs/08-本轮实施方案/G3-缺口收口-13-验证报告-20261021.json`。",
+      "rowStatus": "PASS (follow-up)",
+      "fact": "依赖候选批量提出**已实现**（一次提出若干候选依赖，候选与已确认边**分表存放**，候选带对象版本、依据片段与建议理由，可与既有 `decision` 三态对接）。落证：`docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json`（#252）。原先「本轮实跑 BLOCKED：候选的 source / target 约束已修但未在当前 head 重跑出绿」这条旧事实已作废。**本轮实跑判定成立**（#321）：三态齐备（确认 / 修改 / 拒绝），拒绝不产生边、同版本重投被抑制（`rejected_in_same_version`）、确认时版本复检被服务端按 409 `dependency_candidate_requires_reevaluation` 拒掉。落证：`docs/08-本轮实施方案/G3-缺口收口-19-验证报告-20261021.json`。",
       "implemented": true,
       "evidence": "docs/08-本轮实施方案/G3-缺口收口-3-验证报告-20261020.json",
       "spec_anchor_label": "docs/06-灵档产品开发规划/beta-gap-development-plans/G3-pcc-change-coordination.md:406-408"
@@ -1162,6 +1162,6 @@
     }
   ],
   "evidence_dir": "docs/08-本轮实施方案",
-  "evidence_file": "G3-验收台-8-证据-g3r-mvhv5lgf-24974133.json",
+  "evidence_file": "G3-验收台-8-证据-g3r-mvhzm3nr-d4b811aa.json",
   "evidence_file_note": "证据落 docs/08-本轮实施方案/ 目录，**不写进 Issue**（docs/agents/issue-tracker.md:54-56）。"
 }
