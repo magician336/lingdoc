@@ -1,13 +1,13 @@
 {
-  "generated_at": "2026-10-21T14:50:18.379Z",
+  "generated_at": "2026-10-21T15:01:30.490Z",
   "ticket": "G3 验收台-8：证据导出与实现缺口标注",
-  "run_id": "g3r-mvi8bb2i-7afec66a",
-  "started_at": "2026-10-21T14:50:18.186Z",
+  "run_id": "g3r-mvi8ppos-aa99788f",
+  "started_at": "2026-10-21T15:01:30.316Z",
   "head": {
-    "commitId": "5ac48870",
+    "commitId": "9641707b",
     "buildTime": "unknown",
     "version": "unknown",
-    "probedAt": "2026-10-21T14:50:18.272Z",
+    "probedAt": "2026-10-21T15:01:30.397Z",
     "probePath": "/api/v1/version",
     "probeStatus": 401
   },
@@ -19,8 +19,8 @@
       "kind": "this_run",
       "label": "本次运行得出",
       "note": "本次运行真实调用得出的结论：绑定本次运行标识与后端 head。",
-      "run_id": "g3r-mvi8bb2i-7afec66a",
-      "head": "5ac48870",
+      "run_id": "g3r-mvi8ppos-aa99788f",
+      "head": "9641707b",
       "steps": 26
     },
     {
@@ -51,10 +51,10 @@
       "path": "/api/v1/version",
       "status": 401,
       "ok": false,
-      "durationMs": 28,
+      "durationMs": 27,
       "conclusion": "存活探针返回 401（未带凭据的 401 表示服务存活）",
       "index": 1,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "登录",
@@ -62,15 +62,15 @@
       "path": "/api/v1/auth/login",
       "status": 200,
       "ok": true,
-      "durationMs": 54,
-      "conclusion": "登录成功（HTTP 200）：g3acceptance-58c2fee4b0ee@example.com",
+      "durationMs": 50,
+      "conclusion": "登录成功（HTTP 200）：g3acceptance-9b53dbbcc177@example.com",
       "details": {
-        "user_id": "b827ae27-0cc4-4fd0-82c6-7ea1c9b5c420",
-        "email": "g3acceptance-58c2fee4b0ee@example.com",
+        "user_id": "95bee1d3-0a25-4799-82aa-3d22d0781c4e",
+        "email": "g3acceptance-9b53dbbcc177@example.com",
         "tenant_id": 1
       },
       "index": 2,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "读取当前身份",
@@ -81,7 +81,7 @@
       "durationMs": 2,
       "conclusion": "令牌有效（HTTP 200）",
       "index": 3,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "读取后端 head",
@@ -89,10 +89,10 @@
       "path": "/api/v1/system/info",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 1,
       "conclusion": "读取后端 head 成功（HTTP 200）",
       "index": 4,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "建项",
@@ -100,11 +100,11 @@
       "path": "/api/v1/lingdoc/projects",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-create-project",
-      "durationMs": 6,
-      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvi8bb2i-7afec66a）",
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-create-project",
+      "durationMs": 5,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（运行 g3r-mvi8ppos-aa99788f）",
       "details": {
-        "project_id": "a82603e7-78d6-4dff-8987-413931bfddb6",
+        "project_id": "a9a4ab7b-9007-43fb-a29a-226faf736579",
         "status": "draft",
         "project_version": 1,
         "spec_revision": 0,
@@ -112,16 +112,16 @@
         "template_version": "1"
       },
       "index": 5,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "写规格",
       "method": "PUT",
-      "path": "/api/v1/lingdoc/projects/a82603e7-78d6-4dff-8987-413931bfddb6/spec",
+      "path": "/api/v1/lingdoc/projects/a9a4ab7b-9007-43fb-a29a-226faf736579/spec",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-save-spec",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-save-spec",
+      "durationMs": 6,
       "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
       "details": {
         "spec_revision": 1,
@@ -132,47 +132,47 @@
         ]
       },
       "index": 6,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "登记立项阅读",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/a82603e7-78d6-4dff-8987-413931bfddb6/activation-read",
+      "path": "/api/v1/lingdoc/projects/a9a4ab7b-9007-43fb-a29a-226faf736579/activation-read",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-activation-read",
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-activation-read",
       "durationMs": 2,
       "conclusion": "立项阅读已登记（HTTP 201）",
       "details": {
-        "activation_read_id": "d9796f94-561e-4c74-8d0c-26dcbdd2d0c9",
+        "activation_read_id": "30f401b6-d282-45a9-83ae-dde3c39456bd",
         "project_version": 2,
         "spec_revision": 1
       },
       "index": 7,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "激活",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/a82603e7-78d6-4dff-8987-413931bfddb6/activate",
+      "path": "/api/v1/lingdoc/projects/a9a4ab7b-9007-43fb-a29a-226faf736579/activate",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-activate",
-      "durationMs": 7,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-activate",
+      "durationMs": 8,
       "conclusion": "项目已激活（HTTP 200）",
       "details": {
         "status": "active",
         "project_version": 3,
         "current_context_revision": 1,
-        "baseline_confirmation_id": "fc1a5919-0f1b-4697-962f-1d19602bd6cb"
+        "baseline_confirmation_id": "81ffbebe-b2de-45ed-8d5b-541265b50957"
       },
       "index": 8,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "读章节列表",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/a82603e7-78d6-4dff-8987-413931bfddb6/chapters",
+      "path": "/api/v1/lingdoc/projects/a9a4ab7b-9007-43fb-a29a-226faf736579/chapters",
       "status": 200,
       "ok": true,
       "durationMs": 2,
@@ -185,7 +185,7 @@
         ]
       },
       "index": 9,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "建项",
@@ -193,11 +193,11 @@
       "path": "/api/v1/lingdoc/projects",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-g3-faultcreate-project",
-      "durationMs": 5,
-      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（fault · 运行 g3r-mvi8bb2i-7afec66a）",
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-g3-faultcreate-project",
+      "durationMs": 4,
+      "conclusion": "项目已建立（HTTP 201）：G3 验收台演示项目（fault · 运行 g3r-mvi8ppos-aa99788f）",
       "details": {
-        "project_id": "7413c863-a54c-44ad-bb52-cc2fc0aa80b1",
+        "project_id": "f4ec545b-0f3e-4482-90d8-80fff4fdc15b",
         "status": "draft",
         "project_version": 1,
         "spec_revision": 0,
@@ -205,16 +205,16 @@
         "template_version": "1"
       },
       "index": 10,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "写规格",
       "method": "PUT",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/spec",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/spec",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-g3-faultsave-spec",
-      "durationMs": 5,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-g3-faultsave-spec",
+      "durationMs": 4,
       "conclusion": "规格已写入（HTTP 200）：research_subject、research_goal",
       "details": {
         "spec_revision": 1,
@@ -225,47 +225,47 @@
         ]
       },
       "index": 11,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "登记立项阅读",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/activation-read",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/activation-read",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-g3-faultactivation-read",
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-g3-faultactivation-read",
       "durationMs": 2,
       "conclusion": "立项阅读已登记（HTTP 201）",
       "details": {
-        "activation_read_id": "7e3454ed-1e88-4fe9-87f7-ba90dfc5518b",
+        "activation_read_id": "aac411be-c8a2-4673-b3f6-f237be6b8be1",
         "project_version": 2,
         "spec_revision": 1
       },
       "index": 12,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "激活",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/activate",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/activate",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-g3-faultactivate",
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-g3-faultactivate",
       "durationMs": 6,
       "conclusion": "项目已激活（HTTP 200）",
       "details": {
         "status": "active",
         "project_version": 3,
         "current_context_revision": 1,
-        "baseline_confirmation_id": "29a0c33b-3248-4db7-bef7-5022e54bcff5"
+        "baseline_confirmation_id": "efc934f6-37ba-4177-8db2-2460d73c2403"
       },
       "index": 13,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "读章节列表",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/chapters",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/chapters",
       "status": 200,
       "ok": true,
       "durationMs": 2,
@@ -278,47 +278,47 @@
         ]
       },
       "index": 14,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "写章节正文（fault）",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/chapters/79ed8aa8-c2cc-436f-8b66-2e92fdda18ad/versions",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/chapters/3e928682-0c91-46a1-870f-eaf284d4b44c/versions",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-g3-fault-chapter-body",
-      "durationMs": 5,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-g3-fault-chapter-body",
+      "durationMs": 4,
       "conclusion": "章节正文已保存（HTTP 201）：规格修订 1",
       "details": {
-        "chapter_id": "79ed8aa8-c2cc-436f-8b66-2e92fdda18ad",
-        "current_version_id": "2c88690b-8a3e-40c6-a225-1fc2a14fc315",
+        "chapter_id": "3e928682-0c91-46a1-870f-eaf284d4b44c",
+        "current_version_id": "5551750d-a38a-4097-80e9-493da7009e2e",
         "confirmation_valid": false
       },
       "index": 15,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读项目（前）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "7413c863-a54c-44ad-bb52-cc2fc0aa80b1",
+        "project_id": "f4ec545b-0f3e-4482-90d8-80fff4fdc15b",
         "status": "active",
         "project_version": 4,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 16,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读影响任务（前）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/impact-tasks",
       "status": 200,
       "ok": true,
       "durationMs": 2,
@@ -327,12 +327,12 @@
         "task_count": 0
       },
       "index": 17,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读审计（前）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/audit",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/audit",
       "status": 200,
       "ok": true,
       "durationMs": 2,
@@ -356,114 +356,114 @@
         ]
       },
       "index": 18,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-建变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/change-sets",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/change-sets",
       "status": 201,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-fault-change-set",
-      "durationMs": 10,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-fault-change-set",
+      "durationMs": 8,
       "conclusion": "变更集已创建（HTTP 201）：G3 验收台-11：观测受控故障注入是否装配（应用原子性）",
       "details": {
-        "change_set_id": "0bf6caac-82c7-4bb3-b085-8b13da55aa61",
+        "change_set_id": "86fb29d8-499f-47f5-9a6b-f61acba4b167",
         "status": "assessed",
         "base_context_revision": 1,
         "base_spec_revision": 1,
         "affected_chapter_ids": [
-          "79ed8aa8-c2cc-436f-8b66-2e92fdda18ad",
-          "a7c060c2-4507-4217-a233-382c418ad81f"
+          "3e928682-0c91-46a1-870f-eaf284d4b44c",
+          "c5153ac8-e544-4dff-bcdd-c508f38d845e"
         ]
       },
       "index": 19,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "评估变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/change-sets/0bf6caac-82c7-4bb3-b085-8b13da55aa61/assess",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/change-sets/86fb29d8-499f-47f5-9a6b-f61acba4b167/assess",
       "status": 200,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-assess-0bf6caac-82c7-4bb3-b085-8b13da55aa61",
-      "durationMs": 11,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-assess-86fb29d8-499f-47f5-9a6b-f61acba4b167",
+      "durationMs": 10,
       "conclusion": "变更集已评估（HTTP 200）",
       "details": {
-        "change_set_id": "0bf6caac-82c7-4bb3-b085-8b13da55aa61",
+        "change_set_id": "86fb29d8-499f-47f5-9a6b-f61acba4b167",
         "status": "assessed"
       },
       "index": 20,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读影响评估",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/change-sets/0bf6caac-82c7-4bb3-b085-8b13da55aa61/impact-assessment",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/change-sets/86fb29d8-499f-47f5-9a6b-f61acba4b167/impact-assessment",
       "status": 200,
       "ok": true,
       "durationMs": 2,
       "conclusion": "影响评估已读回（HTTP 200）",
       "details": {
-        "change_set_id": "0bf6caac-82c7-4bb3-b085-8b13da55aa61",
+        "change_set_id": "86fb29d8-499f-47f5-9a6b-f61acba4b167",
         "context_revision": 1,
         "object_count": 2,
         "impact_count": 1
       },
       "index": 21,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-应用变更集",
       "method": "POST",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/change-sets/0bf6caac-82c7-4bb3-b085-8b13da55aa61/apply",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/change-sets/86fb29d8-499f-47f5-9a6b-f61acba4b167/apply",
       "status": 503,
       "ok": true,
-      "idempotencyKey": "g3-g3r-mvi8bb2i-7afec66a-fault-apply-0bf6caac-82c7-4bb3-b085-8b13da55aa61",
-      "durationMs": 9,
+      "idempotencyKey": "g3-g3r-mvi8ppos-aa99788f-fault-apply-86fb29d8-499f-47f5-9a6b-f61acba4b167",
+      "durationMs": 8,
       "conclusion": "应用变更集已完成（HTTP 503）：注入是组合根夹具，命中时服务端返回 503 + injected_fault",
       "details": {
         "error_code": "injected_fault"
       },
       "index": 22,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读项目（后）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b",
       "status": 200,
       "ok": true,
-      "durationMs": 3,
+      "durationMs": 2,
       "conclusion": "项目状态已读回（HTTP 200）",
       "details": {
-        "project_id": "7413c863-a54c-44ad-bb52-cc2fc0aa80b1",
+        "project_id": "f4ec545b-0f3e-4482-90d8-80fff4fdc15b",
         "status": "active",
         "project_version": 4,
         "spec_revision": 1,
         "current_context_revision": 1
       },
       "index": 23,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读影响任务（后）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/impact-tasks",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/impact-tasks",
       "status": 200,
       "ok": true,
-      "durationMs": 2,
+      "durationMs": 1,
       "conclusion": "影响任务集合已读回（HTTP 200）",
       "details": {
         "task_count": 0
       },
       "index": 24,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读审计（后）",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/audit",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/audit",
       "status": 200,
       "ok": true,
       "durationMs": 2,
@@ -494,25 +494,25 @@
         ]
       },
       "index": 25,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     },
     {
       "name": "故障注入-读回变更集",
       "method": "GET",
-      "path": "/api/v1/lingdoc/projects/7413c863-a54c-44ad-bb52-cc2fc0aa80b1/change-sets/0bf6caac-82c7-4bb3-b085-8b13da55aa61",
+      "path": "/api/v1/lingdoc/projects/f4ec545b-0f3e-4482-90d8-80fff4fdc15b/change-sets/86fb29d8-499f-47f5-9a6b-f61acba4b167",
       "status": 200,
       "ok": true,
-      "durationMs": 4,
+      "durationMs": 3,
       "conclusion": "变更集已读回（HTTP 200）",
       "details": {
-        "change_set_id": "0bf6caac-82c7-4bb3-b085-8b13da55aa61",
+        "change_set_id": "86fb29d8-499f-47f5-9a6b-f61acba4b167",
         "status": "assessed",
         "stale_reason": "",
         "reassessed_from_id": "",
         "reverses_change_set_id": ""
       },
       "index": 26,
-      "runId": "g3r-mvi8bb2i-7afec66a"
+      "runId": "g3r-mvi8ppos-aa99788f"
     }
   ],
   "ac_rows": [
@@ -679,7 +679,7 @@
           ],
           "status": "PASS",
           "model_dependent": false,
-          "run_id": "g3r-mvi8bb2i-7afec66a"
+          "run_id": "g3r-mvi8ppos-aa99788f"
         }
       ],
       "stale": false
@@ -912,7 +912,7 @@
       ],
       "status": "PASS",
       "model_dependent": false,
-      "run_id": "g3r-mvi8bb2i-7afec66a"
+      "run_id": "g3r-mvi8ppos-aa99788f"
     }
   ],
   "gaps": [
@@ -1162,6 +1162,6 @@
     }
   ],
   "evidence_dir": "docs/08-本轮实施方案",
-  "evidence_file": "G3-验收台-8-证据-g3r-mvi8bb2i-7afec66a.json",
+  "evidence_file": "G3-验收台-8-证据-g3r-mvi8ppos-aa99788f.json",
   "evidence_file_note": "证据落 docs/08-本轮实施方案/ 目录，**不写进 Issue**（docs/agents/issue-tracker.md:54-56）。"
 }

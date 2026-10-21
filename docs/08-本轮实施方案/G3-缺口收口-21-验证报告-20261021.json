@@ -1,7 +1,7 @@
 {
   "ticket": "G3 缺口收口-21：#324 的溯源口径修复、七条交付切片行接上实跑判定、外部检索渠道的实测与边界",
-  "head_at_evidence": "5ac48870",
-  "head_note": "服务二进制由 5ac48870 编译（-ldflags 注入 CommitID），六条链脚本取自同一 head 的工作区。本报告入库后只改证据文件本身。",
+  "head_at_evidence": "9641707b",
+  "head_note": "服务二进制由 9641707b 编译（-ldflags 注入 CommitID），六条链脚本取自同一 head 的工作区。本报告入库后只改证据文件本身。",
   "mode": "real",
   "environment": {
     "os": "Windows 10.0.26200 x86_64",
@@ -9,9 +9,9 @@
     "python": "3.14.3",
     "db": "SQLite（真实迁移链 + 真实 workspacecore Service + 真实审计表）",
     "sqlite_include": "C:/Users/ASUS/AppData/Local/Temp/lingdoc-sqlite-inc（已确认存在）",
-    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=5ac48870'\" -o .g3-server-r14.exe ./cmd/server",
+    "build": "go build -ldflags \"-X 'github.com/Tencent/WeKnora/internal/handler.CommitID=9641707b'\" -o .g3-server-r15.exe ./cmd/server",
     "orchestrator": "scripts/acceptance/lingdoc_g3_acceptance_rounds.py（已入库；本轮起它还跑稳定化 / 阻断 / 真实模型三条独立链）",
-    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r14.exe --out .acceptance-r14 --round2-chains 'fault' --with-dependency-chain --with-real-model"
+    "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r15.exe --out .acceptance-r15 --round2-chains 'fault' --with-dependency-chain --with-real-model"
   },
   "what_this_round_did": [
     {
@@ -47,13 +47,13 @@
     {
       "round": "轮 1 · 后端未装配受控故障注入",
       "runs": {
-        "依赖图与影响任务": "g3r-mvi8aiyu-3e414039",
-        "稳定化与交付闭环": "g3r-mvi8ajq2-0906fa0f",
-        "稳定化阻断与恢复路径": "g3r-mvi8akin-8a439224",
-        "依赖真实模型的验收项": "g3r-mvi8alcs-f08cfe48",
-        "证据导出与实现缺口标注": "g3r-mvi8aujj-3e07cd30"
+        "依赖图与影响任务": "g3r-mvi8oz47-e59dbeb5",
+        "稳定化与交付闭环": "g3r-mvi8ozts-b4e40143",
+        "稳定化阻断与恢复路径": "g3r-mvi8p0ms-6bd73a5a",
+        "依赖真实模型的验收项": "g3r-mvi8p1tp-a5df8e05",
+        "证据导出与实现缺口标注": "g3r-mvi8pb4y-4fab1d27"
       },
-      "row_status_distribution": "TODO 0 / NOT RUN 2 / PASS 9 / PASS (follow-up) 9 / WARNING 3",
+      "row_status_distribution": "TODO 0 / NOT RUN 1 / PASS 9 / PASS (follow-up) 9 / WARNING 4",
       "slice_rows": {
         "G3.1": "PASS —— 同基线第二个变更集 apply → 409 version_conflict，变更集落 stale；上下文修订 2→2、影响任务 4→4，没有半完成写入",
         "G3.2": "PASS —— 6 条影响全部可追溯到来源边；两条来源边指向同一目标合并成 1 条逻辑任务（causes 保留 2 条来源）；建议边只进「可能受影响」、目标任务 0 条",
@@ -67,16 +67,16 @@
     {
       "round": "轮 2 · 后端装配了受控故障注入（同一租户）",
       "runs": {
-        "依赖图与影响任务": "g3r-mvi8aysd-6acfd155",
-        "稳定化与交付闭环": "g3r-mvi8azoj-d0c59361",
-        "稳定化阻断与恢复路径": "g3r-mvi8b0lj-782bbe1e",
-        "依赖真实模型的验收项": "g3r-mvi8b1kn-3a726c3a",
-        "证据导出与实现缺口标注": "g3r-mvi8bb2i-7afec66a"
+        "依赖图与影响任务": "g3r-mvi8pf8a-39e2fb47",
+        "稳定化与交付闭环": "g3r-mvi8pg2b-5be9bca9",
+        "稳定化阻断与恢复路径": "g3r-mvi8pgx6-c72c0fc5",
+        "依赖真实模型的验收项": "g3r-mvi8phvj-bb763ded",
+        "证据导出与实现缺口标注": "g3r-mvi8ppos-aa99788f"
       },
       "row_status_distribution": "TODO 0 / NOT RUN 0 / PASS 6 / PASS (follow-up) 13 / WARNING 4",
       "notes": [
         "AC-G3-03：轮 1 未装配注入 → NOT RUN（口径如此）；轮 2 注入命中 → 判定成立。",
-        "AC-G3-14：轮 1 的模型轮次失败（provider_failure）→ 该行 NOT RUN；轮 2 的模型轮次 status=completed / run_mode=real，读回「确定受影响 1 条 / 可能受影响 0 条」⇒ WARNING。模型侧结论不写 PASS。"
+        "AC-G3-14：两轮的模型轮次都 status=completed / run_mode=real，读回「确定受影响 1 条 / 可能受影响 0 条」⇒ WARNING。模型侧结论不写 PASS。"
       ]
     }
   ],
@@ -104,7 +104,7 @@
     "cd frontend && npm run type-check   # exit 0",
     "cd frontend && npm test            # 1547 tests / 1546 pass / 0 fail / 1 skipped",
     "go test ./internal/lingdoc/candidateadoption/... ./internal/lingdoc/workspace/... -count=1 -timeout 20m   # ok（0.714s / 182.986s）",
-    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r14.exe --out .acceptance-r14 --round2-chains 'fault' --with-dependency-chain --with-real-model   # 六条链脚本全部 ok"
+    "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r15.exe --out .acceptance-r15 --round2-chains 'fault' --with-dependency-chain --with-real-model   # 六条链脚本全部 ok"
   ],
   "honest_boundaries": [
     {
