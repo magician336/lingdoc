@@ -1,7 +1,7 @@
 {
   "ticket": "G3 缺口收口-21：#324 的溯源口径修复、七条交付切片行接上实跑判定、外部检索渠道的实测与边界",
   "head_at_evidence": "dd8dd097",
-  "head_note": "服务二进制由 dd8dd097 编译（-ldflags 注入 CommitID），八条链脚本取自同一 head 的工作区。**这个 head 是分支内可 fetch 的提交**（`git fetch origin dd8dd097` 能取到，且是当前分支的祖先），证据里的 `head.commitId` 就是它。上一轮实跑用的 9641707b 已被后续的变基改写，**已不在分支历史里**（`git fetch origin 9641707b` 报 \"couldn't find remote ref\"），评审人取不到那个提交，落证与被审提交对不上；因此本轮在修完评审意见的提交上**重跑了两轮**，把证据重新落在分支内的提交上。本报告入库后只改证据与文档文件本身。",
+  "head_note": "服务二进制由 dd8dd097 编译（-ldflags 注入 CommitID），八条链脚本取自同一 head 的工作区。**这个 head 在分支上**（是当前分支 head 的祖先，`git log` 可见；按完整 sha `dd8dd09765ec22465f0bfadb70bf03c9aaba68b5` 也能从远端单独取到），证据里的 `head.commitId` 就是它。上一轮实跑用的 9641707b 已被后续的变基改写，**不在任何分支上**（不是分支 head 的祖先，`git branch -a --contains` 为空）；按完整 sha `9641707bb810c5a267a02bf78b16ca23a8919494` 还能从 GitHub 取到那个对象，但评审人从分支上到不了它，落证与被审提交对不上；因此本轮在修完评审意见的提交上**重跑了两轮**，把证据重新落在分支内的提交上。本报告入库后只改证据与文档文件本身。",
   "mode": "real",
   "environment": {
     "os": "Windows 10.0.26200 x86_64",
@@ -81,10 +81,10 @@
     }
   ],
   "re_run_at_fix_commit": {
-    "why": "独立评审的 Blocker B2：上一轮落证的 head（`9641707b`）被后续变基改写，既不是分支 head 的祖先，而且 `git fetch origin 9641707b` 也失败（远端不提供该 ref）——评审人 checkout 不到那个提交，证据与被审提交无法对上。同一评审的 Blocker B1 还发现，矩阵七行里有三个运行标识在任何证据文件里都不存在、一个 head 落在任何分支之外。",
+    "why": "独立评审的 Blocker B2：上一轮落证的 head（`9641707b`）被后续变基改写，它**不在任何分支上**——被变基改写后成了孤立提交（`git branch -a --contains 9641707b` 为空、不是分支 head 的祖先），评审人从分支上到不了它，证据与被审提交无法对上。（按完整 sha 还能从 GitHub 取到那个对象，但那是「知道 sha 才能取」，不是「在分支上」。）同一评审的 Blocker B1 还发现，矩阵七行里有三个运行标识在任何证据文件里都不存在、一个 head 落在任何分支之外。",
     "fix": "按评审意见把矩阵证据位改成「链脚本 + 判定卡 + 落证文件」（源码里不再硬编码运行标识与 sha），并在**修完之后的提交**上重跑两轮落证：服务二进制由该提交编译（`-ldflags` 注入 CommitID），证据里的 `head.commitId` 因此直接落在分支内可 fetch 的提交上。",
     "head_at_evidence": "dd8dd097",
-    "head_is_fetchable": "`git fetch origin dd8dd097` 可以取到；`git merge-base --is-ancestor dd8dd097 HEAD` 成立。该提交与本分支 head 之间**没有 `.go` / `.ts` / `.vue` 的变动**（`git diff --name-only dd8dd097 HEAD -- '*.go' '*.ts' '*.vue'` 输出为空），落证与被审的代码是同一份。",
+    "head_is_fetchable": "**在分支上**：`git merge-base --is-ancestor dd8dd097 HEAD` 成立、`git log` 可见；按完整 sha `dd8dd09765ec22465f0bfadb70bf03c9aaba68b5` 也能从远端单独取到（`git fetch origin <完整 sha>`）。该提交与本分支 head 之间**没有 `.go` / `.ts` / `.vue` 的变动**（`git diff --name-only dd8dd097 HEAD -- '*.go' '*.ts' '*.vue'` 输出为空），落证与被审的代码是同一份。",
     "command": "python scripts/acceptance/lingdoc_g3_acceptance_rounds.py --binary .g3-server-r16.exe --out .acceptance-r16 --round2-chains 'fault' --with-dependency-chain --with-real-model",
     "run_ids": {
       "round_1": {
