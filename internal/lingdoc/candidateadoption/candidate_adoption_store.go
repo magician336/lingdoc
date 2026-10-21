@@ -488,7 +488,7 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err != nil {
 			return err
 		}
-		if current.CurrentVersionID != nil && !in.ReplaceExisting {
+		if current.CurrentVersionID != nil && !in.ReplaceExisting && writesFormalVersion(in) {
 			return ErrInvalidState
 		}
 
@@ -515,8 +515,32 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		if err := s.validateEvidenceInTransaction(ctx, tx, in, persisted); err != nil {
 			return err
 		}
-		workingCopy, err := s.cleanWorkingCopy(tx, current)
+		// 采纳目标决定写入路径。分派按目标走，不按动作名走。
+		path, err := writePathFor(in.Confirmation.Target)
 		if err != nil {
+			return err
+		}
+		workingCopy, err := s.readWorkingCopy(tx, in.ProjectID, in.ChapterID)
+		if err != nil {
+			return err
+		}
+		// 客户端声明的是哪一份工作副本，先对这一份。它不对，后面的写入就是在
+		// 替用户「猜」他想改哪一份。
+		if err := checkWorkingCopyDeclaration(in, workingCopy); err != nil {
+			return err
+		}
+		if !path.buildsFormalVersion() {
+			// 只写工作副本：不建正式版本，不动章节版本指针，不推进项目版本。
+			return s.acceptIntoWorkingCopy(tx, in, candidate, current, path, workingCopy, auditEnabled, &result)
+		}
+		// 正式版本路径的第二层复核：即使许可位被绕过，写路径本身也不给那些
+		// 动作建正式版本的机会。
+		if err := guardFormalVersionPath(in); err != nil {
+			return err
+		}
+		// 建正式版本要求工作副本与当前章节一致：草稿里还有没提交的编辑时，
+		// 正式版本会盖掉它们。
+		if err := cleanWorkingCopy(workingCopy, current); err != nil {
 			return err
 		}
 		// 确认的范围必须还对得上工作副本当前正文：范围是用户看着正文选出来的，
@@ -596,24 +620,37 @@ func (s *SQLiteCandidateAdoptionStore) AcceptCandidate(ctx context.Context, in A
 		current.ReviewItems = candidate.ReviewItems
 		current.ConfirmationValid = false
 		result.Chapter = current
-		responseJSON, err := json.Marshal(result.Chapter)
-		if err != nil {
-			return err
-		}
 		if err := recordAdoptionAudit(tx, auditEnabled, in, candidate, newVersionID); err != nil {
 			return err
 		}
-		if err := tx.Create(&adoptionIdempotencyRow{
-			ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
-			ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
-			DigestVersion:    adoptionDigestVersion,
-			ChapterVersionID: newVersionID, ResponseJSON: string(responseJSON),
-		}).Error; err != nil {
-			return err
-		}
-		return nil
+		return recordAdoptionIdempotency(tx, in, hash, &result, &newVersionID)
 	})
 	return result, err
+}
+
+// recordAdoptionIdempotency 记下这次采纳的幂等行。
+//
+// 幂等行是「同一个键对应同一次采纳」的凭据：它落在同一个事务里，所以要么
+// 采纳与幂等行一起成立，要么一起不成立。半截的幂等行会让下一次同键请求
+// 既不像重放、也不像新请求。
+//
+// chapterVersionID 是这次采纳**指向**的章节版本：正式版本路径是新建的那一版；
+// 只写工作副本的路径不建版本，指向的还是原来那一版（没有则为 nil）。
+func recordAdoptionIdempotency(tx *gorm.DB, in AcceptCandidateInput, hash string, result *AcceptResult, chapterVersionID *string) error {
+	responseJSON, err := json.Marshal(result.Chapter)
+	if err != nil {
+		return err
+	}
+	versionID := ""
+	if chapterVersionID != nil {
+		versionID = *chapterVersionID
+	}
+	return tx.Create(&adoptionIdempotencyRow{
+		ID: uuid.NewString(), ProjectID: in.ProjectID, ChapterID: in.ChapterID,
+		ActorID: in.ActorID, Key: in.IdempotencyKey, RequestHash: hash,
+		DigestVersion:    adoptionDigestVersion,
+		ChapterVersionID: versionID, ResponseJSON: string(responseJSON),
+	}).Error
 }
 
 // recordAdoptionAudit 把这次采纳的确认载荷写进项目审计。
@@ -802,24 +839,45 @@ func equalAdoptionJSON(raw string, value any) bool {
 	return reflect.DeepEqual(stored, expected)
 }
 
-func (s *SQLiteCandidateAdoptionStore) cleanWorkingCopy(tx *gorm.DB, current Chapter) (*adoptionWorkingCopyRow, error) {
+// readWorkingCopy 读当前工作副本行。
+//
+// 聚焦测试库可能没有这张表（那里的采纳用例不建工作副本），这时返回 nil：
+// 「没有工作副本」是一个合法状态，声明与判据都按修订号 0、正文为空算。
+//
+// 生产模式（focusedSchema 为 false）下没有表或没有行都是**错**：缺迁移的库
+// 不能拿着过期编辑器继续收采纳。
+func (s *SQLiteCandidateAdoptionStore) readWorkingCopy(tx *gorm.DB, projectID, chapterID string) (*adoptionWorkingCopyRow, error) {
 	// Only the explicit focused schema helper permits an absent G7 table.
 	// Production must fail on missing migrations instead of accepting a stale editor.
 	if s.focusedSchema && !tx.Migrator().HasTable(&adoptionWorkingCopyRow{}) {
 		return nil, nil
 	}
 	var row adoptionWorkingCopyRow
-	if err := tx.Where("project_id = ? AND chapter_id = ?", current.ProjectID, current.ID).First(&row).Error; err != nil {
+	if err := tx.Where("project_id = ? AND chapter_id = ?", projectID, chapterID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrVersionConflict
+		}
 		return nil, err
 	}
-	if !sameOptionalString(row.BaseChapterVersionID, current.CurrentVersionID) ||
-		row.BodyMarkdown != current.BodyMarkdown ||
-		!equalAdoptionJSON(row.SourceIDsJSON, current.SourceIDs) ||
-		!equalAdoptionJSON(row.CitationUsagesJSON, current.CitationUsages) ||
-		!equalAdoptionJSON(row.ReviewItemsJSON, current.ReviewItems) {
-		return nil, ErrVersionConflict
-	}
 	return &row, nil
+}
+
+// cleanWorkingCopy 复核工作副本与当前章节是一致的。
+//
+// 「一致」= 基线版本、正文、来源、引用说明、待核事项全都一样。工作副本里
+// 还有没提交的编辑时，采纳建正式版本会盖掉它们——所以这里拒。
+func cleanWorkingCopy(workingCopy *adoptionWorkingCopyRow, current Chapter) error {
+	if workingCopy == nil {
+		return nil
+	}
+	if !sameOptionalString(workingCopy.BaseChapterVersionID, current.CurrentVersionID) ||
+		workingCopy.BodyMarkdown != current.BodyMarkdown ||
+		!equalAdoptionJSON(workingCopy.SourceIDsJSON, current.SourceIDs) ||
+		!equalAdoptionJSON(workingCopy.CitationUsagesJSON, current.CitationUsages) ||
+		!equalAdoptionJSON(workingCopy.ReviewItemsJSON, current.ReviewItems) {
+		return ErrVersionConflict
+	}
+	return nil
 }
 
 func advanceAdoptedWorkingCopy(tx *gorm.DB, previous adoptionWorkingCopyRow, version chapterVersionRow) error {

@@ -56,6 +56,15 @@ var (
 	// authorization and run the action again" -- not "find the permission that
 	// was never missing".
 	ErrCandidateNotAuthorized = clienterror.Wrap(clienterror.CandidateNotAuthorized, "candidate_not_authorized", ErrSourceAccessDenied)
+	// ErrWorkingCopyDirty says the caller is not looking at the content the
+	// server would replace.
+	//
+	// The caller declared which working copy it acts on -- the revision it read
+	// and the digest of the body it saw. The server sees a different body:
+	// either the caller's editor holds changes that were never saved, or the
+	// draft moved under it. The form carries the next step: save the edits
+	// first, or ask for the replacement to carry a recoverable snapshot.
+	ErrWorkingCopyDirty = clienterror.New(clienterror.WorkingCopyDirty, "working_copy_dirty")
 )
 
 // ReviewItem is copied from the candidate into every adopted version. It is
@@ -157,6 +166,24 @@ type AcceptCandidateInput struct {
 	ExpectedChapterVersionID *string `json:"expected_chapter_version_id"`
 	ExpectedSpecRevision     int     `json:"expected_spec_revision"`
 	ReplaceExisting          bool    `json:"replace_existing"`
+	// ExpectedWorkingCopyRevision 是「用户看到的是哪一份工作副本」。
+	//
+	// 它与服务端当前的工作副本修订号对不上，说明别人改过这份草稿：请重新读取。
+	// 它不是可选项——没有这份声明，服务端无从判断自己替换的是不是用户正在看
+	// 的那份内容。
+	ExpectedWorkingCopyRevision int64 `json:"expected_working_copy_revision"`
+	// ExpectedBodyHash 是「用户看到的正文摘要」。
+	//
+	// 算法：正文的 UTF-8 字节的 SHA-256，小写十六进制、64 个字符
+	// （workingCopyBodyHash）。它与服务端当前的工作副本正文摘要对不上，说明
+	// 用户编辑器里有没保存的内容，或者内容已经变了。
+	ExpectedBodyHash string `json:"expected_body_hash"`
+	// SnapshotID 是「带快照的替换」的快照标识。
+	//
+	// 带它，服务端会在替换前把当前工作副本正文与替换范围记进审计详情，然后
+	// 允许在 dirty 的情况下继续。这**不是**一张可恢复快照表（那要新迁移），
+	// 它是审计留痕：能追、能人工恢复。
+	SnapshotID string `json:"snapshot_id"`
 	// Confirmation 是这次采纳的显式确认载荷。
 	//
 	// 它是**指针**：缺省即「没确认」，与「确认了但字段为空」要能分开。它必填，
@@ -383,6 +410,13 @@ func validateInput(in AcceptCandidateInput) error {
 		in.ExpectedSpecRevision < 0 {
 		return ErrInvalidRequest
 	}
+	// 客户端必须说清它动的是哪一份工作副本：修订号与正文摘要缺一不可。
+	//
+	// 缺了它们，服务端就没有判据去分辨「用户正在看的就是这份」与「用户编辑器
+	// 里有没保存的东西」——而后者正是整段替换最不该悄悄吃掉的东西。
+	if in.ExpectedWorkingCopyRevision < 0 || !validBodyHash(in.ExpectedBodyHash) {
+		return ErrInvalidRequest
+	}
 	// 确认载荷必填：没有它就没有「这次采纳确认了什么」。
 	return validateAdoptionConfirmation(in)
 }
@@ -428,7 +462,11 @@ func validateCandidate(in AcceptCandidateInput, workspace GenerationContext, can
 	if !sameOptionalString(workspace.ChapterVersionID, in.ExpectedChapterVersionID) {
 		return ErrVersionConflict
 	}
-	if workspace.Chapter.CurrentVersionID != nil && !in.ReplaceExisting {
+	// 「章节已经有正式版本」这道门只管**正式版本**那条路：写工作副本的两个
+	// 目标不碰正式版本，用户已写的正式正文不会被替换，所以不需要「replace_existing」
+	// 这句同意。把它套到只写草稿的路径上，是拿一条不相干的门挡住一次无害的
+	// 写入。
+	if workspace.Chapter.CurrentVersionID != nil && !in.ReplaceExisting && writesFormalVersion(in) {
 		return ErrInvalidState
 	}
 	if err := validateSourceReferences(candidate.BodyMarkdown, candidate.SourceIDs); err != nil {

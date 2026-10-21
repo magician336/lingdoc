@@ -105,6 +105,19 @@ var (
 	// action path again, then adopt.
 	CandidateActionUnknown = Form{Status: 409, Code: "candidate_action_unknown", Message: "该候选没有记录产生它的动作与来源，请用动作化路径重新运行后再采纳。", Retryable: false}
 
+	// WorkingCopyDirty is the answer for a request that would replace content
+	// the caller is not looking at any more.
+	//
+	// The caller declared which working copy it acts on (revision and body
+	// digest). The server sees a different body: either the caller's editor
+	// holds changes that were never saved, or the draft moved under it. The
+	// wording carries the next step, because there are exactly two: save the
+	// edits first, or ask for the replacement to carry a recoverable snapshot.
+	//
+	// It is a conflict, not a permission failure: the request is well formed
+	// and authorized, it just does not describe the current state.
+	WorkingCopyDirty = Form{Status: 409, Code: "working_copy_dirty", Message: "工作副本与你看到的内容不一致：请先保存你的修改，或改用带快照的替换。", Retryable: false}
+
 	// PreflightBlocked is the answer for a request that has to clear the
 	// delivery blockers first.
 	PreflightBlocked = Form{Status: 422, Code: "preflight_blocked", Message: "请先处理交付阻断项。", Retryable: false}

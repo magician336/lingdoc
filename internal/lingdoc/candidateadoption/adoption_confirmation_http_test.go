@@ -52,6 +52,10 @@ func adoptionRequestBody(t *testing.T, key string, confirmation any) *bytes.Read
 		"expected_spec_revision":      1,
 		"expected_chapter_version_id": nil,
 		"replace_existing":            false,
+		// 这条夹具的现场里没有工作副本，所以声明是「修订号 0、正文为空」——
+		// 与服务端对「没有工作副本」的算法是同一个。
+		"expected_working_copy_revision": 0,
+		"expected_body_hash":             workingCopyBodyHash(""),
 	}
 	if confirmation != nil {
 		body["confirmation"] = confirmation

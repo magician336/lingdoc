@@ -99,6 +99,14 @@ type acceptCandidateRequest struct {
 	ExpectedChapterVersionID *string `json:"expected_chapter_version_id"`
 	ExpectedSpecRevision     int     `json:"expected_spec_revision"`
 	ReplaceExisting          bool    `json:"replace_existing"`
+	// ExpectedWorkingCopyRevision 与 ExpectedBodyHash 是「用户看到的是哪一份
+	// 工作副本」的声明。两者缺一不可：没有它们，服务端无从分辨这次替换动的
+	// 是不是用户正在看的那份内容。
+	ExpectedWorkingCopyRevision int64  `json:"expected_working_copy_revision"`
+	ExpectedBodyHash            string `json:"expected_body_hash"`
+	// SnapshotID 是「带快照的替换」：服务端会先把当前工作副本正文与替换范围
+	// 记进审计详情，然后允许在 dirty 的情况下继续。
+	SnapshotID string `json:"snapshot_id"`
 	// Confirmation 是这次采纳的显式确认载荷。
 	//
 	// 它必填：缺了它，服务层拒。没有例外路径——重放与待决探测也不例外。
@@ -136,7 +144,10 @@ func (h *CandidateAdoptionHandler) AcceptCandidate(c *gin.Context) {
 		ProjectID: c.Param("projectId"), ChapterID: c.Param("chapterId"), CandidateID: req.CandidateID,
 		ActorID: actor, IdempotencyKey: key, ExpectedChapterVersionID: req.ExpectedChapterVersionID,
 		ExpectedSpecRevision: req.ExpectedSpecRevision, ReplaceExisting: req.ReplaceExisting,
-		Confirmation: req.Confirmation,
+		ExpectedWorkingCopyRevision: req.ExpectedWorkingCopyRevision,
+		ExpectedBodyHash:            req.ExpectedBodyHash,
+		SnapshotID:                  req.SnapshotID,
+		Confirmation:                req.Confirmation,
 	})
 	if err != nil {
 		writeCandidateAdoptionError(c, requestID, err)

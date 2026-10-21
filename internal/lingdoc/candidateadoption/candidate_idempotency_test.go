@@ -105,7 +105,9 @@ func TestRequestDigestCarriesTheVersionPrefix(t *testing.T) {
 		ExpectedSpecRevision: input.ExpectedSpecRevision,
 	})
 	require.NoError(t, err)
-	require.True(t, strings.HasPrefix(string(encoded), `{"digest_version":3,`),
+	// 摘要版本前缀是摘要结构的第一个字段。当前的规则版本是 4（工作副本声明与
+	// 快照标识进了摘要载荷）。
+	require.True(t, strings.HasPrefix(string(encoded), `{"digest_version":4,`),
 		"版本前缀必须是摘要结构的第一个字段，实际编码为 %s", string(encoded))
 
 	legacyDigest, _ := digestBothWays(t, legacyAdoptionRequestDigest{
@@ -141,7 +143,9 @@ func TestIdempotencyKeyFromAnOlderDigestVersionExpiresOnEveryPath(t *testing.T) 
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0001", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	// A row written before the digest rule carried a version: its digest is
 	// the one the old rule produced.
@@ -189,7 +193,9 @@ func TestIdempotencyKeyFromThePreviousDigestVersionExpires(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-previous-version", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	// 版本 2 的行：摘要载荷还没有确认投影。
 	previousDigest, _ := digestBothWays(t, adoptionRequestDigest{
@@ -237,7 +243,9 @@ func TestSameVersionDifferentDigestConflictsOnEveryPath(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0002", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	require.NoError(t, store.DB().Create(&adoptionIdempotencyRow{
 		ID: uuid.NewString(), ProjectID: input.ProjectID, ChapterID: input.ChapterID,
@@ -274,7 +282,9 @@ func TestAcceptedCandidateRecordsTheDigestVersion(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-key-0003", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 	result, err := store.AcceptCandidate(ctx, input, candidate)
 	require.NoError(t, err)

@@ -2,7 +2,9 @@ package workspace
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -25,6 +27,16 @@ import (
 
 type candidateOneConnShares struct{ interfaces.KBShareService }
 type candidateOneConnAuthorizer struct{ service *core.Service }
+
+// workingCopyBodyHash 是工作副本正文的摘要。
+//
+// 算法与采纳端是同一个：正文的 UTF-8 字节的 SHA-256，小写十六进制、64 个
+// 字符。它是 HTTP 契约的一部分，所以这里按契约重算一遍，而不是问服务端要
+// 一个值——那样这条断言就只是把服务端的话抄回来。
+func workingCopyBodyHash(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:])
+}
 
 func (a candidateOneConnAuthorizer) Authorize(ctx context.Context, userID, projectID, capability string) error {
 	caller := types.CallerFromContext(ctx)
@@ -184,7 +196,14 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 		ConfirmedBy:   actor.UserID,
 		Origin:        candidate.Origin,
 	}
-	input := candidateadoption.AcceptCandidateInput{ProjectID: p.ID, ChapterID: "chapter-2", CandidateID: candidate.ID, ActorID: actor.UserID, IdempotencyKey: "oneconn-adoption", ExpectedChapterVersionID: current.ChapterVersionID, ExpectedSpecRevision: current.SpecRevision, ReplaceExisting: true, Confirmation: confirmation}
+	// 采纳要声明「用户看到的是哪一份工作副本」：修订号与正文摘要。这份夹具
+	// 里的草稿是刚插进去的那一行，所以读回来再声明——声明的是事实，不是猜的。
+	var workingCopy struct {
+		WorkingCopyRevision int64
+		BodyMarkdown        string
+	}
+	require.NoError(t, db.Raw("SELECT working_copy_revision, body_markdown FROM lingdoc_working_copies WHERE project_id = ? AND chapter_id = ?", p.ID, "chapter-2").Scan(&workingCopy).Error)
+	input := candidateadoption.AcceptCandidateInput{ProjectID: p.ID, ChapterID: "chapter-2", CandidateID: candidate.ID, ActorID: actor.UserID, IdempotencyKey: "oneconn-adoption", ExpectedChapterVersionID: current.ChapterVersionID, ExpectedSpecRevision: current.SpecRevision, ReplaceExisting: true, ExpectedWorkingCopyRevision: workingCopy.WorkingCopyRevision, ExpectedBodyHash: workingCopyBodyHash(workingCopy.BodyMarkdown), Confirmation: confirmation}
 	adoption := candidateadoption.NewCandidateAdoptionService(store, runtime.CandidateAdoptionSourcePolicy(), candidateOneConnAuthorizer{projects})
 	return candidateOneConnFixture{db, runtime, projects, store, adoption, deadline, actor, candidate, input, card}
 }

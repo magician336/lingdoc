@@ -28,7 +28,9 @@ func TestAcceptCandidateSeparatesStaleInputFromLostAuthorization(t *testing.T) {
 	input := AcceptCandidateInput{
 		ProjectID: "project-1", ChapterID: "chapter-1", CandidateID: "candidate-1", ActorID: "user-1",
 		IdempotencyKey: "candidate-adoption-invalidation-0001", ExpectedSpecRevision: 1,
-		Confirmation: fixtureConfirmation("user-1"),
+		ExpectedWorkingCopyRevision: 0,
+		ExpectedBodyHash:            workingCopyBodyHash(""),
+		Confirmation:                fixtureConfirmation("user-1"),
 	}
 
 	// 授权没了：候选还在，但它依据的授权不在了。
