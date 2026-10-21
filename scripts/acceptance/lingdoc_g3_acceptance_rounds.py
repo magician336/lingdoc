@@ -97,6 +97,7 @@ def run_dependency_chain(
     base_url: str,
     out_dir: Path,
     date_stamp: str,
+    round_label: str,
     timeout: int = 900,
 ) -> dict[str, object]:
     """跑依赖候选链（独立脚本），把「验收台-4」形态的证据落进本轮目录。
@@ -108,12 +109,15 @@ def run_dependency_chain(
 
     它有**自己的账号与自己的项目**：候选的 ``target`` 必须是本项目的章节版本，
     复用别的链的项目会撞 409「基线已漂移」。
+
+    文件名带轮次后缀（``-r1`` / ``-r2``）：两轮是**两次不同的运行**，同名的话
+    整链证据里那条 ``runs[].file`` 引用会指到另一轮的文件上。
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     npx = shutil.which("npx.cmd") or shutil.which("npx")
     if not npx:
         raise SystemExit("npx not found on PATH")
-    out_path = out_dir / f"G3-验收台-4-依赖图与影响任务证据-{date_stamp}.json"
+    out_path = out_dir / f"G3-验收台-4-依赖图与影响任务证据-{date_stamp}-{round_label}.json"
     started = time.monotonic()
     proc = subprocess.run(
         [
@@ -287,7 +291,7 @@ def main() -> int:
     date = date_stamp()
     if args.with_dependency_chain:
         # 依赖候选链先跑：整链导出汇总的是目录里已有的 `G3-验收台-*` 文件。
-        run_dependency_chain(base_url, out_dir / "round1", date)
+        run_dependency_chain(base_url, out_dir / "round1", date, "r1")
     round1 = run_evidence(base_url, email, password, out_dir / "round1", args.round1_chains)
     code1 = base.stop_process(proc)
     print(f"round1: server stopped, exit code={code1} (Windows TerminateProcess 期望 1)")
@@ -296,7 +300,7 @@ def main() -> int:
     proc2 = start_server(binary, data_dir, port, (args.fault_point, tenant_id), model_config)
     print(f"round2: healthy (fault injection armed for tenant {tenant_id})")
     if args.with_dependency_chain:
-        run_dependency_chain(base_url, out_dir / "round2", date)
+        run_dependency_chain(base_url, out_dir / "round2", date, "r2")
     round2 = run_evidence(
         base_url,
         email,
