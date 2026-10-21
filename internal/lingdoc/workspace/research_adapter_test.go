@@ -18,7 +18,7 @@ import (
 )
 
 type g2AdapterProjects struct {
-	ApplicationService
+	core.CapabilityAuthorizer
 	denied     bool
 	capability string
 }

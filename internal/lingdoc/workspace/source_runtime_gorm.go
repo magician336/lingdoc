@@ -4,14 +4,27 @@ import (
 	"context"
 	"github.com/Tencent/WeKnora/internal/evidence"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"gorm.io/gorm"
 )
 
 // SourceRuntime is the production read-side/source adapter. HTTP holds only
 // its application/integration ports; live adapters are shared by all consumers.
+//
+// The three project-side fields are three narrow ports, one per context. The
+// legacy ApplicationService (37 methods) used to play all three roles at once;
+// after it is retired each port answers exactly one question.
+//
+// The four optional fields below are the capabilities the transport used to
+// discover with a run-time type assertion on the project service. They are
+// plain nullable ports now: the composition root hands them over, and a
+// workspace that does not have one answers "the dependency is unavailable"
+// rather than quietly dropping a check.
 type SourceRuntime struct {
-	service      ApplicationService
+	authorizer   core.CapabilityAuthorizer
+	projects     core.ProjectApplication
+	context      core.GenerationContextApplication
 	bindings     *evidence.Bindings
 	modelGateway evidence.AssetGateway
 	gateway      evidence.AssetGateway
@@ -20,20 +33,65 @@ type SourceRuntime struct {
 	templates    delivery.TemplateReader
 	db           *gorm.DB
 	audit        AuditSink
+
+	provenance            core.ProjectProvenanceApplication
+	evidenceSelector      core.EvidenceSelectionApplication
+	evidenceSelectorInTx  core.EvidenceSelectionTransactionApplication
+	evidenceProofPreparer core.EvidenceProofPreparationApplication
 }
 
-func NewGORMSourceRuntime(db *gorm.DB, service ApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService, templates delivery.TemplateReader, audits ...AuditSink) *SourceRuntime {
+// OptionalCapabilities carries the four optional capabilities the transport
+// resolves at run time.
+//
+// Every one of them is a capability of the aggregate, so the aggregate's own
+// package owns the language and the port (Spec #47 决策 33). The composition
+// root is the only place that knows the production value: it hands them over
+// explicitly, so no transport ever has to ask a value what it can do.
+type OptionalCapabilities struct {
+	// Provenance answers "is the provenance in this frozen input real".
+	Provenance core.ProjectProvenanceApplication
+	// EvidenceSelection answers "which evidence may go into the model".
+	EvidenceSelection core.EvidenceSelectionApplication
+	// EvidenceSelectionInTransaction answers the same question inside a transaction.
+	EvidenceSelectionInTransaction core.EvidenceSelectionTransactionApplication
+	// EvidenceProofPreparation answers "prepare the candidate's evidence proof".
+	EvidenceProofPreparation core.EvidenceProofPreparationApplication
+}
+
+func NewGORMSourceRuntime(db *gorm.DB, projectPorts ProjectPorts, shares interfaces.KBShareService, knowledge interfaces.KnowledgeBaseService, templates delivery.TemplateReader, audits ...AuditSink) *SourceRuntime {
 	ports := NewGORMSourcePorts(db, shares)
 	var audit AuditSink
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SourceRuntime{db: db, service: service, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit}
+	return &SourceRuntime{db: db, authorizer: projectPorts.Authorizer, projects: projectPorts.Projects, context: projectPorts.Context, bindings: ports.Bindings.(*evidence.Bindings), gateway: ports.Gateway, kbShares: shares, knowledge: knowledge, templates: templates, audit: audit}
 }
 
 // ConnectProjects is called only at composition time to connect the mutually
 // dependent project authorization and current source-recheck ports.
-func (r *SourceRuntime) ConnectProjects(service ApplicationService) { r.service = service }
+func (r *SourceRuntime) ConnectProjects(projectPorts ProjectPorts) {
+	r.authorizer = projectPorts.Authorizer
+	r.projects = projectPorts.Projects
+	r.context = projectPorts.Context
+}
+
+// ConnectOptionalCapabilities is called at composition time, next to
+// ConnectProjects, to hand over the four optional capabilities.
+//
+// They used to be found with a run-time type assertion on the project
+// service. That assertion was a back door: the value it was asked about was
+// the aggregate, so the assertion could hand back any of the aggregate's
+// operations, not only the ones the narrow port names. Handing them over
+// explicitly keeps the transport's reach at exactly what the port declares.
+func (r *SourceRuntime) ConnectOptionalCapabilities(capabilities OptionalCapabilities) {
+	if r == nil {
+		return
+	}
+	r.provenance = capabilities.Provenance
+	r.evidenceSelector = capabilities.EvidenceSelection
+	r.evidenceSelectorInTx = capabilities.EvidenceSelectionInTransaction
+	r.evidenceProofPreparer = capabilities.EvidenceProofPreparation
+}
 func (r *SourceRuntime) EnableFullWorkflowPolicy() {
 	r.gateway = NewG2ProjectAssetPolicyGateway(r.db, liveGORMSourceGateway{db: r.db, base: r.gateway})
 	r.modelGateway = NewG2ModelAssetPolicyGateway(r.db, r.gateway)
@@ -45,7 +103,7 @@ func (r *SourceRuntime) generationGateway() evidence.AssetGateway {
 	return r.gateway
 }
 func (r *SourceRuntime) application() *SourceService {
-	return NewSourceServiceWithReviewer(r.service, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
+	return NewSourceServiceWithReviewer(r.authorizer, r.bindings, r.gateway, dbSourceCatalog{db: r.db}, r.origins(), r.kbShares, r.knowledge, r.sourceRevalidator(), r.audit)
 }
 func (r *SourceRuntime) ListAssets(ctx context.Context, a Actor, p string) ([]evidence.Asset, error) {
 	return r.application().ListAssets(ctx, a, p)

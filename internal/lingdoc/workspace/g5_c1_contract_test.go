@@ -13,24 +13,33 @@ import (
 )
 
 type g5C1SaveSpecErrorStub struct {
-	ApplicationService
+	ProjectApplication
 	err error
 }
 
-type g5C5ReadPortStub struct{ WorkspaceReadApplication }
-type g5C5WritePortStub struct{ WorkspaceWriteApplication }
-
-func TestG5C5HandlerComposesSplitApplicationPorts(t *testing.T) {
-	handler, err := NewHandler(HandlerDependencies{Read: g5C5ReadPortStub{},
-		Write:   g5C5WritePortStub{},
-		Sources: emptySourcesStub{},
+// The handler composes the five context ports by name. The legacy read/write
+// split is retired, so there is nothing left to infer: every port is handed
+// over explicitly and the handler keeps the one it was given.
+func TestG5C5HandlerComposesTheExplicitContextPorts(t *testing.T) {
+	projects := &focusedProjectPortStub{}
+	members := &focusedMembershipPortStub{}
+	chapters := &focusedChapterPortStub{}
+	templates := &focusedTemplatePortStub{}
+	changeSets := &focusedChangeSetPortStub{}
+	handler, err := NewHandler(HandlerDependencies{
+		Projects:    projects,
+		Members:     members,
+		Chapters:    chapters,
+		TemplateApp: templates,
+		ChangeSets:  changeSets,
+		Sources:     emptySourcesStub{},
 	})
 	if err != nil {
 		t.Fatalf("assemble the workspace handler: %v", err)
 	}
 	if handler.projects == nil || handler.members == nil || handler.chapters == nil ||
 		handler.templatesApp == nil || handler.changeSets == nil {
-		t.Fatalf("split read/write composition left focused route port nil: projects=%T members=%T chapters=%T templates=%T changeSets=%T", handler.projects, handler.members, handler.chapters, handler.templatesApp, handler.changeSets)
+		t.Fatalf("explicit context composition left focused route port nil: projects=%T members=%T chapters=%T templates=%T changeSets=%T", handler.projects, handler.members, handler.chapters, handler.templatesApp, handler.changeSets)
 	}
 }
 
@@ -51,7 +60,7 @@ func TestG5C1RepresentativeHTTPSpecContract(t *testing.T) {
 			Project:  Project{ID: "project-1", SpecRevision: 1, ProjectVersion: 2},
 			Replayed: true,
 		}}
-		handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+		handler, err := NewHandler(contextPorts(service, emptySourcesStub{}))
 		if err != nil {
 			t.Fatalf("assemble the workspace handler: %v", err)
 		}
@@ -83,7 +92,14 @@ func TestG5C1RepresentativeHTTPSpecContract(t *testing.T) {
 
 	t.Run("version conflict remains a domain error mapping", func(t *testing.T) {
 		service := &g5C1SaveSpecErrorStub{err: ErrVersionConflict}
-		handler, err := NewHandler(HandlerDependencies{Write: service, Sources: emptySourcesStub{}})
+		handler, err := NewHandler(HandlerDependencies{
+			Projects:    service,
+			Members:     &focusedMembershipPortStub{},
+			Chapters:    &focusedChapterPortStub{},
+			TemplateApp: &focusedTemplatePortStub{},
+			ChangeSets:  &focusedChangeSetPortStub{},
+			Sources:     emptySourcesStub{},
+		})
 		if err != nil {
 			t.Fatalf("assemble the workspace handler: %v", err)
 		}

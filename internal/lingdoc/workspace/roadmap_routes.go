@@ -18,25 +18,25 @@ import (
 // Every write goes through the idempotency key and the human-decision check
 // the shared impact write helper already applies, so the roadmap cannot be
 // edited by a machine principal.
-func RegisterRoadmapRoutes(group *gin.RouterGroup, service *core.Service) {
-	if group == nil || service == nil {
+func RegisterRoadmapRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
+	if group == nil || nilPort(ports.Roadmap) {
 		return
 	}
-	h := impactRoutesHandler{service}
+	h := impactRoutesHandler{ports: ports}
 	r := group.Group("/projects/:projectId")
 
 	// The frozen roadmap: only committed versions are readable here.
 	r.GET("/roadmap", impactRouteRead(h, func(c *gin.Context, a core.Actor) (core.RoadmapBaseline, error) {
-		return service.ReadRoadmap(c.Request.Context(), a, c.Param("projectId"))
+		return ports.Roadmap.ReadRoadmap(c.Request.Context(), a, c.Param("projectId"))
 	}))
 	r.GET("/roadmap/edges", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RouteEdge, error) {
-		return service.ReadRouteEdges(c.Request.Context(), a, c.Param("projectId"))
+		return ports.Roadmap.ReadRouteEdges(c.Request.Context(), a, c.Param("projectId"))
 	}))
 	r.GET("/roadmap/edges/:edgeId/versions", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RouteEdge, error) {
-		return service.ReadRouteEdgeVersions(c.Request.Context(), a, c.Param("projectId"), c.Param("edgeId"))
+		return ports.Roadmap.ReadRouteEdgeVersions(c.Request.Context(), a, c.Param("projectId"), c.Param("edgeId"))
 	}))
 	r.GET("/roadmap/nodes/:nodeId/versions", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RoadmapVersionEntry, error) {
-		return service.ReadRoadmapNodeVersions(c.Request.Context(), a, c.Param("projectId"), c.Param("nodeId"))
+		return ports.Roadmap.ReadRoadmapNodeVersions(c.Request.Context(), a, c.Param("projectId"), c.Param("nodeId"))
 	}))
 	r.GET("/roadmap/nodes/:nodeId/compare", impactRouteRead(h, func(c *gin.Context, a core.Actor) (core.RoadmapComparison, error) {
 		from, err := strconv.ParseInt(c.Query("from"), 10, 64)
@@ -47,29 +47,29 @@ func RegisterRoadmapRoutes(group *gin.RouterGroup, service *core.Service) {
 		if err != nil {
 			return core.RoadmapComparison{}, core.ErrInvalidRequest
 		}
-		return service.CompareRoadmapNodeVersions(c.Request.Context(), a, c.Param("projectId"), c.Param("nodeId"), from, to)
+		return ports.Roadmap.CompareRoadmapNodeVersions(c.Request.Context(), a, c.Param("projectId"), c.Param("nodeId"), from, to)
 	}))
 
 	// The unfrozen editing session.
 	r.GET("/roadmap/edits", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RoadmapEditSession, error) {
-		return service.ListRoadmapSessions(c.Request.Context(), a, c.Param("projectId"))
+		return ports.Roadmap.ListRoadmapSessions(c.Request.Context(), a, c.Param("projectId"))
 	}))
 	r.GET("/roadmap/edits/:sessionId", impactRouteRead(h, func(c *gin.Context, a core.Actor) (core.RoadmapEditSession, error) {
-		return service.GetRoadmapSession(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"))
+		return ports.Roadmap.GetRoadmapSession(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"))
 	}))
 	r.POST("/roadmap/edits", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RoadmapEditBeginInput) (json.RawMessage, int, bool, error) {
-		return service.BeginRoadmapEdit(c.Request.Context(), a, c.Param("projectId"), k, i)
+		return ports.Roadmap.BeginRoadmapEdit(c.Request.Context(), a, c.Param("projectId"), k, i)
 	}))
 	r.POST("/roadmap/edits/:sessionId/nodes", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RoadmapNodeProposalInput) (json.RawMessage, int, bool, error) {
-		return service.ProposeRoadmapNode(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
+		return ports.Roadmap.ProposeRoadmapNode(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
 	}))
 	r.POST("/roadmap/edits/:sessionId/edges", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RoadmapEdgeProposalInput) (json.RawMessage, int, bool, error) {
-		return service.ProposeRoadmapEdge(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
+		return ports.Roadmap.ProposeRoadmapEdge(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
 	}))
 	r.POST("/roadmap/edits/:sessionId/commit", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RoadmapCommitInput) (json.RawMessage, int, bool, error) {
-		return service.CommitRoadmapEdit(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
+		return ports.Roadmap.CommitRoadmapEdit(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
 	}))
 	r.POST("/roadmap/edits/:sessionId/cancel", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RoadmapCancelInput) (json.RawMessage, int, bool, error) {
-		return service.CancelRoadmapEdit(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
+		return ports.Roadmap.CancelRoadmapEdit(c.Request.Context(), a, c.Param("projectId"), c.Param("sessionId"), k, i)
 	}))
 }

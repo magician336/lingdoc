@@ -48,7 +48,7 @@ type g2OriginalFetcher interface {
 // the existing WeKnora services. It never creates a second RAG/index pipeline.
 type G2ResearchAdapter struct {
 	db        *gorm.DB
-	projects  ApplicationService
+	projects  core.CapabilityAuthorizer
 	sources   SourceApplicationService
 	shares    interfaces.KBShareService
 	knowledge interfaces.KnowledgeService
@@ -56,7 +56,7 @@ type G2ResearchAdapter struct {
 	fetcher   g2OriginalFetcher
 }
 
-func NewG2ResearchAdapter(db *gorm.DB, projects ApplicationService, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *G2ResearchAdapter {
+func NewG2ResearchAdapter(db *gorm.DB, projects core.CapabilityAuthorizer, sources SourceApplicationService, shares interfaces.KBShareService, knowledge interfaces.KnowledgeService, web interfaces.WebSearchService) *G2ResearchAdapter {
 	return &G2ResearchAdapter{db: db, projects: projects, sources: sources, shares: shares, knowledge: knowledge, web: web, fetcher: webfetch.NewFetcher()}
 }
 func g2CallerContext(ctx context.Context, actor core.Actor) context.Context {

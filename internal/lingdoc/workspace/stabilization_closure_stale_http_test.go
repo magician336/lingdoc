@@ -35,7 +35,7 @@ func closureStaleEngine(t *testing.T, f deliveryGuardFixture) *gin.Engine {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	RegisterImpactRoutes(engine.Group("/api"), f.projects)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(f.projects))
 	return engine
 }
 

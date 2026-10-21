@@ -36,7 +36,7 @@ func TestReassessChangeSetValidatesActualBodyNotLengthHint(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &applicationServiceStub{}
-			handler, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: emptySourcesStub{}})
+			handler, err := NewHandler(HandlerDependencies{Projects: service, Members: service, Chapters: service, TemplateApp: service, ChangeSets: service, Sources: emptySourcesStub{}})
 			if err != nil {
 				t.Fatalf("assemble the workspace handler: %v", err)
 			}

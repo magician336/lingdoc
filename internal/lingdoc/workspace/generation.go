@@ -37,13 +37,14 @@ func NewGenerationApplication(
 	db := workspace.db
 	origins := evidence.NewOriginReader(dbKnowledgeReader{db: db})
 	inputs := &generationInputResolver{
-		workspace:     workspace.service,
+		workspace:     workspace.context,
+		selector:      workspace.evidenceSelector,
 		sources:       workspace,
 		gateway:       workspace.generationGateway(),
 		bindings:      workspace.bindings,
 		knowledge:     workspace.knowledge,
 		templates:     workspace.templates,
-		projectCopies: workspace.service,
+		projectCopies: workspace.projects,
 		origins:       evidence.NewSourceResolver(origins),
 	}
 	repository := generation.NewSQLiteRepository(db)
@@ -53,15 +54,15 @@ func NewGenerationApplication(
 		generationSourceValidator{reviewer: workspace.sourceReviewerForGateway(workspace.generationGateway())},
 		generationHostModel{models: models, templates: workspace.templates, acceptanceBudget: acceptanceBudget, acceptanceConfigErr: acceptanceConfigErr}, repository, generationTaskEnqueuer{tasks: tasks},
 	)
-	service.Evidence = g2GenerationEvidenceValidator{workspace: workspace.service}
+	service.Evidence = g2GenerationEvidenceValidator{selector: workspace.evidenceSelector}
 	service.RequireHumanInitiation = true
 	return service
 }
 
-type generationWorkspaceAuthorizer struct{ workspace ApplicationService }
+type generationWorkspaceAuthorizer struct{ authorizer core.CapabilityAuthorizer }
 
 func (a generationWorkspaceAuthorizer) AuthorizeGeneration(ctx context.Context, actor generation.Actor, projectID string) error {
-	err := a.workspace.Authorize(ctx, generationWorkspaceActor(ctx, actor), projectID, "read")
+	err := a.authorizer.Authorize(ctx, generationWorkspaceActor(ctx, actor), projectID, "read")
 	if errors.Is(err, ErrNotFound) {
 		return generation.ErrNotFound
 	}
@@ -69,14 +70,19 @@ func (a generationWorkspaceAuthorizer) AuthorizeGeneration(ctx context.Context, 
 }
 
 type generationInputResolver struct {
-	projectCopies ApplicationService
+	projectCopies core.ProjectApplication
 	sources       SourceApplicationService
-	workspace     ApplicationService
-	gateway       evidence.AssetGateway
-	bindings      *evidence.Bindings
-	knowledge     interfaces.KnowledgeBaseService
-	templates     core.TemplateReader
-	origins       evidence.SourceResolver
+	workspace     core.GenerationContextApplication
+	// selector is the optional formal-evidence capability. It is a port of
+	// its own: the generation context port does not name the selection, and
+	// discovering it by asserting the context port would let the transport
+	// reach past what that port declares.
+	selector  core.EvidenceSelectionApplication
+	gateway   evidence.AssetGateway
+	bindings  *evidence.Bindings
+	knowledge interfaces.KnowledgeBaseService
+	templates core.TemplateReader
+	origins   evidence.SourceResolver
 }
 
 func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, actor generation.Actor, projectID string, request generation.Request) (generation.Input, error) {
@@ -123,7 +129,7 @@ func (r *generationInputResolver) ResolveGenerationInput(ctx context.Context, ac
 		if selectErr != nil {
 			return generation.Input{}, selectErr
 		}
-		selection, selectErr := g2SelectFormal(ctx, r.workspace, workspaceActor, projectID, request.ChapterID, g2GenerationRefs(request.EvidenceCardRefs))
+		selection, selectErr := g2SelectFormal(ctx, r.selector, workspaceActor, projectID, request.ChapterID, g2GenerationRefs(request.EvidenceCardRefs))
 		if selectErr != nil {
 			return generation.Input{}, selectErr
 		}

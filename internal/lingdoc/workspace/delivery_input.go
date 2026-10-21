@@ -35,7 +35,13 @@ type DeliveryInputBuilder struct {
 	reviewer  sourcepolicy.Reviewer
 	gateway   evidence.AssetGateway
 	templates delivery.TemplateReader
-	projects  ApplicationService
+	// provenance is the optional project-provenance capability. It is nil when
+	// the assembly has no full-workflow core, and the provenance checks are
+	// then skipped instead of failing to compile. It used to be found with a
+	// run-time type assertion on the project port, which let the transport
+	// reach any aggregate operation the assertion's interface happened to
+	// name; an explicit nullable port keeps the reach at three operations.
+	provenance core.ProjectProvenanceApplication
 }
 
 func (b *DeliveryInputBuilder) Current(ctx context.Context, actorID string, frozen delivery.DeliveryInput) (bool, error) {
@@ -122,12 +128,12 @@ func (h *SourceRuntime) DeliveryInputBuilder() DeliveryInputAssembler {
 		return nil
 	}
 	// 交付侧另有一份带 rules 的模板（lingdoctemplate.Template）。工作区自己那份
-	// ContractDemoTemplate 是 workspacecore.Template，**没有 Rules**——拿它来冻结，
+	// ContractDemoTemplate 是 core.Template，**没有 Rules**——拿它来冻结，
 	// T13 会因为没有规则声明把每一次检查都判成 not_evaluated。
 	if h.templates == nil {
 		return nil
 	}
-	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), gateway: h.gateway, templates: h.templates, projects: h.service}
+	return &DeliveryInputBuilder{reviewer: h.sourceRevalidator(), gateway: h.gateway, templates: h.templates, provenance: h.provenance}
 }
 
 // Build 把 T12 的交付输入补成 T13 的冻结输入。
@@ -146,7 +152,8 @@ func (b *DeliveryInputBuilder) Build(ctx context.Context, actorID string, input 
 		return delivery.DeliveryInput{}, candidateadoption.ErrSourceAccessDenied
 	}
 	var specProvenance *core.ProjectProvenanceSnapshot
-	if projects, ok := b.projects.(deliveryProvenanceCore); ok {
+	if b.provenance != nil {
+		projects := b.provenance
 		caller := types.CallerFromContext(checked)
 		a := core.Actor{TenantID: caller.TenantID, UserID: caller.UserID, Role: caller.Role}
 		proof, prepared := core.ProjectProvenanceSnapshotFromContext(checked, input.ProjectID)
@@ -421,15 +428,9 @@ func frozenChaptersInTemplateOrder(chapters []candidateadoption.WorkspaceDeliver
 
 // The production core owns these provenance checks. Public snapshot JSON is
 // only a durable reference to its immutable server pins, never an access proof.
-type deliveryProvenanceCore interface {
-	PrepareProjectProvenance(context.Context, core.Actor, string, bool) (context.Context, core.ProjectProvenanceSnapshot, error)
-	ValidateProjectProvenanceSnapshot(context.Context, core.Actor, string, map[string]string, core.ProjectProvenanceSnapshot, bool) error
-	AssertFrozenProjectProvenance(context.Context, core.Actor, string, map[string]string, core.ProjectProvenanceSnapshot, bool) error
-}
-
 func (b *DeliveryInputBuilder) AuthorizeFrozenProvenance(ctx context.Context, actorID, projectID string, frozen delivery.DeliveryInput) error {
-	projects, ok := b.projects.(deliveryProvenanceCore)
-	if !ok {
+	projects := b.provenance
+	if projects == nil {
 		// Legacy contract fixtures have no full-workflow core. A persisted
 		// provenance snapshot still requires its real validator.
 		if frozen.SpecProvenance != nil {

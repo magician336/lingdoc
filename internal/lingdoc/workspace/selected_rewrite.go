@@ -109,6 +109,18 @@ type SelectedRewriteApplication interface {
 	Apply(context.Context, Actor, string, string, string, string, ApplySelectedRewriteInput) (core.WorkingCopy, bool, error)
 }
 
+// RewriteWorkspaceApplication 是选区改写这个用例需要的工作区能力。
+//
+// 它按用例收窄：授权一个能力、读项目、读工作副本、把改写结果写回工作副本。
+// 方法签名逐字取自聚合体的同名方法，收窄只发生在「哪些方法进这个口」。
+// 持有这个口的传输面因此看不到聚合体的其余方法。
+type RewriteWorkspaceApplication interface {
+	Authorize(ctx context.Context, actor Actor, projectID, capability string) error
+	GetProject(ctx context.Context, actor Actor, id string) (Project, error)
+	GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error)
+	ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput, reviewItems []core.ReviewItem) (WorkingCopyMutationResult, error)
+}
+
 type ApplySelectedRewriteInput struct {
 	ExpectedSpecRevision        int64   `json:"expected_spec_revision"`
 	ExpectedWorkingCopyRevision int64   `json:"expected_working_copy_revision"`
@@ -245,19 +257,24 @@ func (s *GORMSelectedRewriteStore) claimApply(ctx context.Context, row selectedR
 
 type SelectedRewriteService struct {
 	store     *GORMSelectedRewriteStore
-	workspace ApplicationService
-	sources   SourceApplicationService
-	model     SelectedRewriteModel
-	audit     AuditSink
-	now       func() time.Time
+	workspace RewriteWorkspaceApplication
+	// selector is the optional formal-evidence capability. It is a port of its
+	// own: the rewrite workspace port does not name the selection, and
+	// discovering it by asserting that port would let the transport reach
+	// past what the port declares.
+	selector core.EvidenceSelectionApplication
+	sources  SourceApplicationService
+	model    SelectedRewriteModel
+	audit    AuditSink
+	now      func() time.Time
 }
 
-func NewSelectedRewriteService(db *gorm.DB, workspace ApplicationService, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
+func NewSelectedRewriteService(db *gorm.DB, workspace RewriteWorkspaceApplication, selector core.EvidenceSelectionApplication, sources SourceApplicationService, model SelectedRewriteModel, audits ...AuditSink) *SelectedRewriteService {
 	var audit AuditSink
 	if len(audits) > 0 {
 		audit = audits[0]
 	}
-	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
+	return &SelectedRewriteService{store: NewGORMSelectedRewriteStore(db), workspace: workspace, selector: selector, sources: sources, model: model, audit: audit, now: func() time.Time { return time.Now().UTC() }}
 }
 
 func (s *SelectedRewriteService) recordAudit(ctx context.Context, actor Actor, projectID, capability, decision, reason string, details map[string]any) {
@@ -294,7 +311,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
 	var evidenceConstraints []generation.EvidenceConstraint
 	if len(input.EvidenceCardRefs) > 0 {
-		selected, selectErr := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
+		selected, selectErr := g2SelectFormal(ctx, s.selector, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}

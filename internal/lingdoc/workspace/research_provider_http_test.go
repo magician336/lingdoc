@@ -55,9 +55,9 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 		t.Fatalf("种入他租户检索来源失败：%v", err)
 	}
 
-	runtime := NewGORMSourceRuntime(db, nil, nil, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, nil, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	runtime.EnableFullWorkflowPolicy()
 	adapter := NewG2ResearchAdapter(db, projects, runtime, nil, nil, nil)
 	// 生产组合根把同一个适配器同时装成 Sources 与 Research；只有 Research
@@ -65,7 +65,17 @@ func newResearchProviderFixture(t *testing.T, seedTenantRow bool) (*gin.Engine, 
 	projects.ConfigureG2(core.G2Runtime{Sources: adapter, Research: adapter})
 
 	engine := gin.New()
-	RegisterG2FullRoutes(engine.Group("/api"), projects)
+	RegisterG2FullRoutes(engine.Group("/api"), G2RoutePorts{
+		Research:      projects,
+		Imports:       projects,
+		EvidenceCards: projects,
+		Claims:        projects,
+		Anchors:       projects,
+		AgentSessions: projects,
+		Proposals:     projects,
+		Context:       projects,
+		ChangeSets:    projects,
+	})
 	return engine, db
 }
 

@@ -47,6 +47,16 @@ func (a g4AdapterChapterAuthorizer) Authorize(ctx context.Context, userID, proje
 
 func g4AdapterFixture(t *testing.T) (*TemplateGovernanceRuntime, *gorm.DB, core.Actor, core.Project, context.Context) {
 	t.Helper()
+	runtime, _, db, actor, p, ctx := g4AdapterFixtureWithProjects(t)
+	return runtime, db, actor, p, ctx
+}
+
+// g4AdapterFixtureWithProjects also hands back the aggregate the fixture
+// assembled. The governance runtime deliberately no longer holds the aggregate,
+// so the helpers that drive the human baseline lifecycle receive it explicitly
+// instead of reaching through the runtime.
+func g4AdapterFixtureWithProjects(t *testing.T) (*TemplateGovernanceRuntime, *core.Service, *gorm.DB, core.Actor, core.Project, context.Context) {
+	t.Helper()
 	db, err := gorm.Open(sqlite.Dialector{DriverName: "sqlite", DSN: filepath.Join(t.TempDir(), "governance.db") + "?_pragma=busy_timeout(5000)"}, &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +109,8 @@ func g4AdapterFixture(t *testing.T) (*TemplateGovernanceRuntime, *gorm.DB, core.
 		t.Fatal(err)
 	}
 	shares := g4AdapterShares{}
-	sourceRuntime := NewGORMSourceRuntime(db, projects, shares, nil, delivery.NewFixedTemplateReader())
+	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Projects: projects, Context: projects}, shares, nil, delivery.NewFixedTemplateReader())
+	connectAggregateCapabilities(sourceRuntime, projects)
 	sourceRuntime.EnableFullWorkflowPolicy()
 	research := NewG2ResearchAdapter(db, projects, sourceRuntime, shares, nil, nil)
 	projects.ConfigureG2(core.G2Runtime{Sources: research})
@@ -107,26 +118,26 @@ func g4AdapterFixture(t *testing.T) (*TemplateGovernanceRuntime, *gorm.DB, core.
 	if err != nil {
 		t.Fatal(err)
 	}
-	return runtime, db, actor, p, ctx
+	return runtime, projects, db, actor, p, ctx
 }
 
 // Exercise the actual human baseline lifecycle. A draft correctly has no
 // formal chapters and cannot be read as a delivery input.
-func g4ActivateProject(t *testing.T, r *TemplateGovernanceRuntime, actor core.Actor, p core.Project, ctx context.Context) core.Project {
+func g4ActivateProject(t *testing.T, projects *core.Service, actor core.Actor, p core.Project, ctx context.Context) core.Project {
 	t.Helper()
-	r.projects.RequireActivationRead(true)
-	raw, _, _, err := r.projects.SaveSpec(ctx, actor, p.ID, "g4-human-spec", core.SaveSpecInput{ExpectedSpecRevision: p.SpecRevision, Fields: map[string]string{"research_subject": "合成软件验收对象", "research_goal": "合成软件验收目标"}})
+	projects.RequireActivationRead(true)
+	raw, _, _, err := projects.SaveSpec(ctx, actor, p.ID, "g4-human-spec", core.SaveSpecInput{ExpectedSpecRevision: p.SpecRevision, Fields: map[string]string{"research_subject": "合成软件验收对象", "research_goal": "合成软件验收目标"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	read, err := r.projects.RecordActivationRead(ctx, actor, p.ID, p.ProjectVersion)
+	read, err := projects.RecordActivationRead(ctx, actor, p.ID, p.ProjectVersion)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _, _, err = r.projects.ActivateProject(ctx, actor, p.ID, "g4-human-activate", core.ActivateProjectInput{ExpectedSpecRevision: p.SpecRevision, ExpectedProjectVersion: p.ProjectVersion, ReviewedProjectVersion: p.ProjectVersion, ActivationReadID: read.ID})
+	raw, _, _, err = projects.ActivateProject(ctx, actor, p.ID, "g4-human-activate", core.ActivateProjectInput{ExpectedSpecRevision: p.SpecRevision, ExpectedProjectVersion: p.ProjectVersion, ReviewedProjectVersion: p.ProjectVersion, ActivationReadID: read.ID})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +152,9 @@ func g4ActivateProject(t *testing.T, r *TemplateGovernanceRuntime, actor core.Ac
 
 // These are synthetic software inputs. A scoped human confirmation is recorded
 // through its real service; it is not a real research trial or scientific proof.
-func g4WriteConfirmedChapters(t *testing.T, r *TemplateGovernanceRuntime, db *gorm.DB, actor core.Actor, p core.Project, ctx context.Context) []core.Chapter {
+func g4WriteConfirmedChapters(t *testing.T, projects *core.Service, db *gorm.DB, actor core.Actor, p core.Project, ctx context.Context) []core.Chapter {
 	t.Helper()
-	chapters, err := r.projects.ListChapters(ctx, actor, p.ID)
+	chapters, err := projects.ListChapters(ctx, actor, p.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,9 +162,9 @@ func g4WriteConfirmedChapters(t *testing.T, r *TemplateGovernanceRuntime, db *go
 		t.Fatal("actual activation did not create the required formal chapters")
 	}
 	store := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	confirmations := candidateadoption.NewConfirmationService(store, nil, g4AdapterChapterAuthorizer{r.projects})
+	confirmations := candidateadoption.NewConfirmationService(store, nil, g4AdapterChapterAuthorizer{projects})
 	for _, chapter := range chapters {
-		raw, _, _, err := r.projects.SaveChapter(ctx, actor, p.ID, chapter.ID, "g4-body-"+chapter.ID, core.SaveChapterInput{ExpectedChapterVersionID: chapter.CurrentVersionID, ExpectedSpecRevision: p.SpecRevision, BodyMarkdown: "合成正文仅检验软件流程，不构成研究结论。", SourceIDs: []string{}})
+		raw, _, _, err := projects.SaveChapter(ctx, actor, p.ID, chapter.ID, "g4-body-"+chapter.ID, core.SaveChapterInput{ExpectedChapterVersionID: chapter.CurrentVersionID, ExpectedSpecRevision: p.SpecRevision, BodyMarkdown: "合成正文仅检验软件流程，不构成研究结论。", SourceIDs: []string{}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -166,7 +177,7 @@ func g4WriteConfirmedChapters(t *testing.T, r *TemplateGovernanceRuntime, db *go
 			t.Fatalf("actual scoped human confirmation: %+v replay=%v %v", confirmed, replayed, err)
 		}
 	}
-	chapters, err = r.projects.ListChapters(ctx, actor, p.ID)
+	chapters, err = projects.ListChapters(ctx, actor, p.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -664,14 +675,14 @@ func TestTemplateGovernanceRuntimeModelUsesActualG2ContextOnce(t *testing.T) {
 	}
 }
 func TestTemplateGovernanceRuntimeCheckerUsesPersistedReviewDecisions(t *testing.T) {
-	r, db, actor, p, ctx := g4AdapterFixture(t)
-	p = g4ActivateProject(t, r, actor, p, ctx)
-	chapters := g4WriteConfirmedChapters(t, r, db, actor, p, ctx)
+	r, projects, db, actor, p, ctx := g4AdapterFixtureWithProjects(t)
+	p = g4ActivateProject(t, projects, actor, p, ctx)
+	chapters := g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
 	check := func() []core.ImpactBlocker {
 		t.Helper()
 		var blockers []core.ImpactBlocker
 		err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			p, err := r.projects.AuthorizeInTransaction(ctx, core.NewTransactionAdapter(tx), actor, p.ID, "read")
+			p, err := r.review.AuthorizeInTransaction(ctx, core.NewTransactionAdapter(tx), actor, p.ID, "read")
 			if err != nil {
 				return err
 			}

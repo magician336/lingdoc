@@ -22,13 +22,15 @@ type selectedRewriteStub struct {
 // names the port.
 //
 // The ports are the ones the routes need: the project, membership, chapter,
-// template and change set families, and the source family.
+// template and change set families, and the source family. They are named,
+// not inferred: since the legacy wide ports were retired, every one of them
+// has to be handed over by name, and the assembly fails when one is absent.
 func TestNewHandlerRefusesToAssembleWithoutARequiredPort(t *testing.T) {
 	service := &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}
 	sources := &sourceApplicationServiceStub{}
 
 	// The complete set assembles.
-	if _, err := NewHandler(HandlerDependencies{Read: service, Write: service, Sources: sources}); err != nil {
+	if _, err := NewHandler(contextPorts(service, sources)); err != nil {
 		t.Fatalf("a complete dependency set = %v, want no error", err)
 	}
 
@@ -39,7 +41,7 @@ func TestNewHandlerRefusesToAssembleWithoutARequiredPort(t *testing.T) {
 	}{
 		{
 			name:    "no sources",
-			deps:    HandlerDependencies{Read: service, Write: service},
+			deps:    contextPorts(service, nil),
 			missing: "sources",
 		},
 		{
@@ -50,11 +52,17 @@ func TestNewHandlerRefusesToAssembleWithoutARequiredPort(t *testing.T) {
 			missing: "projects",
 		},
 		{
-			// The legacy adapter fills the application ports, so the sources
-			// port is the one that cannot be inferred.
-			name:    "no sources beside a legacy service",
-			deps:    HandlerDependencies{Service: service},
-			missing: "sources",
+			// Every port but one is present. The missing one is named,
+			// whichever port it is.
+			name: "no change set port",
+			deps: HandlerDependencies{
+				Projects:    service,
+				Members:     service,
+				Chapters:    service,
+				TemplateApp: service,
+				Sources:     sources,
+			},
+			missing: "change sets",
 		},
 	}
 	for _, testCase := range cases {
@@ -83,7 +91,7 @@ func TestTheRewriteEndpointsExistOnlyWhenTheCallerAsksForThem(t *testing.T) {
 	service := &applicationServiceStub{project: Project{ID: "project-1", Name: "demo"}}
 	sources := &sourceApplicationServiceStub{}
 
-	without := HandlerDependencies{Read: service, Write: service, Sources: sources}
+	without := contextPorts(service, sources)
 	handler, err := NewHandler(without)
 	if err != nil {
 		t.Fatalf("assemble without the rewrite capability: %v", err)
@@ -92,7 +100,7 @@ func TestTheRewriteEndpointsExistOnlyWhenTheCallerAsksForThem(t *testing.T) {
 		t.Fatal("the rewrite port was installed without being asked for")
 	}
 
-	with := HandlerDependencies{Read: service, Write: service, Sources: sources}
+	with := contextPorts(service, sources)
 	with.WithSelectedRewrites(&selectedRewriteStub{})
 	handler, err = NewHandler(with)
 	if err != nil {
@@ -116,7 +124,7 @@ func TestTheOptionalCapabilitiesDecideWhichRoutesExist(t *testing.T) {
 
 	routesOf := func(t *testing.T, declare func(*HandlerDependencies)) map[string]bool {
 		t.Helper()
-		deps := HandlerDependencies{Read: service, Write: service, Sources: sources}
+		deps := contextPorts(service, sources)
 		declare(&deps)
 		handler, err := NewHandler(deps)
 		if err != nil {

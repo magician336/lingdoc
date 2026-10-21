@@ -1,0 +1,76 @@
+{
+ "mode": "real",
+ "note": "47.16 遗留宽口退役。三个宽口一起退役：ApplicationService(37) + WorkspaceReadApplication(12) + WorkspaceWriteApplication(22)。后两个合起来 34 个方法，正是 Spec 决策 34 说的「另一个覆盖三十余个操作的口」，而且它们是组合根推断路径的输入——不删它们，决策 37「组合根不再做多重推断」就没兑现。新增两个上下文窄口：core.CapabilityAuthorizer（1 个方法：Authorize）与 core.GenerationContextApplication（1 个方法：GenerationContext）；22 处消费点各换成它真正需要的那几个窄口。删掉 core_alias.go 的 type Service = core.Service 别名与 4 个 NewService* 工厂（实测全仓无人使用）。口径变化（本票唯一的对外可见变化在装配契约上，不是 HTTP 行为）：组合根不再从 Service / Read / Write 推断上下文口——以前只给 Service 也能装配出 handler，删除推断后必须显式给齐 5 个上下文口 + Sources，否则启动期失败并指名缺哪个（沿用段二的 fail-closed 规矩）。对外 HTTP 行为零变化。",
+ "head": "215cd274",
+ "base": "633ba34",
+ "passed": [
+  {
+   "id": "三个宽口从代码里清零",
+   "status": "passed",
+   "evidence": "脚本 .scratch/lingdoc-arch-20261021/seg3/scan_wide_port_refs.py（把行注释与块注释去掉后再找）：代码里仍引用 ApplicationService / WorkspaceReadApplication / WorkspaceWriteApplication 的文件 = 0；剩下 21 处命中全在注释里（历史说明，保留）"
+  },
+  {
+   "id": "组合根不再做多重推断",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/http.go 减 257 行：resolvePorts 的推断逻辑、legacyApplicationAdapter、splitProjectApplication / splitMembershipApplication / splitChapterApplication / splitTemplateApplication / splitChangeSetApplication 五个转发适配器与它们承载的 35 个转发方法全部删除；HandlerDependencies 只留 5 个上下文口 + Sources + FullWorkflow + 三个 With..."
+  },
+  {
+   "id": "别名层退役",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/core_alias.go 减 17 行：type Service = core.Service 与 NewService / NewServiceWithAuthorizer / NewServiceWithAudit / NewServiceWithAuditMode 四个工厂删除（实测全仓无人使用）；其余类型别名保留"
+  },
+  {
+   "id": "22 处消费点各自换成窄口",
+   "status": "passed",
+   "evidence": "access_policy.go / generation.go / source_policy.go / research_adapter.go / g2_generation_evidence.go / source_runtime_gorm.go / delivery_input.go / container.go 的 6 处：分别换成 core.CapabilityAuthorizer、core.ProjectApplication、core.GenerationContextApplication 之一或其组合"
+  },
+  {
+   "id": "结构断言：传输层无聚合体具体类型引用（白名单清空）",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspace/seg3_transport_ports_test.go 的 aggregateHolders 现在是空表——core_alias.go / contracts.go / delivery_contracts.go 三条全部删除；断言继续绿"
+  },
+  {
+   "id": "窄口契约仍然逐字对齐聚合体",
+   "status": "passed",
+   "evidence": "internal/lingdoc/workspacecore/seg3_context_ports_test.go（27 个窄口）与 internal/lingdoc/membership/ports_test.go（2 个窄口）：方法集 = 登记表、签名逐字 = 聚合体同名方法；两个新窄口也登记在册"
+  },
+  {
+   "id": "行为零变化：契约面 base/head 逐字段对照",
+   "status": "passed",
+   "evidence": "compare_routes_shape.py：base 94 = head 94，独有签名无，摘掉源文件行号后路由条目差异 0 条；行号位移 51 处（反映源文件增删行，不涉及对外契约）"
+  },
+  {
+   "id": "行为零变化：路由树 70 与生产装配 48 未变",
+   "status": "passed",
+   "evidence": "internal/router/lingdoc_routes_test.go（70）与 internal/container/lingdoc_test.go（48）的断言期望值一字未改且通过"
+  },
+  {
+   "id": "读方法承重路由数不变",
+   "status": "passed",
+   "evidence": "check_readmethod_weight.py：改动前 14 条、改动后仍 14 条"
+  },
+  {
+   "id": "全量定向测试通过",
+   "status": "passed",
+   "evidence": "go test -p 1 -count=1 ./internal/lingdoc/... ./internal/router/ ./internal/container/ 全绿；go vet ./internal/... exit 0；gofmt -l 无输出"
+  }
+ ],
+ "failed": [],
+ "not_run": [
+  {
+   "id": "go test -race",
+   "status": "not_run",
+   "reason": "本票是形态重构，无并发语义变更；且本机另有兄弟会话在跑 Go 测试，race 全量并发会互相抢资源。段三整体收口前补一轮。"
+  },
+  {
+   "id": "隔离 PostgreSQL 用例",
+   "status": "not_run",
+   "reason": "本票只改装配契约与端口类型，不改持久化路径；PG 用例需单独轻负载一轮。"
+  },
+  {
+   "id": "真实服务链路（外部模型 / 真实模型调用）",
+   "status": "not_run",
+   "reason": "本票不涉及外部服务，记 N/A"
+  }
+ ]
+}

@@ -49,9 +49,10 @@ func agentReopenDraftService(t *testing.T, f deliveryGuardFixture) *core.Service
 	t.Helper()
 	// A new application service and repository read the same production DB;
 	// no in-memory proposal object is used as the persisted readback source.
-	runtime := NewGORMSourceRuntime(f.db, nil, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(f.db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(f.db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(f.db, projects, runtime, g4AdapterShares{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(f.db, projects, runtime, nil)
@@ -59,7 +60,7 @@ func agentReopenDraftService(t *testing.T, f deliveryGuardFixture) *core.Service
 	projects.SetTemplateCatalogResolver(governance)
 	projects.SetImpactRuleChecker(governance.ImpactRuleChecker())
 	projects.SetRuntimeMode("real")
-	NewFullWorkflowGuard(projects, runtime)
+	NewFullWorkflowGuard(fullWorkflowGuardPortsFor(projects), runtime)
 	return projects
 }
 

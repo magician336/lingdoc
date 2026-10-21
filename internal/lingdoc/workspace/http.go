@@ -1,7 +1,6 @@
 package workspace
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
-	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -84,112 +82,19 @@ type requiredPorts struct {
 
 // resolvePorts finds the port each route family needs.
 //
-// The inference lives here and nowhere else: a caller that supplies one
-// broad application service, or a split read and write pair, gets the same
-// ports either way. Doing the inference in one place is what keeps the
-// routes from depending on how the caller happened to inject them.
+// The ports are named, not inferred: the composition root hands over the port
+// of every context, and this function only checks that none of them is
+// missing. It used to infer them from one broad application service or from
+// a split read/write pair, which meant the same capability could be reached
+// through several doors (Spec #47 决策 37).
 func resolvePorts(deps HandlerDependencies) (requiredPorts, error) {
-	var ports requiredPorts
-	ports.projects = deps.Projects
-	ports.members = deps.Members
-	ports.chapters = deps.Chapters
-	ports.templatesApp = deps.TemplateApp
-	ports.changeSets = deps.ChangeSets
-	ports.sources = deps.Sources
-
-	// ApplicationService is a compatibility edge for older composition roots.
-	// New callers should inject the focused ports above; this adapter is the only
-	// place where the legacy cross-use-case surface is widened again.
-	var legacy ApplicationService = deps.Service
-	// When both focused ports are present, keep them split even if a broad test
-	// double or adapter happens to implement ApplicationService as well. Inferring
-	// the legacy adapter from Read first would route mutations through the read port.
-	if legacy == nil && (deps.Read == nil || deps.Write == nil) {
-		if candidate, ok := any(deps.Read).(ApplicationService); ok {
-			legacy = candidate
-		} else if candidate, ok := any(deps.Write).(ApplicationService); ok {
-			legacy = candidate
-		}
-	}
-	// Keep the legacy extension bridge, but never infer the five route ports
-	// from one side when explicit read/write dependencies were supplied.
-	if legacy != nil && (deps.Service != nil || deps.Read == nil || deps.Write == nil) {
-		adapter := legacyApplicationAdapter{ApplicationService: legacy}
-		if ports.projects == nil {
-			ports.projects = adapter
-		}
-		if ports.members == nil {
-			ports.members = adapter
-		}
-		if ports.chapters == nil {
-			ports.chapters = adapter
-		}
-		if ports.templatesApp == nil {
-			ports.templatesApp = adapter
-		}
-		if ports.changeSets == nil {
-			ports.changeSets = adapter
-		}
-	}
-	// A focused test double may implement one port without carrying the legacy
-	// interface. With both read/write ports present, use the split adapters below
-	// rather than a broad interface inferred from just one dependency.
-	if deps.Read == nil || deps.Write == nil {
-		if ports.projects == nil {
-			if candidate, ok := any(deps.Read).(ProjectApplication); ok {
-				ports.projects = candidate
-			} else if candidate, ok := any(deps.Write).(ProjectApplication); ok {
-				ports.projects = candidate
-			}
-		}
-		if ports.members == nil {
-			if candidate, ok := any(deps.Write).(MembershipApplication); ok {
-				ports.members = candidate
-			}
-		}
-		if ports.chapters == nil {
-			if candidate, ok := any(deps.Read).(ChapterApplication); ok {
-				ports.chapters = candidate
-			} else if candidate, ok := any(deps.Write).(ChapterApplication); ok {
-				ports.chapters = candidate
-			}
-		}
-		if ports.templatesApp == nil {
-			if candidate, ok := any(deps.Read).(TemplateApplication); ok {
-				ports.templatesApp = candidate
-			} else if candidate, ok := any(deps.Write).(TemplateApplication); ok {
-				ports.templatesApp = candidate
-			}
-		}
-		if ports.changeSets == nil {
-			if candidate, ok := any(deps.Read).(ChangeSetApplication); ok {
-				ports.changeSets = candidate
-			} else if candidate, ok := any(deps.Write).(ChangeSetApplication); ok {
-				ports.changeSets = candidate
-			}
-		}
-	}
-	// A composition root may provide the intentionally split read and write
-	// ports without also carrying the legacy ApplicationService. Compose the
-	// five focused route ports explicitly at that seam so every registered
-	// route has a non-nil dependency and the handler never widens the contract
-	// again just to make a route work.
-	if deps.Read != nil && deps.Write != nil {
-		if ports.projects == nil {
-			ports.projects = splitProjectApplication{read: deps.Read, write: deps.Write}
-		}
-		if ports.members == nil {
-			ports.members = splitMembershipApplication{write: deps.Write}
-		}
-		if ports.chapters == nil {
-			ports.chapters = splitChapterApplication{read: deps.Read, write: deps.Write}
-		}
-		if ports.templatesApp == nil {
-			ports.templatesApp = splitTemplateApplication{read: deps.Read, write: deps.Write}
-		}
-		if ports.changeSets == nil {
-			ports.changeSets = splitChangeSetApplication{read: deps.Read, write: deps.Write}
-		}
+	ports := requiredPorts{
+		projects:     deps.Projects,
+		members:      deps.Members,
+		chapters:     deps.Chapters,
+		templatesApp: deps.TemplateApp,
+		changeSets:   deps.ChangeSets,
+		sources:      deps.Sources,
 	}
 
 	// Every port below backs a family of routes that cannot answer without it.
@@ -212,144 +117,6 @@ func resolvePorts(deps HandlerDependencies) (requiredPorts, error) {
 		}
 	}
 	return ports, nil
-}
-
-// legacyApplicationAdapter makes the migration boundary explicit in the
-// composition root while keeping old test doubles and transports working.
-// Existing route families consume only the focused ports.
-type legacyApplicationAdapter struct{ ApplicationService }
-
-type splitProjectApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitProjectApplication) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
-	return a.read.ListProjects(ctx, actor)
-}
-func (a splitProjectApplication) GetProject(ctx context.Context, actor Actor, projectID string) (Project, error) {
-	return a.read.GetProject(ctx, actor, projectID)
-}
-func (a splitProjectApplication) CreateProjectResult(ctx context.Context, actor Actor, key string, input CreateProjectInput) (CreateProjectResult, error) {
-	return a.write.CreateProjectResult(ctx, actor, key, input)
-}
-func (a splitProjectApplication) SaveSpecResult(ctx context.Context, actor Actor, projectID, key string, input SaveSpecInput) (SaveSpecResult, error) {
-	return a.write.SaveSpecResult(ctx, actor, projectID, key, input)
-}
-func (a splitProjectApplication) ActivateProjectResult(ctx context.Context, actor Actor, projectID, key string, input ActivateProjectInput) (ProjectMutationResult, error) {
-	return a.write.ActivateProjectResult(ctx, actor, projectID, key, input)
-}
-func (a splitProjectApplication) ListDraftCandidates(ctx context.Context, actor Actor, projectID string) ([]DraftCandidate, error) {
-	return a.read.ListDraftCandidates(ctx, actor, projectID)
-}
-func (a splitProjectApplication) CreateDraftCandidateResult(ctx context.Context, actor Actor, projectID, key string, input DraftCandidateInput) (DraftCandidateMutationResult, error) {
-	return a.write.CreateDraftCandidateResult(ctx, actor, projectID, key, input)
-}
-func (a splitProjectApplication) ListAuditEvents(ctx context.Context, actor Actor, projectID string) ([]AuditEvent, error) {
-	return a.read.ListAuditEvents(ctx, actor, projectID)
-}
-func (a splitProjectApplication) ActivationDiff(ctx context.Context, actor Actor, projectID string, version int64) (ActivationDiff, error) {
-	return a.read.ActivationDiff(ctx, actor, projectID, version)
-}
-func (a splitProjectApplication) DiscardProjectResult(ctx context.Context, actor Actor, projectID, key string, expected int64) (ProjectMutationResult, error) {
-	return a.write.DiscardProjectResult(ctx, actor, projectID, key, expected)
-}
-func (a splitProjectApplication) RestoreProjectResult(ctx context.Context, actor Actor, projectID, key string, expected int64) (ProjectMutationResult, error) {
-	return a.write.RestoreProjectResult(ctx, actor, projectID, key, expected)
-}
-
-type splitMembershipApplication struct{ write WorkspaceWriteApplication }
-
-func (a splitMembershipApplication) SaveMembersResult(ctx context.Context, actor Actor, projectID, key string, input SaveMembersInput) (ProjectMutationResult, error) {
-	return a.write.SaveMembersResult(ctx, actor, projectID, key, input)
-}
-func (a splitMembershipApplication) TransferOwnerResult(ctx context.Context, actor Actor, projectID, key string, input TransferOwnerInput) (ProjectMutationResult, error) {
-	return a.write.TransferOwnerResult(ctx, actor, projectID, key, input)
-}
-func (a splitMembershipApplication) RequestOwnerTransferResult(ctx context.Context, actor Actor, projectID, key string, input OwnerTransferInput) (OwnerTransferResult, error) {
-	return a.write.RequestOwnerTransferResult(ctx, actor, projectID, key, input)
-}
-func (a splitMembershipApplication) AcceptOwnerTransferResult(ctx context.Context, actor Actor, projectID, transferID, key string) (OwnerTransferResult, error) {
-	return a.write.AcceptOwnerTransferResult(ctx, actor, projectID, transferID, key)
-}
-
-type splitChapterApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitChapterApplication) ListChapters(ctx context.Context, actor Actor, projectID string) ([]Chapter, error) {
-	return a.read.ListChapters(ctx, actor, projectID)
-}
-func (a splitChapterApplication) GetWorkingCopy(ctx context.Context, actor Actor, projectID, chapterID string) (WorkingCopy, error) {
-	return a.read.GetWorkingCopy(ctx, actor, projectID, chapterID)
-}
-func (a splitChapterApplication) ListChapterVersions(ctx context.Context, actor Actor, projectID, chapterID string) ([]ChapterVersion, error) {
-	return a.read.ListChapterVersions(ctx, actor, projectID, chapterID)
-}
-func (a splitChapterApplication) SaveChapterResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveChapterInput) (ChapterMutationResult, error) {
-	return a.write.SaveChapterResult(ctx, actor, projectID, chapterID, key, input)
-}
-func (a splitChapterApplication) SaveWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input SaveWorkingCopyInput) (WorkingCopyMutationResult, error) {
-	return a.write.SaveWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
-}
-func (a splitChapterApplication) ApplyRewriteResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input core.SaveWorkingCopyInput, reviews []core.ReviewItem) (WorkingCopyMutationResult, error) {
-	return a.write.ApplyRewriteResult(ctx, actor, projectID, chapterID, key, input, reviews)
-}
-func (a splitChapterApplication) CommitWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input CommitWorkingCopyInput) (CommittedChapterMutationResult, error) {
-	return a.write.CommitWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
-}
-func (a splitChapterApplication) RestoreWorkingCopyResult(ctx context.Context, actor Actor, projectID, chapterID, key string, input RestoreWorkingCopyInput) (WorkingCopyMutationResult, error) {
-	return a.write.RestoreWorkingCopyResult(ctx, actor, projectID, chapterID, key, input)
-}
-
-type splitTemplateApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitTemplateApplication) PreviewTemplateMigration(ctx context.Context, actor Actor, projectID string, input TemplateMigrationInput) (TemplateMigrationPreview, error) {
-	return a.read.PreviewTemplateMigration(ctx, actor, projectID, input)
-}
-func (a splitTemplateApplication) GetTemplateCopy(ctx context.Context, actor Actor, projectID string, version int64) (ProjectTemplateCopy, error) {
-	return a.read.GetTemplateCopy(ctx, actor, projectID, version)
-}
-func (a splitTemplateApplication) PreviewTemplateCopyEdit(ctx context.Context, actor Actor, projectID string, input TemplateCopyDefinitionInput) (TemplateMigrationPreview, error) {
-	return a.read.PreviewTemplateCopyEdit(ctx, actor, projectID, input)
-}
-func (a splitTemplateApplication) ChangeTemplateResult(ctx context.Context, actor Actor, projectID, key string, input TemplateMigrationInput) (ProjectMutationResult, error) {
-	return a.write.ChangeTemplateResult(ctx, actor, projectID, key, input)
-}
-func (a splitTemplateApplication) SaveTemplateCopyResult(ctx context.Context, actor Actor, projectID, key string, input TemplateCopyDefinitionInput) (ProjectMutationResult, error) {
-	return a.write.SaveTemplateCopyResult(ctx, actor, projectID, key, input)
-}
-func (a splitTemplateApplication) BindTemplateCopyRuleSetResult(ctx context.Context, actor Actor, projectID, key string, input BindTemplateCopyRuleSetInput) (ProjectMutationResult, error) {
-	return a.write.BindTemplateCopyRuleSetResult(ctx, actor, projectID, key, input)
-}
-
-type splitChangeSetApplication struct {
-	read  WorkspaceReadApplication
-	write WorkspaceWriteApplication
-}
-
-func (a splitChangeSetApplication) CreateChangeSetResult(ctx context.Context, actor Actor, projectID, key string, input CreateChangeSetInput) (ChangeSetMutationResult, error) {
-	return a.write.CreateChangeSetResult(ctx, actor, projectID, key, input)
-}
-func (a splitChangeSetApplication) ListChangeSets(ctx context.Context, actor Actor, projectID string) ([]ChangeSet, error) {
-	return a.read.ListChangeSets(ctx, actor, projectID)
-}
-func (a splitChangeSetApplication) GetChangeSet(ctx context.Context, actor Actor, projectID, changeSetID string) (ChangeSet, error) {
-	return a.read.GetChangeSet(ctx, actor, projectID, changeSetID)
-}
-func (a splitChangeSetApplication) ApplyChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	return a.write.ApplyChangeSetResult(ctx, actor, projectID, changeSetID, key)
-}
-func (a splitChangeSetApplication) RejectChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	return a.write.RejectChangeSetResult(ctx, actor, projectID, changeSetID, key)
-}
-
-func (a splitChangeSetApplication) ReassessChangeSetResult(ctx context.Context, actor Actor, projectID, changeSetID, key string) (ChangeSetMutationResult, error) {
-	return a.write.ReassessChangeSetResult(ctx, actor, projectID, changeSetID, key)
 }
 
 // Register registers the workspace's routes.

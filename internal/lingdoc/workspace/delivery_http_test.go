@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/lingdoc/delivery"
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -167,9 +168,9 @@ func TestIssueDispositionRoutePersistsWithoutWaivingDeliveryGate(t *testing.T) {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
-	core, ok := testRuntime(handler).service.(*Service)
+	core, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace application = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace application = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)
@@ -319,9 +320,9 @@ func TestDismissalStopsApplyingWhenTheTargetVersionChanges(t *testing.T) {
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
-	core, ok := testRuntime(handler).service.(*Service)
+	core, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace application = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace application = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)
@@ -406,9 +407,9 @@ func TestRuleIssueWaiveOnBlockingIsRejectedAndResolveKeepsBlocking(t *testing.T)
 			t.Fatalf("prepare workspacecore persistence: %v", err)
 		}
 	}
-	core, ok := testRuntime(handler).service.(*Service)
+	core, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace application = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace application = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryTestAuthorizer{}}
 	release := NewDeliveryReleaseServiceWithDispositions(inputs, handler.DeliveryInputBuilder(), delivery.NewMemorySnapshotStore(), nil, core)

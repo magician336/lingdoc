@@ -229,6 +229,90 @@ class LingDocRouteParity(unittest.TestCase):
             self.check(routes=bad)
 
 
+    def test_read_method_extraction_survives_a_narrow_port_receiver(self):
+        """A read route that returns (any, error) has one shape source: the method it calls.
+
+        The G2 read routes are declared as ``g2FullRead(func(...) (any, error))``,
+        so the response shape is taken from the method the route calls, not from
+        the closure's return type. That extraction used to pin the receiver
+        name, and a transport that holds a narrow context port instead of the
+        aggregate would have lost the shape check for those routes *silently* -
+        the parity gate would still pass, with less coverage.
+
+        The G2 surface now reaches the workspace through a bundle of narrow
+        context ports, so the real source already calls the read method on a
+        receiver that is neither ``service`` nor ``s``. This test pins that real
+        shape: the extraction must still find the method, and the shape drift
+        must still be caught. It then moves the call onto a third receiver name
+        to prove the extraction is not tied to any particular spelling.
+        """
+        file = "internal/lingdoc/workspace/g2_full_http.go"
+        source = self.routes[file]
+        original = "return ports.Research.ListResearchTasks("
+        self.assertIn(original, source,
+                      "the G2 research task read route must call the read method through a narrow port")
+        table = parity.read_routes({file: source})
+        extracted = [route.get("read_method") for route in table.values()]
+        self.assertIn("ListResearchTasks", extracted,
+                      "the read method must still be extracted from a narrow-port receiver")
+
+        bad = copy.deepcopy(self.document)
+        response = next(v for k, v in bad["paths"][self.path]["get"]["responses"].items() if k.startswith("2"))
+        media = response["content"]["application/json"]
+        envelope = copy.deepcopy(parity.resolve(bad, media["schema"]))
+        data = copy.deepcopy(parity.resolve(bad, envelope["properties"]["data"]))
+        item = copy.deepcopy(parity.resolve(bad, data["items"]))
+        self.assertIn("goal", item["properties"])
+        del item["properties"]["goal"]
+        data["items"] = item
+        envelope["properties"]["data"] = data
+        media["schema"] = envelope
+
+        # The real source: the shape drift must be caught as it stands.
+        with self.assertRaisesRegex(parity.ContractParityError, "response schema omits Go JSON fields"):
+            self.check(document=bad)
+
+        # A third receiver spelling: the extraction must not be tied to a name.
+        moved = dict(self.routes)
+        moved[file] = source.replace(original, "return somethingElse.ListResearchTasks(", 1)
+        with self.assertRaisesRegex(parity.ContractParityError, "response schema omits Go JSON fields"):
+            self.check(document=bad, routes=moved)
+
+    def test_a_read_route_whose_shape_source_is_unknown_is_rejected(self):
+        """A read route must have a shape source, or the check is silently skipped.
+
+        The read method is extracted from the route's own source. When the
+        extraction picks up a call that is not a read - ``return err.Error()``
+        looks exactly like ``return service.ListTasks(`` to the pattern - the
+        name resolves to nothing, and looking up nothing used to mean "no
+        shape check", quietly.
+
+        This test requires that a read route whose shape source cannot be
+        resolved is reported instead of skipped.
+        """
+        file = "internal/lingdoc/workspace/g2_full_http.go"
+        source = self.routes[file]
+        original = "return ports.Research.ListResearchTasks("
+        self.assertIn(original, source)
+
+        # A call that is not a read: the extracted name resolves to nothing.
+        not_a_read = dict(self.routes)
+        not_a_read[file] = source.replace(original, "return err.Error(", 1)
+        with self.assertRaisesRegex(parity.ContractParityError,
+                                    "the response shape source cannot be resolved"):
+            self.check(routes=not_a_read)
+
+        # The same route with its read method intact still passes.
+        self.check()
+
+    def test_a_write_route_needs_no_read_shape_source(self):
+        """A write route's shape comes from the contract and the request DTO.
+
+        Requiring a read shape source there would reject every write route, so
+        the rule is scoped to reads.
+        """
+        self.check()
+
     def validator_for_request(self, document, path, method):
         normalized = parity.normalize_openapi_schema(document)
         body = normalized["paths"][path][method]["requestBody"]["content"]["application/json"]["schema"]

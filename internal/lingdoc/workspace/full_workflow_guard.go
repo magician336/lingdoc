@@ -20,23 +20,27 @@ import (
 // Production composition owns this guard; the HTTP layer cannot install or
 // substitute a successful preflight/recovery result.
 type FullWorkflowGuard struct {
-	Core     *core.Service
+	ports    FullWorkflowGuardPorts
 	Sources  SourceApplicationService
 	releases *DeliveryReleaseService
 	exports  *DeliveryExportService
 }
 
-func NewFullWorkflowGuard(service *core.Service, sources SourceApplicationService) *FullWorkflowGuard {
-	g := &FullWorkflowGuard{Core: service, Sources: sources}
-	service.SetImpactPreflightChecker(fullPreflightChecker{g})
-	service.SetRuntimeRecoveryChecker(fullRecoveryChecker{g})
+// NewFullWorkflowGuard 装出全流程守卫，并把守卫自己装进运行时。
+//
+// 守卫要不再持有聚合体具体类型，「把自己装进运行时」这件事就得由装配口承载：
+// 那三个安装动作本来就是守卫做的，端口收窄不改变这个事实。
+func NewFullWorkflowGuard(ports FullWorkflowGuardPorts, sources SourceApplicationService) *FullWorkflowGuard {
+	g := &FullWorkflowGuard{ports: ports, Sources: sources}
+	ports.Compose.SetImpactPreflightChecker(fullPreflightChecker{g})
+	ports.Compose.SetRuntimeRecoveryChecker(fullRecoveryChecker{g})
 	return g
 }
 
 type fullPreflightChecker struct{ guard *FullWorkflowGuard }
 
 func (c fullPreflightChecker) Recheck(ctx context.Context, a core.Actor, pid, id string) (core.ImpactPreflightEvidence, error) {
-	r, err := c.guard.Core.ReadImpactComputationReceipt(ctx, a, pid, id)
+	r, err := c.guard.ports.Impact.ReadImpactComputationReceipt(ctx, a, pid, id)
 	if err != nil {
 		return core.ImpactPreflightEvidence{}, err
 	}
@@ -71,18 +75,20 @@ func (c fullRecoveryChecker) Recheck(ctx context.Context, a core.Actor, pid, sna
 	if len(bytes) == 0 {
 		return core.ErrRuntimeRecoveryRequired
 	}
-	return g.Core.AssertRevisionStabilized(ctx, a, pid)
+	return g.ports.Impact.AssertRevisionStabilized(ctx, a, pid)
 }
 func (g *FullWorkflowGuard) before(ctx context.Context, user, pid, operation string, stable bool) (core.Actor, error) {
 	a, ok := fullWorkflowActor(ctx, user)
-	if !ok || g == nil || g.Core == nil {
+	// 迁移前这里检查的是聚合体指针为 nil；现在束里六个口都要在位，才等价于
+	// 「工作区能力都在」。少一个口就整条拒绝，而不是在请求里解引用空口。
+	if !ok || g == nil || !g.ports.wired() {
 		return a, ErrNotFound
 	}
-	if err := g.Core.CheckRuntimeOperation(ctx, a, pid, operation, ""); err != nil {
+	if err := g.ports.Runtime.CheckRuntimeOperation(ctx, a, pid, operation, ""); err != nil {
 		return a, err
 	}
 	if stable {
-		if err := g.Core.AssertRevisionStabilized(ctx, a, pid); err != nil {
+		if err := g.ports.Impact.AssertRevisionStabilized(ctx, a, pid); err != nil {
 			return a, err
 		}
 	}
@@ -107,9 +113,9 @@ func (g *FullWorkflowGuard) observe(ctx context.Context, a core.Actor, pid, oper
 	trace.ErrorCode = code
 	ctx = core.WithRuntimeTrace(ctx, trace)
 	if len(objects) > 0 {
-		_ = g.Core.ObserveDeliveryRuntime(ctx, a, pid, operation, status, time.Since(started).Milliseconds(), objects[0])
+		_ = g.ports.Runtime.ObserveDeliveryRuntime(ctx, a, pid, operation, status, time.Since(started).Milliseconds(), objects[0])
 	} else {
-		_ = g.Core.ObserveRuntime(ctx, a, pid, operation, status, time.Since(started).Milliseconds())
+		_ = g.ports.Runtime.ObserveRuntime(ctx, a, pid, operation, status, time.Since(started).Milliseconds())
 	}
 }
 
@@ -131,11 +137,11 @@ func (s *GuardedDeliveryRelease) Check(ctx context.Context, user, pid string, ex
 	if err != nil {
 		return out, err
 	}
-	ctx, _, err = s.guard.Core.PrepareProjectProvenance(ctx, a, pid, false)
+	ctx, _, err = s.guard.ports.Provenance.PrepareProjectProvenance(ctx, a, pid, false)
 	if err != nil {
 		return out, err
 	}
-	basis, err := s.guard.Core.ReadPreflightBasis(ctx, a, pid, nil)
+	basis, err := s.guard.ports.Impact.ReadPreflightBasis(ctx, a, pid, nil)
 	if err != nil {
 		return out, err
 	}
@@ -188,7 +194,7 @@ func (s *GuardedDeliveryRelease) Check(ctx context.Context, user, pid string, ex
 	if err = s.recordRuleSetUse(ctx, user, input, "preflight", "", string(out.Status)); err != nil {
 		return delivery.CheckResult{}, err
 	}
-	receipt, err := s.guard.Core.StoreImpactComputationReceipt(ctx, a, basis, hex.EncodeToString(sum[:]), receiptStatus, evaluations, basis.SourceIDs)
+	receipt, err := s.guard.ports.Impact.StoreImpactComputationReceipt(ctx, a, basis, hex.EncodeToString(sum[:]), receiptStatus, evaluations, basis.SourceIDs)
 	if err != nil {
 		return out, err
 	}
@@ -221,7 +227,7 @@ func (s *GuardedDeliveryRelease) Prepare(ctx context.Context, user, pid, key str
 	if err != nil {
 		return out, false, err
 	}
-	ctx, _, err = s.guard.Core.PrepareProjectProvenance(ctx, a, pid, false)
+	ctx, _, err = s.guard.ports.Provenance.PrepareProjectProvenance(ctx, a, pid, false)
 	if err != nil {
 		return out, false, err
 	}
@@ -236,7 +242,7 @@ type GuardedDeliveryExport struct {
 func GuardFullWorkflowExport(base *DeliveryExportService, g *FullWorkflowGuard) *GuardedDeliveryExport {
 	g.exports = base
 	wrapped := &GuardedDeliveryExport{base, g}
-	g.Core.SetG2ActionExecutor(NewG2ActionExecutor(g.Core, g.Sources, wrapped))
+	g.ports.Compose.SetG2ActionExecutor(NewG2ActionExecutor(g.ports.Actions, g.Sources, wrapped))
 	return wrapped
 }
 func (s *GuardedDeliveryExport) Start(ctx context.Context, user, pid, snapshot, key string) (out delivery.ExportArtifact, replay bool, err error) {
@@ -252,10 +258,10 @@ func (s *GuardedDeliveryExport) Start(ctx context.Context, user, pid, snapshot, 
 	if err != nil {
 		return out, false, err
 	}
-	if err = s.guard.Core.AuthorizeDeliveryExport(ctx, a, pid); err != nil {
+	if err = s.guard.ports.Delivery.AuthorizeDeliveryExport(ctx, a, pid); err != nil {
 		return out, false, err
 	}
-	if err = s.guard.Core.AssertRevisionStabilized(ctx, a, pid); err != nil {
+	if err = s.guard.ports.Impact.AssertRevisionStabilized(ctx, a, pid); err != nil {
 		return out, false, err
 	}
 	// Scope Owner authority to Start, including its internal access/replay
@@ -265,7 +271,7 @@ func (s *GuardedDeliveryExport) Start(ctx context.Context, user, pid, snapshot, 
 	}
 	exportService := *s.DeliveryExportService
 	inputs := *s.inputs
-	inputs.Authorizer = fullWorkflowExportAuthorizer{s.guard.Core, inputs.Authorizer}
+	inputs.Authorizer = fullWorkflowExportAuthorizer{s.guard.ports.Delivery, inputs.Authorizer}
 	exportService.inputs = &inputs
 	runtime, ok := s.guard.Sources.(*SourceRuntime)
 	if !ok || runtime == nil || runtime.db == nil {
@@ -274,10 +280,10 @@ func (s *GuardedDeliveryExport) Start(ctx context.Context, user, pid, snapshot, 
 	if _, ok := exportService.exports.(*delivery.SQLiteExportStore); !ok {
 		return out, false, candidateadoption.ErrDependencyUnavailable
 	}
-	exportService.exports = &fullWorkflowExportRecorder{ExportStore: exportService.exports, base: s.DeliveryExportService, core: s.guard.Core, db: runtime.db, ctx: ctx, actor: a}
+	exportService.exports = &fullWorkflowExportRecorder{ExportStore: exportService.exports, base: s.DeliveryExportService, delivery: s.guard.ports.Delivery, provenance: s.guard.ports.Provenance, db: runtime.db, ctx: ctx, actor: a}
 	out, replay, err = exportService.Start(ctx, user, pid, snapshot, key)
 	if err == nil {
-		if err = s.guard.Core.AuthorizeDeliveryExport(ctx, a, pid); err != nil {
+		if err = s.guard.ports.Delivery.AuthorizeDeliveryExport(ctx, a, pid); err != nil {
 			return delivery.ExportArtifact{}, false, err
 		}
 	}
@@ -297,12 +303,12 @@ func (s *GuardedDeliveryExport) Download(ctx context.Context, user, pid, id stri
 
 // This adapter tightens formal export only; it never changes Caller/Principal.
 type fullWorkflowExportAuthorizer struct {
-	core *core.Service
-	base candidateadoption.DeliveryInputProjectAuthorizer
+	delivery core.DeliveryGuardApplication
+	base     candidateadoption.DeliveryInputProjectAuthorizer
 }
 
 func (a fullWorkflowExportAuthorizer) AuthorizeProject(ctx context.Context, user, projectID string) error {
-	if a.base == nil || a.core == nil {
+	if a.base == nil || nilPort(a.delivery) {
 		return candidateadoption.ErrDependencyUnavailable
 	}
 	if err := a.base.AuthorizeProject(ctx, user, projectID); err != nil {
@@ -312,7 +318,7 @@ func (a fullWorkflowExportAuthorizer) AuthorizeProject(ctx context.Context, user
 	if !ok {
 		return core.ErrHumanDecisionRequired
 	}
-	return a.core.AuthorizeDeliveryExport(ctx, actor, projectID)
+	return a.delivery.AuthorizeDeliveryExport(ctx, actor, projectID)
 }
 
 var _ ReleaseApplication = (*GuardedDeliveryRelease)(nil)
@@ -324,11 +330,12 @@ var _ ExportApplication = (*GuardedDeliveryExport)(nil)
 // persistence and the critical business audit then commit together.
 type fullWorkflowExportRecorder struct {
 	delivery.ExportStore
-	base  *DeliveryExportService
-	core  *core.Service
-	db    *gorm.DB
-	ctx   context.Context
-	actor core.Actor
+	base       *DeliveryExportService
+	delivery   core.DeliveryGuardApplication
+	provenance core.SourceProvenanceApplication
+	db         *gorm.DB
+	ctx        context.Context
+	actor      core.Actor
 }
 
 func (r *fullWorkflowExportRecorder) ReplayExport(attempt delivery.ExportAttempt, requestHash string) (delivery.ExportArtifact, bool, error) {
@@ -395,15 +402,15 @@ func (r *fullWorkflowExportRecorder) recordExport(artifact delivery.ExportArtifa
 	if artifact.Status == delivery.ExportVerified {
 		expected = int64(snapshot.FrozenInput.ProjectVersion)
 	}
-	prepared, err := r.core.PrepareDeliveryExportNativeBasis(r.ctx, r.actor, artifact.ProjectID, expected, refs)
+	prepared, err := r.delivery.PrepareDeliveryExportNativeBasis(r.ctx, r.actor, artifact.ProjectID, expected, refs)
 	if err != nil {
 		return out, false, err
 	}
-	provenance := core.ProjectProvenanceSnapshot{}
+	frozenProvenance := core.ProjectProvenanceSnapshot{}
 	if snapshot.FrozenInput.SpecProvenance != nil {
-		provenance = *snapshot.FrozenInput.SpecProvenance
+		frozenProvenance = *snapshot.FrozenInput.SpecProvenance
 	}
-	prepared, err = r.core.PrepareFrozenProjectProvenance(prepared, r.actor, artifact.ProjectID, snapshot.FrozenInput.Spec, provenance, false)
+	prepared, err = r.provenance.PrepareFrozenProjectProvenance(prepared, r.actor, artifact.ProjectID, snapshot.FrozenInput.Spec, frozenProvenance, false)
 	if err != nil {
 		return out, false, err
 	}
@@ -415,10 +422,10 @@ func (r *fullWorkflowExportRecorder) recordExport(artifact delivery.ExportArtifa
 	err = r.db.WithContext(prepared).Transaction(func(tx *gorm.DB) error {
 		port := core.NewTransactionAdapter(tx)
 		validate := func() error {
-			if err := r.core.ValidateDeliveryExportNativeBasisInTransaction(prepared, port, r.actor, artifact.ProjectID, refs); err != nil {
+			if err := r.delivery.ValidateDeliveryExportNativeBasisInTransaction(prepared, port, r.actor, artifact.ProjectID, refs); err != nil {
 				return err
 			}
-			return r.core.ValidateFrozenProjectProvenanceInTransaction(prepared, port, r.actor, artifact.ProjectID, snapshot.FrozenInput.Spec, provenance, false)
+			return r.provenance.ValidateFrozenProjectProvenanceInTransaction(prepared, port, r.actor, artifact.ProjectID, snapshot.FrozenInput.Spec, frozenProvenance, false)
 		}
 		if err := validate(); err != nil {
 			return err

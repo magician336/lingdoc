@@ -86,9 +86,9 @@ func candidateFixtureEngine(t *testing.T) (*gin.Engine, *gorm.DB, core.ObjectVer
 		t.Fatalf("seed context revision: %v", err)
 	}
 	seedDeliveryBoundTemplateCopy(t, db, "change-http-copy")
-	service, ok := testRuntime(handler).service.(*Service)
+	service, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace handler service = %T, want *core.Service", testRuntime(handler).projects)
 	}
 	actor := Actor{TenantID: 7, UserID: deliveryActorID}
 	project, err := service.GetProject(policyContext(), actor, "project-1")
@@ -106,7 +106,7 @@ func candidateFixtureEngine(t *testing.T) (*gin.Engine, *gorm.DB, core.ObjectVer
 	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 	source := core.ObjectVersionRef{Kind: "ChapterVersion", ID: chapters[0].ID, Version: *chapters[0].CurrentVersionID}
 	target := core.ObjectVersionRef{Kind: "ChapterVersion", ID: chapters[1].ID, Version: *chapters[1].CurrentVersionID}
 	return engine, db, source, target

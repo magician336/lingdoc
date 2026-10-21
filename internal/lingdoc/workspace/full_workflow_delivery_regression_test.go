@@ -51,9 +51,10 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: actor.UserID})
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	t.Cleanup(cancel)
-	runtime := NewGORMSourceRuntime(db, nil, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
-	runtime.ConnectProjects(projects)
+	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
+	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
 	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(db, projects, runtime, nil)
@@ -76,9 +77,9 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(raw, &p))
 	} else {
-		p = g4ActivateProject(t, governance, actor, p, ctx)
+		p = g4ActivateProject(t, projects, actor, p, ctx)
 	}
-	chapters := g4WriteConfirmedChapters(t, governance, db, actor, p, ctx)
+	chapters := g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
 	if withSource {
 		_, ref := g4AdapterSource(t, governance, db, p, actor)
 		chapter := chapters[0]
@@ -94,7 +95,7 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 	p, err = projects.GetProject(ctx, actor, p.ID)
 	require.NoError(t, err)
 	projects.SetRuntimeMode("real")
-	guard := NewFullWorkflowGuard(projects, runtime)
+	guard := NewFullWorkflowGuard(fullWorkflowGuardPortsFor(projects), runtime)
 	inputs := &candidateadoption.DeliveryInputService{Reader: candidateadoption.NewSQLiteCandidateAdoptionStore(db), Authorizer: deliveryGuardProjectAuthorizer{projects}}
 	builder := runtime.DeliveryInputBuilder()
 	snapshots := delivery.NewSQLiteSnapshotStore(db)

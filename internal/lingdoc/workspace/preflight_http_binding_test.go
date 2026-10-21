@@ -29,7 +29,7 @@ func TestPreflightUsesBodyProofID(t *testing.T) {
 	probe := &preflightHTTPBindingProbe{}
 	fixture.projects.SetImpactPreflightChecker(probe)
 	engine := gin.New()
-	RegisterImpactRoutes(engine.Group("/api"), fixture.projects)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(fixture.projects))
 	request := httptest.NewRequest(http.MethodPost, "/api/projects/"+fixture.project.ID+"/change-sets/actual-change/preflight", strings.NewReader(`{"proof_id":"current-check-receipt"}`)).WithContext(fixture.ctx)
 	request.Header.Set("Idempotency-Key", "separate-http-retry-key")
 	response := httptest.NewRecorder()

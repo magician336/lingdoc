@@ -67,6 +67,9 @@ func g2FormalRewriteFixture(t *testing.T) (*SelectedRewriteService, *g2RewriteWo
 	s, w, _, model, input := inheritedRewriteFixture(t)
 	port := &g2RewriteWorkspace{inheritedRewriteWorkspace: w, modelAllowed: true}
 	s.workspace = port
+	// The fake answers the formal-evidence selection too. It used to be found
+	// by asserting the workspace port; the selector is its own port now.
+	s.selector = port
 	input.EvidenceCardRefs = []generation.EvidenceCardRef{{ID: "card", Version: 2}}
 	return s, port, model, input
 }
@@ -169,11 +172,15 @@ func TestG2GenerationUsesProjectCopyAndIndependentRuleHashForCurrentness(t *test
 }
 
 type g2GenerationCurrentWorkspace struct {
-	ApplicationService
+	ProjectApplication
+	core.GenerationContextApplication
 	project Project
 	context core.GenerationContext
 }
 
+func (w *g2GenerationCurrentWorkspace) Authorize(context.Context, Actor, string, string) error {
+	return nil
+}
 func (w *g2GenerationCurrentWorkspace) GenerationContext(context.Context, Actor, string, string) (core.GenerationContext, error) {
 	return w.context, nil
 }

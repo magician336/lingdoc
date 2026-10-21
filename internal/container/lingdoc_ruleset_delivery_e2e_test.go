@@ -829,9 +829,9 @@ func buildG4E2EHTTP(t *testing.T, db *gorm.DB) g4E2EHTTP {
 	}
 	ruleSetStore := rulesetstore.NewStore(db, rulesetstore.TenantMembershipAuthorizer{})
 	adoptionStore := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
-	projectAuthorizer := candidateAdoptionWorkspaceAuthorizer{service: parts.Projects}
+	projectAuthorizer := candidateAdoptionWorkspaceAuthorizer{service: parts.Authorizer}
 	inputs := &candidateadoption.DeliveryInputService{Reader: adoptionStore, Authorizer: projectAuthorizer}
-	policy := workspace.NewAccessPolicy(parts.Projects, parts.Runtime, adoptionStore)
+	policy := workspace.NewAccessPolicy(workspace.ProjectPorts{Authorizer: parts.Authorizer, Projects: parts.Projects, Context: parts.GenerationContext}, parts.Runtime, adoptionStore)
 	snapshots := delivery.NewSQLiteSnapshotStore(db)
 	releases := workspace.NewDeliveryReleaseServiceWithPolicy(inputs, parts.Integration.DeliveryInputBuilder(), snapshots, parts.Integration.CandidateAdoptionSourcePolicy(), policy, parts.Projects.(workspace.ValidationIssueDispositionApplication)).WithRuleSetUseAuditor(ruleSetStore)
 	exports := workspace.NewDeliveryExportServiceWithPolicy(snapshots, delivery.NewSQLiteExportStore(db), workspace.DeliveryDocument{}, workspace.DeliveryDocument{}, inputs, parts.Integration.WorkspaceSourcePolicy(), policy).

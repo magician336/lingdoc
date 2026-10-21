@@ -17,10 +17,6 @@ import (
 	"strings"
 )
 
-type g2EvidenceSelector interface {
-	SelectGenerationEvidence(context.Context, core.Actor, string, string, []core.G2VersionRef, bool) (core.G2EvidenceSelection, error)
-}
-
 func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 	out := make([]core.G2VersionRef, 0, len(refs))
 	for _, ref := range refs {
@@ -28,12 +24,22 @@ func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 	}
 	return out
 }
-func g2SelectFormal(ctx context.Context, workspace ApplicationService, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
-	port, ok := workspace.(g2EvidenceSelector)
-	if !ok {
+
+// g2SelectFormal resolves the optional formal-evidence selector.
+//
+// The selector is an optional capability, and a workspace that does not have
+// it has to keep failing as a missing dependency (the 503-shaped
+// generation.ErrDependencyUnavailable). It used to be discovered by asserting
+// the workspace value to a local interface: that assertion was a back door,
+// because the value it asked about was the aggregate, and the assertion could
+// hand back any operation the interface happened to name. The port is now an
+// explicit nullable parameter, and a nil port fails the same way the failed
+// assertion did.
+func g2SelectFormal(ctx context.Context, selector core.EvidenceSelectionApplication, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
+	if selector == nil {
 		return core.G2EvidenceSelection{}, generation.ErrDependencyUnavailable
 	}
-	selected, err := port.SelectGenerationEvidence(ctx, actor, projectID, chapterID, refs, true)
+	selected, err := selector.SelectGenerationEvidence(ctx, actor, projectID, chapterID, refs, true)
 	if err != nil {
 		return selected, generation.ErrSourceAccessDenied
 	}
@@ -48,10 +54,17 @@ func g2SelectFormal(ctx context.Context, workspace ApplicationService, actor Act
 	return selected, nil
 }
 
-type g2GenerationEvidenceValidator struct{ workspace ApplicationService }
+// g2GenerationEvidenceValidator resolves the optional formal-evidence selector.
+//
+// The port it carries stays an interface type: the selector is an optional
+// capability, and a workspace that does not implement it must keep failing as a
+// missing dependency (the 503-shaped generation.ErrDependencyUnavailable).
+type g2GenerationEvidenceValidator struct {
+	selector core.EvidenceSelectionApplication
+}
 
 func (v g2GenerationEvidenceValidator) ValidateGenerationEvidence(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, sources []generation.Source) error {
-	selected, err := g2SelectFormal(ctx, v.workspace, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
+	selected, err := g2SelectFormal(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
 	if err != nil {
 		return err
 	}
@@ -74,7 +87,7 @@ func (r *generationInputResolver) resolveFormalEvidence(ctx context.Context, act
 	if r.sources == nil {
 		return nil, nil, generation.ErrDependencyUnavailable
 	}
-	selected, err := g2SelectFormal(ctx, r.workspace, generationWorkspaceActor(ctx, actor), projectID, request.ChapterID, g2GenerationRefs(request.EvidenceCardRefs))
+	selected, err := g2SelectFormal(ctx, r.selector, generationWorkspaceActor(ctx, actor), projectID, request.ChapterID, g2GenerationRefs(request.EvidenceCardRefs))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -99,7 +112,7 @@ func (a generationWorkspaceAuthorizer) AuthorizeGenerationChapter(ctx context.Co
 	if chapterID == "" {
 		return generation.ErrInvalidRequest
 	}
-	err := a.workspace.Authorize(ctx, generationWorkspaceActor(ctx, actor), projectID, "write:"+chapterID)
+	err := a.authorizer.Authorize(ctx, generationWorkspaceActor(ctx, actor), projectID, "write:"+chapterID)
 	if err != nil {
 		return generation.ErrNotFound
 	}
@@ -161,7 +174,7 @@ func (s *SelectedRewriteService) checkEvidenceRefs(ctx context.Context, actor Ac
 	if len(refs) == 0 {
 		return nil
 	}
-	selected, err := g2SelectFormal(ctx, s.workspace, actor, projectID, chapterID, g2GenerationRefs(refs))
+	selected, err := g2SelectFormal(ctx, s.selector, actor, projectID, chapterID, g2GenerationRefs(refs))
 	if err != nil {
 		return ErrRewriteSourceDenied
 	}
@@ -315,7 +328,7 @@ func g2EvidenceConstraints(selected core.G2EvidenceSelection, refs []generation.
 	return constraints, nil
 }
 func (v g2GenerationEvidenceValidator) ValidateGenerationEvidenceConstraints(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, saved []generation.EvidenceConstraint) error {
-	selected, err := g2SelectFormal(ctx, v.workspace, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
+	selected, err := g2SelectFormal(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
 	if err != nil {
 		return err
 	}
@@ -354,7 +367,7 @@ func (s *SelectedRewriteService) checkRowEvidenceConstraints(ctx context.Context
 		}
 		return nil
 	}
-	selected, err := g2SelectFormal(ctx, s.workspace, actor, projectID, row.ChapterID, g2GenerationRefs(refs))
+	selected, err := g2SelectFormal(ctx, s.selector, actor, projectID, row.ChapterID, g2GenerationRefs(refs))
 	if err != nil {
 		return ErrRewriteSourceDenied
 	}

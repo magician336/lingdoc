@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	core "github.com/Tencent/WeKnora/internal/lingdoc/workspacecore"
 	"github.com/gin-gonic/gin"
 )
 
@@ -21,10 +22,10 @@ import (
 // create/apply/list/get. This file closes that gap by reusing the same fixture.
 //
 // The fixture is deliberately the same one: seedBoundSource +
-// testRuntime(handler).service, so a divergence between this file and
+// testRuntime(handler).projects, so a divergence between this file and
 // change_set_http_test.go is a real finding rather than a setup difference.
 
-func changeSetHTTPFixture(t *testing.T) (*gin.Engine, *Service, ChangeSet) {
+func changeSetHTTPFixture(t *testing.T) (*gin.Engine, *core.Service, ChangeSet) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	handler, db, assetID := seedBoundSource(t)
@@ -37,9 +38,9 @@ func changeSetHTTPFixture(t *testing.T) (*gin.Engine, *Service, ChangeSet) {
 		t.Fatalf("seed context revision: %v", err)
 	}
 	seedDeliveryBoundTemplateCopy(t, db, "change-http-decision-copy")
-	service, ok := testRuntime(handler).service.(*Service)
+	service, ok := testRuntime(handler).projects.(*core.Service)
 	if !ok {
-		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
+		t.Fatalf("workspace handler service = %T, want *core.Service", testRuntime(handler).projects)
 	}
 
 	engine := gin.New()
