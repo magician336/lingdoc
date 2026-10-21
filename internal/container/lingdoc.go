@@ -74,17 +74,28 @@ func NewLingDocWorkspaceHandler(
 	projectService.SetImpactRuleChecker(governance.ImpactRuleChecker())
 	guard := workspace.NewFullWorkflowGuard(projectService, runtime)
 	deps := workspace.HandlerDependencies{
-		FullWorkflow: &workspace.FullWorkflowDependencies{Core: projectService, Governance: governance},
-		Projects:     projectService,
-		Members:      projectService,
-		Chapters:     projectService,
-		TemplateApp:  projectService,
-		ChangeSets:   projectService,
-		Read:         projectService,
-		Write:        projectService,
-		Sources:      runtime,
-		Integration:  runtime,
-		Templates:    templates,
+		FullWorkflow: &workspace.FullWorkflowDependencies{
+			Core:       projectService,
+			Governance: governance,
+			Impact: workspace.ImpactRoutePorts{
+				ChangeSets: projectService,
+				Impact:     projectService,
+				Dependency: projectService,
+				Runtime:    projectService,
+				Trials:     projectService,
+				Roadmap:    projectService,
+			},
+		},
+		Projects:    projectService,
+		Members:     projectService,
+		Chapters:    projectService,
+		TemplateApp: projectService,
+		ChangeSets:  projectService,
+		Read:        projectService,
+		Write:       projectService,
+		Sources:     runtime,
+		Integration: runtime,
+		Templates:   templates,
 	}
 	deps.WithSelectedRewrites(workspace.NewSelectedRewriteService(db, projectService, runtime, workspace.NewSelectedRewriteHostModel(models), auditSink))
 	// The machine read and the review anchor endpoints are capabilities the

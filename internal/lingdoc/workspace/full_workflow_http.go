@@ -11,6 +11,7 @@ import (
 type FullWorkflowDependencies struct {
 	Core       *core.Service
 	Governance *TemplateGovernanceRuntime
+	Impact     ImpactRoutePorts
 }
 
 func (h *Handler) RegisterFullRoutes(group *gin.RouterGroup) {
@@ -18,14 +19,14 @@ func (h *Handler) RegisterFullRoutes(group *gin.RouterGroup) {
 		return
 	}
 	RegisterG2FullRoutes(group, h.full.Core)
-	RegisterImpactRoutes(group, h.full.Core)
-	RegisterRoadmapRoutes(group, h.full.Core)
+	RegisterImpactRoutes(group, h.full.Impact)
+	RegisterRoadmapRoutes(group, h.full.Impact)
 	RegisterG4FullRoutes(group, h.full.Governance)
-	registerG5G7FullRoutes(group, h.full.Core)
+	registerG5G7FullRoutes(group, h.full.Core, h.full.Impact)
 }
 
-func registerG5G7FullRoutes(group *gin.RouterGroup, s *core.Service) {
-	h := impactRoutesHandler{service: s}
+func registerG5G7FullRoutes(group *gin.RouterGroup, s *core.Service, ports ImpactRoutePorts) {
+	h := impactRoutesHandler{ports: ports}
 	group.GET("/discarded-projects", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.Project, error) {
 		return s.ListDiscardedProjects(c.Request.Context(), a)
 	}))

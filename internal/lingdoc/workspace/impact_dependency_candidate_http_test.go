@@ -106,7 +106,7 @@ func candidateFixtureEngine(t *testing.T) (*gin.Engine, *gorm.DB, core.ObjectVer
 	}
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 	source := core.ObjectVersionRef{Kind: "ChapterVersion", ID: chapters[0].ID, Version: *chapters[0].CurrentVersionID}
 	target := core.ObjectVersionRef{Kind: "ChapterVersion", ID: chapters[1].ID, Version: *chapters[1].CurrentVersionID}
 	return engine, db, source, target

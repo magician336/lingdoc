@@ -194,7 +194,7 @@ func newRouteContractFixture(t *testing.T) routeContractFixture {
 		t.Fatalf("workspace handler service = %T, want *Service", testRuntime(handler).service)
 	}
 	engine := gin.New()
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 	project, err := service.GetProject(policyContext(), Actor{TenantID: 7, UserID: deliveryActorID}, "project-1")
 	if err != nil {
 		t.Fatalf("read fixture project: %v", err)

@@ -60,7 +60,7 @@ func faultInjectionFixture(t *testing.T, fault core.FaultInjection) (*Handler, *
 func faultInjectionEngine(handler *Handler, service *core.Service) *gin.Engine {
 	engine := gin.New()
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 	return engine
 }
 

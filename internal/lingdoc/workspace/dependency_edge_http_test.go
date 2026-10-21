@@ -69,7 +69,7 @@ func TestDependencyRoutesCoverConfirmModifyReject(t *testing.T) {
 	handler.Register(RouteGroups{Read: engine.Group("/api"), Write: engine.Group("/api")})
 	// The dependency routes live in the impact/trial group, registered separately from
 	// the main ChangeSet routes above.
-	RegisterImpactRoutes(engine.Group("/api"), service)
+	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(service))
 
 	// Use the chapter versions the delivery fixture already materialised; this
 	// keeps the test on the dependency seam instead of the chapter-edit seam.
