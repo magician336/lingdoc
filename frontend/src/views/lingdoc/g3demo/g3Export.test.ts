@@ -134,6 +134,8 @@ test('轮次级「本段含模型依赖」不得摊到每条判定上', () => {
       verdicts: [
         // 变更集链的判定是确定性的：它自己声明了「不是模型依赖」。
         verdict('AC-G3-01', { status: 'PASS', modelDependent: false }),
+        // 这一条**没有**声明（链上没设这个字段）：它也必须按确定性判定处理。
+        verdict('AC-G3-02', { status: 'PASS' }),
         // 助手链的判定是模型依赖的。
         verdict('AC-G3-14', { status: 'WARNING', modelDependent: true }),
       ],
@@ -148,6 +150,10 @@ test('轮次级「本段含模型依赖」不得摊到每条判定上', () => {
   const ac01 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-01')
   assert.equal(ac01?.verdicts[0]?.model_dependent, false, '确定性判定被轮次级标志污染了')
   assert.equal(ac01?.status, 'PASS', '确定性判定的 PASS 被改写成了模型侧的 WARNING')
+  // 没声明标志的判定也一样：这份文件里有判定自己声明过，文件级就不摊下来。
+  const ac02 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-02')
+  assert.equal(ac02?.verdicts[0]?.model_dependent, false, '没声明标志的判定被轮次级标志污染了')
+  assert.equal(ac02?.status, 'PASS')
   const ac14 = exportBody.ac_rows.find((row) => row.id === 'AC-G3-14')
   assert.equal(ac14?.verdicts[0]?.model_dependent, true, '模型侧判定必须仍是模型依赖')
   assert.equal(ac14?.status, 'WARNING', '模型侧判定不写 PASS')

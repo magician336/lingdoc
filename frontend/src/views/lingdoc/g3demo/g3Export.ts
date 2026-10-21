@@ -291,8 +291,8 @@ function rowSource(row: G3MatrixRow, verdicts: readonly G3ExportVerdict[]): G3Co
  * 不等于这一轮里每一条判定都模型依赖。把轮次级标志摊到每条判定上，会让确定性
  * 判定（AC-G3-01 那一类）在投影时被当成模型侧结论，`PASS` 被改写成 `WARNING`。
  *
- * 判定**没有**声明标志时（历史证据文件里的判定就是这样：整份文件由一次模型轮次
- * 产出，标志记在文件级），才用轮次级标志兜底。
+ * 判定**没有**声明标志时，标志的来源要看**这份文件**：见
+ * `fileLevelModelDependent()`。
  */
 function toExportVerdict(verdict: G3RunVerdict, runId: string, modelDependent: boolean): G3ExportVerdict {
   return {
@@ -305,6 +305,29 @@ function toExportVerdict(verdict: G3RunVerdict, runId: string, modelDependent: b
     model_dependent: verdict.modelDependent ?? modelDependent,
     run_id: runId,
   }
+}
+
+/**
+ * 这一份文件的轮次级标志，要不要摊到它那些**没有自己声明**标志的判定上。
+ *
+ * 两种文件要分开看：
+ * - **整份由一次模型轮次产出**的历史证据文件：它的判定一条都没声明过标志，
+ *   标志记在文件级（「这份证据的结论依赖真实模型」）。这时文件级标志就是每条判定
+ *   的标志，摊下去才对。
+ * - **一次运行里混着多条链**的文件（实时链）：模型依赖的判定自己声明了标志，
+ *   其余判定（确定性链）没声明。文件级在这里只表示「这一段含模型依赖的结论」，
+ *   摊下去会让确定性判定被误标成模型侧结论，它们的 `PASS` 在投影时被改写成
+ *   `WARNING`——那是假的口径。
+ *
+ * 判据：**只要这份文件里有任意一条判定自己声明过标志，就以判定为准**；
+ * 一条都没声明，才用文件级标志兜底。
+ */
+function fileLevelModelDependent(
+  verdicts: readonly G3RunVerdict[],
+  fileModelDependent: boolean,
+): boolean {
+  const anyVerdictDeclares = verdicts.some((verdict) => verdict.modelDependent !== undefined)
+  return anyVerdictDeclares ? false : fileModelDependent
 }
 
 /** 一次运行的导出体输入。 */
@@ -454,7 +477,11 @@ export function buildAggregateEvidenceExport(input: G3AggregateExportInput): G3E
   for (const file of input.files) {
     if (file.head?.commitId) heads.add(file.head.commitId)
     const fileVerdicts = file.verdicts.map((verdict) =>
-      toExportVerdict(verdict, file.runId, file.modelDependent),
+      toExportVerdict(
+        verdict,
+        file.runId,
+        fileLevelModelDependent(file.verdicts, file.modelDependent),
+      ),
     )
     verdicts.push(...fileVerdicts)
     runs.push({
@@ -604,7 +631,11 @@ export function buildChainEvidenceExport(input: G3ChainExportInput): G3EvidenceE
   for (const run of input.runs) {
     if (run.head?.commitId) heads.add(run.head.commitId)
     const runVerdicts = run.verdicts.map((verdict) =>
-      toExportVerdict(verdict, run.runId, run.modelDependent === true),
+      toExportVerdict(
+        verdict,
+        run.runId,
+        fileLevelModelDependent(run.verdicts, run.modelDependent === true),
+      ),
     )
     verdicts.push(...runVerdicts)
     runs.push({
