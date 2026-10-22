@@ -3,6 +3,7 @@ package workspace
 import (
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -12,15 +13,17 @@ import (
 // 找不到这次用的模型时用 fallback——调用方知道「找不到模型」在自己这条链路上
 // 意味着什么（生成侧意味着「没有 provider」，改写侧意味着「按真模型算」）。
 //
-// 三档取值的词表归 candidateadoption 所有，这里只产出那个词表里的取值。
-func modelRunMode(models []*types.Model, modelID, fallback string) string {
+// 三档取值的词表归 candidateadoption 所有：这里只**产出那个词表里的取值**，
+// 不写取值字面量。词表一旦有了第二个拥有者，两处就会各说各话——一条管道报
+// "real"、另一条报 "real_api_fake_model"，谁也说不清这次到底跑的是哪一种。
+func modelRunMode(models []*types.Model, modelID string, fallback candidateadoption.RunMode) candidateadoption.RunMode {
 	for _, model := range models {
 		if model != nil && model.ID == modelID {
 			provider := strings.ToLower(strings.TrimSpace(model.Parameters.Provider))
 			if strings.Contains(provider, "fake") || strings.Contains(provider, "mock") {
-				return "real_api_fake_model"
+				return candidateadoption.RunModeRealAPIFakeModel
 			}
-			return "real"
+			return candidateadoption.RunModeReal
 		}
 	}
 	return fallback

@@ -188,7 +188,7 @@ func (m selectedRewriteHostModel) RewriteSelected(ctx context.Context, actor Act
 }
 
 func rewriteRunMode(models []*types.Model, modelID string) string {
-	return modelRunMode(models, modelID, "real")
+	return string(modelRunMode(models, modelID, candidateadoption.RunModeReal))
 }
 
 // selectedRewriteSystemMessage 给出这次执行写给模型的那一套提示语。

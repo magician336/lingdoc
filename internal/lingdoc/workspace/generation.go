@@ -356,8 +356,8 @@ type generatedDraftPayload struct {
 // RunMode 说这个适配器会不会真的调用 provider。
 //
 // 它是候选上 run_mode 的来源：找不到模型时按「没有 provider」处理，不冒充
-// 真实证据（开发计划 A27）。
-func (m generationHostModel) RunMode() string { return "real" }
+// 真实证据（开发计划 A27）。取值引用 candidateadoption 的词表，不写字面量。
+func (m generationHostModel) RunMode() string { return string(candidateadoption.RunModeReal) }
 
 func (m generationHostModel) Generate(ctx context.Context, input generation.Input) (generation.Draft, error) {
 	if m.acceptanceConfigErr != nil {
@@ -552,7 +552,7 @@ func (m generationHostModel) Generate(ctx context.Context, input generation.Inpu
 		reviewItems = append(reviewItems, candidateadoption.ReviewItem{ID: uuid.NewString(), Statement: strings.TrimSpace(statement)})
 	}
 	return generation.Draft{BodyMarkdown: payload.BodyMarkdown, Sources: used, ReviewItems: reviewItems,
-		RunMode: candidateadoption.RunMode(modelRunMode(models, modelID, "mock"))}, nil
+		RunMode: modelRunMode(models, modelID, candidateadoption.RunModeMock)}, nil
 }
 
 func defaultGenerationModel(models []*types.Model) string {
