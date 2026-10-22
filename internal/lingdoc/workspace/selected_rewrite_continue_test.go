@@ -119,7 +119,7 @@ func TestSelectedRewriteContinueRunsAndRecordsTheActionOriginAndRunMode(t *testi
 	require.Equal(t, writingaction.ActionContinue, candidate.WritingAction)
 	require.Equal(t, writingaction.OriginGenerated, candidate.Origin)
 	require.Equal(t, candidateadoption.RunModeMock, candidate.RunMode)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 	require.Equal(t, 1, model.calls)
 }
 
@@ -197,7 +197,7 @@ func TestSelectedRewriteContinueFailureKeepsItsStatusAndReason(t *testing.T) {
 	model.failing = true
 	failed, err := service.Create(context.Background(), actor, "project", "chapter", "continue-failed", continueRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "failed", failed.Status)
+	require.Empty(t, failed.Validity)
 	require.Equal(t, "rewrite_failed", failed.ErrorCode)
 	require.Empty(t, failed.ReplacementMarkdown)
 	require.Empty(t, workspace.writes, "失败的运行不得写工作副本")
@@ -206,7 +206,7 @@ func TestSelectedRewriteContinueFailureKeepsItsStatusAndReason(t *testing.T) {
 	model.failing = false
 	retried, err := service.Create(context.Background(), actor, "project", "chapter", "continue-retry", continueRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "ready", retried.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, retried.Validity)
 	require.NotEqual(t, failed.CandidateID, retried.CandidateID)
 	require.Empty(t, workspace.writes, "重试不得写工作副本")
 }
@@ -248,7 +248,7 @@ func TestSelectedRewriteContinueRevocationBlocksTheRunTimings(t *testing.T) {
 		candidate, err := service.Create(context.Background(), actor, "project", "chapter", "revoked-during-run", continueRequest(base))
 		require.NoError(t, err)
 		require.Equal(t, 1, model.calls)
-		require.Equal(t, "stale", candidate.Status)
+		require.Equal(t, candidateadoption.ValidityNotAuthorized, candidate.Validity)
 		require.Equal(t, "source_access_denied", candidate.ErrorCode)
 		require.Empty(t, candidate.ReplacementMarkdown)
 		require.Equal(t, int64(1), workspace.copy.WorkingCopyRevision)
@@ -257,7 +257,7 @@ func TestSelectedRewriteContinueRevocationBlocksTheRunTimings(t *testing.T) {
 		service, _, _, base := continueFixture(t)
 		candidate, err := service.Create(context.Background(), actor, "project", "chapter", "revoked-before-read", continueRequest(base))
 		require.NoError(t, err)
-		require.Equal(t, "ready", candidate.Status)
+		require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 		service.sources.(*inheritedRewriteSources).denied = true
 		_, err = service.Get(context.Background(), actor, "project", candidate.CandidateID)
 		require.ErrorIs(t, err, ErrRewriteSourceDenied)

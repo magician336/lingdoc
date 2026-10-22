@@ -38,7 +38,7 @@ func TestSelectedRewriteContinueNeedsAnExplicitAdoptionConfirmation(t *testing.T
 	input := continueRequest(base)
 	candidate, err := service.Create(context.Background(), actor, "project", "chapter", "continue-key", input)
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 
 	apply := func(t *testing.T, key string, confirmation *candidateadoption.AdoptionConfirmation) error {
 		t.Helper()
@@ -122,7 +122,7 @@ func TestSelectedRewriteContinueRevocationBeforeAdoptionIsDenied(t *testing.T) {
 	service, workspace, _, base := continueFixture(t)
 	candidate, err := service.Create(context.Background(), actor, "project", "chapter", "revoked-before-apply", continueRequest(base))
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 
 	service.sources.(*inheritedRewriteSources).denied = true
 	_, _, err = service.Apply(context.Background(), actor, "project", "chapter", candidate.CandidateID,

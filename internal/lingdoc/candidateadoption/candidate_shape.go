@@ -38,3 +38,16 @@ const (
 	// model.
 	RunModeRealAPIFakeModel RunMode = "real_api_fake_model"
 )
+
+// ValidRunMode says whether this is one of the three run modes.
+//
+// The run-mode vocabulary has one owner: the candidate layer. An executor
+// that needs to check a reported mode asks here instead of keeping a second
+// word list of its own (development plan A27).
+func ValidRunMode(mode RunMode) bool {
+	switch mode {
+	case RunModeReal, RunModeMock, RunModeRealAPIFakeModel:
+		return true
+	}
+	return false
+}

@@ -166,6 +166,17 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/", "dir"),
             ("internal/lingdoc/workspace/selected_rewrite.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_model.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_review.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_review_test.go", "file"),
+            # The validity normalization renames the selected rewrite
+            # candidate's own status word list to the candidate layer's
+            # validity enumeration, so the assertions that pinned the old
+            # words move with it.  These files are claimed here for that
+            # reason only.
+            ("internal/lingdoc/workspace/selected_rewrite_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_format_test.go", "file"),
+            ("internal/lingdoc/workspace/selected_rewrite_observation_test.go", "file"),
+            ("internal/lingdoc/workspace/g2_generation_evidence_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_action_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_continue_test.go", "file"),
             ("internal/lingdoc/workspace/selected_rewrite_compress_test.go", "file"),
@@ -183,8 +194,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspace/model_run_mode.go", "file"),
             ("internal/database/migration_selected_rewrite_action_shape_test.go", "file"),
             ("internal/database/migration_generation_digest_version_test.go", "file"),
+            ("internal/database/migration_rewrite_validity_legacy_test.go", "file"),
+            ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
+            # The production composition's route-count assertion follows the
+            # new endpoints: the review report endpoints are part of the
+            # rewrite capability, so the composition serves four more routes.
+            ("internal/container/lingdoc_test.go", "file"),
             ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
             ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),

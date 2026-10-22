@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
 	"github.com/stretchr/testify/require"
 )
 
@@ -28,7 +29,7 @@ func TestUnsupportedReferenceBecomesAReviewItem(t *testing.T) {
 	model := &fixedRewriteModel{output: SelectedRewriteOutput{
 		ReplacementMarkdown: "有据可依的结论 [[source:existing]]",
 		SourceIDs:           []string{"existing"},
-		ReviewItems:         []string{"第二段的统计口径待核"},
+		ReviewItems:         []candidateadoption.ReviewItem{{Statement: "第二段的统计口径待核"}},
 		RunMode:             "mock",
 	}}
 	service, _, _, input := revocationRewriteFixture(t, model)
@@ -36,7 +37,7 @@ func TestUnsupportedReferenceBecomesAReviewItem(t *testing.T) {
 	candidate, err := service.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"},
 		"project", "chapter", "unsupported-reference", input)
 	require.NoError(t, err)
-	require.Equal(t, "ready", candidate.Status)
+	require.Equal(t, candidateadoption.ValidityFresh, candidate.Validity)
 	require.Len(t, candidate.ReviewItems, 1)
 	require.Equal(t, "第二段的统计口径待核", candidate.ReviewItems[0].Statement)
 	require.Equal(t, candidate.CandidateID, candidate.ReviewItems[0].OriginCandidateID)
@@ -57,7 +58,7 @@ func TestFabricatedSourceIsRejected(t *testing.T) {
 	candidate, err := service.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"},
 		"project", "chapter", "fabricated-source", input)
 	require.NoError(t, err)
-	require.Equal(t, "failed", candidate.Status)
+	require.Empty(t, candidate.Validity)
 	require.Equal(t, "source_access_denied", candidate.ErrorCode)
 	require.Empty(t, candidate.ReplacementMarkdown)
 	require.NotContains(t, candidate.SourceIDs, "invented", "编造的来源不得进候选")
@@ -76,7 +77,7 @@ func TestUnsupportedSourceMarkerFormatIsRejected(t *testing.T) {
 	candidate, err := service.Create(context.Background(), Actor{TenantID: 1, UserID: "owner"},
 		"project", "chapter", "unsupported-marker", input)
 	require.NoError(t, err)
-	require.Equal(t, "failed", candidate.Status)
+	require.Empty(t, candidate.Validity)
 	require.Equal(t, "rewrite_failed", candidate.ErrorCode)
 	require.Empty(t, candidate.ReplacementMarkdown)
 }

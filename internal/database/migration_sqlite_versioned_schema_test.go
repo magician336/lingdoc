@@ -61,6 +61,7 @@ var versionedSQLiteTables = []string{
 	"lingdoc_g3_records",
 	"lingdoc_g6_records",
 	"lingdoc_selected_rewrites",
+	"lingdoc_review_reports",
 	"lingdoc_ruleset_metrics",
 	"lingdoc_g3_roadmap_edit_sessions",
 	"lingdoc_g3_route_edges",
@@ -91,7 +92,7 @@ var versionedSQLiteColumns = map[string][]string{
 	"lingdoc_candidate_adoptions":     {"digest_version"},                                                                                                // 000125
 }
 
-const expectedSQLiteMigrationVersion = 48
+const expectedSQLiteMigrationVersion = 50
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
@@ -124,6 +125,13 @@ func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	assertSQLiteMCPOAuthPrincipalUpsertWorks(t, db)
 	require.False(t, sqliteColumnExists(t, db, "knowledges", "tag_id"),
 		"SQLite migrations must drop legacy knowledges.tag_id after multi-tag migration")
+	// The selected rewrite candidate used to carry a status word list of its
+	// own. The validity migration replaces it with the candidate layer's
+	// validity: the old column must be gone, not merely unused.
+	require.True(t, sqliteColumnExists(t, db, "lingdoc_selected_rewrites", "validity"),
+		"SQLite migrations must give the selected rewrite candidate the validity column")
+	require.False(t, sqliteColumnExists(t, db, "lingdoc_selected_rewrites", "status"),
+		"SQLite migrations must drop the selected rewrite candidate's old status word list")
 }
 
 func TestSQLiteMigrationsUpgradeV4PreservesData(t *testing.T) {
