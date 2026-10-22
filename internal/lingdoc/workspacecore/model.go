@@ -111,20 +111,34 @@ type DraftCandidate struct {
 	CreatedAt              time.Time         `json:"created_at"`
 }
 
+// AuditEvent is one append-only project audit record.
+//
+// TargetVersion and ProjectRevision are first-class fields, not notes inside
+// Details: they say which version of the audited object and which revision of
+// the project the decision was made against, so a later reader can reconstruct
+// that decision without parsing JSON. An empty TargetVersion and a zero
+// ProjectRevision mean "this record carries no such concept", not "an empty
+// version" and "revision zero".
+//
+// Audit is append-only. Adding a field never rewrites the rows that were
+// written before it existed: the new columns keep their default on those
+// rows.
 type AuditEvent struct {
-	ID         string           `json:"id,omitempty"`
-	ProjectID  string           `json:"project_id,omitempty"`
-	ActorID    string           `json:"actor_id,omitempty"`
-	Action     string           `json:"action,omitempty"`
-	Target     string           `json:"target,omitempty"`
-	Details    map[string]any   `json:"details,omitempty"`
-	CreatedAt  time.Time        `json:"created_at,omitempty"`
-	TenantID   uint64           `json:"tenant_id,omitempty"`
-	UserID     string           `json:"user_id,omitempty"`
-	Role       types.TenantRole `json:"role,omitempty"`
-	Capability string           `json:"capability,omitempty"`
-	Decision   string           `json:"decision,omitempty"`
-	Reason     string           `json:"reason,omitempty"`
+	ID              string           `json:"id,omitempty"`
+	ProjectID       string           `json:"project_id,omitempty"`
+	ActorID         string           `json:"actor_id,omitempty"`
+	Action          string           `json:"action,omitempty"`
+	Target          string           `json:"target,omitempty"`
+	TargetVersion   string           `json:"target_version,omitempty"`
+	ProjectRevision int64            `json:"project_revision,omitempty"`
+	Details         map[string]any   `json:"details,omitempty"`
+	CreatedAt       time.Time        `json:"created_at,omitempty"`
+	TenantID        uint64           `json:"tenant_id,omitempty"`
+	UserID          string           `json:"user_id,omitempty"`
+	Role            types.TenantRole `json:"role,omitempty"`
+	Capability      string           `json:"capability,omitempty"`
+	Decision        string           `json:"decision,omitempty"`
+	Reason          string           `json:"reason,omitempty"`
 }
 
 // ValidationIssueBinding pins a disposition to the exact rule, target, and
@@ -514,13 +528,15 @@ type draftCandidateRow struct {
 func (draftCandidateRow) TableName() string { return "lingdoc_draft_candidates" }
 
 type auditEventRow struct {
-	ID          string `gorm:"primaryKey;size:36"`
-	ProjectID   string `gorm:"not null;index;size:36"`
-	ActorID     string `gorm:"not null;size:64"`
-	Action      string `gorm:"not null;size:64"`
-	Target      string `gorm:"not null;size:128"`
-	DetailsJSON string `gorm:"column:details_json;not null;type:text;default:'{}'"`
-	CreatedAt   time.Time
+	ID              string `gorm:"primaryKey;size:36"`
+	ProjectID       string `gorm:"not null;index;size:36"`
+	ActorID         string `gorm:"not null;size:64"`
+	Action          string `gorm:"not null;size:64"`
+	Target          string `gorm:"not null;size:128"`
+	TargetVersion   string `gorm:"column:target_version;not null;size:128;default:''"`
+	ProjectRevision int64  `gorm:"column:project_revision;not null;default:0"`
+	DetailsJSON     string `gorm:"column:details_json;not null;type:text;default:'{}'"`
+	CreatedAt       time.Time
 }
 
 func (auditEventRow) TableName() string { return "lingdoc_project_audits" }
