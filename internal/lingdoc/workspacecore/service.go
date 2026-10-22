@@ -420,7 +420,12 @@ func (t gormTransaction) RecordAudit(event AuditEvent) error {
 	if err != nil {
 		return err
 	}
-	return t.db.Create(&auditEventRow{ID: event.ID, ProjectID: event.ProjectID, ActorID: event.ActorID, Action: event.Action, Target: event.Target, DetailsJSON: string(details), CreatedAt: event.CreatedAt}).Error
+	return t.db.Create(&auditEventRow{
+		ID: event.ID, ProjectID: event.ProjectID, ActorID: event.ActorID,
+		Action: event.Action, Target: event.Target,
+		TargetVersion: event.TargetVersion, ProjectRevision: event.ProjectRevision,
+		DetailsJSON: string(details), CreatedAt: event.CreatedAt,
+	}).Error
 }
 
 func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
@@ -437,7 +442,12 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 			}
 		}
 		reason, _ := details["reason"].(string)
-		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Reason: reason, Details: details, CreatedAt: row.CreatedAt})
+		result = append(result, AuditEvent{
+			ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID,
+			Action: row.Action, Target: row.Target,
+			TargetVersion: row.TargetVersion, ProjectRevision: row.ProjectRevision,
+			Reason: reason, Details: details, CreatedAt: row.CreatedAt,
+		})
 	}
 	return result, nil
 }
