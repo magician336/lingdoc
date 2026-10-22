@@ -2,9 +2,9 @@
   "mode": "static-and-suite",
   "note": "PF-3 审计告警接线与 AuditEvent 字段（票 #327，Spec #130）。两件事：读类审计写入失败时，除了记日志，还要在 G6 运行事件里留下一条 Category=audit 的事件并被告警规则命中；AuditEvent 补 target_version / project_revision 两个一等字段并真正落库。设计要点：告警走自己的事务（业务事务可能正因这次失败而回滚，告警写在它内部会在最需要的时候一起消失）；读类与写类分成两个接缝（readWithAudit 吞掉审计错误并发告警，recordAuditInTransaction 继续返回错误，关键写仍 fail-closed）；告警复用 RecordRuntimeOperationContext，但类别必须显式给出（自动推断产不出 audit）；告警只带固定错误码，不带原始错误文本与审计内容。字段走独立列而不是 details_json，两方言同名不同编号（sqlite/000052、versioned/000131）。本轮还实测出并修复了「加两列打红一批夹具」的回归（见 AC-327-16）。",
   "head": "7c000321",
-  "base": "35722299",
+  "base": "6e48ee10",
   "head_note": "证据产出于 7c000321 这棵树。其后的提交只改文档与证据，`git diff 7c000321 <最终 head> -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空 ⇒ 代码面逐字未变，证据绑定最终 head。",
-  "base_note": "origin/main 在本轮基线合并后的尖端（35722299）。分支点为 c4c9ac93，合并提交 65b33531 只解了路径图一处内容冲突，代码零改动（`git diff e54a5bd0 65b33531 -- '*.go' '*.ts' '*.vue' '*.js' '*.json' '*.sql'` 为空）。",
+  "base_note": "origin/main 在本轮最后一次基线合并后的尖端（6e48ee10）。本轮共做了三次基线合并：65b33531（合并 fc3d30b2 之前那一版 main，解路径图一处内容冲突）、d380459a（合并 fc3d30b2，解 PF-3/PF-4 的登记处所有权撞车）、7627853（合并 6e48ee10，解路径图 PF-5 行冲突）。三次合并的代码改动均为零——`git diff 7c000321 7627853 -- '*.go' '*.ts' '*.vue' '*.js' '*.sql'` 为空——所以证据里的测试结论逐条仍然绑定最终 head。",
   "passed": [
     {
       "id": "AC-327-01 读审计失败 → 运行事件",
