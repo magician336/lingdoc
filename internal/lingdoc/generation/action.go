@@ -7,6 +7,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/lingdoc/candidateadoption"
+	lingdoctemplate "github.com/Tencent/WeKnora/internal/lingdoc/template"
 	"github.com/Tencent/WeKnora/internal/lingdoc/writingaction"
 )
 
@@ -105,13 +106,16 @@ func resolveGenerationPlan(request Request) (*writingaction.Plan, error) {
 	if err != nil {
 		return nil, err
 	}
-	// 这个端点只实现生成。别的已知动作由它们自己的端点负责，动作身份引用
-	// 管道常量，不写动作字面量。
-	pipelineAction, err := writingaction.ActionFor(writingaction.PipelineGeneration)
+	// 这个端点只实现生成管道声明的那几个动作（生成与转写）。别的已知动作由它们
+	// 自己的端点负责，动作身份引用管道常量，不写动作字面量。
+	//
+	// 判定的是「这条管道做不做这个动作」而不是「这条管道做哪个动作」：管道可以
+	// 实现多个动作，问错了问题就没有答案（开发计划 A33）。
+	pipelineActions, err := writingaction.ActionsFor(writingaction.PipelineGeneration)
 	if err != nil {
 		return nil, err
 	}
-	if plan.Action != pipelineAction {
+	if !slices.Contains(pipelineActions, plan.Action) {
 		return nil, ErrInvalidRequest
 	}
 	return &plan, nil
@@ -131,6 +135,8 @@ func generationRenderContext(plan writingaction.Plan, input Input) writingaction
 			ctx.Chapter = generationChapterContext(chapter)
 		case writingaction.ContextSection:
 			ctx.Section = generationSectionContext(chapter, generationSectionTitle(input, chapter))
+		case writingaction.ContextTemplate:
+			ctx.Template = generationTemplateContext(input.TemplateDefinition)
 		}
 	}
 	return ctx
@@ -185,6 +191,19 @@ func generationSectionTitle(input Input, chapter candidateadoption.Chapter) stri
 		}
 	}
 	return ""
+}
+
+// generationTemplateContext 渲染「模板与规则」这一类上下文。
+//
+// 它是**上下文**，不是动作语义：动作说什么由词汇包渲染，这里只回答「有没有模板
+// 与规则」。「没有绑定模板」也是一个事实——它告诉模型这次产出不受项目模板约束
+// ——所以这一槽永远非空：否则「缺少必需上下文」与「没有模板」会分不开。
+func generationTemplateContext(definition *lingdoctemplate.Template) string {
+	if definition == nil {
+		return "本项目未绑定模板，产出不受项目模板约束。"
+	}
+	return fmt.Sprintf("模板 %s（%s@%s），内容哈希 %s，规则集哈希 %s。",
+		definition.Name, definition.ID, definition.Version, definition.ContentHash, definition.RulesetHash)
 }
 
 // actionGenerationInput 填动作路径写给模型的指令。
@@ -358,7 +377,7 @@ func candidateAction(request Request) writingaction.Action {
 	if request.WritingAction != nil {
 		return *request.WritingAction
 	}
-	action, err := writingaction.ActionFor(writingaction.PipelineGeneration)
+	action, err := writingaction.DefaultActionFor(writingaction.PipelineGeneration)
 	if err != nil {
 		return ""
 	}

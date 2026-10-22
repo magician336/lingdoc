@@ -1231,15 +1231,27 @@ func resolveRewritePlan(input SelectedRewriteRequest) (*writingaction.Plan, erro
 	if err != nil {
 		return nil, err
 	}
-	// 这个端点只实现选段管道声明的那几个动作（改写、续写与压缩）。别的已知
-	// 动作由它们自己的端点负责。动作身份引用管道常量，不写字符串字面量，也
-	// 不写具体动作常量——执行方因此在语法上就没法按动作名分支（A33）。
+	// 这个端点只实现选段管道声明的那几个动作（改写、续写、压缩、扩展与转写）。
+	// 别的已知动作由它们自己的端点负责。动作身份引用管道常量，不写字符串字面量，
+	// 也不写具体动作常量——执行方因此在语法上就没法按动作名分支（A33）。
 	pipelineActions, err := writingaction.ActionsFor(writingaction.PipelineRewrite)
 	if err != nil {
 		return nil, err
 	}
 	if !slices.Contains(pipelineActions, plan.Action) {
 		return nil, ErrRewriteInvalidRequest
+	}
+	// 这个端点只写选段：范围是**管道**的声明，不是动作的声明——同一个动作
+	// （转写）在动作层面允许整章，在这条管道里只做选段。声明了整章的请求在
+	// 模型调用之前就被拒。
+	pipelineScopes, err := writingaction.ScopesFor(writingaction.PipelineRewrite)
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(pipelineScopes, scope) {
+		return nil, clienterror.Wrap(clienterror.InvalidRequest,
+			fmt.Sprintf("invalid_request: pipeline %q does not allow scope %q",
+				writingaction.PipelineRewrite, scope), writingaction.ErrScopeNotAllowed)
 	}
 	return &plan, nil
 }
