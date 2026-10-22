@@ -295,9 +295,19 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
             ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
             ("internal/lingdoc/workspacecore/membership.go", "file"),
             ("internal/lingdoc/membership/results.go", "file"),
+            ("internal/lingdoc/membership/policy.go", "file"),
             ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
+            ("internal/router/routes_lingdoc.go", "file"),
+            ("internal/router/routes_lingdoc_owner_test.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("frontend/src/api/lingdoc/permissions.ts", "file"),
+            ("frontend/src/composables/useOwnerAvailability.ts", "file"),
+            ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
+            ("frontend/src/composables/useOwnerAvailability.test.ts", "file"),
         ),
         "resolves": ((127, 143),),
         "summary": (
@@ -309,7 +319,11 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "路径集按 2026-10-22 实测修正：Spec-47 把转让的 Service 方法搬进了 "
             "internal/lingdoc/membership/，workspacecore/membership.go 只剩 "
             "TransferOwnerInput；冻结判定要收口的出口是 member_judgement.go 与 "
-            "delivery_export_guard.go。"
+            "delivery_export_guard.go。本面另按 #127 的冻结清单补上尚不存在的归档能力，"
+            "并把五项 Owner-only 动作的可用性判定收口到一处。"
+            "两处前端改动是集成步骤而非面拥有："
+            "frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点（保留路径，不得被任一面独占），"
+            "frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件。"
         ),
     },
     {
