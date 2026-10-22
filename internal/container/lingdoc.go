@@ -239,7 +239,7 @@ func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.Audi
 	details, err := json.Marshal(eventDetails)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"audit_event": "lingdoc_authorization"})
-		return nil
+		return err
 	}
 	action := types.AuditAction("rbac.lingdoc_authorized")
 	outcome := types.AuditOutcomeSuccess
@@ -248,10 +248,13 @@ func (s workspaceAuditSink) Record(ctx context.Context, event workspacecore.Audi
 		outcome = types.AuditOutcomeDenied
 	}
 	if err := s.service.Log(ctx, &types.AuditLog{TenantID: event.TenantID, ActorUserID: event.UserID, ActorRole: string(event.Role), Action: action, ScopeType: "project", ScopeID: event.ProjectID, TargetType: "lingdoc_project", TargetID: event.ProjectID, Outcome: outcome, Details: types.JSON(details)}); err != nil {
-		// Authorization remains fail-open when audit storage is unavailable:
-		// the policy decision is already made and the logger preserves the
-		// operational signal without turning observability into a dependency.
+		// The audit storage is unavailable. The **caller** decides what that
+		// means: a fail-open caller keeps the operation's outcome, a
+		// fail-closed caller fails the operation. Swallowing the error here
+		// would take that decision away from the caller and make a failed
+		// audit write invisible to the runtime, so the failure is reported.
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"audit_event": "lingdoc_authorization", "tenant_id": event.TenantID, "project_id": event.ProjectID})
+		return err
 	}
 	return nil
 }

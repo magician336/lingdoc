@@ -125,6 +125,13 @@ type AuditEvent struct {
 	Capability string           `json:"capability,omitempty"`
 	Decision   string           `json:"decision,omitempty"`
 	Reason     string           `json:"reason,omitempty"`
+	// TargetVersion is the version of the thing the decision was made on.
+	// It is 0 when the decision did not read it: a refusal must not read
+	// the row first, because that would leak whether it exists.
+	TargetVersion int64 `json:"target_version,omitempty"`
+	// ProjectRevision is the project revision the decision was made on. It
+	// is 0 for the same reason as TargetVersion.
+	ProjectRevision int64 `json:"project_revision,omitempty"`
 }
 
 // ValidationIssueBinding pins a disposition to the exact rule, target, and
