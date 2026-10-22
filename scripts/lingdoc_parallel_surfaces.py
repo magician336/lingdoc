@@ -109,8 +109,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-1 G6 运维与试用前端",
         "issue": 325,
         "issues": (145, 146),
-        "status": "claimed",
-        "claimed_by": "magician336",
+        "status": "done",
+        "claimed_by": "",
         "paths": (
             ("frontend/src/views/lingdoc/ImpactOpsPanel.vue", "file"),
             ("frontend/src/views/lingdoc/runtimeMetrics.ts", "file"),
@@ -128,6 +128,8 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "把服务端 RuntimeMetrics.counts 投影成值班可读的指标视图，"
             "并给 G6 前端补一层契约保护。"
             "G6 前端的独立面板与 Workspace 集成不在本面，另开票。"
+            "2026-10-22 由 magician336 认领并完成；"
+            "完成后本面不保留 claimed_by（登记处只允许 claimed 状态带认领人）。"
         ),
     },
     {
