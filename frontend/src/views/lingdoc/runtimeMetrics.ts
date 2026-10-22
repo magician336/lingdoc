@@ -52,7 +52,7 @@ export const RUNTIME_METRIC_SPECS: readonly RuntimeMetricSpec[] = [
     label: '授权判定被拒（G5）',
     categories: ['permission'],
     statuses: ['deny'],
-    note: '服务端只记录被拒绝的授权判定；放行是常态、不单独记录，因此这一项只能数拒绝、算不出放行率。',
+    note: '服务端只记录被拒绝的授权判定；放行是常态、不单独记录，因此这一项只能数拒绝、算不出放行率。拒绝也不触发告警规则——值班请看完整事件流。',
   },
   {
     key: 'authorization_allow',

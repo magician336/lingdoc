@@ -56,29 +56,30 @@ func TestG6AuthorizationDenialIsObservableAsARuntimeEvent(t *testing.T) {
 }
 
 func TestG6TenantLevelDenialIsObservableAsARuntimeEvent(t *testing.T) {
-	svc, actor, p := extendedImpactStore(t)
+	svc, actor, _ := extendedImpactStore(t)
 	ctx := context.Background()
-	outsider := Actor{TenantID: actor.TenantID, UserID: "outsider"}
-	seedTenantMember(t, svc, outsider)
-
-	// 越权写运行控制：被拒。
-	if _, _, _, err := svc.ControlRuntime(ctx, outsider, p.ID, "tenant-denial-pause", RuntimeControlInput{
-		Scope: RuntimeScope{Kind: "project", Value: p.ID}, Action: "pause", Reason: "越权暂停",
-	}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("an outsider paused the runtime: %v", err)
+	// 不属于该租户的 actor：租户级判定（authorizeTenant）被拒。
+	outsider := Actor{TenantID: actor.TenantID + 1, UserID: "outsider"}
+	if _, _, err := svc.ListProjects(ctx, outsider); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("an outsider listed the projects: %v", err)
 	}
-	events, err := svc.ListRuntimeEvents(ctx, actor, p.ID, "")
-	if err != nil {
-		t.Fatalf("read the runtime events: %v", err)
+	// 租户级拒绝没有课题可落，事件记在 project_id="" 上——按课题读看不到它。
+	var rows []runtimeRecordRow
+	if err := svc.testDB().Where("project_id = ? AND kind = ?", "", "event").Find(&rows).Error; err != nil {
+		t.Fatalf("read the tenant-level runtime events: %v", err)
 	}
-	found := false
-	for _, event := range events {
-		if event.Category == "permission" && event.Status == "deny" {
-			found = true
-		}
+	if len(rows) != 1 {
+		t.Fatalf("the tenant-level refusal did not become exactly one runtime event: %+v", rows)
 	}
-	if !found {
-		t.Fatalf("the refusal did not become a runtime event: %+v", events)
+	var event RuntimeEvent
+	if err := json.Unmarshal([]byte(rows[0].BodyJSON), &event); err != nil {
+		t.Fatalf("decode the tenant-level runtime event: %v", err)
+	}
+	if event.Category != "permission" || event.Status != "deny" {
+		t.Fatalf("the tenant-level refusal is not a denial event: %+v", event)
+	}
+	if event.Capability != "read" {
+		t.Fatalf("the tenant-level denial event does not name the refused capability: %+v", event)
 	}
 }
 

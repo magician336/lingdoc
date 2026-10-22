@@ -58,12 +58,33 @@ type RuntimeObservation struct {
 type RuntimeObservationHolder struct {
 	mu           sync.Mutex
 	observations []RuntimeObservation
+	// denialRecorded remembers that this request already refused one
+	// capability decision. A request stops at its first refusal, so a second
+	// refusal in the same request is the observation path asking whether it
+	// may read the very project it just failed on. Recording that again
+	// would double the count the duty officer reads.
+	denialRecorded bool
 	// projectVersion and contextRevision are the revision the authorization
 	// decision was made on. They stay 0 when no project was read: a refusal
 	// must not read the project row first, because that would leak whether
 	// the project exists.
 	projectVersion  int64
 	contextRevision int64
+}
+
+// RecordDenial claims the right to record this request's refusal and reports
+// whether the caller is the first to do so.
+func (h *RuntimeObservationHolder) RecordDenial() bool {
+	if h == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.denialRecorded {
+		return false
+	}
+	h.denialRecorded = true
+	return true
 }
 
 // Add records one observation.
@@ -169,6 +190,13 @@ func noteAuthorizationDenial(ctx context.Context, request AuthorizationRequest, 
 	if errors.As(err, &decision) && decision.capability != "" {
 		capability = decision.capability
 	}
+	if !holder.RecordDenial() {
+		// This request already refused a capability decision. The refusal
+		// that reaches here second is the observation path asking whether it
+		// may read the very project it just failed on; recording it again
+		// would double the count the duty officer reads.
+		return
+	}
 	holder.Add(RuntimeObservation{Kind: RuntimeObservationAuthorizationDenial, Actor: request.Actor,
 		ProjectID: request.ProjectID, Capability: capability,
 		ErrorCode: runtimeErrorCode(err), Reason: err.Error()})
@@ -243,8 +271,14 @@ func (s *Service) WriteRuntimeObservations(ctx context.Context, observations []R
 			if observation.Kind != RuntimeObservationAuditWriteFailure || observation.ProjectID == "" {
 				continue
 			}
-			// A tenant-level authorization has no project to match alert
-			// rules against: the event is still recorded, the alert is not.
+			// Only an audit write failure triggers alert matching. A
+			// tenant-level audit failure has no project to match a rule
+			// against: the event is still recorded, the alert is not.
+			//
+			// An authorization denial is deliberately **not** matched here.
+			// A rule whose action is `pause` would suspend the whole
+			// project over a single refused call, and a denial is already
+			// visible in the event stream.
 			p, err := tx.Project(observation.Actor.TenantID, observation.ProjectID)
 			if err != nil {
 				continue
