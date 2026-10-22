@@ -230,6 +230,7 @@ const (
 	operationSetReviewAnchor            operationName = "setReviewAnchor"
 	operationDiscardProject             operationName = "discardProject"
 	operationRestoreProject             operationName = "restoreProject"
+	operationArchiveProject             operationName = "archiveProject"
 	operationSaveTemplateCopy           operationName = "saveTemplateCopy"
 	operationBindTemplateCopyRuleSet    operationName = "bindTemplateCopyRuleSet"
 	operationChangeTemplate             operationName = "changeTemplate"

@@ -24,6 +24,7 @@ type ProjectApplication interface {
 	ActivationDiff(context.Context, Actor, string, int64) (ActivationDiff, error)
 	DiscardProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
 	RestoreProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
+	ArchiveProjectResult(context.Context, Actor, string, string, int64) (ProjectMutationResult, error)
 }
 
 // ChapterApplication 是 章节与工作副本 上下文的窄口。

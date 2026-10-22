@@ -34,6 +34,7 @@ func workspaceHumanDecisionOperations() map[string]bool {
 	return map[string]bool{
 		"discardProject":         true,
 		"restoreProject":         true,
+		"archiveProject":         true,
 		"activateProject":        true,
 		"applyChangeSet":         true,
 		"reverseChangeSet":       true,

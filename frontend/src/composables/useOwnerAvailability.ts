@@ -20,8 +20,21 @@ export const OWNER_CHANGE_SET_CAPABILITY = 'manage'
 /** 冻结原因文案。 */
 export const OWNER_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，变更集应用与驳回已冻结。'
 
+/** 归档被冻结时的文案：同一个冻结事实，落在归档入口上就讲归档。 */
+export const OWNER_ARCHIVE_UNAVAILABLE_TEXT = '项目 Owner 的租户身份已失效，归档已冻结。'
+
 /** 恢复指引文案。 */
 export const OWNER_RECOVERY_TEXT = '可等待租户恢复 Owner 的身份，或由租户 Owner 指定受让人完成一次所有权转让。'
+
+/**
+ * 冻结文案的选项。
+ *
+ * 文案由这一处持有，各入口只说自己在讲哪一个动作：页面与按钮不各写一遍。
+ */
+export interface OwnerAvailabilityOptions {
+  /** 冻结原因文案；缺省是变更集那条。 */
+  reasonText?: string
+}
 
 /**
  * Owner 可用性事实。
@@ -45,12 +58,12 @@ export interface OwnerAvailability {
  *
  * 按钮的置灰条件、提示条的文案都从这里取，不在各页面各写一遍。
  */
-export function useOwnerAvailability(projectId: () => string | undefined) {
+export function useOwnerAvailability(projectId: () => string | undefined, options: OwnerAvailabilityOptions = {}) {
   const reasonCode = ref('')
   const loading = ref(false)
 
   const frozen = computed(() => reasonCode.value === OWNER_UNAVAILABLE_REASON)
-  const reason = computed(() => (frozen.value ? OWNER_UNAVAILABLE_TEXT : ''))
+  const reason = computed(() => (frozen.value ? (options.reasonText ?? OWNER_UNAVAILABLE_TEXT) : ''))
   const recovery = computed(() => (frozen.value ? OWNER_RECOVERY_TEXT : ''))
 
   const refresh = async () => {

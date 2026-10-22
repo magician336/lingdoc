@@ -21,7 +21,7 @@ export interface ProjectMemberInput extends Omit<ProjectMember, 'role' | 'govern
 export interface Project {
   id: string
   name: string
-  status: 'draft' | 'active'
+  status: 'draft' | 'active' | 'archived'
   project_version: number
   spec_revision: number
   current_context_revision: number
