@@ -1,6 +1,8 @@
 package workspacecore
 
 import (
+	"context"
+
 	"github.com/Tencent/WeKnora/internal/clienterror"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -194,6 +196,25 @@ func OwnerOnlyCapability(capability string) bool {
 		return true
 	}
 	return false
+}
+
+// requireOwnerDecision refuses an Owner-only decision while the project's
+// Owner may not take it.
+//
+// The refusal carries its reason, so a caller can tell the freeze from "you
+// are not the Owner". It runs before the ordinary authorization, because the
+// ordinary authorization answers a lapsed Owner with a plain "not found" --
+// and that is exactly the answer the caller cannot act on.
+//
+// A caller who is not the Owner is left to the ordinary authorization: the
+// freeze is not their reason for being refused.
+//
+// It sits beside the judgement it asks: the decision and the doorway that
+// serves it are one thing to look at.
+func (s *Service) requireOwnerDecision(ctx context.Context, actor Actor, projectID string) error {
+	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
+		return ownerFreezeRefusal(tx, actor, projectID)
+	})
 }
 
 // ownerFreezeRefusal refuses an Owner-only action while the project's Owner

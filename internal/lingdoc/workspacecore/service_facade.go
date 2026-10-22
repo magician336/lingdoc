@@ -2066,22 +2066,6 @@ func (s *Service) GetChangeSet(ctx context.Context, actor Actor, projectID, chan
 	return s.changeProvenanceProjection(ctx, actor, result)
 }
 
-// requireOwnerDecision refuses an Owner-only decision while the project's
-// Owner may not take it.
-//
-// The refusal carries its reason, so a caller can tell the freeze from "you
-// are not the Owner". It runs before the ordinary authorization, because the
-// ordinary authorization answers a lapsed Owner with a plain "not found" --
-// and that is exactly the answer the caller cannot act on.
-//
-// A caller who is not the Owner is left to the ordinary authorization: the
-// freeze is not their reason for being refused.
-func (s *Service) requireOwnerDecision(ctx context.Context, actor Actor, projectID string) error {
-	return s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
-		return ownerFreezeRefusal(tx, actor, projectID)
-	})
-}
-
 func (s *Service) ApplyChangeSet(ctx context.Context, actor Actor, projectID, changeSetID, key string) (json.RawMessage, int, bool, error) {
 	if strings.TrimSpace(changeSetID) == "" {
 		return nil, 0, false, ErrInvalidRequest
