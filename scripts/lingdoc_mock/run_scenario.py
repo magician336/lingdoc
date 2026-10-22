@@ -54,7 +54,7 @@ from scripts.lingdoc_mock.run_f01 import (  # noqa: E402
     scenario_entry,
     write_report,
 )
-from scripts.lingdoc_mock.g6_evidence import (  # noqa: E402
+from scripts.lingdoc_mock.quality_evidence import (  # noqa: E402
     RUNTIME_DEPENDENCIES,
     RUNTIME_MODES,
     SAFE_FIXTURE_ID,
@@ -113,7 +113,7 @@ BOUNDARIES = (
                "模型质量、DOCX 可编辑性以及观察点以外的副作用仍不能由这些通道判定。",
     },
 )
-from scripts.lingdoc_mock.g6_evidence import reduce_results  # noqa: E402
+from scripts.lingdoc_mock.quality_evidence import reduce_results  # noqa: E402
 
 
 def _stable_digest(value: Any) -> str:

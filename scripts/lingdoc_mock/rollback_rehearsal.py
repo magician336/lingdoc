@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lingdoc_mock.g6_evidence import build_evidence, is_finite_number
+from scripts.lingdoc_mock.quality_evidence import build_evidence, is_finite_number
 
 CHECKS = (
     ("old_objects_readable", "old-version objects remain readable during the compatibility window"),
