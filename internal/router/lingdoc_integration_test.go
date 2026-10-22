@@ -379,7 +379,7 @@ func TestLingDocBoundedNativeMachineRead(t *testing.T) {
 		Sources: runtime, Integration: runtime, FullWorkflow: &workspace.FullWorkflowDependencies{
 			Impact: workspace.ImpactRoutePorts{ChangeSets: projects, Impact: projects, Dependency: projects,
 				Runtime: projects, Trials: projects, Roadmap: projects},
-			G2: workspace.G2RoutePorts{Research: projects, Imports: projects, EvidenceCards: projects,
+			G2: workspace.AgentRoutePorts{Research: projects, Imports: projects, EvidenceCards: projects,
 				Claims: projects, Anchors: projects, AgentSessions: projects, Proposals: projects,
 				Context: projects, ChangeSets: projects},
 			Routes: workspace.FullWorkflowRoutePorts{Members: projects, Reviews: projects, Lifecycle: projects}}}

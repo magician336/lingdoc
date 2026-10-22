@@ -101,7 +101,7 @@ func assertDeliveryBoundTemplatePrerequisites(t *testing.T, service *core.Servic
 }
 
 // Only an external sharing service is stubbed; same-tenant access takes the
-// existing owner branch. Core, SourceRuntime, G2ResearchAdapter, bindings,
+// existing owner branch. Core, SourceRuntime, ResearchAdapter, bindings,
 // original text, model consent and adoption persistence are actual adapters.
 func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	t.Helper()
@@ -131,7 +131,7 @@ func newCandidateOneConnFixture(t *testing.T) candidateOneConnFixture {
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	adapter := NewG2ResearchAdapter(db, projects, runtime, shares, nil, nil)
+	adapter := NewResearchAdapter(db, projects, runtime, shares, nil, nil)
 	projects.ConfigureG2(core.G2Runtime{Sources: adapter})
 	_, err := runtime.bindings.Bind(context.Background(), evidence.BindInput{TenantID: 7, ProjectID: "project-1", KnowledgeID: "unused-knowledge", KnowledgeBaseID: "kb-1", CreatedBy: "reader", Title: "Unused synthetic", Signal: evidence.KnowledgeSignal{KnowledgeID: "unused-knowledge", ParseStatus: "completed", FileHash: "unused-hash"}})
 	require.NoError(t, err)

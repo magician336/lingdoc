@@ -70,10 +70,10 @@ func assistantGroupsModelTurnWithKey(t *testing.T, f deliveryGuardFixture, expla
 	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(response), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
-	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
 	f.projects.ConfigureG2(core.G2Runtime{
-		Sources: NewG2ResearchAdapter(f.db, f.projects, f.runtime, g4AdapterShares{}, nil, nil),
-		Model:   host, Actions: NewG2ActionExecutor(f.projects, f.runtime, nil),
+		Sources: NewResearchAdapter(f.db, f.projects, f.runtime, adapterSharesStub{}, nil, nil),
+		Model:   host, Actions: NewAgentActionExecutor(f.projects, f.runtime, nil),
 	})
 	raw, _, _, err := f.projects.CreateAgentSession(f.ctx, f.actor, p.ID, "task_assistant", "agent-groups-session-"+key, agentDraftExpectation(p, 0))
 	require.NoError(t, err)
@@ -421,7 +421,7 @@ func TestAssistantAffectedGroupsStayOutOfTheResolverVocabulary(t *testing.T) {
 	chat := &acceptanceChatStub{response: &types.ChatResponse{Content: string(response), FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 30}}}
 	registered := acceptanceDeepSeekModel()
 	registered.Parameters.Provider = "fake"
-	host := &G2HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
-	_, err = host.Reply(f.ctx, f.actor, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: g2TestModelContext(), UserInput: "提出候选"})
+	host := &HostAgentModel{models: &acceptanceModelServiceStub{models: []*types.Model{registered}, chatModel: chat}}
+	_, err = host.Reply(f.ctx, f.actor, core.G2ModelRequest{Agent: "task_assistant", Purpose: "conversation", Context: testModelContext(), UserInput: "提出候选"})
 	require.Error(t, err, "the assistant side must not carry a certainty field")
 }

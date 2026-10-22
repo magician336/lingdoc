@@ -13,8 +13,14 @@ import re
 from urllib.parse import urlsplit
 
 ROUTE_FILES = tuple("internal/lingdoc/workspace/" + name for name in
-                    ("g2_full_http.go", "impact_routes.go", "full_workflow_http.go",
+                    ("agent_routes.go", "impact_routes.go", "full_workflow_http.go",
                      "roadmap_routes.go"))
+#: A registrar that was renamed.  The published contract names the file a route
+#: lived in when the contract was published, and the contract is frozen -- so
+#: the checker resolves the published name through the rename instead of the
+#: contract being rewritten.  Without this the attribution check would silently
+#: stop covering those operations.
+RENAMED_ROUTE_FILES = {"g2_full_http.go": "agent_routes.go"}
 CLIENT_FILES = tuple("frontend/src/api/lingdoc/" + name for name in
                      ("g2.ts", "mainlineChanges.ts", "collaboration.ts", "chapterReview.ts"))
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "TRACE"}
@@ -149,7 +155,7 @@ def read_routes(sources):
             routes[key] = {"file": filename, "path": groups[receiver] + suffix,
                            "line": text.count("\n", 0, match.start()) + 1,
                            "request_type": request_type,
-                           "fixed_success": "200" if re.search(r'\b(?:g2FullRead|g2FullPostRead|g3g6Read|impactRouteRead)\(', block) else
+                           "fixed_success": "200" if re.search(r'\b(?:agentRead|agentPostRead|g3g6Read|impactRouteRead)\(', block) else
                                             (re.search(r'\bsendOK\(c,\s*(2\d\d),', block).group(1)
                                              if re.search(r'\bsendOK\(c,\s*(2\d\d),', block) else None),
                            "typed_response": (re.search(r'\)\s*\((\[\])?core\.(\w+),\s*error\)', block).group(0)
@@ -160,7 +166,7 @@ def read_routes(sources):
                            # check for every read route that returns (any, error).
                            "read_method": (re.search(r'\breturn\s+[\w.]+\.(\w+)\(', block).group(1)
                                            if re.search(r'\breturn\s+[\w.]+\.(\w+)\(', block) else None),
-                           "idempotent": bool(re.search(r'\b(?:g2FullWrite|g3g6Write|impactRouteWrite)\(', block))}
+                           "idempotent": bool(re.search(r'\b(?:agentWrite|g3g6Write|impactRouteWrite)\(', block))}
     return routes
 
 
@@ -457,6 +463,7 @@ def check_document(spec, route_sources, client_sources, type_sources):
             require(key not in operations, "ambiguous OpenAPI path " + key)
             operations[key] = operation
             source = operation.get("x-lingdoc-route-source")
+            source = RENAMED_ROUTE_FILES.get(source, source)
             if source in {Path(p).name for p in ROUTE_FILES}:
                 require(key in routes, "documented route is no longer registered: " + key)
                 require(Path(routes[key]["file"]).name == source, "route source changed: " + key)

@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
+func evidenceCardVersionRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 	out := make([]core.G2VersionRef, 0, len(refs))
 	for _, ref := range refs {
 		out = append(out, core.G2VersionRef{Kind: "EvidenceCard", ID: ref.ID, Version: ref.Version})
@@ -25,7 +25,7 @@ func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 	return out
 }
 
-// g2SelectFormal resolves the optional formal-evidence selector.
+// selectFormalEvidence resolves the optional formal-evidence selector.
 //
 // The selector is an optional capability, and a workspace that does not have
 // it has to keep failing as a missing dependency (the 503-shaped
@@ -35,7 +35,7 @@ func g2GenerationRefs(refs []generation.EvidenceCardRef) []core.G2VersionRef {
 // hand back any operation the interface happened to name. The port is now an
 // explicit nullable parameter, and a nil port fails the same way the failed
 // assertion did.
-func g2SelectFormal(ctx context.Context, selector core.EvidenceSelectionApplication, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
+func selectFormalEvidence(ctx context.Context, selector core.EvidenceSelectionApplication, actor Actor, projectID, chapterID string, refs []core.G2VersionRef) (core.G2EvidenceSelection, error) {
 	if selector == nil {
 		return core.G2EvidenceSelection{}, generation.ErrDependencyUnavailable
 	}
@@ -54,17 +54,17 @@ func g2SelectFormal(ctx context.Context, selector core.EvidenceSelectionApplicat
 	return selected, nil
 }
 
-// g2GenerationEvidenceValidator resolves the optional formal-evidence selector.
+// generationEvidenceValidator resolves the optional formal-evidence selector.
 //
 // The port it carries stays an interface type: the selector is an optional
 // capability, and a workspace that does not implement it must keep failing as a
 // missing dependency (the 503-shaped generation.ErrDependencyUnavailable).
-type g2GenerationEvidenceValidator struct {
+type generationEvidenceValidator struct {
 	selector core.EvidenceSelectionApplication
 }
 
-func (v g2GenerationEvidenceValidator) ValidateGenerationEvidence(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, sources []generation.Source) error {
-	selected, err := g2SelectFormal(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
+func (v generationEvidenceValidator) ValidateGenerationEvidence(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, sources []generation.Source) error {
+	selected, err := selectFormalEvidence(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, evidenceCardVersionRefs(refs))
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func (v g2GenerationEvidenceValidator) ValidateGenerationEvidence(ctx context.Co
 			return generation.ErrSourceAccessDenied
 		}
 		match := selected.Sources[index]
-		if source.ProjectID != projectID || source.AssetID != match.AssetID || source.AssetRevision != match.AssetRevision || source.Locator != match.Locator || g2AdapterHash(source.QuotedText) != match.QuotedTextHash {
+		if source.ProjectID != projectID || source.AssetID != match.AssetID || source.AssetRevision != match.AssetRevision || source.Locator != match.Locator || researchTextHash(source.QuotedText) != match.QuotedTextHash {
 			return generation.ErrSourceAccessDenied
 		}
 	}
@@ -87,7 +87,7 @@ func (r *generationInputResolver) resolveFormalEvidence(ctx context.Context, act
 	if r.sources == nil {
 		return nil, nil, generation.ErrDependencyUnavailable
 	}
-	selected, err := g2SelectFormal(ctx, r.selector, generationWorkspaceActor(ctx, actor), projectID, request.ChapterID, g2GenerationRefs(request.EvidenceCardRefs))
+	selected, err := selectFormalEvidence(ctx, r.selector, generationWorkspaceActor(ctx, actor), projectID, request.ChapterID, evidenceCardVersionRefs(request.EvidenceCardRefs))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -118,7 +118,7 @@ func (a generationWorkspaceAuthorizer) AuthorizeGenerationChapter(ctx context.Co
 	}
 	return nil
 }
-func g2RewriteModelScope(ctx context.Context, sources SourceApplicationService, actor Actor, projectID string, items []RewriteSourceSnapshot) error {
+func rewriteModelScope(ctx context.Context, sources SourceApplicationService, actor Actor, projectID string, items []RewriteSourceSnapshot) error {
 	runtime, ok := sources.(*SourceRuntime)
 	if !ok {
 		return nil
@@ -174,7 +174,7 @@ func (s *SelectedRewriteService) checkEvidenceRefs(ctx context.Context, actor Ac
 	if len(refs) == 0 {
 		return nil
 	}
-	selected, err := g2SelectFormal(ctx, s.selector, actor, projectID, chapterID, g2GenerationRefs(refs))
+	selected, err := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(refs))
 	if err != nil {
 		return ErrRewriteSourceDenied
 	}
@@ -202,7 +202,7 @@ func (s *SelectedRewriteService) checkRowEvidence(ctx context.Context, actor Act
 		return err
 	}
 	snapshots := mustDecodeSnapshots(row.AuthorizedSourcesJSON)
-	if err := g2RewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
 		return err
 	}
 	return s.checkEvidenceRefs(ctx, actor, projectID, row.ChapterID, refs, snapshots)
@@ -245,7 +245,7 @@ func generationBoundTemplate(p core.Project, legacy core.TemplateReader) (core.T
 	return lingdoctemplate.Clone(copy.Definition), ruleHash, nil
 }
 
-type g2RewriteTemplateBasis struct {
+type rewriteTemplateBasis struct {
 	CopyID          string `json:"copy_id,omitempty"`
 	CopyVersion     int64  `json:"copy_version,omitempty"`
 	ContentHash     string `json:"content_hash,omitempty"`
@@ -253,25 +253,25 @@ type g2RewriteTemplateBasis struct {
 	ContextRevision int64  `json:"context_revision,omitempty"`
 }
 
-func g2RewriteProjectBasis(project core.Project) (g2RewriteTemplateBasis, error) {
+func rewriteProjectBasis(project core.Project) (rewriteTemplateBasis, error) {
 	if project.TemplateCopy == nil {
 		if project.TemplateCopyVersion > 0 {
-			return g2RewriteTemplateBasis{}, ErrRewriteStale
+			return rewriteTemplateBasis{}, ErrRewriteStale
 		}
-		return g2RewriteTemplateBasis{}, nil
+		return rewriteTemplateBasis{}, nil
 	}
 	_, ruleHash, err := generationBoundTemplate(project, nil)
 	if err != nil {
-		return g2RewriteTemplateBasis{}, ErrRewriteStale
+		return rewriteTemplateBasis{}, ErrRewriteStale
 	}
-	return g2RewriteTemplateBasis{CopyID: project.TemplateCopy.ID, CopyVersion: project.TemplateCopy.Version, ContentHash: project.TemplateCopy.ContentHash, RulesetHash: ruleHash, ContextRevision: project.CurrentContextRevision}, nil
+	return rewriteTemplateBasis{CopyID: project.TemplateCopy.ID, CopyVersion: project.TemplateCopy.Version, ContentHash: project.TemplateCopy.ContentHash, RulesetHash: ruleHash, ContextRevision: project.CurrentContextRevision}, nil
 }
 func (s *SelectedRewriteService) checkRowTemplate(ctx context.Context, actor Actor, projectID string, row selectedRewriteRow) error {
 	project, err := s.workspace.GetProject(ctx, actor, projectID)
 	if err != nil {
 		return selectedRewriteContextError(err)
 	}
-	var saved g2RewriteTemplateBasis
+	var saved rewriteTemplateBasis
 	raw := strings.TrimSpace(row.TemplateBasisJSON)
 	if raw != "" {
 		decoder := json.NewDecoder(strings.NewReader(raw))
@@ -283,7 +283,7 @@ func (s *SelectedRewriteService) checkRowTemplate(ctx context.Context, actor Act
 			return ErrRewriteStale
 		}
 	}
-	current, err := g2RewriteProjectBasis(project)
+	current, err := rewriteProjectBasis(project)
 	if err != nil || current != saved {
 		return ErrRewriteStale
 	}
@@ -293,7 +293,7 @@ func (s *SelectedRewriteService) checkRowTemplate(ctx context.Context, actor Act
 	return nil
 }
 
-func g2EvidenceConstraints(selected core.G2EvidenceSelection, refs []generation.EvidenceCardRef) ([]generation.EvidenceConstraint, error) {
+func selectedEvidenceConstraints(selected core.G2EvidenceSelection, refs []generation.EvidenceCardRef) ([]generation.EvidenceConstraint, error) {
 	if len(refs) == 0 {
 		return nil, nil
 	}
@@ -327,12 +327,12 @@ func g2EvidenceConstraints(selected core.G2EvidenceSelection, refs []generation.
 	}
 	return constraints, nil
 }
-func (v g2GenerationEvidenceValidator) ValidateGenerationEvidenceConstraints(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, saved []generation.EvidenceConstraint) error {
-	selected, err := g2SelectFormal(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, g2GenerationRefs(refs))
+func (v generationEvidenceValidator) ValidateGenerationEvidenceConstraints(ctx context.Context, actor generation.Actor, projectID, chapterID string, refs []generation.EvidenceCardRef, saved []generation.EvidenceConstraint) error {
+	selected, err := selectFormalEvidence(ctx, v.selector, generationWorkspaceActor(ctx, actor), projectID, chapterID, evidenceCardVersionRefs(refs))
 	if err != nil {
 		return err
 	}
-	current, err := g2EvidenceConstraints(selected, refs)
+	current, err := selectedEvidenceConstraints(selected, refs)
 	if err != nil {
 		return err
 	}
@@ -367,15 +367,15 @@ func (s *SelectedRewriteService) checkRowEvidenceConstraints(ctx context.Context
 		}
 		return nil
 	}
-	selected, err := g2SelectFormal(ctx, s.selector, actor, projectID, row.ChapterID, g2GenerationRefs(refs))
+	selected, err := selectFormalEvidence(ctx, s.selector, actor, projectID, row.ChapterID, evidenceCardVersionRefs(refs))
 	if err != nil {
 		return ErrRewriteSourceDenied
 	}
-	current, err := g2EvidenceConstraints(selected, refs)
+	current, err := selectedEvidenceConstraints(selected, refs)
 	if err != nil || !reflect.DeepEqual(current, saved) {
 		return ErrRewriteSourceDenied
 	}
 	return nil
 }
 
-const g2EvidenceModelInstructions = "资料可能提供支持、反对、限制条件或背景；不得把反对材料写成支持结论，不得把局部事实推广为总体或因果效果。人工核对来源不表示科学结论已经成立。适用范围或限制不明、材料不足和冲突时应保留待核表述并列入 review_items。"
+const evidenceModelInstructions = "资料可能提供支持、反对、限制条件或背景；不得把反对材料写成支持结论，不得把局部事实推广为总体或因果效果。人工核对来源不表示科学结论已经成立。适用范围或限制不明、材料不足和冲突时应保留待核表述并列入 review_items。"

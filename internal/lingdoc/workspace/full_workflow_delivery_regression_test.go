@@ -42,27 +42,27 @@ type deliveryGuardFixture struct {
 // No model or service is started. The source file contains synthetic text only.
 func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bool) deliveryGuardFixture {
 	t.Helper()
-	_, db, actor, p, _ := g4AdapterFixture(t)
+	_, db, actor, p, _ := governanceAdapterFixture(t)
 	require.NoError(t, db.Exec(`CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,username TEXT,is_active INTEGER NOT NULL,deleted_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`INSERT OR IGNORE INTO users(id,username,is_active) VALUES(?,?,1)`, actor.UserID, actor.UserID).Error)
-	// g4AdapterFixture already applied every production LingDoc migration.
-	ctx := g4CallerContext(context.Background(), actor)
+	// governanceAdapterFixture already applied every production LingDoc migration.
+	ctx := governanceCallerContext(context.Background(), actor)
 	ctx = context.WithValue(ctx, types.TenantRoleContextKey, actor.Role)
 	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: actor.UserID})
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	t.Cleanup(cancel)
-	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, adapterSharesStub{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil)})
+	projects.ConfigureG2(core.G2Runtime{Sources: NewResearchAdapter(db, projects, runtime, adapterSharesStub{}, nil, nil)})
 	governance, err := NewTemplateGovernanceRuntime(db, projects, runtime, nil)
 	require.NoError(t, err)
 	projects.SetTemplateCatalogResolver(governance)
 	projects.SetImpactRuleChecker(governance.ImpactRuleChecker())
 	if len(withSpecSource) > 0 && withSpecSource[0] {
-		_, ref := g4AdapterSource(t, governance, db, p, actor)
+		_, ref := adapterSourceFixture(t, governance, db, p, actor)
 		projects.RequireActivationRead(true)
 		raw, _, _, err := projects.SaveSpec(ctx, actor, p.ID, "delivery-spec-source", core.SaveSpecInput{
 			ExpectedSpecRevision: p.SpecRevision,
@@ -77,16 +77,16 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(raw, &p))
 	} else {
-		p = g4ActivateProject(t, projects, actor, p, ctx)
+		p = activateProjectFixture(t, projects, actor, p, ctx)
 	}
-	chapters := g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
+	chapters := writeConfirmedChaptersFixture(t, projects, db, actor, p, ctx)
 	if withSource {
-		_, ref := g4AdapterSource(t, governance, db, p, actor)
+		_, ref := adapterSourceFixture(t, governance, db, p, actor)
 		chapter := chapters[0]
 		raw, _, _, err := projects.SaveChapter(ctx, actor, p.ID, chapter.ID, "delivery-guard-source-body", core.SaveChapterInput{ExpectedChapterVersionID: chapter.CurrentVersionID, ExpectedSpecRevision: p.SpecRevision, BodyMarkdown: "合成来源用于检验撤权读取 [[source:" + ref.ID + "]]", SourceIDs: []string{ref.ID}})
 		require.NoError(t, err)
 		require.NoError(t, json.Unmarshal(raw, &chapter))
-		confirm := candidateadoption.NewConfirmationService(candidateadoption.NewSQLiteCandidateAdoptionStore(db), runtime.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), g4AdapterChapterAuthorizer{projects})
+		confirm := candidateadoption.NewConfirmationService(candidateadoption.NewSQLiteCandidateAdoptionStore(db), runtime.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), adapterChapterAuthorizerStub{projects})
 		_, _, err = confirm.ConfirmChapter(ctx, candidateadoption.ConfirmChapterInput{ProjectID: p.ID, ChapterID: chapter.ID, ActorID: actor.UserID, IdempotencyKey: "delivery-guard-confirm", ExpectedChapterVersionID: *chapter.CurrentVersionID, ExpectedSpecRevision: int(p.SpecRevision), Decisions: []candidateadoption.ReviewDecision{}})
 		require.NoError(t, err)
 		chapters, err = projects.ListChapters(ctx, actor, p.ID)
@@ -108,7 +108,7 @@ func newDeliveryGuardFixture(t *testing.T, withSource bool, withSpecSource ...bo
 }
 
 func (f deliveryGuardFixture) requestContext(user string, role types.TenantRole, requestID string) context.Context {
-	ctx := g4CallerContext(f.ctx, core.Actor{TenantID: f.actor.TenantID, UserID: user, Role: role})
+	ctx := governanceCallerContext(f.ctx, core.Actor{TenantID: f.actor.TenantID, UserID: user, Role: role})
 	ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
 	ctx = context.WithValue(ctx, types.RequestIDContextKey, requestID)
 	return types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: user})
@@ -126,7 +126,7 @@ func TestFullWorkflowDeliveryHistoricalSnapshotListAndReplayRecheckSources(t *te
 	raw, _, _, err := f.projects.SaveChapter(f.ctx, f.actor, f.project.ID, chapter.ID, "delivery-withdraw-citation", core.SaveChapterInput{ExpectedChapterVersionID: chapter.CurrentVersionID, ExpectedSpecRevision: f.project.SpecRevision, BodyMarkdown: "新版本使用独立人工说明，不引用旧来源。", SourceIDs: []string{}})
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &chapter))
-	confirm := candidateadoption.NewConfirmationService(candidateadoption.NewSQLiteCandidateAdoptionStore(f.db), f.runtime.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), g4AdapterChapterAuthorizer{f.projects})
+	confirm := candidateadoption.NewConfirmationService(candidateadoption.NewSQLiteCandidateAdoptionStore(f.db), f.runtime.CandidateAdoptionSourcePolicy().(candidateadoption.ConfirmationSourcePolicy), adapterChapterAuthorizerStub{f.projects})
 	_, _, err = confirm.ConfirmChapter(f.ctx, candidateadoption.ConfirmChapterInput{ProjectID: f.project.ID, ChapterID: chapter.ID, ActorID: f.actor.UserID, IdempotencyKey: "delivery-confirm-withdrawn-citation", ExpectedChapterVersionID: *chapter.CurrentVersionID, ExpectedSpecRevision: int(f.project.SpecRevision), Decisions: []candidateadoption.ReviewDecision{}})
 	require.NoError(t, err)
 	require.NoError(t, f.projects.AssertRevisionStabilized(f.ctx, f.actor, f.project.ID))

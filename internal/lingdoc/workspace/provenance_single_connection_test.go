@@ -18,7 +18,7 @@ import (
 	"gorm.io/gorm"
 )
 
-type g1NativeFixture struct {
+type nativeProvenanceFixture struct {
 	db         *gorm.DB
 	projects   *core.Service
 	governance *TemplateGovernanceRuntime
@@ -28,35 +28,35 @@ type g1NativeFixture struct {
 	ctx        context.Context
 }
 
-func g1NativeProvenanceFixture(t *testing.T) g1NativeFixture {
+func newNativeProvenanceFixture(t *testing.T) nativeProvenanceFixture {
 	t.Helper()
-	_, db, actor, p, _ := g4AdapterFixture(t)
-	ctx := g4CallerContext(context.Background(), actor)
+	_, db, actor, p, _ := governanceAdapterFixture(t)
+	ctx := governanceCallerContext(context.Background(), actor)
 	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalWebUser, ID: actor.UserID})
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	t.Cleanup(cancel)
-	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, g4AdapterShares{}, nil, delivery.NewFixedTemplateReader())
+	runtime := NewGORMSourceRuntime(db, ProjectPorts{}, adapterSharesStub{}, nil, delivery.NewFixedTemplateReader())
 	projects := core.NewServiceWithSources(core.NewGORMRepository(db), core.ContractDemoTemplate{}, runtime.WorkspaceSourcePolicy())
 	runtime.ConnectProjects(ProjectPorts{Authorizer: projects, Projects: projects, Context: projects})
 	connectAggregateCapabilities(runtime, projects)
 	runtime.EnableFullWorkflowPolicy()
-	projects.ConfigureG2(core.G2Runtime{Sources: NewG2ResearchAdapter(db, projects, runtime, g4AdapterShares{}, nil, nil), Actions: NewG2ActionExecutor(projects, runtime, nil)})
+	projects.ConfigureG2(core.G2Runtime{Sources: NewResearchAdapter(db, projects, runtime, adapterSharesStub{}, nil, nil), Actions: NewAgentActionExecutor(projects, runtime, nil)})
 	governance, err := NewTemplateGovernanceRuntime(db, projects, runtime, nil)
 	require.NoError(t, err)
 	projects.SetTemplateCatalogResolver(governance)
 	projects.SetImpactRuleChecker(governance.ImpactRuleChecker())
-	asset, _ := g4AdapterSource(t, governance, db, p, actor)
+	asset, _ := adapterSourceFixture(t, governance, db, p, actor)
 	pool, err := db.DB()
 	require.NoError(t, err)
 	require.Equal(t, 1, pool.Stats().MaxOpenConnections)
-	return g1NativeFixture{db: db, projects: projects, governance: governance, actor: actor, project: p, asset: asset, ctx: ctx}
+	return nativeProvenanceFixture{db: db, projects: projects, governance: governance, actor: actor, project: p, asset: asset, ctx: ctx}
 }
-func (f g1NativeFixture) specInput(value string) core.SaveSpecInput {
+func (f nativeProvenanceFixture) specInput(value string) core.SaveSpecInput {
 	return core.SaveSpecInput{ExpectedSpecRevision: f.project.SpecRevision, Fields: map[string]string{"research_subject": value, "research_goal": "人类输入的软件目标"}, FieldMetadata: map[string]core.SpecFieldInput{"research_subject": {Origin: "human", Status: "draft", Provenance: &core.ProvenanceRecord{SourceType: "source", SourceID: "source-runtime", SourceVersion: "1", CreatedBy: "forged-owner", Accessible: false, Locator: "private source locator", Purpose: "private source purpose", AuthorizationScope: "client-made-grant"}}}}
 }
 
-func TestG1ActualOneConnectionCurrentSourceProjectionReplayAndNoDataLoss(t *testing.T) {
-	f := g1NativeProvenanceFixture(t)
+func TestActualOneConnectionCurrentSourceProjectionReplayAndNoDataLoss(t *testing.T) {
+	f := newNativeProvenanceFixture(t)
 	input := f.specInput("合成来源派生条件")
 	raw, _, _, err := f.projects.SaveSpec(f.ctx, f.actor, f.project.ID, "g1-native-spec-01", input)
 	require.NoError(t, err)
@@ -139,8 +139,8 @@ func TestG1ActualOneConnectionCurrentSourceProjectionReplayAndNoDataLoss(t *test
 	require.NotEqual(t, context.DeadlineExceeded, f.ctx.Err())
 }
 
-func TestG1ActualSourceHistoryRemainsProtectedAfterHumanFieldChange(t *testing.T) {
-	f := g1NativeProvenanceFixture(t)
+func TestActualSourceHistoryRemainsProtectedAfterHumanFieldChange(t *testing.T) {
+	f := newNativeProvenanceFixture(t)
 	input := f.specInput("合成来源旧条件")
 	raw, _, _, err := f.projects.SaveSpec(f.ctx, f.actor, f.project.ID, "g1-history-spec", input)
 	require.NoError(t, err)
@@ -224,8 +224,8 @@ func TestG1ActualSourceHistoryRemainsProtectedAfterHumanFieldChange(t *testing.T
 	require.NotEqual(t, context.DeadlineExceeded, f.ctx.Err())
 }
 
-func TestG1ActualSourceIdentityVersionAndModelScopeFailClosed(t *testing.T) {
-	f := g1NativeProvenanceFixture(t)
+func TestActualSourceIdentityVersionAndModelScopeFailClosed(t *testing.T) {
+	f := newNativeProvenanceFixture(t)
 	raw, _, _, err := f.projects.SaveSpec(f.ctx, f.actor, f.project.ID, "g1-scope-spec", f.specInput("合成源条件"))
 	require.NoError(t, err)
 	var p core.Project
@@ -265,8 +265,8 @@ func TestG1ActualSourceIdentityVersionAndModelScopeFailClosed(t *testing.T) {
 	require.False(t, strings.Contains(current.Spec["research_subject"], "版本变更"))
 }
 
-func TestG1ActualInverseApplyRetainsSourceAuthority(t *testing.T) {
-	f := g1NativeProvenanceFixture(t)
+func TestActualInverseApplyRetainsSourceAuthority(t *testing.T) {
+	f := newNativeProvenanceFixture(t)
 	input := f.specInput("逆向来源条件 A")
 	raw, _, _, err := f.projects.SaveSpec(f.ctx, f.actor, f.project.ID, "g1-inverse-source-save", input)
 	require.NoError(t, err)
@@ -303,8 +303,8 @@ func TestG1ActualInverseApplyRetainsSourceAuthority(t *testing.T) {
 	require.ErrorIs(t, err, core.ErrSourceUnavailable)
 }
 
-func TestG1ActualActionResultReplayRechecksHistoricalSource(t *testing.T) {
-	f := g1NativeProvenanceFixture(t)
+func TestActualActionResultReplayRechecksHistoricalSource(t *testing.T) {
+	f := newNativeProvenanceFixture(t)
 	input := f.specInput("动作缓存来源条件 A")
 	raw, _, _, err := f.projects.SaveSpec(f.ctx, f.actor, f.project.ID, "g1-action-source-save", input)
 	require.NoError(t, err)
@@ -344,8 +344,8 @@ func TestG1ActualActionResultReplayRechecksHistoricalSource(t *testing.T) {
 	require.Contains(t, row.PayloadJSON, input.Fields["research_subject"])
 }
 
-func TestG1ActualExplicitHumanSameValueCannotEraseSourcePin(t *testing.T) {
-	f := g1NativeProvenanceFixture(t)
+func TestActualExplicitHumanSameValueCannotEraseSourcePin(t *testing.T) {
+	f := newNativeProvenanceFixture(t)
 	input := f.specInput("仍受来源授权约束的条件")
 	raw, _, _, err := f.projects.SaveSpec(f.ctx, f.actor, f.project.ID, "g1-no-launder-source", input)
 	require.NoError(t, err)

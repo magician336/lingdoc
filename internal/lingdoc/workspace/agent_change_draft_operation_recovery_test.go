@@ -33,7 +33,7 @@ func r26OperationHTTP(t *testing.T, f deliveryGuardFixture, method, path, key st
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
-	RegisterG2FullRoutes(engine.Group("/api"), g2PortsFor(f.projects))
+	RegisterAgentRoutes(engine.Group("/api"), agentRoutePortsFor(f.projects))
 	RegisterImpactRoutes(engine.Group("/api"), impactPortsFor(f.projects))
 	body, err := json.Marshal(input)
 	require.NoError(t, err)
@@ -115,7 +115,7 @@ func r26SnapshotOperationMutations(t *testing.T, f deliveryGuardFixture) r26Oper
 // second, unrelated current-baseline source check.
 func r26AgentDraftWithIndependentSource(t *testing.T, f deliveryGuardFixture) (core.AgentChangeDraftInput, string) {
 	t.Helper()
-	_, source := g4AdapterSource(t, f.governance, f.db, f.project, f.actor)
+	_, source := adapterSourceFixture(t, f.governance, f.db, f.project, f.actor)
 	turn, input, _ := agentDraftModelTurn(t, f, source.ID)
 	found := false
 	for _, ref := range turn.Context.SourceRefs {

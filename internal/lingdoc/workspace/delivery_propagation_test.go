@@ -10,10 +10,10 @@ import (
 	governance "github.com/Tencent/WeKnora/internal/lingdoc/templategovernance"
 )
 
-func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t *testing.T) {
-	_, projects, db, actor, p, ctx := g4AdapterFixtureWithProjects(t)
-	p = g4ActivateProject(t, projects, actor, p, ctx)
-	version := g4RuntimeDemoVersion(t)
+func TestIndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t *testing.T) {
+	_, projects, db, actor, p, ctx := governanceAdapterFixtureWithProjects(t)
+	p = activateProjectFixture(t, projects, actor, p, ctx)
+	version := runtimeDemoVersionFixture(t)
 	if p.TemplateCopy == nil {
 		t.Fatal("actual project copy unavailable")
 	}
@@ -35,7 +35,7 @@ func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t 
 	if err := db.Exec("INSERT INTO lingdoc_g5_records(project_id,kind,id,version,payload_json) VALUES(?,'template_binding',?,1,?)", p.ID, copy.ID, string(raw)).Error; err != nil {
 		t.Fatal(err)
 	}
-	g4WriteConfirmedChapters(t, projects, db, actor, p, ctx)
+	writeConfirmedChaptersFixture(t, projects, db, actor, p, ctx)
 	reader := candidateadoption.NewSQLiteCandidateAdoptionStore(db)
 	input, err := reader.ReadDeliveryInput(ctx, p.ID)
 	if err != nil {
@@ -47,7 +47,7 @@ func TestG4IndependentCopySidecarReachesActualFrozenCheckAndDocumentValidator(t 
 	sourceRuntime := NewGORMSourceRuntime(db, ProjectPorts{Authorizer: projects, Projects: projects, Context: projects}, nil, nil, delivery.NewFixedTemplateReader())
 	connectAggregateCapabilities(sourceRuntime, projects)
 	assembler := sourceRuntime.DeliveryInputBuilder()
-	frozen, err := assembler.Build(g4CallerContext(ctx, actor), actor.UserID, input)
+	frozen, err := assembler.Build(governanceCallerContext(ctx, actor), actor.UserID, input)
 	if err != nil {
 		t.Fatal(err)
 	}

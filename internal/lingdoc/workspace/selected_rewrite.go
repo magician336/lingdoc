@@ -81,7 +81,7 @@ type SelectedRewriteCandidate struct {
 }
 
 type SelectedRewritePrompt struct {
-	TemplateBasis       g2RewriteTemplateBasis
+	TemplateBasis       rewriteTemplateBasis
 	EvidenceCardRefs    []generation.EvidenceCardRef
 	EvidenceConstraints []generation.EvidenceConstraint
 	Selection           RewriteSelection
@@ -311,11 +311,11 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 	input.EvidenceCardRefs = append([]generation.EvidenceCardRef(nil), input.EvidenceCardRefs...)
 	var evidenceConstraints []generation.EvidenceConstraint
 	if len(input.EvidenceCardRefs) > 0 {
-		selected, selectErr := g2SelectFormal(ctx, s.selector, actor, projectID, chapterID, g2GenerationRefs(input.EvidenceCardRefs))
+		selected, selectErr := selectFormalEvidence(ctx, s.selector, actor, projectID, chapterID, evidenceCardVersionRefs(input.EvidenceCardRefs))
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
-		evidenceConstraints, selectErr = g2EvidenceConstraints(selected, input.EvidenceCardRefs)
+		evidenceConstraints, selectErr = selectedEvidenceConstraints(selected, input.EvidenceCardRefs)
 		if selectErr != nil {
 			return SelectedRewriteCandidate{}, ErrRewriteSourceDenied
 		}
@@ -375,7 +375,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
-	if err := g2RewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
+	if err := rewriteModelScope(ctx, s.sources, actor, projectID, snapshots); err != nil {
 		return SelectedRewriteCandidate{}, err
 	}
 	if err := s.checkEvidenceRefs(ctx, actor, projectID, chapterID, input.EvidenceCardRefs, snapshots); err != nil {
@@ -396,7 +396,7 @@ func (s *SelectedRewriteService) Create(ctx context.Context, actor Actor, projec
 		auditDecision, auditReason = "deny", err.Error()
 		return SelectedRewriteCandidate{}, err
 	}
-	templateBasis, basisErr := g2RewriteProjectBasis(project)
+	templateBasis, basisErr := rewriteProjectBasis(project)
 	if basisErr != nil {
 		return SelectedRewriteCandidate{}, basisErr
 	}

@@ -23,32 +23,32 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// T09 S4 的 HTTP 集成验收：契约里 project sources 这几个操作**在传输层**的样子。
+// 来源路由的 HTTP 集成验收：契约里 project sources 这几个操作**在传输层**的样子。
 //
 // 领域判据在 internal/evidence 里已经逐条测过（授权 / 绑定 / 复核 / 分块定位），
 // 这里要证的是另一件事：同一套判据挂上路由、过一遍中间件与错误映射之后，**答出来的
-// 状态码与响应体**仍是那些判据说的意思。这是 S4 与 S1-S3 的分界，而它此前一条用例都
-// 没有——所以 T09 报告里那句「S4 未运行」是真的，不是谦虚。
+// 状态码与响应体**仍是那些判据说的意思。这一层此前一条用例都没有——所以固定证据里
+// 那句「未运行」是真的，不是谦虚。
 //
-// 固定资料 docs/08-本轮实施方案/T09-S4-证据.json 供 verify_t09_test.go 读回。
+// 固定资料 docs/08-本轮实施方案/T09-S4-证据.json 供 verify_asset_service_test.go 读回。
 // 每次执行核对当前用例集合，默认不改源码树；本轮结果以 Go test 输出为准。
 // 增减用例须显式更新固定资料，避免历史绿结论被误当本轮运行证据。
 
 const (
-	// t09RouteBase 与 router.go 装配出来的前缀一致（Register 收下的是已认证的 /api/v1 组）。
-	t09RouteBase = "/api/v1/lingdoc/projects/project-1"
-	// t09S4EvidencePath 是这份证据的落点，相对本包目录。
-	t09S4EvidencePath = "../../../docs/08-本轮实施方案/T09-S4-证据.json"
-	// t09S4MinimumCases 是证据文件至少该有的条数。低于它说明有人删了用例却没删这一行——
+	// assetRouteBase 与 router.go 装配出来的前缀一致（Register 收下的是已认证的 /api/v1 组）。
+	assetRouteBase = "/api/v1/lingdoc/projects/project-1"
+	// evidenceFilePath 是这份证据的落点，相对本包目录。
+	evidenceFilePath = "../../../docs/08-本轮实施方案/T09-S4-证据.json"
+	// evidenceMinimumCases 是证据文件至少该有的条数。低于它说明有人删了用例却没删这一行——
 	// 这条判据问的是「覆盖到了」，不是「跑过了」。
-	t09S4MinimumCases = 18
+	evidenceMinimumCases = 18
 )
 
-// t09OriginLines 是强档 fixture 的原文，一段一行。
+// originLines 是强档 fixture 的原文，一段一行。
 //
 // 内容本身不重要，重要的是**每一段都能被坐标唯一指出来**：断言拿段文本当哨兵串，
 // 某一段出现在不该出现的位置（跨了族、跳过了软删的块、越出了窗口）才看得出来。
-var t09OriginLines = []string{
+var originLines = []string{
 	"第一段：项目背景与建设目标。",
 	"第二段：需求分析与调研结论。",
 	"第三段：总体架构与技术选型。",
@@ -58,28 +58,28 @@ var t09OriginLines = []string{
 	"第七段：运维保障与后续演进。",
 }
 
-// t09ParentSentinel 是父块族的哨兵串。它与 text 族的 idx 3 **同号**：窗口若按
+// parentChunkSentinel 是父块族的哨兵串。它与 text 族的 idx 3 **同号**：窗口若按
 // chunk_index 取而不按族过滤，第三段的位置上出现的就会是它。
-const t09ParentSentinel = "父块：与子块的第三段同号，但不该出现在窗口里。"
+const parentChunkSentinel = "父块：与子块的第三段同号，但不该出现在窗口里。"
 
-// t09EditedNeighbour 是那条「坐标对不上」的邻居的正文。它的坐标仍指向第二段，
+// editedNeighbourText 是那条「坐标对不上」的邻居的正文。它的坐标仍指向第二段，
 // 但内容已经不是那一段了——模拟被下游单独编辑过的块。
-const t09EditedNeighbour = "这一段的正文已经被编辑过，与坐标指向的原文不再一致。"
+const editedNeighbourText = "这一段的正文已经被编辑过，与坐标指向的原文不再一致。"
 
-func t09Origin() string { return strings.Join(t09OriginLines, "\n") }
+func originText() string { return strings.Join(originLines, "\n") }
 
-// t09Span 给出第 index 段在整篇原文里的 rune 区间。段间只有一个 '\n'，
+// originSpan 给出第 index 段在整篇原文里的 rune 区间。段间只有一个 '\n'，
 // 与 chunker.NormalizeLineEndings 归一之后的形态一致（否则强档根本立不起来）。
-func t09Span(index int) (int, int) {
+func originSpan(index int) (int, int) {
 	start := 0
 	for i := 0; i < index; i++ {
-		start += len([]rune(t09OriginLines[i])) + 1
+		start += len([]rune(originLines[i])) + 1
 	}
-	return start, start + len([]rune(t09OriginLines[index]))
+	return start, start + len([]rune(originLines[index]))
 }
 
-// t09SourceID 给 text 族第 index 段一个稳定的分块 ID。
-func t09SourceID(index int) string { return fmt.Sprintf("source-%d", index) }
+// chunkSourceID 给 text 族第 index 段一个稳定的分块 ID。
+func chunkSourceID(index int) string { return fmt.Sprintf("source-%d", index) }
 
 // stubKBShareService 只作**非 nil** 用：kbReadChecker.CanReadKB 拿它挡「没装组织共享
 // 这一层」的装配失误，而同租户 + Viewer 的读权限在 KBPermissions.Check 里直接放行，
@@ -184,8 +184,8 @@ func newAssetsHTTPFixture(t *testing.T) assetsHTTPFixture {
 	testRuntime(handler).kbShares = stubKBShareService{}
 	testRuntime(handler).knowledge = stubKnowledgeBases{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 7}}
 
-	txtAssetID := seedT09TxtKnowledge(t, handler, db)
-	pdfAssetID := seedT09WeakKnowledge(t, handler, db)
+	txtAssetID := seedTextKnowledgeFixture(t, handler, db)
+	pdfAssetID := seedWeakKnowledgeFixture(t, handler, db)
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {
@@ -251,7 +251,7 @@ var assetsApplicationSchema = []string{
 	)`,
 }
 
-// seedT09TxtKnowledge 种一份**强档**资料：真 txt 文件 + 逐段落到了坐标上的分块行。
+// seedTextKnowledgeFixture 种一份**强档**资料：真 txt 文件 + 逐段落到了坐标上的分块行。
 //
 // text 族的布局：
 //
@@ -261,57 +261,57 @@ var assetsApplicationSchema = []string{
 //
 // 另有两族的干扰项：parent_text 的 idx 3、summary 的 idx 4。两条都与 text 族同号，
 // 所以任何一条「不按族过滤」的实现都会在这里露馅。
-func seedT09TxtKnowledge(t *testing.T, handler *Handler, db *gorm.DB) string {
+func seedTextKnowledgeFixture(t *testing.T, handler *Handler, db *gorm.DB) string {
 	t.Helper()
 	originPath := filepath.Join(t.TempDir(), "origin.txt")
-	if err := os.WriteFile(originPath, []byte(t09Origin()), 0o600); err != nil {
+	if err := os.WriteFile(originPath, []byte(originText()), 0o600); err != nil {
 		t.Fatalf("write origin file: %v", err)
 	}
-	assetID := bindT09Knowledge(t, handler, db, "knowledge-txt", "synthetic txt", "txt",
-		originPath, "hash-txt", len([]rune(t09Origin())))
+	assetID := bindChunkKnowledge(t, handler, db, "knowledge-txt", "synthetic txt", "txt",
+		originPath, "hash-txt", len([]rune(originText())))
 
-	for index := range t09OriginLines {
-		content := t09OriginLines[index]
+	for index := range originLines {
+		content := originLines[index]
 		if index == 2 {
 			// 坐标不动、正文换掉：quoteAt 取回的原文片段与它不等，判成 stale。
-			content = t09EditedNeighbour
+			content = editedNeighbourText
 		}
-		start, end := t09Span(index)
-		seedT09Chunk(t, db, t09SourceID(index), "knowledge-txt", content,
+		start, end := originSpan(index)
+		seedChunkFixture(t, db, chunkSourceID(index), "knowledge-txt", content,
 			string(types.ChunkTypeText), index, start, end)
 	}
-	if err := db.Exec("UPDATE chunks SET deleted_at = ? WHERE id = ?", time.Now().UTC(), t09SourceID(5)).Error; err != nil {
+	if err := db.Exec("UPDATE chunks SET deleted_at = ? WHERE id = ?", time.Now().UTC(), chunkSourceID(5)).Error; err != nil {
 		t.Fatalf("soft delete the fifth chunk: %v", err)
 	}
 
-	parentStart, parentEnd := t09Span(3)
-	seedT09Chunk(t, db, "parent-3", "knowledge-txt", t09ParentSentinel,
+	parentStart, parentEnd := originSpan(3)
+	seedChunkFixture(t, db, "parent-3", "knowledge-txt", parentChunkSentinel,
 		string(types.ChunkTypeParentText), 3, parentStart, parentEnd)
 	// summary 块与命中块同号、且坐标是对的：它的状态是 available，
 	// 于是「不可展开」与「引用失效」两件事才分得开——用例判的正是这个区别。
-	summaryStart, summaryEnd := t09Span(4)
-	seedT09Chunk(t, db, "summary-4", "knowledge-txt", t09OriginLines[4],
+	summaryStart, summaryEnd := originSpan(4)
+	seedChunkFixture(t, db, "summary-4", "knowledge-txt", originLines[4],
 		string(types.ChunkTypeSummary), 4, summaryStart, summaryEnd)
 	return assetID
 }
 
-// seedT09WeakKnowledge 种一份**弱档**资料：pdf + 空 FilePath，原文取不回来。
+// seedWeakKnowledgeFixture 种一份**弱档**资料：pdf + 空 FilePath，原文取不回来。
 // 坐标只要自洽（runeLen(Content) == EndAt-StartAt）就是 available——与产出侧同一条判据。
-func seedT09WeakKnowledge(t *testing.T, handler *Handler, db *gorm.DB) string {
+func seedWeakKnowledgeFixture(t *testing.T, handler *Handler, db *gorm.DB) string {
 	t.Helper()
-	assetID := bindT09Knowledge(t, handler, db, "knowledge-pdf", "synthetic pdf", "pdf", "", "hash-pdf", 32)
+	assetID := bindChunkKnowledge(t, handler, db, "knowledge-pdf", "synthetic pdf", "pdf", "", "hash-pdf", 32)
 
 	const first = "弱档资料的第一段正文。"
 	const second = "弱档资料的第二段正文，这一句是被引用的。"
-	seedT09Chunk(t, db, "weak-0", "knowledge-pdf", first, string(types.ChunkTypeText), 0, 0, len([]rune(first)))
-	seedT09Chunk(t, db, "weak-1", "knowledge-pdf", second, string(types.ChunkTypeText), 1,
+	seedChunkFixture(t, db, "weak-0", "knowledge-pdf", first, string(types.ChunkTypeText), 0, 0, len([]rune(first)))
+	seedChunkFixture(t, db, "weak-1", "knowledge-pdf", second, string(types.ChunkTypeText), 1,
 		len([]rune(first))+1, len([]rune(first))+1+len([]rune(second)))
 	return assetID
 }
 
-// bindT09Knowledge 写入知识行并把它绑到 project-1 上。知识行必须先于绑定：
+// bindChunkKnowledge 写入知识行并把它绑到 project-1 上。知识行必须先于绑定：
 // AssetGateway 会刷新资料版本，缺行会被读成「正在删除」。
-func bindT09Knowledge(t *testing.T, handler *Handler, db *gorm.DB, knowledgeID, title, fileType, filePath, fileHash string, size int) string {
+func bindChunkKnowledge(t *testing.T, handler *Handler, db *gorm.DB, knowledgeID, title, fileType, filePath, fileHash string, size int) string {
 	t.Helper()
 	processedAt := time.Date(2026, time.September, 26, 10, 0, 0, 0, time.UTC)
 	if err := db.Exec(
@@ -334,12 +334,12 @@ func bindT09Knowledge(t *testing.T, handler *Handler, db *gorm.DB, knowledgeID, 
 	return asset.ID
 }
 
-// seedT09Chunk 写一条分块行，索引与族都显式给。
+// seedChunkFixture 写一条分块行，索引与族都显式给。
 //
 // 不复用 source_policy_test.go 的 seedChunk：那条把 chunk_index 写死成 0、落进默认的
 // text 族，而窗口的判据全在这两列上（按索引位取邻居、按族过滤）——写死的索引让
 // 「跨族」与「软删空洞」两件事**都测不出来**。
-func seedT09Chunk(t *testing.T, db *gorm.DB, id, knowledgeID, content, chunkType string, chunkIndex, startAt, endAt int) {
+func seedChunkFixture(t *testing.T, db *gorm.DB, id, knowledgeID, content, chunkType string, chunkIndex, startAt, endAt int) {
 	t.Helper()
 	if err := db.Exec(
 		"INSERT INTO chunks (id, tenant_id, knowledge_id, knowledge_base_id, content, content_revision, chunk_index, chunk_type, start_at, end_at) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
@@ -351,10 +351,10 @@ func seedT09Chunk(t *testing.T, db *gorm.DB, id, knowledgeID, content, chunkType
 
 // ---------- 请求与响应 ----------
 
-// t09Request / t09Serve 与 delivery_http_test.go 的同名样板是同一件事：注入调用者身份
+// newAssetRequest / serveAssetRequest 与 delivery_http_test.go 的同名样板是同一件事：注入调用者身份
 // （这几条路由都在已认证的组里）、按需带幂等键。另起一对是因为那份常量与注释都绑在
 // 交付链上，改交付测试不该动到 T09 的用例。
-func t09Request(method, path, body, key string) *http.Request {
+func newAssetRequest(method, path, body, key string) *http.Request {
 	var reader io.Reader
 	if body != "" {
 		reader = strings.NewReader(body)
@@ -366,19 +366,19 @@ func t09Request(method, path, body, key string) *http.Request {
 	return request
 }
 
-func t09Serve(router *gin.Engine, request *http.Request) *httptest.ResponseRecorder {
+func serveAssetRequest(router *gin.Engine, request *http.Request) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, request)
 	return recorder
 }
 
-// t09Call 是一整次请求。
-func t09Call(f assetsHTTPFixture, method, path, body, key string) *httptest.ResponseRecorder {
-	return t09Serve(f.router, t09Request(method, path, body, key))
+// callAssetEndpoint 是一整次请求。
+func callAssetEndpoint(f assetsHTTPFixture, method, path, body, key string) *httptest.ResponseRecorder {
+	return serveAssetRequest(f.router, newAssetRequest(method, path, body, key))
 }
 
-// t09Envelope 与交付链共用同一个信封（data + request_id + meta，出错时换成 error）。
-type t09Envelope struct {
+// assetEnvelope 与交付链共用同一个信封（data + request_id + meta，出错时换成 error）。
+type assetEnvelope struct {
 	Data json.RawMessage `json:"data"`
 	Meta struct {
 		Replayed bool `json:"replayed"`
@@ -390,9 +390,9 @@ type t09Envelope struct {
 	} `json:"error"`
 }
 
-func t09Decode(t *testing.T, recorder *httptest.ResponseRecorder) t09Envelope {
+func decodeAssetEnvelope(t *testing.T, recorder *httptest.ResponseRecorder) assetEnvelope {
 	t.Helper()
-	var envelope t09Envelope
+	var envelope assetEnvelope
 	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode response %q: %v", recorder.Body.String(), err)
 	}
@@ -402,18 +402,18 @@ func t09Decode(t *testing.T, recorder *httptest.ResponseRecorder) t09Envelope {
 	return envelope
 }
 
-// t09Expect 断言状态码并把信封解出来；失败信息里带上响应体，一条 500 才不会只报
+// expectAssetStatus 断言状态码并把信封解出来；失败信息里带上响应体，一条 500 才不会只报
 // 「want 200, got 500」而让人回头翻代码猜原因。
-func t09Expect(t *testing.T, recorder *httptest.ResponseRecorder, want int) t09Envelope {
+func expectAssetStatus(t *testing.T, recorder *httptest.ResponseRecorder, want int) assetEnvelope {
 	t.Helper()
 	if recorder.Code != want {
 		t.Fatalf("状态码 = %d, want %d；响应体 %s", recorder.Code, want, recorder.Body.String())
 	}
-	return t09Decode(t, recorder)
+	return decodeAssetEnvelope(t, recorder)
 }
 
-// t09ErrorCode 断言错误码。三条用例共用，省得每处都写一遍 nil 检查。
-func t09ErrorCode(t *testing.T, envelope t09Envelope, want string) {
+// expectAssetErrorCode 断言错误码。三条用例共用，省得每处都写一遍 nil 检查。
+func expectAssetErrorCode(t *testing.T, envelope assetEnvelope, want string) {
 	t.Helper()
 	if envelope.Error == nil {
 		t.Fatalf("响应里没有 error 段，want code=%s", want)
@@ -423,8 +423,8 @@ func t09ErrorCode(t *testing.T, envelope t09Envelope, want string) {
 	}
 }
 
-// t09Data 把 data 解进 dst。
-func t09Data(t *testing.T, envelope t09Envelope, dst any) {
+// decodeAssetData 把 data 解进 dst。
+func decodeAssetData(t *testing.T, envelope assetEnvelope, dst any) {
 	t.Helper()
 	if err := json.Unmarshal(envelope.Data, dst); err != nil {
 		t.Fatalf("decode data %s: %v", string(envelope.Data), err)
@@ -460,18 +460,18 @@ type assetView struct {
 	ProcessingState string `json:"processing_state"`
 }
 
-// t09Context 请求语境端点并解出 data。
-func t09Context(t *testing.T, f assetsHTTPFixture, sourceID string) sourceContextView {
+// readSourceContext 请求语境端点并解出 data。
+func readSourceContext(t *testing.T, f assetsHTTPFixture, sourceID string) sourceContextView {
 	t.Helper()
-	envelope := t09Expect(t, t09Call(f, http.MethodGet, t09RouteBase+"/sources/"+sourceID+"/context", "", ""), http.StatusOK)
+	envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/sources/"+sourceID+"/context", "", ""), http.StatusOK)
 	var view sourceContextView
-	t09Data(t, envelope, &view)
+	decodeAssetData(t, envelope, &view)
 	return view
 }
 
 // ---------- 顶层用例：把子用例的结果收成一份证据 ----------
 
-func TestT09SourceRoutesHTTP(t *testing.T) {
+func TestSourceRoutesHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cases := make([]string, 0, 24)
@@ -487,9 +487,9 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
 		f.authorizer.denied[f.pdfAssetID] = true
 
-		envelope := t09Expect(t, t09Call(f, http.MethodGet, t09RouteBase+"/assets", "", ""), http.StatusOK)
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/assets", "", ""), http.StatusOK)
 		var assets []assetView
-		t09Data(t, envelope, &assets)
+		decodeAssetData(t, envelope, &assets)
 		if len(assets) != 1 || assets[0].ID != f.txtAssetID {
 			t.Fatalf("assets = %+v, want 只剩 %s——被拒的资料不得出现在列表里", assets, f.txtAssetID)
 		}
@@ -498,24 +498,24 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 	record("bindAsset 首次 201 与重放 200", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
 		const body = `{"knowledge_id":"knowledge-txt"}`
-		const key = "t09-bind-replay-key"
+		const key = "asset-bind-replay-key"
 
-		first := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets", body, key), http.StatusCreated)
+		first := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets", body, key), http.StatusCreated)
 		if first.Meta.Replayed {
 			t.Fatal("首次绑定被标成重放")
 		}
 		var created assetView
-		t09Data(t, first, &created)
+		decodeAssetData(t, first, &created)
 		if created.ID != f.txtAssetID {
 			t.Fatalf("绑定回来的是 %s, want %s（同一份知识只该有一份资料）", created.ID, f.txtAssetID)
 		}
 
-		second := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets", body, key), http.StatusOK)
+		second := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets", body, key), http.StatusOK)
 		if !second.Meta.Replayed {
 			t.Fatal("重放没有被标出来——调用方无从知道这次没有新建")
 		}
 		var replayed assetView
-		t09Data(t, second, &replayed)
+		decodeAssetData(t, second, &replayed)
 		if replayed.ID != created.ID {
 			t.Fatalf("重放回了另一份资料 %s, want %s", replayed.ID, created.ID)
 		}
@@ -523,27 +523,27 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("bindAsset 同键不同请求 409", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		const key = "t09-bind-conflict-key"
+		const key = "asset-bind-conflict-key"
 
-		t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets",
+		expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets",
 			`{"knowledge_id":"knowledge-txt"}`, key), http.StatusCreated)
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets",
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets",
 			`{"knowledge_id":"knowledge-pdf"}`, key), http.StatusConflict)
-		t09ErrorCode(t, envelope, "idempotency_conflict")
+		expectAssetErrorCode(t, envelope, "idempotency_conflict")
 	})
 
 	record("bindAsset 缺幂等键 400", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets",
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets",
 			`{"knowledge_id":"knowledge-txt"}`, ""), http.StatusBadRequest)
-		t09ErrorCode(t, envelope, "invalid_request")
+		expectAssetErrorCode(t, envelope, "invalid_request")
 	})
 
 	record("bindAsset 未知知识 404", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets",
-			`{"knowledge_id":"knowledge-absent"}`, "t09-bind-missing-key"), http.StatusNotFound)
-		t09ErrorCode(t, envelope, "not_found")
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets",
+			`{"knowledge_id":"knowledge-absent"}`, "asset-bind-missing-key"), http.StatusNotFound)
+		expectAssetErrorCode(t, envelope, "not_found")
 	})
 
 	record("bindAsset 无知识库读权限也是 404", func(t *testing.T) {
@@ -552,34 +552,34 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 		// 403 等于承认「这个知识库存在」，那是存在性泄露。
 		testRuntime(f.handler).knowledge = stubKnowledgeBases{kb: &types.KnowledgeBase{ID: "kb-1", TenantID: 9}}
 
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/assets",
-			`{"knowledge_id":"knowledge-txt"}`, "t09-bind-denied-key"), http.StatusNotFound)
-		t09ErrorCode(t, envelope, "not_found")
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/assets",
+			`{"knowledge_id":"knowledge-txt"}`, "asset-bind-denied-key"), http.StatusNotFound)
+		expectAssetErrorCode(t, envelope, "not_found")
 	})
 
 	record("retrieveSources 空查询 400", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/retrieval",
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/retrieval",
 			fmt.Sprintf(`{"query":"  ","asset_ids":[%q]}`, f.txtAssetID), ""), http.StatusBadRequest)
-		t09ErrorCode(t, envelope, "invalid_request")
+		expectAssetErrorCode(t, envelope, "invalid_request")
 	})
 
 	record("retrieveSources 空资料范围 400", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
 		// 空范围**不是**「查全库」：那会把一次没有明确范围的调用变成一次全量检索。
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/retrieval",
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/retrieval",
 			`{"query":"建设目标","asset_ids":[]}`, ""), http.StatusBadRequest)
-		t09ErrorCode(t, envelope, "invalid_request")
+		expectAssetErrorCode(t, envelope, "invalid_request")
 	})
 
 	record("retrieveSources 部分授权整批 422 且逐项给出原因", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
 		f.authorizer.denied[f.pdfAssetID] = true
 
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/retrieval",
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/retrieval",
 			fmt.Sprintf(`{"query":"建设目标","asset_ids":[%q,%q]}`, f.txtAssetID, f.pdfAssetID), ""),
 			http.StatusUnprocessableEntity)
-		t09ErrorCode(t, envelope, "asset_not_authorized")
+		expectAssetErrorCode(t, envelope, "asset_not_authorized")
 
 		// details 在 error **里面**（sendErrorDetails），不是顶层——前端可达路径是
 		// err.error.details.denied，这一条钉的就是那个形状。
@@ -605,10 +605,10 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("retrieveSources 全部允许 200", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		envelope := t09Expect(t, t09Call(f, http.MethodPost, t09RouteBase+"/retrieval",
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodPost, assetRouteBase+"/retrieval",
 			fmt.Sprintf(`{"query":"建设目标","asset_ids":[%q]}`, f.txtAssetID), ""), http.StatusOK)
 		var sources []map[string]any
-		t09Data(t, envelope, &sources)
+		decodeAssetData(t, envelope, &sources)
 		// 检索底座在 fixture 里答「没搜到」，所以是空数组而不是 null——空数组是
 		// 「查过了、没有」，null 是「没查」。这条判据在 accessStatus 那里已经栽过一次。
 		if sources == nil {
@@ -618,37 +618,37 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSource 撤权后 403", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		allowed := t09Expect(t, t09Call(f, http.MethodGet, t09RouteBase+"/sources/"+t09SourceID(4), "", ""), http.StatusOK)
+		allowed := expectAssetStatus(t, callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/sources/"+chunkSourceID(4), "", ""), http.StatusOK)
 		var before struct {
 			Status string `json:"status"`
 		}
-		t09Data(t, allowed, &before)
+		decodeAssetData(t, allowed, &before)
 		if before.Status != string(evidence.SourceAvailable) {
 			t.Fatalf("撤权前的 status = %q, want available——后面那条 403 才有意义", before.Status)
 		}
 
 		f.authorizer.denied[f.txtAssetID] = true
-		envelope := t09Expect(t, t09Call(f, http.MethodGet, t09RouteBase+"/sources/"+t09SourceID(4), "", ""),
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/sources/"+chunkSourceID(4), "", ""),
 			http.StatusForbidden)
-		t09ErrorCode(t, envelope, "source_access_denied")
+		expectAssetErrorCode(t, envelope, "source_access_denied")
 	})
 
 	record("getSource 未知引用 404", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		envelope := t09Expect(t, t09Call(f, http.MethodGet, t09RouteBase+"/sources/source-absent", "", ""), http.StatusNotFound)
-		t09ErrorCode(t, envelope, "not_found")
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/sources/source-absent", "", ""), http.StatusNotFound)
+		expectAssetErrorCode(t, envelope, "not_found")
 	})
 
 	record("getSource 坐标漂移是 200 的合法结论", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		if err := f.db.Exec("UPDATE chunks SET content_revision = 1 WHERE id = ?", t09SourceID(4)).Error; err != nil {
+		if err := f.db.Exec("UPDATE chunks SET content_revision = 1 WHERE id = ?", chunkSourceID(4)).Error; err != nil {
 			t.Fatalf("edit chunk: %v", err)
 		}
-		envelope := t09Expect(t, t09Call(f, http.MethodGet, t09RouteBase+"/sources/"+t09SourceID(4), "", ""), http.StatusOK)
+		envelope := expectAssetStatus(t, callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/sources/"+chunkSourceID(4), "", ""), http.StatusOK)
 		var source struct {
 			Status string `json:"status"`
 		}
-		t09Data(t, envelope, &source)
+		decodeAssetData(t, envelope, &source)
 		// 「这条引用不再指得回原文」是一个**结论**，不是一次失败：答 4xx 会让界面把它
 		// 显示成错误，而它描述的是内容本身的状态。
 		if source.Status != string(evidence.SourceStale) {
@@ -658,10 +658,10 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSourceContext 失效来源不回传摘录", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		if err := f.db.Exec("UPDATE chunks SET content_revision = 1 WHERE id = ?", t09SourceID(4)).Error; err != nil {
+		if err := f.db.Exec("UPDATE chunks SET content_revision = 1 WHERE id = ?", chunkSourceID(4)).Error; err != nil {
 			t.Fatalf("edit chunk: %v", err)
 		}
-		view := t09Context(t, f, t09SourceID(4))
+		view := readSourceContext(t, f, chunkSourceID(4))
 		if view.Source.Status != string(evidence.SourceStale) || view.Source.QuotedText != "" || view.Source.QuotedTextHash != "" {
 			t.Fatalf("stale context source = %+v, want status stale with no excerpt/hash", view.Source)
 		}
@@ -669,7 +669,7 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSourceContext 展开同族邻居", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		view := t09Context(t, f, t09SourceID(4))
+		view := readSourceContext(t, f, chunkSourceID(4))
 
 		if !view.ContextAvailable {
 			t.Fatal("context_available = false，want true——强档资料的同族邻居应当展开")
@@ -682,10 +682,10 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 			t.Fatalf("segments = %+v, want 2 段", view.Segments)
 		}
 		before, after := view.Segments[0], view.Segments[1]
-		if before.ChunkIndex != 3 || before.Relation != "before" || before.Text != t09OriginLines[3] || !before.Verbatim {
+		if before.ChunkIndex != 3 || before.Relation != "before" || before.Text != originLines[3] || !before.Verbatim {
 			t.Fatalf("before 段 = %+v, want idx 3 的原文且 verbatim", before)
 		}
-		if after.ChunkIndex != 6 || after.Relation != "after" || after.Text != t09OriginLines[6] || !after.Verbatim {
+		if after.ChunkIndex != 6 || after.Relation != "after" || after.Text != originLines[6] || !after.Verbatim {
 			t.Fatalf("after 段 = %+v, want idx 6 的原文且 verbatim", after)
 		}
 		if view.Source.Status != string(evidence.SourceAvailable) {
@@ -695,12 +695,12 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSourceContext 不跨族取父块", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		view := t09Context(t, f, t09SourceID(4))
+		view := readSourceContext(t, f, chunkSourceID(4))
 
 		// parent_text 的 idx 3 与 text 的 idx 3 同号：窗口若按 chunk_index 取而不按族过滤，
 		// 拿到的是父块。两族各有独立且稠密的索引空间，混进来同一段文字会出现两次。
 		for _, segment := range view.Segments {
-			if segment.Text == t09ParentSentinel || segment.SourceID == "parent-3" {
+			if segment.Text == parentChunkSentinel || segment.SourceID == "parent-3" {
 				t.Fatalf("segments 里混进了父块: %+v", segment)
 			}
 		}
@@ -708,7 +708,7 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSourceContext 软删留号码空洞", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		view := t09Context(t, f, t09SourceID(4))
+		view := readSourceContext(t, f, chunkSourceID(4))
 
 		// idx 5 被软删。按索引位取（`<` 加 LIMIT）会跳过它拿到 idx 6；
 		// 按 chunk_index 的算术区间 [5,5] 取则会空手而归，让人以为文档到头了。
@@ -729,7 +729,7 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 	record("getSourceContext 逐字对不上只给位置", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
 		// 命中换成 idx 1：它的 after 邻居是 idx 2，那一条的正文与坐标对不上。
-		view := t09Context(t, f, t09SourceID(1))
+		view := readSourceContext(t, f, chunkSourceID(1))
 
 		if !view.ContextAvailable {
 			t.Fatal("context_available = false，want true（命中块本身是好的）")
@@ -746,14 +746,14 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 		}
 		// 它仍留在 segments 里：丢掉它会让窗口看上去是连续的，而 chunk_index 的号码
 		// 本来就把这个缺口说清了。
-		if head := view.Segments[0]; head.ChunkIndex != 0 || !head.Verbatim || head.Text != t09OriginLines[0] {
+		if head := view.Segments[0]; head.ChunkIndex != 0 || !head.Verbatim || head.Text != originLines[0] {
 			t.Fatalf("窗口第一段 = %+v, want idx 0 的原文", head)
 		}
 	})
 
 	record("getSourceContext 派生块不展开", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		view := t09Context(t, f, "summary-4")
+		view := readSourceContext(t, f, "summary-4")
 
 		// 派生块没有指向原文的坐标，窗口无从取起。白名单而非黑名单：
 		// 将来底座加了新的派生类型，默认落在「不可展开」这一侧。
@@ -773,7 +773,7 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSourceContext 弱档照样给正文但标注非逐字", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		view := t09Context(t, f, "weak-1")
+		view := readSourceContext(t, f, "weak-1")
 
 		if !view.ContextAvailable {
 			t.Fatal("context_available = false，want true——窗口的数据来源是分块表，它总是有内容")
@@ -794,29 +794,29 @@ func TestT09SourceRoutesHTTP(t *testing.T) {
 
 	record("getSourceContext 撤权后 403 且不泄露正文", func(t *testing.T) {
 		f := newAssetsHTTPFixture(t)
-		t09Context(t, f, t09SourceID(4))
+		readSourceContext(t, f, chunkSourceID(4))
 
 		f.authorizer.denied[f.txtAssetID] = true
-		recorder := t09Call(f, http.MethodGet, t09RouteBase+"/sources/"+t09SourceID(4)+"/context", "", "")
-		t09Expect(t, recorder, http.StatusForbidden)
+		recorder := callAssetEndpoint(f, http.MethodGet, assetRouteBase+"/sources/"+chunkSourceID(4)+"/context", "", "")
+		expectAssetStatus(t, recorder, http.StatusForbidden)
 		// 窗口是在授权与复核**之后**才读的：拒绝的响应体里不许出现邻居的正文，
 		// 否则这条端点就成了绕过 ResolveAllowed 读全文的旁路。
 		body := recorder.Body.String()
-		for _, line := range t09OriginLines {
+		for _, line := range originLines {
 			if strings.Contains(body, line) {
 				t.Fatalf("403 的响应体里带出了原文: %s", body)
 			}
 		}
 	})
 
-	t09AssertEvidenceFixture(t, cases, passed)
+	assertEvidenceFixture(t, cases, passed)
 }
 
-// s4Evidence 是交给 verify_t09_test.go 判分的那份结论。
+// evidenceRecord 是交给 verify_asset_service_test.go 判分的那份结论。
 //
 // 没有时间戳、没有环境信息：这份文件要能被逐字节复现（跑两次绿，git status 不该动），
 // 与两份验证报告同构。判分只问三件事——文件在不在、是不是合法 JSON、passed 等不等于 total。
-type s4Evidence struct {
+type evidenceRecord struct {
 	Package string   `json:"package"`
 	Source  string   `json:"source"`
 	Total   int      `json:"total"`
@@ -824,18 +824,18 @@ type s4Evidence struct {
 	Cases   []string `json:"cases"`
 }
 
-func t09AssertEvidenceFixture(t *testing.T, cases []string, passed int) {
+func assertEvidenceFixture(t *testing.T, cases []string, passed int) {
 	t.Helper()
 	if passed != len(cases) {
 		// 有子用例红了就**不写**证据文件：留着一份旧的绿结论比没有结论更坏——
 		// 它会让后来的人以为这次也验过了。
-		t.Logf("S4 有 %d/%d 条未通过，不写证据文件", len(cases)-passed, len(cases))
+		t.Logf("证据有 %d/%d 条未通过，不写证据文件", len(cases)-passed, len(cases))
 		return
 	}
-	if len(cases) < t09S4MinimumCases {
-		t.Fatalf("S4 只跑了 %d 条用例，低于下限 %d——要么用例被删了，要么下限该跟着改", len(cases), t09S4MinimumCases)
+	if len(cases) < evidenceMinimumCases {
+		t.Fatalf("只跑了 %d 条用例，低于下限 %d——要么用例被删了，要么下限该跟着改", len(cases), evidenceMinimumCases)
 	}
-	record := s4Evidence{
+	record := evidenceRecord{
 		Package: "internal/lingdoc/workspace",
 		Source:  "assets_http_test.go",
 		Total:   len(cases),
@@ -844,15 +844,15 @@ func t09AssertEvidenceFixture(t *testing.T, cases []string, passed int) {
 	}
 	data, err := json.MarshalIndent(record, "", "  ")
 	if err != nil {
-		t.Fatalf("marshal S4 evidence: %v", err)
+		t.Fatalf("marshal evidence: %v", err)
 	}
-	existing, err := os.ReadFile(t09S4EvidencePath)
+	existing, err := os.ReadFile(evidenceFilePath)
 	if err != nil {
-		t.Fatalf("read S4 fixture: %v", err)
+		t.Fatalf("read evidence fixture: %v", err)
 	}
 	// A test must not rewrite a tracked fixture or normalize its checkout EOL.
 	// Current execution evidence is the Go test stream, not this historical file.
 	if !bytes.Equal(bytes.ReplaceAll(existing, []byte("\r\n"), []byte("\n")), append(data, '\n')) {
-		t.Fatalf("S4 fixture no longer matches the executed cases; update it explicitly:\n%s", data)
+		t.Fatalf("evidence fixture no longer matches the executed cases; update it explicitly:\n%s", data)
 	}
 }

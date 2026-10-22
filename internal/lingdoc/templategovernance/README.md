@@ -138,7 +138,7 @@ remain owned by G3; a route's reviewed feasibility does not become a scientific
 confirmation. sameDeliveryState now also compares exact copy/effective rule
 and source-policy identities, rather than relying only on chapter versions.
 
-RegisterG4FullRoutes(group,runtime) adds actual typed catalog, RuleSet and
+RegisterTemplateGovernanceRoutes(group,runtime) adds actual typed catalog, RuleSet and
 suggestion endpoints to the already-authenticated LingDoc group. It reuses the
 existing caller/body/operation/response helpers. Publication, withdrawal,
 recall, acceptance and rejection require a human principal; API keys cannot
