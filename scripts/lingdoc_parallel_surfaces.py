@@ -198,6 +198,10 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("internal/lingdoc/candidateadoption/review_adoption_guard_test.go", "file"),
             ("internal/clienterror/catalog.go", "file"),
             ("internal/router/lingdoc_routes_test.go", "file"),
+            # The production composition's route-count assertion follows the
+            # new endpoints: the review report endpoints are part of the
+            # rewrite capability, so the composition serves four more routes.
+            ("internal/container/lingdoc_test.go", "file"),
             ("internal/lingdoc/writingaction/", "dir"),
             ("frontend/src/views/lingdoc/generationAttempt.ts", "file"),
             ("frontend/src/views/lingdoc/candidateAdoption.ts", "file"),
