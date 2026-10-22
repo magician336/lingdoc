@@ -113,6 +113,9 @@ test('the dialog states what is being confirmed', async () => {
   assert.match(html, /写入目标：正式版本·整段/)
   assert.match(html, /确认人：user-1/)
   assert.match(html, /来源标注：AI 生成/)
+  // 确认载荷必须带上采纳目标：服务端查的是「这个动作允许哪些目标」，
+  // 载荷里没有目标就没有「写到哪里」可查。
+  assert.match(dialogSource, /adoption_target: target\.value/)
 })
 
 test('the dialog declares which working copy it replaces', async () => {
