@@ -184,6 +184,12 @@ func runOperationCore(
 	op, target, key := string(spec.Name), spec.Target, spec.Key
 	body, projectID := spec.Body, spec.Request.ProjectID
 
+	// The observation holder travels with the operation: a refusal rolls the
+	// operation's transaction back, so the refusal is written **after** that
+	// transaction ended.
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
+
 	outcome, err := operationcore.Run(ctx, operationcore.Request[Actor, Transaction, Project]{
 		Identity: operationcore.Identity[Actor]{
 			Actor:     actor,
@@ -233,6 +239,14 @@ func runOperationCore(
 		},
 		RecordAudit: func(ctx context.Context, tx Transaction, projectID, capability string, authErr error) error {
 			return s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+		},
+		// The refusal path is fail-open: the operation is refused anyway, so
+		// a failed audit write changes nothing about the outcome. It is a
+		// separate hook so that the difference between the two paths is
+		// declared at the call site instead of being inferred from how the
+		// caller discards the error.
+		RecordDeniedAudit: func(ctx context.Context, tx Transaction, projectID, capability string, authErr error) error {
+			return s.recordAccessAuditFailOpen(ctx, tx, actor, projectID, capability, authErr)
 		},
 		CheckSources: func(ctx context.Context, projectID string, sourceIDs []string) error {
 			return s.checkSources(ctx, actor, projectID, sourceIDs)

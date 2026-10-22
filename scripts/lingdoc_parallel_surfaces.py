@@ -274,16 +274,41 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-3 审计告警接线与 AuditEvent 字段",
         "issue": 327,
         "issues": (130,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
             ("internal/lingdoc/workspacecore/runtime_control.go", "file"),
             ("internal/lingdoc/workspacecore/model.go", "file"),
+            ("internal/lingdoc/workspacecore/permission_policy.go", "file"),
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/service.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports.go", "file"),
+            ("internal/lingdoc/workspacecore/context_ports_test.go", "file"),
+            ("internal/lingdoc/workspacecore/operation_pipeline.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_alert_rule.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_alert_rule_test.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_observation.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_observation_test.go", "file"),
+            ("internal/lingdoc/workspacecore/runtime_rollback_test.go", "file"),
+            ("internal/lingdoc/workspace/impact_routes.go", "file"),
+            ("internal/lingdoc/operationcore/operationcore.go", "file"),
+            ("internal/container/lingdoc.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("docs/08-本轮实施方案/G6-运行控制后端补齐-20261023.md", "file"),
         ),
         "resolves": (),
         "summary": (
-            "fail-open 语义已实现，但审计失败没有接到告警源，"
-            "AuditEvent 也没有 target_version / project_revision 字段。"
+            "本面一次交付三张票（#382 告警规则与授权判定可观测、"
+            "#327 审计告警接线与 AuditEvent 字段、#383 运行控制回退端点）。"
+            "#382：告警规则可读回（GET runtime/alert-rules）与可停用/可更新"
+            "（POST runtime/alert-rules/:ruleId/actions），停用后的规则不再产生告警；"
+            "授权拒绝落成 permission/deny 运行事件。"
+            "#327：审计写失败落成 audit/failed 运行事件并接上告警规则，"
+            "AuditEvent 增加 target_version / project_revision（走 details_json，零迁移），"
+            "生产组合根的审计 sink 不再吞掉失败。"
+            "#383：运行控制新增 rollback 动作，回退经既有 reverseChangeSet 领域入口执行，"
+            "停止新写入并记录回退目标；「切回已验证配置」这一半不在本面范围。"
             "本面独占 model.go，PF-4 因此不得声明它。"
         ),
     },
@@ -291,12 +316,26 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
         "name": "PF-4 owner_unavailable 状态与 Owner-only 冻结",
         "issue": 328,
         "issues": (127,),
-        "status": "available",
-        "claimed_by": "",
+        "status": "claimed",
+        "claimed_by": "magician336",
         "paths": (
-            ("internal/lingdoc/workspacecore/membership.go", "file"),
-            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
             ("internal/lingdoc/workspacecore/member_lifecycle_state.go", "file"),
+            ("internal/lingdoc/workspacecore/member_judgement.go", "file"),
+            ("internal/lingdoc/workspacecore/owner_transfer_proof.go", "file"),
+            ("internal/lingdoc/workspacecore/delivery_export_guard.go", "file"),
+            ("internal/lingdoc/workspacecore/service_facade.go", "file"),
+            ("internal/lingdoc/workspacecore/typed_contracts.go", "file"),
+            ("internal/lingdoc/workspacecore/membership.go", "file"),
+            ("internal/lingdoc/membership/results.go", "file"),
+            ("internal/lingdoc/membership/policy.go", "file"),
+            ("internal/lingdoc/membership/owner_transfer_test.go", "file"),
+            ("internal/router/routes_lingdoc.go", "file"),
+            ("internal/router/routes_lingdoc_owner_test.go", "file"),
+            ("docs/08-本轮实施方案/contracts/openapi.json", "file"),
+            ("frontend/src/api/lingdoc/permissions.ts", "file"),
+            ("frontend/src/composables/useOwnerAvailability.ts", "file"),
+            ("frontend/src/views/lingdoc/OwnerUnavailableNotice.vue", "file"),
+            ("frontend/src/composables/useOwnerAvailability.test.ts", "file"),
         ),
         "resolves": ((127, 143),),
         "summary": (
@@ -305,6 +344,14 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             "只能用「再提名一次」代替。这是 66 条原生依赖里唯一一条"
             "「行为未稳定」级的实现依赖（#127 → #143），"
             "修完它就解开 G1 立项的一个验收点。状态串放独立新文件，避开 model.go。"
+            "路径集按 2026-10-22 实测修正：Spec-47 把转让的 Service 方法搬进了 "
+            "internal/lingdoc/membership/，workspacecore/membership.go 只剩 "
+            "TransferOwnerInput；冻结判定要收口的出口是 member_judgement.go 与 "
+            "delivery_export_guard.go。本面另按 #127 的冻结清单补上尚不存在的归档能力，"
+            "并把五项 Owner-only 动作的可用性判定收口到一处。"
+            "两处前端改动是集成步骤而非面拥有："
+            "frontend/src/views/lingdoc/Workspace.vue 是所有前端面的集成点（保留路径，不得被任一面独占），"
+            "frontend/src/views/lingdoc/ImpactOpsPanel.vue 属 PF-1 已交面的文件。"
         ),
     },
     {

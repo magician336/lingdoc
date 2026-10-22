@@ -416,6 +416,21 @@ func (t gormTransaction) RecordAudit(event AuditEvent) error {
 		}
 		values["reason"] = event.Reason
 	}
+	// The revision the decision was made on travels in the details, like the
+	// reason: the audit table has no column for it, and a value of 0 means
+	// "the decision did not read one".
+	if event.TargetVersion != 0 {
+		if values == nil {
+			values = map[string]any{}
+		}
+		values["target_version"] = event.TargetVersion
+	}
+	if event.ProjectRevision != 0 {
+		if values == nil {
+			values = map[string]any{}
+		}
+		values["project_revision"] = event.ProjectRevision
+	}
 	details, err := json.Marshal(values)
 	if err != nil {
 		return err
@@ -437,7 +452,10 @@ func (t gormTransaction) AuditEvents(projectID string) ([]AuditEvent, error) {
 			}
 		}
 		reason, _ := details["reason"].(string)
-		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Reason: reason, Details: details, CreatedAt: row.CreatedAt})
+		targetVersion, _ := details["target_version"].(float64)
+		projectRevision, _ := details["project_revision"].(float64)
+		result = append(result, AuditEvent{ID: row.ID, ProjectID: row.ProjectID, ActorID: row.ActorID, Action: row.Action, Target: row.Target, Reason: reason, Details: details, CreatedAt: row.CreatedAt,
+			TargetVersion: int64(targetVersion), ProjectRevision: int64(projectRevision)})
 	}
 	return result, nil
 }

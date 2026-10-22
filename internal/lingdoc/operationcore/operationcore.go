@@ -245,7 +245,23 @@ type Request[A any, Tx any, P any] struct {
 	AuthorizeProject func(ctx context.Context, tx Tx, request Authorization[A]) (P, error)
 	// RecordAudit writes the authorization decision onto the operation's
 	// transaction.
+	//
+	// This is the **fail-closed** hook: the pipeline calls it when the
+	// operation is allowed to proceed, and a failed audit write fails the
+	// operation.
 	RecordAudit func(ctx context.Context, tx Tx, projectID, capability string, authErr error) error
+	// RecordDeniedAudit writes the authorization decision of a **refused**
+	// operation onto the operation's transaction.
+	//
+	// The refusal path is fail-open: the operation is refused anyway, so a
+	// failed audit write changes nothing about the outcome. It is a separate
+	// hook because the two paths have different consequences, and the
+	// difference must not be inferred from how the caller discards the
+	// error: a fail-closed caller must not raise an "audit unavailable"
+	// alert on top of the failure it already reports.
+	//
+	// A request without this hook falls back to RecordAudit.
+	RecordDeniedAudit func(ctx context.Context, tx Tx, projectID, capability string, authErr error) error
 	// CheckSources revalidates the sources an operation depends on. It runs
 	// outside every transaction, because source policy IO must not hold a
 	// connection.
@@ -319,6 +335,19 @@ type Outcome struct {
 //     record, and either replays the stored result or performs the write;
 //  6. the stored result is projected for the caller.
 //
+// recordDeniedAudit writes the audit row of a refused operation.
+//
+// The refusal path is fail-open, so it uses the request's dedicated
+// fail-open hook when there is one. A request that only knows the
+// fail-closed hook falls back to it: the refusal already decides the
+// outcome, and the row is written on the same transaction either way.
+func recordDeniedAudit[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P], tx Tx, projectID, capability string, authErr error) error {
+	if request.RecordDeniedAudit != nil {
+		return request.RecordDeniedAudit(ctx, tx, projectID, capability, authErr)
+	}
+	return request.RecordAudit(ctx, tx, projectID, capability, authErr)
+}
+
 // Authorization precedes replay on purpose. A caller whose permission was
 // revoked must be refused, not handed the cached response of an operation
 // they may no longer perform.
@@ -439,14 +468,14 @@ func Run[A any, Tx any, P any](ctx context.Context, request Request[A, Tx, P]) (
 		var project P
 		if projectID == "" {
 			if authErr := request.AuthorizeTenant(ctx, tx, request.Authorization); authErr != nil {
-				_ = request.RecordAudit(ctx, tx, projectID, capability, authErr)
+				_ = recordDeniedAudit(ctx, request, tx, projectID, capability, authErr)
 				return authErr
 			}
 		} else {
 			var authErr error
 			project, authErr = request.AuthorizeProject(ctx, tx, request.Authorization)
 			if authErr != nil {
-				_ = request.RecordAudit(ctx, tx, projectID, capability, authErr)
+				_ = recordDeniedAudit(ctx, request, tx, projectID, capability, authErr)
 				return authErr
 			}
 		}

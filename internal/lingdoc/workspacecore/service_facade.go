@@ -365,6 +365,9 @@ func (s *Service) authorizeTenant(ctx context.Context, tx Transaction, request A
 		return err
 	}
 	err := s.authorizer.AuthorizeTenant(tx, request)
+	if err != nil {
+		noteAuthorizationDenial(ctx, request, err)
+	}
 	if s.mode == AuthorizationModeLog {
 		_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
 	}
@@ -378,6 +381,13 @@ func (s *Service) authorizeProject(ctx context.Context, tx Transaction, request 
 		return Project{}, err
 	}
 	project, err := s.authorizer.AuthorizeProject(tx, request)
+	if err != nil {
+		noteAuthorizationDenial(ctx, request, err)
+	} else if holder, ok := RuntimeObservationHolderFromContext(ctx); ok {
+		// The revision the decision was made on. A refusal does not get one:
+		// reading the project row first would leak whether it exists.
+		holder.SetRevisions(project.ProjectVersion, project.CurrentContextRevision)
+	}
 	if s.mode == AuthorizationModeLog {
 		_ = s.recordAudit(ctx, request.Actor, request.ProjectID, "shadow:"+request.capability(), err)
 	}
@@ -472,6 +482,12 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 		ProjectID: projectID, Capability: capability,
 		Decision: auditDecision(authErr), Reason: auditReason(authErr),
 	}
+	// The revision the authorization decision was made on. It is 0 when the
+	// decision was a refusal: a refusal must not read the project row first,
+	// because that would leak whether the project exists.
+	if holder, ok := RuntimeObservationHolderFromContext(ctx); ok {
+		event.TargetVersion, event.ProjectRevision = holder.Revisions()
+	}
 	var err error
 	if _, isGORM := tx.(gormTransaction); isGORM {
 		audit, ok := tx.(auditTransaction)
@@ -493,6 +509,25 @@ func (s *Service) recordAuditInTransaction(ctx context.Context, tx Transaction, 
 	}
 	return err
 }
+
+// recordAccessAuditFailOpen writes an access audit that is allowed to fail.
+//
+// The caller decides what a failed audit means. A **fail-open** caller keeps
+// the operation's outcome and only records that the audit did not land; a
+// **fail-closed** caller uses recordAuditInTransaction directly and fails the
+// operation instead.
+//
+// The boundary lives here, at the call site, rather than being inferred from
+// how the caller discards the error: a fail-closed caller must not raise an
+// "audit unavailable" alert on top of the failure it already reports.
+func (s *Service) recordAccessAuditFailOpen(ctx context.Context, tx Transaction, actor Actor, projectID, capability string, authErr error) error {
+	err := s.recordAuditInTransaction(ctx, tx, actor, projectID, capability, authErr)
+	if err != nil {
+		noteAuditWriteFailure(ctx, actor, projectID, capability, err)
+	}
+	return err
+}
+
 func auditDecision(err error) string {
 	if err != nil {
 		return "deny"
@@ -526,24 +561,28 @@ func (s *Service) Authorize(ctx context.Context, actor Actor, projectID, capabil
 	if err != nil {
 		return err
 	}
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	// Authorization checks append their decision to the project audit log in
 	// this transaction. Keep the decision and audit on one transaction, but do
 	// not mark it read-only: PostgreSQL correctly rejects writes in a read-only
 	// transaction even when SQLite permits them.
 	return s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) error {
 		_, err := s.authorizeProject(ctx, tx, request)
-		_ = s.recordAuditInTransaction(ctx, tx, actor, projectID, request.capability(), err)
+		_ = s.recordAccessAuditFailOpen(ctx, tx, actor, projectID, request.capability(), err)
 		return err
 	})
 }
 func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Project, error) {
 	var result Project
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	// GetProject also records the authorization decision in the same
 	// transaction, so PostgreSQL requires a writable transaction here.
 	err := s.repository.Transaction(ctx, TransactionOptions{RepeatableRead: true}, func(tx Transaction) (err error) {
 		request := authorizationRequest(actor, id, AuthorizationRead, "")
 		result, err = s.authorizeProject(ctx, tx, request)
-		_ = s.recordAuditInTransaction(ctx, tx, actor, id, request.capability(), err)
+		_ = s.recordAccessAuditFailOpen(ctx, tx, actor, id, request.capability(), err)
 		if err == nil && result.DiscardedAt != nil {
 			result.Spec = map[string]string{}
 			result.SpecFields = map[string]SpecField{}
@@ -557,15 +596,17 @@ func (s *Service) GetProject(ctx context.Context, actor Actor, id string) (Proje
 }
 func (s *Service) ListProjects(ctx context.Context, actor Actor) ([]Project, bool, error) {
 	var result []Project
+	ctx, emit := s.withRuntimeObservations(ctx)
+	defer emit()
 	err := s.repository.Transaction(ctx, TransactionOptions{ReadOnly: true}, func(tx Transaction) error {
 		if !validActor(actor) {
 			return ErrNotFound
 		}
 		if err := s.authorizeTenant(ctx, tx, authorizationRequest(actor, "", AuthorizationRead, "")); err != nil {
-			_ = s.recordAuditInTransaction(ctx, tx, actor, "", "read", err)
+			_ = s.recordAccessAuditFailOpen(ctx, tx, actor, "", "read", err)
 			return err
 		}
-		_ = s.recordAuditInTransaction(ctx, tx, actor, "", "read", nil)
+		_ = s.recordAccessAuditFailOpen(ctx, tx, actor, "", "read", nil)
 		projects, err := tx.Projects(actor, 51)
 		if err != nil {
 			return err

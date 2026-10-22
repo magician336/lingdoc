@@ -150,6 +150,12 @@ func RegisterImpactRoutes(group *gin.RouterGroup, ports ImpactRoutePorts) {
 	r.POST("/runtime/alert-rules", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RuntimeAlertRule) (json.RawMessage, int, bool, error) {
 		return ports.Runtime.SaveRuntimeAlertRule(c.Request.Context(), a, c.Param("projectId"), k, i)
 	}))
+	r.GET("/runtime/alert-rules", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.RuntimeAlertRule, error) {
+		return ports.Runtime.ListRuntimeAlertRules(c.Request.Context(), a, c.Param("projectId"))
+	}))
+	r.POST("/runtime/alert-rules/:ruleId/actions", impactRouteWrite(h, true, func(c *gin.Context, a core.Actor, k string, i core.RuntimeAlertRuleActionInput) (json.RawMessage, int, bool, error) {
+		return ports.Runtime.ActOnRuntimeAlertRule(c.Request.Context(), a, c.Param("projectId"), c.Param("ruleId"), k, i)
+	}))
 	r.GET("/trial-windows", impactRouteRead(h, func(c *gin.Context, a core.Actor) ([]core.TrialWindow, error) {
 		return ports.Trials.ListTrialWindows(c.Request.Context(), a, c.Param("projectId"))
 	}))
