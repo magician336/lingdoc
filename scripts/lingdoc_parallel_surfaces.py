@@ -219,6 +219,12 @@ PARALLEL_FACES: tuple[Mapping[str, Any], ...] = (
             ("frontend/src/views/lingdoc/candidateAdoption.test.ts", "file"),
             ("frontend/src/views/lingdoc/GenerationActionPanel.vue", "file"),
             ("frontend/src/views/lingdoc/GenerationActionPanel.test.js", "file"),
+            # 集成步新增的四个文件：改写候选的阶段映射（失效判据与「正在应用」
+            # 各归其位）、语言评审报告的面板，以及它们各自的断言。
+            ("frontend/src/views/lingdoc/rewriteStage.ts", "file"),
+            ("frontend/src/views/lingdoc/rewriteStage.test.ts", "file"),
+            ("frontend/src/views/lingdoc/LingDocReviewReportPanel.vue", "file"),
+            ("frontend/src/views/lingdoc/LingDocReviewReportPanel.test.js", "file"),
             ("frontend/src/api/lingdoc/generation.ts", "file"),
             ("frontend/src/api/lingdoc/generation.test.ts", "file"),
             ("frontend/src/api/lingdoc/generationAction.ts", "file"),
