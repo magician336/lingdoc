@@ -182,7 +182,7 @@ import botmsg from './components/botmsg.vue';
 import usermsg from './components/usermsg.vue';
 import { getMessageList, getSession } from "@/api/chat/index";
 import { getSuggestedQuestions } from "@/api/agent/index";
-import { deleteTemporaryAttachment, uploadTemporaryAttachment } from '@/api/chat/temporary-attachments';
+import { deleteChatAttachment, uploadChatAttachment } from '@/api/chat/chatAttachments';
 import { useStream } from '../../api/chat/streame'
 import { listSteerSession, promoteSteerSession, removeSteerSession, steerSession } from '@/api/chat/steer';
 import { persistedAssistantId, previewSteerMessage, discardSteerPreview, reconcileSteerMessageId } from '@/utils/steerStreamFork';
@@ -1121,7 +1121,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
         : (useSettingsStoreInstance.selectedAgentSourceTenantId || undefined);
 
     // Images are unified with the attachment pipeline: on the authenticated web
-    // client they upload as temporary documents (understood in the background by
+    // client they upload as chat attachments (understood in the background by
     // the VLM) and are sent as attachment_ids. The inline base64 `images`
     // payload is kept only for the embedded/public API path. A base64 fallback
     // is used per-image if the async upload fails.
@@ -1145,7 +1145,7 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
                 continue;
             }
             try {
-                const upload = await uploadTemporaryAttachment(
+                const upload = await uploadChatAttachment(
                     session_id.value, file, selectedAgentId, selectedAgentSourceTenantId, 'auto'
                 );
                 imageAttachmentIds.push(upload.data.id);
@@ -1166,17 +1166,17 @@ const sendMsg = async (value, modelId = '', mentionedItems = [], imageFiles = []
             // background and is awaited by the backend (shown on the timeline).
             await Promise.all(localAttachments.map(async (attachment) => {
                 attachment.status = 'uploading';
-                const upload = await uploadTemporaryAttachment(
+                const upload = await uploadChatAttachment(
                     session_id.value, attachment.file, selectedAgentId, selectedAgentSourceTenantId, 'auto'
                 );
                 attachment.documentId = upload.data.id;
                 attachment.status = upload.data.status;
             }));
         } catch (error) {
-            console.error('[Attachment] Temporary document upload failed:', error);
+            console.error('[Attachment] Chat attachment upload failed:', error);
             await Promise.all(localAttachments
                 .filter(attachment => attachment.documentId)
-                .map(attachment => deleteTemporaryAttachment(session_id.value, attachment.documentId).catch(() => undefined)));
+                .map(attachment => deleteChatAttachment(session_id.value, attachment.documentId).catch(() => undefined)));
             MessagePlugin.error(error?.message || t('chat.attachmentParseFailed'));
             loading.value = false;
             isReplying.value = false;

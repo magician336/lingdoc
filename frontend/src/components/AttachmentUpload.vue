@@ -5,11 +5,11 @@ import { useI18n } from 'vue-i18n';
 import { MAX_FILE_SIZE_MB } from '@/utils';
 import { getParserEngines } from '@/api/system';
 import {
-  deleteTemporaryAttachment,
-  getTemporaryAttachment,
-  uploadTemporaryAttachment,
-  type TemporaryAttachmentStatus,
-} from '@/api/chat/temporary-attachments';
+  deleteChatAttachment,
+  getChatAttachment,
+  uploadChatAttachment,
+  type ChatAttachmentStatus,
+} from '@/api/chat/chatAttachments';
 
 const { t } = useI18n();
 
@@ -21,7 +21,7 @@ export interface AttachmentFile {
   type: string;
   preview?: string;
   documentId?: string;
-  status: TemporaryAttachmentStatus | 'local' | 'uploading';
+  status: ChatAttachmentStatus | 'local' | 'uploading';
   progress?: number;
   error?: string;
 }
@@ -140,7 +140,7 @@ const emitFiles = () => emit('update:files', [...attachments.value]);
 const uploadAttachment = async (attachment: AttachmentFile) => {
   if (!props.sessionId) return;
   try {
-    const response = await uploadTemporaryAttachment(
+    const response = await uploadChatAttachment(
       props.sessionId,
       attachment.file,
       props.agentId,
@@ -153,7 +153,7 @@ const uploadAttachment = async (attachment: AttachmentFile) => {
     );
     attachment.documentId = response.data.id;
     if (disposed || !attachments.value.some(item => item.id === attachment.id)) {
-      await deleteTemporaryAttachment(props.sessionId, response.data.id).catch(() => undefined);
+      await deleteChatAttachment(props.sessionId, response.data.id).catch(() => undefined);
       return;
     }
     attachment.status = response.data.status;
@@ -177,7 +177,7 @@ const scheduleStatusPoll = (attachment: AttachmentFile) => {
 const pollStatus = async (attachment: AttachmentFile) => {
   if (!props.sessionId || !attachment.documentId || !attachments.value.some(item => item.id === attachment.id)) return;
   try {
-    const response = await getTemporaryAttachment(props.sessionId, attachment.documentId);
+    const response = await getChatAttachment(props.sessionId, attachment.documentId);
     attachment.status = response.data.status;
     attachment.error = response.data.error_message;
     emitFiles();
@@ -204,7 +204,7 @@ const removeAttachment = (id: string) => {
     emitFiles();
     emit('remove', id);
     if (props.sessionId && attachment.documentId) {
-      void deleteTemporaryAttachment(props.sessionId, attachment.documentId).catch(() => undefined);
+      void deleteChatAttachment(props.sessionId, attachment.documentId).catch(() => undefined);
     }
   }
 };

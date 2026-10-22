@@ -98,8 +98,8 @@ func TestCollectImageBytes(t *testing.T) {
 
 func TestApplyImageUnderstandingImageFileRunsVLM(t *testing.T) {
 	fv := &fakeVLM{response: "a cat sitting on a mat"}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake"}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake"}
 	content := svc.applyImageUnderstanding(context.Background(), "png", options, []byte("imgbytes"), nil, "")
 	if !strings.Contains(content, "a cat sitting on a mat") {
 		t.Fatalf("image understanding should inject VLM text, got %q", content)
@@ -111,11 +111,11 @@ func TestApplyImageUnderstandingImageFileRunsVLM(t *testing.T) {
 
 func TestApplyImageUnderstandingImageOCRSufficientSkipsCaption(t *testing.T) {
 	fv := &promptAwareVLM{
-		ocrResponse:     strings.Repeat("发票明细行内容 ", 8), // > temporaryDocumentOCRSufficientRunes
+		ocrResponse:     strings.Repeat("发票明细行内容 ", 8), // > chatAttachmentOCRSufficientRunes
 		captionResponse: "should-not-be-used",
 	}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake"}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake"}
 	content := svc.applyImageUnderstanding(context.Background(), "png", options, []byte("imgbytes"), nil, "")
 	if strings.Contains(content, "should-not-be-used") {
 		t.Fatalf("text-rich OCR must not trigger a caption fallback, got %q", content)
@@ -133,8 +133,8 @@ func TestApplyImageUnderstandingImageCaptionFallbackOnSparseOCR(t *testing.T) {
 		ocrResponse:     "No text content.", // sanitized to empty → sparse OCR
 		captionResponse: "a flowchart describing the login process",
 	}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake"}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake"}
 	content := svc.applyImageUnderstanding(context.Background(), "png", options, []byte("imgbytes"), nil, "")
 	if !strings.Contains(content, "a flowchart describing the login process") {
 		t.Fatalf("sparse OCR should fall back to a caption, got %q", content)
@@ -152,8 +152,8 @@ func TestApplyImageUnderstandingScannedDocumentNeverCaptions(t *testing.T) {
 		ocrResponse:     "No text content.",
 		captionResponse: "should-not-be-used",
 	}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
 	pages := [][]byte{[]byte("page-1"), []byte("page-2")}
 	content := svc.applyImageUnderstanding(context.Background(), "pdf", options, nil, pages, "![p](x)")
 	if strings.Contains(content, "should-not-be-used") {
@@ -166,8 +166,8 @@ func TestApplyImageUnderstandingScannedDocumentNeverCaptions(t *testing.T) {
 
 func TestApplyImageUnderstandingWithoutVLMModelIsNoop(t *testing.T) {
 	fv := &fakeVLM{}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{}
 	if got := svc.applyImageUnderstanding(context.Background(), "png", options, []byte("x"), nil, ""); got != "" {
 		t.Fatalf("no VLM model should be a no-op, got %q", got)
 	}
@@ -178,8 +178,8 @@ func TestApplyImageUnderstandingWithoutVLMModelIsNoop(t *testing.T) {
 
 func TestApplyImageUnderstandingDocumentGatedByFlag(t *testing.T) {
 	fv := &fakeVLM{}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake", ImageUnderstanding: false}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake", ImageUnderstanding: false}
 	pages := [][]byte{[]byte("page-1")}
 	if got := svc.applyImageUnderstanding(context.Background(), "pdf", options, nil, pages, "![p](x)"); got != "" {
 		t.Fatalf("OCR fallback must stay off when the switch is disabled, got %q", got)
@@ -191,8 +191,8 @@ func TestApplyImageUnderstandingDocumentGatedByFlag(t *testing.T) {
 
 func TestApplyImageUnderstandingScannedDocumentRunsOCR(t *testing.T) {
 	fv := &fakeVLM{response: "第一页扫描文字内容"}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
 	pages := [][]byte{[]byte("page-1")}
 	content := svc.applyImageUnderstanding(context.Background(), "pdf", options, nil, pages, "![p](x)")
 	if !strings.Contains(content, "第一页扫描文字内容") {
@@ -202,8 +202,8 @@ func TestApplyImageUnderstandingScannedDocumentRunsOCR(t *testing.T) {
 
 func TestApplyImageUnderstandingHighTextDocumentSkipsOCR(t *testing.T) {
 	fv := &fakeVLM{}
-	svc := &temporaryDocumentService{modelService: &fakeVLMModelService{model: fv}}
-	options := types.TemporaryDocumentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
+	svc := &chatAttachmentService{modelService: &fakeVLMModelService{model: fv}}
+	options := types.ChatAttachmentCreateOptions{VLMModelID: "fake", ImageUnderstanding: true}
 	pages := [][]byte{[]byte("page-1")}
 	longText := strings.Repeat("这是一段已经解析出来的正文内容。", 40)
 	if got := svc.applyImageUnderstanding(context.Background(), "pdf", options, nil, pages, longText); got != "" {
@@ -214,29 +214,29 @@ func TestApplyImageUnderstandingHighTextDocumentSkipsOCR(t *testing.T) {
 	}
 }
 
-func TestSelectTemporaryDocumentContentReturnsFullSmallDocument(t *testing.T) {
-	document := &types.TemporaryDocument{Content: "complete document", TokenCount: 42}
-	content, selected, total := selectTemporaryDocumentContent(document, "question")
+func TestSelectChatAttachmentContentReturnsFullSmallDocument(t *testing.T) {
+	document := &types.ChatAttachment{Content: "complete document", TokenCount: 42}
+	content, selected, total := selectChatAttachmentContent(document, "question")
 	if content != document.Content || selected != 0 || total != 0 {
 		t.Fatalf("small document selection = (%q, %d, %d)", content, selected, total)
 	}
 }
 
-func TestSelectTemporaryDocumentContentRanksRelevantLargeDocumentChunks(t *testing.T) {
-	chunks := make([]types.TemporaryDocumentChunk, 0, 20)
+func TestSelectChatAttachmentContentRanksRelevantLargeDocumentChunks(t *testing.T) {
+	chunks := make([]types.ChatAttachmentChunk, 0, 20)
 	for i := 0; i < 20; i++ {
 		content := "ordinary background material"
 		if i == 17 {
 			content = "退款政策规定，订阅后七天内可以退款。"
 		}
-		chunks = append(chunks, types.TemporaryDocumentChunk{Seq: i, Content: content, TokenCount: 900})
+		chunks = append(chunks, types.ChatAttachmentChunk{Seq: i, Content: content, TokenCount: 900})
 	}
 	raw, err := json.Marshal(chunks)
 	if err != nil {
 		t.Fatal(err)
 	}
-	document := &types.TemporaryDocument{Content: "large", TokenCount: 18000, Chunks: types.JSON(raw)}
-	content, selected, total := selectTemporaryDocumentContent(document, "退款政策是什么？")
+	document := &types.ChatAttachment{Content: "large", TokenCount: 18000, Chunks: types.JSON(raw)}
+	content, selected, total := selectChatAttachmentContent(document, "退款政策是什么？")
 	if !strings.Contains(content, "七天内可以退款") {
 		t.Fatalf("relevant chunk was not selected: %q", content)
 	}
@@ -245,14 +245,14 @@ func TestSelectTemporaryDocumentContentRanksRelevantLargeDocumentChunks(t *testi
 	}
 }
 
-func TestSelectTemporaryDocumentContentHonorsSharedPromptBudget(t *testing.T) {
-	chunks := make([]types.TemporaryDocumentChunk, 0, 10)
+func TestSelectChatAttachmentContentHonorsSharedPromptBudget(t *testing.T) {
+	chunks := make([]types.ChatAttachmentChunk, 0, 10)
 	for i := 0; i < 10; i++ {
-		chunks = append(chunks, types.TemporaryDocumentChunk{Seq: i, Content: "section", TokenCount: 1000})
+		chunks = append(chunks, types.ChatAttachmentChunk{Seq: i, Content: "section", TokenCount: 1000})
 	}
 	raw, _ := json.Marshal(chunks)
-	document := &types.TemporaryDocument{Content: "complete", TokenCount: 10000, Chunks: types.JSON(raw)}
-	_, selected, total := selectTemporaryDocumentContentWithBudget(document, "", 2500)
+	document := &types.ChatAttachment{Content: "complete", TokenCount: 10000, Chunks: types.JSON(raw)}
+	_, selected, total := selectChatAttachmentContentWithBudget(document, "", 2500)
 	if selected != 2 || total != 10 {
 		t.Fatalf("selected=%d total=%d, want 2/10 within a 2500-token share", selected, total)
 	}

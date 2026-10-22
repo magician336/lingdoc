@@ -14,9 +14,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// UploadTemporaryDocument accepts one multipart file and immediately returns
+// UploadChatAttachment accepts one multipart file and immediately returns
 // a session-scoped document ID. Parsing continues in the document worker.
-func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
+func (h *Handler) UploadChatAttachment(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := c.Param("session_id")
 	// Uploading attaches content to the session, so use the strict owner scope:
@@ -50,7 +50,7 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 		return
 	}
 	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileHeader.Filename)), ".")
-	options := types.TemporaryDocumentCreateOptions{ParserEngine: strings.TrimSpace(c.PostForm("parser_engine"))}
+	options := types.ChatAttachmentCreateOptions{ParserEngine: strings.TrimSpace(c.PostForm("parser_engine"))}
 	if agent != nil {
 		options.ResourceTenantID = resourceTenantID
 		if len(agent.Config.SupportedFileTypes) > 0 && !containsFileType(agent.Config.SupportedFileTypes, ext) {
@@ -81,7 +81,7 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 			options.OCRMaxPages = agent.Config.AttachmentOCRMaxPages
 		}
 	}
-	document, err := h.temporaryDocuments.Create(
+	document, err := h.chatAttachments.Create(
 		ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
 		fileHeader.Filename, fileHeader.Header.Get("Content-Type"), fileHeader.Size, file, options,
 	)
@@ -92,14 +92,14 @@ func (h *Handler) UploadTemporaryDocument(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": document})
 }
 
-func (h *Handler) ListTemporaryDocuments(c *gin.Context) {
+func (h *Handler) ListChatAttachments(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	documents, err := h.temporaryDocuments.List(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID)
+	documents, err := h.chatAttachments.List(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID)
 	if err != nil {
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
@@ -107,14 +107,14 @@ func (h *Handler) ListTemporaryDocuments(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": documents})
 }
 
-func (h *Handler) GetTemporaryDocument(c *gin.Context) {
+func (h *Handler) GetChatAttachment(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	document, err := h.temporaryDocuments.Get(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, c.Param("attachment_id"))
+	document, err := h.chatAttachments.Get(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, c.Param("attachment_id"))
 	if err != nil {
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
@@ -126,7 +126,7 @@ func (h *Handler) GetTemporaryDocument(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": document})
 }
 
-func (h *Handler) PreviewTemporaryDocument(c *gin.Context) {
+func (h *Handler) PreviewChatAttachment(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
@@ -138,7 +138,7 @@ func (h *Handler) PreviewTemporaryDocument(c *gin.Context) {
 		c.Error(apperrors.NewBadRequestError("Attachment ID cannot be empty"))
 		return
 	}
-	file, filename, err := h.temporaryDocuments.OpenFile(
+	file, filename, err := h.chatAttachments.OpenFile(
 		ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, attachmentID,
 	)
 	if err != nil {
@@ -157,7 +157,7 @@ func (h *Handler) PreviewTemporaryDocument(c *gin.Context) {
 	}
 }
 
-func (h *Handler) DeleteTemporaryDocument(c *gin.Context) {
+func (h *Handler) DeleteChatAttachment(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	// Deleting mutates the session's attachments, so use the strict owner scope:
@@ -166,7 +166,7 @@ func (h *Handler) DeleteTemporaryDocument(c *gin.Context) {
 		c.Error(apperrors.NewNotFoundError("Session not found"))
 		return
 	}
-	if err := h.temporaryDocuments.Delete(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, c.Param("attachment_id")); err != nil {
+	if err := h.chatAttachments.Delete(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, c.Param("attachment_id")); err != nil {
 		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}

@@ -200,11 +200,11 @@ func TestBuildSandboxAttachmentsPromptEscapesMetadata(t *testing.T) {
 	assert.Contains(t, prompt, "edit_sandbox_file")
 }
 
-func TestStageSessionAttachmentsResolvesURLFromTemporaryDocument(t *testing.T) {
+func TestStageSessionAttachmentsResolvesURLFromChatAttachment(t *testing.T) {
 	db := stagingTempDocDB(t)
 	docID := "doc-1"
 	resourceRef := "local://tenant/attachment-1"
-	require.NoError(t, db.Create(&types.TemporaryDocument{
+	require.NoError(t, db.Create(&types.ChatAttachment{
 		ID:          docID,
 		TenantID:    7,
 		SessionID:   "session-1",
@@ -212,7 +212,7 @@ func TestStageSessionAttachmentsResolvesURLFromTemporaryDocument(t *testing.T) {
 		FileName:    "report.pdf",
 		FileType:    ".pdf",
 		FileSize:    7,
-		Status:      types.TemporaryDocumentStatusReady,
+		Status:      types.ChatAttachmentStatusReady,
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}).Error)
 
@@ -257,7 +257,7 @@ func TestStageSessionAttachmentsResolvesURLFromTemporaryDocument(t *testing.T) {
 	assert.Equal(t, 1, fileService.getCalls[resourceRef])
 }
 
-func TestStageSessionAttachmentsSkipsMissingTemporaryDocument(t *testing.T) {
+func TestStageSessionAttachmentsSkipsMissingChatAttachment(t *testing.T) {
 	db := stagingTempDocDB(t)
 	manager := &stagingSandboxManager{sandboxType: sandbox.SandboxTypeCube}
 	fileService := &stagingFileService{files: map[string][]byte{}}
@@ -287,7 +287,7 @@ func TestStageSessionAttachmentsSkipsMissingTemporaryDocument(t *testing.T) {
 func TestStageSessionAttachmentsIgnoresWrongTenant(t *testing.T) {
 	db := stagingTempDocDB(t)
 	resourceRef := "local://tenant/attachment-1"
-	require.NoError(t, db.Create(&types.TemporaryDocument{
+	require.NoError(t, db.Create(&types.ChatAttachment{
 		ID:          "doc-1",
 		TenantID:    7,
 		SessionID:   "session-1",
@@ -295,7 +295,7 @@ func TestStageSessionAttachmentsIgnoresWrongTenant(t *testing.T) {
 		FileName:    "report.pdf",
 		FileType:    ".pdf",
 		FileSize:    7,
-		Status:      types.TemporaryDocumentStatusReady,
+		Status:      types.ChatAttachmentStatusReady,
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}).Error)
 
@@ -315,7 +315,7 @@ func TestStageSessionAttachmentsIgnoresWrongTenant(t *testing.T) {
 		ctx,
 		"session-1",
 		"cfg-remote",
-		99, // session tenant must not see another tenant's temporary document
+		99, // session tenant must not see another tenant's chat attachment
 		types.MessageAttachments{{
 			ID: "doc-1", FileName: "report.pdf", FileType: ".pdf", FileSize: 7,
 		}},
@@ -336,7 +336,7 @@ func TestStageSessionAttachmentsKeepsExistingURLWithoutLookup(t *testing.T) {
 		FileType: ".txt",
 		FileSize: 4,
 	}
-	require.NoError(t, db.Create(&types.TemporaryDocument{
+	require.NoError(t, db.Create(&types.ChatAttachment{
 		ID:          "doc-1",
 		TenantID:    7,
 		SessionID:   "session-1",
@@ -344,7 +344,7 @@ func TestStageSessionAttachmentsKeepsExistingURLWithoutLookup(t *testing.T) {
 		FileName:    "notes.txt",
 		FileType:    ".txt",
 		FileSize:    4,
-		Status:      types.TemporaryDocumentStatusReady,
+		Status:      types.ChatAttachmentStatusReady,
 		ExpiresAt:   time.Now().Add(time.Hour),
 	}).Error)
 
@@ -374,6 +374,6 @@ func stagingTempDocDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.TemporaryDocument{}))
+	require.NoError(t, db.AutoMigrate(&types.ChatAttachment{}))
 	return db
 }
