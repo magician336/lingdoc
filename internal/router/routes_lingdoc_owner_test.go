@@ -503,6 +503,17 @@ func TestOwnerUnavailableDoesNotFreezeOrdinaryCollaboration(t *testing.T) {
 		`,"chapter_version_id":"` + versionID + `","action":"submit","reason":"冻结期间的成员复核"}`
 	f.request(t, http.MethodPost, "/projects/"+project.ID+"/chapters/"+chapter.ID+"/review",
 		review, "owner-freeze-review", f.tokens["member-user"], 200)
+
+	// The member's own change-draft path is not taken over by the freeze: the
+	// refusal it answers with is the ordinary one, and it names no freeze.
+	proposal := `{"expected_context_revision":` + strconv.FormatInt(current.CurrentContextRevision, 10) +
+		`,"fields":{"research_subject":{"old_value":"合成研究对象","new_value":"成员的拟议值"}}` +
+		`,"affected_chapter_ids":["` + chapter.ID + `"],"reason":"冻结期间的成员拟议"}`
+	draft := f.request(t, http.MethodPost, "/projects/"+project.ID+"/change-sets", proposal,
+		"owner-freeze-member-draft", f.tokens["member-user"], 404)
+	if reason := errorReason(t, draft); reason != "" {
+		t.Fatalf("member draft refusal reason = %q, want none (%s)", reason, draft.Body.String())
+	}
 }
 
 // TestCompletedOwnerTransferSurvivesThePredecessorRestoration is the
