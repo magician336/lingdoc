@@ -1231,9 +1231,9 @@ func resolveRewritePlan(input SelectedRewriteRequest) (*writingaction.Plan, erro
 	if err != nil {
 		return nil, err
 	}
-	// 这个端点只实现选段管道声明的那几个动作（改写与续写）。别的已知动作由
-	// 它们自己的端点负责。动作身份引用管道常量，不写字符串字面量，也不写
-	// 具体动作常量——执行方因此在语法上就没法按动作名分支（A33）。
+	// 这个端点只实现选段管道声明的那几个动作（改写、续写与压缩）。别的已知
+	// 动作由它们自己的端点负责。动作身份引用管道常量，不写字符串字面量，也
+	// 不写具体动作常量——执行方因此在语法上就没法按动作名分支（A33）。
 	pipelineActions, err := writingaction.ActionsFor(writingaction.PipelineRewrite)
 	if err != nil {
 		return nil, err

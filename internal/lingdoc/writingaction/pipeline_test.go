@@ -10,7 +10,7 @@ import (
 
 // TestPipelineDeclaresTheActionsItImplements 断言管道按**集合**声明它实现的动作。
 //
-// 一条管道可以实现多个动作：选段管道既做改写，也做续写。执行方因此只问
+// 一条管道可以实现多个动作：选段管道既做改写，也做续写与压缩。执行方因此只问
 // 「这条管道做不做这个动作」，不问「这个动作叫什么」——它在语法上就没法
 // 按动作名分支（开发计划 A33）。
 func TestPipelineDeclaresTheActionsItImplements(t *testing.T) {
@@ -20,6 +20,8 @@ func TestPipelineDeclaresTheActionsItImplements(t *testing.T) {
 		"选段管道做改写")
 	require.True(t, slices.Contains(selection, writingaction.ActionContinue),
 		"选段管道做续写")
+	require.True(t, slices.Contains(selection, writingaction.ActionCompress),
+		"选段管道做压缩")
 
 	generation, err := writingaction.ActionsFor(writingaction.PipelineGeneration)
 	require.NoError(t, err)
@@ -42,5 +44,5 @@ func TestActionForAnswersOnlyForSingleActionPipelines(t *testing.T) {
 
 	_, err = writingaction.ActionFor(writingaction.PipelineRewrite)
 	require.ErrorIs(t, err, writingaction.ErrAmbiguousPipeline,
-		"选段管道做两个动作，单动作的问答没有答案")
+		"选段管道做多个动作，单动作的问答没有答案")
 }
