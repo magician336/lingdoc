@@ -8,20 +8,22 @@ import (
 )
 
 const (
-	TemporaryDocumentStatusUploaded   = "uploaded"
-	TemporaryDocumentStatusProcessing = "processing"
-	TemporaryDocumentStatusReady      = "ready"
-	TemporaryDocumentStatusFailed     = "failed"
+	ChatAttachmentStatusUploaded   = "uploaded"
+	ChatAttachmentStatusProcessing = "processing"
+	ChatAttachmentStatusReady      = "ready"
+	ChatAttachmentStatusFailed     = "failed"
 
-	// MaxTemporaryAttachmentsPerMessage is the maximum number of pre-uploaded
-	// temporary attachment IDs a single QA turn may reference.
-	MaxTemporaryAttachmentsPerMessage = 5
+	// MaxChatAttachmentsPerMessage is the maximum number of pre-uploaded
+	// chat attachment IDs a single QA turn may reference.
+	MaxChatAttachmentsPerMessage = 5
 )
 
-// TemporaryDocument is a session-scoped, expiring document used by chat.
+// ChatAttachment is a session-scoped chat attachment: the file a user hands
+// to a QA turn before the turn is sent.  It is parsed in the background and
+// expires on its own, so it never becomes part of the knowledge base.
 // Parsed artifacts are retained separately from the source file so a question
 // can select only the useful parts without parsing the upload again.
-type TemporaryDocument struct {
+type ChatAttachment struct {
 	ID                string         `json:"id" gorm:"type:varchar(36);primaryKey"`
 	TenantID          uint64         `json:"tenant_id" gorm:"not null;index"`
 	SessionID         string         `json:"session_id" gorm:"type:varchar(36);not null;index"`
@@ -47,14 +49,17 @@ type TemporaryDocument struct {
 	DeletedAt         gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
-func (TemporaryDocument) TableName() string { return "temporary_documents" }
+// TableName keeps the persisted table name unchanged: renaming it would need a
+// database migration, and the table name is a storage contract rather than a
+// code-layer name.
+func (ChatAttachment) TableName() string { return "temporary_documents" }
 
-func (d *TemporaryDocument) BeforeCreate(_ *gorm.DB) error {
+func (d *ChatAttachment) BeforeCreate(_ *gorm.DB) error {
 	if d.ID == "" {
 		d.ID = uuid.NewString()
 	}
 	if d.Status == "" {
-		d.Status = TemporaryDocumentStatusUploaded
+		d.Status = ChatAttachmentStatusUploaded
 	}
 	if len(d.Chunks) == 0 {
 		d.Chunks = JSON(`[]`)
@@ -71,7 +76,7 @@ func (d *TemporaryDocument) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-type TemporaryDocumentChunk struct {
+type ChatAttachmentChunk struct {
 	Seq           int    `json:"seq"`
 	Content       string `json:"content"`
 	ContextHeader string `json:"context_header,omitempty"`
@@ -80,18 +85,18 @@ type TemporaryDocumentChunk struct {
 	TokenCount    int    `json:"token_count"`
 }
 
-type TemporaryDocumentImage struct {
+type ChatAttachmentImage struct {
 	OriginalRef string `json:"original_ref,omitempty"`
 	URL         string `json:"url"`
 	MimeType    string `json:"mime_type,omitempty"`
 }
 
-type TemporaryDocumentTaskPayload struct {
+type ChatAttachmentTaskPayload struct {
 	TenantID   uint64 `json:"tenant_id"`
 	DocumentID string `json:"document_id"`
 }
 
-type TemporaryDocumentCreateOptions struct {
+type ChatAttachmentCreateOptions struct {
 	// ResourceTenantID is the verified agent source workspace used to resolve
 	// parser/model dependencies. The document itself remains owned by TenantID.
 	ResourceTenantID uint64 `json:"resource_tenant_id,omitempty"`
@@ -109,7 +114,7 @@ type TemporaryDocumentCreateOptions struct {
 	OCRMaxPages int `json:"ocr_max_pages,omitempty"`
 }
 
-type TemporaryDocumentPromptResult struct {
+type ChatAttachmentPromptResult struct {
 	Attachments MessageAttachments
 	ImageURLs   []string
 }

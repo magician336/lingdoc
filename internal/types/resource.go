@@ -25,9 +25,13 @@ const (
 // lets a chat answer be saved into the knowledge base without copying its
 // files, and lets either copy be deleted without breaking the other.
 const (
-	ResourceOwnerKnowledge         = "knowledge"
-	ResourceOwnerMessage           = "message"
-	ResourceOwnerTemporaryDocument = "temporary_document"
+	ResourceOwnerKnowledge = "knowledge"
+	ResourceOwnerMessage   = "message"
+	// ResourceOwnerChatAttachment is the owner type of a chat attachment's
+	// stored bytes.  Its value stays "temporary_document": the owner type is a
+	// persisted discriminator, so renaming it would orphan the bindings that
+	// are already written.
+	ResourceOwnerChatAttachment = "temporary_document"
 )
 
 // Resource binding relations describe why an owner claims a resource.

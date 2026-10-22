@@ -127,7 +127,7 @@ func (m *MessageImages) Scan(value interface{}) error {
 
 // MessageAttachment represents a file attachment in a chat message
 type MessageAttachment struct {
-	ID string `json:"id,omitempty"` // Temporary document ID for session-scoped uploads
+	ID string `json:"id,omitempty"` // Chat attachment ID for session-scoped uploads
 	// URL is the internal storage handle (provider://path / resource://...). It is
 	// an internal locator only: previews are served via the session-scoped
 	// attachment endpoints, so this handle must never reach the client. Kept out

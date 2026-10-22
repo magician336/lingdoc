@@ -13,7 +13,7 @@
 
 ## 怎么跑出来的
 
-1. `scripts/acceptance/issue196_g4_real_http.py` 的浏览器对偶：CDP 客户端用 Node 内置
+1. `scripts/acceptance/governance_real_http.py` 的浏览器对偶：CDP 客户端用 Node 内置
    `WebSocket` 直连 `http://127.0.0.1:9222`，对每个步骤做真实 DOM 操作（`Input.insertText`
    打字、`element.click()` 点按钮），并用 `Network.requestWillBeSent/responseReceived`
    记录真实请求，用 `Page.captureScreenshot` 截图。

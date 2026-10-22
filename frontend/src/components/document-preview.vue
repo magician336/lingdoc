@@ -2,7 +2,7 @@
 <script setup lang="ts">
 import { ref, shallowRef, watch, onMounted, onUnmounted, nextTick, defineAsyncComponent } from 'vue';
 import { previewKnowledgeFile } from '@/api/knowledge-base/index';
-import { previewTemporaryAttachment } from '@/api/chat/temporary-attachments';
+import { previewChatAttachment } from '@/api/chat/chatAttachments';
 import { downloadArtifact } from '@/api/chat';
 import hljs from 'highlight.js';
 import 'highlight.js/styles/github.css';
@@ -334,7 +334,7 @@ async function fetchPreviewBlob(): Promise<Blob> {
     return previewKnowledgeFile(props.knowledgeId);
   }
   if (props.sessionId && props.attachmentId) {
-    return previewTemporaryAttachment(props.sessionId, props.attachmentId);
+    return previewChatAttachment(props.sessionId, props.attachmentId);
   }
   if (
     props.sessionId &&

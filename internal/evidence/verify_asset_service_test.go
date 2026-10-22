@@ -13,20 +13,20 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// t09ReportPath 是 T09 验证报告的落点，供交接记录（T09-项目资料与来源.md §7）引用。
+// assetServiceReportPath 是 T09 验证报告的落点，供交接记录（T09-项目资料与来源.md §7）引用。
 // 与 T03 同规矩：报告由测试生成，能重跑；散文不能。
-const t09ReportPath = "../../docs/08-本轮实施方案/T09-验证报告.json"
+const assetServiceReportPath = "../../docs/08-本轮实施方案/T09-验证报告.json"
 
-// t09S4EvidencePath 是 S4（HTTP 集成）的结论落点，由
+// assetServiceHTTPEvidencePath 是 S4（HTTP 集成）的结论落点，由
 // internal/lingdoc/workspace/assets_http_test.go 写出。
 //
 // S4 判的是传输层，而它的用例住在另一个包里——本包跑不到那些路由。所以结论走文件：
 // 那边的用例跑绿才写得出这份证据，这边只读它。与 T03-S7 同一条模式。
-const t09S4EvidencePath = "../../docs/08-本轮实施方案/T09-S4-证据.json"
+const assetServiceHTTPEvidencePath = "../../docs/08-本轮实施方案/T09-S4-证据.json"
 
-// t09S4MinimumCases 是证据至少要有的条数。低于它说明用例被删过——
+// assetServiceHTTPMinimumCases 是证据至少要有的条数。低于它说明用例被删过——
 // 判据问的是「覆盖到了」，不是「跑过了」。
-const t09S4MinimumCases = 18
+const assetServiceHTTPMinimumCases = 18
 
 // TestT09VerificationRun 把 T09 的验收各跑一遍并落成报告。
 //
@@ -427,12 +427,12 @@ func TestT09VerificationRun(t *testing.T) {
 	// 这一条曾经**写死**成 not_run：代码早就接线了，报告却永远说「本次未运行」。
 	// 一条永远不动的结论比没有结论更坏——它看着像一次诚实的缺席。
 	record("T09-S4-HTTP 薄适配与幂等", func() (CheckStatus, string) {
-		raw, err := os.ReadFile(filepath.Clean(t09S4EvidencePath))
+		raw, err := os.ReadFile(filepath.Clean(assetServiceHTTPEvidencePath))
 		if err != nil {
 			return CheckNotRun, fmt.Sprintf(
 				"没有 S4 的运行记录（读 %s 失败：%v）。产生它：go test ./internal/lingdoc/workspace/ -run TestT09SourceRoutesHTTP -count=1，"+
 					"用例全绿才会写出证据文件；有红的不写，免得旧结论被当成这一次的",
-				t09S4EvidencePath, err)
+				assetServiceHTTPEvidencePath, err)
 		}
 		var s4 struct {
 			Package string   `json:"package"`
@@ -442,16 +442,16 @@ func TestT09VerificationRun(t *testing.T) {
 			Cases   []string `json:"cases"`
 		}
 		if err := json.Unmarshal(raw, &s4); err != nil {
-			return CheckFailed, fmt.Sprintf("S4 证据 %s 不是合法 JSON：%v", t09S4EvidencePath, err)
+			return CheckFailed, fmt.Sprintf("S4 证据 %s 不是合法 JSON：%v", assetServiceHTTPEvidencePath, err)
 		}
 		switch {
 		case s4.Package == "" || s4.Source == "":
-			return CheckFailed, fmt.Sprintf("证据 %s 没说清是哪一套用例产出的——无法确认它还是这一份", t09S4EvidencePath)
+			return CheckFailed, fmt.Sprintf("证据 %s 没说清是哪一套用例产出的——无法确认它还是这一份", assetServiceHTTPEvidencePath)
 		case s4.Total == 0:
-			return CheckFailed, fmt.Sprintf("证据 %s 记了 0 条用例，不构成一次集成验证", t09S4EvidencePath)
-		case s4.Total < t09S4MinimumCases:
+			return CheckFailed, fmt.Sprintf("证据 %s 记了 0 条用例，不构成一次集成验证", assetServiceHTTPEvidencePath)
+		case s4.Total < assetServiceHTTPMinimumCases:
 			return CheckFailed, fmt.Sprintf("证据只记了 %d 条用例，低于 T09 验收要求的 %d 条——用例被删过，覆盖不再完整",
-				s4.Total, t09S4MinimumCases)
+				s4.Total, assetServiceHTTPMinimumCases)
 		case s4.Passed != s4.Total:
 			return CheckFailed, fmt.Sprintf("S4 的 %d 条用例里有 %d 条没通过——拿一份有红的运行当结论是错的",
 				s4.Total, s4.Total-s4.Passed)
@@ -461,7 +461,7 @@ func TestT09VerificationRun(t *testing.T) {
 		return CheckPassed, fmt.Sprintf(
 			"S4 的 %d 条 HTTP 集成用例全部通过（证据 %s）：绑定 201/200/409/400/404、空范围与部分授权的 422 明细、"+
 				"撤权后的 403、坐标漂移是 200 的合法结论、语境窗口的同族与逐字标注。由 %s 产出",
-			s4.Total, t09S4EvidencePath, s4.Source)
+			s4.Total, assetServiceHTTPEvidencePath, s4.Source)
 	})
 
 	record("T09-S5-界面切片（本次未运行浏览器联调）", func() (CheckStatus, string) {
@@ -480,9 +480,9 @@ func TestT09VerificationRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("序列化报告: %v", err)
 	}
-	if err := os.WriteFile(filepath.Clean(t09ReportPath), append(raw, '\n'), 0o644); err != nil {
-		t.Fatalf("写报告 %s: %v", t09ReportPath, err)
+	if err := os.WriteFile(filepath.Clean(assetServiceReportPath), append(raw, '\n'), 0o644); err != nil {
+		t.Fatalf("写报告 %s: %v", assetServiceReportPath, err)
 	}
 	t.Logf("报告已写入 %s：mode=%s，通过 %d、失败 %d、未运行 %d",
-		t09ReportPath, rep.EffectiveMode(), len(rep.Passed()), len(rep.Failed()), len(rep.NotRun()))
+		assetServiceReportPath, rep.EffectiveMode(), len(rep.Passed()), len(rep.Failed()), len(rep.NotRun()))
 }

@@ -2024,7 +2024,7 @@ const createSession = async (val: string, delivery: 'inject' | 'after' = 'after'
   }
 
   // Images and non-embedded attachments both travel to the backend as
-  // `attachment_ids`, which enforces a combined cap (MaxTemporaryAttachmentsPerMessage).
+  // `attachment_ids`, which enforces a combined cap (MaxChatAttachmentsPerMessage).
   // The per-picker limits (5 images / 5 attachments) are independent, so guard the
   // merged total here to avoid a late 400 after the files are already uploaded.
   const MAX_TOTAL_ATTACHMENTS = 5;

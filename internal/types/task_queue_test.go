@@ -58,9 +58,9 @@ func TestQueueDefinitionsAreUniqueAndConsumable(t *testing.T) {
 }
 
 func TestChatAttachmentQueueIsIsolatedAndPrioritized(t *testing.T) {
-	queue, ok := QueueForTaskType(TypeTemporaryDocumentProcess)
+	queue, ok := QueueForTaskType(TypeChatAttachmentProcess)
 	if !ok || queue != QueueChatAttachment {
-		t.Fatalf("temporary document parsing must use %q, got %q", QueueChatAttachment, queue)
+		t.Fatalf("chat attachment parsing must use %q, got %q", QueueChatAttachment, queue)
 	}
 	coreWeights := QueueWeightsForPool(WorkerPoolCore)
 	if coreWeights[QueueChatAttachment] <= coreWeights[QueueDefault] {
@@ -84,7 +84,7 @@ func TestEveryAsynqTaskTypeHasADeclaredQueue(t *testing.T) {
 		TypeIndexDelete, TypeKBDelete, TypeKnowledgeListDelete,
 		TypeKnowledgeListReparse, TypeKnowledgeMove, TypeDataTableSummary,
 		TypeImageMultimodal, TypeKnowledgePostProcess, TypeKnowledgeAutoTag, TypeManualProcess,
-		TypeDataSourceSync, TypeWikiIngest, TypeWikiFinalize, TypeTemporaryDocumentProcess,
+		TypeDataSourceSync, TypeWikiIngest, TypeWikiFinalize, TypeChatAttachmentProcess,
 		TypeLingDocGeneration,
 	}
 	for _, taskType := range taskTypes {

@@ -1,15 +1,15 @@
 import { del, get, getDown, postUpload } from '@/utils/request';
 
-export type TemporaryAttachmentStatus = 'uploaded' | 'processing' | 'ready' | 'failed';
+export type ChatAttachmentStatus = 'uploaded' | 'processing' | 'ready' | 'failed';
 
-export interface TemporaryAttachment {
+export interface ChatAttachment {
   id: string;
   session_id: string;
   file_name: string;
   file_type: string;
   file_size: number;
   mime_type?: string;
-  status: TemporaryAttachmentStatus;
+  status: ChatAttachmentStatus;
   token_count: number;
   chunk_count: number;
   image_refs?: Array<{ original_ref?: string; url: string; mime_type?: string }>;
@@ -19,10 +19,10 @@ export interface TemporaryAttachment {
 
 interface AttachmentResponse {
   success: boolean;
-  data: TemporaryAttachment;
+  data: ChatAttachment;
 }
 
-export function uploadTemporaryAttachment(
+export function uploadChatAttachment(
   sessionId: string,
   file: File,
   agentId?: string,
@@ -44,14 +44,14 @@ export function uploadTemporaryAttachment(
   );
 }
 
-export function getTemporaryAttachment(sessionId: string, attachmentId: string): Promise<AttachmentResponse> {
+export function getChatAttachment(sessionId: string, attachmentId: string): Promise<AttachmentResponse> {
   return get(`/api/v1/sessions/${sessionId}/attachments/${attachmentId}`);
 }
 
-export function previewTemporaryAttachment(sessionId: string, attachmentId: string): Promise<Blob> {
+export function previewChatAttachment(sessionId: string, attachmentId: string): Promise<Blob> {
   return getDown(`/api/v1/sessions/${sessionId}/attachments/${attachmentId}/preview`);
 }
 
-export function deleteTemporaryAttachment(sessionId: string, attachmentId: string): Promise<void> {
+export function deleteChatAttachment(sessionId: string, attachmentId: string): Promise<void> {
   return del(`/api/v1/sessions/${sessionId}/attachments/${attachmentId}`);
 }
