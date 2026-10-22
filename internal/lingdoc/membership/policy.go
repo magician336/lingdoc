@@ -53,3 +53,28 @@ func (s *Service) EffectivePermission(
 	})
 	return result, err
 }
+
+// OwnerAvailability reports the derived fact about the project's Owner.
+//
+// It is the project level read outlet: the project page and the members page
+// use it to say what is going on with the Owner and how the project gets back
+// to work. It reads the same judgement the permission read outlet reads, so
+// the two answers cannot disagree about the same project.
+func (s *Service) OwnerAvailability(
+	ctx context.Context,
+	actor core.Actor,
+	projectID string,
+) (core.OwnerAvailability, error) {
+	var result core.OwnerAvailability
+	err := s.repository.Transaction(ctx, core.TransactionOptions{ReadOnly: true}, func(tx core.Transaction) error {
+		p, err := s.authorizer.AuthorizeProject(
+			ctx, tx, core.NewAuthorizationRequest(actor, projectID, core.AuthorizationRead, ""),
+		)
+		if err != nil {
+			return err
+		}
+		result = core.OwnerAvailabilityOf(tx, p, actor.TenantID)
+		return nil
+	})
+	return result, err
+}

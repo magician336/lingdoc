@@ -1,5 +1,6 @@
 <template>
   <section class="member-panel" aria-labelledby="project-members-heading">
+    <OwnerUnavailableNotice :reason="ownerNoticeReason" :recovery="ownerNoticeRecovery" />
     <div class="member-panel__heading">
       <div>
         <h3 id="project-members-heading">项目成员与权限</h3>
@@ -89,6 +90,8 @@ import {
   effectiveCapabilitySummary, projectFunctionRoles, serializeProjectMemberDrafts, setAssetScopes, setChapterScopes,
   setProjectFunctionRole, type ProjectMemberDraft,
 } from './projectMembers'
+import { useOwnerAvailability } from '@/composables/useOwnerAvailability'
+import OwnerUnavailableNotice from './OwnerUnavailableNotice.vue'
 
 const props = defineProps<{
   project: Project
@@ -111,6 +114,16 @@ const canPersistReason = computed(() => {
   return ''
 })
 const canSave = computed(() => props.editable && changed.value && !props.saving && !unsupported.value)
+
+// Owner 不可用时的项目级提示：说清「出了什么事、怎么恢复」。
+// 文案由 `useOwnerAvailability` 持有，这一处只负责显示。
+const {
+  noticeReason: ownerNoticeReason,
+  noticeRecovery: ownerNoticeRecovery,
+  refresh: refreshOwnerAvailability,
+} = useOwnerAvailability(() => props.project.id)
+
+watch(() => props.project.id, () => { void refreshOwnerAvailability() }, { immediate: true })
 
 watch(changed, value => emit('dirty', value), { immediate: true })
 watch(() => props.project, (project, previous) => {

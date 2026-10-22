@@ -33,6 +33,18 @@ export interface CollaborationOwnerTransfer {
  expected_project_version:number;created_at:string;accepted_at?:string
 }
 export interface OwnerTransferRequest {to_user_id:string;expected_project_version:number}
+/**
+ * 项目级 Owner 可用性事实。
+ *
+ * 它是读时派生的：服务端读的是 Owner 当前的租户成员状态与项目成员状态，
+ * 没有落库，也没有「解冻」动作。恢复路径只给可识别的标识，具体文案由前端持有。
+ */
+export interface OwnerAvailabilityFact {
+  owner_user_id:string
+  available:boolean
+  reason_code:string
+  recovery_paths:string[]
+}
 const segment=(value:string)=>encodeURIComponent(value)
 const base=(projectId:string)=>`/api/v1/lingdoc/projects/${segment(projectId)}`
 const headers=(key:string)=>({headers:{'Idempotency-Key':key}})
@@ -45,6 +57,7 @@ export const updateMemberAssignment=(id:string,userId:string,input:MemberAssignm
 export const changeMemberState=(id:string,userId:string,input:MemberStateInput,key:string)=>post<Result<Project>>(`${base(id)}/members/${segment(userId)}/state`,input,headers(key))
 export const getCollaborationProject=(id:string)=>get<Result<Project>>(base(id))
 export const listOwnerTransfers=(id:string)=>get<Result<CollaborationOwnerTransfer[]>>(`${base(id)}/owner-transfers`)
+export const getOwnerAvailability=(id:string)=>get<Result<OwnerAvailabilityFact>>(`${base(id)}/owner-availability`)
 export const requestOwnerTransfer=(id:string,input:OwnerTransferRequest,key:string)=>post<Result<CollaborationOwnerTransfer>>(`${base(id)}/owner-transfer`,input,headers(key))
 export const acceptOwnerTransfer=(id:string,transferId:string,key:string)=>post<Result<CollaborationOwnerTransfer>>(`${base(id)}/owner-transfer/${segment(transferId)}/accept`,{},headers(key))
 export const rejectOwnerTransfer=(id:string,transferId:string,expectedProjectVersion:number,reason:string,key:string)=>post<Result<CollaborationOwnerTransfer>>(`${base(id)}/owner-transfer/${segment(transferId)}/reject`,{expected_project_version:expectedProjectVersion,reason},headers(key))
